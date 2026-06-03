@@ -1,0 +1,56 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# CMake and build outputs
+build/
+build-*/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+_deps/
+
+# Native binaries and libraries
+*.a
+*.dylib
+*.dll
+*.exe
+*.lib
+*.o
+*.obj
+*.so
+
+# Generated debug/profiling artifacts
+*.dSYM/
+*.gcda
+*.gcno
+*.gcov
+*.profdata
+*.profraw
+*.stackdump
+core
+core.*
+
+# Logs and local env files
+*.log
+.env
+.env.*
+!.env.example
+
+# Package manager caches / installs
+vcpkg_installed/
+conanbuildinfo.*
+conaninfo.txt
+graph_info.json
