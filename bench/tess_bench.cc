@@ -1,6 +1,5 @@
 #include <benchmark/benchmark.h>
-
-#include <tess/tess.hpp>
+#include <tess/tess.h>
 
 namespace {
 
@@ -13,4 +12,4 @@ void BM_library_version_access(benchmark::State& state) {
 
 BENCHMARK(BM_library_version_access);
 
-} // namespace
+}  // namespace

@@ -13,9 +13,9 @@ struct version {
 };
 
 inline constexpr version library_version{
-  TESS_VERSION_MAJOR,
-  TESS_VERSION_MINOR,
-  TESS_VERSION_PATCH,
+    TESS_VERSION_MAJOR,
+    TESS_VERSION_MINOR,
+    TESS_VERSION_PATCH,
 };
 
-} // namespace tess
+}  // namespace tess
