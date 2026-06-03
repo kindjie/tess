@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
-
-#include <tess/tess.hpp>
+#include <tess/tess.h>
 
 TEST(TessSmoke, ExposesLibraryVersion) {
   static_assert(tess::library_version.major == TESS_VERSION_MAJOR);

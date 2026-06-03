@@ -20,3 +20,5 @@ architecture docs, the historical TDD archive provides design intent:
 - [GPU backend interface](../tdd/gpu-backend-interface.md)
 - [Diagnostics and tooling](../tdd/diagnostics-and-tooling.md)
 - [Modern C++ safety](../tdd/modern-cpp-compile-time-safety.md)
+
+C++ implementation work follows the active [style policy](../style.md).
