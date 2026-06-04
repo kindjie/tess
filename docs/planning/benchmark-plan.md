@@ -130,7 +130,8 @@ Strictly check no allocations after warmup for hot path/field builds. Measure sc
 
 v1: EnTT and custom minimal adapter.
 
-Measure request collection, result application, movement commit, spatial index update, deterministic sorting.
+Measure request collection, result application, movement commit, spatial index
+update, deterministic sorting.
 
 ## 17. Diagnostics/tooling benchmarks
 
@@ -138,7 +139,8 @@ Measure disabled/counters/warnings/trace/stacktrace, ImGui panel draw, export co
 
 ## 18. GPU placeholders
 
-Mock backend for planner/backend choice, upload batch construction, handle lifecycle, fallback, stale readback, cache eviction. Real GPU benchmarks future.
+Mock backend for planner/backend choice, upload batch construction, handle
+lifecycle, fallback, stale readback, cache eviction. Real GPU benchmarks future.
 
 ## 19. Scenario benchmarks
 
@@ -152,22 +154,42 @@ Mock backend for planner/backend choice, upload batch construction, handle lifec
 
 ## 20. Correctness validation
 
-Benchmarks must check correctness: legal paths, decreasing distance fields, topology reference matches, dirty matches dense reference, fused equals materialized, delta replay matches projected state.
+Benchmarks must check correctness: legal paths, decreasing distance fields,
+topology reference matches, dirty matches dense reference, fused equals
+materialized, delta replay matches projected state.
 
 ## 21. Reproducibility
 
-Record commit, compiler, flags, CPU, OS, build mode, shape, chunk size, field schema, random seed, thread count, diagnostic level.
+Record commit, compiler, flags, CPU, OS, build mode, shape, chunk size, field
+schema, random seed, thread count, diagnostic level.
 
 ## 22. Output formats
 
 Console summary, JSON, CSV. Optional Chrome trace/flamegraph markers and plot scripts.
 
-## 23. CI strategy
+## 23. Regression thresholds
+
+Key conversion benchmarks have threshold scaffolding in
+`bench/thresholds/key-conversions.json`.
+
+Run the current scaffold with:
+
+```sh
+cmake --build --preset bench --target tess_bench_key_thresholds
+```
+
+Threshold values default to `null`, which records the intended gate names
+without failing on wall-clock variance. After several same-machine baseline
+runs, fill `max_real_time_ns` or `max_cpu_time_ns` for stable benchmarks.
+
+## 24. CI strategy
 
 - correctness benchmarks with sanitizers
 - performance smoke
 - full performance suite manual/scheduled
 
-## 24. Acceptance criteria
+## 25. Acceptance criteria
 
-Benchmarks cover storage, planner, scheduler, topology, pathing, fields, caches, ECS, render deltas, diagnostics, shapes, allocation, and correctness. Results are reproducible and exportable.
+Benchmarks cover storage, planner, scheduler, topology, pathing, fields,
+caches, ECS, render deltas, diagnostics, shapes, allocation, and correctness.
+Results are reproducible and exportable.

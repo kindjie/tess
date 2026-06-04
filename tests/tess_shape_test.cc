@@ -1,9 +1,47 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <atomic>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
+#include <new>
 #include <type_traits>
+
+namespace {
+
+std::atomic<bool> count_allocations{false};
+std::atomic<int> allocation_count{0};
+
+}  // namespace
+
+void* operator new(std::size_t size) {
+  if (count_allocations.load(std::memory_order_relaxed)) {
+    allocation_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  if (void* ptr = std::malloc(size)) {
+    return ptr;
+  }
+  throw std::bad_alloc();
+}
+
+void* operator new[](std::size_t size) {
+  if (count_allocations.load(std::memory_order_relaxed)) {
+    allocation_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  if (void* ptr = std::malloc(size)) {
+    return ptr;
+  }
+  throw std::bad_alloc();
+}
+
+void operator delete(void* ptr) noexcept { std::free(ptr); }
+
+void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
+
+void operator delete[](void* ptr) noexcept { std::free(ptr); }
+
+void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
 
 namespace {
 
@@ -194,6 +232,47 @@ TEST(TessShape, RoundTripsTileKeys) {
   static_assert(tess::coord<Chunked3D>(tile) == coord);
 
   EXPECT_EQ(tess::coord<Chunked3D>(tile), coord);
+}
+
+TEST(TessShape, KeyConversionsAreNoexcept) {
+  constexpr auto coord = tess::Coord3{47, 33, 17};
+  constexpr auto chunk_coord = tess::ChunkCoord3{2, 2, 2};
+  constexpr auto local_coord = tess::LocalCoord3{15, 1, 1};
+  constexpr auto chunk_key = tess::ChunkKey{42};
+  constexpr auto local_tile_id = tess::LocalTileId{287};
+  constexpr auto tile = tess::tile_key<Chunked3D>(coord);
+
+  static_assert(noexcept(tess::chunk_coord<Chunked3D>(coord)));
+  static_assert(noexcept(tess::local_coord<Chunked3D>(coord)));
+  static_assert(noexcept(tess::local_tile_id<Chunked3D>(local_coord)));
+  static_assert(noexcept(tess::coord<Chunked3D>(chunk_coord, local_tile_id)));
+  static_assert(noexcept(tess::chunk_key<Chunked3D>(chunk_coord)));
+  static_assert(noexcept(tess::chunk_coord<Chunked3D>(chunk_key)));
+  static_assert(noexcept(tess::tile_key<Chunked3D>(coord)));
+  static_assert(noexcept(tess::chunk_key<Chunked3D>(tile)));
+  static_assert(noexcept(tess::local_tile_id<Chunked3D>(tile)));
+  static_assert(noexcept(tess::coord<Chunked3D>(tile)));
+}
+
+TEST(TessShape, KeyConversionsDoNotAllocate) {
+  auto coord = tess::Coord3{47, 33, 17};
+  auto observed = std::uint64_t{0};
+
+  allocation_count.store(0, std::memory_order_relaxed);
+  count_allocations.store(true, std::memory_order_relaxed);
+  for (auto i = 0; i < 1024; ++i) {
+    const auto tile = tess::tile_key<Chunked3D>(coord);
+    const auto decoded = tess::coord<Chunked3D>(tile);
+    observed += tess::chunk_key<Chunked3D>(tile).value;
+    observed += tess::local_tile_id<Chunked3D>(tile).value;
+    coord.x = (decoded.x + 1) % 64;
+    coord.y = (decoded.y + 3) % 64;
+    coord.z = (decoded.z + 5) % 32;
+  }
+  count_allocations.store(false, std::memory_order_relaxed);
+
+  EXPECT_GT(observed, 0u);
+  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
 }
 
 TEST(TessShape, RepresentsSingleChunkTilesWithZeroChunkKey) {
