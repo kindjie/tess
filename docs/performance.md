@@ -1,6 +1,6 @@
 # Benchmark Trends
 
-Stale snapshot: data from CI run 26975937015 at commit fb7e3bf, collected 2026-06-04 12:59 PDT.
+Stale snapshot: data from CI run 26980713740 at commit 90ce419, collected 2026-06-04 14:33 PDT.
 
 The SVG snapshot in `docs/assets/benchmark-trends.svg` is a labeled
 summary, not the source of truth. Use CI benchmark baseline artifacts
@@ -12,8 +12,12 @@ Regenerate the detailed report with:
 tools/benchmark_trends.py path/to/benchmark-baselines-* \
   --out build/bench/benchmark-trends.html \
   --snapshot-svg docs/assets/benchmark-trends.svg \
-  --summary-md docs/performance.md
+  --summary-md build/bench/benchmark-trends.md
 ```
+
+Use the generated Markdown as a scratch summary. Update this maintained page by
+copying over the stale label and latest snapshot table while preserving the
+regeneration policy.
 
 ## Regeneration Policy
 
@@ -51,8 +55,8 @@ The final commit remains manual by design:
 
 | Benchmark | Latest median CPU ns |
 | --- | ---: |
-| `block/context_iteration_2d` | 402.730 |
-| `block/chunk_tile_iteration_2d` | 1709.727 |
-| `block/chunk_boundary_scan_2d` | 12319.091 |
-| `storage/world_chunks_iteration` | 93.382 |
-| `storage/world_dirty_chunks_iteration` | 279.552 |
+| `block/context_iteration_2d` | 436.332 |
+| `block/chunk_tile_iteration_2d` | 1710.011 |
+| `block/chunk_boundary_scan_2d` | 12332.274 |
+| `storage/world_chunks_iteration` | 93.393 |
+| `storage/world_dirty_chunks_iteration` | 285.844 |
