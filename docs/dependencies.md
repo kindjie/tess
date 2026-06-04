@@ -35,6 +35,16 @@ CI pins `ubuntu-24.04` instead of `ubuntu-latest` to avoid runner image drift.
 Benchmark baseline JSON is uploaded from CI artifacts so timing thresholds can
 be calibrated against the same runner family that will enforce them.
 
+## tiktoken
+
+- Version: `0.13.0`
+- Documentation and releases: https://pypi.org/project/tiktoken/
+- Repository: https://github.com/openai/tiktoken
+
+Used by the Git pre-commit hook to count tokens in staged text files through
+the Python API. The hook reads staged blobs from Git, so the library API is a
+better fit than a filesystem-oriented command-line wrapper.
+
 ## Deferred Executor Candidates
 
 No block-executor dependency is added yet. `work_contract`, Taskflow, oneTBB,
