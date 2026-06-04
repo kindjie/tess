@@ -52,6 +52,15 @@ Summarize downloaded baseline artifacts with:
 tools/benchmark_baseline_summary.py path/to/*.json
 ```
 
+## Benchmark Trends
+
+![Benchmark trend snapshot](docs/assets/benchmark-trends.svg)
+
+This snapshot is intentionally labeled with its source CI run, commit, and
+Pacific-time collection timestamp. It may be stale by a few commits. See
+[`docs/performance.md`](docs/performance.md) for regeneration instructions and
+use CI benchmark artifacts as the source of truth for threshold calibration.
+
 ## Name
 
 `tess` is named after tesserae and tessellation: small spatial pieces composed

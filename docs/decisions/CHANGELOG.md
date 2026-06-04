@@ -110,11 +110,13 @@ Records meaningful design changes from the original TDDs.
 ## 2026-06-04 - CI Benchmark Baseline Collection
 
 - Changed: Added block benchmark threshold scaffolding, non-gating CI baseline
-  JSON collection for key, storage, and block benchmark groups, and a baseline
-  summary helper for threshold calibration.
+  JSON collection for key, storage, and block benchmark groups, a baseline
+  summary helper for threshold calibration, and README-visible benchmark trend
+  snapshot generation.
 - Reason: Timing limits should be calibrated from repeated samples on the
   pinned CI runner family that will enforce them, not from developer machines.
-- Affected docs: `README.md`, `docs/dependencies.md`,
+- Affected docs: `README.md`, `docs/dependencies.md`, `docs/performance.md`,
   `docs/planning/benchmark-plan.md`
 - Affected code: `.github/workflows/ci.yml`, `bench/CMakeLists.txt`,
-  `bench/thresholds/block.json`, `tools/benchmark_baseline_summary.py`
+  `bench/thresholds/block.json`, `tools/benchmark_artifact_metadata.py`,
+  `tools/benchmark_baseline_summary.py`, `tools/benchmark_trends.py`
