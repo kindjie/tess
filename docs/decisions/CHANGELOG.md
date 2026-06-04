@@ -154,3 +154,13 @@ Records meaningful design changes from the original TDDs.
   provide consistent clang-tidy diagnostics while editing.
 - Affected docs: `docs/dependencies.md`, `docs/style.md`
 - Affected code: `.clangd`
+
+## 2026-06-04 - Opt-In Cppcheck Preset
+
+- Changed: Added a project-local cppcheck CMake option and `dev-cppcheck`
+  preset for local test and benchmark targets.
+- Reason: cppcheck provides a complementary static-analysis pass without
+  exporting project analysis policy to downstream consumers.
+- Affected docs: `docs/dependencies.md`, `docs/style.md`
+- Affected code: `CMakeLists.txt`, `CMakePresets.json`,
+  `cmake/TessProjectOptions.cmake`

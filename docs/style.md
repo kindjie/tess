@@ -12,6 +12,8 @@ C++ code follows the
   runs.
 - Use `dev-clang-tidy` for opt-in clang-tidy checks when `clang-tidy` is
   installed.
+- Use `dev-cppcheck` for opt-in cppcheck analysis when `cppcheck` is
+  installed.
 - Run clangd with `--clang-tidy --enable-config` so editor diagnostics use the
   project `.clangd` and `.clang-tidy` files.
 - Use `.h` for C++ headers.

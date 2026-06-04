@@ -45,6 +45,15 @@
       }
     },
     {
+      "name": "dev-cppcheck",
+      "displayName": "Developer Debug cppcheck",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "TESS_ENABLE_CPPCHECK": "ON"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Release",
       "binaryDir": "${sourceDir}/build/${presetName}",
@@ -86,6 +95,10 @@
       "configurePreset": "dev-clang-tidy"
     },
     {
+      "name": "dev-cppcheck",
+      "configurePreset": "dev-cppcheck"
+    },
+    {
       "name": "release",
       "configurePreset": "release"
     },
@@ -119,6 +132,13 @@
     {
       "name": "dev-clang-tidy",
       "configurePreset": "dev-clang-tidy",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-cppcheck",
+      "configurePreset": "dev-cppcheck",
       "output": {
         "outputOnFailure": true
       }
