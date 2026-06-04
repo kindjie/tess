@@ -12,3 +12,8 @@ add_executable(tess_shape_test tess_shape_test.cc)
 target_link_libraries(tess_shape_test PRIVATE tess::tess GTest::gtest_main)
 
 gtest_discover_tests(tess_shape_test)
+
+add_executable(tess_storage_test tess_storage_test.cc)
+target_link_libraries(tess_storage_test PRIVATE tess::tess GTest::gtest_main)
+
+gtest_discover_tests(tess_storage_test)

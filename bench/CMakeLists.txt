@@ -40,4 +40,12 @@ if(BUILD_TESTING)
       --benchmark_filter=key/tile_key_2d_u64
       --benchmark_min_time=0.001
   )
+
+  add_test(
+    NAME tess_bench_storage_smoke
+    COMMAND
+      tess_bench
+      --benchmark_filter=storage/field_span_acquisition
+      --benchmark_min_time=0.001
+  )
 endif()

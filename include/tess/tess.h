@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/shape.h>
+#include <tess/storage/chunk_page.h>
 
 #define TESS_VERSION_MAJOR 0
 #define TESS_VERSION_MINOR 1

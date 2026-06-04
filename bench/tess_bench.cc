@@ -1,6 +1,7 @@
 #include <benchmark/benchmark.h>
 #include <tess/tess.h>
 
+#include <array>
 #include <cstdint>
 
 namespace {
@@ -13,6 +14,19 @@ using SingleChunk =
     tess::Shape<tess::Extent3{1024, 1024, 1}, tess::Extent3{1024, 1024, 1}>;
 using HugeBounded = tess::Shape<tess::Extent3{1ull << 34, 1ull << 33, 256},
                                 tess::Extent3{32, 32, 4}>;
+using StorageChunk =
+    tess::Shape<tess::Extent3{4096, 4096, 1}, tess::Extent3{64, 64, 1}>;
+using StorageSingleChunk =
+    tess::Shape<tess::Extent3{256, 256, 1}, tess::Extent3{256, 256, 1}>;
+
+struct TerrainTag {};
+struct CostTag {};
+
+using StorageSchema = tess::FieldSchema<tess::Field<TerrainTag, std::uint16_t>,
+                                        tess::Field<CostTag, float>>;
+using StoragePage = tess::ChunkPage<StorageChunk, StorageSchema>;
+using StorageSingleChunkPage =
+    tess::ChunkPage<StorageSingleChunk, StorageSchema>;
 
 template <typename Shape>
 void BM_chunk_coord(benchmark::State& state) {
@@ -108,6 +122,55 @@ void BM_coord_from_tile_key(benchmark::State& state) {
   }
 }
 
+void BM_field_span_acquisition(benchmark::State& state) {
+  StoragePage page{tess::ChunkKey{0}, tess::ChunkCoord3{0, 0, 0}};
+  for (auto _ : state) {
+    auto terrain = page.field_span<TerrainTag>();
+    auto costs = page.field_span<CostTag>();
+    benchmark::DoNotOptimize(terrain.data());
+    benchmark::DoNotOptimize(costs.data());
+  }
+}
+
+void BM_chunk_field_write_read_iteration(benchmark::State& state) {
+  StoragePage page{tess::ChunkKey{0}, tess::ChunkCoord3{0, 0, 0}};
+  for (auto _ : state) {
+    auto terrain = page.field_span<TerrainTag>();
+    std::uint64_t sum = 0;
+    for (std::uint64_t i = 0; i < StoragePage::local_tile_count; ++i) {
+      terrain[i] = static_cast<std::uint16_t>(i);
+      sum += terrain[i];
+    }
+    benchmark::DoNotOptimize(sum);
+  }
+}
+
+void BM_single_chunk_page_iteration(benchmark::State& state) {
+  StorageSingleChunkPage page{tess::ChunkKey{0}, tess::ChunkCoord3{0, 0, 0}};
+  for (auto _ : state) {
+    auto terrain = page.field_span<TerrainTag>();
+    std::uint64_t sum = 0;
+    for (std::uint64_t i = 0; i < StorageSingleChunkPage::local_tile_count;
+         ++i) {
+      terrain[i] = static_cast<std::uint16_t>(i);
+      sum += terrain[i];
+    }
+    benchmark::DoNotOptimize(sum);
+  }
+}
+
+void BM_flat_array_iteration(benchmark::State& state) {
+  std::array<std::uint16_t, StorageSingleChunkPage::local_tile_count> terrain{};
+  for (auto _ : state) {
+    std::uint64_t sum = 0;
+    for (std::uint64_t i = 0; i < terrain.size(); ++i) {
+      terrain[i] = static_cast<std::uint16_t>(i);
+      sum += terrain[i];
+    }
+    benchmark::DoNotOptimize(sum);
+  }
+}
+
 BENCHMARK(BM_chunk_coord<TopDown2D>)->Name("key/chunk_coord_2d_u64");
 BENCHMARK(BM_local_coord<TopDown2D>)->Name("key/local_coord_2d_u64");
 BENCHMARK(BM_local_tile_id<TopDown2D>)->Name("key/local_tile_id_2d_u64");
@@ -123,5 +186,12 @@ BENCHMARK(BM_tile_key<SingleChunk>)->Name("key/tile_key_single_chunk_u64");
 BENCHMARK(BM_tile_key<HugeBounded>)->Name("key/tile_key_huge_u128");
 BENCHMARK(BM_coord_from_tile_key<HugeBounded>)
     ->Name("key/coord_from_tile_key_huge_u128");
+
+BENCHMARK(BM_field_span_acquisition)->Name("storage/field_span_acquisition");
+BENCHMARK(BM_chunk_field_write_read_iteration)
+    ->Name("storage/chunk_field_write_read_iteration");
+BENCHMARK(BM_single_chunk_page_iteration)
+    ->Name("storage/single_chunk_page_iteration");
+BENCHMARK(BM_flat_array_iteration)->Name("storage/flat_array_iteration");
 
 }  // namespace
