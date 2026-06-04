@@ -13,5 +13,6 @@
   noexcept hot accessors, and allocation-free local field/span/world access
   after construction.
 - `tess_block_test`: verifies chunk-domain builders, serial block iteration,
-  const-correct chunk views, chunk bounds for 2D vertical and 3D worlds, and
-  allocation-free iteration for prebuilt domains.
+  const-correct chunk views, chunk bounds for 2D vertical and 3D worlds,
+  chunk-local tile iteration and coordinate helpers, and allocation-free
+  iteration for prebuilt domains.

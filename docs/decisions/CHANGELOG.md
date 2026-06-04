@@ -72,3 +72,14 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/architecture/block.md`, `docs/dependencies.md`
 - Affected code: `include/tess/block/block.h`, `include/tess/tess.h`,
   `tests/tess_block_test.cc`, `bench/tess_bench.cc`
+
+## 2026-06-04 - Chunk-Local Tile Iteration
+
+- Changed: `ChunkView` now exposes local tile coordinate/id conversion,
+  current-chunk world coordinate conversion, and allocation-free serial
+  `for_each_tile` traversal in ascending `LocalTileId` order.
+- Reason: Block executors need deterministic chunk-local tile traversal before
+  adding planners, parallel scheduling, scratch storage, or diagnostics.
+- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
+  `bench/tess_bench.cc`, `bench/CMakeLists.txt`
