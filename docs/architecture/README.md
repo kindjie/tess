@@ -22,3 +22,7 @@ architecture docs, the historical TDD archive provides design intent:
 - [Modern C++ safety](../tdd/modern-cpp-compile-time-safety.md)
 
 C++ implementation work follows the active [style policy](../style.md).
+
+Maintained notes for implemented areas:
+
+- [Storage foundation](storage.md)

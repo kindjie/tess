@@ -11,14 +11,14 @@ struct Extent3 {
   std::uint64_t y;
   std::uint64_t z = 1;
 
-  friend constexpr bool operator==(Extent3 lhs, Extent3 rhs) = default;
+  friend constexpr bool operator==(Extent3 lhs, Extent3 rhs) noexcept = default;
 };
 
 struct Coord2 {
   std::int64_t x;
   std::int64_t y;
 
-  friend constexpr bool operator==(Coord2 lhs, Coord2 rhs) = default;
+  friend constexpr bool operator==(Coord2 lhs, Coord2 rhs) noexcept = default;
 };
 
 struct Coord3 {
@@ -26,7 +26,7 @@ struct Coord3 {
   std::int64_t y;
   std::int64_t z = 0;
 
-  friend constexpr bool operator==(Coord3 lhs, Coord3 rhs) = default;
+  friend constexpr bool operator==(Coord3 lhs, Coord3 rhs) noexcept = default;
 };
 
 struct ChunkCoord3 {
@@ -34,7 +34,8 @@ struct ChunkCoord3 {
   std::uint64_t y;
   std::uint64_t z = 0;
 
-  friend constexpr bool operator==(ChunkCoord3 lhs, ChunkCoord3 rhs) = default;
+  friend constexpr bool operator==(ChunkCoord3 lhs,
+                                   ChunkCoord3 rhs) noexcept = default;
 };
 
 struct LocalCoord3 {
@@ -42,26 +43,29 @@ struct LocalCoord3 {
   std::uint64_t y;
   std::uint64_t z = 0;
 
-  friend constexpr bool operator==(LocalCoord3 lhs, LocalCoord3 rhs) = default;
+  friend constexpr bool operator==(LocalCoord3 lhs,
+                                   LocalCoord3 rhs) noexcept = default;
 };
 
 struct LocalTileId {
   std::uint64_t value;
 
-  friend constexpr bool operator==(LocalTileId lhs, LocalTileId rhs) = default;
+  friend constexpr bool operator==(LocalTileId lhs,
+                                   LocalTileId rhs) noexcept = default;
 };
 
 struct ChunkKey {
   std::uint64_t value;
 
-  friend constexpr bool operator==(ChunkKey lhs, ChunkKey rhs) = default;
+  friend constexpr bool operator==(ChunkKey lhs,
+                                   ChunkKey rhs) noexcept = default;
 };
 
 struct Box3 {
   Coord3 origin;
   Extent3 extent;
 
-  friend constexpr bool operator==(Box3 lhs, Box3 rhs) = default;
+  friend constexpr bool operator==(Box3 lhs, Box3 rhs) noexcept = default;
 };
 
 template <typename Shape>
@@ -73,40 +77,42 @@ struct ResolvedTile {
   LocalTileId local_tile_id;
 
   friend constexpr bool operator==(ResolvedTile lhs,
-                                   ResolvedTile rhs) = default;
+                                   ResolvedTile rhs) noexcept = default;
 };
 
-constexpr Coord3 to_coord3(Coord2 coord) { return Coord3{coord.x, coord.y, 0}; }
+constexpr Coord3 to_coord3(Coord2 coord) noexcept {
+  return Coord3{coord.x, coord.y, 0};
+}
 
 namespace detail {
 
 using UInt128 = unsigned __int128;
 
-constexpr bool is_power_of_two(std::uint64_t value) {
+constexpr bool is_power_of_two(std::uint64_t value) noexcept {
   return value != 0 && (value & (value - 1)) == 0;
 }
 
-constexpr bool is_valid_extent(Extent3 extent) {
+constexpr bool is_valid_extent(Extent3 extent) noexcept {
   return extent.x > 0 && extent.y > 0 && extent.z > 0;
 }
 
-constexpr bool is_divisible_by(Extent3 size, Extent3 chunk) {
+constexpr bool is_divisible_by(Extent3 size, Extent3 chunk) noexcept {
   return size.x % chunk.x == 0 && size.y % chunk.y == 0 &&
          size.z % chunk.z == 0;
 }
 
-constexpr UInt128 product(Extent3 extent) {
+constexpr UInt128 product(Extent3 extent) noexcept {
   return static_cast<UInt128>(extent.x) * static_cast<UInt128>(extent.y) *
          static_cast<UInt128>(extent.z);
 }
 
-constexpr UInt128 chunk_count(Extent3 size, Extent3 chunk) {
+constexpr UInt128 chunk_count(Extent3 size, Extent3 chunk) noexcept {
   return static_cast<UInt128>(size.x / chunk.x) *
          static_cast<UInt128>(size.y / chunk.y) *
          static_cast<UInt128>(size.z / chunk.z);
 }
 
-constexpr std::uint32_t bit_width(UInt128 value) {
+constexpr std::uint32_t bit_width(UInt128 value) noexcept {
   std::uint32_t bits = 0;
   while (value != 0) {
     ++bits;
@@ -115,19 +121,19 @@ constexpr std::uint32_t bit_width(UInt128 value) {
   return bits;
 }
 
-constexpr std::uint32_t bits_for_count(UInt128 count) {
+constexpr std::uint32_t bits_for_count(UInt128 count) noexcept {
   return count <= 1 ? 0 : bit_width(count - 1);
 }
 
 template <std::uint32_t Bits>
 using KeyStorage = std::conditional_t<Bits <= 64, std::uint64_t, UInt128>;
 
-constexpr std::uint64_t magnitude(std::int64_t value) {
+constexpr std::uint64_t magnitude(std::int64_t value) noexcept {
   return static_cast<std::uint64_t>(-(value + 1)) + 1;
 }
 
 constexpr bool axis_contains(std::int64_t origin, std::uint64_t extent,
-                             std::int64_t coord) {
+                             std::int64_t coord) noexcept {
   if (coord < origin) {
     return false;
   }
@@ -146,7 +152,7 @@ constexpr bool axis_contains(std::int64_t origin, std::uint64_t extent,
 
 }  // namespace detail
 
-constexpr bool contains(Box3 box, Coord3 coord) {
+constexpr bool contains(Box3 box, Coord3 coord) noexcept {
   return detail::axis_contains(box.origin.x, box.extent.x, coord.x) &&
          detail::axis_contains(box.origin.y, box.extent.y, coord.y) &&
          detail::axis_contains(box.origin.z, box.extent.z, coord.z);
@@ -217,11 +223,11 @@ template <typename Shape>
 struct TileKey {
   typename ShapeTraits<Shape>::TileKeyStorage value;
 
-  friend constexpr bool operator==(TileKey lhs, TileKey rhs) = default;
+  friend constexpr bool operator==(TileKey lhs, TileKey rhs) noexcept = default;
 };
 
 template <typename Shape>
-constexpr bool contains(Coord3 coord) {
+constexpr bool contains(Coord3 coord) noexcept {
   return contains(Box3{Coord3{0, 0, 0}, ShapeTraits<Shape>::size}, coord);
 }
 

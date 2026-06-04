@@ -28,6 +28,7 @@ target_sources(
     BASE_DIRS include
     FILES
       include/tess/core/shape.h
+      include/tess/storage/chunk_page.h
       include/tess/tess.h
 )
 

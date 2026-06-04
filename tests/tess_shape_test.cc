@@ -254,6 +254,41 @@ TEST(TessShape, KeyConversionsAreNoexcept) {
   static_assert(noexcept(tess::coord<Chunked3D>(tile)));
 }
 
+TEST(TessShape, PublicValueHelpersAreNoexcept) {
+  constexpr auto coord2 = tess::Coord2{2, 3};
+  constexpr auto coord3 = tess::Coord3{2, 3, 0};
+  constexpr auto box = tess::Box3{
+      .origin = tess::Coord3{0, 0, 0},
+      .extent = tess::Extent3{8, 8, 1},
+  };
+
+  static_assert(noexcept(tess::Extent3{1, 1, 1} == tess::Extent3{1, 1, 1}));
+  static_assert(noexcept(tess::Coord2{1, 2} == tess::Coord2{1, 2}));
+  static_assert(noexcept(tess::Coord3{1, 2, 3} == tess::Coord3{1, 2, 3}));
+  static_assert(
+      noexcept(tess::ChunkCoord3{1, 2, 3} == tess::ChunkCoord3{1, 2, 3}));
+  static_assert(
+      noexcept(tess::LocalCoord3{1, 2, 3} == tess::LocalCoord3{1, 2, 3}));
+  static_assert(noexcept(tess::LocalTileId{1} == tess::LocalTileId{1}));
+  static_assert(noexcept(tess::ChunkKey{1} == tess::ChunkKey{1}));
+  static_assert(noexcept(box == box));
+  static_assert(
+      noexcept(tess::TileKey<Chunked3D>{1} == tess::TileKey<Chunked3D>{1}));
+  static_assert(noexcept(tess::ResolvedTile<Chunked3D>{
+                             tess::ChunkKey{1},
+                             tess::LocalTileId{2},
+                         } == tess::ResolvedTile<Chunked3D>{
+                                  tess::ChunkKey{1},
+                                  tess::LocalTileId{2},
+                              }));
+  static_assert(noexcept(tess::to_coord3(coord2)));
+  static_assert(noexcept(tess::contains(box, coord3)));
+  static_assert(noexcept(tess::contains<Chunked3D>(coord3)));
+
+  EXPECT_EQ(tess::to_coord3(coord2), coord3);
+  EXPECT_TRUE(tess::contains(box, coord3));
+}
+
 TEST(TessShape, KeyConversionsDoNotAllocate) {
   auto coord = tess::Coord3{47, 33, 17};
   auto observed = std::uint64_t{0};
