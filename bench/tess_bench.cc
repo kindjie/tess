@@ -37,6 +37,7 @@ using StorageWorld =
     tess::AlwaysResidentWorld<StorageWorldShape, StorageSchema>;
 using StorageSingleChunkPage =
     tess::ChunkPage<StorageSingleChunk, StorageSchema>;
+using Block2DWorld = tess::AlwaysResidentWorld<TopDown2D, StorageSchema>;
 using Block3DWorld = tess::AlwaysResidentWorld<Block3DShape, StorageSchema>;
 
 template <typename Shape>
@@ -311,6 +312,37 @@ void BM_block_chunk_tile_iteration(benchmark::State& state) {
   }
 }
 
+template <typename WorldType>
+void BM_block_chunk_boundary_scan(benchmark::State& state) {
+  WorldType world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{0}};
+  const auto domain = tess::chunk_domain(keys);
+
+  for (auto _ : state) {
+    std::uint64_t boundary_count = 0;
+    std::uint64_t interior_count = 0;
+    std::uint64_t sum = 0;
+    tess::for_each_chunk(
+        world, domain, tess::WritePolicy::UniquePerChunk, [&](auto view) {
+          auto terrain = view.template field_span<TerrainTag>();
+          view.for_each_tile(
+              [&](tess::LocalTileId id, tess::LocalCoord3 coord) {
+                if (view.is_boundary(coord)) {
+                  terrain[id.value] = 1;
+                  ++boundary_count;
+                } else {
+                  terrain[id.value] = 2;
+                  ++interior_count;
+                }
+                sum += terrain[id.value] + id.value;
+              });
+        });
+    benchmark::DoNotOptimize(boundary_count);
+    benchmark::DoNotOptimize(interior_count);
+    benchmark::DoNotOptimize(sum);
+  }
+}
+
 BENCHMARK(BM_chunk_coord<TopDown2D>)->Name("key/chunk_coord_2d_u64");
 BENCHMARK(BM_local_coord<TopDown2D>)->Name("key/local_coord_2d_u64");
 BENCHMARK(BM_local_tile_id<TopDown2D>)->Name("key/local_tile_id_2d_u64");
@@ -351,5 +383,9 @@ BENCHMARK(BM_block_chunk_tile_iteration<StorageWorld>)
     ->Name("block/chunk_tile_iteration_2d");
 BENCHMARK(BM_block_chunk_tile_iteration<Block3DWorld>)
     ->Name("block/chunk_tile_iteration_3d");
+BENCHMARK(BM_block_chunk_boundary_scan<Block2DWorld>)
+    ->Name("block/chunk_boundary_scan_2d");
+BENCHMARK(BM_block_chunk_boundary_scan<Block3DWorld>)
+    ->Name("block/chunk_boundary_scan_3d");
 
 }  // namespace

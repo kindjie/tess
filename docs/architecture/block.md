@@ -22,9 +22,21 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
 - `ChunkView<World>::local_coord(LocalTileId)` and
   `ChunkView<World>::local_tile_id(LocalCoord3)` convert local tile positions
   using row-major chunk-local order.
+- `ChunkView<World>::local_bounds()` returns the signed local candidate box
+  `{Coord3{0, 0, 0}, ShapeTraits<Shape>::chunk}`.
+- `ChunkView<World>::contains_local(Coord3)` and
+  `ChunkView<World>::try_local_coord(Coord3)` validate signed local candidate
+  coordinates before converting them to unsigned `LocalCoord3`.
+- `ChunkView<World>::is_boundary(LocalCoord3)` reports whether a valid local
+  tile touches any non-degenerate chunk face, and
+  `ChunkView<World>::is_interior(LocalCoord3)` is its inverse for valid local
+  coordinates. Axes with chunk extent `1` do not make every tile a boundary.
 - `ChunkView<World>::world_coord(LocalCoord3)` and
   `ChunkView<World>::world_coord(LocalTileId)` convert local positions to
   world coordinates for the current chunk.
+- `ChunkView<World>::world_coord(Coord3)` converts signed local candidates,
+  including one-step-out candidates, to world coordinates for the current
+  chunk.
 - `ChunkView<World>::for_each_tile(fn)` invokes
   `fn(LocalTileId, LocalCoord3)` for every local tile in ascending
   `LocalTileId` order.
@@ -33,6 +45,12 @@ Iteration is deterministic when domains are produced by the provided builders.
 The hot executor path does not allocate when passed a prebuilt `ChunkDomain`,
 and chunk-local tile iteration does not materialize ranges or decode global
 `TileKey` values.
+
+Boundary and local-candidate helpers only describe the current chunk. They do
+not define movement legality, neighbor ordering, direction enums, halo loading,
+transition providers, or cross-chunk field access. Future topology and path
+systems can use signed local candidates plus `contains_local` to decide whether
+a candidate remains inside the chunk or needs an explicit transition.
 
 ## TDD Divergences
 
