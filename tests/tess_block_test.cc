@@ -162,7 +162,7 @@ TEST(TessBlock, BlockCtxExposesWorldDomainPolicySizeAndEmptyState) {
   };
   const auto domain = tess::chunk_domain(keys);
   const auto ctx =
-      tess::block_ctx(world, domain, tess::WritePolicy::UniquePerTile);
+      tess::block_ctx<tess::WritePolicy::UniquePerTile>(world, domain);
 
   EXPECT_EQ(&ctx.world(), &world);
   EXPECT_EQ(ctx.domain().keys().data(), domain.keys().data());
@@ -172,7 +172,7 @@ TEST(TessBlock, BlockCtxExposesWorldDomainPolicySizeAndEmptyState) {
   EXPECT_FALSE(ctx.empty());
 
   const auto empty_ctx =
-      tess::block_ctx(world, tess::ChunkDomain{}, tess::WritePolicy::ReadOnly);
+      tess::block_ctx<tess::WritePolicy::ReadOnly>(world, tess::ChunkDomain{});
   EXPECT_EQ(empty_ctx.size(), 0u);
   EXPECT_TRUE(empty_ctx.empty());
 }
@@ -185,8 +185,8 @@ TEST(TessBlock, BlockCtxChunkViewMatchesDirectChunkViewBehavior) {
   world.meta(key).entity_count = 12;
   world.chunk(key).template field<TerrainTag>(tess::LocalTileId{3}) = 44;
 
-  const auto ctx = tess::block_ctx(world, tess::chunk_domain(keys),
-                                   tess::WritePolicy::UniquePerChunk);
+  const auto ctx = tess::block_ctx<tess::WritePolicy::UniquePerChunk>(
+      world, tess::chunk_domain(keys));
   const auto view = ctx.chunk_view(key);
   const auto direct = tess::ChunkView<World<TopDown2D>>{world, key};
   auto terrain = view.template field_span<TerrainTag>();
@@ -208,7 +208,7 @@ TEST(TessBlock, BlockCtxForEachChunkMatchesFreeFunctionDomainOrder) {
       tess::ChunkKey{5},
   };
   const auto domain = tess::chunk_domain(keys);
-  const auto ctx = tess::block_ctx(world, domain, tess::WritePolicy::ReadOnly);
+  const auto ctx = tess::block_ctx<tess::WritePolicy::ReadOnly>(world, domain);
   std::vector<tess::ChunkKey> ctx_visited;
   std::vector<tess::ChunkKey> free_visited;
 
@@ -251,8 +251,8 @@ TEST(TessBlock, ConstWorldBlockCtxReturnsConstPageMetadataAndFields) {
   constexpr auto key = tess::ChunkKey{1};
   const auto keys = std::vector<tess::ChunkKey>{key};
   const auto& const_world = world;
-  const auto ctx = tess::block_ctx(const_world, tess::chunk_domain(keys),
-                                   tess::WritePolicy::ReadOnly);
+  const auto ctx = tess::block_ctx<tess::WritePolicy::ReadOnly>(
+      const_world, tess::chunk_domain(keys));
 
   ctx.for_each_chunk([&](auto view) {
     auto terrain = view.template field_span<TerrainTag>();
@@ -269,6 +269,88 @@ TEST(TessBlock, ConstWorldBlockCtxReturnsConstPageMetadataAndFields) {
     EXPECT_EQ(&page, &const_world.chunk(key));
     EXPECT_EQ(&meta, &const_world.meta(key));
   });
+}
+
+TEST(TessBlock, ReadOnlyPolicyReturnsConstViewsForMutableWorld) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{1};
+  const auto keys = std::vector<tess::ChunkKey>{key};
+
+  tess::for_each_chunk<tess::WritePolicy::ReadOnly>(
+      world, tess::chunk_domain(keys), [&](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        decltype(auto) page = view.page();
+        decltype(auto) meta = view.meta();
+
+        static_assert(
+            std::is_same_v<decltype(terrain), std::span<const std::uint16_t>>);
+        static_assert(
+            std::is_same_v<decltype(page),
+                           const typename World<TopDown2D>::page_type&>);
+        static_assert(std::is_same_v<decltype(meta), const tess::ChunkMeta&>);
+
+        EXPECT_EQ(view.key(), key);
+        EXPECT_EQ(&page, &world.chunk(key));
+        EXPECT_EQ(&meta, &world.meta(key));
+      });
+}
+
+TEST(TessBlock, ReadOnlyBlockCtxChunkViewsAreConstForMutableWorld) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{1};
+  const auto keys = std::vector<tess::ChunkKey>{key};
+  const auto ctx = tess::block_ctx<tess::WritePolicy::ReadOnly>(
+      world, tess::chunk_domain(keys));
+  const auto view = ctx.chunk_view(key);
+  auto terrain = view.template field_span<TerrainTag>();
+  decltype(auto) page = view.page();
+  decltype(auto) meta = view.meta();
+
+  static_assert(
+      std::is_same_v<decltype(terrain), std::span<const std::uint16_t>>);
+  static_assert(std::is_same_v<decltype(page),
+                               const typename World<TopDown2D>::page_type&>);
+  static_assert(std::is_same_v<decltype(meta), const tess::ChunkMeta&>);
+
+  EXPECT_EQ(&page, &world.chunk(key));
+  EXPECT_EQ(&meta, &world.meta(key));
+}
+
+TEST(TessBlock, MutableWritePoliciesReturnMutableViews) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{1};
+  const auto keys = std::vector<tess::ChunkKey>{key};
+
+  const auto tile_ctx = tess::block_ctx<tess::WritePolicy::UniquePerTile>(
+      world, tess::chunk_domain(keys));
+
+  tile_ctx.for_each_chunk([](auto view) {
+    auto terrain = view.template field_span<TerrainTag>();
+    decltype(auto) page = view.page();
+    decltype(auto) meta = view.meta();
+
+    static_assert(std::is_same_v<decltype(terrain), std::span<std::uint16_t>>);
+    static_assert(
+        std::is_same_v<decltype(page), typename World<TopDown2D>::page_type&>);
+    static_assert(std::is_same_v<decltype(meta), tess::ChunkMeta&>);
+  });
+
+  const auto ctx = tess::block_ctx<tess::WritePolicy::UniquePerChunk>(
+      world, tess::chunk_domain(keys));
+  const auto view = ctx.chunk_view(key);
+  auto terrain = view.template field_span<TerrainTag>();
+  decltype(auto) page = view.page();
+  decltype(auto) meta = view.meta();
+
+  static_assert(std::is_same_v<decltype(terrain), std::span<std::uint16_t>>);
+  static_assert(
+      std::is_same_v<decltype(page), typename World<TopDown2D>::page_type&>);
+  static_assert(std::is_same_v<decltype(meta), tess::ChunkMeta&>);
+
+  terrain[0] = 7;
+  meta.entity_count = 3;
+  EXPECT_EQ(page.template field<TerrainTag>(tess::LocalTileId{0}), 7);
+  EXPECT_EQ(world.meta(key).entity_count, 3u);
 }
 
 TEST(TessBlock, TopDown2DTileIterationVisitsLocalIdsInOrder) {
@@ -637,8 +719,8 @@ TEST(TessBlock, PrebuiltBlockCtxNestedChunkAndTileIterationDoesNotAllocate) {
       tess::ChunkKey{8},
       tess::ChunkKey{12},
   };
-  const auto ctx = tess::block_ctx(world, tess::chunk_domain(keys),
-                                   tess::WritePolicy::UniquePerChunk);
+  const auto ctx = tess::block_ctx<tess::WritePolicy::UniquePerChunk>(
+      world, tess::chunk_domain(keys));
   std::uint64_t sum = 0;
 
   allocation_count.store(0, std::memory_order_relaxed);

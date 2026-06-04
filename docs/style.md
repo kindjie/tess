@@ -6,6 +6,14 @@ C++ code follows the
 ## Local Policy
 
 - Format C++ with `clang-format` using the repository `.clang-format`.
+- Build local test and benchmark targets with project warning flags by default.
+- Use `dev-werror` when checking that project warnings remain clean as errors.
+- Use `dev-asan` for AddressSanitizer and UndefinedBehaviorSanitizer test
+  runs.
+- Use `dev-clang-tidy` for opt-in clang-tidy checks when `clang-tidy` is
+  installed.
+- Run clangd with `--clang-tidy --enable-config` so editor diagnostics use the
+  project `.clangd` and `.clang-tidy` files.
 - Use `.h` for C++ headers.
 - Use `.cc` for C++ implementation, test, and benchmark files.
 - Keep lines at 80 columns where practical.
