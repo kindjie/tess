@@ -1,9 +1,9 @@
 # Storage Foundation
 
 The implemented storage foundation covers typed compile-time field schemas,
-resident chunk pages, and an always-resident dense world owner. It implements
-the early storage slices of the historical
-[chunk storage TDD](../tdd/core-chunk-storage.md).
+resident chunk pages, an always-resident dense world owner, and per-chunk
+metadata for dirty/active tracking. It implements the early storage slices of
+the historical [chunk storage TDD](../tdd/core-chunk-storage.md).
 
 ## Field Schemas
 
@@ -92,8 +92,42 @@ Unchecked accessors require valid chunk keys, chunk coordinates, and tile
 coordinates. Checked `try_*` accessors return `nullptr` or `std::nullopt` for
 out-of-bounds input.
 
+## Chunk Metadata
+
+Each always-resident world owns one `tess::ChunkMeta` per resident page in
+matching `ChunkKey` order. Metadata defaults to sleeping, clean, inactive
+chunks:
+
+- `state = tess::ChunkState::ResidentSleeping`
+- `version = 0`
+- `topology_version = 0`
+- `field_dirty_flags = 0`
+- `active_flags = 0`
+- `dirty_bounds = {}`
+- `active_count = 0`
+- `entity_count = 0`
+
+Direct metadata lookup mirrors page lookup:
+
+```cpp
+auto& meta = world.meta(tess::ChunkKey{3});
+auto* checked = world.try_meta(tess::ChunkCoord3{3, 0, 0});
+```
+
+These direct accessors are `noexcept` and do not allocate. Dirty and active
+flags are raw `std::uint32_t` masks in this slice. `mark_dirty` unions dirty
+bounds and increments the chunk version; `clear_dirty` clears selected bits and
+resets bounds when no dirty bits remain. `mark_active` and `clear_active`
+maintain `active_count` and move the chunk between sleeping and active state
+when the active flag set becomes nonzero or empty.
+
+`dirty_chunks(flags)` and `active_chunks(flags)` return matching `ChunkKey`
+values in key order. These query helpers allocate their returned vectors; they
+are intended for planner/domain construction, not inner tile loops.
+
 ## Out Of Scope
 
 This slice does not implement sparse residency, `ChunkDirectory`, generation or
-eviction, dirty/active masks, lifecycle states, thread ownership policies,
-block generation, or planner domains.
+eviction, typed dirty/active vocabularies, full lifecycle states beyond
+sleeping/active, thread ownership policies, block generation, or planner
+domains.

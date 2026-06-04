@@ -9,5 +9,6 @@
 - `tess_storage_test`: verifies typed field schemas, resident chunk pages, and
   always-resident dense worlds, including SoA field independence, contiguous
   typed spans, metadata, const access, key/coord lookup, coordinate resolution,
-  checked invalid-coordinate behavior, noexcept hot accessors, and
-  allocation-free local field/span/world access after construction.
+  checked invalid-coordinate behavior, per-chunk dirty/active metadata,
+  noexcept hot accessors, and allocation-free local field/span/world access
+  after construction.

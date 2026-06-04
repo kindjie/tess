@@ -28,6 +28,18 @@
     "storage/world_chunks_iteration": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": null
+    },
+    "storage/world_metadata_lookup_by_key": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "storage/world_dirty_mark_clear": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "storage/world_dirty_chunks_iteration": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
     }
   }
 }
