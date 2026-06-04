@@ -1,8 +1,9 @@
 # Storage Foundation
 
-The implemented storage foundation covers one resident chunk page and typed
-compile-time field schemas. It is the first implementation slice of the
-historical [chunk storage TDD](../tdd/core-chunk-storage.md).
+The implemented storage foundation covers typed compile-time field schemas,
+resident chunk pages, and an always-resident dense world owner. It implements
+the early storage slices of the historical
+[chunk storage TDD](../tdd/core-chunk-storage.md).
 
 ## Field Schemas
 
@@ -56,8 +57,43 @@ The page type also exposes:
 `byte_size` reports the owned field-array storage, not object padding or
 metadata bytes.
 
+## Always-Resident World
+
+`tess::World<Shape, Schema, tess::AlwaysResident>` owns one
+`tess::ChunkPage<Shape, Schema>` for every chunk in the shape. The convenience
+alias `tess::AlwaysResidentWorld<Shape, Schema>` names the same type.
+
+Pages live in a `std::vector` populated during world construction. Construction
+may allocate and throw. The vector is filled in `ChunkKey` order, and each page
+stores matching `ChunkKey` and `ChunkCoord3` metadata derived from the public
+shape key conversion helpers.
+
+The world type exposes static storage metadata:
+
+- `chunk_count`
+- `local_tile_count`
+- `field_count`
+- `page_byte_size`
+- `storage_byte_size`
+
+Hot accessors are explicitly `noexcept` and do not allocate after
+construction:
+
+```cpp
+tess::AlwaysResidentWorld<MyShape, MySchema> world;
+auto pages = world.chunks();
+auto& page = world.chunk(tess::ChunkKey{3});
+auto resolved = world.resolve(tess::Coord3{10, 20, 0});
+world.field<TerrainTag>(tess::Coord3{10, 20, 0}) = 7;
+auto terrain = world.field_span<TerrainTag>(tess::ChunkKey{3});
+```
+
+Unchecked accessors require valid chunk keys, chunk coordinates, and tile
+coordinates. Checked `try_*` accessors return `nullptr` or `std::nullopt` for
+out-of-bounds input.
+
 ## Out Of Scope
 
-This slice does not implement `World`, `ChunkDirectory`, sparse residency,
-generation or eviction, dirty/active masks, lifecycle states, thread ownership
-policies, block generation, or planner domains.
+This slice does not implement sparse residency, `ChunkDirectory`, generation or
+eviction, dirty/active masks, lifecycle states, thread ownership policies,
+block generation, or planner domains.

@@ -36,6 +36,8 @@ CI runs on `ubuntu-24.04` with Clang and covers:
 - Benchmark smoke tests: `ctest --preset bench`
 - Key conversion benchmark threshold scaffold:
   `cmake --build --preset bench --target tess_bench_key_thresholds`
+- Storage benchmark threshold scaffold:
+  `cmake --build --preset bench --target tess_bench_storage_thresholds`
 
 Benchmark thresholds are currently scaffolded with disabled wall-clock limits
 until stable same-machine baselines are available.

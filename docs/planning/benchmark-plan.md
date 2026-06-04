@@ -170,12 +170,14 @@ Console summary, JSON, CSV. Optional Chrome trace/flamegraph markers and plot sc
 ## 23. Regression thresholds
 
 Key conversion benchmarks have threshold scaffolding in
-`bench/thresholds/key-conversions.json`.
+`bench/thresholds/key-conversions.json`. Storage benchmarks have matching
+threshold scaffolding in `bench/thresholds/storage.json`.
 
-Run the current scaffold with:
+Run the current scaffolds with:
 
 ```sh
 cmake --build --preset bench --target tess_bench_key_thresholds
+cmake --build --preset bench --target tess_bench_storage_thresholds
 ```
 
 Threshold values default to `null`, which records the intended gate names

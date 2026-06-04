@@ -29,6 +29,7 @@ target_sources(
     FILES
       include/tess/core/shape.h
       include/tess/storage/chunk_page.h
+      include/tess/storage/world.h
       include/tess/tess.h
 )
 

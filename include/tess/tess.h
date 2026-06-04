@@ -2,6 +2,7 @@
 
 #include <tess/core/shape.h>
 #include <tess/storage/chunk_page.h>
+#include <tess/storage/world.h>
 
 #define TESS_VERSION_MAJOR 0
 #define TESS_VERSION_MINOR 1
