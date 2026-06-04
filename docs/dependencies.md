@@ -26,10 +26,24 @@ measurements from running.
 
 - Checkout action version: `actions/checkout@v6`
 - Checkout documentation: https://github.com/actions/checkout
+- Upload artifact action version: `actions/upload-artifact@v7`
+- Upload artifact documentation: https://github.com/actions/upload-artifact
 - Hosted runner documentation:
   https://docs.github.com/actions/reference/runners/github-hosted-runners
 
 CI pins `ubuntu-24.04` instead of `ubuntu-latest` to avoid runner image drift.
+Benchmark baseline JSON is uploaded from CI artifacts so timing thresholds can
+be calibrated against the same runner family that will enforce them.
+
+## tiktoken
+
+- Version: `0.13.0`
+- Documentation and releases: https://pypi.org/project/tiktoken/
+- Repository: https://github.com/openai/tiktoken
+
+Used by the Git pre-commit hook to count tokens in staged text files through
+the Python API. The hook reads staged blobs from Git, so the library API is a
+better fit than a filesystem-oriented command-line wrapper.
 
 ## Deferred Executor Candidates
 

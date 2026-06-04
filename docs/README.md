@@ -8,6 +8,8 @@ intent.
 - [Architecture](architecture/README.md): maintained design notes that should
   track implementation.
 - [Planning](planning/README.md): milestone and benchmark plans.
+- [Performance](performance.md): benchmark trend snapshots and calibration
+  workflow.
 - [Dependencies](dependencies.md): external library choices and documentation.
 - [Style](style.md): C++ coding style and formatting policy.
 - [Git Hooks](git-hooks.md): local commit and push guardrails.
