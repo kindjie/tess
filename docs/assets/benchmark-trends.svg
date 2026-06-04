@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="540" viewBox="0 0 920 540" role="img" aria-label="Benchmark trend snapshot">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="20" y="28" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#111827">Tess Benchmark Trends</text>
+<text x="20" y="50" font-family="Arial, sans-serif" font-size="12" fill="#4b5563">Stale snapshot: data from CI run 26980713740 at commit 90ce419, collected 2026-06-04 14:33 PDT.</text>
+<text x="20" y="94" font-family="Arial, sans-serif" font-size="12" fill="#111827">block/context_iteration_2d</text>
+<text x="20" y="113" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 436.332 ns</text>
+<line x1="235" y1="130" x2="884" y2="130" stroke="#e5e7eb"/>
+<polyline points="235.0,94.9 559.5,94.7 884.0,92.0" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="235.0" cy="94.9" r="3.5" fill="#2563eb"/>
+<circle cx="559.5" cy="94.7" r="3.5" fill="#2563eb"/>
+<circle cx="884.0" cy="92.0" r="3.5" fill="#2563eb"/>
+<text x="20" y="180" font-family="Arial, sans-serif" font-size="12" fill="#111827">block/chunk_tile_iteration_2d</text>
+<text x="20" y="199" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 1710.011 ns</text>
+<line x1="235" y1="216" x2="884" y2="216" stroke="#e5e7eb"/>
+<polyline points="235.0,178.0 559.5,178.0 884.0,178.0" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="235.0" cy="178.0" r="3.5" fill="#16a34a"/>
+<circle cx="559.5" cy="178.0" r="3.5" fill="#16a34a"/>
+<circle cx="884.0" cy="178.0" r="3.5" fill="#16a34a"/>
+<text x="20" y="266" font-family="Arial, sans-serif" font-size="12" fill="#111827">block/chunk_boundary_scan_2d</text>
+<text x="20" y="285" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 12332.274 ns</text>
+<line x1="235" y1="302" x2="884" y2="302" stroke="#e5e7eb"/>
+<polyline points="235.0,264.0 559.5,264.1 884.0,264.0" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="235.0" cy="264.0" r="3.5" fill="#dc2626"/>
+<circle cx="559.5" cy="264.1" r="3.5" fill="#dc2626"/>
+<circle cx="884.0" cy="264.0" r="3.5" fill="#dc2626"/>
+<text x="20" y="352" font-family="Arial, sans-serif" font-size="12" fill="#111827">storage/world_chunks_iteration</text>
+<text x="20" y="371" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 93.393 ns</text>
+<line x1="235" y1="388" x2="884" y2="388" stroke="#e5e7eb"/>
+<polyline points="235.0,350.1 559.5,350.0 884.0,350.0" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="235.0" cy="350.1" r="3.5" fill="#7c3aed"/>
+<circle cx="559.5" cy="350.0" r="3.5" fill="#7c3aed"/>
+<circle cx="884.0" cy="350.0" r="3.5" fill="#7c3aed"/>
+<text x="20" y="438" font-family="Arial, sans-serif" font-size="12" fill="#111827">storage/world_dirty_chunks_iteration</text>
+<text x="20" y="457" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 285.844 ns</text>
+<line x1="235" y1="474" x2="884" y2="474" stroke="#e5e7eb"/>
+<polyline points="235.0,436.8 559.5,436.6 884.0,436.0" fill="none" stroke="#ca8a04" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="235.0" cy="436.8" r="3.5" fill="#ca8a04"/>
+<circle cx="559.5" cy="436.6" r="3.5" fill="#ca8a04"/>
+<circle cx="884.0" cy="436.0" r="3.5" fill="#ca8a04"/>
+</svg>

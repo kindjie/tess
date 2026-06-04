@@ -171,18 +171,55 @@ Console summary, JSON, CSV. Optional Chrome trace/flamegraph markers and plot sc
 
 Key conversion benchmarks have threshold scaffolding in
 `bench/thresholds/key-conversions.json`. Storage benchmarks have matching
-threshold scaffolding in `bench/thresholds/storage.json`.
+threshold scaffolding in `bench/thresholds/storage.json`. Block benchmarks
+have matching threshold scaffolding in `bench/thresholds/block.json`.
 
 Run the current scaffolds with:
 
 ```sh
 cmake --build --preset bench --target tess_bench_key_thresholds
 cmake --build --preset bench --target tess_bench_storage_thresholds
+cmake --build --preset bench --target tess_bench_block_thresholds
 ```
 
 Threshold values default to `null`, which records the intended gate names
-without failing on wall-clock variance. After several same-machine baseline
-runs, fill `max_real_time_ns` or `max_cpu_time_ns` for stable benchmarks.
+without failing on wall-clock variance. CI collects non-gating repeated
+benchmark samples with:
+
+```sh
+cmake --build --preset bench --target tess_bench_ci_baselines
+```
+
+Use the pinned `ubuntu-24.04` CI runner artifacts as the primary calibration
+source for limits that will gate CI. After several same-runner baseline runs,
+fill `max_real_time_ns` or `max_cpu_time_ns` for stable benchmarks. Prefer
+`max_cpu_time_ns` for single-thread microbenchmarks. Leave very small or noisy
+benchmarks at `null` until their variance is understood.
+
+After downloading CI baseline artifacts, summarize candidate CPU-time limits
+with:
+
+```sh
+tools/benchmark_baseline_summary.py path/to/*.json
+```
+
+Review coefficient of variation and outliers before copying suggested values
+into threshold JSON. The suggestions use maximum observed CPU time plus
+headroom; they are starting points, not automatic gates.
+
+Generate the README-visible trend snapshot and detailed local HTML report with:
+
+```sh
+tools/benchmark_trends.py path/to/benchmark-baselines-* \
+  --out build/bench/benchmark-trends.html \
+  --snapshot-svg docs/assets/benchmark-trends.svg \
+  --summary-md docs/performance.md
+```
+
+Refresh the tracked SVG intentionally when thresholds change, benchmark
+workloads change, or a milestone/release lands. The SVG label must include the
+source CI run, commit, and Pacific-time collection timestamp so stale snapshots
+are obvious.
 
 ## 24. CI strategy
 

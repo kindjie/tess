@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -111,6 +112,84 @@ class ChunkView {
 
   constexpr auto bounds() const noexcept -> Box3 { return bounds_; }
 
+  static constexpr auto local_bounds() noexcept -> Box3 {
+    return Box3{Coord3{0, 0, 0}, ShapeTraits<shape_type>::chunk};
+  }
+
+  static constexpr bool contains_local(Coord3 coord) noexcept {
+    return tess::contains(local_bounds(), coord);
+  }
+
+  static constexpr auto try_local_coord(Coord3 coord) noexcept
+      -> std::optional<LocalCoord3> {
+    if (!contains_local(coord)) {
+      return std::nullopt;
+    }
+
+    return LocalCoord3{
+        static_cast<std::uint64_t>(coord.x),
+        static_cast<std::uint64_t>(coord.y),
+        static_cast<std::uint64_t>(coord.z),
+    };
+  }
+
+  static constexpr auto local_coord(LocalTileId id) noexcept -> LocalCoord3 {
+    const auto chunk = ShapeTraits<shape_type>::chunk;
+    const auto local_xy = chunk.x * chunk.y;
+    const auto local_z = id.value / local_xy;
+    const auto remainder = id.value % local_xy;
+    const auto local_y = remainder / chunk.x;
+    const auto local_x = remainder % chunk.x;
+
+    return LocalCoord3{local_x, local_y, local_z};
+  }
+
+  static constexpr auto local_tile_id(LocalCoord3 coord) noexcept
+      -> LocalTileId {
+    return tess::local_tile_id<shape_type>(coord);
+  }
+
+  static constexpr bool is_boundary(LocalCoord3 coord) noexcept {
+    const auto chunk = ShapeTraits<shape_type>::chunk;
+    return (chunk.x > 1 && (coord.x == 0 || coord.x + 1 == chunk.x)) ||
+           (chunk.y > 1 && (coord.y == 0 || coord.y + 1 == chunk.y)) ||
+           (chunk.z > 1 && (coord.z == 0 || coord.z + 1 == chunk.z));
+  }
+
+  static constexpr bool is_interior(LocalCoord3 coord) noexcept {
+    return !is_boundary(coord);
+  }
+
+  constexpr auto world_coord(Coord3 local_candidate) const noexcept -> Coord3 {
+    const auto chunk = ShapeTraits<shape_type>::chunk;
+    return Coord3{
+        static_cast<std::int64_t>(coord_.x * chunk.x) + local_candidate.x,
+        static_cast<std::int64_t>(coord_.y * chunk.y) + local_candidate.y,
+        static_cast<std::int64_t>(coord_.z * chunk.z) + local_candidate.z,
+    };
+  }
+
+  constexpr auto world_coord(LocalCoord3 coord) const noexcept -> Coord3 {
+    return world_coord(Coord3{
+        static_cast<std::int64_t>(coord.x),
+        static_cast<std::int64_t>(coord.y),
+        static_cast<std::int64_t>(coord.z),
+    });
+  }
+
+  constexpr auto world_coord(LocalTileId id) const noexcept -> Coord3 {
+    return world_coord(local_coord(id));
+  }
+
+  template <typename Fn>
+  constexpr void for_each_tile(Fn&& fn) const {
+    for (std::uint64_t i = 0; i < ShapeTraits<shape_type>::local_tile_count;
+         ++i) {
+      const auto id = LocalTileId{i};
+      std::invoke(fn, id, local_coord(id));
+    }
+  }
+
   template <typename Tag>
   constexpr auto field_span() const noexcept {
     return page_->template field_span<Tag>();
@@ -136,14 +215,54 @@ class ChunkView {
   Box3 bounds_;
 };
 
+template <typename World>
+class BlockCtx {
+ public:
+  using world_type = std::remove_reference_t<World>;
+
+  constexpr BlockCtx(world_type& world, ChunkDomain domain,
+                     WritePolicy policy) noexcept
+      : world_(&world), domain_(domain), policy_(policy) {
+    assert(is_valid_write_policy(policy));
+  }
+
+  constexpr auto world() const noexcept -> world_type& { return *world_; }
+
+  constexpr auto domain() const noexcept -> ChunkDomain { return domain_; }
+
+  constexpr auto policy() const noexcept -> WritePolicy { return policy_; }
+
+  constexpr auto size() const noexcept -> std::size_t { return domain_.size(); }
+
+  constexpr bool empty() const noexcept { return domain_.empty(); }
+
+  constexpr auto chunk_view(ChunkKey key) const noexcept -> ChunkView<World> {
+    return ChunkView<World>{*world_, key};
+  }
+
+  template <typename Fn>
+  constexpr void for_each_chunk(Fn&& fn) const {
+    for (const auto key : domain_) {
+      std::invoke(std::forward<Fn>(fn), chunk_view(key));
+    }
+  }
+
+ private:
+  world_type* world_;
+  ChunkDomain domain_;
+  WritePolicy policy_;
+};
+
+template <typename World>
+constexpr auto block_ctx(World& world, ChunkDomain domain,
+                         WritePolicy policy) noexcept -> BlockCtx<World> {
+  return BlockCtx<World>{world, domain, policy};
+}
+
 template <typename World, typename Fn>
 constexpr void for_each_chunk(World& world, ChunkDomain domain,
                               WritePolicy policy, Fn&& fn) {
-  assert(is_valid_write_policy(policy));
-  (void)policy;
-  for (const auto key : domain) {
-    std::invoke(std::forward<Fn>(fn), ChunkView<World>{world, key});
-  }
+  block_ctx(world, domain, policy).for_each_chunk(std::forward<Fn>(fn));
 }
 
 }  // namespace tess

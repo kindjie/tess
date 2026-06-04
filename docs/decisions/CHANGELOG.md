@@ -72,3 +72,51 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/architecture/block.md`, `docs/dependencies.md`
 - Affected code: `include/tess/block/block.h`, `include/tess/tess.h`,
   `tests/tess_block_test.cc`, `bench/tess_bench.cc`
+
+## 2026-06-04 - Chunk-Local Tile Iteration
+
+- Changed: `ChunkView` now exposes local tile coordinate/id conversion,
+  current-chunk world coordinate conversion, and allocation-free serial
+  `for_each_tile` traversal in ascending `LocalTileId` order.
+- Reason: Block executors need deterministic chunk-local tile traversal before
+  adding planners, parallel scheduling, scratch storage, or diagnostics.
+- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
+  `bench/tess_bench.cc`, `bench/CMakeLists.txt`
+
+## 2026-06-04 - Chunk Boundary Helpers
+
+- Changed: `ChunkView` now exposes local bounds, signed local-candidate
+  validation/conversion, non-degenerate boundary/interior predicates, and
+  signed local-candidate world coordinate conversion.
+- Reason: Topology and path systems need allocation-free helpers to identify
+  current-chunk candidates before movement rules, transitions, halos, scratch
+  storage, diagnostics, or parallel execution are introduced.
+- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
+  `bench/tess_bench.cc`, `bench/CMakeLists.txt`
+
+## 2026-06-04 - BlockCtx Foundation
+
+- Changed: Added `BlockCtx` as a non-owning serial block execution context over
+  a world, chunk domain, and write policy. Existing `for_each_chunk` now
+  delegates through the context.
+- Reason: M3 needs an explicit context object before adding planner phases,
+  scratch storage, diagnostics, scheduling, or policy enforcement.
+- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
+  `bench/tess_bench.cc`, `bench/CMakeLists.txt`
+
+## 2026-06-04 - CI Benchmark Baseline Collection
+
+- Changed: Added block benchmark threshold scaffolding, non-gating CI baseline
+  JSON collection for key, storage, and block benchmark groups, a baseline
+  summary helper for threshold calibration, and README-visible benchmark trend
+  snapshot generation.
+- Reason: Timing limits should be calibrated from repeated samples on the
+  pinned CI runner family that will enforce them, not from developer machines.
+- Affected docs: `README.md`, `docs/dependencies.md`, `docs/performance.md`,
+  `docs/planning/benchmark-plan.md`
+- Affected code: `.github/workflows/ci.yml`, `bench/CMakeLists.txt`,
+  `bench/thresholds/block.json`, `tools/benchmark_artifact_metadata.py`,
+  `tools/benchmark_baseline_summary.py`, `tools/benchmark_trends.py`

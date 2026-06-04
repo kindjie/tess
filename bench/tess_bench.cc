@@ -21,6 +21,8 @@ using StorageWorldShape =
     tess::Shape<tess::Extent3{1024, 1024, 1}, tess::Extent3{64, 64, 1}>;
 using StorageSingleChunk =
     tess::Shape<tess::Extent3{256, 256, 1}, tess::Extent3{256, 256, 1}>;
+using Block3DShape =
+    tess::Shape<tess::Extent3{128, 128, 32}, tess::Extent3{16, 16, 8}>;
 
 struct TerrainTag {};
 struct CostTag {};
@@ -35,6 +37,8 @@ using StorageWorld =
     tess::AlwaysResidentWorld<StorageWorldShape, StorageSchema>;
 using StorageSingleChunkPage =
     tess::ChunkPage<StorageSingleChunk, StorageSchema>;
+using Block2DWorld = tess::AlwaysResidentWorld<TopDown2D, StorageSchema>;
+using Block3DWorld = tess::AlwaysResidentWorld<Block3DShape, StorageSchema>;
 
 template <typename Shape>
 void BM_chunk_coord(benchmark::State& state) {
@@ -286,6 +290,80 @@ void BM_block_dirty_domain_iteration(benchmark::State& state) {
   }
 }
 
+void BM_block_context_iteration_2d(benchmark::State& state) {
+  StorageWorld world;
+  std::vector<tess::ChunkKey> keys;
+  keys.reserve(StorageWorld::chunk_count);
+  for (std::uint64_t key = 0; key < StorageWorld::chunk_count; ++key) {
+    keys.push_back(tess::ChunkKey{key});
+  }
+  const auto ctx = tess::block_ctx(world, tess::chunk_domain(keys),
+                                   tess::WritePolicy::UniquePerChunk);
+
+  for (auto _ : state) {
+    std::uint64_t sum = 0;
+    ctx.for_each_chunk([&](auto view) {
+      auto terrain = view.template field_span<TerrainTag>();
+      terrain[0] = static_cast<std::uint16_t>(view.key().value);
+      sum += terrain[0] + view.meta().version + view.bounds().extent.x;
+    });
+    benchmark::DoNotOptimize(sum);
+  }
+}
+
+template <typename WorldType>
+void BM_block_chunk_tile_iteration(benchmark::State& state) {
+  WorldType world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{0}};
+  const auto domain = tess::chunk_domain(keys);
+
+  for (auto _ : state) {
+    std::uint64_t sum = 0;
+    tess::for_each_chunk(
+        world, domain, tess::WritePolicy::UniquePerChunk, [&](auto view) {
+          auto terrain = view.template field_span<TerrainTag>();
+          view.for_each_tile(
+              [&](tess::LocalTileId id, tess::LocalCoord3 coord) {
+                terrain[id.value] =
+                    static_cast<std::uint16_t>(id.value + coord.x + coord.y);
+                sum += terrain[id.value];
+              });
+        });
+    benchmark::DoNotOptimize(sum);
+  }
+}
+
+template <typename WorldType>
+void BM_block_chunk_boundary_scan(benchmark::State& state) {
+  WorldType world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{0}};
+  const auto domain = tess::chunk_domain(keys);
+
+  for (auto _ : state) {
+    std::uint64_t boundary_count = 0;
+    std::uint64_t interior_count = 0;
+    std::uint64_t sum = 0;
+    tess::for_each_chunk(
+        world, domain, tess::WritePolicy::UniquePerChunk, [&](auto view) {
+          auto terrain = view.template field_span<TerrainTag>();
+          view.for_each_tile(
+              [&](tess::LocalTileId id, tess::LocalCoord3 coord) {
+                if (view.is_boundary(coord)) {
+                  terrain[id.value] = 1;
+                  ++boundary_count;
+                } else {
+                  terrain[id.value] = 2;
+                  ++interior_count;
+                }
+                sum += terrain[id.value] + id.value;
+              });
+        });
+    benchmark::DoNotOptimize(boundary_count);
+    benchmark::DoNotOptimize(interior_count);
+    benchmark::DoNotOptimize(sum);
+  }
+}
+
 BENCHMARK(BM_chunk_coord<TopDown2D>)->Name("key/chunk_coord_2d_u64");
 BENCHMARK(BM_local_coord<TopDown2D>)->Name("key/local_coord_2d_u64");
 BENCHMARK(BM_local_tile_id<TopDown2D>)->Name("key/local_tile_id_2d_u64");
@@ -322,5 +400,14 @@ BENCHMARK(BM_block_explicit_domain_iteration)
     ->Name("block/explicit_domain_iteration");
 BENCHMARK(BM_block_dirty_domain_iteration)
     ->Name("block/dirty_domain_iteration");
+BENCHMARK(BM_block_context_iteration_2d)->Name("block/context_iteration_2d");
+BENCHMARK(BM_block_chunk_tile_iteration<StorageWorld>)
+    ->Name("block/chunk_tile_iteration_2d");
+BENCHMARK(BM_block_chunk_tile_iteration<Block3DWorld>)
+    ->Name("block/chunk_tile_iteration_3d");
+BENCHMARK(BM_block_chunk_boundary_scan<Block2DWorld>)
+    ->Name("block/chunk_boundary_scan_2d");
+BENCHMARK(BM_block_chunk_boundary_scan<Block3DWorld>)
+    ->Name("block/chunk_boundary_scan_3d");
 
 }  // namespace

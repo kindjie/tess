@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "block/explicit_domain_iteration": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "block/dirty_domain_iteration": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "block/context_iteration_2d": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "block/chunk_tile_iteration_2d": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "block/chunk_tile_iteration_3d": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "block/chunk_boundary_scan_2d": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "block/chunk_boundary_scan_3d": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    }
+  }
+}
