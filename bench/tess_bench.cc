@@ -24,6 +24,9 @@ using StorageSingleChunk =
 struct TerrainTag {};
 struct CostTag {};
 
+constexpr std::uint32_t DirtyTerrain = 1u << 0u;
+constexpr std::uint32_t DirtyCost = 1u << 1u;
+
 using StorageSchema = tess::FieldSchema<tess::Field<TerrainTag, std::uint16_t>,
                                         tess::Field<CostTag, float>>;
 using StoragePage = tess::ChunkPage<StorageChunk, StorageSchema>;
@@ -208,6 +211,44 @@ void BM_world_chunks_iteration(benchmark::State& state) {
   }
 }
 
+void BM_world_metadata_lookup_by_key(benchmark::State& state) {
+  StorageWorld world;
+  auto key = tess::ChunkKey{0};
+  for (auto _ : state) {
+    auto& meta = world.meta(key);
+    benchmark::DoNotOptimize(meta.version);
+    key.value = (key.value + 17) % StorageWorld::chunk_count;
+  }
+}
+
+void BM_world_dirty_mark_clear(benchmark::State& state) {
+  StorageWorld world;
+  const auto bounds = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+  auto key = tess::ChunkKey{0};
+  for (auto _ : state) {
+    world.mark_dirty(key, DirtyTerrain, bounds);
+    world.clear_dirty(key, DirtyTerrain);
+    key.value = (key.value + 17) % StorageWorld::chunk_count;
+  }
+}
+
+void BM_world_dirty_chunks_iteration(benchmark::State& state) {
+  StorageWorld world;
+  const auto bounds = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+  for (std::uint64_t key = 0; key < StorageWorld::chunk_count; key += 3) {
+    world.mark_dirty(tess::ChunkKey{key}, DirtyTerrain, bounds);
+  }
+  for (std::uint64_t key = 1; key < StorageWorld::chunk_count; key += 5) {
+    world.mark_dirty(tess::ChunkKey{key}, DirtyCost, bounds);
+  }
+
+  for (auto _ : state) {
+    auto chunks = world.dirty_chunks(DirtyTerrain);
+    benchmark::DoNotOptimize(chunks.data());
+    benchmark::DoNotOptimize(chunks.size());
+  }
+}
+
 BENCHMARK(BM_chunk_coord<TopDown2D>)->Name("key/chunk_coord_2d_u64");
 BENCHMARK(BM_local_coord<TopDown2D>)->Name("key/local_coord_2d_u64");
 BENCHMARK(BM_local_tile_id<TopDown2D>)->Name("key/local_tile_id_2d_u64");
@@ -235,5 +276,10 @@ BENCHMARK(BM_world_chunk_lookup_by_key)
 BENCHMARK(BM_world_chunk_lookup_by_coord)
     ->Name("storage/world_chunk_lookup_by_coord");
 BENCHMARK(BM_world_chunks_iteration)->Name("storage/world_chunks_iteration");
+BENCHMARK(BM_world_metadata_lookup_by_key)
+    ->Name("storage/world_metadata_lookup_by_key");
+BENCHMARK(BM_world_dirty_mark_clear)->Name("storage/world_dirty_mark_clear");
+BENCHMARK(BM_world_dirty_chunks_iteration)
+    ->Name("storage/world_dirty_chunks_iteration");
 
 }  // namespace

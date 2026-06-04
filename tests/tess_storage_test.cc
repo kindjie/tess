@@ -7,6 +7,7 @@
 #include <new>
 #include <span>
 #include <type_traits>
+#include <vector>
 
 namespace {
 
@@ -48,6 +49,12 @@ namespace {
 struct TerrainTag {};
 struct CostTag {};
 struct RegionTag {};
+
+constexpr std::uint32_t DirtyTerrain = 1u << 0u;
+constexpr std::uint32_t DirtyCost = 1u << 1u;
+constexpr std::uint32_t DirtyTopology = 1u << 2u;
+constexpr std::uint32_t ActiveFluid = 1u << 0u;
+constexpr std::uint32_t ActiveFire = 1u << 1u;
 
 using TopDown2D =
     tess::Shape<tess::Extent3{128, 64, 1}, tess::Extent3{32, 16, 1}>;
@@ -329,6 +336,26 @@ TEST(TessStorage, WorldHotAccessorsAreNoexcept) {
   static_assert(noexcept(const_world.try_chunk(key)));
   static_assert(noexcept(world.try_chunk(chunk_coord)));
   static_assert(noexcept(const_world.try_chunk(chunk_coord)));
+  static_assert(noexcept(world.meta(key)));
+  static_assert(noexcept(const_world.meta(key)));
+  static_assert(noexcept(world.meta(chunk_coord)));
+  static_assert(noexcept(const_world.meta(chunk_coord)));
+  static_assert(noexcept(world.try_meta(key)));
+  static_assert(noexcept(const_world.try_meta(key)));
+  static_assert(noexcept(world.try_meta(chunk_coord)));
+  static_assert(noexcept(const_world.try_meta(chunk_coord)));
+  static_assert(noexcept(world.chunk_state(key)));
+  static_assert(noexcept(const_world.chunk_state(key)));
+  static_assert(noexcept(world.chunk_state(chunk_coord)));
+  static_assert(noexcept(const_world.chunk_state(chunk_coord)));
+  static_assert(
+      noexcept(world.set_chunk_state(key, tess::ChunkState::ResidentActive)));
+  static_assert(noexcept(world.mark_dirty(
+      key, DirtyTerrain,
+      tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}})));
+  static_assert(noexcept(world.clear_dirty(key, DirtyTerrain)));
+  static_assert(noexcept(world.mark_active(key, ActiveFluid)));
+  static_assert(noexcept(world.clear_active(key, ActiveFluid)));
   static_assert(noexcept(world.resolve(coord)));
   static_assert(noexcept(world.try_resolve(coord)));
   static_assert(noexcept(world.field<TerrainTag>(coord)));
@@ -339,6 +366,194 @@ TEST(TessStorage, WorldHotAccessorsAreNoexcept) {
   static_assert(noexcept(const_world.field_span<TerrainTag>(key)));
 
   EXPECT_EQ(world.chunks().size(), World<TopDown2D>::chunk_count);
+}
+
+TEST(TessStorage, WorldDefaultMetadataIsSleepingAndClean) {
+  World<TopDown2D> top_down;
+  World<Vertical2D> vertical;
+  World<Chunked3D> chunked;
+
+  for (const auto key :
+       {tess::ChunkKey{0}, tess::ChunkKey{5}, tess::ChunkKey{15}}) {
+    const auto& meta = top_down.meta(key);
+    EXPECT_EQ(meta.state, tess::ChunkState::ResidentSleeping);
+    EXPECT_EQ(meta.version, 0u);
+    EXPECT_EQ(meta.topology_version, 0u);
+    EXPECT_EQ(meta.field_dirty_flags, 0u);
+    EXPECT_EQ(meta.active_flags, 0u);
+    EXPECT_EQ(meta.dirty_bounds, (tess::Box3{}));
+    EXPECT_EQ(meta.active_count, 0u);
+    EXPECT_EQ(meta.entity_count, 0u);
+  }
+
+  EXPECT_EQ(vertical.meta(tess::ChunkKey{6}).state,
+            tess::ChunkState::ResidentSleeping);
+  EXPECT_EQ(chunked.meta(tess::ChunkKey{42}).state,
+            tess::ChunkState::ResidentSleeping);
+}
+
+TEST(TessStorage, WorldLooksUpMetadataByKeyAndCoord) {
+  World<Vertical2D> world;
+
+  auto& by_key = world.meta(tess::ChunkKey{6});
+  auto& by_coord = world.meta(tess::ChunkCoord3{0, 2, 1});
+
+  by_key.entity_count = 12;
+
+  EXPECT_EQ(&by_key, &by_coord);
+  EXPECT_EQ(by_coord.entity_count, 12u);
+  EXPECT_EQ(world.try_meta(tess::ChunkKey{16}), nullptr);
+  EXPECT_EQ(world.try_meta(tess::ChunkCoord3{1, 0, 0}), nullptr);
+  EXPECT_EQ(world.try_meta(tess::ChunkCoord3{0, 4, 0}), nullptr);
+  EXPECT_EQ(world.try_meta(tess::ChunkCoord3{0, 0, 4}), nullptr);
+}
+
+TEST(TessStorage, WorldConstMetadataAccessReturnsConstReferences) {
+  World<TopDown2D> world;
+  world.meta(tess::ChunkKey{1}).entity_count = 3;
+  const auto& const_world = world;
+
+  decltype(auto) by_key = const_world.meta(tess::ChunkKey{1});
+  decltype(auto) by_coord = const_world.meta(tess::ChunkCoord3{1, 0, 0});
+  const auto* checked = const_world.try_meta(tess::ChunkKey{1});
+
+  static_assert(std::is_same_v<decltype(by_key), const tess::ChunkMeta&>);
+  static_assert(std::is_same_v<decltype(by_coord), const tess::ChunkMeta&>);
+
+  ASSERT_NE(checked, nullptr);
+  EXPECT_EQ(&by_key, &by_coord);
+  EXPECT_EQ(checked->entity_count, 3u);
+}
+
+TEST(TessStorage, WorldTransitionsChunkStateExplicitly) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{2};
+
+  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentSleeping);
+  world.set_chunk_state(key, tess::ChunkState::ResidentActive);
+  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);
+  EXPECT_EQ(world.chunk_state(tess::ChunkCoord3{2, 0, 0}),
+            tess::ChunkState::ResidentActive);
+  world.set_chunk_state(key, tess::ChunkState::ResidentSleeping);
+  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentSleeping);
+}
+
+TEST(TessStorage, WorldDirtyFlagsUnionClearAndIncrementVersion) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{5};
+  const auto first =
+      tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{2, 3, 1}};
+  const auto second =
+      tess::Box3{tess::Coord3{40, 18, 0}, tess::Extent3{4, 2, 1}};
+
+  world.mark_dirty(key, DirtyTerrain, first);
+  EXPECT_EQ(world.meta(key).field_dirty_flags, DirtyTerrain);
+  EXPECT_EQ(world.meta(key).version, 1u);
+  EXPECT_EQ(world.meta(key).dirty_bounds, first);
+
+  world.mark_dirty(key, DirtyCost | DirtyTopology, second);
+  EXPECT_EQ(world.meta(key).field_dirty_flags,
+            DirtyTerrain | DirtyCost | DirtyTopology);
+  EXPECT_EQ(world.meta(key).version, 2u);
+  EXPECT_EQ(world.meta(key).dirty_bounds,
+            (tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{12, 4, 1}}));
+
+  world.clear_dirty(key, DirtyCost);
+  EXPECT_EQ(world.meta(key).field_dirty_flags, DirtyTerrain | DirtyTopology);
+  EXPECT_EQ(world.meta(key).dirty_bounds,
+            (tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{12, 4, 1}}));
+  world.clear_dirty(key, DirtyTerrain | DirtyTopology);
+  EXPECT_EQ(world.meta(key).field_dirty_flags, 0u);
+  EXPECT_EQ(world.meta(key).dirty_bounds, (tess::Box3{}));
+  EXPECT_EQ(world.meta(key).version, 2u);
+}
+
+TEST(TessStorage, WorldZeroDirtyMaskDoesNotChangeMetadata) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{5};
+  const auto bounds =
+      tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{2, 3, 1}};
+
+  world.mark_dirty(key, 0, bounds);
+  EXPECT_EQ(world.meta(key).field_dirty_flags, 0u);
+  EXPECT_EQ(world.meta(key).dirty_bounds, (tess::Box3{}));
+  EXPECT_EQ(world.meta(key).version, 0u);
+
+  world.mark_dirty(key, DirtyTerrain, bounds);
+  world.clear_dirty(key, 0);
+  EXPECT_EQ(world.meta(key).field_dirty_flags, DirtyTerrain);
+  EXPECT_EQ(world.meta(key).dirty_bounds, bounds);
+  EXPECT_EQ(world.meta(key).version, 1u);
+}
+
+TEST(TessStorage, WorldActiveFlagsDriveStateAndActiveCount) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{4};
+
+  world.mark_active(key, ActiveFluid);
+  EXPECT_EQ(world.meta(key).active_flags, ActiveFluid);
+  EXPECT_EQ(world.meta(key).active_count, 1u);
+  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);
+
+  world.mark_active(key, ActiveFluid | ActiveFire);
+  EXPECT_EQ(world.meta(key).active_flags, ActiveFluid | ActiveFire);
+  EXPECT_EQ(world.meta(key).active_count, 2u);
+  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);
+
+  world.clear_active(key, ActiveFluid);
+  EXPECT_EQ(world.meta(key).active_flags, ActiveFire);
+  EXPECT_EQ(world.meta(key).active_count, 1u);
+  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);
+
+  world.clear_active(key, ActiveFire);
+  EXPECT_EQ(world.meta(key).active_flags, 0u);
+  EXPECT_EQ(world.meta(key).active_count, 0u);
+  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentSleeping);
+}
+
+TEST(TessStorage, WorldZeroActiveMaskDoesNotChangeMetadata) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{4};
+
+  world.mark_active(key, 0);
+  EXPECT_EQ(world.meta(key).active_flags, 0u);
+  EXPECT_EQ(world.meta(key).active_count, 0u);
+  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentSleeping);
+
+  world.mark_active(key, ActiveFluid);
+  world.clear_active(key, 0);
+  EXPECT_EQ(world.meta(key).active_flags, ActiveFluid);
+  EXPECT_EQ(world.meta(key).active_count, 1u);
+  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);
+}
+
+TEST(TessStorage, WorldDirtyAndActiveChunkQueriesReturnKeyOrder) {
+  World<TopDown2D> world;
+  const auto one = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+
+  world.mark_dirty(tess::ChunkKey{7}, DirtyTerrain, one);
+  world.mark_dirty(tess::ChunkKey{2}, DirtyCost, one);
+  world.mark_dirty(tess::ChunkKey{5}, DirtyTerrain | DirtyCost, one);
+  world.mark_active(tess::ChunkKey{9}, ActiveFire);
+  world.mark_active(tess::ChunkKey{1}, ActiveFluid);
+  world.mark_active(tess::ChunkKey{4}, ActiveFluid | ActiveFire);
+
+  EXPECT_EQ(world.dirty_chunks(DirtyTerrain), (std::vector<tess::ChunkKey>{
+                                                  tess::ChunkKey{5},
+                                                  tess::ChunkKey{7},
+                                              }));
+  EXPECT_EQ(world.dirty_chunks(DirtyCost), (std::vector<tess::ChunkKey>{
+                                               tess::ChunkKey{2},
+                                               tess::ChunkKey{5},
+                                           }));
+  EXPECT_EQ(world.active_chunks(ActiveFluid), (std::vector<tess::ChunkKey>{
+                                                  tess::ChunkKey{1},
+                                                  tess::ChunkKey{4},
+                                              }));
+  EXPECT_EQ(world.active_chunks(ActiveFire), (std::vector<tess::ChunkKey>{
+                                                 tess::ChunkKey{4},
+                                                 tess::ChunkKey{9},
+                                             }));
 }
 
 TEST(TessStorage, RepeatedWorldHotAccessDoesNotAllocateAfterConstruction) {
@@ -352,14 +567,18 @@ TEST(TessStorage, RepeatedWorldHotAccessDoesNotAllocateAfterConstruction) {
     const auto chunk = tess::chunk_coord<TopDown2D>(key);
     const auto coord = tess::coord<TopDown2D>(chunk, tess::LocalTileId{0});
     auto* page = world.try_chunk(key);
+    auto* meta = world.try_meta(key);
     auto* terrain = world.try_field<TerrainTag>(coord);
     auto regions = world.field_span<RegionTag>(key);
 
     ASSERT_NE(page, nullptr);
+    ASSERT_NE(meta, nullptr);
     ASSERT_NE(terrain, nullptr);
+    meta->entity_count = static_cast<std::uint32_t>(i);
     *terrain = static_cast<std::uint16_t>(i);
     regions[0] = static_cast<std::uint32_t>(i + 1);
-    observed += page->chunk_key().value + *terrain + regions[0];
+    observed +=
+        page->chunk_key().value + meta->entity_count + *terrain + regions[0];
   }
   count_allocations.store(false, std::memory_order_relaxed);
 

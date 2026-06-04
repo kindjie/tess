@@ -79,4 +79,12 @@ if(BUILD_TESTING)
       --benchmark_filter=storage/world_chunk_lookup_by_key
       --benchmark_min_time=0.001
   )
+
+  add_test(
+    NAME tess_bench_world_metadata_smoke
+    COMMAND
+      tess_bench
+      --benchmark_filter=storage/world_metadata_lookup_by_key
+      --benchmark_min_time=0.001
+  )
 endif()

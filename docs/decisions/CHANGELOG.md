@@ -51,3 +51,13 @@ Records meaningful design changes from the original TDDs.
   wall-clock limits should wait for stable same-machine baselines.
 - Affected docs: `README.md`, `docs/planning/benchmark-plan.md`
 - Affected code: `bench/CMakeLists.txt`, `bench/thresholds/storage.json`
+
+## 2026-06-04 - Always-Resident Chunk Metadata
+
+- Changed: Always-resident worlds now own per-chunk metadata with sleeping and
+  active states plus raw dirty/active flag tracking.
+- Reason: Planner and block domains need chunk-level dirty/active discovery
+  without scanning tile fields.
+- Affected docs: `docs/architecture/storage.md`
+- Affected code: `include/tess/storage/world.h`, `tests/tess_storage_test.cc`,
+  `bench/tess_bench.cc`
