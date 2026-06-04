@@ -61,3 +61,14 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/architecture/storage.md`
 - Affected code: `include/tess/storage/world.h`, `tests/tess_storage_test.cc`,
   `bench/tess_bench.cc`
+
+## 2026-06-04 - Minimal Serial Block Domains
+
+- Changed: Added a public `tess::block` foundation with chunk-domain builders,
+  const-correct `ChunkView`, and serial `for_each_chunk` execution over
+  always-resident worlds.
+- Reason: M3 needs deterministic block/domain execution before adding planner
+  integration, diagnostics, scratch storage, or external scheduler backends.
+- Affected docs: `docs/architecture/block.md`, `docs/dependencies.md`
+- Affected code: `include/tess/block/block.h`, `include/tess/tess.h`,
+  `tests/tess_block_test.cc`, `bench/tess_bench.cc`

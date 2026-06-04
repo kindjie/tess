@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 namespace {
 
@@ -249,6 +250,42 @@ void BM_world_dirty_chunks_iteration(benchmark::State& state) {
   }
 }
 
+void BM_block_explicit_domain_iteration(benchmark::State& state) {
+  StorageWorld world;
+  std::vector<tess::ChunkKey> keys;
+  keys.reserve(StorageWorld::chunk_count);
+  for (std::uint64_t key = 0; key < StorageWorld::chunk_count; key += 2) {
+    keys.push_back(tess::ChunkKey{key});
+  }
+  const auto domain = tess::chunk_domain(keys);
+
+  for (auto _ : state) {
+    std::uint64_t sum = 0;
+    tess::for_each_chunk(
+        world, domain, tess::WritePolicy::ReadOnly,
+        [&](auto view) { sum += view.key().value + view.bounds().extent.x; });
+    benchmark::DoNotOptimize(sum);
+  }
+}
+
+void BM_block_dirty_domain_iteration(benchmark::State& state) {
+  StorageWorld world;
+  const auto bounds = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+  for (std::uint64_t key = 0; key < StorageWorld::chunk_count; key += 3) {
+    world.mark_dirty(tess::ChunkKey{key}, DirtyTerrain, bounds);
+  }
+  const auto keys = tess::dirty_chunk_domain(world, DirtyTerrain);
+  const auto domain = tess::chunk_domain(keys);
+
+  for (auto _ : state) {
+    std::uint64_t sum = 0;
+    tess::for_each_chunk(
+        world, domain, tess::WritePolicy::ReadOnly,
+        [&](auto view) { sum += view.key().value + view.meta().version; });
+    benchmark::DoNotOptimize(sum);
+  }
+}
+
 BENCHMARK(BM_chunk_coord<TopDown2D>)->Name("key/chunk_coord_2d_u64");
 BENCHMARK(BM_local_coord<TopDown2D>)->Name("key/local_coord_2d_u64");
 BENCHMARK(BM_local_tile_id<TopDown2D>)->Name("key/local_tile_id_2d_u64");
@@ -281,5 +318,9 @@ BENCHMARK(BM_world_metadata_lookup_by_key)
 BENCHMARK(BM_world_dirty_mark_clear)->Name("storage/world_dirty_mark_clear");
 BENCHMARK(BM_world_dirty_chunks_iteration)
     ->Name("storage/world_dirty_chunks_iteration");
+BENCHMARK(BM_block_explicit_domain_iteration)
+    ->Name("block/explicit_domain_iteration");
+BENCHMARK(BM_block_dirty_domain_iteration)
+    ->Name("block/dirty_domain_iteration");
 
 }  // namespace

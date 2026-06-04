@@ -17,3 +17,8 @@ add_executable(tess_storage_test tess_storage_test.cc)
 target_link_libraries(tess_storage_test PRIVATE tess::tess GTest::gtest_main)
 
 gtest_discover_tests(tess_storage_test)
+
+add_executable(tess_block_test tess_block_test.cc)
+target_link_libraries(tess_block_test PRIVATE tess::tess GTest::gtest_main)
+
+gtest_discover_tests(tess_block_test)
