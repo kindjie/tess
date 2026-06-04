@@ -15,6 +15,36 @@ tools/benchmark_trends.py path/to/benchmark-baselines-* \
   --summary-md docs/performance.md
 ```
 
+## Regeneration Policy
+
+Regenerate and commit `docs/assets/benchmark-trends.svg` and this page when the
+snapshot will materially help readers understand current performance:
+
+- before enabling or changing benchmark timing thresholds
+- after benchmark workloads, selected trend benchmarks, or threshold JSON names
+  change
+- after a performance-sensitive optimization or regression fix
+- at milestone or release checkpoints
+- after collecting at least 5 CI baseline artifacts, or 10 artifacts before
+  tightening existing limits
+
+Do not refresh the snapshot for every CI run. A stale snapshot is acceptable
+when its label shows the source CI run, commit, and Pacific-time timestamp.
+
+## Automation Boundary
+
+CI already automates benchmark collection by uploading baseline JSON artifacts
+for each run. The trend tool automates summarizing those artifacts and
+regenerating the SVG, HTML report, and Markdown summary.
+
+The final commit remains manual by design:
+
+- CI should not push generated README images back to branches.
+- Maintainers should review trend shape, variance, and benchmark relevance
+  before changing tracked performance docs.
+- Threshold JSON files remain the authoritative gate policy; plots are
+  calibration evidence.
+
 ## Latest Snapshot
 
 ![Benchmark trend snapshot](assets/benchmark-trends.svg)

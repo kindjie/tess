@@ -58,8 +58,9 @@ tools/benchmark_baseline_summary.py path/to/*.json
 
 This snapshot is intentionally labeled with its source CI run, commit, and
 Pacific-time collection timestamp. It may be stale by a few commits. See
-[`docs/performance.md`](docs/performance.md) for regeneration instructions and
-use CI benchmark artifacts as the source of truth for threshold calibration.
+[`docs/performance.md`](docs/performance.md) for when and how to regenerate it,
+and use CI benchmark artifacts as the source of truth for threshold
+calibration.
 
 ## Name
 
