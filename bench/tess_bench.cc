@@ -16,6 +16,8 @@ using HugeBounded = tess::Shape<tess::Extent3{1ull << 34, 1ull << 33, 256},
                                 tess::Extent3{32, 32, 4}>;
 using StorageChunk =
     tess::Shape<tess::Extent3{4096, 4096, 1}, tess::Extent3{64, 64, 1}>;
+using StorageWorldShape =
+    tess::Shape<tess::Extent3{1024, 1024, 1}, tess::Extent3{64, 64, 1}>;
 using StorageSingleChunk =
     tess::Shape<tess::Extent3{256, 256, 1}, tess::Extent3{256, 256, 1}>;
 
@@ -25,6 +27,8 @@ struct CostTag {};
 using StorageSchema = tess::FieldSchema<tess::Field<TerrainTag, std::uint16_t>,
                                         tess::Field<CostTag, float>>;
 using StoragePage = tess::ChunkPage<StorageChunk, StorageSchema>;
+using StorageWorld =
+    tess::AlwaysResidentWorld<StorageWorldShape, StorageSchema>;
 using StorageSingleChunkPage =
     tess::ChunkPage<StorageSingleChunk, StorageSchema>;
 
@@ -171,6 +175,39 @@ void BM_flat_array_iteration(benchmark::State& state) {
   }
 }
 
+void BM_world_chunk_lookup_by_key(benchmark::State& state) {
+  StorageWorld world;
+  auto key = tess::ChunkKey{0};
+  for (auto _ : state) {
+    auto& page = world.chunk(key);
+    benchmark::DoNotOptimize(page.chunk_key());
+    key.value = (key.value + 17) % StorageWorld::chunk_count;
+  }
+}
+
+void BM_world_chunk_lookup_by_coord(benchmark::State& state) {
+  StorageWorld world;
+  auto coord = tess::ChunkCoord3{0, 0, 0};
+  for (auto _ : state) {
+    auto& page = world.chunk(coord);
+    benchmark::DoNotOptimize(page.chunk_coord());
+    const auto next = (tess::chunk_key<StorageWorldShape>(coord).value + 17) %
+                      StorageWorld::chunk_count;
+    coord = tess::chunk_coord<StorageWorldShape>(tess::ChunkKey{next});
+  }
+}
+
+void BM_world_chunks_iteration(benchmark::State& state) {
+  StorageWorld world;
+  for (auto _ : state) {
+    std::uint64_t sum = 0;
+    for (const auto& page : world.chunks()) {
+      sum += page.chunk_key().value;
+    }
+    benchmark::DoNotOptimize(sum);
+  }
+}
+
 BENCHMARK(BM_chunk_coord<TopDown2D>)->Name("key/chunk_coord_2d_u64");
 BENCHMARK(BM_local_coord<TopDown2D>)->Name("key/local_coord_2d_u64");
 BENCHMARK(BM_local_tile_id<TopDown2D>)->Name("key/local_tile_id_2d_u64");
@@ -193,5 +230,10 @@ BENCHMARK(BM_chunk_field_write_read_iteration)
 BENCHMARK(BM_single_chunk_page_iteration)
     ->Name("storage/single_chunk_page_iteration");
 BENCHMARK(BM_flat_array_iteration)->Name("storage/flat_array_iteration");
+BENCHMARK(BM_world_chunk_lookup_by_key)
+    ->Name("storage/world_chunk_lookup_by_key");
+BENCHMARK(BM_world_chunk_lookup_by_coord)
+    ->Name("storage/world_chunk_lookup_by_coord");
+BENCHMARK(BM_world_chunks_iteration)->Name("storage/world_chunks_iteration");
 
 }  // namespace

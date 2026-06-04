@@ -41,3 +41,13 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/planning/benchmark-plan.md`
 - Affected code: `bench/tess_bench.cc`, `bench/CMakeLists.txt`,
   `tools/benchmark_thresholds.py`, `tests/tess_shape_test.cc`
+
+## 2026-06-04 - Storage Performance Gate Scaffold
+
+- Changed: Added disabled threshold scaffolding for storage benchmarks,
+  including chunk page access, field iteration, and always-resident world
+  lookup/iteration benchmarks.
+- Reason: Storage hot paths should have named regression gates, but hard
+  wall-clock limits should wait for stable same-machine baselines.
+- Affected docs: `README.md`, `docs/planning/benchmark-plan.md`
+- Affected code: `bench/CMakeLists.txt`, `bench/thresholds/storage.json`

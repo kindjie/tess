@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "storage/field_span_acquisition": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "storage/chunk_field_write_read_iteration": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "storage/single_chunk_page_iteration": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "storage/flat_array_iteration": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "storage/world_chunk_lookup_by_key": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "storage/world_chunk_lookup_by_coord": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    },
+    "storage/world_chunks_iteration": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": null
+    }
+  }
+}

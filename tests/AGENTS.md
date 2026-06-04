@@ -6,6 +6,8 @@
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
   degenerate-axis handling, containment helpers, key width inference, and
   coordinate/chunk/local/tile key conversion helpers.
-- `tess_storage_test`: verifies typed field schemas and resident chunk pages,
-  including SoA field independence, contiguous typed spans, metadata, const
-  access, and allocation-free local field/span access.
+- `tess_storage_test`: verifies typed field schemas, resident chunk pages, and
+  always-resident dense worlds, including SoA field independence, contiguous
+  typed spans, metadata, const access, key/coord lookup, coordinate resolution,
+  checked invalid-coordinate behavior, noexcept hot accessors, and
+  allocation-free local field/span/world access after construction.

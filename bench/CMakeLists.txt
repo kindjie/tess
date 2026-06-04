@@ -13,6 +13,12 @@ set(
   CACHE FILEPATH "Thresholds for key conversion benchmark regressions"
 )
 
+set(
+  TESS_STORAGE_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/storage.json"
+  CACHE FILEPATH "Thresholds for storage benchmark regressions"
+)
+
 if(Python3_Interpreter_FOUND)
   add_custom_target(
     tess_bench_key_thresholds
@@ -28,6 +34,23 @@ if(Python3_Interpreter_FOUND)
       --thresholds ${TESS_KEY_BENCHMARK_THRESHOLDS}
     DEPENDS tess_bench
     COMMENT "Running key conversion benchmark threshold checks"
+    VERBATIM
+  )
+
+  add_custom_target(
+    tess_bench_storage_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=storage/.*
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/storage.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/storage.json
+      --thresholds ${TESS_STORAGE_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running storage benchmark threshold checks"
     VERBATIM
   )
 endif()
@@ -46,6 +69,14 @@ if(BUILD_TESTING)
     COMMAND
       tess_bench
       --benchmark_filter=storage/field_span_acquisition
+      --benchmark_min_time=0.001
+  )
+
+  add_test(
+    NAME tess_bench_world_storage_smoke
+    COMMAND
+      tess_bench
+      --benchmark_filter=storage/world_chunk_lookup_by_key
       --benchmark_min_time=0.001
   )
 endif()
