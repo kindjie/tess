@@ -26,7 +26,9 @@ target_sources(
   INTERFACE
     FILE_SET HEADERS
     BASE_DIRS include
-    FILES include/tess/tess.h
+    FILES
+      include/tess/core/shape.h
+      include/tess/tess.h
 )
 
 install(
