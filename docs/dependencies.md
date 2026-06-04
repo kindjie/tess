@@ -21,3 +21,12 @@ Used for opt-in C++ benchmarks.
 On macOS, benchmark configure or execution may warn that pthread affinity or CPU
 frequency metadata is unavailable. Those warnings do not prevent benchmark
 measurements from running.
+
+## GitHub Actions
+
+- Checkout action version: `actions/checkout@v6`
+- Checkout documentation: https://github.com/actions/checkout
+- Hosted runner documentation:
+  https://docs.github.com/actions/reference/runners/github-hosted-runners
+
+CI pins `ubuntu-24.04` instead of `ubuntu-latest` to avoid runner image drift.

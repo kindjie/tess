@@ -1,6 +1,43 @@
 include(TessGoogleDeps)
 
+find_package(Python3 COMPONENTS Interpreter QUIET)
+
 tess_require_google_benchmark()
 
 add_executable(tess_bench tess_bench.cc)
 target_link_libraries(tess_bench PRIVATE tess::tess benchmark::benchmark_main)
+
+set(
+  TESS_KEY_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/key-conversions.json"
+  CACHE FILEPATH "Thresholds for key conversion benchmark regressions"
+)
+
+if(Python3_Interpreter_FOUND)
+  add_custom_target(
+    tess_bench_key_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=key/.*
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/key-conversions.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/key-conversions.json
+      --thresholds ${TESS_KEY_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running key conversion benchmark threshold checks"
+    VERBATIM
+  )
+endif()
+
+if(BUILD_TESTING)
+  add_test(
+    NAME tess_bench_key_smoke
+    COMMAND
+      tess_bench
+      --benchmark_filter=key/tile_key_2d_u64
+      --benchmark_min_time=0.001
+  )
+endif()

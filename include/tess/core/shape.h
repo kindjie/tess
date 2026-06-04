@@ -226,7 +226,7 @@ constexpr bool contains(Coord3 coord) {
 }
 
 template <typename Shape>
-constexpr ChunkCoord3 chunk_coord(Coord3 coord) {
+constexpr ChunkCoord3 chunk_coord(Coord3 coord) noexcept {
   const auto chunk = ShapeTraits<Shape>::chunk;
   return ChunkCoord3{
       static_cast<std::uint64_t>(coord.x) / chunk.x,
@@ -236,7 +236,7 @@ constexpr ChunkCoord3 chunk_coord(Coord3 coord) {
 }
 
 template <typename Shape>
-constexpr LocalCoord3 local_coord(Coord3 coord) {
+constexpr LocalCoord3 local_coord(Coord3 coord) noexcept {
   const auto chunk = ShapeTraits<Shape>::chunk;
   return LocalCoord3{
       static_cast<std::uint64_t>(coord.x) % chunk.x,
@@ -246,13 +246,14 @@ constexpr LocalCoord3 local_coord(Coord3 coord) {
 }
 
 template <typename Shape>
-constexpr LocalTileId local_tile_id(LocalCoord3 coord) {
+constexpr LocalTileId local_tile_id(LocalCoord3 coord) noexcept {
   const auto chunk = ShapeTraits<Shape>::chunk;
   return LocalTileId{coord.x + coord.y * chunk.x + coord.z * chunk.x * chunk.y};
 }
 
 template <typename Shape>
-constexpr Coord3 coord(ChunkCoord3 chunk_coord, LocalTileId local_tile_id) {
+constexpr Coord3 coord(ChunkCoord3 chunk_coord,
+                       LocalTileId local_tile_id) noexcept {
   const auto chunk = ShapeTraits<Shape>::chunk;
   const auto local_xy = chunk.x * chunk.y;
   const auto local_z = local_tile_id.value / local_xy;
@@ -268,14 +269,14 @@ constexpr Coord3 coord(ChunkCoord3 chunk_coord, LocalTileId local_tile_id) {
 }
 
 template <typename Shape>
-constexpr ChunkKey chunk_key(ChunkCoord3 coord) {
+constexpr ChunkKey chunk_key(ChunkCoord3 coord) noexcept {
   using Traits = ShapeTraits<Shape>;
   return ChunkKey{coord.x + coord.y * Traits::chunk_count_x +
                   coord.z * Traits::chunk_count_x * Traits::chunk_count_y};
 }
 
 template <typename Shape>
-constexpr ChunkCoord3 chunk_coord(ChunkKey key) {
+constexpr ChunkCoord3 chunk_coord(ChunkKey key) noexcept {
   using Traits = ShapeTraits<Shape>;
   const auto chunk_xy = Traits::chunk_count_x * Traits::chunk_count_y;
   const auto z = key.value / chunk_xy;
@@ -287,7 +288,7 @@ constexpr ChunkCoord3 chunk_coord(ChunkKey key) {
 }
 
 template <typename Shape>
-constexpr TileKey<Shape> tile_key(Coord3 coord) {
+constexpr TileKey<Shape> tile_key(Coord3 coord) noexcept {
   using Traits = ShapeTraits<Shape>;
   const auto chunk = chunk_key<Shape>(chunk_coord<Shape>(coord));
   const auto local = local_tile_id<Shape>(local_coord<Shape>(coord));
@@ -300,7 +301,7 @@ constexpr TileKey<Shape> tile_key(Coord3 coord) {
 }
 
 template <typename Shape>
-constexpr ChunkKey chunk_key(TileKey<Shape> key) {
+constexpr ChunkKey chunk_key(TileKey<Shape> key) noexcept {
   using Traits = ShapeTraits<Shape>;
   return ChunkKey{
       static_cast<std::uint64_t>(key.value >> Traits::local_bits),
@@ -308,7 +309,7 @@ constexpr ChunkKey chunk_key(TileKey<Shape> key) {
 }
 
 template <typename Shape>
-constexpr LocalTileId local_tile_id(TileKey<Shape> key) {
+constexpr LocalTileId local_tile_id(TileKey<Shape> key) noexcept {
   using Traits = ShapeTraits<Shape>;
   using Storage = typename Traits::TileKeyStorage;
   Storage mask = 0;
@@ -322,7 +323,7 @@ constexpr LocalTileId local_tile_id(TileKey<Shape> key) {
 }
 
 template <typename Shape>
-constexpr Coord3 coord(TileKey<Shape> key) {
+constexpr Coord3 coord(TileKey<Shape> key) noexcept {
   return coord<Shape>(chunk_coord<Shape>(chunk_key<Shape>(key)),
                       local_tile_id<Shape>(key));
 }

@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  dev:
+    name: Dev Build And Tests
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Show tool versions
+        run: |
+          cmake --version
+          clang++ --version
+
+      - name: Configure
+        run: cmake --preset dev
+
+      - name: Build
+        run: cmake --build --preset dev
+
+      - name: Test
+        run: ctest --preset dev
+
+  bench:
+    name: Benchmark Gates
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Show tool versions
+        run: |
+          cmake --version
+          clang++ --version
+
+      - name: Configure
+        run: cmake --preset bench
+
+      - name: Build
+        run: cmake --build --preset bench
+
+      - name: Test
+        run: ctest --preset bench
+
+      - name: Key benchmark threshold scaffold
+        run: cmake --build --preset bench --target tess_bench_key_thresholds

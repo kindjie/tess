@@ -31,3 +31,13 @@ Records meaningful design changes from the original TDDs.
   testable while chunk-order benchmarks are still pending.
 - Affected docs: `docs/tdd/core-shape-coordinate-key-system.md`
 - Affected code: `include/tess/core/shape.h`, `tests/tess_shape_test.cc`
+
+## 2026-06-04 - Key Conversion Performance Gates
+
+- Changed: Added key conversion benchmarks, zero-allocation/noexcept tests, and
+  disabled benchmark threshold scaffolding for future regression gates.
+- Reason: M1 key conversion is hot-path foundation, but wall-clock thresholds
+  should wait until same-machine baselines are stable.
+- Affected docs: `docs/planning/benchmark-plan.md`
+- Affected code: `bench/tess_bench.cc`, `bench/CMakeLists.txt`,
+  `tools/benchmark_thresholds.py`, `tests/tess_shape_test.cc`
