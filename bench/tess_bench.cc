@@ -290,6 +290,27 @@ void BM_block_dirty_domain_iteration(benchmark::State& state) {
   }
 }
 
+void BM_block_context_iteration_2d(benchmark::State& state) {
+  StorageWorld world;
+  std::vector<tess::ChunkKey> keys;
+  keys.reserve(StorageWorld::chunk_count);
+  for (std::uint64_t key = 0; key < StorageWorld::chunk_count; ++key) {
+    keys.push_back(tess::ChunkKey{key});
+  }
+  const auto ctx = tess::block_ctx(world, tess::chunk_domain(keys),
+                                   tess::WritePolicy::UniquePerChunk);
+
+  for (auto _ : state) {
+    std::uint64_t sum = 0;
+    ctx.for_each_chunk([&](auto view) {
+      auto terrain = view.template field_span<TerrainTag>();
+      terrain[0] = static_cast<std::uint16_t>(view.key().value);
+      sum += terrain[0] + view.meta().version + view.bounds().extent.x;
+    });
+    benchmark::DoNotOptimize(sum);
+  }
+}
+
 template <typename WorldType>
 void BM_block_chunk_tile_iteration(benchmark::State& state) {
   WorldType world;
@@ -379,6 +400,7 @@ BENCHMARK(BM_block_explicit_domain_iteration)
     ->Name("block/explicit_domain_iteration");
 BENCHMARK(BM_block_dirty_domain_iteration)
     ->Name("block/dirty_domain_iteration");
+BENCHMARK(BM_block_context_iteration_2d)->Name("block/context_iteration_2d");
 BENCHMARK(BM_block_chunk_tile_iteration<StorageWorld>)
     ->Name("block/chunk_tile_iteration_2d");
 BENCHMARK(BM_block_chunk_tile_iteration<Block3DWorld>)

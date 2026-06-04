@@ -38,9 +38,19 @@ CI runs on `ubuntu-24.04` with Clang and covers:
   `cmake --build --preset bench --target tess_bench_key_thresholds`
 - Storage benchmark threshold scaffold:
   `cmake --build --preset bench --target tess_bench_storage_thresholds`
+- Block benchmark threshold scaffold:
+  `cmake --build --preset bench --target tess_bench_block_thresholds`
+- Non-gating CI benchmark baseline collection:
+  `cmake --build --preset bench --target tess_bench_ci_baselines`
 
 Benchmark thresholds are currently scaffolded with disabled wall-clock limits
-until stable same-machine baselines are available.
+until stable same-runner baselines are available. CI uploads repeated benchmark
+JSON samples as a workflow artifact for threshold calibration.
+Summarize downloaded baseline artifacts with:
+
+```sh
+tools/benchmark_baseline_summary.py path/to/*.json
+```
 
 ## Name
 

@@ -154,6 +154,72 @@ TEST(TessBlock, ChunkViewExposesIdentityBoundsPageMetadataAndFields) {
       });
 }
 
+TEST(TessBlock, BlockCtxExposesWorldDomainPolicySizeAndEmptyState) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{
+      tess::ChunkKey{1},
+      tess::ChunkKey{3},
+  };
+  const auto domain = tess::chunk_domain(keys);
+  const auto ctx =
+      tess::block_ctx(world, domain, tess::WritePolicy::UniquePerTile);
+
+  EXPECT_EQ(&ctx.world(), &world);
+  EXPECT_EQ(ctx.domain().keys().data(), domain.keys().data());
+  EXPECT_EQ(ctx.domain().size(), domain.size());
+  EXPECT_EQ(ctx.policy(), tess::WritePolicy::UniquePerTile);
+  EXPECT_EQ(ctx.size(), keys.size());
+  EXPECT_FALSE(ctx.empty());
+
+  const auto empty_ctx =
+      tess::block_ctx(world, tess::ChunkDomain{}, tess::WritePolicy::ReadOnly);
+  EXPECT_EQ(empty_ctx.size(), 0u);
+  EXPECT_TRUE(empty_ctx.empty());
+}
+
+TEST(TessBlock, BlockCtxChunkViewMatchesDirectChunkViewBehavior) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{5};
+  const auto keys = std::vector<tess::ChunkKey>{key};
+
+  world.meta(key).entity_count = 12;
+  world.chunk(key).template field<TerrainTag>(tess::LocalTileId{3}) = 44;
+
+  const auto ctx = tess::block_ctx(world, tess::chunk_domain(keys),
+                                   tess::WritePolicy::UniquePerChunk);
+  const auto view = ctx.chunk_view(key);
+  const auto direct = tess::ChunkView<World<TopDown2D>>{world, key};
+  auto terrain = view.template field_span<TerrainTag>();
+
+  EXPECT_EQ(view.key(), direct.key());
+  EXPECT_EQ(view.coord(), direct.coord());
+  EXPECT_EQ(view.bounds(), direct.bounds());
+  EXPECT_EQ(&view.page(), &direct.page());
+  EXPECT_EQ(&view.meta(), &direct.meta());
+  EXPECT_EQ(view.meta().entity_count, 12u);
+  EXPECT_EQ(terrain[3], 44);
+}
+
+TEST(TessBlock, BlockCtxForEachChunkMatchesFreeFunctionDomainOrder) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{
+      tess::ChunkKey{7},
+      tess::ChunkKey{2},
+      tess::ChunkKey{5},
+  };
+  const auto domain = tess::chunk_domain(keys);
+  const auto ctx = tess::block_ctx(world, domain, tess::WritePolicy::ReadOnly);
+  std::vector<tess::ChunkKey> ctx_visited;
+  std::vector<tess::ChunkKey> free_visited;
+
+  ctx.for_each_chunk([&](auto view) { ctx_visited.push_back(view.key()); });
+  tess::for_each_chunk(world, domain, tess::WritePolicy::ReadOnly,
+                       [&](auto view) { free_visited.push_back(view.key()); });
+
+  EXPECT_EQ(ctx_visited, keys);
+  EXPECT_EQ(ctx_visited, free_visited);
+}
+
 TEST(TessBlock, ConstWorldIterationReturnsConstPageMetadataAndFields) {
   World<TopDown2D> world;
   constexpr auto key = tess::ChunkKey{1};
@@ -178,6 +244,31 @@ TEST(TessBlock, ConstWorldIterationReturnsConstPageMetadataAndFields) {
         EXPECT_EQ(&page, &const_world.chunk(key));
         EXPECT_EQ(&meta, &const_world.meta(key));
       });
+}
+
+TEST(TessBlock, ConstWorldBlockCtxReturnsConstPageMetadataAndFields) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{1};
+  const auto keys = std::vector<tess::ChunkKey>{key};
+  const auto& const_world = world;
+  const auto ctx = tess::block_ctx(const_world, tess::chunk_domain(keys),
+                                   tess::WritePolicy::ReadOnly);
+
+  ctx.for_each_chunk([&](auto view) {
+    auto terrain = view.template field_span<TerrainTag>();
+    decltype(auto) page = view.page();
+    decltype(auto) meta = view.meta();
+
+    static_assert(
+        std::is_same_v<decltype(terrain), std::span<const std::uint16_t>>);
+    static_assert(std::is_same_v<decltype(page),
+                                 const typename World<TopDown2D>::page_type&>);
+    static_assert(std::is_same_v<decltype(meta), const tess::ChunkMeta&>);
+
+    EXPECT_EQ(view.key(), key);
+    EXPECT_EQ(&page, &const_world.chunk(key));
+    EXPECT_EQ(&meta, &const_world.meta(key));
+  });
 }
 
 TEST(TessBlock, TopDown2DTileIterationVisitsLocalIdsInOrder) {
@@ -532,6 +623,34 @@ TEST(TessBlock, NestedChunkAndTileIterationDoesNotAllocate) {
           sum += terrain[id.value] + coord.x + coord.y + coord.z;
         });
       });
+  count_allocations.store(false, std::memory_order_relaxed);
+
+  EXPECT_GT(sum, 0u);
+  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+}
+
+TEST(TessBlock, PrebuiltBlockCtxNestedChunkAndTileIterationDoesNotAllocate) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{
+      tess::ChunkKey{0},
+      tess::ChunkKey{4},
+      tess::ChunkKey{8},
+      tess::ChunkKey{12},
+  };
+  const auto ctx = tess::block_ctx(world, tess::chunk_domain(keys),
+                                   tess::WritePolicy::UniquePerChunk);
+  std::uint64_t sum = 0;
+
+  allocation_count.store(0, std::memory_order_relaxed);
+  count_allocations.store(true, std::memory_order_relaxed);
+  ctx.for_each_chunk([&](auto view) {
+    auto terrain = view.template field_span<TerrainTag>();
+    view.for_each_tile([&](tess::LocalTileId id, tess::LocalCoord3 coord) {
+      terrain[id.value] =
+          static_cast<std::uint16_t>(id.value + view.key().value);
+      sum += terrain[id.value] + coord.x + coord.y + coord.z;
+    });
+  });
   count_allocations.store(false, std::memory_order_relaxed);
 
   EXPECT_GT(sum, 0u);

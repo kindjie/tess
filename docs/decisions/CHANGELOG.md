@@ -95,3 +95,26 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
 - Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
   `bench/tess_bench.cc`, `bench/CMakeLists.txt`
+
+## 2026-06-04 - BlockCtx Foundation
+
+- Changed: Added `BlockCtx` as a non-owning serial block execution context over
+  a world, chunk domain, and write policy. Existing `for_each_chunk` now
+  delegates through the context.
+- Reason: M3 needs an explicit context object before adding planner phases,
+  scratch storage, diagnostics, scheduling, or policy enforcement.
+- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
+  `bench/tess_bench.cc`, `bench/CMakeLists.txt`
+
+## 2026-06-04 - CI Benchmark Baseline Collection
+
+- Changed: Added block benchmark threshold scaffolding, non-gating CI baseline
+  JSON collection for key, storage, and block benchmark groups, and a baseline
+  summary helper for threshold calibration.
+- Reason: Timing limits should be calibrated from repeated samples on the
+  pinned CI runner family that will enforce them, not from developer machines.
+- Affected docs: `README.md`, `docs/dependencies.md`,
+  `docs/planning/benchmark-plan.md`
+- Affected code: `.github/workflows/ci.yml`, `bench/CMakeLists.txt`,
+  `bench/thresholds/block.json`, `tools/benchmark_baseline_summary.py`

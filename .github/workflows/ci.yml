@@ -60,3 +60,19 @@ jobs:
 
       - name: Key benchmark threshold scaffold
         run: cmake --build --preset bench --target tess_bench_key_thresholds
+
+      - name: Storage benchmark threshold scaffold
+        run: cmake --build --preset bench --target tess_bench_storage_thresholds
+
+      - name: Block benchmark threshold scaffold
+        run: cmake --build --preset bench --target tess_bench_block_thresholds
+
+      - name: Collect non-gating benchmark baselines
+        run: cmake --build --preset bench --target tess_bench_ci_baselines
+
+      - name: Upload benchmark baseline artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-baselines-${{ github.run_id }}
+          path: build/bench/bench/ci-baselines/*.json
+          retention-days: 30

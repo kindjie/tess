@@ -215,14 +215,54 @@ class ChunkView {
   Box3 bounds_;
 };
 
+template <typename World>
+class BlockCtx {
+ public:
+  using world_type = std::remove_reference_t<World>;
+
+  constexpr BlockCtx(world_type& world, ChunkDomain domain,
+                     WritePolicy policy) noexcept
+      : world_(&world), domain_(domain), policy_(policy) {
+    assert(is_valid_write_policy(policy));
+  }
+
+  constexpr auto world() const noexcept -> world_type& { return *world_; }
+
+  constexpr auto domain() const noexcept -> ChunkDomain { return domain_; }
+
+  constexpr auto policy() const noexcept -> WritePolicy { return policy_; }
+
+  constexpr auto size() const noexcept -> std::size_t { return domain_.size(); }
+
+  constexpr bool empty() const noexcept { return domain_.empty(); }
+
+  constexpr auto chunk_view(ChunkKey key) const noexcept -> ChunkView<World> {
+    return ChunkView<World>{*world_, key};
+  }
+
+  template <typename Fn>
+  constexpr void for_each_chunk(Fn&& fn) const {
+    for (const auto key : domain_) {
+      std::invoke(std::forward<Fn>(fn), chunk_view(key));
+    }
+  }
+
+ private:
+  world_type* world_;
+  ChunkDomain domain_;
+  WritePolicy policy_;
+};
+
+template <typename World>
+constexpr auto block_ctx(World& world, ChunkDomain domain,
+                         WritePolicy policy) noexcept -> BlockCtx<World> {
+  return BlockCtx<World>{world, domain, policy};
+}
+
 template <typename World, typename Fn>
 constexpr void for_each_chunk(World& world, ChunkDomain domain,
                               WritePolicy policy, Fn&& fn) {
-  assert(is_valid_write_policy(policy));
-  (void)policy;
-  for (const auto key : domain) {
-    std::invoke(std::forward<Fn>(fn), ChunkView<World>{world, key});
-  }
+  block_ctx(world, domain, policy).for_each_chunk(std::forward<Fn>(fn));
 }
 
 }  // namespace tess
