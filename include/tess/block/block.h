@@ -111,6 +111,44 @@ class ChunkView {
 
   constexpr auto bounds() const noexcept -> Box3 { return bounds_; }
 
+  static constexpr auto local_coord(LocalTileId id) noexcept -> LocalCoord3 {
+    const auto chunk = ShapeTraits<shape_type>::chunk;
+    const auto local_xy = chunk.x * chunk.y;
+    const auto local_z = id.value / local_xy;
+    const auto remainder = id.value % local_xy;
+    const auto local_y = remainder / chunk.x;
+    const auto local_x = remainder % chunk.x;
+
+    return LocalCoord3{local_x, local_y, local_z};
+  }
+
+  static constexpr auto local_tile_id(LocalCoord3 coord) noexcept
+      -> LocalTileId {
+    return tess::local_tile_id<shape_type>(coord);
+  }
+
+  constexpr auto world_coord(LocalCoord3 coord) const noexcept -> Coord3 {
+    const auto chunk = ShapeTraits<shape_type>::chunk;
+    return Coord3{
+        static_cast<std::int64_t>(coord_.x * chunk.x + coord.x),
+        static_cast<std::int64_t>(coord_.y * chunk.y + coord.y),
+        static_cast<std::int64_t>(coord_.z * chunk.z + coord.z),
+    };
+  }
+
+  constexpr auto world_coord(LocalTileId id) const noexcept -> Coord3 {
+    return world_coord(local_coord(id));
+  }
+
+  template <typename Fn>
+  constexpr void for_each_tile(Fn&& fn) const {
+    for (std::uint64_t i = 0; i < ShapeTraits<shape_type>::local_tile_count;
+         ++i) {
+      const auto id = LocalTileId{i};
+      std::invoke(fn, id, local_coord(id));
+    }
+  }
+
   template <typename Tag>
   constexpr auto field_span() const noexcept {
     return page_->template field_span<Tag>();
