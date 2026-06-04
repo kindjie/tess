@@ -70,6 +70,11 @@ jobs:
       - name: Collect non-gating benchmark baselines
         run: cmake --build --preset bench --target tess_bench_ci_baselines
 
+      - name: Write benchmark artifact metadata
+        run: |
+          tools/benchmark_artifact_metadata.py \
+            --out build/bench/bench/ci-baselines/metadata.json
+
       - name: Upload benchmark baseline artifact
         uses: actions/upload-artifact@v7
         with:

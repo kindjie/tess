@@ -207,6 +207,20 @@ Review coefficient of variation and outliers before copying suggested values
 into threshold JSON. The suggestions use maximum observed CPU time plus
 headroom; they are starting points, not automatic gates.
 
+Generate the README-visible trend snapshot and detailed local HTML report with:
+
+```sh
+tools/benchmark_trends.py path/to/benchmark-baselines-* \
+  --out build/bench/benchmark-trends.html \
+  --snapshot-svg docs/assets/benchmark-trends.svg \
+  --summary-md docs/performance.md
+```
+
+Refresh the tracked SVG intentionally when thresholds change, benchmark
+workloads change, or a milestone/release lands. The SVG label must include the
+source CI run, commit, and Pacific-time collection timestamp so stale snapshots
+are obvious.
+
 ## 24. CI strategy
 
 - correctness benchmarks with sanitizers
