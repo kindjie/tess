@@ -48,6 +48,25 @@ function(tess_target_clang_tidy_options target)
   )
 endfunction()
 
+function(tess_target_cppcheck_options target)
+  if(NOT TESS_ENABLE_CPPCHECK)
+    return()
+  endif()
+
+  set_property(
+    TARGET ${target}
+    PROPERTY
+      CXX_CPPCHECK
+        "${TESS_CPPCHECK_EXE}"
+        "--enable=warning,portability"
+        "--error-exitcode=1"
+        "--inline-suppr"
+        "--suppress=internalError:${PROJECT_SOURCE_DIR}/include/tess/core/shape.h"
+        "--suppress=missingIncludeSystem"
+        "--std=c++20"
+  )
+endfunction()
+
 function(tess_target_sanitizer_options target)
   if(NOT TESS_ENABLE_SANITIZERS)
     return()
@@ -73,5 +92,6 @@ endfunction()
 function(tess_apply_project_options target)
   tess_target_warning_options(${target})
   tess_target_clang_tidy_options(${target})
+  tess_target_cppcheck_options(${target})
   tess_target_sanitizer_options(${target})
 endfunction()

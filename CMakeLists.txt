@@ -18,12 +18,17 @@ option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
 option(TESS_ENABLE_WARNINGS "Enable tess warning flags on local targets" ON)
 option(TESS_WARNINGS_AS_ERRORS "Treat tess local target warnings as errors" OFF)
 option(TESS_ENABLE_CLANG_TIDY "Enable clang-tidy on tess local targets" OFF)
+option(TESS_ENABLE_CPPCHECK "Enable cppcheck on tess local targets" OFF)
 option(TESS_ENABLE_SANITIZERS "Enable ASan and UBSan on tess local targets" OFF)
 
 include(TessProjectOptions)
 
 if(TESS_ENABLE_CLANG_TIDY)
   find_program(TESS_CLANG_TIDY_EXE NAMES clang-tidy REQUIRED)
+endif()
+
+if(TESS_ENABLE_CPPCHECK)
+  find_program(TESS_CPPCHECK_EXE NAMES cppcheck REQUIRED)
 endif()
 
 add_library(tess INTERFACE)
