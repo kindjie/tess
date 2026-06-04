@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import runpy
+import sys
+
+sys.argv = [sys.argv[0], Path(sys.argv[0]).name, *sys.argv[1:]]
+runpy.run_path(Path(__file__).resolve().parents[1] / "git_hooks.py",
+               run_name="__main__")
