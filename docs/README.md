@@ -10,6 +10,7 @@ intent.
 - [Planning](planning/README.md): milestone and benchmark plans.
 - [Dependencies](dependencies.md): external library choices and documentation.
 - [Style](style.md): C++ coding style and formatting policy.
+- [Git Hooks](git-hooks.md): local commit and push guardrails.
 
 ## Design History
 
