@@ -12,9 +12,9 @@
   checked invalid-coordinate behavior, per-chunk dirty/active metadata,
   noexcept hot accessors, and allocation-free local field/span/world access
   after construction.
-- `tess_block_test`: verifies chunk-domain builders, `BlockCtx` construction
-  and iteration, serial block iteration, const-correct chunk views, chunk
-  bounds for 2D vertical and 3D worlds, chunk-local tile iteration and
-  coordinate helpers, boundary/local-candidate helpers across 2D/3D and
-  degenerate axes, and allocation-free iteration for prebuilt domains and
-  contexts.
+- `tess_block_test`: verifies chunk-domain builders, policy-typed `BlockCtx`
+  construction and iteration, serial block iteration, const-correct chunk
+  views including `ReadOnly` policy enforcement, chunk bounds for 2D vertical
+  and 3D worlds, chunk-local tile iteration and coordinate helpers,
+  boundary/local-candidate helpers across 2D/3D and degenerate axes, and
+  allocation-free iteration for prebuilt domains and contexts.

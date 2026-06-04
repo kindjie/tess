@@ -215,29 +215,32 @@ class ChunkView {
   Box3 bounds_;
 };
 
-template <typename World>
+template <typename World, WritePolicy Policy>
 class BlockCtx {
  public:
-  using world_type = std::remove_reference_t<World>;
+  static_assert(is_valid_write_policy(Policy));
 
-  constexpr BlockCtx(world_type& world, ChunkDomain domain,
-                     WritePolicy policy) noexcept
-      : world_(&world), domain_(domain), policy_(policy) {
-    assert(is_valid_write_policy(policy));
-  }
+  using world_type = std::remove_reference_t<World>;
+  using view_world_type =
+      std::conditional_t<Policy == WritePolicy::ReadOnly,
+                         const std::remove_const_t<world_type>, world_type>;
+
+  constexpr BlockCtx(world_type& world, ChunkDomain domain) noexcept
+      : world_(&world), domain_(domain) {}
 
   constexpr auto world() const noexcept -> world_type& { return *world_; }
 
   constexpr auto domain() const noexcept -> ChunkDomain { return domain_; }
 
-  constexpr auto policy() const noexcept -> WritePolicy { return policy_; }
+  constexpr auto policy() const noexcept -> WritePolicy { return Policy; }
 
   constexpr auto size() const noexcept -> std::size_t { return domain_.size(); }
 
   constexpr bool empty() const noexcept { return domain_.empty(); }
 
-  constexpr auto chunk_view(ChunkKey key) const noexcept -> ChunkView<World> {
-    return ChunkView<World>{*world_, key};
+  constexpr auto chunk_view(ChunkKey key) const noexcept
+      -> ChunkView<view_world_type> {
+    return ChunkView<view_world_type>{*world_, key};
   }
 
   template <typename Fn>
@@ -250,19 +253,27 @@ class BlockCtx {
  private:
   world_type* world_;
   ChunkDomain domain_;
-  WritePolicy policy_;
 };
 
-template <typename World>
-constexpr auto block_ctx(World& world, ChunkDomain domain,
-                         WritePolicy policy) noexcept -> BlockCtx<World> {
-  return BlockCtx<World>{world, domain, policy};
+template <WritePolicy Policy, typename World>
+constexpr auto block_ctx(World& world, ChunkDomain domain) noexcept
+    -> BlockCtx<World, Policy> {
+  return BlockCtx<World, Policy>{world, domain};
+}
+
+template <WritePolicy Policy, typename World, typename Fn>
+constexpr void for_each_chunk(World& world, ChunkDomain domain, Fn&& fn) {
+  block_ctx<Policy>(world, domain).for_each_chunk(std::forward<Fn>(fn));
 }
 
 template <typename World, typename Fn>
 constexpr void for_each_chunk(World& world, ChunkDomain domain,
                               WritePolicy policy, Fn&& fn) {
-  block_ctx(world, domain, policy).for_each_chunk(std::forward<Fn>(fn));
+  assert(is_valid_write_policy(policy));
+  (void)policy;
+  for (const auto key : domain) {
+    std::invoke(std::forward<Fn>(fn), ChunkView<World>{world, key});
+  }
 }
 
 }  // namespace tess

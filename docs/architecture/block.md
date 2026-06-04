@@ -14,19 +14,24 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
   `ChunkKey` order.
 - `dirty_chunk_domain(world, flags)` and `active_chunk_domain(world, flags)`
   return allocating vectors using the current always-resident metadata queries.
-- `BlockCtx<World>` is a non-owning serial execution context over a world,
-  `ChunkDomain`, and `WritePolicy`. Callers must keep the world and domain key
-  storage alive for the context lifetime.
-- `block_ctx(world, domain, policy)` constructs a `BlockCtx` without
-  allocation.
+- `BlockCtx<World, Policy>` is a non-owning serial execution context over a
+  world, `ChunkDomain`, and compile-time `WritePolicy`. Callers must keep the
+  world and domain key storage alive for the context lifetime.
+- `block_ctx<Policy>(world, domain)` constructs a policy-typed `BlockCtx`
+  without allocation.
 - `BlockCtx::world()`, `domain()`, `policy()`, `size()`, and `empty()` expose
   the context inputs and domain state.
-- `BlockCtx::chunk_view(key)` returns an explicit `ChunkView<World>` for a
-  chunk key.
+- `BlockCtx::chunk_view(key)` returns an explicit chunk view for a chunk key.
+  `ReadOnly` contexts expose `ChunkView<const World>` even when the stored
+  world object is mutable. Other current policies expose `ChunkView<World>`.
 - `BlockCtx::for_each_chunk(fn)` walks the domain serially and invokes
-  `fn(ChunkView<World>)`.
-- `for_each_chunk(world, domain, policy, fn)` walks the domain serially and
-  invokes `fn(ChunkView<World>)` by delegating through `BlockCtx`.
+  `fn(view)` with the policy-selected view type.
+- `for_each_chunk<Policy>(world, domain, fn)` constructs a policy-typed
+  context and walks the domain serially without allocation.
+- `for_each_chunk(world, domain, policy, fn)` remains a runtime-policy
+  compatibility overload. It validates the policy enum value but keeps the view
+  type derived from the world argument, because a runtime enum cannot change a
+  C++ callback parameter type.
 - `ChunkView<World>` exposes the resolved page, metadata, key, chunk
   coordinate, chunk bounds, typed field spans through `ChunkPage`, and
   chunk-local tile helpers.
@@ -54,8 +59,10 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
 
 Iteration is deterministic when domains are produced by the provided builders.
 The hot executor path does not allocate when passed a prebuilt `ChunkDomain`.
-Prebuilt `BlockCtx` iteration is also allocation-free. Chunk-local tile
-iteration does not materialize ranges or decode global `TileKey` values.
+Policy-typed `ReadOnly` contexts enforce const page, metadata, and field span
+access at compile time. Prebuilt `BlockCtx` iteration is also allocation-free.
+Chunk-local tile iteration does not materialize ranges or decode global
+`TileKey` values.
 
 Boundary and local-candidate helpers only describe the current chunk. They do
 not define movement legality, neighbor ordering, direction enums, halo loading,
@@ -72,7 +79,9 @@ This first M3 slice intentionally diverges:
   external scheduler backend is implemented yet.
 - `BlockCtx` is only the current serial context. It does not yet provide
   scratch arenas, diagnostics, scheduling, phase graphs, or planner state.
-- `WritePolicy` is validated as a known enum value, but it is not enforced.
+- Only `ReadOnly` is enforced today, and only through policy-typed block
+  contexts and `for_each_chunk<Policy>`. `UniquePerTile`, `UniquePerChunk`,
+  and `Unsafe` still record intended write discipline without ownership checks.
 - Execution remains serial only for both chunk and tile iteration; parallel
   chunk scheduling is deferred.
 - Domains are chunk-key spans over always-resident storage only; sparse
