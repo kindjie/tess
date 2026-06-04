@@ -45,6 +45,38 @@ Used by the Git pre-commit hook to count tokens in staged text files through
 the Python API. The hook reads staged blobs from Git, so the library API is a
 better fit than a filesystem-oriented command-line wrapper.
 
+## CMake clang-tidy Integration
+
+- Documentation:
+  https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_CLANG_TIDY.html
+- Target property:
+  https://cmake.org/cmake/help/latest/prop_tgt/LANG_CLANG_TIDY.html
+
+Used by the opt-in `dev-clang-tidy` preset through the `CXX_CLANG_TIDY` target
+property. Tess sets the property only on local test and benchmark targets so
+third-party targets are not linted by project policy.
+
+## clangd
+
+- Configuration documentation: https://clangd.llvm.org/config
+- Feature documentation: https://clangd.llvm.org/features#clang-tidy-checks
+
+Used for editor diagnostics and navigation. Start clangd with
+`--clang-tidy --enable-config`; the checked-in `.clangd` points clangd at the
+default developer compilation database in `build/dev`, and `.clang-tidy`
+selects the clang-tidy checks.
+
+## Clang Sanitizers
+
+- AddressSanitizer documentation:
+  https://clang.llvm.org/docs/AddressSanitizer.html
+- UndefinedBehaviorSanitizer documentation:
+  https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html
+
+Used by the opt-in `dev-asan` preset for tests. Tess applies sanitizer compile
+and link flags to local executables only, because AddressSanitizer must be
+linked into the final executable.
+
 ## Deferred Executor Candidates
 
 No block-executor dependency is added yet. `work_contract`, Taskflow, oneTBB,

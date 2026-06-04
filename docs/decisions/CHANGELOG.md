@@ -120,3 +120,37 @@ Records meaningful design changes from the original TDDs.
 - Affected code: `.github/workflows/ci.yml`, `bench/CMakeLists.txt`,
   `bench/thresholds/block.json`, `tools/benchmark_artifact_metadata.py`,
   `tools/benchmark_baseline_summary.py`, `tools/benchmark_trends.py`
+
+## 2026-06-04 - ReadOnly Block Policy Enforcement
+
+- Changed: `BlockCtx` is now policy-typed, and `ReadOnly` contexts expose
+  const chunk views even for mutable worlds. Added `for_each_chunk<Policy>` for
+  policy-typed serial execution while keeping the runtime-policy overload as a
+  compatibility path.
+- Reason: M3 write policies need a real enforcement foothold without adding
+  planner phases, scratch storage, diagnostics, or parallel scheduling.
+- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
+  `bench/tess_bench.cc`
+
+## 2026-06-04 - Local Warning and Analysis Presets
+
+- Changed: Added project-local warning flags, warnings-as-errors,
+  clang-tidy, and ASan/UBSan CMake options plus presets for tests and
+  benchmarks.
+- Reason: M0 scaffolding needs repeatable compiler diagnostics and dynamic
+  analysis without exporting Tess warning policy to downstream consumers.
+- Affected docs: `docs/dependencies.md`, `docs/style.md`
+- Affected code: `.clang-tidy`, `CMakeLists.txt`, `CMakePresets.json`,
+  `cmake/TessProjectOptions.cmake`, `tests/CMakeLists.txt`,
+  `bench/CMakeLists.txt`
+
+## 2026-06-04 - clangd Project Configuration
+
+- Changed: Added `.clangd` to point editor tooling at the default developer
+  compilation database and keep clang-tidy checks on clangd's strict fast-check
+  filter.
+- Reason: clangd needs project configuration plus editor startup flags to
+  provide consistent clang-tidy diagnostics while editing.
+- Affected docs: `docs/dependencies.md`, `docs/style.md`
+- Affected code: `.clangd`

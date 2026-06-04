@@ -297,8 +297,8 @@ void BM_block_context_iteration_2d(benchmark::State& state) {
   for (std::uint64_t key = 0; key < StorageWorld::chunk_count; ++key) {
     keys.push_back(tess::ChunkKey{key});
   }
-  const auto ctx = tess::block_ctx(world, tess::chunk_domain(keys),
-                                   tess::WritePolicy::UniquePerChunk);
+  const auto ctx = tess::block_ctx<tess::WritePolicy::UniquePerChunk>(
+      world, tess::chunk_domain(keys));
 
   for (auto _ : state) {
     std::uint64_t sum = 0;

@@ -13,7 +13,35 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "TESS_BUILD_TESTING": "ON"
+        "TESS_BUILD_TESTING": "ON",
+        "TESS_ENABLE_WARNINGS": "ON"
+      }
+    },
+    {
+      "name": "dev-werror",
+      "displayName": "Developer Debug Warnings As Errors",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "TESS_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "dev-asan",
+      "displayName": "Developer Debug ASan UBSan",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "TESS_ENABLE_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "dev-clang-tidy",
+      "displayName": "Developer Debug clang-tidy",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "TESS_ENABLE_CLANG_TIDY": "ON"
       }
     },
     {
@@ -23,7 +51,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "TESS_BUILD_TESTING": "ON"
+        "TESS_BUILD_TESTING": "ON",
+        "TESS_ENABLE_WARNINGS": "ON"
       }
     },
     {
@@ -34,7 +63,8 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "TESS_BUILD_TESTING": "ON",
-        "TESS_BUILD_BENCHMARKS": "ON"
+        "TESS_BUILD_BENCHMARKS": "ON",
+        "TESS_ENABLE_WARNINGS": "ON"
       }
     }
   ],
@@ -42,6 +72,18 @@
     {
       "name": "dev",
       "configurePreset": "dev"
+    },
+    {
+      "name": "dev-werror",
+      "configurePreset": "dev-werror"
+    },
+    {
+      "name": "dev-asan",
+      "configurePreset": "dev-asan"
+    },
+    {
+      "name": "dev-clang-tidy",
+      "configurePreset": "dev-clang-tidy"
     },
     {
       "name": "release",
@@ -56,6 +98,27 @@
     {
       "name": "dev",
       "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-werror",
+      "configurePreset": "dev-werror",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-asan",
+      "configurePreset": "dev-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-clang-tidy",
+      "configurePreset": "dev-clang-tidy",
       "output": {
         "outputOnFailure": true
       }
