@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tess/core/shape.h>
+
 #define TESS_VERSION_MAJOR 0
 #define TESS_VERSION_MINOR 1
 #define TESS_VERSION_PATCH 0

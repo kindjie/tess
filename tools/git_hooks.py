@@ -223,7 +223,11 @@ def check_cpp_format() -> int:
         if output:
             print(output)
         return fail("git-clang-format failed")
-    if output and "no modified files to format" not in output.lower():
+    clean_markers = (
+        "clang-format did not modify any files",
+        "no modified files to format",
+    )
+    if output and not any(marker in output.lower() for marker in clean_markers):
         print(result.stdout, end="")
         return fail("staged C++ changes need clang-format")
     return 0

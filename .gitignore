@@ -40,8 +40,8 @@ _deps/
 *.profdata
 *.profraw
 *.stackdump
-core
-core.*
+/core
+/core.*
 
 # Python caches
 __pycache__/
