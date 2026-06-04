@@ -26,10 +26,14 @@ measurements from running.
 
 - Checkout action version: `actions/checkout@v6`
 - Checkout documentation: https://github.com/actions/checkout
+- Upload artifact action version: `actions/upload-artifact@v7`
+- Upload artifact documentation: https://github.com/actions/upload-artifact
 - Hosted runner documentation:
   https://docs.github.com/actions/reference/runners/github-hosted-runners
 
 CI pins `ubuntu-24.04` instead of `ubuntu-latest` to avoid runner image drift.
+Benchmark baseline JSON is uploaded from CI artifacts so timing thresholds can
+be calibrated against the same runner family that will enforce them.
 
 ## Deferred Executor Candidates
 
