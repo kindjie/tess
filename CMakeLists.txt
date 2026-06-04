@@ -27,6 +27,7 @@ target_sources(
     FILE_SET HEADERS
     BASE_DIRS include
     FILES
+      include/tess/block/block.h
       include/tess/core/shape.h
       include/tess/storage/chunk_page.h
       include/tess/storage/world.h

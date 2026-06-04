@@ -26,3 +26,4 @@ C++ implementation work follows the active [style policy](../style.md).
 Maintained notes for implemented areas:
 
 - [Storage foundation](storage.md)
+- [Block foundation](block.md)

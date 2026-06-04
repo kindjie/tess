@@ -30,3 +30,9 @@ measurements from running.
   https://docs.github.com/actions/reference/runners/github-hosted-runners
 
 CI pins `ubuntu-24.04` instead of `ubuntu-latest` to avoid runner image drift.
+
+## Deferred Executor Candidates
+
+No block-executor dependency is added yet. `work_contract`, Taskflow, oneTBB,
+and enkiTS remain candidates for later executor backends after Tess has an
+internal executor abstraction and benchmark comparisons.
