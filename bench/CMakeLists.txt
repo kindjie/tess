@@ -95,4 +95,12 @@ if(BUILD_TESTING)
       --benchmark_filter=block/chunk_tile_iteration_2d
       --benchmark_min_time=0.001
   )
+
+  add_test(
+    NAME tess_bench_block_boundary_smoke
+    COMMAND
+      tess_bench
+      --benchmark_filter=block/chunk_boundary_scan_2d
+      --benchmark_min_time=0.001
+  )
 endif()

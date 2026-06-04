@@ -83,3 +83,15 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
 - Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
   `bench/tess_bench.cc`, `bench/CMakeLists.txt`
+
+## 2026-06-04 - Chunk Boundary Helpers
+
+- Changed: `ChunkView` now exposes local bounds, signed local-candidate
+  validation/conversion, non-degenerate boundary/interior predicates, and
+  signed local-candidate world coordinate conversion.
+- Reason: Topology and path systems need allocation-free helpers to identify
+  current-chunk candidates before movement rules, transitions, halos, scratch
+  storage, diagnostics, or parallel execution are introduced.
+- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
+  `bench/tess_bench.cc`, `bench/CMakeLists.txt`

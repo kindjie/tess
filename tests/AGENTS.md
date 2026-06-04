@@ -14,5 +14,6 @@
   after construction.
 - `tess_block_test`: verifies chunk-domain builders, serial block iteration,
   const-correct chunk views, chunk bounds for 2D vertical and 3D worlds,
-  chunk-local tile iteration and coordinate helpers, and allocation-free
-  iteration for prebuilt domains.
+  chunk-local tile iteration and coordinate helpers, boundary/local-candidate
+  helpers across 2D/3D and degenerate axes, and allocation-free iteration for
+  prebuilt domains.
