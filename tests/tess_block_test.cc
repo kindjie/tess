@@ -154,6 +154,72 @@ TEST(TessBlock, ChunkViewExposesIdentityBoundsPageMetadataAndFields) {
       });
 }
 
+TEST(TessBlock, BlockCtxExposesWorldDomainPolicySizeAndEmptyState) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{
+      tess::ChunkKey{1},
+      tess::ChunkKey{3},
+  };
+  const auto domain = tess::chunk_domain(keys);
+  const auto ctx =
+      tess::block_ctx(world, domain, tess::WritePolicy::UniquePerTile);
+
+  EXPECT_EQ(&ctx.world(), &world);
+  EXPECT_EQ(ctx.domain().keys().data(), domain.keys().data());
+  EXPECT_EQ(ctx.domain().size(), domain.size());
+  EXPECT_EQ(ctx.policy(), tess::WritePolicy::UniquePerTile);
+  EXPECT_EQ(ctx.size(), keys.size());
+  EXPECT_FALSE(ctx.empty());
+
+  const auto empty_ctx =
+      tess::block_ctx(world, tess::ChunkDomain{}, tess::WritePolicy::ReadOnly);
+  EXPECT_EQ(empty_ctx.size(), 0u);
+  EXPECT_TRUE(empty_ctx.empty());
+}
+
+TEST(TessBlock, BlockCtxChunkViewMatchesDirectChunkViewBehavior) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{5};
+  const auto keys = std::vector<tess::ChunkKey>{key};
+
+  world.meta(key).entity_count = 12;
+  world.chunk(key).template field<TerrainTag>(tess::LocalTileId{3}) = 44;
+
+  const auto ctx = tess::block_ctx(world, tess::chunk_domain(keys),
+                                   tess::WritePolicy::UniquePerChunk);
+  const auto view = ctx.chunk_view(key);
+  const auto direct = tess::ChunkView<World<TopDown2D>>{world, key};
+  auto terrain = view.template field_span<TerrainTag>();
+
+  EXPECT_EQ(view.key(), direct.key());
+  EXPECT_EQ(view.coord(), direct.coord());
+  EXPECT_EQ(view.bounds(), direct.bounds());
+  EXPECT_EQ(&view.page(), &direct.page());
+  EXPECT_EQ(&view.meta(), &direct.meta());
+  EXPECT_EQ(view.meta().entity_count, 12u);
+  EXPECT_EQ(terrain[3], 44);
+}
+
+TEST(TessBlock, BlockCtxForEachChunkMatchesFreeFunctionDomainOrder) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{
+      tess::ChunkKey{7},
+      tess::ChunkKey{2},
+      tess::ChunkKey{5},
+  };
+  const auto domain = tess::chunk_domain(keys);
+  const auto ctx = tess::block_ctx(world, domain, tess::WritePolicy::ReadOnly);
+  std::vector<tess::ChunkKey> ctx_visited;
+  std::vector<tess::ChunkKey> free_visited;
+
+  ctx.for_each_chunk([&](auto view) { ctx_visited.push_back(view.key()); });
+  tess::for_each_chunk(world, domain, tess::WritePolicy::ReadOnly,
+                       [&](auto view) { free_visited.push_back(view.key()); });
+
+  EXPECT_EQ(ctx_visited, keys);
+  EXPECT_EQ(ctx_visited, free_visited);
+}
+
 TEST(TessBlock, ConstWorldIterationReturnsConstPageMetadataAndFields) {
   World<TopDown2D> world;
   constexpr auto key = tess::ChunkKey{1};
@@ -180,6 +246,336 @@ TEST(TessBlock, ConstWorldIterationReturnsConstPageMetadataAndFields) {
       });
 }
 
+TEST(TessBlock, ConstWorldBlockCtxReturnsConstPageMetadataAndFields) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{1};
+  const auto keys = std::vector<tess::ChunkKey>{key};
+  const auto& const_world = world;
+  const auto ctx = tess::block_ctx(const_world, tess::chunk_domain(keys),
+                                   tess::WritePolicy::ReadOnly);
+
+  ctx.for_each_chunk([&](auto view) {
+    auto terrain = view.template field_span<TerrainTag>();
+    decltype(auto) page = view.page();
+    decltype(auto) meta = view.meta();
+
+    static_assert(
+        std::is_same_v<decltype(terrain), std::span<const std::uint16_t>>);
+    static_assert(std::is_same_v<decltype(page),
+                                 const typename World<TopDown2D>::page_type&>);
+    static_assert(std::is_same_v<decltype(meta), const tess::ChunkMeta&>);
+
+    EXPECT_EQ(view.key(), key);
+    EXPECT_EQ(&page, &const_world.chunk(key));
+    EXPECT_EQ(&meta, &const_world.meta(key));
+  });
+}
+
+TEST(TessBlock, TopDown2DTileIterationVisitsLocalIdsInOrder) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{0}};
+  std::uint64_t expected_id = 0;
+
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::ReadOnly,
+      [&](auto view) {
+        view.for_each_tile([&](tess::LocalTileId id, tess::LocalCoord3 coord) {
+          EXPECT_EQ(id, (tess::LocalTileId{expected_id}));
+          EXPECT_EQ(coord, view.local_coord(id));
+          ++expected_id;
+        });
+      });
+
+  EXPECT_EQ(expected_id, tess::ShapeTraits<TopDown2D>::local_tile_count);
+}
+
+TEST(TessBlock, TileIterationSupportsVertical2DWorldCoordinates) {
+  World<Vertical2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{6}};
+  bool saw_target = false;
+
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::ReadOnly,
+      [&](auto view) {
+        view.for_each_tile([&](tess::LocalTileId id, tess::LocalCoord3 coord) {
+          if (id == tess::LocalTileId{31}) {
+            saw_target = true;
+            EXPECT_EQ(coord, (tess::LocalCoord3{0, 15, 1}));
+            EXPECT_EQ(view.world_coord(coord), (tess::Coord3{0, 47, 9}));
+            EXPECT_EQ(view.world_coord(id), (tess::Coord3{0, 47, 9}));
+          }
+        });
+      });
+
+  EXPECT_TRUE(saw_target);
+}
+
+TEST(TessBlock, TileIterationSupportsChunked3DWorldCoordinates) {
+  World<Chunked3D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{42}};
+  bool saw_target = false;
+
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::ReadOnly,
+      [&](auto view) {
+        view.for_each_tile([&](tess::LocalTileId id, tess::LocalCoord3 coord) {
+          if (id == tess::LocalTileId{287}) {
+            saw_target = true;
+            EXPECT_EQ(coord, (tess::LocalCoord3{15, 1, 1}));
+            EXPECT_EQ(view.world_coord(coord), (tess::Coord3{47, 33, 17}));
+            EXPECT_EQ(view.world_coord(id), (tess::Coord3{47, 33, 17}));
+          }
+        });
+      });
+
+  EXPECT_TRUE(saw_target);
+}
+
+TEST(TessBlock, LocalCoordinateHelpersRoundTripRepresentativeTiles) {
+  World<Chunked3D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{42}};
+
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::ReadOnly,
+      [](auto view) {
+        constexpr auto final_id =
+            tess::ShapeTraits<Chunked3D>::local_tile_count - 1;
+        const auto ids = std::vector<tess::LocalTileId>{
+            tess::LocalTileId{0},
+            tess::LocalTileId{287},
+            tess::LocalTileId{255},
+            tess::LocalTileId{final_id},
+        };
+
+        for (const auto id : ids) {
+          const auto coord = view.local_coord(id);
+          EXPECT_EQ(view.local_tile_id(coord), id);
+          EXPECT_EQ(view.world_coord(id), view.world_coord(coord));
+        }
+
+        EXPECT_EQ(view.local_coord(tess::LocalTileId{0}),
+                  (tess::LocalCoord3{0, 0, 0}));
+        EXPECT_EQ(view.local_coord(tess::LocalTileId{255}),
+                  (tess::LocalCoord3{15, 15, 0}));
+        EXPECT_EQ(view.local_coord(tess::LocalTileId{final_id}),
+                  (tess::LocalCoord3{15, 15, 7}));
+      });
+}
+
+TEST(TessBlock, TopDown2DBoundariesIgnoreDegenerateZAxis) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{0}};
+
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::ReadOnly,
+      [](auto view) {
+        EXPECT_EQ(view.local_bounds(), (tess::Box3{
+                                           tess::Coord3{0, 0, 0},
+                                           tess::Extent3{32, 16, 1},
+                                       }));
+
+        EXPECT_TRUE(view.is_boundary(tess::LocalCoord3{0, 0, 0}));
+        EXPECT_TRUE(view.is_boundary(tess::LocalCoord3{31, 15, 0}));
+        EXPECT_TRUE(view.is_boundary(tess::LocalCoord3{17, 0, 0}));
+        EXPECT_TRUE(view.is_boundary(tess::LocalCoord3{0, 9, 0}));
+        EXPECT_FALSE(view.is_boundary(tess::LocalCoord3{17, 9, 0}));
+        EXPECT_TRUE(view.is_interior(tess::LocalCoord3{17, 9, 0}));
+
+        std::uint64_t boundary_count = 0;
+        std::uint64_t interior_count = 0;
+        view.for_each_tile([&](tess::LocalTileId, tess::LocalCoord3 coord) {
+          if (view.is_boundary(coord)) {
+            ++boundary_count;
+          } else {
+            ++interior_count;
+          }
+        });
+
+        EXPECT_EQ(boundary_count, 92u);
+        EXPECT_EQ(interior_count, 420u);
+      });
+}
+
+TEST(TessBlock, Vertical2DBoundariesUseOnlyNonDegenerateAxes) {
+  World<Vertical2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{0}};
+
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::ReadOnly,
+      [](auto view) {
+        EXPECT_TRUE(view.is_boundary(tess::LocalCoord3{0, 0, 0}));
+        EXPECT_TRUE(view.is_boundary(tess::LocalCoord3{0, 15, 7}));
+        EXPECT_TRUE(view.is_boundary(tess::LocalCoord3{0, 8, 0}));
+        EXPECT_TRUE(view.is_boundary(tess::LocalCoord3{0, 0, 4}));
+        EXPECT_FALSE(view.is_boundary(tess::LocalCoord3{0, 8, 4}));
+        EXPECT_TRUE(view.is_interior(tess::LocalCoord3{0, 8, 4}));
+
+        std::uint64_t boundary_count = 0;
+        std::uint64_t interior_count = 0;
+        view.for_each_tile([&](tess::LocalTileId, tess::LocalCoord3 coord) {
+          if (view.is_boundary(coord)) {
+            ++boundary_count;
+          } else {
+            ++interior_count;
+          }
+        });
+
+        EXPECT_EQ(boundary_count, 44u);
+        EXPECT_EQ(interior_count, 84u);
+      });
+}
+
+TEST(TessBlock, Chunked3DBoundariesUseAllAxes) {
+  World<Chunked3D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{0}};
+
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::ReadOnly,
+      [](auto view) {
+        EXPECT_TRUE(view.is_boundary(tess::LocalCoord3{0, 0, 0}));
+        EXPECT_TRUE(view.is_boundary(tess::LocalCoord3{15, 15, 7}));
+        EXPECT_TRUE(view.is_boundary(tess::LocalCoord3{8, 7, 0}));
+        EXPECT_FALSE(view.is_boundary(tess::LocalCoord3{8, 7, 4}));
+        EXPECT_TRUE(view.is_interior(tess::LocalCoord3{8, 7, 4}));
+
+        std::uint64_t boundary_count = 0;
+        std::uint64_t interior_count = 0;
+        view.for_each_tile([&](tess::LocalTileId, tess::LocalCoord3 coord) {
+          if (view.is_boundary(coord)) {
+            ++boundary_count;
+          } else {
+            ++interior_count;
+          }
+        });
+
+        EXPECT_EQ(boundary_count, 872u);
+        EXPECT_EQ(interior_count, 1176u);
+      });
+}
+
+TEST(TessBlock, LocalCandidateHelpersAcceptAndRejectSignedCoordinates) {
+  World<Chunked3D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{42}};
+
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::ReadOnly,
+      [](auto view) {
+        EXPECT_TRUE(view.contains_local(tess::Coord3{0, 0, 0}));
+        EXPECT_TRUE(view.contains_local(tess::Coord3{8, 7, 4}));
+        EXPECT_TRUE(view.contains_local(tess::Coord3{15, 15, 7}));
+
+        EXPECT_EQ(view.try_local_coord(tess::Coord3{0, 0, 0}),
+                  (tess::LocalCoord3{0, 0, 0}));
+        EXPECT_EQ(view.try_local_coord(tess::Coord3{8, 7, 4}),
+                  (tess::LocalCoord3{8, 7, 4}));
+        EXPECT_EQ(view.try_local_coord(tess::Coord3{15, 15, 7}),
+                  (tess::LocalCoord3{15, 15, 7}));
+
+        EXPECT_FALSE(view.contains_local(tess::Coord3{-1, 0, 0}));
+        EXPECT_FALSE(view.contains_local(tess::Coord3{16, 0, 0}));
+        EXPECT_FALSE(view.contains_local(tess::Coord3{0, -1, 0}));
+        EXPECT_FALSE(view.contains_local(tess::Coord3{0, 16, 0}));
+        EXPECT_FALSE(view.contains_local(tess::Coord3{0, 0, -1}));
+        EXPECT_FALSE(view.contains_local(tess::Coord3{0, 0, 8}));
+
+        EXPECT_FALSE(view.try_local_coord(tess::Coord3{-1, 0, 0}));
+        EXPECT_FALSE(view.try_local_coord(tess::Coord3{16, 0, 0}));
+        EXPECT_FALSE(view.try_local_coord(tess::Coord3{0, -1, 0}));
+        EXPECT_FALSE(view.try_local_coord(tess::Coord3{0, 16, 0}));
+        EXPECT_FALSE(view.try_local_coord(tess::Coord3{0, 0, -1}));
+        EXPECT_FALSE(view.try_local_coord(tess::Coord3{0, 0, 8}));
+      });
+}
+
+TEST(TessBlock, LocalCandidateHelpersRejectDegenerateAxisOutsideChunk) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{0}};
+
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::ReadOnly,
+      [](auto view) {
+        EXPECT_TRUE(view.contains_local(tess::Coord3{17, 9, 0}));
+        EXPECT_FALSE(view.contains_local(tess::Coord3{17, 9, -1}));
+        EXPECT_FALSE(view.contains_local(tess::Coord3{17, 9, 1}));
+
+        EXPECT_EQ(view.try_local_coord(tess::Coord3{17, 9, 0}),
+                  (tess::LocalCoord3{17, 9, 0}));
+        EXPECT_FALSE(view.try_local_coord(tess::Coord3{17, 9, -1}));
+        EXPECT_FALSE(view.try_local_coord(tess::Coord3{17, 9, 1}));
+      });
+}
+
+TEST(TessBlock, WorldCoordConvertsSignedLocalCandidatesOutsideChunk) {
+  World<Chunked3D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{42}};
+
+  tess::for_each_chunk(world, tess::chunk_domain(keys),
+                       tess::WritePolicy::ReadOnly, [](auto view) {
+                         EXPECT_EQ(view.coord(), (tess::ChunkCoord3{2, 2, 2}));
+                         EXPECT_EQ(view.world_coord(tess::Coord3{0, 0, 0}),
+                                   (tess::Coord3{32, 32, 16}));
+                         EXPECT_EQ(view.world_coord(tess::Coord3{15, 15, 7}),
+                                   (tess::Coord3{47, 47, 23}));
+                         EXPECT_EQ(view.world_coord(tess::Coord3{-1, 8, 4}),
+                                   (tess::Coord3{31, 40, 20}));
+                         EXPECT_EQ(view.world_coord(tess::Coord3{16, 8, 4}),
+                                   (tess::Coord3{48, 40, 20}));
+                         EXPECT_EQ(view.world_coord(tess::Coord3{8, -1, 4}),
+                                   (tess::Coord3{40, 31, 20}));
+                         EXPECT_EQ(view.world_coord(tess::Coord3{8, 16, 4}),
+                                   (tess::Coord3{40, 48, 20}));
+                         EXPECT_EQ(view.world_coord(tess::Coord3{8, 7, -1}),
+                                   (tess::Coord3{40, 39, 15}));
+                         EXPECT_EQ(view.world_coord(tess::Coord3{8, 7, 8}),
+                                   (tess::Coord3{40, 39, 24}));
+                       });
+}
+
+TEST(TessBlock, ChunkViewBoundaryHelpersAreNoexcept) {
+  World<Chunked3D> world;
+  const auto view = tess::ChunkView<World<Chunked3D>>{world, tess::ChunkKey{0}};
+
+  static_assert(noexcept(view.local_bounds()));
+  static_assert(noexcept(view.contains_local(tess::Coord3{0, 0, 0})));
+  static_assert(noexcept(view.try_local_coord(tess::Coord3{0, 0, 0})));
+  static_assert(noexcept(view.is_boundary(tess::LocalCoord3{0, 0, 0})));
+  static_assert(noexcept(view.is_interior(tess::LocalCoord3{1, 1, 1})));
+  static_assert(noexcept(view.world_coord(tess::Coord3{0, 0, 0})));
+
+  EXPECT_TRUE(view.contains_local(tess::Coord3{0, 0, 0}));
+}
+
+TEST(TessBlock, ConstWorldChunkViewExposesCoordinateHelpers) {
+  World<Chunked3D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{42}};
+  const auto& const_world = world;
+
+  tess::for_each_chunk(
+      const_world, tess::chunk_domain(keys), tess::WritePolicy::ReadOnly,
+      [](auto view) {
+        EXPECT_EQ(view.local_coord(tess::LocalTileId{287}),
+                  (tess::LocalCoord3{15, 1, 1}));
+        EXPECT_EQ(view.local_tile_id(tess::LocalCoord3{15, 1, 1}),
+                  (tess::LocalTileId{287}));
+        EXPECT_EQ(view.world_coord(tess::LocalCoord3{15, 1, 1}),
+                  (tess::Coord3{47, 33, 17}));
+        EXPECT_EQ(view.world_coord(tess::LocalTileId{287}),
+                  (tess::Coord3{47, 33, 17}));
+        EXPECT_EQ(view.local_bounds(), (tess::Box3{
+                                           tess::Coord3{0, 0, 0},
+                                           tess::Extent3{16, 16, 8},
+                                       }));
+        EXPECT_TRUE(view.contains_local(tess::Coord3{8, 7, 4}));
+        EXPECT_EQ(view.try_local_coord(tess::Coord3{8, 7, 4}),
+                  (tess::LocalCoord3{8, 7, 4}));
+        EXPECT_FALSE(view.try_local_coord(tess::Coord3{16, 7, 4}));
+        EXPECT_TRUE(view.is_boundary(tess::LocalCoord3{15, 1, 1}));
+        EXPECT_TRUE(view.is_interior(tess::LocalCoord3{8, 7, 4}));
+        EXPECT_EQ(view.world_coord(tess::Coord3{-1, 8, 4}),
+                  (tess::Coord3{31, 40, 20}));
+      });
+}
+
 TEST(TessBlock, PrebuiltChunkDomainIterationDoesNotAllocate) {
   World<TopDown2D> world;
   const auto keys = std::vector<tess::ChunkKey>{
@@ -202,6 +598,104 @@ TEST(TessBlock, PrebuiltChunkDomainIterationDoesNotAllocate) {
   count_allocations.store(false, std::memory_order_relaxed);
 
   EXPECT_GT(sum, 0u);
+  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+}
+
+TEST(TessBlock, NestedChunkAndTileIterationDoesNotAllocate) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{
+      tess::ChunkKey{0},
+      tess::ChunkKey{4},
+      tess::ChunkKey{8},
+      tess::ChunkKey{12},
+  };
+  std::uint64_t sum = 0;
+
+  allocation_count.store(0, std::memory_order_relaxed);
+  count_allocations.store(true, std::memory_order_relaxed);
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::UniquePerChunk,
+      [&](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        view.for_each_tile([&](tess::LocalTileId id, tess::LocalCoord3 coord) {
+          terrain[id.value] =
+              static_cast<std::uint16_t>(id.value + view.key().value);
+          sum += terrain[id.value] + coord.x + coord.y + coord.z;
+        });
+      });
+  count_allocations.store(false, std::memory_order_relaxed);
+
+  EXPECT_GT(sum, 0u);
+  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+}
+
+TEST(TessBlock, PrebuiltBlockCtxNestedChunkAndTileIterationDoesNotAllocate) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{
+      tess::ChunkKey{0},
+      tess::ChunkKey{4},
+      tess::ChunkKey{8},
+      tess::ChunkKey{12},
+  };
+  const auto ctx = tess::block_ctx(world, tess::chunk_domain(keys),
+                                   tess::WritePolicy::UniquePerChunk);
+  std::uint64_t sum = 0;
+
+  allocation_count.store(0, std::memory_order_relaxed);
+  count_allocations.store(true, std::memory_order_relaxed);
+  ctx.for_each_chunk([&](auto view) {
+    auto terrain = view.template field_span<TerrainTag>();
+    view.for_each_tile([&](tess::LocalTileId id, tess::LocalCoord3 coord) {
+      terrain[id.value] =
+          static_cast<std::uint16_t>(id.value + view.key().value);
+      sum += terrain[id.value] + coord.x + coord.y + coord.z;
+    });
+  });
+  count_allocations.store(false, std::memory_order_relaxed);
+
+  EXPECT_GT(sum, 0u);
+  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+}
+
+TEST(TessBlock, NestedBoundaryPredicateIterationDoesNotAllocate) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{
+      tess::ChunkKey{0},
+      tess::ChunkKey{4},
+      tess::ChunkKey{8},
+      tess::ChunkKey{12},
+  };
+  std::uint64_t boundary_count = 0;
+  std::uint64_t interior_count = 0;
+  std::uint64_t sum = 0;
+
+  allocation_count.store(0, std::memory_order_relaxed);
+  count_allocations.store(true, std::memory_order_relaxed);
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::UniquePerChunk,
+      [&](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        view.for_each_tile([&](tess::LocalTileId id, tess::LocalCoord3 coord) {
+          terrain[id.value] =
+              static_cast<std::uint16_t>(id.value + view.key().value);
+          if (view.is_boundary(coord)) {
+            ++boundary_count;
+          } else {
+            ++interior_count;
+          }
+          const auto candidate = tess::Coord3{
+              static_cast<std::int64_t>(coord.x),
+              static_cast<std::int64_t>(coord.y),
+              static_cast<std::int64_t>(coord.z),
+          };
+          sum += terrain[id.value] + view.contains_local(candidate);
+        });
+      });
+  count_allocations.store(false, std::memory_order_relaxed);
+
+  EXPECT_GT(sum, 0u);
+  EXPECT_EQ(boundary_count, 92u * keys.size());
+  EXPECT_EQ(interior_count, 420u * keys.size());
   EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
 }
 

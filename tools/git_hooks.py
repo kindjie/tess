@@ -243,8 +243,9 @@ def check_token_limits() -> int:
         [
             uv,
             "run",
-            "--with",
-            "tiktoken",
+            "--frozen",
+            "--group",
+            "dev",
             "python",
             str(SCRIPT_PATH),
             "_token-check",

@@ -8,7 +8,7 @@ clean before CI sees them.
 - Git 2.54 or newer for config-defined hooks.
 - Python 3.10 or newer.
 - `clang-format` and `git-clang-format` for C++ formatting checks.
-- `uv` for the staged-file `tiktoken` size check.
+- `uv` for the locked staged-file `tiktoken` size check.
 - CMake for pre-push build and test checks.
 
 Older Git versions are supported through `core.hooksPath`.
@@ -40,6 +40,10 @@ available. Otherwise it sets `core.hooksPath` to `tools/git-hooks`.
 
 Hooks do not rewrite files or staged content. Fix the reported issue, stage the
 result, and retry the Git command.
+
+The token limit check runs through `uv run --frozen --group dev` so it uses the
+checked-in development dependency lock instead of resolving packages during the
+commit.
 
 ## Bypass
 

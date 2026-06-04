@@ -19,6 +19,18 @@ set(
   CACHE FILEPATH "Thresholds for storage benchmark regressions"
 )
 
+set(
+  TESS_BLOCK_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/block.json"
+  CACHE FILEPATH "Thresholds for block benchmark regressions"
+)
+
+set(
+  TESS_BENCHMARK_BASELINE_REPETITIONS
+  "10"
+  CACHE STRING "Repeated samples for non-gating CI benchmark baselines"
+)
+
 if(Python3_Interpreter_FOUND)
   add_custom_target(
     tess_bench_key_thresholds
@@ -53,7 +65,52 @@ if(Python3_Interpreter_FOUND)
     COMMENT "Running storage benchmark threshold checks"
     VERBATIM
   )
+
+  add_custom_target(
+    tess_bench_block_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=block/.*
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/block.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/block.json
+      --thresholds ${TESS_BLOCK_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running block benchmark threshold checks"
+    VERBATIM
+  )
 endif()
+
+add_custom_target(
+  tess_bench_ci_baselines
+  COMMAND
+    "${CMAKE_COMMAND}" -E make_directory
+    ${CMAKE_CURRENT_BINARY_DIR}/ci-baselines
+  COMMAND
+    tess_bench
+    --benchmark_filter=key/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/key.json
+    --benchmark_out_format=json
+  COMMAND
+    tess_bench
+    --benchmark_filter=storage/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/storage.json
+    --benchmark_out_format=json
+  COMMAND
+    tess_bench
+    --benchmark_filter=block/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/block.json
+    --benchmark_out_format=json
+  DEPENDS tess_bench
+  COMMENT "Collecting non-gating CI benchmark baseline samples"
+  VERBATIM
+)
 
 if(BUILD_TESTING)
   add_test(
@@ -85,6 +142,30 @@ if(BUILD_TESTING)
     COMMAND
       tess_bench
       --benchmark_filter=storage/world_metadata_lookup_by_key
+      --benchmark_min_time=0.001
+  )
+
+  add_test(
+    NAME tess_bench_block_smoke
+    COMMAND
+      tess_bench
+      --benchmark_filter=block/chunk_tile_iteration_2d
+      --benchmark_min_time=0.001
+  )
+
+  add_test(
+    NAME tess_bench_block_context_smoke
+    COMMAND
+      tess_bench
+      --benchmark_filter=block/context_iteration_2d
+      --benchmark_min_time=0.001
+  )
+
+  add_test(
+    NAME tess_bench_block_boundary_smoke
+    COMMAND
+      tess_bench
+      --benchmark_filter=block/chunk_boundary_scan_2d
       --benchmark_min_time=0.001
   )
 endif()
