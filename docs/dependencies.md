@@ -66,6 +66,23 @@ Used for editor diagnostics and navigation. Start clangd with
 default developer compilation database in `build/dev`, and `.clang-tidy`
 selects the clang-tidy checks.
 
+## Cppcheck
+
+- Version: `2.20.0`
+- Manual: https://cppcheck.sourceforge.io/manual.html
+- CMake target property:
+  https://cmake.org/cmake/help/latest/prop_tgt/LANG_CPPCHECK.html
+
+Used by the opt-in `dev-cppcheck` preset through the `CXX_CPPCHECK` target
+property. Tess sets the property only on local test and benchmark targets so
+third-party targets are not analyzed by project policy. The preset enables
+`warning` and `portability` checks; cppcheck `style` and `performance` checks
+are intentionally deferred because early runs mostly report low-signal advice
+for small value types and static member functions in this template-heavy API.
+The preset narrowly suppresses cppcheck `internalError` for
+`include/tess/core/shape.h`, where cppcheck 2.20.0 fails while analyzing
+`ShapeTraits` non-type template parameter constants.
+
 ## Clang Sanitizers
 
 - AddressSanitizer documentation:
