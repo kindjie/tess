@@ -34,9 +34,9 @@
   spans.
 - `tess_path_test`: verifies the MVP A* path foundation, including top-down 2D
   paths around blocked tiles, invalid start and goal reporting, no-path
-  reporting, direct-path and uniform-cost fast paths, vertical 2D and chunked
-  3D coordinate support, and allocation-free repeated queries with pre-reserved
-  path scratch.
+  reporting, direct-path and uniform-cost fast paths across top-down 2D,
+  vertical 2D, and 3D layouts, coordinate support, and allocation-free repeated
+  queries with pre-reserved path scratch.
 - `tess_diagnostics_default_test`: verifies public diagnostic macros are
   disabled by default and do not evaluate arguments, including generic events.
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate

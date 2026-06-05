@@ -235,3 +235,34 @@ deferred for scope reasons. Keep entries short and concrete:
   blocked.
 - Retry conditions: Reconsider only if path queries gain cached topology or
   compact per-plane metadata outside the current local-A* scope.
+
+## 2026-06-05 - A* Vertical 2D Gap Generalization
+
+- Area: Degenerate-axis 2D fast paths and benchmark coverage.
+- Hypothesis: The accepted top-down single-plane and forced-gap fast paths
+  should apply to any 2D shape, including vertical YZ layouts, because the
+  proof depends on the two active axes rather than named x/y axes.
+- Evidence: New vertical 512x512 benchmarks match top-down behavior. Local
+  release runs reported `path/astar_vertical_wall_gap_512x512` around 5.9 us
+  and `path/astar_vertical_striped_maze_512x512` around 0.18 ms, both with zero
+  heap pushes/pops in diagnostics.
+- Decision: Accepted. The 2D gap fast paths now select active axes from shape
+  traits instead of assuming top-down XY layout.
+- Retry conditions: Revisit if non-axis movement, movement classes, weighted
+  costs, or reservations make the current unit-cost proof insufficient.
+
+## 2026-06-05 - A* 3D Single-Plane Gap
+
+- Area: Uniform-cost fast path for simple 3D slab-with-gap requests.
+- Hypothesis: If a direct 3D route is blocked by an axis plane, scanning that
+  plane for the cheapest passable crossing and verifying a concrete Manhattan
+  route through it can prove an optimal path without heap-backed A*.
+- Evidence: A new `path/astar_slab_gap_3d_64x64x16` benchmark initially took
+  about 1.3 ms and expanded about 32.8k A* nodes. After the fast path it runs
+  around 5.3 us with zero heap pushes/pops. The open 3D benchmark stays below
+  1 us.
+- Decision: Accepted for the current unit-cost axis-adjacent movement model.
+  The concrete route through the chosen plane crossing is still checked tile by
+  tile; failures fall back to A*.
+- Retry conditions: Revisit when 3D multi-plane portals, stairs, movement
+  classes, reservations, dynamic blockers, or weighted costs enter scope.

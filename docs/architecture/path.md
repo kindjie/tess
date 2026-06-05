@@ -43,11 +43,13 @@ model. For axis-aligned requests, a clear one-tile parallel detour is also
 returned before A* because its Manhattan+2 cost is optimal when the straight
 line is blocked. For top-down 2D requests blocked by a non-separating axis
 plane, the implementation can scan that plane for the cheapest passable gap and
-return a verified Manhattan route through it. It also handles top-down 2D
-vertical forced-gap sequences by walking toward the goal, scanning an x-plane
-only when the next x step is blocked, and accepting only fully open planes or
-planes with exactly one passable gap. Other non-separating blockers fall back
-to normal A*.
+return a verified Manhattan route through it; the same logic applies to
+vertical 2D layouts. It also handles 2D forced-gap sequences by walking toward
+the goal, scanning a barrier line only when the next progress step is blocked,
+and accepting only fully open lines or lines with exactly one passable gap. In
+3D, a blocked direct route can scan the blocked axis plane for the cheapest
+passable crossing and return a verified Manhattan route through it. Other
+non-separating blockers fall back to normal A*.
 
 The returned path span points into the supplied `PathScratch` and remains valid
 until the next path query or scratch clear/reserve operation. Scratch keeps

@@ -31,6 +31,10 @@ using PathScaleShape =
     tess::Shape<tess::Extent3{512, 512, 1}, tess::Extent3{32, 32, 1}>;
 using PathLargeShape =
     tess::Shape<tess::Extent3{1024, 1024, 1}, tess::Extent3{32, 32, 1}>;
+using PathVerticalScaleShape =
+    tess::Shape<tess::Extent3{1, 512, 512}, tess::Extent3{1, 32, 32}>;
+using Path3DShape =
+    tess::Shape<tess::Extent3{64, 64, 16}, tess::Extent3{16, 16, 4}>;
 
 struct TerrainTag {};
 struct CostTag {};
@@ -54,6 +58,9 @@ using PathRealisticWorld =
     tess::AlwaysResidentWorld<PathRealisticShape, PathSchema>;
 using PathScaleWorld = tess::AlwaysResidentWorld<PathScaleShape, PathSchema>;
 using PathLargeWorld = tess::AlwaysResidentWorld<PathLargeShape, PathSchema>;
+using PathVerticalScaleWorld =
+    tess::AlwaysResidentWorld<PathVerticalScaleShape, PathSchema>;
+using Path3DWorld = tess::AlwaysResidentWorld<Path3DShape, PathSchema>;
 
 void record_path_counters(benchmark::State& state,
                           const tess::PathResult& result) {
@@ -565,12 +572,44 @@ void block_vertical_wall(World& world, std::int64_t x, std::int64_t gap_y) {
   }
 }
 
+template <typename World>
+void block_yz_wall(World& world, std::int64_t y, std::int64_t gap_z) {
+  using Shape = typename World::shape_type;
+  for (std::int64_t z = 0; z < static_cast<std::int64_t>(Shape::size.z); ++z) {
+    if (z != gap_z) {
+      world.template field<PassableTag>(tess::Coord3{0, y, z}) = 0;
+    }
+  }
+}
+
+template <typename World>
+void block_3d_x_slab(World& world, std::int64_t x, tess::Coord3 gap) {
+  using Shape = typename World::shape_type;
+  for (std::int64_t z = 0; z < static_cast<std::int64_t>(Shape::size.z); ++z) {
+    for (std::int64_t y = 0; y < static_cast<std::int64_t>(Shape::size.y);
+         ++y) {
+      if (y != gap.y || z != gap.z) {
+        world.template field<PassableTag>(tess::Coord3{x, y, z}) = 0;
+      }
+    }
+  }
+}
+
 void carve_striped_maze(PathScaleWorld& world) {
   for (std::int64_t x = 8;
        x < static_cast<std::int64_t>(PathScaleShape::size.x); x += 8) {
     const auto gap_y =
         x % 16 == 0 ? PathScaleShape::size.y - 1 : std::uint64_t{0};
     block_vertical_wall(world, x, static_cast<std::int64_t>(gap_y));
+  }
+}
+
+void carve_vertical_striped_maze(PathVerticalScaleWorld& world) {
+  for (std::int64_t y = 8;
+       y < static_cast<std::int64_t>(PathVerticalScaleShape::size.y); y += 8) {
+    const auto gap_z =
+        y % 16 == 0 ? PathVerticalScaleShape::size.z - 1 : std::uint64_t{0};
+    block_yz_wall(world, y, static_cast<std::int64_t>(gap_z));
   }
 }
 
@@ -921,6 +960,127 @@ void BM_path_astar_striped_maze_1024x1024(benchmark::State& state) {
   TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
 }
 
+void BM_path_astar_vertical_open_512x512(benchmark::State& state) {
+  PathVerticalScaleWorld world;
+  fill_path_passable(world, 1);
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathVerticalScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::astar_path<PathVerticalScaleWorld, PassableTag>(
+            world,
+            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{0, 511, 511}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_astar_vertical_wall_gap_512x512(benchmark::State& state) {
+  PathVerticalScaleWorld world;
+  fill_path_passable(world, 1);
+  block_yz_wall(world, 256, 511);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathVerticalScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::astar_path<PathVerticalScaleWorld, PassableTag>(
+            world,
+            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{0, 511, 0}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_astar_vertical_striped_maze_512x512(benchmark::State& state) {
+  PathVerticalScaleWorld world;
+  fill_path_passable(world, 1);
+  carve_vertical_striped_maze(world);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathVerticalScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::astar_path<PathVerticalScaleWorld, PassableTag>(
+            world,
+            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{0, 511, 511}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_astar_open_3d_64x64x16(benchmark::State& state) {
+  Path3DWorld world;
+  fill_path_passable(world, 1);
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<Path3DShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::astar_path<Path3DWorld, PassableTag>(
+            world,
+            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 15}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_astar_slab_gap_3d_64x64x16(benchmark::State& state) {
+  Path3DWorld world;
+  fill_path_passable(world, 1);
+  block_3d_x_slab(world, 32, tess::Coord3{32, 63, 15});
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<Path3DShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::astar_path<Path3DWorld, PassableTag>(
+            world,
+            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 0, 0}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
 void BM_path_astar_batch_100_open_512x512(benchmark::State& state) {
   PathScaleWorld world;
   fill_path_passable(world, 1);
@@ -1079,6 +1239,15 @@ BENCHMARK(BM_path_astar_no_path_1024x1024)
     ->Name("path/astar_no_path_1024x1024");
 BENCHMARK(BM_path_astar_striped_maze_1024x1024)
     ->Name("path/astar_striped_maze_1024x1024");
+BENCHMARK(BM_path_astar_vertical_open_512x512)
+    ->Name("path/astar_vertical_open_512x512");
+BENCHMARK(BM_path_astar_vertical_wall_gap_512x512)
+    ->Name("path/astar_vertical_wall_gap_512x512");
+BENCHMARK(BM_path_astar_vertical_striped_maze_512x512)
+    ->Name("path/astar_vertical_striped_maze_512x512");
+BENCHMARK(BM_path_astar_open_3d_64x64x16)->Name("path/astar_open_3d_64x64x16");
+BENCHMARK(BM_path_astar_slab_gap_3d_64x64x16)
+    ->Name("path/astar_slab_gap_3d_64x64x16");
 BENCHMARK(BM_path_astar_batch_100_open_512x512)
     ->Name("path/astar_batch_100_open_512x512");
 BENCHMARK(BM_path_astar_batch_100_mixed_512x512)
