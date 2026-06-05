@@ -133,6 +133,17 @@ Records meaningful design changes from the original TDDs.
 - Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
   `bench/tess_bench.cc`
 
+## 2026-06-04 - Caller-Owned Block Scratch
+
+- Changed: Added `BlockScratch` as reusable caller-owned bump storage and
+  allowed policy-typed `BlockCtx` instances to carry an optional non-owning
+  scratch pointer.
+- Reason: M3 block algorithms need allocation-free temporary storage during
+  serial chunk and tile iteration before planner-owned arenas, diagnostics,
+  worker pools, or parallel scheduling exist.
+- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`
+
 ## 2026-06-04 - Local Warning and Analysis Presets
 
 - Changed: Added project-local warning flags, warnings-as-errors,
