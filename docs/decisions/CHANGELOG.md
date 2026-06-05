@@ -29,15 +29,15 @@ Records meaningful design changes from the original TDDs.
 ## 2026-06-05 - Path Direct Fast-Path Prechecks
 
 - Changed: Pathfinding now tries shape-relevant direct Manhattan axis orders,
-  simple axis-aligned detours, verified top-down 2D single-plane gap routes,
-  and vertical forced-gap sequences before heap-backed A*, and rejects full
-  axis-plane barriers before expanding A* nodes.
+  simple axis-aligned detours, verified 2D and 3D plane-gap routes, and 2D
+  forced-gap sequences before heap-backed A*, and rejects full axis-plane
+  barriers before expanding A* nodes.
 - Reason: Uniform-cost direct paths and fully separating blocked planes can be
   resolved exactly without general A* search. Axis-aligned one-tile parallel
   detours and verified routes through a passable plane gap are also optimal
-  under the current unit-cost movement model. Forced single-gap vertical
-  barriers have fixed crossings, while non-matching cases preserve normal A*
-  fallback behavior.
+  under the current unit-cost movement model. Forced single-gap barriers have
+  fixed crossings, while non-matching cases preserve normal A* fallback
+  behavior.
 - Affected docs: `docs/architecture/path.md`,
   `docs/planning/benchmark-plan.md`,
   `docs/planning/optimization-log.md`
