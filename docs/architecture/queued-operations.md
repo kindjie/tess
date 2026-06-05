@@ -1,0 +1,92 @@
+# Queued Operations Foundation
+
+The current queued-operations layer is the first M4 scaffold over the existing
+storage and block APIs. It lives in `include/tess/ops/queued.h` and is exported
+by `tess/tess.h`.
+
+## Public Surface
+
+- `FrameOps` owns the operations submitted for one planning frame.
+- `OpHandle` is a stable handle assigned when an operation is enqueued.
+- `OpId` is assigned in enqueue order. The current handle value and id value
+  both start at zero and advance together, but they remain separate public
+  types.
+- `Priority` records broad planning priority: `Immediate`,
+  `GameplayCritical`, `VisibleSoon`, `Background`, and `Maintenance`.
+- `BudgetPolicy` records basic budget intent: `MustRun`, `CanDefer`,
+  `CanSkipIfSuperseded`, and `BudgetedIncremental`.
+- `OperationStatus` records per-operation planner outcome. The current
+  statuses are `Planned`, `InvalidWritePolicy`, and `InvalidDomain`.
+- `DomainDesc` owns a minimal operation domain descriptor:
+  `explicit_chunks(keys)`, `dirty_chunks(mask)`, `active_chunks(mask)`, or
+  `resident_chunks()`.
+- `QueuedOperation` stores the submitted operation kind, handle, id, domain,
+  `WritePolicy`, priority, budget policy, and `std::source_location`.
+- `ExecutionPlan` stores planned operations in enqueue order. Each planned
+  operation contains the expanded chunk-key vector.
+- `ExecutionReport` stores one report entry per queued operation and the plan
+  entries for operations that passed validation.
+
+The first submitted operation category is `FrameOps::update_field(...)`. It
+records field/block-style work intent only; it does not accept callbacks or
+invoke kernels.
+
+## Planning Behavior
+
+`plan_operations(world, ops)` validates and expands queued operations over the
+current always-resident world metadata.
+
+Validation currently covers:
+
+- invalid `WritePolicy` enum values
+- explicit chunk keys outside the world
+
+Expansion currently covers:
+
+- explicit chunks copied into deterministic ascending `ChunkKey` order
+- dirty chunks discovered through `world.dirty_chunks(mask)`
+- active chunks discovered through `world.active_chunks(mask)`
+- all chunks in an always-resident world for `resident_chunks()`
+
+Planning preserves enqueue order for reports and successful plan entries.
+Operations with invalid write policies or invalid domains still receive report
+entries, but they do not produce plan entries.
+
+Inspecting existing queued operations, reports, and planned operations returns
+non-owning spans and does not allocate. Enqueueing and domain/report expansion
+may allocate because `FrameOps`, explicit domains, reports, and planned chunk
+lists own their storage.
+
+## Deliberate Limits
+
+This slice is a planner scaffold only. It intentionally does not implement:
+
+- callbacks, kernel invocation, executor integration, or result channels
+- barrier insertion, batching heuristics, async work, or worker scheduling
+- topology, pathfinding, movement, residency transitions, or GPU selection
+- work-contract or maintenance-scheduler semantics
+- hazard analysis beyond validating the current `WritePolicy` enum value
+- sparse residency or non-resident chunk loading
+- rich diagnostics beyond per-op status and captured source location
+
+The Work Contracts addendum remains an experiment proposal. Current queued ops
+use the existing dirty/active metadata scans as the baseline and do not add
+coalescing scheduler handles or long-lived maintenance tasks.
+
+## TDD Divergences
+
+The historical queued-operations TDD describes a much larger public planning
+and execution system. This M4 slice keeps only the stable foundation needed by
+later work:
+
+- `FrameOps::update_field(...)` records intent without a kernel type.
+- `DomainDesc` only supports chunk-domain descriptors that can be resolved by
+  current always-resident storage.
+- `ExecutionPlan` is only an ordered list of expanded chunk keys per operation,
+  not a phase graph.
+- `ExecutionReport` reports validation status, chunk count, and source
+  location, not backend choice, hazards, versions, or result channels.
+
+Those omissions are intentional so future scheduler, topology, pathing, and
+diagnostics slices can be added against a deterministic queue and domain
+foundation.

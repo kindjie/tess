@@ -26,3 +26,9 @@ target_link_libraries(tess_block_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_block_test)
 
 gtest_discover_tests(tess_block_test)
+
+add_executable(tess_queued_test tess_queued_test.cc)
+target_link_libraries(tess_queued_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_queued_test)
+
+gtest_discover_tests(tess_queued_test)
