@@ -13,9 +13,8 @@ The current path layer is a minimal always-resident A* foundation. It lives in
   returned path. `reserve_nodes(count)` prepares storage for allocation-free
   repeated queries when capacity is sufficient.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs deterministic
-  A* over the existing always-resident world storage. The passability field is
-  read through `world.try_field<PassableTag>(coord)` and treated as
-  boolean-like.
+  pathfinding over the existing always-resident world storage. The passability
+  field is treated as boolean-like.
 
 ## Behavior
 
@@ -34,6 +33,13 @@ Costs are unit-weighted. The heuristic is Manhattan distance. Tie-breaking is
 deterministic by lower total score, then higher path cost for equal-score
 nodes, then tile-key order. Preferring higher path cost on equal-score nodes
 avoids open-grid wavefront expansion while preserving shortest paths.
+
+Before entering heap-backed A*, the implementation probes the direct Manhattan
+path in fixed axis order. If that route is fully passable, it returns the
+direct shortest path immediately. If the direct probe hits a blocked tile whose
+axis plane is fully blocked, it returns `NoPath` immediately because the plane
+separates start from goal under the current axis-adjacent movement model.
+Non-separating blockers fall back to normal A*.
 
 The returned path span points into the supplied `PathScratch` and remains valid
 until the next path query or scratch clear/reserve operation. Scratch keeps

@@ -122,6 +122,26 @@ TEST(TessPath, ReportsNoPathWhenGoalIsCutOff) {
   EXPECT_TRUE(result.path.empty());
 }
 
+TEST(TessPath, RejectsFullSeparatingBarrierBeforeAStar) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  for (std::int64_t y = 0; y < 8; ++y) {
+    world.template field<PassableTag>(tess::Coord3{4, y, 0}) = false;
+  }
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+
+  const auto result = tess::astar_path<decltype(world), PassableTag>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}},
+      scratch);
+
+  EXPECT_EQ(result.status, tess::PathStatus::NoPath);
+  EXPECT_EQ(result.expanded_nodes, 0u);
+  EXPECT_EQ(result.reached_nodes, 0u);
+  EXPECT_TRUE(result.path.empty());
+}
+
 TEST(TessPath, SupportsVertical2DCoordinates) {
   tess::AlwaysResidentWorld<Vertical2D, Schema> world;
   fill_passable(world, true);
