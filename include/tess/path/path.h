@@ -44,6 +44,7 @@ class PathScratch {
 
   void reserve_nodes(std::size_t node_count) {
     open_.reserve(node_count);
+    open_next_.reserve(node_count);
     generation_.reserve(node_count);
     state_.reserve(node_count);
     g_.reserve(node_count);
@@ -55,6 +56,7 @@ class PathScratch {
   void clear() noexcept {
     advance_epoch();
     open_.clear();
+    open_next_.clear();
     touched_.clear();
     path_.clear();
   }
@@ -99,6 +101,7 @@ class PathScratch {
   }
 
   std::vector<OpenNode> open_;
+  std::vector<OpenNode> open_next_;
   std::vector<std::uint32_t> generation_;
   std::uint32_t epoch_ = 1;
   std::vector<std::uint8_t> state_;
@@ -853,20 +856,22 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
   scratch.touch_node(start);
   TESS_DIAG_EVENT(path_touch_node);
   TESS_DIAG_EVENT(path_heuristic);
+  auto current_f = detail::manhattan(request.start, request.goal);
   scratch.open_.push_back(PathScratch::OpenNode{
       start,
       0,
-      detail::manhattan(request.start, request.goal),
+      current_f,
   });
   TESS_DIAG_EVENT(path_heap_push);
-  std::push_heap(scratch.open_.begin(), scratch.open_.end(),
-                 detail::open_node_less);
 
   std::size_t expanded_nodes = 0;
-  while (!scratch.open_.empty()) {
+  while (!scratch.open_.empty() || !scratch.open_next_.empty()) {
+    if (scratch.open_.empty()) {
+      current_f += 2;
+      scratch.open_.swap(scratch.open_next_);
+    }
+
     TESS_DIAG_EVENT(path_heap_pop);
-    std::pop_heap(scratch.open_.begin(), scratch.open_.end(),
-                  detail::open_node_less);
     const auto current = scratch.open_.back();
     scratch.open_.pop_back();
 
@@ -930,10 +935,12 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
                 tentative_g,
                 tentative_g + detail::manhattan(neighbor, request.goal),
             };
-            scratch.open_.push_back(updated_node);
+            if (updated_node.f <= current_f) {
+              scratch.open_.push_back(updated_node);
+            } else {
+              scratch.open_next_.push_back(updated_node);
+            }
             TESS_DIAG_EVENT(path_heap_push);
-            std::push_heap(scratch.open_.begin(), scratch.open_.end(),
-                           detail::open_node_less);
           }
         });
   }
