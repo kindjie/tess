@@ -26,6 +26,16 @@ Records meaningful design changes from the original TDDs.
 - Affected code: `include/tess/ops/queued.h`, `include/tess/tess.h`,
   `tests/tess_queued_test.cc`, `tests/CMakeLists.txt`
 
+## 2026-06-05 - Queued Operation Diagnostics
+
+- Changed: Added structured operation failure reasons, diagnostic access
+  metadata, invalid explicit-chunk detail, and deterministic report lookup and
+  count helpers.
+- Reason: The queued planner needs testable diagnostics and a hazard-metadata
+  foothold before adding executors, barriers, batching, or scheduler behavior.
+- Affected docs: `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
+
 ## 2026-06-01 - Documentation Model
 
 - Changed: TDDs are treated as historical design intent, while maintained
