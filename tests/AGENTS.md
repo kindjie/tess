@@ -26,6 +26,7 @@
   diagnostic access metadata, untyped field access mask propagation,
   structured invalid write-policy, invalid field-access, and explicit-domain
   rejection, report lookup/count helpers, mixed valid/invalid report ordering,
-  plan-to-block adapters, policy mismatch rejection, allocation-free prebuilt
-  planned block iteration, source-location capture, and allocation-free
-  inspection of already-built queue/report/plan spans.
+  deterministic field-mask hazard validation, plan-to-block adapters, policy
+  mismatch rejection, allocation-free prebuilt planned block iteration,
+  source-location capture, and allocation-free inspection of already-built
+  queue/report/plan spans.
