@@ -167,7 +167,44 @@ schema, random seed, thread count, diagnostic level.
 
 Console summary, JSON, CSV. Optional Chrome trace/flamegraph markers and plot scripts.
 
-## 23. Regression thresholds
+## 23. Profiling workflow
+
+Use the `bench-profile` preset for local native profiler captures. It builds the
+benchmark binary with optimized code, debug information, and frame pointers so
+sampled profiles can be symbolicated without changing the normal `bench`
+regression preset.
+
+Build the profiling binary first, then capture the default 1024x1024 A*
+benchmark without starting a local profiler viewer:
+
+```sh
+cmake --preset bench-profile
+cmake --build --preset bench-profile --target tess_bench
+tools/profile_benchmark.sh \
+  --output "$TMPDIR/tess-astar-1024-profile.json.gz"
+# Run the printed samply command as its own separate shell command.
+```
+
+The helper prints a `samply record --save-only` command with presymbolication
+enabled. Pass an output path in a scratch directory so generated profiles and
+symbol sidecars do not land in the repository. Run the printed command as its
+own separate shell command so `samply` is launched directly by the shell. In
+managed macOS sandbox environments, launching `samply` from an intermediate
+helper process, or immediately after CMake in the same shell command, can fail
+with `Unknown(1100)`. Load the saved profile explicitly when an interactive
+view is needed:
+
+```sh
+samply load "$TMPDIR/tess-astar-1024-profile.json.gz"
+```
+
+Pass a different benchmark filter or extra Google Benchmark arguments with:
+
+```sh
+tools/profile_benchmark.sh --filter 'path/.*' -- --benchmark_repetitions=1
+```
+
+## 24. Regression thresholds
 
 Key conversion benchmarks have threshold scaffolding in
 `bench/thresholds/key-conversions.json`. Storage benchmarks have matching
