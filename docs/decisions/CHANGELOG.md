@@ -56,6 +56,16 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
 - Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
 
+## 2026-06-05 - Basic Queued Hazard Validation
+
+- Changed: Added deterministic field-mask hazard validation across overlapping
+  planned chunk domains. Later conflicting operations are rejected with
+  conflict handle/id and conflict-mask diagnostics.
+- Reason: The queued planner should catch obvious write/write and read/write
+  conflicts before adding barriers, reordering, batching, or execution.
+- Affected docs: `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
+
 ## 2026-06-01 - Documentation Model
 
 - Changed: TDDs are treated as historical design intent, while maintained
