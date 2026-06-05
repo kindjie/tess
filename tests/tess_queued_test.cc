@@ -357,6 +357,126 @@ TEST(TessQueued, MixedReportsPreserveOrderAndCountFailures) {
   EXPECT_EQ(report.plan().operations()[0].handle, valid);
 }
 
+TEST(TessQueued, DisjointChunksWithSameWriteMaskDoNotConflict) {
+  World world;
+  tess::FrameOps ops;
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{1}};
+  const std::vector<tess::ChunkKey> second_keys{tess::ChunkKey{2}};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(second_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+
+  const auto report = tess::plan_operations(world, ops);
+
+  EXPECT_TRUE(report.ok());
+  EXPECT_EQ(report.planned_count(), 2u);
+  ASSERT_EQ(report.plan().operations().size(), 2u);
+  EXPECT_EQ(report.plan().operations()[0].chunks[0], (tess::ChunkKey{1}));
+  EXPECT_EQ(report.plan().operations()[1].chunks[0], (tess::ChunkKey{2}));
+}
+
+TEST(TessQueued, OverlappingWriteMasksConflictOnSameChunk) {
+  World world;
+  tess::FrameOps ops;
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{
+      tess::ChunkKey{1},
+      tess::ChunkKey{3},
+  };
+  const std::vector<tess::ChunkKey> second_keys{tess::ChunkKey{3}};
+
+  const auto first =
+      ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                       writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto second =
+      ops.update_field(tess::DomainDesc::explicit_chunks(second_keys),
+                       writes_terrain, tess::WritePolicy::UniquePerChunk);
+
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_FALSE(report.ok());
+  EXPECT_EQ(report.planned_count(), 1u);
+  EXPECT_EQ(report.failed_count(), 1u);
+  ASSERT_NE(report.find(second), nullptr);
+  EXPECT_EQ(report.find(second)->status, tess::OperationStatus::HazardConflict);
+  EXPECT_EQ(report.find(second)->failure,
+            tess::OperationFailure::FieldHazardConflict);
+  EXPECT_TRUE(report.find(second)->has_conflict);
+  EXPECT_EQ(report.find(second)->conflict_handle, first);
+  EXPECT_EQ(report.find(second)->conflict_id, (tess::OpId{0}));
+  EXPECT_EQ(report.find(second)->conflict_mask, DirtyTerrain);
+  ASSERT_EQ(report.plan().operations().size(), 1u);
+  EXPECT_EQ(report.plan().operations()[0].handle, first);
+}
+
+TEST(TessQueued, DisjointFieldMasksOnSameChunksDoNotConflict) {
+  World world;
+  tess::FrameOps ops;
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  constexpr auto writes_cost = tess::FieldAccessDesc{
+      0,
+      DirtyCost,
+      DirtyCost,
+  };
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(), writes_terrain,
+                         tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(), writes_cost,
+                         tess::WritePolicy::UniquePerChunk);
+
+  const auto report = tess::plan_operations(world, ops);
+
+  EXPECT_TRUE(report.ok());
+  EXPECT_EQ(report.planned_count(), 2u);
+}
+
+TEST(TessQueued, ReadWriteOverlapConflictsWithoutBarrier) {
+  World world;
+  tess::FrameOps ops;
+  constexpr auto reads_terrain = tess::FieldAccessDesc{
+      DirtyTerrain,
+      0,
+      0,
+  };
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+
+  const auto reader =
+      ops.update_field(tess::DomainDesc::resident_chunks(), reads_terrain,
+                       tess::WritePolicy::ReadOnly);
+  const auto writer =
+      ops.update_field(tess::DomainDesc::resident_chunks(), writes_terrain,
+                       tess::WritePolicy::UniquePerTile);
+
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_FALSE(report.ok());
+  EXPECT_EQ(report.planned_count(), 1u);
+  EXPECT_EQ(report.failed_count(), 1u);
+  ASSERT_NE(report.find(writer), nullptr);
+  EXPECT_EQ(report.find(writer)->status, tess::OperationStatus::HazardConflict);
+  EXPECT_EQ(report.find(writer)->conflict_handle, reader);
+  EXPECT_EQ(report.find(writer)->conflict_mask, DirtyTerrain);
+}
+
 TEST(TessQueued, PlanOperationsPreserveEnqueueOrderAcrossDomains) {
   World world;
   tess::FrameOps ops;

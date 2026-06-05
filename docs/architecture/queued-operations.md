@@ -16,10 +16,12 @@ by `tess/tess.h`.
 - `BudgetPolicy` records basic budget intent: `MustRun`, `CanDefer`,
   `CanSkipIfSuperseded`, and `BudgetedIncremental`.
 - `OperationStatus` records per-operation planner outcome. The current
-  statuses are `Planned`, `InvalidWritePolicy`, and `InvalidDomain`.
+  statuses are `Planned`, `InvalidWritePolicy`, `InvalidDomain`,
+  `InvalidFieldAccess`, and `HazardConflict`.
 - `OperationFailure` records the stable reason for an invalid operation. The
   current reasons are `InvalidWritePolicyValue` and
-  `ExplicitChunkOutOfRange`.
+  `ExplicitChunkOutOfRange`, `ReadOnlyWriteMask`, and
+  `FieldHazardConflict`.
 - `DomainDesc` owns a minimal operation domain descriptor:
   `explicit_chunks(keys)`, `dirty_chunks(mask)`, `active_chunks(mask)`, or
   `resident_chunks()`.
@@ -61,6 +63,7 @@ Validation currently covers:
 - invalid `WritePolicy` enum values
 - explicit chunk keys outside the world
 - `ReadOnly` operations that declare nonzero field write masks
+- deterministic field hazards against earlier successfully planned operations
 
 Expansion currently covers:
 
@@ -85,6 +88,10 @@ Invalid operation reports include `OperationFailure`. Invalid explicit chunk
 domains also include the first out-of-range `ChunkKey` as diagnostic detail.
 Invalid read-only write-mask reports include the submitted `FieldAccessDesc` so
 callers can diagnose the bad declaration.
+Hazard reports include the earlier conflicting operation handle/id and the
+overlapping field mask. The planner does not reorder operations or insert
+barriers; it rejects the later conflicting operation and keeps the earlier
+planned operation.
 
 The plan-to-block adapter is intentionally non-owning. The planned operation
 must outlive any `ChunkDomain` or `BlockCtx` produced from it, because those
@@ -107,8 +114,8 @@ This slice is a planner scaffold only. It intentionally does not implement:
 - work-contract or maintenance-scheduler semantics
 - field tag reflection, typed read/write sets, or automatic dirty-flag
   mutation
-- hazard analysis beyond recording diagnostic access metadata, validating the
-  current `WritePolicy` enum value, and rejecting read-only write masks
+- hazard analysis beyond deterministic same-plan field-mask conflicts over
+  overlapping chunk domains
 - sparse residency or non-resident chunk loading
 - rich diagnostics beyond per-op status, failure reason, limited detail, access
   metadata, and captured source location
@@ -130,8 +137,8 @@ later work:
 - `ExecutionPlan` is only an ordered list of expanded chunk keys per operation,
   not a phase graph.
 - `ExecutionReport` reports validation status, chunk count, and source
-  location plus limited diagnostics, not backend choice, solved hazards,
-  versions, or result channels.
+  location plus limited diagnostics, not backend choice, solved/reordered
+  hazards, versions, or result channels.
 - The plan-to-block adapter only exposes successful planned chunk domains to
   the existing serial block API. It does not execute queued intent by itself.
 

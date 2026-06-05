@@ -55,6 +55,7 @@ enum class OperationStatus : std::uint8_t {
   InvalidWritePolicy,
   InvalidDomain,
   InvalidFieldAccess,
+  HazardConflict,
 };
 static_assert(sizeof(OperationStatus) == sizeof(std::uint8_t));
 
@@ -63,6 +64,7 @@ enum class OperationFailure : std::uint8_t {
   InvalidWritePolicyValue,
   ExplicitChunkOutOfRange,
   ReadOnlyWriteMask,
+  FieldHazardConflict,
 };
 static_assert(sizeof(OperationFailure) == sizeof(std::uint8_t));
 
@@ -192,7 +194,11 @@ struct OperationReport {
   OperationAccess access{};
   FieldAccessDesc field_access{};
   ChunkKey detail_chunk{};
+  OpHandle conflict_handle{};
+  OpId conflict_id{};
+  std::uint32_t conflict_mask = 0;
   bool has_detail_chunk = false;
+  bool has_conflict = false;
   std::size_t chunk_count = 0;
   std::source_location source = std::source_location::current();
 };
@@ -391,6 +397,47 @@ template <typename World>
   return false;
 }
 
+[[nodiscard]] constexpr auto hazard_mask(FieldAccessDesc earlier,
+                                         FieldAccessDesc later) noexcept
+    -> std::uint32_t {
+  return (earlier.write_mask & later.write_mask) |
+         (earlier.write_mask & later.read_mask) |
+         (earlier.read_mask & later.write_mask);
+}
+
+[[nodiscard]] constexpr bool chunks_overlap(
+    std::span<const ChunkKey> lhs, std::span<const ChunkKey> rhs) noexcept {
+  std::size_t lhs_index = 0;
+  std::size_t rhs_index = 0;
+  while (lhs_index < lhs.size() && rhs_index < rhs.size()) {
+    const auto lhs_key = lhs[lhs_index].value;
+    const auto rhs_key = rhs[rhs_index].value;
+    if (lhs_key == rhs_key) {
+      return true;
+    }
+    if (lhs_key < rhs_key) {
+      ++lhs_index;
+    } else {
+      ++rhs_index;
+    }
+  }
+  return false;
+}
+
+[[nodiscard]] constexpr auto find_hazard(
+    std::span<const PlannedOperation> earlier_ops,
+    const PlannedOperation& later) noexcept -> const PlannedOperation* {
+  for (const auto& earlier : earlier_ops) {
+    if (hazard_mask(earlier.field_access, later.field_access) == 0) {
+      continue;
+    }
+    if (chunks_overlap(earlier.chunks, later.chunks)) {
+      return &earlier;
+    }
+  }
+  return nullptr;
+}
+
 }  // namespace detail
 
 template <typename World>
@@ -409,6 +456,10 @@ template <typename World>
         detail::operation_access(op),
         op.field_access,
         {},
+        {},
+        {},
+        0,
+        false,
         false,
         0,
         op.source,
@@ -446,6 +497,21 @@ template <typename World>
       op_report.failure = OperationFailure::ExplicitChunkOutOfRange;
       op_report.detail_chunk = invalid_chunk;
       op_report.has_detail_chunk = true;
+      report.push_report(op_report);
+      continue;
+    }
+
+    if (const auto* conflict =
+            detail::find_hazard(report.plan().operations(), planned);
+        conflict != nullptr) {
+      op_report.status = OperationStatus::HazardConflict;
+      op_report.failure = OperationFailure::FieldHazardConflict;
+      op_report.conflict_handle = conflict->handle;
+      op_report.conflict_id = conflict->id;
+      op_report.conflict_mask =
+          detail::hazard_mask(conflict->field_access, planned.field_access);
+      op_report.has_conflict = true;
+      op_report.chunk_count = planned.chunks.size();
       report.push_report(op_report);
       continue;
     }
