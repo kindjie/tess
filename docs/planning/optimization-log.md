@@ -183,3 +183,22 @@ deferred for scope reasons. Keep entries short and concrete:
   behavior for low latency.
 - Retry conditions: Reconsider if failed detour attempts become common enough
   in production workloads to outweigh successful-detour latency.
+
+## 2026-06-05 - A* Top-Down 2D Single-Plane Gap
+
+- Area: Uniform-cost fast path for simple wall-with-gap requests.
+- Hypothesis: When a direct probe is blocked by a non-separating axis plane,
+  scanning the plane for the cheapest passable crossing and verifying the two
+  Manhattan legs can prove an optimal path without heap-backed A*.
+- Evidence: The local release `path/astar_wall_gap_512x512` case dropped from
+  about 4.1 ms to about 5.6 us with no heap work. The
+  `path/astar_batch_100_mixed_512x512` case dropped from about 138 ms to about
+  0.32 ms because its repeated wall-gap requests now use the precheck. Open
+  512x512 and 1024x1024 direct paths stayed in the same range. The striped-maze
+  case still falls back to A* and stayed around 11-12 ms.
+- Decision: Accepted for top-down 2D, unit-cost, axis-adjacent movement. The
+  route is returned only after passability of the concrete path through the
+  chosen gap is verified.
+- Retry conditions: Revisit if weighted movement, reservations, dynamic
+  blockers, or movement classes make the cheapest passable plane crossing
+  insufficient to prove optimality.

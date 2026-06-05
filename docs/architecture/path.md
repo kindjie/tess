@@ -41,7 +41,10 @@ tile whose axis plane is fully blocked, it returns `NoPath` immediately because
 the plane separates start from goal under the current axis-adjacent movement
 model. For axis-aligned requests, a clear one-tile parallel detour is also
 returned before A* because its Manhattan+2 cost is optimal when the straight
-line is blocked. Other non-separating blockers fall back to normal A*.
+line is blocked. For top-down 2D requests blocked by a non-separating axis
+plane, the implementation can scan that plane for the cheapest passable gap and
+return a verified Manhattan route through it. Other non-separating blockers
+fall back to normal A*.
 
 The returned path span points into the supplied `PathScratch` and remains valid
 until the next path query or scratch clear/reserve operation. Scratch keeps
