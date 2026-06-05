@@ -238,9 +238,14 @@ paths, wall-gap detours, failed wall-separated paths, striped mazes, and
 axis-aligned one-tile detour cases for uniform-cost fast paths. The wall-gap
 case exercises the exact 2D single-plane gap precheck, striped maze cases
 exercise dynamic forced-gap sequence handling, and vertical 2D plus small 3D
-cases cover non-top-down layouts. The current path benchmark suite is included
-in threshold JSON at the 1 ms investigation ceiling; lower per-case thresholds
-can be calibrated later from repeated same-runner baselines.
+cases cover non-top-down layouts. Fallback-stress path cases include sparse
+blockers, room/portal partitions, branch-heavy lattice paths, and repeated
+shared-destination room/portal batches. Terrain-cost stress remains pending
+until the public path API accepts weighted cost fields instead of passability
+only. Most current path benchmarks are included in threshold JSON at the 1 ms
+investigation ceiling; investigated fallback profiles may carry explicit
+larger thresholds when the mitigation requires future path data structures,
+route caching, hierarchy, or batching support outside the current A* scope.
 
 Run the current scaffolds with:
 
