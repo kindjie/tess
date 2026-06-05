@@ -80,7 +80,7 @@ struct ResolvedTile {
                                    ResolvedTile rhs) noexcept = default;
 };
 
-constexpr Coord3 to_coord3(Coord2 coord) noexcept {
+[[nodiscard]] constexpr Coord3 to_coord3(Coord2 coord) noexcept {
   return Coord3{coord.x, coord.y, 0};
 }
 
@@ -88,31 +88,33 @@ namespace detail {
 
 using UInt128 = unsigned __int128;
 
-constexpr bool is_power_of_two(std::uint64_t value) noexcept {
+[[nodiscard]] constexpr bool is_power_of_two(std::uint64_t value) noexcept {
   return value != 0 && (value & (value - 1)) == 0;
 }
 
-constexpr bool is_valid_extent(Extent3 extent) noexcept {
+[[nodiscard]] constexpr bool is_valid_extent(Extent3 extent) noexcept {
   return extent.x > 0 && extent.y > 0 && extent.z > 0;
 }
 
-constexpr bool is_divisible_by(Extent3 size, Extent3 chunk) noexcept {
+[[nodiscard]] constexpr bool is_divisible_by(Extent3 size,
+                                             Extent3 chunk) noexcept {
   return size.x % chunk.x == 0 && size.y % chunk.y == 0 &&
          size.z % chunk.z == 0;
 }
 
-constexpr UInt128 product(Extent3 extent) noexcept {
+[[nodiscard]] constexpr UInt128 product(Extent3 extent) noexcept {
   return static_cast<UInt128>(extent.x) * static_cast<UInt128>(extent.y) *
          static_cast<UInt128>(extent.z);
 }
 
-constexpr UInt128 chunk_count(Extent3 size, Extent3 chunk) noexcept {
+[[nodiscard]] constexpr UInt128 chunk_count(Extent3 size,
+                                            Extent3 chunk) noexcept {
   return static_cast<UInt128>(size.x / chunk.x) *
          static_cast<UInt128>(size.y / chunk.y) *
          static_cast<UInt128>(size.z / chunk.z);
 }
 
-constexpr std::uint32_t bit_width(UInt128 value) noexcept {
+[[nodiscard]] constexpr std::uint32_t bit_width(UInt128 value) noexcept {
   std::uint32_t bits = 0;
   while (value != 0) {
     ++bits;
@@ -121,38 +123,44 @@ constexpr std::uint32_t bit_width(UInt128 value) noexcept {
   return bits;
 }
 
-constexpr std::uint32_t bits_for_count(UInt128 count) noexcept {
+[[nodiscard]] constexpr std::uint32_t bits_for_count(UInt128 count) noexcept {
   return count <= 1 ? 0 : bit_width(count - 1);
 }
 
 template <std::uint32_t Bits>
 using KeyStorage = std::conditional_t<Bits <= 64, std::uint64_t, UInt128>;
 
-constexpr std::uint64_t magnitude(std::int64_t value) noexcept {
+[[nodiscard]] constexpr std::uint64_t magnitude(std::int64_t value) noexcept {
   return static_cast<std::uint64_t>(-(value + 1)) + 1;
 }
 
-constexpr bool axis_contains(std::int64_t origin, std::uint64_t extent,
-                             std::int64_t coord) noexcept {
-  if (coord < origin) {
-    return false;
-  }
-
+[[nodiscard]] constexpr std::uint64_t axis_delta(std::int64_t origin,
+                                                 std::int64_t coord) noexcept {
   if (origin >= 0) {
-    return static_cast<std::uint64_t>(coord - origin) < extent;
+    return static_cast<std::uint64_t>(coord - origin);
   }
 
   const auto origin_magnitude = magnitude(origin);
   if (coord < 0) {
-    return origin_magnitude - magnitude(coord) < extent;
+    return origin_magnitude - magnitude(coord);
   }
 
-  return origin_magnitude + static_cast<std::uint64_t>(coord) < extent;
+  return origin_magnitude + static_cast<std::uint64_t>(coord);
+}
+
+[[nodiscard]] constexpr bool axis_contains(std::int64_t origin,
+                                           std::uint64_t extent,
+                                           std::int64_t coord) noexcept {
+  if (coord < origin) {
+    return false;
+  }
+
+  return axis_delta(origin, coord) < extent;
 }
 
 }  // namespace detail
 
-constexpr bool contains(Box3 box, Coord3 coord) noexcept {
+[[nodiscard]] constexpr bool contains(Box3 box, Coord3 coord) noexcept {
   return detail::axis_contains(box.origin.x, box.extent.x, coord.x) &&
          detail::axis_contains(box.origin.y, box.extent.y, coord.y) &&
          detail::axis_contains(box.origin.z, box.extent.z, coord.z);
@@ -221,18 +229,18 @@ struct ShapeTraits {
 
 template <typename Shape>
 struct TileKey {
-  typename ShapeTraits<Shape>::TileKeyStorage value;
+  ShapeTraits<Shape>::TileKeyStorage value;
 
   friend constexpr bool operator==(TileKey lhs, TileKey rhs) noexcept = default;
 };
 
 template <typename Shape>
-constexpr bool contains(Coord3 coord) noexcept {
+[[nodiscard]] constexpr bool contains(Coord3 coord) noexcept {
   return contains(Box3{Coord3{0, 0, 0}, ShapeTraits<Shape>::size}, coord);
 }
 
 template <typename Shape>
-constexpr ChunkCoord3 chunk_coord(Coord3 coord) noexcept {
+[[nodiscard]] constexpr ChunkCoord3 chunk_coord(Coord3 coord) noexcept {
   const auto chunk = ShapeTraits<Shape>::chunk;
   return ChunkCoord3{
       static_cast<std::uint64_t>(coord.x) / chunk.x,
@@ -242,7 +250,7 @@ constexpr ChunkCoord3 chunk_coord(Coord3 coord) noexcept {
 }
 
 template <typename Shape>
-constexpr LocalCoord3 local_coord(Coord3 coord) noexcept {
+[[nodiscard]] constexpr LocalCoord3 local_coord(Coord3 coord) noexcept {
   const auto chunk = ShapeTraits<Shape>::chunk;
   return LocalCoord3{
       static_cast<std::uint64_t>(coord.x) % chunk.x,
@@ -252,14 +260,14 @@ constexpr LocalCoord3 local_coord(Coord3 coord) noexcept {
 }
 
 template <typename Shape>
-constexpr LocalTileId local_tile_id(LocalCoord3 coord) noexcept {
+[[nodiscard]] constexpr LocalTileId local_tile_id(LocalCoord3 coord) noexcept {
   const auto chunk = ShapeTraits<Shape>::chunk;
   return LocalTileId{coord.x + coord.y * chunk.x + coord.z * chunk.x * chunk.y};
 }
 
 template <typename Shape>
-constexpr Coord3 coord(ChunkCoord3 chunk_coord,
-                       LocalTileId local_tile_id) noexcept {
+[[nodiscard]] constexpr Coord3 coord(ChunkCoord3 chunk_coord,
+                                     LocalTileId local_tile_id) noexcept {
   const auto chunk = ShapeTraits<Shape>::chunk;
   const auto local_xy = chunk.x * chunk.y;
   const auto local_z = local_tile_id.value / local_xy;
@@ -275,14 +283,14 @@ constexpr Coord3 coord(ChunkCoord3 chunk_coord,
 }
 
 template <typename Shape>
-constexpr ChunkKey chunk_key(ChunkCoord3 coord) noexcept {
+[[nodiscard]] constexpr ChunkKey chunk_key(ChunkCoord3 coord) noexcept {
   using Traits = ShapeTraits<Shape>;
   return ChunkKey{coord.x + coord.y * Traits::chunk_count_x +
                   coord.z * Traits::chunk_count_x * Traits::chunk_count_y};
 }
 
 template <typename Shape>
-constexpr ChunkCoord3 chunk_coord(ChunkKey key) noexcept {
+[[nodiscard]] constexpr ChunkCoord3 chunk_coord(ChunkKey key) noexcept {
   using Traits = ShapeTraits<Shape>;
   const auto chunk_xy = Traits::chunk_count_x * Traits::chunk_count_y;
   const auto z = key.value / chunk_xy;
@@ -294,11 +302,11 @@ constexpr ChunkCoord3 chunk_coord(ChunkKey key) noexcept {
 }
 
 template <typename Shape>
-constexpr TileKey<Shape> tile_key(Coord3 coord) noexcept {
+[[nodiscard]] constexpr TileKey<Shape> tile_key(Coord3 coord) noexcept {
   using Traits = ShapeTraits<Shape>;
   const auto chunk = chunk_key<Shape>(chunk_coord<Shape>(coord));
   const auto local = local_tile_id<Shape>(local_coord<Shape>(coord));
-  using Storage = typename Traits::TileKeyStorage;
+  using Storage = Traits::TileKeyStorage;
 
   return TileKey<Shape>{
       (static_cast<Storage>(chunk.value) << Traits::local_bits) |
@@ -307,7 +315,7 @@ constexpr TileKey<Shape> tile_key(Coord3 coord) noexcept {
 }
 
 template <typename Shape>
-constexpr ChunkKey chunk_key(TileKey<Shape> key) noexcept {
+[[nodiscard]] constexpr ChunkKey chunk_key(TileKey<Shape> key) noexcept {
   using Traits = ShapeTraits<Shape>;
   return ChunkKey{
       static_cast<std::uint64_t>(key.value >> Traits::local_bits),
@@ -315,9 +323,9 @@ constexpr ChunkKey chunk_key(TileKey<Shape> key) noexcept {
 }
 
 template <typename Shape>
-constexpr LocalTileId local_tile_id(TileKey<Shape> key) noexcept {
+[[nodiscard]] constexpr LocalTileId local_tile_id(TileKey<Shape> key) noexcept {
   using Traits = ShapeTraits<Shape>;
-  using Storage = typename Traits::TileKeyStorage;
+  using Storage = Traits::TileKeyStorage;
   Storage mask = 0;
   if constexpr (Traits::local_bits == 64) {
     mask = static_cast<Storage>(std::numeric_limits<std::uint64_t>::max());
@@ -329,7 +337,7 @@ constexpr LocalTileId local_tile_id(TileKey<Shape> key) noexcept {
 }
 
 template <typename Shape>
-constexpr Coord3 coord(TileKey<Shape> key) noexcept {
+[[nodiscard]] constexpr Coord3 coord(TileKey<Shape> key) noexcept {
   return coord<Shape>(chunk_coord<Shape>(chunk_key<Shape>(key)),
                       local_tile_id<Shape>(key));
 }

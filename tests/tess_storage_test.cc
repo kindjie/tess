@@ -245,8 +245,8 @@ TEST(TessStorage, Chunked3DWorldResolvesCoordinatesAndWritesFields) {
   EXPECT_EQ(resolved.local_tile_id, (tess::LocalTileId{287}));
 
   auto checked = world.try_resolve(coord);
-  ASSERT_TRUE(checked.has_value());
-  EXPECT_EQ(*checked, resolved);
+  ASSERT_TRUE(checked);
+  EXPECT_EQ(checked, resolved);
 
   world.field<TerrainTag>(coord) = 11;
   world.field<CostTag>(coord) = 1.25F;
@@ -279,14 +279,13 @@ TEST(TessStorage, WorldConstAccessReturnsConstPagesFieldsAndSpans) {
   world.field<TerrainTag>(tess::Coord3{3, 4, 0}) = 23;
   const auto& const_world = world;
 
-  auto pages = const_world.chunks();
+  using Pages = decltype(const_world.chunks());
   auto terrain = const_world.field_span<TerrainTag>(tess::ChunkKey{0});
   decltype(auto) tile = const_world.field<TerrainTag>(tess::Coord3{3, 4, 0});
   const auto* checked =
       const_world.try_field<TerrainTag>(tess::Coord3{3, 4, 0});
 
-  static_assert(
-      std::is_same_v<decltype(pages), std::span<const Page<TopDown2D>>>);
+  static_assert(std::is_same_v<Pages, std::span<const Page<TopDown2D>>>);
   static_assert(
       std::is_same_v<decltype(terrain), std::span<const std::uint16_t>>);
   static_assert(std::is_same_v<decltype(tile), const std::uint16_t&>);
