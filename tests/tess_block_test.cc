@@ -2,6 +2,7 @@
 #include <tess/tess.h>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <new>
@@ -175,6 +176,115 @@ TEST(TessBlock, BlockCtxExposesWorldDomainPolicySizeAndEmptyState) {
       tess::block_ctx<tess::WritePolicy::ReadOnly>(world, tess::ChunkDomain{});
   EXPECT_EQ(empty_ctx.size(), 0u);
   EXPECT_TRUE(empty_ctx.empty());
+}
+
+TEST(TessBlock, BlockScratchReportsCapacityUsedAndRemainingBytes) {
+  tess::BlockScratch scratch;
+
+  EXPECT_EQ(scratch.capacity_bytes(), 0u);
+  EXPECT_EQ(scratch.used_bytes(), 0u);
+  EXPECT_EQ(scratch.remaining_bytes(), 0u);
+
+  scratch.reserve_bytes(17);
+
+  EXPECT_GE(scratch.capacity_bytes(), 17u);
+  EXPECT_EQ(scratch.used_bytes(), 0u);
+  EXPECT_EQ(scratch.remaining_bytes(), scratch.capacity_bytes());
+
+  const auto values = scratch.allocate<std::uint32_t>(3);
+
+  ASSERT_EQ(values.size(), 3u);
+  EXPECT_GE(scratch.used_bytes(), sizeof(std::uint32_t) * values.size());
+  EXPECT_EQ(scratch.remaining_bytes(),
+            scratch.capacity_bytes() - scratch.used_bytes());
+}
+
+TEST(TessBlock, BlockScratchTypedAllocationsAreSizedAlignedAndWritable) {
+  tess::BlockScratch scratch;
+  scratch.reserve_bytes(64);
+
+  const auto bytes = scratch.allocate<std::uint8_t>(1);
+  auto values = scratch.allocate<std::uint32_t>(3);
+
+  ASSERT_EQ(bytes.size(), 1u);
+  ASSERT_EQ(values.size(), 3u);
+  EXPECT_EQ(
+      reinterpret_cast<std::uintptr_t>(values.data()) % alignof(std::uint32_t),
+      0u);
+
+  values[0] = 11;
+  values[1] = 22;
+  values[2] = 33;
+
+  EXPECT_EQ(values[0], 11u);
+  EXPECT_EQ(values[1], 22u);
+  EXPECT_EQ(values[2], 33u);
+}
+
+TEST(TessBlock, BlockScratchResetReusesStorageWithoutClearingCapacity) {
+  tess::BlockScratch scratch;
+  scratch.reserve_bytes(64);
+
+  const auto capacity = scratch.capacity_bytes();
+  auto first = scratch.allocate<std::uint32_t>(4);
+  ASSERT_EQ(first.size(), 4u);
+  first[0] = 99;
+  EXPECT_GT(scratch.used_bytes(), 0u);
+
+  scratch.reset();
+
+  EXPECT_EQ(scratch.capacity_bytes(), capacity);
+  EXPECT_EQ(scratch.used_bytes(), 0u);
+  EXPECT_EQ(scratch.remaining_bytes(), capacity);
+
+  auto second = scratch.allocate<std::uint32_t>(4);
+  ASSERT_EQ(second.size(), 4u);
+  EXPECT_EQ(second.data(), first.data());
+}
+
+TEST(TessBlock, BlockScratchExhaustionReturnsEmptySpanWithoutAdvancing) {
+  tess::BlockScratch scratch;
+  scratch.reserve_bytes(sizeof(std::max_align_t));
+
+  const auto first = scratch.allocate<std::max_align_t>(1);
+  ASSERT_EQ(first.size(), 1u);
+  const auto used = scratch.used_bytes();
+
+  const auto exhausted = scratch.allocate<std::uint8_t>(1);
+
+  EXPECT_TRUE(exhausted.empty());
+  EXPECT_EQ(exhausted.data(), nullptr);
+  EXPECT_EQ(scratch.used_bytes(), used);
+}
+
+TEST(TessBlock, BlockCtxExposesOptionalScratch) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{1}};
+  const auto domain = tess::chunk_domain(keys);
+
+  auto no_scratch_ctx =
+      tess::block_ctx<tess::WritePolicy::ReadOnly>(world, domain);
+  const auto& const_no_scratch_ctx = no_scratch_ctx;
+
+  EXPECT_EQ(no_scratch_ctx.scratch(), nullptr);
+  EXPECT_EQ(const_no_scratch_ctx.scratch(), nullptr);
+  no_scratch_ctx.reset_scratch();
+
+  tess::BlockScratch scratch;
+  scratch.reserve_bytes(32);
+  auto scratch_ctx = tess::block_ctx<tess::WritePolicy::UniquePerChunk>(
+      world, domain, scratch);
+  const auto& const_scratch_ctx = scratch_ctx;
+
+  EXPECT_EQ(scratch_ctx.scratch(), &scratch);
+  EXPECT_EQ(const_scratch_ctx.scratch(), &scratch);
+
+  const auto values = scratch_ctx.scratch()->allocate<std::uint32_t>(2);
+  ASSERT_EQ(values.size(), 2u);
+  EXPECT_GT(scratch.used_bytes(), 0u);
+
+  scratch_ctx.reset_scratch();
+  EXPECT_EQ(scratch.used_bytes(), 0u);
 }
 
 TEST(TessBlock, BlockCtxChunkViewMatchesDirectChunkViewBehavior) {
@@ -728,6 +838,40 @@ TEST(TessBlock, PrebuiltBlockCtxNestedChunkAndTileIterationDoesNotAllocate) {
       terrain[id.value] =
           static_cast<std::uint16_t>(id.value + view.key().value);
       sum += terrain[id.value] + coord.x + coord.y + coord.z;
+    });
+  });
+  count_allocations.store(false, std::memory_order_relaxed);
+
+  EXPECT_GT(sum, 0u);
+  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+}
+
+TEST(TessBlock, PreReservedScratchInChunkAndTileIterationDoesNotAllocate) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{
+      tess::ChunkKey{0},
+      tess::ChunkKey{4},
+      tess::ChunkKey{8},
+      tess::ChunkKey{12},
+  };
+  tess::BlockScratch scratch;
+  scratch.reserve_bytes(sizeof(std::uint32_t) *
+                        tess::ShapeTraits<TopDown2D>::local_tile_count);
+  auto ctx = tess::block_ctx<tess::WritePolicy::UniquePerChunk>(
+      world, tess::chunk_domain(keys), scratch);
+  std::uint64_t sum = 0;
+
+  allocation_count.store(0, std::memory_order_relaxed);
+  count_allocations.store(true, std::memory_order_relaxed);
+  ctx.for_each_chunk([&](auto view) {
+    ctx.reset_scratch();
+    auto values = ctx.scratch()->allocate<std::uint32_t>(
+        tess::ShapeTraits<TopDown2D>::local_tile_count);
+    ASSERT_EQ(values.size(), tess::ShapeTraits<TopDown2D>::local_tile_count);
+    view.for_each_tile([&](tess::LocalTileId id, tess::LocalCoord3 coord) {
+      values[id.value] =
+          static_cast<std::uint32_t>(id.value + view.key().value);
+      sum += values[id.value] + coord.x + coord.y + coord.z;
     });
   });
   count_allocations.store(false, std::memory_order_relaxed);

@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <span>
 #include <type_traits>
@@ -35,6 +36,73 @@ static_assert(sizeof(WritePolicy) == sizeof(std::uint8_t));
   }
   return false;
 }
+
+class BlockScratch {
+ public:
+  void reserve_bytes(std::size_t bytes) {
+    const auto word_count =
+        bytes / word_size + (bytes % word_size == 0 ? 0 : 1);
+    if (word_count > storage_.size()) {
+      storage_.resize(word_count);
+    }
+  }
+
+  constexpr void reset() noexcept { used_bytes_ = 0; }
+
+  [[nodiscard]] constexpr auto capacity_bytes() const noexcept -> std::size_t {
+    return storage_.size() * word_size;
+  }
+
+  [[nodiscard]] constexpr auto used_bytes() const noexcept -> std::size_t {
+    return used_bytes_;
+  }
+
+  [[nodiscard]] constexpr auto remaining_bytes() const noexcept -> std::size_t {
+    return capacity_bytes() - used_bytes_;
+  }
+
+  template <typename T>
+  [[nodiscard]] auto allocate(std::size_t count) noexcept -> std::span<T> {
+    static_assert(!std::is_void_v<T>);
+    static_assert(alignof(T) <= alignof(std::max_align_t));
+    static_assert(std::is_trivially_default_constructible_v<T>);
+    static_assert(std::is_trivially_destructible_v<T>);
+
+    if (count == 0) {
+      return {};
+    }
+    if (count > std::numeric_limits<std::size_t>::max() / sizeof(T)) {
+      return {};
+    }
+
+    const auto byte_count = count * sizeof(T);
+    const auto aligned_offset = align_offset(used_bytes_, alignof(T));
+    if (aligned_offset > capacity_bytes() ||
+        byte_count > capacity_bytes() - aligned_offset) {
+      return {};
+    }
+
+    auto* ptr = reinterpret_cast<T*>(
+        reinterpret_cast<std::byte*>(storage_.data()) + aligned_offset);
+    used_bytes_ = aligned_offset + byte_count;
+    return std::span<T>{ptr, count};
+  }
+
+ private:
+  static constexpr auto word_size = sizeof(std::max_align_t);
+
+  [[nodiscard]] static constexpr auto align_offset(
+      std::size_t offset, std::size_t alignment) noexcept -> std::size_t {
+    const auto remainder = offset % alignment;
+    if (remainder == 0) {
+      return offset;
+    }
+    return offset + (alignment - remainder);
+  }
+
+  std::vector<std::max_align_t> storage_;
+  std::size_t used_bytes_ = 0;
+};
 
 class ChunkDomain {
  public:
@@ -243,8 +311,9 @@ class BlockCtx {
       std::conditional_t<Policy == WritePolicy::ReadOnly,
                          const std::remove_const_t<world_type>, world_type>;
 
-  constexpr BlockCtx(world_type& world, ChunkDomain domain) noexcept
-      : world_(&world), domain_(domain) {}
+  constexpr BlockCtx(world_type& world, ChunkDomain domain,
+                     BlockScratch* scratch = nullptr) noexcept
+      : world_(&world), domain_(domain), scratch_(scratch) {}
 
   [[nodiscard]] constexpr auto world() const noexcept -> world_type& {
     return *world_;
@@ -266,6 +335,20 @@ class BlockCtx {
     return domain_.empty();
   }
 
+  [[nodiscard]] constexpr auto scratch() noexcept -> BlockScratch* {
+    return scratch_;
+  }
+
+  [[nodiscard]] constexpr auto scratch() const noexcept -> const BlockScratch* {
+    return scratch_;
+  }
+
+  constexpr void reset_scratch() const noexcept {
+    if (scratch_ != nullptr) {
+      scratch_->reset();
+    }
+  }
+
   [[nodiscard]] constexpr auto chunk_view(ChunkKey key) const noexcept
       -> ChunkView<view_world_type> {
     return ChunkView<view_world_type>{*world_, key};
@@ -281,6 +364,7 @@ class BlockCtx {
  private:
   world_type* world_;
   ChunkDomain domain_;
+  BlockScratch* scratch_;
 };
 
 template <WritePolicy Policy, typename World>
@@ -288,6 +372,13 @@ template <WritePolicy Policy, typename World>
                                        ChunkDomain domain) noexcept
     -> BlockCtx<World, Policy> {
   return BlockCtx<World, Policy>{world, domain};
+}
+
+template <WritePolicy Policy, typename World>
+[[nodiscard]] constexpr auto block_ctx(World& world, ChunkDomain domain,
+                                       BlockScratch& scratch) noexcept
+    -> BlockCtx<World, Policy> {
+  return BlockCtx<World, Policy>{world, domain, &scratch};
 }
 
 template <WritePolicy Policy, typename World, typename Fn>
