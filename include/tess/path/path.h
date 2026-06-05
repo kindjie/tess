@@ -110,6 +110,12 @@ class PathScratch {
 
 namespace detail {
 
+enum class Axis : std::uint8_t {
+  X,
+  Y,
+  Z,
+};
+
 [[nodiscard]] constexpr auto abs_delta(std::int64_t lhs,
                                        std::int64_t rhs) noexcept
     -> std::uint64_t {
@@ -165,6 +171,50 @@ template <typename World, typename Tag>
   const auto& value = world.chunk(chunk_key<Shape>(key))
                           .template field<Tag>(local_tile_id<Shape>(key));
   return static_cast<bool>(value);
+}
+
+template <typename World, typename Tag>
+[[nodiscard]] auto is_full_axis_barrier(const World& world, Coord3 blocked,
+                                        Axis axis) noexcept -> bool {
+  using Shape = typename World::shape_type;
+  constexpr auto size = ShapeTraits<Shape>::size;
+
+  if (axis == Axis::X) {
+    for (std::int64_t z = 0; z < static_cast<std::int64_t>(size.z); ++z) {
+      for (std::int64_t y = 0; y < static_cast<std::int64_t>(size.y); ++y) {
+        const auto coord = Coord3{blocked.x, y, z};
+        TESS_DIAG_EVENT(path_passability_check);
+        if (is_passable_index<World, Tag>(world, tile_index<Shape>(coord))) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  if (axis == Axis::Y) {
+    for (std::int64_t z = 0; z < static_cast<std::int64_t>(size.z); ++z) {
+      for (std::int64_t x = 0; x < static_cast<std::int64_t>(size.x); ++x) {
+        const auto coord = Coord3{x, blocked.y, z};
+        TESS_DIAG_EVENT(path_passability_check);
+        if (is_passable_index<World, Tag>(world, tile_index<Shape>(coord))) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  for (std::int64_t y = 0; y < static_cast<std::int64_t>(size.y); ++y) {
+    for (std::int64_t x = 0; x < static_cast<std::int64_t>(size.x); ++x) {
+      const auto coord = Coord3{x, y, blocked.z};
+      TESS_DIAG_EVENT(path_passability_check);
+      if (is_passable_index<World, Tag>(world, tile_index<Shape>(coord))) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 template <typename Fn>
@@ -283,12 +333,15 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
   auto direct_current = request.start;
   scratch.path_.push_back(direct_current);
   TESS_DIAG_EVENT(path_reconstruct_node);
-  const auto step_direct_axis = [&](auto Coord3::* member) {
+  auto direct_blocked_by_barrier = false;
+  const auto step_direct_axis = [&](auto Coord3::* member, detail::Axis axis) {
     while (direct_current.*member != request.goal.*member) {
       direct_current.*member +=
           direct_current.*member < request.goal.*member ? 1 : -1;
       TESS_DIAG_EVENT(path_passability_check);
       if (!detail::is_passable<World, Tag>(world, direct_current)) {
+        direct_blocked_by_barrier = detail::is_full_axis_barrier<World, Tag>(
+            world, direct_current, axis);
         scratch.path_.clear();
         return false;
       }
@@ -297,13 +350,17 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
     }
     return true;
   };
-  const auto direct_path_found = step_direct_axis(&Coord3::x) &&
-                                 step_direct_axis(&Coord3::y) &&
-                                 step_direct_axis(&Coord3::z);
+  const auto direct_path_found =
+      step_direct_axis(&Coord3::x, detail::Axis::X) &&
+      step_direct_axis(&Coord3::y, detail::Axis::Y) &&
+      step_direct_axis(&Coord3::z, detail::Axis::Z);
   if (direct_path_found) {
     const auto cost = detail::manhattan(request.start, request.goal);
     return PathResult{PathStatus::Found, cost, scratch.path_.size(),
                       scratch.path_.size(), scratch.path_};
+  }
+  if (direct_blocked_by_barrier) {
+    return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
   }
 
   const auto node_count = detail::tile_count<World>();
