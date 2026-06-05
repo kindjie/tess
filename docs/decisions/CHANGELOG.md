@@ -26,11 +26,23 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/planning/benchmark-plan.md`
 - Affected code: `CMakePresets.json`, `tools/profile_benchmark.sh`
 
+## 2026-06-05 - Unit-Cost A* Bucket Open Set
+
+- Changed: Replaced the general fallback A* binary heap with a two-bucket
+  monotone open set for the current unit-cost Manhattan heuristic path model.
+- Reason: With unit-cost axis-adjacent movement and a consistent Manhattan
+  heuristic, generated fallback nodes have the current `f` score or `f + 2`.
+  The bucket queue removes binary heap maintenance while preserving optimal
+  path ordering for this MVP path model.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/optimization-log.md`
+- Affected code: `include/tess/path/path.h`
+
 ## 2026-06-05 - Path Direct Fast-Path Prechecks
 
 - Changed: Pathfinding now tries shape-relevant direct Manhattan axis orders,
   simple axis-aligned detours, verified 2D and 3D plane-gap routes, and 2D
-  forced-gap sequences before heap-backed A*, and rejects full axis-plane
+  forced-gap sequences before fallback A*, and rejects full axis-plane
   barriers before expanding A* nodes.
 - Reason: Uniform-cost direct paths and fully separating blocked planes can be
   resolved exactly without general A* search. Axis-aligned one-tile parallel

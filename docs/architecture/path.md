@@ -34,7 +34,7 @@ deterministic by lower total score, then higher path cost for equal-score
 nodes, then tile-key order. Preferring higher path cost on equal-score nodes
 avoids open-grid wavefront expansion while preserving shortest paths.
 
-Before entering heap-backed A*, the implementation probes direct Manhattan
+Before entering open-set A*, the implementation probes direct Manhattan
 paths in the shape-relevant axis orders. If any route is fully passable, it
 returns that direct shortest path immediately. If a direct probe hits a blocked
 tile whose axis plane is fully blocked, it returns `NoPath` immediately because
@@ -62,9 +62,9 @@ visits a small fraction of the world.
 This MVP slice does not implement movement classes, weighted terrain, topology
 prechecks, portal graphs, sparse residency, reservations, dynamic blockers,
 distance fields, path caching, async tickets, or rich path diagnostics. The
-implementation uses reusable dense per-tile scratch arrays and a heap-backed
-open set; it is still an MVP path core, not the final topology-aware path
-system.
+implementation uses reusable dense per-tile scratch arrays and a two-bucket
+monotone open set for the current unit-cost Manhattan A* fallback; it is still
+an MVP path core, not the final topology-aware path system.
 
 This API is suitable for individual point-to-point queries and regression
 coverage. It is not the intended scaling mechanism for hundreds of agents with
@@ -80,7 +80,7 @@ benchmark reports a 2,046 unit path, 2,047 expanded nodes, and 5,112 reached
 nodes.
 
 Sampling the 1024x1024 query shows time concentrated in neighbor processing:
-heap maintenance for the open set, passability/world lookup for each accepted
-neighbor candidate, and fixed six-axis neighbor generation even for degenerate
-2D shapes. Those are the first optimization targets before treating this A*
-path as suitable for hundreds of independent agents per tick.
+open-set maintenance, passability/world lookup for each accepted neighbor
+candidate, and fixed six-axis neighbor generation even for degenerate 2D
+shapes. Those are the first optimization targets before treating this A* path
+as suitable for hundreds of independent agents per tick.

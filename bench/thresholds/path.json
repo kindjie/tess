@@ -111,7 +111,7 @@
     },
     "path/astar_batch_100_shared_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 50000000
+      "max_cpu_time_ns": 25000000
     }
   }
 }
