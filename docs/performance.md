@@ -22,6 +22,10 @@ Use the generated Markdown as a scratch summary. Update this maintained page by
 copying over the stale label and latest snapshot table while preserving the
 regeneration policy.
 
+For individual optimization experiments, rejected ideas, and deferred
+performance work, use the [optimization log](planning/optimization-log.md)
+instead of architecture docs.
+
 ## Regeneration Policy
 
 Regenerate and commit `docs/assets/benchmark-trends.svg` and this page when the

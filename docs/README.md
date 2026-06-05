@@ -10,6 +10,8 @@ intent.
 - [Planning](planning/README.md): milestone and benchmark plans.
 - [Performance](performance.md): benchmark trend snapshots and calibration
   workflow.
+- [Optimization Log](planning/optimization-log.md): accepted, rejected, and
+  deferred performance experiments.
 - [Dependencies](dependencies.md): external library choices and documentation.
 - [Style](style.md): C++ coding style and formatting policy.
 - [Git Hooks](git-hooks.md): local commit and push guardrails.
