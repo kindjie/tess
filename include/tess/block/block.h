@@ -104,6 +104,23 @@ class BlockScratch {
   std::size_t used_bytes_ = 0;
 };
 
+class BlockDiagnostics {
+ public:
+  constexpr void record_scratch_allocation_failure() noexcept {
+    ++scratch_allocation_failures_;
+  }
+
+  constexpr void reset() noexcept { scratch_allocation_failures_ = 0; }
+
+  [[nodiscard]] constexpr auto scratch_allocation_failures() const noexcept
+      -> std::size_t {
+    return scratch_allocation_failures_;
+  }
+
+ private:
+  std::size_t scratch_allocation_failures_ = 0;
+};
+
 class ChunkDomain {
  public:
   constexpr ChunkDomain() noexcept = default;
@@ -312,8 +329,12 @@ class BlockCtx {
                          const std::remove_const_t<world_type>, world_type>;
 
   constexpr BlockCtx(world_type& world, ChunkDomain domain,
-                     BlockScratch* scratch = nullptr) noexcept
-      : world_(&world), domain_(domain), scratch_(scratch) {}
+                     BlockScratch* scratch = nullptr,
+                     BlockDiagnostics* diagnostics = nullptr) noexcept
+      : world_(&world),
+        domain_(domain),
+        scratch_(scratch),
+        diagnostics_(diagnostics) {}
 
   [[nodiscard]] constexpr auto world() const noexcept -> world_type& {
     return *world_;
@@ -349,6 +370,21 @@ class BlockCtx {
     }
   }
 
+  [[nodiscard]] constexpr auto diagnostics() noexcept -> BlockDiagnostics* {
+    return diagnostics_;
+  }
+
+  [[nodiscard]] constexpr auto diagnostics() const noexcept
+      -> const BlockDiagnostics* {
+    return diagnostics_;
+  }
+
+  constexpr void reset_diagnostics() const noexcept {
+    if (diagnostics_ != nullptr) {
+      diagnostics_->reset();
+    }
+  }
+
   [[nodiscard]] constexpr auto chunk_view(ChunkKey key) const noexcept
       -> ChunkView<view_world_type> {
     return ChunkView<view_world_type>{*world_, key};
@@ -365,6 +401,7 @@ class BlockCtx {
   world_type* world_;
   ChunkDomain domain_;
   BlockScratch* scratch_;
+  BlockDiagnostics* diagnostics_;
 };
 
 template <WritePolicy Policy, typename World>
@@ -379,6 +416,21 @@ template <WritePolicy Policy, typename World>
                                        BlockScratch& scratch) noexcept
     -> BlockCtx<World, Policy> {
   return BlockCtx<World, Policy>{world, domain, &scratch};
+}
+
+template <WritePolicy Policy, typename World>
+[[nodiscard]] constexpr auto block_ctx(World& world, ChunkDomain domain,
+                                       BlockDiagnostics& diagnostics) noexcept
+    -> BlockCtx<World, Policy> {
+  return BlockCtx<World, Policy>{world, domain, nullptr, &diagnostics};
+}
+
+template <WritePolicy Policy, typename World>
+[[nodiscard]] constexpr auto block_ctx(World& world, ChunkDomain domain,
+                                       BlockScratch& scratch,
+                                       BlockDiagnostics& diagnostics) noexcept
+    -> BlockCtx<World, Policy> {
+  return BlockCtx<World, Policy>{world, domain, &scratch, &diagnostics};
 }
 
 template <WritePolicy Policy, typename World, typename Fn>
