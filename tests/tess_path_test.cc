@@ -501,6 +501,130 @@ TEST(TessPath, WarmScratchPathQueryDoesNotAllocate) {
   EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
 }
 
+TEST(TessPath, CachedAStarReusesRepeatedRoute) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  world.template field<PassableTag>(tess::Coord3{3, 0, 0}) = false;
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::RouteCacheScratch cache;
+  cache.reserve_routes(2);
+  cache.reserve_path_nodes(128);
+
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}};
+  const auto first = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, request, scratch, cache);
+  const auto second = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, request, scratch, cache);
+  const auto stats = cache.stats();
+
+  ASSERT_EQ(first.status, tess::PathStatus::Found);
+  ASSERT_EQ(second.status, tess::PathStatus::Found);
+  EXPECT_EQ(second.cost, first.cost);
+  EXPECT_EQ(second.path.front(), request.start);
+  EXPECT_EQ(second.path.back(), request.goal);
+  EXPECT_EQ(second.expanded_nodes, 0u);
+  EXPECT_EQ(second.reached_nodes, 0u);
+  EXPECT_EQ(stats.entries, 1u);
+  EXPECT_EQ(stats.hits, 1u);
+  EXPECT_EQ(stats.misses, 1u);
+  EXPECT_EQ(stats.path_nodes, first.path.size());
+}
+
+TEST(TessPath, CachedAStarClearForcesRecompute) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  world.template field<PassableTag>(tess::Coord3{3, 0, 0}) = false;
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::RouteCacheScratch cache;
+  cache.reserve_routes(2);
+  cache.reserve_path_nodes(128);
+
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}};
+  const auto first = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, request, scratch, cache);
+  cache.clear();
+  const auto second = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, request, scratch, cache);
+  const auto stats = cache.stats();
+
+  ASSERT_EQ(first.status, tess::PathStatus::Found);
+  ASSERT_EQ(second.status, tess::PathStatus::Found);
+  EXPECT_EQ(second.cost, first.cost);
+  EXPECT_GT(second.expanded_nodes, 0u);
+  EXPECT_GT(second.reached_nodes, 0u);
+  EXPECT_EQ(stats.entries, 1u);
+  EXPECT_EQ(stats.hits, 0u);
+  EXPECT_EQ(stats.misses, 1u);
+}
+
+TEST(TessPath, CachedAStarReusesSuffixForSameGoal) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::RouteCacheScratch cache;
+  cache.reserve_routes(2);
+  cache.reserve_path_nodes(64);
+
+  const auto first_request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
+  const auto suffix_request =
+      tess::PathRequest{tess::Coord3{3, 0, 0}, tess::Coord3{7, 0, 0}};
+
+  const auto first = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, first_request, scratch, cache);
+  const auto suffix = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, suffix_request, scratch, cache);
+  const auto stats = cache.stats();
+
+  ASSERT_EQ(first.status, tess::PathStatus::Found);
+  ASSERT_EQ(suffix.status, tess::PathStatus::Found);
+  EXPECT_EQ(suffix.path.front(), suffix_request.start);
+  EXPECT_EQ(suffix.path.back(), suffix_request.goal);
+  EXPECT_EQ(suffix.cost, 4u);
+  EXPECT_EQ(suffix.expanded_nodes, 0u);
+  EXPECT_EQ(suffix.reached_nodes, 0u);
+  EXPECT_EQ(stats.entries, 1u);
+  EXPECT_EQ(stats.hits, 0u);
+  EXPECT_EQ(stats.suffix_hits, 1u);
+  EXPECT_EQ(stats.misses, 1u);
+}
+
+TEST(TessPath, WarmCachedAStarHitDoesNotAllocate) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::RouteCacheScratch cache;
+  cache.reserve_routes(1);
+  cache.reserve_path_nodes(64);
+
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}};
+  (void)tess::cached_astar_path<decltype(world), PassableTag>(world, request,
+                                                              scratch, cache);
+
+  allocation_count.store(0, std::memory_order_relaxed);
+  count_allocations.store(true, std::memory_order_relaxed);
+
+  const auto result = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, request, scratch, cache);
+
+  count_allocations.store(false, std::memory_order_relaxed);
+
+  EXPECT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.expanded_nodes, 0u);
+  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+}
+
 TEST(TessPath, BuildsSharedGoalDistanceFieldForMultipleStarts) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
   fill_passable(world, true);

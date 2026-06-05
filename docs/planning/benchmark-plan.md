@@ -234,7 +234,8 @@ Path benchmarks also publish user counters for cost, path nodes, expanded
 nodes, and reached nodes so timing changes can be correlated with graph work.
 Batch path benchmarks also report agents, unique starts, unique goals, unique
 start/goal chunks, and average expanded nodes so repeated-work opportunities
-are visible in benchmark output.
+are visible in benchmark output. Cached path benchmarks also report route-cache
+entries, exact hits, suffix hits, misses, and stored path nodes.
 Additional A* investigation benchmarks cover short/medium/long 512x512 open
 paths, wall-gap detours, failed wall-separated paths, striped mazes, and
 100-request batches. They also include alternate direct-axis-order and
@@ -247,6 +248,8 @@ shared-destination room/portal batches. Many-agent cases cover 100 agents to
 one goal, one room cluster to another, 8 common destinations, and mixed
 short/medium/long repeated room routes. Shared-goal distance-field benchmarks
 compare reverse field builds plus path reconstruction against independent A*.
+Route-cache benchmarks compare exact repeated room routes and same-goal suffix
+reuse against independent A*.
 Terrain-cost stress remains pending until the public path API accepts weighted
 cost fields instead of passability only. Most current path benchmarks are
 included in threshold JSON at the 1 ms investigation ceiling; investigated

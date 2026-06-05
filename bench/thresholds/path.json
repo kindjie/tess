@@ -136,6 +136,18 @@
     "path/astar_batch_100_mixed_repeated_room_portals_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 75000000
+    },
+    "path/cached_astar_batch_100_mixed_repeated_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 25000000
+    },
+    "path/astar_batch_100_suffix_open_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/cached_astar_batch_100_suffix_open_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 250000
     }
   }
 }

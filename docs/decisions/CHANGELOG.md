@@ -26,6 +26,20 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/planning/benchmark-plan.md`
 - Affected code: `CMakePresets.json`, `tools/profile_benchmark.sh`
 
+## 2026-06-05 - Route Cache Path Reuse
+
+- Changed: Added reusable exact route and same-goal suffix caching for the
+  current unit-cost A* path model. Added cache-hit benchmark counters and
+  monitored batch benchmarks for repeated route and suffix reuse cases.
+- Reason: Many-agent batches can repeat identical routes or ask for suffixes
+  of an already-computed route. Reusing cached optimal path spans avoids
+  rerunning A* while preserving the general fallback.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/benchmark-plan.md`,
+  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
+  `bench/tess_bench.cc`, `bench/thresholds/path.json`
+
 ## 2026-06-05 - Shared-Goal Distance Fields
 
 - Changed: Added reusable reverse distance-field scratch and shared-goal path
