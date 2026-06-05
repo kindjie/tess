@@ -25,6 +25,18 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 100000
     },
+    "path/weighted_astar_sparse_blockers_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 3000000
+    },
+    "path/weighted_astar_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 13000000
+    },
+    "path/weighted_astar_batch_100_mixed_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 700000000
+    },
     "path/astar_wall_gap_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000

@@ -24,6 +24,20 @@ Records meaningful design changes from the original TDDs.
   `docs/planning/optimization-log.md`, `tests/AGENTS.md`
 - Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`
 
+## 2026-06-05 - Weighted A* Stress Diagnostics
+
+- Changed: Added weighted sparse-blocker, room-portal, and mixed-batch path
+  benchmarks, weighted path threshold gates, and a path diagnostic counter for
+  weighted entry-cost reads.
+- Reason: Weighted terrain needs regression coverage that exercises realistic
+  search volume and exposes whether time is spent in heap churn, neighbor
+  expansion, passability reads, cost reads, or allocations.
+- Affected docs: `docs/planning/benchmark-plan.md`,
+  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/diagnostics/diagnostics.h`,
+  `include/tess/path/path.h`, `tests/tess_diagnostics_enabled_test.cc`,
+  `bench/tess_bench.cc`, `bench/thresholds/path.json`
+
 ## 2026-06-05 - Weighted A* Entry Costs
 
 - Changed: Added a separate `weighted_astar_path` API for positive integral
