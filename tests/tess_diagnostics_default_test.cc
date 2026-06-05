@@ -20,6 +20,8 @@ TEST(TessDiagnostics, DisabledMacrosDoNotEvaluateArguments) {
   TESS_DIAGNOSTIC_ONLY(++value);
   TESS_DIAGNOSTIC_INC(value);
   TESS_DIAGNOSTIC_ADD(counter, increment(value));
+  TESS_DIAG_EVENT(path_heap_push);
+  TESS_DIAG_EVENT_VALUE(path_clear, increment(value));
 
   EXPECT_EQ(value, 0);
   EXPECT_EQ(counter, 0);
