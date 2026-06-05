@@ -311,6 +311,49 @@ void BM_block_context_iteration_2d(benchmark::State& state) {
   }
 }
 
+void BM_block_scratch_allocate_u32(benchmark::State& state) {
+  tess::BlockScratch scratch;
+  scratch.reserve_bytes(sizeof(std::uint32_t) * StorageWorldShape::chunk.x *
+                        StorageWorldShape::chunk.y *
+                        StorageWorldShape::chunk.z);
+
+  for (auto _ : state) {
+    scratch.reset();
+    const auto values = scratch.allocate<std::uint32_t>(
+        StorageWorldShape::chunk.x * StorageWorldShape::chunk.y *
+        StorageWorldShape::chunk.z);
+    benchmark::DoNotOptimize(values.data());
+    benchmark::DoNotOptimize(values.size());
+  }
+}
+
+void BM_block_context_scratch_tile_iteration_2d(benchmark::State& state) {
+  StorageWorld world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{0}};
+  tess::BlockScratch scratch;
+  scratch.reserve_bytes(sizeof(std::uint32_t) * StorageWorldShape::chunk.x *
+                        StorageWorldShape::chunk.y *
+                        StorageWorldShape::chunk.z);
+  auto ctx = tess::block_ctx<tess::WritePolicy::UniquePerChunk>(
+      world, tess::chunk_domain(keys), scratch);
+
+  for (auto _ : state) {
+    std::uint64_t sum = 0;
+    ctx.for_each_chunk([&](auto view) {
+      ctx.reset_scratch();
+      auto values = ctx.scratch()->template allocate<std::uint32_t>(
+          StorageWorldShape::chunk.x * StorageWorldShape::chunk.y *
+          StorageWorldShape::chunk.z);
+      view.for_each_tile([&](tess::LocalTileId id, tess::LocalCoord3 coord) {
+        values[id.value] =
+            static_cast<std::uint32_t>(id.value + coord.x + coord.y);
+        sum += values[id.value];
+      });
+    });
+    benchmark::DoNotOptimize(sum);
+  }
+}
+
 template <typename WorldType>
 void BM_block_chunk_tile_iteration(benchmark::State& state) {
   WorldType world;
@@ -401,6 +444,9 @@ BENCHMARK(BM_block_explicit_domain_iteration)
 BENCHMARK(BM_block_dirty_domain_iteration)
     ->Name("block/dirty_domain_iteration");
 BENCHMARK(BM_block_context_iteration_2d)->Name("block/context_iteration_2d");
+BENCHMARK(BM_block_scratch_allocate_u32)->Name("block/scratch_allocate_u32");
+BENCHMARK(BM_block_context_scratch_tile_iteration_2d)
+    ->Name("block/context_scratch_tile_iteration_2d");
 BENCHMARK(BM_block_chunk_tile_iteration<StorageWorld>)
     ->Name("block/chunk_tile_iteration_2d");
 BENCHMARK(BM_block_chunk_tile_iteration<Block3DWorld>)

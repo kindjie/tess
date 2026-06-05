@@ -172,7 +172,9 @@ Console summary, JSON, CSV. Optional Chrome trace/flamegraph markers and plot sc
 Key conversion benchmarks have threshold scaffolding in
 `bench/thresholds/key-conversions.json`. Storage benchmarks have matching
 threshold scaffolding in `bench/thresholds/storage.json`. Block benchmarks
-have matching threshold scaffolding in `bench/thresholds/block.json`.
+have matching threshold scaffolding in `bench/thresholds/block.json`,
+including scratch-specific names for `block/scratch_allocate_u32` and
+`block/context_scratch_tile_iteration_2d`.
 
 Run the current scaffolds with:
 

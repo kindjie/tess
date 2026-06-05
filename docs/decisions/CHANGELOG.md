@@ -144,6 +144,15 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
 - Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`
 
+## 2026-06-05 - Block Scratch Benchmark Scaffold
+
+- Changed: Added disabled block benchmark threshold entries and benchmark
+  workloads for scratch allocation/reset and context scratch tile iteration.
+- Reason: Caller-owned scratch needs CI baseline visibility before real
+  wall-clock gates can be calibrated.
+- Affected docs: `docs/performance.md`, `docs/planning/benchmark-plan.md`
+- Affected code: `bench/tess_bench.cc`, `bench/thresholds/block.json`
+
 ## 2026-06-04 - Local Warning and Analysis Presets
 
 - Changed: Added project-local warning flags, warnings-as-errors,
