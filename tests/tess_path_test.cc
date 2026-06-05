@@ -155,7 +155,7 @@ TEST(TessPath, SupportsChunked3DCoordinates) {
   EXPECT_EQ(result.path.back(), (tess::Coord3{2, 2, 2}));
   EXPECT_EQ(result.cost, 6u);
   EXPECT_EQ(result.expanded_nodes, result.path.size());
-  EXPECT_GT(result.reached_nodes, result.expanded_nodes);
+  EXPECT_GE(result.reached_nodes, result.expanded_nodes);
 }
 
 TEST(TessPath, WarmScratchPathQueryDoesNotAllocate) {

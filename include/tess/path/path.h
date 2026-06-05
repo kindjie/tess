@@ -44,6 +44,7 @@ class PathScratch {
 
   void reserve_nodes(std::size_t node_count) {
     open_.reserve(node_count);
+    generation_.reserve(node_count);
     state_.reserve(node_count);
     g_.reserve(node_count);
     parent_.reserve(node_count);
@@ -52,12 +53,7 @@ class PathScratch {
   }
 
   void clear() noexcept {
-    for (const auto index : touched_) {
-      const auto offset = static_cast<std::size_t>(index);
-      state_[offset] = 0;
-      g_[offset] = std::numeric_limits<std::uint32_t>::max();
-      parent_[offset] = std::numeric_limits<std::uint64_t>::max();
-    }
+    advance_epoch();
     open_.clear();
     touched_.clear();
     path_.clear();
@@ -72,7 +68,39 @@ class PathScratch {
   friend auto astar_path(const World& world, PathRequest request,
                          PathScratch& scratch) -> PathResult;
 
+  void advance_epoch() noexcept {
+    ++epoch_;
+    if (epoch_ == 0) {
+      std::fill(generation_.begin(), generation_.end(), 0);
+      epoch_ = 1;
+    }
+  }
+
+  [[nodiscard]] auto is_current(std::size_t offset) const noexcept -> bool {
+    return generation_[offset] == epoch_;
+  }
+
+  [[nodiscard]] auto state_at(std::size_t offset,
+                              std::uint8_t unseen) const noexcept
+      -> std::uint8_t {
+    return is_current(offset) ? state_[offset] : unseen;
+  }
+
+  [[nodiscard]] auto g_at(std::size_t offset,
+                          std::uint32_t infinite_cost) const noexcept
+      -> std::uint32_t {
+    return is_current(offset) ? g_[offset] : infinite_cost;
+  }
+
+  void touch_node(std::uint64_t index) {
+    const auto offset = static_cast<std::size_t>(index);
+    generation_[offset] = epoch_;
+    touched_.push_back(index);
+  }
+
   std::vector<OpenNode> open_;
+  std::vector<std::uint32_t> generation_;
+  std::uint32_t epoch_ = 1;
   std::vector<std::uint8_t> state_;
   std::vector<std::uint32_t> g_;
   std::vector<std::uint64_t> parent_;
@@ -241,9 +269,36 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
     return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
   }
 
+  auto direct_current = request.start;
+  scratch.path_.push_back(direct_current);
+  TESS_DIAG_EVENT(path_reconstruct_node);
+  const auto step_direct_axis = [&](auto Coord3::* member) {
+    while (direct_current.*member != request.goal.*member) {
+      direct_current.*member +=
+          direct_current.*member < request.goal.*member ? 1 : -1;
+      TESS_DIAG_EVENT(path_passability_check);
+      if (!detail::is_passable<World, Tag>(world, direct_current)) {
+        scratch.path_.clear();
+        return false;
+      }
+      scratch.path_.push_back(direct_current);
+      TESS_DIAG_EVENT(path_reconstruct_node);
+    }
+    return true;
+  };
+  const auto direct_path_found = step_direct_axis(&Coord3::x) &&
+                                 step_direct_axis(&Coord3::y) &&
+                                 step_direct_axis(&Coord3::z);
+  if (direct_path_found) {
+    const auto cost = detail::manhattan(request.start, request.goal);
+    return PathResult{PathStatus::Found, cost, scratch.path_.size(),
+                      scratch.path_.size(), scratch.path_};
+  }
+
   const auto node_count = detail::tile_count<World>();
   if (scratch.state_.size() != node_count) {
     TESS_DIAG_EVENT(path_initialize);
+    scratch.generation_.assign(node_count, 0);
     scratch.state_.assign(node_count, unseen);
     scratch.g_.assign(node_count, infinite_cost);
     scratch.parent_.assign(node_count, no_parent);
@@ -253,7 +308,7 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
   const auto goal = detail::tile_index<Shape>(request.goal);
   scratch.g_[static_cast<std::size_t>(start)] = 0;
   scratch.state_[static_cast<std::size_t>(start)] = open;
-  scratch.touched_.push_back(start);
+  scratch.touch_node(start);
   TESS_DIAG_EVENT(path_touch_node);
   TESS_DIAG_EVENT(path_heuristic);
   scratch.open_.push_back(PathScratch::OpenNode{
@@ -274,10 +329,10 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
     scratch.open_.pop_back();
 
     const auto current_offset = static_cast<std::size_t>(current.index);
-    if (scratch.state_[current_offset] == closed ||
-        current.g != scratch.g_[current_offset]) {
-      TESS_DIAG_EVENT_VALUE(path_skip_pop,
-                            scratch.state_[current_offset] == closed);
+    const auto current_state = scratch.state_at(current_offset, unseen);
+    if (current_state == closed ||
+        current.g != scratch.g_at(current_offset, infinite_cost)) {
+      TESS_DIAG_EVENT_VALUE(path_skip_pop, current_state == closed);
       continue;
     }
     scratch.state_[current_offset] = closed;
@@ -310,16 +365,17 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
           }
 
           const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
-          if (scratch.state_[neighbor_offset] == closed) {
+          const auto neighbor_state = scratch.state_at(neighbor_offset, unseen);
+          if (neighbor_state == closed) {
             TESS_DIAG_EVENT(path_neighbor_closed);
             return;
           }
           const auto tentative_g = current.g + 1;
           TESS_DIAG_EVENT(path_relax_attempt);
-          if (tentative_g < scratch.g_[neighbor_offset]) {
+          if (tentative_g < scratch.g_at(neighbor_offset, infinite_cost)) {
             TESS_DIAG_EVENT(path_relax_success);
-            if (scratch.state_[neighbor_offset] == unseen) {
-              scratch.touched_.push_back(neighbor_index);
+            if (neighbor_state == unseen) {
+              scratch.touch_node(neighbor_index);
               TESS_DIAG_EVENT(path_touch_node);
             }
             scratch.g_[neighbor_offset] = tentative_g;
