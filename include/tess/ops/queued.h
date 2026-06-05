@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <source_location>
 #include <span>
 #include <utility>
@@ -419,6 +420,28 @@ template <typename World>
 [[nodiscard]] auto plan_operations(const World& world, const FrameOps& ops)
     -> ExecutionReport {
   return plan_operations(world, ops.operations());
+}
+
+[[nodiscard]] constexpr auto planned_chunk_domain(
+    const PlannedOperation& operation) noexcept -> ChunkDomain {
+  return chunk_domain(std::span<const ChunkKey>{operation.chunks.data(),
+                                                operation.chunks.size()});
+}
+
+template <WritePolicy Policy>
+[[nodiscard]] constexpr bool planned_policy_matches(
+    const PlannedOperation& operation) noexcept {
+  return operation.write_policy == Policy;
+}
+
+template <WritePolicy Policy, typename World>
+[[nodiscard]] constexpr auto try_planned_block_ctx(
+    World& world, const PlannedOperation& operation) noexcept
+    -> std::optional<BlockCtx<World, Policy>> {
+  if (!planned_policy_matches<Policy>(operation)) {
+    return std::nullopt;
+  }
+  return block_ctx<Policy>(world, planned_chunk_domain(operation));
 }
 
 }  // namespace tess
