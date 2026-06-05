@@ -33,6 +33,14 @@ by `tess/tess.h`.
   vector.
 - `ExecutionReport` stores one report entry per queued operation and the plan
   entries for operations that passed validation.
+- `planned_chunk_domain(planned)` adapts a successful planned operation into a
+  non-owning `ChunkDomain` span over the planned operation's owned chunk
+  vector.
+- `planned_policy_matches<Policy>(planned)` checks whether the planned write
+  policy exactly matches the requested block policy.
+- `try_planned_block_ctx<Policy>(world, planned)` returns a policy-typed
+  `BlockCtx` over the planned chunk domain when the policies match, or
+  `std::nullopt` on mismatch.
 
 The first submitted operation category is `FrameOps::update_field(...)`. It
 records field/block-style work intent only; it does not accept callbacks or
@@ -70,6 +78,11 @@ Report helpers expose deterministic inspection without changing ownership:
 Invalid operation reports include `OperationFailure`. Invalid explicit chunk
 domains also include the first out-of-range `ChunkKey` as diagnostic detail.
 
+The plan-to-block adapter is intentionally non-owning. The planned operation
+must outlive any `ChunkDomain` or `BlockCtx` produced from it, because those
+objects point at `planned.chunks`. Adapter construction and iteration over a
+prebuilt plan do not allocate.
+
 Inspecting existing queued operations, reports, and planned operations returns
 non-owning spans and does not allocate. Enqueueing and domain/report expansion
 may allocate because `FrameOps`, explicit domains, reports, and planned chunk
@@ -81,6 +94,7 @@ This slice is a planner scaffold only. It intentionally does not implement:
 
 - callbacks, kernel invocation, executor integration, or result channels
 - barrier insertion, batching heuristics, async work, or worker scheduling
+- automatic execution of planned operations
 - topology, pathfinding, movement, residency transitions, or GPU selection
 - work-contract or maintenance-scheduler semantics
 - hazard analysis beyond recording diagnostic access metadata and validating
@@ -107,6 +121,8 @@ later work:
 - `ExecutionReport` reports validation status, chunk count, and source
   location plus limited diagnostics, not backend choice, solved hazards,
   versions, or result channels.
+- The plan-to-block adapter only exposes successful planned chunk domains to
+  the existing serial block API. It does not execute queued intent by itself.
 
 Those omissions are intentional so future scheduler, topology, pathing, and
 diagnostics slices can be added against a deterministic queue and domain

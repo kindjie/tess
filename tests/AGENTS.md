@@ -25,5 +25,6 @@
   active/resident chunk-domain expansion, enqueue-order plan preservation,
   diagnostic access metadata, structured invalid write-policy and
   explicit-domain rejection, report lookup/count helpers, mixed valid/invalid
-  report ordering, source-location capture, and allocation-free inspection of
-  already-built queue/report/plan spans.
+  report ordering, plan-to-block adapters, policy mismatch rejection,
+  allocation-free prebuilt planned block iteration, source-location capture,
+  and allocation-free inspection of already-built queue/report/plan spans.
