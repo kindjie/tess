@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -83,6 +84,10 @@ class PathScratch {
   template <typename World, typename Tag>
   friend auto astar_path(const World& world, PathRequest request,
                          PathScratch& scratch) -> PathResult;
+
+  template <typename World, typename PassableTag, typename CostTag>
+  friend auto weighted_astar_path(const World& world, PathRequest request,
+                                  PathScratch& scratch) -> PathResult;
 
   void advance_epoch() noexcept {
     ++epoch_;
@@ -349,6 +354,40 @@ template <typename World, typename Tag>
   const auto& value = world.chunk(chunk_key<Shape>(key))
                           .template field<Tag>(local_tile_id<Shape>(key));
   return static_cast<bool>(value);
+}
+
+template <typename World, typename Tag>
+[[nodiscard]] auto tile_entry_cost_index(const World& world,
+                                         std::uint64_t index) noexcept
+    -> std::uint32_t {
+  using Shape = typename World::shape_type;
+  using Storage = typename ShapeTraits<Shape>::TileKeyStorage;
+  const auto key = TileKey<Shape>{static_cast<Storage>(index)};
+  const auto& value = world.chunk(chunk_key<Shape>(key))
+                          .template field<Tag>(local_tile_id<Shape>(key));
+  static_assert(std::is_integral_v<std::remove_cvref_t<decltype(value)>>,
+                "weighted_astar_path requires an integral cost field.");
+  if constexpr (std::is_signed_v<std::remove_cvref_t<decltype(value)>>) {
+    if (value <= 0) {
+      return 0;
+    }
+  } else if (value == 0) {
+    return 0;
+  }
+  if (static_cast<std::uint64_t>(value) >
+      std::numeric_limits<std::uint32_t>::max()) {
+    return std::numeric_limits<std::uint32_t>::max();
+  }
+  return static_cast<std::uint32_t>(value);
+}
+
+[[nodiscard]] constexpr auto saturating_add(std::uint32_t lhs,
+                                            std::uint32_t rhs) noexcept
+    -> std::uint32_t {
+  if (rhs > std::numeric_limits<std::uint32_t>::max() - lhs) {
+    return std::numeric_limits<std::uint32_t>::max();
+  }
+  return lhs + rhs;
 }
 
 template <typename World, typename Tag>
@@ -1115,6 +1154,157 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
             } else {
               scratch.open_next_.push_back(updated_node);
             }
+            TESS_DIAG_EVENT(path_heap_push);
+          }
+        });
+  }
+
+  return PathResult{PathStatus::NoPath, 0, expanded_nodes,
+                    scratch.touched_.size(), scratch.path_};
+}
+
+template <typename World, typename PassableTag, typename CostTag>
+auto weighted_astar_path(const World& world, PathRequest request,
+                         PathScratch& scratch) -> PathResult {
+  using Shape = typename World::shape_type;
+  constexpr auto unseen = std::uint8_t{0};
+  constexpr auto open = std::uint8_t{1};
+  constexpr auto closed = std::uint8_t{2};
+  constexpr auto no_parent = std::numeric_limits<std::uint64_t>::max();
+  constexpr auto infinite_cost = std::numeric_limits<std::uint32_t>::max();
+
+  TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
+  scratch.clear();
+  if (!contains<Shape>(request.start)) {
+    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+  }
+  TESS_DIAG_EVENT(path_start_passability_check);
+  if (!detail::is_passable<World, PassableTag>(world, request.start)) {
+    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+  }
+  if (!contains<Shape>(request.goal)) {
+    return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
+  }
+  TESS_DIAG_EVENT(path_goal_passability_check);
+  if (!detail::is_passable<World, PassableTag>(world, request.goal)) {
+    return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
+  }
+
+  const auto start = detail::tile_index<Shape>(request.start);
+  const auto goal = detail::tile_index<Shape>(request.goal);
+  if (detail::tile_entry_cost_index<World, CostTag>(world, start) == 0) {
+    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+  }
+  if (detail::tile_entry_cost_index<World, CostTag>(world, goal) == 0) {
+    return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
+  }
+
+  const auto node_count = detail::tile_count<World>();
+  if (scratch.state_.size() != node_count) {
+    TESS_DIAG_EVENT(path_initialize);
+    scratch.generation_.assign(node_count, 0);
+    scratch.state_.assign(node_count, unseen);
+    scratch.g_.assign(node_count, infinite_cost);
+    scratch.parent_.assign(node_count, no_parent);
+  }
+
+  scratch.g_[static_cast<std::size_t>(start)] = 0;
+  scratch.state_[static_cast<std::size_t>(start)] = open;
+  scratch.touch_node(start);
+  TESS_DIAG_EVENT(path_touch_node);
+  TESS_DIAG_EVENT(path_heuristic);
+  scratch.open_.push_back(PathScratch::OpenNode{
+      start,
+      0,
+      detail::manhattan(request.start, request.goal),
+  });
+  std::push_heap(scratch.open_.begin(), scratch.open_.end(),
+                 detail::open_node_less);
+  TESS_DIAG_EVENT(path_heap_push);
+
+  std::size_t expanded_nodes = 0;
+  while (!scratch.open_.empty()) {
+    TESS_DIAG_EVENT(path_heap_pop);
+    std::pop_heap(scratch.open_.begin(), scratch.open_.end(),
+                  detail::open_node_less);
+    const auto current = scratch.open_.back();
+    scratch.open_.pop_back();
+
+    const auto current_offset = static_cast<std::size_t>(current.index);
+    const auto current_state = scratch.state_at(current_offset, unseen);
+    if (current_state == closed ||
+        current.g != scratch.g_at(current_offset, infinite_cost)) {
+      TESS_DIAG_EVENT_VALUE(path_skip_pop, current_state == closed);
+      continue;
+    }
+    scratch.state_[current_offset] = closed;
+    ++expanded_nodes;
+
+    if (current.index == goal) {
+      auto step = current.index;
+      while (true) {
+        scratch.path_.push_back(detail::tile_coord<Shape>(step));
+        TESS_DIAG_EVENT(path_reconstruct_node);
+        if (step == start) {
+          break;
+        }
+        step = scratch.parent_[static_cast<std::size_t>(step)];
+      }
+      std::reverse(scratch.path_.begin(), scratch.path_.end());
+      return PathResult{PathStatus::Found, current.g, expanded_nodes,
+                        scratch.touched_.size(), scratch.path_};
+    }
+
+    const auto current_coord = detail::tile_coord<Shape>(current.index);
+    detail::for_each_indexed_axis_neighbor<Shape>(
+        current_coord, current.index,
+        [&](Coord3 neighbor, std::uint64_t neighbor_index) {
+          TESS_DIAG_EVENT(path_neighbor_candidate);
+          const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
+          const auto neighbor_state = scratch.state_at(neighbor_offset, unseen);
+          if (neighbor_state == closed) {
+            TESS_DIAG_EVENT(path_neighbor_closed);
+            return;
+          }
+          TESS_DIAG_EVENT(path_relax_attempt);
+          if (neighbor_state == unseen) {
+            TESS_DIAG_EVENT(path_passability_check);
+            if (!detail::is_passable_index<World, PassableTag>(
+                    world, neighbor_index)) {
+              TESS_DIAG_EVENT(path_neighbor_blocked);
+              return;
+            }
+          }
+
+          const auto entry_cost = detail::tile_entry_cost_index<World, CostTag>(
+              world, neighbor_index);
+          if (entry_cost == 0) {
+            TESS_DIAG_EVENT(path_neighbor_blocked);
+            return;
+          }
+          const auto tentative_g =
+              detail::saturating_add(current.g, entry_cost);
+          if (tentative_g == infinite_cost) {
+            return;
+          }
+          if (tentative_g < scratch.g_at(neighbor_offset, infinite_cost)) {
+            TESS_DIAG_EVENT(path_relax_success);
+            if (neighbor_state == unseen) {
+              scratch.touch_node(neighbor_index);
+              TESS_DIAG_EVENT(path_touch_node);
+            }
+            scratch.g_[neighbor_offset] = tentative_g;
+            scratch.parent_[neighbor_offset] = current.index;
+            scratch.state_[neighbor_offset] = open;
+            TESS_DIAG_EVENT(path_heuristic);
+            scratch.open_.push_back(PathScratch::OpenNode{
+                neighbor_index,
+                tentative_g,
+                detail::saturating_add(
+                    tentative_g, detail::manhattan(neighbor, request.goal)),
+            });
+            std::push_heap(scratch.open_.begin(), scratch.open_.end(),
+                           detail::open_node_less);
             TESS_DIAG_EVENT(path_heap_push);
           }
         });

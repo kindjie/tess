@@ -91,8 +91,14 @@ Compare row-major, Morton, Hilbert if implemented, and workload-specific active/
 - unique/shared goals
 - bottlenecks
 - missing chunks
+- unit-cost regression guardrails
+- weighted terrain with positive integral entry costs
 - open set comparisons
 - scratch reuse
+
+The path threshold set keeps unit-cost and weighted benchmarks separate. A
+weighted-path change must still pass the existing unit-cost path thresholds so
+weighted support cannot silently regress the optimized unit-cost fast paths.
 
 ## 12. Flow/distance/influence benchmarks
 

@@ -13,6 +13,20 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-05 - Weighted A* Entry Costs
+
+- Changed: Added a separate `weighted_astar_path` API for positive integral
+  entry costs, plus weighted correctness tests and weighted path benchmarks.
+- Reason: Weighted terrain is likely to be important, but the existing
+  unit-cost fast paths and route reuse proofs do not apply to arbitrary entry
+  costs. The weighted API preserves optimal weighted paths while leaving the
+  optimized unit-cost path unchanged.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/benchmark-plan.md`,
+  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
+  `bench/tess_bench.cc`, `bench/thresholds/path.json`
+
 ## 2026-06-05 - Symbolicated Benchmark Profiling Workflow
 
 - Changed: Added a `bench-profile` preset and a `tools/profile_benchmark.sh`

@@ -1,7 +1,7 @@
 # Path Foundation
 
-The current path layer is a minimal always-resident unit-cost path foundation.
-It lives in `include/tess/path/path.h` and is exported by `tess/tess.h`.
+The current path layer is a minimal always-resident path foundation. It lives
+in `include/tess/path/path.h` and is exported by `tess/tess.h`.
 
 ## Public Surface
 
@@ -18,9 +18,12 @@ It lives in `include/tess/path/path.h` and is exported by `tess/tess.h`.
   and reconstructed paths.
 - `RouteCacheScratch` owns reusable route-cache entries and cached path nodes
   for exact route and same-goal suffix reuse.
-- `astar_path<World, PassableTag>(world, request, scratch)` runs deterministic
-  pathfinding over the existing always-resident world storage. The passability
-  field is treated as boolean-like.
+- `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
+  unit-cost deterministic pathfinding over the existing always-resident world
+  storage. The passability field is treated as boolean-like.
+- `weighted_astar_path<World, PassableTag, CostTag>(world, request, scratch)`
+  runs deterministic weighted A* over passability plus an integral entry-cost
+  field.
 - `cached_astar_path<World, PassableTag>(world, request, scratch, cache)`
   checks the route cache before falling back to `astar_path`.
 - `build_distance_field<World, PassableTag>(world, goal, scratch)` builds a
@@ -41,10 +44,20 @@ shape containment helpers. Degenerate axes naturally reject out-of-bounds
 neighbors, so the same implementation covers top-down 2D, vertical 2D, and
 small 3D worlds.
 
-Costs are unit-weighted. The heuristic is Manhattan distance. Tie-breaking is
-deterministic by lower total score, then higher path cost for equal-score
-nodes, then tile-key order. Preferring higher path cost on equal-score nodes
-avoids open-grid wavefront expansion while preserving shortest paths.
+The default `astar_path` costs are unit-weighted. The heuristic is Manhattan
+distance. Tie-breaking is deterministic by lower total score, then higher path
+cost for equal-score nodes, then tile-key order. Preferring higher path cost on
+equal-score nodes avoids open-grid wavefront expansion while preserving
+shortest paths.
+
+`weighted_astar_path` charges the destination tile's positive integral
+entry cost for each move. The start tile's cost is not charged, but start and
+goal costs must be positive. Zero-cost and negative signed-cost tiles are
+treated as blocked, and oversized integral costs saturate to the public
+32-bit path-cost range. Weighted A* uses a binary heap and Manhattan distance
+with a minimum edge cost of one, so it preserves optimal weighted paths while
+skipping the unit-cost-only fast paths, bucket queue, route cache, and distance
+field shortcuts.
 
 Before entering open-set A*, the implementation probes direct Manhattan
 paths in the shape-relevant axis orders. If any route is fully passable, it
@@ -69,12 +82,12 @@ dense per-tile state arrays and clears only nodes touched by the previous
 query, so repeated queries avoid full-world scratch resets when the search
 visits a small fraction of the world.
 
-For many agents repeating point-to-point routes, `RouteCacheScratch` can
-amortize complete path searches. Exact `(start, goal)` hits return the cached
-path without expanding nodes. Same-goal suffix hits are also supported when the
-new start already appears inside a cached optimal path; with unit positive edge
-costs, that suffix is also optimal. The cache assumes the caller clears it when
-passability or movement rules change.
+For many agents repeating unit-cost point-to-point routes, `RouteCacheScratch`
+can amortize complete path searches. Exact `(start, goal)` hits return the
+cached path without expanding nodes. Same-goal suffix hits are also supported
+when the new start already appears inside a cached optimal path; with unit
+positive edge costs, that suffix is also optimal. The cache assumes the caller
+clears it when passability or movement rules change.
 
 For many agents sharing a goal, `DistanceFieldScratch` can amortize search
 work. A field build visits reachable passable tiles once from the goal, and
@@ -84,20 +97,23 @@ instead of returning a path to stale field data.
 
 ## Deliberate Limits
 
-This MVP slice does not implement movement classes, weighted terrain, topology
-prechecks, portal graphs, sparse residency, reservations, dynamic blockers,
-async tickets, or rich path diagnostics. The implementation uses reusable dense
-per-tile scratch arrays, a two-bucket monotone open set for the current
-unit-cost Manhattan A* fallback, exact route/suffix caches, and dense reverse
-distance fields for shared-goal batches; it is still an MVP path core, not the
-final topology-aware path system.
+This MVP slice does not implement movement classes, topology prechecks, portal
+graphs, sparse residency, reservations, dynamic blockers, async tickets, or
+rich path diagnostics. The implementation uses reusable dense per-tile scratch
+arrays, a two-bucket monotone open set for the current unit-cost Manhattan A*
+fallback, exact route/suffix caches, dense reverse distance fields for
+shared-goal batches, and a separate weighted A* fallback for positive integral
+entry costs; it is still an MVP path core, not the final topology-aware path
+system.
 
-The A* API is suitable for individual point-to-point queries and regression
-coverage. Shared-goal distance fields are suitable for batches with substantial
-goal reuse. Route caches are suitable for stable maps with repeated exact
-routes or starts that lie on cached same-goal paths. The v1 plan still needs
-topology prechecks, richer field reuse, and hierarchy to cover broad many-agent
-workloads.
+The unit-cost A* API is suitable for individual point-to-point queries and
+regression coverage. Weighted A* is suitable for correctness-first weighted
+terrain queries while the optimized unit-cost shortcuts remain separate.
+Shared-goal distance fields are suitable for batches with substantial goal
+reuse. Route caches are suitable for stable maps with repeated exact routes or
+starts that lie on cached same-goal paths. The v1 plan still needs topology
+prechecks, richer field reuse, weighted reuse, and hierarchy to cover broad
+many-agent workloads.
 
 ## Current Profiling Notes
 
