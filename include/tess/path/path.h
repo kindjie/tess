@@ -137,6 +137,69 @@ void for_each_axis_neighbor(Coord3 coord, Fn&& fn) {
   fn(Coord3{coord.x, coord.y, coord.z - 1});
 }
 
+template <typename Shape, typename Fn>
+void for_each_indexed_axis_neighbor(Coord3 coord, std::uint64_t index,
+                                    Fn&& fn) {
+  using Traits = ShapeTraits<Shape>;
+  constexpr auto size = Traits::size;
+  constexpr auto chunk = Traits::chunk;
+  constexpr auto local_bits = Traits::local_bits;
+  constexpr auto chunk_index_stride =
+      local_bits >= 64 ? std::uint64_t{0} : (std::uint64_t{1} << local_bits);
+  constexpr auto chunk_y_stride = Traits::chunk_count_x * chunk_index_stride;
+  constexpr auto chunk_z_stride =
+      Traits::chunk_count_x * Traits::chunk_count_y * chunk_index_stride;
+
+  const auto local_x = static_cast<std::uint64_t>(coord.x) & (chunk.x - 1);
+  const auto local_y = static_cast<std::uint64_t>(coord.y) & (chunk.y - 1);
+  const auto local_z = static_cast<std::uint64_t>(coord.z) & (chunk.z - 1);
+
+  if constexpr (!Traits::degenerate_x) {
+    if (static_cast<std::uint64_t>(coord.x) + 1 < size.x) {
+      const auto next_index = local_x + 1 < chunk.x
+                                  ? index + 1
+                                  : index + chunk_index_stride - local_x;
+      fn(Coord3{coord.x + 1, coord.y, coord.z}, next_index);
+    }
+    if (coord.x > 0) {
+      const auto next_index =
+          local_x > 0 ? index - 1 : index - chunk_index_stride + (chunk.x - 1);
+      fn(Coord3{coord.x - 1, coord.y, coord.z}, next_index);
+    }
+  }
+
+  if constexpr (!Traits::degenerate_y) {
+    if (static_cast<std::uint64_t>(coord.y) + 1 < size.y) {
+      const auto next_index = local_y + 1 < chunk.y
+                                  ? index + chunk.x
+                                  : index + chunk_y_stride - local_y * chunk.x;
+      fn(Coord3{coord.x, coord.y + 1, coord.z}, next_index);
+    }
+    if (coord.y > 0) {
+      const auto next_index =
+          local_y > 0 ? index - chunk.x
+                      : index - chunk_y_stride + (chunk.y - 1) * chunk.x;
+      fn(Coord3{coord.x, coord.y - 1, coord.z}, next_index);
+    }
+  }
+
+  if constexpr (!Traits::degenerate_z) {
+    const auto local_xy = chunk.x * chunk.y;
+    if (static_cast<std::uint64_t>(coord.z) + 1 < size.z) {
+      const auto next_index = local_z + 1 < chunk.z
+                                  ? index + local_xy
+                                  : index + chunk_z_stride - local_z * local_xy;
+      fn(Coord3{coord.x, coord.y, coord.z + 1}, next_index);
+    }
+    if (coord.z > 0) {
+      const auto next_index =
+          local_z > 0 ? index - local_xy
+                      : index - chunk_z_stride + (chunk.z - 1) * local_xy;
+      fn(Coord3{coord.x, coord.y, coord.z - 1}, next_index);
+    }
+  }
+}
+
 [[nodiscard]] constexpr bool open_node_less(
     PathScratch::OpenNode lhs, PathScratch::OpenNode rhs) noexcept {
   if (lhs.f != rhs.f) {
@@ -220,34 +283,34 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
     }
 
     const auto current_coord = detail::tile_coord<Shape>(current.index);
-    detail::for_each_axis_neighbor(current_coord, [&](Coord3 neighbor) {
-      if (!contains<Shape>(neighbor) ||
-          !detail::is_passable<World, Tag>(world, neighbor)) {
-        return;
-      }
+    detail::for_each_indexed_axis_neighbor<Shape>(
+        current_coord, current.index,
+        [&](Coord3 neighbor, std::uint64_t neighbor_index) {
+          if (!detail::is_passable<World, Tag>(world, neighbor)) {
+            return;
+          }
 
-      const auto neighbor_index = detail::tile_index<Shape>(neighbor);
-      const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
-      if (scratch.state_[neighbor_offset] == closed) {
-        return;
-      }
-      const auto tentative_g = current.g + 1;
-      if (tentative_g < scratch.g_[neighbor_offset]) {
-        if (scratch.state_[neighbor_offset] == unseen) {
-          scratch.touched_.push_back(neighbor_index);
-        }
-        scratch.g_[neighbor_offset] = tentative_g;
-        scratch.parent_[neighbor_offset] = current.index;
-        scratch.state_[neighbor_offset] = open;
-        scratch.open_.push_back(PathScratch::OpenNode{
-            neighbor_index,
-            tentative_g,
-            tentative_g + detail::manhattan(neighbor, request.goal),
+          const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
+          if (scratch.state_[neighbor_offset] == closed) {
+            return;
+          }
+          const auto tentative_g = current.g + 1;
+          if (tentative_g < scratch.g_[neighbor_offset]) {
+            if (scratch.state_[neighbor_offset] == unseen) {
+              scratch.touched_.push_back(neighbor_index);
+            }
+            scratch.g_[neighbor_offset] = tentative_g;
+            scratch.parent_[neighbor_offset] = current.index;
+            scratch.state_[neighbor_offset] = open;
+            scratch.open_.push_back(PathScratch::OpenNode{
+                neighbor_index,
+                tentative_g,
+                tentative_g + detail::manhattan(neighbor, request.goal),
+            });
+            std::push_heap(scratch.open_.begin(), scratch.open_.end(),
+                           detail::open_node_less);
+          }
         });
-        std::push_heap(scratch.open_.begin(), scratch.open_.end(),
-                       detail::open_node_less);
-      }
-    });
   }
 
   return PathResult{PathStatus::NoPath, 0, expanded_nodes,
