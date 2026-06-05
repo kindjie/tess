@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "path/astar_open_2d": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_open_2d_64x64": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_open_2d_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_open_2d_1024x1024": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    }
+  }
+}

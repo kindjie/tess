@@ -3,43 +3,43 @@
   "benchmarks": {
     "key/chunk_coord_2d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": null
+      "max_cpu_time_ns": 1000000
     },
     "key/local_coord_2d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": null
+      "max_cpu_time_ns": 1000000
     },
     "key/local_tile_id_2d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": null
+      "max_cpu_time_ns": 1000000
     },
     "key/tile_key_2d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": null
+      "max_cpu_time_ns": 1000000
     },
     "key/coord_from_tile_key_2d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": null
+      "max_cpu_time_ns": 1000000
     },
     "key/tile_key_3d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": null
+      "max_cpu_time_ns": 1000000
     },
     "key/coord_from_tile_key_3d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": null
+      "max_cpu_time_ns": 1000000
     },
     "key/tile_key_single_chunk_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": null
+      "max_cpu_time_ns": 1000000
     },
     "key/tile_key_huge_u128": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": null
+      "max_cpu_time_ns": 1000000
     },
     "key/coord_from_tile_key_huge_u128": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": null
+      "max_cpu_time_ns": 1000000
     }
   }
 }

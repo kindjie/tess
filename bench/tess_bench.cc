@@ -23,9 +23,18 @@ using StorageSingleChunk =
     tess::Shape<tess::Extent3{256, 256, 1}, tess::Extent3{256, 256, 1}>;
 using Block3DShape =
     tess::Shape<tess::Extent3{128, 128, 32}, tess::Extent3{16, 16, 8}>;
+using PathShape =
+    tess::Shape<tess::Extent3{16, 16, 1}, tess::Extent3{16, 16, 1}>;
+using PathRealisticShape =
+    tess::Shape<tess::Extent3{64, 64, 1}, tess::Extent3{16, 16, 1}>;
+using PathScaleShape =
+    tess::Shape<tess::Extent3{512, 512, 1}, tess::Extent3{32, 32, 1}>;
+using PathLargeShape =
+    tess::Shape<tess::Extent3{1024, 1024, 1}, tess::Extent3{32, 32, 1}>;
 
 struct TerrainTag {};
 struct CostTag {};
+struct PassableTag {};
 
 constexpr std::uint32_t DirtyTerrain = 1u << 0u;
 constexpr std::uint32_t DirtyCost = 1u << 1u;
@@ -39,6 +48,20 @@ using StorageSingleChunkPage =
     tess::ChunkPage<StorageSingleChunk, StorageSchema>;
 using Block2DWorld = tess::AlwaysResidentWorld<TopDown2D, StorageSchema>;
 using Block3DWorld = tess::AlwaysResidentWorld<Block3DShape, StorageSchema>;
+using PathSchema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
+using PathWorld = tess::AlwaysResidentWorld<PathShape, PathSchema>;
+using PathRealisticWorld =
+    tess::AlwaysResidentWorld<PathRealisticShape, PathSchema>;
+using PathScaleWorld = tess::AlwaysResidentWorld<PathScaleShape, PathSchema>;
+using PathLargeWorld = tess::AlwaysResidentWorld<PathLargeShape, PathSchema>;
+
+void record_path_counters(benchmark::State& state,
+                          const tess::PathResult& result) {
+  state.counters["cost"] = static_cast<double>(result.cost);
+  state.counters["path_nodes"] = static_cast<double>(result.path.size());
+  state.counters["expanded_nodes"] = static_cast<double>(result.expanded_nodes);
+  state.counters["reached_nodes"] = static_cast<double>(result.reached_nodes);
+}
 
 template <typename Shape>
 void BM_chunk_coord(benchmark::State& state) {
@@ -407,6 +430,127 @@ void BM_block_chunk_boundary_scan(benchmark::State& state) {
   }
 }
 
+void BM_queued_execute_resident_update(benchmark::State& state) {
+  StorageWorld world;
+  tess::FrameOps ops;
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::FieldAccessDesc{0, DirtyTerrain, 0},
+                         tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  const auto& plan = report.plan();
+
+  for (auto _ : state) {
+    const auto result = tess::execute_plan<tess::WritePolicy::UniquePerChunk>(
+        world, plan, [](auto view) {
+          auto terrain = view.template field_span<TerrainTag>();
+          terrain[0] = static_cast<std::uint16_t>(view.key().value);
+        });
+    auto chunk_count = result.chunk_count;
+    benchmark::DoNotOptimize(chunk_count);
+  }
+}
+
+void BM_path_astar_open_2d(benchmark::State& state) {
+  PathWorld world;
+  for (auto& page : world.chunks()) {
+    auto passable = page.field_span<PassableTag>();
+    for (auto& tile : passable) {
+      tile = 1;
+    }
+  }
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(PathShape::size.x * PathShape::size.y *
+                        PathShape::size.z);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    result = tess::astar_path<PathWorld, PassableTag>(
+        world,
+        tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{15, 15, 0}},
+        scratch);
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+}
+
+void BM_path_astar_open_2d_64x64(benchmark::State& state) {
+  PathRealisticWorld world;
+  for (auto& page : world.chunks()) {
+    auto passable = page.field_span<PassableTag>();
+    for (auto& tile : passable) {
+      tile = 1;
+    }
+  }
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(PathRealisticShape::size.x *
+                        PathRealisticShape::size.y *
+                        PathRealisticShape::size.z);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    result = tess::astar_path<PathRealisticWorld, PassableTag>(
+        world,
+        tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 0}},
+        scratch);
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+}
+
+void BM_path_astar_open_2d_512x512(benchmark::State& state) {
+  PathScaleWorld world;
+  for (auto& page : world.chunks()) {
+    auto passable = page.field_span<PassableTag>();
+    for (auto& tile : passable) {
+      tile = 1;
+    }
+  }
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(PathScaleShape::size.x * PathScaleShape::size.y *
+                        PathScaleShape::size.z);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    result = tess::astar_path<PathScaleWorld, PassableTag>(
+        world,
+        tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 511, 0}},
+        scratch);
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+}
+
+void BM_path_astar_open_2d_1024x1024(benchmark::State& state) {
+  PathLargeWorld world;
+  for (auto& page : world.chunks()) {
+    auto passable = page.field_span<PassableTag>();
+    for (auto& tile : passable) {
+      tile = 1;
+    }
+  }
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(PathLargeShape::size.x * PathLargeShape::size.y *
+                        PathLargeShape::size.z);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    result = tess::astar_path<PathLargeWorld, PassableTag>(
+        world,
+        tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{1023, 1023, 0}},
+        scratch);
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+}
+
 BENCHMARK(BM_chunk_coord<TopDown2D>)->Name("key/chunk_coord_2d_u64");
 BENCHMARK(BM_local_coord<TopDown2D>)->Name("key/local_coord_2d_u64");
 BENCHMARK(BM_local_tile_id<TopDown2D>)->Name("key/local_tile_id_2d_u64");
@@ -455,5 +599,12 @@ BENCHMARK(BM_block_chunk_boundary_scan<Block2DWorld>)
     ->Name("block/chunk_boundary_scan_2d");
 BENCHMARK(BM_block_chunk_boundary_scan<Block3DWorld>)
     ->Name("block/chunk_boundary_scan_3d");
+BENCHMARK(BM_queued_execute_resident_update)
+    ->Name("queued/execute_resident_update");
+BENCHMARK(BM_path_astar_open_2d)->Name("path/astar_open_2d");
+BENCHMARK(BM_path_astar_open_2d_64x64)->Name("path/astar_open_2d_64x64");
+BENCHMARK(BM_path_astar_open_2d_512x512)->Name("path/astar_open_2d_512x512");
+BENCHMARK(BM_path_astar_open_2d_1024x1024)
+    ->Name("path/astar_open_2d_1024x1024");
 
 }  // namespace

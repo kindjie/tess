@@ -593,6 +593,93 @@ TEST(TessQueued, PlannedBlockCtxIteratesWithExistingBlockApi) {
                      }));
 }
 
+TEST(TessQueued, ExecutePlannedOperationRunsCallbackAndMarksDirtyChunks) {
+  World world;
+  tess::FrameOps ops;
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> requested{
+      tess::ChunkKey{3},
+      tess::ChunkKey{1},
+  };
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(requested),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_TRUE(report.ok());
+  ASSERT_EQ(report.plan().operations().size(), 1u);
+
+  const auto result =
+      tess::execute_planned_operation<tess::WritePolicy::UniquePerChunk>(
+          world, report.plan().operations()[0], [](auto view) {
+            auto terrain = view.template field_span<TerrainTag>();
+            terrain[0] = static_cast<std::uint16_t>(view.key().value + 10);
+          });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(result.chunk_count, 2u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{1})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            11u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{3})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            13u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).field_dirty_flags, DirtyTerrain);
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).field_dirty_flags, DirtyTerrain);
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 1u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).version, 1u);
+}
+
+TEST(TessQueued, ExecutePlanRejectsPolicyMismatchBeforeCallback) {
+  World world;
+  tess::FrameOps ops;
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_TRUE(report.ok());
+  bool called = false;
+  const auto result = tess::execute_plan<tess::WritePolicy::ReadOnly>(
+      world, report.plan(), [&](auto) { called = true; });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::PolicyMismatch);
+  EXPECT_EQ(result.chunk_count, 0u);
+  EXPECT_FALSE(called);
+}
+
+TEST(TessQueued, PrebuiltPlannedExecutionDoesNotAllocate) {
+  World world;
+  tess::FrameOps ops;
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::FieldAccessDesc{},
+                         tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  ASSERT_EQ(report.plan().operations().size(), 1u);
+
+  allocation_count.store(0, std::memory_order_relaxed);
+  count_allocations.store(true, std::memory_order_relaxed);
+
+  const auto result =
+      tess::execute_planned_operation<tess::WritePolicy::UniquePerChunk>(
+          world, report.plan().operations()[0], [](auto view) {
+            auto terrain = view.template field_span<TerrainTag>();
+            terrain[0] = static_cast<std::uint16_t>(view.key().value);
+          });
+
+  count_allocations.store(false, std::memory_order_relaxed);
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(result.chunk_count, World::chunk_count);
+  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+}
+
 TEST(TessQueued, PrebuiltPlannedBlockCtxIterationDoesNotAllocate) {
   World world;
   tess::FrameOps ops;
