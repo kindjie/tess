@@ -327,6 +327,129 @@ TEST(TessQueued, PlanOperationsPreserveEnqueueOrderAcrossDomains) {
   EXPECT_EQ(report.plan().operations()[1].chunks[0], (tess::ChunkKey{1}));
 }
 
+TEST(TessQueued, PlannedChunkDomainAdaptsExpandedChunks) {
+  World world;
+  tess::FrameOps ops;
+  const auto bounds = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+  const std::vector<tess::ChunkKey> requested{
+      tess::ChunkKey{4},
+      tess::ChunkKey{1},
+  };
+
+  world.mark_dirty(tess::ChunkKey{7}, DirtyTerrain, bounds);
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(requested),
+                         tess::WritePolicy::ReadOnly);
+  (void)ops.update_field(tess::DomainDesc::dirty_chunks(DirtyTerrain),
+                         tess::WritePolicy::ReadOnly);
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::WritePolicy::ReadOnly);
+
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_TRUE(report.ok());
+  ASSERT_EQ(report.plan().operations().size(), 3u);
+
+  const auto explicit_domain =
+      tess::planned_chunk_domain(report.plan().operations()[0]);
+  const auto dirty_domain =
+      tess::planned_chunk_domain(report.plan().operations()[1]);
+  const auto resident_domain =
+      tess::planned_chunk_domain(report.plan().operations()[2]);
+
+  EXPECT_EQ(explicit_domain.size(), 2u);
+  EXPECT_EQ(explicit_domain.keys()[0], (tess::ChunkKey{1}));
+  EXPECT_EQ(explicit_domain.keys()[1], (tess::ChunkKey{4}));
+  EXPECT_EQ(dirty_domain.size(), 1u);
+  EXPECT_EQ(dirty_domain.keys()[0], (tess::ChunkKey{7}));
+  EXPECT_EQ(resident_domain.size(), World::chunk_count);
+  EXPECT_EQ(resident_domain.keys().front(), (tess::ChunkKey{0}));
+  EXPECT_EQ(resident_domain.keys().back(), (tess::ChunkKey{15}));
+}
+
+TEST(TessQueued, PlannedBlockCtxRejectsPolicyMismatch) {
+  World world;
+  tess::FrameOps ops;
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_TRUE(report.ok());
+  ASSERT_EQ(report.plan().operations().size(), 1u);
+  const auto& planned = report.plan().operations()[0];
+
+  EXPECT_TRUE(
+      tess::planned_policy_matches<tess::WritePolicy::UniquePerChunk>(planned));
+  EXPECT_FALSE(
+      tess::planned_policy_matches<tess::WritePolicy::ReadOnly>(planned));
+  EXPECT_FALSE(
+      tess::try_planned_block_ctx<tess::WritePolicy::ReadOnly>(world, planned));
+}
+
+TEST(TessQueued, PlannedBlockCtxIteratesWithExistingBlockApi) {
+  World world;
+  tess::FrameOps ops;
+  const std::vector<tess::ChunkKey> requested{
+      tess::ChunkKey{3},
+      tess::ChunkKey{1},
+  };
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(requested),
+                         tess::WritePolicy::ReadOnly);
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_TRUE(report.ok());
+  ASSERT_EQ(report.plan().operations().size(), 1u);
+
+  auto ctx = tess::try_planned_block_ctx<tess::WritePolicy::ReadOnly>(
+      world, report.plan().operations()[0]);
+
+  ASSERT_TRUE(ctx);
+  EXPECT_EQ(ctx->policy(), tess::WritePolicy::ReadOnly);
+  EXPECT_EQ(ctx->size(), 2u);
+
+  std::vector<tess::ChunkKey> visited;
+  ctx->for_each_chunk([&](auto view) { visited.push_back(view.key()); });
+
+  EXPECT_EQ(visited, (std::vector<tess::ChunkKey>{
+                         tess::ChunkKey{1},
+                         tess::ChunkKey{3},
+                     }));
+}
+
+TEST(TessQueued, PrebuiltPlannedBlockCtxIterationDoesNotAllocate) {
+  World world;
+  tess::FrameOps ops;
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::WritePolicy::ReadOnly);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  ASSERT_EQ(report.plan().operations().size(), 1u);
+
+  allocation_count.store(0, std::memory_order_relaxed);
+  count_allocations.store(true, std::memory_order_relaxed);
+
+  auto ctx = tess::try_planned_block_ctx<tess::WritePolicy::ReadOnly>(
+      world, report.plan().operations()[0]);
+  std::uint64_t key_sum = 0;
+  std::size_t visited = 0;
+  if (ctx) {
+    ctx->for_each_chunk([&](auto view) {
+      key_sum += view.key().value;
+      ++visited;
+    });
+  }
+
+  count_allocations.store(false, std::memory_order_relaxed);
+
+  ASSERT_TRUE(ctx);
+  EXPECT_EQ(visited, World::chunk_count);
+  EXPECT_EQ(key_sum, 120u);
+  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+}
+
 TEST(TessQueued, SourceLocationIsCapturedForDiagnostics) {
   World world;
   tess::FrameOps ops;

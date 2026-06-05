@@ -36,6 +36,16 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
 - Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
 
+## 2026-06-05 - Planned Operation Block Adapter
+
+- Changed: Added non-owning adapters from successful planned operations to
+  `ChunkDomain` and policy-typed `BlockCtx` instances.
+- Reason: Planned chunk work needs a practical bridge to the existing serial
+  block API before introducing executors, queued callbacks, barriers, or
+  scheduler behavior.
+- Affected docs: `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
+
 ## 2026-06-01 - Documentation Model
 
 - Changed: TDDs are treated as historical design intent, while maintained
