@@ -14,13 +14,29 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
   `ChunkKey` order.
 - `dirty_chunk_domain(world, flags)` and `active_chunk_domain(world, flags)`
   return allocating vectors using the current always-resident metadata queries.
+- `BlockScratch` owns caller-reusable temporary storage backed by
+  `std::vector<std::max_align_t>`. `reserve_bytes(bytes)` grows the backing
+  store when needed, `reset()` rewinds the bump offset, and
+  `capacity_bytes()`, `used_bytes()`, and `remaining_bytes()` expose byte
+  accounting.
+- `BlockScratch::allocate<T>(count)` returns an aligned `std::span<T>` from
+  the current bump offset. It does not allocate when existing capacity is
+  sufficient. Capacity exhaustion returns an empty span and leaves
+  `used_bytes()` unchanged.
 - `BlockCtx<World, Policy>` is a non-owning serial execution context over a
-  world, `ChunkDomain`, and compile-time `WritePolicy`. Callers must keep the
-  world and domain key storage alive for the context lifetime.
+  world, `ChunkDomain`, compile-time `WritePolicy`, and optional
+  `BlockScratch`. Callers must keep the world, domain key storage, and scratch
+  storage alive for the context lifetime.
 - `block_ctx<Policy>(world, domain)` constructs a policy-typed `BlockCtx`
   without allocation.
+- `block_ctx<Policy>(world, domain, scratch)` constructs a policy-typed
+  `BlockCtx` with a non-owning scratch pointer.
 - `BlockCtx::world()`, `domain()`, `policy()`, `size()`, and `empty()` expose
   the context inputs and domain state.
+- `BlockCtx::scratch()` returns the optional scratch pointer, and
+  `BlockCtx::reset_scratch()` rewinds it when present. Context iteration does
+  not reset scratch automatically; callers choose whether scratch lifetime is
+  per domain, per chunk, or per algorithm.
 - `BlockCtx::chunk_view(key)` returns an explicit chunk view for a chunk key.
   `ReadOnly` contexts expose `ChunkView<const World>` even when the stored
   world object is mutable. Other current policies expose `ChunkView<World>`.
@@ -60,9 +76,11 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
 Iteration is deterministic when domains are produced by the provided builders.
 The hot executor path does not allocate when passed a prebuilt `ChunkDomain`.
 Policy-typed `ReadOnly` contexts enforce const page, metadata, and field span
-access at compile time. Prebuilt `BlockCtx` iteration is also allocation-free.
-Chunk-local tile iteration does not materialize ranges or decode global
-`TileKey` values.
+access at compile time. Prebuilt `BlockCtx` iteration is also allocation-free,
+including use of pre-reserved `BlockScratch` during chunk and tile iteration.
+Scratch allocation can occur during `reserve_bytes`, but not during
+`allocate<T>` when capacity is sufficient. Chunk-local tile iteration does not
+materialize ranges or decode global `TileKey` values.
 
 Boundary and local-candidate helpers only describe the current chunk. They do
 not define movement legality, neighbor ordering, direction enums, halo loading,
@@ -75,10 +93,12 @@ a candidate remains inside the chunk or needs an explicit transition.
 The historical block-kernel pipeline TDD describes a richer staged executor.
 This first M3 slice intentionally diverges:
 
-- No planner, phase graph, barrier model, diagnostics, scratch storage, or
-  external scheduler backend is implemented yet.
+- No planner, phase graph, barrier model, diagnostics counters, planner-owned
+  scratch arenas, worker pools, or external scheduler backend is implemented
+  yet.
 - `BlockCtx` is only the current serial context. It does not yet provide
-  scratch arenas, diagnostics, scheduling, phase graphs, or planner state.
+  diagnostics, scheduling, phase graphs, or planner state. Its scratch pointer
+  is caller-owned and optional.
 - Only `ReadOnly` is enforced today, and only through policy-typed block
   contexts and `for_each_chunk<Policy>`. `UniquePerTile`, `UniquePerChunk`,
   and `Unsafe` still record intended write discipline without ownership checks.

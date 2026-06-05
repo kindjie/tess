@@ -17,4 +17,5 @@
   views including `ReadOnly` policy enforcement, chunk bounds for 2D vertical
   and 3D worlds, chunk-local tile iteration and coordinate helpers,
   boundary/local-candidate helpers across 2D/3D and degenerate axes, and
-  allocation-free iteration for prebuilt domains and contexts.
+  allocation-free iteration for prebuilt domains and contexts, including
+  pre-reserved caller-owned block scratch.
