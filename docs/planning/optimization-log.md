@@ -159,7 +159,7 @@ deferred for scope reasons. Keep entries short and concrete:
 - Area: Uniform-cost fast path for simple blocked straight-line requests.
 - Hypothesis: If an axis-aligned direct path is blocked but a one-tile
   parallel lane is clear, the detour path is optimal with Manhattan+2 cost and
-  can return without heap-backed A*.
+  can return without fallback A*.
 - Evidence: A new 512x512 benchmark with a single blocked tile on an
   axis-aligned route runs in about 2.3 us with no heap work. Open direct paths,
   alternate-direct paths, and no-path barrier rejection stayed fast. Wall-gap,
@@ -189,7 +189,7 @@ deferred for scope reasons. Keep entries short and concrete:
 - Area: Uniform-cost fast path for simple wall-with-gap requests.
 - Hypothesis: When a direct probe is blocked by a non-separating axis plane,
   scanning the plane for the cheapest passable crossing and verifying the two
-  Manhattan legs can prove an optimal path without heap-backed A*.
+  Manhattan legs can prove an optimal path without fallback A*.
 - Evidence: The local release `path/astar_wall_gap_512x512` case dropped from
   about 4.1 ms to about 5.6 us with no heap work. The
   `path/astar_batch_100_mixed_512x512` case dropped from about 138 ms to about
@@ -209,7 +209,7 @@ deferred for scope reasons. Keep entries short and concrete:
 - Hypothesis: In top-down 2D, when progress toward the goal hits a blocked
   x-plane with exactly one passable gap, that crossing is forced. Repeating
   this scan only when the next x step is blocked can build and verify an
-  optimal route through striped barrier layouts without heap-backed A*.
+  optimal route through striped barrier layouts without fallback A*.
 - Evidence: Local release `path/astar_striped_maze_512x512` dropped from about
   11-12 ms to about 0.18 ms, and `path/astar_striped_maze_1024x1024` dropped
   from about 52 ms to about 0.72 ms. Diagnostics show zero heap pushes/pops in
@@ -256,12 +256,12 @@ deferred for scope reasons. Keep entries short and concrete:
 - Area: Uniform-cost fast path for simple 3D slab-with-gap requests.
 - Hypothesis: If a direct 3D route is blocked by an axis plane, scanning that
   plane for the cheapest passable crossing and verifying a concrete Manhattan
-  route through it can prove an optimal path without heap-backed A*.
+  route through it can prove an optimal path without fallback A*.
 - Evidence: A new `path/astar_slab_gap_3d_64x64x16` benchmark initially took
   about 1.3 ms and expanded about 32.8k A* nodes. After the fast path it runs
   around 5.3 us with zero heap pushes/pops. The open 3D benchmark stays below
   1 us. Added no-gap, multi-gap, and carved-corridor 3D cases also stay below
-  the 1 ms investigation trigger; the corridor case still uses heap-backed A*
+  the 1 ms investigation trigger; the corridor case still uses fallback A*
   but expands only about 142 nodes.
 - Decision: Accepted for the current unit-cost axis-adjacent movement model.
   The concrete route through the chosen plane crossing is still checked tile by
@@ -273,13 +273,13 @@ deferred for scope reasons. Keep entries short and concrete:
 
 - Area: Current post-fast-path fallback cases.
 - Hypothesis: After direct, gap, forced-gap, and slab-gap fast paths, remaining
-  heap-backed A* cases should be small enough to stay below the 1 ms
+  fallback A* cases should be small enough to stay below the 1 ms
   investigation trigger.
 - Evidence: Diagnostic runs show `path/astar_corridor_3d_64x64x16` still uses
-  heap-backed A*, but only expands 142 nodes with 142 heap pushes and 142 heap
-  pops, running around 9 us locally. The 100-agent open and mixed batches now
-  report zero heap pushes/pops because all sampled requests hit verified fast
-  paths.
+  fallback A*, but only expands 142 nodes with 142 open-set pushes and 142
+  open-set pops, running around 9 us locally. The 100-agent open and mixed
+  batches now report zero open-set pushes/pops because all sampled requests hit
+  verified fast paths.
 - Decision: No additional A* optimization accepted in this iteration. The
   current fallback profile does not justify an indexed heap or additional
   pathfinding data structures inside the current scope.
@@ -295,7 +295,7 @@ deferred for scope reasons. Keep entries short and concrete:
 - Evidence: Sparse blockers run around 0.82 ms locally with about 11.8k heap
   pops and 19.1k heap pushes. Room/portal partitions run around 0.35 ms with
   about 5.4k expanded nodes. The 100-request shared-room/portal batch runs
-  around 35 ms because it repeats the same heap-backed search shape 100 times;
+  around 35 ms because it repeats the same fallback search shape 100 times;
   there is no route cache, hierarchy, or shared batch planner in current scope.
   Diagnostics report zero allocations and zero stale pops, so the current
   bottleneck is graph expansion plus heap maintenance rather than allocation
@@ -311,6 +311,26 @@ deferred for scope reasons. Keep entries short and concrete:
   searches under the 1 ms threshold and bound the investigated repeated
   100-request fallback batch explicitly instead of forcing it under 1 ms without
   the future data structures needed to share work.
-- Retry conditions: Revisit indexed heaps, bucket queues, region graphs, route
-  caches, or batch/shared-destination planning once those data structures enter
-  scope.
+- Retry conditions: Revisit indexed heaps, region graphs, route caches, or
+  batch/shared-destination planning once those data structures enter scope.
+
+## 2026-06-05 - A* Unit-Cost Bucket Open Set
+
+- Area: Fallback A* open-set maintenance for the current unit-cost Manhattan
+  path model.
+- Hypothesis: Since unit-cost axis-adjacent movement with a consistent
+  Manhattan heuristic generates fallback nodes at the current `f` score or
+  `f + 2`, a two-bucket monotone queue can remove binary heap maintenance while
+  preserving optimal path ordering.
+- Evidence: Release threshold runs dropped `path/astar_sparse_blockers_512x512`
+  from about 0.82 ms to about 0.35 ms, `path/astar_room_portals_512x512` from
+  about 0.35 ms to about 0.15 ms, and
+  `path/astar_batch_100_shared_room_portals_512x512` from about 35 ms to about
+  15 ms. The bucket queue expands more nodes on the sparse and room/portal
+  stress cases, but the removed heap maintenance more than offsets the extra
+  graph work. Path unit tests and the path benchmark threshold target pass.
+- Decision: Accepted for the current unit-cost fallback. Keep the binary heap
+  idea rejected for this slice unless weighted costs or non-Manhattan movement
+  require a more general open-set policy.
+- Retry conditions: Revisit when weighted terrain, non-unit movement costs,
+  non-axis movement, or movement classes enter the public path API.
