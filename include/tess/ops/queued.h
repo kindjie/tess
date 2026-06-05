@@ -54,6 +54,7 @@ enum class OperationStatus : std::uint8_t {
   Planned,
   InvalidWritePolicy,
   InvalidDomain,
+  InvalidFieldAccess,
 };
 static_assert(sizeof(OperationStatus) == sizeof(std::uint8_t));
 
@@ -61,6 +62,7 @@ enum class OperationFailure : std::uint8_t {
   None,
   InvalidWritePolicyValue,
   ExplicitChunkOutOfRange,
+  ReadOnlyWriteMask,
 };
 static_assert(sizeof(OperationFailure) == sizeof(std::uint8_t));
 
@@ -122,11 +124,21 @@ class DomainDesc {
   std::vector<ChunkKey> explicit_chunks_;
 };
 
+struct FieldAccessDesc {
+  std::uint32_t read_mask = 0;
+  std::uint32_t write_mask = 0;
+  std::uint32_t dirty_mask = 0;
+
+  friend constexpr bool operator==(FieldAccessDesc lhs,
+                                   FieldAccessDesc rhs) noexcept = default;
+};
+
 struct QueuedOperation {
   OperationKind kind = OperationKind::UpdateField;
   OpHandle handle{};
   OpId id{};
   DomainDesc domain = DomainDesc::resident_chunks();
+  FieldAccessDesc field_access{};
   WritePolicy write_policy = WritePolicy::ReadOnly;
   Priority priority = Priority::GameplayCritical;
   BudgetPolicy budget_policy = BudgetPolicy::MustRun;
@@ -144,6 +156,7 @@ struct PlannedOperation {
   OpHandle handle{};
   OpId id{};
   OperationAccess access{};
+  FieldAccessDesc field_access{};
   WritePolicy write_policy = WritePolicy::ReadOnly;
   Priority priority = Priority::GameplayCritical;
   BudgetPolicy budget_policy = BudgetPolicy::MustRun;
@@ -177,6 +190,7 @@ struct OperationReport {
   OperationStatus status = OperationStatus::Planned;
   OperationFailure failure = OperationFailure::None;
   OperationAccess access{};
+  FieldAccessDesc field_access{};
   ChunkKey detail_chunk{};
   bool has_detail_chunk = false;
   std::size_t chunk_count = 0;
@@ -252,7 +266,7 @@ class ExecutionReport {
 class FrameOps {
  public:
   [[nodiscard]] auto update_field(
-      DomainDesc domain, WritePolicy write_policy,
+      DomainDesc domain, FieldAccessDesc field_access, WritePolicy write_policy,
       Priority priority = Priority::GameplayCritical,
       BudgetPolicy budget_policy = BudgetPolicy::MustRun,
       std::source_location source = std::source_location::current())
@@ -264,12 +278,23 @@ class FrameOps {
         handle,
         id,
         std::move(domain),
+        field_access,
         write_policy,
         priority,
         budget_policy,
         source,
     });
     return handle;
+  }
+
+  [[nodiscard]] auto update_field(
+      DomainDesc domain, WritePolicy write_policy,
+      Priority priority = Priority::GameplayCritical,
+      BudgetPolicy budget_policy = BudgetPolicy::MustRun,
+      std::source_location source = std::source_location::current())
+      -> OpHandle {
+    return update_field(std::move(domain), FieldAccessDesc{}, write_policy,
+                        priority, budget_policy, source);
   }
 
   [[nodiscard]] constexpr auto operations() const noexcept
@@ -306,6 +331,14 @@ namespace detail {
       op.domain.kind(),
       op.domain.mask(),
   };
+}
+
+[[nodiscard]] constexpr bool is_valid_field_access(
+    WritePolicy write_policy, FieldAccessDesc field_access) noexcept {
+  if (write_policy == WritePolicy::ReadOnly && field_access.write_mask != 0) {
+    return false;
+  }
+  return true;
 }
 
 template <typename World>
@@ -374,6 +407,7 @@ template <typename World>
         OperationStatus::Planned,
         OperationFailure::None,
         detail::operation_access(op),
+        op.field_access,
         {},
         false,
         0,
@@ -387,11 +421,19 @@ template <typename World>
       continue;
     }
 
+    if (!detail::is_valid_field_access(op.write_policy, op.field_access)) {
+      op_report.status = OperationStatus::InvalidFieldAccess;
+      op_report.failure = OperationFailure::ReadOnlyWriteMask;
+      report.push_report(op_report);
+      continue;
+    }
+
     PlannedOperation planned{
         op.kind,
         op.handle,
         op.id,
         detail::operation_access(op),
+        op.field_access,
         op.write_policy,
         op.priority,
         op.budget_policy,

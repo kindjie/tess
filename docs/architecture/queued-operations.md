@@ -23,8 +23,13 @@ by `tess/tess.h`.
 - `DomainDesc` owns a minimal operation domain descriptor:
   `explicit_chunks(keys)`, `dirty_chunks(mask)`, `active_chunks(mask)`, or
   `resident_chunks()`.
+- `FieldAccessDesc` records untyped field access masks for an operation:
+  `read_mask`, `write_mask`, and `dirty_mask`. These are planner metadata only
+  in this slice; they do not mutate world dirty flags and are not field-tag
+  reflection.
 - `QueuedOperation` stores the submitted operation kind, handle, id, domain,
-  `WritePolicy`, priority, budget policy, and `std::source_location`.
+  field access, `WritePolicy`, priority, budget policy, and
+  `std::source_location`.
 - `OperationAccess` records the diagnostic access metadata known to the
   planner: write policy, domain kind, and domain mask. It is diagnostic
   metadata only in this slice, not a hazard solver.
@@ -55,6 +60,7 @@ Validation currently covers:
 
 - invalid `WritePolicy` enum values
 - explicit chunk keys outside the world
+- `ReadOnly` operations that declare nonzero field write masks
 
 Expansion currently covers:
 
@@ -77,6 +83,8 @@ Report helpers expose deterministic inspection without changing ownership:
 
 Invalid operation reports include `OperationFailure`. Invalid explicit chunk
 domains also include the first out-of-range `ChunkKey` as diagnostic detail.
+Invalid read-only write-mask reports include the submitted `FieldAccessDesc` so
+callers can diagnose the bad declaration.
 
 The plan-to-block adapter is intentionally non-owning. The planned operation
 must outlive any `ChunkDomain` or `BlockCtx` produced from it, because those
@@ -97,8 +105,10 @@ This slice is a planner scaffold only. It intentionally does not implement:
 - automatic execution of planned operations
 - topology, pathfinding, movement, residency transitions, or GPU selection
 - work-contract or maintenance-scheduler semantics
-- hazard analysis beyond recording diagnostic access metadata and validating
-  the current `WritePolicy` enum value
+- field tag reflection, typed read/write sets, or automatic dirty-flag
+  mutation
+- hazard analysis beyond recording diagnostic access metadata, validating the
+  current `WritePolicy` enum value, and rejecting read-only write masks
 - sparse residency or non-resident chunk loading
 - rich diagnostics beyond per-op status, failure reason, limited detail, access
   metadata, and captured source location
@@ -113,7 +123,8 @@ The historical queued-operations TDD describes a much larger public planning
 and execution system. This M4 slice keeps only the stable foundation needed by
 later work:
 
-- `FrameOps::update_field(...)` records intent without a kernel type.
+- `FrameOps::update_field(...)` records intent and optional untyped field
+  access masks without a kernel type.
 - `DomainDesc` only supports chunk-domain descriptors that can be resolved by
   current always-resident storage.
 - `ExecutionPlan` is only an ordered list of expanded chunk keys per operation,

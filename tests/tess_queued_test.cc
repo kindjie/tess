@@ -144,6 +144,35 @@ TEST(TessQueued, ExplicitChunkDomainExpandsInChunkKeyOrder) {
                                      }));
 }
 
+TEST(TessQueued, FieldAccessMetadataPropagatesToPlanAndReport) {
+  World world;
+  tess::FrameOps ops;
+  constexpr auto field_access = tess::FieldAccessDesc{
+      DirtyCost,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+
+  const auto handle = ops.update_field(
+      tess::DomainDesc::resident_chunks(), field_access,
+      tess::WritePolicy::UniquePerTile, tess::Priority::VisibleSoon,
+      tess::BudgetPolicy::BudgetedIncremental);
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_TRUE(report.ok());
+  ASSERT_NE(ops.operation(handle), nullptr);
+  ASSERT_NE(report.find(handle), nullptr);
+  ASSERT_EQ(report.plan().operations().size(), 1u);
+
+  EXPECT_EQ(ops.operation(handle)->field_access, field_access);
+  EXPECT_EQ(report.find(handle)->field_access, field_access);
+  EXPECT_EQ(report.plan().operations()[0].field_access, field_access);
+  EXPECT_EQ(report.plan().operations()[0].priority,
+            tess::Priority::VisibleSoon);
+  EXPECT_EQ(report.plan().operations()[0].budget_policy,
+            tess::BudgetPolicy::BudgetedIncremental);
+}
+
 TEST(TessQueued, DirtyChunkDomainExpandsThroughWorldMetadata) {
   World world;
   tess::FrameOps ops;
@@ -217,6 +246,32 @@ TEST(TessQueued, InvalidWritePolicyIsRejectedWithoutPlanEntry) {
   EXPECT_EQ(report.operations()[0].failure,
             tess::OperationFailure::InvalidWritePolicyValue);
   EXPECT_FALSE(report.operations()[0].has_detail_chunk);
+  EXPECT_TRUE(report.plan().empty());
+}
+
+TEST(TessQueued, ReadOnlyWriteMaskIsRejectedWithoutPlanEntry) {
+  World world;
+  tess::FrameOps ops;
+  constexpr auto field_access = tess::FieldAccessDesc{
+      DirtyCost,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(), field_access,
+                         tess::WritePolicy::ReadOnly);
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_FALSE(report.ok());
+  EXPECT_TRUE(report.failed());
+  EXPECT_EQ(report.planned_count(), 0u);
+  EXPECT_EQ(report.failed_count(), 1u);
+  ASSERT_EQ(report.operations().size(), 1u);
+  EXPECT_EQ(report.operations()[0].status,
+            tess::OperationStatus::InvalidFieldAccess);
+  EXPECT_EQ(report.operations()[0].failure,
+            tess::OperationFailure::ReadOnlyWriteMask);
+  EXPECT_EQ(report.operations()[0].field_access, field_access);
   EXPECT_TRUE(report.plan().empty());
 }
 
