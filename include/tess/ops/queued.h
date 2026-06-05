@@ -68,6 +68,12 @@ enum class OperationFailure : std::uint8_t {
 };
 static_assert(sizeof(OperationFailure) == sizeof(std::uint8_t));
 
+enum class PlannedExecutionStatus : std::uint8_t {
+  Executed,
+  PolicyMismatch,
+};
+static_assert(sizeof(PlannedExecutionStatus) == sizeof(std::uint8_t));
+
 enum class DomainKind : std::uint8_t {
   ExplicitChunks,
   DirtyChunks,
@@ -201,6 +207,11 @@ struct OperationReport {
   bool has_conflict = false;
   std::size_t chunk_count = 0;
   std::source_location source = std::source_location::current();
+};
+
+struct PlannedExecutionResult {
+  PlannedExecutionStatus status = PlannedExecutionStatus::Executed;
+  std::size_t chunk_count = 0;
 };
 
 class ExecutionReport {
@@ -550,6 +561,52 @@ template <WritePolicy Policy, typename World>
     return std::nullopt;
   }
   return block_ctx<Policy>(world, planned_chunk_domain(operation));
+}
+
+template <WritePolicy Policy, typename World, typename Fn>
+auto execute_planned_operation(World& world, const PlannedOperation& operation,
+                               Fn&& fn) -> PlannedExecutionResult {
+  auto ctx = try_planned_block_ctx<Policy>(world, operation);
+  if (!ctx.has_value()) {
+    return PlannedExecutionResult{
+        PlannedExecutionStatus::PolicyMismatch,
+        0,
+    };
+  }
+
+  std::size_t chunk_count = 0;
+  auto&& callback = fn;
+  ctx->for_each_chunk([&](auto view) {
+    callback(view);
+    if (operation.field_access.dirty_mask != 0) {
+      world.mark_dirty(view.key(), operation.field_access.dirty_mask,
+                       view.bounds());
+    }
+    ++chunk_count;
+  });
+
+  return PlannedExecutionResult{
+      PlannedExecutionStatus::Executed,
+      chunk_count,
+  };
+}
+
+template <WritePolicy Policy, typename World, typename Fn>
+auto execute_plan(World& world, const ExecutionPlan& plan, Fn&& fn)
+    -> PlannedExecutionResult {
+  std::size_t chunk_count = 0;
+  auto&& callback = fn;
+  for (const auto& operation : plan.operations()) {
+    auto result = execute_planned_operation<Policy>(world, operation, callback);
+    if (result.status != PlannedExecutionStatus::Executed) {
+      return result;
+    }
+    chunk_count += result.chunk_count;
+  }
+  return PlannedExecutionResult{
+      PlannedExecutionStatus::Executed,
+      chunk_count,
+  };
 }
 
 }  // namespace tess

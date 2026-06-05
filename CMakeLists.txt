@@ -14,6 +14,7 @@ set(CMAKE_CXX_SCAN_FOR_MODULES 0)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 option(TESS_BUILD_TESTING "Build tess tests" ${PROJECT_IS_TOP_LEVEL})
+option(TESS_BUILD_EXAMPLES "Build tess examples" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
 option(TESS_ENABLE_WARNINGS "Enable tess warning flags on local targets" ON)
 option(TESS_WARNINGS_AS_ERRORS "Treat tess local target warnings as errors" OFF)
@@ -45,6 +46,7 @@ target_sources(
       include/tess/block/block.h
       include/tess/core/shape.h
       include/tess/ops/queued.h
+      include/tess/path/path.h
       include/tess/storage/chunk_page.h
       include/tess/storage/world.h
       include/tess/tess.h
@@ -87,6 +89,10 @@ if(TESS_BUILD_TESTING)
   if(BUILD_TESTING)
     add_subdirectory(tests)
   endif()
+endif()
+
+if(TESS_BUILD_EXAMPLES)
+  add_subdirectory(examples)
 endif()
 
 if(TESS_BUILD_BENCHMARKS)

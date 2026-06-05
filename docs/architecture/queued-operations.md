@@ -98,6 +98,28 @@ must outlive any `ChunkDomain` or `BlockCtx` produced from it, because those
 objects point at `planned.chunks`. Adapter construction and iteration over a
 prebuilt plan do not allocate.
 
+## Minimal Execution Bridge
+
+Planned operations can now be executed explicitly through the serial block API:
+
+```cpp
+auto result = tess::execute_planned_operation<
+    tess::WritePolicy::UniquePerChunk>(world, planned, [](auto view) {
+  auto terrain = view.template field_span<TerrainTag>();
+  terrain[0] = 1;
+});
+```
+
+`execute_planned_operation<Policy>` rejects policy mismatches before invoking
+the callback. On success, it creates a policy-typed `BlockCtx`, visits the
+planned chunks in deterministic key order, invokes the callback once per chunk
+view, and marks each visited chunk dirty when the planned operation declares a
+nonzero `dirty_mask`.
+
+`execute_plan<Policy>` applies the same callback to each planned operation in
+plan order and stops at the first policy mismatch. This is still a synchronous
+caller-driven bridge, not a scheduler.
+
 Inspecting existing queued operations, reports, and planned operations returns
 non-owning spans and does not allocate. Enqueueing and domain/report expansion
 may allocate because `FrameOps`, explicit domains, reports, and planned chunk
@@ -107,9 +129,10 @@ lists own their storage.
 
 This slice is a planner scaffold only. It intentionally does not implement:
 
-- callbacks, kernel invocation, executor integration, or result channels
+- queued kernel storage, executor integration, or result channels
+- callback ownership, queued kernel storage, result channels, or async handles
 - barrier insertion, batching heuristics, async work, or worker scheduling
-- automatic execution of planned operations
+- automatic execution of planned operations through a scheduler
 - topology, pathfinding, movement, residency transitions, or GPU selection
 - work-contract or maintenance-scheduler semantics
 - field tag reflection, typed read/write sets, or automatic dirty-flag

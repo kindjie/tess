@@ -27,6 +27,18 @@ set(
 )
 
 set(
+  TESS_QUEUED_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/queued.json"
+  CACHE FILEPATH "Thresholds for queued benchmark regressions"
+)
+
+set(
+  TESS_PATH_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/path.json"
+  CACHE FILEPATH "Thresholds for path benchmark regressions"
+)
+
+set(
   TESS_BENCHMARK_BASELINE_REPETITIONS
   "10"
   CACHE STRING "Repeated samples for non-gating CI benchmark baselines"
@@ -83,6 +95,40 @@ if(Python3_Interpreter_FOUND)
     COMMENT "Running block benchmark threshold checks"
     VERBATIM
   )
+
+  add_custom_target(
+    tess_bench_queued_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=queued/.*
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/queued.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/queued.json
+      --thresholds ${TESS_QUEUED_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running queued benchmark threshold checks"
+    VERBATIM
+  )
+
+  add_custom_target(
+    tess_bench_path_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=path/.*
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/path.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/path.json
+      --thresholds ${TESS_PATH_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running path benchmark threshold checks"
+    VERBATIM
+  )
 endif()
 
 add_custom_target(
@@ -107,6 +153,18 @@ add_custom_target(
     --benchmark_filter=block/.*
     --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
     --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/block.json
+    --benchmark_out_format=json
+  COMMAND
+    tess_bench
+    --benchmark_filter=queued/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/queued.json
+    --benchmark_out_format=json
+  COMMAND
+    tess_bench
+    --benchmark_filter=path/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/path.json
     --benchmark_out_format=json
   DEPENDS tess_bench
   COMMENT "Collecting non-gating CI benchmark baseline samples"
@@ -167,6 +225,22 @@ if(BUILD_TESTING)
     COMMAND
       tess_bench
       --benchmark_filter=block/chunk_boundary_scan_2d
+      --benchmark_min_time=0.001
+  )
+
+  add_test(
+    NAME tess_bench_queued_execute_smoke
+    COMMAND
+      tess_bench
+      --benchmark_filter=queued/execute_resident_update
+      --benchmark_min_time=0.001
+  )
+
+  add_test(
+    NAME tess_bench_path_astar_smoke
+    COMMAND
+      tess_bench
+      --benchmark_filter=path/astar_open_2d
       --benchmark_min_time=0.001
   )
 endif()

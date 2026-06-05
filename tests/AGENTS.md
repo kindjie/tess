@@ -28,5 +28,11 @@
   rejection, report lookup/count helpers, mixed valid/invalid report ordering,
   deterministic field-mask hazard validation, plan-to-block adapters, policy
   mismatch rejection, allocation-free prebuilt planned block iteration,
-  source-location capture, and allocation-free inspection of already-built
-  queue/report/plan spans.
+  explicit planned execution with dirty propagation, policy-mismatch execution
+  rejection, allocation-free prebuilt planned execution, source-location
+  capture, and allocation-free inspection of already-built queue/report/plan
+  spans.
+- `tess_path_test`: verifies the MVP A* path foundation, including top-down 2D
+  paths around blocked tiles, invalid start and goal reporting, no-path
+  reporting, vertical 2D and chunked 3D coordinate support, and allocation-free
+  repeated queries with pre-reserved path scratch.

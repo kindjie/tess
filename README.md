@@ -26,6 +26,9 @@ cmake --build --preset bench
 
 The public CMake target is `tess::tess`.
 
+The `dev` preset also builds `examples/tess_mvp_path`, a small end-to-end
+queued-edit plus A* pathfinding prototype.
+
 ## Quality Gates
 
 CI runs on `ubuntu-24.04` with Clang and covers:
@@ -40,6 +43,10 @@ CI runs on `ubuntu-24.04` with Clang and covers:
   `cmake --build --preset bench --target tess_bench_storage_thresholds`
 - Block benchmark threshold scaffold:
   `cmake --build --preset bench --target tess_bench_block_thresholds`
+- Queued benchmark threshold scaffold:
+  `cmake --build --preset bench --target tess_bench_queued_thresholds`
+- Path benchmark threshold scaffold:
+  `cmake --build --preset bench --target tess_bench_path_thresholds`
 - Non-gating CI benchmark baseline collection:
   `cmake --build --preset bench --target tess_bench_ci_baselines`
 

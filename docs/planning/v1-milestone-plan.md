@@ -40,7 +40,27 @@ v1 should produce a usable prototype with constexpr shapes, 3D-internal coordina
 - docs/
 - tools/
 
-## 5. Milestones
+## 5. Testable MVP checkpoint
+
+The first testable MVP is narrower than the full v1 vision. It should prove an
+end-to-end synchronous flow over always-resident storage:
+
+- create a compile-time world and typed tile fields;
+- enqueue and plan field update work;
+- execute planned work through serial block views;
+- update dirty metadata from declared dirty masks;
+- run a deterministic unit-cost A* query over a boolean-like passability field;
+- cover top-down 2D, vertical 2D, and small 3D coordinates;
+- keep repeated hot execution/path queries allocation-free after scratch or
+  plan warmup;
+- expose benchmark smoke tests and disabled timing thresholds for new queue and
+  path benchmarks.
+
+MVP non-goals: sparse residency, scheduler-owned execution, barrier insertion,
+portal graphs, topology prechecks, weighted movement, distance fields, ECS,
+render deltas, GPU backends, save/load, and production timing gates.
+
+## 6. Milestones
 
 ### M0 scaffolding
 
@@ -108,7 +128,7 @@ Shape/key, storage, block, planner, scheduler, topology, pathfinding, fields, ca
 
 2D colony, vertical 2D ant-farm, 3D stair pathing, EnTT pawn movement, render delta consumer, path overlay.
 
-## 6. v1 deliverables
+## 7. v1 deliverables
 
 Required:
 
@@ -148,7 +168,7 @@ Deferred:
 - full save/load migration
 - editor/tool integration
 
-## 7. Cross-cutting acceptance criteria
+## 8. Cross-cutting acceptance criteria
 
 Performance:
 
@@ -176,7 +196,7 @@ Usability:
 - diagnostics explain planner decisions
 - examples concrete
 
-## 8. Future TDDs
+## 9. Future TDDs
 
 - Tactical Queries and Assignment
 - Flecs Integration
