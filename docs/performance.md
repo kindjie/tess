@@ -1,6 +1,8 @@
 # Benchmark Trends
 
 Stale snapshot: data from CI run 26980713740 at commit 90ce419, collected 2026-06-04 14:33 PDT.
+Scratch-specific block benchmarks were added after this snapshot and will not
+appear until the next intentional CI-baseline refresh.
 
 The SVG snapshot in `docs/assets/benchmark-trends.svg` is a labeled
 summary, not the source of truth. Use CI benchmark baseline artifacts
