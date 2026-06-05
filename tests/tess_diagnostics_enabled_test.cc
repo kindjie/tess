@@ -39,6 +39,7 @@ TEST(TessDiagnostics, ScopedPathCountersRecordGenericEvents) {
     TESS_DIAG_EVENT(path_heap_push);
     TESS_DIAG_EVENT(path_heap_pop);
     TESS_DIAG_EVENT(path_neighbor_candidate);
+    TESS_DIAG_EVENT(path_passability_check);
     TESS_DIAG_EVENT(path_neighbor_blocked);
     TESS_DIAG_EVENT(path_relax_attempt);
     TESS_DIAG_EVENT(path_relax_success);

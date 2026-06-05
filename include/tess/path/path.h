@@ -303,6 +303,7 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
         current_coord, current.index,
         [&](Coord3 neighbor, std::uint64_t neighbor_index) {
           TESS_DIAG_EVENT(path_neighbor_candidate);
+          TESS_DIAG_EVENT(path_passability_check);
           if (!detail::is_passable<World, Tag>(world, neighbor)) {
             TESS_DIAG_EVENT(path_neighbor_blocked);
             return;
@@ -325,11 +326,12 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
             scratch.parent_[neighbor_offset] = current.index;
             scratch.state_[neighbor_offset] = open;
             TESS_DIAG_EVENT(path_heuristic);
-            scratch.open_.push_back(PathScratch::OpenNode{
+            const auto updated_node = PathScratch::OpenNode{
                 neighbor_index,
                 tentative_g,
                 tentative_g + detail::manhattan(neighbor, request.goal),
-            });
+            };
+            scratch.open_.push_back(updated_node);
             TESS_DIAG_EVENT(path_heap_push);
             std::push_heap(scratch.open_.begin(), scratch.open_.end(),
                            detail::open_node_less);
