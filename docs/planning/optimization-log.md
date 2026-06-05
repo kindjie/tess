@@ -285,3 +285,32 @@ deferred for scope reasons. Keep entries short and concrete:
   pathfinding data structures inside the current scope.
 - Retry conditions: Revisit if new benchmarks or production traces show a
   remaining fallback case over 1 ms or high heap churn in realistic workloads.
+
+## 2026-06-05 - A* Fallback-Stress Benchmarks
+
+- Area: Heap-backed A* under maps that defeat current uniform-cost fast paths.
+- Hypothesis: Sparse blockers, room/portal partitions, branch-heavy lattices,
+  and repeated shared-destination requests will expose the next bottleneck more
+  clearly than open grids or single-wall fast-path cases.
+- Evidence: Sparse blockers run around 0.82 ms locally with about 11.8k heap
+  pops and 19.1k heap pushes. Room/portal partitions run around 0.35 ms with
+  about 5.4k expanded nodes. The 100-request shared-room/portal batch runs
+  around 35 ms because it repeats the same heap-backed search shape 100 times;
+  there is no route cache, hierarchy, or shared batch planner in current scope.
+  Diagnostics report zero allocations and zero stale pops, so the current
+  bottleneck is graph expansion plus heap maintenance rather than allocation
+  churn or duplicate-pop cleanup.
+- Accepted: Moved z-only neighbor stride/local-coordinate work into the 3D-only
+  branch of the indexed neighbor helper. This is a small flat-world supporting
+  code cleanup and preserves behavior.
+- Rejected: Reversing the final open-set index tie-break made room/portal and
+  sparse-blocker cases slower by increasing heap pushes, pops, and expansions.
+  Increasing room size from 32 to 64 tiles also made the room/portal case worse
+  by roughly doubling expansions.
+- Decision: Keep the fallback-stress benchmarks. Keep individual fallback
+  searches under the 1 ms threshold and bound the investigated repeated
+  100-request fallback batch explicitly instead of forcing it under 1 ms without
+  the future data structures needed to share work.
+- Retry conditions: Revisit indexed heaps, bucket queues, region graphs, route
+  caches, or batch/shared-destination planning once those data structures enter
+  scope.

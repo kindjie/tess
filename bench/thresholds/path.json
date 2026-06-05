@@ -89,6 +89,18 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000
     },
+    "path/astar_sparse_blockers_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_branch_lattice_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
     "path/astar_batch_100_open_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000
@@ -96,6 +108,10 @@
     "path/astar_batch_100_mixed_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000
+    },
+    "path/astar_batch_100_shared_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 50000000
     }
   }
 }

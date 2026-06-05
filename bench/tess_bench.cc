@@ -682,6 +682,93 @@ void carve_striped_maze(PathLargeWorld& world) {
   }
 }
 
+[[nodiscard]] constexpr auto path_hash(std::uint64_t x,
+                                       std::uint64_t y) noexcept
+    -> std::uint64_t {
+  auto value = x * 0x9e3779b97f4a7c15ull;
+  value ^= y + 0xbf58476d1ce4e5b9ull + (value << 6u) + (value >> 2u);
+  value ^= value >> 30u;
+  value *= 0xbf58476d1ce4e5b9ull;
+  value ^= value >> 27u;
+  value *= 0x94d049bb133111ebull;
+  value ^= value >> 31u;
+  return value;
+}
+
+void carve_sparse_blockers(PathScaleWorld& world) {
+  for (std::int64_t y = 1;
+       y + 1 < static_cast<std::int64_t>(PathScaleShape::size.y); ++y) {
+    for (std::int64_t x = 1;
+         x + 1 < static_cast<std::int64_t>(PathScaleShape::size.x); ++x) {
+      const auto hash = path_hash(static_cast<std::uint64_t>(x),
+                                  static_cast<std::uint64_t>(y));
+      if (hash % 100u < 18u) {
+        world.template field<PassableTag>(tess::Coord3{x, y, 0}) = 0;
+      }
+    }
+  }
+
+  for (std::int64_t x = 32; x < 512; x += 64) {
+    world.template field<PassableTag>(tess::Coord3{x, 1, 0}) = 0;
+  }
+  for (std::int64_t y = 64; y < 512; y += 64) {
+    world.template field<PassableTag>(tess::Coord3{510, y, 0}) = 0;
+  }
+  world.template field<PassableTag>(tess::Coord3{1, 1, 0}) = 1;
+  world.template field<PassableTag>(tess::Coord3{510, 510, 0}) = 1;
+}
+
+void carve_room_portals(PathScaleWorld& world) {
+  constexpr auto room_size = std::int64_t{32};
+  for (std::int64_t x = room_size;
+       x < static_cast<std::int64_t>(PathScaleShape::size.x); x += room_size) {
+    for (std::int64_t y = 0;
+         y < static_cast<std::int64_t>(PathScaleShape::size.y); ++y) {
+      const auto room = y / room_size;
+      const auto portal = (room * 23 + x / room_size * 17) % room_size;
+      if (y % room_size != portal) {
+        world.template field<PassableTag>(tess::Coord3{x, y, 0}) = 0;
+      }
+    }
+  }
+  for (std::int64_t y = room_size;
+       y < static_cast<std::int64_t>(PathScaleShape::size.y); y += room_size) {
+    for (std::int64_t x = 0;
+         x < static_cast<std::int64_t>(PathScaleShape::size.x); ++x) {
+      const auto room = x / room_size;
+      const auto portal = (room * 29 + y / room_size * 19) % room_size;
+      if (x % room_size != portal) {
+        world.template field<PassableTag>(tess::Coord3{x, y, 0}) = 0;
+      }
+    }
+  }
+}
+
+void carve_branch_lattice(PathScaleWorld& world) {
+  fill_path_passable(world, 0);
+  for (std::int64_t y = 0;
+       y < static_cast<std::int64_t>(PathScaleShape::size.y); y += 4) {
+    for (std::int64_t x = 0;
+         x < static_cast<std::int64_t>(PathScaleShape::size.x); ++x) {
+      world.template field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
+    }
+  }
+  for (std::int64_t x = 0;
+       x < static_cast<std::int64_t>(PathScaleShape::size.x); x += 4) {
+    for (std::int64_t y = 0;
+         y < static_cast<std::int64_t>(PathScaleShape::size.y); ++y) {
+      world.template field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
+    }
+  }
+
+  for (std::int64_t x = 64; x < 512; x += 64) {
+    world.template field<PassableTag>(tess::Coord3{x, 4, 0}) = 0;
+  }
+  for (std::int64_t y = 64; y < 512; y += 64) {
+    world.template field<PassableTag>(tess::Coord3{508, y, 0}) = 0;
+  }
+}
+
 void BM_path_astar_open_2d(benchmark::State& state) {
   PathWorld world;
   fill_path_passable(world, 1);
@@ -1215,6 +1302,118 @@ void BM_path_astar_corridor_3d_64x64x16(benchmark::State& state) {
   TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
 }
 
+void BM_path_astar_sparse_blockers_512x512(benchmark::State& state) {
+  PathScaleWorld world;
+  fill_path_passable(world, 1);
+  carve_sparse_blockers(world);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::astar_path<PathScaleWorld, PassableTag>(
+            world,
+            tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{510, 510, 0}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_astar_room_portals_512x512(benchmark::State& state) {
+  PathScaleWorld world;
+  fill_path_passable(world, 1);
+  carve_room_portals(world);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::astar_path<PathScaleWorld, PassableTag>(
+            world,
+            tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{510, 510, 0}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_astar_branch_lattice_512x512(benchmark::State& state) {
+  PathScaleWorld world;
+  carve_branch_lattice(world);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::astar_path<PathScaleWorld, PassableTag>(
+            world,
+            tess::PathRequest{tess::Coord3{4, 4, 0}, tess::Coord3{508, 508, 0}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_astar_batch_100_shared_room_portals_512x512(
+    benchmark::State& state) {
+  PathScaleWorld world;
+  fill_path_passable(world, 1);
+  carve_room_portals(world);
+
+  std::array<tess::PathRequest, 100> requests{};
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    requests[i] = tess::PathRequest{
+        tess::Coord3{1 + offset % 16, 1 + offset / 16, 0},
+        tess::Coord3{510, 510, 0},
+    };
+  }
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    std::uint64_t total_cost = 0;
+    std::uint64_t total_expanded = 0;
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(for (const auto request : requests) {
+      result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
+                                                             scratch);
+      total_cost += result.cost;
+      total_expanded += result.expanded_nodes;
+    });
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+  }
+  state.counters["agents"] = static_cast<double>(requests.size());
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
 void BM_path_astar_batch_100_open_512x512(benchmark::State& state) {
   PathScaleWorld world;
   fill_path_passable(world, 1);
@@ -1388,9 +1587,17 @@ BENCHMARK(BM_path_astar_slab_multi_gap_3d_64x64x16)
     ->Name("path/astar_slab_multi_gap_3d_64x64x16");
 BENCHMARK(BM_path_astar_corridor_3d_64x64x16)
     ->Name("path/astar_corridor_3d_64x64x16");
+BENCHMARK(BM_path_astar_sparse_blockers_512x512)
+    ->Name("path/astar_sparse_blockers_512x512");
+BENCHMARK(BM_path_astar_room_portals_512x512)
+    ->Name("path/astar_room_portals_512x512");
+BENCHMARK(BM_path_astar_branch_lattice_512x512)
+    ->Name("path/astar_branch_lattice_512x512");
 BENCHMARK(BM_path_astar_batch_100_open_512x512)
     ->Name("path/astar_batch_100_open_512x512");
 BENCHMARK(BM_path_astar_batch_100_mixed_512x512)
     ->Name("path/astar_batch_100_mixed_512x512");
+BENCHMARK(BM_path_astar_batch_100_shared_room_portals_512x512)
+    ->Name("path/astar_batch_100_shared_room_portals_512x512");
 
 }  // namespace
