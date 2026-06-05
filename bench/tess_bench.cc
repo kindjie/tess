@@ -595,6 +595,66 @@ void block_3d_x_slab(World& world, std::int64_t x, tess::Coord3 gap) {
   }
 }
 
+template <typename World>
+void block_3d_x_slab_with_two_gaps(World& world, std::int64_t x,
+                                   tess::Coord3 first_gap,
+                                   tess::Coord3 second_gap) {
+  using Shape = typename World::shape_type;
+  for (std::int64_t z = 0; z < static_cast<std::int64_t>(Shape::size.z); ++z) {
+    for (std::int64_t y = 0; y < static_cast<std::int64_t>(Shape::size.y);
+         ++y) {
+      const auto first = y == first_gap.y && z == first_gap.z;
+      const auto second = y == second_gap.y && z == second_gap.z;
+      if (!first && !second) {
+        world.template field<PassableTag>(tess::Coord3{x, y, z}) = 0;
+      }
+    }
+  }
+}
+
+void carve_3d_corridor(Path3DWorld& world) {
+  fill_path_passable(world, 0);
+  auto carve = [&](tess::Coord3 coord) {
+    world.template field<PassableTag>(coord) = 1;
+  };
+  for (std::int64_t x = 0; x <= 16; ++x) {
+    carve(tess::Coord3{x, 0, 0});
+  }
+  for (std::int64_t y = 0; y <= 16; ++y) {
+    carve(tess::Coord3{16, y, 0});
+  }
+  for (std::int64_t z = 0; z <= 4; ++z) {
+    carve(tess::Coord3{16, 16, z});
+  }
+  for (std::int64_t x = 16; x <= 32; ++x) {
+    carve(tess::Coord3{x, 16, 4});
+  }
+  for (std::int64_t y = 16; y <= 32; ++y) {
+    carve(tess::Coord3{32, y, 4});
+  }
+  for (std::int64_t z = 4; z <= 8; ++z) {
+    carve(tess::Coord3{32, 32, z});
+  }
+  for (std::int64_t x = 32; x <= 48; ++x) {
+    carve(tess::Coord3{x, 32, 8});
+  }
+  for (std::int64_t y = 32; y <= 48; ++y) {
+    carve(tess::Coord3{48, y, 8});
+  }
+  for (std::int64_t z = 8; z <= 12; ++z) {
+    carve(tess::Coord3{48, 48, z});
+  }
+  for (std::int64_t x = 48; x <= 63; ++x) {
+    carve(tess::Coord3{x, 48, 12});
+  }
+  for (std::int64_t y = 48; y <= 63; ++y) {
+    carve(tess::Coord3{63, y, 12});
+  }
+  for (std::int64_t z = 12; z <= 15; ++z) {
+    carve(tess::Coord3{63, 63, z});
+  }
+}
+
 void carve_striped_maze(PathScaleWorld& world) {
   for (std::int64_t x = 8;
        x < static_cast<std::int64_t>(PathScaleShape::size.x); x += 8) {
@@ -1081,6 +1141,80 @@ void BM_path_astar_slab_gap_3d_64x64x16(benchmark::State& state) {
   TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
 }
 
+void BM_path_astar_slab_no_gap_3d_64x64x16(benchmark::State& state) {
+  Path3DWorld world;
+  fill_path_passable(world, 1);
+  block_3d_x_slab(world, 32, tess::Coord3{32, -1, -1});
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<Path3DShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::astar_path<Path3DWorld, PassableTag>(
+            world,
+            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 15}},
+            scratch));
+    auto expanded = result.expanded_nodes;
+    benchmark::DoNotOptimize(expanded);
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_astar_slab_multi_gap_3d_64x64x16(benchmark::State& state) {
+  Path3DWorld world;
+  fill_path_passable(world, 1);
+  block_3d_x_slab_with_two_gaps(world, 32, tess::Coord3{32, 8, 0},
+                                tess::Coord3{32, 63, 15});
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<Path3DShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::astar_path<Path3DWorld, PassableTag>(
+            world,
+            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 0, 0}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_astar_corridor_3d_64x64x16(benchmark::State& state) {
+  Path3DWorld world;
+  carve_3d_corridor(world);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<Path3DShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::astar_path<Path3DWorld, PassableTag>(
+            world,
+            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 15}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
 void BM_path_astar_batch_100_open_512x512(benchmark::State& state) {
   PathScaleWorld world;
   fill_path_passable(world, 1);
@@ -1248,6 +1382,12 @@ BENCHMARK(BM_path_astar_vertical_striped_maze_512x512)
 BENCHMARK(BM_path_astar_open_3d_64x64x16)->Name("path/astar_open_3d_64x64x16");
 BENCHMARK(BM_path_astar_slab_gap_3d_64x64x16)
     ->Name("path/astar_slab_gap_3d_64x64x16");
+BENCHMARK(BM_path_astar_slab_no_gap_3d_64x64x16)
+    ->Name("path/astar_slab_no_gap_3d_64x64x16");
+BENCHMARK(BM_path_astar_slab_multi_gap_3d_64x64x16)
+    ->Name("path/astar_slab_multi_gap_3d_64x64x16");
+BENCHMARK(BM_path_astar_corridor_3d_64x64x16)
+    ->Name("path/astar_corridor_3d_64x64x16");
 BENCHMARK(BM_path_astar_batch_100_open_512x512)
     ->Name("path/astar_batch_100_open_512x512");
 BENCHMARK(BM_path_astar_batch_100_mixed_512x512)

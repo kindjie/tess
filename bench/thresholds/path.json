@@ -16,6 +16,86 @@
     "path/astar_open_2d_1024x1024": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000
+    },
+    "path/astar_wall_gap_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_alternate_direct_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_axis_detour_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_no_path_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_striped_maze_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_short_open_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_medium_open_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_long_open_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_no_path_1024x1024": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_striped_maze_1024x1024": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_vertical_open_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_vertical_wall_gap_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_vertical_striped_maze_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_open_3d_64x64x16": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_slab_gap_3d_64x64x16": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_slab_no_gap_3d_64x64x16": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_slab_multi_gap_3d_64x64x16": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_corridor_3d_64x64x16": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_batch_100_open_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/astar_batch_100_mixed_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
     }
   }
 }

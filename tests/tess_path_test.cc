@@ -245,6 +245,66 @@ TEST(TessPath, FindsForcedPlaneGapsBeforeAStar) {
   }
 }
 
+TEST(TessPath, FindsForcedPlaneGapsOnYProgressAxisBeforeAStar) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  for (std::int64_t x = 0; x < 8; ++x) {
+    if (x != 0) {
+      world.template field<PassableTag>(tess::Coord3{x, 2, 0}) = false;
+    }
+    if (x != 7) {
+      world.template field<PassableTag>(tess::Coord3{x, 4, 0}) = false;
+    }
+  }
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+
+  const auto result = tess::astar_path<decltype(world), PassableTag>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}},
+      scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 14u);
+  EXPECT_EQ(result.expanded_nodes, result.path.size());
+  EXPECT_EQ(result.reached_nodes, result.path.size());
+  EXPECT_EQ(result.path.front(), (tess::Coord3{0, 0, 0}));
+  EXPECT_EQ(result.path.back(), (tess::Coord3{7, 7, 0}));
+  for (const auto coord : result.path) {
+    EXPECT_TRUE(world.template field<PassableTag>(coord));
+  }
+}
+
+TEST(TessPath, FindsForcedPlaneGapsInReverseBeforeAStar) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  for (std::int64_t y = 0; y < 8; ++y) {
+    if (y != 0) {
+      world.template field<PassableTag>(tess::Coord3{2, y, 0}) = false;
+    }
+    if (y != 7) {
+      world.template field<PassableTag>(tess::Coord3{4, y, 0}) = false;
+    }
+  }
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+
+  const auto result = tess::astar_path<decltype(world), PassableTag>(
+      world, tess::PathRequest{tess::Coord3{7, 7, 0}, tess::Coord3{0, 0, 0}},
+      scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 14u);
+  EXPECT_EQ(result.expanded_nodes, result.path.size());
+  EXPECT_EQ(result.reached_nodes, result.path.size());
+  EXPECT_EQ(result.path.front(), (tess::Coord3{7, 7, 0}));
+  EXPECT_EQ(result.path.back(), (tess::Coord3{0, 0, 0}));
+  for (const auto coord : result.path) {
+    EXPECT_TRUE(world.template field<PassableTag>(coord));
+  }
+}
+
 TEST(TessPath, FindsVertical2DSinglePlaneGapBeforeAStar) {
   tess::AlwaysResidentWorld<Vertical2D, Schema> world;
   fill_passable(world, true);
@@ -358,6 +418,57 @@ TEST(TessPath, Finds3DPlaneGapBeforeAStar) {
 
   ASSERT_EQ(result.status, tess::PathStatus::Found);
   EXPECT_EQ(result.cost, 15u);
+  EXPECT_EQ(result.expanded_nodes, result.path.size());
+  EXPECT_EQ(result.reached_nodes, result.path.size());
+  EXPECT_EQ(result.path.front(), (tess::Coord3{0, 0, 0}));
+  EXPECT_EQ(result.path.back(), (tess::Coord3{3, 0, 0}));
+  for (const auto coord : result.path) {
+    EXPECT_TRUE(world.template field<PassableTag>(coord));
+  }
+}
+
+TEST(TessPath, Rejects3DSlabWithoutGapBeforeAStar) {
+  tess::AlwaysResidentWorld<Chunked3D, Schema> world;
+  fill_passable(world, true);
+  for (std::int64_t z = 0; z < 4; ++z) {
+    for (std::int64_t y = 0; y < 4; ++y) {
+      world.template field<PassableTag>(tess::Coord3{2, y, z}) = false;
+    }
+  }
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+
+  const auto result = tess::astar_path<decltype(world), PassableTag>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 3, 3}},
+      scratch);
+
+  EXPECT_EQ(result.status, tess::PathStatus::NoPath);
+  EXPECT_EQ(result.expanded_nodes, 0u);
+  EXPECT_EQ(result.reached_nodes, 0u);
+  EXPECT_TRUE(result.path.empty());
+}
+
+TEST(TessPath, Finds3DPlaneGapWithMultipleOpenings) {
+  tess::AlwaysResidentWorld<Chunked3D, Schema> world;
+  fill_passable(world, true);
+  for (std::int64_t z = 0; z < 4; ++z) {
+    for (std::int64_t y = 0; y < 4; ++y) {
+      if ((y != 1 || z != 0) && (y != 3 || z != 3)) {
+        world.template field<PassableTag>(tess::Coord3{2, y, z}) = false;
+      }
+    }
+  }
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+
+  const auto result = tess::astar_path<decltype(world), PassableTag>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}},
+      scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 5u);
   EXPECT_EQ(result.expanded_nodes, result.path.size());
   EXPECT_EQ(result.reached_nodes, result.path.size());
   EXPECT_EQ(result.path.front(), (tess::Coord3{0, 0, 0}));

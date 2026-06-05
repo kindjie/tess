@@ -238,9 +238,9 @@ paths, wall-gap detours, failed wall-separated paths, striped mazes, and
 axis-aligned one-tile detour cases for uniform-cost fast paths. The wall-gap
 case exercises the exact 2D single-plane gap precheck, striped maze cases
 exercise dynamic forced-gap sequence handling, and vertical 2D plus small 3D
-cases cover non-top-down layouts. These are profiling cases first; keep only
-stable, short-running path cases in threshold JSON until same-runner variance
-is calibrated.
+cases cover non-top-down layouts. The current path benchmark suite is included
+in threshold JSON at the 1 ms investigation ceiling; lower per-case thresholds
+can be calibrated later from repeated same-runner baselines.
 
 Run the current scaffolds with:
 
