@@ -38,3 +38,25 @@ target_link_libraries(tess_path_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_path_test)
 
 gtest_discover_tests(tess_path_test)
+
+add_executable(tess_diagnostics_default_test tess_diagnostics_default_test.cc)
+target_link_libraries(
+  tess_diagnostics_default_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_diagnostics_default_test)
+
+gtest_discover_tests(tess_diagnostics_default_test)
+
+add_executable(tess_diagnostics_enabled_test tess_diagnostics_enabled_test.cc)
+target_link_libraries(
+  tess_diagnostics_enabled_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+target_compile_definitions(
+  tess_diagnostics_enabled_test
+  PRIVATE TESS_ENABLE_DIAGNOSTICS
+)
+tess_apply_project_options(tess_diagnostics_enabled_test)
+
+gtest_discover_tests(tess_diagnostics_enabled_test)
