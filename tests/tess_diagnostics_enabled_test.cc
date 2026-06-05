@@ -40,6 +40,7 @@ TEST(TessDiagnostics, ScopedPathCountersRecordGenericEvents) {
     TESS_DIAG_EVENT(path_heap_pop);
     TESS_DIAG_EVENT(path_neighbor_candidate);
     TESS_DIAG_EVENT(path_passability_check);
+    TESS_DIAG_EVENT(path_cost_read);
     TESS_DIAG_EVENT(path_neighbor_blocked);
     TESS_DIAG_EVENT(path_relax_attempt);
     TESS_DIAG_EVENT(path_relax_success);
@@ -56,6 +57,7 @@ TEST(TessDiagnostics, ScopedPathCountersRecordGenericEvents) {
   EXPECT_EQ(counters.heap_pops, 1u);
   EXPECT_EQ(counters.neighbor_candidates, 1u);
   EXPECT_EQ(counters.passability_checks, 1u);
+  EXPECT_EQ(counters.cost_reads, 1u);
   EXPECT_EQ(counters.blocked_neighbors, 1u);
   EXPECT_EQ(counters.relax_attempts, 1u);
   EXPECT_EQ(counters.relax_successes, 1u);

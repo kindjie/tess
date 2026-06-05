@@ -93,12 +93,15 @@ Compare row-major, Morton, Hilbert if implemented, and workload-specific active/
 - missing chunks
 - unit-cost regression guardrails
 - weighted terrain with positive integral entry costs
+- weighted stress cases for sparse blockers, room portals, and mixed batches
 - open set comparisons
 - scratch reuse
 
 The path threshold set keeps unit-cost and weighted benchmarks separate. A
 weighted-path change must still pass the existing unit-cost path thresholds so
 weighted support cannot silently regress the optimized unit-cost fast paths.
+Single-query path cases above 1 ms should have an optimization-log entry that
+records the bottleneck evidence and current decision.
 
 ## 12. Flow/distance/influence benchmarks
 

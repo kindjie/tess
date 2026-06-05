@@ -14,6 +14,61 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-06-05 - Weighted A* Stress Profiling
+
+- Area: Weighted A* benchmarks and diagnostics.
+- Hypothesis: Weighted entry costs need stress cases beyond open-grid and
+  single-axis detour paths before choosing another open-set optimization.
+- Evidence: Added weighted sparse-blocker, room-portal, and 100-request mixed
+  batch benchmarks. Corrected diagnostics show no allocations in warm runs.
+  The weighted sparse case runs around 2.0 ms and performs about 98k neighbor
+  candidates, 49k passability checks, 50k cost reads, and 41k heap pushes. The
+  weighted room-portal case runs around 10.7-12.4 ms and performs about 554k
+  neighbor candidates, 157k passability checks, 269k cost reads, 224k heap
+  pushes, and 219k heap pops. The weighted 100-request mixed batch runs around
+  509-588 ms with about 20.8M neighbor candidates and 7.5M heap pushes.
+- Decision: Accepted the benchmark and diagnostic coverage. The specific
+  bottleneck is search volume plus memory-heavy world/cost reads and binary
+  heap traffic, not allocations or floating-point arithmetic.
+- Follow-up: Any single-query path benchmark above 1 ms remains an
+  investigated bottleneck. Next useful work is reducing weighted search volume
+  through exact domain-specific fast paths or weighted shared-goal products,
+  while preserving the current unit-cost regression gates.
+
+## 2026-06-05 - Weighted A* Indexed Heap
+
+- Area: Weighted A* open-set duplicate entries.
+- Hypothesis: Updating open nodes in place with an indexed heap would remove
+  duplicate closed pops and improve weighted stress cases.
+- Evidence: The experiment eliminated weighted `diag.closed_pops` and improved
+  `path/weighted_astar_room_portals_512x512` from about 10.8 ms to about
+  9.0 ms. It regressed common weighted cases: open 512x512 rose from about
+  60 us to 79 us, axis detour from about 22 us to 40 us, sparse blockers from
+  about 2.0 ms to 2.6 ms, and the 100-request mixed batch from about 513 ms to
+  613 ms.
+- Decision: Rejected. The extra indexed-heap bookkeeping costs more than it
+  saves for most current weighted workloads.
+- Retry conditions: Reconsider only if a future profile is dominated by
+  duplicate heap pops rather than neighbor/cost reads, or if a lower-overhead
+  indexed open set is introduced.
+
+## 2026-06-05 - Route Product Dependency Direction
+
+- Area: Route-cache invalidation and future route products.
+- Hypothesis: Route reuse should eventually track dependencies so stable route
+  products can survive unrelated world edits without risking stale optimality.
+- Evidence: Whole-cache invalidation is correct but coarse. The weighted batch
+  benchmark shows independent weighted A* is too expensive for repeated agent
+  workloads, while current exact/suffix route caches only reuse already-known
+  paths and do not know which world edits affect them.
+- Decision: Deferred as additional product data structure work. Keep current
+  conservative invalidation for now.
+- Follow-up: Design route products around public, non-private dependencies:
+  movement class, cost/passability field identity, goal or exact request,
+  touched tile/chunk keys, and chunk/version stamps. Revalidate or invalidate
+  products when any dependent chunk version changes; do not attempt
+  region-selective invalidation without an optimality proof.
+
 ## 2026-06-05 - Route Cache Invalidation Hook
 
 - Area: Route-cache lifecycle support.
