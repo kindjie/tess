@@ -37,6 +37,9 @@
   reporting, vertical 2D and chunked 3D coordinate support, and allocation-free
   repeated queries with pre-reserved path scratch.
 - `tess_diagnostics_default_test`: verifies public diagnostic macros are
-  disabled by default and do not evaluate arguments.
+  disabled by default and do not evaluate arguments, including generic events.
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate
-  exactly once when `TESS_ENABLE_DIAGNOSTICS` is defined.
+  exactly once when `TESS_ENABLE_DIAGNOSTICS` is defined, and that scoped path
+  counters record generic diagnostic events. It also links diagnostic
+  allocation hooks and verifies scoped allocation counters observe global
+  `new`/`delete`.

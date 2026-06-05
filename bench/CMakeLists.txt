@@ -8,6 +8,17 @@ add_executable(tess_bench tess_bench.cc)
 target_link_libraries(tess_bench PRIVATE tess::tess benchmark::benchmark_main)
 tess_apply_project_options(tess_bench)
 
+add_executable(tess_bench_diagnostics tess_bench.cc tess_diagnostics_alloc_hooks.cc)
+target_link_libraries(
+  tess_bench_diagnostics
+  PRIVATE tess::tess benchmark::benchmark_main
+)
+target_compile_definitions(
+  tess_bench_diagnostics
+  PRIVATE TESS_ENABLE_DIAGNOSTICS
+)
+tess_apply_project_options(tess_bench_diagnostics)
+
 set(
   TESS_KEY_BENCHMARK_THRESHOLDS
   "${PROJECT_SOURCE_DIR}/bench/thresholds/key-conversions.json"
@@ -240,6 +251,14 @@ if(BUILD_TESTING)
     NAME tess_bench_path_astar_smoke
     COMMAND
       tess_bench
+      --benchmark_filter=path/astar_open_2d
+      --benchmark_min_time=0.001
+  )
+
+  add_test(
+    NAME tess_bench_path_astar_diagnostics_smoke
+    COMMAND
+      tess_bench_diagnostics
       --benchmark_filter=path/astar_open_2d
       --benchmark_min_time=0.001
   )
