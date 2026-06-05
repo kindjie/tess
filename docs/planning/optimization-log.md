@@ -334,3 +334,32 @@ deferred for scope reasons. Keep entries short and concrete:
   require a more general open-set policy.
 - Retry conditions: Revisit when weighted terrain, non-unit movement costs,
   non-axis movement, or movement classes enter the public path API.
+
+## 2026-06-05 - Shared-Goal Distance Fields
+
+- Area: Many-agent path batches with repeated goals or goal chunks.
+- Hypothesis: For 100 agents sharing one goal, a reverse distance field can
+  build one goal-rooted search tree and reconstruct each path more cheaply than
+  running 100 independent point-to-point A* searches.
+- Evidence: Release threshold runs report
+  `path/astar_batch_100_shared_room_portals_512x512` around 15.6 ms versus
+  `path/distance_field_batch_100_shared_room_portals_512x512` around 2.8 ms.
+  The sparse shared-goal batch drops from about 38.9 ms to about 3.5 ms. The
+  8-goal room/portal batch drops from about 56.8 ms with independent A* to
+  about 17.7 ms by building one field per goal. Benchmark counters report
+  unique starts, unique goals, unique start/goal chunks, and average expanded
+  nodes to make reuse opportunities visible.
+- Accepted: Add `DistanceFieldScratch`, `build_distance_field`, and
+  `distance_field_path` for the current unit-cost passability model. The
+  scratch records the goal used to build the field and rejects mismatched
+  reconstruction requests.
+- Rejected: Applying distance fields blindly to mixed routes with many unique
+  goals is not accepted in this iteration. The mixed repeated room/portal batch
+  has 21 unique goals, so broad route caching, hierarchy, or selective field
+  reuse needs a separate design.
+- Decision: Use reverse distance fields for shared-goal and small common-goal
+  batches. Keep point-to-point A* for one-off routes until route caches,
+  hierarchy, or weighted path APIs enter scope.
+- Retry conditions: Revisit field storage/reuse policies when topology,
+  invalidation, chunk residency, weighted costs, or path product caching are
+  introduced.

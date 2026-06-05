@@ -501,4 +501,107 @@ TEST(TessPath, WarmScratchPathQueryDoesNotAllocate) {
   EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
 }
 
+TEST(TessPath, BuildsSharedGoalDistanceFieldForMultipleStarts) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  world.template field<PassableTag>(tess::Coord3{3, 0, 0}) = false;
+  world.template field<PassableTag>(tess::Coord3{3, 1, 0}) = false;
+  world.template field<PassableTag>(tess::Coord3{3, 2, 0}) = false;
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(64);
+
+  const auto field = tess::build_distance_field<decltype(world), PassableTag>(
+      world, tess::Coord3{7, 7, 0}, scratch);
+
+  ASSERT_EQ(field.status, tess::PathStatus::Found);
+  EXPECT_GT(field.expanded_nodes, 0u);
+  EXPECT_GE(field.reached_nodes, field.expanded_nodes);
+
+  const auto first = tess::distance_field_path<decltype(world), PassableTag>(
+      world, tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}, scratch);
+
+  ASSERT_EQ(first.status, tess::PathStatus::Found);
+  EXPECT_EQ(first.path.front(), (tess::Coord3{0, 0, 0}));
+  EXPECT_EQ(first.path.back(), (tess::Coord3{7, 7, 0}));
+  EXPECT_EQ(first.cost, first.path.size() - 1u);
+  for (const auto coord : first.path) {
+    EXPECT_TRUE(world.template field<PassableTag>(coord));
+  }
+
+  const auto second = tess::distance_field_path<decltype(world), PassableTag>(
+      world, tess::Coord3{0, 7, 0}, tess::Coord3{7, 7, 0}, scratch);
+
+  ASSERT_EQ(second.status, tess::PathStatus::Found);
+  EXPECT_EQ(second.path.front(), (tess::Coord3{0, 7, 0}));
+  EXPECT_EQ(second.path.back(), (tess::Coord3{7, 7, 0}));
+  EXPECT_EQ(second.cost, second.path.size() - 1u);
+  for (const auto coord : second.path) {
+    EXPECT_TRUE(world.template field<PassableTag>(coord));
+  }
+}
+
+TEST(TessPath, DistanceFieldReportsNoPathForUnreachableStart) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  for (std::int64_t y = 0; y < 8; ++y) {
+    world.template field<PassableTag>(tess::Coord3{4, y, 0}) = false;
+  }
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(64);
+
+  const auto field = tess::build_distance_field<decltype(world), PassableTag>(
+      world, tess::Coord3{7, 7, 0}, scratch);
+  const auto result = tess::distance_field_path<decltype(world), PassableTag>(
+      world, tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}, scratch);
+
+  ASSERT_EQ(field.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.status, tess::PathStatus::NoPath);
+  EXPECT_TRUE(result.path.empty());
+}
+
+TEST(TessPath, DistanceFieldRejectsMismatchedGoal) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(64);
+
+  const auto field = tess::build_distance_field<decltype(world), PassableTag>(
+      world, tess::Coord3{7, 7, 0}, scratch);
+  const auto result = tess::distance_field_path<decltype(world), PassableTag>(
+      world, tess::Coord3{0, 0, 0}, tess::Coord3{7, 6, 0}, scratch);
+
+  ASSERT_EQ(field.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.status, tess::PathStatus::NoPath);
+  EXPECT_TRUE(result.path.empty());
+}
+
+TEST(TessPath, WarmDistanceFieldQueriesDoNotAllocate) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(64);
+
+  (void)tess::build_distance_field<decltype(world), PassableTag>(
+      world, tess::Coord3{7, 7, 0}, scratch);
+  (void)tess::distance_field_path<decltype(world), PassableTag>(
+      world, tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}, scratch);
+
+  allocation_count.store(0, std::memory_order_relaxed);
+  count_allocations.store(true, std::memory_order_relaxed);
+
+  const auto field = tess::build_distance_field<decltype(world), PassableTag>(
+      world, tess::Coord3{7, 7, 0}, scratch);
+  const auto result = tess::distance_field_path<decltype(world), PassableTag>(
+      world, tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}, scratch);
+
+  count_allocations.store(false, std::memory_order_relaxed);
+
+  EXPECT_EQ(field.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+}
+
 }  // namespace
