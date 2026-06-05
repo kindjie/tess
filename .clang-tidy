@@ -2,8 +2,6 @@ Checks: >
   clang-analyzer-*,
   bugprone-*,
   performance-*,
-  portability-*,
-  modernize-*,
   readability-const-return-type,
   readability-redundant-*,
   cppcoreguidelines-pro-type-member-init

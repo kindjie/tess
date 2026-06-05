@@ -302,12 +302,11 @@ TEST(TessBlock, ReadOnlyBlockCtxChunkViewsAreConstForMutableWorld) {
   const auto ctx = tess::block_ctx<tess::WritePolicy::ReadOnly>(
       world, tess::chunk_domain(keys));
   const auto view = ctx.chunk_view(key);
-  auto terrain = view.template field_span<TerrainTag>();
+  using TerrainSpan = decltype(view.template field_span<TerrainTag>());
   decltype(auto) page = view.page();
   decltype(auto) meta = view.meta();
 
-  static_assert(
-      std::is_same_v<decltype(terrain), std::span<const std::uint16_t>>);
+  static_assert(std::is_same_v<TerrainSpan, std::span<const std::uint16_t>>);
   static_assert(std::is_same_v<decltype(page),
                                const typename World<TopDown2D>::page_type&>);
   static_assert(std::is_same_v<decltype(meta), const tess::ChunkMeta&>);
@@ -330,8 +329,7 @@ TEST(TessBlock, MutableWritePoliciesReturnMutableViews) {
     decltype(auto) meta = view.meta();
 
     static_assert(std::is_same_v<decltype(terrain), std::span<std::uint16_t>>);
-    static_assert(
-        std::is_same_v<decltype(page), typename World<TopDown2D>::page_type&>);
+    static_assert(std::is_same_v<decltype(page), World<TopDown2D>::page_type&>);
     static_assert(std::is_same_v<decltype(meta), tess::ChunkMeta&>);
   });
 
@@ -343,8 +341,7 @@ TEST(TessBlock, MutableWritePoliciesReturnMutableViews) {
   decltype(auto) meta = view.meta();
 
   static_assert(std::is_same_v<decltype(terrain), std::span<std::uint16_t>>);
-  static_assert(
-      std::is_same_v<decltype(page), typename World<TopDown2D>::page_type&>);
+  static_assert(std::is_same_v<decltype(page), World<TopDown2D>::page_type&>);
   static_assert(std::is_same_v<decltype(meta), tess::ChunkMeta&>);
 
   terrain[0] = 7;
