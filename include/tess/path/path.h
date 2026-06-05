@@ -156,6 +156,17 @@ template <typename World, typename Tag>
   return value != nullptr && static_cast<bool>(*value);
 }
 
+template <typename World, typename Tag>
+[[nodiscard]] auto is_passable_index(const World& world,
+                                     std::uint64_t index) noexcept -> bool {
+  using Shape = typename World::shape_type;
+  using Storage = typename ShapeTraits<Shape>::TileKeyStorage;
+  const auto key = TileKey<Shape>{static_cast<Storage>(index)};
+  const auto& value = world.chunk(chunk_key<Shape>(key))
+                          .template field<Tag>(local_tile_id<Shape>(key));
+  return static_cast<bool>(value);
+}
+
 template <typename Fn>
 void for_each_axis_neighbor(Coord3 coord, Fn&& fn) {
   fn(Coord3{coord.x + 1, coord.y, coord.z});
@@ -358,12 +369,6 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
         current_coord, current.index,
         [&](Coord3 neighbor, std::uint64_t neighbor_index) {
           TESS_DIAG_EVENT(path_neighbor_candidate);
-          TESS_DIAG_EVENT(path_passability_check);
-          if (!detail::is_passable<World, Tag>(world, neighbor)) {
-            TESS_DIAG_EVENT(path_neighbor_blocked);
-            return;
-          }
-
           const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
           const auto neighbor_state = scratch.state_at(neighbor_offset, unseen);
           if (neighbor_state == closed) {
@@ -372,6 +377,13 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
           }
           const auto tentative_g = current.g + 1;
           TESS_DIAG_EVENT(path_relax_attempt);
+          if (neighbor_state == unseen) {
+            TESS_DIAG_EVENT(path_passability_check);
+            if (!detail::is_passable_index<World, Tag>(world, neighbor_index)) {
+              TESS_DIAG_EVENT(path_neighbor_blocked);
+              return;
+            }
+          }
           if (tentative_g < scratch.g_at(neighbor_offset, infinite_cost)) {
             TESS_DIAG_EVENT(path_relax_success);
             if (neighbor_state == unseen) {
