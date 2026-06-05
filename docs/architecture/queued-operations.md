@@ -17,13 +17,20 @@ by `tess/tess.h`.
   `CanSkipIfSuperseded`, and `BudgetedIncremental`.
 - `OperationStatus` records per-operation planner outcome. The current
   statuses are `Planned`, `InvalidWritePolicy`, and `InvalidDomain`.
+- `OperationFailure` records the stable reason for an invalid operation. The
+  current reasons are `InvalidWritePolicyValue` and
+  `ExplicitChunkOutOfRange`.
 - `DomainDesc` owns a minimal operation domain descriptor:
   `explicit_chunks(keys)`, `dirty_chunks(mask)`, `active_chunks(mask)`, or
   `resident_chunks()`.
 - `QueuedOperation` stores the submitted operation kind, handle, id, domain,
   `WritePolicy`, priority, budget policy, and `std::source_location`.
+- `OperationAccess` records the diagnostic access metadata known to the
+  planner: write policy, domain kind, and domain mask. It is diagnostic
+  metadata only in this slice, not a hazard solver.
 - `ExecutionPlan` stores planned operations in enqueue order. Each planned
-  operation contains the expanded chunk-key vector.
+  operation contains the diagnostic access metadata and expanded chunk-key
+  vector.
 - `ExecutionReport` stores one report entry per queued operation and the plan
   entries for operations that passed validation.
 
@@ -52,6 +59,17 @@ Planning preserves enqueue order for reports and successful plan entries.
 Operations with invalid write policies or invalid domains still receive report
 entries, but they do not produce plan entries.
 
+Report helpers expose deterministic inspection without changing ownership:
+
+- `ok()` and `failed()` summarize whether any operation failed validation.
+- `planned_count()` returns the number of successful plan entries.
+- `failed_count()` returns the number of failed report entries.
+- `find(handle)` performs a linear lookup in report order and returns the
+  matching report entry or `nullptr`.
+
+Invalid operation reports include `OperationFailure`. Invalid explicit chunk
+domains also include the first out-of-range `ChunkKey` as diagnostic detail.
+
 Inspecting existing queued operations, reports, and planned operations returns
 non-owning spans and does not allocate. Enqueueing and domain/report expansion
 may allocate because `FrameOps`, explicit domains, reports, and planned chunk
@@ -65,9 +83,11 @@ This slice is a planner scaffold only. It intentionally does not implement:
 - barrier insertion, batching heuristics, async work, or worker scheduling
 - topology, pathfinding, movement, residency transitions, or GPU selection
 - work-contract or maintenance-scheduler semantics
-- hazard analysis beyond validating the current `WritePolicy` enum value
+- hazard analysis beyond recording diagnostic access metadata and validating
+  the current `WritePolicy` enum value
 - sparse residency or non-resident chunk loading
-- rich diagnostics beyond per-op status and captured source location
+- rich diagnostics beyond per-op status, failure reason, limited detail, access
+  metadata, and captured source location
 
 The Work Contracts addendum remains an experiment proposal. Current queued ops
 use the existing dirty/active metadata scans as the baseline and do not add
@@ -85,7 +105,8 @@ later work:
 - `ExecutionPlan` is only an ordered list of expanded chunk keys per operation,
   not a phase graph.
 - `ExecutionReport` reports validation status, chunk count, and source
-  location, not backend choice, hazards, versions, or result channels.
+  location plus limited diagnostics, not backend choice, solved hazards,
+  versions, or result channels.
 
 Those omissions are intentional so future scheduler, topology, pathing, and
 diagnostics slices can be added against a deterministic queue and domain
