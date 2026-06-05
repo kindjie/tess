@@ -103,3 +103,20 @@ deferred for scope reasons. Keep entries short and concrete:
   current open-set representation.
 - Retry conditions: Reconsider if `OpenNode` grows larger or the open-set
   representation changes.
+
+## 2026-06-05 - A* Full Separating Barrier Precheck
+
+- Area: A* no-path precheck for uniform passability grids.
+- Hypothesis: If the direct path probe hits a blocked tile and that tile's
+  axis plane is fully blocked, the plane separates start from goal under
+  axis-adjacent movement and A* can return `NoPath` immediately.
+- Evidence: Local release benchmarks dropped `path/astar_no_path_512x512`
+  from about 17.8 ms to about 0.8 us and `path/astar_no_path_1024x1024` from
+  about 88 ms to about 1.6 us. Wall-gap, striped-maze, and mixed-batch release
+  timings stayed in the same range because non-separating barriers fall back to
+  normal A*.
+- Decision: Accepted. The precheck is exact for the current passability model:
+  it only returns `NoPath` when a fully blocked axis plane separates the query.
+- Retry conditions: If movement rules later permit jumping, teleporting, or
+  non-axis transitions across the plane, gate or disable this precheck for
+  those movement classes.
