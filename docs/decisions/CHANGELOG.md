@@ -13,6 +13,19 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-05 - Queued Operations Foundation
+
+- Changed: Added a public `FrameOps` queue, minimal chunk-domain descriptors,
+  deterministic operation handles/ids, and a planner scaffold that validates
+  write policies/domains and expands domains into ordered chunk-key vectors.
+- Reason: M4 needs a stable queued-intent foundation before adding executors,
+  scheduler integration, topology/path systems, richer diagnostics, result
+  channels, or work-contract-style maintenance.
+- Affected docs: `docs/architecture/queued-operations.md`,
+  `docs/architecture/README.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/ops/queued.h`, `include/tess/tess.h`,
+  `tests/tess_queued_test.cc`, `tests/CMakeLists.txt`
+
 ## 2026-06-01 - Documentation Model
 
 - Changed: TDDs are treated as historical design intent, while maintained
