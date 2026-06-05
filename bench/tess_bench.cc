@@ -53,10 +53,15 @@ using StorageSingleChunkPage =
 using Block2DWorld = tess::AlwaysResidentWorld<TopDown2D, StorageSchema>;
 using Block3DWorld = tess::AlwaysResidentWorld<Block3DShape, StorageSchema>;
 using PathSchema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
+using WeightedPathSchema =
+    tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
+                      tess::Field<CostTag, std::uint32_t>>;
 using PathWorld = tess::AlwaysResidentWorld<PathShape, PathSchema>;
 using PathRealisticWorld =
     tess::AlwaysResidentWorld<PathRealisticShape, PathSchema>;
 using PathScaleWorld = tess::AlwaysResidentWorld<PathScaleShape, PathSchema>;
+using WeightedPathScaleWorld =
+    tess::AlwaysResidentWorld<PathScaleShape, WeightedPathSchema>;
 using PathLargeWorld = tess::AlwaysResidentWorld<PathLargeShape, PathSchema>;
 using PathVerticalScaleWorld =
     tess::AlwaysResidentWorld<PathVerticalScaleShape, PathSchema>;
@@ -628,6 +633,16 @@ void fill_path_passable(World& world, std::uint8_t value) {
   }
 }
 
+template <typename World>
+void fill_path_cost(World& world, std::uint32_t value) {
+  for (auto& page : world.chunks()) {
+    auto costs = page.template field_span<CostTag>();
+    for (auto& tile : costs) {
+      tile = value;
+    }
+  }
+}
+
 template <typename Shape>
 [[nodiscard]] constexpr auto path_node_count() noexcept -> std::uint64_t {
   return Shape::size.x * Shape::size.y * Shape::size.z;
@@ -924,6 +939,60 @@ void BM_path_astar_open_2d_1024x1024(benchmark::State& state) {
             world,
             tess::PathRequest{tess::Coord3{0, 0, 0},
                               tess::Coord3{1023, 1023, 0}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_weighted_astar_open_512x512(benchmark::State& state) {
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag,
+                                           CostTag>(
+            world,
+            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 511, 0}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_weighted_astar_axis_detour_512x512(benchmark::State& state) {
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+  for (std::int64_t x = 1; x < 511; ++x) {
+    world.template field<CostTag>(tess::Coord3{x, 0, 0}) = 25;
+  }
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag,
+                                           CostTag>(
+            world,
+            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 0, 0}},
             scratch));
     auto cost = result.cost;
     benchmark::DoNotOptimize(cost);
@@ -2077,6 +2146,10 @@ BENCHMARK(BM_path_astar_open_2d_64x64)->Name("path/astar_open_2d_64x64");
 BENCHMARK(BM_path_astar_open_2d_512x512)->Name("path/astar_open_2d_512x512");
 BENCHMARK(BM_path_astar_open_2d_1024x1024)
     ->Name("path/astar_open_2d_1024x1024");
+BENCHMARK(BM_path_weighted_astar_open_512x512)
+    ->Name("path/weighted_astar_open_512x512");
+BENCHMARK(BM_path_weighted_astar_axis_detour_512x512)
+    ->Name("path/weighted_astar_axis_detour_512x512");
 BENCHMARK(BM_path_astar_wall_gap_512x512)->Name("path/astar_wall_gap_512x512");
 BENCHMARK(BM_path_astar_alternate_direct_512x512)
     ->Name("path/astar_alternate_direct_512x512");

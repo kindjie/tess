@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <new>
 
@@ -44,8 +45,10 @@ void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
 namespace {
 
 struct PassableTag {};
+struct CostTag {};
 
-using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>>;
+using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
+                                 tess::Field<CostTag, std::uint32_t>>;
 using TopDown2D = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
 using Vertical2D = tess::Shape<tess::Extent3{1, 8, 8}, tess::Extent3{1, 4, 4}>;
 using Chunked3D = tess::Shape<tess::Extent3{4, 4, 4}, tess::Extent3{2, 2, 2}>;
@@ -55,6 +58,16 @@ void fill_passable(World& world, bool value) {
   for (auto& page : world.chunks()) {
     auto passable = page.template field_span<PassableTag>();
     for (auto& tile : passable) {
+      tile = value;
+    }
+  }
+}
+
+template <typename World>
+void fill_cost(World& world, std::uint32_t value) {
+  for (auto& page : world.chunks()) {
+    auto costs = page.template field_span<CostTag>();
+    for (auto& tile : costs) {
       tile = value;
     }
   }
@@ -120,6 +133,83 @@ TEST(TessPath, ReportsNoPathWhenGoalIsCutOff) {
 
   EXPECT_EQ(result.status, tess::PathStatus::NoPath);
   EXPECT_TRUE(result.path.empty());
+}
+
+TEST(TessPath, WeightedAStarAvoidsExpensiveDirectTiles) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  world.template field<CostTag>(tess::Coord3{1, 0, 0}) = 10;
+  world.template field<CostTag>(tess::Coord3{2, 0, 0}) = 10;
+  world.template field<CostTag>(tess::Coord3{3, 0, 0}) = 10;
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+
+  const auto result =
+      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+          world,
+          tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{4, 0, 0}},
+          scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 6u);
+  EXPECT_EQ(result.path.front(), (tess::Coord3{0, 0, 0}));
+  EXPECT_EQ(result.path.back(), (tess::Coord3{4, 0, 0}));
+  EXPECT_NE(result.path[1], (tess::Coord3{1, 0, 0}));
+  for (const auto coord : result.path) {
+    EXPECT_TRUE(world.template field<PassableTag>(coord));
+    EXPECT_GT(world.template field<CostTag>(coord), 0u);
+  }
+}
+
+TEST(TessPath, WeightedAStarTreatsZeroCostTilesAsBlocked) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  world.template field<CostTag>(tess::Coord3{1, 0, 0}) = 0;
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+
+  const auto result =
+      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+          world,
+          tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}},
+          scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 5u);
+  EXPECT_NE(result.path[1], (tess::Coord3{1, 0, 0}));
+  for (const auto coord : result.path) {
+    EXPECT_GT(world.template field<CostTag>(coord), 0u);
+  }
+}
+
+TEST(TessPath, WeightedAStarReportsInvalidZeroCostEndpoints) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+
+  world.template field<CostTag>(tess::Coord3{0, 0, 0}) = 0;
+  const auto invalid_start =
+      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+          world,
+          tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}},
+          scratch);
+  world.template field<CostTag>(tess::Coord3{0, 0, 0}) = 1;
+  world.template field<CostTag>(tess::Coord3{3, 0, 0}) = 0;
+  const auto invalid_goal =
+      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+          world,
+          tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}},
+          scratch);
+
+  EXPECT_EQ(invalid_start.status, tess::PathStatus::InvalidStart);
+  EXPECT_EQ(invalid_goal.status, tess::PathStatus::InvalidGoal);
 }
 
 TEST(TessPath, RejectsFullSeparatingBarrierBeforeAStar) {
