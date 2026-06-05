@@ -653,6 +653,38 @@ TEST(TessPath, CachedAStarClearForcesRecompute) {
   EXPECT_EQ(stats.misses, 1u);
 }
 
+TEST(TessPath, CachedAStarInvalidationForcesRecomputeAndKeepsStats) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  world.template field<PassableTag>(tess::Coord3{3, 0, 0}) = false;
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::RouteCacheScratch cache;
+  cache.reserve_routes(2);
+  cache.reserve_path_nodes(128);
+
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}};
+  const auto first = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, request, scratch, cache);
+  const auto hit = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, request, scratch, cache);
+  cache.invalidate();
+  const auto recomputed = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, request, scratch, cache);
+  const auto stats = cache.stats();
+
+  ASSERT_EQ(first.status, tess::PathStatus::Found);
+  ASSERT_EQ(hit.status, tess::PathStatus::Found);
+  ASSERT_EQ(recomputed.status, tess::PathStatus::Found);
+  EXPECT_EQ(hit.expanded_nodes, 0u);
+  EXPECT_GT(recomputed.expanded_nodes, 0u);
+  EXPECT_EQ(stats.entries, 1u);
+  EXPECT_EQ(stats.hits, 1u);
+  EXPECT_EQ(stats.misses, 2u);
+}
+
 TEST(TessPath, CachedAStarReusesSuffixForSameGoal) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
   fill_passable(world, true);
