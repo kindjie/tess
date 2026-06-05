@@ -2,6 +2,7 @@
 
 #include <tess/block/block.h>
 #include <tess/core/shape.h>
+#include <tess/diagnostics/diagnostics.h>
 #include <tess/ops/queued.h>
 #include <tess/path/path.h>
 #include <tess/storage/chunk_page.h>
