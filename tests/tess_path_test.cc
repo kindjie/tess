@@ -165,6 +165,29 @@ TEST(TessPath, FindsAlternateDirectAxisOrder) {
   }
 }
 
+TEST(TessPath, FindsAxisAlignedOneTileDetourBeforeAStar) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  world.template field<PassableTag>(tess::Coord3{4, 0, 0}) = false;
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+
+  const auto result = tess::astar_path<decltype(world), PassableTag>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}},
+      scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 9u);
+  EXPECT_EQ(result.expanded_nodes, result.path.size());
+  EXPECT_EQ(result.reached_nodes, result.path.size());
+  EXPECT_EQ(result.path.front(), (tess::Coord3{0, 0, 0}));
+  EXPECT_EQ(result.path.back(), (tess::Coord3{7, 0, 0}));
+  for (const auto coord : result.path) {
+    EXPECT_TRUE(world.template field<PassableTag>(coord));
+  }
+}
+
 TEST(TessPath, SupportsVertical2DCoordinates) {
   tess::AlwaysResidentWorld<Vertical2D, Schema> world;
   fill_passable(world, true);

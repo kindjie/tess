@@ -726,6 +726,31 @@ void BM_path_astar_alternate_direct_512x512(benchmark::State& state) {
   TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
 }
 
+void BM_path_astar_axis_detour_512x512(benchmark::State& state) {
+  PathScaleWorld world;
+  fill_path_passable(world, 1);
+  world.template field<PassableTag>(tess::Coord3{256, 0, 0}) = 0;
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        result = tess::astar_path<PathScaleWorld, PassableTag>(
+            world,
+            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 0, 0}},
+            scratch));
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
 void BM_path_astar_no_path_512x512(benchmark::State& state) {
   PathScaleWorld world;
   fill_path_passable(world, 1);
@@ -1039,6 +1064,8 @@ BENCHMARK(BM_path_astar_open_2d_1024x1024)
 BENCHMARK(BM_path_astar_wall_gap_512x512)->Name("path/astar_wall_gap_512x512");
 BENCHMARK(BM_path_astar_alternate_direct_512x512)
     ->Name("path/astar_alternate_direct_512x512");
+BENCHMARK(BM_path_astar_axis_detour_512x512)
+    ->Name("path/astar_axis_detour_512x512");
 BENCHMARK(BM_path_astar_no_path_512x512)->Name("path/astar_no_path_512x512");
 BENCHMARK(BM_path_astar_striped_maze_512x512)
     ->Name("path/astar_striped_maze_512x512");
