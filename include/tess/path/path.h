@@ -237,12 +237,9 @@ void for_each_indexed_axis_neighbor(Coord3 coord, std::uint64_t index,
   constexpr auto chunk_index_stride =
       local_bits >= 64 ? std::uint64_t{0} : (std::uint64_t{1} << local_bits);
   constexpr auto chunk_y_stride = Traits::chunk_count_x * chunk_index_stride;
-  constexpr auto chunk_z_stride =
-      Traits::chunk_count_x * Traits::chunk_count_y * chunk_index_stride;
 
   const auto local_x = static_cast<std::uint64_t>(coord.x) & (chunk.x - 1);
   const auto local_y = static_cast<std::uint64_t>(coord.y) & (chunk.y - 1);
-  const auto local_z = static_cast<std::uint64_t>(coord.z) & (chunk.z - 1);
 
   if constexpr (!Traits::degenerate_x) {
     if (static_cast<std::uint64_t>(coord.x) + 1 < size.x) {
@@ -274,7 +271,10 @@ void for_each_indexed_axis_neighbor(Coord3 coord, std::uint64_t index,
   }
 
   if constexpr (!Traits::degenerate_z) {
+    constexpr auto chunk_z_stride =
+        Traits::chunk_count_x * Traits::chunk_count_y * chunk_index_stride;
     const auto local_xy = chunk.x * chunk.y;
+    const auto local_z = static_cast<std::uint64_t>(coord.z) & (chunk.z - 1);
     if (static_cast<std::uint64_t>(coord.z) + 1 < size.z) {
       const auto next_index = local_z + 1 < chunk.z
                                   ? index + local_xy
