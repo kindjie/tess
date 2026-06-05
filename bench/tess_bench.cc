@@ -70,6 +70,68 @@ void record_path_counters(benchmark::State& state,
   state.counters["reached_nodes"] = static_cast<double>(result.reached_nodes);
 }
 
+template <typename World, std::size_t Count>
+void record_path_batch_counters(
+    benchmark::State& state,
+    const std::array<tess::PathRequest, Count>& requests,
+    std::uint64_t total_expanded) {
+  using Shape = typename World::shape_type;
+  std::array<tess::Coord3, Count> starts{};
+  std::array<tess::Coord3, Count> goals{};
+  std::array<std::uint64_t, Count> start_chunks{};
+  std::array<std::uint64_t, Count> goal_chunks{};
+  std::size_t unique_starts = 0;
+  std::size_t unique_goals = 0;
+  std::size_t unique_start_chunks = 0;
+  std::size_t unique_goal_chunks = 0;
+
+  const auto append_coord = [](auto& values, std::size_t& size,
+                               tess::Coord3 coord) {
+    for (std::size_t i = 0; i < size; ++i) {
+      if (values[i] == coord) {
+        return;
+      }
+    }
+    values[size] = coord;
+    ++size;
+  };
+  const auto append_key = [](auto& values, std::size_t& size,
+                             std::uint64_t key) {
+    for (std::size_t i = 0; i < size; ++i) {
+      if (values[i] == key) {
+        return;
+      }
+    }
+    values[size] = key;
+    ++size;
+  };
+
+  for (const auto request : requests) {
+    append_coord(starts, unique_starts, request.start);
+    append_coord(goals, unique_goals, request.goal);
+    append_key(
+        start_chunks, unique_start_chunks,
+        static_cast<std::uint64_t>(
+            tess::chunk_key<Shape>(tess::chunk_coord<Shape>(request.start))
+                .value));
+    append_key(
+        goal_chunks, unique_goal_chunks,
+        static_cast<std::uint64_t>(
+            tess::chunk_key<Shape>(tess::chunk_coord<Shape>(request.goal))
+                .value));
+  }
+
+  state.counters["agents"] = static_cast<double>(Count);
+  state.counters["batch.unique_starts"] = static_cast<double>(unique_starts);
+  state.counters["batch.unique_goals"] = static_cast<double>(unique_goals);
+  state.counters["batch.unique_start_chunks"] =
+      static_cast<double>(unique_start_chunks);
+  state.counters["batch.unique_goal_chunks"] =
+      static_cast<double>(unique_goal_chunks);
+  state.counters["batch.avg_expanded_nodes"] =
+      static_cast<double>(total_expanded) / static_cast<double>(Count);
+}
+
 #if TESS_DIAGNOSTICS_ENABLED
 void record_path_diagnostic_counters(
     benchmark::State& state,
@@ -1385,9 +1447,13 @@ void BM_path_astar_batch_100_shared_room_portals_512x512(
   std::array<tess::PathRequest, 100> requests{};
   for (std::size_t i = 0; i < requests.size(); ++i) {
     const auto offset = static_cast<std::int64_t>(i);
+    const auto start = tess::Coord3{1 + offset % 16, 1 + offset / 16, 0};
+    const auto goal = tess::Coord3{510, 510, 0};
+    world.template field<PassableTag>(start) = 1;
+    world.template field<PassableTag>(goal) = 1;
     requests[i] = tess::PathRequest{
-        tess::Coord3{1 + offset % 16, 1 + offset / 16, 0},
-        tess::Coord3{510, 510, 0},
+        start,
+        goal,
     };
   }
 
@@ -1396,10 +1462,11 @@ void BM_path_astar_batch_100_shared_room_portals_512x512(
   TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
   tess::PathResult result;
 
+  std::uint64_t total_expanded = 0;
   for (auto _ : state) {
     TESS_BENCH_PATH_DIAGNOSTICS_RESET();
     std::uint64_t total_cost = 0;
-    std::uint64_t total_expanded = 0;
+    total_expanded = 0;
     TESS_BENCH_PATH_DIAGNOSTICS_RUN(for (const auto request : requests) {
       result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
                                                              scratch);
@@ -1409,7 +1476,313 @@ void BM_path_astar_batch_100_shared_room_portals_512x512(
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  state.counters["agents"] = static_cast<double>(requests.size());
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_distance_field_batch_100_shared_room_portals_512x512(
+    benchmark::State& state) {
+  PathScaleWorld world;
+  fill_path_passable(world, 1);
+  carve_room_portals(world);
+
+  std::array<tess::PathRequest, 100> requests{};
+  const auto goal = tess::Coord3{510, 510, 0};
+  world.template field<PassableTag>(goal) = 1;
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    const auto start = tess::Coord3{1 + offset % 16, 1 + offset / 16, 0};
+    world.template field<PassableTag>(start) = 1;
+    requests[i] = tess::PathRequest{start, goal};
+  }
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::DistanceFieldResult field;
+  tess::PathResult result;
+  std::uint64_t total_expanded = 0;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    std::uint64_t total_cost = 0;
+    total_expanded = 0;
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        field = tess::build_distance_field<PathScaleWorld, PassableTag>(
+            world, goal, scratch);
+        for (const auto request : requests) {
+          result = tess::distance_field_path<PathScaleWorld, PassableTag>(
+              world, request.start, request.goal, scratch);
+          total_cost += result.cost;
+          total_expanded += result.expanded_nodes;
+        });
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+    benchmark::DoNotOptimize(field.expanded_nodes);
+  }
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
+  state.counters["field_expanded_nodes"] =
+      static_cast<double>(field.expanded_nodes);
+  state.counters["field_reached_nodes"] =
+      static_cast<double>(field.reached_nodes);
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_astar_batch_100_shared_sparse_512x512(benchmark::State& state) {
+  PathScaleWorld world;
+  fill_path_passable(world, 1);
+  carve_sparse_blockers(world);
+
+  std::array<tess::PathRequest, 100> requests{};
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    const auto x = static_cast<std::int64_t>(1 + i % 10);
+    const auto y = static_cast<std::int64_t>(1 + i / 10);
+    const auto goal = tess::Coord3{510, 510, 0};
+    world.template field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
+    world.template field<PassableTag>(goal) = 1;
+    requests[i] = tess::PathRequest{tess::Coord3{x, y, 0}, goal};
+  }
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+  std::uint64_t total_expanded = 0;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    std::uint64_t total_cost = 0;
+    total_expanded = 0;
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(for (const auto request : requests) {
+      result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
+                                                             scratch);
+      total_cost += result.cost;
+      total_expanded += result.expanded_nodes;
+    });
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+  }
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_distance_field_batch_100_shared_sparse_512x512(
+    benchmark::State& state) {
+  PathScaleWorld world;
+  fill_path_passable(world, 1);
+  carve_sparse_blockers(world);
+
+  std::array<tess::PathRequest, 100> requests{};
+  const auto goal = tess::Coord3{510, 510, 0};
+  world.template field<PassableTag>(goal) = 1;
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    const auto x = static_cast<std::int64_t>(1 + i % 10);
+    const auto y = static_cast<std::int64_t>(1 + i / 10);
+    const auto start = tess::Coord3{x, y, 0};
+    world.template field<PassableTag>(start) = 1;
+    requests[i] = tess::PathRequest{start, goal};
+  }
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::DistanceFieldResult field;
+  tess::PathResult result;
+  std::uint64_t total_expanded = 0;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    std::uint64_t total_cost = 0;
+    total_expanded = 0;
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(
+        field = tess::build_distance_field<PathScaleWorld, PassableTag>(
+            world, goal, scratch);
+        for (const auto request : requests) {
+          result = tess::distance_field_path<PathScaleWorld, PassableTag>(
+              world, request.start, request.goal, scratch);
+          total_cost += result.cost;
+          total_expanded += result.expanded_nodes;
+        });
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+    benchmark::DoNotOptimize(field.expanded_nodes);
+  }
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
+  state.counters["field_expanded_nodes"] =
+      static_cast<double>(field.expanded_nodes);
+  state.counters["field_reached_nodes"] =
+      static_cast<double>(field.reached_nodes);
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_astar_batch_100_multigoal_room_portals_512x512(
+    benchmark::State& state) {
+  PathScaleWorld world;
+  fill_path_passable(world, 1);
+  carve_room_portals(world);
+
+  constexpr auto goals = std::array{
+      tess::Coord3{510, 510, 0}, tess::Coord3{510, 447, 0},
+      tess::Coord3{447, 510, 0}, tess::Coord3{383, 510, 0},
+      tess::Coord3{510, 383, 0}, tess::Coord3{447, 447, 0},
+      tess::Coord3{383, 447, 0}, tess::Coord3{447, 383, 0},
+  };
+  std::array<tess::PathRequest, 100> requests{};
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    const auto start = tess::Coord3{1 + offset % 16, 1 + offset / 16, 0};
+    const auto goal = goals[i % goals.size()];
+    world.template field<PassableTag>(start) = 1;
+    world.template field<PassableTag>(goal) = 1;
+    requests[i] = tess::PathRequest{
+        start,
+        goal,
+    };
+  }
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+  std::uint64_t total_expanded = 0;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    std::uint64_t total_cost = 0;
+    total_expanded = 0;
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(for (const auto request : requests) {
+      result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
+                                                             scratch);
+      total_cost += result.cost;
+      total_expanded += result.expanded_nodes;
+    });
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+  }
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_distance_field_batch_100_multigoal_room_portals_512x512(
+    benchmark::State& state) {
+  PathScaleWorld world;
+  fill_path_passable(world, 1);
+  carve_room_portals(world);
+
+  constexpr auto goals = std::array{
+      tess::Coord3{510, 510, 0}, tess::Coord3{510, 447, 0},
+      tess::Coord3{447, 510, 0}, tess::Coord3{383, 510, 0},
+      tess::Coord3{510, 383, 0}, tess::Coord3{447, 447, 0},
+      tess::Coord3{383, 447, 0}, tess::Coord3{447, 383, 0},
+  };
+  std::array<tess::PathRequest, 100> requests{};
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    const auto start = tess::Coord3{1 + offset % 16, 1 + offset / 16, 0};
+    const auto goal = goals[i % goals.size()];
+    world.template field<PassableTag>(start) = 1;
+    world.template field<PassableTag>(goal) = 1;
+    requests[i] = tess::PathRequest{start, goal};
+  }
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::DistanceFieldResult field;
+  tess::PathResult result;
+  std::uint64_t total_expanded = 0;
+  std::uint64_t total_field_expanded = 0;
+  std::uint64_t total_field_reached = 0;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    std::uint64_t total_cost = 0;
+    total_expanded = 0;
+    total_field_expanded = 0;
+    total_field_reached = 0;
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(for (const auto goal : goals) {
+      field = tess::build_distance_field<PathScaleWorld, PassableTag>(
+          world, goal, scratch);
+      total_field_expanded += field.expanded_nodes;
+      total_field_reached += field.reached_nodes;
+      for (const auto request : requests) {
+        if (request.goal != goal) {
+          continue;
+        }
+        result = tess::distance_field_path<PathScaleWorld, PassableTag>(
+            world, request.start, request.goal, scratch);
+        total_cost += result.cost;
+        total_expanded += result.expanded_nodes;
+      }
+    });
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+    benchmark::DoNotOptimize(total_field_expanded);
+  }
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
+  state.counters["field_expanded_nodes"] =
+      static_cast<double>(total_field_expanded);
+  state.counters["field_reached_nodes"] =
+      static_cast<double>(total_field_reached);
+  record_path_counters(state, result);
+  TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
+}
+
+void BM_path_astar_batch_100_mixed_repeated_room_portals_512x512(
+    benchmark::State& state) {
+  PathScaleWorld world;
+  fill_path_passable(world, 1);
+  carve_room_portals(world);
+
+  std::array<tess::PathRequest, 100> requests{};
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    const auto lane = static_cast<std::int64_t>(i % 10);
+    if (i % 3 == 0) {
+      const auto start = tess::Coord3{1 + lane, 1, 0};
+      const auto goal = tess::Coord3{128 + lane, 128, 0};
+      world.template field<PassableTag>(start) = 1;
+      world.template field<PassableTag>(goal) = 1;
+      requests[i] = tess::PathRequest{start, goal};
+    } else if (i % 3 == 1) {
+      const auto start = tess::Coord3{1 + lane, 64, 0};
+      const auto goal = tess::Coord3{320 + lane, 320, 0};
+      world.template field<PassableTag>(start) = 1;
+      world.template field<PassableTag>(goal) = 1;
+      requests[i] = tess::PathRequest{start, goal};
+    } else {
+      const auto start = tess::Coord3{1 + lane, 96, 0};
+      const auto goal = tess::Coord3{510, 510, 0};
+      world.template field<PassableTag>(start) = 1;
+      world.template field<PassableTag>(goal) = 1;
+      requests[i] = tess::PathRequest{start, goal};
+    }
+  }
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
+  tess::PathResult result;
+  std::uint64_t total_expanded = 0;
+
+  for (auto _ : state) {
+    TESS_BENCH_PATH_DIAGNOSTICS_RESET();
+    std::uint64_t total_cost = 0;
+    total_expanded = 0;
+    TESS_BENCH_PATH_DIAGNOSTICS_RUN(for (const auto request : requests) {
+      result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
+                                                             scratch);
+      total_cost += result.cost;
+      total_expanded += result.expanded_nodes;
+    });
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+  }
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
   record_path_counters(state, result);
   TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
 }
@@ -1431,11 +1804,12 @@ void BM_path_astar_batch_100_open_512x512(benchmark::State& state) {
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
   tess::PathResult result;
+  std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_BENCH_PATH_DIAGNOSTICS_RESET();
     std::uint64_t total_cost = 0;
-    std::uint64_t total_expanded = 0;
+    total_expanded = 0;
     TESS_BENCH_PATH_DIAGNOSTICS_RUN(for (const auto request : requests) {
       result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
                                                              scratch);
@@ -1445,7 +1819,7 @@ void BM_path_astar_batch_100_open_512x512(benchmark::State& state) {
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  state.counters["agents"] = static_cast<double>(requests.size());
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
   record_path_counters(state, result);
   TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
 }
@@ -1480,11 +1854,12 @@ void BM_path_astar_batch_100_mixed_512x512(benchmark::State& state) {
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   TESS_BENCH_PATH_DIAGNOSTICS_DECL(scratch);
   tess::PathResult result;
+  std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_BENCH_PATH_DIAGNOSTICS_RESET();
     std::uint64_t total_cost = 0;
-    std::uint64_t total_expanded = 0;
+    total_expanded = 0;
     TESS_BENCH_PATH_DIAGNOSTICS_RUN(for (const auto request : requests) {
       result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
                                                              scratch);
@@ -1494,7 +1869,7 @@ void BM_path_astar_batch_100_mixed_512x512(benchmark::State& state) {
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  state.counters["agents"] = static_cast<double>(requests.size());
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
   record_path_counters(state, result);
   TESS_BENCH_PATH_DIAGNOSTICS_RECORD(state);
 }
@@ -1599,5 +1974,17 @@ BENCHMARK(BM_path_astar_batch_100_mixed_512x512)
     ->Name("path/astar_batch_100_mixed_512x512");
 BENCHMARK(BM_path_astar_batch_100_shared_room_portals_512x512)
     ->Name("path/astar_batch_100_shared_room_portals_512x512");
+BENCHMARK(BM_path_distance_field_batch_100_shared_room_portals_512x512)
+    ->Name("path/distance_field_batch_100_shared_room_portals_512x512");
+BENCHMARK(BM_path_astar_batch_100_shared_sparse_512x512)
+    ->Name("path/astar_batch_100_shared_sparse_512x512");
+BENCHMARK(BM_path_distance_field_batch_100_shared_sparse_512x512)
+    ->Name("path/distance_field_batch_100_shared_sparse_512x512");
+BENCHMARK(BM_path_astar_batch_100_multigoal_room_portals_512x512)
+    ->Name("path/astar_batch_100_multigoal_room_portals_512x512");
+BENCHMARK(BM_path_distance_field_batch_100_multigoal_room_portals_512x512)
+    ->Name("path/distance_field_batch_100_multigoal_room_portals_512x512");
+BENCHMARK(BM_path_astar_batch_100_mixed_repeated_room_portals_512x512)
+    ->Name("path/astar_batch_100_mixed_repeated_room_portals_512x512");
 
 }  // namespace

@@ -232,6 +232,9 @@ The path set includes a cheap smoke path plus 64x64, 512x512, and 1024x1024
 open-world A* scaling paths intended to catch unrealistic path-core overhead.
 Path benchmarks also publish user counters for cost, path nodes, expanded
 nodes, and reached nodes so timing changes can be correlated with graph work.
+Batch path benchmarks also report agents, unique starts, unique goals, unique
+start/goal chunks, and average expanded nodes so repeated-work opportunities
+are visible in benchmark output.
 Additional A* investigation benchmarks cover short/medium/long 512x512 open
 paths, wall-gap detours, failed wall-separated paths, striped mazes, and
 100-request batches. They also include alternate direct-axis-order and
@@ -240,12 +243,16 @@ case exercises the exact 2D single-plane gap precheck, striped maze cases
 exercise dynamic forced-gap sequence handling, and vertical 2D plus small 3D
 cases cover non-top-down layouts. Fallback-stress path cases include sparse
 blockers, room/portal partitions, branch-heavy lattice paths, and repeated
-shared-destination room/portal batches. Terrain-cost stress remains pending
-until the public path API accepts weighted cost fields instead of passability
-only. Most current path benchmarks are included in threshold JSON at the 1 ms
-investigation ceiling; investigated fallback profiles may carry explicit
-larger thresholds when the mitigation requires future path data structures,
-route caching, hierarchy, or batching support outside the current A* scope.
+shared-destination room/portal batches. Many-agent cases cover 100 agents to
+one goal, one room cluster to another, 8 common destinations, and mixed
+short/medium/long repeated room routes. Shared-goal distance-field benchmarks
+compare reverse field builds plus path reconstruction against independent A*.
+Terrain-cost stress remains pending until the public path API accepts weighted
+cost fields instead of passability only. Most current path benchmarks are
+included in threshold JSON at the 1 ms investigation ceiling; investigated
+batch profiles may carry explicit larger thresholds when the workload contains
+many path requests or the mitigation requires future path data structures,
+route caching, hierarchy, or broader batching support.
 
 Run the current scaffolds with:
 
