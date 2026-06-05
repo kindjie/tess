@@ -26,6 +26,20 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/planning/benchmark-plan.md`
 - Affected code: `CMakePresets.json`, `tools/profile_benchmark.sh`
 
+## 2026-06-05 - Path Direct Fast-Path Prechecks
+
+- Changed: Pathfinding now tries shape-relevant direct Manhattan axis orders
+  before heap-backed A*, and rejects full axis-plane barriers before expanding
+  A* nodes.
+- Reason: Uniform-cost direct paths and fully separating blocked planes can be
+  resolved exactly without general A* search while preserving optimal fallback
+  behavior for non-separating blockers.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/benchmark-plan.md`,
+  `docs/planning/optimization-log.md`
+- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
+  `bench/tess_bench.cc`
+
 ## 2026-06-05 - Testable MVP Scope
 
 - Changed: Added an explicit MVP checkpoint that narrows the first end-to-end

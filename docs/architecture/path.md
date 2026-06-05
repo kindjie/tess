@@ -34,12 +34,12 @@ deterministic by lower total score, then higher path cost for equal-score
 nodes, then tile-key order. Preferring higher path cost on equal-score nodes
 avoids open-grid wavefront expansion while preserving shortest paths.
 
-Before entering heap-backed A*, the implementation probes the direct Manhattan
-path in fixed axis order. If that route is fully passable, it returns the
-direct shortest path immediately. If the direct probe hits a blocked tile whose
-axis plane is fully blocked, it returns `NoPath` immediately because the plane
-separates start from goal under the current axis-adjacent movement model.
-Non-separating blockers fall back to normal A*.
+Before entering heap-backed A*, the implementation probes direct Manhattan
+paths in the shape-relevant axis orders. If any route is fully passable, it
+returns that direct shortest path immediately. If a direct probe hits a blocked
+tile whose axis plane is fully blocked, it returns `NoPath` immediately because
+the plane separates start from goal under the current axis-adjacent movement
+model. Non-separating blockers fall back to normal A*.
 
 The returned path span points into the supplied `PathScratch` and remains valid
 until the next path query or scratch clear/reserve operation. Scratch keeps
