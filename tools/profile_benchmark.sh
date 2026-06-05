@@ -99,6 +99,14 @@ else
     "--benchmark_min_time=$min_time" "$@"
 fi
 
+sidecar="$output"
+case "$sidecar" in
+  *.gz)
+    sidecar=${sidecar%.gz}
+    ;;
+esac
+sidecar="${sidecar}.syms.json"
+
 printf "samply"
 print_arg record
 print_arg --save-only
@@ -111,3 +119,15 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 printf "\n"
+
+printf "profile: %s\n" "$output"
+if [ "$presymbolicate" = "1" ]; then
+  printf "symbols: %s\n" "$sidecar"
+  printf "summary:"
+  print_arg tools/profile_symbol_summary.py
+  print_arg "$output"
+  print_arg "$sidecar"
+  printf "\n"
+else
+  printf "symbols: disabled\n"
+fi

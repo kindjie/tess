@@ -179,6 +179,11 @@ inline void event_path_skip_pop(bool closed) noexcept {
 inline void event_path_neighbor_candidate() noexcept {
   if (active_path_counters != nullptr) {
     ++active_path_counters->neighbor_candidates;
+  }
+}
+
+inline void event_path_passability_check() noexcept {
+  if (active_path_counters != nullptr) {
     ++active_path_counters->passability_checks;
   }
 }

@@ -186,13 +186,27 @@ tools/profile_benchmark.sh \
 ```
 
 The helper prints a `samply record --save-only` command with presymbolication
-enabled. Pass an output path in a scratch directory so generated profiles and
-symbol sidecars do not land in the repository. Run the printed command as its
-own separate shell command so `samply` is launched directly by the shell. In
-managed macOS sandbox environments, launching `samply` from an intermediate
-helper process, or immediately after CMake in the same shell command, can fail
-with `Unknown(1100)`. Load the saved profile explicitly when an interactive
-view is needed:
+enabled, plus the expected profile, symbol sidecar, and CLI summary paths. Pass
+an output path in a scratch directory so generated profiles and symbol sidecars
+do not land in the repository. Run the printed command as its own separate shell
+command so `samply` is launched directly by the shell. In managed macOS sandbox
+environments, launching `samply` from an intermediate helper process, or
+immediately after CMake in the same shell command, can fail with
+`Unknown(1100)`.
+
+Samply writes presymbolicated native symbols to a sibling `.syms.json` sidecar,
+for example `tess-profile.json.gz` produces `tess-profile.json.syms.json`.
+Seeing `symbolicated:false` in the main Gecko profile JSON is expected in this
+workflow; use the sidecar when producing CLI summaries:
+
+```sh
+tools/profile_symbol_summary.py \
+  "$TMPDIR/tess-astar-1024-profile.json.gz" \
+  "$TMPDIR/tess-astar-1024-profile.json.syms.json" \
+  --include-regex 'tess::|PathScratch'
+```
+
+Load the saved profile explicitly when an interactive view is needed:
 
 ```sh
 samply load "$TMPDIR/tess-astar-1024-profile.json.gz"
@@ -218,6 +232,11 @@ The path set includes a cheap smoke path plus 64x64, 512x512, and 1024x1024
 open-world A* scaling paths intended to catch unrealistic path-core overhead.
 Path benchmarks also publish user counters for cost, path nodes, expanded
 nodes, and reached nodes so timing changes can be correlated with graph work.
+Additional A* investigation benchmarks cover short/medium/long 512x512 open
+paths, wall-gap detours, failed wall-separated paths, striped mazes, and
+100-request batches. These are profiling cases first; keep only stable,
+short-running path cases in threshold JSON until same-runner variance is
+calibrated.
 
 Run the current scaffolds with:
 
