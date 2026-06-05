@@ -120,3 +120,20 @@ deferred for scope reasons. Keep entries short and concrete:
 - Retry conditions: If movement rules later permit jumping, teleporting, or
   non-axis transitions across the plane, gate or disable this precheck for
   those movement classes.
+
+## 2026-06-05 - A* Alternate Direct Axis Orders
+
+- Area: Uniform-cost direct-path fast path.
+- Hypothesis: The direct Manhattan probe should try all shape-relevant axis
+  orders before falling back to A*, because any passable Manhattan route is
+  optimal under unit-cost axis-adjacent movement.
+- Evidence: A new 512x512 benchmark with the X-first direct route blocked but
+  the Y-first route clear runs in about 2.7 us with no heap work. The naive
+  six-order version regressed fallback cases in 2D, so it was narrowed to the
+  two meaningful 2D orders for degenerate-Z shapes. The focused release slice
+  then kept wall-gap, no-path, striped-maze, and mixed-batch timings in the
+  same range as baseline.
+- Decision: Accepted. Direct probing now tries only shape-relevant axis-order
+  permutations and falls back to A* when none are passable.
+- Retry conditions: Gate or revise this fast path when non-unit movement costs
+  or movement classes make arbitrary Manhattan axis orders non-equivalent.
