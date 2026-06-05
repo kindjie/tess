@@ -20,3 +20,8 @@
   allocation-free iteration for prebuilt domains and contexts, including
   pre-reserved caller-owned block scratch and explicit scratch-exhaustion
   diagnostics.
+- `tess_queued_test`: verifies the M4 queued-operations scaffold, including
+  empty-frame planning, stable handles and enqueue-order ids, explicit/dirty/
+  active/resident chunk-domain expansion, enqueue-order plan preservation,
+  invalid write-policy and explicit-domain rejection, source-location capture,
+  and allocation-free inspection of already-built queue/report/plan spans.
