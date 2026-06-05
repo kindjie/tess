@@ -142,12 +142,16 @@ class RouteCacheScratch {
   }
 
   void clear() noexcept {
-    entries_.clear();
-    paths_.clear();
-    temp_path_.clear();
+    invalidate();
     hits_ = 0;
     suffix_hits_ = 0;
     misses_ = 0;
+  }
+
+  void invalidate() noexcept {
+    entries_.clear();
+    paths_.clear();
+    temp_path_.clear();
   }
 
   void reset_stats() noexcept {

@@ -13,6 +13,17 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-05 - Route Cache Invalidation Hook
+
+- Changed: Added `RouteCacheScratch::invalidate()` to drop cached route data
+  without resetting cache hit/miss counters.
+- Reason: Stable-map route reuse needs an explicit hook for passability or
+  movement-rule changes, while benchmark and diagnostic callers may want to
+  preserve accumulated cache stats across invalidations.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`
+
 ## 2026-06-05 - Weighted A* Entry Costs
 
 - Changed: Added a separate `weighted_astar_path` API for positive integral

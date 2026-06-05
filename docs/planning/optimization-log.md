@@ -14,6 +14,22 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-06-05 - Route Cache Invalidation Hook
+
+- Area: Route-cache lifecycle support.
+- Hypothesis: Cached route data needs an explicit invalidation hook so callers
+  can respond to passability or movement-rule changes without also resetting
+  hit/miss counters used by benchmarks and diagnostics.
+- Evidence: New unit coverage verifies that `invalidate()` drops cached route
+  entries, forces the next repeated query to recompute, and preserves prior
+  hit/miss stats. This deliberately avoids region-selective invalidation,
+  because removing a blocker outside a cached path can still create a shorter
+  optimal route.
+- Decision: Accepted as a supporting API. Keep conservative whole-cache
+  invalidation until route products have stronger dependency tracking.
+- Retry conditions: Revisit region-selective invalidation when topology,
+  chunk-version dependencies, or route-product ownership are designed.
+
 ## 2026-06-05 - Weighted A* Entry Costs
 
 - Area: Weighted terrain support for the path API.

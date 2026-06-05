@@ -17,7 +17,9 @@ in `include/tess/path/path.h` and is exported by `tess/tess.h`.
 - `DistanceFieldScratch` owns reusable vectors for reverse shared-goal fields
   and reconstructed paths.
 - `RouteCacheScratch` owns reusable route-cache entries and cached path nodes
-  for exact route and same-goal suffix reuse.
+  for exact route and same-goal suffix reuse. `invalidate()` drops cached route
+  data while preserving hit/miss counters; `clear()` drops routes and resets
+  counters.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
   unit-cost deterministic pathfinding over the existing always-resident world
   storage. The passability field is treated as boolean-like.
@@ -87,7 +89,7 @@ can amortize complete path searches. Exact `(start, goal)` hits return the
 cached path without expanding nodes. Same-goal suffix hits are also supported
 when the new start already appears inside a cached optimal path; with unit
 positive edge costs, that suffix is also optimal. The cache assumes the caller
-clears it when passability or movement rules change.
+invalidates it when passability or movement rules change.
 
 For many agents sharing a goal, `DistanceFieldScratch` can amortize search
 work. A field build visits reachable passable tiles once from the goal, and
