@@ -75,6 +75,19 @@
         "TESS_BUILD_BENCHMARKS": "ON",
         "TESS_ENABLE_WARNINGS": "ON"
       }
+    },
+    {
+      "name": "bench-profile",
+      "displayName": "Benchmark Profiling",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O3 -g -fno-omit-frame-pointer -DNDEBUG",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "TESS_BUILD_TESTING": "ON",
+        "TESS_BUILD_BENCHMARKS": "ON",
+        "TESS_ENABLE_WARNINGS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -105,6 +118,10 @@
     {
       "name": "bench",
       "configurePreset": "bench"
+    },
+    {
+      "name": "bench-profile",
+      "configurePreset": "bench-profile"
     }
   ],
   "testPresets": [
@@ -153,6 +170,13 @@
     {
       "name": "bench",
       "configurePreset": "bench",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "bench-profile",
+      "configurePreset": "bench-profile",
       "output": {
         "outputOnFailure": true
       }

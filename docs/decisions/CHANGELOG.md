@@ -13,6 +13,19 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-05 - Symbolicated Benchmark Profiling Workflow
+
+- Changed: Added a `bench-profile` preset and a `tools/profile_benchmark.sh`
+  command helper for non-interactive `samply` captures with debug information,
+  frame pointers, and presymbolication.
+- Reason: Release benchmark profiles were saved without usable symbols and
+  `samply record` launched a local viewer process that could outlive the
+  profiling run. The profiling workflow now emits a direct shell command to run
+  as a separate capture step, producing repeatable saved profiles outside the
+  repository and loading them explicitly only when needed.
+- Affected docs: `docs/planning/benchmark-plan.md`
+- Affected code: `CMakePresets.json`, `tools/profile_benchmark.sh`
+
 ## 2026-06-05 - Testable MVP Scope
 
 - Changed: Added an explicit MVP checkpoint that narrows the first end-to-end
