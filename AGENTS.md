@@ -16,6 +16,10 @@ When adding dependencies, record public dependency documentation in
 `docs/dependencies.md`. Keep this file focused on agent instructions and public
 repository safety.
 
+For performance work, use an iterative optimize/test/benchmark cycle. Record
+accepted, rejected, and deferred experiments in
+`docs/planning/optimization-log.md` instead of architecture docs.
+
 TDDs in `docs/tdd/` are historical design intent. When implementation diverges
 from them, update maintained docs under `docs/architecture/`, add an entry to
 `docs/decisions/CHANGELOG.md`, and optionally add a note to the affected TDD.
