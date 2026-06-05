@@ -331,8 +331,6 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
   }
 
   auto direct_current = request.start;
-  scratch.path_.push_back(direct_current);
-  TESS_DIAG_EVENT(path_reconstruct_node);
   auto direct_blocked_by_barrier = false;
   const auto step_direct_axis = [&](auto Coord3::* member, detail::Axis axis) {
     while (direct_current.*member != request.goal.*member) {
@@ -350,10 +348,60 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
     }
     return true;
   };
-  const auto direct_path_found =
-      step_direct_axis(&Coord3::x, detail::Axis::X) &&
-      step_direct_axis(&Coord3::y, detail::Axis::Y) &&
-      step_direct_axis(&Coord3::z, detail::Axis::Z);
+  const auto try_direct_order = [&](auto first_member, detail::Axis first_axis,
+                                    auto second_member,
+                                    detail::Axis second_axis, auto third_member,
+                                    detail::Axis third_axis) {
+    direct_current = request.start;
+    scratch.path_.clear();
+    scratch.path_.push_back(direct_current);
+    TESS_DIAG_EVENT(path_reconstruct_node);
+    return step_direct_axis(first_member, first_axis) &&
+           step_direct_axis(second_member, second_axis) &&
+           step_direct_axis(third_member, third_axis);
+  };
+  auto direct_path_found = false;
+  if constexpr (ShapeTraits<Shape>::degenerate_z) {
+    direct_path_found =
+        try_direct_order(&Coord3::x, detail::Axis::X, &Coord3::y,
+                         detail::Axis::Y, &Coord3::z, detail::Axis::Z) ||
+        (!direct_blocked_by_barrier &&
+         try_direct_order(&Coord3::y, detail::Axis::Y, &Coord3::x,
+                          detail::Axis::X, &Coord3::z, detail::Axis::Z));
+  } else if constexpr (ShapeTraits<Shape>::degenerate_y) {
+    direct_path_found =
+        try_direct_order(&Coord3::x, detail::Axis::X, &Coord3::z,
+                         detail::Axis::Z, &Coord3::y, detail::Axis::Y) ||
+        (!direct_blocked_by_barrier &&
+         try_direct_order(&Coord3::z, detail::Axis::Z, &Coord3::x,
+                          detail::Axis::X, &Coord3::y, detail::Axis::Y));
+  } else if constexpr (ShapeTraits<Shape>::degenerate_x) {
+    direct_path_found =
+        try_direct_order(&Coord3::y, detail::Axis::Y, &Coord3::z,
+                         detail::Axis::Z, &Coord3::x, detail::Axis::X) ||
+        (!direct_blocked_by_barrier &&
+         try_direct_order(&Coord3::z, detail::Axis::Z, &Coord3::y,
+                          detail::Axis::Y, &Coord3::x, detail::Axis::X));
+  } else {
+    direct_path_found =
+        try_direct_order(&Coord3::x, detail::Axis::X, &Coord3::y,
+                         detail::Axis::Y, &Coord3::z, detail::Axis::Z) ||
+        (!direct_blocked_by_barrier &&
+         try_direct_order(&Coord3::y, detail::Axis::Y, &Coord3::x,
+                          detail::Axis::X, &Coord3::z, detail::Axis::Z)) ||
+        (!direct_blocked_by_barrier &&
+         try_direct_order(&Coord3::x, detail::Axis::X, &Coord3::z,
+                          detail::Axis::Z, &Coord3::y, detail::Axis::Y)) ||
+        (!direct_blocked_by_barrier &&
+         try_direct_order(&Coord3::z, detail::Axis::Z, &Coord3::x,
+                          detail::Axis::X, &Coord3::y, detail::Axis::Y)) ||
+        (!direct_blocked_by_barrier &&
+         try_direct_order(&Coord3::y, detail::Axis::Y, &Coord3::z,
+                          detail::Axis::Z, &Coord3::x, detail::Axis::X)) ||
+        (!direct_blocked_by_barrier &&
+         try_direct_order(&Coord3::z, detail::Axis::Z, &Coord3::y,
+                          detail::Axis::Y, &Coord3::x, detail::Axis::X));
+  }
   if (direct_path_found) {
     const auto cost = detail::manhattan(request.start, request.goal);
     return PathResult{PathStatus::Found, cost, scratch.path_.size(),
