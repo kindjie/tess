@@ -14,10 +14,11 @@ namespace tess {
 
 struct AlwaysResident {};
 
-enum class ChunkState {
+enum class ChunkState : std::uint8_t {
   ResidentSleeping,
   ResidentActive,
 };
+static_assert(sizeof(ChunkState) == sizeof(std::uint8_t));
 
 struct ChunkMeta {
   ChunkState state = ChunkState::ResidentSleeping;
@@ -66,107 +67,113 @@ class World<Shape, Schema, AlwaysResident> {
     }
   }
 
-  auto chunks() noexcept -> std::span<page_type> {
+  [[nodiscard]] auto chunks() noexcept -> std::span<page_type> {
     return {pages_.data(), pages_.size()};
   }
 
-  auto chunks() const noexcept -> std::span<const page_type> {
+  [[nodiscard]] auto chunks() const noexcept -> std::span<const page_type> {
     return {pages_.data(), pages_.size()};
   }
 
-  auto chunk(ChunkKey key) noexcept -> page_type& {
+  [[nodiscard]] auto chunk(ChunkKey key) noexcept -> page_type& {
     return pages_[static_cast<std::size_t>(key.value)];
   }
 
-  auto chunk(ChunkKey key) const noexcept -> const page_type& {
+  [[nodiscard]] auto chunk(ChunkKey key) const noexcept -> const page_type& {
     return pages_[static_cast<std::size_t>(key.value)];
   }
 
-  auto chunk(ChunkCoord3 coord) noexcept -> page_type& {
+  [[nodiscard]] auto chunk(ChunkCoord3 coord) noexcept -> page_type& {
     return chunk(chunk_key<Shape>(coord));
   }
 
-  auto chunk(ChunkCoord3 coord) const noexcept -> const page_type& {
+  [[nodiscard]] auto chunk(ChunkCoord3 coord) const noexcept
+      -> const page_type& {
     return chunk(chunk_key<Shape>(coord));
   }
 
-  auto try_chunk(ChunkKey key) noexcept -> page_type* {
+  [[nodiscard]] auto try_chunk(ChunkKey key) noexcept -> page_type* {
     if (key.value >= chunk_count) {
       return nullptr;
     }
     return &chunk(key);
   }
 
-  auto try_chunk(ChunkKey key) const noexcept -> const page_type* {
+  [[nodiscard]] auto try_chunk(ChunkKey key) const noexcept
+      -> const page_type* {
     if (key.value >= chunk_count) {
       return nullptr;
     }
     return &chunk(key);
   }
 
-  auto try_chunk(ChunkCoord3 coord) noexcept -> page_type* {
+  [[nodiscard]] auto try_chunk(ChunkCoord3 coord) noexcept -> page_type* {
     if (!contains_chunk(coord)) {
       return nullptr;
     }
     return &chunk(coord);
   }
 
-  auto try_chunk(ChunkCoord3 coord) const noexcept -> const page_type* {
+  [[nodiscard]] auto try_chunk(ChunkCoord3 coord) const noexcept
+      -> const page_type* {
     if (!contains_chunk(coord)) {
       return nullptr;
     }
     return &chunk(coord);
   }
 
-  auto meta(ChunkKey key) noexcept -> ChunkMeta& {
+  [[nodiscard]] auto meta(ChunkKey key) noexcept -> ChunkMeta& {
     return metadata_[static_cast<std::size_t>(key.value)];
   }
 
-  auto meta(ChunkKey key) const noexcept -> const ChunkMeta& {
+  [[nodiscard]] auto meta(ChunkKey key) const noexcept -> const ChunkMeta& {
     return metadata_[static_cast<std::size_t>(key.value)];
   }
 
-  auto meta(ChunkCoord3 coord) noexcept -> ChunkMeta& {
+  [[nodiscard]] auto meta(ChunkCoord3 coord) noexcept -> ChunkMeta& {
     return meta(chunk_key<Shape>(coord));
   }
 
-  auto meta(ChunkCoord3 coord) const noexcept -> const ChunkMeta& {
+  [[nodiscard]] auto meta(ChunkCoord3 coord) const noexcept
+      -> const ChunkMeta& {
     return meta(chunk_key<Shape>(coord));
   }
 
-  auto try_meta(ChunkKey key) noexcept -> ChunkMeta* {
+  [[nodiscard]] auto try_meta(ChunkKey key) noexcept -> ChunkMeta* {
     if (key.value >= chunk_count) {
       return nullptr;
     }
     return &meta(key);
   }
 
-  auto try_meta(ChunkKey key) const noexcept -> const ChunkMeta* {
+  [[nodiscard]] auto try_meta(ChunkKey key) const noexcept -> const ChunkMeta* {
     if (key.value >= chunk_count) {
       return nullptr;
     }
     return &meta(key);
   }
 
-  auto try_meta(ChunkCoord3 coord) noexcept -> ChunkMeta* {
+  [[nodiscard]] auto try_meta(ChunkCoord3 coord) noexcept -> ChunkMeta* {
     if (!contains_chunk(coord)) {
       return nullptr;
     }
     return &meta(coord);
   }
 
-  auto try_meta(ChunkCoord3 coord) const noexcept -> const ChunkMeta* {
+  [[nodiscard]] auto try_meta(ChunkCoord3 coord) const noexcept
+      -> const ChunkMeta* {
     if (!contains_chunk(coord)) {
       return nullptr;
     }
     return &meta(coord);
   }
 
-  auto chunk_state(ChunkKey key) const noexcept -> ChunkState {
+  [[nodiscard]] auto chunk_state(ChunkKey key) const noexcept -> ChunkState {
     return meta(key).state;
   }
 
-  auto chunk_state(ChunkCoord3 coord) const noexcept -> ChunkState {
+  [[nodiscard]] auto chunk_state(ChunkCoord3 coord) const noexcept
+      -> ChunkState {
     return meta(coord).state;
   }
 
@@ -224,15 +231,18 @@ class World<Shape, Schema, AlwaysResident> {
     }
   }
 
-  auto dirty_chunks(std::uint32_t flags) const -> std::vector<ChunkKey> {
+  [[nodiscard]] auto dirty_chunks(std::uint32_t flags) const
+      -> std::vector<ChunkKey> {
     return matching_chunks(flags, &ChunkMeta::field_dirty_flags);
   }
 
-  auto active_chunks(std::uint32_t flags) const -> std::vector<ChunkKey> {
+  [[nodiscard]] auto active_chunks(std::uint32_t flags) const
+      -> std::vector<ChunkKey> {
     return matching_chunks(flags, &ChunkMeta::active_flags);
   }
 
-  auto resolve(Coord3 coord) const noexcept -> ResolvedTile<Shape> {
+  [[nodiscard]] auto resolve(Coord3 coord) const noexcept
+      -> ResolvedTile<Shape> {
     const auto chunk_coord_value = chunk_coord<Shape>(coord);
     return ResolvedTile<Shape>{
         chunk_key<Shape>(chunk_coord_value),
@@ -240,7 +250,7 @@ class World<Shape, Schema, AlwaysResident> {
     };
   }
 
-  auto try_resolve(Coord3 coord) const noexcept
+  [[nodiscard]] auto try_resolve(Coord3 coord) const noexcept
       -> std::optional<ResolvedTile<Shape>> {
     if (!contains<Shape>(coord)) {
       return std::nullopt;
@@ -249,24 +259,24 @@ class World<Shape, Schema, AlwaysResident> {
   }
 
   template <typename Tag>
-  auto field(Coord3 coord) noexcept ->
-      typename Schema::template value_type<Tag>& {
+  [[nodiscard]] auto field(Coord3 coord) noexcept
+      -> Schema::template value_type<Tag>& {
     const auto resolved = resolve(coord);
     return chunk(resolved.chunk_key)
         .template field<Tag>(resolved.local_tile_id);
   }
 
   template <typename Tag>
-  auto field(Coord3 coord) const noexcept -> const
-      typename Schema::template value_type<Tag>& {
+  [[nodiscard]] auto field(Coord3 coord) const noexcept
+      -> const Schema::template value_type<Tag>& {
     const auto resolved = resolve(coord);
     return chunk(resolved.chunk_key)
         .template field<Tag>(resolved.local_tile_id);
   }
 
   template <typename Tag>
-  auto try_field(Coord3 coord) noexcept ->
-      typename Schema::template value_type<Tag>* {
+  [[nodiscard]] auto try_field(Coord3 coord) noexcept
+      -> Schema::template value_type<Tag>* {
     const auto resolved = try_resolve(coord);
     if (!resolved.has_value()) {
       return nullptr;
@@ -276,8 +286,8 @@ class World<Shape, Schema, AlwaysResident> {
   }
 
   template <typename Tag>
-  auto try_field(Coord3 coord) const noexcept -> const
-      typename Schema::template value_type<Tag>* {
+  [[nodiscard]] auto try_field(Coord3 coord) const noexcept
+      -> const Schema::template value_type<Tag>* {
     const auto resolved = try_resolve(coord);
     if (!resolved.has_value()) {
       return nullptr;
@@ -287,12 +297,12 @@ class World<Shape, Schema, AlwaysResident> {
   }
 
   template <typename Tag>
-  auto field_span(ChunkKey key) noexcept {
+  [[nodiscard]] auto field_span(ChunkKey key) noexcept {
     return chunk(key).template field_span<Tag>();
   }
 
   template <typename Tag>
-  auto field_span(ChunkKey key) const noexcept {
+  [[nodiscard]] auto field_span(ChunkKey key) const noexcept {
     return chunk(key).template field_span<Tag>();
   }
 

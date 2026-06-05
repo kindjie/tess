@@ -18,9 +18,12 @@ struct Field {
 
 namespace detail {
 
+template <typename Field>
+using FieldTag =
+    typename Field::tag_type;  // NOLINT(readability-redundant-typename)
+
 template <typename Tag, typename Field>
-inline constexpr bool field_has_tag_v =
-    std::is_same_v<Tag, typename Field::tag_type>;
+inline constexpr bool field_has_tag_v = std::is_same_v<Tag, FieldTag<Field>>;
 
 template <typename Tag, typename... Fields>
 inline constexpr bool contains_field_tag_v =
@@ -79,7 +82,7 @@ struct FieldSchema {
   static constexpr bool contains = detail::contains_field_tag_v<Tag, Fields...>;
 
   template <typename Tag>
-  using value_type = typename detail::FieldValue<Tag, Fields...>::type;
+  using value_type = detail::FieldValue<Tag, Fields...>::type;
 
   template <typename Tag>
   static constexpr std::size_t index =
@@ -105,33 +108,37 @@ class ChunkPage<Shape, FieldSchema<Fields...>> {
   constexpr ChunkPage(ChunkKey key, ChunkCoord3 coord) noexcept
       : chunk_key_(key), chunk_coord_(coord) {}
 
-  constexpr ChunkKey chunk_key() const noexcept { return chunk_key_; }
+  [[nodiscard]] constexpr ChunkKey chunk_key() const noexcept {
+    return chunk_key_;
+  }
 
-  constexpr ChunkCoord3 chunk_coord() const noexcept { return chunk_coord_; }
+  [[nodiscard]] constexpr ChunkCoord3 chunk_coord() const noexcept {
+    return chunk_coord_;
+  }
 
   template <typename Tag>
-  constexpr auto field_span() noexcept
+  [[nodiscard]] constexpr auto field_span() noexcept
       -> std::span<typename schema_type::template value_type<Tag>> {
     auto& values = field_array<Tag>();
     return {values.data(), values.size()};
   }
 
   template <typename Tag>
-  constexpr auto field_span() const noexcept
+  [[nodiscard]] constexpr auto field_span() const noexcept
       -> std::span<const typename schema_type::template value_type<Tag>> {
     const auto& values = field_array<Tag>();
     return {values.data(), values.size()};
   }
 
   template <typename Tag>
-  constexpr auto field(LocalTileId id) noexcept ->
-      typename schema_type::template value_type<Tag>& {
+  [[nodiscard]] constexpr auto field(LocalTileId id) noexcept
+      -> schema_type::template value_type<Tag>& {
     return field_array<Tag>()[id.value];
   }
 
   template <typename Tag>
-  constexpr auto field(LocalTileId id) const noexcept -> const
-      typename schema_type::template value_type<Tag>& {
+  [[nodiscard]] constexpr auto field(LocalTileId id) const noexcept
+      -> const schema_type::template value_type<Tag>& {
     return field_array<Tag>()[id.value];
   }
 
@@ -140,14 +147,14 @@ class ChunkPage<Shape, FieldSchema<Fields...>> {
   using FieldArray = std::array<typename Field::value_type, local_tile_count>;
 
   template <typename Tag>
-  constexpr auto field_array() noexcept
+  [[nodiscard]] constexpr auto field_array() noexcept
       -> FieldArray<std::tuple_element_t<schema_type::template index<Tag>,
                                          std::tuple<Fields...>>>& {
     return std::get<schema_type::template index<Tag>>(fields_);
   }
 
   template <typename Tag>
-  constexpr auto field_array() const noexcept
+  [[nodiscard]] constexpr auto field_array() const noexcept
       -> const FieldArray<std::tuple_element_t<schema_type::template index<Tag>,
                                                std::tuple<Fields...>>>& {
     return std::get<schema_type::template index<Tag>>(fields_);
