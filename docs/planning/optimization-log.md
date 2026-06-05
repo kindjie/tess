@@ -202,3 +202,36 @@ deferred for scope reasons. Keep entries short and concrete:
 - Retry conditions: Revisit if weighted movement, reservations, dynamic
   blockers, or movement classes make the cheapest passable plane crossing
   insufficient to prove optimality.
+
+## 2026-06-05 - A* Top-Down 2D Forced-Gap Sequences
+
+- Area: Uniform-cost fast path for repeated single-gap vertical barriers.
+- Hypothesis: In top-down 2D, when progress toward the goal hits a blocked
+  x-plane with exactly one passable gap, that crossing is forced. Repeating
+  this scan only when the next x step is blocked can build and verify an
+  optimal route through striped barrier layouts without heap-backed A*.
+- Evidence: Local release `path/astar_striped_maze_512x512` dropped from about
+  11-12 ms to about 0.18 ms, and `path/astar_striped_maze_1024x1024` dropped
+  from about 52 ms to about 0.72 ms. Diagnostics show zero heap pushes/pops in
+  both cases. Open direct paths and the wall-gap fast path stayed in the same
+  range.
+- Decision: Accepted for top-down 2D, unit-cost, axis-adjacent movement when
+  encountered x-planes are fully open or have exactly one passable gap. The
+  concrete route is still passability-checked tile by tile.
+- Retry conditions: Revisit if weighted movement, reservations, dynamic
+  blockers, horizontal forced-gap sequences, or multi-gap barrier choices enter
+  the current pathfinding scope.
+
+## 2026-06-05 - A* Scan Every X Plane For Forced Gaps
+
+- Area: Forced-gap sequence detection.
+- Hypothesis: Scanning every x-plane between start and goal would distinguish
+  fully open planes from single-gap forced planes and keep the proof simple.
+- Evidence: The stricter full scan kept correctness but pushed local
+  `path/astar_striped_maze_1024x1024` to about 1.2 ms, crossing the current
+  1 ms investigation trigger. Most time was spent scanning fully open columns
+  that did not affect the route.
+- Decision: Rejected in favor of scanning a plane only when the next x step is
+  blocked.
+- Retry conditions: Reconsider only if path queries gain cached topology or
+  compact per-plane metadata outside the current local-A* scope.

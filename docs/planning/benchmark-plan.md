@@ -236,9 +236,10 @@ Additional A* investigation benchmarks cover short/medium/long 512x512 open
 paths, wall-gap detours, failed wall-separated paths, striped mazes, and
 100-request batches. They also include alternate direct-axis-order and
 axis-aligned one-tile detour cases for uniform-cost fast paths. The wall-gap
-case exercises the exact top-down 2D single-plane gap precheck. These are
-profiling cases first; keep only stable, short-running path cases in threshold
-JSON until same-runner variance is calibrated.
+case exercises the exact top-down 2D single-plane gap precheck, and striped
+maze cases exercise dynamic forced-gap sequence handling. These are profiling
+cases first; keep only stable, short-running path cases in threshold JSON until
+same-runner variance is calibrated.
 
 Run the current scaffolds with:
 
