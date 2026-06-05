@@ -26,6 +26,21 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/planning/benchmark-plan.md`
 - Affected code: `CMakePresets.json`, `tools/profile_benchmark.sh`
 
+## 2026-06-05 - Shared-Goal Distance Fields
+
+- Changed: Added reusable reverse distance-field scratch and shared-goal path
+  reconstruction for the current unit-cost passability path model. Added
+  many-agent batch benchmarks and reuse counters for unique starts, goals, and
+  chunks.
+- Reason: Independent A* repeats substantial work for agents sharing goals.
+  Reverse distance fields amortize the search across all starts for a goal and
+  are a better fit for 100-agent shared-destination workloads.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/benchmark-plan.md`,
+  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
+  `bench/tess_bench.cc`, `bench/thresholds/path.json`
+
 ## 2026-06-05 - Unit-Cost A* Bucket Open Set
 
 - Changed: Replaced the general fallback A* binary heap with a two-bucket

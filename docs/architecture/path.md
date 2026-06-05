@@ -1,7 +1,7 @@
 # Path Foundation
 
-The current path layer is a minimal always-resident A* foundation. It lives in
-`include/tess/path/path.h` and is exported by `tess/tess.h`.
+The current path layer is a minimal always-resident unit-cost path foundation.
+It lives in `include/tess/path/path.h` and is exported by `tess/tess.h`.
 
 ## Public Surface
 
@@ -9,12 +9,20 @@ The current path layer is a minimal always-resident A* foundation. It lives in
 - `PathStatus` reports `Found`, `InvalidStart`, `InvalidGoal`, or `NoPath`.
 - `PathResult` returns the status, unit movement cost, expanded-node count,
   reached-node count, and a non-owning span of path coordinates.
+- `DistanceFieldResult` returns the status and node counts for a reverse
+  shared-goal field build.
 - `PathScratch` owns reusable vectors for open nodes, visited records, and the
   returned path. `reserve_nodes(count)` prepares storage for allocation-free
   repeated queries when capacity is sufficient.
+- `DistanceFieldScratch` owns reusable vectors for reverse shared-goal fields
+  and reconstructed paths.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs deterministic
   pathfinding over the existing always-resident world storage. The passability
   field is treated as boolean-like.
+- `build_distance_field<World, PassableTag>(world, goal, scratch)` builds a
+  unit-cost reverse distance field from one passable goal.
+- `distance_field_path<World, PassableTag>(world, start, goal, scratch)`
+  reconstructs a start-to-goal path from the most recent matching field.
 
 ## Behavior
 
@@ -57,19 +65,26 @@ dense per-tile state arrays and clears only nodes touched by the previous
 query, so repeated queries avoid full-world scratch resets when the search
 visits a small fraction of the world.
 
+For many agents sharing a goal, `DistanceFieldScratch` can amortize search
+work. A field build visits reachable passable tiles once from the goal, and
+each path query follows decreasing distances back to that goal. The scratch
+remembers the field goal and rejects path reconstruction for a different goal
+instead of returning a path to stale field data.
+
 ## Deliberate Limits
 
 This MVP slice does not implement movement classes, weighted terrain, topology
 prechecks, portal graphs, sparse residency, reservations, dynamic blockers,
-distance fields, path caching, async tickets, or rich path diagnostics. The
-implementation uses reusable dense per-tile scratch arrays and a two-bucket
-monotone open set for the current unit-cost Manhattan A* fallback; it is still
-an MVP path core, not the final topology-aware path system.
+path caching, async tickets, or rich path diagnostics. The implementation uses
+reusable dense per-tile scratch arrays, a two-bucket monotone open set for the
+current unit-cost Manhattan A* fallback, and dense reverse distance fields for
+shared-goal batches; it is still an MVP path core, not the final topology-aware
+path system.
 
-This API is suitable for individual point-to-point queries and regression
-coverage. It is not the intended scaling mechanism for hundreds of agents with
-shared goals; the v1 plan still needs topology prechecks, distance fields, and
-field reuse to amortize many-agent path work.
+The A* API is suitable for individual point-to-point queries and regression
+coverage. Shared-goal distance fields are suitable for batches with substantial
+goal reuse, but the v1 plan still needs topology prechecks, richer field reuse,
+route caches, and hierarchy to cover broad many-agent workloads.
 
 ## Current Profiling Notes
 

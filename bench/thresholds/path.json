@@ -112,6 +112,30 @@
     "path/astar_batch_100_shared_room_portals_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 25000000
+    },
+    "path/distance_field_batch_100_shared_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 6000000
+    },
+    "path/astar_batch_100_shared_sparse_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 60000000
+    },
+    "path/distance_field_batch_100_shared_sparse_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 8000000
+    },
+    "path/astar_batch_100_multigoal_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 100000000
+    },
+    "path/distance_field_batch_100_multigoal_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 40000000
+    },
+    "path/astar_batch_100_mixed_repeated_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 75000000
     }
   }
 }

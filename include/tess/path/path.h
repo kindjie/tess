@@ -34,6 +34,12 @@ struct PathResult {
   std::span<const Coord3> path;
 };
 
+struct DistanceFieldResult {
+  PathStatus status = PathStatus::NoPath;
+  std::size_t expanded_nodes = 0;
+  std::size_t reached_nodes = 0;
+};
+
 class PathScratch {
  public:
   struct OpenNode {
@@ -109,6 +115,74 @@ class PathScratch {
   std::vector<std::uint64_t> parent_;
   std::vector<std::uint64_t> touched_;
   std::vector<Coord3> path_;
+};
+
+class DistanceFieldScratch {
+ public:
+  void reserve_nodes(std::size_t node_count) {
+    frontier_.reserve(node_count);
+    generation_.reserve(node_count);
+    distance_.reserve(node_count);
+    touched_.reserve(node_count);
+    path_.reserve(node_count);
+  }
+
+  [[nodiscard]] auto capacity_nodes() const noexcept -> std::size_t {
+    return distance_.capacity();
+  }
+
+ private:
+  template <typename World, typename Tag>
+  friend auto build_distance_field(const World& world, Coord3 goal,
+                                   DistanceFieldScratch& scratch)
+      -> DistanceFieldResult;
+
+  template <typename World, typename Tag>
+  friend auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
+                                  DistanceFieldScratch& scratch) -> PathResult;
+
+  void clear_build() noexcept {
+    advance_epoch();
+    frontier_.clear();
+    touched_.clear();
+    path_.clear();
+    has_goal_ = false;
+  }
+
+  void clear_path() noexcept { path_.clear(); }
+
+  void advance_epoch() noexcept {
+    ++epoch_;
+    if (epoch_ == 0) {
+      std::fill(generation_.begin(), generation_.end(), 0);
+      epoch_ = 1;
+    }
+  }
+
+  [[nodiscard]] auto is_current(std::size_t offset) const noexcept -> bool {
+    return generation_[offset] == epoch_;
+  }
+
+  [[nodiscard]] auto distance_at(std::size_t offset,
+                                 std::uint32_t infinite_distance) const noexcept
+      -> std::uint32_t {
+    return is_current(offset) ? distance_[offset] : infinite_distance;
+  }
+
+  void touch_node(std::uint64_t index) {
+    const auto offset = static_cast<std::size_t>(index);
+    generation_[offset] = epoch_;
+    touched_.push_back(index);
+  }
+
+  std::vector<std::uint64_t> frontier_;
+  std::vector<std::uint32_t> generation_;
+  std::uint32_t epoch_ = 1;
+  std::vector<std::uint32_t> distance_;
+  std::vector<std::uint64_t> touched_;
+  std::vector<Coord3> path_;
+  Coord3 goal_{};
+  bool has_goal_ = false;
 };
 
 namespace detail {
@@ -947,6 +1021,144 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
 
   return PathResult{PathStatus::NoPath, 0, expanded_nodes,
                     scratch.touched_.size(), scratch.path_};
+}
+
+template <typename World, typename Tag>
+auto build_distance_field(const World& world, Coord3 goal,
+                          DistanceFieldScratch& scratch)
+    -> DistanceFieldResult {
+  using Shape = typename World::shape_type;
+  constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
+
+  TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
+  scratch.clear_build();
+  if (!contains<Shape>(goal)) {
+    return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
+  }
+  TESS_DIAG_EVENT(path_goal_passability_check);
+  if (!detail::is_passable<World, Tag>(world, goal)) {
+    return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
+  }
+
+  const auto node_count = detail::tile_count<World>();
+  if (scratch.distance_.size() != node_count) {
+    TESS_DIAG_EVENT(path_initialize);
+    scratch.generation_.assign(node_count, 0);
+    scratch.distance_.assign(node_count, infinite_distance);
+  }
+
+  const auto goal_index = detail::tile_index<Shape>(goal);
+  scratch.goal_ = goal;
+  scratch.has_goal_ = true;
+  scratch.distance_[static_cast<std::size_t>(goal_index)] = 0;
+  scratch.touch_node(goal_index);
+  TESS_DIAG_EVENT(path_touch_node);
+  scratch.frontier_.push_back(goal_index);
+  TESS_DIAG_EVENT(path_heap_push);
+
+  std::size_t expanded_nodes = 0;
+  std::size_t head = 0;
+  while (head < scratch.frontier_.size()) {
+    const auto current = scratch.frontier_[head];
+    ++head;
+    TESS_DIAG_EVENT(path_heap_pop);
+    ++expanded_nodes;
+
+    const auto current_offset = static_cast<std::size_t>(current);
+    const auto current_distance =
+        scratch.distance_at(current_offset, infinite_distance);
+    const auto current_coord = detail::tile_coord<Shape>(current);
+    detail::for_each_indexed_axis_neighbor<Shape>(
+        current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
+          TESS_DIAG_EVENT(path_neighbor_candidate);
+          const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
+          if (scratch.is_current(neighbor_offset)) {
+            TESS_DIAG_EVENT(path_neighbor_closed);
+            return;
+          }
+          TESS_DIAG_EVENT(path_passability_check);
+          if (!detail::is_passable_index<World, Tag>(world, neighbor_index)) {
+            TESS_DIAG_EVENT(path_neighbor_blocked);
+            return;
+          }
+
+          scratch.distance_[neighbor_offset] = current_distance + 1;
+          scratch.touch_node(neighbor_index);
+          TESS_DIAG_EVENT(path_touch_node);
+          scratch.frontier_.push_back(neighbor_index);
+          TESS_DIAG_EVENT(path_heap_push);
+        });
+  }
+
+  return DistanceFieldResult{PathStatus::Found, expanded_nodes,
+                             scratch.touched_.size()};
+}
+
+template <typename World, typename Tag>
+auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
+                         DistanceFieldScratch& scratch) -> PathResult {
+  using Shape = typename World::shape_type;
+  constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
+
+  scratch.clear_path();
+  if (!contains<Shape>(start)) {
+    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+  }
+  TESS_DIAG_EVENT(path_start_passability_check);
+  if (!detail::is_passable<World, Tag>(world, start)) {
+    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+  }
+  if (!contains<Shape>(goal)) {
+    return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
+  }
+  if (!scratch.has_goal_ || scratch.goal_ != goal) {
+    return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
+  }
+
+  const auto start_index = detail::tile_index<Shape>(start);
+  auto current = start_index;
+  auto current_offset = static_cast<std::size_t>(current);
+  auto current_distance =
+      scratch.distance_at(current_offset, infinite_distance);
+  if (current_distance == infinite_distance) {
+    return PathResult{PathStatus::NoPath, 0, 0, scratch.touched_.size(),
+                      scratch.path_};
+  }
+
+  scratch.path_.push_back(start);
+  TESS_DIAG_EVENT(path_reconstruct_node);
+  while (current_distance > 0) {
+    const auto current_coord = detail::tile_coord<Shape>(current);
+    auto next = current;
+    auto next_distance = current_distance;
+    detail::for_each_indexed_axis_neighbor<Shape>(
+        current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
+          const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
+          const auto neighbor_distance =
+              scratch.distance_at(neighbor_offset, infinite_distance);
+          if (neighbor_distance < next_distance) {
+            next = neighbor_index;
+            next_distance = neighbor_distance;
+          }
+        });
+
+    if (next == current || next_distance + 1 != current_distance) {
+      scratch.path_.clear();
+      return PathResult{PathStatus::NoPath, 0, 0, scratch.touched_.size(),
+                        scratch.path_};
+    }
+
+    current = next;
+    current_offset = static_cast<std::size_t>(current);
+    current_distance = scratch.distance_at(current_offset, infinite_distance);
+    scratch.path_.push_back(detail::tile_coord<Shape>(current));
+    TESS_DIAG_EVENT(path_reconstruct_node);
+  }
+
+  return PathResult{PathStatus::Found,
+                    scratch.distance_[static_cast<std::size_t>(start_index)],
+                    scratch.path_.size(), scratch.touched_.size(),
+                    scratch.path_};
 }
 
 }  // namespace tess
