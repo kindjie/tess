@@ -18,4 +18,5 @@
   and 3D worlds, chunk-local tile iteration and coordinate helpers,
   boundary/local-candidate helpers across 2D/3D and degenerate axes, and
   allocation-free iteration for prebuilt domains and contexts, including
-  pre-reserved caller-owned block scratch.
+  pre-reserved caller-owned block scratch and explicit scratch-exhaustion
+  diagnostics.

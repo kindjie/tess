@@ -153,6 +153,17 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/performance.md`, `docs/planning/benchmark-plan.md`
 - Affected code: `bench/tess_bench.cc`, `bench/thresholds/block.json`
 
+## 2026-06-05 - Caller-Owned Block Diagnostics
+
+- Changed: Added `BlockDiagnostics` with a scratch allocation failure counter
+  and allowed policy-typed `BlockCtx` instances to carry an optional
+  non-owning diagnostics pointer.
+- Reason: Scratch exhaustion needs an explicit reporting path before
+  planner-owned arenas, rich diagnostics, worker pools, or parallel scheduling
+  exist.
+- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`
+
 ## 2026-06-04 - Local Warning and Analysis Presets
 
 - Changed: Added project-local warning flags, warnings-as-errors,
