@@ -260,9 +260,28 @@ deferred for scope reasons. Keep entries short and concrete:
 - Evidence: A new `path/astar_slab_gap_3d_64x64x16` benchmark initially took
   about 1.3 ms and expanded about 32.8k A* nodes. After the fast path it runs
   around 5.3 us with zero heap pushes/pops. The open 3D benchmark stays below
-  1 us.
+  1 us. Added no-gap, multi-gap, and carved-corridor 3D cases also stay below
+  the 1 ms investigation trigger; the corridor case still uses heap-backed A*
+  but expands only about 142 nodes.
 - Decision: Accepted for the current unit-cost axis-adjacent movement model.
   The concrete route through the chosen plane crossing is still checked tile by
   tile; failures fall back to A*.
 - Retry conditions: Revisit when 3D multi-plane portals, stairs, movement
   classes, reservations, dynamic blockers, or weighted costs enter scope.
+
+## 2026-06-05 - A* Remaining Fallback Profile
+
+- Area: Current post-fast-path fallback cases.
+- Hypothesis: After direct, gap, forced-gap, and slab-gap fast paths, remaining
+  heap-backed A* cases should be small enough to stay below the 1 ms
+  investigation trigger.
+- Evidence: Diagnostic runs show `path/astar_corridor_3d_64x64x16` still uses
+  heap-backed A*, but only expands 142 nodes with 142 heap pushes and 142 heap
+  pops, running around 9 us locally. The 100-agent open and mixed batches now
+  report zero heap pushes/pops because all sampled requests hit verified fast
+  paths.
+- Decision: No additional A* optimization accepted in this iteration. The
+  current fallback profile does not justify an indexed heap or additional
+  pathfinding data structures inside the current scope.
+- Retry conditions: Revisit if new benchmarks or production traces show a
+  remaining fallback case over 1 ms or high heap churn in realistic workloads.
