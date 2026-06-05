@@ -46,6 +46,16 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
 - Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
 
+## 2026-06-05 - Queued Field Access Metadata
+
+- Changed: Added untyped field access masks to queued, planned, and reported
+  operations, plus validation rejecting read-only operations with write masks.
+- Reason: Planner diagnostics and future hazard checks need explicit
+  read/write metadata before typed field binding, callbacks, barriers, or
+  executors are introduced.
+- Affected docs: `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
+
 ## 2026-06-01 - Documentation Model
 
 - Changed: TDDs are treated as historical design intent, while maintained

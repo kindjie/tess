@@ -23,8 +23,9 @@
 - `tess_queued_test`: verifies the M4 queued-operations scaffold, including
   empty-frame planning, stable handles and enqueue-order ids, explicit/dirty/
   active/resident chunk-domain expansion, enqueue-order plan preservation,
-  diagnostic access metadata, structured invalid write-policy and
-  explicit-domain rejection, report lookup/count helpers, mixed valid/invalid
-  report ordering, plan-to-block adapters, policy mismatch rejection,
-  allocation-free prebuilt planned block iteration, source-location capture,
-  and allocation-free inspection of already-built queue/report/plan spans.
+  diagnostic access metadata, untyped field access mask propagation,
+  structured invalid write-policy, invalid field-access, and explicit-domain
+  rejection, report lookup/count helpers, mixed valid/invalid report ordering,
+  plan-to-block adapters, policy mismatch rejection, allocation-free prebuilt
+  planned block iteration, source-location capture, and allocation-free
+  inspection of already-built queue/report/plan spans.
