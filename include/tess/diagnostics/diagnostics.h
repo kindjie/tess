@@ -59,6 +59,7 @@ struct PathCounters {
   std::uint64_t closed_pops = 0;
   std::uint64_t neighbor_candidates = 0;
   std::uint64_t passability_checks = 0;
+  std::uint64_t cost_reads = 0;
   std::uint64_t blocked_neighbors = 0;
   std::uint64_t closed_neighbors = 0;
   std::uint64_t relax_attempts = 0;
@@ -185,6 +186,12 @@ inline void event_path_neighbor_candidate() noexcept {
 inline void event_path_passability_check() noexcept {
   if (active_path_counters != nullptr) {
     ++active_path_counters->passability_checks;
+  }
+}
+
+inline void event_path_cost_read() noexcept {
+  if (active_path_counters != nullptr) {
+    ++active_path_counters->cost_reads;
   }
 }
 

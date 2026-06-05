@@ -367,6 +367,7 @@ template <typename World, typename Tag>
   using Shape = typename World::shape_type;
   using Storage = typename ShapeTraits<Shape>::TileKeyStorage;
   const auto key = TileKey<Shape>{static_cast<Storage>(index)};
+  TESS_DIAG_EVENT(path_cost_read);
   const auto& value = world.chunk(chunk_key<Shape>(key))
                           .template field<Tag>(local_tile_id<Shape>(key));
   static_assert(std::is_integral_v<std::remove_cvref_t<decltype(value)>>,
