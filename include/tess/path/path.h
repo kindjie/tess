@@ -40,6 +40,14 @@ struct DistanceFieldResult {
   std::size_t reached_nodes = 0;
 };
 
+struct RouteCacheStats {
+  std::size_t entries = 0;
+  std::size_t hits = 0;
+  std::size_t suffix_hits = 0;
+  std::size_t misses = 0;
+  std::size_t path_nodes = 0;
+};
+
 class PathScratch {
  public:
   struct OpenNode {
@@ -115,6 +123,99 @@ class PathScratch {
   std::vector<std::uint64_t> parent_;
   std::vector<std::uint64_t> touched_;
   std::vector<Coord3> path_;
+};
+
+class RouteCacheScratch {
+ public:
+  void reserve_routes(std::size_t route_count) {
+    entries_.reserve(route_count);
+  }
+
+  void reserve_path_nodes(std::size_t node_count) {
+    paths_.reserve(node_count);
+    temp_path_.reserve(node_count);
+  }
+
+  void clear() noexcept {
+    entries_.clear();
+    paths_.clear();
+    temp_path_.clear();
+    hits_ = 0;
+    suffix_hits_ = 0;
+    misses_ = 0;
+  }
+
+  void reset_stats() noexcept {
+    hits_ = 0;
+    suffix_hits_ = 0;
+    misses_ = 0;
+  }
+
+  [[nodiscard]] auto stats() const noexcept -> RouteCacheStats {
+    return RouteCacheStats{
+        entries_.size(), hits_, suffix_hits_, misses_, paths_.size(),
+    };
+  }
+
+ private:
+  struct Entry {
+    Coord3 start{};
+    Coord3 goal{};
+    PathStatus status = PathStatus::NoPath;
+    std::uint32_t cost = 0;
+    std::size_t expanded_nodes = 0;
+    std::size_t reached_nodes = 0;
+    std::size_t path_offset = 0;
+    std::size_t path_size = 0;
+  };
+
+  template <typename World, typename Tag>
+  friend auto cached_astar_path(const World& world, PathRequest request,
+                                PathScratch& scratch, RouteCacheScratch& cache)
+      -> PathResult;
+
+  [[nodiscard]] auto find(PathRequest request) const noexcept -> const Entry* {
+    for (const auto& entry : entries_) {
+      if (entry.start == request.start && entry.goal == request.goal) {
+        return &entry;
+      }
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] auto find_suffix(PathRequest request,
+                                 std::size_t& suffix_offset) const noexcept
+      -> const Entry* {
+    for (const auto& entry : entries_) {
+      if (entry.goal != request.goal || entry.status != PathStatus::Found) {
+        continue;
+      }
+      for (std::size_t i = 0; i < entry.path_size; ++i) {
+        if (paths_[entry.path_offset + i] == request.start) {
+          suffix_offset = i;
+          return &entry;
+        }
+      }
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] auto path_span(const Entry& entry,
+                               std::size_t offset = 0) const noexcept
+      -> std::span<const Coord3> {
+    if (entry.path_size <= offset) {
+      return {};
+    }
+    return std::span<const Coord3>{paths_.data() + entry.path_offset + offset,
+                                   entry.path_size - offset};
+  }
+
+  std::vector<Entry> entries_;
+  std::vector<Coord3> paths_;
+  std::vector<Coord3> temp_path_;
+  std::size_t hits_ = 0;
+  std::size_t suffix_hits_ = 0;
+  std::size_t misses_ = 0;
 };
 
 class DistanceFieldScratch {
@@ -1021,6 +1122,49 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
 
   return PathResult{PathStatus::NoPath, 0, expanded_nodes,
                     scratch.touched_.size(), scratch.path_};
+}
+
+template <typename World, typename Tag>
+auto cached_astar_path(const World& world, PathRequest request,
+                       PathScratch& scratch, RouteCacheScratch& cache)
+    -> PathResult {
+  if (const auto* entry = cache.find(request); entry != nullptr) {
+    ++cache.hits_;
+    return PathResult{
+        entry->status, entry->cost, 0, 0, cache.path_span(*entry),
+    };
+  }
+  auto suffix_offset = std::size_t{0};
+  if (const auto* entry = cache.find_suffix(request, suffix_offset);
+      entry != nullptr) {
+    ++cache.suffix_hits_;
+    const auto suffix = cache.path_span(*entry, suffix_offset);
+    return PathResult{
+        PathStatus::Found,
+        static_cast<std::uint32_t>(suffix.size() - 1u),
+        0,
+        0,
+        suffix,
+    };
+  }
+
+  ++cache.misses_;
+  const auto result = astar_path<World, Tag>(world, request, scratch);
+  cache.temp_path_.assign(result.path.begin(), result.path.end());
+  const auto path_offset = cache.paths_.size();
+  cache.paths_.insert(cache.paths_.end(), cache.temp_path_.begin(),
+                      cache.temp_path_.end());
+  cache.entries_.push_back(RouteCacheScratch::Entry{
+      request.start,
+      request.goal,
+      result.status,
+      result.cost,
+      result.expanded_nodes,
+      result.reached_nodes,
+      path_offset,
+      cache.temp_path_.size(),
+  });
+  return result;
 }
 
 template <typename World, typename Tag>

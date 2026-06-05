@@ -16,9 +16,13 @@ It lives in `include/tess/path/path.h` and is exported by `tess/tess.h`.
   repeated queries when capacity is sufficient.
 - `DistanceFieldScratch` owns reusable vectors for reverse shared-goal fields
   and reconstructed paths.
+- `RouteCacheScratch` owns reusable route-cache entries and cached path nodes
+  for exact route and same-goal suffix reuse.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs deterministic
   pathfinding over the existing always-resident world storage. The passability
   field is treated as boolean-like.
+- `cached_astar_path<World, PassableTag>(world, request, scratch, cache)`
+  checks the route cache before falling back to `astar_path`.
 - `build_distance_field<World, PassableTag>(world, goal, scratch)` builds a
   unit-cost reverse distance field from one passable goal.
 - `distance_field_path<World, PassableTag>(world, start, goal, scratch)`
@@ -65,6 +69,13 @@ dense per-tile state arrays and clears only nodes touched by the previous
 query, so repeated queries avoid full-world scratch resets when the search
 visits a small fraction of the world.
 
+For many agents repeating point-to-point routes, `RouteCacheScratch` can
+amortize complete path searches. Exact `(start, goal)` hits return the cached
+path without expanding nodes. Same-goal suffix hits are also supported when the
+new start already appears inside a cached optimal path; with unit positive edge
+costs, that suffix is also optimal. The cache assumes the caller clears it when
+passability or movement rules change.
+
 For many agents sharing a goal, `DistanceFieldScratch` can amortize search
 work. A field build visits reachable passable tiles once from the goal, and
 each path query follows decreasing distances back to that goal. The scratch
@@ -75,16 +86,18 @@ instead of returning a path to stale field data.
 
 This MVP slice does not implement movement classes, weighted terrain, topology
 prechecks, portal graphs, sparse residency, reservations, dynamic blockers,
-path caching, async tickets, or rich path diagnostics. The implementation uses
-reusable dense per-tile scratch arrays, a two-bucket monotone open set for the
-current unit-cost Manhattan A* fallback, and dense reverse distance fields for
-shared-goal batches; it is still an MVP path core, not the final topology-aware
-path system.
+async tickets, or rich path diagnostics. The implementation uses reusable dense
+per-tile scratch arrays, a two-bucket monotone open set for the current
+unit-cost Manhattan A* fallback, exact route/suffix caches, and dense reverse
+distance fields for shared-goal batches; it is still an MVP path core, not the
+final topology-aware path system.
 
 The A* API is suitable for individual point-to-point queries and regression
 coverage. Shared-goal distance fields are suitable for batches with substantial
-goal reuse, but the v1 plan still needs topology prechecks, richer field reuse,
-route caches, and hierarchy to cover broad many-agent workloads.
+goal reuse. Route caches are suitable for stable maps with repeated exact
+routes or starts that lie on cached same-goal paths. The v1 plan still needs
+topology prechecks, richer field reuse, and hierarchy to cover broad many-agent
+workloads.
 
 ## Current Profiling Notes
 

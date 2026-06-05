@@ -363,3 +363,33 @@ deferred for scope reasons. Keep entries short and concrete:
 - Retry conditions: Revisit field storage/reuse policies when topology,
   invalidation, chunk residency, weighted costs, or path product caching are
   introduced.
+
+## 2026-06-05 - Exact Route and Suffix Cache
+
+- Area: Many-agent path batches with repeated point-to-point routes or starts
+  that lie on an already-computed route to the same goal.
+- Hypothesis: A small caller-owned route cache can avoid rerunning A* for
+  repeated stable-map routes. Exact route hits can return the stored path
+  directly, and same-goal suffix hits are optimal for unit positive edge costs
+  when the new start is already on a cached optimal path.
+- Evidence: Targeted Release benchmarks report
+  `path/astar_batch_100_mixed_repeated_room_portals_512x512` around 41.1 ms
+  versus
+  `path/cached_astar_batch_100_mixed_repeated_room_portals_512x512` around
+  12.5 ms with 30 misses and 70 exact hits. The suffix-specific open batch
+  reports `path/astar_batch_100_suffix_open_512x512` around 95.9 us versus
+  `path/cached_astar_batch_100_suffix_open_512x512` around 4.0 us with
+  1 miss and 99 suffix hits.
+- Accepted: Add `RouteCacheScratch` and `cached_astar_path` for explicit
+  caller-managed route reuse. The cache keeps whole path nodes, reports
+  entries, exact hits, suffix hits, misses, and stored path nodes, and assumes
+  the caller clears it when passability or movement rules change.
+- Deferred: Room/portal hierarchy remains a larger topology feature. It needs
+  persistent portal graph ownership, invalidation, and tests over general
+  map structure; adding benchmark-only room knowledge would not be a usable
+  library optimization.
+- Decision: Keep exact route and same-goal suffix reuse. Continue using
+  independent A* or distance fields when there is no route/suffix reuse.
+- Retry conditions: Revisit cache indexing when route counts become large
+  enough for linear lookup to show up in profiles, and revisit hierarchy when
+  topology graph ownership is designed.

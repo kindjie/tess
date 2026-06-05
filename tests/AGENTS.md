@@ -35,7 +35,8 @@
 - `tess_path_test`: verifies the MVP A* path foundation, including top-down 2D
   paths around blocked tiles, invalid start and goal reporting, no-path
   reporting, direct-path and uniform-cost fast paths across top-down 2D,
-  vertical 2D, and 3D layouts, coordinate support, shared-goal distance-field
+  vertical 2D, and 3D layouts, coordinate support, exact route-cache and
+  same-goal suffix reuse, explicit cache clearing, shared-goal distance-field
   builds and reconstruction, mismatched-field rejection, and allocation-free
   repeated queries with pre-reserved path scratch.
 - `tess_diagnostics_default_test`: verifies public diagnostic macros are
