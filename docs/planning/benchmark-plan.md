@@ -234,10 +234,10 @@ Path benchmarks also publish user counters for cost, path nodes, expanded
 nodes, and reached nodes so timing changes can be correlated with graph work.
 Additional A* investigation benchmarks cover short/medium/long 512x512 open
 paths, wall-gap detours, failed wall-separated paths, striped mazes, and
-100-request batches. They also include an alternate direct-axis-order case
-where one optimal Manhattan route is blocked but another remains clear. These
-are profiling cases first; keep only stable, short-running path cases in
-threshold JSON until same-runner variance is calibrated.
+100-request batches. They also include alternate direct-axis-order and
+axis-aligned one-tile detour cases for uniform-cost fast paths. These are
+profiling cases first; keep only stable, short-running path cases in threshold
+JSON until same-runner variance is calibrated.
 
 Run the current scaffolds with:
 
