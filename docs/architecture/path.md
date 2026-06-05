@@ -39,7 +39,9 @@ paths in the shape-relevant axis orders. If any route is fully passable, it
 returns that direct shortest path immediately. If a direct probe hits a blocked
 tile whose axis plane is fully blocked, it returns `NoPath` immediately because
 the plane separates start from goal under the current axis-adjacent movement
-model. Non-separating blockers fall back to normal A*.
+model. For axis-aligned requests, a clear one-tile parallel detour is also
+returned before A* because its Manhattan+2 cost is optimal when the straight
+line is blocked. Other non-separating blockers fall back to normal A*.
 
 The returned path span points into the supplied `PathScratch` and remains valid
 until the next path query or scratch clear/reserve operation. Scratch keeps

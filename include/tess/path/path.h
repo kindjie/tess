@@ -410,6 +410,72 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
   if (direct_blocked_by_barrier) {
     return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
   }
+  const auto try_axis_aligned_detour = [&](auto Coord3::* primary,
+                                           auto Coord3::* detour,
+                                           std::int64_t detour_step) {
+    direct_current = request.start;
+    direct_current.*detour += detour_step;
+    if (!contains<Shape>(direct_current)) {
+      return false;
+    }
+    TESS_DIAG_EVENT(path_passability_check);
+    if (!detail::is_passable<World, Tag>(world, direct_current)) {
+      return false;
+    }
+
+    scratch.path_.clear();
+    scratch.path_.push_back(request.start);
+    TESS_DIAG_EVENT(path_reconstruct_node);
+    scratch.path_.push_back(direct_current);
+    TESS_DIAG_EVENT(path_reconstruct_node);
+
+    while (direct_current.*primary != request.goal.*primary) {
+      direct_current.*primary +=
+          direct_current.*primary < request.goal.*primary ? 1 : -1;
+      TESS_DIAG_EVENT(path_passability_check);
+      if (!detail::is_passable<World, Tag>(world, direct_current)) {
+        scratch.path_.clear();
+        return false;
+      }
+      scratch.path_.push_back(direct_current);
+      TESS_DIAG_EVENT(path_reconstruct_node);
+    }
+
+    direct_current.*detour -= detour_step;
+    TESS_DIAG_EVENT(path_passability_check);
+    if (!detail::is_passable<World, Tag>(world, direct_current)) {
+      scratch.path_.clear();
+      return false;
+    }
+    scratch.path_.push_back(direct_current);
+    TESS_DIAG_EVENT(path_reconstruct_node);
+    return true;
+  };
+  const auto detour_cost = detail::manhattan(request.start, request.goal) + 2;
+  if (request.start.y == request.goal.y && request.start.z == request.goal.z &&
+      (try_axis_aligned_detour(&Coord3::x, &Coord3::y, 1) ||
+       try_axis_aligned_detour(&Coord3::x, &Coord3::y, -1) ||
+       try_axis_aligned_detour(&Coord3::x, &Coord3::z, 1) ||
+       try_axis_aligned_detour(&Coord3::x, &Coord3::z, -1))) {
+    return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
+                      scratch.path_.size(), scratch.path_};
+  }
+  if (request.start.x == request.goal.x && request.start.z == request.goal.z &&
+      (try_axis_aligned_detour(&Coord3::y, &Coord3::x, 1) ||
+       try_axis_aligned_detour(&Coord3::y, &Coord3::x, -1) ||
+       try_axis_aligned_detour(&Coord3::y, &Coord3::z, 1) ||
+       try_axis_aligned_detour(&Coord3::y, &Coord3::z, -1))) {
+    return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
+                      scratch.path_.size(), scratch.path_};
+  }
+  if (request.start.x == request.goal.x && request.start.y == request.goal.y &&
+      (try_axis_aligned_detour(&Coord3::z, &Coord3::x, 1) ||
+       try_axis_aligned_detour(&Coord3::z, &Coord3::x, -1) ||
+       try_axis_aligned_detour(&Coord3::z, &Coord3::y, 1) ||
+       try_axis_aligned_detour(&Coord3::z, &Coord3::y, -1))) {
+    return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
+                      scratch.path_.size(), scratch.path_};
+  }
 
   const auto node_count = detail::tile_count<World>();
   if (scratch.state_.size() != node_count) {

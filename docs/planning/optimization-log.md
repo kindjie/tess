@@ -137,3 +137,49 @@ deferred for scope reasons. Keep entries short and concrete:
   permutations and falls back to A* when none are passable.
 - Retry conditions: Gate or revise this fast path when non-unit movement costs
   or movement classes make arbitrary Manhattan axis orders non-equivalent.
+
+## 2026-06-05 - A* Scan Then Build Direct Path
+
+- Area: Uniform-cost direct-path fast path.
+- Hypothesis: Direct probes should scan passability first and build the path
+  only after a probe succeeds, avoiding path reconstruction work for failed
+  probes that fall back to A*.
+- Evidence: Diagnostics became cleaner for fallback cases, but release timings
+  regressed common direct paths because successful paths walked coordinates
+  twice. The local `open_512x512` slice rose from about 2.2 us to about 3.0 us,
+  and `alternate_direct_512x512` rose from about 2.7 us to about 3.2 us.
+- Decision: Rejected. Direct-path success latency matters more than reducing
+  failed-probe reconstruction bookkeeping.
+- Retry conditions: Reconsider only if direct-path reconstruction becomes
+  materially more expensive or if probes can build a compact reusable route
+  representation without a second coordinate walk.
+
+## 2026-06-05 - A* Axis-Aligned One-Tile Detour
+
+- Area: Uniform-cost fast path for simple blocked straight-line requests.
+- Hypothesis: If an axis-aligned direct path is blocked but a one-tile
+  parallel lane is clear, the detour path is optimal with Manhattan+2 cost and
+  can return without heap-backed A*.
+- Evidence: A new 512x512 benchmark with a single blocked tile on an
+  axis-aligned route runs in about 2.3 us with no heap work. Open direct paths,
+  alternate-direct paths, and no-path barrier rejection stayed fast. Wall-gap,
+  striped-maze, and mixed-batch timings remained in the same range and still
+  fall back to A* when the detour lane is blocked.
+- Decision: Accepted for the current unit-cost axis-adjacent movement model.
+- Retry conditions: Gate or revise this fast path when non-unit movement costs,
+  movement classes, reservations, or dynamic blockers make Manhattan+2 detours
+  non-equivalent.
+
+## 2026-06-05 - A* Scan Then Build Axis Detour
+
+- Area: Axis-aligned detour fast path.
+- Hypothesis: Detour probes should scan passability first and build the path
+  only after a detour succeeds, reducing reconstruction work for failed detour
+  attempts that fall back to A*.
+- Evidence: Failed-detour diagnostics became cleaner, but the successful
+  `axis_detour_512x512` release case slowed from about 2.3 us to about 2.5 us,
+  and fallback cases did not improve enough to offset the success-path cost.
+- Decision: Rejected. The accepted detour path keeps one-pass build/probe
+  behavior for low latency.
+- Retry conditions: Reconsider if failed detour attempts become common enough
+  in production workloads to outweigh successful-detour latency.
