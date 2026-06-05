@@ -56,6 +56,13 @@ enum class OperationStatus : std::uint8_t {
 };
 static_assert(sizeof(OperationStatus) == sizeof(std::uint8_t));
 
+enum class OperationFailure : std::uint8_t {
+  None,
+  InvalidWritePolicyValue,
+  ExplicitChunkOutOfRange,
+};
+static_assert(sizeof(OperationFailure) == sizeof(std::uint8_t));
+
 enum class DomainKind : std::uint8_t {
   ExplicitChunks,
   DirtyChunks,
@@ -125,10 +132,17 @@ struct QueuedOperation {
   std::source_location source = std::source_location::current();
 };
 
+struct OperationAccess {
+  WritePolicy write_policy = WritePolicy::ReadOnly;
+  DomainKind domain_kind = DomainKind::ResidentChunks;
+  std::uint32_t domain_mask = 0;
+};
+
 struct PlannedOperation {
   OperationKind kind = OperationKind::UpdateField;
   OpHandle handle{};
   OpId id{};
+  OperationAccess access{};
   WritePolicy write_policy = WritePolicy::ReadOnly;
   Priority priority = Priority::GameplayCritical;
   BudgetPolicy budget_policy = BudgetPolicy::MustRun;
@@ -160,6 +174,10 @@ struct OperationReport {
   OpHandle handle{};
   OpId id{};
   OperationStatus status = OperationStatus::Planned;
+  OperationFailure failure = OperationFailure::None;
+  OperationAccess access{};
+  ChunkKey detail_chunk{};
+  bool has_detail_chunk = false;
   std::size_t chunk_count = 0;
   std::source_location source = std::source_location::current();
 };
@@ -175,13 +193,36 @@ class ExecutionReport {
     return plan_;
   }
 
-  [[nodiscard]] constexpr bool ok() const noexcept {
+  [[nodiscard]] constexpr auto find(OpHandle handle) const noexcept
+      -> const OperationReport* {
     for (const auto& op : operations_) {
-      if (op.status != OperationStatus::Planned) {
-        return false;
+      if (op.handle == handle) {
+        return &op;
       }
     }
-    return true;
+    return nullptr;
+  }
+
+  [[nodiscard]] constexpr bool ok() const noexcept {
+    return failed_count() == 0;
+  }
+
+  [[nodiscard]] constexpr bool failed() const noexcept {
+    return failed_count() != 0;
+  }
+
+  [[nodiscard]] constexpr auto planned_count() const noexcept -> std::size_t {
+    return plan_.size();
+  }
+
+  [[nodiscard]] constexpr auto failed_count() const noexcept -> std::size_t {
+    std::size_t count = 0;
+    for (const auto& op : operations_) {
+      if (op.status != OperationStatus::Planned) {
+        ++count;
+      }
+    }
+    return count;
   }
 
  private:
@@ -257,11 +298,23 @@ class FrameOps {
 
 namespace detail {
 
+[[nodiscard]] constexpr auto operation_access(
+    const QueuedOperation& op) noexcept -> OperationAccess {
+  return OperationAccess{
+      op.write_policy,
+      op.domain.kind(),
+      op.domain.mask(),
+  };
+}
+
 template <typename World>
-[[nodiscard]] auto validate_explicit_chunks(
-    const World& world, std::span<const ChunkKey> chunks) noexcept -> bool {
+[[nodiscard]] auto validate_explicit_chunks(const World& world,
+                                            std::span<const ChunkKey> chunks,
+                                            ChunkKey& invalid_chunk) noexcept
+    -> bool {
   for (const auto key : chunks) {
     if (world.try_chunk(key) == nullptr) {
+      invalid_chunk = key;
       return false;
     }
   }
@@ -280,10 +333,12 @@ template <typename World>
 
 template <typename World>
 [[nodiscard]] auto expand_domain(const World& world, const DomainDesc& domain,
-                                 std::vector<ChunkKey>& chunks) -> bool {
+                                 std::vector<ChunkKey>& chunks,
+                                 ChunkKey& invalid_chunk) -> bool {
   switch (domain.kind()) {
     case DomainKind::ExplicitChunks:
-      if (!validate_explicit_chunks(world, domain.explicit_chunks())) {
+      if (!validate_explicit_chunks(world, domain.explicit_chunks(),
+                                    invalid_chunk)) {
         return false;
       }
       chunks.assign(domain.explicit_chunks().begin(),
@@ -313,21 +368,41 @@ template <typename World>
 
   for (const auto& op : operations) {
     OperationReport op_report{
-        op.handle, op.id, OperationStatus::Planned, 0, op.source,
+        op.handle,
+        op.id,
+        OperationStatus::Planned,
+        OperationFailure::None,
+        detail::operation_access(op),
+        {},
+        false,
+        0,
+        op.source,
     };
 
     if (!is_valid_write_policy(op.write_policy)) {
       op_report.status = OperationStatus::InvalidWritePolicy;
+      op_report.failure = OperationFailure::InvalidWritePolicyValue;
       report.push_report(op_report);
       continue;
     }
 
     PlannedOperation planned{
-        op.kind,     op.handle,        op.id, op.write_policy,
-        op.priority, op.budget_policy, {},
+        op.kind,
+        op.handle,
+        op.id,
+        detail::operation_access(op),
+        op.write_policy,
+        op.priority,
+        op.budget_policy,
+        {},
     };
-    if (!detail::expand_domain(world, op.domain, planned.chunks)) {
+    ChunkKey invalid_chunk{};
+    if (!detail::expand_domain(world, op.domain, planned.chunks,
+                               invalid_chunk)) {
       op_report.status = OperationStatus::InvalidDomain;
+      op_report.failure = OperationFailure::ExplicitChunkOutOfRange;
+      op_report.detail_chunk = invalid_chunk;
+      op_report.has_detail_chunk = true;
       report.push_report(op_report);
       continue;
     }

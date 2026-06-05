@@ -130,6 +130,13 @@ TEST(TessQueued, ExplicitChunkDomainExpandsInChunkKeyOrder) {
   ASSERT_EQ(report.plan().operations().size(), 1u);
   EXPECT_EQ(report.operations()[0].handle, handle);
   EXPECT_EQ(report.operations()[0].chunk_count, 3u);
+  EXPECT_EQ(report.operations()[0].access.write_policy,
+            tess::WritePolicy::UniquePerChunk);
+  EXPECT_EQ(report.operations()[0].access.domain_kind,
+            tess::DomainKind::ExplicitChunks);
+  EXPECT_EQ(report.operations()[0].access.domain_mask, 0u);
+  EXPECT_EQ(report.plan().operations()[0].access.write_policy,
+            tess::WritePolicy::UniquePerChunk);
   EXPECT_EQ(planned_keys(report, 0), (std::vector<tess::ChunkKey>{
                                          tess::ChunkKey{2},
                                          tess::ChunkKey{5},
@@ -201,9 +208,15 @@ TEST(TessQueued, InvalidWritePolicyIsRejectedWithoutPlanEntry) {
   const auto report = tess::plan_operations(world, ops);
 
   ASSERT_FALSE(report.ok());
+  EXPECT_TRUE(report.failed());
+  EXPECT_EQ(report.planned_count(), 0u);
+  EXPECT_EQ(report.failed_count(), 1u);
   ASSERT_EQ(report.operations().size(), 1u);
   EXPECT_EQ(report.operations()[0].status,
             tess::OperationStatus::InvalidWritePolicy);
+  EXPECT_EQ(report.operations()[0].failure,
+            tess::OperationFailure::InvalidWritePolicyValue);
+  EXPECT_FALSE(report.operations()[0].has_detail_chunk);
   EXPECT_TRUE(report.plan().empty());
 }
 
@@ -220,11 +233,73 @@ TEST(TessQueued, OutOfRangeExplicitChunkIsRejectedWithoutPlanEntry) {
   const auto report = tess::plan_operations(world, ops);
 
   ASSERT_FALSE(report.ok());
+  EXPECT_TRUE(report.failed());
+  EXPECT_EQ(report.planned_count(), 0u);
+  EXPECT_EQ(report.failed_count(), 1u);
   ASSERT_EQ(report.operations().size(), 1u);
   EXPECT_EQ(report.operations()[0].status,
             tess::OperationStatus::InvalidDomain);
+  EXPECT_EQ(report.operations()[0].failure,
+            tess::OperationFailure::ExplicitChunkOutOfRange);
+  EXPECT_TRUE(report.operations()[0].has_detail_chunk);
+  EXPECT_EQ(report.operations()[0].detail_chunk,
+            (tess::ChunkKey{World::chunk_count}));
   EXPECT_TRUE(report.plan().empty());
   EXPECT_EQ(report.operations()[0].chunk_count, 0u);
+}
+
+TEST(TessQueued, ReportFindsOperationsByHandle) {
+  World world;
+  tess::FrameOps ops;
+
+  const auto first = ops.update_field(tess::DomainDesc::resident_chunks(),
+                                      tess::WritePolicy::ReadOnly);
+  const auto second = ops.update_field(tess::DomainDesc::resident_chunks(),
+                                       static_cast<tess::WritePolicy>(255));
+
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_NE(report.find(first), nullptr);
+  ASSERT_NE(report.find(second), nullptr);
+  EXPECT_EQ(report.find(first)->status, tess::OperationStatus::Planned);
+  EXPECT_EQ(report.find(second)->status,
+            tess::OperationStatus::InvalidWritePolicy);
+  EXPECT_EQ(report.find(tess::OpHandle{2}), nullptr);
+}
+
+TEST(TessQueued, MixedReportsPreserveOrderAndCountFailures) {
+  World world;
+  tess::FrameOps ops;
+  const std::vector<tess::ChunkKey> invalid_keys{
+      tess::ChunkKey{World::chunk_count},
+  };
+
+  const auto valid = ops.update_field(tess::DomainDesc::resident_chunks(),
+                                      tess::WritePolicy::ReadOnly);
+  const auto bad_policy = ops.update_field(tess::DomainDesc::resident_chunks(),
+                                           static_cast<tess::WritePolicy>(255));
+  const auto bad_domain =
+      ops.update_field(tess::DomainDesc::explicit_chunks(invalid_keys),
+                       tess::WritePolicy::ReadOnly);
+
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_FALSE(report.ok());
+  EXPECT_TRUE(report.failed());
+  EXPECT_EQ(report.planned_count(), 1u);
+  EXPECT_EQ(report.failed_count(), 2u);
+  ASSERT_EQ(report.operations().size(), 3u);
+  EXPECT_EQ(report.operations()[0].handle, valid);
+  EXPECT_EQ(report.operations()[0].status, tess::OperationStatus::Planned);
+  EXPECT_EQ(report.operations()[1].handle, bad_policy);
+  EXPECT_EQ(report.operations()[1].status,
+            tess::OperationStatus::InvalidWritePolicy);
+  EXPECT_EQ(report.operations()[2].handle, bad_domain);
+  EXPECT_EQ(report.operations()[2].status,
+            tess::OperationStatus::InvalidDomain);
+
+  ASSERT_EQ(report.plan().operations().size(), 1u);
+  EXPECT_EQ(report.plan().operations()[0].handle, valid);
 }
 
 TEST(TessQueued, PlanOperationsPreserveEnqueueOrderAcrossDomains) {
