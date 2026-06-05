@@ -36,3 +36,7 @@
   paths around blocked tiles, invalid start and goal reporting, no-path
   reporting, vertical 2D and chunked 3D coordinate support, and allocation-free
   repeated queries with pre-reserved path scratch.
+- `tess_diagnostics_default_test`: verifies public diagnostic macros are
+  disabled by default and do not evaluate arguments.
+- `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate
+  exactly once when `TESS_ENABLE_DIAGNOSTICS` is defined.
