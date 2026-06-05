@@ -14,6 +14,25 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-06-05 - Weighted A* Entry Costs
+
+- Area: Weighted terrain support for the path API.
+- Hypothesis: Weighted costs should use a separate general A* API so
+  unit-cost-only fast paths, bucket queues, distance fields, and route caches
+  keep their existing optimality assumptions.
+- Evidence: New unit tests cover avoiding expensive direct tiles, treating
+  zero-cost tiles as blocked, and rejecting zero-cost endpoints. Local Release
+  benchmarks report `path/weighted_astar_open_512x512` around 60 us and
+  `path/weighted_astar_axis_detour_512x512` around 22 us. The unit-cost
+  `path/astar_open_2d_512x512` benchmark remained around 2.2 us in the same
+  local run.
+- Decision: Accepted. Add `weighted_astar_path` for positive integral entry
+  costs, keep weighted reuse/fast paths out of scope, and add weighted
+  threshold cases below the 1 ms investigation trigger.
+- Retry conditions: Revisit weighted open-set or weighted reuse only after
+  profiles show weighted workloads are a bottleneck; do not reuse unit-cost
+  shortcuts without a weighted optimality proof.
+
 ## 2026-06-05 - A* Fallback Passability Checks
 
 - Area: A* fallback search in `include/tess/path/path.h`.
