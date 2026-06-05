@@ -13,6 +13,73 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-05 - Testable MVP Scope
+
+- Changed: Added an explicit MVP checkpoint that narrows the first end-to-end
+  prototype to always-resident queued execution plus minimal unit-cost A*
+  pathfinding.
+- Reason: The full v1 milestone remains useful design intent, but it is too
+  broad to serve as the first testable implementation target.
+- Affected docs: `docs/planning/v1-milestone-plan.md`
+- Affected code: none
+
+## 2026-06-05 - One Millisecond Benchmark Investigation Gate
+
+- Changed: Current benchmark threshold scaffolds now enforce a 1 ms CPU-time
+  ceiling for each named benchmark while leaving real-time limits unset. The
+  path threshold set includes 64x64, 512x512, and 1024x1024 open-world A*
+  benchmarks in addition to the cheap smoke path.
+- Reason: Any operation taking longer than 1 ms should be investigated, and the
+  benchmark policy should encode that expectation directly.
+- Affected docs: `docs/planning/benchmark-plan.md`
+- Affected code: `bench/thresholds/key-conversions.json`,
+  `bench/thresholds/storage.json`, `bench/thresholds/block.json`,
+  `bench/thresholds/queued.json`, `bench/thresholds/path.json`
+
+## 2026-06-05 - Path Benchmark Profiling Counters
+
+- Changed: `PathResult` now reports expanded and reached node counts, and path
+  benchmarks publish cost, path-node, expanded-node, and reached-node counters.
+- Reason: Large-world path timing needs to distinguish graph-work growth from
+  per-node overhead. The 1024x1024 open-grid profile currently points to heap
+  maintenance, passability/world lookup, and 2D use of six-axis neighbor
+  generation as the first bottlenecks.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/benchmark-plan.md`
+- Affected code: `include/tess/path/path.h`, `bench/tess_bench.cc`,
+  `tests/tess_path_test.cc`
+
+## 2026-06-05 - Queued Execution Bridge
+
+- Changed: Added explicit execution helpers for planned queued operations and
+  plans. Execution runs caller callbacks through policy-typed serial block
+  contexts and marks visited chunks dirty from declared dirty masks.
+- Reason: The queued planner needed a minimal synchronous execution bridge
+  before scheduler-owned execution, barriers, result channels, or async work.
+- Affected docs: `docs/architecture/queued-operations.md`,
+  `docs/planning/benchmark-plan.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`,
+  `bench/tess_bench.cc`, `bench/CMakeLists.txt`,
+  `bench/thresholds/queued.json`
+
+## 2026-06-05 - MVP Path Foundation
+
+- Changed: Added a minimal always-resident A* path API over boolean-like typed
+  passability fields, reusable `PathScratch`, path tests, benchmark coverage,
+  and equal-score tie-breaking that prefers deeper paths to avoid open-grid
+  wavefront expansion. Path scratch now clears only nodes touched by the prior
+  query instead of resetting dense arrays for the whole world on every query.
+- Reason: The first MVP needs a concrete path query that proves top-down 2D,
+  vertical 2D, and shallow 3D share the existing coordinate/storage model
+  before topology prechecks, portal graphs, weighted movement, or distance
+  fields are introduced.
+- Affected docs: `docs/architecture/path.md`, `docs/architecture/README.md`,
+  `docs/planning/benchmark-plan.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/path/path.h`, `include/tess/tess.h`,
+  `CMakeLists.txt`, `tests/tess_path_test.cc`, `tests/CMakeLists.txt`,
+  `examples/mvp_path.cc`, `examples/CMakeLists.txt`, `bench/tess_bench.cc`,
+  `bench/CMakeLists.txt`, `bench/thresholds/path.json`
+
 ## 2026-06-05 - Queued Operations Foundation
 
 - Changed: Added a public `FrameOps` queue, minimal chunk-domain descriptors,

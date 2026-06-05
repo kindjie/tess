@@ -174,7 +174,13 @@ Key conversion benchmarks have threshold scaffolding in
 threshold scaffolding in `bench/thresholds/storage.json`. Block benchmarks
 have matching threshold scaffolding in `bench/thresholds/block.json`,
 including scratch-specific names for `block/scratch_allocate_u32` and
-`block/context_scratch_tile_iteration_2d`.
+`block/context_scratch_tile_iteration_2d`. Queued execution benchmarks have
+matching threshold scaffolding in `bench/thresholds/queued.json`, and MVP path
+benchmarks have matching threshold scaffolding in `bench/thresholds/path.json`.
+The path set includes a cheap smoke path plus 64x64, 512x512, and 1024x1024
+open-world A* scaling paths intended to catch unrealistic path-core overhead.
+Path benchmarks also publish user counters for cost, path nodes, expanded
+nodes, and reached nodes so timing changes can be correlated with graph work.
 
 Run the current scaffolds with:
 
@@ -182,11 +188,14 @@ Run the current scaffolds with:
 cmake --build --preset bench --target tess_bench_key_thresholds
 cmake --build --preset bench --target tess_bench_storage_thresholds
 cmake --build --preset bench --target tess_bench_block_thresholds
+cmake --build --preset bench --target tess_bench_queued_thresholds
+cmake --build --preset bench --target tess_bench_path_thresholds
 ```
 
-Threshold values default to `null`, which records the intended gate names
-without failing on wall-clock variance. CI collects non-gating repeated
-benchmark samples with:
+Benchmark CPU time over 1 ms is an investigation trigger for the current MVP
+suite. Threshold JSON entries use `max_cpu_time_ns: 1000000` to enforce that
+upper bound while leaving real-time limits unset until same-runner variance is
+better understood. CI also collects non-gating repeated benchmark samples with:
 
 ```sh
 cmake --build --preset bench --target tess_bench_ci_baselines
@@ -194,9 +203,9 @@ cmake --build --preset bench --target tess_bench_ci_baselines
 
 Use the pinned `ubuntu-24.04` CI runner artifacts as the primary calibration
 source for limits that will gate CI. After several same-runner baseline runs,
-fill `max_real_time_ns` or `max_cpu_time_ns` for stable benchmarks. Prefer
-`max_cpu_time_ns` for single-thread microbenchmarks. Leave very small or noisy
-benchmarks at `null` until their variance is understood.
+tighten stable benchmark thresholds below the 1 ms investigation ceiling where
+useful. Prefer `max_cpu_time_ns` for single-thread microbenchmarks. Leave
+real-time limits at `null` until their variance is understood.
 
 After downloading CI baseline artifacts, summarize candidate CPU-time limits
 with:
