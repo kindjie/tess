@@ -508,6 +508,125 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
                       scratch.path_.size(), scratch.path_};
   }
 
+  auto forced_plane_gap_cost = infinite_cost;
+  auto forced_plane_gap_no_path = false;
+  const auto try_forced_x_plane_gaps_2d = [&]() {
+    if constexpr (!ShapeTraits<Shape>::degenerate_z) {
+      return false;
+    }
+
+    if (request.start.x == request.goal.x) {
+      return false;
+    }
+
+    const auto x_step = request.start.x < request.goal.x ? 1 : -1;
+    auto current = request.start;
+    auto found_forced_gap = false;
+
+    scratch.path_.clear();
+    scratch.path_.push_back(current);
+    TESS_DIAG_EVENT(path_reconstruct_node);
+
+    const auto append_checked = [&](Coord3 next) {
+      TESS_DIAG_EVENT(path_passability_check);
+      if (!detail::is_passable<World, Tag>(world, next)) {
+        scratch.path_.clear();
+        return false;
+      }
+      scratch.path_.push_back(next);
+      TESS_DIAG_EVENT(path_reconstruct_node);
+      current = next;
+      return true;
+    };
+    const auto append_x = [&](std::int64_t target_x) {
+      while (current.x != target_x) {
+        auto next = current;
+        next.x += current.x < target_x ? 1 : -1;
+        if (!append_checked(next)) {
+          return false;
+        }
+      }
+      return true;
+    };
+    const auto append_y = [&](std::int64_t target_y) {
+      while (current.y != target_y) {
+        auto next = current;
+        next.y += current.y < target_y ? 1 : -1;
+        if (!append_checked(next)) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    while (current.x != request.goal.x) {
+      auto next = current;
+      next.x += x_step;
+      TESS_DIAG_EVENT(path_passability_check);
+      if (detail::is_passable<World, Tag>(world, next)) {
+        scratch.path_.push_back(next);
+        TESS_DIAG_EVENT(path_reconstruct_node);
+        current = next;
+        continue;
+      }
+
+      auto passable_count = std::uint64_t{0};
+      auto gap_y = std::int64_t{0};
+      auto blocked_count = std::uint64_t{0};
+      for (std::int64_t y = 0;
+           y < static_cast<std::int64_t>(ShapeTraits<Shape>::size.y); ++y) {
+        const auto coord = Coord3{next.x, y, 0};
+        TESS_DIAG_EVENT(path_passability_check);
+        if (detail::is_passable_index<World, Tag>(
+                world, detail::tile_index<Shape>(coord))) {
+          ++passable_count;
+          gap_y = y;
+        } else {
+          ++blocked_count;
+        }
+      }
+
+      if (passable_count == 0) {
+        forced_plane_gap_no_path = true;
+        scratch.path_.clear();
+        return false;
+      }
+      if (blocked_count == 0) {
+        continue;
+      }
+      if (passable_count > 1) {
+        scratch.path_.clear();
+        return false;
+      }
+
+      found_forced_gap = true;
+      const auto gap = Coord3{next.x, gap_y, 0};
+      if (!append_y(gap.y) || !append_x(gap.x)) {
+        return false;
+      }
+    }
+
+    if (!found_forced_gap) {
+      scratch.path_.clear();
+      return false;
+    }
+    if (!append_x(request.goal.x) || !append_y(request.goal.y)) {
+      return false;
+    }
+
+    forced_plane_gap_cost =
+        static_cast<std::uint32_t>(scratch.path_.size() - 1);
+    return true;
+  };
+  if (try_forced_x_plane_gaps_2d()) {
+    return PathResult{PathStatus::Found, forced_plane_gap_cost,
+                      scratch.path_.size(), scratch.path_.size(),
+                      scratch.path_};
+  }
+  if (forced_plane_gap_no_path) {
+    return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
+  }
+
   const auto try_axis_aligned_detour = [&](auto Coord3::* primary,
                                            auto Coord3::* detour,
                                            std::int64_t detour_step) {
