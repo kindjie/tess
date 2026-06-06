@@ -82,6 +82,9 @@ under `include/tess/path/` and is exported by `tess/tess.h`.
 - `build_weighted_distance_field<World, PassableTag, CostTag>(world, goal,
   scratch)` builds a weighted reverse Dijkstra field for positive integral
   entry costs.
+- `build_weighted_distance_field_in_box<World, PassableTag, CostTag>(world,
+  goal, domain, scratch)` builds the same exact weighted reverse field, but
+  only inside the supplied `Box3` domain.
 - `build_bounded_weighted_distance_field<World, PassableTag, CostTag,
   MaxCost>(world, goal, scratch)` builds the same exact weighted reverse field
   through a bounded bucket queue when all reached entry costs are between 1 and
@@ -193,6 +196,10 @@ forward move from `n` into `c`. Weighted reconstruction follows neighbors
 where `distance(current) == entry_cost(neighbor) + distance(neighbor)`. The
 scratch remembers the field goal and rejects path reconstruction for a
 different goal instead of returning a path to stale field data.
+`build_weighted_distance_field_in_box` applies the same weighted model inside
+one explicit domain box. It is useful for local products, such as finding many
+starts inside one room to the same portal, while starts outside the box remain
+unreached.
 
 When weighted entry costs are known to be small bounded positive integers,
 `build_bounded_weighted_distance_field` avoids binary heap traffic with a

@@ -147,6 +147,20 @@ auto make_room_portal_waypoints(tess::PathRequest request)
   return waypoints;
 }
 
+template <std::size_t Count>
+auto make_shared_room_portal_requests()
+    -> std::array<tess::PathRequest, Count> {
+  auto requests = std::array<tess::PathRequest, Count>{};
+  const auto goal = tess::Coord3{510, 510, 0};
+  for (std::size_t i = 0; i < Count; ++i) {
+    requests[i] = tess::PathRequest{
+        tess::Coord3{1 + static_cast<std::int64_t>(i % 10u),
+                     1 + static_cast<std::int64_t>(i / 10u), 0},
+        goal};
+  }
+  return requests;
+}
+
 void record_path_counters(benchmark::State& state,
                           const tess::PathResult& result) {
   state.counters["cost"] = static_cast<double>(result.cost);
@@ -536,14 +550,7 @@ void BM_path_weighted_portal_segment_cache_batch_100_room_portals_512x512(
   carve_room_portals(world);
 
   constexpr auto count = std::size_t{100};
-  auto requests = std::array<tess::PathRequest, count>{};
-  const auto goal = tess::Coord3{510, 510, 0};
-  for (std::size_t i = 0; i < count; ++i) {
-    requests[i] = tess::PathRequest{
-        tess::Coord3{1 + static_cast<std::int64_t>(i % 10u),
-                     1 + static_cast<std::int64_t>(i / 10u), 0},
-        goal};
-  }
+  const auto requests = make_shared_room_portal_requests<count>();
   const auto waypoints = make_room_portal_waypoints(requests.front());
 
   tess::PathScratch scratch;
@@ -579,6 +586,123 @@ void BM_path_weighted_portal_segment_cache_batch_100_room_portals_512x512(
   state.counters["portal.segment_cache_entries"] =
       static_cast<double>(cache.size());
   state.counters["portal.waypoints"] = static_cast<double>(waypoints.size());
+}
+
+void BM_path_weighted_portal_endpoint_segments_batch_100_room_portals_512x512(
+    benchmark::State& state) {
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+  carve_room_portals(world);
+
+  constexpr auto count = std::size_t{100};
+  const auto requests = make_shared_room_portal_requests<count>();
+  const auto waypoints = make_room_portal_waypoints(requests.front());
+  const auto first_portal = waypoints.front();
+  const auto last_portal = waypoints.back();
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  tess::PathResult result;
+  std::uint64_t total_first_expanded = 0;
+  std::uint64_t total_cost = 0;
+  std::size_t last_expanded = 0;
+
+  for (auto _ : state) {
+    total_first_expanded = 0;
+    total_cost = 0;
+    for (const auto request : requests) {
+      result = tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag,
+                                         CostTag>(
+          world, tess::PathRequest{request.start, first_portal}, scratch);
+      total_first_expanded += result.expanded_nodes;
+      total_cost += result.cost;
+    }
+    result =
+        tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+            world, tess::PathRequest{last_portal, requests.front().goal},
+            scratch);
+    last_expanded = result.expanded_nodes;
+    total_cost += result.cost;
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_first_expanded);
+    benchmark::DoNotOptimize(last_expanded);
+  }
+  record_batch_counters<count>(state, total_first_expanded);
+  record_path_counters(state, result);
+  state.counters["portal.first_segment_avg_expanded"] =
+      static_cast<double>(total_first_expanded) / static_cast<double>(count);
+  state.counters["portal.last_segment_expanded"] =
+      static_cast<double>(last_expanded);
+}
+
+void BM_path_weighted_portal_first_field_cache_batch_100_room_portals_512x512(
+    benchmark::State& state) {
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+  carve_room_portals(world);
+
+  constexpr auto count = std::size_t{100};
+  const auto requests = make_shared_room_portal_requests<count>();
+  const auto waypoints = make_room_portal_waypoints(requests.front());
+  const auto first_portal = waypoints.front();
+  const auto tail_waypoints = std::span<const tess::Coord3>{
+      waypoints.data() + 1u, waypoints.size() - 1u};
+
+  tess::DistanceFieldScratch field_scratch;
+  field_scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  tess::PathScratch segment_scratch;
+  segment_scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  tess::WeightedPortalSegmentCache cache;
+  cache.reserve_segments(waypoints.size());
+  cache.reserve_path_nodes(4096);
+  tess::WeightedPortalRouteProduct product;
+  product.reserve_waypoints(tail_waypoints.size());
+  product.reserve_path_nodes(2048);
+  product.reserve_dependencies(64);
+  tess::DistanceFieldResult field;
+  tess::PathResult result;
+  std::uint64_t total_reconstruct_expanded = 0;
+  std::uint64_t total_cost = 0;
+
+  for (auto _ : state) {
+    cache.clear();
+    total_reconstruct_expanded = 0;
+    total_cost = 0;
+    field = tess::build_weighted_distance_field_in_box<WeightedPathScaleWorld,
+                                                       PassableTag, CostTag>(
+        world, first_portal,
+        tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{33, 32, 1}},
+        field_scratch);
+    for (const auto request : requests) {
+      const auto first =
+          tess::weighted_distance_field_path<WeightedPathScaleWorld,
+                                             PassableTag, CostTag>(
+              world, request.start, first_portal, field_scratch);
+      total_reconstruct_expanded += first.expanded_nodes;
+      total_cost += first.cost;
+      result = tess::build_weighted_portal_route_product<WeightedPathScaleWorld,
+                                                         PassableTag, CostTag>(
+          world, tess::PathRequest{first_portal, request.goal}, tail_waypoints,
+          segment_scratch, cache, product);
+      total_cost += result.cost;
+    }
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_reconstruct_expanded);
+    benchmark::DoNotOptimize(field.expanded_nodes);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_batch_counters<count>(state, total_reconstruct_expanded);
+  record_path_counters(state, result);
+  state.counters["field_expanded_nodes"] =
+      static_cast<double>(field.expanded_nodes);
+  state.counters["field_reached_nodes"] =
+      static_cast<double>(field.reached_nodes);
+  state.counters["portal.segment_cache_entries"] =
+      static_cast<double>(cache.size());
+  state.counters["portal.waypoints"] =
+      static_cast<double>(tail_waypoints.size());
 }
 
 void BM_path_weighted_astar_batch_100_shared_sparse_512x512(
@@ -916,6 +1040,16 @@ BENCHMARK(BM_path_weighted_portal_segment_cache_room_portals_512x512)
     ->Name("path/weighted_portal_segment_cache_room_portals_512x512");
 BENCHMARK(BM_path_weighted_portal_segment_cache_batch_100_room_portals_512x512)
     ->Name("path/weighted_portal_segment_cache_batch_100_room_portals_512x512");
+BENCHMARK(
+    BM_path_weighted_portal_endpoint_segments_batch_100_room_portals_512x512)
+    ->Name(
+        "path/"
+        "weighted_portal_endpoint_segments_batch_100_room_portals_512x512");
+BENCHMARK(
+    BM_path_weighted_portal_first_field_cache_batch_100_room_portals_512x512)
+    ->Name(
+        "path/"
+        "weighted_portal_first_field_cache_batch_100_room_portals_512x512");
 BENCHMARK(BM_path_weighted_astar_batch_100_shared_sparse_512x512)
     ->Name("path/weighted_astar_batch_100_shared_sparse_512x512");
 BENCHMARK(BM_path_weighted_distance_field_batch_100_shared_sparse_512x512)

@@ -18,8 +18,8 @@ Records meaningful design changes from the original TDDs.
 - Changed: Added weighted portal route products that stitch exact weighted A*
   segments through caller-supplied or chunk-boundary-derived portal waypoints,
   six-order plus greedy chunk-boundary candidate selection, warmed
-  portal-segment reuse, and room-portal build/replay/candidate/cache
-  benchmarks.
+  portal-segment reuse, local-domain weighted fields, and room-portal
+  build/replay/candidate/cache/endpoint benchmarks.
 - Reason: The remaining weighted room-portal bottleneck is search volume.
   Portal waypoints give measurable product primitives before the repository
   owns a full topology graph builder, while candidate and cost-ratio counters
@@ -28,6 +28,7 @@ Records meaningful design changes from the original TDDs.
   `docs/planning/benchmark-plan.md`,
   `docs/planning/optimization-log.md`, `tests/AGENTS.md`
 - Affected code: `include/tess/path/path.h`,
+  `include/tess/path/distance_field_box.h`,
   `include/tess/path/portal_route.h`,
   `include/tess/path/portal_segment_cache.h`, `include/tess/tess.h`,
   `tests/tess_path_test.cc`, `bench/tess_path_weighted_bench.cc`,

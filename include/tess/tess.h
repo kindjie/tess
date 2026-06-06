@@ -4,6 +4,7 @@
 #include <tess/core/shape.h>
 #include <tess/diagnostics/diagnostics.h>
 #include <tess/ops/queued.h>
+#include <tess/path/distance_field_box.h>
 #include <tess/path/path.h>
 #include <tess/path/portal_route.h>
 #include <tess/path/portal_segment_cache.h>
