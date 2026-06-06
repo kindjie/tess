@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -55,6 +56,34 @@ struct LocalTopologyResult {
   std::uint32_t version = 0;
 };
 
+struct RegionRef {
+  ChunkKey chunk;
+  LocalRegionId region;
+
+  friend constexpr bool operator==(RegionRef lhs,
+                                   RegionRef rhs) noexcept = default;
+};
+
+struct RegionPortal {
+  RegionRef from;
+  RegionRef to;
+  Coord3 from_coord;
+  Coord3 to_coord;
+  BoundaryFace face;
+};
+
+enum class ReachabilityStatus : std::uint8_t {
+  Reachable,
+  Unreachable,
+  InvalidStart,
+  InvalidGoal,
+};
+
+struct ReachabilityResult {
+  ReachabilityStatus status;
+  std::size_t visited_regions = 0;
+};
+
 class LocalTopologyScratch {
  public:
   void reserve_tiles(std::size_t count) { stack_.reserve(count); }
@@ -71,6 +100,27 @@ class LocalTopologyScratch {
       -> LocalTopologyResult;
 
   std::vector<LocalTileId> stack_;
+};
+
+class RegionGraphScratch {
+ public:
+  void reserve_regions(std::size_t count) {
+    frontier_.reserve(count);
+    visited_.reserve(count);
+  }
+
+  [[nodiscard]] auto capacity() const noexcept -> std::size_t {
+    return frontier_.capacity();
+  }
+
+ private:
+  template <typename Shape>
+  friend auto reachable(const class RegionGraph& graph, Coord3 start,
+                        Coord3 goal, RegionGraphScratch& scratch)
+      -> ReachabilityResult;
+
+  std::vector<RegionRef> frontier_;
+  std::vector<RegionRef> visited_;
 };
 
 class LocalChunkTopology {
@@ -135,6 +185,55 @@ class LocalChunkTopology {
   std::vector<LocalRegionId> region_ids_;
   std::vector<LocalRegion> regions_;
   std::vector<LocalBoundaryExit> boundary_exits_;
+};
+
+class RegionGraph {
+ public:
+  void clear() noexcept {
+    local_topologies_.clear();
+    portals_.clear();
+  }
+
+  [[nodiscard]] auto local_topologies() const noexcept
+      -> std::span<const LocalChunkTopology> {
+    return {local_topologies_.data(), local_topologies_.size()};
+  }
+
+  [[nodiscard]] auto portals() const noexcept -> std::span<const RegionPortal> {
+    return {portals_.data(), portals_.size()};
+  }
+
+  [[nodiscard]] auto local_topology(ChunkKey chunk) const noexcept
+      -> const LocalChunkTopology* {
+    if (chunk.value >= local_topologies_.size()) {
+      return nullptr;
+    }
+    return &local_topologies_[static_cast<std::size_t>(chunk.value)];
+  }
+
+  template <typename Shape>
+  [[nodiscard]] auto region_of(Coord3 coord) const noexcept -> RegionRef {
+    if (!contains<Shape>(coord)) {
+      return RegionRef{ChunkKey{std::numeric_limits<std::uint64_t>::max()},
+                       invalid_local_region};
+    }
+    const auto key = chunk_key<Shape>(chunk_coord<Shape>(coord));
+    const auto* local = local_topology(key);
+    if (local == nullptr) {
+      return RegionRef{key, invalid_local_region};
+    }
+    return RegionRef{
+        key, local->region_at(local_tile_id<Shape>(local_coord<Shape>(coord)))};
+  }
+
+ private:
+  template <typename World, typename PassableTag>
+  friend auto build_region_graph(const World& world,
+                                 LocalTopologyScratch& scratch,
+                                 RegionGraph& graph) -> LocalTopologyResult;
+
+  std::vector<LocalChunkTopology> local_topologies_;
+  std::vector<RegionPortal> portals_;
 };
 
 namespace detail {
@@ -275,6 +374,36 @@ constexpr void include_coord_in_bounds(LocalRegion& region,
   };
 }
 
+[[nodiscard]] constexpr auto neighbor_coord(Coord3 coord,
+                                            BoundaryFace face) noexcept
+    -> Coord3 {
+  switch (face) {
+    case BoundaryFace::NegativeX:
+      return Coord3{coord.x - 1, coord.y, coord.z};
+    case BoundaryFace::PositiveX:
+      return Coord3{coord.x + 1, coord.y, coord.z};
+    case BoundaryFace::NegativeY:
+      return Coord3{coord.x, coord.y - 1, coord.z};
+    case BoundaryFace::PositiveY:
+      return Coord3{coord.x, coord.y + 1, coord.z};
+    case BoundaryFace::NegativeZ:
+      return Coord3{coord.x, coord.y, coord.z - 1};
+    case BoundaryFace::PositiveZ:
+      return Coord3{coord.x, coord.y, coord.z + 1};
+  }
+  return coord;
+}
+
+[[nodiscard]] constexpr auto is_visited(std::span<const RegionRef> visited,
+                                        RegionRef region) noexcept -> bool {
+  for (const auto item : visited) {
+    if (item == region) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace detail
 
 template <typename World, typename PassableTag>
@@ -346,6 +475,104 @@ auto build_local_chunk_topology(const World& world, ChunkKey chunk,
       TopologyStatus::Built,           topology.regions_.size(), passable_tiles,
       topology.boundary_exits_.size(), topology.version_,
   };
+}
+
+template <typename World, typename PassableTag>
+auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
+                        RegionGraph& graph) -> LocalTopologyResult {
+  using Shape = typename World::shape_type;
+  using Traits = ShapeTraits<Shape>;
+
+  graph.clear();
+  graph.local_topologies_.resize(static_cast<std::size_t>(Traits::chunk_count));
+
+  auto result = LocalTopologyResult{};
+  for (std::uint64_t raw_chunk = 0; raw_chunk < Traits::chunk_count;
+       ++raw_chunk) {
+    auto& topology =
+        graph.local_topologies_[static_cast<std::size_t>(raw_chunk)];
+    const auto local_result = build_local_chunk_topology<World, PassableTag>(
+        world, ChunkKey{raw_chunk}, scratch, topology);
+    if (local_result.status != TopologyStatus::Built) {
+      result.status = local_result.status;
+      return result;
+    }
+    result.region_count += local_result.region_count;
+    result.passable_tile_count += local_result.passable_tile_count;
+    result.boundary_exit_count += local_result.boundary_exit_count;
+    result.version += local_result.version;
+  }
+
+  for (const auto& topology : graph.local_topologies_) {
+    for (const auto& exit : topology.boundary_exits()) {
+      const auto to_coord = detail::neighbor_coord(exit.coord, exit.face);
+      const auto target = graph.region_of<Shape>(to_coord);
+      if (target.region == invalid_local_region) {
+        continue;
+      }
+      graph.portals_.push_back(RegionPortal{
+          RegionRef{topology.chunk(), exit.region},
+          target,
+          exit.coord,
+          to_coord,
+          exit.face,
+      });
+    }
+  }
+
+  return result;
+}
+
+template <typename Shape>
+auto reachable(const RegionGraph& graph, Coord3 start, Coord3 goal,
+               RegionGraphScratch& scratch) -> ReachabilityResult {
+  if (!contains<Shape>(start)) {
+    return ReachabilityResult{ReachabilityStatus::InvalidStart, 0};
+  }
+  if (!contains<Shape>(goal)) {
+    return ReachabilityResult{ReachabilityStatus::InvalidGoal, 0};
+  }
+
+  const auto start_region = graph.region_of<Shape>(start);
+  if (start_region.region == invalid_local_region) {
+    return ReachabilityResult{ReachabilityStatus::InvalidStart, 0};
+  }
+  const auto goal_region = graph.region_of<Shape>(goal);
+  if (goal_region.region == invalid_local_region) {
+    return ReachabilityResult{ReachabilityStatus::InvalidGoal, 0};
+  }
+  if (start_region == goal_region) {
+    return ReachabilityResult{ReachabilityStatus::Reachable, 1};
+  }
+
+  scratch.frontier_.clear();
+  scratch.visited_.clear();
+  scratch.frontier_.push_back(start_region);
+  scratch.visited_.push_back(start_region);
+
+  while (!scratch.frontier_.empty()) {
+    const auto current = scratch.frontier_.back();
+    scratch.frontier_.pop_back();
+
+    for (const auto& portal : graph.portals()) {
+      if (portal.from != current ||
+          detail::is_visited(
+              std::span<const RegionRef>{scratch.visited_.data(),
+                                         scratch.visited_.size()},
+              portal.to)) {
+        continue;
+      }
+      if (portal.to == goal_region) {
+        return ReachabilityResult{ReachabilityStatus::Reachable,
+                                  scratch.visited_.size() + 1};
+      }
+      scratch.visited_.push_back(portal.to);
+      scratch.frontier_.push_back(portal.to);
+    }
+  }
+
+  return ReachabilityResult{ReachabilityStatus::Unreachable,
+                            scratch.visited_.size()};
 }
 
 }  // namespace tess
