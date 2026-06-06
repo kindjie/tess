@@ -19,7 +19,9 @@ in `include/tess/path/path.h` and is exported by `tess/tess.h`.
 - `RouteCacheScratch` owns reusable route-cache entries and cached path nodes
   for exact route and same-goal suffix reuse. `invalidate()` drops cached route
   data while preserving hit/miss counters; `clear()` drops routes and resets
-  counters.
+  counters. `capture_world_versions(world)` and
+  `invalidate_if_world_changed(world)` provide coarse whole-cache invalidation
+  from chunk version fingerprints.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
   unit-cost deterministic pathfinding over the existing always-resident world
   storage. The passability field is treated as boolean-like.
@@ -32,6 +34,12 @@ in `include/tess/path/path.h` and is exported by `tess/tess.h`.
   unit-cost reverse distance field from one passable goal.
 - `distance_field_path<World, PassableTag>(world, start, goal, scratch)`
   reconstructs a start-to-goal path from the most recent matching field.
+- `build_weighted_distance_field<World, PassableTag, CostTag>(world, goal,
+  scratch)` builds a weighted reverse Dijkstra field for positive integral
+  entry costs.
+- `weighted_distance_field_path<World, PassableTag, CostTag>(world, start,
+  goal, scratch)` reconstructs a weighted start-to-goal path from the most
+  recent matching weighted field.
 
 ## Behavior
 
@@ -58,8 +66,9 @@ goal costs must be positive. Zero-cost and negative signed-cost tiles are
 treated as blocked, and oversized integral costs saturate to the public
 32-bit path-cost range. Weighted A* uses a binary heap and Manhattan distance
 with a minimum edge cost of one, so it preserves optimal weighted paths while
-skipping the unit-cost-only fast paths, bucket queue, route cache, and distance
-field shortcuts.
+skipping the unit-cost-only bucket queue and route cache. It does include an
+exact direct Manhattan fast path when every entered tile on a probed route has
+cost 1; no positive-cost path can beat that Manhattan lower bound.
 
 Before entering open-set A*, the implementation probes direct Manhattan
 paths in the shape-relevant axis orders. If any route is fully passable, it
@@ -89,13 +98,20 @@ can amortize complete path searches. Exact `(start, goal)` hits return the
 cached path without expanding nodes. Same-goal suffix hits are also supported
 when the new start already appears inside a cached optimal path; with unit
 positive edge costs, that suffix is also optimal. The cache assumes the caller
-invalidates it when passability or movement rules change.
+invalidates it when passability or movement rules change. The optional world
+version fingerprint support is deliberately conservative: when any chunk
+version changes, `invalidate_if_world_changed(world)` drops the whole cache and
+preserves hit/miss counters. It does not attempt region-selective validation.
 
 For many agents sharing a goal, `DistanceFieldScratch` can amortize search
-work. A field build visits reachable passable tiles once from the goal, and
-each path query follows decreasing distances back to that goal. The scratch
-remembers the field goal and rejects path reconstruction for a different goal
-instead of returning a path to stale field data.
+work. A unit-cost field build visits reachable passable tiles once from the
+goal, and each path query follows decreasing distances back to that goal. A
+weighted field uses reverse Dijkstra: when expanding backward from tile `c`,
+the reverse edge to predecessor `n` costs `entry_cost(c)`, matching the
+forward move from `n` into `c`. Weighted reconstruction follows neighbors
+where `distance(current) == entry_cost(neighbor) + distance(neighbor)`. The
+scratch remembers the field goal and rejects path reconstruction for a
+different goal instead of returning a path to stale field data.
 
 ## Deliberate Limits
 
@@ -104,18 +120,18 @@ graphs, sparse residency, reservations, dynamic blockers, async tickets, or
 rich path diagnostics. The implementation uses reusable dense per-tile scratch
 arrays, a two-bucket monotone open set for the current unit-cost Manhattan A*
 fallback, exact route/suffix caches, dense reverse distance fields for
-shared-goal batches, and a separate weighted A* fallback for positive integral
-entry costs; it is still an MVP path core, not the final topology-aware path
-system.
+shared-goal batches, a weighted shared-goal field, and weighted A* for
+positive integral entry costs; it is still an MVP path core, not the final
+topology-aware path system.
 
 The unit-cost A* API is suitable for individual point-to-point queries and
 regression coverage. Weighted A* is suitable for correctness-first weighted
-terrain queries while the optimized unit-cost shortcuts remain separate.
-Shared-goal distance fields are suitable for batches with substantial goal
-reuse. Route caches are suitable for stable maps with repeated exact routes or
-starts that lie on cached same-goal paths. The v1 plan still needs topology
-prechecks, richer field reuse, weighted reuse, and hierarchy to cover broad
-many-agent workloads.
+terrain queries, and weighted distance fields are suitable for weighted
+batches with substantial goal reuse. Shared-goal distance fields are suitable
+for batches with substantial goal reuse. Route caches are suitable for stable
+maps with repeated exact routes or starts that lie on cached same-goal paths.
+The v1 plan still needs topology prechecks, richer field reuse, and hierarchy
+to cover broad many-agent workloads.
 
 ## Current Profiling Notes
 
