@@ -49,6 +49,16 @@ struct RouteCacheStats {
   std::size_t path_nodes = 0;
 };
 
+struct WeightedPathBatchStats {
+  std::size_t requests = 0;
+  std::size_t unique_goals = 0;
+  std::size_t field_builds = 0;
+  std::size_t astar_fallbacks = 0;
+  std::size_t path_nodes = 0;
+};
+
+class PathScratch;
+
 class ChunkVersionDependencies {
  public:
   struct ChunkVersionDependency {
@@ -102,6 +112,58 @@ class ChunkVersionDependencies {
 
  private:
   std::vector<ChunkVersionDependency> chunks_;
+};
+
+class WeightedRouteProduct {
+ public:
+  void reserve_path_nodes(std::size_t node_count) { path_.reserve(node_count); }
+
+  void reserve_dependencies(std::size_t count) { dependencies_.reserve(count); }
+
+  void clear() noexcept {
+    request_ = {};
+    status_ = PathStatus::NoPath;
+    cost_ = 0;
+    expanded_nodes_ = 0;
+    reached_nodes_ = 0;
+    path_.clear();
+    dependencies_.clear();
+  }
+
+  template <typename World>
+  [[nodiscard]] auto is_valid(const World& world) const noexcept -> bool {
+    return dependencies_.is_valid(world);
+  }
+
+  [[nodiscard]] auto request() const noexcept -> PathRequest {
+    return request_;
+  }
+
+  [[nodiscard]] auto dependencies() const noexcept
+      -> std::span<const ChunkVersionDependencies::ChunkVersionDependency> {
+    return dependencies_.chunks();
+  }
+
+ private:
+  template <typename World, typename PassableTag, typename CostTag>
+  friend auto build_weighted_route_product(const World& world,
+                                           PathRequest request,
+                                           PathScratch& scratch,
+                                           WeightedRouteProduct& product)
+      -> PathResult;
+
+  template <typename World>
+  friend auto weighted_route_product_path(const World& world,
+                                          const WeightedRouteProduct& product)
+      -> PathResult;
+
+  PathRequest request_{};
+  PathStatus status_ = PathStatus::NoPath;
+  std::uint32_t cost_ = 0;
+  std::size_t expanded_nodes_ = 0;
+  std::size_t reached_nodes_ = 0;
+  std::vector<Coord3> path_;
+  ChunkVersionDependencies dependencies_;
 };
 
 class PathScratch {
@@ -416,6 +478,55 @@ class DistanceFieldScratch {
   std::vector<Coord3> path_;
   Coord3 goal_{};
   bool has_goal_ = false;
+};
+
+class WeightedPathBatchScratch {
+ public:
+  void reserve_requests(std::size_t request_count) {
+    results_.reserve(request_count);
+    offsets_.reserve(request_count);
+    sizes_.reserve(request_count);
+    processed_.reserve(request_count);
+  }
+
+  void reserve_path_nodes(std::size_t node_count) {
+    paths_.reserve(node_count);
+  }
+
+  void reserve_search_nodes(std::size_t node_count) {
+    field_scratch_.reserve_nodes(node_count);
+    astar_scratch_.reserve_nodes(node_count);
+  }
+
+  void clear() noexcept {
+    results_.clear();
+    offsets_.clear();
+    sizes_.clear();
+    processed_.clear();
+    paths_.clear();
+    stats_ = {};
+  }
+
+  [[nodiscard]] auto stats() const noexcept -> WeightedPathBatchStats {
+    return stats_;
+  }
+
+ private:
+  template <typename World, typename PassableTag, typename CostTag,
+            std::uint32_t MaxCost>
+  friend auto weighted_path_batch(const World& world,
+                                  std::span<const PathRequest> requests,
+                                  WeightedPathBatchScratch& scratch)
+      -> std::span<const PathResult>;
+
+  DistanceFieldScratch field_scratch_;
+  PathScratch astar_scratch_;
+  std::vector<PathResult> results_;
+  std::vector<std::size_t> offsets_;
+  std::vector<std::size_t> sizes_;
+  std::vector<std::uint8_t> processed_;
+  std::vector<Coord3> paths_;
+  WeightedPathBatchStats stats_;
 };
 
 namespace detail {
@@ -1328,6 +1439,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
   }
 
   auto direct_current = request.start;
+  auto direct_axis_blocked = false;
   const auto append_unit_axis = [&](auto Coord3::* member) {
     while (direct_current.*member != request.goal.*member) {
       direct_current.*member +=
@@ -1335,11 +1447,18 @@ auto weighted_astar_path(const World& world, PathRequest request,
       const auto direct_index = detail::tile_index<Shape>(direct_current);
       TESS_DIAG_EVENT(path_passability_check);
       if (!detail::is_passable_index<World, PassableTag>(world, direct_index)) {
+        direct_axis_blocked = true;
         scratch.path_.clear();
         return false;
       }
-      if (detail::tile_entry_cost_index<World, CostTag>(world, direct_index) !=
-          1) {
+      const auto entry_cost =
+          detail::tile_entry_cost_index<World, CostTag>(world, direct_index);
+      if (entry_cost == 0) {
+        direct_axis_blocked = true;
+        scratch.path_.clear();
+        return false;
+      }
+      if (entry_cost != 1) {
         scratch.path_.clear();
         return false;
       }
@@ -1382,6 +1501,80 @@ auto weighted_astar_path(const World& world, PathRequest request,
   if (direct_path_found) {
     const auto cost = detail::manhattan(request.start, request.goal);
     return PathResult{PathStatus::Found, cost, scratch.path_.size(),
+                      scratch.path_.size(), scratch.path_};
+  }
+
+  const auto append_unit_detour_axis = [&](auto Coord3::* primary,
+                                           auto Coord3::* detour,
+                                           std::int64_t detour_step) {
+    if (!direct_axis_blocked) {
+      return false;
+    }
+    direct_current = request.start;
+    direct_current.*detour += detour_step;
+    if (!contains<Shape>(direct_current)) {
+      return false;
+    }
+    const auto append_checked = [&](Coord3 coord) {
+      const auto index = detail::tile_index<Shape>(coord);
+      TESS_DIAG_EVENT(path_passability_check);
+      if (!detail::is_passable_index<World, PassableTag>(world, index)) {
+        scratch.path_.clear();
+        return false;
+      }
+      if (detail::tile_entry_cost_index<World, CostTag>(world, index) != 1) {
+        scratch.path_.clear();
+        return false;
+      }
+      scratch.path_.push_back(coord);
+      TESS_DIAG_EVENT(path_reconstruct_node);
+      return true;
+    };
+
+    scratch.path_.clear();
+    scratch.path_.push_back(request.start);
+    TESS_DIAG_EVENT(path_reconstruct_node);
+    if (!append_checked(direct_current)) {
+      return false;
+    }
+
+    while (direct_current.*primary != request.goal.*primary) {
+      direct_current.*primary +=
+          direct_current.*primary < request.goal.*primary ? 1 : -1;
+      if (!append_checked(direct_current)) {
+        return false;
+      }
+    }
+
+    direct_current.*detour -= detour_step;
+    if (!append_checked(direct_current)) {
+      return false;
+    }
+    return true;
+  };
+  const auto detour_cost = detail::manhattan(request.start, request.goal) + 2;
+  if (request.start.y == request.goal.y && request.start.z == request.goal.z &&
+      (append_unit_detour_axis(&Coord3::x, &Coord3::y, 1) ||
+       append_unit_detour_axis(&Coord3::x, &Coord3::y, -1) ||
+       append_unit_detour_axis(&Coord3::x, &Coord3::z, 1) ||
+       append_unit_detour_axis(&Coord3::x, &Coord3::z, -1))) {
+    return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
+                      scratch.path_.size(), scratch.path_};
+  }
+  if (request.start.x == request.goal.x && request.start.z == request.goal.z &&
+      (append_unit_detour_axis(&Coord3::y, &Coord3::x, 1) ||
+       append_unit_detour_axis(&Coord3::y, &Coord3::x, -1) ||
+       append_unit_detour_axis(&Coord3::y, &Coord3::z, 1) ||
+       append_unit_detour_axis(&Coord3::y, &Coord3::z, -1))) {
+    return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
+                      scratch.path_.size(), scratch.path_};
+  }
+  if (request.start.x == request.goal.x && request.start.y == request.goal.y &&
+      (append_unit_detour_axis(&Coord3::z, &Coord3::x, 1) ||
+       append_unit_detour_axis(&Coord3::z, &Coord3::x, -1) ||
+       append_unit_detour_axis(&Coord3::z, &Coord3::y, 1) ||
+       append_unit_detour_axis(&Coord3::z, &Coord3::y, -1))) {
+    return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
                       scratch.path_.size(), scratch.path_};
   }
 
@@ -1498,6 +1691,40 @@ auto weighted_astar_path(const World& world, PathRequest request,
 
   return PathResult{PathStatus::NoPath, 0, expanded_nodes,
                     scratch.touched_.size(), scratch.path_};
+}
+
+template <typename World, typename PassableTag, typename CostTag>
+auto build_weighted_route_product(const World& world, PathRequest request,
+                                  PathScratch& scratch,
+                                  WeightedRouteProduct& product) -> PathResult {
+  using Shape = typename World::shape_type;
+
+  product.clear();
+  const auto result =
+      weighted_astar_path<World, PassableTag, CostTag>(world, request, scratch);
+  product.request_ = request;
+  product.status_ = result.status;
+  product.cost_ = result.cost;
+  product.expanded_nodes_ = result.expanded_nodes;
+  product.reached_nodes_ = result.reached_nodes;
+  product.path_.assign(result.path.begin(), result.path.end());
+  for (const auto coord : product.path_) {
+    const auto key = tile_key<Shape>(coord);
+    product.dependencies_.add_chunk(world, chunk_key<Shape>(key));
+  }
+
+  return PathResult{product.status_, product.cost_, product.expanded_nodes_,
+                    product.reached_nodes_, product.path_};
+}
+
+template <typename World>
+auto weighted_route_product_path(const World& world,
+                                 const WeightedRouteProduct& product)
+    -> PathResult {
+  if (!product.is_valid(world)) {
+    return PathResult{PathStatus::NoPath, 0, 0, 0, {}};
+  }
+  return PathResult{product.status_, product.cost_, 0, 0, product.path_};
 }
 
 template <typename World, typename Tag>
@@ -1998,6 +2225,92 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
 
   return PathResult{PathStatus::Found, total_cost, scratch.path_.size(),
                     scratch.touched_.size(), scratch.path_};
+}
+
+template <typename World, typename PassableTag, typename CostTag,
+          std::uint32_t MaxCost>
+auto weighted_path_batch(const World& world,
+                         std::span<const PathRequest> requests,
+                         WeightedPathBatchScratch& scratch)
+    -> std::span<const PathResult> {
+  scratch.clear();
+  scratch.results_.resize(requests.size());
+  scratch.offsets_.assign(requests.size(), 0);
+  scratch.sizes_.assign(requests.size(), 0);
+  scratch.processed_.assign(requests.size(), 0);
+  scratch.stats_.requests = requests.size();
+
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    if (scratch.processed_[i] != 0) {
+      continue;
+    }
+
+    auto goal_count = std::size_t{0};
+    for (const auto request : requests) {
+      if (request.goal == requests[i].goal) {
+        ++goal_count;
+      }
+    }
+    ++scratch.stats_.unique_goals;
+
+    if (goal_count == 1) {
+      ++scratch.stats_.astar_fallbacks;
+      const auto result = weighted_astar_path<World, PassableTag, CostTag>(
+          world, requests[i], scratch.astar_scratch_);
+      scratch.offsets_[i] = scratch.paths_.size();
+      scratch.sizes_[i] = result.path.size();
+      scratch.paths_.insert(scratch.paths_.end(), result.path.begin(),
+                            result.path.end());
+      scratch.results_[i] = PathResult{result.status,
+                                       result.cost,
+                                       result.expanded_nodes,
+                                       result.reached_nodes,
+                                       {}};
+      scratch.processed_[i] = 1;
+      continue;
+    }
+
+    ++scratch.stats_.field_builds;
+    const auto field = build_bounded_weighted_distance_field<World, PassableTag,
+                                                             CostTag, MaxCost>(
+        world, requests[i].goal, scratch.field_scratch_);
+    for (std::size_t j = 0; j < requests.size(); ++j) {
+      if (requests[j].goal != requests[i].goal) {
+        continue;
+      }
+      const auto result =
+          field.status == PathStatus::Found
+              ? weighted_distance_field_path<World, PassableTag, CostTag>(
+                    world, requests[j].start, requests[j].goal,
+                    scratch.field_scratch_)
+              : PathResult{field.status,
+                           0,
+                           field.expanded_nodes,
+                           field.reached_nodes,
+                           {}};
+      scratch.offsets_[j] = scratch.paths_.size();
+      scratch.sizes_[j] = result.path.size();
+      scratch.paths_.insert(scratch.paths_.end(), result.path.begin(),
+                            result.path.end());
+      scratch.results_[j] = PathResult{result.status,
+                                       result.cost,
+                                       result.expanded_nodes,
+                                       result.reached_nodes,
+                                       {}};
+      scratch.processed_[j] = 1;
+    }
+  }
+
+  for (std::size_t i = 0; i < scratch.results_.size(); ++i) {
+    if (scratch.sizes_[i] == 0) {
+      scratch.results_[i].path = {};
+      continue;
+    }
+    scratch.results_[i].path = std::span<const Coord3>{
+        scratch.paths_.data() + scratch.offsets_[i], scratch.sizes_[i]};
+  }
+  scratch.stats_.path_nodes = scratch.paths_.size();
+  return scratch.results_;
 }
 
 }  // namespace tess

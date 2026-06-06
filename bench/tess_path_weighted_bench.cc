@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 
 namespace {
 
@@ -469,6 +470,54 @@ void BM_path_bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512(
   TESS_PATH_DIAG_RECORD(state);
 }
 
+void BM_path_weighted_batch_planner_100_multigoal_sparse_512x512(
+    benchmark::State& state) {
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+  carve_sparse_blockers(world);
+  const auto requests = make_multigoal_sparse_requests(world);
+
+  tess::WeightedPathBatchScratch scratch;
+  scratch.reserve_search_nodes(path_node_count<PathScaleShape>());
+  scratch.reserve_requests(requests.size());
+  scratch.reserve_path_nodes(requests.size() * 1024u);
+  TESS_PATH_DIAG_DECL();
+  std::span<const tess::PathResult> results;
+  std::uint64_t total_expanded = 0;
+  std::uint64_t total_cost = 0;
+
+  for (auto _ : state) {
+    TESS_PATH_DIAG_RESET();
+    total_cost = 0;
+    total_expanded = 0;
+    TESS_PATH_DIAG_RUN(
+        results =
+            tess::weighted_path_batch<WeightedPathScaleWorld, PassableTag,
+                                      CostTag, 7>(world, requests, scratch));
+    for (const auto result : results) {
+      total_cost += result.cost;
+      total_expanded += result.expanded_nodes;
+    }
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+    benchmark::DoNotOptimize(results.data());
+  }
+  record_batch_counters<requests.size()>(state, total_expanded);
+  state.counters["batch.unique_goals"] =
+      static_cast<double>(scratch.stats().unique_goals);
+  state.counters["batch.field_builds"] =
+      static_cast<double>(scratch.stats().field_builds);
+  state.counters["batch.astar_fallbacks"] =
+      static_cast<double>(scratch.stats().astar_fallbacks);
+  state.counters["batch.path_nodes"] =
+      static_cast<double>(scratch.stats().path_nodes);
+  if (!results.empty()) {
+    record_path_counters(state, results.back());
+  }
+  TESS_PATH_DIAG_RECORD(state);
+}
+
 BENCHMARK(BM_path_weighted_astar_batch_100_shared_sparse_512x512)
     ->Name("path/weighted_astar_batch_100_shared_sparse_512x512");
 BENCHMARK(BM_path_weighted_distance_field_batch_100_shared_sparse_512x512)
@@ -486,5 +535,7 @@ BENCHMARK(
     ->Name(
         "path/"
         "bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512");
+BENCHMARK(BM_path_weighted_batch_planner_100_multigoal_sparse_512x512)
+    ->Name("path/weighted_batch_planner_100_multigoal_sparse_512x512");
 
 }  // namespace
