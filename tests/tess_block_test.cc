@@ -474,6 +474,17 @@ TEST(TessBlock, RuntimeReadOnlyPolicyReturnsConstViewsForMutableWorld) {
       });
 }
 
+TEST(TessBlock, RuntimeInvalidWritePolicyFailsFast) {
+  EXPECT_DEATH(
+      {
+        World<TopDown2D> world;
+        const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{0}};
+        tess::for_each_chunk(world, tess::chunk_domain(keys),
+                             static_cast<tess::WritePolicy>(255), [](auto) {});
+      },
+      ".*");
+}
+
 TEST(TessBlock, ReadOnlyBlockCtxChunkViewsAreConstForMutableWorld) {
   World<TopDown2D> world;
   constexpr auto key = tess::ChunkKey{1};

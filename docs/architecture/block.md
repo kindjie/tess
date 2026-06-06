@@ -63,9 +63,10 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
   for mutable worlds; other current policies invoke `ChunkView<World>`. Because
   the policy is runtime but the callback type is compile-time, callbacks passed
   to this overload must accept the selected policy view type; selecting an
-  incompatible callback/policy pair is a programmer error and fails fast. Prefer
-  `for_each_chunk<Policy>(world, domain, fn)` or `BlockCtx<World, Policy>` when
-  the policy is already known.
+  invalid runtime policy value or incompatible callback/policy pair is a
+  programmer error and fails fast. Prefer
+  `for_each_chunk<Policy>(world, domain, fn)` or `BlockCtx<World, Policy>`
+  when the policy is already known.
 - `ChunkView<World>` exposes the resolved page, metadata, key, chunk
   coordinate, chunk bounds, typed field spans through `ChunkPage`, and
   chunk-local tile helpers.
