@@ -43,6 +43,19 @@ Records meaningful design changes from the original TDDs.
 - Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
   `tests/tess_path_test.cc`
 
+## 2026-06-06 - Path Request Runtime MVP
+
+- Changed: Added a small path request runtime that owns ticketed requests,
+  stable copied result paths, reusable unit A* scratch, the unit route cache,
+  weighted batch scratch, and a caller-managed weighted portal segment cache.
+  Runtime processing supports cached unit paths and many-request weighted batch
+  paths with an explicit world-edit cache clear cadence.
+- Reason: Mainline simulation work needs a testable request/result lifecycle
+  and cache ownership boundary before higher-level scheduling or agent systems.
+- Affected docs: `docs/architecture/path.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/path/path_runtime.h`, `include/tess/tess.h`,
+  `tests/CMakeLists.txt`, `tests/tess_path_runtime_test.cc`
+
 ## 2026-06-06 - Runtime Block Read-Only Enforcement
 
 - Changed: Made the runtime `for_each_chunk(world, domain, policy, fn)`

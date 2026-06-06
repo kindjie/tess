@@ -49,6 +49,16 @@ under `include/tess/path/` and is exported by `tess/tess.h`.
   replace the cache on a memory-budget cadence.
 - `WeightedPathBatchScratch` owns reusable search scratch and stable copied
   result paths for weighted batch planning.
+- `PathRequestRuntime` owns a small deterministic request/result lifecycle for
+  simulation callers. `submit(request)` returns a `PathTicket`, processing
+  methods copy stable result paths into runtime-owned storage, and
+  `result(ticket)` returns the latest result for that submitted request.
+  Tickets remain valid until `clear_requests()` starts a new request set.
+  `clear_requests()` starts a new request set without dropping long-lived
+  caches; `clear_caches()` drops the owned unit route cache and weighted
+  portal segment cache.
+  `PathRuntimeCachePolicy::clear_every_world_change` lets long-lived callers
+  reclaim caller-managed cache storage after repeated world edits.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
   unit-cost deterministic pathfinding over the existing always-resident world
   storage. The passability field is treated as boolean-like.
@@ -76,6 +86,14 @@ under `include/tess/path/` and is exported by `tess/tess.h`.
   scratch)` groups weighted requests by goal, builds bounded weighted fields
   for repeated goals, uses weighted A* for singleton goals, and returns stable
   result spans owned by `WeightedPathBatchScratch`.
+- `PathRequestRuntime::process_unit_cached<World, PassableTag>(world, policy)`
+  processes the current request set through `cached_astar_path`, invalidates
+  the unit route cache when chunk versions change, and returns stable result
+  spans owned by the runtime.
+- `PathRequestRuntime::process_weighted_batch<World, PassableTag, CostTag,
+  MaxCost>(world, policy)` processes the current request set through
+  `weighted_path_batch`, while using the same world-change cadence to clear
+  owned long-lived caches.
 - `cached_astar_path<World, PassableTag>(world, request, scratch, cache)`
   checks the route cache before falling back to `astar_path`.
 - `build_distance_field<World, PassableTag>(world, goal, scratch)` builds a
