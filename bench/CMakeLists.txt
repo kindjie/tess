@@ -4,13 +4,19 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 
 tess_require_google_benchmark()
 
-add_executable(tess_bench tess_bench.cc tess_path_weighted_bench.cc)
+add_executable(
+  tess_bench
+  tess_bench.cc
+  tess_path_agent_bench.cc
+  tess_path_weighted_bench.cc
+)
 target_link_libraries(tess_bench PRIVATE tess::tess benchmark::benchmark_main)
 tess_apply_project_options(tess_bench)
 
 add_executable(
   tess_bench_diagnostics
   tess_bench.cc
+  tess_path_agent_bench.cc
   tess_path_weighted_bench.cc
   tess_diagnostics_alloc_hooks.cc
 )
