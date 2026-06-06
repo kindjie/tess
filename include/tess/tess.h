@@ -9,6 +9,7 @@
 #include <tess/path/path_runtime.h>
 #include <tess/path/portal_route.h>
 #include <tess/path/portal_segment_cache.h>
+#include <tess/sim/path_agent.h>
 #include <tess/storage/chunk_page.h>
 #include <tess/storage/world.h>
 #include <tess/topology/topology.h>
