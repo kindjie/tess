@@ -48,6 +48,37 @@ deferred for scope reasons. Keep entries short and concrete:
 - Follow-up: Add hierarchy/topology when many unique far goals make one field
   per goal too expensive.
 
+## 2026-06-05 - Supplied-Waypoint Portal Route Product
+
+- Area: Weighted room/portal route products.
+- Hypothesis: If topology supplies portal waypoints, stitching exact weighted
+  A* segments through those waypoints should reduce tile search volume while
+  keeping the general weighted A* fallback unchanged.
+- Evidence: Added `WeightedPortalRouteProduct`, build/replay tests, dependency
+  invalidation tests, and room-portal benchmarks. On the 512x512 weighted
+  room-portal case, normal weighted A* runs around 10.8 ms with about 139k
+  expanded nodes. The supplied-waypoint product build runs around 1.0 ms with
+  about 17k expanded nodes, and replay is around 10 ns.
+- Decision: Accepted as a product primitive. It is exact for the supplied
+  waypoint route but not a general optimal portal query.
+- Follow-up: Add a topology-owned portal graph builder that chooses waypoints
+  and proves when the waypoint route is globally optimal or acceptable.
+
+## 2026-06-05 - Chunk-Boundary Portal Route Product
+
+- Area: Weighted room/portal route products.
+- Hypothesis: Deriving waypoints from adjacent chunk-boundary portals should
+  make the topology MVP measurable without requiring callers to supply every
+  portal coordinate.
+- Evidence: Added `build_weighted_chunk_portal_route_product`, unit coverage
+  for automatic boundary selection, and 512x512 weighted room-portal build and
+  replay benchmarks.
+- Decision: Accepted as a minimal topology product. It verifies each segment
+  with weighted A*, but chooses one axis-ordered chunk route and therefore is
+  not a full shortest-path portal graph.
+- Follow-up: Add a persistent graph with alternate chunk/portal routes only
+  after profiling shows this boundary-derived MVP is insufficient.
+
 ## 2026-06-05 - Exact Weighted Route Products
 
 - Area: Route-product dependency support.
