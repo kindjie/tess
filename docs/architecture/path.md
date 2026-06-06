@@ -169,13 +169,14 @@ or room graph; the product verifies each segment with weighted A*, concatenates
 the segment paths, and records chunk-version dependencies. This makes topology
 evidence measurable before the repository owns a full portal graph builder.
 The automatic chunk-boundary builder is a minimal topology MVP: it tries the
-six axis-order permutations, walks from the start chunk to the goal chunk
-through adjacent chunks for each permutation, scans each adjacent chunk
-boundary for passable crossings, chooses the crossing with the lowest
-Manhattan score to the current point and final goal, then keeps the
-lowest-scoring waypoint candidate and verifies every resulting segment with
-weighted A*. It does not search non-Manhattan chunk routes or prove global
-portal optimality.
+six axis-order permutations plus one greedy monotone candidate, walks from the
+start chunk to the goal chunk through adjacent chunks for each candidate,
+scans each adjacent chunk boundary for passable crossings, chooses the
+crossing with the lowest Manhattan score to the current point and final goal,
+then keeps the lowest-scoring waypoint candidate and verifies every resulting
+segment with weighted A*. The greedy candidate can interleave progress axes
+instead of exhausting one axis before the next. The builder still does not
+search non-Manhattan chunk routes or prove global portal optimality.
 
 `WeightedPortalSegmentCache` can reuse previously verified segment paths for
 repeated supplied-waypoint portal builds. Cached hits avoid A* expansion for

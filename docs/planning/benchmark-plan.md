@@ -101,7 +101,8 @@ Compare row-major, Morton, Hilbert if implemented, and workload-specific active/
 - route-product replay and dependency invalidation
 - supplied-waypoint and chunk-boundary portal route products versus weighted A*
 - portal route quality counters, chunk-boundary candidate-selection overhead,
-  and warmed portal segment reuse
+  warmed single-route portal segment reuse, and 100-agent shared portal-leg
+  segment reuse
 - open set comparisons
 - scratch reuse
 
