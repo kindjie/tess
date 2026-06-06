@@ -95,6 +95,7 @@ Compare row-major, Morton, Hilbert if implemented, and workload-specific active/
 - weighted terrain with positive integral entry costs
 - weighted stress cases for sparse blockers, room portals, and mixed batches
 - weighted shared-goal fields versus independent weighted A*
+- local-domain weighted fields for portal-entry batches
 - weighted multi-goal grouped fields versus independent weighted A*
 - bounded weighted field buckets versus general weighted heap fields
 - weighted batch planner policy versus hand-grouped fields
@@ -102,7 +103,7 @@ Compare row-major, Morton, Hilbert if implemented, and workload-specific active/
 - supplied-waypoint and chunk-boundary portal route products versus weighted A*
 - portal route quality counters, chunk-boundary candidate-selection overhead,
   warmed single-route portal segment reuse, and 100-agent shared portal-leg
-  segment reuse
+  segment reuse, with endpoint-segment isolation
 - open set comparisons
 - scratch reuse
 

@@ -511,6 +511,11 @@ class DistanceFieldScratch {
                                             DistanceFieldScratch& scratch)
       -> DistanceFieldResult;
 
+  template <typename World, typename PassableTag, typename CostTag>
+  friend auto build_weighted_distance_field_in_box(
+      const World& world, Coord3 goal, Box3 domain,
+      DistanceFieldScratch& scratch) -> DistanceFieldResult;
+
   template <typename World, typename PassableTag, typename CostTag,
             std::uint32_t MaxCost>
   friend auto build_bounded_weighted_distance_field(

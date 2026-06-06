@@ -42,11 +42,11 @@
   supplied-waypoint, and chunk-boundary portal route-product replay and
   dependency invalidation, chunk-boundary portal candidate counters, warmed
   portal segment-cache reuse, shared-goal distance-field builds and
-  reconstruction, mismatched-field rejection, weighted entry-cost routing,
-  weighted direct and detour fast paths, weighted shared-goal fields, bounded
-  weighted field builds and fallback, weighted batch grouping, endpoint
-  validation, and allocation-free repeated queries with pre-reserved path
-  scratch.
+  reconstruction, local-domain weighted field bounds, mismatched-field
+  rejection, weighted entry-cost routing, weighted direct and detour fast
+  paths, weighted shared-goal fields, bounded weighted field builds and
+  fallback, weighted batch grouping, endpoint validation, and allocation-free
+  repeated queries with pre-reserved path scratch.
 - `tess_diagnostics_default_test`: verifies public diagnostic macros are
   disabled by default and do not evaluate arguments, including generic events.
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate
