@@ -13,6 +13,17 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-05 - Local Topology Foundation
+
+- Changed: Added local chunk topology that labels passable connected regions
+  inside one chunk and records boundary exits to adjacent chunks.
+- Reason: Path products now need topology-owned domains and portal facts before
+  further portal route quality work can be made exact and reusable.
+- Affected docs: `docs/architecture/README.md`,
+  `docs/architecture/topology.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/topology/topology.h`, `include/tess/tess.h`,
+  `tests/tess_topology_test.cc`, `tests/CMakeLists.txt`
+
 ## 2026-06-05 - Portal Route Products
 
 - Changed: Added weighted portal route products that stitch exact weighted A*

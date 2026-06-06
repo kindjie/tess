@@ -10,6 +10,7 @@
 #include <tess/path/portal_segment_cache.h>
 #include <tess/storage/chunk_page.h>
 #include <tess/storage/world.h>
+#include <tess/topology/topology.h>
 
 #define TESS_VERSION_MAJOR 0
 #define TESS_VERSION_MINOR 2
