@@ -33,6 +33,53 @@ deferred for scope reasons. Keep entries short and concrete:
 - Follow-up: Add weighted multi-goal field grouping when weighted workloads
   have a small set of repeated goals.
 
+## 2026-06-05 - Weighted Multi-Goal Field Grouping
+
+- Area: Weighted many-agent pathfinding with a small set of repeated goals.
+- Hypothesis: Building one weighted field per unique goal should still beat
+  independent weighted A* when a batch has several repeated goals.
+- Evidence: Added 100-agent sparse weighted benchmarks with eight unique
+  goals. Independent weighted A* runs around 470-504 ms locally; grouped
+  weighted fields run around 119-133 ms with the same reconstructed paths.
+  The grouped field path still performs one full weighted field build per
+  unique goal, so cost scales with unique goals rather than agents.
+- Decision: Accepted. Group requests by goal and build one weighted field per
+  goal when weighted batches have repeated destinations.
+- Follow-up: Use bounded weighted field construction for small integral costs;
+  use topology or hierarchy for batches with many unique far goals.
+
+## 2026-06-05 - Bounded Weighted Distance-Field Buckets
+
+- Area: Weighted shared-goal field construction for small positive costs.
+- Hypothesis: A Dial-style bucket queue should reduce binary heap traffic when
+  weighted entry costs are bounded small integers.
+- Evidence: Added `build_bounded_weighted_distance_field` and correctness,
+  fallback, allocation, benchmark, and threshold coverage. On the 512x512
+  sparse weighted shared-goal batch, general weighted field construction runs
+  around 15.1 ms while the bounded field runs around 6.3 ms. On the eight-goal
+  grouped sparse batch, general weighted fields run around 118.8 ms while
+  bounded fields run around 46.6 ms.
+- Decision: Accepted for exact bounded-cost weighted field builds. It falls
+  back to the general weighted builder if a reached tile exceeds `MaxCost`.
+- Follow-up: Profile bucket occupancy and modulo-collision churn only if
+  bounded weighted field benchmarks regress or weighted costs grow beyond the
+  current small-cost assumption.
+
+## 2026-06-05 - Explicit Chunk Version Dependencies
+
+- Area: Route-product support.
+- Hypothesis: A small public helper for chunk/version dependencies can support
+  future route products without changing current route-cache semantics.
+- Evidence: Added `ChunkVersionDependencies` with explicit chunk capture,
+  whole-world capture, and validation tests. The helper correctly remains
+  valid across unrelated chunk edits and invalidates when a captured chunk
+  version changes.
+- Decision: Accepted as supporting code only. Current route-cache hits still
+  rely on conservative caller invalidation or whole-world fingerprints.
+- Follow-up: Wire dependencies into cached route products only after the
+  product records enough route/topology evidence to prove reuse remains
+  optimal.
+
 ## 2026-06-05 - Weighted Unit-Cost Direct Fast Path
 
 - Area: Weighted A* common-case latency.

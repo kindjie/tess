@@ -15,13 +15,19 @@ in `include/tess/path/path.h` and is exported by `tess/tess.h`.
   returned path. `reserve_nodes(count)` prepares storage for allocation-free
   repeated queries when capacity is sufficient.
 - `DistanceFieldScratch` owns reusable vectors for reverse shared-goal fields
-  and reconstructed paths.
+  and reconstructed paths. `reserve_nodes(count)` also prepares weighted
+  bucket storage for allocation-free bounded weighted field rebuilds after
+  warmup.
 - `RouteCacheScratch` owns reusable route-cache entries and cached path nodes
   for exact route and same-goal suffix reuse. `invalidate()` drops cached route
   data while preserving hit/miss counters; `clear()` drops routes and resets
   counters. `capture_world_versions(world)` and
   `invalidate_if_world_changed(world)` provide coarse whole-cache invalidation
   from chunk version fingerprints.
+- `ChunkVersionDependencies` records explicit chunk/version pairs and can
+  validate whether those chunks are unchanged. It is supporting infrastructure
+  for future route products; current route-cache hits still use conservative
+  whole-cache invalidation.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
   unit-cost deterministic pathfinding over the existing always-resident world
   storage. The passability field is treated as boolean-like.
@@ -37,6 +43,11 @@ in `include/tess/path/path.h` and is exported by `tess/tess.h`.
 - `build_weighted_distance_field<World, PassableTag, CostTag>(world, goal,
   scratch)` builds a weighted reverse Dijkstra field for positive integral
   entry costs.
+- `build_bounded_weighted_distance_field<World, PassableTag, CostTag,
+  MaxCost>(world, goal, scratch)` builds the same exact weighted reverse field
+  through a bounded bucket queue when all reached entry costs are between 1 and
+  `MaxCost`. If it encounters a higher positive entry cost, it falls back to
+  the general weighted field builder.
 - `weighted_distance_field_path<World, PassableTag, CostTag>(world, start,
   goal, scratch)` reconstructs a weighted start-to-goal path from the most
   recent matching weighted field.
@@ -113,6 +124,12 @@ where `distance(current) == entry_cost(neighbor) + distance(neighbor)`. The
 scratch remembers the field goal and rejects path reconstruction for a
 different goal instead of returning a path to stale field data.
 
+When weighted entry costs are known to be small bounded positive integers,
+`build_bounded_weighted_distance_field` avoids binary heap traffic with a
+Dial-style bucket queue. The result is still exact, because nodes are expanded
+in nondecreasing distance order. The bounded builder is an optimization of
+weighted field construction, not a different path model.
+
 ## Deliberate Limits
 
 This MVP slice does not implement movement classes, topology prechecks, portal
@@ -120,9 +137,9 @@ graphs, sparse residency, reservations, dynamic blockers, async tickets, or
 rich path diagnostics. The implementation uses reusable dense per-tile scratch
 arrays, a two-bucket monotone open set for the current unit-cost Manhattan A*
 fallback, exact route/suffix caches, dense reverse distance fields for
-shared-goal batches, a weighted shared-goal field, and weighted A* for
-positive integral entry costs; it is still an MVP path core, not the final
-topology-aware path system.
+shared-goal batches, weighted shared-goal fields with optional bounded-cost
+bucket construction, and weighted A* for positive integral entry costs; it is
+still an MVP path core, not the final topology-aware path system.
 
 The unit-cost A* API is suitable for individual point-to-point queries and
 regression coverage. Weighted A* is suitable for correctness-first weighted

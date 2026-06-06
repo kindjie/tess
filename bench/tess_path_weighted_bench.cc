@@ -155,6 +155,47 @@ auto make_shared_sparse_requests(WeightedPathScaleWorld& world)
   return requests;
 }
 
+auto make_multigoal_sparse_requests(WeightedPathScaleWorld& world)
+    -> std::array<tess::PathRequest, 100> {
+  constexpr auto goals = std::array{
+      tess::Coord3{510, 510, 0}, tess::Coord3{480, 510, 0},
+      tess::Coord3{510, 480, 0}, tess::Coord3{448, 510, 0},
+      tess::Coord3{510, 448, 0}, tess::Coord3{416, 510, 0},
+      tess::Coord3{510, 416, 0}, tess::Coord3{384, 510, 0},
+  };
+  std::array<tess::PathRequest, 100> requests{};
+  for (const auto goal : goals) {
+    world.template field<PassableTag>(goal) = 1;
+    world.template field<CostTag>(goal) = 1;
+  }
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    const auto start = tess::Coord3{1 + offset % 10, 1 + offset / 10, 0};
+    world.template field<PassableTag>(start) = 1;
+    world.template field<CostTag>(start) = 1;
+    requests[i] = tess::PathRequest{start, goals[i % goals.size()]};
+  }
+  return requests;
+}
+
+template <std::size_t Count>
+[[nodiscard]] auto unique_goal_count(
+    const std::array<tess::PathRequest, Count>& requests) -> std::size_t {
+  std::array<tess::Coord3, Count> goals{};
+  std::size_t count = 0;
+  for (const auto request : requests) {
+    auto found = false;
+    for (std::size_t i = 0; i < count; ++i) {
+      found = found || goals[i] == request.goal;
+    }
+    if (!found) {
+      goals[count] = request.goal;
+      ++count;
+    }
+  }
+  return count;
+}
+
 void BM_path_weighted_astar_batch_100_shared_sparse_512x512(
     benchmark::State& state) {
   WeightedPathScaleWorld world;
@@ -231,9 +272,219 @@ void BM_path_weighted_distance_field_batch_100_shared_sparse_512x512(
   TESS_PATH_DIAG_RECORD(state);
 }
 
+void BM_path_bounded_weighted_distance_field_batch_100_shared_sparse_512x512(
+    benchmark::State& state) {
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+  carve_sparse_blockers(world);
+  const auto requests = make_shared_sparse_requests(world);
+  const auto goal = requests.front().goal;
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_PATH_DIAG_DECL();
+  tess::DistanceFieldResult field;
+  tess::PathResult result;
+  std::uint64_t total_expanded = 0;
+
+  for (auto _ : state) {
+    TESS_PATH_DIAG_RESET();
+    std::uint64_t total_cost = 0;
+    total_expanded = 0;
+    TESS_PATH_DIAG_RUN(
+        field = tess::build_bounded_weighted_distance_field<
+            WeightedPathScaleWorld, PassableTag, CostTag, 7>(world, goal,
+                                                             scratch);
+        for (const auto request : requests) {
+          result = tess::weighted_distance_field_path<WeightedPathScaleWorld,
+                                                      PassableTag, CostTag>(
+              world, request.start, request.goal, scratch);
+          total_cost += result.cost;
+          total_expanded += result.expanded_nodes;
+        });
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+    benchmark::DoNotOptimize(field.expanded_nodes);
+  }
+  record_batch_counters<requests.size()>(state, total_expanded);
+  state.counters["field_expanded_nodes"] =
+      static_cast<double>(field.expanded_nodes);
+  state.counters["field_reached_nodes"] =
+      static_cast<double>(field.reached_nodes);
+  record_path_counters(state, result);
+  TESS_PATH_DIAG_RECORD(state);
+}
+
+void BM_path_weighted_astar_batch_100_multigoal_sparse_512x512(
+    benchmark::State& state) {
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+  carve_sparse_blockers(world);
+  const auto requests = make_multigoal_sparse_requests(world);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_PATH_DIAG_DECL();
+  tess::PathResult result;
+  std::uint64_t total_expanded = 0;
+
+  for (auto _ : state) {
+    TESS_PATH_DIAG_RESET();
+    std::uint64_t total_cost = 0;
+    total_expanded = 0;
+    TESS_PATH_DIAG_RUN(for (const auto request : requests) {
+      result = tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag,
+                                         CostTag>(world, request, scratch);
+      total_cost += result.cost;
+      total_expanded += result.expanded_nodes;
+    });
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+  }
+  record_batch_counters<requests.size()>(state, total_expanded);
+  state.counters["batch.unique_goals"] =
+      static_cast<double>(unique_goal_count(requests));
+  record_path_counters(state, result);
+  TESS_PATH_DIAG_RECORD(state);
+}
+
+void BM_path_weighted_distance_field_batch_100_multigoal_sparse_512x512(
+    benchmark::State& state) {
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+  carve_sparse_blockers(world);
+  const auto requests = make_multigoal_sparse_requests(world);
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_PATH_DIAG_DECL();
+  tess::DistanceFieldResult field;
+  tess::PathResult result;
+  std::uint64_t total_expanded = 0;
+  std::uint64_t total_field_expanded = 0;
+
+  for (auto _ : state) {
+    TESS_PATH_DIAG_RESET();
+    std::uint64_t total_cost = 0;
+    total_expanded = 0;
+    total_field_expanded = 0;
+    TESS_PATH_DIAG_RUN(for (std::size_t i = 0; i < requests.size(); ++i) {
+      auto already_built = false;
+      for (std::size_t j = 0; j < i; ++j) {
+        already_built = already_built || requests[j].goal == requests[i].goal;
+      }
+      if (already_built) {
+        continue;
+      }
+      field = tess::build_weighted_distance_field<WeightedPathScaleWorld,
+                                                  PassableTag, CostTag>(
+          world, requests[i].goal, scratch);
+      total_field_expanded += field.expanded_nodes;
+      for (const auto request : requests) {
+        if (request.goal != requests[i].goal) {
+          continue;
+        }
+        result = tess::weighted_distance_field_path<WeightedPathScaleWorld,
+                                                    PassableTag, CostTag>(
+            world, request.start, request.goal, scratch);
+        total_cost += result.cost;
+        total_expanded += result.expanded_nodes;
+      }
+    });
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+    benchmark::DoNotOptimize(total_field_expanded);
+  }
+  record_batch_counters<requests.size()>(state, total_expanded);
+  state.counters["batch.unique_goals"] =
+      static_cast<double>(unique_goal_count(requests));
+  state.counters["field_expanded_nodes"] =
+      static_cast<double>(total_field_expanded);
+  state.counters["field_reached_nodes"] =
+      static_cast<double>(field.reached_nodes);
+  record_path_counters(state, result);
+  TESS_PATH_DIAG_RECORD(state);
+}
+
+void BM_path_bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512(
+    benchmark::State& state) {
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+  carve_sparse_blockers(world);
+  const auto requests = make_multigoal_sparse_requests(world);
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  TESS_PATH_DIAG_DECL();
+  tess::DistanceFieldResult field;
+  tess::PathResult result;
+  std::uint64_t total_expanded = 0;
+  std::uint64_t total_field_expanded = 0;
+
+  for (auto _ : state) {
+    TESS_PATH_DIAG_RESET();
+    std::uint64_t total_cost = 0;
+    total_expanded = 0;
+    total_field_expanded = 0;
+    TESS_PATH_DIAG_RUN(for (std::size_t i = 0; i < requests.size(); ++i) {
+      auto already_built = false;
+      for (std::size_t j = 0; j < i; ++j) {
+        already_built = already_built || requests[j].goal == requests[i].goal;
+      }
+      if (already_built) {
+        continue;
+      }
+      field =
+          tess::build_bounded_weighted_distance_field<WeightedPathScaleWorld,
+                                                      PassableTag, CostTag, 7>(
+              world, requests[i].goal, scratch);
+      total_field_expanded += field.expanded_nodes;
+      for (const auto request : requests) {
+        if (request.goal != requests[i].goal) {
+          continue;
+        }
+        result = tess::weighted_distance_field_path<WeightedPathScaleWorld,
+                                                    PassableTag, CostTag>(
+            world, request.start, request.goal, scratch);
+        total_cost += result.cost;
+        total_expanded += result.expanded_nodes;
+      }
+    });
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+    benchmark::DoNotOptimize(total_field_expanded);
+  }
+  record_batch_counters<requests.size()>(state, total_expanded);
+  state.counters["batch.unique_goals"] =
+      static_cast<double>(unique_goal_count(requests));
+  state.counters["field_expanded_nodes"] =
+      static_cast<double>(total_field_expanded);
+  state.counters["field_reached_nodes"] =
+      static_cast<double>(field.reached_nodes);
+  record_path_counters(state, result);
+  TESS_PATH_DIAG_RECORD(state);
+}
+
 BENCHMARK(BM_path_weighted_astar_batch_100_shared_sparse_512x512)
     ->Name("path/weighted_astar_batch_100_shared_sparse_512x512");
 BENCHMARK(BM_path_weighted_distance_field_batch_100_shared_sparse_512x512)
     ->Name("path/weighted_distance_field_batch_100_shared_sparse_512x512");
+BENCHMARK(
+    BM_path_bounded_weighted_distance_field_batch_100_shared_sparse_512x512)
+    ->Name(
+        "path/bounded_weighted_distance_field_batch_100_shared_sparse_512x512");
+BENCHMARK(BM_path_weighted_astar_batch_100_multigoal_sparse_512x512)
+    ->Name("path/weighted_astar_batch_100_multigoal_sparse_512x512");
+BENCHMARK(BM_path_weighted_distance_field_batch_100_multigoal_sparse_512x512)
+    ->Name("path/weighted_distance_field_batch_100_multigoal_sparse_512x512");
+BENCHMARK(
+    BM_path_bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512)
+    ->Name(
+        "path/"
+        "bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512");
 
 }  // namespace

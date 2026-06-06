@@ -13,6 +13,20 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-05 - Weighted Multi-Goal and Bounded Field Reuse
+
+- Changed: Added weighted multi-goal batch benchmarks, bounded-cost weighted
+  distance-field construction, explicit chunk-version dependency helpers, and
+  threshold gates for the accepted bounded weighted benchmarks.
+- Reason: Weighted many-agent workloads need exact reuse beyond one shared
+  goal, and small integral terrain costs can avoid binary heap field-building
+  overhead while preserving optimal weighted paths.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/benchmark-plan.md`,
+  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
+  `bench/tess_path_weighted_bench.cc`, `bench/thresholds/path.json`
+
 ## 2026-06-05 - Route Cache Invalidation Hook
 
 - Changed: Added `RouteCacheScratch::invalidate()` to drop cached route data
