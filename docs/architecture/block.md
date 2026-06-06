@@ -58,12 +58,14 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
   `fn(view)` with the policy-selected view type.
 - `for_each_chunk<Policy>(world, domain, fn)` constructs a policy-typed
   context and walks the domain serially without allocation.
-- `for_each_chunk(world, domain, policy, fn)` remains a runtime-policy
-  compatibility overload. It validates the policy enum value but keeps the view
-  type derived from the world argument, because a runtime enum cannot safely
-  change an arbitrary C++ callback parameter type. Use the compile-time
-  overload or `BlockCtx<World, WritePolicy::ReadOnly>` when const views are
-  required for a mutable world.
+- `for_each_chunk(world, domain, policy, fn)` validates and dispatches the
+  runtime policy. `ReadOnly` invokes `fn(view)` with `ChunkView<const World>`
+  for mutable worlds; other current policies invoke `ChunkView<World>`. Because
+  the policy is runtime but the callback type is compile-time, callbacks passed
+  to this overload must accept the selected policy view type; selecting an
+  incompatible callback/policy pair is a programmer error and fails fast. Prefer
+  `for_each_chunk<Policy>(world, domain, fn)` or `BlockCtx<World, Policy>` when
+  the policy is already known.
 - `ChunkView<World>` exposes the resolved page, metadata, key, chunk
   coordinate, chunk bounds, typed field spans through `ChunkPage`, and
   chunk-local tile helpers.

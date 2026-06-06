@@ -29,6 +29,19 @@ Records meaningful design changes from the original TDDs.
   `include/tess/ops/queued.h`, `include/tess/path/portal_segment_cache.h`,
   `tests/tess_path_test.cc`, `tests/tess_topology_test.cc`
 
+## 2026-06-06 - Runtime Block Read-Only Enforcement
+
+- Changed: Made the runtime `for_each_chunk(world, domain, policy, fn)`
+  overload dispatch policy-selected chunk view types, including
+  `ChunkView<const World>` for `ReadOnly` on mutable worlds. Fixed-policy
+  mutable callers now use the compile-time policy overload.
+- Reason: Follow-up review flagged the previous runtime policy argument as a
+  footgun because it accepted `ReadOnly` without enforcing const callback
+  views.
+- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
+- Affected code: `bench/tess_bench.cc`, `include/tess/block/block.h`,
+  `tests/tess_block_test.cc`
+
 ## 2026-06-06 - Review Remediation Gates And API Safety
 
 - Changed: Fixed installed public header coverage, added stricter CI quality

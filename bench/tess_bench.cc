@@ -561,8 +561,8 @@ void BM_block_chunk_tile_iteration(benchmark::State& state) {
 
   for (auto _ : state) {
     std::uint64_t sum = 0;
-    tess::for_each_chunk(
-        world, domain, tess::WritePolicy::UniquePerChunk, [&](auto view) {
+    tess::for_each_chunk<tess::WritePolicy::UniquePerChunk>(
+        world, domain, [&](auto view) {
           auto terrain = view.template field_span<TerrainTag>();
           view.for_each_tile(
               [&](tess::LocalTileId id, tess::LocalCoord3 coord) {
@@ -585,8 +585,8 @@ void BM_block_chunk_boundary_scan(benchmark::State& state) {
     std::uint64_t boundary_count = 0;
     std::uint64_t interior_count = 0;
     std::uint64_t sum = 0;
-    tess::for_each_chunk(
-        world, domain, tess::WritePolicy::UniquePerChunk, [&](auto view) {
+    tess::for_each_chunk<tess::WritePolicy::UniquePerChunk>(
+        world, domain, [&](auto view) {
           auto terrain = view.template field_span<TerrainTag>();
           view.for_each_tile(
               [&](tess::LocalTileId id, tess::LocalCoord3 coord) {
