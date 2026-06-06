@@ -74,6 +74,16 @@ void record_agent_counters(benchmark::State& state,
   state.counters["agents.no_path"] = static_cast<double>(stats.no_path);
 }
 
+void record_tick_counters(benchmark::State& state,
+                          tess::PathAgentTickStats stats) {
+  state.counters["tick"] = static_cast<double>(stats.tick);
+  state.counters["tick.processed_paths"] = stats.processed_paths ? 1.0 : 0.0;
+  state.counters["tick.movement.advanced"] =
+      static_cast<double>(stats.movement.advanced);
+  state.counters["tick.movement.arrived"] =
+      static_cast<double>(stats.movement.arrived);
+}
+
 void record_route_cache_counters(benchmark::State& state,
                                  tess::RouteCacheStats stats) {
   state.counters["cache.entries"] = static_cast<double>(stats.entries);
@@ -113,6 +123,102 @@ void BM_path_agent_runtime_100_unit_suffix_512x512(benchmark::State& state) {
   state.counters["runtime.path_nodes"] = static_cast<double>(stats.path_nodes);
 }
 
+void BM_path_agent_tick_100_unit_clean_512x512(benchmark::State& state) {
+  PathWorld world;
+  fill_passable(world, 1);
+
+  std::array<tess::PathAgentState, 100> agents{};
+  std::array<tess::Coord3, 100> starts{};
+  const auto goal = tess::Coord3{511, 0, 0};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    starts[i] = tess::Coord3{static_cast<std::int64_t>(i), 0, 0};
+    agents[i].position = starts[i];
+    tess::set_path_agent_goal(agents[i], goal);
+  }
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  const auto options = tess::PathAgentTickOptions{.max_steps = 1};
+  (void)tess::tick_unit_path_agents<PathWorld, PassableTag>(
+      tick_state, world, agents, runtime, options);
+
+  tess::PathAgentTickStats tick_stats;
+  for (auto _ : state) {
+    state.PauseTiming();
+    for (std::size_t i = 0; i < agents.size(); ++i) {
+      agents[i].position = starts[i];
+      agents[i].goal = goal;
+      agents[i].path_index = 0;
+      agents[i].status = tess::PathStatus::Found;
+      agents[i].has_goal = true;
+    }
+    state.ResumeTiming();
+
+    tick_stats = tess::tick_unit_path_agents<PathWorld, PassableTag>(
+        tick_state, world, agents, runtime, options);
+    benchmark::DoNotOptimize(tick_stats.tick);
+    benchmark::DoNotOptimize(agents.data());
+  }
+
+  record_tick_counters(state, tick_stats);
+  const auto stats = runtime.stats();
+  record_route_cache_counters(state, stats.route_cache);
+  state.counters["runtime.path_nodes"] = static_cast<double>(stats.path_nodes);
+}
+
+void BM_path_agent_tick_100_unit_dirty_world_edit_512x512(
+    benchmark::State& state) {
+  PathWorld world;
+  fill_passable(world, 1);
+
+  std::array<tess::PathAgentState, 100> agents{};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    agents[i].position = tess::Coord3{offset % 16, offset / 16, 0};
+    tess::set_path_agent_goal(agents[i], tess::Coord3{511, 511, 0});
+  }
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  const auto options = tess::PathAgentTickOptions{
+      .max_steps = 0,
+      .cache_policy =
+          {
+              .clear_every_world_change = 4,
+              .invalidate_unit_route_cache_on_world_change = true,
+          },
+  };
+
+  tess::PathAgentTickStats tick_stats;
+  std::uint64_t edits = 0;
+  for (auto _ : state) {
+    const auto coord =
+        tess::Coord3{256, static_cast<std::int64_t>(edits % 32), 0};
+    const auto passable = edits % 2 == 0;
+    world.template field<PassableTag>(coord) = passable ? 1 : 0;
+    world.mark_dirty(
+        tess::chunk_key<PathScaleShape>(tess::tile_key<PathScaleShape>(coord)),
+        1u, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+    ++edits;
+
+    tess::mark_pathing_dirty(tick_state);
+    tick_stats = tess::tick_unit_path_agents<PathWorld, PassableTag>(
+        tick_state, world, agents, runtime, options);
+    benchmark::DoNotOptimize(tick_stats.pathing.found);
+    benchmark::DoNotOptimize(runtime.results().data());
+  }
+
+  record_tick_counters(state, tick_stats);
+  record_agent_counters(state, tick_stats.pathing);
+  const auto stats = runtime.stats();
+  record_route_cache_counters(state, stats.route_cache);
+  state.counters["runtime.cache_clears"] =
+      static_cast<double>(stats.cache_clears);
+  state.counters["runtime.path_nodes"] = static_cast<double>(stats.path_nodes);
+}
+
 void BM_path_agent_runtime_100_weighted_shared_512x512(
     benchmark::State& state) {
   WeightedPathWorld world;
@@ -145,6 +251,50 @@ void BM_path_agent_runtime_100_weighted_shared_512x512(
   }
 
   record_agent_counters(state, frame_stats);
+  const auto stats = runtime.stats();
+  state.counters["batch.unique_goals"] =
+      static_cast<double>(stats.weighted_batch.unique_goals);
+  state.counters["batch.field_builds"] =
+      static_cast<double>(stats.weighted_batch.field_builds);
+  state.counters["runtime.path_nodes"] = static_cast<double>(stats.path_nodes);
+}
+
+void BM_path_agent_tick_100_weighted_shared_dirty_512x512(
+    benchmark::State& state) {
+  WeightedPathWorld world;
+  fill_passable(world, 1);
+  fill_cost(world, 1);
+  carve_sparse_blockers(world);
+
+  std::array<tess::PathAgentState, 100> agents{};
+  const auto goal = tess::Coord3{510, 510, 0};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    agents[i].position = tess::Coord3{1 + offset % 16, 1 + offset / 16, 0};
+    world.template field<PassableTag>(agents[i].position) = 1;
+    world.template field<CostTag>(agents[i].position) = 1;
+    world.template field<PassableTag>(goal) = 1;
+    world.template field<CostTag>(goal) = 1;
+    tess::set_path_agent_goal(agents[i], goal);
+  }
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  const auto options = tess::PathAgentTickOptions{.max_steps = 0};
+
+  tess::PathAgentTickStats tick_stats;
+  for (auto _ : state) {
+    tess::mark_pathing_dirty(tick_state);
+    tick_stats = tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag,
+                                                 CostTag, 8>(
+        tick_state, world, agents, runtime, options);
+    benchmark::DoNotOptimize(tick_stats.pathing.found);
+    benchmark::DoNotOptimize(runtime.results().data());
+  }
+
+  record_tick_counters(state, tick_stats);
+  record_agent_counters(state, tick_stats.pathing);
   const auto stats = runtime.stats();
   state.counters["batch.unique_goals"] =
       static_cast<double>(stats.weighted_batch.unique_goals);
@@ -240,8 +390,14 @@ void BM_path_agent_runtime_100_unit_world_edit_512x512(
 
 BENCHMARK(BM_path_agent_runtime_100_unit_suffix_512x512)
     ->Name("path/agent_runtime_100_unit_suffix_512x512");
+BENCHMARK(BM_path_agent_tick_100_unit_clean_512x512)
+    ->Name("path/agent_tick_100_unit_clean_512x512");
+BENCHMARK(BM_path_agent_tick_100_unit_dirty_world_edit_512x512)
+    ->Name("path/agent_tick_100_unit_dirty_world_edit_512x512");
 BENCHMARK(BM_path_agent_runtime_100_weighted_shared_512x512)
     ->Name("path/agent_runtime_100_weighted_shared_512x512");
+BENCHMARK(BM_path_agent_tick_100_weighted_shared_dirty_512x512)
+    ->Name("path/agent_tick_100_weighted_shared_dirty_512x512");
 BENCHMARK(BM_path_agent_runtime_100_weighted_mixed_512x512)
     ->Name("path/agent_runtime_100_weighted_mixed_512x512");
 BENCHMARK(BM_path_agent_runtime_100_unit_world_edit_512x512)

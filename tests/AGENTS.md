@@ -65,6 +65,10 @@
   advancement and arrival, conservative reprocessing after world edits,
   invalid/unreachable goal handling, weighted shared-goal processing, and
   allocation-free warm unit and weighted agent batches.
+- `tess_path_agent_tick_test`: verifies the minimal path-agent tick wrapper,
+  including tick advancement, dirty-gated path processing, movement ordering,
+  dirty reprocessing after world edits and goal changes, unreachable goals,
+  weighted shared-goal ticks, and allocation-free warm clean ticks.
 - `tess_diagnostics_default_test`: verifies public diagnostic macros are
   disabled by default and do not evaluate arguments, including generic events.
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate

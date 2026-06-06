@@ -99,6 +99,8 @@ Compare row-major, Morton, Hilbert if implemented, and workload-specific active/
 - weighted multi-goal grouped fields versus independent weighted A*
 - bounded weighted field buckets versus general weighted heap fields
 - weighted batch planner policy versus hand-grouped fields
+- path-agent tick overhead for clean frames, dirty unit replans after world
+  edits, and dirty weighted shared-goal replans
 - route-product replay and dependency invalidation
 - supplied-waypoint and chunk-boundary portal route products versus weighted A*
 - portal route quality counters, chunk-boundary candidate-selection overhead,
