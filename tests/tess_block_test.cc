@@ -150,9 +150,8 @@ TEST(TessBlock, ChunkViewExposesIdentityBoundsPageMetadataAndFields) {
   world.meta(key).entity_count = 12;
   world.chunk(key).template field<TerrainTag>(tess::LocalTileId{3}) = 44;
 
-  tess::for_each_chunk(
-      world, tess::chunk_domain(keys), tess::WritePolicy::UniquePerChunk,
-      [&](auto view) {
+  tess::for_each_chunk<tess::WritePolicy::UniquePerChunk>(
+      world, tess::chunk_domain(keys), [&](auto view) {
         auto terrain = view.template field_span<TerrainTag>();
         static_assert(
             std::is_same_v<decltype(terrain), std::span<std::uint16_t>>);
@@ -433,6 +432,31 @@ TEST(TessBlock, ReadOnlyPolicyReturnsConstViewsForMutableWorld) {
 
   tess::for_each_chunk<tess::WritePolicy::ReadOnly>(
       world, tess::chunk_domain(keys), [&](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        decltype(auto) page = view.page();
+        decltype(auto) meta = view.meta();
+
+        static_assert(
+            std::is_same_v<decltype(terrain), std::span<const std::uint16_t>>);
+        static_assert(
+            std::is_same_v<decltype(page),
+                           const typename World<TopDown2D>::page_type&>);
+        static_assert(std::is_same_v<decltype(meta), const tess::ChunkMeta&>);
+
+        EXPECT_EQ(view.key(), key);
+        EXPECT_EQ(&page, &world.chunk(key));
+        EXPECT_EQ(&meta, &world.meta(key));
+      });
+}
+
+TEST(TessBlock, RuntimeReadOnlyPolicyReturnsConstViewsForMutableWorld) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{1};
+  const auto keys = std::vector<tess::ChunkKey>{key};
+
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::ReadOnly,
+      [&](tess::ChunkView<const World<TopDown2D>> view) {
         auto terrain = view.template field_span<TerrainTag>();
         decltype(auto) page = view.page();
         decltype(auto) meta = view.meta();
@@ -834,13 +858,12 @@ TEST(TessBlock, PrebuiltChunkDomainIterationDoesNotAllocate) {
 
   allocation_count.store(0, std::memory_order_relaxed);
   count_allocations.store(true, std::memory_order_relaxed);
-  tess::for_each_chunk(world, tess::chunk_domain(keys),
-                       tess::WritePolicy::UniquePerChunk, [&](auto view) {
-                         auto terrain = view.template field_span<TerrainTag>();
-                         terrain[0] =
-                             static_cast<std::uint16_t>(view.key().value);
-                         sum += terrain[0] + view.bounds().extent.x;
-                       });
+  tess::for_each_chunk<tess::WritePolicy::UniquePerChunk>(
+      world, tess::chunk_domain(keys), [&](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        terrain[0] = static_cast<std::uint16_t>(view.key().value);
+        sum += terrain[0] + view.bounds().extent.x;
+      });
   count_allocations.store(false, std::memory_order_relaxed);
 
   EXPECT_GT(sum, 0u);
@@ -859,9 +882,8 @@ TEST(TessBlock, NestedChunkAndTileIterationDoesNotAllocate) {
 
   allocation_count.store(0, std::memory_order_relaxed);
   count_allocations.store(true, std::memory_order_relaxed);
-  tess::for_each_chunk(
-      world, tess::chunk_domain(keys), tess::WritePolicy::UniquePerChunk,
-      [&](auto view) {
+  tess::for_each_chunk<tess::WritePolicy::UniquePerChunk>(
+      world, tess::chunk_domain(keys), [&](auto view) {
         auto terrain = view.template field_span<TerrainTag>();
         view.for_each_tile([&](tess::LocalTileId id, tess::LocalCoord3 coord) {
           terrain[id.value] =
@@ -978,9 +1000,8 @@ TEST(TessBlock, NestedBoundaryPredicateIterationDoesNotAllocate) {
 
   allocation_count.store(0, std::memory_order_relaxed);
   count_allocations.store(true, std::memory_order_relaxed);
-  tess::for_each_chunk(
-      world, tess::chunk_domain(keys), tess::WritePolicy::UniquePerChunk,
-      [&](auto view) {
+  tess::for_each_chunk<tess::WritePolicy::UniquePerChunk>(
+      world, tess::chunk_domain(keys), [&](auto view) {
         auto terrain = view.template field_span<TerrainTag>();
         view.for_each_tile([&](tess::LocalTileId id, tess::LocalCoord3 coord) {
           terrain[id.value] =

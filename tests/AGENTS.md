@@ -14,8 +14,9 @@
   access after construction.
 - `tess_block_test`: verifies chunk-domain builders, policy-typed `BlockCtx`
   construction and iteration, serial block iteration, owned domain lifetimes,
-  const-correct chunk views and world access including `ReadOnly` policy
-  enforcement, chunk bounds for 2D vertical and 3D worlds, chunk-local tile
+  const-correct chunk views and world access including compile-time and runtime
+  `ReadOnly` policy enforcement, chunk bounds for 2D vertical and 3D worlds,
+  chunk-local tile
   iteration and coordinate helpers,
   boundary/local-candidate helpers across 2D/3D and degenerate axes, and
   allocation-free iteration for prebuilt domains and contexts, including

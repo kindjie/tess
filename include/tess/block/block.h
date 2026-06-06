@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -475,13 +476,49 @@ constexpr void for_each_chunk(World& world, ChunkDomain domain, Fn&& fn) {
   block_ctx<Policy>(world, domain).for_each_chunk(std::forward<Fn>(fn));
 }
 
+namespace detail {
+
+template <WritePolicy Policy, typename World, typename Fn>
+constexpr void for_each_chunk_policy_view(World& world, ChunkDomain domain,
+                                          Fn&& fn) {
+  using world_type = std::remove_reference_t<World>;
+  using view_world_type =
+      std::conditional_t<Policy == WritePolicy::ReadOnly,
+                         const std::remove_const_t<world_type>, world_type>;
+
+  if constexpr (std::is_invocable_v<Fn&, ChunkView<view_world_type>>) {
+    for (const auto key : domain) {
+      std::invoke(fn, ChunkView<view_world_type>{world, key});
+    }
+  } else {
+    assert(false && "callback cannot accept the selected block policy view");
+    std::abort();
+  }
+}
+
+}  // namespace detail
+
 template <typename World, typename Fn>
 constexpr void for_each_chunk(World& world, ChunkDomain domain,
                               WritePolicy policy, Fn&& fn) {
   assert(is_valid_write_policy(policy));
-  (void)policy;
-  for (const auto key : domain) {
-    std::invoke(fn, ChunkView<World>{world, key});
+  switch (policy) {
+    case WritePolicy::ReadOnly:
+      detail::for_each_chunk_policy_view<WritePolicy::ReadOnly>(
+          world, domain, std::forward<Fn>(fn));
+      return;
+    case WritePolicy::UniquePerTile:
+      detail::for_each_chunk_policy_view<WritePolicy::UniquePerTile>(
+          world, domain, std::forward<Fn>(fn));
+      return;
+    case WritePolicy::UniquePerChunk:
+      detail::for_each_chunk_policy_view<WritePolicy::UniquePerChunk>(
+          world, domain, std::forward<Fn>(fn));
+      return;
+    case WritePolicy::Unsafe:
+      detail::for_each_chunk_policy_view<WritePolicy::Unsafe>(
+          world, domain, std::forward<Fn>(fn));
+      return;
   }
 }
 
