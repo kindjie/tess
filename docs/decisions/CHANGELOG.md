@@ -13,6 +13,20 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-05 - Portal Route Products
+
+- Changed: Added weighted portal route products that stitch exact weighted A*
+  segments through caller-supplied or chunk-boundary-derived portal waypoints,
+  plus room-portal build and replay benchmarks.
+- Reason: The remaining weighted room-portal bottleneck is search volume.
+  Portal waypoints give measurable product primitives before the repository
+  owns a full topology graph builder.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/benchmark-plan.md`,
+  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
+  `bench/tess_bench.cc`, `bench/thresholds/path.json`
+
 ## 2026-06-05 - Weighted Batch Planner and Route Products
 
 - Changed: Added a weighted batch planner API, exact weighted route products
