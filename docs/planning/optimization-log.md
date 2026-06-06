@@ -86,22 +86,25 @@ deferred for scope reasons. Keep entries short and concrete:
   improve route choice without adding meaningful overhead, and warmed segment
   reuse should avoid repeated A* work for stable supplied-waypoint portal
   routes.
-- Evidence: Added six-order chunk-boundary candidate selection, candidate and
-  scan counters, route cost-ratio counters, an isolated candidate-selection
-  benchmark, and a warmed portal segment-cache benchmark. On the 512x512
-  weighted room-portal case, candidate selection scans 5,760 boundary tiles in
-  about 5.6 us. The full chunk-boundary product remains around 1.0 ms with
-  about 17.4k expanded nodes, so segment A* remains the bottleneck. Warmed
-  portal segment-cache rebuilds run around 11.4 us with zero expanded nodes.
-  The current waypoint route costs 1,556 versus a global weighted A* optimum
-  of 1,138, a cost ratio of about 1.37.
+- Evidence: Added six-order chunk-boundary candidate selection, a greedy
+  monotone candidate, candidate and scan counters, route cost-ratio counters,
+  an isolated candidate-selection benchmark, and warmed portal segment-cache
+  benchmarks. On the 512x512 weighted room-portal case, candidate selection
+  scans 7,456 boundary tiles in about 7.4 us. The greedy candidate drops the
+  full chunk-boundary product from around 1.0 ms, 17.4k expanded nodes, and a
+  1.37 route-cost ratio to around 0.72 ms, 12.6k expanded nodes, and a 1.12
+  route-cost ratio. Warmed single-route portal segment-cache rebuilds run
+  around 11.3 us with zero expanded nodes. A 100-agent shared portal-leg batch
+  with exact segment reuse runs around 4.4 ms with about 566 expanded nodes per
+  agent.
 - Decision: Accepted. Candidate selection is cheap enough to keep, and segment
   reuse is useful for repeated stable portal routes. The high cost ratio means
   this is still a product/throughput primitive, not a global optimal portal
   planner.
 - Follow-up: Improve waypoint quality with a real portal graph or weighted
-  portal-edge summaries before optimizing the remaining millisecond of
-  segment A*.
+  portal-edge summaries before optimizing the remaining segment A* cost.
+  Unique start-to-first-portal segments remain the bottleneck in the exact
+  shared-leg cache batch.
 
 ## 2026-06-05 - Exact Weighted Route Products
 

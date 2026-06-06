@@ -3,10 +3,97 @@
 #include <tess/path/path.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 namespace tess {
+
+namespace detail {
+
+template <typename World, typename PassableTag>
+[[nodiscard]] auto build_greedy_chunk_portal_candidate(
+    const World& world, PathRequest request, std::vector<Coord3>& waypoints)
+    -> PortalRouteCandidate {
+  using Shape = typename World::shape_type;
+
+  waypoints.clear();
+  auto current = request.start;
+  auto current_chunk = chunk_coord<Shape>(request.start);
+  const auto goal_chunk = chunk_coord<Shape>(request.goal);
+  auto result = PortalRouteCandidate{true, 0, 0};
+
+  while (current_chunk != goal_chunk) {
+    auto found_step = false;
+    auto best_score = std::numeric_limits<std::uint32_t>::max();
+    auto best_chunk = ChunkCoord3{};
+    auto best_portal = Coord3{};
+
+    const auto consider = [&](ChunkCoord3 next_chunk) {
+      auto portal = Coord3{};
+      auto scan_tiles = std::size_t{0};
+      if (!best_chunk_portal<World, PassableTag>(
+              world, current_chunk, next_chunk, current, request.goal, portal,
+              &scan_tiles)) {
+        result.scan_tiles += scan_tiles;
+        return;
+      }
+      result.scan_tiles += scan_tiles;
+      const auto score = saturating_add(manhattan(current, portal),
+                                        manhattan(portal, request.goal));
+      if (!found_step || score < best_score) {
+        found_step = true;
+        best_score = score;
+        best_chunk = next_chunk;
+        best_portal = portal;
+      }
+    };
+
+    if (current_chunk.x != goal_chunk.x) {
+      auto next = current_chunk;
+      if (current_chunk.x < goal_chunk.x) {
+        ++next.x;
+      } else {
+        --next.x;
+      }
+      consider(next);
+    }
+    if (current_chunk.y != goal_chunk.y) {
+      auto next = current_chunk;
+      if (current_chunk.y < goal_chunk.y) {
+        ++next.y;
+      } else {
+        --next.y;
+      }
+      consider(next);
+    }
+    if (current_chunk.z != goal_chunk.z) {
+      auto next = current_chunk;
+      if (current_chunk.z < goal_chunk.z) {
+        ++next.z;
+      } else {
+        --next.z;
+      }
+      consider(next);
+    }
+
+    if (!found_step) {
+      result.found = false;
+      return result;
+    }
+    result.score =
+        saturating_add(result.score, manhattan(current, best_portal));
+    waypoints.push_back(best_portal);
+    current = best_portal;
+    current_chunk = best_chunk;
+  }
+
+  result.score = saturating_add(result.score, manhattan(current, request.goal));
+  return result;
+}
+
+}  // namespace detail
 
 template <typename World, typename PassableTag, typename CostTag>
 auto build_weighted_chunk_portal_route_product(
@@ -48,6 +135,19 @@ auto build_weighted_chunk_portal_route_product(
       continue;
     }
     if (!found_route || candidate.score < best_score) {
+      found_route = true;
+      best_score = candidate.score;
+      product.best_waypoints_.assign(product.candidate_waypoints_.begin(),
+                                     product.candidate_waypoints_.end());
+    }
+  }
+  {
+    const auto candidate =
+        detail::build_greedy_chunk_portal_candidate<World, PassableTag>(
+            world, request, product.candidate_waypoints_);
+    ++product.route_candidates_;
+    product.portal_scan_tiles_ += candidate.scan_tiles;
+    if (candidate.found && (!found_route || candidate.score < best_score)) {
       found_route = true;
       best_score = candidate.score;
       product.best_waypoints_.assign(product.candidate_waypoints_.begin(),
