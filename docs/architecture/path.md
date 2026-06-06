@@ -1,7 +1,7 @@
 # Path Foundation
 
 The current path layer is a minimal always-resident path foundation. It lives
-in `include/tess/path/path.h` and is exported by `tess/tess.h`.
+under `include/tess/path/` and is exported by `tess/tess.h`.
 
 ## Public Surface
 
@@ -38,7 +38,12 @@ in `include/tess/path/path.h` and is exported by `tess/tess.h`.
   product. It stitches exact weighted A* segments through caller-provided
   portal waypoints, stores the resulting path, and validates chunk versions on
   replay. It also supports an automatic chunk-boundary portal builder for a
-  first topology MVP.
+  first topology MVP, and reports candidate and boundary-scan counters for
+  that automatic builder.
+- `WeightedPortalSegmentCache` owns caller-managed weighted portal segment
+  entries for repeated builds with the same portal waypoints. It has no
+  internal world invalidation; callers clear it when terrain, passability, or
+  movement rules affecting cached segments change.
 - `WeightedPathBatchScratch` owns reusable search scratch and stable copied
   result paths for weighted batch planning.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
@@ -55,10 +60,13 @@ in `include/tess/path/path.h` and is exported by `tess/tess.h`.
 - `build_weighted_portal_route_product<World, PassableTag, CostTag>(world,
   request, waypoints, scratch, product)` builds a supplied-waypoint portal
   route product.
+- `build_weighted_portal_route_product<World, PassableTag, CostTag>(world,
+  request, waypoints, scratch, segment_cache, product)` builds the same
+  supplied-waypoint route product while reusing cached segment results.
 - `build_weighted_chunk_portal_route_product<World, PassableTag, CostTag>(
-  world, request, scratch, product)` derives a simple axis-ordered route
-  through adjacent chunk-boundary portals, then builds the same weighted portal
-  route product.
+  world, request, scratch, product)` derives adjacent chunk-boundary portal
+  route candidates, chooses the lowest-score candidate, then builds the same
+  weighted portal route product.
 - `weighted_portal_route_product_path(world, product)` replays a stored portal
   route product if its chunk dependencies are still valid.
 - `weighted_path_batch<World, PassableTag, CostTag, MaxCost>(world, requests,
@@ -160,12 +168,20 @@ not for arbitrary routing. The caller provides portal waypoints from a topology
 or room graph; the product verifies each segment with weighted A*, concatenates
 the segment paths, and records chunk-version dependencies. This makes topology
 evidence measurable before the repository owns a full portal graph builder.
-The automatic chunk-boundary builder is a minimal topology MVP: it walks from
-the start chunk to the goal chunk in x/y/z order, scans each adjacent chunk
+The automatic chunk-boundary builder is a minimal topology MVP: it tries the
+six axis-order permutations, walks from the start chunk to the goal chunk
+through adjacent chunks for each permutation, scans each adjacent chunk
 boundary for passable crossings, chooses the crossing with the lowest
-Manhattan score to the current point and final goal, then verifies every
-resulting segment with weighted A*. It does not search alternate chunk routes
-or prove global portal optimality.
+Manhattan score to the current point and final goal, then keeps the
+lowest-scoring waypoint candidate and verifies every resulting segment with
+weighted A*. It does not search non-Manhattan chunk routes or prove global
+portal optimality.
+
+`WeightedPortalSegmentCache` can reuse previously verified segment paths for
+repeated supplied-waypoint portal builds. Cached hits avoid A* expansion for
+the segment, but still rebuild the route-product path and dependencies. The
+cache deliberately stays caller-managed so it does not imply stale-route safety
+or region-selective optimality before the topology layer exists.
 
 For many agents sharing a goal, `DistanceFieldScratch` can amortize search
 work. A unit-cost field build visits reachable passable tiles once from the

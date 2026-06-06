@@ -79,6 +79,30 @@ deferred for scope reasons. Keep entries short and concrete:
 - Follow-up: Add a persistent graph with alternate chunk/portal routes only
   after profiling shows this boundary-derived MVP is insufficient.
 
+## 2026-06-05 - Portal Candidate Selection And Segment Reuse
+
+- Area: Weighted room/portal route products.
+- Hypothesis: Comparing a small set of chunk-boundary portal candidates should
+  improve route choice without adding meaningful overhead, and warmed segment
+  reuse should avoid repeated A* work for stable supplied-waypoint portal
+  routes.
+- Evidence: Added six-order chunk-boundary candidate selection, candidate and
+  scan counters, route cost-ratio counters, an isolated candidate-selection
+  benchmark, and a warmed portal segment-cache benchmark. On the 512x512
+  weighted room-portal case, candidate selection scans 5,760 boundary tiles in
+  about 5.6 us. The full chunk-boundary product remains around 1.0 ms with
+  about 17.4k expanded nodes, so segment A* remains the bottleneck. Warmed
+  portal segment-cache rebuilds run around 11.4 us with zero expanded nodes.
+  The current waypoint route costs 1,556 versus a global weighted A* optimum
+  of 1,138, a cost ratio of about 1.37.
+- Decision: Accepted. Candidate selection is cheap enough to keep, and segment
+  reuse is useful for repeated stable portal routes. The high cost ratio means
+  this is still a product/throughput primitive, not a global optimal portal
+  planner.
+- Follow-up: Improve waypoint quality with a real portal graph or weighted
+  portal-edge summaries before optimizing the remaining millisecond of
+  segment A*.
+
 ## 2026-06-05 - Exact Weighted Route Products
 
 - Area: Route-product dependency support.
