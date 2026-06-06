@@ -49,6 +49,61 @@ struct RouteCacheStats {
   std::size_t path_nodes = 0;
 };
 
+class ChunkVersionDependencies {
+ public:
+  struct ChunkVersionDependency {
+    ChunkKey key{};
+    std::uint32_t version = 0;
+  };
+
+  void reserve(std::size_t count) { chunks_.reserve(count); }
+
+  void clear() noexcept { chunks_.clear(); }
+
+  template <typename World>
+  void capture_all(const World& world) {
+    chunks_.clear();
+    chunks_.reserve(static_cast<std::size_t>(World::chunk_count));
+    for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
+      add_chunk(world, ChunkKey{i});
+    }
+  }
+
+  template <typename World>
+  void add_chunk(const World& world, ChunkKey key) {
+    const auto version = world.meta(key).version;
+    for (auto& chunk : chunks_) {
+      if (chunk.key == key) {
+        chunk.version = version;
+        return;
+      }
+    }
+    chunks_.push_back(ChunkVersionDependency{key, version});
+  }
+
+  template <typename World>
+  [[nodiscard]] auto is_valid(const World& world) const noexcept -> bool {
+    for (const auto chunk : chunks_) {
+      if (world.meta(chunk.key).version != chunk.version) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  [[nodiscard]] auto size() const noexcept -> std::size_t {
+    return chunks_.size();
+  }
+
+  [[nodiscard]] auto chunks() const noexcept
+      -> std::span<const ChunkVersionDependency> {
+    return chunks_;
+  }
+
+ private:
+  std::vector<ChunkVersionDependency> chunks_;
+};
+
 class PathScratch {
  public:
   struct OpenNode {
@@ -271,6 +326,10 @@ class DistanceFieldScratch {
   void reserve_nodes(std::size_t node_count) {
     frontier_.reserve(node_count);
     weighted_frontier_.reserve(node_count);
+    weighted_bucket_capacity_ = node_count / 8u + 1u;
+    for (auto& bucket : weighted_buckets_) {
+      bucket.reserve(weighted_bucket_capacity_);
+    }
     generation_.reserve(node_count);
     distance_.reserve(node_count);
     touched_.reserve(node_count);
@@ -296,6 +355,12 @@ class DistanceFieldScratch {
                                             DistanceFieldScratch& scratch)
       -> DistanceFieldResult;
 
+  template <typename World, typename PassableTag, typename CostTag,
+            std::uint32_t MaxCost>
+  friend auto build_bounded_weighted_distance_field(
+      const World& world, Coord3 goal, DistanceFieldScratch& scratch)
+      -> DistanceFieldResult;
+
   template <typename World, typename PassableTag, typename CostTag>
   friend auto weighted_distance_field_path(const World& world, Coord3 start,
                                            Coord3 goal,
@@ -306,6 +371,9 @@ class DistanceFieldScratch {
     advance_epoch();
     frontier_.clear();
     weighted_frontier_.clear();
+    for (auto& bucket : weighted_buckets_) {
+      bucket.clear();
+    }
     touched_.clear();
     path_.clear();
     has_goal_ = false;
@@ -339,6 +407,8 @@ class DistanceFieldScratch {
 
   std::vector<std::uint64_t> frontier_;
   std::vector<PathScratch::OpenNode> weighted_frontier_;
+  std::vector<std::vector<std::uint64_t>> weighted_buckets_;
+  std::size_t weighted_bucket_capacity_ = 0;
   std::vector<std::uint32_t> generation_;
   std::uint32_t epoch_ = 1;
   std::vector<std::uint32_t> distance_;
@@ -1713,6 +1783,137 @@ auto build_weighted_distance_field(const World& world, Coord3 goal,
             std::push_heap(scratch.weighted_frontier_.begin(),
                            scratch.weighted_frontier_.end(),
                            detail::open_node_less);
+            TESS_DIAG_EVENT(path_heap_push);
+          }
+        });
+  }
+
+  return DistanceFieldResult{PathStatus::Found, expanded_nodes,
+                             scratch.touched_.size()};
+}
+
+template <typename World, typename PassableTag, typename CostTag,
+          std::uint32_t MaxCost>
+auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
+                                           DistanceFieldScratch& scratch)
+    -> DistanceFieldResult {
+  static_assert(MaxCost > 0);
+  using Shape = typename World::shape_type;
+  constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
+  constexpr auto bucket_count = static_cast<std::size_t>(MaxCost) + 1u;
+
+  TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
+  scratch.clear_build();
+  if (!contains<Shape>(goal)) {
+    return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
+  }
+  TESS_DIAG_EVENT(path_goal_passability_check);
+  if (!detail::is_passable<World, PassableTag>(world, goal)) {
+    return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
+  }
+
+  const auto goal_index = detail::tile_index<Shape>(goal);
+  if (detail::tile_entry_cost_index<World, CostTag>(world, goal_index) == 0) {
+    return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
+  }
+
+  const auto node_count = detail::tile_count<World>();
+  if (scratch.distance_.size() != node_count) {
+    TESS_DIAG_EVENT(path_initialize);
+    scratch.generation_.assign(node_count, 0);
+    scratch.distance_.assign(node_count, infinite_distance);
+  }
+  if (scratch.weighted_buckets_.size() != bucket_count) {
+    scratch.weighted_buckets_.assign(bucket_count, {});
+    for (auto& bucket : scratch.weighted_buckets_) {
+      bucket.reserve(scratch.weighted_bucket_capacity_);
+    }
+  }
+
+  scratch.goal_ = goal;
+  scratch.has_goal_ = true;
+  scratch.distance_[static_cast<std::size_t>(goal_index)] = 0;
+  scratch.touch_node(goal_index);
+  TESS_DIAG_EVENT(path_touch_node);
+  scratch.weighted_buckets_[0].push_back(goal_index);
+  TESS_DIAG_EVENT(path_heap_push);
+
+  auto active_nodes = std::size_t{1};
+  auto current_distance = std::uint32_t{0};
+  std::size_t expanded_nodes = 0;
+  while (active_nodes > 0) {
+    auto& bucket = scratch.weighted_buckets_[current_distance % bucket_count];
+    if (bucket.empty()) {
+      ++current_distance;
+      continue;
+    }
+
+    const auto current = bucket.back();
+    bucket.pop_back();
+    --active_nodes;
+    TESS_DIAG_EVENT(path_heap_pop);
+
+    const auto current_offset = static_cast<std::size_t>(current);
+    const auto stored_distance =
+        scratch.distance_at(current_offset, infinite_distance);
+    if (stored_distance != current_distance) {
+      if (stored_distance != infinite_distance &&
+          stored_distance > current_distance) {
+        scratch.weighted_buckets_[stored_distance % bucket_count].push_back(
+            current);
+        ++active_nodes;
+      } else {
+        TESS_DIAG_EVENT_VALUE(path_skip_pop, false);
+      }
+      continue;
+    }
+    ++expanded_nodes;
+
+    const auto current_entry_cost =
+        detail::tile_entry_cost_index<World, CostTag>(world, current);
+    if (current_entry_cost == 0) {
+      continue;
+    }
+    if (current_entry_cost > MaxCost) {
+      return build_weighted_distance_field<World, PassableTag, CostTag>(
+          world, goal, scratch);
+    }
+
+    const auto current_coord = detail::tile_coord<Shape>(current);
+    detail::for_each_indexed_axis_neighbor<Shape>(
+        current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
+          TESS_DIAG_EVENT(path_neighbor_candidate);
+          const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
+          TESS_DIAG_EVENT(path_relax_attempt);
+          if (!scratch.is_current(neighbor_offset)) {
+            TESS_DIAG_EVENT(path_passability_check);
+            if (!detail::is_passable_index<World, PassableTag>(
+                    world, neighbor_index)) {
+              TESS_DIAG_EVENT(path_neighbor_blocked);
+              return;
+            }
+            if (detail::tile_entry_cost_index<World, CostTag>(
+                    world, neighbor_index) == 0) {
+              TESS_DIAG_EVENT(path_neighbor_blocked);
+              return;
+            }
+            scratch.distance_[neighbor_offset] = infinite_distance;
+            scratch.touch_node(neighbor_index);
+            TESS_DIAG_EVENT(path_touch_node);
+          }
+
+          const auto next_distance =
+              detail::saturating_add(current_distance, current_entry_cost);
+          if (next_distance == infinite_distance) {
+            return;
+          }
+          if (next_distance <
+              scratch.distance_at(neighbor_offset, infinite_distance)) {
+            TESS_DIAG_EVENT(path_relax_success);
+            scratch.distance_[neighbor_offset] = next_distance;
+            scratch.weighted_buckets_[next_distance % bucket_count].push_back(
+                neighbor_index);
+            ++active_nodes;
             TESS_DIAG_EVENT(path_heap_push);
           }
         });
