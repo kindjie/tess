@@ -32,6 +32,9 @@
   rejection, allocation-free prebuilt planned execution, source-location
   capture, and allocation-free inspection of already-built queue/report/plan
   spans.
+- `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
+  region rejection, boundary exits, invalid chunks, and top-down 2D,
+  vertical 2D, and 3D degenerate-axis behavior.
 - `tess_path_test`: verifies the MVP A* path foundation, including top-down 2D
   paths around blocked tiles, invalid start and goal reporting, no-path
   reporting, direct-path and uniform-cost fast paths across top-down 2D,

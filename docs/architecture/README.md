@@ -28,4 +28,5 @@ Maintained notes for implemented areas:
 - [Storage foundation](storage.md)
 - [Block foundation](block.md)
 - [Queued operations foundation](queued-operations.md)
+- [Topology foundation](topology.md)
 - [Path foundation](path.md)
