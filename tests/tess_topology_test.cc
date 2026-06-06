@@ -136,3 +136,105 @@ TEST(TessTopology, RejectsInvalidChunk) {
   EXPECT_EQ(result.status, tess::TopologyStatus::InvalidChunk);
   EXPECT_TRUE(topology.regions().empty());
 }
+
+TEST(TessTopology, RegionGraphPairsBoundaryExitsAndFindsReachability) {
+  using Shape = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
+  World<Shape> world;
+  fill_passable(world, 1);
+
+  tess::LocalTopologyScratch local_scratch;
+  tess::RegionGraph graph;
+  const auto result = tess::build_region_graph<decltype(world), PassableTag>(
+      world, local_scratch, graph);
+
+  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
+  EXPECT_EQ(result.region_count, 2u);
+  EXPECT_EQ(graph.local_topologies().size(), 2u);
+  EXPECT_EQ(graph.portals().size(), 16u);
+
+  tess::RegionGraphScratch graph_scratch;
+  const auto reachable = tess::reachable<Shape>(
+      graph, tess::Coord3{0, 0, 0}, tess::Coord3{15, 7, 0}, graph_scratch);
+
+  EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Reachable);
+  EXPECT_EQ(reachable.visited_regions, 2u);
+}
+
+TEST(TessTopology, RegionGraphRejectsBlockedSeamReachability) {
+  using Shape = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
+  World<Shape> world;
+  fill_passable(world, 1);
+  for (std::int64_t y = 0; y < 8; ++y) {
+    world.field<PassableTag>(tess::Coord3{8, y, 0}) = 0;
+  }
+
+  tess::LocalTopologyScratch local_scratch;
+  tess::RegionGraph graph;
+  const auto result = tess::build_region_graph<decltype(world), PassableTag>(
+      world, local_scratch, graph);
+
+  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
+  EXPECT_EQ(result.region_count, 2u);
+  EXPECT_EQ(graph.portals().size(), 0u);
+
+  tess::RegionGraphScratch graph_scratch;
+  const auto reachable = tess::reachable<Shape>(
+      graph, tess::Coord3{0, 0, 0}, tess::Coord3{15, 7, 0}, graph_scratch);
+
+  EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Unreachable);
+  EXPECT_EQ(reachable.visited_regions, 1u);
+}
+
+TEST(TessTopology, RegionGraphSupportsVertical2DChunkReachability) {
+  using Shape = tess::Shape<tess::Extent3{1, 8, 16}, tess::Extent3{1, 8, 8}>;
+  World<Shape> world;
+  fill_passable(world, 1);
+
+  tess::LocalTopologyScratch local_scratch;
+  tess::RegionGraph graph;
+  const auto result = tess::build_region_graph<decltype(world), PassableTag>(
+      world, local_scratch, graph);
+
+  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
+  EXPECT_EQ(result.region_count, 2u);
+  EXPECT_EQ(graph.portals().size(), 16u);
+
+  tess::RegionGraphScratch graph_scratch;
+  const auto reachable = tess::reachable<Shape>(
+      graph, tess::Coord3{0, 0, 0}, tess::Coord3{0, 7, 15}, graph_scratch);
+
+  EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Reachable);
+  EXPECT_EQ(reachable.visited_regions, 2u);
+}
+
+TEST(TessTopology, ReachabilityReportsInvalidEndpoints) {
+  using Shape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{8, 8, 1}>;
+  World<Shape> world;
+  fill_passable(world, 1);
+  world.field<PassableTag>(tess::Coord3{7, 7, 0}) = 0;
+
+  tess::LocalTopologyScratch local_scratch;
+  tess::RegionGraph graph;
+  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
+                 world, local_scratch, graph))
+                .status,
+            tess::TopologyStatus::Built);
+
+  tess::RegionGraphScratch graph_scratch;
+  EXPECT_EQ(tess::reachable<Shape>(graph, tess::Coord3{-1, 0, 0},
+                                   tess::Coord3{0, 0, 0}, graph_scratch)
+                .status,
+            tess::ReachabilityStatus::InvalidStart);
+  EXPECT_EQ(tess::reachable<Shape>(graph, tess::Coord3{0, 0, 0},
+                                   tess::Coord3{9, 0, 0}, graph_scratch)
+                .status,
+            tess::ReachabilityStatus::InvalidGoal);
+  EXPECT_EQ(tess::reachable<Shape>(graph, tess::Coord3{7, 7, 0},
+                                   tess::Coord3{0, 0, 0}, graph_scratch)
+                .status,
+            tess::ReachabilityStatus::InvalidStart);
+  EXPECT_EQ(tess::reachable<Shape>(graph, tess::Coord3{0, 0, 0},
+                                   tess::Coord3{7, 7, 0}, graph_scratch)
+                .status,
+            tess::ReachabilityStatus::InvalidGoal);
+}
