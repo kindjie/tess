@@ -66,6 +66,12 @@ Used for editor diagnostics and navigation. Start clangd with
 default developer compilation database in `build/dev`, and `.clang-tidy`
 selects the clang-tidy checks.
 
+The `dev-clang-tidy` preset runs the same checks in CI as an advisory signal.
+It is not currently warnings-as-errors because existing findings include known
+style debt such as redundant `typename` and swappable coordinate parameters.
+Promote this gate only after those findings are either fixed or intentionally
+suppressed.
+
 ## Cppcheck
 
 - Version: `2.20.0`
@@ -81,12 +87,12 @@ are intentionally deferred because early runs mostly report low-signal advice
 for small value types and static member functions in this template-heavy API.
 The preset narrowly suppresses cppcheck `internalError` for
 `include/tess/core/shape.h`, where cppcheck 2.20.0 fails while analyzing
-`ShapeTraits` non-type template parameter constants, and
-`returnDanglingLifetime` for `include/tess/ops/queued.h`, where cppcheck reports
-a false positive for a pointer to an element inside a caller-provided span. It
-also suppresses `syntaxError` for the diagnostics macro test translation units
-because cppcheck misparses GoogleTest `TEST` macros there; those files remain
-covered by normal, warnings-as-errors, and sanitizer builds.
+`ShapeTraits` non-type template parameter constants. The queued-operation
+planner uses an inline `returnDanglingLifetime` suppression where cppcheck
+reports a false positive for a pointer to an element inside a caller-provided
+span. The preset also suppresses `syntaxError` for the diagnostics macro test
+translation units because cppcheck misparses GoogleTest `TEST` macros there;
+those files remain covered by normal, warnings-as-errors, and sanitizer builds.
 
 ## Clang Sanitizers
 
