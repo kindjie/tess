@@ -13,6 +13,20 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-05 - Weighted Batch Planner and Route Products
+
+- Changed: Added a weighted batch planner API, exact weighted route products
+  with chunk-version dependencies, and a narrow blocked-axis weighted detour
+  fast path.
+- Reason: Current weighted reuse needs a public batching surface, route-product
+  dependency wiring needs a concrete exact product primitive, and blocked
+  unit-cost weighted detours can avoid A* without weakening optimality.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/benchmark-plan.md`,
+  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
+  `bench/tess_path_weighted_bench.cc`, `bench/thresholds/path.json`
+
 ## 2026-06-05 - Weighted Multi-Goal and Bounded Field Reuse
 
 - Changed: Added weighted multi-goal batch benchmarks, bounded-cost weighted

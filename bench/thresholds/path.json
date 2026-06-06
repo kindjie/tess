@@ -61,6 +61,10 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 80000000
     },
+    "path/weighted_batch_planner_100_multigoal_sparse_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 80000000
+    },
     "path/astar_wall_gap_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000
