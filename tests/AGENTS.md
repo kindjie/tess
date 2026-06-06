@@ -60,6 +60,11 @@
   reuse and invalidation across world edits, many-agent weighted batch
   processing through shared-goal fields, and caller-configured cache clearing
   after repeated world edits.
+- `tess_path_agent_test`: verifies the public path-agent wrapper, including
+  goal assignment, runtime-backed request/result processing, tile-by-tile
+  advancement and arrival, conservative reprocessing after world edits,
+  invalid/unreachable goal handling, weighted shared-goal processing, and
+  allocation-free warm unit and weighted agent batches.
 - `tess_diagnostics_default_test`: verifies public diagnostic macros are
   disabled by default and do not evaluate arguments, including generic events.
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate

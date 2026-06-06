@@ -13,6 +13,21 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-06 - Path Agent Runtime MVP
+
+- Changed: Added a public path-agent wrapper over `PathRequestRuntime` for
+  goal assignment, ticketed request processing, result application,
+  tile-by-tile advancement, conservative replanning after world edits, and
+  warm allocation-free unit and weighted agent batches.
+- Reason: Mainline implementation needs a testable simulation-facing path loop
+  before adding a scheduler, ECS adapter, reservations, or local avoidance.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/benchmark-plan.md`, `tests/AGENTS.md`
+- Affected code: `bench/CMakeLists.txt`, `bench/tess_path_agent_bench.cc`,
+  `examples/path_agents.cc`, `examples/CMakeLists.txt`,
+  `include/tess/sim/path_agent.h`, `include/tess/tess.h`,
+  `tests/CMakeLists.txt`, `tests/tess_path_agent_test.cc`
+
 ## 2026-06-06 - Follow-Up Review Cache And Coverage Tightening
 
 - Changed: Added chunk-version validation to weighted portal segment cache

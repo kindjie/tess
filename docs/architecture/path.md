@@ -59,6 +59,16 @@ under `include/tess/path/` and is exported by `tess/tess.h`.
   portal segment cache.
   `PathRuntimeCachePolicy::clear_every_world_change` lets long-lived callers
   reclaim caller-managed cache storage after repeated world edits.
+- `PathAgentState` and the path-agent helper functions provide the first
+  simulation-facing path wrapper. Agents store position, goal, path ticket,
+  path index, status, and active-goal state. The helpers submit active agents
+  into a `PathRequestRuntime`, apply ticketed results, and advance agents along
+  returned paths.
+- `process_unit_path_agents<World, PassableTag>(world, agents, runtime,
+  policy)` and `process_weighted_path_agents<World, PassableTag, CostTag,
+  MaxCost>(world, agents, runtime, policy)` run the current conservative
+  synchronous agent pathing loop. They resubmit active agents each processing
+  pass, so stale `PathTicket` values do not survive runtime request clears.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
   unit-cost deterministic pathfinding over the existing always-resident world
   storage. The passability field is treated as boolean-like.

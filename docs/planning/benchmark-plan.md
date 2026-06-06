@@ -268,13 +268,14 @@ one goal, one room cluster to another, 8 common destinations, and mixed
 short/medium/long repeated room routes. Shared-goal distance-field benchmarks
 compare reverse field builds plus path reconstruction against independent A*.
 Route-cache benchmarks compare exact repeated room routes and same-goal suffix
-reuse against independent A*.
-Terrain-cost stress remains pending until the public path API accepts weighted
-cost fields instead of passability only. Most current path benchmarks are
-included in threshold JSON at the 1 ms investigation ceiling; investigated
-batch profiles may carry explicit larger thresholds when the workload contains
-many path requests or the mitigation requires future path data structures,
-route caching, hierarchy, or broader batching support.
+reuse against independent A*. Runtime path-agent benchmarks cover the new
+simulation-facing wrapper with 100-agent unit suffix reuse, weighted shared
+goals, weighted mixed goals, and a world-edit invalidation cadence. Most
+current path benchmarks are included in threshold JSON at the 1 ms
+investigation ceiling; investigated batch profiles may carry explicit larger
+thresholds when the workload contains many path requests or the mitigation
+requires future path data structures, route caching, hierarchy, or broader
+batching support.
 
 Run the current scaffolds with:
 
