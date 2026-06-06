@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -154,6 +155,22 @@ void record_path_counters(benchmark::State& state,
   state.counters["reached_nodes"] = static_cast<double>(result.reached_nodes);
 }
 
+void record_portal_product_counters(
+    benchmark::State& state, const tess::WeightedPortalRouteProduct& product,
+    const tess::PathResult& result, std::uint32_t optimal_cost) {
+  state.counters["portal.waypoints"] =
+      static_cast<double>(product.waypoints().size());
+  state.counters["portal.route_candidates"] =
+      static_cast<double>(product.route_candidates());
+  state.counters["portal.scan_tiles"] =
+      static_cast<double>(product.portal_scan_tiles());
+  state.counters["route.optimal_cost"] = static_cast<double>(optimal_cost);
+  if (optimal_cost != 0) {
+    state.counters["route.cost_ratio"] =
+        static_cast<double>(result.cost) / static_cast<double>(optimal_cost);
+  }
+}
+
 template <std::size_t Count>
 void record_batch_counters(benchmark::State& state,
                            std::uint64_t total_expanded) {
@@ -272,6 +289,11 @@ void BM_path_weighted_portal_product_room_portals_512x512(
       tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{510, 510, 0}};
   const auto waypoints = make_room_portal_waypoints(request);
 
+  tess::PathScratch optimal_scratch;
+  optimal_scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto optimal =
+      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+          world, request, optimal_scratch);
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   tess::WeightedPortalRouteProduct product;
@@ -290,9 +312,8 @@ void BM_path_weighted_portal_product_room_portals_512x512(
     benchmark::DoNotOptimize(cost);
     benchmark::DoNotOptimize(result.path.data());
   }
-  state.counters["portal.waypoints"] =
-      static_cast<double>(product.waypoints().size());
   record_path_counters(state, result);
+  record_portal_product_counters(state, product, result, optimal.cost);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -306,6 +327,11 @@ void BM_path_weighted_portal_product_replay_room_portals_512x512(
       tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{510, 510, 0}};
   const auto waypoints = make_room_portal_waypoints(request);
 
+  tess::PathScratch optimal_scratch;
+  optimal_scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto optimal =
+      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+          world, request, optimal_scratch);
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   tess::WeightedPortalRouteProduct product;
@@ -323,9 +349,8 @@ void BM_path_weighted_portal_product_replay_room_portals_512x512(
     benchmark::DoNotOptimize(cost);
     benchmark::DoNotOptimize(result.path.data());
   }
-  state.counters["portal.waypoints"] =
-      static_cast<double>(product.waypoints().size());
   record_path_counters(state, result);
+  record_portal_product_counters(state, product, result, optimal.cost);
 }
 
 void BM_path_weighted_chunk_portal_product_room_portals_512x512(
@@ -337,6 +362,11 @@ void BM_path_weighted_chunk_portal_product_room_portals_512x512(
   const auto request =
       tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{510, 510, 0}};
 
+  tess::PathScratch optimal_scratch;
+  optimal_scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto optimal =
+      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+          world, request, optimal_scratch);
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   tess::WeightedPortalRouteProduct product;
@@ -355,9 +385,8 @@ void BM_path_weighted_chunk_portal_product_room_portals_512x512(
     benchmark::DoNotOptimize(cost);
     benchmark::DoNotOptimize(result.path.data());
   }
-  state.counters["portal.waypoints"] =
-      static_cast<double>(product.waypoints().size());
   record_path_counters(state, result);
+  record_portal_product_counters(state, product, result, optimal.cost);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -370,6 +399,11 @@ void BM_path_weighted_chunk_portal_product_replay_room_portals_512x512(
   const auto request =
       tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{510, 510, 0}};
 
+  tess::PathScratch optimal_scratch;
+  optimal_scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto optimal =
+      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+          world, request, optimal_scratch);
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   tess::WeightedPortalRouteProduct product;
@@ -387,9 +421,104 @@ void BM_path_weighted_chunk_portal_product_replay_room_portals_512x512(
     benchmark::DoNotOptimize(cost);
     benchmark::DoNotOptimize(result.path.data());
   }
-  state.counters["portal.waypoints"] =
-      static_cast<double>(product.waypoints().size());
   record_path_counters(state, result);
+  record_portal_product_counters(state, product, result, optimal.cost);
+}
+
+void BM_path_weighted_chunk_portal_candidates_room_portals_512x512(
+    benchmark::State& state) {
+  constexpr auto orders = std::array{
+      std::array{tess::detail::Axis::X, tess::detail::Axis::Y,
+                 tess::detail::Axis::Z},
+      std::array{tess::detail::Axis::X, tess::detail::Axis::Z,
+                 tess::detail::Axis::Y},
+      std::array{tess::detail::Axis::Y, tess::detail::Axis::X,
+                 tess::detail::Axis::Z},
+      std::array{tess::detail::Axis::Y, tess::detail::Axis::Z,
+                 tess::detail::Axis::X},
+      std::array{tess::detail::Axis::Z, tess::detail::Axis::X,
+                 tess::detail::Axis::Y},
+      std::array{tess::detail::Axis::Z, tess::detail::Axis::Y,
+                 tess::detail::Axis::X},
+  };
+
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+  carve_room_portals(world);
+  const auto request =
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{510, 510, 0}};
+  std::vector<tess::Coord3> waypoints;
+  waypoints.reserve(32);
+  tess::detail::PortalRouteCandidate candidate;
+
+  for (auto _ : state) {
+    auto best_score = std::numeric_limits<std::uint32_t>::max();
+    auto total_scan_tiles = std::size_t{0};
+    auto total_waypoints = std::size_t{0};
+    for (const auto& order : orders) {
+      candidate =
+          tess::detail::build_chunk_portal_candidate<WeightedPathScaleWorld,
+                                                     PassableTag>(
+              world, request, order, waypoints);
+      total_scan_tiles += candidate.scan_tiles;
+      total_waypoints += waypoints.size();
+      if (candidate.found && candidate.score < best_score) {
+        best_score = candidate.score;
+      }
+    }
+    benchmark::DoNotOptimize(best_score);
+    benchmark::DoNotOptimize(total_scan_tiles);
+    benchmark::DoNotOptimize(total_waypoints);
+  }
+  state.counters["portal.route_candidates"] =
+      static_cast<double>(orders.size());
+  state.counters["portal.scan_tiles"] =
+      static_cast<double>(candidate.scan_tiles * orders.size());
+  state.counters["portal.waypoints"] = static_cast<double>(waypoints.size());
+}
+
+void BM_path_weighted_portal_segment_cache_room_portals_512x512(
+    benchmark::State& state) {
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+  carve_room_portals(world);
+  const auto request =
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{510, 510, 0}};
+  const auto waypoints = make_room_portal_waypoints(request);
+
+  tess::PathScratch optimal_scratch;
+  optimal_scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto optimal =
+      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+          world, request, optimal_scratch);
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  tess::WeightedPortalSegmentCache cache;
+  cache.reserve_segments(waypoints.size() + 1);
+  cache.reserve_path_nodes(2048);
+  tess::WeightedPortalRouteProduct product;
+  product.reserve_waypoints(waypoints.size());
+  product.reserve_path_nodes(2048);
+  product.reserve_dependencies(64);
+  auto result =
+      tess::build_weighted_portal_route_product<WeightedPathScaleWorld,
+                                                PassableTag, CostTag>(
+          world, request, waypoints, scratch, cache, product);
+
+  for (auto _ : state) {
+    result = tess::build_weighted_portal_route_product<WeightedPathScaleWorld,
+                                                       PassableTag, CostTag>(
+        world, request, waypoints, scratch, cache, product);
+    auto cost = result.cost;
+    benchmark::DoNotOptimize(cost);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_path_counters(state, result);
+  record_portal_product_counters(state, product, result, optimal.cost);
+  state.counters["portal.segment_cache_entries"] =
+      static_cast<double>(cache.size());
 }
 
 void BM_path_weighted_astar_batch_100_shared_sparse_512x512(
@@ -721,6 +850,10 @@ BENCHMARK(BM_path_weighted_chunk_portal_product_room_portals_512x512)
     ->Name("path/weighted_chunk_portal_product_room_portals_512x512");
 BENCHMARK(BM_path_weighted_chunk_portal_product_replay_room_portals_512x512)
     ->Name("path/weighted_chunk_portal_product_replay_room_portals_512x512");
+BENCHMARK(BM_path_weighted_chunk_portal_candidates_room_portals_512x512)
+    ->Name("path/weighted_chunk_portal_candidates_room_portals_512x512");
+BENCHMARK(BM_path_weighted_portal_segment_cache_room_portals_512x512)
+    ->Name("path/weighted_portal_segment_cache_room_portals_512x512");
 BENCHMARK(BM_path_weighted_astar_batch_100_shared_sparse_512x512)
     ->Name("path/weighted_astar_batch_100_shared_sparse_512x512");
 BENCHMARK(BM_path_weighted_distance_field_batch_100_shared_sparse_512x512)

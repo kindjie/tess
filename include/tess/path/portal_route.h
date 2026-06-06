@@ -1,0 +1,113 @@
+#pragma once
+
+#include <tess/path/path.h>
+
+#include <array>
+#include <cstdint>
+#include <limits>
+
+namespace tess {
+
+template <typename World, typename PassableTag, typename CostTag>
+auto build_weighted_chunk_portal_route_product(
+    const World& world, PathRequest request, PathScratch& scratch,
+    WeightedPortalRouteProduct& product) -> PathResult {
+  using Shape = typename World::shape_type;
+
+  product.clear();
+  product.request_ = request;
+
+  if (!contains<Shape>(request.start)) {
+    product.status_ = PathStatus::InvalidStart;
+    return PathResult{product.status_, 0, 0, 0, product.path_};
+  }
+  if (!contains<Shape>(request.goal)) {
+    product.status_ = PathStatus::InvalidGoal;
+    return PathResult{product.status_, 0, 0, 0, product.path_};
+  }
+
+  constexpr auto orders = std::array{
+      std::array{detail::Axis::X, detail::Axis::Y, detail::Axis::Z},
+      std::array{detail::Axis::X, detail::Axis::Z, detail::Axis::Y},
+      std::array{detail::Axis::Y, detail::Axis::X, detail::Axis::Z},
+      std::array{detail::Axis::Y, detail::Axis::Z, detail::Axis::X},
+      std::array{detail::Axis::Z, detail::Axis::X, detail::Axis::Y},
+      std::array{detail::Axis::Z, detail::Axis::Y, detail::Axis::X},
+  };
+
+  auto found_route = false;
+  auto best_score = std::numeric_limits<std::uint32_t>::max();
+  product.best_waypoints_.clear();
+  for (const auto& order : orders) {
+    const auto candidate =
+        detail::build_chunk_portal_candidate<World, PassableTag>(
+            world, request, order, product.candidate_waypoints_);
+    ++product.route_candidates_;
+    product.portal_scan_tiles_ += candidate.scan_tiles;
+    if (!candidate.found) {
+      continue;
+    }
+    if (!found_route || candidate.score < best_score) {
+      found_route = true;
+      best_score = candidate.score;
+      product.best_waypoints_.assign(product.candidate_waypoints_.begin(),
+                                     product.candidate_waypoints_.end());
+    }
+  }
+  if (!found_route) {
+    product.status_ = PathStatus::NoPath;
+    return PathResult{product.status_, 0, 0, 0, product.path_};
+  }
+  product.waypoints_.assign(product.best_waypoints_.begin(),
+                            product.best_waypoints_.end());
+
+  auto from = request.start;
+  auto total_cost = std::uint32_t{0};
+  auto total_expanded = std::size_t{0};
+  auto total_reached = std::size_t{0};
+  auto append_segment = [&](PathRequest segment_request) {
+    const auto result = weighted_astar_path<World, PassableTag, CostTag>(
+        world, segment_request, scratch);
+    total_expanded += result.expanded_nodes;
+    total_reached += result.reached_nodes;
+    if (result.status != PathStatus::Found) {
+      product.path_.clear();
+      product.status_ = result.status;
+      product.expanded_nodes_ = total_expanded;
+      product.reached_nodes_ = total_reached;
+      return false;
+    }
+    total_cost = detail::saturating_add(total_cost, result.cost);
+    product.segment_.assign(result.path.begin(), result.path.end());
+    for (std::size_t i = product.path_.empty() ? 0u : 1u;
+         i < product.segment_.size(); ++i) {
+      product.path_.push_back(product.segment_[i]);
+    }
+    return true;
+  };
+
+  for (const auto waypoint : product.waypoints_) {
+    if (!append_segment(PathRequest{from, waypoint})) {
+      return PathResult{product.status_, 0, total_expanded, total_reached,
+                        product.path_};
+    }
+    from = waypoint;
+  }
+  if (!append_segment(PathRequest{from, request.goal})) {
+    return PathResult{product.status_, 0, total_expanded, total_reached,
+                      product.path_};
+  }
+
+  product.status_ = PathStatus::Found;
+  product.cost_ = total_cost;
+  product.expanded_nodes_ = total_expanded;
+  product.reached_nodes_ = total_reached;
+  for (const auto coord : product.path_) {
+    const auto key = tile_key<Shape>(coord);
+    product.dependencies_.add_chunk(world, chunk_key<Shape>(key));
+  }
+  return PathResult{product.status_, product.cost_, product.expanded_nodes_,
+                    product.reached_nodes_, product.path_};
+}
+
+}  // namespace tess
