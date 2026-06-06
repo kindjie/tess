@@ -100,6 +100,8 @@ Compare row-major, Morton, Hilbert if implemented, and workload-specific active/
 - weighted batch planner policy versus hand-grouped fields
 - route-product replay and dependency invalidation
 - supplied-waypoint and chunk-boundary portal route products versus weighted A*
+- portal route quality counters, chunk-boundary candidate-selection overhead,
+  and warmed portal segment reuse
 - open set comparisons
 - scratch reuse
 

@@ -17,15 +17,20 @@ Records meaningful design changes from the original TDDs.
 
 - Changed: Added weighted portal route products that stitch exact weighted A*
   segments through caller-supplied or chunk-boundary-derived portal waypoints,
-  plus room-portal build and replay benchmarks.
+  six-order chunk-boundary candidate selection, warmed portal segment-cache
+  reuse, and room-portal build/replay/candidate/cache benchmarks.
 - Reason: The remaining weighted room-portal bottleneck is search volume.
   Portal waypoints give measurable product primitives before the repository
-  owns a full topology graph builder.
+  owns a full topology graph builder, while candidate and cost-ratio counters
+  keep route quality and selection overhead visible.
 - Affected docs: `docs/architecture/path.md`,
   `docs/planning/benchmark-plan.md`,
   `docs/planning/optimization-log.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
-  `bench/tess_bench.cc`, `bench/thresholds/path.json`
+- Affected code: `include/tess/path/path.h`,
+  `include/tess/path/portal_route.h`,
+  `include/tess/path/portal_segment_cache.h`, `include/tess/tess.h`,
+  `tests/tess_path_test.cc`, `bench/tess_path_weighted_bench.cc`,
+  `bench/thresholds/path.json`
 
 ## 2026-06-05 - Weighted Batch Planner and Route Products
 
