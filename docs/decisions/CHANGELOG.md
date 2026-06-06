@@ -29,6 +29,20 @@ Records meaningful design changes from the original TDDs.
   `include/tess/ops/queued.h`, `include/tess/path/portal_segment_cache.h`,
   `tests/tess_path_test.cc`, `tests/tess_topology_test.cc`
 
+## 2026-06-06 - Follow-Up API Fail-Fast And Cache Retention Contract
+
+- Changed: Made the runtime block `for_each_chunk` overload fail fast for
+  invalid `WritePolicy` values in release builds, and covered the weighted
+  portal segment-cache stale-entry retention plus `clear()` reclamation
+  contract in tests and docs.
+- Reason: Follow-up review identified a release-only silent no-op for invalid
+  runtime write policies and called out the caller-managed memory implications
+  of retained stale segment-cache entries.
+- Affected docs: `docs/architecture/block.md`, `docs/architecture/path.md`,
+  `tests/AGENTS.md`
+- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
+  `tests/tess_path_test.cc`
+
 ## 2026-06-06 - Runtime Block Read-Only Enforcement
 
 - Changed: Made the runtime `for_each_chunk(world, domain, policy, fn)`

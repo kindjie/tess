@@ -520,6 +520,7 @@ constexpr void for_each_chunk(World& world, ChunkDomain domain,
           world, domain, std::forward<Fn>(fn));
       return;
   }
+  std::abort();
 }
 
 }  // namespace tess

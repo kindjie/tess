@@ -44,7 +44,9 @@ under `include/tess/path/` and is exported by `tess/tess.h`.
   entries for repeated builds with the same portal waypoints. Found segments
   record chunk-version dependencies for the chunks touched by the segment path;
   cache hits are reused only while those versions still match. Failed segments
-  are not cached.
+  are not cached. Stale entries remain retained until the caller invokes
+  `clear()`, so long-lived simulations that edit pathing data should clear or
+  replace the cache on a memory-budget cadence.
 - `WeightedPathBatchScratch` owns reusable search scratch and stable copied
   result paths for weighted batch planning.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
@@ -186,9 +188,11 @@ search non-Manhattan chunk routes or prove global portal optimality.
 repeated supplied-waypoint portal builds. Cached hits avoid A* expansion for
 the segment, but still rebuild the route-product path and dependencies.
 Segments carry chunk-version dependencies and stale entries are ignored on
-lookup. The cache deliberately stays caller-managed for retention and memory
-budgeting, and it does not imply region-selective optimality before the
-topology layer exists.
+lookup. Recomputing a stale segment appends the new entry and path storage next
+to the ignored stale entry; `clear()` is the compaction/reclamation boundary.
+The cache deliberately stays caller-managed for retention and memory budgeting,
+and it does not imply region-selective optimality before the topology layer
+exists.
 
 For many agents sharing a goal, `DistanceFieldScratch` can amortize search
 work. A unit-cost field build visits reachable passable tiles once from the
