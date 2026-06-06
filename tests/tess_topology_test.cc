@@ -137,6 +137,25 @@ TEST(TessTopology, RejectsInvalidChunk) {
   EXPECT_TRUE(topology.regions().empty());
 }
 
+TEST(TessTopology, CapturesChunkTopologyVersion) {
+  using Shape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{8, 8, 1}>;
+  World<Shape> world;
+  fill_passable(world, 1);
+  world.mark_topology_dirty(
+      tess::ChunkKey{0}, 1u,
+      tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
+
+  tess::LocalTopologyScratch scratch;
+  tess::LocalChunkTopology topology;
+  const auto result =
+      tess::build_local_chunk_topology<decltype(world), PassableTag>(
+          world, tess::ChunkKey{0}, scratch, topology);
+
+  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
+  EXPECT_EQ(result.version, 1u);
+  EXPECT_EQ(topology.version(), 1u);
+}
+
 TEST(TessTopology, RegionGraphPairsBoundaryExitsAndFindsReachability) {
   using Shape = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
   World<Shape> world;

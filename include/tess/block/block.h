@@ -147,29 +147,66 @@ class ChunkDomain {
   std::span<const ChunkKey> keys_;
 };
 
+class OwnedChunkDomain {
+ public:
+  OwnedChunkDomain() = default;
+
+  explicit OwnedChunkDomain(std::vector<ChunkKey> keys)
+      : keys_(std::move(keys)) {}
+
+  [[nodiscard]] constexpr auto view() const noexcept -> ChunkDomain {
+    return ChunkDomain{keys_};
+  }
+
+  [[nodiscard]] constexpr auto keys() const noexcept
+      -> std::span<const ChunkKey> {
+    return keys_;
+  }
+
+  [[nodiscard]] constexpr auto begin() const noexcept { return keys_.begin(); }
+
+  [[nodiscard]] constexpr auto end() const noexcept { return keys_.end(); }
+
+  [[nodiscard]] constexpr auto size() const noexcept -> std::size_t {
+    return keys_.size();
+  }
+
+  [[nodiscard]] constexpr bool empty() const noexcept { return keys_.empty(); }
+
+ private:
+  std::vector<ChunkKey> keys_;
+};
+
 [[nodiscard]] constexpr auto chunk_domain(
     std::span<const ChunkKey> keys) noexcept -> ChunkDomain {
   return ChunkDomain{keys};
 }
 
+[[nodiscard]] constexpr auto chunk_domain(const OwnedChunkDomain& keys) noexcept
+    -> ChunkDomain {
+  return keys.view();
+}
+
+auto chunk_domain(OwnedChunkDomain&& keys) noexcept -> ChunkDomain = delete;
+
 [[nodiscard]] inline auto explicit_chunk_domain(std::span<const ChunkKey> keys)
-    -> std::vector<ChunkKey> {
+    -> OwnedChunkDomain {
   std::vector<ChunkKey> domain{keys.begin(), keys.end()};
   std::sort(domain.begin(), domain.end(),
             [](ChunkKey lhs, ChunkKey rhs) { return lhs.value < rhs.value; });
-  return domain;
+  return OwnedChunkDomain{std::move(domain)};
 }
 
 template <typename World>
 [[nodiscard]] auto dirty_chunk_domain(const World& world, std::uint32_t flags)
-    -> std::vector<ChunkKey> {
-  return world.dirty_chunks(flags);
+    -> OwnedChunkDomain {
+  return OwnedChunkDomain{world.dirty_chunks(flags)};
 }
 
 template <typename World>
 [[nodiscard]] auto active_chunk_domain(const World& world, std::uint32_t flags)
-    -> std::vector<ChunkKey> {
-  return world.active_chunks(flags);
+    -> OwnedChunkDomain {
+  return OwnedChunkDomain{world.active_chunks(flags)};
 }
 
 template <typename World>
@@ -327,6 +364,9 @@ class BlockCtx {
   using view_world_type =
       std::conditional_t<Policy == WritePolicy::ReadOnly,
                          const std::remove_const_t<world_type>, world_type>;
+  using access_world_type =
+      std::conditional_t<Policy == WritePolicy::ReadOnly,
+                         const std::remove_const_t<world_type>, world_type>;
 
   constexpr BlockCtx(world_type& world, ChunkDomain domain,
                      BlockScratch* scratch = nullptr,
@@ -336,7 +376,7 @@ class BlockCtx {
         scratch_(scratch),
         diagnostics_(diagnostics) {}
 
-  [[nodiscard]] constexpr auto world() const noexcept -> world_type& {
+  [[nodiscard]] constexpr auto world() const noexcept -> access_world_type& {
     return *world_;
   }
 

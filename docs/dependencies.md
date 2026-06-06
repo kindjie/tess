@@ -81,7 +81,12 @@ are intentionally deferred because early runs mostly report low-signal advice
 for small value types and static member functions in this template-heavy API.
 The preset narrowly suppresses cppcheck `internalError` for
 `include/tess/core/shape.h`, where cppcheck 2.20.0 fails while analyzing
-`ShapeTraits` non-type template parameter constants.
+`ShapeTraits` non-type template parameter constants, and
+`returnDanglingLifetime` for `include/tess/ops/queued.h`, where cppcheck reports
+a false positive for a pointer to an element inside a caller-provided span. It
+also suppresses `syntaxError` for the diagnostics macro test translation units
+because cppcheck misparses GoogleTest `TEST` macros there; those files remain
+covered by normal, warnings-as-errors, and sanitizer builds.
 
 ## Clang Sanitizers
 

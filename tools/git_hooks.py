@@ -175,7 +175,9 @@ def check_conflict_markers() -> int:
             continue
         data = staged_bytes(path)
         for line in data.splitlines():
-            if line.startswith((b"<<<<<<< ", b"======= ", b">>>>>>> ")):
+            if line.startswith((b"<<<<<<< ", b">>>>>>> ", b"||||||| ")) or (
+                line == b"======="
+            ):
                 offenders.append(path)
                 break
     if offenders:

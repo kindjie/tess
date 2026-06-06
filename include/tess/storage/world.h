@@ -195,6 +195,19 @@ class World<Shape, Schema, AlwaysResident> {
     ++chunk_meta.version;
   }
 
+  void mark_topology_dirty(ChunkKey key, std::uint32_t flags,
+                           Box3 bounds) noexcept {
+    if (flags == 0) {
+      return;
+    }
+    mark_dirty(key, flags, bounds);
+    ++meta(key).topology_version;
+  }
+
+  void mark_topology_rebuilt(ChunkKey key) noexcept {
+    ++meta(key).topology_version;
+  }
+
   void clear_dirty(ChunkKey key, std::uint32_t flags) noexcept {
     if (flags == 0) {
       return;

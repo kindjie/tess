@@ -80,7 +80,7 @@ enum class ReachabilityStatus : std::uint8_t {
 };
 
 struct ReachabilityResult {
-  ReachabilityStatus status;
+  ReachabilityStatus status = ReachabilityStatus::Unreachable;
   std::size_t visited_regions = 0;
 };
 
