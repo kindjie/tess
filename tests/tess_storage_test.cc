@@ -467,6 +467,22 @@ TEST(TessStorage, WorldDirtyFlagsUnionClearAndIncrementVersion) {
   EXPECT_EQ(world.meta(key).version, 2u);
 }
 
+TEST(TessStorage, WorldTopologyDirtyAdvancesTopologyVersion) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{5};
+  const auto bounds =
+      tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{2, 3, 1}};
+
+  world.mark_topology_dirty(key, DirtyTopology, bounds);
+  EXPECT_EQ(world.meta(key).field_dirty_flags, DirtyTopology);
+  EXPECT_EQ(world.meta(key).version, 1u);
+  EXPECT_EQ(world.meta(key).topology_version, 1u);
+  EXPECT_EQ(world.meta(key).dirty_bounds, bounds);
+
+  world.mark_topology_rebuilt(key);
+  EXPECT_EQ(world.meta(key).topology_version, 2u);
+}
+
 TEST(TessStorage, WorldZeroDirtyMaskDoesNotChangeMetadata) {
   World<TopDown2D> world;
   constexpr auto key = tess::ChunkKey{5};

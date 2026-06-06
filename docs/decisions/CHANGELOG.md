@@ -13,6 +13,25 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-06 - Review Remediation Gates And API Safety
+
+- Changed: Fixed installed public header coverage, added stricter CI quality
+  gates and install smoke coverage, made block read-only context world access
+  const-correct, documented the runtime block dispatch limitation, added owning
+  chunk domains for allocating domain builders, advanced topology versions
+  through explicit world methods, and tightened tooling diagnostics.
+- Reason: A read-only external review identified package install breakage,
+  unexercised quality gates, and API safety gaps that could hide regressions.
+- Affected docs: `docs/architecture/block.md`,
+  `docs/architecture/storage.md`, `docs/dependencies.md`, `tests/AGENTS.md`
+- Affected code: `.github/workflows/ci.yml`, `CMakeLists.txt`,
+  `cmake/TessProjectOptions.cmake`, `include/tess/block/block.h`,
+  `include/tess/core/shape.h`, `include/tess/storage/world.h`,
+  `include/tess/topology/topology.h`, `tests/tess_block_test.cc`,
+  `tests/tess_storage_test.cc`, `tests/tess_topology_test.cc`,
+  `tools/benchmark_trends.py`, `tools/git_hooks.py`,
+  `tools/install_smoke.sh`
+
 ## 2026-06-05 - Local Topology Foundation
 
 - Changed: Added local chunk topology that labels passable connected regions

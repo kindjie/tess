@@ -120,6 +120,9 @@ bounds and increments the chunk version; `clear_dirty` clears selected bits and
 resets bounds when no dirty bits remain. `mark_active` and `clear_active`
 maintain `active_count` and move the chunk between sleeping and active state
 when the active flag set becomes nonzero or empty.
+`mark_topology_dirty` applies dirty metadata and increments both the chunk
+version and topology version. `mark_topology_rebuilt` increments only the
+topology version so topology products can observe rebuild/replacement events.
 
 `dirty_chunks(flags)` and `active_chunks(flags)` return matching `ChunkKey`
 values in key order. These query helpers allocate their returned vectors; they

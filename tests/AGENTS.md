@@ -9,13 +9,14 @@
 - `tess_storage_test`: verifies typed field schemas, resident chunk pages, and
   always-resident dense worlds, including SoA field independence, contiguous
   typed spans, metadata, const access, key/coord lookup, coordinate resolution,
-  checked invalid-coordinate behavior, per-chunk dirty/active metadata,
-  noexcept hot accessors, and allocation-free local field/span/world access
-  after construction.
+  checked invalid-coordinate behavior, per-chunk dirty/active/topology-version
+  metadata, noexcept hot accessors, and allocation-free local field/span/world
+  access after construction.
 - `tess_block_test`: verifies chunk-domain builders, policy-typed `BlockCtx`
-  construction and iteration, serial block iteration, const-correct chunk
-  views including `ReadOnly` policy enforcement, chunk bounds for 2D vertical
-  and 3D worlds, chunk-local tile iteration and coordinate helpers,
+  construction and iteration, serial block iteration, owned domain lifetimes,
+  const-correct chunk views and world access including `ReadOnly` policy
+  enforcement, chunk bounds for 2D vertical and 3D worlds, chunk-local tile
+  iteration and coordinate helpers,
   boundary/local-candidate helpers across 2D/3D and degenerate axes, and
   allocation-free iteration for prebuilt domains and contexts, including
   pre-reserved caller-owned block scratch and explicit scratch-exhaustion

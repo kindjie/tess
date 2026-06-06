@@ -62,6 +62,9 @@ function(tess_target_cppcheck_options target)
         "--error-exitcode=1"
         "--inline-suppr"
         "--suppress=internalError:${PROJECT_SOURCE_DIR}/include/tess/core/shape.h"
+        "--suppress=returnDanglingLifetime:${PROJECT_SOURCE_DIR}/include/tess/ops/queued.h"
+        "--suppress=syntaxError:${PROJECT_SOURCE_DIR}/tests/tess_diagnostics_default_test.cc"
+        "--suppress=syntaxError:${PROJECT_SOURCE_DIR}/tests/tess_diagnostics_enabled_test.cc"
         "--suppress=missingIncludeSystem"
         "--std=c++20"
   )

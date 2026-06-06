@@ -34,6 +34,50 @@ jobs:
       - name: Test
         run: ctest --preset dev
 
+      - name: Install smoke
+        run: tools/install_smoke.sh
+
+  quality:
+    name: Quality Gates (${{ matrix.preset }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        preset:
+          - dev-werror
+          - dev-asan
+          - dev-cppcheck
+          - dev-clang-tidy
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install analysis tools
+        if: matrix.preset == 'dev-cppcheck' || matrix.preset == 'dev-clang-tidy'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy cppcheck
+
+      - name: Show tool versions
+        run: |
+          cmake --version
+          clang++ --version
+          if command -v clang-tidy >/dev/null; then clang-tidy --version; fi
+          if command -v cppcheck >/dev/null; then cppcheck --version; fi
+
+      - name: Configure
+        run: cmake --preset "${{ matrix.preset }}"
+
+      - name: Build
+        run: cmake --build --preset "${{ matrix.preset }}"
+
+      - name: Test
+        if: matrix.preset == 'dev-werror' || matrix.preset == 'dev-asan'
+        run: ctest --preset "${{ matrix.preset }}"
+
   bench:
     name: Benchmark Gates
     runs-on: ubuntu-24.04

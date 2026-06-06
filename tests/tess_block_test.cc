@@ -94,6 +94,21 @@ TEST(TessBlock, ExplicitChunkDomainVisitsRequestedChunksInKeyOrder) {
             }));
 }
 
+TEST(TessBlock, OwnedChunkDomainKeepsReturnedKeysAlive) {
+  World<TopDown2D> world;
+  const auto bounds = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+
+  world.mark_dirty(tess::ChunkKey{7}, DirtyTerrain, bounds);
+  world.mark_dirty(tess::ChunkKey{2}, DirtyTerrain, bounds);
+
+  const auto keys = tess::dirty_chunk_domain(world, DirtyTerrain);
+  EXPECT_EQ(visited_keys(world, tess::chunk_domain(keys)),
+            (std::vector<tess::ChunkKey>{
+                tess::ChunkKey{2},
+                tess::ChunkKey{7},
+            }));
+}
+
 TEST(TessBlock, DirtyChunkDomainVisitsChunksMatchingMask) {
   World<TopDown2D> world;
   const auto bounds = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
@@ -453,6 +468,18 @@ TEST(TessBlock, ReadOnlyBlockCtxChunkViewsAreConstForMutableWorld) {
 
   EXPECT_EQ(&page, &world.chunk(key));
   EXPECT_EQ(&meta, &world.meta(key));
+}
+
+TEST(TessBlock, ReadOnlyBlockCtxWorldAccessIsConstForMutableWorld) {
+  World<TopDown2D> world;
+  const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{1}};
+  const auto ctx = tess::block_ctx<tess::WritePolicy::ReadOnly>(
+      world, tess::chunk_domain(keys));
+  decltype(auto) exposed_world = ctx.world();
+
+  static_assert(
+      std::is_same_v<decltype(exposed_world), const World<TopDown2D>&>);
+  EXPECT_EQ(&exposed_world, &world);
 }
 
 TEST(TessBlock, MutableWritePoliciesReturnMutableViews) {
