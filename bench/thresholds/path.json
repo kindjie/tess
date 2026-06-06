@@ -45,6 +45,22 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 25000000
     },
+    "path/bounded_weighted_distance_field_batch_100_shared_sparse_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 12000000
+    },
+    "path/weighted_astar_batch_100_multigoal_sparse_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 600000000
+    },
+    "path/weighted_distance_field_batch_100_multigoal_sparse_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 160000000
+    },
+    "path/bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 80000000
+    },
     "path/astar_wall_gap_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000

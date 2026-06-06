@@ -37,10 +37,12 @@
   reporting, direct-path and uniform-cost fast paths across top-down 2D,
   vertical 2D, and 3D layouts, coordinate support, exact route-cache and
   same-goal suffix reuse, explicit cache clearing, invalidation, and
-  world-version invalidation, shared-goal distance-field builds and
-  reconstruction, mismatched-field rejection, weighted entry-cost routing,
-  weighted direct fast paths, weighted shared-goal fields, endpoint validation,
-  and allocation-free repeated queries with pre-reserved path scratch.
+  world-version invalidation, explicit chunk-version dependency tracking,
+  shared-goal distance-field builds and reconstruction, mismatched-field
+  rejection, weighted entry-cost routing, weighted direct fast paths, weighted
+  shared-goal fields, bounded weighted field builds and fallback, endpoint
+  validation, and allocation-free repeated queries with pre-reserved path
+  scratch.
 - `tess_diagnostics_default_test`: verifies public diagnostic macros are
   disabled by default and do not evaluate arguments, including generic events.
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate

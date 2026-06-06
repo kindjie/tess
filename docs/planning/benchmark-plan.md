@@ -95,6 +95,8 @@ Compare row-major, Morton, Hilbert if implemented, and workload-specific active/
 - weighted terrain with positive integral entry costs
 - weighted stress cases for sparse blockers, room portals, and mixed batches
 - weighted shared-goal fields versus independent weighted A*
+- weighted multi-goal grouped fields versus independent weighted A*
+- bounded weighted field buckets versus general weighted heap fields
 - open set comparisons
 - scratch reuse
 
