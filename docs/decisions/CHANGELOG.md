@@ -16,7 +16,9 @@ Records meaningful design changes from the original TDDs.
 ## 2026-06-05 - Local Topology Foundation
 
 - Changed: Added local chunk topology that labels passable connected regions
-  inside one chunk and records boundary exits to adjacent chunks.
+  inside one chunk, records boundary exits to adjacent chunks, pairs boundary
+  exits into directed portals, and checks reachability over the resulting
+  region graph.
 - Reason: Path products now need topology-owned domains and portal facts before
   further portal route quality work can be made exact and reusable.
 - Affected docs: `docs/architecture/README.md`,
