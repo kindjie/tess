@@ -69,6 +69,15 @@ under `include/tess/path/` and is exported by `tess/tess.h`.
   MaxCost>(world, agents, runtime, policy)` run the current conservative
   synchronous agent pathing loop. They resubmit active agents each processing
   pass, so stale `PathTicket` values do not survive runtime request clears.
+- `SimClock`, `PathAgentTickState`, `PathAgentTickOptions`, and
+  `PathAgentTickStats` provide the first minimal path-agent tick wrapper.
+  `tick_unit_path_agents<World, PassableTag>(state, world, agents, runtime,
+  options)` and `tick_weighted_path_agents<World, PassableTag, CostTag,
+  MaxCost>(state, world, agents, runtime, options)` advance the clock,
+  process paths only when `state.pathing_dirty` is set, then move agents up to
+  `options.max_steps` path nodes. `mark_pathing_dirty(state)` and the
+  tick-state `set_path_agent_goal(state, agent, goal)` overload are the public
+  hooks for scheduling conservative replans after world or goal changes.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
   unit-cost deterministic pathfinding over the existing always-resident world
   storage. The passability field is treated as boolean-like.
@@ -248,11 +257,19 @@ singleton goals use normal weighted A*. Returned paths are copied into batch
 scratch so all result spans remain valid until the next batch call or scratch
 clear.
 
+The path-agent tick wrapper is intentionally small and synchronous. It does not
+own a scheduler backend, cadence table, event queue, or ECS adapter. It only
+centralizes the common simulation order for the current path-agent MVP: advance
+the simulation tick, optionally rebuild active paths after a dirty event, then
+move agents along stable runtime-owned result paths.
+
 ## Deliberate Limits
 
 This MVP slice does not implement movement classes, topology prechecks, portal
 graphs, sparse residency, reservations, dynamic blockers, async tickets, or
-rich path diagnostics. The implementation uses reusable dense per-tile scratch
+rich path diagnostics. It also does not automatically infer all dirty causes;
+callers must mark the path-agent tick state dirty when world movement data or
+agent goals change. The implementation uses reusable dense per-tile scratch
 arrays, a two-bucket monotone open set for the current unit-cost Manhattan A*
 fallback, exact route/suffix caches, dense reverse distance fields for
 shared-goal batches, weighted shared-goal fields with optional bounded-cost
