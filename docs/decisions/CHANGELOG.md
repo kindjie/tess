@@ -24,6 +24,20 @@ Records meaningful design changes from the original TDDs.
   `docs/planning/optimization-log.md`, `tests/AGENTS.md`
 - Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`
 
+## 2026-06-05 - Weighted Path Reuse and Fast Path
+
+- Changed: Added weighted shared-goal distance fields, an exact weighted
+  unit-cost direct fast path, opt-in route-cache world-version fingerprints,
+  and weighted shared-goal path benchmarks.
+- Reason: Weighted terrain must remain correct, but repeated weighted
+  point-to-point A* is too slow for many-agent shared-goal workloads and
+  unit-cost maps should not pay the general weighted heap cost.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
+  `bench/CMakeLists.txt`, `bench/tess_path_weighted_bench.cc`,
+  `bench/thresholds/path.json`
+
 ## 2026-06-05 - Weighted A* Stress Diagnostics
 
 - Changed: Added weighted sparse-blocker, room-portal, and mixed-batch path

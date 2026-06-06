@@ -14,6 +14,70 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-06-05 - Weighted Shared-Goal Distance Field
+
+- Area: Weighted many-agent shared-goal pathfinding.
+- Hypothesis: Reverse Dijkstra over positive entry costs should amortize
+  weighted pathfinding for many starts sharing one goal, similar to the
+  unit-cost distance-field win.
+- Evidence: Added `build_weighted_distance_field` and
+  `weighted_distance_field_path`, plus correctness and allocation tests against
+  weighted A*. On the 512x512 weighted sparse shared-goal batch,
+  independent weighted A* runs around 236-238 ms for 100 agents, while the
+  weighted field batch runs around 15.5 ms. Diagnostics drop from about
+  10.3M neighbor candidates, 5.0M passability checks, and 4.0M heap pushes to
+  about 859k neighbor candidates, 367k passability checks, and 243k heap
+  pushes.
+- Decision: Accepted. Weighted shared-goal fields are the first choice for
+  weighted batches with substantial goal reuse.
+- Follow-up: Add weighted multi-goal field grouping when weighted workloads
+  have a small set of repeated goals.
+
+## 2026-06-05 - Weighted Unit-Cost Direct Fast Path
+
+- Area: Weighted A* common-case latency.
+- Hypothesis: If a direct Manhattan route is passable and every entered tile
+  has entry cost 1, returning it is optimal because no positive-cost
+  axis-adjacent path can beat Manhattan distance.
+- Evidence: `path/weighted_astar_open_512x512` dropped from about 60 us to
+  about 2.9 us. Expensive-axis and weighted obstacle cases still fall back to
+  general weighted A* and keep their previous behavior.
+- Decision: Accepted. This protects unit-cost maps using the weighted API
+  without weakening the general weighted optimality path.
+- Follow-up: Consider exact weighted detour or gap fast paths only when the
+  optimality proof is as local and cheap as the direct unit-cost proof.
+
+## 2026-06-05 - Route Cache World-Version Fingerprint
+
+- Area: Route-cache dependency support.
+- Hypothesis: A coarse whole-world chunk-version fingerprint gives callers a
+  correct invalidation hook without pretending region-selective route
+  validation is solved.
+- Evidence: Added `capture_world_versions(world)` and
+  `invalidate_if_world_changed(world)` on `RouteCacheScratch`. Unit coverage
+  verifies that a chunk version change drops cached route entries while
+  preserving hit/miss counters.
+- Decision: Accepted as conservative support. It is opt-in and does not change
+  existing route-cache hit behavior.
+- Follow-up: Replace whole-world fingerprints with explicit route-product
+  chunk dependencies only after topology/portal products are designed.
+
+## 2026-06-05 - Weighted Portal Topology
+
+- Area: Weighted room/portal single-query performance.
+- Hypothesis: The weighted room-portal case needs a graph or portal product
+  rather than more local A* bookkeeping.
+- Evidence: The weighted room-portal single path remains around 11 ms and is
+  dominated by search volume. The accepted weighted field helps shared-goal
+  batches, but a single weighted route through many rooms still expands a
+  large tile search.
+- Decision: Deferred. Implementing weighted portal topology would add the
+  extra data structures that are intentionally outside the current A* and
+  supporting-code scope.
+- Follow-up: Design chunk/room portal products with weighted edge summaries,
+  movement class keys, and version dependencies before adding a topology-aware
+  weighted query.
+
 ## 2026-06-05 - Weighted A* Stress Profiling
 
 - Area: Weighted A* benchmarks and diagnostics.
