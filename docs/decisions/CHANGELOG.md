@@ -28,6 +28,22 @@ Records meaningful design changes from the original TDDs.
   `include/tess/sim/path_agent.h`, `include/tess/tess.h`,
   `tests/CMakeLists.txt`, `tests/tess_path_agent_test.cc`
 
+## 2026-06-06 - Path Agent Tick MVP
+
+- Changed: Added a minimal synchronous path-agent tick wrapper with a
+  simulation clock, dirty-gated path processing, per-tick movement advancement,
+  a tick-state goal-assignment helper, focused tests, example coverage, and
+  clean/dirty tick benchmarks.
+- Reason: Mainline implementation needs a testable scheduler-adjacent path loop
+  before adding cadence policies, ECS adapters, reservations, local avoidance,
+  or async planning.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/benchmark-plan.md`, `tests/AGENTS.md`
+- Affected code: `bench/tess_path_agent_bench.cc`,
+  `examples/path_agents.cc`, `include/tess/sim/path_agent_tick.h`,
+  `include/tess/tess.h`, `tests/CMakeLists.txt`,
+  `tests/tess_path_agent_tick_test.cc`
+
 ## 2026-06-06 - Follow-Up Review Cache And Coverage Tightening
 
 - Changed: Added chunk-version validation to weighted portal segment cache
