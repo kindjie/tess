@@ -933,7 +933,7 @@ TEST(TessPath, WeightedChunkPortalRouteProductFindsChunkBoundaryPortal) {
   EXPECT_EQ(product_path.path.back(), request.goal);
   ASSERT_EQ(product.waypoints().size(), 1u);
   EXPECT_EQ(product.waypoints().front(), (tess::Coord3{4, 3, 0}));
-  EXPECT_EQ(product.route_candidates(), 6u);
+  EXPECT_EQ(product.route_candidates(), 7u);
   EXPECT_GT(product.portal_scan_tiles(), 0u);
 }
 

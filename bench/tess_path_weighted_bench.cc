@@ -467,14 +467,21 @@ void BM_path_weighted_chunk_portal_candidates_room_portals_512x512(
         best_score = candidate.score;
       }
     }
+    candidate = tess::detail::build_greedy_chunk_portal_candidate<
+        WeightedPathScaleWorld, PassableTag>(world, request, waypoints);
+    total_scan_tiles += candidate.scan_tiles;
+    total_waypoints += waypoints.size();
+    if (candidate.found && candidate.score < best_score) {
+      best_score = candidate.score;
+    }
     benchmark::DoNotOptimize(best_score);
     benchmark::DoNotOptimize(total_scan_tiles);
     benchmark::DoNotOptimize(total_waypoints);
   }
   state.counters["portal.route_candidates"] =
-      static_cast<double>(orders.size());
+      static_cast<double>(orders.size() + 1u);
   state.counters["portal.scan_tiles"] =
-      static_cast<double>(candidate.scan_tiles * orders.size());
+      static_cast<double>((30u * 32u * orders.size()) + candidate.scan_tiles);
   state.counters["portal.waypoints"] = static_cast<double>(waypoints.size());
 }
 
@@ -519,6 +526,59 @@ void BM_path_weighted_portal_segment_cache_room_portals_512x512(
   record_portal_product_counters(state, product, result, optimal.cost);
   state.counters["portal.segment_cache_entries"] =
       static_cast<double>(cache.size());
+}
+
+void BM_path_weighted_portal_segment_cache_batch_100_room_portals_512x512(
+    benchmark::State& state) {
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+  carve_room_portals(world);
+
+  constexpr auto count = std::size_t{100};
+  auto requests = std::array<tess::PathRequest, count>{};
+  const auto goal = tess::Coord3{510, 510, 0};
+  for (std::size_t i = 0; i < count; ++i) {
+    requests[i] = tess::PathRequest{
+        tess::Coord3{1 + static_cast<std::int64_t>(i % 10u),
+                     1 + static_cast<std::int64_t>(i / 10u), 0},
+        goal};
+  }
+  const auto waypoints = make_room_portal_waypoints(requests.front());
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  tess::WeightedPortalSegmentCache cache;
+  cache.reserve_segments((waypoints.size() + 1u) * count);
+  cache.reserve_path_nodes(4096 + count * 96u);
+  tess::WeightedPortalRouteProduct product;
+  product.reserve_waypoints(waypoints.size());
+  product.reserve_path_nodes(2048);
+  product.reserve_dependencies(64);
+  tess::PathResult result;
+  std::uint64_t total_expanded = 0;
+  std::uint64_t total_cost = 0;
+
+  for (auto _ : state) {
+    cache.clear();
+    total_expanded = 0;
+    total_cost = 0;
+    for (const auto request : requests) {
+      result = tess::build_weighted_portal_route_product<WeightedPathScaleWorld,
+                                                         PassableTag, CostTag>(
+          world, request, waypoints, scratch, cache, product);
+      total_expanded += result.expanded_nodes;
+      total_cost += result.cost;
+    }
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  record_batch_counters<count>(state, total_expanded);
+  record_path_counters(state, result);
+  state.counters["portal.segment_cache_entries"] =
+      static_cast<double>(cache.size());
+  state.counters["portal.waypoints"] = static_cast<double>(waypoints.size());
 }
 
 void BM_path_weighted_astar_batch_100_shared_sparse_512x512(
@@ -854,6 +914,8 @@ BENCHMARK(BM_path_weighted_chunk_portal_candidates_room_portals_512x512)
     ->Name("path/weighted_chunk_portal_candidates_room_portals_512x512");
 BENCHMARK(BM_path_weighted_portal_segment_cache_room_portals_512x512)
     ->Name("path/weighted_portal_segment_cache_room_portals_512x512");
+BENCHMARK(BM_path_weighted_portal_segment_cache_batch_100_room_portals_512x512)
+    ->Name("path/weighted_portal_segment_cache_batch_100_room_portals_512x512");
 BENCHMARK(BM_path_weighted_astar_batch_100_shared_sparse_512x512)
     ->Name("path/weighted_astar_batch_100_shared_sparse_512x512");
 BENCHMARK(BM_path_weighted_distance_field_batch_100_shared_sparse_512x512)

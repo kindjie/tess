@@ -17,8 +17,9 @@ Records meaningful design changes from the original TDDs.
 
 - Changed: Added weighted portal route products that stitch exact weighted A*
   segments through caller-supplied or chunk-boundary-derived portal waypoints,
-  six-order chunk-boundary candidate selection, warmed portal segment-cache
-  reuse, and room-portal build/replay/candidate/cache benchmarks.
+  six-order plus greedy chunk-boundary candidate selection, warmed
+  portal-segment reuse, and room-portal build/replay/candidate/cache
+  benchmarks.
 - Reason: The remaining weighted room-portal bottleneck is search volume.
   Portal waypoints give measurable product primitives before the repository
   owns a full topology graph builder, while candidate and cost-ratio counters
