@@ -15,8 +15,8 @@
 - `tess_block_test`: verifies chunk-domain builders, policy-typed `BlockCtx`
   construction and iteration, serial block iteration, owned domain lifetimes,
   const-correct chunk views and world access including compile-time and runtime
-  `ReadOnly` policy enforcement, chunk bounds for 2D vertical and 3D worlds,
-  chunk-local tile
+  `ReadOnly` policy enforcement, runtime invalid write-policy fail-fast
+  behavior, chunk bounds for 2D vertical and 3D worlds, chunk-local tile
   iteration and coordinate helpers,
   boundary/local-candidate helpers across 2D/3D and degenerate axes, and
   allocation-free iteration for prebuilt domains and contexts, including
@@ -48,8 +48,8 @@
   exact weighted route-product replay and dependency invalidation, shared-goal,
   supplied-waypoint, and chunk-boundary portal route-product replay and
   dependency invalidation, chunk-boundary portal candidate counters, warmed
-  portal segment-cache reuse, stale segment rejection, failed-segment cache
-  bypass, shared-goal distance-field builds and
+  portal segment-cache reuse, stale segment rejection and caller-managed clear,
+  failed-segment cache bypass, shared-goal distance-field builds and
   reconstruction, local-domain weighted field bounds, mismatched-field
   rejection, weighted entry-cost routing, weighted direct and detour fast
   paths, weighted shared-goal fields, bounded weighted field builds and

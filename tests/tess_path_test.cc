@@ -998,6 +998,7 @@ TEST(TessPath, WeightedPortalSegmentCacheRejectsStaleSegments) {
                                                 CostTag>(
           world, request, waypoints, scratch, cache, product);
   ASSERT_EQ(first.status, tess::PathStatus::Found);
+  EXPECT_EQ(cache.size(), 2u);
 
   world.template field<CostTag>(tess::Coord3{3, 0, 0}) = 9;
   world.mark_dirty(tess::ChunkKey{0}, 1u,
@@ -1013,6 +1014,10 @@ TEST(TessPath, WeightedPortalSegmentCacheRejectsStaleSegments) {
   EXPECT_EQ(second.cost, 15u);
   EXPECT_EQ(second.path.front(), request.start);
   EXPECT_EQ(second.path.back(), request.goal);
+  EXPECT_EQ(cache.size(), 4u);
+
+  cache.clear();
+  EXPECT_EQ(cache.size(), 0u);
 }
 
 TEST(TessPath, WeightedPortalSegmentCacheDoesNotStoreFailedSegments) {
