@@ -34,6 +34,11 @@ in `include/tess/path/path.h` and is exported by `tess/tess.h`.
 - `WeightedRouteProduct` stores one verified weighted route plus the chunk
   versions touched by that route. Replaying it succeeds only while those chunk
   versions are unchanged.
+- `WeightedPortalRouteProduct` stores a supplied-waypoint weighted route
+  product. It stitches exact weighted A* segments through caller-provided
+  portal waypoints, stores the resulting path, and validates chunk versions on
+  replay. It also supports an automatic chunk-boundary portal builder for a
+  first topology MVP.
 - `WeightedPathBatchScratch` owns reusable search scratch and stable copied
   result paths for weighted batch planning.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
@@ -46,6 +51,15 @@ in `include/tess/path/path.h` and is exported by `tess/tess.h`.
 - `build_weighted_route_product<World, PassableTag, CostTag>(world, request,
   scratch, product)` builds and stores a weighted route product.
 - `weighted_route_product_path(world, product)` replays a stored weighted
+  route product if its chunk dependencies are still valid.
+- `build_weighted_portal_route_product<World, PassableTag, CostTag>(world,
+  request, waypoints, scratch, product)` builds a supplied-waypoint portal
+  route product.
+- `build_weighted_chunk_portal_route_product<World, PassableTag, CostTag>(
+  world, request, scratch, product)` derives a simple axis-ordered route
+  through adjacent chunk-boundary portals, then builds the same weighted portal
+  route product.
+- `weighted_portal_route_product_path(world, product)` replays a stored portal
   route product if its chunk dependencies are still valid.
 - `weighted_path_batch<World, PassableTag, CostTag, MaxCost>(world, requests,
   scratch)` groups weighted requests by goal, builds bounded weighted fields
@@ -141,6 +155,18 @@ not prove that unrelated blocker removals could not create a shorter route, so
 they are support for future topology/portal products rather than a general
 optimality-preserving weighted route cache.
 
+Weighted portal route products are also exact for the supplied waypoint route,
+not for arbitrary routing. The caller provides portal waypoints from a topology
+or room graph; the product verifies each segment with weighted A*, concatenates
+the segment paths, and records chunk-version dependencies. This makes topology
+evidence measurable before the repository owns a full portal graph builder.
+The automatic chunk-boundary builder is a minimal topology MVP: it walks from
+the start chunk to the goal chunk in x/y/z order, scans each adjacent chunk
+boundary for passable crossings, chooses the crossing with the lowest
+Manhattan score to the current point and final goal, then verifies every
+resulting segment with weighted A*. It does not search alternate chunk routes
+or prove global portal optimality.
+
 For many agents sharing a goal, `DistanceFieldScratch` can amortize search
 work. A unit-cost field build visits reachable passable tiles once from the
 goal, and each path query follows decreasing distances back to that goal. A
@@ -172,8 +198,9 @@ arrays, a two-bucket monotone open set for the current unit-cost Manhattan A*
 fallback, exact route/suffix caches, dense reverse distance fields for
 shared-goal batches, weighted shared-goal fields with optional bounded-cost
 bucket construction, weighted batch grouping, exact weighted route products,
-and weighted A* for positive integral entry costs; it is still an MVP path
-core, not the final topology-aware path system.
+supplied-waypoint and chunk-boundary portal route products, and weighted A*
+for positive integral entry costs; it is still an MVP path core, not the final
+topology-aware path system.
 
 The unit-cost A* API is suitable for individual point-to-point queries and
 regression coverage. Weighted A* is suitable for correctness-first weighted

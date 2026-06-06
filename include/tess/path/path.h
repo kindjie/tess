@@ -166,6 +166,70 @@ class WeightedRouteProduct {
   ChunkVersionDependencies dependencies_;
 };
 
+class WeightedPortalRouteProduct {
+ public:
+  void reserve_waypoints(std::size_t count) { waypoints_.reserve(count); }
+
+  void reserve_path_nodes(std::size_t node_count) {
+    path_.reserve(node_count);
+    segment_.reserve(node_count);
+  }
+
+  void reserve_dependencies(std::size_t count) { dependencies_.reserve(count); }
+
+  void clear() noexcept {
+    request_ = {};
+    status_ = PathStatus::NoPath;
+    cost_ = 0;
+    expanded_nodes_ = 0;
+    reached_nodes_ = 0;
+    waypoints_.clear();
+    path_.clear();
+    segment_.clear();
+    dependencies_.clear();
+  }
+
+  template <typename World>
+  [[nodiscard]] auto is_valid(const World& world) const noexcept -> bool {
+    return dependencies_.is_valid(world);
+  }
+
+  [[nodiscard]] auto request() const noexcept -> PathRequest {
+    return request_;
+  }
+
+  [[nodiscard]] auto waypoints() const noexcept -> std::span<const Coord3> {
+    return waypoints_;
+  }
+
+ private:
+  template <typename World, typename PassableTag, typename CostTag>
+  friend auto build_weighted_portal_route_product(
+      const World& world, PathRequest request,
+      std::span<const Coord3> waypoints, PathScratch& scratch,
+      WeightedPortalRouteProduct& product) -> PathResult;
+
+  template <typename World, typename PassableTag, typename CostTag>
+  friend auto build_weighted_chunk_portal_route_product(
+      const World& world, PathRequest request, PathScratch& scratch,
+      WeightedPortalRouteProduct& product) -> PathResult;
+
+  template <typename World>
+  friend auto weighted_portal_route_product_path(
+      const World& world, const WeightedPortalRouteProduct& product)
+      -> PathResult;
+
+  PathRequest request_{};
+  PathStatus status_ = PathStatus::NoPath;
+  std::uint32_t cost_ = 0;
+  std::size_t expanded_nodes_ = 0;
+  std::size_t reached_nodes_ = 0;
+  std::vector<Coord3> waypoints_;
+  std::vector<Coord3> path_;
+  std::vector<Coord3> segment_;
+  ChunkVersionDependencies dependencies_;
+};
+
 class PathScratch {
  public:
   struct OpenNode {
@@ -671,6 +735,100 @@ template <typename World, typename Tag>
     }
   }
   return true;
+}
+
+template <typename Shape>
+[[nodiscard]] constexpr auto chunk_origin(ChunkCoord3 chunk) noexcept
+    -> Coord3 {
+  constexpr auto size = ShapeTraits<Shape>::chunk;
+  return Coord3{
+      static_cast<std::int64_t>(chunk.x * size.x),
+      static_cast<std::int64_t>(chunk.y * size.y),
+      static_cast<std::int64_t>(chunk.z * size.z),
+  };
+}
+
+template <typename Shape>
+[[nodiscard]] constexpr auto adjacent_chunk(ChunkCoord3 from,
+                                            ChunkCoord3 to) noexcept -> bool {
+  const auto dx = from.x > to.x ? from.x - to.x : to.x - from.x;
+  const auto dy = from.y > to.y ? from.y - to.y : to.y - from.y;
+  const auto dz = from.z > to.z ? from.z - to.z : to.z - from.z;
+  return dx + dy + dz == 1;
+}
+
+template <typename World, typename PassableTag>
+[[nodiscard]] auto best_chunk_portal(const World& world, ChunkCoord3 from,
+                                     ChunkCoord3 to, Coord3 current,
+                                     Coord3 goal, Coord3& portal) noexcept
+    -> bool {
+  using Shape = typename World::shape_type;
+  constexpr auto chunk = ShapeTraits<Shape>::chunk;
+  const auto origin = chunk_origin<Shape>(from);
+
+  if (!adjacent_chunk<Shape>(from, to)) {
+    return false;
+  }
+
+  auto found = false;
+  auto best_score = std::numeric_limits<std::uint32_t>::max();
+  const auto consider = [&](Coord3 source, Coord3 target) {
+    TESS_DIAG_EVENT(path_passability_check);
+    if (!is_passable<World, PassableTag>(world, source)) {
+      return;
+    }
+    TESS_DIAG_EVENT(path_passability_check);
+    if (!is_passable<World, PassableTag>(world, target)) {
+      return;
+    }
+    const auto score =
+        saturating_add(manhattan(current, target), manhattan(target, goal));
+    if (!found || score < best_score) {
+      found = true;
+      best_score = score;
+      portal = target;
+    }
+  };
+
+  if (from.x != to.x) {
+    const auto step = from.x < to.x ? std::int64_t{1} : std::int64_t{-1};
+    const auto source_x =
+        step > 0 ? origin.x + static_cast<std::int64_t>(chunk.x) - 1 : origin.x;
+    for (std::int64_t z = origin.z;
+         z < origin.z + static_cast<std::int64_t>(chunk.z); ++z) {
+      for (std::int64_t y = origin.y;
+           y < origin.y + static_cast<std::int64_t>(chunk.y); ++y) {
+        consider(Coord3{source_x, y, z}, Coord3{source_x + step, y, z});
+      }
+    }
+    return found;
+  }
+
+  if (from.y != to.y) {
+    const auto step = from.y < to.y ? std::int64_t{1} : std::int64_t{-1};
+    const auto source_y =
+        step > 0 ? origin.y + static_cast<std::int64_t>(chunk.y) - 1 : origin.y;
+    for (std::int64_t z = origin.z;
+         z < origin.z + static_cast<std::int64_t>(chunk.z); ++z) {
+      for (std::int64_t x = origin.x;
+           x < origin.x + static_cast<std::int64_t>(chunk.x); ++x) {
+        consider(Coord3{x, source_y, z}, Coord3{x, source_y + step, z});
+      }
+    }
+    return found;
+  }
+
+  const auto step = from.z < to.z ? std::int64_t{1} : std::int64_t{-1};
+  const auto source_z =
+      step > 0 ? origin.z + static_cast<std::int64_t>(chunk.z) - 1 : origin.z;
+  for (std::int64_t y = origin.y;
+       y < origin.y + static_cast<std::int64_t>(chunk.y); ++y) {
+    for (std::int64_t x = origin.x;
+         x < origin.x + static_cast<std::int64_t>(chunk.x); ++x) {
+      consider(Coord3{x, y, source_z}, Coord3{x, y, source_z + step});
+    }
+  }
+  return found;
 }
 
 template <typename Fn>
@@ -1720,6 +1878,195 @@ auto build_weighted_route_product(const World& world, PathRequest request,
 template <typename World>
 auto weighted_route_product_path(const World& world,
                                  const WeightedRouteProduct& product)
+    -> PathResult {
+  if (!product.is_valid(world)) {
+    return PathResult{PathStatus::NoPath, 0, 0, 0, {}};
+  }
+  return PathResult{product.status_, product.cost_, 0, 0, product.path_};
+}
+
+template <typename World, typename PassableTag, typename CostTag>
+auto build_weighted_portal_route_product(const World& world,
+                                         PathRequest request,
+                                         std::span<const Coord3> waypoints,
+                                         PathScratch& scratch,
+                                         WeightedPortalRouteProduct& product)
+    -> PathResult {
+  using Shape = typename World::shape_type;
+
+  product.clear();
+  product.request_ = request;
+  product.waypoints_.assign(waypoints.begin(), waypoints.end());
+
+  auto from = request.start;
+  auto total_cost = std::uint32_t{0};
+  auto total_expanded = std::size_t{0};
+  auto total_reached = std::size_t{0};
+  auto append_segment = [&](PathRequest segment_request) {
+    const auto result = weighted_astar_path<World, PassableTag, CostTag>(
+        world, segment_request, scratch);
+    total_expanded += result.expanded_nodes;
+    total_reached += result.reached_nodes;
+    if (result.status != PathStatus::Found) {
+      product.path_.clear();
+      product.status_ = result.status;
+      product.expanded_nodes_ = total_expanded;
+      product.reached_nodes_ = total_reached;
+      return false;
+    }
+    total_cost = detail::saturating_add(total_cost, result.cost);
+    product.segment_.assign(result.path.begin(), result.path.end());
+    for (std::size_t i = product.path_.empty() ? 0u : 1u;
+         i < product.segment_.size(); ++i) {
+      product.path_.push_back(product.segment_[i]);
+    }
+    return true;
+  };
+
+  for (const auto waypoint : waypoints) {
+    if (!append_segment(PathRequest{from, waypoint})) {
+      return PathResult{product.status_, 0, total_expanded, total_reached,
+                        product.path_};
+    }
+    from = waypoint;
+  }
+  if (!append_segment(PathRequest{from, request.goal})) {
+    return PathResult{product.status_, 0, total_expanded, total_reached,
+                      product.path_};
+  }
+
+  product.status_ = PathStatus::Found;
+  product.cost_ = total_cost;
+  product.expanded_nodes_ = total_expanded;
+  product.reached_nodes_ = total_reached;
+  for (const auto coord : product.path_) {
+    const auto key = tile_key<Shape>(coord);
+    product.dependencies_.add_chunk(world, chunk_key<Shape>(key));
+  }
+  return PathResult{product.status_, product.cost_, product.expanded_nodes_,
+                    product.reached_nodes_, product.path_};
+}
+
+template <typename World, typename PassableTag, typename CostTag>
+auto build_weighted_chunk_portal_route_product(
+    const World& world, PathRequest request, PathScratch& scratch,
+    WeightedPortalRouteProduct& product) -> PathResult {
+  using Shape = typename World::shape_type;
+
+  product.clear();
+  product.request_ = request;
+
+  if (!contains<Shape>(request.start)) {
+    product.status_ = PathStatus::InvalidStart;
+    return PathResult{product.status_, 0, 0, 0, product.path_};
+  }
+  if (!contains<Shape>(request.goal)) {
+    product.status_ = PathStatus::InvalidGoal;
+    return PathResult{product.status_, 0, 0, 0, product.path_};
+  }
+
+  auto current = request.start;
+  auto current_chunk = chunk_coord<Shape>(request.start);
+  const auto goal_chunk = chunk_coord<Shape>(request.goal);
+  const auto append_portal = [&](ChunkCoord3 next_chunk) {
+    auto portal = Coord3{};
+    if (!detail::best_chunk_portal<World, PassableTag>(
+            world, current_chunk, next_chunk, current, request.goal, portal)) {
+      product.status_ = PathStatus::NoPath;
+      return false;
+    }
+    product.waypoints_.push_back(portal);
+    current = portal;
+    current_chunk = next_chunk;
+    return true;
+  };
+
+  while (current_chunk.x != goal_chunk.x) {
+    auto next = current_chunk;
+    if (current_chunk.x < goal_chunk.x) {
+      ++next.x;
+    } else {
+      --next.x;
+    }
+    if (!append_portal(next)) {
+      return PathResult{product.status_, 0, 0, 0, product.path_};
+    }
+  }
+  while (current_chunk.y != goal_chunk.y) {
+    auto next = current_chunk;
+    if (current_chunk.y < goal_chunk.y) {
+      ++next.y;
+    } else {
+      --next.y;
+    }
+    if (!append_portal(next)) {
+      return PathResult{product.status_, 0, 0, 0, product.path_};
+    }
+  }
+  while (current_chunk.z != goal_chunk.z) {
+    auto next = current_chunk;
+    if (current_chunk.z < goal_chunk.z) {
+      ++next.z;
+    } else {
+      --next.z;
+    }
+    if (!append_portal(next)) {
+      return PathResult{product.status_, 0, 0, 0, product.path_};
+    }
+  }
+
+  auto from = request.start;
+  auto total_cost = std::uint32_t{0};
+  auto total_expanded = std::size_t{0};
+  auto total_reached = std::size_t{0};
+  auto append_segment = [&](PathRequest segment_request) {
+    const auto result = weighted_astar_path<World, PassableTag, CostTag>(
+        world, segment_request, scratch);
+    total_expanded += result.expanded_nodes;
+    total_reached += result.reached_nodes;
+    if (result.status != PathStatus::Found) {
+      product.path_.clear();
+      product.status_ = result.status;
+      product.expanded_nodes_ = total_expanded;
+      product.reached_nodes_ = total_reached;
+      return false;
+    }
+    total_cost = detail::saturating_add(total_cost, result.cost);
+    product.segment_.assign(result.path.begin(), result.path.end());
+    for (std::size_t i = product.path_.empty() ? 0u : 1u;
+         i < product.segment_.size(); ++i) {
+      product.path_.push_back(product.segment_[i]);
+    }
+    return true;
+  };
+
+  for (const auto waypoint : product.waypoints_) {
+    if (!append_segment(PathRequest{from, waypoint})) {
+      return PathResult{product.status_, 0, total_expanded, total_reached,
+                        product.path_};
+    }
+    from = waypoint;
+  }
+  if (!append_segment(PathRequest{from, request.goal})) {
+    return PathResult{product.status_, 0, total_expanded, total_reached,
+                      product.path_};
+  }
+
+  product.status_ = PathStatus::Found;
+  product.cost_ = total_cost;
+  product.expanded_nodes_ = total_expanded;
+  product.reached_nodes_ = total_reached;
+  for (const auto coord : product.path_) {
+    const auto key = tile_key<Shape>(coord);
+    product.dependencies_.add_chunk(world, chunk_key<Shape>(key));
+  }
+  return PathResult{product.status_, product.cost_, product.expanded_nodes_,
+                    product.reached_nodes_, product.path_};
+}
+
+template <typename World>
+auto weighted_portal_route_product_path(
+    const World& world, const WeightedPortalRouteProduct& product)
     -> PathResult {
   if (!product.is_valid(world)) {
     return PathResult{PathStatus::NoPath, 0, 0, 0, {}};

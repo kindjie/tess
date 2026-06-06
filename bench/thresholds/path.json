@@ -33,6 +33,22 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 13000000
     },
+    "path/weighted_portal_product_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 2000000
+    },
+    "path/weighted_portal_product_replay_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000
+    },
+    "path/weighted_chunk_portal_product_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 2500000
+    },
+    "path/weighted_chunk_portal_product_replay_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000
+    },
     "path/weighted_astar_batch_100_mixed_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 700000000
