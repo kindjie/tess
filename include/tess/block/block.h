@@ -364,9 +364,6 @@ class BlockCtx {
   using view_world_type =
       std::conditional_t<Policy == WritePolicy::ReadOnly,
                          const std::remove_const_t<world_type>, world_type>;
-  using access_world_type =
-      std::conditional_t<Policy == WritePolicy::ReadOnly,
-                         const std::remove_const_t<world_type>, world_type>;
 
   constexpr BlockCtx(world_type& world, ChunkDomain domain,
                      BlockScratch* scratch = nullptr,
@@ -376,7 +373,7 @@ class BlockCtx {
         scratch_(scratch),
         diagnostics_(diagnostics) {}
 
-  [[nodiscard]] constexpr auto world() const noexcept -> access_world_type& {
+  [[nodiscard]] constexpr auto world() const noexcept -> view_world_type& {
     return *world_;
   }
 

@@ -179,6 +179,50 @@ TEST(TessTopology, RegionGraphPairsBoundaryExitsAndFindsReachability) {
   EXPECT_EQ(reachable.visited_regions, 2u);
 }
 
+TEST(TessTopology, RegionGraphSameRegionReachabilityReturnsImmediately) {
+  using Shape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{8, 8, 1}>;
+  World<Shape> world;
+  fill_passable(world, 1);
+
+  tess::LocalTopologyScratch local_scratch;
+  tess::RegionGraph graph;
+  const auto result = tess::build_region_graph<decltype(world), PassableTag>(
+      world, local_scratch, graph);
+
+  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
+  EXPECT_EQ(result.region_count, 1u);
+
+  tess::RegionGraphScratch graph_scratch;
+  const auto reachable = tess::reachable<Shape>(
+      graph, tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}, graph_scratch);
+
+  EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Reachable);
+  EXPECT_EQ(reachable.visited_regions, 1u);
+}
+
+TEST(TessTopology, RegionGraphFindsMultiHopReachability) {
+  using Shape = tess::Shape<tess::Extent3{24, 8, 1}, tess::Extent3{8, 8, 1}>;
+  World<Shape> world;
+  fill_passable(world, 1);
+
+  tess::LocalTopologyScratch local_scratch;
+  tess::RegionGraph graph;
+  const auto result = tess::build_region_graph<decltype(world), PassableTag>(
+      world, local_scratch, graph);
+
+  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
+  EXPECT_EQ(result.region_count, 3u);
+  EXPECT_EQ(graph.local_topologies().size(), 3u);
+  EXPECT_EQ(graph.portals().size(), 32u);
+
+  tess::RegionGraphScratch graph_scratch;
+  const auto reachable = tess::reachable<Shape>(
+      graph, tess::Coord3{0, 0, 0}, tess::Coord3{23, 7, 0}, graph_scratch);
+
+  EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Reachable);
+  EXPECT_EQ(reachable.visited_regions, 3u);
+}
+
 TEST(TessTopology, RegionGraphRejectsBlockedSeamReachability) {
   using Shape = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
   World<Shape> world;
@@ -199,6 +243,60 @@ TEST(TessTopology, RegionGraphRejectsBlockedSeamReachability) {
   tess::RegionGraphScratch graph_scratch;
   const auto reachable = tess::reachable<Shape>(
       graph, tess::Coord3{0, 0, 0}, tess::Coord3{15, 7, 0}, graph_scratch);
+
+  EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Unreachable);
+  EXPECT_EQ(reachable.visited_regions, 1u);
+}
+
+TEST(TessTopology, RegionGraphRejectsDisconnectedSameChunkRegions) {
+  using Shape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{8, 8, 1}>;
+  World<Shape> world;
+  fill_passable(world, 1);
+  for (std::int64_t y = 0; y < 8; ++y) {
+    world.field<PassableTag>(tess::Coord3{3, y, 0}) = 0;
+  }
+
+  tess::LocalTopologyScratch local_scratch;
+  tess::RegionGraph graph;
+  const auto result = tess::build_region_graph<decltype(world), PassableTag>(
+      world, local_scratch, graph);
+
+  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
+  EXPECT_EQ(result.region_count, 2u);
+  EXPECT_EQ(graph.portals().size(), 0u);
+
+  tess::RegionGraphScratch graph_scratch;
+  const auto reachable = tess::reachable<Shape>(
+      graph, tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}, graph_scratch);
+
+  EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Unreachable);
+  EXPECT_EQ(reachable.visited_regions, 1u);
+}
+
+TEST(TessTopology, RegionGraphRejectsEnclosedRegionReachability) {
+  using Shape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{8, 8, 1}>;
+  World<Shape> world;
+  fill_passable(world, 1);
+  for (std::int64_t offset = -1; offset <= 1; ++offset) {
+    world.field<PassableTag>(tess::Coord3{4 + offset, 3, 0}) = 0;
+    world.field<PassableTag>(tess::Coord3{4 + offset, 5, 0}) = 0;
+    world.field<PassableTag>(tess::Coord3{3, 4 + offset, 0}) = 0;
+    world.field<PassableTag>(tess::Coord3{5, 4 + offset, 0}) = 0;
+  }
+  world.field<PassableTag>(tess::Coord3{4, 4, 0}) = 1;
+
+  tess::LocalTopologyScratch local_scratch;
+  tess::RegionGraph graph;
+  const auto result = tess::build_region_graph<decltype(world), PassableTag>(
+      world, local_scratch, graph);
+
+  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
+  EXPECT_EQ(result.region_count, 2u);
+  EXPECT_EQ(graph.portals().size(), 0u);
+
+  tess::RegionGraphScratch graph_scratch;
+  const auto reachable = tess::reachable<Shape>(
+      graph, tess::Coord3{4, 4, 0}, tess::Coord3{0, 0, 0}, graph_scratch);
 
   EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Unreachable);
   EXPECT_EQ(reachable.visited_regions, 1u);

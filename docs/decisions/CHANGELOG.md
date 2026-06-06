@@ -13,6 +13,22 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-06 - Follow-Up Review Cache And Coverage Tightening
+
+- Changed: Added chunk-version validation to weighted portal segment cache
+  hits, stopped caching failed portal segments, expanded topology reachability
+  coverage, labeled clang-tidy as advisory, removed a redundant block context
+  alias, and narrowed the queued cppcheck false-positive suppression inline.
+- Reason: Follow-up review identified the remaining weighted segment-cache
+  correctness hazard, high-value topology test gaps, and minor quality-gate
+  clarity issues after the first remediation commit.
+- Affected docs: `docs/architecture/path.md`, `docs/dependencies.md`,
+  `tests/AGENTS.md`
+- Affected code: `.github/workflows/ci.yml`,
+  `cmake/TessProjectOptions.cmake`, `include/tess/block/block.h`,
+  `include/tess/ops/queued.h`, `include/tess/path/portal_segment_cache.h`,
+  `tests/tess_path_test.cc`, `tests/tess_topology_test.cc`
+
 ## 2026-06-06 - Review Remediation Gates And API Safety
 
 - Changed: Fixed installed public header coverage, added stricter CI quality
