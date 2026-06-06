@@ -41,9 +41,10 @@ under `include/tess/path/` and is exported by `tess/tess.h`.
   first topology MVP, and reports candidate and boundary-scan counters for
   that automatic builder.
 - `WeightedPortalSegmentCache` owns caller-managed weighted portal segment
-  entries for repeated builds with the same portal waypoints. It has no
-  internal world invalidation; callers clear it when terrain, passability, or
-  movement rules affecting cached segments change.
+  entries for repeated builds with the same portal waypoints. Found segments
+  record chunk-version dependencies for the chunks touched by the segment path;
+  cache hits are reused only while those versions still match. Failed segments
+  are not cached.
 - `WeightedPathBatchScratch` owns reusable search scratch and stable copied
   result paths for weighted batch planning.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
@@ -183,9 +184,11 @@ search non-Manhattan chunk routes or prove global portal optimality.
 
 `WeightedPortalSegmentCache` can reuse previously verified segment paths for
 repeated supplied-waypoint portal builds. Cached hits avoid A* expansion for
-the segment, but still rebuild the route-product path and dependencies. The
-cache deliberately stays caller-managed so it does not imply stale-route safety
-or region-selective optimality before the topology layer exists.
+the segment, but still rebuild the route-product path and dependencies.
+Segments carry chunk-version dependencies and stale entries are ignored on
+lookup. The cache deliberately stays caller-managed for retention and memory
+budgeting, and it does not imply region-selective optimality before the
+topology layer exists.
 
 For many agents sharing a goal, `DistanceFieldScratch` can amortize search
 work. A unit-cost field build visits reachable passable tiles once from the

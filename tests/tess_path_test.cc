@@ -976,6 +976,78 @@ TEST(TessPath, WeightedPortalSegmentCacheReusesVerifiedSegments) {
   EXPECT_EQ(cache.size(), 2u);
 }
 
+TEST(TessPath, WeightedPortalSegmentCacheRejectsStaleSegments) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::WeightedPortalSegmentCache cache;
+  cache.reserve_segments(2);
+  cache.reserve_path_nodes(16);
+  tess::WeightedPortalRouteProduct product;
+  product.reserve_waypoints(1);
+  product.reserve_path_nodes(16);
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
+  const auto waypoints = std::array{tess::Coord3{3, 0, 0}};
+
+  const auto first =
+      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
+                                                CostTag>(
+          world, request, waypoints, scratch, cache, product);
+  ASSERT_EQ(first.status, tess::PathStatus::Found);
+
+  world.template field<CostTag>(tess::Coord3{3, 0, 0}) = 9;
+  world.mark_dirty(tess::ChunkKey{0}, 1u,
+                   tess::Box3{tess::Coord3{3, 0, 0}, tess::Extent3{1, 1, 1}});
+
+  const auto second =
+      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
+                                                CostTag>(
+          world, request, waypoints, scratch, cache, product);
+
+  ASSERT_EQ(second.status, tess::PathStatus::Found);
+  EXPECT_GT(second.expanded_nodes, 0u);
+  EXPECT_EQ(second.cost, 15u);
+  EXPECT_EQ(second.path.front(), request.start);
+  EXPECT_EQ(second.path.back(), request.goal);
+}
+
+TEST(TessPath, WeightedPortalSegmentCacheDoesNotStoreFailedSegments) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  for (std::int64_t y = 0; y < 8; ++y) {
+    world.template field<PassableTag>(tess::Coord3{4, y, 0}) = false;
+  }
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::WeightedPortalSegmentCache cache;
+  tess::WeightedPortalRouteProduct product;
+  product.reserve_path_nodes(16);
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
+  const auto waypoints = std::array<tess::Coord3, 0>{};
+
+  const auto first =
+      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
+                                                CostTag>(
+          world, request, waypoints, scratch, cache, product);
+  const auto second =
+      tess::build_weighted_portal_route_product<decltype(world), PassableTag,
+                                                CostTag>(
+          world, request, waypoints, scratch, cache, product);
+
+  EXPECT_EQ(first.status, tess::PathStatus::NoPath);
+  EXPECT_EQ(second.status, tess::PathStatus::NoPath);
+  EXPECT_GT(first.expanded_nodes, 0u);
+  EXPECT_GT(second.expanded_nodes, 0u);
+  EXPECT_EQ(cache.size(), 0u);
+}
+
 TEST(TessPath, WeightedPortalRouteProductInvalidatesTouchedChunks) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
   fill_passable(world, true);

@@ -17,6 +17,7 @@ class WeightedPortalSegmentCache {
     std::uint32_t cost = 0;
     std::size_t path_offset = 0;
     std::size_t path_size = 0;
+    ChunkVersionDependencies dependencies{};
   };
 
   void reserve_segments(std::size_t count) { entries_.reserve(count); }
@@ -28,10 +29,13 @@ class WeightedPortalSegmentCache {
     paths_.clear();
   }
 
-  [[nodiscard]] auto find(PathRequest request) const noexcept -> const Entry* {
+  template <typename World>
+  [[nodiscard]] auto find(const World& world,
+                          PathRequest request) const noexcept -> const Entry* {
     for (const auto& entry : entries_) {
       if (entry.request.start == request.start &&
-          entry.request.goal == request.goal) {
+          entry.request.goal == request.goal &&
+          entry.dependencies.is_valid(world)) {
         return &entry;
       }
     }
@@ -44,14 +48,25 @@ class WeightedPortalSegmentCache {
                                    entry.path_size};
   }
 
-  void store(PathRequest request, PathResult result) {
-    if (find(request) != nullptr) {
+  template <typename World>
+  void store(const World& world, PathRequest request, PathResult result) {
+    using Shape = World::shape_type;
+
+    if (result.status != PathStatus::Found || find(world, request) != nullptr) {
       return;
     }
     const auto offset = paths_.size();
     paths_.insert(paths_.end(), result.path.begin(), result.path.end());
-    entries_.push_back(
-        Entry{request, result.status, result.cost, offset, result.path.size()});
+    auto& entry = entries_.emplace_back();
+    entry.request = request;
+    entry.status = result.status;
+    entry.cost = result.cost;
+    entry.path_offset = offset;
+    entry.path_size = result.path.size();
+    for (const auto coord : result.path) {
+      entry.dependencies.add_chunk(world,
+                                   chunk_key<Shape>(tile_key<Shape>(coord)));
+    }
   }
 
   [[nodiscard]] auto size() const noexcept -> std::size_t {
@@ -71,7 +86,7 @@ auto build_weighted_portal_route_product(const World& world,
                                          WeightedPortalSegmentCache& cache,
                                          WeightedPortalRouteProduct& product)
     -> PathResult {
-  using Shape = typename World::shape_type;
+  using Shape = World::shape_type;
 
   product.clear();
   product.request_ = request;
@@ -88,14 +103,8 @@ auto build_weighted_portal_route_product(const World& world,
     }
   };
   auto append_segment = [&](PathRequest segment_request) {
-    if (const auto* entry = cache.find(segment_request); entry != nullptr) {
-      if (entry->status != PathStatus::Found) {
-        product.path_.clear();
-        product.status_ = entry->status;
-        product.expanded_nodes_ = total_expanded;
-        product.reached_nodes_ = total_reached;
-        return false;
-      }
+    if (const auto* entry = cache.find(world, segment_request);
+        entry != nullptr) {
       total_cost = detail::saturating_add(total_cost, entry->cost);
       append_path(cache.path(*entry));
       return true;
@@ -103,7 +112,7 @@ auto build_weighted_portal_route_product(const World& world,
 
     const auto result = weighted_astar_path<World, PassableTag, CostTag>(
         world, segment_request, scratch);
-    cache.store(segment_request, result);
+    cache.store(world, segment_request, result);
     total_expanded += result.expanded_nodes;
     total_reached += result.reached_nodes;
     if (result.status != PathStatus::Found) {

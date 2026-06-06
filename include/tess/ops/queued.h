@@ -443,6 +443,7 @@ template <typename World>
       continue;
     }
     if (chunks_overlap(earlier.chunks, later.chunks)) {
+      // cppcheck-suppress returnDanglingLifetime
       return &earlier;
     }
   }

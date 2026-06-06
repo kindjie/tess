@@ -38,7 +38,7 @@ jobs:
         run: tools/install_smoke.sh
 
   quality:
-    name: Quality Gates (${{ matrix.preset }})
+    name: Quality Gates And Advisory Checks (${{ matrix.preset }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
