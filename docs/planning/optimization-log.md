@@ -33,6 +33,49 @@ deferred for scope reasons. Keep entries short and concrete:
 - Follow-up: Add weighted multi-goal field grouping when weighted workloads
   have a small set of repeated goals.
 
+## 2026-06-05 - Weighted Batch Planner API
+
+- Area: Weighted many-agent request dispatch.
+- Hypothesis: A public batch helper can make the accepted weighted reuse
+  policy explicit: use one bounded weighted field per repeated goal and use
+  weighted A* for singleton goals.
+- Evidence: Added `weighted_path_batch` and stable-result batch scratch. Unit
+  coverage verifies grouped repeated goals, singleton fallback, stable result
+  spans, and cost agreement with weighted A*. The 100-agent eight-goal sparse
+  benchmark runs around 46.5 ms, matching the hand-grouped bounded field path.
+- Decision: Accepted. This is the default API for current weighted batches
+  with repeated goals.
+- Follow-up: Add hierarchy/topology when many unique far goals make one field
+  per goal too expensive.
+
+## 2026-06-05 - Exact Weighted Route Products
+
+- Area: Route-product dependency support.
+- Hypothesis: Storing a verified weighted path plus chunk-version
+  dependencies gives a safe route product primitive without claiming
+  region-selective optimality.
+- Evidence: Added `WeightedRouteProduct`, build/replay helpers, and tests that
+  replay succeeds across unrelated chunk edits and fails when a captured chunk
+  changes.
+- Decision: Accepted as an exact product primitive. It is not a general
+  weighted route cache because an unrelated edit could create a shorter route.
+- Follow-up: Use this dependency shape in future topology/portal products,
+  where the product can record enough evidence to prove optimal reuse.
+
+## 2026-06-05 - Weighted Unit-Cost Axis Detour Fast Path
+
+- Area: Weighted A* local fast paths.
+- Hypothesis: If an axis-aligned straight line is blocked and a one-tile
+  parallel detour has only unit entry costs, returning that detour is optimal
+  under positive axis-adjacent movement.
+- Evidence: Added a weighted detour fast path and unit coverage. The existing
+  weighted axis-detour benchmark is unchanged because it covers expensive
+  direct terrain, not a blocked unit-cost line.
+- Decision: Accepted with a narrow guard. Do not apply this to merely
+  expensive direct terrain.
+- Follow-up: Add a dedicated blocked weighted detour benchmark only if this
+  path appears in production-style workloads.
+
 ## 2026-06-05 - Weighted Multi-Goal Field Grouping
 
 - Area: Weighted many-agent pathfinding with a small set of repeated goals.

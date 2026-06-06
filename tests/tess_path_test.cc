@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -231,6 +232,29 @@ TEST(TessPath, WeightedAStarUsesUnitCostDirectFastPath) {
   EXPECT_EQ(result.path.size(), 15u);
   EXPECT_EQ(result.expanded_nodes, result.path.size());
   EXPECT_EQ(result.reached_nodes, result.path.size());
+}
+
+TEST(TessPath, WeightedAStarUsesUnitCostAxisDetourFastPath) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  world.template field<PassableTag>(tess::Coord3{1, 0, 0}) = false;
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+
+  const auto result =
+      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+          world,
+          tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}},
+          scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 5u);
+  EXPECT_EQ(result.expanded_nodes, result.path.size());
+  EXPECT_EQ(result.path.front(), (tess::Coord3{0, 0, 0}));
+  EXPECT_EQ(result.path.back(), (tess::Coord3{3, 0, 0}));
+  EXPECT_NE(result.path[1], (tess::Coord3{1, 0, 0}));
 }
 
 TEST(TessPath, RejectsFullSeparatingBarrierBeforeAStar) {
@@ -783,6 +807,59 @@ TEST(TessPath, ChunkVersionDependenciesCanCaptureAllChunks) {
   EXPECT_FALSE(dependencies.is_valid(world));
 }
 
+TEST(TessPath, WeightedRouteProductReplaysWhileDependenciesAreValid) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::WeightedRouteProduct product;
+  product.reserve_path_nodes(8);
+  product.reserve_dependencies(2);
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}};
+
+  const auto built =
+      tess::build_weighted_route_product<decltype(world), PassableTag, CostTag>(
+          world, request, scratch, product);
+  const auto replay = tess::weighted_route_product_path(world, product);
+
+  ASSERT_EQ(built.status, tess::PathStatus::Found);
+  EXPECT_EQ(replay.status, tess::PathStatus::Found);
+  EXPECT_EQ(replay.cost, built.cost);
+  EXPECT_EQ(replay.path.size(), built.path.size());
+  EXPECT_EQ(product.request().start, request.start);
+  EXPECT_FALSE(product.dependencies().empty());
+}
+
+TEST(TessPath, WeightedRouteProductInvalidatesCapturedChunksOnly) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::WeightedRouteProduct product;
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}};
+
+  const auto built =
+      tess::build_weighted_route_product<decltype(world), PassableTag, CostTag>(
+          world, request, scratch, product);
+  ASSERT_EQ(built.status, tess::PathStatus::Found);
+
+  world.mark_dirty(tess::ChunkKey{3}, 1u,
+                   tess::Box3{tess::Coord3{4, 4, 0}, tess::Extent3{1, 1, 1}});
+  EXPECT_EQ(tess::weighted_route_product_path(world, product).status,
+            tess::PathStatus::Found);
+
+  world.mark_dirty(tess::ChunkKey{0}, 1u,
+                   tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
+  EXPECT_EQ(tess::weighted_route_product_path(world, product).status,
+            tess::PathStatus::NoPath);
+}
+
 TEST(TessPath, CachedAStarReusesSuffixForSameGoal) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
   fill_passable(world, true);
@@ -1051,6 +1128,46 @@ TEST(TessPath, BoundedWeightedDistanceFieldFallsBackAboveBound) {
   ASSERT_EQ(field.status, tess::PathStatus::Found);
   ASSERT_EQ(path.status, tess::PathStatus::Found);
   EXPECT_EQ(path.cost, 15u);
+}
+
+TEST(TessPath, WeightedPathBatchGroupsRepeatedGoalsAndKeepsResultSpans) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  world.template field<CostTag>(tess::Coord3{1, 0, 0}) = 7;
+  world.template field<PassableTag>(tess::Coord3{2, 2, 0}) = false;
+
+  const auto requests = std::array{
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}},
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{7, 7, 0}},
+      tess::PathRequest{tess::Coord3{0, 7, 0}, tess::Coord3{7, 0, 0}},
+  };
+
+  tess::WeightedPathBatchScratch batch;
+  batch.reserve_search_nodes(64);
+  batch.reserve_requests(requests.size());
+  batch.reserve_path_nodes(64);
+  const auto results =
+      tess::weighted_path_batch<decltype(world), PassableTag, CostTag, 7>(
+          world, requests, batch);
+
+  ASSERT_EQ(results.size(), requests.size());
+  EXPECT_EQ(batch.stats().requests, requests.size());
+  EXPECT_EQ(batch.stats().unique_goals, 2u);
+  EXPECT_EQ(batch.stats().field_builds, 1u);
+  EXPECT_EQ(batch.stats().astar_fallbacks, 1u);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    const auto expected =
+        tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+            world, requests[i], scratch);
+    ASSERT_EQ(results[i].status, tess::PathStatus::Found);
+    EXPECT_EQ(results[i].cost, expected.cost);
+    EXPECT_EQ(results[i].path.front(), requests[i].start);
+    EXPECT_EQ(results[i].path.back(), requests[i].goal);
+  }
 }
 
 TEST(TessPath, WeightedDistanceFieldRejectsMismatchedGoal) {

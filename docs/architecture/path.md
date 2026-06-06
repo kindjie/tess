@@ -11,6 +11,9 @@ in `include/tess/path/path.h` and is exported by `tess/tess.h`.
   reached-node count, and a non-owning span of path coordinates.
 - `DistanceFieldResult` returns the status and node counts for a reverse
   shared-goal field build.
+- `WeightedPathBatchStats` returns request count, unique-goal count, field
+  build count, A* fallback count, and copied path-node count for weighted batch
+  planning.
 - `PathScratch` owns reusable vectors for open nodes, visited records, and the
   returned path. `reserve_nodes(count)` prepares storage for allocation-free
   repeated queries when capacity is sufficient.
@@ -28,12 +31,26 @@ in `include/tess/path/path.h` and is exported by `tess/tess.h`.
   validate whether those chunks are unchanged. It is supporting infrastructure
   for future route products; current route-cache hits still use conservative
   whole-cache invalidation.
+- `WeightedRouteProduct` stores one verified weighted route plus the chunk
+  versions touched by that route. Replaying it succeeds only while those chunk
+  versions are unchanged.
+- `WeightedPathBatchScratch` owns reusable search scratch and stable copied
+  result paths for weighted batch planning.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
   unit-cost deterministic pathfinding over the existing always-resident world
   storage. The passability field is treated as boolean-like.
 - `weighted_astar_path<World, PassableTag, CostTag>(world, request, scratch)`
   runs deterministic weighted A* over passability plus an integral entry-cost
-  field.
+  field. It includes exact unit-cost direct and blocked-axis detour fast paths
+  when their local optimality proofs apply.
+- `build_weighted_route_product<World, PassableTag, CostTag>(world, request,
+  scratch, product)` builds and stores a weighted route product.
+- `weighted_route_product_path(world, product)` replays a stored weighted
+  route product if its chunk dependencies are still valid.
+- `weighted_path_batch<World, PassableTag, CostTag, MaxCost>(world, requests,
+  scratch)` groups weighted requests by goal, builds bounded weighted fields
+  for repeated goals, uses weighted A* for singleton goals, and returns stable
+  result spans owned by `WeightedPathBatchScratch`.
 - `cached_astar_path<World, PassableTag>(world, request, scratch, cache)`
   checks the route cache before falling back to `astar_path`.
 - `build_distance_field<World, PassableTag>(world, goal, scratch)` builds a
@@ -79,7 +96,10 @@ treated as blocked, and oversized integral costs saturate to the public
 with a minimum edge cost of one, so it preserves optimal weighted paths while
 skipping the unit-cost-only bucket queue and route cache. It does include an
 exact direct Manhattan fast path when every entered tile on a probed route has
-cost 1; no positive-cost path can beat that Manhattan lower bound.
+cost 1; no positive-cost path can beat that Manhattan lower bound. For
+axis-aligned routes where the straight line is blocked, it can also return a
+one-tile parallel detour when every entered detour tile has cost 1; any
+positive-cost path around the blocked line needs at least Manhattan+2 moves.
 
 Before entering open-set A*, the implementation probes direct Manhattan
 paths in the shape-relevant axis orders. If any route is fully passable, it
@@ -114,6 +134,13 @@ version fingerprint support is deliberately conservative: when any chunk
 version changes, `invalidate_if_world_changed(world)` drops the whole cache and
 preserves hit/miss counters. It does not attempt region-selective validation.
 
+Weighted route products are narrower than the route cache: they store one
+weighted path and the chunk versions for chunks touched by that path. They are
+safe for replaying that exact product while those chunks are unchanged. They do
+not prove that unrelated blocker removals could not create a shorter route, so
+they are support for future topology/portal products rather than a general
+optimality-preserving weighted route cache.
+
 For many agents sharing a goal, `DistanceFieldScratch` can amortize search
 work. A unit-cost field build visits reachable passable tiles once from the
 goal, and each path query follows decreasing distances back to that goal. A
@@ -130,6 +157,12 @@ Dial-style bucket queue. The result is still exact, because nodes are expanded
 in nondecreasing distance order. The bounded builder is an optimization of
 weighted field construction, not a different path model.
 
+`weighted_path_batch` makes the current weighted reuse policy explicit for
+callers. Repeated goals use one bounded weighted field per unique goal;
+singleton goals use normal weighted A*. Returned paths are copied into batch
+scratch so all result spans remain valid until the next batch call or scratch
+clear.
+
 ## Deliberate Limits
 
 This MVP slice does not implement movement classes, topology prechecks, portal
@@ -138,8 +171,9 @@ rich path diagnostics. The implementation uses reusable dense per-tile scratch
 arrays, a two-bucket monotone open set for the current unit-cost Manhattan A*
 fallback, exact route/suffix caches, dense reverse distance fields for
 shared-goal batches, weighted shared-goal fields with optional bounded-cost
-bucket construction, and weighted A* for positive integral entry costs; it is
-still an MVP path core, not the final topology-aware path system.
+bucket construction, weighted batch grouping, exact weighted route products,
+and weighted A* for positive integral entry costs; it is still an MVP path
+core, not the final topology-aware path system.
 
 The unit-cost A* API is suitable for individual point-to-point queries and
 regression coverage. Weighted A* is suitable for correctness-first weighted
