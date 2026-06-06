@@ -55,6 +55,11 @@
   paths, weighted shared-goal fields, bounded weighted field builds and
   fallback, weighted batch grouping, endpoint validation, and allocation-free
   repeated queries with pre-reserved path scratch.
+- `tess_path_runtime_test`: verifies the path request runtime MVP, including
+  ticketed request/result lookup, stable copied result spans, unit route-cache
+  reuse and invalidation across world edits, many-agent weighted batch
+  processing through shared-goal fields, and caller-configured cache clearing
+  after repeated world edits.
 - `tess_diagnostics_default_test`: verifies public diagnostic macros are
   disabled by default and do not evaluate arguments, including generic events.
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate
