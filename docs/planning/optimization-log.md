@@ -96,15 +96,21 @@ deferred for scope reasons. Keep entries short and concrete:
   route-cost ratio. Warmed single-route portal segment-cache rebuilds run
   around 11.3 us with zero expanded nodes. A 100-agent shared portal-leg batch
   with exact segment reuse runs around 4.4 ms with about 566 expanded nodes per
-  agent.
+  agent. Isolating the endpoint segments shows the unique start-to-first-portal
+  A* searches alone run around 2.3 ms with about 398 expanded nodes per agent,
+  while the shared last segment expands about 45 nodes. Replacing those unique
+  first segments with one exact local-domain weighted field to the first portal
+  plus cached shared portal legs drops the 100-agent batch to about 2.1 ms; the
+  local field expands about 1,025 nodes once and reconstruction averages about
+  39 nodes per agent.
 - Decision: Accepted. Candidate selection is cheap enough to keep, and segment
   reuse is useful for repeated stable portal routes. The high cost ratio means
   this is still a product/throughput primitive, not a global optimal portal
   planner.
 - Follow-up: Improve waypoint quality with a real portal graph or weighted
   portal-edge summaries before optimizing the remaining segment A* cost.
-  Unique start-to-first-portal segments remain the bottleneck in the exact
-  shared-leg cache batch.
+  Promote local-domain portal-entry fields into a product API only after the
+  topology layer owns room/region domains.
 
 ## 2026-06-05 - Exact Weighted Route Products
 

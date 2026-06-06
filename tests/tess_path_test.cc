@@ -1213,6 +1213,46 @@ TEST(TessPath, WeightedDistanceFieldMatchesWeightedAStarForSharedGoal) {
   }
 }
 
+TEST(TessPath, WeightedDistanceFieldInBoxRestrictsDomain) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  world.template field<CostTag>(tess::Coord3{2, 1, 0}) = 5;
+
+  tess::DistanceFieldScratch boxed_scratch;
+  boxed_scratch.reserve_nodes(64);
+  tess::DistanceFieldScratch general_scratch;
+  general_scratch.reserve_nodes(64);
+  const auto domain = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{4, 4, 1}};
+  const auto goal = tess::Coord3{3, 3, 0};
+
+  const auto boxed =
+      tess::build_weighted_distance_field_in_box<decltype(world), PassableTag,
+                                                 CostTag>(world, goal, domain,
+                                                          boxed_scratch);
+  const auto general =
+      tess::build_weighted_distance_field<decltype(world), PassableTag,
+                                          CostTag>(world, goal,
+                                                   general_scratch);
+  const auto boxed_path =
+      tess::weighted_distance_field_path<decltype(world), PassableTag, CostTag>(
+          world, tess::Coord3{0, 0, 0}, goal, boxed_scratch);
+  const auto general_path =
+      tess::weighted_distance_field_path<decltype(world), PassableTag, CostTag>(
+          world, tess::Coord3{0, 0, 0}, goal, general_scratch);
+  const auto outside_path =
+      tess::weighted_distance_field_path<decltype(world), PassableTag, CostTag>(
+          world, tess::Coord3{5, 5, 0}, goal, boxed_scratch);
+
+  ASSERT_EQ(boxed.status, tess::PathStatus::Found);
+  ASSERT_EQ(general.status, tess::PathStatus::Found);
+  ASSERT_EQ(boxed_path.status, tess::PathStatus::Found);
+  ASSERT_EQ(general_path.status, tess::PathStatus::Found);
+  EXPECT_EQ(boxed_path.cost, general_path.cost);
+  EXPECT_LT(boxed.expanded_nodes, general.expanded_nodes);
+  EXPECT_EQ(outside_path.status, tess::PathStatus::NoPath);
+}
+
 TEST(TessPath, BoundedWeightedDistanceFieldMatchesGeneralWeightedField) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
   fill_passable(world, true);
