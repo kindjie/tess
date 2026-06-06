@@ -22,8 +22,8 @@ struct Coord2 {
 };
 
 struct Coord3 {
-  std::int64_t x;
-  std::int64_t y;
+  std::int64_t x = 0;
+  std::int64_t y = 0;
   std::int64_t z = 0;
 
   friend constexpr bool operator==(Coord3 lhs, Coord3 rhs) noexcept = default;

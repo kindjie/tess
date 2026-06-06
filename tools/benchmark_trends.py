@@ -239,7 +239,7 @@ def render_markdown(runs: list[Run], benchmarks: tuple[str, ...]) -> str:
       "tools/benchmark_trends.py path/to/benchmark-baselines-* \\",
       "  --out build/bench/benchmark-trends.html \\",
       "  --snapshot-svg docs/assets/benchmark-trends.svg \\",
-      "  --summary-md docs/performance.md",
+      "  --summary-md build/bench/benchmark-trends.md",
       "```",
       "",
       "## Latest Snapshot",

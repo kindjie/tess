@@ -9,11 +9,13 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
 - `WritePolicy` records intended write discipline: `ReadOnly`,
   `UniquePerTile`, `UniquePerChunk`, and `Unsafe`.
 - `ChunkDomain` is a non-owning `std::span<const ChunkKey>` wrapper.
+- `OwnedChunkDomain` owns sorted chunk keys returned by allocating domain
+  builders and can be adapted to `ChunkDomain` while the owner lives.
 - `chunk_domain(span)` adapts a prebuilt key span without allocation.
 - `explicit_chunk_domain(span)` copies and sorts explicit keys in ascending
   `ChunkKey` order.
 - `dirty_chunk_domain(world, flags)` and `active_chunk_domain(world, flags)`
-  return allocating vectors using the current always-resident metadata queries.
+  return owning domains using the current always-resident metadata queries.
 - `BlockScratch` owns caller-reusable temporary storage backed by
   `std::vector<std::max_align_t>`. `reserve_bytes(bytes)` grows the backing
   store when needed, `reset()` rewinds the bump offset, and
@@ -58,8 +60,10 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
   context and walks the domain serially without allocation.
 - `for_each_chunk(world, domain, policy, fn)` remains a runtime-policy
   compatibility overload. It validates the policy enum value but keeps the view
-  type derived from the world argument, because a runtime enum cannot change a
-  C++ callback parameter type.
+  type derived from the world argument, because a runtime enum cannot safely
+  change an arbitrary C++ callback parameter type. Use the compile-time
+  overload or `BlockCtx<World, WritePolicy::ReadOnly>` when const views are
+  required for a mutable world.
 - `ChunkView<World>` exposes the resolved page, metadata, key, chunk
   coordinate, chunk bounds, typed field spans through `ChunkPage`, and
   chunk-local tile helpers.
