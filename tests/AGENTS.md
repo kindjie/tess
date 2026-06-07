@@ -31,12 +31,17 @@
   diagnostic access metadata, untyped field access mask propagation,
   structured invalid write-policy, invalid field-access, and explicit-domain
   rejection, report lookup/count helpers, mixed valid/invalid report ordering,
-  deterministic field-mask hazard validation, plan-to-block adapters, policy
-  mismatch rejection, allocation-free prebuilt planned block iteration,
-  explicit planned execution with dirty propagation, policy-mismatch execution
-  rejection, allocation-free prebuilt planned execution, source-location
-  capture, and allocation-free inspection of already-built queue/report/plan
-  spans.
+  deterministic field-mask hazard validation, deterministic parallel phase
+  grouping/rejection, plan-to-block adapters, policy mismatch rejection,
+  allocation-free prebuilt planned block iteration, explicit planned execution
+  with direct and deferred dirty propagation, dirty-record coalescing,
+  phase-range deferred execution and rejection, backend-executor range dispatch,
+  partitioned dirty phase execution and merge including test-only threaded
+  mutable and read-only dispatch, scoped threaded executor equivalence and
+  failure ordering, read-only const-view enforcement, partitioned threaded
+  failure semantics, policy-mismatch execution rejection, allocation-free
+  prebuilt planned execution, source-location capture, and allocation-free
+  inspection of already-built queue/report/plan spans.
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.
@@ -53,21 +58,26 @@
   dependency invalidation, chunk-boundary portal candidate counters, warmed
   portal segment-cache reuse, stale segment rejection and caller-managed clear,
   failed-segment cache bypass, shared-goal distance-field builds and
-  reconstruction, local-domain weighted field bounds, mismatched-field
-  rejection, weighted entry-cost routing, weighted direct and detour fast
-  paths, weighted shared-goal fields, bounded weighted field builds and
-  fallback, weighted batch grouping, endpoint validation, and allocation-free
-  repeated queries with pre-reserved path scratch.
+  reconstruction, unit-cost multi-goal distance-field products,
+  nearest-target reconstruction, product stale-version rejection,
+  byte-budgeted field-product cache hit/miss/eviction/stale stats,
+  local-domain weighted field bounds, mismatched-field rejection, weighted
+  entry-cost routing, weighted direct and detour fast paths, weighted
+  shared-goal fields, bounded weighted field builds and fallback, weighted
+  batch grouping, endpoint validation, and allocation-free repeated queries
+  with pre-reserved path scratch.
 - `tess_path_runtime_test`: verifies the path request runtime MVP, including
   ticketed request/result lookup, stable copied result spans, unit route-cache
-  reuse and invalidation across world edits, many-agent weighted batch
+  reuse and invalidation across world edits, opt-in unit field-product cache
+  reuse for repeated goals, start-chunk policy skip/use counters, stale product
+  rejection, runtime cache clearing cadence, many-agent weighted batch
   processing through shared-goal fields, and caller-configured cache clearing
   after repeated world edits.
 - `tess_path_agent_test`: verifies the public path-agent wrapper, including
   goal assignment, runtime-backed request/result processing, tile-by-tile
   advancement and arrival, conservative reprocessing after world edits,
   invalid/unreachable goal handling, weighted shared-goal processing, and
-  allocation-free warm unit and weighted agent batches.
+  allocation-free warm unit, unit field-product, and weighted agent batches.
 - `tess_path_agent_tick_test`: verifies the minimal path-agent tick wrapper,
   including tick advancement, dirty-gated path processing, movement ordering,
   explicit dirty-mark requirements after world edits, dirty reprocessing after
