@@ -1,6 +1,7 @@
 #include <tess/tess.h>
 
 #include <cstdint>
+#include <exception>
 #include <iostream>
 
 namespace {
@@ -13,9 +14,7 @@ using Shape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
-}  // namespace
-
-int main() {
+auto run() -> int {
   World world;
   tess::FrameOps ops;
 
@@ -56,4 +55,15 @@ int main() {
 
   std::cout << "path cost: " << path.cost << "\n";
   return 0;
+}
+
+}  // namespace
+
+int main() {
+  try {
+    return run();
+  } catch (const std::exception& err) {
+    std::cerr << "example failed: " << err.what() << "\n";
+    return 1;
+  }
 }

@@ -1,10 +1,10 @@
 Checks: >
   clang-analyzer-*,
   bugprone-*,
-  -bugprone-easily-swappable-parameters,
   performance-*,
   readability-const-return-type,
+  readability-redundant-*,
   cppcoreguidelines-pro-type-member-init
-WarningsAsErrors: '*'
+WarningsAsErrors: ''
 HeaderFilterRegex: '.*'
 FormatStyle: file

@@ -35,6 +35,9 @@ CI runs on `ubuntu-24.04` with Clang and covers:
 
 - Dev build: `cmake --build --preset dev`
 - Unit tests: `ctest --preset dev`
+- Public header file-set drift check: `tess_public_headers_file_set`
+- Installed package smoke test: `tools/install_smoke.sh`
+- Strict clang-tidy gate: `cmake --build --preset dev-clang-tidy`
 - Benchmark build: `cmake --build --preset bench`
 - Benchmark smoke tests: `ctest --preset bench`
 - Key conversion benchmark threshold scaffold:

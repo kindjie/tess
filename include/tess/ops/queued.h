@@ -268,9 +268,7 @@ class ExecutionReport {
     plan_.operations_.reserve(size);
   }
 
-  void push_report(OperationReport report) {
-    operations_.push_back(std::move(report));
-  }
+  void push_report(OperationReport report) { operations_.push_back(report); }
 
   void push_planned(PlannedOperation planned) {
     plan_.operations_.push_back(std::move(planned));

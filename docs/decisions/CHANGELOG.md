@@ -28,6 +28,28 @@ Records meaningful design changes from the original TDDs.
   `include/tess/sim/path_agent.h`, `include/tess/tess.h`,
   `tests/CMakeLists.txt`, `tests/tess_path_agent_test.cc`
 
+## 2026-06-06 - Quality Gate Ratchet
+
+- Changed: Fixed installed package header drift, added a public-header file-set
+  test, added install smoke to pre-push, made low-noise clang-tidy checks a
+  warnings-as-errors gate with a separate advisory preset, added path-agent
+  benchmark thresholds, consolidated allocation-sensitive test hooks, made the
+  tick dirty contract explicit in tests and docs, and split bounded weighted
+  batch implementation into a path detail header.
+- Reason: A tech-debt review found that installed consumers were broken and
+  that several quality expectations were documented but not enforced.
+- Affected docs: `README.md`, `docs/architecture/path.md`,
+  `docs/dependencies.md`, `docs/planning/benchmark-plan.md`,
+  `tests/AGENTS.md`
+- Affected code: `.clang-tidy`, `.clang-tidy-advisory`,
+  `.github/workflows/ci.yml`, `CMakeLists.txt`, `CMakePresets.json`,
+  `bench/thresholds/path.json`, `cmake/TessProjectOptions.cmake`,
+  `cmake/check-public-headers.cmake`, `include/tess/ops/queued.h`,
+  `include/tess/path/path.h`, `include/tess/path/detail/weighted_batch.h`,
+  `tests/CMakeLists.txt`, `tests/allocation_counter.*`,
+  `tests/tess_path_agent_test.cc`, `tests/tess_path_agent_tick_test.cc`,
+  `tools/git_hooks.py`
+
 ## 2026-06-06 - Path Agent Tick MVP
 
 - Changed: Added a minimal synchronous path-agent tick wrapper with a

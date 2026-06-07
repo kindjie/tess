@@ -1,49 +1,12 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
-#include <atomic>
-#include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <new>
 #include <span>
 #include <type_traits>
 #include <vector>
 
-namespace {
-
-std::atomic<bool> count_allocations{false};
-std::atomic<int> allocation_count{0};
-
-}  // namespace
-
-void* operator new(std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void* operator new[](std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void operator delete(void* ptr) noexcept { std::free(ptr); }
-
-void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
+#include "allocation_counter.h"
 
 namespace {
 
@@ -479,8 +442,10 @@ TEST(TessBlock, RuntimeInvalidWritePolicyFailsFast) {
       {
         World<TopDown2D> world;
         const auto keys = std::vector<tess::ChunkKey>{tess::ChunkKey{0}};
-        tess::for_each_chunk(world, tess::chunk_domain(keys),
-                             static_cast<tess::WritePolicy>(255), [](auto) {});
+        tess::for_each_chunk(
+            world, tess::chunk_domain(keys),
+            // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+            static_cast<tess::WritePolicy>(255), [](auto) {});
       },
       ".*");
 }
@@ -867,18 +832,18 @@ TEST(TessBlock, PrebuiltChunkDomainIterationDoesNotAllocate) {
   };
   std::uint64_t sum = 0;
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
   tess::for_each_chunk<tess::WritePolicy::UniquePerChunk>(
       world, tess::chunk_domain(keys), [&](auto view) {
         auto terrain = view.template field_span<TerrainTag>();
         terrain[0] = static_cast<std::uint16_t>(view.key().value);
         sum += terrain[0] + view.bounds().extent.x;
       });
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_GT(sum, 0u);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessBlock, NestedChunkAndTileIterationDoesNotAllocate) {
@@ -891,8 +856,8 @@ TEST(TessBlock, NestedChunkAndTileIterationDoesNotAllocate) {
   };
   std::uint64_t sum = 0;
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
   tess::for_each_chunk<tess::WritePolicy::UniquePerChunk>(
       world, tess::chunk_domain(keys), [&](auto view) {
         auto terrain = view.template field_span<TerrainTag>();
@@ -902,10 +867,10 @@ TEST(TessBlock, NestedChunkAndTileIterationDoesNotAllocate) {
           sum += terrain[id.value] + coord.x + coord.y + coord.z;
         });
       });
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_GT(sum, 0u);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessBlock, PrebuiltBlockCtxNestedChunkAndTileIterationDoesNotAllocate) {
@@ -920,8 +885,8 @@ TEST(TessBlock, PrebuiltBlockCtxNestedChunkAndTileIterationDoesNotAllocate) {
       world, tess::chunk_domain(keys));
   std::uint64_t sum = 0;
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
   ctx.for_each_chunk([&](auto view) {
     auto terrain = view.template field_span<TerrainTag>();
     view.for_each_tile([&](tess::LocalTileId id, tess::LocalCoord3 coord) {
@@ -930,10 +895,10 @@ TEST(TessBlock, PrebuiltBlockCtxNestedChunkAndTileIterationDoesNotAllocate) {
       sum += terrain[id.value] + coord.x + coord.y + coord.z;
     });
   });
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_GT(sum, 0u);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessBlock, PreReservedScratchInChunkAndTileIterationDoesNotAllocate) {
@@ -951,8 +916,8 @@ TEST(TessBlock, PreReservedScratchInChunkAndTileIterationDoesNotAllocate) {
       world, tess::chunk_domain(keys), scratch);
   std::uint64_t sum = 0;
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
   ctx.for_each_chunk([&](auto view) {
     ctx.reset_scratch();
     auto values = ctx.scratch()->allocate<std::uint32_t>(
@@ -964,10 +929,10 @@ TEST(TessBlock, PreReservedScratchInChunkAndTileIterationDoesNotAllocate) {
       sum += values[id.value] + coord.x + coord.y + coord.z;
     });
   });
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_GT(sum, 0u);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessBlock, ScratchExhaustionCanBeReportedDuringChunkIteration) {
@@ -1009,8 +974,8 @@ TEST(TessBlock, NestedBoundaryPredicateIterationDoesNotAllocate) {
   std::uint64_t interior_count = 0;
   std::uint64_t sum = 0;
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
   tess::for_each_chunk<tess::WritePolicy::UniquePerChunk>(
       world, tess::chunk_domain(keys), [&](auto view) {
         auto terrain = view.template field_span<TerrainTag>();
@@ -1030,12 +995,12 @@ TEST(TessBlock, NestedBoundaryPredicateIterationDoesNotAllocate) {
           sum += terrain[id.value] + view.contains_local(candidate);
         });
       });
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_GT(sum, 0u);
   EXPECT_EQ(boundary_count, 92u * keys.size());
   EXPECT_EQ(interior_count, 420u * keys.size());
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessBlock, Vertical2DChunkBoundsUseWorldAxes) {

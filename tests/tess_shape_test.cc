@@ -1,47 +1,11 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
-#include <atomic>
 #include <cstdint>
-#include <cstdlib>
 #include <limits>
-#include <new>
 #include <type_traits>
 
-namespace {
-
-std::atomic<bool> count_allocations{false};
-std::atomic<int> allocation_count{0};
-
-}  // namespace
-
-void* operator new(std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void* operator new[](std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void operator delete(void* ptr) noexcept { std::free(ptr); }
-
-void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
+#include "allocation_counter.h"
 
 namespace {
 
@@ -293,8 +257,8 @@ TEST(TessShape, KeyConversionsDoNotAllocate) {
   auto coord = tess::Coord3{47, 33, 17};
   auto observed = std::uint64_t{0};
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
   for (auto i = 0; i < 1024; ++i) {
     const auto tile = tess::tile_key<Chunked3D>(coord);
     const auto decoded = tess::coord<Chunked3D>(tile);
@@ -304,10 +268,10 @@ TEST(TessShape, KeyConversionsDoNotAllocate) {
     coord.y = (decoded.y + 3) % 64;
     coord.z = (decoded.z + 5) % 32;
   }
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_GT(observed, 0u);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessShape, RepresentsSingleChunkTilesWithZeroChunkKey) {

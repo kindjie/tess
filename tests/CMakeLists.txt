@@ -9,25 +9,25 @@ tess_apply_project_options(tess_smoke)
 
 gtest_discover_tests(tess_smoke)
 
-add_executable(tess_shape_test tess_shape_test.cc)
+add_executable(tess_shape_test allocation_counter.cc tess_shape_test.cc)
 target_link_libraries(tess_shape_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_shape_test)
 
 gtest_discover_tests(tess_shape_test)
 
-add_executable(tess_storage_test tess_storage_test.cc)
+add_executable(tess_storage_test allocation_counter.cc tess_storage_test.cc)
 target_link_libraries(tess_storage_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_storage_test)
 
 gtest_discover_tests(tess_storage_test)
 
-add_executable(tess_block_test tess_block_test.cc)
+add_executable(tess_block_test allocation_counter.cc tess_block_test.cc)
 target_link_libraries(tess_block_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_block_test)
 
 gtest_discover_tests(tess_block_test)
 
-add_executable(tess_queued_test tess_queued_test.cc)
+add_executable(tess_queued_test allocation_counter.cc tess_queued_test.cc)
 target_link_libraries(tess_queued_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_queued_test)
 
@@ -39,7 +39,7 @@ tess_apply_project_options(tess_topology_test)
 
 gtest_discover_tests(tess_topology_test)
 
-add_executable(tess_path_test tess_path_test.cc)
+add_executable(tess_path_test allocation_counter.cc tess_path_test.cc)
 target_link_libraries(tess_path_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_path_test)
 
@@ -54,7 +54,11 @@ tess_apply_project_options(tess_path_runtime_test)
 
 gtest_discover_tests(tess_path_runtime_test)
 
-add_executable(tess_path_agent_test tess_path_agent_test.cc)
+add_executable(
+  tess_path_agent_test
+  allocation_counter.cc
+  tess_path_agent_test.cc
+)
 target_link_libraries(
   tess_path_agent_test
   PRIVATE tess::tess GTest::gtest_main
@@ -63,7 +67,11 @@ tess_apply_project_options(tess_path_agent_test)
 
 gtest_discover_tests(tess_path_agent_test)
 
-add_executable(tess_path_agent_tick_test tess_path_agent_tick_test.cc)
+add_executable(
+  tess_path_agent_tick_test
+  allocation_counter.cc
+  tess_path_agent_tick_test.cc
+)
 target_link_libraries(
   tess_path_agent_tick_test
   PRIVATE tess::tess GTest::gtest_main

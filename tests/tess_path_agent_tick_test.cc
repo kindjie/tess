@@ -2,46 +2,10 @@
 #include <tess/tess.h>
 
 #include <array>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <new>
 
-namespace {
-
-std::atomic<bool> count_allocations{false};
-std::atomic<int> allocation_count{0};
-
-}  // namespace
-
-void* operator new(std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void* operator new[](std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void operator delete(void* ptr) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr) noexcept { std::free(ptr); }
-
-void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
+#include "allocation_counter.h"
 
 namespace {
 
@@ -145,6 +109,31 @@ TEST(TessPathAgentTick, DirtyPathingReprocessesBeforeMovement) {
   EXPECT_NE(agents[0].position, (tess::Coord3{2, 0, 0}));
 }
 
+TEST(TessPathAgentTick, WorldEditRequiresExplicitDirtyMark) {
+  World world;
+  fill_world(world);
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{7, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+
+  auto stats = tess::tick_unit_path_agents<World, PassableTag>(
+      tick_state, world, agents, runtime);
+  ASSERT_TRUE(stats.processed_paths);
+  ASSERT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
+
+  mark_passable(world, tess::Coord3{2, 0, 0}, false);
+  stats = tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
+                                                          agents, runtime);
+  EXPECT_FALSE(stats.processed_paths);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{2, 0, 0}));
+}
+
 TEST(TessPathAgentTick, TickGoalAssignmentMarksPathingDirty) {
   World world;
   fill_world(world);
@@ -232,13 +221,13 @@ TEST(TessPathAgentTick, WarmUnitTickWithoutDirtyPathingDoesNotAllocate) {
   (void)tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
                                                         agents, runtime);
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
   (void)tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
                                                         agents, runtime);
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 }  // namespace
