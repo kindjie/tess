@@ -52,6 +52,8 @@ void reserve_runtime(tess::PathRequestRuntime& runtime,
   runtime.reserve_search_nodes(RuntimeTileCount);
   runtime.reserve_path_nodes(8192);
   runtime.reserve_unit_routes(request_count);
+  runtime.reserve_unit_field_products(request_count);
+  runtime.reserve_unit_field_product_dependencies(World::chunk_count);
   runtime.reserve_portal_segments(request_count);
   runtime.portal_segment_cache().reserve_path_nodes(1024);
 }
@@ -203,6 +205,35 @@ TEST(TessPathAgent, WarmUnitAgentProcessingDoesNotAllocate) {
                                                            runtime);
   tess_test::set_allocation_counting(false);
 
+  EXPECT_EQ(tess_test::allocation_count(), 0);
+}
+
+TEST(TessPathAgent, WarmUnitFieldProductProcessingDoesNotAllocate) {
+  World world;
+  fill_world(world);
+
+  std::array<tess::PathAgentState, 8> agents{};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    agents[i].position = tess::Coord3{0, static_cast<std::int64_t>(i), 0};
+    tess::set_path_agent_goal(agents[i], tess::Coord3{31, 31, 0});
+  }
+
+  const auto policy = tess::PathRuntimeCachePolicy{
+      .use_unit_field_product_cache = true,
+      .unit_field_product_min_start_chunks = 1,
+  };
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  (void)tess::process_unit_path_agents<World, PassableTag>(world, agents,
+                                                           runtime, policy);
+
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
+  (void)tess::process_unit_path_agents<World, PassableTag>(world, agents,
+                                                           runtime, policy);
+  tess_test::set_allocation_counting(false);
+
+  EXPECT_EQ(runtime.stats().field_product_cache.entries, 1u);
   EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 

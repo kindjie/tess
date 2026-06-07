@@ -61,6 +61,26 @@ struct WeightedPathBatchStats {
 };
 
 class PathScratch;
+class DistanceFieldScratch;
+class GoalSet;
+class DistanceFieldProduct;
+struct NearestTargetResult;
+
+template <typename World, typename Tag>
+auto build_distance_field_product(const World& world, const GoalSet& goals,
+                                  DistanceFieldScratch& scratch,
+                                  DistanceFieldProduct& product)
+    -> DistanceFieldResult;
+
+template <typename World, typename Tag>
+auto distance_field_product_path(const World& world, Coord3 start,
+                                 const DistanceFieldProduct& product,
+                                 DistanceFieldScratch& scratch) -> PathResult;
+
+template <typename World, typename Tag>
+auto nearest_target(const World& world, Coord3 start,
+                    const DistanceFieldProduct& product,
+                    DistanceFieldScratch& scratch) -> NearestTargetResult;
 
 class ChunkVersionDependencies {
  public:
@@ -529,6 +549,25 @@ class DistanceFieldScratch {
                                            Coord3 goal,
                                            DistanceFieldScratch& scratch)
       -> PathResult;
+
+  template <typename World, typename Tag>
+  friend auto build_distance_field_product(const World& world,
+                                           const GoalSet& goals,
+                                           DistanceFieldScratch& scratch,
+                                           DistanceFieldProduct& product)
+      -> DistanceFieldResult;
+
+  template <typename World, typename Tag>
+  friend auto distance_field_product_path(const World& world, Coord3 start,
+                                          const DistanceFieldProduct& product,
+                                          DistanceFieldScratch& scratch)
+      -> PathResult;
+
+  template <typename World, typename Tag>
+  friend auto nearest_target(const World& world, Coord3 start,
+                             const DistanceFieldProduct& product,
+                             DistanceFieldScratch& scratch)
+      -> NearestTargetResult;
 
   void clear_build() noexcept {
     advance_epoch();

@@ -93,6 +93,18 @@ void record_route_cache_counters(benchmark::State& state,
   state.counters["cache.path_nodes"] = static_cast<double>(stats.path_nodes);
 }
 
+void record_field_product_cache_counters(benchmark::State& state,
+                                         tess::FieldProductCacheStats stats) {
+  state.counters["field_cache.entries"] = static_cast<double>(stats.entries);
+  state.counters["field_cache.bytes"] = static_cast<double>(stats.bytes);
+  state.counters["field_cache.hits"] = static_cast<double>(stats.hits);
+  state.counters["field_cache.misses"] = static_cast<double>(stats.misses);
+  state.counters["field_cache.evictions"] =
+      static_cast<double>(stats.evictions);
+  state.counters["field_cache.stale_rejections"] =
+      static_cast<double>(stats.stale_rejections);
+}
+
 void BM_path_agent_runtime_100_unit_suffix_512x512(benchmark::State& state) {
   PathWorld world;
   fill_passable(world, 1);
@@ -388,6 +400,125 @@ void BM_path_agent_runtime_100_unit_world_edit_512x512(
   state.counters["runtime.path_nodes"] = static_cast<double>(stats.path_nodes);
 }
 
+template <typename PolicyFactory>
+void run_unit_shared_goal_wall_gap_runtime(benchmark::State& state,
+                                           PolicyFactory policy_factory) {
+  PathWorld world;
+  fill_passable(world, 1);
+  for (std::int64_t y = 0; y < 511; ++y) {
+    world.template field<PassableTag>(tess::Coord3{256, y, 0}) = 0;
+  }
+
+  std::array<tess::PathAgentState, 100> agents{};
+  const auto goal = tess::Coord3{511, 511, 0};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    agents[i].position = tess::Coord3{offset % 16, offset / 16, 0};
+    tess::set_path_agent_goal(agents[i], goal);
+  }
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  runtime.reserve_unit_field_products(1);
+  runtime.reserve_unit_field_product_dependencies(PathWorld::chunk_count);
+  const auto policy = policy_factory();
+
+  tess::PathAgentFrameStats frame_stats;
+  for (auto _ : state) {
+    frame_stats = tess::process_unit_path_agents<PathWorld, PassableTag>(
+        world, agents, runtime, policy);
+    benchmark::DoNotOptimize(frame_stats.found);
+    benchmark::DoNotOptimize(runtime.results().data());
+  }
+
+  record_agent_counters(state, frame_stats);
+  const auto stats = runtime.stats();
+  record_route_cache_counters(state, stats.route_cache);
+  record_field_product_cache_counters(state, stats.field_product_cache);
+  state.counters["field_policy.candidates"] =
+      static_cast<double>(stats.field_product_candidate_groups);
+  state.counters["field_policy.used"] =
+      static_cast<double>(stats.field_product_used_groups);
+  state.counters["field_policy.skipped"] =
+      static_cast<double>(stats.field_product_skipped_groups);
+  state.counters["runtime.path_nodes"] = static_cast<double>(stats.path_nodes);
+}
+
+void BM_path_agent_runtime_100_unit_shared_wall_gap_route_cache_512x512(
+    benchmark::State& state) {
+  run_unit_shared_goal_wall_gap_runtime(
+      state, [] { return tess::PathRuntimeCachePolicy{}; });
+}
+
+void BM_path_agent_runtime_100_unit_shared_wall_gap_field_cache_512x512(
+    benchmark::State& state) {
+  run_unit_shared_goal_wall_gap_runtime(state, [] {
+    return tess::PathRuntimeCachePolicy{
+        .use_unit_field_product_cache = true,
+    };
+  });
+}
+
+template <typename PolicyFactory>
+void run_unit_scattered_goal_wall_gap_runtime(benchmark::State& state,
+                                              PolicyFactory policy_factory) {
+  PathWorld world;
+  fill_passable(world, 1);
+  for (std::int64_t y = 0; y < 511; ++y) {
+    world.template field<PassableTag>(tess::Coord3{256, y, 0}) = 0;
+  }
+
+  std::array<tess::PathAgentState, 100> agents{};
+  const auto goal = tess::Coord3{511, 511, 0};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    const auto x = static_cast<std::int64_t>((i % 10) * 24);
+    const auto y = static_cast<std::int64_t>((i / 10) * 48);
+    agents[i].position = tess::Coord3{x, y, 0};
+    tess::set_path_agent_goal(agents[i], goal);
+  }
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  runtime.reserve_unit_field_products(1);
+  runtime.reserve_unit_field_product_dependencies(PathWorld::chunk_count);
+  const auto policy = policy_factory();
+
+  tess::PathAgentFrameStats frame_stats;
+  for (auto _ : state) {
+    frame_stats = tess::process_unit_path_agents<PathWorld, PassableTag>(
+        world, agents, runtime, policy);
+    benchmark::DoNotOptimize(frame_stats.found);
+    benchmark::DoNotOptimize(runtime.results().data());
+  }
+
+  record_agent_counters(state, frame_stats);
+  const auto stats = runtime.stats();
+  record_route_cache_counters(state, stats.route_cache);
+  record_field_product_cache_counters(state, stats.field_product_cache);
+  state.counters["field_policy.candidates"] =
+      static_cast<double>(stats.field_product_candidate_groups);
+  state.counters["field_policy.used"] =
+      static_cast<double>(stats.field_product_used_groups);
+  state.counters["field_policy.skipped"] =
+      static_cast<double>(stats.field_product_skipped_groups);
+  state.counters["runtime.path_nodes"] = static_cast<double>(stats.path_nodes);
+}
+
+void BM_path_agent_runtime_100_unit_scattered_wall_gap_route_cache_512x512(
+    benchmark::State& state) {
+  run_unit_scattered_goal_wall_gap_runtime(
+      state, [] { return tess::PathRuntimeCachePolicy{}; });
+}
+
+void BM_path_agent_runtime_100_unit_scattered_wall_gap_field_cache_512x512(
+    benchmark::State& state) {
+  run_unit_scattered_goal_wall_gap_runtime(state, [] {
+    return tess::PathRuntimeCachePolicy{
+        .use_unit_field_product_cache = true,
+    };
+  });
+}
+
 BENCHMARK(BM_path_agent_runtime_100_unit_suffix_512x512)
     ->Name("path/agent_runtime_100_unit_suffix_512x512");
 BENCHMARK(BM_path_agent_tick_100_unit_clean_512x512)
@@ -402,5 +533,15 @@ BENCHMARK(BM_path_agent_runtime_100_weighted_mixed_512x512)
     ->Name("path/agent_runtime_100_weighted_mixed_512x512");
 BENCHMARK(BM_path_agent_runtime_100_unit_world_edit_512x512)
     ->Name("path/agent_runtime_100_unit_world_edit_512x512");
+BENCHMARK(BM_path_agent_runtime_100_unit_shared_wall_gap_route_cache_512x512)
+    ->Name("path/agent_runtime_100_unit_shared_wall_gap_route_cache_512x512");
+BENCHMARK(BM_path_agent_runtime_100_unit_shared_wall_gap_field_cache_512x512)
+    ->Name("path/agent_runtime_100_unit_shared_wall_gap_field_cache_512x512");
+BENCHMARK(BM_path_agent_runtime_100_unit_scattered_wall_gap_route_cache_512x512)
+    ->Name(
+        "path/agent_runtime_100_unit_scattered_wall_gap_route_cache_512x512");
+BENCHMARK(BM_path_agent_runtime_100_unit_scattered_wall_gap_field_cache_512x512)
+    ->Name(
+        "path/agent_runtime_100_unit_scattered_wall_gap_field_cache_512x512");
 
 }  // namespace

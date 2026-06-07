@@ -1209,6 +1209,184 @@ TEST(TessPath, WarmDistanceFieldQueriesDoNotAllocate) {
   EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
+TEST(TessPath, DistanceFieldProductFindsNearestReachableGoal) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::GoalSet goals;
+  goals.reserve(2);
+  goals.add(tess::Coord3{7, 0, 0});
+  goals.add(tess::Coord3{7, 7, 0});
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::DistanceFieldProduct product;
+  product.reserve_goals(2);
+  product.reserve_nodes(64);
+  product.reserve_dependencies(4);
+
+  const auto field =
+      tess::build_distance_field_product<decltype(world), PassableTag>(
+          world, goals, scratch, product);
+  const auto nearest = tess::nearest_target<decltype(world), PassableTag>(
+      world, tess::Coord3{0, 7, 0}, product, scratch);
+
+  ASSERT_EQ(field.status, tess::PathStatus::Found);
+  ASSERT_EQ(nearest.status, tess::PathStatus::Found);
+  EXPECT_EQ(nearest.target, (tess::Coord3{7, 7, 0}));
+  EXPECT_EQ(nearest.cost, 7u);
+  EXPECT_EQ(nearest.path.front(), (tess::Coord3{0, 7, 0}));
+  EXPECT_EQ(nearest.path.back(), nearest.target);
+}
+
+TEST(TessPath, DistanceFieldProductReportsNoPathForUnreachableStart) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  for (std::int64_t y = 0; y < 8; ++y) {
+    world.template field<PassableTag>(tess::Coord3{4, y, 0}) = false;
+  }
+
+  tess::GoalSet goals;
+  goals.add(tess::Coord3{7, 7, 0});
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::DistanceFieldProduct product;
+  product.reserve_nodes(64);
+
+  const auto field =
+      tess::build_distance_field_product<decltype(world), PassableTag>(
+          world, goals, scratch, product);
+  const auto result =
+      tess::distance_field_product_path<decltype(world), PassableTag>(
+          world, tess::Coord3{0, 0, 0}, product, scratch);
+
+  ASSERT_EQ(field.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.status, tess::PathStatus::NoPath);
+  EXPECT_TRUE(result.path.empty());
+}
+
+TEST(TessPath, DistanceFieldProductRejectsStaleChunkVersion) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::GoalSet goals;
+  goals.add(tess::Coord3{7, 7, 0});
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::DistanceFieldProduct product;
+  product.reserve_nodes(64);
+  product.reserve_dependencies(4);
+
+  const auto field =
+      tess::build_distance_field_product<decltype(world), PassableTag>(
+          world, goals, scratch, product);
+  ASSERT_EQ(field.status, tess::PathStatus::Found);
+
+  world.mark_dirty(tess::ChunkKey{0}, 1u,
+                   tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
+
+  const auto result =
+      tess::distance_field_product_path<decltype(world), PassableTag>(
+          world, tess::Coord3{0, 0, 0}, product, scratch);
+  EXPECT_EQ(result.status, tess::PathStatus::NoPath);
+  EXPECT_TRUE(result.path.empty());
+}
+
+TEST(TessPath, FieldProductCacheTracksHitsMissesEvictionAndStaleRejects) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::FieldProductCache cache{100000};
+  cache.reserve_entries(2);
+
+  tess::GoalSet first_goals;
+  first_goals.add(tess::Coord3{7, 7, 0});
+  EXPECT_EQ((cache.lookup<decltype(world), PassableTag>(world, first_goals)),
+            nullptr);
+  EXPECT_EQ(cache.stats().misses, 1u);
+
+  tess::DistanceFieldProduct first;
+  first.reserve_nodes(64);
+  first.reserve_dependencies(4);
+  ASSERT_EQ((tess::build_distance_field_product<decltype(world), PassableTag>(
+                 world, first_goals, scratch, first))
+                .status,
+            tess::PathStatus::Found);
+  EXPECT_TRUE((cache.store<decltype(world), PassableTag>(first)));
+  EXPECT_NE((cache.lookup<decltype(world), PassableTag>(world, first_goals)),
+            nullptr);
+  EXPECT_EQ(cache.stats().hits, 1u);
+
+  const auto first_entry_bytes = cache.stats().bytes;
+  cache.set_byte_budget(first_entry_bytes + 1u);
+  tess::GoalSet second_goals;
+  second_goals.add(tess::Coord3{7, 0, 0});
+  tess::DistanceFieldProduct second;
+  second.reserve_nodes(64);
+  second.reserve_dependencies(4);
+  ASSERT_EQ((tess::build_distance_field_product<decltype(world), PassableTag>(
+                 world, second_goals, scratch, second))
+                .status,
+            tess::PathStatus::Found);
+  EXPECT_TRUE((cache.store<decltype(world), PassableTag>(second)));
+  EXPECT_EQ(cache.stats().entries, 1u);
+  EXPECT_EQ(cache.stats().evictions, 1u);
+
+  world.mark_dirty(tess::ChunkKey{0}, 1u,
+                   tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
+  EXPECT_EQ((cache.lookup<decltype(world), PassableTag>(world, second_goals)),
+            nullptr);
+  EXPECT_EQ(cache.stats().stale_rejections, 1u);
+  EXPECT_EQ(cache.stats().entries, 0u);
+}
+
+TEST(TessPath, WarmFieldProductCacheLookupAndQueryDoNotAllocate) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::GoalSet goals;
+  goals.reserve(1);
+  goals.add(tess::Coord3{7, 7, 0});
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::DistanceFieldProduct product;
+  product.reserve_goals(1);
+  product.reserve_nodes(64);
+  product.reserve_dependencies(4);
+  ASSERT_EQ((tess::build_distance_field_product<decltype(world), PassableTag>(
+                 world, goals, scratch, product))
+                .status,
+            tess::PathStatus::Found);
+
+  tess::FieldProductCache cache{100000};
+  cache.reserve_entries(1);
+  ASSERT_TRUE((cache.store<decltype(world), PassableTag>(product)));
+  (void)cache.lookup<decltype(world), PassableTag>(world, goals);
+  (void)tess::distance_field_product_path<decltype(world), PassableTag>(
+      world, tess::Coord3{0, 0, 0}, product, scratch);
+
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
+
+  const auto* cached = cache.lookup<decltype(world), PassableTag>(world, goals);
+  auto result = tess::PathResult{};
+  if (cached != nullptr) {
+    result = tess::distance_field_product_path<decltype(world), PassableTag>(
+        world, tess::Coord3{0, 0, 0}, *cached, scratch);
+  }
+
+  tess_test::set_allocation_counting(false);
+
+  ASSERT_NE(cached, nullptr);
+  EXPECT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
+}
+
 TEST(TessPath, WeightedDistanceFieldMatchesWeightedAStarForSharedGoal) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
   fill_passable(world, true);

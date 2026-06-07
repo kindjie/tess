@@ -112,3 +112,12 @@ linked into the final executable.
 No block-executor dependency is added yet. `work_contract`, Taskflow, oneTBB,
 and enkiTS remain candidates for later executor backends after Tess has an
 internal executor abstraction and benchmark comparisons.
+
+Public documentation inspected for the deferred Building C++ candidates:
+
+- `work_contract`: https://github.com/buildingcpp/work_contract
+- `signal_tree`: https://github.com/buildingcpp/signal_tree
+
+As of the 2026-06-07 spike, `signal_tree` is a readiness-selection primitive,
+not a scoped phase executor, and `work_contract` adds recurrent task lifecycle
+semantics beyond the current Tess executor adapter. Neither is adopted yet.

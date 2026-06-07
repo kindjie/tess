@@ -99,6 +99,12 @@ Compare row-major, Morton, Hilbert if implemented, and workload-specific active/
 - weighted multi-goal grouped fields versus independent weighted A*
 - bounded weighted field buckets versus general weighted heap fields
 - weighted batch planner policy versus hand-grouped fields
+- unit-cost distance-field products for multi-goal builds, nearest-target
+  query batches, cached hit/replay, stale rejection, and constrained-budget
+  LRU eviction
+- runtime comparisons between the default unit route/suffix cache and opt-in
+  unit field-product cache on repeated-goal agent batches, including policy
+  skip cases for suffix-friendly starts and use cases for scattered starts
 - path-agent tick overhead for clean frames, dirty unit replans after world
   edits, and dirty weighted shared-goal replans
 - route-product replay and dependency invalidation
@@ -113,7 +119,10 @@ The path threshold set keeps unit-cost and weighted benchmarks separate. A
 weighted-path change must still pass the existing unit-cost path thresholds so
 weighted support cannot silently regress the optimized unit-cost fast paths.
 Single-query path cases above 1 ms should have an optimization-log entry that
-records the bottleneck evidence and current decision.
+records the bottleneck evidence and current decision. Dense product build and
+cache eviction benchmarks may use explicit batch/cache thresholds above 1 ms
+when they intentionally build or copy reusable products and the threshold is
+documented from measurement.
 
 ## 12. Flow/distance/influence benchmarks
 
@@ -133,6 +142,7 @@ records the bottleneck evidence and current decision.
 - invalidation
 - pins
 - thrash/reuse
+- exact-hit, stale-rejection, and eviction counters for cache observability
 
 ## 14. Memory/allocation benchmarks
 

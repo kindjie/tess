@@ -14,6 +14,39 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-06-07 - Concurrent Phase Backend Library Spike
+
+- Area: Tile-world queued operation phase execution.
+- Hypothesis: A small external concurrency primitive might reduce risk for
+  future production worker backends if it maps cleanly to Tess's current
+  phase contract: execute one contiguous planned-operation index range,
+  complete or join before returning, keep per-operation dirty/result scratch
+  caller-owned, and avoid hidden cancellation or lifecycle semantics.
+- Evidence: Reviewed current upstream state for
+  `buildingcpp/work_contract` at commit
+  `3f56a17e36db57846a086e20d8788478287f3c86` and
+  `buildingcpp/signal_tree` at commit
+  `f7b59510e117bc6156af86a6b8689ca4a3832e3c`. `signal_tree` is a concurrent
+  readiness set: it selects ready signal ids, is idempotent, does not store
+  work payloads, and leaves worker waiting/join/result handling to the caller.
+  That is useful scheduler infrastructure, but it is not a phase executor.
+  `work_contract` is closer to a scheduler because it manages recurrent
+  schedulable contracts with non-blocking and blocking groups, explicit async
+  release, thread-local reschedule/release controls, and exception callbacks.
+  Those lifecycle features are stronger than Tess needs for the current phase
+  adapter and would introduce semantics not yet covered by Tess tests.
+- Decision: Deferred. Keep the internal `ExecutorPhaseRange` /
+  `for_each_operation(first, count, fn)` adapter as the production-facing
+  contract for now, with `SerialPhaseExecutor` and test-only threaded
+  executors covering the memory and ordering rules. Do not add either
+  dependency in this slice.
+- Follow-up: Revisit `work_contract` only after Tess has a production worker
+  backend prototype that needs recurrent work handles or blocking wakeups, and
+  first prove scoped phase completion, deterministic result reduction, and
+  shutdown behavior in Tess-owned tests. Revisit `signal_tree` only if a later
+  scheduler has many stable ready lanes where idempotent readiness and
+  non-FIFO fairness are the real bottleneck.
+
 ## 2026-06-05 - Weighted Shared-Goal Distance Field
 
 - Area: Weighted many-agent shared-goal pathfinding.
@@ -701,3 +734,66 @@ deferred for scope reasons. Keep entries short and concrete:
 - Retry conditions: Revisit cache indexing when route counts become large
   enough for linear lookup to show up in profiles, and revisit hierarchy when
   topology graph ownership is designed.
+
+## 2026-06-06 - Unit-Cost Distance-Field Products
+
+- Area: Reusable unit-cost distance fields for stable maps with repeated goal
+  sets.
+- Hypothesis: Copying a built reverse field into a reusable product can make
+  repeated nearest-target and replay queries much cheaper than rebuilding the
+  field, while chunk-version dependencies conservatively reject stale products.
+- Evidence: Targeted local benchmark runs report
+  `path/distance_field_product_build_8_goal_room_portals_512x512` around
+  13 ms while visiting about 247k reachable tiles and copying about 1 MiB of
+  dense field data. The corresponding
+  `path/nearest_target_product_100_starts_room_portals_512x512` batch is about
+  0.32 ms, `path/field_product_cache_hit_replay_room_portals_512x512` is about
+  4 us, stale rejection is about 0.8 us, and constrained LRU eviction is about
+  27 us.
+- Accepted: Add `GoalSet`, `DistanceFieldProduct`, nearest-target replay, and
+  a caller-owned byte-budgeted `FieldProductCache` for unit-cost fields. Keep
+  replay and cache lookup exact and conservative: products carry reached
+  chunk-version dependencies, and stale products return `NoPath` or are
+  rejected from the cache.
+- Deferred: Weighted field products and `PathRequestRuntime` integration remain
+  out of this slice. Runtime policy needs a separate decision once product
+  ownership, invalidation cadence, and topology interaction are clearer.
+- Decision: Keep dense field products for now. The 8-goal product build is a
+  batch/product-construction workload, so its threshold is explicitly above
+  the 1 ms single-query investigation line; nearest-target and cache replay
+  thresholds stay under 1 ms.
+- Retry conditions: Revisit sparse product storage or differential cache
+  invalidation if dense product byte size or build-copy time starts dominating
+  real workloads.
+
+## 2026-06-06 - Runtime Field-Product Reuse Policy
+
+- Area: Integrating unit-cost distance-field products into
+  `PathRequestRuntime`.
+- Hypothesis: Repeated-goal runtime batches can opt into field-product reuse
+  while preserving the existing exact route/suffix cache as the default unit
+  pathing behavior.
+- Evidence: Runtime tests cover opt-in repeated-goal reuse, stale product
+  rejection after world edits, world-change cache clearing, and warm
+  allocation-free agent processing. Local benchmark comparison on a 100-agent
+  shared wall-gap workload reports the default route/suffix cache around
+  0.31 ms and the opt-in field-product cache around 0.68 ms; the route cache
+  wins there because many starts are suffix hits on already-cached paths. A
+  start-chunk policy gate makes that same field-product opt-in path skip the
+  suffix-friendly group and match route-cache timing around 0.31 ms. A
+  scattered-start wall-gap workload uses the product, but still measures
+  around 0.41 ms versus route/suffix around 0.21 ms because suffix reuse
+  remains strong in the current map.
+- Accepted: Add `PathRuntimeCachePolicy::use_unit_field_product_cache`,
+  `unit_field_product_min_goal_reuse`,
+  `unit_field_product_min_start_chunks`, and a byte budget for the
+  runtime-owned field-product cache. Only repeated single-goal groups with
+  enough distinct start chunks use products; singleton and suffix-friendly
+  single-chunk groups keep the route/suffix path. Runtime counters report
+  candidate, used, and skipped field-product groups.
+- Decision: Keep runtime field products opt-in. They are useful for workloads
+  where callers know field reuse should beat suffix reuse, but the existing
+  route cache remains the safer default for converging paths.
+- Retry conditions: Revisit automatic runtime selection after more workload
+  benchmarks identify when field products consistently beat route/suffix
+  caching.
