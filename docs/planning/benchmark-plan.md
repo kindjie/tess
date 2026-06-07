@@ -249,6 +249,9 @@ including scratch-specific names for `block/scratch_allocate_u32` and
 `block/context_scratch_tile_iteration_2d`. Queued execution benchmarks have
 matching threshold scaffolding in `bench/thresholds/queued.json`, and MVP path
 benchmarks have matching threshold scaffolding in `bench/thresholds/path.json`.
+Path-agent runtime and tick benchmarks are part of the path threshold set, so
+new simulation-facing path loops must add thresholds when benchmark names are
+added.
 The path set includes a cheap smoke path plus 64x64, 512x512, and 1024x1024
 open-world A* scaling paths intended to catch unrealistic path-core overhead.
 Path benchmarks also publish user counters for cost, path nodes, expanded

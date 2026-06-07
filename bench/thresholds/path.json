@@ -232,6 +232,34 @@
     "path/cached_astar_batch_100_suffix_open_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 250000
+    },
+    "path/agent_runtime_100_unit_suffix_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 250000
+    },
+    "path/agent_tick_100_unit_clean_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 100000
+    },
+    "path/agent_tick_100_unit_dirty_world_edit_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/agent_runtime_100_weighted_shared_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 10000000
+    },
+    "path/agent_tick_100_weighted_shared_dirty_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 10000000
+    },
+    "path/agent_runtime_100_weighted_mixed_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 80000000
+    },
+    "path/agent_runtime_100_unit_world_edit_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
     }
   }
 }

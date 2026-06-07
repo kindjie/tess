@@ -37,11 +37,20 @@
     },
     {
       "name": "dev-clang-tidy",
-      "displayName": "Developer Debug clang-tidy",
+      "displayName": "Developer Debug clang-tidy Gate",
       "inherits": "dev",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "TESS_ENABLE_CLANG_TIDY": "ON"
+      }
+    },
+    {
+      "name": "dev-clang-tidy-advisory",
+      "displayName": "Developer Debug clang-tidy Advisory",
+      "inherits": "dev-clang-tidy",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "TESS_CLANG_TIDY_CONFIG": "${sourceDir}/.clang-tidy-advisory"
       }
     },
     {
@@ -82,7 +91,8 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O3 -g -fno-omit-frame-pointer -DNDEBUG",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO":
+            "-O3 -g -fno-omit-frame-pointer -DNDEBUG",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "TESS_BUILD_TESTING": "ON",
         "TESS_BUILD_BENCHMARKS": "ON",
@@ -106,6 +116,10 @@
     {
       "name": "dev-clang-tidy",
       "configurePreset": "dev-clang-tidy"
+    },
+    {
+      "name": "dev-clang-tidy-advisory",
+      "configurePreset": "dev-clang-tidy-advisory"
     },
     {
       "name": "dev-cppcheck",
@@ -149,6 +163,13 @@
     {
       "name": "dev-clang-tidy",
       "configurePreset": "dev-clang-tidy",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-clang-tidy-advisory",
+      "configurePreset": "dev-clang-tidy-advisory",
       "output": {
         "outputOnFailure": true
       }

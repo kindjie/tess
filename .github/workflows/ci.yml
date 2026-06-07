@@ -38,7 +38,7 @@ jobs:
         run: tools/install_smoke.sh
 
   quality:
-    name: Quality Gates And Advisory Checks (${{ matrix.preset }})
+    name: Quality Gates (${{ matrix.preset }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -77,6 +77,38 @@ jobs:
       - name: Test
         if: matrix.preset == 'dev-werror' || matrix.preset == 'dev-asan'
         run: ctest --preset "${{ matrix.preset }}"
+
+  advisory:
+    name: Advisory Checks (${{ matrix.preset }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        preset:
+          - dev-clang-tidy-advisory
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install analysis tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy
+
+      - name: Show tool versions
+        run: |
+          cmake --version
+          clang++ --version
+          clang-tidy --version
+
+      - name: Configure
+        run: cmake --preset "${{ matrix.preset }}"
+
+      - name: Build
+        run: cmake --build --preset "${{ matrix.preset }}"
 
   bench:
     name: Benchmark Gates

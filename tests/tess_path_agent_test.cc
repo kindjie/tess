@@ -2,46 +2,10 @@
 #include <tess/tess.h>
 
 #include <array>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <new>
 
-namespace {
-
-std::atomic<bool> count_allocations{false};
-std::atomic<int> allocation_count{0};
-
-}  // namespace
-
-void* operator new(std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void* operator new[](std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void operator delete(void* ptr) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr) noexcept { std::free(ptr); }
-
-void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
+#include "allocation_counter.h"
 
 namespace {
 
@@ -233,13 +197,13 @@ TEST(TessPathAgent, WarmUnitAgentProcessingDoesNotAllocate) {
   (void)tess::process_unit_path_agents<World, PassableTag>(world, agents,
                                                            runtime);
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
   (void)tess::process_unit_path_agents<World, PassableTag>(world, agents,
                                                            runtime);
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessPathAgent, WarmWeightedAgentProcessingDoesNotAllocate) {
@@ -257,13 +221,13 @@ TEST(TessPathAgent, WarmWeightedAgentProcessingDoesNotAllocate) {
   (void)tess::process_weighted_path_agents<World, PassableTag, CostTag, 8>(
       world, agents, runtime);
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
   (void)tess::process_weighted_path_agents<World, PassableTag, CostTag, 8>(
       world, agents, runtime);
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 }  // namespace

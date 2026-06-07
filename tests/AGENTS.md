@@ -1,6 +1,9 @@
 # Tests
 
 - Tests use GoogleTest.
+- `allocation_counter.{h,cc}` is shared only by allocation-sensitive test
+  binaries that need global `new`/`delete` counters. Do not link it into more
+  than one translation unit inside the same executable.
 - `tess_smoke`: verifies that the public `tess::tess` target is consumable,
   that the root public header compiles, and that public version constants match.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
@@ -67,8 +70,9 @@
   allocation-free warm unit and weighted agent batches.
 - `tess_path_agent_tick_test`: verifies the minimal path-agent tick wrapper,
   including tick advancement, dirty-gated path processing, movement ordering,
-  dirty reprocessing after world edits and goal changes, unreachable goals,
-  weighted shared-goal ticks, and allocation-free warm clean ticks.
+  explicit dirty-mark requirements after world edits, dirty reprocessing after
+  world edits and goal changes, unreachable goals, weighted shared-goal ticks,
+  and allocation-free warm clean ticks.
 - `tess_diagnostics_default_test`: verifies public diagnostic macros are
   disabled by default and do not evaluate arguments, including generic events.
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate
