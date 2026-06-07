@@ -66,11 +66,13 @@ Used for editor diagnostics and navigation. Start clangd with
 default developer compilation database in `build/dev`, and `.clang-tidy`
 selects the clang-tidy checks.
 
-The `dev-clang-tidy` preset runs the same checks in CI as an advisory signal.
-It is not currently warnings-as-errors because existing findings include known
-style debt such as redundant `typename` and swappable coordinate parameters.
-Promote this gate only after those findings are either fixed or intentionally
-suppressed.
+The `dev-clang-tidy` preset is a CI quality gate for low-noise
+clang-analyzer, bugprone, performance, and selected readability checks. The
+`dev-clang-tidy-advisory` preset uses `.clang-tidy-advisory` for broader noisy
+checks that should be reviewed but are not yet part of the blocking gate.
+Current advisory findings include known style debt such as redundant
+`typename` and swappable coordinate parameters. Promote advisory checks only
+after those findings are either fixed or intentionally suppressed.
 
 ## Cppcheck
 

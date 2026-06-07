@@ -2,6 +2,9 @@
 
 The current path layer is a minimal always-resident path foundation. It lives
 under `include/tess/path/` and is exported by `tess/tess.h`.
+`tess/path/path.h` remains the public umbrella for core path APIs; larger
+implementation sections may live in `include/tess/path/detail/` and are
+included from that umbrella.
 
 ## Public Surface
 
@@ -262,6 +265,10 @@ own a scheduler backend, cadence table, event queue, or ECS adapter. It only
 centralizes the common simulation order for the current path-agent MVP: advance
 the simulation tick, optionally rebuild active paths after a dirty event, then
 move agents along stable runtime-owned result paths.
+It does not observe world mutations on its own. Any edit to passability,
+movement costs, topology-relevant movement rules, or active agent goals must
+call `mark_pathing_dirty(state)` or use the tick-state goal helper before the
+next tick that should replan.
 
 ## Deliberate Limits
 

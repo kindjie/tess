@@ -1,50 +1,13 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
-#include <atomic>
-#include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <new>
 #include <span>
 #include <string_view>
 #include <utility>
 #include <vector>
 
-namespace {
-
-std::atomic<bool> count_allocations{false};
-std::atomic<int> allocation_count{0};
-
-}  // namespace
-
-void* operator new(std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void* operator new[](std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void operator delete(void* ptr) noexcept { std::free(ptr); }
-
-void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
+#include "allocation_counter.h"
 
 namespace {
 
@@ -232,8 +195,10 @@ TEST(TessQueued, InvalidWritePolicyIsRejectedWithoutPlanEntry) {
   World world;
   tess::FrameOps ops;
 
-  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
-                         static_cast<tess::WritePolicy>(255));
+  (void)ops.update_field(
+      tess::DomainDesc::resident_chunks(),
+      // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+      static_cast<tess::WritePolicy>(255));
   const auto report = tess::plan_operations(world, ops);
 
   ASSERT_FALSE(report.ok());
@@ -309,8 +274,10 @@ TEST(TessQueued, ReportFindsOperationsByHandle) {
 
   const auto first = ops.update_field(tess::DomainDesc::resident_chunks(),
                                       tess::WritePolicy::ReadOnly);
-  const auto second = ops.update_field(tess::DomainDesc::resident_chunks(),
-                                       static_cast<tess::WritePolicy>(255));
+  const auto second = ops.update_field(
+      tess::DomainDesc::resident_chunks(),
+      // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+      static_cast<tess::WritePolicy>(255));
 
   const auto report = tess::plan_operations(world, ops);
 
@@ -331,8 +298,10 @@ TEST(TessQueued, MixedReportsPreserveOrderAndCountFailures) {
 
   const auto valid = ops.update_field(tess::DomainDesc::resident_chunks(),
                                       tess::WritePolicy::ReadOnly);
-  const auto bad_policy = ops.update_field(tess::DomainDesc::resident_chunks(),
-                                           static_cast<tess::WritePolicy>(255));
+  const auto bad_policy = ops.update_field(
+      tess::DomainDesc::resident_chunks(),
+      // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+      static_cast<tess::WritePolicy>(255));
   const auto bad_domain =
       ops.update_field(tess::DomainDesc::explicit_chunks(invalid_keys),
                        tess::WritePolicy::ReadOnly);
@@ -580,12 +549,16 @@ TEST(TessQueued, PlannedBlockCtxIteratesWithExistingBlockApi) {
   auto ctx = tess::try_planned_block_ctx<tess::WritePolicy::ReadOnly>(
       world, report.plan().operations()[0]);
 
-  ASSERT_TRUE(ctx);
-  EXPECT_EQ(ctx->policy(), tess::WritePolicy::ReadOnly);
-  EXPECT_EQ(ctx->size(), 2u);
+  if (!ctx.has_value()) {
+    FAIL() << "expected planned block context";
+    return;
+  }
+  auto& block_ctx = ctx.value();
+  EXPECT_EQ(block_ctx.policy(), tess::WritePolicy::ReadOnly);
+  EXPECT_EQ(block_ctx.size(), 2u);
 
   std::vector<tess::ChunkKey> visited;
-  ctx->for_each_chunk([&](auto view) { visited.push_back(view.key()); });
+  block_ctx.for_each_chunk([&](auto view) { visited.push_back(view.key()); });
 
   EXPECT_EQ(visited, (std::vector<tess::ChunkKey>{
                          tess::ChunkKey{1},
@@ -663,8 +636,8 @@ TEST(TessQueued, PrebuiltPlannedExecutionDoesNotAllocate) {
   ASSERT_TRUE(report.ok());
   ASSERT_EQ(report.plan().operations().size(), 1u);
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
 
   const auto result =
       tess::execute_planned_operation<tess::WritePolicy::UniquePerChunk>(
@@ -673,11 +646,11 @@ TEST(TessQueued, PrebuiltPlannedExecutionDoesNotAllocate) {
             terrain[0] = static_cast<std::uint16_t>(view.key().value);
           });
 
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
   EXPECT_EQ(result.chunk_count, World::chunk_count);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessQueued, PrebuiltPlannedBlockCtxIterationDoesNotAllocate) {
@@ -690,8 +663,8 @@ TEST(TessQueued, PrebuiltPlannedBlockCtxIterationDoesNotAllocate) {
   ASSERT_TRUE(report.ok());
   ASSERT_EQ(report.plan().operations().size(), 1u);
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
 
   auto ctx = tess::try_planned_block_ctx<tess::WritePolicy::ReadOnly>(
       world, report.plan().operations()[0]);
@@ -704,12 +677,12 @@ TEST(TessQueued, PrebuiltPlannedBlockCtxIterationDoesNotAllocate) {
     });
   }
 
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   ASSERT_TRUE(ctx);
   EXPECT_EQ(visited, World::chunk_count);
   EXPECT_EQ(key_sum, 120u);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessQueued, SourceLocationIsCapturedForDiagnostics) {
@@ -744,22 +717,22 @@ TEST(TessQueued, InspectingQueuedAndPlannedOperationsDoesNotAllocate) {
                          tess::WritePolicy::ReadOnly);
   const auto report = tess::plan_operations(world, ops);
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
 
   const auto queued = ops.operations();
   const auto* operation = ops.operation(tess::OpHandle{0});
   const auto reports = report.operations();
   const auto planned = report.plan().operations();
 
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   ASSERT_NE(operation, nullptr);
   EXPECT_EQ(queued.size(), 1u);
   EXPECT_EQ(operation->id, (tess::OpId{0}));
   EXPECT_EQ(reports.size(), 1u);
   EXPECT_EQ(planned.size(), 1u);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 }  // namespace

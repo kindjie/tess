@@ -42,9 +42,18 @@ function(tess_target_clang_tidy_options target)
     return()
   endif()
 
+  set(clang_tidy_command "${TESS_CLANG_TIDY_EXE}")
+  if(TESS_CLANG_TIDY_CONFIG)
+    list(
+      APPEND
+      clang_tidy_command
+      "--config-file=${TESS_CLANG_TIDY_CONFIG}"
+    )
+  endif()
+
   set_property(
     TARGET ${target}
-    PROPERTY CXX_CLANG_TIDY "${TESS_CLANG_TIDY_EXE}"
+    PROPERTY CXX_CLANG_TIDY "${clang_tidy_command}"
   )
 endfunction()
 

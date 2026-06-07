@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <exception>
 #include <iostream>
 
 namespace {
@@ -30,9 +31,7 @@ void mark_passable(World& world, tess::Coord3 coord, bool passable) {
                    tess::Box3{coord, tess::Extent3{1, 1, 1}});
 }
 
-}  // namespace
-
-int main() {
+auto run() -> int {
   World world;
   fill_field<PassableTag>(world, true);
   fill_field<CostTag>(world, 1u);
@@ -82,4 +81,15 @@ int main() {
             << agents[0].position.y << "," << agents[0].position.z << "\n";
   std::cout << "runtime path nodes: " << runtime.stats().path_nodes << "\n";
   return 0;
+}
+
+}  // namespace
+
+int main() {
+  try {
+    return run();
+  } catch (const std::exception& err) {
+    std::cerr << "example failed: " << err.what() << "\n";
+    return 1;
+  }
 }

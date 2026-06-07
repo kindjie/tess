@@ -19,6 +19,7 @@ option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
 option(TESS_ENABLE_WARNINGS "Enable tess warning flags on local targets" ON)
 option(TESS_WARNINGS_AS_ERRORS "Treat tess local target warnings as errors" OFF)
 option(TESS_ENABLE_CLANG_TIDY "Enable clang-tidy on tess local targets" OFF)
+set(TESS_CLANG_TIDY_CONFIG "" CACHE FILEPATH "Optional clang-tidy config file")
 option(TESS_ENABLE_CPPCHECK "Enable cppcheck on tess local targets" OFF)
 option(TESS_ENABLE_SANITIZERS "Enable ASan and UBSan on tess local targets" OFF)
 
@@ -37,24 +38,32 @@ add_library(tess::tess ALIAS tess)
 
 target_compile_features(tess INTERFACE cxx_std_20)
 
+set(
+  TESS_PUBLIC_HEADERS
+  include/tess/block/block.h
+  include/tess/core/shape.h
+  include/tess/diagnostics/diagnostics.h
+  include/tess/ops/queued.h
+  include/tess/path/detail/weighted_batch.h
+  include/tess/path/distance_field_box.h
+  include/tess/path/path.h
+  include/tess/path/path_runtime.h
+  include/tess/path/portal_route.h
+  include/tess/path/portal_segment_cache.h
+  include/tess/sim/path_agent.h
+  include/tess/sim/path_agent_tick.h
+  include/tess/storage/chunk_page.h
+  include/tess/storage/world.h
+  include/tess/tess.h
+  include/tess/topology/topology.h
+)
+
 target_sources(
   tess
   INTERFACE
     FILE_SET HEADERS
     BASE_DIRS include
-    FILES
-      include/tess/block/block.h
-      include/tess/core/shape.h
-      include/tess/diagnostics/diagnostics.h
-      include/tess/ops/queued.h
-      include/tess/path/distance_field_box.h
-      include/tess/path/path.h
-      include/tess/path/portal_route.h
-      include/tess/path/portal_segment_cache.h
-      include/tess/storage/chunk_page.h
-      include/tess/storage/world.h
-      include/tess/tess.h
-      include/tess/topology/topology.h
+    FILES ${TESS_PUBLIC_HEADERS}
 )
 
 install(
@@ -92,6 +101,14 @@ install(
 if(TESS_BUILD_TESTING)
   include(CTest)
   if(BUILD_TESTING)
+    add_test(
+      NAME tess_public_headers_file_set
+      COMMAND
+        "${CMAKE_COMMAND}"
+        -DTESS_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+        "-DTESS_DECLARED_HEADERS=$<JOIN:${TESS_PUBLIC_HEADERS},;>"
+        -P ${PROJECT_SOURCE_DIR}/cmake/check-public-headers.cmake
+    )
     add_subdirectory(tests)
   endif()
 endif()

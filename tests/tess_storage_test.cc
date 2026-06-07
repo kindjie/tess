@@ -1,48 +1,12 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
-#include <atomic>
 #include <cstdint>
-#include <cstdlib>
-#include <new>
 #include <span>
 #include <type_traits>
 #include <vector>
 
-namespace {
-
-std::atomic<bool> count_allocations{false};
-std::atomic<int> allocation_count{0};
-
-}  // namespace
-
-void* operator new(std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void* operator new[](std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void operator delete(void* ptr) noexcept { std::free(ptr); }
-
-void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
+#include "allocation_counter.h"
 
 namespace {
 
@@ -182,17 +146,17 @@ TEST(TessStorage, PageMetadataReportsChunkIdentityAndByteSize) {
 TEST(TessStorage, RepeatedFieldAccessDoesNotAllocate) {
   Page<TopDown2D> page{tess::ChunkKey{0}, tess::ChunkCoord3{0, 0, 0}};
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
   for (std::uint64_t i = 0; i < Page<TopDown2D>::local_tile_count; ++i) {
     auto id = tess::LocalTileId{i};
     page.field<TerrainTag>(id) = static_cast<std::uint16_t>(i);
     auto terrain = page.field_span<TerrainTag>();
     EXPECT_EQ(terrain[id.value], static_cast<std::uint16_t>(i));
   }
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessStorage, TopDown2DWorldOwnsResidentPagesInChunkKeyOrder) {
@@ -575,8 +539,8 @@ TEST(TessStorage, RepeatedWorldHotAccessDoesNotAllocateAfterConstruction) {
   World<TopDown2D> world;
   std::uint64_t observed = 0;
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
   for (std::uint64_t i = 0; i < 1024; ++i) {
     const auto key = tess::ChunkKey{i % World<TopDown2D>::chunk_count};
     const auto chunk = tess::chunk_coord<TopDown2D>(key);
@@ -595,10 +559,10 @@ TEST(TessStorage, RepeatedWorldHotAccessDoesNotAllocateAfterConstruction) {
     observed +=
         page->chunk_key().value + meta->entity_count + *terrain + regions[0];
   }
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_GT(observed, 0u);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 }  // namespace

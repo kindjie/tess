@@ -2,47 +2,10 @@
 #include <tess/tess.h>
 
 #include <array>
-#include <atomic>
-#include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <new>
 #include <span>
 
-namespace {
-
-std::atomic<bool> count_allocations{false};
-std::atomic<int> allocation_count{0};
-
-}  // namespace
-
-void* operator new(std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void* operator new[](std::size_t size) {
-  if (count_allocations.load(std::memory_order_relaxed)) {
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-  }
-  if (void* ptr = std::malloc(size)) {
-    return ptr;
-  }
-  throw std::bad_alloc();
-}
-
-void operator delete(void* ptr) noexcept { std::free(ptr); }
-
-void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr) noexcept { std::free(ptr); }
-
-void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
+#include "allocation_counter.h"
 
 namespace {
 
@@ -624,17 +587,17 @@ TEST(TessPath, WarmScratchPathQueryDoesNotAllocate) {
       world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}},
       scratch);
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
 
   const auto result = tess::astar_path<decltype(world), PassableTag>(
       world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}},
       scratch);
 
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_EQ(result.status, tess::PathStatus::Found);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessPath, CachedAStarReusesRepeatedRoute) {
@@ -1130,17 +1093,17 @@ TEST(TessPath, WarmCachedAStarHitDoesNotAllocate) {
   (void)tess::cached_astar_path<decltype(world), PassableTag>(world, request,
                                                               scratch, cache);
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
 
   const auto result = tess::cached_astar_path<decltype(world), PassableTag>(
       world, request, scratch, cache);
 
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_EQ(result.status, tess::PathStatus::Found);
   EXPECT_EQ(result.expanded_nodes, 0u);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessPath, BuildsSharedGoalDistanceFieldForMultipleStarts) {
@@ -1231,19 +1194,19 @@ TEST(TessPath, WarmDistanceFieldQueriesDoNotAllocate) {
   (void)tess::distance_field_path<decltype(world), PassableTag>(
       world, tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}, scratch);
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
 
   const auto field = tess::build_distance_field<decltype(world), PassableTag>(
       world, tess::Coord3{7, 7, 0}, scratch);
   const auto result = tess::distance_field_path<decltype(world), PassableTag>(
       world, tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}, scratch);
 
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_EQ(field.status, tess::PathStatus::Found);
   EXPECT_EQ(result.status, tess::PathStatus::Found);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessPath, WeightedDistanceFieldMatchesWeightedAStarForSharedGoal) {
@@ -1491,8 +1454,8 @@ TEST(TessPath, WarmWeightedDistanceFieldQueriesDoNotAllocate) {
       tess::weighted_distance_field_path<decltype(world), PassableTag, CostTag>(
           world, start, goal, scratch);
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
 
   const auto field =
       tess::build_weighted_distance_field<decltype(world), PassableTag,
@@ -1501,11 +1464,11 @@ TEST(TessPath, WarmWeightedDistanceFieldQueriesDoNotAllocate) {
       tess::weighted_distance_field_path<decltype(world), PassableTag, CostTag>(
           world, start, goal, scratch);
 
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_EQ(field.status, tess::PathStatus::Found);
   EXPECT_EQ(result.status, tess::PathStatus::Found);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 TEST(TessPath, WarmBoundedWeightedDistanceFieldQueriesDoNotAllocate) {
@@ -1526,8 +1489,8 @@ TEST(TessPath, WarmBoundedWeightedDistanceFieldQueriesDoNotAllocate) {
       tess::weighted_distance_field_path<decltype(world), PassableTag, CostTag>(
           world, start, goal, scratch);
 
-  allocation_count.store(0, std::memory_order_relaxed);
-  count_allocations.store(true, std::memory_order_relaxed);
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
 
   const auto field =
       tess::build_bounded_weighted_distance_field<decltype(world), PassableTag,
@@ -1537,11 +1500,11 @@ TEST(TessPath, WarmBoundedWeightedDistanceFieldQueriesDoNotAllocate) {
       tess::weighted_distance_field_path<decltype(world), PassableTag, CostTag>(
           world, start, goal, scratch);
 
-  count_allocations.store(false, std::memory_order_relaxed);
+  tess_test::set_allocation_counting(false);
 
   EXPECT_EQ(field.status, tess::PathStatus::Found);
   EXPECT_EQ(result.status, tess::PathStatus::Found);
-  EXPECT_EQ(allocation_count.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
 }
 
 }  // namespace

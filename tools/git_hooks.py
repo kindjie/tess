@@ -319,6 +319,7 @@ def pre_push() -> int:
         ["cmake", "--preset", "dev"],
         ["cmake", "--build", "--preset", "dev"],
         ["ctest", "--preset", "dev"],
+        ["tools/install_smoke.sh"],
     ]
     if should_build_bench():
         commands.append(["cmake", "--build", "--preset", "bench"])
