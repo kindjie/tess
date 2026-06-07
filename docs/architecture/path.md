@@ -260,11 +260,12 @@ singleton goals use normal weighted A*. Returned paths are copied into batch
 scratch so all result spans remain valid until the next batch call or scratch
 clear.
 
-The path-agent tick wrapper is intentionally small and synchronous. It does not
-own a scheduler backend, cadence table, event queue, or ECS adapter. It only
-centralizes the common simulation order for the current path-agent MVP: advance
-the simulation tick, optionally rebuild active paths after a dirty event, then
-move agents along stable runtime-owned result paths.
+The path-agent tick wrapper is intentionally small and synchronous. The
+simulation scheduler MVP in `include/tess/sim/scheduler.h` layers queued
+operation execution and render deltas around it, but the path tick itself only
+centralizes the common path-agent order: advance the simulation tick,
+optionally rebuild active paths after a dirty event, then move agents along
+stable runtime-owned result paths.
 It does not observe world mutations on its own. Any edit to passability,
 movement costs, topology-relevant movement rules, or active agent goals must
 call `mark_pathing_dirty(state)` or use the tick-state goal helper before the
@@ -272,18 +273,20 @@ next tick that should replan.
 
 ## Deliberate Limits
 
-This MVP slice does not implement movement classes, topology prechecks, portal
-graphs, sparse residency, reservations, dynamic blockers, async tickets, or
-rich path diagnostics. It also does not automatically infer all dirty causes;
-callers must mark the path-agent tick state dirty when world movement data or
-agent goals change. The implementation uses reusable dense per-tile scratch
-arrays, a two-bucket monotone open set for the current unit-cost Manhattan A*
-fallback, exact route/suffix caches, dense reverse distance fields for
-shared-goal batches, weighted shared-goal fields with optional bounded-cost
-bucket construction, weighted batch grouping, exact weighted route products,
-supplied-waypoint and chunk-boundary portal route products, and weighted A*
-for positive integral entry costs; it is still an MVP path core, not the final
-topology-aware path system.
+This MVP slice does not implement topology prechecks, portal graphs, sparse
+residency, async tickets, or rich path diagnostics. Movement commit validation,
+reservation checks, queued-operation-driven path dirtying, and render deltas
+now live in the simulation integration MVP, but pathfinding still does not
+automatically infer every dirty cause. Callers must mark the path-agent tick
+state dirty directly or run through the scheduler with accurate dirty masks
+when world movement data or agent goals change. The implementation uses
+reusable dense per-tile scratch arrays, a two-bucket monotone open set for the
+current unit-cost Manhattan A* fallback, exact route/suffix caches, dense
+reverse distance fields for shared-goal batches, weighted shared-goal fields
+with optional bounded-cost bucket construction, weighted batch grouping, exact
+weighted route products, supplied-waypoint and chunk-boundary portal route
+products, and weighted A* for positive integral entry costs; it is still an MVP
+path core, not the final topology-aware path system.
 
 The unit-cost A* API is suitable for individual point-to-point queries and
 regression coverage. Weighted A* is suitable for correctness-first weighted

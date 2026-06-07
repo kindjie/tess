@@ -13,6 +13,22 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-06 - Simulation Integration MVP
+
+- Changed: Added movement intent validation/commit helpers, render tile
+  deltas, and synchronous unit/weighted scheduler ticks that execute queued
+  operations, mark path agents dirty from configured field masks, run path
+  ticks, and emit presentation deltas.
+- Reason: Colony-sim consumers need a public integration flow instead of
+  manually coupling queued edits, path dirtying, occupancy checks, and render
+  refreshes.
+- Affected docs: `docs/architecture/README.md`,
+  `docs/architecture/path.md`, `docs/architecture/simulation.md`
+- Affected code: `CMakeLists.txt`, `include/tess/sim/movement.h`,
+  `include/tess/sim/render_delta.h`, `include/tess/sim/scheduler.h`,
+  `include/tess/tess.h`, `tests/CMakeLists.txt`,
+  `tests/tess_sim_scheduler_test.cc`
+
 ## 2026-06-06 - Path Agent Runtime MVP
 
 - Changed: Added a public path-agent wrapper over `PathRequestRuntime` for

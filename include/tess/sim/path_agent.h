@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/path/path_runtime.h>
+#include <tess/sim/movement.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +27,7 @@ struct PathAgentFrameStats {
   std::size_t no_path = 0;
   std::size_t advanced = 0;
   std::size_t arrived = 0;
+  MovementFailureCounts movement_failures{};
 };
 
 inline void set_path_agent_goal(PathAgentState& agent, Coord3 goal) noexcept {
@@ -142,6 +144,59 @@ inline auto advance_path_agents(std::span<PathAgentState> agents,
   return stats;
 }
 
+template <typename World, typename PassableTag, typename OccupancyTag,
+          typename ReservationTag>
+inline auto advance_path_agents_with_movement(
+    World& world, std::span<PathAgentState> agents,
+    const PathRequestRuntime& runtime, std::size_t max_steps = 1,
+    std::uint32_t movement_dirty_mask = 0) -> PathAgentFrameStats {
+  PathAgentFrameStats stats;
+  if (max_steps == 0) {
+    return stats;
+  }
+
+  for (auto& agent : agents) {
+    if (!agent.has_goal || agent.status != PathStatus::Found) {
+      continue;
+    }
+
+    const auto result = runtime.result(agent.ticket);
+    if (result.status != PathStatus::Found || result.path.empty()) {
+      continue;
+    }
+
+    for (std::size_t step = 0; step < max_steps; ++step) {
+      if (agent.path_index + 1 >= result.path.size()) {
+        break;
+      }
+
+      const auto from = agent.position;
+      const auto to = result.path[agent.path_index + 1];
+      const auto movement =
+          commit_movement_intent<World, PassableTag, OccupancyTag,
+                                 ReservationTag>(
+              world, MovementIntent{from, to, {}}, movement_dirty_mask);
+      if (movement.status != MovementStatus::Moved) {
+        record_movement_failure(stats.movement_failures, movement.status);
+        agent.status = PathStatus::NoPath;
+        break;
+      }
+
+      ++agent.path_index;
+      agent.position = to;
+      ++stats.advanced;
+      if (agent.position == agent.goal) {
+        clear_path_agent_goal(agent);
+        agent.status = PathStatus::Found;
+        ++stats.arrived;
+        break;
+      }
+    }
+  }
+
+  return stats;
+}
+
 inline void add_path_agent_stats(PathAgentFrameStats& lhs,
                                  PathAgentFrameStats rhs) noexcept {
   lhs.submitted += rhs.submitted;
@@ -152,6 +207,12 @@ inline void add_path_agent_stats(PathAgentFrameStats& lhs,
   lhs.no_path += rhs.no_path;
   lhs.advanced += rhs.advanced;
   lhs.arrived += rhs.arrived;
+  lhs.movement_failures.invalid += rhs.movement_failures.invalid;
+  lhs.movement_failures.blocked += rhs.movement_failures.blocked;
+  lhs.movement_failures.occupied += rhs.movement_failures.occupied;
+  lhs.movement_failures.reserved += rhs.movement_failures.reserved;
+  lhs.movement_failures.stale_version += rhs.movement_failures.stale_version;
+  lhs.movement_failures.stale_topology += rhs.movement_failures.stale_topology;
 }
 
 template <typename World, typename PassableTag>

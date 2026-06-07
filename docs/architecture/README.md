@@ -30,3 +30,4 @@ Maintained notes for implemented areas:
 - [Queued operations foundation](queued-operations.md)
 - [Topology foundation](topology.md)
 - [Path foundation](path.md)
+- [Simulation integration MVP](simulation.md)
