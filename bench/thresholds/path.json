@@ -217,6 +217,26 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 40000000
     },
+    "path/distance_field_product_build_8_goal_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 20000000
+    },
+    "path/nearest_target_product_100_starts_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/field_product_cache_hit_replay_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/field_product_cache_stale_rejection_room_portals_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/field_product_cache_lru_eviction_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 10000000
+    },
     "path/astar_batch_100_mixed_repeated_room_portals_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 75000000
@@ -258,6 +278,22 @@
       "max_cpu_time_ns": 80000000
     },
     "path/agent_runtime_100_unit_world_edit_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/agent_runtime_100_unit_shared_wall_gap_route_cache_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/agent_runtime_100_unit_shared_wall_gap_field_cache_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/agent_runtime_100_unit_scattered_wall_gap_route_cache_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "path/agent_runtime_100_unit_scattered_wall_gap_field_cache_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000
     }

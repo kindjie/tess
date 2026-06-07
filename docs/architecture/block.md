@@ -67,6 +67,11 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
   programmer error and fails fast. Prefer
   `for_each_chunk<Policy>(world, domain, fn)` or `BlockCtx<World, Policy>`
   when the policy is already known.
+- Parallel-ready ownership validation currently lives above the raw block API
+  in queued-operation phase planning. `plan_parallel_execution_phases(plan)`
+  accepts only `ReadOnly` and `UniquePerChunk` planned operations, keeps
+  same-chunk mutable work in separate phases, and rejects `UniquePerTile` until
+  tile subdomains exist.
 - `ChunkView<World>` exposes the resolved page, metadata, key, chunk
   coordinate, chunk bounds, typed field spans through `ChunkPage`, and
   chunk-local tile helpers.
@@ -120,7 +125,9 @@ This first M3 slice intentionally diverges:
   pointers are caller-owned and optional.
 - Only `ReadOnly` is enforced today, and only through policy-typed block
   contexts and `for_each_chunk<Policy>`. `UniquePerTile`, `UniquePerChunk`,
-  and `Unsafe` still record intended write discipline without ownership checks.
+  and `Unsafe` still record intended write discipline without ownership checks
+  in raw block iteration. Queued-operation phase planning adds the first
+  conservative parallel ownership check for planned `UniquePerChunk` work.
 - Execution remains serial only for both chunk and tile iteration; parallel
   chunk scheduling is deferred.
 - Domains are chunk-key spans over always-resident storage only; sparse

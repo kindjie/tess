@@ -13,6 +13,39 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-06 - Queued Parallel Phase Planning
+
+- Changed: Added a conservative `ExecutionPhasePlan` over successful queued
+  operation plans. Phase planning accepts only `ReadOnly` and
+  `UniquePerChunk` work, preserves deterministic operation order, groups
+  disjoint mutable chunk operations into the same phase, separates same-chunk
+  mutation behind a phase boundary, and rejects `UniquePerTile` until tile
+  subdomains exist. Added `PlannedDirtyAccumulator` and deferred planned
+  execution helpers so dirty metadata can be recorded during work and merged
+  deterministically after a phase. Added a serial
+  `execute_phase_deferred_dirty` helper that validates and executes one phase
+  range as the future worker-backend handoff, plus `SerialPhaseExecutor` and
+  `execute_phase_deferred_dirty_with` so backend dispatch can be tested without
+  owning threads yet. Added `PlannedDirtyPartitions`,
+  `PlannedPhaseExecutionScratch`, deterministic partition merge helpers, and
+  `execute_phase_partitioned_dirty_with` so future worker backends can avoid
+  sharing dirty buffers or result counters during phase dispatch. Added
+  test-only threaded executor coverage for disjoint mutable chunk phases and
+  overlapping read-only chunk phases with const-view enforcement. Added
+  `ExecutorPhaseRange` and `execute_operation_index_range` as the explicit
+  operation-index adapter contract for later backend integrations. Added
+  `ScopedThreadPhaseExecutor` as a production scoped-thread prototype that
+  joins before returning and preserves deterministic result reduction.
+  Documented partitioned failure semantics and covered completed dirty
+  partitions after a threaded policy mismatch.
+- Reason: Concurrent tile-world execution needs a testable ownership and
+  barrier contract before worker scheduling or external task systems are
+  introduced.
+- Affected docs: `docs/architecture/block.md`,
+  `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/ops/queued.h`,
+  `tests/tess_queued_test.cc`
+
 ## 2026-06-06 - Simulation Integration MVP
 
 - Changed: Added movement intent validation/commit helpers, render tile
