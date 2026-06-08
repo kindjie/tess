@@ -1,9 +1,14 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <span>
 #include <string_view>
+#include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -38,6 +43,101 @@ auto planned_keys(const tess::ExecutionReport& report, std::size_t index)
   }
   return {ops[index].chunks.begin(), ops[index].chunks.end()};
 }
+
+struct RecordingPhaseExecutor {
+  std::vector<std::size_t> indexes;
+
+  template <typename Fn>
+  auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn)
+      -> tess::PlannedExecutionResult {
+    auto&& callback = fn;
+    const auto end = first + count;
+    for (std::size_t i = first; i < end; ++i) {
+      indexes.push_back(i);
+      auto result = callback(i);
+      if (result.status != tess::PlannedExecutionStatus::Executed) {
+        return result;
+      }
+    }
+    return tess::PlannedExecutionResult{};
+  }
+};
+
+struct RangeRecordingPhaseExecutor {
+  std::vector<tess::ExecutorPhaseRange> ranges;
+  std::vector<std::size_t> indexes;
+
+  template <typename Fn>
+  auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn)
+      -> tess::PlannedExecutionResult {
+    ranges.push_back(tess::ExecutorPhaseRange{first, count});
+    auto&& callback = fn;
+    const auto end = first + count;
+    for (std::size_t i = first; i < end; ++i) {
+      indexes.push_back(i);
+      auto result = callback(i);
+      if (result.status != tess::PlannedExecutionStatus::Executed) {
+        return result;
+      }
+    }
+    return tess::PlannedExecutionResult{};
+  }
+};
+
+struct ReverseRecordingPhaseExecutor {
+  std::vector<std::size_t> indexes;
+
+  template <typename Fn>
+  auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn)
+      -> tess::PlannedExecutionResult {
+    auto&& callback = fn;
+    for (std::size_t remaining = count; remaining != 0; --remaining) {
+      const auto index = first + remaining - 1;
+      indexes.push_back(index);
+      auto result = callback(index);
+      if (result.status != tess::PlannedExecutionStatus::Executed) {
+        return result;
+      }
+    }
+    return tess::PlannedExecutionResult{};
+  }
+};
+
+struct ThreadedRecordingPhaseExecutor {
+  std::vector<std::size_t> indexes;
+
+  template <typename Fn>
+  auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn)
+      -> tess::PlannedExecutionResult {
+    auto&& callback = fn;
+    std::mutex indexes_mutex;
+    std::vector<tess::PlannedExecutionResult> results(count);
+    std::vector<std::thread> threads;
+    threads.reserve(count);
+
+    for (std::size_t offset = 0; offset < count; ++offset) {
+      threads.emplace_back([&, offset] {
+        const auto index = first + offset;
+        {
+          const std::lock_guard<std::mutex> lock(indexes_mutex);
+          indexes.push_back(index);
+        }
+        results[offset] = callback(index);
+      });
+    }
+
+    for (auto& thread : threads) {
+      thread.join();
+    }
+
+    for (const auto result : results) {
+      if (result.status != tess::PlannedExecutionStatus::Executed) {
+        return result;
+      }
+    }
+    return tess::PlannedExecutionResult{};
+  }
+};
 
 TEST(TessQueued, EmptyFramePlansToEmptyReport) {
   World world;
@@ -511,6 +611,115 @@ TEST(TessQueued, PlannedChunkDomainAdaptsExpandedChunks) {
   EXPECT_EQ(resident_domain.keys().back(), (tess::ChunkKey{15}));
 }
 
+TEST(TessQueued, ParallelPhasesGroupDisjointChunkMutationsAfterReaders) {
+  World world;
+  tess::FrameOps ops;
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{1}};
+  const std::vector<tess::ChunkKey> second_keys{tess::ChunkKey{2}};
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::WritePolicy::ReadOnly);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(second_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+
+  ASSERT_TRUE(phases.ok());
+  ASSERT_EQ(phases.phases().size(), 2u);
+  EXPECT_EQ(phases.phases()[0].first_operation, 0u);
+  EXPECT_EQ(phases.phases()[0].operation_count, 1u);
+  EXPECT_EQ(phases.phases()[1].first_operation, 1u);
+  EXPECT_EQ(phases.phases()[1].operation_count, 2u);
+}
+
+TEST(TessQueued, ParallelPhasesSeparateSameChunkMutations) {
+  World world;
+  tess::FrameOps ops;
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  constexpr auto writes_cost = tess::FieldAccessDesc{
+      0,
+      DirtyCost,
+      DirtyCost,
+  };
+  const std::vector<tess::ChunkKey> keys{tess::ChunkKey{3}};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys), writes_cost,
+                         tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+
+  ASSERT_TRUE(phases.ok());
+  ASSERT_EQ(phases.phases().size(), 2u);
+  EXPECT_EQ(phases.phases()[0].first_operation, 0u);
+  EXPECT_EQ(phases.phases()[0].operation_count, 1u);
+  EXPECT_EQ(phases.phases()[1].first_operation, 1u);
+  EXPECT_EQ(phases.phases()[1].operation_count, 1u);
+}
+
+TEST(TessQueued, ParallelPhasesRejectUniquePerTileUntilTileDomainsExist) {
+  World world;
+  tess::FrameOps ops;
+  const std::vector<tess::ChunkKey> keys{tess::ChunkKey{3}};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys),
+                         tess::WritePolicy::UniquePerTile);
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+
+  EXPECT_FALSE(phases.ok());
+  EXPECT_EQ(phases.status(),
+            tess::ExecutionPhaseStatus::UnsupportedWritePolicy);
+  EXPECT_EQ(phases.failed_operation_index(), 0u);
+  EXPECT_EQ(phases.failed_write_policy(), tess::WritePolicy::UniquePerTile);
+  EXPECT_TRUE(phases.phases().empty());
+}
+
+TEST(TessQueued, ExecutorPhaseRangeCopiesExecutionPhaseRange) {
+  const auto phase = tess::ExecutionPhase{3, 4};
+
+  const auto range = tess::executor_phase_range(phase);
+
+  EXPECT_EQ(range.first_operation, 3u);
+  EXPECT_EQ(range.operation_count, 4u);
+}
+
+TEST(TessQueued, ExecuteOperationIndexRangeDeliversContiguousIndexes) {
+  RangeRecordingPhaseExecutor executor;
+  std::vector<std::size_t> visited;
+
+  const auto result = tess::execute_operation_index_range(
+      executor, tess::ExecutorPhaseRange{2, 3}, [&](std::size_t index) {
+        visited.push_back(index);
+        return tess::PlannedExecutionResult{};
+      });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+  ASSERT_EQ(executor.ranges.size(), 1u);
+  EXPECT_EQ(executor.ranges[0].first_operation, 2u);
+  EXPECT_EQ(executor.ranges[0].operation_count, 3u);
+  EXPECT_EQ(executor.indexes, (std::vector<std::size_t>{2, 3, 4}));
+  EXPECT_EQ(visited, (std::vector<std::size_t>{2, 3, 4}));
+}
+
 TEST(TessQueued, PlannedBlockCtxRejectsPolicyMismatch) {
   World world;
   tess::FrameOps ops;
@@ -607,6 +816,83 @@ TEST(TessQueued, ExecutePlannedOperationRunsCallbackAndMarksDirtyChunks) {
   EXPECT_EQ(world.meta(tess::ChunkKey{3}).version, 1u);
 }
 
+TEST(TessQueued, PlannedDirtyMergeCoalescesRecordsInChunkOrder) {
+  World world;
+  tess::PlannedDirtyAccumulator dirty;
+  dirty.reserve(2);
+
+  const auto first =
+      tess::Box3{tess::Coord3{96, 48, 0}, tess::Extent3{2, 3, 1}};
+  const auto second =
+      tess::Box3{tess::Coord3{100, 50, 0}, tess::Extent3{4, 2, 1}};
+
+  dirty.record(tess::ChunkKey{3}, DirtyTerrain, first);
+  dirty.record(tess::ChunkKey{3}, DirtyCost, second);
+
+  const auto merged = tess::merge_planned_dirty(world, dirty);
+
+  EXPECT_EQ(merged, 1u);
+  EXPECT_TRUE(dirty.records().empty());
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).field_dirty_flags,
+            DirtyTerrain | DirtyCost);
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).version, 1u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).dirty_bounds,
+            (tess::Box3{tess::Coord3{96, 48, 0}, tess::Extent3{8, 4, 1}}));
+}
+
+TEST(TessQueued, DeferredPlannedExecutionRecordsDirtyBeforeMerge) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedDirtyAccumulator dirty;
+  dirty.reserve(2);
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> requested{
+      tess::ChunkKey{3},
+      tess::ChunkKey{1},
+  };
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(requested),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+
+  ASSERT_TRUE(report.ok());
+  ASSERT_EQ(report.plan().operations().size(), 1u);
+
+  const auto result = tess::execute_planned_operation_deferred_dirty<
+      tess::WritePolicy::UniquePerChunk>(
+      world, report.plan().operations()[0], dirty, [](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        terrain[0] = static_cast<std::uint16_t>(view.key().value + 20);
+      });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(result.chunk_count, 2u);
+  EXPECT_EQ(dirty.records().size(), 2u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).field_dirty_flags, 0u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).field_dirty_flags, 0u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 0u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).version, 0u);
+
+  const auto merged = tess::merge_planned_dirty(world, dirty);
+
+  EXPECT_EQ(merged, 2u);
+  EXPECT_TRUE(dirty.records().empty());
+  EXPECT_EQ(world.chunk(tess::ChunkKey{1})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            21u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{3})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            23u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).field_dirty_flags, DirtyTerrain);
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).field_dirty_flags, DirtyTerrain);
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 1u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).version, 1u);
+}
+
 TEST(TessQueued, ExecutePlanRejectsPolicyMismatchBeforeCallback) {
   World world;
   tess::FrameOps ops;
@@ -651,6 +937,845 @@ TEST(TessQueued, PrebuiltPlannedExecutionDoesNotAllocate) {
   EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
   EXPECT_EQ(result.chunk_count, World::chunk_count);
   EXPECT_EQ(tess_test::allocation_count(), 0);
+}
+
+TEST(TessQueued, PreReservedDeferredPlannedExecutionDoesNotAllocate) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedDirtyAccumulator dirty;
+  dirty.reserve(World::chunk_count);
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(), writes_terrain,
+                         tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  ASSERT_EQ(report.plan().operations().size(), 1u);
+
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
+
+  const auto result =
+      tess::execute_plan_deferred_dirty<tess::WritePolicy::UniquePerChunk>(
+          world, report.plan(), dirty, [](auto view) {
+            auto terrain = view.template field_span<TerrainTag>();
+            terrain[0] = static_cast<std::uint16_t>(view.key().value);
+          });
+  const auto merged = tess::merge_planned_dirty(world, dirty);
+
+  tess_test::set_allocation_counting(false);
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(result.chunk_count, World::chunk_count);
+  EXPECT_EQ(merged, World::chunk_count);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
+}
+
+TEST(TessQueued, ExecutePhaseDeferredDirtyVisitsOnlyPhaseRange) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedDirtyAccumulator dirty;
+  dirty.reserve(2);
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{1}};
+  const std::vector<tess::ChunkKey> second_keys{tess::ChunkKey{2}};
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::WritePolicy::ReadOnly);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(second_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+  ASSERT_TRUE(phases.ok());
+  ASSERT_EQ(phases.phases().size(), 2u);
+
+  const auto result =
+      tess::execute_phase_deferred_dirty<tess::WritePolicy::UniquePerChunk>(
+          world, report.plan(), phases.phases()[1], dirty, [](auto view) {
+            auto terrain = view.template field_span<TerrainTag>();
+            terrain[0] = static_cast<std::uint16_t>(view.key().value + 30);
+          });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(result.chunk_count, 2u);
+  EXPECT_EQ(dirty.records().size(), 2u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{1})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            31u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{2})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            32u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{0})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            0u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 0u);
+
+  const auto merged = tess::merge_planned_dirty(world, dirty);
+  EXPECT_EQ(merged, 2u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 1u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{2}).version, 1u);
+}
+
+TEST(TessQueued, ExecutePhaseDeferredDirtyWithUsesExecutorRange) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedDirtyAccumulator dirty;
+  RecordingPhaseExecutor executor;
+  dirty.reserve(2);
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{1}};
+  const std::vector<tess::ChunkKey> second_keys{tess::ChunkKey{2}};
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::WritePolicy::ReadOnly);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(second_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+  ASSERT_TRUE(phases.ok());
+  ASSERT_EQ(phases.phases().size(), 2u);
+
+  const auto result = tess::execute_phase_deferred_dirty_with<
+      tess::WritePolicy::UniquePerChunk>(
+      executor, world, report.plan(), phases.phases()[1], dirty, [](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        terrain[0] = static_cast<std::uint16_t>(view.key().value + 50);
+      });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(result.chunk_count, 2u);
+  EXPECT_EQ(executor.indexes, (std::vector<std::size_t>{1, 2}));
+  EXPECT_EQ(dirty.records().size(), 2u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{1})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            51u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{2})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            52u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{0})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            0u);
+}
+
+TEST(TessQueued, PlannedDirtyPartitionsMergeDeterministically) {
+  World world;
+  tess::PlannedDirtyPartitions partitions;
+  tess::PlannedDirtyAccumulator scratch;
+  partitions.resize(2);
+  scratch.reserve(2);
+
+  const auto first =
+      tess::Box3{tess::Coord3{96, 48, 0}, tess::Extent3{2, 3, 1}};
+  const auto second =
+      tess::Box3{tess::Coord3{100, 50, 0}, tess::Extent3{4, 2, 1}};
+
+  partitions.partition(1).record(tess::ChunkKey{3}, DirtyTerrain, first);
+  partitions.partition(0).record(tess::ChunkKey{3}, DirtyCost, second);
+
+  const auto merged = tess::merge_planned_dirty(world, partitions, scratch);
+
+  EXPECT_EQ(merged, 1u);
+  EXPECT_TRUE(partitions.partition(0).records().empty());
+  EXPECT_TRUE(partitions.partition(1).records().empty());
+  EXPECT_TRUE(scratch.records().empty());
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).field_dirty_flags,
+            DirtyTerrain | DirtyCost);
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).dirty_bounds,
+            (tess::Box3{tess::Coord3{96, 48, 0}, tess::Extent3{8, 4, 1}}));
+}
+
+TEST(TessQueued, ExecutePhasePartitionedDirtyUsesOperationLocalDirty) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedPhaseExecutionScratch scratch;
+  ReverseRecordingPhaseExecutor executor;
+  scratch.reserve_operations(2);
+  scratch.reserve_dirty_records_per_operation(1);
+  scratch.reserve_merged_dirty_records(2);
+  scratch.prepare_for_operation_count(2);
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{1}};
+  const std::vector<tess::ChunkKey> second_keys{tess::ChunkKey{2}};
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::WritePolicy::ReadOnly);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(second_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+  ASSERT_TRUE(phases.ok());
+  ASSERT_EQ(phases.phases().size(), 2u);
+
+  const auto result = tess::execute_phase_partitioned_dirty_with<
+      tess::WritePolicy::UniquePerChunk>(
+      executor, world, report.plan(), phases.phases()[1], scratch,
+      [](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        terrain[0] = static_cast<std::uint16_t>(view.key().value + 60);
+      });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(result.chunk_count, 2u);
+  EXPECT_EQ(executor.indexes, (std::vector<std::size_t>{2, 1}));
+  ASSERT_EQ(scratch.dirty_partitions().size(), 2u);
+  ASSERT_EQ(scratch.dirty_partitions()[0].records().size(), 1u);
+  ASSERT_EQ(scratch.dirty_partitions()[1].records().size(), 1u);
+  EXPECT_EQ(scratch.dirty_partitions()[0].records()[0].chunk,
+            tess::ChunkKey{1});
+  EXPECT_EQ(scratch.dirty_partitions()[1].records()[0].chunk,
+            tess::ChunkKey{2});
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 0u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{2}).version, 0u);
+
+  const auto merged = tess::merge_planned_dirty(world, scratch);
+
+  EXPECT_EQ(merged, 2u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{1})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            61u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{2})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            62u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 1u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{2}).version, 1u);
+}
+
+TEST(TessQueued, ExecutePhasePartitionedDirtyDeliversExactExecutorRange) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedPhaseExecutionScratch scratch;
+  RangeRecordingPhaseExecutor executor;
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{1}};
+  const std::vector<tess::ChunkKey> second_keys{tess::ChunkKey{2}};
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::WritePolicy::ReadOnly);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(second_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+  ASSERT_TRUE(phases.ok());
+  ASSERT_EQ(phases.phases().size(), 2u);
+
+  const auto result = tess::execute_phase_partitioned_dirty_with<
+      tess::WritePolicy::UniquePerChunk>(
+      executor, world, report.plan(), phases.phases()[1], scratch,
+      [](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        terrain[0] = static_cast<std::uint16_t>(view.key().value + 90);
+      });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(result.chunk_count, 2u);
+  ASSERT_EQ(executor.ranges.size(), 1u);
+  EXPECT_EQ(executor.ranges[0].first_operation, 1u);
+  EXPECT_EQ(executor.ranges[0].operation_count, 2u);
+  EXPECT_EQ(executor.indexes, (std::vector<std::size_t>{1, 2}));
+}
+
+TEST(TessQueued, ExecutePhasePartitionedDirtySupportsThreadedExecutor) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedPhaseExecutionScratch scratch;
+  ThreadedRecordingPhaseExecutor executor;
+  scratch.reserve_operations(2);
+  scratch.reserve_dirty_records_per_operation(1);
+  scratch.reserve_merged_dirty_records(2);
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{1}};
+  const std::vector<tess::ChunkKey> second_keys{tess::ChunkKey{2}};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(second_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+  ASSERT_TRUE(phases.ok());
+  ASSERT_EQ(phases.phases().size(), 1u);
+  ASSERT_EQ(phases.phases()[0].operation_count, 2u);
+  scratch.prepare_for_operation_count(phases.phases()[0].operation_count);
+
+  std::atomic<std::size_t> entered = 0;
+  std::atomic<std::size_t> max_concurrent = 0;
+  std::atomic<std::size_t> active = 0;
+  const auto expected_workers = phases.phases()[0].operation_count;
+
+  const auto result = tess::execute_phase_partitioned_dirty_with<
+      tess::WritePolicy::UniquePerChunk>(
+      executor, world, report.plan(), phases.phases()[0], scratch,
+      [&](auto view) {
+        const auto now_active = active.fetch_add(1) + 1;
+        auto observed = max_concurrent.load();
+        while (observed < now_active &&
+               !max_concurrent.compare_exchange_weak(observed, now_active)) {
+        }
+
+        entered.fetch_add(1);
+        while (entered.load() < expected_workers) {
+          std::this_thread::yield();
+        }
+
+        auto terrain = view.template field_span<TerrainTag>();
+        terrain[0] = static_cast<std::uint16_t>(view.key().value + 80);
+        active.fetch_sub(1);
+      });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(result.chunk_count, 2u);
+  EXPECT_EQ(executor.indexes.size(), 2u);
+  EXPECT_GE(max_concurrent.load(), 2u);
+  ASSERT_EQ(scratch.dirty_partitions().size(), 2u);
+  EXPECT_EQ(scratch.dirty_partitions()[0].records()[0].chunk,
+            tess::ChunkKey{1});
+  EXPECT_EQ(scratch.dirty_partitions()[1].records()[0].chunk,
+            tess::ChunkKey{2});
+
+  const auto merged = tess::merge_planned_dirty(world, scratch);
+
+  EXPECT_EQ(merged, 2u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{1})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            81u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{2})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            82u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 1u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{2}).version, 1u);
+}
+
+TEST(TessQueued, ThreadedReadOnlyPhaseAllowsOverlappingChunksWithConstViews) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedPhaseExecutionScratch scratch;
+  ThreadedRecordingPhaseExecutor executor;
+  constexpr auto key = tess::ChunkKey{1};
+  const std::vector<tess::ChunkKey> keys{key};
+  world.chunk(key).template field<TerrainTag>(tess::LocalTileId{0}) = 41;
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys),
+                         tess::WritePolicy::ReadOnly);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys),
+                         tess::WritePolicy::ReadOnly);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+  ASSERT_TRUE(phases.ok());
+  ASSERT_EQ(phases.phases().size(), 1u);
+  ASSERT_EQ(phases.phases()[0].operation_count, 2u);
+  scratch.prepare_for_operation_count(phases.phases()[0].operation_count);
+
+  std::atomic<std::size_t> entered = 0;
+  std::atomic<std::size_t> max_concurrent = 0;
+  std::atomic<std::size_t> active = 0;
+  std::atomic<std::uint32_t> observed_sum = 0;
+  const auto expected_workers = phases.phases()[0].operation_count;
+
+  const auto result = tess::execute_phase_partitioned_dirty_with<
+      tess::WritePolicy::ReadOnly>(
+      executor, world, report.plan(), phases.phases()[0], scratch,
+      [&](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        decltype(auto) page = view.page();
+        decltype(auto) meta = view.meta();
+
+        static_assert(
+            std::is_same_v<decltype(terrain), std::span<const std::uint16_t>>);
+        static_assert(std::is_same_v<decltype(page), const World::page_type&>);
+        static_assert(std::is_same_v<decltype(meta), const tess::ChunkMeta&>);
+        static_assert(
+            !std::is_assignable_v<decltype(terrain[0]), std::uint16_t>);
+
+        const auto now_active = active.fetch_add(1) + 1;
+        auto observed = max_concurrent.load();
+        while (observed < now_active &&
+               !max_concurrent.compare_exchange_weak(observed, now_active)) {
+        }
+
+        entered.fetch_add(1);
+        while (entered.load() < expected_workers) {
+          std::this_thread::yield();
+        }
+
+        observed_sum.fetch_add(terrain[0]);
+        active.fetch_sub(1);
+      });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(result.chunk_count, 2u);
+  EXPECT_EQ(executor.indexes.size(), 2u);
+  EXPECT_GE(max_concurrent.load(), 2u);
+  EXPECT_EQ(observed_sum.load(), 82u);
+  ASSERT_EQ(scratch.dirty_partitions().size(), 2u);
+  EXPECT_TRUE(scratch.dirty_partitions()[0].records().empty());
+  EXPECT_TRUE(scratch.dirty_partitions()[1].records().empty());
+  EXPECT_EQ(world.meta(key).version, 0u);
+  EXPECT_EQ(world.chunk(key).template field<TerrainTag>(tess::LocalTileId{0}),
+            41u);
+}
+
+TEST(TessQueued, ScopedThreadPhaseExecutorMatchesSerialPhaseExecution) {
+  World serial_world;
+  World threaded_world;
+  tess::FrameOps ops;
+  tess::PlannedPhaseExecutionScratch serial_scratch;
+  tess::PlannedPhaseExecutionScratch threaded_scratch;
+  tess::SerialPhaseExecutor serial_executor;
+  tess::ScopedThreadPhaseExecutor threaded_executor{2};
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{1}};
+  const std::vector<tess::ChunkKey> second_keys{tess::ChunkKey{2}};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(second_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(serial_world, ops);
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+  ASSERT_TRUE(phases.ok());
+  ASSERT_EQ(phases.phases().size(), 1u);
+  const auto phase = phases.phases()[0];
+  serial_scratch.prepare_for_operation_count(phase.operation_count);
+  threaded_scratch.prepare_for_operation_count(phase.operation_count);
+
+  const auto serial_result = tess::execute_phase_partitioned_dirty_with<
+      tess::WritePolicy::UniquePerChunk>(
+      serial_executor, serial_world, report.plan(), phase, serial_scratch,
+      [](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        terrain[0] = static_cast<std::uint16_t>(view.key().value + 120);
+      });
+  const auto threaded_result = tess::execute_phase_partitioned_dirty_with<
+      tess::WritePolicy::UniquePerChunk>(
+      threaded_executor, threaded_world, report.plan(), phase, threaded_scratch,
+      [](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        terrain[0] = static_cast<std::uint16_t>(view.key().value + 120);
+      });
+  (void)tess::merge_planned_dirty(serial_world, serial_scratch);
+  (void)tess::merge_planned_dirty(threaded_world, threaded_scratch);
+
+  EXPECT_EQ(threaded_executor.worker_count(), 2u);
+  EXPECT_EQ(serial_result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(threaded_result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(serial_result.chunk_count, threaded_result.chunk_count);
+  EXPECT_EQ(serial_world.meta(tess::ChunkKey{1}).version,
+            threaded_world.meta(tess::ChunkKey{1}).version);
+  EXPECT_EQ(serial_world.meta(tess::ChunkKey{2}).version,
+            threaded_world.meta(tess::ChunkKey{2}).version);
+  EXPECT_EQ(serial_world.chunk(tess::ChunkKey{1})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            threaded_world.chunk(tess::ChunkKey{1})
+                .template field<TerrainTag>(tess::LocalTileId{0}));
+  EXPECT_EQ(serial_world.chunk(tess::ChunkKey{2})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            threaded_world.chunk(tess::ChunkKey{2})
+                .template field<TerrainTag>(tess::LocalTileId{0}));
+}
+
+TEST(TessQueued, ScopedThreadPhaseExecutorReportsFirstFailureInPlanOrder) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedPhaseExecutionScratch scratch;
+  tess::ScopedThreadPhaseExecutor executor{2};
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{1}};
+  const std::vector<tess::ChunkKey> mismatch_keys{tess::ChunkKey{2}};
+  const std::vector<tess::ChunkKey> third_keys{tess::ChunkKey{3}};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(mismatch_keys),
+                         tess::WritePolicy::ReadOnly);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(third_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+
+  const auto result = tess::execute_phase_partitioned_dirty_with<
+      tess::WritePolicy::UniquePerChunk>(
+      executor, world, report.plan(), tess::ExecutionPhase{0, 3}, scratch,
+      [](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        terrain[0] = static_cast<std::uint16_t>(view.key().value + 130);
+      });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::PolicyMismatch);
+  EXPECT_EQ(result.chunk_count, 1u);
+  ASSERT_EQ(scratch.dirty_partitions().size(), 3u);
+  ASSERT_EQ(scratch.dirty_partitions()[0].records().size(), 1u);
+  EXPECT_TRUE(scratch.dirty_partitions()[1].records().empty());
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 0u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).version, 0u);
+}
+
+TEST(TessQueued, ThreadedPartitionedFailureKeepsCompletedDirtyPartitions) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedPhaseExecutionScratch scratch;
+  ThreadedRecordingPhaseExecutor executor;
+  scratch.reserve_operations(3);
+  scratch.reserve_dirty_records_per_operation(1);
+  scratch.reserve_merged_dirty_records(2);
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{1}};
+  const std::vector<tess::ChunkKey> mismatch_keys{tess::ChunkKey{2}};
+  const std::vector<tess::ChunkKey> third_keys{tess::ChunkKey{3}};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(mismatch_keys),
+                         tess::WritePolicy::ReadOnly);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(third_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  ASSERT_EQ(report.plan().operations().size(), 3u);
+  const auto phase = tess::ExecutionPhase{0, 3};
+  scratch.prepare_for_operation_count(phase.operation_count);
+
+  std::atomic<std::size_t> callbacks = 0;
+  const auto result = tess::execute_phase_partitioned_dirty_with<
+      tess::WritePolicy::UniquePerChunk>(
+      executor, world, report.plan(), phase, scratch, [&](auto view) {
+        callbacks.fetch_add(1);
+        auto terrain = view.template field_span<TerrainTag>();
+        terrain[0] = static_cast<std::uint16_t>(view.key().value + 100);
+      });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::PolicyMismatch);
+  EXPECT_EQ(result.chunk_count, 1u);
+  EXPECT_EQ(callbacks.load(), 2u);
+  EXPECT_EQ(executor.indexes.size(), 3u);
+  ASSERT_EQ(scratch.dirty_partitions().size(), 3u);
+  ASSERT_EQ(scratch.dirty_partitions()[0].records().size(), 1u);
+  EXPECT_EQ(scratch.dirty_partitions()[0].records()[0].chunk,
+            tess::ChunkKey{1});
+  EXPECT_TRUE(scratch.dirty_partitions()[1].records().empty());
+  ASSERT_EQ(scratch.dirty_partitions()[2].records().size(), 1u);
+  EXPECT_EQ(scratch.dirty_partitions()[2].records()[0].chunk,
+            tess::ChunkKey{3});
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 0u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{2}).version, 0u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).version, 0u);
+
+  const auto merged = tess::merge_planned_dirty(world, scratch);
+
+  EXPECT_EQ(merged, 2u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{1})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            101u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{2})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            0u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{3})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            103u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 1u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{2}).version, 0u);
+  EXPECT_EQ(world.meta(tess::ChunkKey{3}).version, 1u);
+}
+
+TEST(TessQueued, ExecutePhaseDeferredDirtyRejectsPolicyMismatchBeforeCallback) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedDirtyAccumulator dirty;
+  const std::vector<tess::ChunkKey> keys{tess::ChunkKey{1}};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys),
+                         tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+
+  auto called = false;
+  const auto result =
+      tess::execute_phase_deferred_dirty<tess::WritePolicy::ReadOnly>(
+          world, report.plan(), tess::ExecutionPhase{0, 1}, dirty,
+          [&](auto) { called = true; });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::PolicyMismatch);
+  EXPECT_EQ(result.chunk_count, 0u);
+  EXPECT_FALSE(called);
+  EXPECT_TRUE(dirty.records().empty());
+}
+
+TEST(TessQueued, ExecutePhaseDeferredDirtyWithStopsOnPolicyMismatch) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedDirtyAccumulator dirty;
+  RecordingPhaseExecutor executor;
+  const std::vector<tess::ChunkKey> keys{tess::ChunkKey{1}};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys),
+                         tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+
+  auto called = false;
+  const auto result =
+      tess::execute_phase_deferred_dirty_with<tess::WritePolicy::ReadOnly>(
+          executor, world, report.plan(), tess::ExecutionPhase{0, 1}, dirty,
+          [&](auto) { called = true; });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::PolicyMismatch);
+  EXPECT_EQ(result.chunk_count, 0u);
+  EXPECT_EQ(executor.indexes, (std::vector<std::size_t>{0}));
+  EXPECT_FALSE(called);
+  EXPECT_TRUE(dirty.records().empty());
+}
+
+TEST(TessQueued, ExecutePhasePartitionedDirtyStopsOnPolicyMismatch) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedPhaseExecutionScratch scratch;
+  RecordingPhaseExecutor executor;
+  const std::vector<tess::ChunkKey> keys{tess::ChunkKey{1}};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys),
+                         tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+
+  auto called = false;
+  const auto result =
+      tess::execute_phase_partitioned_dirty_with<tess::WritePolicy::ReadOnly>(
+          executor, world, report.plan(), tess::ExecutionPhase{0, 1}, scratch,
+          [&](auto) { called = true; });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::PolicyMismatch);
+  EXPECT_EQ(result.chunk_count, 0u);
+  EXPECT_EQ(executor.indexes, (std::vector<std::size_t>{0}));
+  EXPECT_FALSE(called);
+  ASSERT_EQ(scratch.dirty_partitions().size(), 1u);
+  EXPECT_TRUE(scratch.dirty_partitions()[0].records().empty());
+}
+
+TEST(TessQueued, ExecutePhaseDeferredDirtyRejectsInvalidRange) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedDirtyAccumulator dirty;
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::WritePolicy::ReadOnly);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+
+  auto called = false;
+  const auto result =
+      tess::execute_phase_deferred_dirty<tess::WritePolicy::ReadOnly>(
+          world, report.plan(), tess::ExecutionPhase{1, 1}, dirty,
+          [&](auto) { called = true; });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::InvalidPhase);
+  EXPECT_EQ(result.chunk_count, 0u);
+  EXPECT_FALSE(called);
+  EXPECT_TRUE(dirty.records().empty());
+}
+
+TEST(TessQueued, ExecutePhaseDeferredDirtyWithRejectsInvalidRange) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedDirtyAccumulator dirty;
+  RecordingPhaseExecutor executor;
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::WritePolicy::ReadOnly);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+
+  auto called = false;
+  const auto result =
+      tess::execute_phase_deferred_dirty_with<tess::WritePolicy::ReadOnly>(
+          executor, world, report.plan(), tess::ExecutionPhase{1, 1}, dirty,
+          [&](auto) { called = true; });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::InvalidPhase);
+  EXPECT_EQ(result.chunk_count, 0u);
+  EXPECT_TRUE(executor.indexes.empty());
+  EXPECT_FALSE(called);
+  EXPECT_TRUE(dirty.records().empty());
+}
+
+TEST(TessQueued, ExecutePhasePartitionedDirtyRejectsInvalidRange) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedPhaseExecutionScratch scratch;
+  RecordingPhaseExecutor executor;
+
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::WritePolicy::ReadOnly);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+
+  auto called = false;
+  const auto result =
+      tess::execute_phase_partitioned_dirty_with<tess::WritePolicy::ReadOnly>(
+          executor, world, report.plan(), tess::ExecutionPhase{1, 1}, scratch,
+          [&](auto) { called = true; });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::InvalidPhase);
+  EXPECT_EQ(result.chunk_count, 0u);
+  EXPECT_TRUE(executor.indexes.empty());
+  EXPECT_FALSE(called);
+  EXPECT_EQ(scratch.operation_count(), 0u);
+  EXPECT_TRUE(scratch.dirty_partitions().empty());
+}
+
+TEST(TessQueued, PreReservedPartitionedPhaseExecutionDoesNotAllocate) {
+  World world;
+  tess::FrameOps ops;
+  tess::PlannedPhaseExecutionScratch scratch;
+  tess::SerialPhaseExecutor executor;
+  scratch.reserve_operations(2);
+  scratch.reserve_dirty_records_per_operation(1);
+  scratch.reserve_merged_dirty_records(2);
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{1}};
+  const std::vector<tess::ChunkKey> second_keys{tess::ChunkKey{2}};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(second_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+  ASSERT_TRUE(phases.ok());
+  ASSERT_EQ(phases.phases().size(), 1u);
+  scratch.prepare_for_operation_count(phases.phases()[0].operation_count);
+
+  tess_test::reset_allocation_count();
+  tess_test::set_allocation_counting(true);
+
+  const auto result = tess::execute_phase_partitioned_dirty_with<
+      tess::WritePolicy::UniquePerChunk>(
+      executor, world, report.plan(), phases.phases()[0], scratch,
+      [](auto view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        terrain[0] = static_cast<std::uint16_t>(view.key().value + 70);
+      });
+  const auto merged = tess::merge_planned_dirty(world, scratch);
+
+  tess_test::set_allocation_counting(false);
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+  EXPECT_EQ(result.chunk_count, 2u);
+  EXPECT_EQ(merged, 2u);
+  EXPECT_EQ(tess_test::allocation_count(), 0);
+}
+
+TEST(TessQueued, ExecutingPhasesMatchesDeferredPlanExecution) {
+  World phase_world;
+  World plan_world;
+  tess::FrameOps ops;
+  tess::PlannedDirtyAccumulator phase_dirty;
+  tess::PlannedDirtyAccumulator plan_dirty;
+  phase_dirty.reserve(2);
+  plan_dirty.reserve(2);
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{1}};
+  const std::vector<tess::ChunkKey> second_keys{tess::ChunkKey{2}};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(second_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(phase_world, ops);
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+  ASSERT_TRUE(phases.ok());
+
+  for (const auto phase : phases.phases()) {
+    const auto result =
+        tess::execute_phase_deferred_dirty<tess::WritePolicy::UniquePerChunk>(
+            phase_world, report.plan(), phase, phase_dirty, [](auto view) {
+              auto terrain = view.template field_span<TerrainTag>();
+              terrain[0] = static_cast<std::uint16_t>(view.key().value + 40);
+            });
+    ASSERT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+    (void)tess::merge_planned_dirty(phase_world, phase_dirty);
+  }
+
+  const auto plan_result =
+      tess::execute_plan_deferred_dirty<tess::WritePolicy::UniquePerChunk>(
+          plan_world, report.plan(), plan_dirty, [](auto view) {
+            auto terrain = view.template field_span<TerrainTag>();
+            terrain[0] = static_cast<std::uint16_t>(view.key().value + 40);
+          });
+  ASSERT_EQ(plan_result.status, tess::PlannedExecutionStatus::Executed);
+  (void)tess::merge_planned_dirty(plan_world, plan_dirty);
+
+  EXPECT_EQ(phase_world.chunk(tess::ChunkKey{1})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            plan_world.chunk(tess::ChunkKey{1})
+                .template field<TerrainTag>(tess::LocalTileId{0}));
+  EXPECT_EQ(phase_world.chunk(tess::ChunkKey{2})
+                .template field<TerrainTag>(tess::LocalTileId{0}),
+            plan_world.chunk(tess::ChunkKey{2})
+                .template field<TerrainTag>(tess::LocalTileId{0}));
+  EXPECT_EQ(phase_world.meta(tess::ChunkKey{1}).version,
+            plan_world.meta(tess::ChunkKey{1}).version);
+  EXPECT_EQ(phase_world.meta(tess::ChunkKey{2}).version,
+            plan_world.meta(tess::ChunkKey{2}).version);
 }
 
 TEST(TessQueued, PrebuiltPlannedBlockCtxIterationDoesNotAllocate) {

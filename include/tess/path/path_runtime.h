@@ -1,10 +1,12 @@
 #pragma once
 
+#include <tess/path/field_product_cache.h>
 #include <tess/path/path.h>
 #include <tess/path/portal_segment_cache.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -17,6 +19,11 @@ struct PathTicket {
 struct PathRuntimeCachePolicy {
   std::size_t clear_every_world_change = 0;
   bool invalidate_unit_route_cache_on_world_change = true;
+  bool use_unit_field_product_cache = false;
+  std::size_t unit_field_product_min_goal_reuse = 2;
+  std::size_t unit_field_product_min_start_chunks = 2;
+  std::size_t unit_field_product_cache_byte_budget =
+      std::numeric_limits<std::size_t>::max();
 };
 
 struct PathRuntimeStats {
@@ -30,6 +37,10 @@ struct PathRuntimeStats {
   std::size_t cache_clears = 0;
   std::size_t path_nodes = 0;
   RouteCacheStats route_cache{};
+  FieldProductCacheStats field_product_cache{};
+  std::size_t field_product_candidate_groups = 0;
+  std::size_t field_product_used_groups = 0;
+  std::size_t field_product_skipped_groups = 0;
   WeightedPathBatchStats weighted_batch{};
   std::size_t portal_segment_cache_entries = 0;
 };
@@ -41,23 +52,37 @@ class PathRequestRuntime {
     results_.reserve(count);
     offsets_.reserve(count);
     sizes_.reserve(count);
+    processed_.reserve(count);
     weighted_batch_.reserve_requests(count);
+    unit_field_goals_.reserve(1);
   }
 
   void reserve_path_nodes(std::size_t count) {
     paths_.reserve(count);
     unit_route_cache_.reserve_path_nodes(count);
+    unit_field_scratch_.reserve_nodes(count);
+    unit_field_product_.reserve_nodes(count);
     weighted_batch_.reserve_path_nodes(count);
     portal_segment_cache_.reserve_path_nodes(count);
   }
 
   void reserve_search_nodes(std::size_t count) {
     unit_scratch_.reserve_nodes(count);
+    unit_field_scratch_.reserve_nodes(count);
+    unit_field_product_.reserve_nodes(count);
     weighted_batch_.reserve_search_nodes(count);
   }
 
   void reserve_unit_routes(std::size_t count) {
     unit_route_cache_.reserve_routes(count);
+  }
+
+  void reserve_unit_field_products(std::size_t count) {
+    unit_field_product_cache_.reserve_entries(count);
+  }
+
+  void reserve_unit_field_product_dependencies(std::size_t count) {
+    unit_field_product_.reserve_dependencies(count);
   }
 
   void reserve_portal_segments(std::size_t count) {
@@ -71,6 +96,7 @@ class PathRequestRuntime {
 
   void clear_caches() noexcept {
     unit_route_cache_.clear();
+    unit_field_product_cache_.clear();
     portal_segment_cache_.clear();
     world_changes_since_clear_ = 0;
     ++cache_clears_;
@@ -118,6 +144,7 @@ class PathRequestRuntime {
     stats.completed = results_.size();
     stats.path_nodes = paths_.size();
     stats.route_cache = unit_route_cache_.stats();
+    stats.field_product_cache = unit_field_product_cache_.stats();
     stats.weighted_batch = weighted_batch_.stats();
     stats.portal_segment_cache_entries = portal_segment_cache_.size();
     stats.cache_clears = cache_clears_;
@@ -132,10 +159,17 @@ class PathRequestRuntime {
     results_.resize(requests_.size());
     offsets_.assign(requests_.size(), 0);
     sizes_.assign(requests_.size(), 0);
+    processed_.assign(requests_.size(), 0);
     stats_ = {};
     prepare_process(world, policy);
+    if (policy.use_unit_field_product_cache) {
+      process_repeated_goal_fields<World, PassableTag>(world, policy);
+    }
 
     for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (processed_[i] != 0) {
+        continue;
+      }
       const auto result = cached_astar_path<World, PassableTag>(
           world, requests_[i], unit_scratch_, unit_route_cache_);
       copy_result(i, result);
@@ -154,6 +188,7 @@ class PathRequestRuntime {
     results_.resize(requests_.size());
     offsets_.assign(requests_.size(), 0);
     sizes_.assign(requests_.size(), 0);
+    processed_.assign(requests_.size(), 0);
     stats_ = {};
     prepare_process(world, policy);
 
@@ -173,6 +208,7 @@ class PathRequestRuntime {
     results_.clear();
     offsets_.clear();
     sizes_.clear();
+    processed_.clear();
     paths_.clear();
     stats_ = {};
   }
@@ -190,6 +226,103 @@ class PathRequestRuntime {
     if (policy.clear_every_world_change != 0 &&
         world_changes_since_clear_ >= policy.clear_every_world_change) {
       clear_caches();
+    }
+  }
+
+  template <typename World, typename PassableTag>
+  void process_repeated_goal_fields(const World& world,
+                                    PathRuntimeCachePolicy policy) {
+    using Shape = typename World::shape_type;
+
+    if (policy.unit_field_product_min_goal_reuse < 2) {
+      policy.unit_field_product_min_goal_reuse = 2;
+    }
+    if (policy.unit_field_product_min_start_chunks == 0) {
+      policy.unit_field_product_min_start_chunks = 1;
+    }
+    unit_field_product_cache_.set_byte_budget(
+        policy.unit_field_product_cache_byte_budget);
+
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (processed_[i] != 0) {
+        continue;
+      }
+      auto grouped_by_previous_request = false;
+      for (std::size_t j = 0; j < i; ++j) {
+        if (requests_[j].goal == requests_[i].goal) {
+          grouped_by_previous_request = true;
+          break;
+        }
+      }
+      if (grouped_by_previous_request) {
+        continue;
+      }
+
+      auto reuse_count = std::size_t{0};
+      auto start_chunk_count = std::size_t{0};
+      for (std::size_t j = i; j < requests_.size(); ++j) {
+        if (processed_[j] == 0 && requests_[j].goal == requests_[i].goal) {
+          ++reuse_count;
+          const auto chunk =
+              chunk_key<Shape>(tile_key<Shape>(requests_[j].start));
+          auto seen = false;
+          for (std::size_t k = i; k < j; ++k) {
+            if (processed_[k] != 0 || requests_[k].goal != requests_[i].goal) {
+              continue;
+            }
+            if (chunk_key<Shape>(tile_key<Shape>(requests_[k].start)) ==
+                chunk) {
+              seen = true;
+              break;
+            }
+          }
+          if (!seen) {
+            ++start_chunk_count;
+          }
+        }
+      }
+      if (reuse_count < policy.unit_field_product_min_goal_reuse) {
+        continue;
+      }
+      ++stats_.field_product_candidate_groups;
+      if (start_chunk_count < policy.unit_field_product_min_start_chunks) {
+        ++stats_.field_product_skipped_groups;
+        continue;
+      }
+
+      unit_field_goals_.clear();
+      unit_field_goals_.add(requests_[i].goal);
+      auto* product =
+          unit_field_product_cache_.template lookup<World, PassableTag>(
+              world, unit_field_goals_);
+      if (product == nullptr) {
+        const auto field = build_distance_field_product<World, PassableTag>(
+            world, unit_field_goals_, unit_field_scratch_, unit_field_product_);
+        if (field.status == PathStatus::Found) {
+          (void)unit_field_product_cache_.template store<World, PassableTag>(
+              unit_field_product_);
+          product =
+              unit_field_product_cache_.template lookup<World, PassableTag>(
+                  world, unit_field_goals_);
+        }
+      }
+
+      if (product == nullptr) {
+        ++stats_.field_product_skipped_groups;
+        continue;
+      }
+
+      ++stats_.field_product_used_groups;
+      for (std::size_t j = i; j < requests_.size(); ++j) {
+        if (processed_[j] != 0 || requests_[j].goal != requests_[i].goal) {
+          continue;
+        }
+        const auto result = distance_field_product_path<World, PassableTag>(
+            world, requests_[j].start, *product, unit_field_scratch_);
+        copy_result(j, result);
+        record_status(result.status);
+        processed_[j] = 1;
+      }
     }
   }
 
@@ -235,9 +368,14 @@ class PathRequestRuntime {
   std::vector<PathResult> results_;
   std::vector<std::size_t> offsets_;
   std::vector<std::size_t> sizes_;
+  std::vector<std::uint8_t> processed_;
   std::vector<Coord3> paths_;
   PathScratch unit_scratch_;
   RouteCacheScratch unit_route_cache_;
+  DistanceFieldScratch unit_field_scratch_;
+  GoalSet unit_field_goals_;
+  DistanceFieldProduct unit_field_product_;
+  FieldProductCache unit_field_product_cache_;
   WeightedPathBatchScratch weighted_batch_;
   WeightedPortalSegmentCache portal_segment_cache_;
   PathRuntimeStats stats_;
