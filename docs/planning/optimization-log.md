@@ -807,6 +807,9 @@ deferred for scope reasons. Keep entries short and concrete:
   existing 100-agent A* batches, and
   `path/agent_runtime_100_weighted_mixed_512x512`. The failing values were
   broad runner calibration misses rather than a product-specific regression.
+  A follow-up run narrowed the remaining misses to two multigoal weighted
+  batch thresholds at about 81-82 ms against 80 ms, plus the existing
+  `path/astar_batch_100_mixed_512x512` batch at about 1.08 ms against 1 ms.
 - Accepted: Raise only the path thresholds exceeded by that CI run, using the
   observed runner timings with headroom. Keep single-query product replay,
   nearest-target, stale rejection, and cache lookup thresholds below the 1 ms

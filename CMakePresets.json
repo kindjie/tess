@@ -156,9 +156,6 @@
     {
       "name": "dev-asan",
       "configurePreset": "dev-asan",
-      "environment": {
-        "ASAN_OPTIONS": "alloc_dealloc_mismatch=0"
-      },
       "output": {
         "outputOnFailure": true
       }
