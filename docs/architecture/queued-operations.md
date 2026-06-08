@@ -197,7 +197,10 @@ contract. It owns no persistent pool: each call splits one operation-index
 range across a bounded number of `std::thread` workers, joins all workers
 before returning, and reports the first non-`Executed` callback result in
 operation order. It exists to prove the phase handoff and visibility rules
-before Tess adds a long-lived worker pool.
+before Tess adds a long-lived worker pool. When diagnostics are enabled, it
+records dispatch counts and worker counts before launching threads; the scoped
+queued-phase diagnostics are intentionally owned by the caller thread and are
+not mutated from worker callbacks.
 
 `execute_phase_partitioned_dirty_with<Policy>` uses the same executor contract,
 but stores callback dirty records and execution results in
@@ -208,13 +211,16 @@ deterministically with `merge_planned_dirty(world, scratch)`. The scratch can be
 pre-reserved and prepared for a known phase operation count so warm partitioned
 execution and dirty merge do not allocate. Queued-operation tests exercise this
 contract with a test-only `std::thread` executor over disjoint chunk mutations
-and overlapping read-only chunk access. The ownership rule is deliberately
-small: `ReadOnly` phase operations may overlap chunk domains and receive const
-views, while `UniquePerChunk` phase operations may run concurrently only after
-phase planning proves their mutable chunk domains are disjoint. User callbacks
-must still synchronize any mutable state they capture themselves. Production
-worker pools, cancellation, and result-channel completion remain outside this
-layer.
+and overlapping read-only chunk access, plus deterministic replay stress that
+compares serial phase execution against `ScopedThreadPhaseExecutor` across
+many shuffled legal phase plans. The ownership rule is deliberately small:
+`ReadOnly` phase operations may overlap chunk domains and receive const views,
+while `UniquePerChunk` phase operations may run concurrently only after phase
+planning proves their mutable chunk domains are disjoint. User callbacks must
+still synchronize any mutable state they capture themselves. Production worker
+pools, cancellation, and result-channel completion remain outside this layer.
+Diagnostics also count validated phase calls, partition counts, invalid phase
+ranges, phase failures, collected dirty records, and merged dirty chunks.
 
 Partitioned execution has no cancellation semantics yet. If one operation fails
 policy validation while a parallel executor has already started other

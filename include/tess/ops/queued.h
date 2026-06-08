@@ -2,6 +2,7 @@
 
 #include <tess/block/block.h>
 #include <tess/core/shape.h>
+#include <tess/diagnostics/diagnostics.h>
 #include <tess/storage/world.h>
 
 #include <algorithm>
@@ -323,6 +324,7 @@ class ScopedThreadPhaseExecutor {
     }
 
     const auto thread_count = std::min(worker_count_, count);
+    TESS_DIAG_EVENT_VALUE(queued_scoped_thread_dispatch, thread_count);
     std::atomic<std::size_t> next_offset = 0;
     std::vector<PlannedExecutionResult> results(count);
     std::vector<std::thread> threads;
@@ -996,6 +998,7 @@ auto merge_planned_dirty(World& world, PlannedDirtyAccumulator& dirty) noexcept
     ++merged_count;
   }
 
+  TESS_DIAG_EVENT_VALUE(queued_dirty_merge, merged_count);
   dirty.clear();
   return merged_count;
 }
@@ -1010,6 +1013,7 @@ inline auto collect_planned_dirty(PlannedDirtyAccumulator& dirty,
                           partition.records_.end());
     partition.clear();
   }
+  TESS_DIAG_EVENT_VALUE(queued_dirty_collect, record_count);
   return record_count;
 }
 
@@ -1148,12 +1152,14 @@ auto execute_phase_deferred_dirty_with(Executor&& executor, World& world,
   const auto operations = plan.operations();
   if (phase.first_operation > operations.size() ||
       phase.operation_count > operations.size() - phase.first_operation) {
+    TESS_DIAG_EVENT(queued_phase_invalid_range);
     return PlannedExecutionResult{
         PlannedExecutionStatus::InvalidPhase,
         0,
     };
   }
 
+  TESS_DIAG_EVENT_VALUE(queued_phase_execute, phase.operation_count);
   std::size_t chunk_count = 0;
   auto&& callback = fn;
   auto result = execute_operation_index_range(
@@ -1168,6 +1174,7 @@ auto execute_phase_deferred_dirty_with(Executor&& executor, World& world,
         return operation_result;
       });
   if (result.status != PlannedExecutionStatus::Executed) {
+    TESS_DIAG_EVENT(queued_phase_failure);
     result.chunk_count = chunk_count;
     return result;
   }
@@ -1187,12 +1194,15 @@ auto execute_phase_partitioned_dirty_with(Executor&& executor, World& world,
   const auto operations = plan.operations();
   if (phase.first_operation > operations.size() ||
       phase.operation_count > operations.size() - phase.first_operation) {
+    TESS_DIAG_EVENT(queued_phase_invalid_range);
     return PlannedExecutionResult{
         PlannedExecutionStatus::InvalidPhase,
         0,
     };
   }
 
+  TESS_DIAG_EVENT_VALUE(queued_phase_execute, phase.operation_count);
+  TESS_DIAG_EVENT_VALUE(queued_partitioned_phase, phase.operation_count);
   scratch.prepare(phase.operation_count);
   auto&& callback = fn;
   auto result = execute_operation_index_range(
@@ -1210,6 +1220,7 @@ auto execute_phase_partitioned_dirty_with(Executor&& executor, World& world,
   std::size_t chunk_count = 0;
   for (const auto operation_result : scratch.results()) {
     if (operation_result.status != PlannedExecutionStatus::Executed) {
+      TESS_DIAG_EVENT(queued_phase_failure);
       return PlannedExecutionResult{
           operation_result.status,
           chunk_count,
@@ -1219,6 +1230,7 @@ auto execute_phase_partitioned_dirty_with(Executor&& executor, World& world,
   }
 
   if (result.status != PlannedExecutionStatus::Executed) {
+    TESS_DIAG_EVENT(queued_phase_failure);
     return PlannedExecutionResult{
         result.status,
         chunk_count,

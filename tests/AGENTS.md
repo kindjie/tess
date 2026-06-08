@@ -41,10 +41,11 @@
   phase-range deferred execution and rejection, backend-executor range dispatch,
   partitioned dirty phase execution and merge including test-only threaded
   mutable and read-only dispatch, scoped threaded executor equivalence and
-  failure ordering, read-only const-view enforcement, partitioned threaded
-  failure semantics, policy-mismatch execution rejection, allocation-free
-  prebuilt planned execution, source-location capture, and allocation-free
-  inspection of already-built queue/report/plan spans.
+  replay stress over shuffled legal phase plans, failure ordering, read-only
+  const-view enforcement, partitioned threaded failure semantics,
+  policy-mismatch execution rejection, allocation-free prebuilt planned
+  execution, source-location capture, and allocation-free inspection of
+  already-built queue/report/plan spans.
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.
@@ -90,6 +91,7 @@
   disabled by default and do not evaluate arguments, including generic events.
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate
   exactly once when `TESS_ENABLE_DIAGNOSTICS` is defined, and that scoped path
-  counters record generic diagnostic events including weighted cost reads. It
-  also links diagnostic allocation hooks and verifies scoped allocation
-  counters observe global `new`/`delete`.
+  and queued phase counters record generic diagnostic events including weighted
+  cost reads and queued partitioned execution. It also links diagnostic
+  allocation hooks and verifies scoped allocation counters observe global
+  `new`/`delete`.
