@@ -4,6 +4,9 @@
 - `allocation_counter.{h,cc}` is shared only by allocation-sensitive test
   binaries that need global `new`/`delete` counters. Do not link it into more
   than one translation unit inside the same executable.
+- Under AddressSanitizer, `allocation_counter.cc` must use sanitizer allocation
+  hooks instead of replacing global `new`, so ASan's alloc/dealloc mismatch
+  check remains meaningful.
 - `tess_smoke`: verifies that the public `tess::tess` target is consumable,
   that the root public header compiles, and that public version constants match.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
