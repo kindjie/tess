@@ -44,6 +44,86 @@ auto planned_keys(const tess::ExecutionReport& report, std::size_t index)
   return {ops[index].chunks.begin(), ops[index].chunks.end()};
 }
 
+struct ReplayEntry {
+  tess::ChunkKey key{};
+  tess::FieldAccessDesc access{};
+};
+
+auto next_replay_value(std::uint32_t& state) -> std::uint32_t {
+  state = (state * 1664525u) + 1013904223u;
+  return state;
+}
+
+auto replay_entries(std::uint32_t seed) -> std::vector<ReplayEntry> {
+  std::vector<ReplayEntry> entries;
+  entries.reserve(static_cast<std::size_t>(World::chunk_count) * 2u);
+
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      DirtyTerrain,
+      DirtyTerrain,
+  };
+  constexpr auto writes_cost = tess::FieldAccessDesc{
+      0,
+      DirtyCost,
+      DirtyCost,
+  };
+
+  for (std::uint64_t key = 0; key < World::chunk_count; ++key) {
+    entries.push_back(ReplayEntry{tess::ChunkKey{key}, writes_terrain});
+    entries.push_back(ReplayEntry{tess::ChunkKey{key}, writes_cost});
+  }
+
+  auto state = seed;
+  for (std::size_t i = entries.size(); i > 1u; --i) {
+    const auto j = static_cast<std::size_t>(next_replay_value(state) % i);
+    std::swap(entries[i - 1u], entries[j]);
+  }
+  return entries;
+}
+
+auto replay_callback(std::uint32_t seed) {
+  return [seed](auto view) {
+    auto terrain = view.template field_span<TerrainTag>();
+    auto cost = view.template field_span<CostTag>();
+    terrain[0] = static_cast<std::uint16_t>((seed * 97u) + view.key().value);
+    cost[0] = static_cast<float>(seed) +
+              (static_cast<float>(view.key().value) * 0.25F);
+  };
+}
+
+template <typename Executor>
+void execute_replay_phases(Executor& executor, World& world,
+                           const tess::ExecutionPlan& plan,
+                           std::span<const tess::ExecutionPhase> phases,
+                           tess::PlannedPhaseExecutionScratch& scratch,
+                           std::uint32_t seed) {
+  for (const auto phase : phases) {
+    const auto result = tess::execute_phase_partitioned_dirty_with<
+        tess::WritePolicy::UniquePerChunk>(executor, world, plan, phase,
+                                           scratch, replay_callback(seed));
+    ASSERT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+    (void)tess::merge_planned_dirty(world, scratch);
+  }
+}
+
+void expect_worlds_match(const World& lhs, const World& rhs) {
+  for (std::uint64_t key_value = 0; key_value < World::chunk_count;
+       ++key_value) {
+    const auto key = tess::ChunkKey{key_value};
+    EXPECT_EQ(lhs.meta(key).state, rhs.meta(key).state);
+    EXPECT_EQ(lhs.meta(key).version, rhs.meta(key).version);
+    EXPECT_EQ(lhs.meta(key).topology_version, rhs.meta(key).topology_version);
+    EXPECT_EQ(lhs.meta(key).field_dirty_flags, rhs.meta(key).field_dirty_flags);
+    EXPECT_EQ(lhs.meta(key).active_flags, rhs.meta(key).active_flags);
+    EXPECT_EQ(lhs.meta(key).dirty_bounds, rhs.meta(key).dirty_bounds);
+    EXPECT_EQ(lhs.chunk(key).template field<TerrainTag>(tess::LocalTileId{0}),
+              rhs.chunk(key).template field<TerrainTag>(tess::LocalTileId{0}));
+    EXPECT_EQ(lhs.chunk(key).template field<CostTag>(tess::LocalTileId{0}),
+              rhs.chunk(key).template field<CostTag>(tess::LocalTileId{0}));
+  }
+}
+
 struct RecordingPhaseExecutor {
   std::vector<std::size_t> indexes;
 
@@ -1414,6 +1494,46 @@ TEST(TessQueued, ScopedThreadPhaseExecutorMatchesSerialPhaseExecution) {
                 .template field<TerrainTag>(tess::LocalTileId{0}),
             threaded_world.chunk(tess::ChunkKey{2})
                 .template field<TerrainTag>(tess::LocalTileId{0}));
+}
+
+TEST(TessQueued, ScopedThreadPhaseExecutorReplaysStressPlansLikeSerial) {
+  for (std::uint32_t seed = 1; seed <= 24u; ++seed) {
+    World serial_world;
+    World threaded_world;
+    tess::FrameOps ops;
+    tess::PlannedPhaseExecutionScratch serial_scratch;
+    tess::PlannedPhaseExecutionScratch threaded_scratch;
+    tess::SerialPhaseExecutor serial_executor;
+    tess::ScopedThreadPhaseExecutor threaded_executor{4};
+
+    for (const auto entry : replay_entries(seed)) {
+      const std::vector<tess::ChunkKey> keys{entry.key};
+      (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys),
+                             entry.access, tess::WritePolicy::UniquePerChunk);
+    }
+
+    const auto report = tess::plan_operations(serial_world, ops);
+    ASSERT_TRUE(report.ok()) << "seed " << seed;
+    ASSERT_EQ(report.plan().operations().size(), ops.size());
+
+    const auto phase_plan = tess::plan_parallel_execution_phases(report.plan());
+    ASSERT_TRUE(phase_plan.ok()) << "seed " << seed;
+    ASSERT_GT(phase_plan.phases().size(), 1u) << "seed " << seed;
+
+    serial_scratch.reserve_operations(ops.size());
+    serial_scratch.reserve_dirty_records_per_operation(1);
+    serial_scratch.reserve_merged_dirty_records(World::chunk_count);
+    threaded_scratch.reserve_operations(ops.size());
+    threaded_scratch.reserve_dirty_records_per_operation(1);
+    threaded_scratch.reserve_merged_dirty_records(World::chunk_count);
+
+    execute_replay_phases(serial_executor, serial_world, report.plan(),
+                          phase_plan.phases(), serial_scratch, seed);
+    execute_replay_phases(threaded_executor, threaded_world, report.plan(),
+                          phase_plan.phases(), threaded_scratch, seed);
+
+    expect_worlds_match(serial_world, threaded_world);
+  }
 }
 
 TEST(TessQueued, ScopedThreadPhaseExecutorReportsFirstFailureInPlanOrder) {
