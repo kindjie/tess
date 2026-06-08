@@ -56,16 +56,6 @@ auto real_operator_new_array() noexcept -> void* (*)(std::size_t) {
   return fn;
 }
 
-auto real_operator_delete() noexcept -> void (*)(void*) {
-  static auto fn = required_next_symbol<void (*)(void*)>("_ZdlPv");
-  return fn;
-}
-
-auto real_operator_delete_array() noexcept -> void (*)(void*) {
-  static auto fn = required_next_symbol<void (*)(void*)>("_ZdaPv");
-  return fn;
-}
-
 }  // namespace
 
 void* operator new(std::size_t size) {
@@ -78,16 +68,5 @@ void* operator new[](std::size_t size) {
   return real_operator_new_array()(size);
 }
 
-void operator delete(void* ptr) noexcept { real_operator_delete()(ptr); }
-
-void operator delete[](void* ptr) noexcept {
-  real_operator_delete_array()(ptr);
-}
-
-void operator delete(void* ptr, std::size_t) noexcept {
-  real_operator_delete()(ptr);
-}
-
-void operator delete[](void* ptr, std::size_t) noexcept {
-  real_operator_delete_array()(ptr);
-}
+// Deallocation remains owned by the runtime and sanitizer interceptors so
+// ASan can keep its alloc/dealloc mismatch checks enabled.
