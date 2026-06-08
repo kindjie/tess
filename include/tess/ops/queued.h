@@ -5,11 +5,13 @@
 #include <tess/storage/world.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <source_location>
 #include <span>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -71,8 +73,15 @@ static_assert(sizeof(OperationFailure) == sizeof(std::uint8_t));
 enum class PlannedExecutionStatus : std::uint8_t {
   Executed,
   PolicyMismatch,
+  InvalidPhase,
 };
 static_assert(sizeof(PlannedExecutionStatus) == sizeof(std::uint8_t));
+
+enum class ExecutionPhaseStatus : std::uint8_t {
+  Ready,
+  UnsupportedWritePolicy,
+};
+static_assert(sizeof(ExecutionPhaseStatus) == sizeof(std::uint8_t));
 
 enum class DomainKind : std::uint8_t {
   ExplicitChunks,
@@ -192,6 +201,63 @@ class ExecutionPlan {
   std::vector<PlannedOperation> operations_;
 };
 
+struct ExecutionPhase {
+  std::size_t first_operation = 0;
+  std::size_t operation_count = 0;
+};
+
+struct ExecutorPhaseRange {
+  std::size_t first_operation = 0;
+  std::size_t operation_count = 0;
+};
+
+[[nodiscard]] constexpr auto executor_phase_range(ExecutionPhase phase) noexcept
+    -> ExecutorPhaseRange {
+  return ExecutorPhaseRange{
+      phase.first_operation,
+      phase.operation_count,
+  };
+}
+
+class ExecutionPhasePlan {
+ public:
+  [[nodiscard]] constexpr auto phases() const noexcept
+      -> std::span<const ExecutionPhase> {
+    return {phases_.data(), phases_.size()};
+  }
+
+  [[nodiscard]] constexpr auto status() const noexcept -> ExecutionPhaseStatus {
+    return status_;
+  }
+
+  [[nodiscard]] constexpr bool ok() const noexcept {
+    return status_ == ExecutionPhaseStatus::Ready;
+  }
+
+  [[nodiscard]] constexpr auto failed_operation_index() const noexcept
+      -> std::size_t {
+    return failed_operation_index_;
+  }
+
+  [[nodiscard]] constexpr auto failed_write_policy() const noexcept
+      -> WritePolicy {
+    return failed_write_policy_;
+  }
+
+ private:
+  friend auto plan_parallel_execution_phases(const ExecutionPlan& plan)
+      -> ExecutionPhasePlan;
+
+  void reserve(std::size_t size) { phases_.reserve(size); }
+
+  void push_phase(ExecutionPhase phase) { phases_.push_back(phase); }
+
+  std::vector<ExecutionPhase> phases_;
+  ExecutionPhaseStatus status_ = ExecutionPhaseStatus::Ready;
+  std::size_t failed_operation_index_ = 0;
+  WritePolicy failed_write_policy_ = WritePolicy::ReadOnly;
+};
+
 struct OperationReport {
   OpHandle handle{};
   OpId id{};
@@ -212,6 +278,256 @@ struct OperationReport {
 struct PlannedExecutionResult {
   PlannedExecutionStatus status = PlannedExecutionStatus::Executed;
   std::size_t chunk_count = 0;
+};
+
+struct SerialPhaseExecutor {
+  template <typename Fn>
+  auto for_each_operation(ExecutorPhaseRange range, Fn&& fn) const
+      -> PlannedExecutionResult {
+    return for_each_operation(range.first_operation, range.operation_count,
+                              std::forward<Fn>(fn));
+  }
+
+  template <typename Fn>
+  auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn) const
+      -> PlannedExecutionResult {
+    auto&& callback = fn;
+    const auto end = first + count;
+    for (std::size_t i = first; i < end; ++i) {
+      auto result = callback(i);
+      if (result.status != PlannedExecutionStatus::Executed) {
+        return result;
+      }
+    }
+    return PlannedExecutionResult{};
+  }
+};
+
+class ScopedThreadPhaseExecutor {
+ public:
+  explicit ScopedThreadPhaseExecutor(std::size_t worker_count) noexcept
+      : worker_count_(worker_count == 0 ? 1 : worker_count) {}
+
+  ScopedThreadPhaseExecutor() noexcept
+      : ScopedThreadPhaseExecutor(std::thread::hardware_concurrency()) {}
+
+  [[nodiscard]] auto worker_count() const noexcept -> std::size_t {
+    return worker_count_;
+  }
+
+  template <typename Fn>
+  auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn) const
+      -> PlannedExecutionResult {
+    if (count == 0) {
+      return PlannedExecutionResult{};
+    }
+
+    const auto thread_count = std::min(worker_count_, count);
+    std::atomic<std::size_t> next_offset = 0;
+    std::vector<PlannedExecutionResult> results(count);
+    std::vector<std::thread> threads;
+    threads.reserve(thread_count);
+    auto&& callback = fn;
+
+    for (std::size_t worker = 0; worker < thread_count; ++worker) {
+      threads.emplace_back([&] {
+        while (true) {
+          const auto offset = next_offset.fetch_add(1);
+          if (offset >= count) {
+            return;
+          }
+          results[offset] = callback(first + offset);
+        }
+      });
+    }
+
+    for (auto& thread : threads) {
+      thread.join();
+    }
+
+    for (const auto result : results) {
+      if (result.status != PlannedExecutionStatus::Executed) {
+        return result;
+      }
+    }
+    return PlannedExecutionResult{};
+  }
+
+ private:
+  std::size_t worker_count_ = 1;
+};
+
+template <typename Executor, typename Fn>
+auto execute_operation_index_range(Executor&& executor,
+                                   ExecutorPhaseRange range, Fn&& fn)
+    -> PlannedExecutionResult {
+  return executor.for_each_operation(
+      range.first_operation, range.operation_count, std::forward<Fn>(fn));
+}
+
+struct PlannedDirtyRecord {
+  ChunkKey chunk{};
+  std::uint32_t dirty_mask = 0;
+  Box3 bounds{};
+};
+
+class PlannedDirtyPartitions;
+
+class PlannedDirtyAccumulator {
+ public:
+  void reserve(std::size_t count) { records_.reserve(count); }
+
+  void clear() noexcept { records_.clear(); }
+
+  void record(ChunkKey chunk, std::uint32_t dirty_mask, Box3 bounds) {
+    if (dirty_mask == 0) {
+      return;
+    }
+    records_.push_back(PlannedDirtyRecord{chunk, dirty_mask, bounds});
+  }
+
+  [[nodiscard]] auto records() const noexcept
+      -> std::span<const PlannedDirtyRecord> {
+    return records_;
+  }
+
+ private:
+  template <typename World>
+  friend auto merge_planned_dirty(World& world,
+                                  PlannedDirtyAccumulator& dirty) noexcept
+      -> std::size_t;
+  friend auto collect_planned_dirty(PlannedDirtyAccumulator& dirty,
+                                    PlannedDirtyPartitions& partitions)
+      -> std::size_t;
+
+  std::vector<PlannedDirtyRecord> records_;
+};
+
+class PlannedDirtyPartitions {
+ public:
+  void reserve(std::size_t count) { partitions_.reserve(count); }
+
+  void resize(std::size_t count) { partitions_.resize(count); }
+
+  void clear() noexcept { partitions_.clear(); }
+
+  void clear_records() noexcept {
+    for (auto& partition : partitions_) {
+      partition.clear();
+    }
+  }
+
+  void reserve_records_per_partition(std::size_t count) {
+    records_per_partition_reserve_ = count;
+    for (auto& partition : partitions_) {
+      partition.reserve(count);
+    }
+  }
+
+  [[nodiscard]] auto size() const noexcept -> std::size_t {
+    return partitions_.size();
+  }
+
+  [[nodiscard]] auto partition(std::size_t index) noexcept
+      -> PlannedDirtyAccumulator& {
+    return partitions_[index];
+  }
+
+  [[nodiscard]] auto partition(std::size_t index) const noexcept
+      -> const PlannedDirtyAccumulator& {
+    return partitions_[index];
+  }
+
+  [[nodiscard]] auto partitions() const noexcept
+      -> std::span<const PlannedDirtyAccumulator> {
+    return partitions_;
+  }
+
+ private:
+  friend auto collect_planned_dirty(PlannedDirtyAccumulator& dirty,
+                                    PlannedDirtyPartitions& partitions)
+      -> std::size_t;
+  friend class PlannedPhaseExecutionScratch;
+
+  void prepare(std::size_t count) {
+    partitions_.resize(count);
+    for (auto& partition : partitions_) {
+      partition.clear();
+      partition.reserve(records_per_partition_reserve_);
+    }
+  }
+
+  std::vector<PlannedDirtyAccumulator> partitions_;
+  std::size_t records_per_partition_reserve_ = 0;
+};
+
+class PlannedPhaseExecutionScratch {
+ public:
+  void reserve_operations(std::size_t count) {
+    dirty_partitions_.reserve(count);
+    results_.reserve(count);
+  }
+
+  void reserve_dirty_records_per_operation(std::size_t count) {
+    dirty_partitions_.reserve_records_per_partition(count);
+  }
+
+  void reserve_merged_dirty_records(std::size_t count) {
+    merged_dirty_.reserve(count);
+  }
+
+  void prepare_for_operation_count(std::size_t count) { prepare(count); }
+
+  void clear() noexcept {
+    dirty_partitions_.clear_records();
+    results_.clear();
+    merged_dirty_.clear();
+  }
+
+  [[nodiscard]] auto operation_count() const noexcept -> std::size_t {
+    return results_.size();
+  }
+
+  [[nodiscard]] auto dirty_partitions() const noexcept
+      -> std::span<const PlannedDirtyAccumulator> {
+    return dirty_partitions_.partitions();
+  }
+
+ private:
+  template <WritePolicy Policy, typename Executor, typename World, typename Fn>
+  friend auto execute_phase_partitioned_dirty_with(
+      Executor&& executor, World& world, const ExecutionPlan& plan,
+      ExecutionPhase phase, PlannedPhaseExecutionScratch& scratch, Fn&& fn)
+      -> PlannedExecutionResult;
+
+  template <typename World>
+  friend auto merge_planned_dirty(World& world,
+                                  PlannedPhaseExecutionScratch& scratch)
+      -> std::size_t;
+
+  void prepare(std::size_t operation_count) {
+    dirty_partitions_.prepare(operation_count);
+    results_.assign(operation_count, PlannedExecutionResult{});
+    merged_dirty_.clear();
+  }
+
+  [[nodiscard]] auto dirty_for_operation(std::size_t index) noexcept
+      -> PlannedDirtyAccumulator& {
+    return dirty_partitions_.partition(index);
+  }
+
+  void record_result(std::size_t index, PlannedExecutionResult result) {
+    results_[index] = result;
+  }
+
+  [[nodiscard]] auto results() const noexcept
+      -> std::span<const PlannedExecutionResult> {
+    return results_;
+  }
+
+  PlannedDirtyPartitions dirty_partitions_;
+  std::vector<PlannedExecutionResult> results_;
+  PlannedDirtyAccumulator merged_dirty_;
 };
 
 class ExecutionReport {
@@ -448,6 +764,74 @@ template <typename World>
   return nullptr;
 }
 
+[[nodiscard]] constexpr bool is_parallel_supported_policy(
+    WritePolicy policy) noexcept {
+  return policy == WritePolicy::ReadOnly ||
+         policy == WritePolicy::UniquePerChunk;
+}
+
+[[nodiscard]] constexpr bool is_mutating_policy(WritePolicy policy) noexcept {
+  return policy != WritePolicy::ReadOnly;
+}
+
+[[nodiscard]] constexpr bool parallel_phase_conflict(
+    const PlannedOperation& lhs, const PlannedOperation& rhs) noexcept {
+  if (!chunks_overlap(lhs.chunks, rhs.chunks)) {
+    return false;
+  }
+  if (is_mutating_policy(lhs.write_policy) ||
+      is_mutating_policy(rhs.write_policy)) {
+    return true;
+  }
+  return hazard_mask(lhs.field_access, rhs.field_access) != 0;
+}
+
+[[nodiscard]] constexpr auto dirty_axis_end(std::int64_t origin,
+                                            std::uint64_t extent) noexcept
+    -> std::int64_t {
+  return origin + static_cast<std::int64_t>(extent);
+}
+
+[[nodiscard]] constexpr auto dirty_min(std::int64_t lhs,
+                                       std::int64_t rhs) noexcept
+    -> std::int64_t {
+  return lhs < rhs ? lhs : rhs;
+}
+
+[[nodiscard]] constexpr auto dirty_max(std::int64_t lhs,
+                                       std::int64_t rhs) noexcept
+    -> std::int64_t {
+  return lhs < rhs ? rhs : lhs;
+}
+
+[[nodiscard]] constexpr auto dirty_union_extent(std::int64_t origin,
+                                                std::int64_t end) noexcept
+    -> std::uint64_t {
+  return static_cast<std::uint64_t>(end - origin);
+}
+
+[[nodiscard]] constexpr auto union_dirty_bounds(Box3 lhs, Box3 rhs) noexcept
+    -> Box3 {
+  const auto min_x = dirty_min(lhs.origin.x, rhs.origin.x);
+  const auto min_y = dirty_min(lhs.origin.y, rhs.origin.y);
+  const auto min_z = dirty_min(lhs.origin.z, rhs.origin.z);
+  const auto max_x = dirty_max(dirty_axis_end(lhs.origin.x, lhs.extent.x),
+                               dirty_axis_end(rhs.origin.x, rhs.extent.x));
+  const auto max_y = dirty_max(dirty_axis_end(lhs.origin.y, lhs.extent.y),
+                               dirty_axis_end(rhs.origin.y, rhs.extent.y));
+  const auto max_z = dirty_max(dirty_axis_end(lhs.origin.z, lhs.extent.z),
+                               dirty_axis_end(rhs.origin.z, rhs.extent.z));
+
+  return Box3{
+      Coord3{min_x, min_y, min_z},
+      Extent3{
+          dirty_union_extent(min_x, max_x),
+          dirty_union_extent(min_y, max_y),
+          dirty_union_extent(min_z, max_z),
+      },
+  };
+}
+
 }  // namespace detail
 
 template <typename World>
@@ -546,6 +930,105 @@ template <typename World>
                                                 operation.chunks.size()});
 }
 
+[[nodiscard]] inline auto plan_parallel_execution_phases(
+    const ExecutionPlan& plan) -> ExecutionPhasePlan {
+  const auto operations = plan.operations();
+  auto phases = ExecutionPhasePlan{};
+  phases.reserve(operations.size());
+
+  for (std::size_t i = 0; i < operations.size(); ++i) {
+    const auto& operation = operations[i];
+    if (!detail::is_parallel_supported_policy(operation.write_policy)) {
+      phases.status_ = ExecutionPhaseStatus::UnsupportedWritePolicy;
+      phases.failed_operation_index_ = i;
+      phases.failed_write_policy_ = operation.write_policy;
+      return phases;
+    }
+
+    if (phases.phases_.empty()) {
+      phases.push_phase(ExecutionPhase{i, 1});
+      continue;
+    }
+
+    auto& phase = phases.phases_.back();
+    auto conflicts = false;
+    const auto end = phase.first_operation + phase.operation_count;
+    for (std::size_t j = phase.first_operation; j < end; ++j) {
+      if (detail::parallel_phase_conflict(operations[j], operation)) {
+        conflicts = true;
+        break;
+      }
+    }
+
+    if (conflicts) {
+      phases.push_phase(ExecutionPhase{i, 1});
+    } else {
+      ++phase.operation_count;
+    }
+  }
+
+  return phases;
+}
+
+template <typename World>
+auto merge_planned_dirty(World& world, PlannedDirtyAccumulator& dirty) noexcept
+    -> std::size_t {
+  auto& records = dirty.records_;
+  std::sort(records.begin(), records.end(),
+            [](PlannedDirtyRecord lhs, PlannedDirtyRecord rhs) {
+              return lhs.chunk.value < rhs.chunk.value;
+            });
+
+  auto merged_count = std::size_t{0};
+  for (std::size_t i = 0; i < records.size();) {
+    auto chunk = records[i].chunk;
+    auto dirty_mask = records[i].dirty_mask;
+    auto bounds = records[i].bounds;
+    ++i;
+
+    while (i < records.size() && records[i].chunk == chunk) {
+      dirty_mask |= records[i].dirty_mask;
+      bounds = detail::union_dirty_bounds(bounds, records[i].bounds);
+      ++i;
+    }
+
+    world.mark_dirty(chunk, dirty_mask, bounds);
+    ++merged_count;
+  }
+
+  dirty.clear();
+  return merged_count;
+}
+
+inline auto collect_planned_dirty(PlannedDirtyAccumulator& dirty,
+                                  PlannedDirtyPartitions& partitions)
+    -> std::size_t {
+  std::size_t record_count = 0;
+  for (auto& partition : partitions.partitions_) {
+    record_count += partition.records_.size();
+    dirty.records_.insert(dirty.records_.end(), partition.records_.begin(),
+                          partition.records_.end());
+    partition.clear();
+  }
+  return record_count;
+}
+
+template <typename World>
+auto merge_planned_dirty(World& world, PlannedDirtyPartitions& partitions,
+                         PlannedDirtyAccumulator& dirty_scratch)
+    -> std::size_t {
+  dirty_scratch.clear();
+  (void)collect_planned_dirty(dirty_scratch, partitions);
+  return merge_planned_dirty(world, dirty_scratch);
+}
+
+template <typename World>
+auto merge_planned_dirty(World& world, PlannedPhaseExecutionScratch& scratch)
+    -> std::size_t {
+  return merge_planned_dirty(world, scratch.dirty_partitions_,
+                             scratch.merged_dirty_);
+}
+
 template <WritePolicy Policy>
 [[nodiscard]] constexpr bool planned_policy_matches(
     const PlannedOperation& operation) noexcept {
@@ -591,6 +1074,34 @@ auto execute_planned_operation(World& world, const PlannedOperation& operation,
 }
 
 template <WritePolicy Policy, typename World, typename Fn>
+auto execute_planned_operation_deferred_dirty(World& world,
+                                              const PlannedOperation& operation,
+                                              PlannedDirtyAccumulator& dirty,
+                                              Fn&& fn)
+    -> PlannedExecutionResult {
+  auto ctx = try_planned_block_ctx<Policy>(world, operation);
+  if (!ctx.has_value()) {
+    return PlannedExecutionResult{
+        PlannedExecutionStatus::PolicyMismatch,
+        0,
+    };
+  }
+
+  std::size_t chunk_count = 0;
+  auto&& callback = fn;
+  ctx->for_each_chunk([&](auto view) {
+    callback(view);
+    dirty.record(view.key(), operation.field_access.dirty_mask, view.bounds());
+    ++chunk_count;
+  });
+
+  return PlannedExecutionResult{
+      PlannedExecutionStatus::Executed,
+      chunk_count,
+  };
+}
+
+template <WritePolicy Policy, typename World, typename Fn>
 auto execute_plan(World& world, const ExecutionPlan& plan, Fn&& fn)
     -> PlannedExecutionResult {
   std::size_t chunk_count = 0;
@@ -606,6 +1117,128 @@ auto execute_plan(World& world, const ExecutionPlan& plan, Fn&& fn)
       PlannedExecutionStatus::Executed,
       chunk_count,
   };
+}
+
+template <WritePolicy Policy, typename World, typename Fn>
+auto execute_plan_deferred_dirty(World& world, const ExecutionPlan& plan,
+                                 PlannedDirtyAccumulator& dirty, Fn&& fn)
+    -> PlannedExecutionResult {
+  std::size_t chunk_count = 0;
+  auto&& callback = fn;
+  for (const auto& operation : plan.operations()) {
+    auto result = execute_planned_operation_deferred_dirty<Policy>(
+        world, operation, dirty, callback);
+    if (result.status != PlannedExecutionStatus::Executed) {
+      return result;
+    }
+    chunk_count += result.chunk_count;
+  }
+  return PlannedExecutionResult{
+      PlannedExecutionStatus::Executed,
+      chunk_count,
+  };
+}
+
+template <WritePolicy Policy, typename Executor, typename World, typename Fn>
+auto execute_phase_deferred_dirty_with(Executor&& executor, World& world,
+                                       const ExecutionPlan& plan,
+                                       ExecutionPhase phase,
+                                       PlannedDirtyAccumulator& dirty, Fn&& fn)
+    -> PlannedExecutionResult {
+  const auto operations = plan.operations();
+  if (phase.first_operation > operations.size() ||
+      phase.operation_count > operations.size() - phase.first_operation) {
+    return PlannedExecutionResult{
+        PlannedExecutionStatus::InvalidPhase,
+        0,
+    };
+  }
+
+  std::size_t chunk_count = 0;
+  auto&& callback = fn;
+  auto result = execute_operation_index_range(
+      std::forward<Executor>(executor), executor_phase_range(phase),
+      [&](std::size_t index) {
+        auto operation_result =
+            execute_planned_operation_deferred_dirty<Policy>(
+                world, operations[index], dirty, callback);
+        if (operation_result.status == PlannedExecutionStatus::Executed) {
+          chunk_count += operation_result.chunk_count;
+        }
+        return operation_result;
+      });
+  if (result.status != PlannedExecutionStatus::Executed) {
+    result.chunk_count = chunk_count;
+    return result;
+  }
+
+  return PlannedExecutionResult{
+      PlannedExecutionStatus::Executed,
+      chunk_count,
+  };
+}
+
+template <WritePolicy Policy, typename Executor, typename World, typename Fn>
+auto execute_phase_partitioned_dirty_with(Executor&& executor, World& world,
+                                          const ExecutionPlan& plan,
+                                          ExecutionPhase phase,
+                                          PlannedPhaseExecutionScratch& scratch,
+                                          Fn&& fn) -> PlannedExecutionResult {
+  const auto operations = plan.operations();
+  if (phase.first_operation > operations.size() ||
+      phase.operation_count > operations.size() - phase.first_operation) {
+    return PlannedExecutionResult{
+        PlannedExecutionStatus::InvalidPhase,
+        0,
+    };
+  }
+
+  scratch.prepare(phase.operation_count);
+  auto&& callback = fn;
+  auto result = execute_operation_index_range(
+      std::forward<Executor>(executor), executor_phase_range(phase),
+      [&](std::size_t index) {
+        const auto offset = index - phase.first_operation;
+        auto operation_result =
+            execute_planned_operation_deferred_dirty<Policy>(
+                world, operations[index], scratch.dirty_for_operation(offset),
+                callback);
+        scratch.record_result(offset, operation_result);
+        return operation_result;
+      });
+
+  std::size_t chunk_count = 0;
+  for (const auto operation_result : scratch.results()) {
+    if (operation_result.status != PlannedExecutionStatus::Executed) {
+      return PlannedExecutionResult{
+          operation_result.status,
+          chunk_count,
+      };
+    }
+    chunk_count += operation_result.chunk_count;
+  }
+
+  if (result.status != PlannedExecutionStatus::Executed) {
+    return PlannedExecutionResult{
+        result.status,
+        chunk_count,
+    };
+  }
+
+  return PlannedExecutionResult{
+      PlannedExecutionStatus::Executed,
+      chunk_count,
+  };
+}
+
+template <WritePolicy Policy, typename World, typename Fn>
+auto execute_phase_deferred_dirty(World& world, const ExecutionPlan& plan,
+                                  ExecutionPhase phase,
+                                  PlannedDirtyAccumulator& dirty, Fn&& fn)
+    -> PlannedExecutionResult {
+  const SerialPhaseExecutor executor;
+  return execute_phase_deferred_dirty_with<Policy>(executor, world, plan, phase,
+                                                   dirty, std::forward<Fn>(fn));
 }
 
 }  // namespace tess
