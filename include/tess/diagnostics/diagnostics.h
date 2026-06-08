@@ -80,8 +80,24 @@ struct AllocationCounters {
   void reset() noexcept { *this = AllocationCounters{}; }
 };
 
+struct QueuedPhaseCounters {
+  std::uint64_t phase_calls = 0;
+  std::uint64_t phase_operations = 0;
+  std::uint64_t phase_invalid_ranges = 0;
+  std::uint64_t phase_failures = 0;
+  std::uint64_t partitioned_phase_calls = 0;
+  std::uint64_t dirty_partitions = 0;
+  std::uint64_t scoped_thread_calls = 0;
+  std::uint64_t scoped_thread_workers = 0;
+  std::uint64_t dirty_records_collected = 0;
+  std::uint64_t dirty_chunks_merged = 0;
+
+  void reset() noexcept { *this = QueuedPhaseCounters{}; }
+};
+
 inline thread_local PathCounters* active_path_counters = nullptr;
 inline thread_local AllocationCounters* active_allocation_counters = nullptr;
+inline thread_local QueuedPhaseCounters* active_queued_phase_counters = nullptr;
 
 class ScopedPathCounters {
  public:
@@ -114,6 +130,23 @@ class ScopedAllocationCounters {
 
  private:
   AllocationCounters* previous_;
+};
+
+class ScopedQueuedPhaseCounters {
+ public:
+  explicit ScopedQueuedPhaseCounters(QueuedPhaseCounters& counters) noexcept
+      : previous_{active_queued_phase_counters} {
+    active_queued_phase_counters = &counters;
+  }
+
+  ScopedQueuedPhaseCounters(const ScopedQueuedPhaseCounters&) = delete;
+  auto operator=(const ScopedQueuedPhaseCounters&)
+      -> ScopedQueuedPhaseCounters& = delete;
+
+  ~ScopedQueuedPhaseCounters() { active_queued_phase_counters = previous_; }
+
+ private:
+  QueuedPhaseCounters* previous_;
 };
 
 inline void record_allocation(std::size_t size) noexcept {
@@ -234,6 +267,52 @@ inline void event_path_heuristic() noexcept {
 inline void event_path_reconstruct_node() noexcept {
   if (active_path_counters != nullptr) {
     ++active_path_counters->reconstructed_nodes;
+  }
+}
+
+inline void event_queued_phase_execute(std::uint64_t operations) noexcept {
+  if (active_queued_phase_counters != nullptr) {
+    ++active_queued_phase_counters->phase_calls;
+    active_queued_phase_counters->phase_operations += operations;
+  }
+}
+
+inline void event_queued_phase_invalid_range() noexcept {
+  if (active_queued_phase_counters != nullptr) {
+    ++active_queued_phase_counters->phase_invalid_ranges;
+  }
+}
+
+inline void event_queued_phase_failure() noexcept {
+  if (active_queued_phase_counters != nullptr) {
+    ++active_queued_phase_counters->phase_failures;
+  }
+}
+
+inline void event_queued_partitioned_phase(std::uint64_t partitions) noexcept {
+  if (active_queued_phase_counters != nullptr) {
+    ++active_queued_phase_counters->partitioned_phase_calls;
+    active_queued_phase_counters->dirty_partitions += partitions;
+  }
+}
+
+inline void event_queued_scoped_thread_dispatch(
+    std::uint64_t workers) noexcept {
+  if (active_queued_phase_counters != nullptr) {
+    ++active_queued_phase_counters->scoped_thread_calls;
+    active_queued_phase_counters->scoped_thread_workers += workers;
+  }
+}
+
+inline void event_queued_dirty_collect(std::uint64_t records) noexcept {
+  if (active_queued_phase_counters != nullptr) {
+    active_queued_phase_counters->dirty_records_collected += records;
+  }
+}
+
+inline void event_queued_dirty_merge(std::uint64_t chunks) noexcept {
+  if (active_queued_phase_counters != nullptr) {
+    active_queued_phase_counters->dirty_chunks_merged += chunks;
   }
 }
 #endif

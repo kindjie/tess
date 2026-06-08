@@ -22,6 +22,8 @@ TEST(TessDiagnostics, DisabledMacrosDoNotEvaluateArguments) {
   TESS_DIAGNOSTIC_ADD(counter, increment(value));
   TESS_DIAG_EVENT(path_heap_push);
   TESS_DIAG_EVENT_VALUE(path_clear, increment(value));
+  TESS_DIAG_EVENT(queued_phase_failure);
+  TESS_DIAG_EVENT_VALUE(queued_phase_execute, increment(value));
 
   EXPECT_EQ(value, 0);
   EXPECT_EQ(counter, 0);
