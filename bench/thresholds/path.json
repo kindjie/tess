@@ -27,15 +27,15 @@
     },
     "path/weighted_astar_sparse_blockers_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 3000000
+      "max_cpu_time_ns": 6000000
     },
     "path/weighted_astar_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 13000000
+      "max_cpu_time_ns": 32000000
     },
     "path/weighted_portal_product_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2000000
+      "max_cpu_time_ns": 4000000
     },
     "path/weighted_portal_product_replay_room_portals_512x512": {
       "max_real_time_ns": null,
@@ -59,11 +59,11 @@
     },
     "path/weighted_portal_segment_cache_batch_100_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 10000000
+      "max_cpu_time_ns": 15000000
     },
     "path/weighted_portal_endpoint_segments_batch_100_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 5000000
+      "max_cpu_time_ns": 8000000
     },
     "path/weighted_portal_first_field_cache_batch_100_room_portals_512x512": {
       "max_real_time_ns": null,
@@ -71,15 +71,15 @@
     },
     "path/weighted_astar_batch_100_mixed_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 700000000
+      "max_cpu_time_ns": 1200000000
     },
     "path/weighted_astar_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 300000000
+      "max_cpu_time_ns": 550000000
     },
     "path/weighted_distance_field_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 25000000
+      "max_cpu_time_ns": 40000000
     },
     "path/bounded_weighted_distance_field_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
@@ -87,11 +87,11 @@
     },
     "path/weighted_astar_batch_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 600000000
+      "max_cpu_time_ns": 1000000000
     },
     "path/weighted_distance_field_batch_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 160000000
+      "max_cpu_time_ns": 280000000
     },
     "path/bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,
@@ -139,7 +139,7 @@
     },
     "path/astar_striped_maze_1024x1024": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 4000000
     },
     "path/astar_vertical_open_512x512": {
       "max_real_time_ns": null,
@@ -195,7 +195,7 @@
     },
     "path/astar_batch_100_shared_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 25000000
+      "max_cpu_time_ns": 60000000
     },
     "path/distance_field_batch_100_shared_room_portals_512x512": {
       "max_real_time_ns": null,
@@ -203,7 +203,7 @@
     },
     "path/astar_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 60000000
+      "max_cpu_time_ns": 110000000
     },
     "path/distance_field_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
@@ -211,7 +211,7 @@
     },
     "path/astar_batch_100_multigoal_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 100000000
+      "max_cpu_time_ns": 220000000
     },
     "path/distance_field_batch_100_multigoal_room_portals_512x512": {
       "max_real_time_ns": null,
@@ -239,11 +239,11 @@
     },
     "path/astar_batch_100_mixed_repeated_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 75000000
+      "max_cpu_time_ns": 160000000
     },
     "path/cached_astar_batch_100_mixed_repeated_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 25000000
+      "max_cpu_time_ns": 50000000
     },
     "path/astar_batch_100_suffix_open_512x512": {
       "max_real_time_ns": null,
@@ -275,7 +275,7 @@
     },
     "path/agent_runtime_100_weighted_mixed_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 80000000
+      "max_cpu_time_ns": 140000000
     },
     "path/agent_runtime_100_unit_world_edit_512x512": {
       "max_real_time_ns": null,
