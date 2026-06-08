@@ -1,11 +1,25 @@
 #include "allocation_counter.h"
 
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define TESS_TEST_ALLOCATION_COUNTER_USE_ASAN_HOOK 1
+#endif
+#endif
+
+#if defined(__SANITIZE_ADDRESS__)
+#define TESS_TEST_ALLOCATION_COUNTER_USE_ASAN_HOOK 1
+#endif
+
+#if !defined(TESS_TEST_ALLOCATION_COUNTER_USE_ASAN_HOOK)
 #include <dlfcn.h>
+#endif
 
 #include <atomic>
 #include <cstddef>
+#if !defined(TESS_TEST_ALLOCATION_COUNTER_USE_ASAN_HOOK)
 #include <cstdlib>
 #include <new>
+#endif
 
 namespace tess_test {
 namespace {
@@ -34,6 +48,17 @@ void record_allocation() noexcept {
 }
 
 }  // namespace tess_test
+
+#if defined(TESS_TEST_ALLOCATION_COUNTER_USE_ASAN_HOOK)
+
+extern "C" void __sanitizer_malloc_hook(const volatile void* ptr,
+                                        std::size_t size) {
+  (void)ptr;
+  (void)size;
+  tess_test::record_allocation();
+}
+
+#else
 
 namespace {
 
@@ -68,5 +93,6 @@ void* operator new[](std::size_t size) {
   return real_operator_new_array()(size);
 }
 
-// Deallocation remains owned by the runtime and sanitizer interceptors so
-// ASan can keep its alloc/dealloc mismatch checks enabled.
+// Keep paired deallocation owned by the runtime and sanitizer interceptors.
+
+#endif
