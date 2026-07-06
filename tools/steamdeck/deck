@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# Single entrypoint for the tess Steam Deck workflow: build on macOS in the
+# Steam Runtime container, run tests/benchmarks on the Deck. Run `deck help`.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
+
+DECK_HOST="${DECK_HOST:-deck}"
+CONTAINER="${TESS_STEAMRT_CONTAINER:-tess-rt}"
+BUILD_IMAGE="${TESS_STEAMRT_BUILD_IMAGE:-tess-steamrt4:local}"
+SSH_KEY="${DECK_SSH_KEY:-$HOME/.ssh/id_ed25519}"
+
+say()  { printf '\033[1m>> %s\033[0m\n' "$*"; }
+die()  { printf '\033[31m!! %s\033[0m\n' "$*" >&2; exit 1; }
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+no()   { printf '  \033[31m✗\033[0m %s\n' "$*"; }
+
+cmd_help() {
+  cat <<'EOF'
+tess Steam Deck workflow — build for x86_64 in Valve's Steam Runtime container
+on this Mac, run on the Deck's real hardware.
+
+Usage: tools/steamdeck/deck <command> [args]
+
+Setup (once):
+  setup            Mac: verify Docker/Rosetta, install watchexec, build the
+                   build image, start the container, configure linux-dev.
+  deck-setup [ip]  Deck: discover it on the LAN (or pass [ip]), set up the ssh
+                   'deck' alias + key, verify. FIRST, on the Deck once, run:
+                     passwd && sudo systemctl enable --now sshd
+  doctor           Check every prerequisite and print ✓/✗.
+
+Develop (on the Mac):
+  test             Build + ctest (linux-dev) once in the container.
+  watch            Rebuild + ctest on every save (needs watchexec).
+  asan             Build + ctest under ASan/UBSan (linux-asan).
+
+Run on the device:
+  bench [--pin] [tess_bench args]   Build, ship, run on real hardware.
+                   --pin fixes the CPU governor for accurate numbers.
+
+Env: DECK_HOST (default 'deck'), TESS_STEAMRT_IMAGE, DECK_SSH_KEY.
+EOF
+}
+
+ensure_container() {
+  if [ "$(docker inspect -f '{{.State.Running}}' "${CONTAINER}" 2>/dev/null)" != "true" ]; then
+    say "container '${CONTAINER}' not running; starting it ..."
+    "${HERE}/container-up.sh" linux-dev
+  fi
+}
+
+cmd_setup() {
+  command -v docker >/dev/null 2>&1 || die "Docker not found — install Docker Desktop."
+  docker info >/dev/null 2>&1 || die "Docker daemon not running — start Docker Desktop."
+  if ! command -v watchexec >/dev/null 2>&1 && command -v brew >/dev/null 2>&1; then
+    say "installing watchexec (for 'deck watch') ..."; brew install watchexec || true
+  fi
+  "${HERE}/container-up.sh" linux-dev
+  say "done. Next: 'deck deck-setup' (after enabling ssh on the Deck), then 'deck watch'."
+}
+
+# Discover a Steam Deck on the LAN: the host (other than us) with SSH open.
+discover_deck() {
+  local iface myip subnet selfips ip found=()
+  iface="$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')"
+  myip="$(ipconfig getifaddr "${iface:-en0}" 2>/dev/null || true)"
+  [ -n "$myip" ] || return 1
+  subnet="${myip%.*}"
+  local i; for i in $(seq 1 254); do ping -c1 -t1 "$subnet.$i" >/dev/null 2>&1 & done; wait
+  selfips="$(ifconfig 2>/dev/null | awk '/inet /{print $2}')"
+  while read -r ip; do
+    printf '%s\n' "$selfips" | grep -qx "$ip" && continue
+    nc -z -G1 -w1 "$ip" 22 >/dev/null 2>&1 && found+=("$ip")
+  done < <(arp -an | awk -F'[()]' '/'"$subnet"'\./{print $2}' | sort -t. -k4 -n -u)
+  case "${#found[@]}" in
+    1) printf '%s\n' "${found[0]}" ;;
+    0) return 1 ;;
+    *) printf 'multiple SSH hosts: %s\n' "${found[*]}" >&2; return 2 ;;
+  esac
+}
+
+ensure_ssh_alias() {  # $1 = ip
+  local cfg="$HOME/.ssh/config"
+  touch "$cfg"; chmod 600 "$cfg"
+  if grep -qiE "^[[:space:]]*Host[[:space:]]+${DECK_HOST}([[:space:]]|$)" "$cfg"; then
+    say "ssh config already has '${DECK_HOST}' — leaving it"
+  else
+    printf '\nHost %s\n    HostName %s\n    User deck\n    IdentitiesOnly yes\n    IdentityFile %s\n' \
+      "$DECK_HOST" "$1" "$SSH_KEY" >> "$cfg"
+    say "added '${DECK_HOST}' -> $1 to ~/.ssh/config"
+  fi
+}
+
+cmd_deck_setup() {
+  local ip="${1:-}"
+  [ -f "${SSH_KEY}.pub" ] || die "no ssh key at ${SSH_KEY}.pub (set DECK_SSH_KEY or run: ssh-keygen -t ed25519)"
+  if [ -z "$ip" ]; then
+    say "discovering the Deck on the LAN ..."
+    ip="$(discover_deck)" || die "couldn't find the Deck. Pass its IP: 'deck deck-setup <ip>'.
+   On the Deck (Desktop Mode → Konsole) first run: passwd && sudo systemctl enable --now sshd"
+    say "found Deck at $ip"
+  fi
+  ensure_ssh_alias "$ip"
+  say "installing SSH key (enter the Deck password once if prompted) ..."
+  ssh-copy-id -o IdentitiesOnly=yes -i "${SSH_KEY}.pub" "$DECK_HOST" >/dev/null 2>&1 \
+    || ssh-copy-id -o IdentitiesOnly=yes -i "${SSH_KEY}.pub" "$DECK_HOST" \
+    || die "ssh-copy-id failed — check the Deck password / that sshd is enabled"
+  ssh -o BatchMode=yes -o ConnectTimeout=8 "$DECK_HOST" 'echo "connected: $(uname -srm)"' \
+    && say "Deck ready. Try: 'deck bench --pin'."
+}
+
+cmd_doctor() {
+  echo "macOS side:"
+  command -v docker >/dev/null 2>&1 && ok "docker installed" || no "docker missing"
+  docker info >/dev/null 2>&1 && ok "docker daemon running" || no "docker daemon down (start Docker Desktop)"
+  docker image inspect "${BUILD_IMAGE}" >/dev/null 2>&1 && ok "build image ${BUILD_IMAGE}" || no "build image missing (run: deck setup)"
+  [ "$(docker inspect -f '{{.State.Running}}' "${CONTAINER}" 2>/dev/null)" = "true" ] \
+    && ok "container ${CONTAINER} running" || no "container not running (run: deck setup)"
+  command -v watchexec >/dev/null 2>&1 && ok "watchexec (for 'deck watch')" || no "watchexec missing (brew install watchexec)"
+  echo "Deck side:"
+  if ssh -o BatchMode=yes -o ConnectTimeout=6 "$DECK_HOST" true 2>/dev/null; then
+    ok "ssh ${DECK_HOST}: $(ssh -o ConnectTimeout=6 "$DECK_HOST" 'echo $(uname -srm), glibc $(ldd --version | awk "NR==1{print \$NF}")')"
+  else
+    no "ssh ${DECK_HOST} unreachable (run: deck deck-setup)"
+  fi
+}
+
+cmd_test() { ensure_container; docker exec "$CONTAINER" sh -c 'cmake --build --preset linux-dev && ctest --preset linux-dev --output-on-failure'; }
+cmd_asan() { ensure_container; docker exec "$CONTAINER" sh -c 'cmake --preset linux-asan && cmake --build --preset linux-asan && ctest --preset linux-asan --output-on-failure'; }
+cmd_watch() {
+  command -v watchexec >/dev/null 2>&1 || die "watchexec not installed (brew install watchexec)"
+  ensure_container
+  say "watching for changes — rebuild + ctest on save (Ctrl-C to stop)"
+  exec watchexec -w "${REPO_ROOT}/include" -w "${REPO_ROOT}/tests" -w "${REPO_ROOT}/examples" \
+    -e cc,h,hpp,cpp,cmake,json -- \
+    docker exec "$CONTAINER" sh -c 'cmake --build --preset linux-dev && ctest --preset linux-dev --output-on-failure'
+}
+
+cmd="${1:-help}"; shift 2>/dev/null || true
+case "$cmd" in
+  help|-h|--help) cmd_help ;;
+  setup)          cmd_setup "$@" ;;
+  deck-setup)     cmd_deck_setup "$@" ;;
+  doctor)         cmd_doctor "$@" ;;
+  test)           cmd_test "$@" ;;
+  asan)           cmd_asan "$@" ;;
+  watch)          cmd_watch "$@" ;;
+  bench)          exec "${HERE}/deck-bench.sh" "$@" ;;
+  *)              die "unknown command '$cmd' — try: tools/steamdeck/deck help" ;;
+esac
