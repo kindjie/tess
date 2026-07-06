@@ -30,6 +30,22 @@ auto local_id(tess::LocalCoord3 coord) -> tess::LocalTileId {
 
 }  // namespace
 
+TEST(TessTopology, PublicValueTypesDefaultInitialize) {
+  EXPECT_EQ(tess::LocalRegion{}.id, tess::LocalRegionId{});
+  EXPECT_EQ(tess::LocalBoundaryExit{}.region, tess::LocalRegionId{});
+  EXPECT_EQ(tess::LocalBoundaryExit{}.local_tile, tess::LocalTileId{});
+  EXPECT_EQ(tess::LocalBoundaryExit{}.coord, tess::Coord3{});
+  EXPECT_EQ(tess::LocalBoundaryExit{}.face, tess::BoundaryFace::NegativeX);
+  EXPECT_EQ(tess::LocalBoundaryExit{}.target_chunk, tess::ChunkKey{});
+  EXPECT_EQ(tess::RegionRef{}.chunk, tess::ChunkKey{});
+  EXPECT_EQ(tess::RegionRef{}.region, tess::LocalRegionId{});
+  EXPECT_EQ(tess::RegionPortal{}.from, tess::RegionRef{});
+  EXPECT_EQ(tess::RegionPortal{}.to, tess::RegionRef{});
+  EXPECT_EQ(tess::RegionPortal{}.from_coord, tess::Coord3{});
+  EXPECT_EQ(tess::RegionPortal{}.to_coord, tess::Coord3{});
+  EXPECT_EQ(tess::RegionPortal{}.face, tess::BoundaryFace::NegativeX);
+}
+
 TEST(TessTopology, BuildsTopDown2DLocalRegions) {
   using Shape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{8, 8, 1}>;
   World<Shape> world;

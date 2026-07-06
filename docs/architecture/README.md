@@ -3,8 +3,9 @@
 This directory contains maintained architecture documentation for the current
 implementation.
 
-The codebase is still in scaffolding. Until implementation fills in the current
-architecture docs, the historical TDD archive provides design intent:
+The codebase has an implemented synchronous MVP foundation, with larger async,
+residency, ECS, GPU, and topology-aware routing work still deferred. The
+historical TDD archive provides broader design intent:
 
 - [Project design](../tdd/project-design.md)
 - [Shape, coordinate, and key system](../tdd/core-shape-coordinate-key-system.md)

@@ -7,16 +7,16 @@
 namespace tess {
 
 struct Extent3 {
-  std::uint64_t x;
-  std::uint64_t y;
+  std::uint64_t x = 0;
+  std::uint64_t y = 0;
   std::uint64_t z = 1;
 
   friend constexpr bool operator==(Extent3 lhs, Extent3 rhs) noexcept = default;
 };
 
 struct Coord2 {
-  std::int64_t x;
-  std::int64_t y;
+  std::int64_t x = 0;
+  std::int64_t y = 0;
 
   friend constexpr bool operator==(Coord2 lhs, Coord2 rhs) noexcept = default;
 };
@@ -30,8 +30,8 @@ struct Coord3 {
 };
 
 struct ChunkCoord3 {
-  std::uint64_t x;
-  std::uint64_t y;
+  std::uint64_t x = 0;
+  std::uint64_t y = 0;
   std::uint64_t z = 0;
 
   friend constexpr bool operator==(ChunkCoord3 lhs,
@@ -39,8 +39,8 @@ struct ChunkCoord3 {
 };
 
 struct LocalCoord3 {
-  std::uint64_t x;
-  std::uint64_t y;
+  std::uint64_t x = 0;
+  std::uint64_t y = 0;
   std::uint64_t z = 0;
 
   friend constexpr bool operator==(LocalCoord3 lhs,
@@ -48,22 +48,22 @@ struct LocalCoord3 {
 };
 
 struct LocalTileId {
-  std::uint64_t value;
+  std::uint64_t value = 0;
 
   friend constexpr bool operator==(LocalTileId lhs,
                                    LocalTileId rhs) noexcept = default;
 };
 
 struct ChunkKey {
-  std::uint64_t value;
+  std::uint64_t value = 0;
 
   friend constexpr bool operator==(ChunkKey lhs,
                                    ChunkKey rhs) noexcept = default;
 };
 
 struct Box3 {
-  Coord3 origin;
-  Extent3 extent;
+  Coord3 origin{};
+  Extent3 extent{};
 
   friend constexpr bool operator==(Box3 lhs, Box3 rhs) noexcept = default;
 };
@@ -73,8 +73,8 @@ struct TileKey;
 
 template <typename Shape>
 struct ResolvedTile {
-  ChunkKey chunk_key;
-  LocalTileId local_tile_id;
+  ChunkKey chunk_key{};
+  LocalTileId local_tile_id{};
 
   friend constexpr bool operator==(ResolvedTile lhs,
                                    ResolvedTile rhs) noexcept = default;
@@ -229,7 +229,7 @@ struct ShapeTraits {
 
 template <typename Shape>
 struct TileKey {
-  ShapeTraits<Shape>::TileKeyStorage value;
+  ShapeTraits<Shape>::TileKeyStorage value{};
 
   friend constexpr bool operator==(TileKey lhs, TileKey rhs) noexcept = default;
 };

@@ -27,3 +27,6 @@ When implementation diverges from a TDD:
 - [GPU backend interface](gpu-backend-interface.md)
 - [Diagnostics and tooling](diagnostics-and-tooling.md)
 - [Modern C++ / compile-time safety](modern-cpp-compile-time-safety.md)
+- [Concurrent tile-world execution and maintenance][concurrent-tile-world]
+
+[concurrent-tile-world]: tdd_addendum_concurrent_tile_world.md
