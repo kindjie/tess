@@ -34,18 +34,18 @@ enum class TopologyStatus : std::uint8_t {
 };
 
 struct LocalRegion {
-  LocalRegionId id;
+  LocalRegionId id{};
   std::size_t tile_count = 0;
   Box3 bounds{};
   std::size_t boundary_exit_count = 0;
 };
 
 struct LocalBoundaryExit {
-  LocalRegionId region;
-  LocalTileId local_tile;
-  Coord3 coord;
-  BoundaryFace face;
-  ChunkKey target_chunk;
+  LocalRegionId region{};
+  LocalTileId local_tile{};
+  Coord3 coord{};
+  BoundaryFace face = BoundaryFace::NegativeX;
+  ChunkKey target_chunk{};
 };
 
 struct LocalTopologyResult {
@@ -57,19 +57,19 @@ struct LocalTopologyResult {
 };
 
 struct RegionRef {
-  ChunkKey chunk;
-  LocalRegionId region;
+  ChunkKey chunk{};
+  LocalRegionId region{};
 
   friend constexpr bool operator==(RegionRef lhs,
                                    RegionRef rhs) noexcept = default;
 };
 
 struct RegionPortal {
-  RegionRef from;
-  RegionRef to;
-  Coord3 from_coord;
-  Coord3 to_coord;
-  BoundaryFace face;
+  RegionRef from{};
+  RegionRef to{};
+  Coord3 from_coord{};
+  Coord3 to_coord{};
+  BoundaryFace face = BoundaryFace::NegativeX;
 };
 
 enum class ReachabilityStatus : std::uint8_t {

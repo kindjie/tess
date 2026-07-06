@@ -4,9 +4,9 @@
 
 `tess` is a performance-first C++ tile and path simulation substrate.
 
-The project is currently in design/scaffolding. Documentation lives in `docs/`.
-The original TDDs are archived under `docs/tdd/`; maintained architecture docs
-will track implementation as code lands.
+The project has an implemented synchronous MVP foundation. Documentation lives
+in `docs/`. The original TDDs are archived under `docs/tdd/`; maintained
+architecture docs track the current implementation as code lands.
 
 ## Build
 

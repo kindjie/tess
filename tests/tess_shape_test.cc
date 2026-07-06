@@ -19,6 +19,24 @@ using SingleChunk = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{8, 8, 1}>;
 using HugeBounded = tess::Shape<tess::Extent3{1ull << 34, 1ull << 33, 256},
                                 tess::Extent3{32, 32, 4}>;
 
+TEST(TessShape, PublicValueTypesDefaultInitialize) {
+  static_assert(tess::Extent3{} == tess::Extent3{0, 0, 1});
+  static_assert(tess::Coord2{} == tess::Coord2{0, 0});
+  static_assert(tess::Coord3{} == tess::Coord3{0, 0, 0});
+  static_assert(tess::ChunkCoord3{} == tess::ChunkCoord3{0, 0, 0});
+  static_assert(tess::LocalCoord3{} == tess::LocalCoord3{0, 0, 0});
+  static_assert(tess::LocalTileId{} == tess::LocalTileId{0});
+  static_assert(tess::ChunkKey{} == tess::ChunkKey{0});
+  static_assert(tess::Box3{} ==
+                tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{0, 0, 1}});
+  static_assert(
+      tess::ResolvedTile<TopDown2D>{} ==
+      tess::ResolvedTile<TopDown2D>{tess::ChunkKey{0}, tess::LocalTileId{0}});
+  static_assert(tess::TileKey<TopDown2D>{} == tess::TileKey<TopDown2D>{0});
+
+  EXPECT_EQ(tess::Extent3{}, (tess::Extent3{0, 0, 1}));
+}
+
 TEST(TessShape, DerivesTopDown2DTraits) {
   using Traits = tess::ShapeTraits<TopDown2D>;
 

@@ -16,6 +16,12 @@ Work Contracts are a candidate abstraction for this deferred maintenance layer. 
 
 This addendum defines how to test that fit before adopting the pattern.
 
+For the broader tile-world concurrency split between scoped phase execution and
+coalesced maintenance scheduling, see
+[Concurrent Tile-World Execution and Maintenance][concurrent-tile-world].
+
+[concurrent-tile-world]: tdd_addendum_concurrent_tile_world.md
+
 ## Existing Design Alignment
 
 The current library has chunk metadata but not a scheduler:

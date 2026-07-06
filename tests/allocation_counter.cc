@@ -1,9 +1,11 @@
 #include "allocation_counter.h"
 
-#if defined(__has_feature)
+#ifndef __has_feature
+#define __has_feature(feature) 0
+#endif
+
 #if __has_feature(address_sanitizer)
 #define TESS_TEST_ALLOCATION_COUNTER_USE_ASAN_HOOK 1
-#endif
 #endif
 
 #if defined(__SANITIZE_ADDRESS__)
