@@ -261,6 +261,10 @@ The Work Contracts addendum remains an experiment proposal. Current queued ops
 use the existing dirty/active metadata scans as the baseline and do not add
 coalescing scheduler handles or long-lived maintenance tasks.
 
+Production worker pools and coalesced maintenance scheduling remain proposed
+TDD work, not current behavior; see
+`docs/tdd/tdd_addendum_concurrent_tile_world.md`.
+
 The phase executor contract is deliberately library-agnostic. External
 backends must adapt to the contiguous operation-index range API and preserve
 the documented completion, visibility, dirty-partition, and result-reduction

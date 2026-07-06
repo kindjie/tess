@@ -13,6 +13,23 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-06-08 - Concurrent Tile-World TDD Split
+
+- Changed: Added a concurrent tile-world TDD addendum that separates scoped
+  phase execution from coalesced maintenance scheduling. Scoped phase
+  execution remains Tess-owned through deterministic phase barriers,
+  partitioned dirty records, and ordered reduction. Work Contracts and Signal
+  Tree remain deferred candidate infrastructure for backend experiments, not
+  adopted dependencies or direct storage integrations.
+- Reason: Parallel execution and coalesced maintenance have different
+  correctness contracts. Keeping them separate prevents maintenance
+  coalescing semantics from leaking into authoritative simulation events or
+  planned phase execution.
+- Affected docs: `docs/tdd/tdd_addendum_concurrent_tile_world.md`,
+  `docs/tdd/tdd_addendum_work_contracts.md`, `docs/tdd/README.md`,
+  `docs/dependencies.md`, `docs/architecture/queued-operations.md`
+- Affected code: none
+
 ## 2026-06-06 - Queued Parallel Phase Planning
 
 - Changed: Added a conservative `ExecutionPhasePlan` over successful queued

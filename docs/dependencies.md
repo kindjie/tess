@@ -116,8 +116,28 @@ internal executor abstraction and benchmark comparisons.
 Public documentation inspected for the deferred Building C++ candidates:
 
 - `work_contract`: https://github.com/buildingcpp/work_contract
+  - Pinned research commit:
+    `3f56a17e36db57846a086e20d8788478287f3c86`
+  - Commit URL: [work_contract pinned commit][work-contract-commit]
+  - PDF overview:
+    https://www.buildingcpp.com/documents/work_contract.pdf
+  - CppCon 2024 talk:
+    https://www.youtube.com/watch?v=oj-_vpZNMVw
+  - CppCon 2025 talk:
+    https://www.youtube.com/watch?v=5ghAa7B5bF0
 - `signal_tree`: https://github.com/buildingcpp/signal_tree
+  - Pinned research commit:
+    `f7b59510e117bc6156af86a6b8689ca4a3832e3c`
+  - Commit URL: [signal_tree pinned commit][signal-tree-commit]
 
-As of the 2026-06-07 spike, `signal_tree` is a readiness-selection primitive,
-not a scoped phase executor, and `work_contract` adds recurrent task lifecycle
-semantics beyond the current Tess executor adapter. Neither is adopted yet.
+As of the 2026-06-08 spike, `signal_tree` is a readiness-selection primitive
+that stores signal ids instead of work payloads. It does not provide phase
+completion, result reduction, worker lifetime, or dirty-merge semantics.
+`work_contract` adds recurrent task lifecycle semantics, coalesced scheduling,
+blocking and non-blocking groups, async release, and exception callbacks. That
+is closer to deferred maintenance scheduling than scoped phase execution, but
+still stronger than the current Tess executor adapter needs. Neither library
+is adopted yet.
+
+[work-contract-commit]: https://github.com/buildingcpp/work_contract/commit/3f56a17e36db57846a086e20d8788478287f3c86
+[signal-tree-commit]: https://github.com/buildingcpp/signal_tree/commit/f7b59510e117bc6156af86a6b8689ca4a3832e3c
