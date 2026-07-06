@@ -15,6 +15,34 @@ macOS (ARM64)                                   Steam Deck (x86_64 Zen 2)
 
 Same SDK image on both sides ⇒ identical ABI.
 
+## Quickstart
+
+Everything runs through one command — **`tools/steamdeck/deck`** (`deck help`
+lists all; `deck doctor` checks prerequisites).
+
+**1. Set up (once).** On the Deck (Desktop Mode → Konsole) enable SSH:
+```sh
+passwd && sudo systemctl enable --now sshd
+```
+Then on the Mac:
+```sh
+tools/steamdeck/deck setup        # Docker/Rosetta check, build image, start container
+tools/steamdeck/deck deck-setup   # find the Deck on the LAN, install ssh key + alias
+tools/steamdeck/deck doctor       # confirm everything is ✓
+```
+
+**2. Develop (on the Mac — x86_64 parity):**
+```sh
+tools/steamdeck/deck watch        # rebuild + ctest on every save   (or: deck test)
+```
+
+**3. Benchmark on the device:**
+```sh
+tools/steamdeck/deck bench --pin  # ship to the Deck, run on real Zen 2 hardware
+```
+
+The rest of this document explains what those steps do and why.
+
 ## Why these choices
 
 - **Container, not cross-compiler.** Valve: "build within a Steam Runtime
@@ -100,6 +128,8 @@ builds feel slow.
 - `CMakePresets.json` (repo root) — adds tracked `linux-dev` / `linux-asan` /
   `linux-bench` presets (clang, separate `build/linux-*` dirs) alongside the
   existing presets.
+- `deck` — the entrypoint: `setup`, `deck-setup`, `doctor`, `test`, `watch`,
+  `asan`, `bench`. Wraps the scripts below; run `deck help`.
 - `Dockerfile` — steamrt4 SDK + clang.
 - `container-up.sh` — start/refresh the local build container.
 - `deck-bench.sh` — build locally, ship, run on the Deck (direct by default;
