@@ -1,0 +1,109 @@
+# Developing/testing `tess` for the Steam Deck from macOS
+
+`tess` is a headless, header-only C++20 library. The dev machine is Apple
+Silicon (ARM64); the Steam Deck is x86_64 (Zen 2). Binaries do not cross that
+architecture gap, so we **build for x86_64 inside a Steam Runtime SDK
+container** — the environment Valve recommends for native Linux games — and run
+on the Deck for hardware-accurate benchmarks and on-device validation.
+
+```
+macOS (ARM64)                                   Steam Deck (x86_64 Zen 2)
+  Neovim ── save ──▶ steamrt4 SDK container         podman run steamrt4 SDK
+                     (amd64, Rosetta): clang        (native): ./tess_bench
+                     cmake + ctest  ───rsync binaries───▶  real hardware
+```
+
+Same SDK image on both sides ⇒ identical ABI.
+
+## Why these choices
+
+- **Container, not cross-compiler.** Valve: "build within a Steam Runtime
+  container" so host libraries do not leak into the binary. Beats maintaining a
+  hand-built cross-GCC + sysroot on Apple Silicon.
+- **steamrt4 (Debian 13).** Recommended for new native Linux games; ships
+  CMake 3.31 (≥ 3.28) and Clang 19 / GCC 14, so `tess` builds unmodified.
+  `sniper` (Debian 11) would need a newer CMake installed.
+- **Clang, not GCC.** The Steam Runtime pins glibc + libstdc++, not the
+  compiler. Clang matches `tess` CI and defaults to `-stdlib=libstdc++` (the
+  runtime's C++ library), so binaries stay compatible. **Do not use `libc++`**
+  unless you statically bundle it. (Also sidesteps the GCC perf regression.)
+- **Rosetta.** amd64 emulation on Apple Silicon is ~20% slower than native
+  (QEMU is ~85% slower). Fine for this small test suite. Enable in Docker
+  Desktop → Settings → General → "Use Rosetta for x86/amd64 emulation".
+
+## One-time setup
+
+### macOS
+1. Docker Desktop → enable Rosetta for amd64 (above). Default-on for macOS ≥14.1.
+2. `brew install watchexec` (save-triggered rebuilds; fits Neovim/tmux).
+3. `docker pull --platform linux/amd64 registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest`
+   — **verify the exact tag** at <https://gitlab.steamos.cloud/steamrt/steamrt4/sdk>
+   (override with `TESS_STEAMRT_IMAGE=…` / build-arg `STEAMRT_IMAGE`).
+
+### Steam Deck (Desktop Mode → Konsole)
+1. `passwd` (set a sudo password), then `sudo systemctl enable --now sshd`.
+   SteamOS root is immutable; `/etc` changes can be reset by a major OS update —
+   re-run if SSH stops working afterward. `/home` persists.
+2. `ip addr` → note the LAN IP. On the Mac, `ssh-copy-id deck@<ip>` and add a
+   `~/.ssh/config` alias `Host deck`. Prefer the IP over the `steamdeck` mDNS
+   name (it drops on sleep).
+3. Get the SDK image onto the Deck (podman is preinstalled on SteamOS ≥3.5):
+   `podman pull registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest`,
+   or ship it: `docker save tess-steamrt4:local | ssh deck podman load`.
+
+## Daily use
+
+```sh
+# Start the build container (builds the SDK+clang image on first run).
+tools/steamdeck/container-up.sh              # configures linux-dev
+
+# Inner loop — rebuild + test in the container on every save (x86_64 parity):
+watchexec -e cc,h,hpp,cpp,cmake,json -- \
+  docker exec tess-rt sh -c 'cmake --build --preset linux-dev && ctest --preset linux-dev'
+
+# Sanitizers (fork-join executor under ASan/UBSan on x86_64):
+tools/steamdeck/container-up.sh linux-asan
+docker exec tess-rt sh -c 'cmake --build --preset linux-asan && ctest --preset linux-asan'
+
+# On-device benchmark on the real Zen 2 APU (runs directly on stock SteamOS):
+DECK_HOST=deck tools/steamdeck/deck-bench.sh
+
+# For accurate numbers, pin the CPU governor to 'performance' (removes Google
+# Benchmark's "CPU scaling is enabled" noise). Needs sudo on the Deck, so run it
+# yourself and enter the Deck password once when prompted:
+DECK_HOST=deck tools/steamdeck/deck-bench.sh --pin
+```
+
+`deck-bench.sh` runs the binary **directly on stock SteamOS** by default —
+nothing installed. This works because the steamrt4-built binary needs only up to
+`GLIBC_2.38` and SteamOS ships `glibc 2.41` / `GLIBCXX_3.4.34`. `--pin` restores
+the original governor on exit (even on Ctrl-C). `USE_CONTAINER=1` runs inside the
+steamrt4 SDK image instead (ABI-guaranteed; needs the image pulled on the Deck).
+
+`build/linux-*` is separate from the native macOS `build/dev` etc. (the
+`linux-*` presets in `CMakePresets.json` inherit the base presets but land
+in their own binary dirs), so container and native builds never clobber each
+other. Both trees are git-ignored via `build/`.
+
+### On-device correctness parity (optional)
+Run the suite on the Deck the same way `deck-bench.sh` runs the benchmark —
+build `linux-dev`, rsync `build/linux-dev/`, then on the Deck:
+`podman run --rm -v ~/tess-bench:/b -w /b <sdk-image> ctest --test-dir /b --output-on-failure`.
+
+## Alternative: build on the Deck (skip emulation)
+The Deck runs the SDK container natively, so you can rsync **source** and build
+there instead — faster than emulated local builds, at the cost of compiling on
+the Deck. Local build is the default here per preference; switch if emulated
+builds feel slow.
+
+## Files
+- `CMakePresets.json` (repo root) — adds tracked `linux-dev` / `linux-asan` /
+  `linux-bench` presets (clang, separate `build/linux-*` dirs) alongside the
+  existing presets.
+- `Dockerfile` — steamrt4 SDK + clang.
+- `container-up.sh` — start/refresh the local build container.
+- `deck-bench.sh` — build locally, ship, run on the Deck (direct by default;
+  `--pin` for governor-pinned accurate numbers; `USE_CONTAINER=1` for the SDK
+  image path).
+- `deck-run-pinned.sh` — on-Deck helper for `--pin`: pins the CPU governor to
+  `performance`, runs `tess_bench`, restores the governor on exit.

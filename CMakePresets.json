@@ -98,6 +98,33 @@
         "TESS_BUILD_BENCHMARKS": "ON",
         "TESS_ENABLE_WARNINGS": "ON"
       }
+    },
+    {
+      "name": "linux-dev",
+      "displayName": "Linux Debug (clang, Steam Runtime container)",
+      "inherits": "dev",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "linux-asan",
+      "displayName": "Linux Debug ASan/UBSan (clang, Steam Runtime container)",
+      "inherits": "dev-asan",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "linux-bench",
+      "displayName": "Linux Benchmark Release (clang, Steam Runtime container)",
+      "inherits": "bench",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
     }
   ],
   "buildPresets": [
@@ -136,7 +163,10 @@
     {
       "name": "bench-profile",
       "configurePreset": "bench-profile"
-    }
+    },
+    { "name": "linux-dev", "configurePreset": "linux-dev" },
+    { "name": "linux-asan", "configurePreset": "linux-asan" },
+    { "name": "linux-bench", "configurePreset": "linux-bench" }
   ],
   "testPresets": [
     {
@@ -201,6 +231,21 @@
       "output": {
         "outputOnFailure": true
       }
+    },
+    {
+      "name": "linux-dev",
+      "configurePreset": "linux-dev",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-asan",
+      "configurePreset": "linux-asan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-bench",
+      "configurePreset": "linux-bench",
+      "output": { "outputOnFailure": true }
     }
   ]
 }
