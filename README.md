@@ -29,6 +29,17 @@ The public CMake target is `tess::tess`.
 The `dev` preset also builds `examples/tess_mvp_path`, a small end-to-end
 queued-edit plus A* pathfinding prototype.
 
+## Testing on a Steam Deck
+
+Build on macOS (for x86_64, in Valve's Steam Runtime container) and run the
+tests or benchmarks on real Steam Deck hardware via `tools/steamdeck/deck` — see
+[`tools/steamdeck/README.md`](tools/steamdeck/README.md). Quickstart:
+
+```sh
+tools/steamdeck/deck setup && tools/steamdeck/deck deck-setup   # once
+tools/steamdeck/deck bench --pin                                # run on the Deck
+```
+
 ## Quality Gates
 
 CI runs on `ubuntu-24.04` with Clang and covers:
