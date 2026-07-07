@@ -3,6 +3,9 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build_dir="${TESS_INSTALL_SMOKE_BUILD_DIR:-$root/build/dev}"
+# Set TESS_INSTALL_SMOKE_CONFIG (e.g. Debug) for multi-config generators
+# such as Visual Studio; single-config builds should leave it unset.
+config="${TESS_INSTALL_SMOKE_CONFIG:-}"
 
 if [[ ! -d "$build_dir" ]]; then
   echo "error: build directory '$build_dir' does not exist;" \
@@ -30,7 +33,13 @@ build="$work/build"
 
 mkdir -p "$consumer"
 
-cmake --install "$build_dir" --prefix "$prefix"
+# Bash 3.2 (macOS /bin/bash) treats empty-array expansion as an unbound
+# variable under `set -u`, so branch instead of building argument arrays.
+if [[ -n "$config" ]]; then
+  cmake --install "$build_dir" --prefix "$prefix" --config "$config"
+else
+  cmake --install "$build_dir" --prefix "$prefix"
+fi
 
 cat > "$consumer/CMakeLists.txt" <<'EOF'
 cmake_minimum_required(VERSION 3.28)
@@ -50,5 +59,10 @@ int main() {
 EOF
 
 cmake -S "$consumer" -B "$build" -DCMAKE_PREFIX_PATH="$prefix"
-cmake --build "$build"
-"$build/tess_install_smoke"
+if [[ -n "$config" ]]; then
+  cmake --build "$build" --config "$config"
+  "$build/$config/tess_install_smoke"
+else
+  cmake --build "$build"
+  "$build/tess_install_smoke"
+fi
