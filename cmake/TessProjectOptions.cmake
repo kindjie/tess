@@ -84,13 +84,21 @@ function(tess_target_sanitizer_options target)
   endif()
 
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    # -fno-sanitize-recover makes UBSan findings fatal; without it the
+    # runtime prints and continues with exit code 0, so CI cannot fail.
     target_compile_options(
       ${target}
-      PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer
+      PRIVATE
+        -fsanitize=address,undefined
+        -fno-sanitize-recover=undefined
+        -fno-omit-frame-pointer
     )
     target_link_options(
       ${target}
-      PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer
+      PRIVATE
+        -fsanitize=address,undefined
+        -fno-sanitize-recover=undefined
+        -fno-omit-frame-pointer
     )
   else()
     message(

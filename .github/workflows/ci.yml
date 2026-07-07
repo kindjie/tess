@@ -9,6 +9,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+
 jobs:
   dev:
     name: Dev Build And Tests
@@ -18,12 +26,20 @@ jobs:
       CXX: clang++
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Restore compiler cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .ccache
+          key: ccache-dev-${{ github.sha }}
+          restore-keys: ccache-dev-
 
       - name: Show tool versions
         run: |
           cmake --version
           clang++ --version
+          ccache --version
 
       - name: Configure
         run: cmake --preset dev
@@ -48,12 +64,20 @@ jobs:
           - dev-asan
           - dev-cppcheck
           - dev-clang-tidy
+          - release
     env:
       CC: clang
       CXX: clang++
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Restore compiler cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .ccache
+          key: ccache-${{ matrix.preset }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.preset }}-
 
       - name: Install analysis tools
         if: matrix.preset == 'dev-cppcheck' || matrix.preset == 'dev-clang-tidy'
@@ -75,7 +99,10 @@ jobs:
         run: cmake --build --preset "${{ matrix.preset }}"
 
       - name: Test
-        if: matrix.preset == 'dev-werror' || matrix.preset == 'dev-asan'
+        if: >-
+          matrix.preset == 'dev-werror' ||
+          matrix.preset == 'dev-asan' ||
+          matrix.preset == 'release'
         run: ctest --preset "${{ matrix.preset }}"
 
   advisory:
@@ -91,7 +118,14 @@ jobs:
       CXX: clang++
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Restore compiler cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .ccache
+          key: ccache-${{ matrix.preset }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.preset }}-
 
       - name: Install analysis tools
         run: |
@@ -118,7 +152,14 @@ jobs:
       CXX: clang++
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Restore compiler cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .ccache
+          key: ccache-bench-${{ github.sha }}
+          restore-keys: ccache-bench-
 
       - name: Show tool versions
         run: |
@@ -134,19 +175,19 @@ jobs:
       - name: Test
         run: ctest --preset bench
 
-      - name: Key benchmark threshold scaffold
+      - name: Key benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_key_thresholds
 
-      - name: Storage benchmark threshold scaffold
+      - name: Storage benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_storage_thresholds
 
-      - name: Block benchmark threshold scaffold
+      - name: Block benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_block_thresholds
 
-      - name: Queued benchmark threshold scaffold
+      - name: Queued benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_queued_thresholds
 
-      - name: Path benchmark threshold scaffold
+      - name: Path benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_path_thresholds
 
       - name: Collect non-gating benchmark baselines
@@ -158,7 +199,7 @@ jobs:
             --out build/bench/bench/ci-baselines/metadata.json
 
       - name: Upload benchmark baseline artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: benchmark-baselines-${{ github.run_id }}
           path: build/bench/bench/ci-baselines/*.json

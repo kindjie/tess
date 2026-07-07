@@ -44,34 +44,37 @@ tools/steamdeck/deck bench --pin                                # run on the Dec
 
 CI runs on `ubuntu-24.04` with Clang and covers:
 
-- Dev build: `cmake --build --preset dev`
-- Unit tests: `ctest --preset dev`
+- Dev build and unit tests: `cmake --build --preset dev`,
+  `ctest --preset dev`
 - Public header file-set drift check: `tess_public_headers_file_set`
 - Installed package smoke test: `tools/install_smoke.sh`
+- Warnings-as-errors build and tests: preset `dev-werror`
+- ASan/UBSan build and tests (UBSan findings are fatal): preset `dev-asan`
+- Release build and tests: preset `release`
 - Strict clang-tidy gate: `cmake --build --preset dev-clang-tidy`
-- Benchmark build: `cmake --build --preset bench`
-- Benchmark smoke tests: `ctest --preset bench`
-- Key conversion benchmark threshold scaffold:
-  `cmake --build --preset bench --target tess_bench_key_thresholds`
-- Storage benchmark threshold scaffold:
-  `cmake --build --preset bench --target tess_bench_storage_thresholds`
-- Block benchmark threshold scaffold:
-  `cmake --build --preset bench --target tess_bench_block_thresholds`
-- Queued benchmark threshold scaffold:
-  `cmake --build --preset bench --target tess_bench_queued_thresholds`
-- Path benchmark threshold scaffold:
-  `cmake --build --preset bench --target tess_bench_path_thresholds`
+- cppcheck gate: `cmake --build --preset dev-cppcheck`
+- Advisory (non-gating) clang-tidy profile: preset `dev-clang-tidy-advisory`
+- Benchmark build and smoke tests: presets `bench`
+- Benchmark CPU-time threshold gates, one per suite:
+  `cmake --build --preset bench --target tess_bench_<suite>_thresholds`
+  for `key`, `storage`, `block`, `queued`, and `path`
 - Non-gating CI benchmark baseline collection:
   `cmake --build --preset bench --target tess_bench_ci_baselines`
 
-Benchmark thresholds are currently scaffolded with disabled wall-clock limits
-until stable same-runner baselines are available. CI uploads repeated benchmark
-JSON samples as a workflow artifact for threshold calibration.
-Summarize downloaded baseline artifacts with:
+Benchmark thresholds enforce calibrated per-benchmark CPU-time ceilings
+(`bench/thresholds/*.json`) and fail CI when exceeded or when an expected
+benchmark is missing. Wall-clock ceilings stay unset because shared-runner
+wall time is too noisy to gate. Recalibrate from CI baseline artifacts after
+intentional performance changes; summarize downloaded artifacts with:
 
 ```sh
 tools/benchmark_baseline_summary.py path/to/*.json
 ```
+
+New contributors: install the local git hooks with
+`python3 tools/git_hooks.py install` (see
+[`docs/git-hooks.md`](docs/git-hooks.md)) and read
+[`docs/style.md`](docs/style.md) for formatting and layout conventions.
 
 ## Benchmark Trends
 
