@@ -42,7 +42,7 @@ tools/steamdeck/deck bench --pin                                # run on the Dec
 
 ## Quality Gates
 
-CI runs on `ubuntu-24.04` with Clang and covers:
+CI runs primarily on `ubuntu-24.04` with Clang and covers:
 
 - Dev build and unit tests: `cmake --build --preset dev`,
   `ctest --preset dev`
@@ -50,7 +50,12 @@ CI runs on `ubuntu-24.04` with Clang and covers:
 - Installed package smoke test: `tools/install_smoke.sh`
 - Warnings-as-errors build and tests: preset `dev-werror`
 - ASan/UBSan build and tests (UBSan findings are fatal): preset `dev-asan`
+- TSan build and tests (`TSAN_OPTIONS=halt_on_error=1`): preset `dev-tsan`
 - Release build and tests: preset `release`
+- macOS build, tests, and install smoke on `macos-15`: presets `dev` and
+  `dev-asan` (no benchmark gates there; thresholds are Linux-calibrated)
+- Advisory Windows MSVC build, tests, and install smoke on `windows-2025`:
+  preset `windows-msvc` (non-gating during shake-out)
 - Strict clang-tidy gate: `cmake --build --preset dev-clang-tidy`
 - cppcheck gate: `cmake --build --preset dev-cppcheck`
 - Advisory (non-gating) clang-tidy profile: preset `dev-clang-tidy-advisory`
