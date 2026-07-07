@@ -10,8 +10,14 @@
 - `tess_smoke`: verifies that the public `tess::tess` target is consumable,
   that the root public header compiles, and that public version constants match.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
-  degenerate-axis handling, containment helpers, key width inference, and
-  coordinate/chunk/local/tile key conversion helpers.
+  degenerate-axis handling, containment helpers, key width inference,
+  coordinate/chunk/local/tile key conversion helpers, the portable
+  `tess::detail::UInt128` operations (carrying multiply, borrow subtract,
+  boundary shifts including counts of 64/127/>=128, comparisons, narrowing,
+  and `bit_width`/`bits_for_count` at the 64-bit boundary), >64-bit
+  tile-key round-trips on the huge bounded shape, and the largest legal
+  64-bit boundary shape (single chunk, 2^63 local tiles, `chunk_bits == 0`)
+  round-tripping without wide shifts.
 - `tess_storage_test`: verifies typed field schemas, resident chunk pages, and
   always-resident dense worlds, including SoA field independence, contiguous
   typed spans, metadata, const access, key/coord lookup, coordinate resolution,
