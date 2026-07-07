@@ -2,8 +2,11 @@ include_guard(DIRECTORY)
 
 include(FetchContent)
 
-set(TESS_GOOGLETEST_VERSION "v1.17.0")
-set(TESS_GOOGLE_BENCHMARK_VERSION "v1.9.5")
+# Commit SHAs pinned so upstream tag moves cannot alter builds.
+set(TESS_GOOGLETEST_VERSION
+    "52eb8108c5bdec04579160ae17225d66034bd723") # tag v1.17.0
+set(TESS_GOOGLE_BENCHMARK_VERSION
+    "192ef10025eb2c4cdd392bc502f0c852196baa48") # tag v1.9.5
 
 function(tess_require_googletest)
   find_package(GTest CONFIG QUIET)
@@ -18,7 +21,6 @@ function(tess_require_googletest)
     googletest
     GIT_REPOSITORY https://github.com/google/googletest.git
     GIT_TAG "${TESS_GOOGLETEST_VERSION}"
-    GIT_SHALLOW TRUE
     SYSTEM
     EXCLUDE_FROM_ALL
   )
@@ -39,7 +41,6 @@ function(tess_require_google_benchmark)
     googlebenchmark
     GIT_REPOSITORY https://github.com/google/benchmark.git
     GIT_TAG "${TESS_GOOGLE_BENCHMARK_VERSION}"
-    GIT_SHALLOW TRUE
     SYSTEM
     EXCLUDE_FROM_ALL
   )
