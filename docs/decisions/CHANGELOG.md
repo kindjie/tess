@@ -45,6 +45,36 @@ Records meaningful design changes from the original TDDs.
 - Affected code: `CMakeLists.txt`, `cmake/TessProjectOptions.cmake`,
   `CMakePresets.json`, `.github/workflows/ci.yml`,
   `tools/install_smoke.sh`.
+## 2026-07-06 - A* Heap Loops Gain Oracle-Backed Coverage and Mutation Guards
+
+- Changed: Added `tests/tess_path_search_test.cc` (new binary) and
+  `tests/path_test_util.h` with serpentine maze fixtures that defeat every
+  pre-A* fast path (two parallel two-gap walls with gaps at opposite ends,
+  start/goal displaced on both non-degenerate axes), plus independent BFS
+  and Dijkstra oracles. An audit had found the unit A* heap loop was never
+  reached by any Found-status test — every maze was answered by fast paths
+  (heap_pushes = 0 under diagnostics), and pervasive
+  `expanded_nodes == path.size()` assertions structurally required this.
+  The new tests pin exact optimal costs against the oracles across
+  top-down 2D, vertical 2D, and multi-chunk 3D shapes and assert
+  `expanded_nodes > path.size()`; `tess_diagnostics_enabled_test` gains
+  heap-push mutation guards on the same fixtures. Mutation validation
+  (single-gap walls) confirmed the discriminators fail when a fast path
+  answers. The heap loops themselves were verified correct: unit banded
+  search and weighted heap search both matched the oracles exactly, so no
+  library fix was needed. Start == goal now has pinned semantics (Found,
+  single-node path, cost 0) across all public path entry points, all of
+  which already behaved correctly. The flagship
+  `FindsTopDown2DPathAroundBlockedTiles` weak assert
+  (`EXPECT_GT(cost, 3u)`) was tightened to the exact optimal cost 9 and
+  documented as plane-gap-fast-path coverage.
+- Reason: Closes the audit finding that a tie-breaking, band-stride, or
+  parent-reconstruction bug in the real search would ship green, and pins
+  start == goal semantics (audit H4) against regression.
+- Affected docs: `tests/AGENTS.md`
+- Affected code: `tests/path_test_util.h`, `tests/tess_path_search_test.cc`,
+  `tests/tess_diagnostics_enabled_test.cc`, `tests/tess_path_test.cc`,
+  `tests/CMakeLists.txt`
 
 ## 2026-07-06 - Path Caches Gain Eviction Budgets and Hash-Indexed Lookups
 
