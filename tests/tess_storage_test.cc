@@ -146,17 +146,15 @@ TEST(TessStorage, PageMetadataReportsChunkIdentityAndByteSize) {
 TEST(TessStorage, RepeatedFieldAccessDoesNotAllocate) {
   Page<TopDown2D> page{tess::ChunkKey{0}, tess::ChunkCoord3{0, 0, 0}};
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
   for (std::uint64_t i = 0; i < Page<TopDown2D>::local_tile_count; ++i) {
     auto id = tess::LocalTileId{i};
     page.field<TerrainTag>(id) = static_cast<std::uint16_t>(i);
     auto terrain = page.field_span<TerrainTag>();
     EXPECT_EQ(terrain[id.value], static_cast<std::uint16_t>(i));
   }
-  tess_test::set_allocation_counting(false);
 
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessStorage, TopDown2DWorldOwnsResidentPagesInChunkKeyOrder) {
@@ -539,8 +537,7 @@ TEST(TessStorage, RepeatedWorldHotAccessDoesNotAllocateAfterConstruction) {
   World<TopDown2D> world;
   std::uint64_t observed = 0;
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
   for (std::uint64_t i = 0; i < 1024; ++i) {
     const auto key = tess::ChunkKey{i % World<TopDown2D>::chunk_count};
     const auto chunk = tess::chunk_coord<TopDown2D>(key);
@@ -559,10 +556,9 @@ TEST(TessStorage, RepeatedWorldHotAccessDoesNotAllocateAfterConstruction) {
     observed +=
         page->chunk_key().value + meta->entity_count + *terrain + regions[0];
   }
-  tess_test::set_allocation_counting(false);
 
   EXPECT_GT(observed, 0u);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 }  // namespace

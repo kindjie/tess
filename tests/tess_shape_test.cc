@@ -282,8 +282,7 @@ TEST(TessShape, KeyConversionsDoNotAllocate) {
   auto coord = tess::Coord3{47, 33, 17};
   auto observed = std::uint64_t{0};
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
   for (auto i = 0; i < 1024; ++i) {
     const auto tile = tess::tile_key<Chunked3D>(coord);
     const auto decoded = tess::coord<Chunked3D>(tile);
@@ -293,10 +292,9 @@ TEST(TessShape, KeyConversionsDoNotAllocate) {
     coord.y = (decoded.y + 3) % 64;
     coord.z = (decoded.z + 5) % 32;
   }
-  tess_test::set_allocation_counting(false);
 
   EXPECT_GT(observed, 0u);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessUInt128, MultipliesWithCarriesAcrossThe64BitBoundary) {
