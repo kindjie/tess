@@ -3,6 +3,8 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <span>
 #include <vector>
 
@@ -68,6 +70,47 @@ using PathVerticalScaleWorld =
     tess::AlwaysResidentWorld<PathVerticalScaleShape, PathSchema>;
 using Path3DWorld = tess::AlwaysResidentWorld<Path3DShape, PathSchema>;
 
+// Correctness checks mandated by docs/planning/benchmark-plan.md run outside
+// the timed regions; a failed check aborts the benchmark binary so threshold
+// runs cannot silently gate on wrong results.
+void bench_check(bool condition, const char* message) {
+  if (!condition) {
+    std::fprintf(stderr, "tess_bench correctness check failed: %s\n", message);
+    std::abort();
+  }
+}
+
+// Validates a Found path: endpoints match the request and every step is a
+// unit move onto a passable tile.
+template <typename World>
+void check_found_path(World& world, const tess::PathResult& result,
+                      tess::PathRequest request) {
+  bench_check(result.status == tess::PathStatus::Found,
+              "path status is not Found");
+  bench_check(!result.path.empty(), "found path is empty");
+  bench_check(result.path.front() == request.start,
+              "path does not begin at the requested start");
+  bench_check(result.path.back() == request.goal,
+              "path does not end at the requested goal");
+  for (std::size_t i = 1; i < result.path.size(); ++i) {
+    bench_check(
+        tess::manhattan_distance(result.path[i - 1], result.path[i]) == 1,
+        "path contains a non-unit step");
+    bench_check(world.template field<PassableTag>(result.path[i]) != 0,
+                "path crosses an impassable tile");
+  }
+}
+
+// Additionally pins the cost to an expected value captured from an untimed
+// setup run of the same deterministic search.
+template <typename World>
+void check_found_path(World& world, const tess::PathResult& result,
+                      tess::PathRequest request, std::uint64_t expected_cost) {
+  check_found_path(world, result, request);
+  bench_check(result.cost == expected_cost,
+              "path cost differs from the expected setup-run cost");
+}
+
 void record_path_counters(benchmark::State& state,
                           const tess::PathResult& result) {
   state.counters["cost"] = static_cast<double>(result.cost);
@@ -89,7 +132,7 @@ template <typename World, std::size_t Count>
 void record_path_batch_counters(
     benchmark::State& state,
     const std::array<tess::PathRequest, Count>& requests,
-    std::uint64_t total_expanded) {
+    std::uint64_t total_cost, std::uint64_t total_expanded) {
   using Shape = typename World::shape_type;
   std::array<tess::Coord3, Count> starts{};
   std::array<tess::Coord3, Count> goals{};
@@ -143,6 +186,11 @@ void record_path_batch_counters(
       static_cast<double>(unique_start_chunks);
   state.counters["batch.unique_goal_chunks"] =
       static_cast<double>(unique_goal_chunks);
+  // Whole-batch aggregates: the per-request counter names (cost,
+  // expanded_nodes, ...) previously published the LAST request only, which
+  // made per-node timing math ~100x off for 100-request batches.
+  state.counters["batch.cost_total"] = static_cast<double>(total_cost);
+  state.counters["batch.expanded_total"] = static_cast<double>(total_expanded);
   state.counters["batch.avg_expanded_nodes"] =
       static_cast<double>(total_expanded) / static_cast<double>(Count);
 }
@@ -319,17 +367,26 @@ void BM_coord_from_tile_key(benchmark::State& state) {
       33,
       tess::ShapeTraits<Shape>::size.z == 1 ? 0 : 17,
   };
-  auto key = tess::tile_key<Shape>(coord);
-  for (auto _ : state) {
-    auto result = tess::coord<Shape>(key);
-    benchmark::DoNotOptimize(result);
+  // Precompute the encoded keys so the timed loop measures decode only;
+  // calling tile_key() inside the loop double-counted the encode cost.
+  constexpr auto key_count = std::size_t{1024};
+  std::vector<decltype(tess::tile_key<Shape>(coord))> keys;
+  keys.reserve(key_count);
+  for (std::size_t i = 0; i < key_count; ++i) {
+    keys.push_back(tess::tile_key<Shape>(coord));
     coord.x = (coord.x + 17) %
               static_cast<std::int64_t>(tess::ShapeTraits<Shape>::size.x);
     coord.y = (coord.y + 31) %
               static_cast<std::int64_t>(tess::ShapeTraits<Shape>::size.y);
     coord.z = (coord.z + 7) %
               static_cast<std::int64_t>(tess::ShapeTraits<Shape>::size.z);
-    key = tess::tile_key<Shape>(coord);
+  }
+
+  std::size_t index = 0;
+  for (auto _ : state) {
+    auto result = tess::coord<Shape>(keys[index]);
+    benchmark::DoNotOptimize(result);
+    index = (index + 1) & (key_count - 1);
   }
 }
 
@@ -439,18 +496,31 @@ void BM_world_dirty_mark_clear(benchmark::State& state) {
 void BM_world_dirty_chunks_iteration(benchmark::State& state) {
   StorageWorld world;
   const auto bounds = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+  std::size_t expected_dirty = 0;
   for (std::uint64_t key = 0; key < StorageWorld::chunk_count; key += 3) {
     world.mark_dirty(tess::ChunkKey{key}, DirtyTerrain, bounds);
+    ++expected_dirty;
   }
   for (std::uint64_t key = 1; key < StorageWorld::chunk_count; key += 5) {
     world.mark_dirty(tess::ChunkKey{key}, DirtyCost, bounds);
   }
 
+  // Collect into a hoisted, reserved vector and iterate the collected keys;
+  // the previous by-value dirty_chunks() call never iterated the result, so
+  // the loop timed vector allocation instead of dirty-chunk iteration.
+  std::vector<tess::ChunkKey> chunks;
+  chunks.reserve(StorageWorld::chunk_count);
   for (auto _ : state) {
-    auto chunks = world.dirty_chunks(DirtyTerrain);
-    benchmark::DoNotOptimize(chunks.data());
-    benchmark::DoNotOptimize(chunks.size());
+    chunks.clear();
+    world.collect_dirty_chunks(DirtyTerrain, chunks);
+    std::uint64_t sum = 0;
+    for (const auto key : chunks) {
+      sum += key.value;
+    }
+    benchmark::DoNotOptimize(sum);
   }
+  bench_check(chunks.size() == expected_dirty,
+              "dirty chunk collection count mismatch");
 }
 
 void BM_block_explicit_domain_iteration(benchmark::State& state) {
@@ -615,15 +685,18 @@ void BM_queued_execute_resident_update(benchmark::State& state) {
   const auto report = tess::plan_operations(world, ops);
   const auto& plan = report.plan();
 
+  std::uint64_t last_chunk_count = 0;
   for (auto _ : state) {
     const auto result = tess::execute_plan<tess::WritePolicy::UniquePerChunk>(
         world, plan, [](auto view) {
           auto terrain = view.template field_span<TerrainTag>();
           terrain[0] = static_cast<std::uint16_t>(view.key().value);
         });
-    auto chunk_count = result.chunk_count;
-    benchmark::DoNotOptimize(chunk_count);
+    last_chunk_count = result.chunk_count;
+    benchmark::DoNotOptimize(last_chunk_count);
   }
+  bench_check(last_chunk_count == StorageWorld::chunk_count,
+              "queued execution did not visit every resident chunk");
 }
 
 template <typename World>
@@ -892,96 +965,79 @@ void carve_branch_lattice(PathScaleWorld& world) {
   }
 }
 
-void BM_path_astar_open_2d(benchmark::State& state) {
-  PathWorld world;
+// Shared runner for single-request unit-cost A* benchmarks. The untimed
+// setup run warms scratch storage and captures the expected result for the
+// post-loop correctness check.
+template <typename World, typename Setup>
+void run_unit_astar_bench(benchmark::State& state, tess::PathRequest request,
+                          bool expect_found, Setup setup,
+                          bool check_alloc_free = false) {
+  using Shape = typename World::shape_type;
+  World world;
   fill_path_passable(world, 1);
+  setup(world);
+
   tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathShape>());
+  scratch.reserve_nodes(path_node_count<Shape>());
+  const auto expected =
+      tess::astar_path<World, PassableTag>(world, request, scratch);
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
     TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{15, 15, 0}},
-            scratch));
+        result = tess::astar_path<World, PassableTag>(world, request, scratch));
     auto cost = result.cost;
     benchmark::DoNotOptimize(cost);
     benchmark::DoNotOptimize(result.path.data());
   }
+  if (expect_found) {
+    check_found_path(world, result, request, expected.cost);
+  } else {
+    bench_check(result.status == tess::PathStatus::NoPath,
+                "expected an unreachable goal");
+    bench_check(result.path.empty(), "no-path result carries path nodes");
+  }
+#if TESS_DIAGNOSTICS_ENABLED
+  if (check_alloc_free) {
+    // Representative warm-path allocation assertion (benchmark-plan.md
+    // section 14): the last timed iteration ran against warmed scratch, so
+    // the diagnostics allocation counters must report zero allocations.
+    bench_check(allocation_counters.allocations == 0,
+                "warm path iteration allocated");
+  }
+#else
+  (void)check_alloc_free;
+#endif
   record_path_counters(state, result);
   TESS_PATH_DIAG_RECORD(state);
+}
+
+void BM_path_astar_open_2d(benchmark::State& state) {
+  run_unit_astar_bench<PathWorld>(
+      state, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{15, 15, 0}},
+      true, [](PathWorld&) noexcept {}, true);
 }
 
 void BM_path_astar_open_2d_64x64(benchmark::State& state) {
-  PathRealisticWorld world;
-  fill_path_passable(world, 1);
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathRealisticShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathRealisticWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathRealisticWorld>(
+      state, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 0}},
+      true, [](PathRealisticWorld&) noexcept {});
 }
 
 void BM_path_astar_open_2d_512x512(benchmark::State& state) {
-  PathScaleWorld world;
-  fill_path_passable(world, 1);
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 511, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathScaleWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 511, 0}}, true,
+      [](PathScaleWorld&) noexcept {});
 }
 
 void BM_path_astar_open_2d_1024x1024(benchmark::State& state) {
-  PathLargeWorld world;
-  fill_path_passable(world, 1);
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathLargeShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(result = tess::astar_path<PathLargeWorld, PassableTag>(
-                           world,
-                           tess::PathRequest{tess::Coord3{0, 0, 0},
-                                             tess::Coord3{1023, 1023, 0}},
-                           scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathLargeWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{1023, 1023, 0}},
+      true, [](PathLargeWorld&) noexcept {});
 }
 
 template <typename Setup>
@@ -994,6 +1050,10 @@ void run_weighted_astar_512x512(benchmark::State& state,
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  // Untimed setup run captures the expected cost for the post-loop check.
+  const auto expected =
+      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+          world, request, scratch);
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
 
@@ -1006,6 +1066,7 @@ void run_weighted_astar_512x512(benchmark::State& state,
     benchmark::DoNotOptimize(cost);
     benchmark::DoNotOptimize(result.path.data());
   }
+  check_found_path(world, result, request, expected.cost);
   record_path_counters(state, result);
   TESS_PATH_DIAG_RECORD(state);
 }
@@ -1062,13 +1123,17 @@ void BM_path_weighted_astar_batch_100_mixed_512x512(benchmark::State& state) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last =
+      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+          world, requests.back(), scratch);
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
       result = tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag,
@@ -1079,521 +1144,180 @@ void BM_path_weighted_astar_batch_100_mixed_512x512(benchmark::State& state) {
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  record_path_batch_counters<WeightedPathScaleWorld>(state, requests,
-                                                     total_expanded);
-  record_path_counters(state, result);
+  check_found_path(world, result, requests.back(), expected_last.cost);
+  record_path_batch_counters<WeightedPathScaleWorld>(
+      state, requests, total_cost, total_expanded);
   TESS_PATH_DIAG_RECORD(state);
+}
+
+// Untimed reference run used by batch benchmarks to pin the last request's
+// cost for the post-loop correctness check.
+[[nodiscard]] auto expected_unit_path_cost(PathScaleWorld& world,
+                                           tess::PathRequest request)
+    -> std::uint64_t {
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto result =
+      tess::astar_path<PathScaleWorld, PassableTag>(world, request, scratch);
+  bench_check(result.status == tess::PathStatus::Found,
+              "setup reference path not found");
+  return result.cost;
 }
 
 void BM_path_astar_wall_gap_512x512(benchmark::State& state) {
-  PathScaleWorld world;
-  fill_path_passable(world, 1);
-  block_vertical_wall(world, 256, 511);
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 0, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathScaleWorld>(
+      state, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 0, 0}},
+      true,
+      [](PathScaleWorld& world) { block_vertical_wall(world, 256, 511); });
 }
 
 void BM_path_astar_alternate_direct_512x512(benchmark::State& state) {
-  PathScaleWorld world;
-  fill_path_passable(world, 1);
-  world.template field<PassableTag>(tess::Coord3{256, 0, 0}) = 0;
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 511, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathScaleWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 511, 0}}, true,
+      [](PathScaleWorld& world) {
+        world.template field<PassableTag>(tess::Coord3{256, 0, 0}) = 0;
+      });
 }
 
 void BM_path_astar_axis_detour_512x512(benchmark::State& state) {
-  PathScaleWorld world;
-  fill_path_passable(world, 1);
-  world.template field<PassableTag>(tess::Coord3{256, 0, 0}) = 0;
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 0, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathScaleWorld>(
+      state, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 0, 0}},
+      true, [](PathScaleWorld& world) {
+        world.template field<PassableTag>(tess::Coord3{256, 0, 0}) = 0;
+      });
 }
 
 void BM_path_astar_no_path_512x512(benchmark::State& state) {
-  PathScaleWorld world;
-  fill_path_passable(world, 1);
-  block_vertical_wall(world, 256, -1);
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 511, 0}},
-            scratch));
-    auto expanded = result.expanded_nodes;
-    benchmark::DoNotOptimize(expanded);
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathScaleWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 511, 0}},
+      false,
+      [](PathScaleWorld& world) { block_vertical_wall(world, 256, -1); });
 }
 
 void BM_path_astar_striped_maze_512x512(benchmark::State& state) {
-  PathScaleWorld world;
-  fill_path_passable(world, 1);
-  carve_striped_maze(world);
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 511, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathScaleWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 511, 0}}, true,
+      [](PathScaleWorld& world) { carve_striped_maze(world); });
 }
 
 void BM_path_astar_short_open_512x512(benchmark::State& state) {
-  PathScaleWorld world;
-  fill_path_passable(world, 1);
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{32, 32, 0}, tess::Coord3{63, 63, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathScaleWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{32, 32, 0}, tess::Coord3{63, 63, 0}}, true,
+      [](PathScaleWorld&) noexcept {});
 }
 
 void BM_path_astar_medium_open_512x512(benchmark::State& state) {
-  PathScaleWorld world;
-  fill_path_passable(world, 1);
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(result = tess::astar_path<PathScaleWorld, PassableTag>(
-                           world,
-                           tess::PathRequest{tess::Coord3{64, 64, 0},
-                                             tess::Coord3{255, 255, 0}},
-                           scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathScaleWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{64, 64, 0}, tess::Coord3{255, 255, 0}},
+      true, [](PathScaleWorld&) noexcept {});
 }
 
 void BM_path_astar_long_open_512x512(benchmark::State& state) {
-  PathScaleWorld world;
-  fill_path_passable(world, 1);
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 511, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathScaleWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{511, 511, 0}}, true,
+      [](PathScaleWorld&) noexcept {});
 }
 
 void BM_path_astar_no_path_1024x1024(benchmark::State& state) {
-  PathLargeWorld world;
-  fill_path_passable(world, 1);
-  block_vertical_wall(world, 512, -1);
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathLargeShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(result = tess::astar_path<PathLargeWorld, PassableTag>(
-                           world,
-                           tess::PathRequest{tess::Coord3{0, 0, 0},
-                                             tess::Coord3{1023, 1023, 0}},
-                           scratch));
-    auto expanded = result.expanded_nodes;
-    benchmark::DoNotOptimize(expanded);
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathLargeWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{1023, 1023, 0}},
+      false,
+      [](PathLargeWorld& world) { block_vertical_wall(world, 512, -1); });
 }
 
 void BM_path_astar_striped_maze_1024x1024(benchmark::State& state) {
-  PathLargeWorld world;
-  fill_path_passable(world, 1);
-  carve_striped_maze(world);
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathLargeShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(result = tess::astar_path<PathLargeWorld, PassableTag>(
-                           world,
-                           tess::PathRequest{tess::Coord3{0, 0, 0},
-                                             tess::Coord3{1023, 1023, 0}},
-                           scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathLargeWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{1023, 1023, 0}},
+      true, [](PathLargeWorld& world) { carve_striped_maze(world); });
 }
 
 void BM_path_astar_vertical_open_512x512(benchmark::State& state) {
-  PathVerticalScaleWorld world;
-  fill_path_passable(world, 1);
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathVerticalScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathVerticalScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{0, 511, 511}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathVerticalScaleWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{0, 511, 511}}, true,
+      [](PathVerticalScaleWorld&) noexcept {});
 }
 
 void BM_path_astar_vertical_wall_gap_512x512(benchmark::State& state) {
-  PathVerticalScaleWorld world;
-  fill_path_passable(world, 1);
-  block_yz_wall(world, 256, 511);
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathVerticalScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathVerticalScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{0, 511, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathVerticalScaleWorld>(
+      state, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{0, 511, 0}},
+      true,
+      [](PathVerticalScaleWorld& world) { block_yz_wall(world, 256, 511); });
 }
 
 void BM_path_astar_vertical_striped_maze_512x512(benchmark::State& state) {
-  PathVerticalScaleWorld world;
-  fill_path_passable(world, 1);
-  carve_vertical_striped_maze(world);
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathVerticalScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathVerticalScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{0, 511, 511}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathVerticalScaleWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{0, 511, 511}}, true,
+      [](PathVerticalScaleWorld& world) {
+        carve_vertical_striped_maze(world);
+      });
 }
 
 void BM_path_astar_open_3d_64x64x16(benchmark::State& state) {
-  Path3DWorld world;
-  fill_path_passable(world, 1);
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<Path3DShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<Path3DWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 15}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<Path3DWorld>(
+      state, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 15}},
+      true, [](Path3DWorld&) noexcept {});
 }
 
 void BM_path_astar_slab_gap_3d_64x64x16(benchmark::State& state) {
-  Path3DWorld world;
-  fill_path_passable(world, 1);
-  block_3d_x_slab(world, 32, tess::Coord3{32, 63, 15});
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<Path3DShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<Path3DWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 0, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<Path3DWorld>(
+      state, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 0, 0}},
+      true, [](Path3DWorld& world) {
+        block_3d_x_slab(world, 32, tess::Coord3{32, 63, 15});
+      });
 }
 
 void BM_path_astar_slab_no_gap_3d_64x64x16(benchmark::State& state) {
-  Path3DWorld world;
-  fill_path_passable(world, 1);
-  block_3d_x_slab(world, 32, tess::Coord3{32, -1, -1});
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<Path3DShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<Path3DWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 15}},
-            scratch));
-    auto expanded = result.expanded_nodes;
-    benchmark::DoNotOptimize(expanded);
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<Path3DWorld>(
+      state, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 15}},
+      false, [](Path3DWorld& world) {
+        block_3d_x_slab(world, 32, tess::Coord3{32, -1, -1});
+      });
 }
 
 void BM_path_astar_slab_multi_gap_3d_64x64x16(benchmark::State& state) {
-  Path3DWorld world;
-  fill_path_passable(world, 1);
-  block_3d_x_slab_with_two_gaps(world, 32, tess::Coord3{32, 8, 0},
-                                tess::Coord3{32, 63, 15});
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<Path3DShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<Path3DWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 0, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<Path3DWorld>(
+      state, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 0, 0}},
+      true, [](Path3DWorld& world) {
+        block_3d_x_slab_with_two_gaps(world, 32, tess::Coord3{32, 8, 0},
+                                      tess::Coord3{32, 63, 15});
+      });
 }
 
 void BM_path_astar_corridor_3d_64x64x16(benchmark::State& state) {
-  Path3DWorld world;
-  carve_3d_corridor(world);
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<Path3DShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<Path3DWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 15}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<Path3DWorld>(
+      state, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 15}},
+      true, [](Path3DWorld& world) { carve_3d_corridor(world); });
 }
 
 void BM_path_astar_sparse_blockers_512x512(benchmark::State& state) {
-  PathScaleWorld world;
-  fill_path_passable(world, 1);
-  carve_sparse_blockers(world);
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{510, 510, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathScaleWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{510, 510, 0}}, true,
+      [](PathScaleWorld& world) { carve_sparse_blockers(world); });
 }
 
 void BM_path_astar_room_portals_512x512(benchmark::State& state) {
-  PathScaleWorld world;
-  fill_path_passable(world, 1);
-  carve_room_portals(world);
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{510, 510, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathScaleWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{510, 510, 0}}, true,
+      [](PathScaleWorld& world) { carve_room_portals(world); });
 }
 
 void BM_path_astar_branch_lattice_512x512(benchmark::State& state) {
-  PathScaleWorld world;
-  carve_branch_lattice(world);
-
-  tess::PathScratch scratch;
-  scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  TESS_PATH_DIAG_DECL(scratch);
-  tess::PathResult result;
-
-  for (auto _ : state) {
-    TESS_PATH_DIAG_RESET();
-    TESS_PATH_DIAG_RUN(
-        result = tess::astar_path<PathScaleWorld, PassableTag>(
-            world,
-            tess::PathRequest{tess::Coord3{4, 4, 0}, tess::Coord3{508, 508, 0}},
-            scratch));
-    auto cost = result.cost;
-    benchmark::DoNotOptimize(cost);
-    benchmark::DoNotOptimize(result.path.data());
-  }
-  record_path_counters(state, result);
-  TESS_PATH_DIAG_RECORD(state);
+  run_unit_astar_bench<PathScaleWorld>(
+      state,
+      tess::PathRequest{tess::Coord3{4, 4, 0}, tess::Coord3{508, 508, 0}}, true,
+      [](PathScaleWorld& world) { carve_branch_lattice(world); });
 }
 
 void BM_path_astar_batch_100_shared_room_portals_512x512(
@@ -1617,13 +1341,16 @@ void BM_path_astar_batch_100_shared_room_portals_512x512(
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_unit_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
-
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
+
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
       result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
@@ -1634,8 +1361,9 @@ void BM_path_astar_batch_100_shared_room_portals_512x512(
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
-  record_path_counters(state, result);
+  check_found_path(world, result, requests.back(), expected_last_cost);
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_cost,
+                                             total_expanded);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -1657,14 +1385,17 @@ void BM_path_distance_field_batch_100_shared_room_portals_512x512(
 
   tess::DistanceFieldScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_unit_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL(scratch);
   tess::DistanceFieldResult field;
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(
         field = tess::build_distance_field<PathScaleWorld, PassableTag>(
@@ -1679,12 +1410,15 @@ void BM_path_distance_field_batch_100_shared_room_portals_512x512(
     benchmark::DoNotOptimize(total_expanded);
     benchmark::DoNotOptimize(field.expanded_nodes);
   }
-  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
+  bench_check(field.status == tess::PathStatus::Found,
+              "distance field build failed");
+  check_found_path(world, result, requests.back(), expected_last_cost);
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_cost,
+                                             total_expanded);
   state.counters["field_expanded_nodes"] =
       static_cast<double>(field.expanded_nodes);
   state.counters["field_reached_nodes"] =
       static_cast<double>(field.reached_nodes);
-  record_path_counters(state, result);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -1705,13 +1439,16 @@ void BM_path_astar_batch_100_shared_sparse_512x512(benchmark::State& state) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_unit_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
       result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
@@ -1722,8 +1459,9 @@ void BM_path_astar_batch_100_shared_sparse_512x512(benchmark::State& state) {
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
-  record_path_counters(state, result);
+  check_found_path(world, result, requests.back(), expected_last_cost);
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_cost,
+                                             total_expanded);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -1746,14 +1484,17 @@ void BM_path_distance_field_batch_100_shared_sparse_512x512(
 
   tess::DistanceFieldScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_unit_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL(scratch);
   tess::DistanceFieldResult field;
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(
         field = tess::build_distance_field<PathScaleWorld, PassableTag>(
@@ -1768,12 +1509,15 @@ void BM_path_distance_field_batch_100_shared_sparse_512x512(
     benchmark::DoNotOptimize(total_expanded);
     benchmark::DoNotOptimize(field.expanded_nodes);
   }
-  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
+  bench_check(field.status == tess::PathStatus::Found,
+              "distance field build failed");
+  check_found_path(world, result, requests.back(), expected_last_cost);
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_cost,
+                                             total_expanded);
   state.counters["field_expanded_nodes"] =
       static_cast<double>(field.expanded_nodes);
   state.counters["field_reached_nodes"] =
       static_cast<double>(field.reached_nodes);
-  record_path_counters(state, result);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -1804,13 +1548,16 @@ void BM_path_astar_batch_100_multigoal_room_portals_512x512(
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_unit_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
       result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
@@ -1821,8 +1568,9 @@ void BM_path_astar_batch_100_multigoal_room_portals_512x512(
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
-  record_path_counters(state, result);
+  check_found_path(world, result, requests.back(), expected_last_cost);
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_cost,
+                                             total_expanded);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -1850,16 +1598,26 @@ void BM_path_distance_field_batch_100_multigoal_room_portals_512x512(
 
   tess::DistanceFieldScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  auto last_request = requests.front();
+  for (const auto goal : goals) {
+    for (const auto request : requests) {
+      if (request.goal == goal) {
+        last_request = request;
+      }
+    }
+  }
+  const auto expected_last_cost = expected_unit_path_cost(world, last_request);
   TESS_PATH_DIAG_DECL(scratch);
   tess::DistanceFieldResult field;
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
   std::uint64_t total_field_expanded = 0;
   std::uint64_t total_field_reached = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     total_field_expanded = 0;
     total_field_reached = 0;
@@ -1882,12 +1640,15 @@ void BM_path_distance_field_batch_100_multigoal_room_portals_512x512(
     benchmark::DoNotOptimize(total_expanded);
     benchmark::DoNotOptimize(total_field_expanded);
   }
-  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
+  bench_check(field.status == tess::PathStatus::Found,
+              "distance field build failed");
+  check_found_path(world, result, last_request, expected_last_cost);
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_cost,
+                                             total_expanded);
   state.counters["field_expanded_nodes"] =
       static_cast<double>(total_field_expanded);
   state.counters["field_reached_nodes"] =
       static_cast<double>(total_field_reached);
-  record_path_counters(state, result);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -1923,13 +1684,16 @@ void BM_path_astar_batch_100_mixed_repeated_room_portals_512x512(
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_unit_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
       result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
@@ -1940,8 +1704,9 @@ void BM_path_astar_batch_100_mixed_repeated_room_portals_512x512(
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
-  record_path_counters(state, result);
+  check_found_path(world, result, requests.back(), expected_last_cost);
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_cost,
+                                             total_expanded);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -1983,12 +1748,13 @@ void BM_path_cached_astar_batch_100_mixed_repeated_room_portals_512x512(
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
   tess::RouteCacheStats cache_stats;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     cache.clear();
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
       result = tess::cached_astar_path<PathScaleWorld, PassableTag>(
@@ -2000,9 +1766,10 @@ void BM_path_cached_astar_batch_100_mixed_repeated_room_portals_512x512(
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
+  check_found_path(world, result, requests.back());
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_cost,
+                                             total_expanded);
   record_route_cache_counters(state, cache_stats);
-  record_path_counters(state, result);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -2019,13 +1786,16 @@ void BM_path_astar_batch_100_suffix_open_512x512(benchmark::State& state) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_unit_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
       result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
@@ -2036,8 +1806,9 @@ void BM_path_astar_batch_100_suffix_open_512x512(benchmark::State& state) {
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
-  record_path_counters(state, result);
+  check_found_path(world, result, requests.back(), expected_last_cost);
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_cost,
+                                             total_expanded);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -2061,12 +1832,13 @@ void BM_path_cached_astar_batch_100_suffix_open_512x512(
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
   tess::RouteCacheStats cache_stats;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     cache.clear();
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
       result = tess::cached_astar_path<PathScaleWorld, PassableTag>(
@@ -2078,9 +1850,10 @@ void BM_path_cached_astar_batch_100_suffix_open_512x512(
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
+  check_found_path(world, result, requests.back());
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_cost,
+                                             total_expanded);
   record_route_cache_counters(state, cache_stats);
-  record_path_counters(state, result);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -2099,13 +1872,16 @@ void BM_path_astar_batch_100_open_512x512(benchmark::State& state) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_unit_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
       result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
@@ -2116,8 +1892,9 @@ void BM_path_astar_batch_100_open_512x512(benchmark::State& state) {
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
-  record_path_counters(state, result);
+  check_found_path(world, result, requests.back(), expected_last_cost);
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_cost,
+                                             total_expanded);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -2149,13 +1926,16 @@ void BM_path_astar_batch_100_mixed_512x512(benchmark::State& state) {
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_unit_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL(scratch);
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
       result = tess::astar_path<PathScaleWorld, PassableTag>(world, request,
@@ -2166,8 +1946,9 @@ void BM_path_astar_batch_100_mixed_512x512(benchmark::State& state) {
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  record_path_batch_counters<PathScaleWorld>(state, requests, total_expanded);
-  record_path_counters(state, result);
+  check_found_path(world, result, requests.back(), expected_last_cost);
+  record_path_batch_counters<PathScaleWorld>(state, requests, total_cost,
+                                             total_expanded);
   TESS_PATH_DIAG_RECORD(state);
 }
 
