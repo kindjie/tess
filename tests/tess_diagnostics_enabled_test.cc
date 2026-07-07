@@ -92,6 +92,7 @@ TEST(TessDiagnostics, ScopedQueuedPhaseCountersRecordGenericEvents) {
     TESS_DIAG_EVENT(queued_phase_failure);
     TESS_DIAG_EVENT_VALUE(queued_partitioned_phase, 3);
     TESS_DIAG_EVENT_VALUE(queued_scoped_thread_dispatch, 2);
+    TESS_DIAG_EVENT_VALUE(queued_worker_pool_dispatch, 3);
     TESS_DIAG_EVENT_VALUE(queued_dirty_collect, 5);
     TESS_DIAG_EVENT_VALUE(queued_dirty_merge, 2);
   }
@@ -104,6 +105,8 @@ TEST(TessDiagnostics, ScopedQueuedPhaseCountersRecordGenericEvents) {
   EXPECT_EQ(counters.dirty_partitions, 3u);
   EXPECT_EQ(counters.scoped_thread_calls, 1u);
   EXPECT_EQ(counters.scoped_thread_workers, 2u);
+  EXPECT_EQ(counters.worker_pool_calls, 1u);
+  EXPECT_EQ(counters.worker_pool_workers, 3u);
   EXPECT_EQ(counters.dirty_records_collected, 5u);
   EXPECT_EQ(counters.dirty_chunks_merged, 2u);
 

@@ -37,8 +37,9 @@ search, allocation tracking, and queued phase execution. It lives in
   (`event_queued_phase_invalid_range`), phase failures
   (`event_queued_phase_failure`), partitioned phase calls and dirty
   partitions (`event_queued_partitioned_phase`), scoped-thread dispatches
-  and worker counts (`event_queued_scoped_thread_dispatch`), and collected
-  and merged dirty records (`event_queued_dirty_collect`,
+  and worker counts (`event_queued_scoped_thread_dispatch`), worker-pool
+  dispatches and worker counts (`event_queued_worker_pool_dispatch`), and
+  collected and merged dirty records (`event_queued_dirty_collect`,
   `event_queued_dirty_merge`).
 - `ScopedPathCounters`, `ScopedAllocationCounters`, and
   `ScopedQueuedPhaseCounters` are RAII scopes that install a caller-owned

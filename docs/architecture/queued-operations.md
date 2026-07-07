@@ -245,6 +245,21 @@ records dispatch counts and worker counts before launching threads; the scoped
 queued-phase diagnostics are intentionally owned by the caller thread and are
 not mutated from worker callbacks.
 
+`WorkerPoolPhaseExecutor` is the persistent-pool prototype the concurrent
+tile-world addendum calls for: workers are created once at construction and
+reused across phases, so phase dispatch never creates threads. Each
+`for_each_operation` call publishes one type-erased job under the pool
+mutex, wakes the workers, and blocks until every claimed operation has
+finished and every adopted worker has left the claim loop, so all callback
+writes are visible before it returns; it then reports the first
+non-`Executed` result in operation order. `reserve_operations(count)`
+pre-sizes the per-operation result buffer so warm phases allocate nothing.
+Like the scoped-thread prototype it invokes callbacks concurrently, does not
+declare `serial_execution_tag`, and pairs only with the partitioned dirty
+variant. It is non-copyable and non-movable, stops its workers via RAII, and
+remains a prototype for backend comparison benchmarks rather than the
+production scheduler backend; callbacks must not throw.
+
 `execute_phase_partitioned_dirty_with<Policy>` uses the same executor contract,
 but stores callback dirty records and execution results in
 `PlannedPhaseExecutionScratch` by operation offset. This avoids shared result
