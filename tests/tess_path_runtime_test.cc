@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -285,6 +287,53 @@ TEST(TessPathRuntime, UnitFieldProductCacheClearsOnWorldChangeCadence) {
   EXPECT_EQ(stats.field_product_cache.stale_rejections, 0u);
 }
 
+TEST(TessPathRuntime, FieldProductCacheLookupPointerStableAcrossStores) {
+  World world;
+  fill_world(world);
+
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(RuntimeTileCount);
+  tess::FieldProductCache cache;
+
+  tess::GoalSet held_goals;
+  held_goals.add(tess::Coord3{31, 31, 0});
+  tess::DistanceFieldProduct first;
+  first.reserve_nodes(RuntimeTileCount);
+  first.reserve_dependencies(World::chunk_count);
+  ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
+                 world, held_goals, scratch, first))
+                .status,
+            tess::PathStatus::Found);
+  ASSERT_TRUE((cache.store<World, PassableTag>(std::move(first))));
+
+  const auto* held = cache.lookup<World, PassableTag>(world, held_goals);
+  ASSERT_NE(held, nullptr);
+
+  for (const std::int64_t x : {0, 8, 16, 24}) {
+    tess::GoalSet other_goals;
+    other_goals.add(tess::Coord3{x, 0, 0});
+    tess::DistanceFieldProduct other;
+    other.reserve_nodes(RuntimeTileCount);
+    other.reserve_dependencies(World::chunk_count);
+    ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
+                   world, other_goals, scratch, other))
+                  .status,
+              tess::PathStatus::Found);
+    ASSERT_TRUE((cache.store<World, PassableTag>(std::move(other))));
+  }
+  ASSERT_EQ(cache.stats().entries, 5u);
+
+  EXPECT_EQ(held->status(), tess::PathStatus::Found);
+  ASSERT_EQ(held->goals().size(), 1u);
+  EXPECT_EQ(held->goals().front(), (tess::Coord3{31, 31, 0}));
+
+  const auto replay = tess::distance_field_product_path<World, PassableTag>(
+      world, tess::Coord3{0, 0, 0}, *held, scratch);
+  EXPECT_EQ(replay.status, tess::PathStatus::Found);
+
+  EXPECT_EQ((cache.lookup<World, PassableTag>(world, held_goals)), held);
+}
+
 TEST(TessPathRuntime, WeightedBatchHandlesManyAgentsAndCacheClearCadence) {
   World world;
   fill_world(world);
@@ -294,8 +343,6 @@ TEST(TessPathRuntime, WeightedBatchHandlesManyAgentsAndCacheClearCadence) {
   runtime.reserve_search_nodes(RuntimeTileCount);
   runtime.reserve_path_nodes(2048);
   runtime.reserve_unit_routes(8);
-  runtime.reserve_portal_segments(8);
-  runtime.portal_segment_cache().reserve_path_nodes(64);
 
   for (std::int64_t y = 0; y < 16; ++y) {
     (void)runtime.submit(
@@ -337,7 +384,40 @@ TEST(TessPathRuntime, WeightedBatchHandlesManyAgentsAndCacheClearCadence) {
   stats = runtime.stats();
   EXPECT_EQ(stats.world_cache_invalidations, 1u);
   EXPECT_EQ(stats.cache_clears, 1u);
-  EXPECT_EQ(stats.portal_segment_cache_entries, 0u);
+}
+
+// The runtime's processing passes never populate the portal segment cache:
+// portal route products are caller-driven through
+// build_weighted_portal_route_product with the runtime-owned cache accessor.
+// This pins the real runtime contract for that cache: stats report entries
+// stored through the accessor, and clear_caches() drops them.
+TEST(TessPathRuntime, PortalSegmentCacheStatsTrackAccessorStoresAndClear) {
+  World world;
+  fill_world(world);
+
+  tess::PathRequestRuntime runtime;
+  runtime.reserve_portal_segments(2);
+  runtime.portal_segment_cache().reserve_path_nodes(128);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(RuntimeTileCount);
+  tess::WeightedPortalRouteProduct product;
+  product.reserve_waypoints(1);
+  product.reserve_path_nodes(64);
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{31, 0, 0}};
+  const auto waypoints = std::array{tess::Coord3{15, 0, 0}};
+
+  const auto built =
+      tess::build_weighted_portal_route_product<World, PassableTag, CostTag>(
+          world, request, waypoints, scratch, runtime.portal_segment_cache(),
+          product);
+
+  ASSERT_EQ(built.status, tess::PathStatus::Found);
+  EXPECT_EQ(runtime.stats().portal_segment_cache_entries, 2u);
+
+  runtime.clear_caches();
+  EXPECT_EQ(runtime.stats().portal_segment_cache_entries, 0u);
 }
 
 }  // namespace

@@ -96,27 +96,39 @@
   reporting, direct-path and uniform-cost fast paths across top-down 2D,
   vertical 2D, and 3D layouts, coordinate support, exact route-cache and
   same-goal suffix reuse, explicit cache clearing, invalidation, and
-  world-version invalidation, explicit chunk-version dependency tracking,
-  exact weighted route-product replay and dependency invalidation, shared-goal,
-  supplied-waypoint, and chunk-boundary portal route-product replay and
-  dependency invalidation, chunk-boundary portal candidate counters, warmed
-  portal segment-cache reuse, stale segment rejection and caller-managed clear,
-  failed-segment cache bypass, shared-goal distance-field builds and
-  reconstruction, unit-cost multi-goal distance-field products,
-  nearest-target reconstruction, product stale-version rejection,
-  byte-budgeted field-product cache hit/miss/eviction/stale stats,
-  local-domain weighted field bounds, mismatched-field rejection, weighted
-  entry-cost routing, weighted direct and detour fast paths, weighted
-  shared-goal fields, bounded weighted field builds and fallback, weighted
-  batch grouping, endpoint validation, and allocation-free repeated queries
-  with pre-reserved path scratch.
+  world-version invalidation, route-cache hit/suffix-hit span validity across
+  later misses that grow cache storage (hits copy into the caller scratch),
+  explicit chunk-version dependency tracking, exact weighted route-product
+  replay and dependency invalidation, shared-goal, supplied-waypoint, and
+  chunk-boundary portal route-product replay and dependency invalidation,
+  chunk-boundary portal candidate counters, warmed portal segment-cache
+  reuse, segment-cache `lookup_append` hit/miss/stale semantics including
+  junction-node stitching and untouched caller storage on miss, stale
+  segment rejection and caller-managed clear, failed-segment cache bypass,
+  shared-goal distance-field builds and reconstruction, unit-cost multi-goal
+  distance-field products, nearest-target reconstruction, product
+  stale-version rejection, byte-budgeted field-product cache
+  hit/miss/eviction/stale stats, move-only field-product store without
+  world-sized copies, oversized-store whole-cache clearing, zero byte
+  budget, same-key replacement byte accounting, least-recently-used (not
+  insertion-order) eviction, distance-field error-status families
+  (InvalidGoal/InvalidStart/empty `GoalSet` across plain, weighted, and
+  product builds and reconstruction, with no garbage field or path left
+  behind), local-domain weighted field bounds, mismatched-field rejection,
+  weighted entry-cost routing, weighted direct and detour fast paths,
+  weighted shared-goal fields, bounded weighted field builds and fallback,
+  weighted batch grouping, endpoint validation, and allocation-free repeated
+  queries with pre-reserved path scratch.
 - `tess_path_runtime_test`: verifies the path request runtime MVP, including
   ticketed request/result lookup, stable copied result spans, unit route-cache
   reuse and invalidation across world edits, opt-in unit field-product cache
   reuse for repeated goals, start-chunk policy skip/use counters, stale product
   rejection, runtime cache clearing cadence, many-agent weighted batch
-  processing through shared-goal fields, and caller-configured cache clearing
-  after repeated world edits.
+  processing through shared-goal fields, caller-configured cache clearing
+  after repeated world edits, field-product-cache lookup-pointer stability
+  across stores of other keys, and portal segment-cache runtime stats and
+  `clear_caches()` for entries stored through the runtime accessor (the
+  runtime's own processing passes do not populate that cache).
 - `tess_path_agent_test`: verifies the public path-agent wrapper, including
   goal assignment, runtime-backed request/result processing, tile-by-tile
   advancement and arrival, conservative reprocessing after world edits,
