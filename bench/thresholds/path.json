@@ -105,6 +105,18 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000
     },
+    "path/astar_plane_gap_miss_512x512": {
+      "comment": "Pre-A* scan worst case; generous 10x-measured ceiling",
+      "comment_ref": "docs/planning/optimization-log.md 2026-07-06",
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 18000000
+    },
+    "path/astar_plane_gap_miss_3d_64x64x16": {
+      "comment": "3D plane-scan worst case; generous 10x-measured ceiling",
+      "comment_ref": "docs/planning/optimization-log.md 2026-07-06",
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 100000
+    },
     "path/astar_alternate_direct_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000

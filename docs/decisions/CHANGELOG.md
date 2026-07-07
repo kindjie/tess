@@ -124,6 +124,52 @@ Records meaningful design changes from the original TDDs.
   `bench/thresholds/path.json`, `tools/benchmark_thresholds.py`,
   `tools/benchmark_baseline_summary.py`, `tests/test_benchmark_tools.py`,
   `.github/workflows/ci.yml`.
+## 2026-07-06 - Flat-Hash Path Grouping, Batch Status Fix, Scan Cost Model
+
+- Changed: `PathRequestRuntime::process_repeated_goal_fields` no longer
+  rescans the request list per request (O(n^2) with an O(n^3)-worst inner
+  start-chunk dedup); one O(n) pass over a reusable open-addressed flat
+  map (goal -> group id, first-occurrence order, matching the route
+  cache's hashing style) buckets members via counting sort and counts
+  distinct start chunks with sort+unique over runtime-owned scratch.
+  `weighted_path_batch` likewise builds its goal -> request count map once
+  per batch instead of rescanning all requests per request; the map
+  scratch lives in `WeightedPathBatchScratch`. Group processing order and
+  every stats counter (`field_product_candidate_groups`/`used`/`skipped`,
+  `WeightedPathBatchStats`) are pinned unchanged by seeded randomized
+  equivalence tests against per-request A* oracles, and warm reruns of
+  both passes are allocation-free. Behavior fix (red evidence first):
+  members of a failed shared-goal weighted batch group were blanket
+  labeled with the goal's failure status even when their own start was
+  invalid; `detail::weighted_group_member_failure` now mirrors
+  `weighted_astar_path`'s exact endpoint-validation precedence
+  (start containment/passability before goal status, start entry cost
+  after goal containment/passability). Added the pre-A* scan cost model
+  to `docs/architecture/path.md` with two accepted-with-evidence
+  worst-case benchmarks (`path/astar_plane_gap_miss_512x512`,
+  `path/astar_plane_gap_miss_3d_64x64x16`) under deliberately generous
+  10x-measured ceilings, plus new coverage: portal-route corner cases
+  (invalid endpoints, no-candidate NoPath, segment failure clearing the
+  assembled path, a layout where the greedy candidate is the only winner,
+  multi-seam L routes), weighted batch edges (empty batch, all-distinct
+  goals, duplicate requests, >MaxCost fallback engagement evidence,
+  bounded-vs-unbounded random-cost equivalence), and runtime lifecycle
+  (clear_requests regeneration, empty frames, failure counters, byte
+  budget driving real eviction through `process_unit_cached`).
+- Reason: Audit flagged the grouping hot paths as quadratic-plus in
+  request count, the batch fan-out as mislabeling per-member statuses,
+  and the pre-A* scans as an undocumented O(world-slice) cost accepted
+  without evidence. The rewrite keeps deterministic first-occurrence
+  semantics while making grouping linear, and the new tests pin the
+  previously untested corners.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/planning/optimization-log.md`, `tests/AGENTS.md`.
+- Affected code: `include/tess/path/path_runtime.h`,
+  `include/tess/path/path.h`, `include/tess/path/detail/weighted_batch.h`,
+  `tests/tess_path_runtime_test.cc`, `tests/tess_path_weighted_batch_test.cc`,
+  `tests/tess_path_portal_route_test.cc`, `tests/CMakeLists.txt`,
+  `bench/tess_path_scan_bench.cc`, `bench/CMakeLists.txt`,
+  `bench/thresholds/path.json`.
 
 ## 2026-07-06 - Path Caches Gain Eviction Budgets and Hash-Indexed Lookups
 
