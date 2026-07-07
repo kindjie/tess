@@ -329,6 +329,25 @@ TEST(TessStorage, WorldHotAccessorsAreNoexcept) {
   EXPECT_EQ(world.chunks().size(), World<TopDown2D>::chunk_count);
 }
 
+TEST(TessStorage, FreshWorldFieldValuesAreZeroInitializedWithoutWrites) {
+  const World<Chunked3D> world;
+  std::size_t nonzero_values = 0;
+
+  for (const auto& page : world.chunks()) {
+    for (const auto value : page.field_span<TerrainTag>()) {
+      nonzero_values += value != 0 ? 1u : 0u;
+    }
+    for (const auto value : page.field_span<CostTag>()) {
+      nonzero_values += value == 0.0F ? 0u : 1u;
+    }
+    for (const auto value : page.field_span<RegionTag>()) {
+      nonzero_values += value != 0 ? 1u : 0u;
+    }
+  }
+
+  EXPECT_EQ(nonzero_values, 0u);
+}
+
 TEST(TessStorage, WorldDefaultMetadataIsSleepingAndClean) {
   World<TopDown2D> top_down;
   World<Vertical2D> vertical;
@@ -427,6 +446,57 @@ TEST(TessStorage, WorldDirtyFlagsUnionClearAndIncrementVersion) {
   EXPECT_EQ(world.meta(key).field_dirty_flags, 0u);
   EXPECT_EQ(world.meta(key).dirty_bounds, (tess::Box3{}));
   EXPECT_EQ(world.meta(key).version, 2u);
+}
+
+TEST(TessStorage, WorldDirtyBoundsUnionCoversAllRelativeOrientations) {
+  const auto union_via_mark = [](tess::Box3 lhs, tess::Box3 rhs) {
+    World<TopDown2D> world;
+    world.mark_dirty(tess::ChunkKey{0}, DirtyTerrain, lhs);
+    world.mark_dirty(tess::ChunkKey{0}, DirtyTerrain, rhs);
+    return world.meta(tess::ChunkKey{0}).dirty_bounds;
+  };
+
+  const auto base = tess::Box3{tess::Coord3{4, 4, 0}, tess::Extent3{2, 2, 1}};
+
+  // rhs fully left of lhs.
+  EXPECT_EQ(union_via_mark(base, tess::Box3{tess::Coord3{0, 4, 0},
+                                            tess::Extent3{2, 2, 1}}),
+            (tess::Box3{tess::Coord3{0, 4, 0}, tess::Extent3{6, 2, 1}}));
+  // rhs fully below lhs.
+  EXPECT_EQ(union_via_mark(base, tess::Box3{tess::Coord3{4, 0, 0},
+                                            tess::Extent3{2, 2, 1}}),
+            (tess::Box3{tess::Coord3{4, 0, 0}, tess::Extent3{2, 6, 1}}));
+  // rhs up-right of lhs.
+  EXPECT_EQ(union_via_mark(base, tess::Box3{tess::Coord3{7, 7, 0},
+                                            tess::Extent3{2, 2, 1}}),
+            (tess::Box3{tess::Coord3{4, 4, 0}, tess::Extent3{5, 5, 1}}));
+  // Overlapping boxes.
+  EXPECT_EQ(
+      union_via_mark(tess::Box3{tess::Coord3{2, 2, 0}, tess::Extent3{3, 3, 1}},
+                     tess::Box3{tess::Coord3{4, 4, 0}, tess::Extent3{3, 3, 1}}),
+      (tess::Box3{tess::Coord3{2, 2, 0}, tess::Extent3{5, 5, 1}}));
+  // rhs contained in lhs.
+  EXPECT_EQ(
+      union_via_mark(tess::Box3{tess::Coord3{1, 1, 0}, tess::Extent3{6, 6, 1}},
+                     tess::Box3{tess::Coord3{3, 3, 0}, tess::Extent3{2, 2, 1}}),
+      (tess::Box3{tess::Coord3{1, 1, 0}, tess::Extent3{6, 6, 1}}));
+  // Identical boxes.
+  EXPECT_EQ(union_via_mark(base, base), base);
+  // rhs above lhs along z.
+  EXPECT_EQ(
+      union_via_mark(tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}},
+                     tess::Box3{tess::Coord3{0, 0, 2}, tess::Extent3{1, 1, 1}}),
+      (tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 3}}));
+  // rhs below lhs along z.
+  EXPECT_EQ(
+      union_via_mark(tess::Box3{tess::Coord3{0, 0, 2}, tess::Extent3{1, 1, 1}},
+                     tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}}),
+      (tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 3}}));
+  // Overlapping z spans.
+  EXPECT_EQ(
+      union_via_mark(tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 2}},
+                     tess::Box3{tess::Coord3{0, 0, 1}, tess::Extent3{1, 1, 2}}),
+      (tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 3}}));
 }
 
 TEST(TessStorage, WorldTopologyDirtyAdvancesTopologyVersion) {
@@ -531,6 +601,59 @@ TEST(TessStorage, WorldDirtyAndActiveChunkQueriesReturnKeyOrder) {
                                                  tess::ChunkKey{4},
                                                  tess::ChunkKey{9},
                                              }));
+}
+
+TEST(TessStorage, CollectChunkQueriesAppendAndMatchByValueQueries) {
+  World<TopDown2D> world;
+  const auto one = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+
+  world.mark_dirty(tess::ChunkKey{7}, DirtyTerrain, one);
+  world.mark_dirty(tess::ChunkKey{2}, DirtyCost, one);
+  world.mark_dirty(tess::ChunkKey{5}, DirtyTerrain | DirtyCost, one);
+  world.mark_active(tess::ChunkKey{9}, ActiveFire);
+  world.mark_active(tess::ChunkKey{1}, ActiveFluid);
+  world.mark_active(tess::ChunkKey{4}, ActiveFluid | ActiveFire);
+
+  std::vector<tess::ChunkKey> dirty;
+  world.collect_dirty_chunks(DirtyTerrain, dirty);
+  EXPECT_EQ(dirty, world.dirty_chunks(DirtyTerrain));
+
+  std::vector<tess::ChunkKey> active;
+  world.collect_active_chunks(ActiveFluid, active);
+  EXPECT_EQ(active, world.active_chunks(ActiveFluid));
+
+  // The out-parameter variants append to the caller-owned vector.
+  world.collect_dirty_chunks(DirtyCost, dirty);
+  auto expected = world.dirty_chunks(DirtyTerrain);
+  const auto cost_chunks = world.dirty_chunks(DirtyCost);
+  expected.insert(expected.end(), cost_chunks.begin(), cost_chunks.end());
+  EXPECT_EQ(dirty, expected);
+}
+
+TEST(TessStorage, CollectChunkQueriesDoNotAllocateWithReservedVectors) {
+  World<TopDown2D> world;
+  const auto one = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+
+  world.mark_dirty(tess::ChunkKey{3}, DirtyTerrain, one);
+  world.mark_dirty(tess::ChunkKey{8}, DirtyTerrain, one);
+  world.mark_active(tess::ChunkKey{6}, ActiveFluid);
+
+  std::vector<tess::ChunkKey> dirty;
+  std::vector<tess::ChunkKey> active;
+  dirty.reserve(World<TopDown2D>::chunk_count);
+  active.reserve(World<TopDown2D>::chunk_count);
+
+  {
+    tess_test::ScopedAllocationCounter counter;
+    world.collect_dirty_chunks(DirtyTerrain, dirty);
+    world.collect_active_chunks(ActiveFluid, active);
+    EXPECT_EQ(counter.count(), 0u);
+  }
+  EXPECT_EQ(dirty, (std::vector<tess::ChunkKey>{
+                       tess::ChunkKey{3},
+                       tess::ChunkKey{8},
+                   }));
+  EXPECT_EQ(active, (std::vector<tess::ChunkKey>{tess::ChunkKey{6}}));
 }
 
 TEST(TessStorage, RepeatedWorldHotAccessDoesNotAllocateAfterConstruction) {

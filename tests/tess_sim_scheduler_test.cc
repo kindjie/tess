@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace {
@@ -140,20 +141,29 @@ TEST(TessTime, FixedAccumulatorHonorsPauseSpeedAndClamp) {
   auto frame = accumulator.consume(1.0, {tess::SimSpeed::Paused});
   EXPECT_EQ(frame.ticks, 0u);
   EXPECT_DOUBLE_EQ(accumulator.accumulated_seconds(), 0.0);
+  EXPECT_DOUBLE_EQ(frame.alpha, 0.0);
 
   frame = accumulator.consume(0.05, {tess::SimSpeed::Speed1x});
   EXPECT_EQ(frame.ticks, 1u);
+  EXPECT_DOUBLE_EQ(frame.alpha, 0.0);
 
   frame = accumulator.consume(0.05, {tess::SimSpeed::Speed2x});
   EXPECT_EQ(frame.ticks, 2u);
+  EXPECT_DOUBLE_EQ(frame.alpha, 0.0);
 
   frame = accumulator.consume(0.05, {tess::SimSpeed::Speed4x});
   EXPECT_EQ(frame.ticks, 4u);
+  EXPECT_DOUBLE_EQ(frame.alpha, 0.0);
+
+  frame = accumulator.consume(0.025, {tess::SimSpeed::Speed1x});
+  EXPECT_EQ(frame.ticks, 0u);
+  EXPECT_NEAR(frame.alpha, 0.5, 1e-12);
+  EXPECT_NEAR(accumulator.accumulated_seconds(), 0.025, 1e-12);
 
   frame = accumulator.consume(1.0, {tess::SimSpeed::Speed4x});
   EXPECT_EQ(frame.ticks, 8u);
   EXPECT_GT(accumulator.accumulated_seconds(), 0.0);
-  EXPECT_LE(frame.alpha, 1.0);
+  EXPECT_DOUBLE_EQ(frame.alpha, 1.0);
 }
 
 TEST(TessTime, FixedAccumulatorDropsBacklogBeyondOneStepWhenCapped) {
@@ -253,6 +263,61 @@ TEST(TessRenderDelta, CollectsDirtyBoundsAndClearsRenderMask) {
   EXPECT_TRUE(tess::render_tile_deltas(world, DirtyRender).empty());
 }
 
+TEST(TessRenderDelta, ChunkBorderBoundsEmitOnlyOwningChunkTiles) {
+  World world;
+  fill_world(world);
+
+  const auto chunk_a = world.resolve(tess::Coord3{7, 0, 0}).chunk_key;
+  const auto chunk_b = world.resolve(tess::Coord3{8, 0, 0}).chunk_key;
+  ASSERT_NE(chunk_a, chunk_b);
+
+  const auto border_span =
+      tess::Box3{tess::Coord3{6, 0, 0}, tess::Extent3{4, 1, 1}};
+  world.mark_dirty(chunk_a, DirtyTerrain, border_span);
+  world.mark_dirty(chunk_b, DirtyTerrain, border_span);
+
+  const auto deltas = tess::render_tile_deltas(world, DirtyRender);
+  ASSERT_EQ(deltas.size(), 4u);
+  EXPECT_EQ(deltas[0].coord, (tess::Coord3{6, 0, 0}));
+  EXPECT_EQ(deltas[1].coord, (tess::Coord3{7, 0, 0}));
+  EXPECT_EQ(deltas[2].coord, (tess::Coord3{8, 0, 0}));
+  EXPECT_EQ(deltas[3].coord, (tess::Coord3{9, 0, 0}));
+  EXPECT_EQ(deltas[0].chunk_key, chunk_a);
+  EXPECT_EQ(deltas[1].chunk_key, chunk_a);
+  EXPECT_EQ(deltas[2].chunk_key, chunk_b);
+  EXPECT_EQ(deltas[3].chunk_key, chunk_b);
+  for (const auto& delta : deltas) {
+    EXPECT_EQ(delta.chunk_key, world.resolve(delta.coord).chunk_key);
+    EXPECT_EQ(delta.local_tile_id, world.resolve(delta.coord).local_tile_id);
+  }
+}
+
+TEST(TessRenderDelta, ClampedBoundsSkipOutOfShapeTiles) {
+  World world;
+  fill_world(world);
+
+  const auto corner_chunk = world.resolve(tess::Coord3{15, 15, 0}).chunk_key;
+  world.mark_dirty(corner_chunk, DirtyTerrain,
+                   tess::Box3{tess::Coord3{14, 14, 0}, tess::Extent3{4, 4, 1}});
+
+  auto deltas = tess::render_tile_deltas(world, DirtyRender);
+  ASSERT_EQ(deltas.size(), 4u);
+  EXPECT_EQ(deltas[0].coord, (tess::Coord3{14, 14, 0}));
+  EXPECT_EQ(deltas[1].coord, (tess::Coord3{15, 14, 0}));
+  EXPECT_EQ(deltas[2].coord, (tess::Coord3{14, 15, 0}));
+  EXPECT_EQ(deltas[3].coord, (tess::Coord3{15, 15, 0}));
+
+  World negative;
+  fill_world(negative);
+  negative.mark_dirty(
+      negative.resolve(tess::Coord3{0, 0, 0}).chunk_key, DirtyTerrain,
+      tess::Box3{tess::Coord3{-1, -1, 0}, tess::Extent3{2, 2, 1}});
+
+  deltas = tess::render_tile_deltas(negative, DirtyRender);
+  ASSERT_EQ(deltas.size(), 1u);
+  EXPECT_EQ(deltas[0].coord, (tess::Coord3{0, 0, 0}));
+}
+
 TEST(TessScheduler, QueuedEditDirtiesPathingAndEmitsRenderDeltas) {
   World world;
   fill_world(world);
@@ -311,6 +376,84 @@ TEST(TessScheduler, QueuedEditDirtiesPathingAndEmitsRenderDeltas) {
   EXPECT_NE(agents[0].position, (tess::Coord3{2, 0, 0}));
   EXPECT_GE(stats.render_delta_count, 1u);
   EXPECT_FALSE(render_deltas.empty());
+
+  std::vector<tess::Coord3> visited{agents[0].position};
+  for (int tick = 0; tick < 32 && agents[0].has_goal; ++tick) {
+    stats = tess::tick_unit_scheduler<World, PassableTag,
+                                      tess::WritePolicy::UniquePerChunk>(
+        scheduler, world, tess::FrameOps{}, agents, runtime, render_deltas,
+        [](auto) {},
+        tess::SimSchedulerOptions{
+            DirtyTerrain,
+            DirtyRender,
+            tess::PathAgentTickOptions{1, {}},
+            false,
+        });
+    visited.push_back(agents[0].position);
+  }
+
+  EXPECT_FALSE(agents[0].has_goal);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{4, 0, 0}));
+  for (const auto coord : visited) {
+    EXPECT_NE(coord, (tess::Coord3{2, 0, 0}));
+  }
+}
+
+TEST(TessScheduler, RejectedPlanSkipsExecutionAndStillTicksAgents) {
+  World world;
+  fill_world(world);
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{3, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::SimSchedulerState scheduler;
+  std::vector<tess::RenderTileDelta> render_deltas;
+
+  tess::FrameOps ops;
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::FieldAccessDesc{0, DirtyTerrain, DirtyTerrain},
+                         tess::WritePolicy::ReadOnly);
+
+  bool callback_ran = false;
+  const auto stats = tess::tick_unit_scheduler<World, PassableTag,
+                                               tess::WritePolicy::ReadOnly>(
+      scheduler, world, ops, agents, runtime, render_deltas,
+      [&callback_ran](auto) { callback_ran = true; },
+      tess::SimSchedulerOptions{
+          DirtyTerrain,
+          DirtyRender,
+          tess::PathAgentTickOptions{1, {}},
+          false,
+      });
+
+  EXPECT_TRUE(stats.planned_ops);
+  EXPECT_FALSE(stats.executed_ops);
+  EXPECT_FALSE(stats.op_report.ok());
+  EXPECT_EQ(stats.op_report.failed_count(), 1u);
+  EXPECT_FALSE(callback_ran);
+
+  std::size_t changed_tiles = 0;
+  for (const auto& page : world.chunks()) {
+    for (const auto value : page.field_span<TerrainTag>()) {
+      changed_tiles += value != 0 ? 1u : 0u;
+    }
+    for (const auto value : page.field_span<PassableTag>()) {
+      changed_tiles += value ? 0u : 1u;
+    }
+  }
+  EXPECT_EQ(changed_tiles, 0u);
+  EXPECT_TRUE(world.dirty_chunks(DirtyRender).empty());
+  EXPECT_EQ(stats.render_delta_count, 0u);
+  EXPECT_TRUE(render_deltas.empty());
+
+  EXPECT_EQ(stats.tick, 1u);
+  EXPECT_TRUE(stats.path_agents.processed_paths);
+  EXPECT_EQ(stats.path_agents.pathing.found, 1u);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
 }
 
 TEST(TessScheduler, MovementSchedulerCommitsOccupancyAndEmitsDeltas) {
@@ -373,6 +516,165 @@ TEST(TessScheduler, WeightedTickUsesBatchPathing) {
   EXPECT_TRUE(stats.path_agents.processed_paths);
   EXPECT_EQ(stats.path_agents.pathing.found, agents.size());
   EXPECT_EQ(runtime.stats().weighted_batch.unique_goals, 1u);
+}
+
+TEST(TessScheduler, ClearRenderDirtyOptionClearsMetadataAfterCollection) {
+  World world;
+  fill_world(world);
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::SimSchedulerState scheduler;
+  std::vector<tess::RenderTileDelta> render_deltas;
+
+  const auto edit_chunk = world.resolve(tess::Coord3{2, 0, 0}).chunk_key;
+  const std::vector<tess::ChunkKey> chunks{edit_chunk};
+  tess::FrameOps ops;
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(chunks),
+                         tess::FieldAccessDesc{0, DirtyTerrain, DirtyTerrain},
+                         tess::WritePolicy::UniquePerChunk);
+
+  auto stats = tess::tick_unit_scheduler<World, PassableTag,
+                                         tess::WritePolicy::UniquePerChunk>(
+      scheduler, world, ops, agents, runtime, render_deltas,
+      [](auto view) {
+        const auto local = tess::local_tile_id<Shape>(
+            tess::local_coord<Shape>(tess::Coord3{2, 0, 0}));
+        view.template field_span<TerrainTag>()[local.value] = 3u;
+      },
+      tess::SimSchedulerOptions{
+          DirtyTerrain,
+          DirtyRender,
+          tess::PathAgentTickOptions{1, {}},
+          true,
+      });
+
+  EXPECT_TRUE(stats.executed_ops);
+  EXPECT_GE(stats.render_delta_count, 1u);
+  EXPECT_EQ(world.meta(edit_chunk).field_dirty_flags & DirtyRender, 0u);
+  EXPECT_TRUE(world.dirty_chunks(DirtyRender).empty());
+
+  const auto collected = render_deltas.size();
+  stats = tess::tick_unit_scheduler<World, PassableTag,
+                                    tess::WritePolicy::UniquePerChunk>(
+      scheduler, world, tess::FrameOps{}, agents, runtime, render_deltas,
+      [](auto) {},
+      tess::SimSchedulerOptions{
+          DirtyTerrain,
+          DirtyRender,
+          tess::PathAgentTickOptions{1, {}},
+          true,
+      });
+  EXPECT_EQ(stats.render_delta_count, 0u);
+  EXPECT_EQ(render_deltas.size(), collected);
+}
+
+constexpr std::uint32_t WeightedMaxCost = 8;
+
+void fill_weighted_detour_world(World& world) {
+  fill_world(world);
+  world.template field<CostTag>(tess::Coord3{1, 0, 0}) = 5u;
+  world.template field<CostTag>(tess::Coord3{2, 0, 0}) = 5u;
+  world.template field<CostTag>(tess::Coord3{3, 0, 0}) = 5u;
+  world.template field<OccupancyTag>(tess::Coord3{0, 0, 0}) = true;
+}
+
+auto run_weighted_movement_to_arrival(World& world,
+                                      std::span<tess::PathAgentState> agents,
+                                      tess::PathRequestRuntime& runtime,
+                                      std::vector<tess::RenderTileDelta>& out,
+                                      std::uint32_t movement_dirty_mask)
+    -> std::vector<tess::Coord3> {
+  tess::SimSchedulerState scheduler;
+  const auto options = tess::SimSchedulerOptions{
+      DirtyTerrain, DirtyRender,         tess::PathAgentTickOptions{1, {}},
+      false,        movement_dirty_mask,
+  };
+
+  std::vector<tess::Coord3> visited{agents[0].position};
+  for (int tick = 0; tick < 32 && agents[0].has_goal; ++tick) {
+    (void)tess::tick_weighted_movement_scheduler<
+        World, PassableTag, CostTag, WeightedMaxCost, OccupancyTag,
+        ReservationTag, tess::WritePolicy::ReadOnly>(
+        scheduler, world, tess::FrameOps{}, agents, runtime, out, [](auto) {},
+        options);
+    visited.push_back(agents[0].position);
+  }
+  return visited;
+}
+
+TEST(TessScheduler, WeightedMovementSchedulerTakesCheapDetourAndCommits) {
+  World world;
+  fill_weighted_detour_world(world);
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{4, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  std::vector<tess::RenderTileDelta> render_deltas;
+
+  const auto visited = run_weighted_movement_to_arrival(
+      world, agents, runtime, render_deltas, DirtyOccupancy);
+
+  EXPECT_FALSE(agents[0].has_goal);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{4, 0, 0}));
+
+  bool used_detour_row = false;
+  for (const auto coord : visited) {
+    EXPECT_EQ(world.template field<CostTag>(coord), 1u)
+        << "expensive tile entered at " << coord.x << "," << coord.y;
+    used_detour_row = used_detour_row || coord.y != 0;
+  }
+  EXPECT_TRUE(used_detour_row);
+
+  EXPECT_FALSE(world.template field<OccupancyTag>(tess::Coord3{0, 0, 0}));
+  EXPECT_TRUE(world.template field<OccupancyTag>(tess::Coord3{4, 0, 0}));
+
+  const auto route_chunk = world.resolve(tess::Coord3{0, 0, 0}).chunk_key;
+  EXPECT_NE(world.meta(route_chunk).field_dirty_flags & DirtyOccupancy, 0u);
+  for (std::uint64_t key = 0; key < World::chunk_count; ++key) {
+    if ((tess::ChunkKey{key}) == route_chunk) {
+      continue;
+    }
+    EXPECT_EQ(world.meta(tess::ChunkKey{key}).field_dirty_flags, 0u);
+  }
+  EXPECT_FALSE(render_deltas.empty());
+}
+
+TEST(TessScheduler, WeightedMovementSchedulerZeroMaskLeavesMetadataClean) {
+  World world;
+  fill_weighted_detour_world(world);
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{4, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  std::vector<tess::RenderTileDelta> render_deltas;
+
+  const auto visited = run_weighted_movement_to_arrival(world, agents, runtime,
+                                                        render_deltas, 0);
+
+  EXPECT_FALSE(agents[0].has_goal);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{4, 0, 0}));
+  EXPECT_GE(visited.size(), 2u);
+
+  EXPECT_FALSE(world.template field<OccupancyTag>(tess::Coord3{0, 0, 0}));
+  EXPECT_TRUE(world.template field<OccupancyTag>(tess::Coord3{4, 0, 0}));
+
+  for (std::uint64_t key = 0; key < World::chunk_count; ++key) {
+    EXPECT_EQ(world.meta(tess::ChunkKey{key}).field_dirty_flags, 0u);
+  }
+  EXPECT_TRUE(render_deltas.empty());
 }
 
 }  // namespace
