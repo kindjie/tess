@@ -13,6 +13,36 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-06 - Sim Scheduler Coverage, Delta Clipping, Query Out-Params
+
+- Changed: Deduplicated the four `tick_*_scheduler` bodies behind a shared
+  `detail::tick_scheduler_core` helper; public signatures are unchanged.
+  Render-delta collection now clips each chunk's dirty bounds to the chunk's
+  own world-space box before the per-tile loop instead of filtering every
+  tile through shape containment and coordinate resolution
+  (behavior-identical, strictly less work, pinned by new border/clip tests).
+  Added appending `collect_dirty_chunks` / `collect_active_chunks`
+  out-parameter variants on `World`; the by-value queries became thin
+  wrappers. Closed audit coverage gaps with behavioral tests for
+  `tick_weighted_movement_scheduler` and
+  `tick_weighted_path_agents_with_movement` (cheap cost-band detours,
+  occupancy commits, movement dirty-mask interplay), the rejected-plan early
+  return, scheduler-driven render-dirty clearing, cross-chunk and
+  out-of-shape dirty bounds, fresh-world zero-initialization, and dirty
+  bounds `union_box` orientations. Strengthened tautological scheduler test
+  assertions (exact accumulator alpha values, reroute-to-arrival with
+  visited-tile tracking).
+- Reason: A coverage audit found an entirely untested public scheduler
+  variant, untested failure and clearing paths, tautological assertions, and
+  copy-pasted scheduler bodies; pinning behavior first made the mechanical
+  cleanups safe. All new tests passed against the old code, confirming pins
+  rather than latent bugs.
+- Affected docs: `docs/architecture/simulation.md`,
+  `docs/architecture/storage.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/sim/scheduler.h`,
+  `include/tess/sim/render_delta.h`, `include/tess/storage/world.h`,
+  `tests/tess_sim_scheduler_test.cc`, `tests/tess_storage_test.cc`
+
 ## 2026-06-08 - Concurrent Tile-World TDD Split
 
 - Changed: Added a concurrent tile-world TDD addendum that separates scoped

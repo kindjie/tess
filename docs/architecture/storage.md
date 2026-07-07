@@ -127,6 +127,10 @@ topology version so topology products can observe rebuild/replacement events.
 `dirty_chunks(flags)` and `active_chunks(flags)` return matching `ChunkKey`
 values in key order. These query helpers allocate their returned vectors; they
 are intended for planner/domain construction, not inner tile loops.
+`collect_dirty_chunks(flags, out)` and `collect_active_chunks(flags, out)`
+append the same keys to a caller-owned vector and do not allocate when the
+caller has reserved enough capacity; the by-value queries are thin wrappers
+over them.
 
 ## Out Of Scope
 
