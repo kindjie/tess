@@ -83,6 +83,7 @@ jobs:
         preset:
           - dev-werror
           - dev-asan
+          - dev-tsan
           - dev-cppcheck
           - dev-clang-tidy
           - release
@@ -123,6 +124,7 @@ jobs:
         if: >-
           matrix.preset == 'dev-werror' ||
           matrix.preset == 'dev-asan' ||
+          matrix.preset == 'dev-tsan' ||
           matrix.preset == 'release'
         run: ctest --preset "${{ matrix.preset }}"
 
@@ -164,6 +166,85 @@ jobs:
 
       - name: Build
         run: cmake --build --preset "${{ matrix.preset }}"
+
+  # No benchmark gates on macOS: bench/thresholds/*.json ceilings are
+  # calibrated against the Linux ubuntu-24.04 runner family and would
+  # misfire on Apple Silicon runners.
+  macos:
+    name: macOS Build And Tests (${{ matrix.preset }})
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        preset:
+          - dev
+          - dev-asan
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Restore compiler cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .ccache
+          key: ccache-macos-${{ matrix.preset }}-${{ github.sha }}
+          restore-keys: ccache-macos-${{ matrix.preset }}-
+
+      - name: Install ccache
+        run: brew install ccache
+
+      - name: Show tool versions
+        run: |
+          cmake --version
+          clang++ --version
+          ccache --version
+
+      - name: Configure
+        run: cmake --preset "${{ matrix.preset }}"
+
+      - name: Build
+        run: cmake --build --preset "${{ matrix.preset }}"
+
+      - name: Test
+        run: ctest --preset "${{ matrix.preset }}"
+
+      - name: Install smoke
+        if: matrix.preset == 'dev'
+        run: tools/install_smoke.sh
+
+  # Advisory during shake-out; flip to required after two consecutive
+  # green runs on main. The Visual Studio generator ignores compiler
+  # launchers, so the workflow-level ccache env vars are inert here.
+  windows:
+    name: Windows MSVC (advisory)
+    runs-on: windows-2025
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Show tool versions
+        run: cmake --version
+
+      - name: Configure
+        run: cmake --preset windows-msvc
+
+      - name: Build
+        run: cmake --build --preset windows-msvc
+
+      - name: Test
+        run: ctest --preset windows-msvc
+
+      - name: Install smoke
+        shell: bash
+        env:
+          TESS_INSTALL_SMOKE_BUILD_DIR: >-
+            ${{ github.workspace }}/build/windows-msvc
+          TESS_INSTALL_SMOKE_CONFIG: Debug
+        run: tools/install_smoke.sh
 
   bench:
     name: Benchmark Gates
