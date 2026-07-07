@@ -495,6 +495,9 @@ class WeightedPathBatchScratch {
     offsets_.reserve(request_count);
     sizes_.reserve(request_count);
     processed_.reserve(request_count);
+    request_goal_.reserve(request_count);
+    goal_coords_.reserve(request_count);
+    goal_counts_.reserve(request_count);
   }
 
   void reserve_path_nodes(std::size_t node_count) {
@@ -534,6 +537,12 @@ class WeightedPathBatchScratch {
   std::vector<std::size_t> sizes_;
   std::vector<std::uint8_t> processed_;
   std::vector<Coord3> paths_;
+  // Reusable goal -> request count flat map (open-addressed, power-of-two
+  // capacity, linear probing) built once per batch call.
+  std::vector<std::uint32_t> goal_slots_;
+  std::vector<Coord3> goal_coords_;
+  std::vector<std::uint32_t> goal_counts_;
+  std::vector<std::uint32_t> request_goal_;
   WeightedPathBatchStats stats_;
 };
 
@@ -550,6 +559,21 @@ struct PortalRouteCandidate {
   std::uint32_t score = 0;
   std::size_t scan_tiles = 0;
 };
+
+// FNV-style lane combine with one final avalanche: cheap per coordinate,
+// well distributed for the power-of-two linear-probing flat hash maps used
+// by the batch planner and the request runtime (matching the route cache's
+// hashing style).
+[[nodiscard]] constexpr auto coord_hash(Coord3 coord) noexcept
+    -> std::uint64_t {
+  auto hash = std::uint64_t{0xcbf29ce484222325ull};
+  hash = (hash ^ static_cast<std::uint64_t>(coord.x)) * 0x100000001b3ull;
+  hash = (hash ^ static_cast<std::uint64_t>(coord.y)) * 0x100000001b3ull;
+  hash = (hash ^ static_cast<std::uint64_t>(coord.z)) * 0x100000001b3ull;
+  hash = (hash ^ (hash >> 30u)) * 0xbf58476d1ce4e5b9ull;
+  hash = (hash ^ (hash >> 27u)) * 0x94d049bb133111ebull;
+  return hash ^ (hash >> 31u);
+}
 
 [[nodiscard]] constexpr auto manhattan(Coord3 lhs, Coord3 rhs) noexcept
     -> std::uint32_t {
