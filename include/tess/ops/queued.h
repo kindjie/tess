@@ -13,19 +13,20 @@
 #include <source_location>
 #include <span>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace tess {
 
 struct OpId {
-  std::uint64_t value;
+  std::uint64_t value = 0;
 
   friend constexpr bool operator==(OpId lhs, OpId rhs) noexcept = default;
 };
 
 struct OpHandle {
-  std::uint64_t value;
+  std::uint64_t value = 0;
 
   friend constexpr bool operator==(OpHandle lhs,
                                    OpHandle rhs) noexcept = default;
@@ -94,12 +95,19 @@ static_assert(sizeof(DomainKind) == sizeof(std::uint8_t));
 
 class DomainDesc {
  public:
+  // Explicit chunk keys are stored sorted and deduplicated so a planned
+  // operation never visits one chunk twice: repeated keys under
+  // UniquePerChunk would otherwise defeat the per-chunk ownership rule
+  // that parallel phase planning relies on.
   [[nodiscard]] static auto explicit_chunks(std::span<const ChunkKey> keys)
       -> DomainDesc {
     DomainDesc desc{DomainKind::ExplicitChunks};
     desc.explicit_chunks_.assign(keys.begin(), keys.end());
     std::sort(desc.explicit_chunks_.begin(), desc.explicit_chunks_.end(),
               [](ChunkKey lhs, ChunkKey rhs) { return lhs.value < rhs.value; });
+    desc.explicit_chunks_.erase(
+        std::unique(desc.explicit_chunks_.begin(), desc.explicit_chunks_.end()),
+        desc.explicit_chunks_.end());
     return desc;
   }
 
@@ -282,6 +290,9 @@ struct PlannedExecutionResult {
 };
 
 struct SerialPhaseExecutor {
+  // Serialized-callback promise; see the SerialExecutor concept below.
+  using serial_execution_tag = void;
+
   template <typename Fn>
   auto for_each_operation(ExecutorPhaseRange range, Fn&& fn) const
       -> PlannedExecutionResult {
@@ -304,6 +315,24 @@ struct SerialPhaseExecutor {
   }
 };
 
+// Custom executors declare `using serial_execution_tag = void;` to promise
+// that for_each_operation invokes the per-operation callback strictly one
+// at a time (never concurrently). execute_phase_deferred_dirty_with
+// requires this promise because it shares one PlannedDirtyAccumulator and
+// a non-atomic chunk counter across all callbacks. Concurrent executors
+// must not declare the tag and must use
+// execute_phase_partitioned_dirty_with, which gives every operation its
+// own dirty partition and result slot.
+template <typename Executor>
+concept SerialExecutor =
+    requires { typename std::remove_cvref_t<Executor>::serial_execution_tag; };
+
+// Documented prototype, not the production backend: spawns and joins raw
+// std::thread workers per phase call to prove the phase handoff and
+// visibility rules. It invokes callbacks concurrently, so it deliberately
+// does not declare serial_execution_tag and pairs only with
+// execute_phase_partitioned_dirty_with; the shared-accumulator
+// execute_phase_deferred_dirty_with rejects it at compile time.
 class ScopedThreadPhaseExecutor {
  public:
   explicit ScopedThreadPhaseExecutor(std::size_t worker_count) noexcept
@@ -650,6 +679,12 @@ class FrameOps {
   [[nodiscard]] constexpr auto size() const noexcept -> std::size_t {
     return operations_.size();
   }
+
+  // Clears queued operations for per-frame reuse while keeping the enqueue
+  // vector's capacity, so warm frame loops re-enqueue without allocating.
+  // Previously returned handles are invalidated; handle and id assignment
+  // restarts at zero on the next enqueue.
+  void clear() noexcept { operations_.clear(); }
 
  private:
   std::vector<QueuedOperation> operations_;
@@ -1143,7 +1178,11 @@ auto execute_plan_deferred_dirty(World& world, const ExecutionPlan& plan,
   };
 }
 
+// Shares one PlannedDirtyAccumulator and a non-atomic chunk counter across
+// every callback, so the executor must satisfy SerialExecutor; concurrent
+// executors must use execute_phase_partitioned_dirty_with instead.
 template <WritePolicy Policy, typename Executor, typename World, typename Fn>
+  requires SerialExecutor<Executor>
 auto execute_phase_deferred_dirty_with(Executor&& executor, World& world,
                                        const ExecutionPlan& plan,
                                        ExecutionPhase phase,

@@ -7,10 +7,16 @@ by `tess/tess.h`.
 ## Public Surface
 
 - `FrameOps` owns the operations submitted for one planning frame.
+  `FrameOps::clear()` resets the frame for reuse: it drops all queued
+  operations while keeping the enqueue vector's capacity, so warm frame
+  loops re-enqueue without allocating. Clearing invalidates previously
+  returned handles, and handle/id assignment restarts at zero on the next
+  enqueue.
 - `OpHandle` is a stable handle assigned when an operation is enqueued.
 - `OpId` is assigned in enqueue order. The current handle value and id value
   both start at zero and advance together, but they remain separate public
-  types.
+  types. Default-constructed `OpHandle` and `OpId` values compare equal to
+  zero.
 - `Priority` records broad planning priority: `Immediate`,
   `GameplayCritical`, `VisibleSoon`, `Background`, and `Maintenance`.
 - `BudgetPolicy` records basic budget intent: `MustRun`, `CanDefer`,
@@ -81,7 +87,10 @@ Validation currently covers:
 
 Expansion currently covers:
 
-- explicit chunks copied into deterministic ascending `ChunkKey` order
+- explicit chunks copied into deterministic ascending `ChunkKey` order with
+  duplicate keys removed, so one planned operation never visits a chunk
+  twice (repeated keys under `UniquePerChunk` would otherwise break the
+  per-chunk ownership rule that parallel phase planning relies on)
 - dirty chunks discovered through `world.dirty_chunks(mask)`
 - active chunks discovered through `world.active_chunks(mask)`
 - all chunks in an always-resident world for `resident_chunks()`
@@ -185,18 +194,31 @@ auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn)
 
 The executor receives planned operation indexes and must return the first
 non-`Executed` result from the callback, or `Executed` if the whole range
-completed. This helper is still a serial-safe bridge over one caller-owned
-`PlannedDirtyAccumulator`; custom executors must serialize callback invocation
-or provide their own synchronization. Any executor used with these helpers must
+completed. This helper is a serial bridge over one caller-owned
+`PlannedDirtyAccumulator` and a shared chunk counter, and the serial
+contract is now enforced structurally instead of by convention:
+`execute_phase_deferred_dirty_with<Policy>` requires the
+`tess::SerialExecutor` concept, which is satisfied only by executor types
+that declare a nested `serial_execution_tag` type alias. Declaring the tag
+is the executor author's promise that `for_each_operation` invokes the
+per-operation callback strictly one at a time. `SerialPhaseExecutor`
+declares the tag; `ScopedThreadPhaseExecutor` deliberately does not, so
+passing it (or any untagged concurrent executor) to the shared-accumulator
+helper is a compile error rather than a data race. Concurrent executors
+must use `execute_phase_partitioned_dirty_with<Policy>`, which accepts both
+serial and concurrent executors. Any executor used with these helpers must
 complete, join, or otherwise make all invoked callbacks visible before
 returning its `PlannedExecutionResult`; cancellation and partial completion are
 not modeled yet.
 
-`ScopedThreadPhaseExecutor` is the first production executor prototype for this
-contract. It owns no persistent pool: each call splits one operation-index
-range across a bounded number of `std::thread` workers, joins all workers
-before returning, and reports the first non-`Executed` callback result in
-operation order. It exists to prove the phase handoff and visibility rules
+`ScopedThreadPhaseExecutor` is a documented prototype for this contract, not
+the production backend. It owns no persistent pool: each call splits one
+operation-index range across a bounded number of `std::thread` workers
+(worker counts clamp to at least one, including when
+`hardware_concurrency()` reports zero), joins all workers before returning,
+and reports the first non-`Executed` callback result in operation order. It
+invokes callbacks concurrently, so it pairs only with the partitioned
+variant below. It exists to prove the phase handoff and visibility rules
 before Tess adds a long-lived worker pool. When diagnostics are enabled, it
 records dispatch counts and worker counts before launching threads; the scoped
 queued-phase diagnostics are intentionally owned by the caller thread and are
