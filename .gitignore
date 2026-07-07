@@ -44,9 +44,10 @@ _deps/
 /core
 /core.*
 
-# Python caches
+# Python caches and environments
 __pycache__/
 *.py[cod]
+.venv/
 
 # Logs and local env files
 *.log
