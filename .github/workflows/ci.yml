@@ -37,6 +37,27 @@ jobs:
       - name: Install smoke
         run: tools/install_smoke.sh
 
+  hooks-backstop:
+    name: Hook Backstop Checks
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        run: pipx install uv==0.11.26
+
+      - name: Show tool versions
+        run: |
+          uv --version
+          uv run --frozen --group dev clang-format --version
+
+      - name: Repository hook checks
+        run: uv run --frozen --group dev python tools/git_hooks.py ci
+
+      - name: Hook unit tests
+        run: uv run --frozen --group dev pytest tests/test_git_hooks.py
+
   quality:
     name: Quality Gates (${{ matrix.preset }})
     runs-on: ubuntu-24.04
