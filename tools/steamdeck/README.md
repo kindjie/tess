@@ -31,6 +31,13 @@ tools/steamdeck/deck deck-setup   # find the Deck on the LAN, install ssh key + 
 tools/steamdeck/deck doctor       # confirm everything is ✓
 ```
 
+`deck-setup` never installs the SSH key blindly: it prints the discovered
+host's SSH key fingerprint (via `ssh-keyscan`) and asks for interactive
+confirmation before running `ssh-copy-id`; the confirmed key is pinned in
+`~/.ssh/known_hosts`. After installing the key it probes the host
+(`uname -n` / `/etc/os-release`) and warns if it does not identify as a
+Steam Deck. It refuses to run non-interactively.
+
 **2. Develop (on the Mac — x86_64 parity):**
 ```sh
 tools/steamdeck/deck watch        # rebuild + ctest on every save   (or: deck test)
@@ -129,7 +136,10 @@ builds feel slow.
   `linux-bench` presets (clang, separate `build/linux-*` dirs) alongside the
   existing presets.
 - `deck` — the entrypoint: `setup`, `deck-setup`, `doctor`, `test`, `watch`,
-  `asan`, `bench`. Wraps the scripts below; run `deck help`.
+  `asan`, `bench`. Wraps the scripts below; run `deck help`. Each command
+  configures the cmake preset it needs (`bench` → `linux-bench`, `test`/
+  `watch` → `linux-dev`, `asan` → `linux-asan`); override with
+  `DECK_PRESET=<preset>`.
 - `Dockerfile` — steamrt4 SDK + clang.
 - `container-up.sh` — start/refresh the local build container.
 - `deck-bench.sh` — build locally, ship, run on the Deck (direct by default;
