@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <functional>
 #include <limits>
+#include <memory>
+#include <new>
 #include <optional>
 #include <span>
 #include <type_traits>
@@ -40,18 +42,48 @@ static_assert(sizeof(WritePolicy) == sizeof(std::uint8_t));
 
 class BlockScratch {
  public:
+  BlockScratch() = default;
+
+  BlockScratch(BlockScratch&& other) noexcept
+      : storage_(std::move(other.storage_)),
+        capacity_bytes_(std::exchange(other.capacity_bytes_, 0)),
+        used_bytes_(std::exchange(other.used_bytes_, 0)) {}
+
+  auto operator=(BlockScratch&& other) noexcept -> BlockScratch& {
+    storage_ = std::move(other.storage_);
+    capacity_bytes_ = std::exchange(other.capacity_bytes_, 0);
+    used_bytes_ = std::exchange(other.used_bytes_, 0);
+    return *this;
+  }
+
+  BlockScratch(const BlockScratch&) = delete;
+  auto operator=(const BlockScratch&) -> BlockScratch& = delete;
+
+  ~BlockScratch() = default;
+
+  // Growth allocates a fresh buffer: previously returned spans are
+  // invalidated and scratch contents are not preserved. Only the byte
+  // accounting (`used_bytes()`) carries over.
   void reserve_bytes(std::size_t bytes) {
     const auto word_count =
         bytes / word_size + (bytes % word_size == 0 ? 0 : 1);
-    if (word_count > storage_.size()) {
-      storage_.resize(word_count);
+    if (word_count > std::numeric_limits<std::size_t>::max() / word_size) {
+      throw std::bad_alloc{};
+    }
+    const auto byte_capacity = word_count * word_size;
+    if (byte_capacity > capacity_bytes_) {
+      // The std::byte array-new implicitly creates implicit-lifetime
+      // objects in its storage ([intro.object]/13), which makes the
+      // typed spans returned by allocate<T> well-defined.
+      storage_ = std::make_unique_for_overwrite<std::byte[]>(byte_capacity);
+      capacity_bytes_ = byte_capacity;
     }
   }
 
   constexpr void reset() noexcept { used_bytes_ = 0; }
 
   [[nodiscard]] constexpr auto capacity_bytes() const noexcept -> std::size_t {
-    return storage_.size() * word_size;
+    return capacity_bytes_;
   }
 
   [[nodiscard]] constexpr auto used_bytes() const noexcept -> std::size_t {
@@ -83,14 +115,18 @@ class BlockScratch {
       return {};
     }
 
-    auto* ptr = reinterpret_cast<T*>(
-        reinterpret_cast<std::byte*>(storage_.data()) + aligned_offset);
+    auto* ptr =
+        std::launder(reinterpret_cast<T*>(storage_.get() + aligned_offset));
     used_bytes_ = aligned_offset + byte_count;
     return std::span<T>{ptr, count};
   }
 
  private:
   static constexpr auto word_size = sizeof(std::max_align_t);
+
+  // `new std::byte[n]` only guarantees the default new alignment; the class
+  // promises alignof(std::max_align_t) for the buffer base.
+  static_assert(__STDCPP_DEFAULT_NEW_ALIGNMENT__ >= alignof(std::max_align_t));
 
   [[nodiscard]] static constexpr auto align_offset(
       std::size_t offset, std::size_t alignment) noexcept -> std::size_t {
@@ -101,7 +137,8 @@ class BlockScratch {
     return offset + (alignment - remainder);
   }
 
-  std::vector<std::max_align_t> storage_;
+  std::unique_ptr<std::byte[]> storage_;
+  std::size_t capacity_bytes_ = 0;
   std::size_t used_bytes_ = 0;
 };
 
