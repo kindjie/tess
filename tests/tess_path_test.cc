@@ -587,17 +587,14 @@ TEST(TessPath, WarmScratchPathQueryDoesNotAllocate) {
       world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}},
       scratch);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
 
   const auto result = tess::astar_path<decltype(world), PassableTag>(
       world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}},
       scratch);
 
-  tess_test::set_allocation_counting(false);
-
   EXPECT_EQ(result.status, tess::PathStatus::Found);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessPath, CachedAStarReusesRepeatedRoute) {
@@ -1093,17 +1090,14 @@ TEST(TessPath, WarmCachedAStarHitDoesNotAllocate) {
   (void)tess::cached_astar_path<decltype(world), PassableTag>(world, request,
                                                               scratch, cache);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
 
   const auto result = tess::cached_astar_path<decltype(world), PassableTag>(
       world, request, scratch, cache);
 
-  tess_test::set_allocation_counting(false);
-
   EXPECT_EQ(result.status, tess::PathStatus::Found);
   EXPECT_EQ(result.expanded_nodes, 0u);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessPath, BuildsSharedGoalDistanceFieldForMultipleStarts) {
@@ -1194,19 +1188,16 @@ TEST(TessPath, WarmDistanceFieldQueriesDoNotAllocate) {
   (void)tess::distance_field_path<decltype(world), PassableTag>(
       world, tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}, scratch);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
 
   const auto field = tess::build_distance_field<decltype(world), PassableTag>(
       world, tess::Coord3{7, 7, 0}, scratch);
   const auto result = tess::distance_field_path<decltype(world), PassableTag>(
       world, tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}, scratch);
 
-  tess_test::set_allocation_counting(false);
-
   EXPECT_EQ(field.status, tess::PathStatus::Found);
   EXPECT_EQ(result.status, tess::PathStatus::Found);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessPath, DistanceFieldProductFindsNearestReachableGoal) {
@@ -1370,8 +1361,7 @@ TEST(TessPath, WarmFieldProductCacheLookupAndQueryDoNotAllocate) {
   (void)tess::distance_field_product_path<decltype(world), PassableTag>(
       world, tess::Coord3{0, 0, 0}, product, scratch);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
 
   const auto* cached = cache.lookup<decltype(world), PassableTag>(world, goals);
   auto result = tess::PathResult{};
@@ -1380,11 +1370,9 @@ TEST(TessPath, WarmFieldProductCacheLookupAndQueryDoNotAllocate) {
         world, tess::Coord3{0, 0, 0}, *cached, scratch);
   }
 
-  tess_test::set_allocation_counting(false);
-
   ASSERT_NE(cached, nullptr);
   EXPECT_EQ(result.status, tess::PathStatus::Found);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessPath, WeightedDistanceFieldMatchesWeightedAStarForSharedGoal) {
@@ -1632,8 +1620,7 @@ TEST(TessPath, WarmWeightedDistanceFieldQueriesDoNotAllocate) {
       tess::weighted_distance_field_path<decltype(world), PassableTag, CostTag>(
           world, start, goal, scratch);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
 
   const auto field =
       tess::build_weighted_distance_field<decltype(world), PassableTag,
@@ -1642,11 +1629,9 @@ TEST(TessPath, WarmWeightedDistanceFieldQueriesDoNotAllocate) {
       tess::weighted_distance_field_path<decltype(world), PassableTag, CostTag>(
           world, start, goal, scratch);
 
-  tess_test::set_allocation_counting(false);
-
   EXPECT_EQ(field.status, tess::PathStatus::Found);
   EXPECT_EQ(result.status, tess::PathStatus::Found);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessPath, WarmBoundedWeightedDistanceFieldQueriesDoNotAllocate) {
@@ -1667,8 +1652,7 @@ TEST(TessPath, WarmBoundedWeightedDistanceFieldQueriesDoNotAllocate) {
       tess::weighted_distance_field_path<decltype(world), PassableTag, CostTag>(
           world, start, goal, scratch);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
 
   const auto field =
       tess::build_bounded_weighted_distance_field<decltype(world), PassableTag,
@@ -1678,11 +1662,9 @@ TEST(TessPath, WarmBoundedWeightedDistanceFieldQueriesDoNotAllocate) {
       tess::weighted_distance_field_path<decltype(world), PassableTag, CostTag>(
           world, start, goal, scratch);
 
-  tess_test::set_allocation_counting(false);
-
   EXPECT_EQ(field.status, tess::PathStatus::Found);
   EXPECT_EQ(result.status, tess::PathStatus::Found);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 }  // namespace

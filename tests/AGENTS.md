@@ -4,9 +4,25 @@
 - `allocation_counter.{h,cc}` is shared only by allocation-sensitive test
   binaries that need global `new`/`delete` counters. Do not link it into more
   than one translation unit inside the same executable.
-- Under AddressSanitizer, `allocation_counter.cc` must use sanitizer allocation
-  hooks instead of replacing global `new`, so ASan's alloc/dealloc mismatch
-  check remains meaningful.
+- Allocation counting is enabled exclusively through the RAII
+  `tess_test::ScopedAllocationCounter` (construction resets and enables,
+  destruction disables). There is intentionally no free-function
+  enable/disable API: failed `ASSERT_*`s return early, and a raw flag would
+  leak enabled counting into later tests. Read results via `counter.count()`
+  / `counter.bytes()` inside the scope, or the read-only
+  `tess_test::allocation_count()` / `allocation_bytes()` snapshots.
+- Under AddressSanitizer or ThreadSanitizer, `allocation_counter.cc` and
+  `bench/tess_diagnostics_alloc_hooks.cc` must use sanitizer allocation
+  hooks instead of replacing global `new`, so the sanitizer's alloc/dealloc
+  mismatch and alloc-dealloc-size checks remain meaningful. Without a
+  sanitizer they replace the complete standard `operator new`/`delete`
+  overload set (plain, array, aligned, nothrow) so every allocation form is
+  counted portably (no dlsym chaining to Itanium-mangled symbols).
+- `tess_allocation_counter_test`: verifies the scoped allocation counter
+  itself — plain/array, aligned, nothrow, and aligned-nothrow `operator new`
+  forms are all counted with byte totals, construction resets counters, and
+  a fatal gtest failure inside a counting scope disables counting during
+  unwind instead of poisoning later assertions.
 - `tess_smoke`: verifies that the public `tess::tess` target is consumable,
   that the root public header compiles, and that public version constants match.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
@@ -105,4 +121,4 @@
   and queued phase counters record generic diagnostic events including weighted
   cost reads and queued partitioned execution. It also links diagnostic
   allocation hooks and verifies scoped allocation counters observe global
-  `new`/`delete`.
+  `new`/`delete` (via sanitizer malloc/free hooks under ASan/TSan).
