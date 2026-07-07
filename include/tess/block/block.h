@@ -115,8 +115,9 @@ class BlockScratch {
       return {};
     }
 
-    // cppcheck-suppress arithOperationsOnVoidPointer ; false positive:
-    // storage_.get() is std::byte*, whose arithmetic is well-defined.
+    // cppcheck misparses std::byte* as void* here (suppressed in
+    // TessProjectOptions.cmake); std::byte pointer arithmetic is
+    // well-defined.
     auto* ptr =
         std::launder(reinterpret_cast<T*>(storage_.get() + aligned_offset));
     used_bytes_ = aligned_offset + byte_count;
