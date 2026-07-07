@@ -141,13 +141,22 @@
 - `tess_path_agent_test`: verifies the public path-agent wrapper, including
   goal assignment, runtime-backed request/result processing, tile-by-tile
   advancement and arrival, conservative reprocessing after world edits,
-  invalid/unreachable goal handling, weighted shared-goal processing, and
-  allocation-free warm unit, unit field-product, and weighted agent batches.
+  invalid/unreachable goal handling, weighted shared-goal processing,
+  allocation-free warm unit, unit field-product, and weighted agent batches,
+  the phase lifecycle (goal set/clear transitions, transient movement
+  failures keeping Found status while entering Blocked, structural failures
+  turning terminally Unreachable), movement validation rejection statuses
+  including stale topology/version branches, and overflow-safe
+  `manhattan_distance` at `int64` extremes.
 - `tess_path_agent_tick_test`: verifies the minimal path-agent tick wrapper,
   including tick advancement, dirty-gated path processing, movement ordering,
   explicit dirty-mark requirements after world edits, dirty reprocessing after
   world edits and goal changes, unreachable goals, weighted shared-goal ticks,
-  and allocation-free warm clean ticks.
+  allocation-free warm clean ticks, two-argument goal assignment processed
+  without a manual dirty mark, transiently blocked agents resuming and
+  arriving, mid-route wall insertion triggering bounded re-paths, and boxed-in
+  goals exhausting the retry budget into terminal Unreachable that stops
+  consuming processing.
 - `tess_assert_test`: verifies the `TESS_ASSERT` debug precondition policy —
   death tests for out-of-shape coordinates and out-of-range keys/tickets on
   unchecked accessors (`World::resolve`, `World::chunk`, `World::meta`,

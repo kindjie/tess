@@ -101,9 +101,13 @@ other entries cannot move.
   each processing pass.
 - `PathAgentState` and the path-agent helper functions provide the first
   simulation-facing path wrapper. Agents store position, goal, path ticket,
-  path index, status, and active-goal state. The helpers submit active agents
-  into a `PathRequestRuntime`, apply ticketed results, and advance agents along
-  returned paths.
+  path index, status, active-goal state, and an explicit `PathAgentPhase`
+  lifecycle (`Idle`, `NeedsPath`, `Following`, `Blocked`, `Unreachable`)
+  with a `blocked_retries` budget. The helpers submit active agents into a
+  `PathRequestRuntime`, apply ticketed results, and advance agents along
+  returned paths. Transient movement failures keep the `Found` route and
+  enter `Blocked`; structural failures (invalid endpoints, non-adjacent
+  steps) are terminal `Unreachable` until a new goal is assigned.
 - `process_unit_path_agents<World, PassableTag>(world, agents, runtime,
   policy)` and `process_weighted_path_agents<World, PassableTag, CostTag,
   MaxCost>(world, agents, runtime, policy)` run the current conservative
@@ -114,10 +118,14 @@ other entries cannot move.
   `tick_unit_path_agents<World, PassableTag>(state, world, agents, runtime,
   options)` and `tick_weighted_path_agents<World, PassableTag, CostTag,
   MaxCost>(state, world, agents, runtime, options)` advance the clock,
-  process paths only when `state.pathing_dirty` is set, then move agents up to
-  `options.max_steps` path nodes. `mark_pathing_dirty(state)` and the
-  tick-state `set_path_agent_goal(state, agent, goal)` overload are the public
-  hooks for scheduling conservative replans after world or goal changes.
+  process paths when `state.pathing_dirty` is set or when any agent is in
+  `NeedsPath` or `Blocked` (with retry budget remaining), then move agents up
+  to `options.max_steps` path nodes. Goals assigned through either
+  `set_path_agent_goal` overload are picked up on the next tick; `Blocked`
+  agents consume one re-path attempt per processed tick until
+  `options.max_blocked_retries` runs out and they turn terminally
+  `Unreachable`, no longer requesting processing. `mark_pathing_dirty(state)`
+  remains the hook for conservative replans after world edits.
 - `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
   unit-cost deterministic pathfinding over the existing always-resident world
   storage. The passability field is treated as boolean-like.
