@@ -81,16 +81,11 @@ jobs:
           tests/test_benchmark_tools.py
           tests/test_check_public_surface.py
 
-      # Advisory while the manifest workflow shakes out; promote to a
-      # failing gate once contributors are used to updating surface.json.
-      - name: Public surface manifest (advisory)
-        run: >-
-          uv run --frozen --group dev python tools/check_public_surface.py
-          || echo "::warning title=Public surface manifest::Public symbols
-          are missing from docs/architecture/surface.json. Run
-          tools/check_public_surface.py locally, document each symbol in
-          its maintained architecture doc, and add the name to
-          surface.json."
+      # Failing gate (promoted 2026-07-07 after a clean shake-out):
+      # public symbols must be documented in a maintained architecture
+      # doc and listed in docs/architecture/surface.json.
+      - name: Public surface manifest
+        run: uv run --frozen --group dev python tools/check_public_surface.py
 
   quality:
     name: Quality Gates (${{ matrix.preset }})
@@ -243,9 +238,11 @@ jobs:
   # green runs on main. The Visual Studio generator ignores compiler
   # launchers, so the workflow-level ccache env vars are inert here.
   windows:
-    name: Windows MSVC (advisory)
+    # Required gate since two consecutive green main runs (2026-07-07).
+    # MSVC warnings (for example C4702) are not yet errors; enable
+    # TESS_WARNINGS_AS_ERRORS here once the warning backlog is cleared.
+    name: Windows MSVC
     runs-on: windows-2025
-    continue-on-error: true
     steps:
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
