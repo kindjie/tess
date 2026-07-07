@@ -551,17 +551,9 @@ struct PortalRouteCandidate {
   std::size_t scan_tiles = 0;
 };
 
-[[nodiscard]] constexpr auto abs_delta(std::int64_t lhs,
-                                       std::int64_t rhs) noexcept
-    -> std::uint64_t {
-  return lhs < rhs ? static_cast<std::uint64_t>(rhs - lhs)
-                   : static_cast<std::uint64_t>(lhs - rhs);
-}
-
 [[nodiscard]] constexpr auto manhattan(Coord3 lhs, Coord3 rhs) noexcept
     -> std::uint32_t {
-  const auto distance = abs_delta(lhs.x, rhs.x) + abs_delta(lhs.y, rhs.y) +
-                        abs_delta(lhs.z, rhs.z);
+  const auto distance = manhattan_distance(lhs, rhs);
   if (distance > std::numeric_limits<std::uint32_t>::max()) {
     return std::numeric_limits<std::uint32_t>::max();
   }

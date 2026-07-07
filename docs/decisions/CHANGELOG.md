@@ -210,6 +210,34 @@ Records meaningful design changes from the original TDDs.
   `tests/tess_path_test.cc`, `tests/tess_queued_test.cc`,
   `tests/tess_path_agent_test.cc`, `tests/tess_path_agent_tick_test.cc`
 
+## 2026-07-06 - Path Agent Phase Lifecycle And Bounded Re-Pathing
+
+- Changed: `PathAgentState` gained an explicit `PathAgentPhase` lifecycle
+  (`Idle`, `NeedsPath`, `Following`, `Blocked`, `Unreachable`) plus a
+  `blocked_retries` budget. Transient movement failures (occupied,
+  reserved, blocked, stale version/topology) no longer set `NoPath`; the
+  agent enters `Blocked`, keeps its `Found` route, and the tick drivers
+  schedule bounded re-paths (`PathAgentTickOptions::max_blocked_retries`,
+  default 8) before turning terminally `Unreachable`. Goals assigned via
+  the two-argument `set_path_agent_goal` are now picked up on the next
+  tick without a manual dirty mark (`NeedsPath` requests processing
+  structurally). `PathTicket` carries a generation stamped at submission
+  and invalidated by `clear_requests()`; stale tickets assert in debug
+  and return `NoPath` in release. `manhattan_distance` moved to
+  `core/shape.h` built on overflow-safe `abs_delta` with a saturating
+  sum; the signed implementation in `sim/movement.h` was removed.
+- Reason: an audit found transient movement failures permanently
+  stranded agents (crossing agents froze forever in a static world), the
+  two-argument goal overload silently never scheduled pathing, stale
+  tickets indexed out of bounds, and the signed Manhattan distance was
+  UB at coordinate extremes.
+- Affected docs: `docs/architecture/path.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/sim/path_agent.h`,
+  `include/tess/sim/path_agent_tick.h`, `include/tess/sim/movement.h`,
+  `include/tess/core/shape.h`, `include/tess/path/path.h`,
+  `include/tess/path/path_runtime.h`, `tests/tess_path_agent_test.cc`,
+  `tests/tess_path_agent_tick_test.cc`, `tests/tess_assert_test.cc`
+
 ## 2026-07-06 - Portable UInt128 Key Storage And Boundary Shift Guards
 
 - Changed: Replaced the unconditional `unsigned __int128` alias in

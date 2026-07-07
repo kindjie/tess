@@ -8,6 +8,7 @@
 namespace {
 
 struct TerrainTag {};
+struct PassableTag {};
 
 using TopDown2D =
     tess::Shape<tess::Extent3{128, 64, 1}, tess::Extent3{32, 16, 1}>;
@@ -15,6 +16,17 @@ using TopDown2D =
 using TerrainField = tess::Field<TerrainTag, std::uint16_t>;
 using Schema = tess::FieldSchema<TerrainField>;
 using World = tess::AlwaysResidentWorld<TopDown2D, Schema>;
+
+using PathSchema = tess::FieldSchema<tess::Field<PassableTag, bool>>;
+using PathWorld = tess::AlwaysResidentWorld<TopDown2D, PathSchema>;
+
+void fill_passable(PathWorld& world) {
+  for (auto& page : world.chunks()) {
+    for (auto& tile : page.template field_span<PassableTag>()) {
+      tile = true;
+    }
+  }
+}
 
 constexpr auto kAssertDeathMessage = "tess assertion failed";
 
@@ -83,6 +95,25 @@ TEST(TessAssertDeathTest, RuntimeResultRejectsOutOfRangeTicket) {
   tess::PathRequestRuntime runtime;
   EXPECT_DEATH(static_cast<void>(runtime.result(tess::PathTicket{7})),
                kAssertDeathMessage);
+}
+
+TEST(TessAssertDeathTest, RuntimeResultRejectsStaleTicketGeneration) {
+  PathWorld world;
+  fill_passable(world);
+  tess::PathRequestRuntime runtime;
+
+  const auto stale = runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}});
+  (void)runtime.process_unit_cached<PathWorld, PassableTag>(world);
+  ASSERT_EQ(runtime.result(stale).status, tess::PathStatus::Found);
+
+  // Same-size resubmission: the stale ticket aliases the new request's
+  // slot, so a range check alone cannot catch the reuse.
+  runtime.clear_requests();
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{2, 0, 0}});
+  (void)runtime.process_unit_cached<PathWorld, PassableTag>(world);
+  EXPECT_DEATH(static_cast<void>(runtime.result(stale)), kAssertDeathMessage);
 }
 
 #endif  // TESS_ENABLE_ASSERTS

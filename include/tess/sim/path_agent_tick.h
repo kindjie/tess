@@ -20,6 +20,7 @@ struct PathAgentTickState {
 struct PathAgentTickOptions {
   std::size_t max_steps = 1;
   PathRuntimeCachePolicy cache_policy{};
+  std::uint32_t max_blocked_retries = 8;
 };
 
 struct PathAgentTickStats {
@@ -27,6 +28,8 @@ struct PathAgentTickStats {
   bool processed_paths = false;
   PathAgentFrameStats pathing{};
   PathAgentFrameStats movement{};
+  std::size_t repaths_requested = 0;
+  std::size_t repath_exhausted = 0;
 };
 
 inline auto advance_sim_tick(SimClock& clock) noexcept -> std::uint64_t {
@@ -44,6 +47,40 @@ inline void set_path_agent_goal(PathAgentTickState& state,
   mark_pathing_dirty(state);
 }
 
+// Scans agents ahead of a tick's path processing. NeedsPath agents (goals
+// assigned through the two-argument set_path_agent_goal) request processing
+// with no manual dirty mark. Blocked agents consume one re-path attempt per
+// processed tick until the retry budget runs out, at which point they turn
+// terminally Unreachable and stop requesting processing.
+inline auto prepare_path_agent_processing(std::span<PathAgentState> agents,
+                                          PathAgentTickOptions options,
+                                          PathAgentTickStats& stats) noexcept
+    -> bool {
+  bool needs_processing = false;
+  for (auto& agent : agents) {
+    if (!agent.has_goal) {
+      continue;
+    }
+    if (agent.phase == PathAgentPhase::NeedsPath) {
+      needs_processing = true;
+      continue;
+    }
+    if (agent.phase != PathAgentPhase::Blocked) {
+      continue;
+    }
+    if (agent.blocked_retries < options.max_blocked_retries) {
+      ++agent.blocked_retries;
+      ++stats.repaths_requested;
+      needs_processing = true;
+    } else {
+      agent.phase = PathAgentPhase::Unreachable;
+      agent.status = PathStatus::NoPath;
+      ++stats.repath_exhausted;
+    }
+  }
+  return needs_processing;
+}
+
 template <typename World, typename PassableTag>
 [[nodiscard]] auto tick_unit_path_agents(PathAgentTickState& state,
                                          const World& world,
@@ -54,7 +91,9 @@ template <typename World, typename PassableTag>
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  if (state.pathing_dirty) {
+  const bool repath_needed =
+      prepare_path_agent_processing(agents, options, stats);
+  if (state.pathing_dirty || repath_needed) {
     stats.pathing = process_unit_path_agents<World, PassableTag>(
         world, agents, runtime, options.cache_policy);
     stats.processed_paths = true;
@@ -74,7 +113,9 @@ template <typename World, typename PassableTag, typename OccupancyTag,
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  if (state.pathing_dirty) {
+  const bool repath_needed =
+      prepare_path_agent_processing(agents, options, stats);
+  if (state.pathing_dirty || repath_needed) {
     stats.pathing = process_unit_path_agents<World, PassableTag>(
         world, agents, runtime, options.cache_policy);
     stats.processed_paths = true;
@@ -99,7 +140,9 @@ template <typename World, typename PassableTag, typename CostTag,
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  if (state.pathing_dirty) {
+  const bool repath_needed =
+      prepare_path_agent_processing(agents, options, stats);
+  if (state.pathing_dirty || repath_needed) {
     stats.pathing =
         process_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(
             world, agents, runtime, options.cache_policy);
@@ -120,7 +163,9 @@ template <typename World, typename PassableTag, typename CostTag,
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  if (state.pathing_dirty) {
+  const bool repath_needed =
+      prepare_path_agent_processing(agents, options, stats);
+  if (state.pathing_dirty || repath_needed) {
     stats.pathing =
         process_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(
             world, agents, runtime, options.cache_policy);
