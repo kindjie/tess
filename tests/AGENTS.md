@@ -38,8 +38,11 @@
   always-resident dense worlds, including SoA field independence, contiguous
   typed spans, metadata, const access, key/coord lookup, coordinate resolution,
   checked invalid-coordinate behavior, per-chunk dirty/active/topology-version
-  metadata, noexcept hot accessors, and allocation-free local field/span/world
-  access after construction.
+  metadata, dirty-bounds union across all relative box orientations including
+  z cases, zero-initialized fresh-world field values without prior writes,
+  appending out-parameter dirty/active chunk queries that match the by-value
+  queries and do not allocate into reserved vectors, noexcept hot accessors,
+  and allocation-free local field/span/world access after construction.
 - `tess_block_test`: verifies chunk-domain builders, policy-typed `BlockCtx`
   construction and iteration, serial block iteration, owned domain lifetimes,
   const-correct chunk views and world access including compile-time and runtime
@@ -172,6 +175,17 @@
   unchecked accessors (`World::resolve`, `World::chunk`, `World::meta`,
   `tile_key`, `PathRequestRuntime::result`), that the disabled form does not
   evaluate its condition, and that guarded accessors stay `noexcept`.
+- `tess_sim_scheduler_test`: verifies the simulation integration slice,
+  including movement intent validation and commit, fixed-step accumulator
+  pause/speed/clamp behavior with exact interpolation alpha values at known
+  accumulator states, render-delta collection from dirty bounds including
+  chunk-border and out-of-shape clipping, scheduler-driven render-dirty
+  clearing after collection, queued-edit pathing invalidation with reroute to
+  arrival around the edited tile, rejected-plan early return that reports
+  planned-but-not-executed operations while leaving the world untouched and
+  still ticking agents, unit and weighted movement scheduler occupancy
+  commits, weighted cost-band detour routing, and movement dirty-mask
+  metadata interplay for nonzero and zero masks.
 - `tess_diagnostics_default_test`: verifies public diagnostic macros are
   disabled by default and do not evaluate arguments, including generic events.
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate
