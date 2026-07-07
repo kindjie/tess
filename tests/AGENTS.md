@@ -67,7 +67,19 @@
   const-view enforcement, partitioned threaded failure semantics,
   policy-mismatch execution rejection, allocation-free prebuilt planned
   execution, source-location capture, and allocation-free inspection of
-  already-built queue/report/plan spans.
+  already-built queue/report/plan spans. It also verifies the structural
+  serial-executor guard (compile-time `static_assert`s that
+  `execute_phase_deferred_dirty_with` accepts `tess::SerialExecutor`-tagged
+  executors and rejects `ScopedThreadPhaseExecutor`, while the partitioned
+  variant accepts both), a tagged custom serial executor end to end,
+  `FrameOps::clear()` id restart and allocation-free warm re-enqueue,
+  zero-value default-constructed `OpId`/`OpHandle`, write-then-read hazard
+  rejection and same-chunk write-then-read phase splitting, legal empty and
+  end-anchored phase ranges plus empty-plan phase planning, explicit-domain
+  duplicate-key deduplication and empty explicit domains, and
+  `ScopedThreadPhaseExecutor` worker-count clamping and zero-count early
+  return. Threaded replay stress compares every tile of every chunk between
+  serial and threaded worlds via field spans.
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.
