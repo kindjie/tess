@@ -41,8 +41,10 @@
   metadata, dirty-bounds union across all relative box orientations including
   z cases, zero-initialized fresh-world field values without prior writes,
   appending out-parameter dirty/active chunk queries that match the by-value
-  queries and do not allocate into reserved vectors, noexcept hot accessors,
-  and allocation-free local field/span/world access after construction.
+  queries and do not allocate into reserved vectors, generation-stamped
+  `observe_dirty`/`clear_dirty_observed` maintenance clears that preserve
+  marks landing after observation, noexcept hot accessors, and
+  allocation-free local field/span/world access after construction.
 - `tess_block_test`: verifies chunk-domain builders, policy-typed `BlockCtx`
   construction and iteration, serial block iteration, owned domain lifetimes,
   const-correct chunk views and world access including compile-time and runtime

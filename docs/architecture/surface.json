@@ -30,6 +30,7 @@
     "ChunkMeta",
     "ChunkPage",
     "ChunkState",
+    "DirtyObservation",
     "Field",
     "FieldSchema",
     "World"
