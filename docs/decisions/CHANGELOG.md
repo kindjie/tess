@@ -13,6 +13,54 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-06 - Path Caches Stop Handing Out Views Into Reallocatable Storage
+
+- Changed: All three path caches now follow one lifetime policy — no
+  returned view may point into storage that a later cache write can
+  reallocate. `cached_astar_path` hits (exact and suffix) copy the cached
+  route into the caller's `PathScratch` and return a span into that scratch,
+  giving hits the identical lifetime contract as misses (valid until the
+  next call using the same scratch); warm hits stay allocation-free with
+  pre-reserved scratch. `WeightedPortalSegmentCache` deleted its public
+  `find()`/`path()` (a held span dangled across `store()` growth) in favor
+  of `lookup_append(world, request, out_path) -> SegmentHit`, which appends
+  the cached path into caller storage and deduplicates the shared junction
+  node when stitching consecutive segments; `Entry` went private.
+  `FieldProductCache` entries now hold products behind
+  `std::unique_ptr<DistanceFieldProduct>`, so `lookup()` pointers survive
+  stores/evictions of other entries (borrow window: until a store/eviction
+  touching that key, or `clear()`), and `store()` takes
+  `DistanceFieldProduct&&`, moving instead of double-copying world-sized
+  field data (the runtime rebuilds its staging product on the next build).
+  `RouteCacheScratch` + `cached_astar_path` moved to the new public header
+  `include/tess/path/route_cache.h` (included by `path.h`, listed in
+  `TESS_PUBLIC_HEADERS`) to keep `path.h` under the token budget. Audit
+  gaps pinned: oversized-store clears the entire cache, zero byte budget
+  stores nothing, same-key replacement byte accounting, LRU eviction by
+  recency with 3+ entries (verified correct, pinned), distance-field
+  error-status families (InvalidGoal/InvalidStart/empty `GoalSet`) across
+  plain/weighted/product builds and path reconstruction. The placebo
+  portal-segment-cache assertions in the runtime weighted-batch test
+  (asserting 0 entries in a cache the runtime never writes) were replaced
+  by a real contract test: entries stored through the runtime accessor are
+  reported by `stats()` and dropped by `clear_caches()` — the runtime
+  itself intentionally does not populate that cache today.
+- Reason: A lifetime audit reproduced heap-use-after-free under ASan for
+  all three caches: a route-cache hit span dangled after a later miss
+  reallocated `paths_`, a segment-cache `path()` span dangled across
+  `store()`, and a field-product-cache `lookup()` pointer dangled after
+  `entries_` growth. `store()` also copied world-sized products twice
+  (measured 8,800 bytes allocated for a 4,376-byte product store; now a
+  move). Fixes chosen per size class: small routes copy into scratch;
+  world-sized products get stable heap slots plus move-in ownership.
+- Affected docs: `docs/architecture/path.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/path/route_cache.h` (new),
+  `include/tess/path/path.h`, `include/tess/path/portal_segment_cache.h`,
+  `include/tess/path/field_product_cache.h`,
+  `include/tess/path/path_runtime.h`, `include/tess/tess.h`,
+  `CMakeLists.txt`, `bench/tess_path_product_bench.cc`,
+  `tests/tess_path_test.cc`, `tests/tess_path_runtime_test.cc`
+
 ## 2026-07-06 - Byte-Array Backing For BlockScratch Object Lifetimes
 
 - Changed: `BlockScratch` now owns heap `std::byte[]` storage

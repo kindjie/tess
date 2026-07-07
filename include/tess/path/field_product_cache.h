@@ -6,7 +6,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace tess {
@@ -176,6 +178,10 @@ class FieldProductCache {
     };
   }
 
+  // The returned pointer targets heap storage that never moves when other
+  // entries are stored or evicted. It stays valid until a `store()` or
+  // eviction touches this exact key, or until `clear()`. Stale products are
+  // erased on lookup and reported as stale rejections.
   template <typename World, typename Tag>
   [[nodiscard]] auto lookup(const World& world, const GoalSet& goals)
       -> const DistanceFieldProduct* {
@@ -184,48 +190,55 @@ class FieldProductCache {
       if (!key_matches<World, Tag>(entry.key, goals.goals())) {
         continue;
       }
-      if (!entry.product.is_valid(world)) {
+      if (!entry.product->is_valid(world)) {
         ++stale_rejections_;
         erase_entry(i);
         return nullptr;
       }
       ++hits_;
       entry.last_used = ++clock_;
-      return &entry.product;
+      return entry.product.get();
     }
 
     ++misses_;
     return nullptr;
   }
 
+  // Takes ownership of `product` by move; world-sized field data is never
+  // copied. The argument is left moved-from (empty but reusable). A product
+  // whose entry exceeds the byte budget cannot be cached at all; that store
+  // clears the entire cache and returns false.
   template <typename World, typename Tag>
-  auto store(const DistanceFieldProduct& product) -> bool {
+  auto store(DistanceFieldProduct&& product) -> bool {
     if (product.status() != PathStatus::Found) {
       return false;
     }
 
-    auto entry = Entry{};
-    entry.key = make_key<World, Tag>(product.goals());
-    entry.product = product;
-    entry.last_used = ++clock_;
-    entry.bytes = entry_byte_size(entry);
-    if (entry.bytes > byte_budget_) {
+    auto key = make_key<World, Tag>(product.goals());
+    const auto bytes = entry_byte_size(key, product);
+    if (bytes > byte_budget_) {
       clear();
       return false;
     }
 
     for (std::size_t i = 0; i < entries_.size(); ++i) {
-      if (keys_equal(entries_[i].key, entry.key)) {
+      if (keys_equal(entries_[i].key, key)) {
         bytes_ -= entries_[i].bytes;
-        entries_[i] = entry;
-        bytes_ += entries_[i].bytes;
+        *entries_[i].product = std::move(product);
+        entries_[i].last_used = ++clock_;
+        entries_[i].bytes = bytes;
+        bytes_ += bytes;
         evict_to_budget();
         return true;
       }
     }
 
-    entries_.push_back(entry);
-    bytes_ += entries_.back().bytes;
+    auto& entry = entries_.emplace_back();
+    entry.key = std::move(key);
+    entry.product = std::make_unique<DistanceFieldProduct>(std::move(product));
+    entry.last_used = ++clock_;
+    entry.bytes = bytes;
+    bytes_ += bytes;
     evict_to_budget();
     return true;
   }
@@ -241,9 +254,12 @@ class FieldProductCache {
     std::vector<Coord3> goals;
   };
 
+  // Each product lives behind a `unique_ptr` so `entries_` growth and
+  // eviction of other entries never relocate a product that a caller still
+  // borrows through `lookup()`.
   struct Entry {
     Key key;
-    DistanceFieldProduct product;
+    std::unique_ptr<DistanceFieldProduct> product;
     std::uint64_t last_used = 0;
     std::size_t bytes = 0;
   };
@@ -291,10 +307,11 @@ class FieldProductCache {
            std::equal(key.goals.begin(), key.goals.end(), goals.begin());
   }
 
-  [[nodiscard]] static auto entry_byte_size(const Entry& entry) noexcept
+  [[nodiscard]] static auto entry_byte_size(
+      const Key& key, const DistanceFieldProduct& product) noexcept
       -> std::size_t {
-    return sizeof(Entry) + entry.key.goals.size() * sizeof(Coord3) +
-           entry.product.byte_size();
+    return sizeof(Entry) + sizeof(DistanceFieldProduct) +
+           key.goals.size() * sizeof(Coord3) + product.byte_size();
   }
 
   void erase_entry(std::size_t index) noexcept {

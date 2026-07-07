@@ -9,17 +9,17 @@
 
 namespace tess {
 
+struct SegmentHit {
+  bool found = false;
+  PathStatus status = PathStatus::NoPath;
+  std::uint32_t cost = 0;
+};
+
+// Cached segment paths are only handed out by appending into caller-owned
+// storage. The cache never returns pointers or spans into its own path
+// storage, so later `store()` growth cannot invalidate a previous lookup.
 class WeightedPortalSegmentCache {
  public:
-  struct Entry {
-    PathRequest request{};
-    PathStatus status = PathStatus::NoPath;
-    std::uint32_t cost = 0;
-    std::size_t path_offset = 0;
-    std::size_t path_size = 0;
-    ChunkVersionDependencies dependencies{};
-  };
-
   void reserve_segments(std::size_t count) { entries_.reserve(count); }
 
   void reserve_path_nodes(std::size_t count) { paths_.reserve(count); }
@@ -29,23 +29,25 @@ class WeightedPortalSegmentCache {
     paths_.clear();
   }
 
+  // Appends the cached path for `request` into `out_path` on a hit. When
+  // `out_path` already ends with the segment start (stitching consecutive
+  // segments), the shared junction node is appended only once. Misses and
+  // stale entries leave `out_path` untouched.
   template <typename World>
-  [[nodiscard]] auto find(const World& world,
-                          PathRequest request) const noexcept -> const Entry* {
-    for (const auto& entry : entries_) {
-      if (entry.request.start == request.start &&
-          entry.request.goal == request.goal &&
-          entry.dependencies.is_valid(world)) {
-        return &entry;
-      }
+  [[nodiscard]] auto lookup_append(const World& world, PathRequest request,
+                                   std::vector<Coord3>& out_path)
+      -> SegmentHit {
+    const auto* entry = find(world, request);
+    if (entry == nullptr) {
+      return SegmentHit{};
     }
-    return nullptr;
-  }
-
-  [[nodiscard]] auto path(const Entry& entry) const noexcept
-      -> std::span<const Coord3> {
-    return std::span<const Coord3>{paths_.data() + entry.path_offset,
-                                   entry.path_size};
+    const auto cached = path(*entry);
+    const auto stitch = !out_path.empty() && !cached.empty() &&
+                        out_path.back() == cached.front();
+    out_path.insert(out_path.end(),
+                    cached.begin() + (stitch ? std::ptrdiff_t{1} : 0),
+                    cached.end());
+    return SegmentHit{true, entry->status, entry->cost};
   }
 
   template <typename World>
@@ -74,6 +76,34 @@ class WeightedPortalSegmentCache {
   }
 
  private:
+  struct Entry {
+    PathRequest request{};
+    PathStatus status = PathStatus::NoPath;
+    std::uint32_t cost = 0;
+    std::size_t path_offset = 0;
+    std::size_t path_size = 0;
+    ChunkVersionDependencies dependencies{};
+  };
+
+  template <typename World>
+  [[nodiscard]] auto find(const World& world,
+                          PathRequest request) const noexcept -> const Entry* {
+    for (const auto& entry : entries_) {
+      if (entry.request.start == request.start &&
+          entry.request.goal == request.goal &&
+          entry.dependencies.is_valid(world)) {
+        return &entry;
+      }
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] auto path(const Entry& entry) const noexcept
+      -> std::span<const Coord3> {
+    return std::span<const Coord3>{paths_.data() + entry.path_offset,
+                                   entry.path_size};
+  }
+
   std::vector<Entry> entries_;
   std::vector<Coord3> paths_;
 };
@@ -103,10 +133,10 @@ auto build_weighted_portal_route_product(const World& world,
     }
   };
   auto append_segment = [&](PathRequest segment_request) {
-    if (const auto* entry = cache.find(world, segment_request);
-        entry != nullptr) {
-      total_cost = detail::saturating_add(total_cost, entry->cost);
-      append_path(cache.path(*entry));
+    if (const auto hit =
+            cache.lookup_append(world, segment_request, product.path_);
+        hit.found) {
+      total_cost = detail::saturating_add(total_cost, hit.cost);
       return true;
     }
 
