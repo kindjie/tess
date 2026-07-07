@@ -8,6 +8,8 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
 
 - `WritePolicy` records intended write discipline: `ReadOnly`,
   `UniquePerTile`, `UniquePerChunk`, and `Unsafe`.
+  `is_valid_write_policy(policy)` validates a runtime policy value against
+  that enumerator set.
 - `ChunkDomain` is a non-owning `std::span<const ChunkKey>` wrapper.
 - `OwnedChunkDomain` owns sorted chunk keys returned by allocating domain
   builders and can be adapted to `ChunkDomain` while the owner lives.

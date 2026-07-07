@@ -76,6 +76,18 @@ jobs:
           uv run --frozen --group dev pytest
           tests/test_git_hooks.py
           tests/test_benchmark_tools.py
+          tests/test_check_public_surface.py
+
+      # Advisory while the manifest workflow shakes out; promote to a
+      # failing gate once contributors are used to updating surface.json.
+      - name: Public surface manifest (advisory)
+        run: >-
+          uv run --frozen --group dev python tools/check_public_surface.py
+          || echo "::warning title=Public surface manifest::Public symbols
+          are missing from docs/architecture/surface.json. Run
+          tools/check_public_surface.py locally, document each symbol in
+          its maintained architecture doc, and add the name to
+          surface.json."
 
   quality:
     name: Quality Gates (${{ matrix.preset }})

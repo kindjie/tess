@@ -28,5 +28,11 @@ When implementation diverges from a TDD:
 - [Diagnostics and tooling](diagnostics-and-tooling.md)
 - [Modern C++ / compile-time safety](modern-cpp-compile-time-safety.md)
 - [Concurrent tile-world execution and maintenance][concurrent-tile-world]
+- [Work Contracts evaluation and integration][work-contracts] (proposed
+  addendum)
+- [Tile layout benchmark findings and library integration][tile-layout]
+  (proposed addendum)
 
 [concurrent-tile-world]: tdd_addendum_concurrent_tile_world.md
+[work-contracts]: tdd_addendum_work_contracts.md
+[tile-layout]: tdd_addendum_tile_layout_bench_takeaways.md

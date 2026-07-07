@@ -26,8 +26,10 @@ cmake --build --preset bench
 
 The public CMake target is `tess::tess`.
 
-The `dev` preset also builds `examples/tess_mvp_path`, a small end-to-end
-queued-edit plus A* pathfinding prototype.
+The `dev` preset also builds two examples: `examples/tess_mvp_path`, a small
+end-to-end queued-edit plus A* pathfinding prototype, and
+`examples/tess_path_agents`, a multi-agent path-agent tick loop with goal
+assignment, dirty-driven replanning, and blocked-path handling.
 
 ## Testing on a Steam Deck
 
@@ -48,6 +50,12 @@ CI runs primarily on `ubuntu-24.04` with Clang and covers:
   `ctest --preset dev`
 - Public header file-set drift check: `tess_public_headers_file_set`
 - Installed package smoke test: `tools/install_smoke.sh`
+- Hook backstop checks: `tools/git_hooks.py ci` repository hygiene plus
+  pytest for the repo tools (`tests/test_git_hooks.py`,
+  `tests/test_benchmark_tools.py`, `tests/test_check_public_surface.py`)
+  and an advisory public-surface manifest check
+  (`tools/check_public_surface.py` against
+  `docs/architecture/surface.json`)
 - Warnings-as-errors build and tests: preset `dev-werror`
 - ASan/UBSan build and tests (UBSan findings are fatal): preset `dev-asan`
 - TSan build and tests (`TSAN_OPTIONS=halt_on_error=1`): preset `dev-tsan`

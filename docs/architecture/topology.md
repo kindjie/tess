@@ -11,7 +11,9 @@ The current topology layer is a local chunk-region foundation. It lives under
 - `LocalRegion` summarizes one local region with tile count, world-space
   bounds, and boundary-exit count.
 - `LocalBoundaryExit` records one passable local boundary tile that has an
-  adjacent resident chunk in the compile-time shape.
+  adjacent resident chunk in the compile-time shape, including which
+  `BoundaryFace` it crosses (`NegativeX` through `PositiveZ`) and the
+  target `ChunkKey`.
 - `LocalChunkTopology` owns local region labels, region summaries, boundary
   exits, the chunk key, and the captured chunk topology version.
   `region(LocalRegionId)` is the checked accessor for the 1-based id
@@ -27,6 +29,10 @@ The current topology layer is a local chunk-region foundation. It lives under
   (`invalid_region_index` for invalid or out-of-range references).
 - `RegionGraphScratch` owns reusable reachability traversal storage with
   epoch-stamped visited marks.
+- `LocalTopologyResult` summarizes one build: a `TopologyStatus` (`Built`,
+  or `InvalidChunk` for an out-of-range chunk key), region count, passable
+  tile count, boundary exit count, and the captured topology version. The
+  chunk and graph builders below all return it.
 - `build_local_chunk_topology<World, PassableTag>(world, chunk, scratch,
   topology)` labels passable connected components for one chunk and records
   boundary exits.
@@ -38,7 +44,10 @@ The current topology layer is a local chunk-region foundation. It lives under
   confined to the dirty chunks and returns the same aggregate result a full
   rebuild would.
 - `reachable<Shape>(graph, start, goal, scratch)` checks whether two
-  coordinates are connected through local regions and paired portals.
+  coordinates are connected through local regions and paired portals. It
+  returns a `ReachabilityResult`: a `ReachabilityStatus` (`Reachable`,
+  `Unreachable`, `InvalidStart`, or `InvalidGoal`) plus the number of
+  visited regions.
 
 ## Behavior
 
