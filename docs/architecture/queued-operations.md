@@ -187,13 +187,17 @@ range, and returns `InvalidPhase` or `PolicyMismatch` without side effects when
 the phase cannot be executed. The default implementation is serial; future
 worker backends should preserve the same validation and dirty-merge contract.
 
-`ExecutorPhaseRange` is the backend-facing operation-index range shape copied
-from an `ExecutionPhase` by `executor_phase_range(phase)`.
-`execute_operation_index_range(executor, range, fn)` adapts that range to the
-current operation-index executor contract. `SerialPhaseExecutor` is the default
-executor used by `execute_phase_deferred_dirty<Policy>`. Callers that need to
-test a backend integration point can use
-`execute_phase_deferred_dirty_with<Policy>` and pass an executor that provides:
+The executor contract lives in its own public header,
+`tess/ops/phase_executor.h`, so backends can be written and tested without
+pulling in the planner. `ExecutorPhaseRange` is the backend-facing
+operation-index range shape copied from an `ExecutionPhase` by
+`executor_phase_range(phase)` (the plan-side bridge stays in
+`tess/ops/queued.h`). `execute_operation_index_range(executor, range, fn)`
+adapts that range to the current operation-index executor contract.
+`SerialPhaseExecutor` is the default executor used by
+`execute_phase_deferred_dirty<Policy>`. Callers that need to test a backend
+integration point can use `execute_phase_deferred_dirty_with<Policy>` and
+pass an executor that provides:
 
 ```cpp
 auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn)
@@ -202,7 +206,16 @@ auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn)
 
 The executor receives planned operation indexes and must return the first
 non-`Executed` result from the callback, or `Executed` if the whole range
-completed. This helper is a serial bridge over one caller-owned
+completed. The `tess::PhaseExecutor` concept states this contract
+structurally: a const executor must accept
+`for_each_operation(first, count, fn)` for a callback returning
+`PlannedExecutionResult` and return `PlannedExecutionResult`. Implementations
+must complete or join every callback (making all callback writes visible)
+before returning. The header also documents the thread contract: world
+fields and `ChunkMeta` stay non-atomic, concurrent callbacks are safe only
+because phase planning proves disjoint mutable chunk ownership, and worker
+callbacks write dirty records into caller-owned partitions that the caller
+reduces in plan order after the executor returns. This helper is a serial bridge over one caller-owned
 `PlannedDirtyAccumulator` and a shared chunk counter, and the serial
 contract is now enforced structurally instead of by convention:
 `execute_phase_deferred_dirty_with<Policy>` requires the

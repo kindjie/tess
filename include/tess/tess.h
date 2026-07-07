@@ -3,6 +3,7 @@
 #include <tess/block/block.h>
 #include <tess/core/shape.h>
 #include <tess/diagnostics/diagnostics.h>
+#include <tess/ops/phase_executor.h>
 #include <tess/ops/queued.h>
 #include <tess/path/distance_field_box.h>
 #include <tess/path/field_product_cache.h>
