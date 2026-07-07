@@ -55,7 +55,7 @@ void enqueue_per_chunk_updates(tess::FrameOps& ops,
   for (std::size_t i = 0; i < keys.size(); ++i) {
     (void)ops.update_field(
         tess::DomainDesc::explicit_chunks(keys.subspan(i, 1)),
-        tess::FieldAccessDesc{0, kDirtyTerrain, 0},
+        tess::FieldAccessDesc{0, kDirtyTerrain, kDirtyTerrain},
         tess::WritePolicy::UniquePerChunk);
   }
 }
