@@ -18,9 +18,11 @@ intent.
 
 ## Design History
 
-- [TDD Archive](tdd/README.md): original technical design documents. These
-  explain design intent and rationale, but they are not the authoritative
-  source for current implementation behavior once code diverges.
+- [TDD Archive](tdd/README.md): original technical design documents plus
+  proposed addenda that continue to land there. These explain design intent
+  and rationale, but they are non-authoritative: maintained architecture
+  docs and code are the source of truth for current implementation
+  behavior.
 - [Design Changelog](decisions/CHANGELOG.md): records meaningful changes from
   the original TDDs.
 

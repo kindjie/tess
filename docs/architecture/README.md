@@ -26,9 +26,19 @@ C++ implementation work follows the active [style policy](../style.md).
 
 Maintained notes for implemented areas:
 
+- [Shape, coordinate, and key foundation](shape.md)
 - [Storage foundation](storage.md)
 - [Block foundation](block.md)
 - [Queued operations foundation](queued-operations.md)
 - [Topology foundation](topology.md)
 - [Path foundation](path.md)
 - [Simulation integration MVP](simulation.md)
+- [Diagnostics foundation](diagnostics.md)
+
+The umbrella header `tess/tess.h` exports the whole public surface plus the
+`tess::version` / `tess::library_version` constant.
+
+[surface.json](surface.json) maps each maintained doc to the public symbol
+names it documents; `tools/check_public_surface.py` compares that manifest
+against the headers in `TESS_PUBLIC_HEADERS` and reports undocumented public
+symbols (advisory in CI's hooks-backstop job).

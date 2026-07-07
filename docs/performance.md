@@ -3,7 +3,17 @@
 Stale snapshot: data from CI run 26980713740 at commit 90ce419, collected 2026-06-04 14:33 PDT.
 Scratch-specific block benchmarks were added after this snapshot and will not
 appear until the next intentional CI-baseline refresh. Queued execution and
-MVP path benchmarks were also added after this snapshot.
+MVP path benchmarks were also added after this snapshot. Since then the
+benchmark harness was reworked (2026-07-06): several benchmarks were fixed to
+measure the named operation, batch counters were renamed, the field-product
+cache benchmarks gained `/iterations:N/manual_time` names gated on real time,
+and `bench/thresholds/*.json` ceilings changed accordingly. The snapshot below
+predates all of that and must not be used for calibration.
+
+TODO(regenerate-snapshot): after CI has collected at least 5 baseline
+artifacts from the reworked harness, regenerate the SVG and this table from
+those artifacts per the regeneration policy below (the threshold change is
+the trigger; the recalibrated CI baselines are the missing input).
 
 The SVG snapshot in `docs/assets/benchmark-trends.svg` is a labeled
 summary, not the source of truth. Use CI benchmark baseline artifacts

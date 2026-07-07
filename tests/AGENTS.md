@@ -249,6 +249,15 @@
   null limits, and reports missing/malformed input files as clear errors;
   and that `tools/benchmark_baseline_summary.py` filters aggregates by
   `run_type` and quotes CSV fields.
+- `tests/test_check_public_surface.py`: pytest coverage for the advisory
+  public-surface manifest checker (`tools/check_public_surface.py`, run in
+  the same CI hooks-backstop pytest invocation). Synthetic header fixtures
+  verify type and free-function extraction at namespace scope, skipping of
+  members, function-local declarations, comments, macro-body braces, and
+  `detail`/`internal` namespaces, plus failure messages for undocumented
+  symbols and missing headers. One test asserts the committed
+  `docs/architecture/surface.json` stays complete against the real
+  `TESS_PUBLIC_HEADERS` headers.
 - The benchmark binaries (`tess_bench`, `tess_bench_diagnostics`) enforce
   correctness checks after their timed loops via an aborting `bench_check`
   helper (endpoints, legal unit steps onto passable tiles, expected costs,
