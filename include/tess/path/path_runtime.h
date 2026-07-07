@@ -5,6 +5,7 @@
 #include <tess/path/path.h>
 #include <tess/path/portal_segment_cache.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -60,6 +61,9 @@ class PathRequestRuntime {
     offsets_.reserve(count);
     sizes_.reserve(count);
     processed_.reserve(count);
+    request_group_.reserve(count);
+    group_members_.reserve(count);
+    group_start_chunks_.reserve(count);
     weighted_batch_.reserve_requests(count);
     unit_field_goals_.reserve(1);
   }
@@ -249,6 +253,12 @@ class PathRequestRuntime {
     }
   }
 
+  // Groups repeated-goal requests in one O(n) pass: a reusable
+  // open-addressed flat map (power-of-two capacity, linear probing) assigns
+  // each distinct goal a group id in first-occurrence order, member indices
+  // are bucketed with a counting sort, and per-group distinct start chunks
+  // come from a sort+unique over reusable scratch. Group processing order
+  // and all stats semantics match the previous per-request rescan.
   template <typename World, typename PassableTag>
   void process_repeated_goal_fields(const World& world,
                                     PathRuntimeCachePolicy policy) {
@@ -263,47 +273,80 @@ class PathRequestRuntime {
     unit_field_product_cache_.set_byte_budget(
         policy.unit_field_product_cache_byte_budget);
 
+    constexpr auto no_group = std::numeric_limits<std::uint32_t>::max();
+    group_goals_.clear();
+    group_counts_.clear();
+    request_group_.assign(requests_.size(), no_group);
+    auto slot_capacity = goal_group_slots_.size() < 16u
+                             ? std::size_t{16}
+                             : goal_group_slots_.size();
+    while (slot_capacity < (requests_.size() + 1u) * 2u) {
+      slot_capacity *= 2u;
+    }
+    goal_group_slots_.assign(slot_capacity, 0u);
+    const auto slot_mask = slot_capacity - 1u;
     for (std::size_t i = 0; i < requests_.size(); ++i) {
       if (processed_[i] != 0) {
         continue;
       }
-      auto grouped_by_previous_request = false;
-      for (std::size_t j = 0; j < i; ++j) {
-        if (requests_[j].goal == requests_[i].goal) {
-          grouped_by_previous_request = true;
+      const auto goal = requests_[i].goal;
+      auto slot =
+          static_cast<std::size_t>(detail::coord_hash(goal)) & slot_mask;
+      auto group = no_group;
+      while (goal_group_slots_[slot] != 0u) {
+        const auto candidate = goal_group_slots_[slot] - 1u;
+        if (group_goals_[candidate] == goal) {
+          group = candidate;
           break;
         }
+        slot = (slot + 1u) & slot_mask;
       }
-      if (grouped_by_previous_request) {
-        continue;
+      if (group == no_group) {
+        group = static_cast<std::uint32_t>(group_goals_.size());
+        goal_group_slots_[slot] = group + 1u;
+        group_goals_.push_back(goal);
+        group_counts_.push_back(0u);
       }
+      request_group_[i] = group;
+      ++group_counts_[group];
+    }
 
-      auto reuse_count = std::size_t{0};
-      auto start_chunk_count = std::size_t{0};
-      for (std::size_t j = i; j < requests_.size(); ++j) {
-        if (processed_[j] == 0 && requests_[j].goal == requests_[i].goal) {
-          ++reuse_count;
-          const auto chunk =
-              chunk_key<Shape>(tile_key<Shape>(requests_[j].start));
-          auto seen = false;
-          for (std::size_t k = i; k < j; ++k) {
-            if (processed_[k] != 0 || requests_[k].goal != requests_[i].goal) {
-              continue;
-            }
-            if (chunk_key<Shape>(tile_key<Shape>(requests_[k].start)) ==
-                chunk) {
-              seen = true;
-              break;
-            }
-          }
-          if (!seen) {
-            ++start_chunk_count;
-          }
-        }
+    // Bucket member indices per group; members stay in submission order.
+    group_offsets_.assign(group_goals_.size() + 1u, 0u);
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (request_group_[i] != no_group) {
+        ++group_offsets_[request_group_[i] + 1u];
       }
-      if (reuse_count < policy.unit_field_product_min_goal_reuse) {
+    }
+    for (std::size_t g = 1; g < group_offsets_.size(); ++g) {
+      group_offsets_[g] += group_offsets_[g - 1u];
+    }
+    group_cursors_.assign(group_offsets_.begin(), group_offsets_.end());
+    group_members_.assign(group_offsets_.back(), 0u);
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (request_group_[i] != no_group) {
+        group_members_[group_cursors_[request_group_[i]]++] =
+            static_cast<std::uint32_t>(i);
+      }
+    }
+
+    for (std::uint32_t g = 0; g < group_goals_.size(); ++g) {
+      if (group_counts_[g] < policy.unit_field_product_min_goal_reuse) {
         continue;
       }
+      const auto members_begin = group_offsets_[g];
+      const auto members_end = group_offsets_[g + 1u];
+      group_start_chunks_.clear();
+      for (auto m = members_begin; m < members_end; ++m) {
+        const auto& request = requests_[group_members_[m]];
+        group_start_chunks_.push_back(
+            chunk_key<Shape>(tile_key<Shape>(request.start)).value);
+      }
+      std::sort(group_start_chunks_.begin(), group_start_chunks_.end());
+      const auto start_chunk_count = static_cast<std::size_t>(
+          std::unique(group_start_chunks_.begin(), group_start_chunks_.end()) -
+          group_start_chunks_.begin());
+
       ++stats_.field_product_candidate_groups;
       if (start_chunk_count < policy.unit_field_product_min_start_chunks) {
         ++stats_.field_product_skipped_groups;
@@ -311,7 +354,7 @@ class PathRequestRuntime {
       }
 
       unit_field_goals_.clear();
-      unit_field_goals_.add(requests_[i].goal);
+      unit_field_goals_.add(group_goals_[g]);
       auto* product =
           unit_field_product_cache_.template lookup<World, PassableTag>(
               world, unit_field_goals_);
@@ -336,10 +379,8 @@ class PathRequestRuntime {
       }
 
       ++stats_.field_product_used_groups;
-      for (std::size_t j = i; j < requests_.size(); ++j) {
-        if (processed_[j] != 0 || requests_[j].goal != requests_[i].goal) {
-          continue;
-        }
+      for (auto m = members_begin; m < members_end; ++m) {
+        const auto j = static_cast<std::size_t>(group_members_[m]);
         const auto result = distance_field_product_path<World, PassableTag>(
             world, requests_[j].start, *product, unit_field_scratch_);
         copy_result(j, result);
@@ -393,6 +434,16 @@ class PathRequestRuntime {
   std::vector<std::size_t> sizes_;
   std::vector<std::uint8_t> processed_;
   std::vector<Coord3> paths_;
+  // Reusable repeated-goal grouping scratch: flat-hash goal map slots,
+  // per-group goals/counts/member buckets, and start-chunk dedup storage.
+  std::vector<std::uint32_t> goal_group_slots_;
+  std::vector<Coord3> group_goals_;
+  std::vector<std::uint32_t> group_counts_;
+  std::vector<std::uint32_t> group_offsets_;
+  std::vector<std::uint32_t> group_cursors_;
+  std::vector<std::uint32_t> group_members_;
+  std::vector<std::uint32_t> request_group_;
+  std::vector<std::uint64_t> group_start_chunks_;
   PathScratch unit_scratch_;
   RouteCacheScratch unit_route_cache_;
   DistanceFieldScratch unit_field_scratch_;

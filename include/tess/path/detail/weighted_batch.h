@@ -212,6 +212,35 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
                     scratch.touched_.size(), scratch.path_};
 }
 
+namespace detail {
+
+// Mirrors weighted_astar_path's endpoint validation for a member of a
+// shared-goal group whose field build failed: the start (containment,
+// passability) is checked before any goal status, and a zero-entry-cost
+// start outranks only a zero-entry-cost goal, matching the single-request
+// check order exactly.
+template <typename World, typename PassableTag, typename CostTag>
+[[nodiscard]] auto weighted_group_member_failure(const World& world,
+                                                 PathRequest request,
+                                                 DistanceFieldResult field)
+    -> PathResult {
+  using Shape = typename World::shape_type;
+  if (!contains<Shape>(request.start) ||
+      !is_passable<World, PassableTag>(world, request.start)) {
+    return PathResult{PathStatus::InvalidStart, 0, 0, 0, {}};
+  }
+  if (contains<Shape>(request.goal) &&
+      is_passable<World, PassableTag>(world, request.goal) &&
+      tile_entry_cost_index<World, CostTag>(
+          world, tile_index<Shape>(request.start)) == 0) {
+    return PathResult{PathStatus::InvalidStart, 0, 0, 0, {}};
+  }
+  return PathResult{
+      field.status, 0, field.expanded_nodes, field.reached_nodes, {}};
+}
+
+}  // namespace detail
+
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost>
 auto weighted_path_batch(const World& world,
@@ -225,17 +254,50 @@ auto weighted_path_batch(const World& world,
   scratch.processed_.assign(requests.size(), 0);
   scratch.stats_.requests = requests.size();
 
+  // Build the goal -> request count map once through a reusable
+  // open-addressed flat hash (power-of-two capacity, linear probing),
+  // replacing the per-request O(n) rescan.
+  constexpr auto no_goal = std::numeric_limits<std::uint32_t>::max();
+  scratch.goal_coords_.clear();
+  scratch.goal_counts_.clear();
+  scratch.request_goal_.assign(requests.size(), no_goal);
+  auto slot_capacity = scratch.goal_slots_.size() < 16u
+                           ? std::size_t{16}
+                           : scratch.goal_slots_.size();
+  while (slot_capacity < (requests.size() + 1u) * 2u) {
+    slot_capacity *= 2u;
+  }
+  scratch.goal_slots_.assign(slot_capacity, 0u);
+  const auto slot_mask = slot_capacity - 1u;
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    auto slot = static_cast<std::size_t>(detail::coord_hash(requests[i].goal)) &
+                slot_mask;
+    auto goal_index = no_goal;
+    while (scratch.goal_slots_[slot] != 0u) {
+      const auto candidate = scratch.goal_slots_[slot] - 1u;
+      if (scratch.goal_coords_[candidate] == requests[i].goal) {
+        goal_index = candidate;
+        break;
+      }
+      slot = (slot + 1u) & slot_mask;
+    }
+    if (goal_index == no_goal) {
+      goal_index = static_cast<std::uint32_t>(scratch.goal_coords_.size());
+      scratch.goal_slots_[slot] = goal_index + 1u;
+      scratch.goal_coords_.push_back(requests[i].goal);
+      scratch.goal_counts_.push_back(0u);
+    }
+    scratch.request_goal_[i] = goal_index;
+    ++scratch.goal_counts_[goal_index];
+  }
+
   for (std::size_t i = 0; i < requests.size(); ++i) {
     if (scratch.processed_[i] != 0) {
       continue;
     }
 
-    auto goal_count = std::size_t{0};
-    for (const auto request : requests) {
-      if (request.goal == requests[i].goal) {
-        ++goal_count;
-      }
-    }
+    const auto goal_count = static_cast<std::size_t>(
+        scratch.goal_counts_[scratch.request_goal_[i]]);
     ++scratch.stats_.unique_goals;
 
     if (goal_count == 1) {
@@ -260,7 +322,7 @@ auto weighted_path_batch(const World& world,
                                                              CostTag, MaxCost>(
         world, requests[i].goal, scratch.field_scratch_);
     for (std::size_t j = 0; j < requests.size(); ++j) {
-      if (requests[j].goal != requests[i].goal) {
+      if (scratch.request_goal_[j] != scratch.request_goal_[i]) {
         continue;
       }
       const auto result =
@@ -268,11 +330,9 @@ auto weighted_path_batch(const World& world,
               ? weighted_distance_field_path<World, PassableTag, CostTag>(
                     world, requests[j].start, requests[j].goal,
                     scratch.field_scratch_)
-              : PathResult{field.status,
-                           0,
-                           field.expanded_nodes,
-                           field.reached_nodes,
-                           {}};
+              : detail::weighted_group_member_failure<World, PassableTag,
+                                                      CostTag>(
+                    world, requests[j], field);
       scratch.offsets_[j] = scratch.paths_.size();
       scratch.sizes_[j] = result.path.size();
       scratch.paths_.insert(scratch.paths_.end(), result.path.begin(),

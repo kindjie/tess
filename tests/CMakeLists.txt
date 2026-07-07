@@ -73,7 +73,11 @@ tess_apply_project_options(tess_path_cache_test)
 
 gtest_discover_tests(tess_path_cache_test)
 
-add_executable(tess_path_runtime_test tess_path_runtime_test.cc)
+add_executable(
+  tess_path_runtime_test
+  allocation_counter.cc
+  tess_path_runtime_test.cc
+)
 target_link_libraries(
   tess_path_runtime_test
   PRIVATE tess::tess GTest::gtest_main
@@ -81,6 +85,28 @@ target_link_libraries(
 tess_apply_project_options(tess_path_runtime_test)
 
 gtest_discover_tests(tess_path_runtime_test)
+
+add_executable(
+  tess_path_weighted_batch_test
+  allocation_counter.cc
+  tess_path_weighted_batch_test.cc
+)
+target_link_libraries(
+  tess_path_weighted_batch_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_path_weighted_batch_test)
+
+gtest_discover_tests(tess_path_weighted_batch_test)
+
+add_executable(tess_path_portal_route_test tess_path_portal_route_test.cc)
+target_link_libraries(
+  tess_path_portal_route_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_path_portal_route_test)
+
+gtest_discover_tests(tess_path_portal_route_test)
 
 add_executable(
   tess_path_agent_test

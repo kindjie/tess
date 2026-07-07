@@ -243,6 +243,27 @@ and accepting only fully open lines or lines with exactly one passable gap. In
 passable crossing and return a verified Manhattan route through it. Other
 non-separating blockers fall back to normal A*.
 
+### Pre-A* scan cost model
+
+The fast paths above are accepted with an O(world-slice) worst case
+(decision logged in `docs/planning/optimization-log.md`, 2026-07-06). The
+direct probes walk up to the Manhattan distance per axis order. A blocked
+probe triggers `is_full_axis_barrier`, which scans the blocked tile's full
+axis plane: one extent line in 2D, `size.y * size.z` (or the matching pair)
+tiles in 3D. The 2D plane-gap and forced-gap scans each walk one extent
+line per blocked step, and the 3D plane-gap scan walks the whole blocked
+plane. Every scan runs before any A* node is expanded, so a miss — the
+scans all fail and the query still floods A* — pays the full scan cost as
+pure overhead on top of the search. Two worst-case benchmarks pin this
+cost: `path/astar_plane_gap_miss_512x512` (direct blocked, sealed wall gap,
+falls through every 2D scan into a full-flood NoPath A*) and
+`path/astar_plane_gap_miss_3d_64x64x16` (the best-scoring 3D plane gap is
+sealed, so segment stitching fails and A* routes through a second gap).
+Their thresholds in `bench/thresholds/path.json` are deliberately generous
+(10x measured) documentation ceilings, not tuned gates: the scans stay
+accepted because hit rates on real layouts dwarf the miss cost, and a miss
+is bounded by one world slice per failed scan.
+
 The returned path span points into the supplied `PathScratch` and remains valid
 until the next path query or scratch clear/reserve operation. Scratch keeps
 dense per-tile state arrays and clears only nodes touched by the previous

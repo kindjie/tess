@@ -4,7 +4,12 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <random>
+#include <set>
 #include <utility>
+#include <vector>
+
+#include "allocation_counter.h"
 
 namespace {
 
@@ -420,6 +425,344 @@ TEST(TessPathRuntime, PortalSegmentCacheStatsTrackAccessorStoresAndClear) {
   runtime.clear_caches();
   EXPECT_EQ(runtime.stats().portal_segment_cache.entries, 0u);
   EXPECT_EQ(runtime.stats().portal_segment_cache.path_nodes, 0u);
+}
+
+TEST(TessPathRuntime, ClearRequestsStartsNewFrameWithFreshTickets) {
+  World world;
+  fill_world(world);
+
+  tess::PathRequestRuntime runtime;
+  const auto first = runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{5, 0, 0}});
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 1, 0}, tess::Coord3{5, 1, 0}});
+  auto results = runtime.process_unit_cached<World, PassableTag>(world);
+  ASSERT_EQ(results.size(), 2u);
+  EXPECT_EQ(runtime.result(first).status, tess::PathStatus::Found);
+  EXPECT_EQ(runtime.result(first).path.size(), 6u);
+
+  runtime.clear_requests();
+  EXPECT_TRUE(runtime.requests().empty());
+  EXPECT_TRUE(runtime.results().empty());
+
+  const auto resubmitted = runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{9, 0, 0}});
+  results = runtime.process_unit_cached<World, PassableTag>(world);
+  ASSERT_EQ(results.size(), 1u);
+  EXPECT_EQ(runtime.result(resubmitted).status, tess::PathStatus::Found);
+  EXPECT_EQ(runtime.result(resubmitted).path.size(), 10u);
+  EXPECT_EQ(runtime.result(resubmitted).path.back(), (tess::Coord3{9, 0, 0}));
+
+  const auto stats = runtime.stats();
+  EXPECT_EQ(stats.submitted, 1u);
+  EXPECT_EQ(stats.completed, 1u);
+  EXPECT_EQ(stats.found, 1u);
+}
+
+TEST(TessPathRuntime, EmptyRequestListProcessesToEmptyResults) {
+  World world;
+  fill_world(world);
+
+  tess::PathRequestRuntime runtime;
+  const auto policy = tess::PathRuntimeCachePolicy{
+      .use_unit_field_product_cache = true,
+  };
+  const auto unit_results =
+      runtime.process_unit_cached<World, PassableTag>(world, policy);
+  EXPECT_TRUE(unit_results.empty());
+
+  const auto weighted_results =
+      runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(world);
+  EXPECT_TRUE(weighted_results.empty());
+
+  const auto stats = runtime.stats();
+  EXPECT_EQ(stats.submitted, 0u);
+  EXPECT_EQ(stats.completed, 0u);
+  EXPECT_EQ(stats.found, 0u);
+  EXPECT_EQ(stats.field_product_candidate_groups, 0u);
+  EXPECT_EQ(stats.weighted_batch.requests, 0u);
+}
+
+TEST(TessPathRuntime, FailureStatusCountersTallyMixedBatches) {
+  World world;
+  fill_world(world);
+  // Blocked start tile, blocked goal tile, and a sealed pocket around
+  // (16, 16) for a NoPath result.
+  world.template field<PassableTag>(tess::Coord3{2, 2, 0}) = false;
+  world.template field<PassableTag>(tess::Coord3{20, 20, 0}) = false;
+  for (const auto coord : {tess::Coord3{15, 15, 0}, tess::Coord3{16, 15, 0},
+                           tess::Coord3{17, 15, 0}, tess::Coord3{15, 16, 0},
+                           tess::Coord3{17, 16, 0}, tess::Coord3{15, 17, 0},
+                           tess::Coord3{16, 17, 0}, tess::Coord3{17, 17, 0}}) {
+    world.template field<PassableTag>(coord) = false;
+  }
+
+  const auto submit_mixed = [](tess::PathRequestRuntime& runtime) {
+    (void)runtime.submit(
+        tess::PathRequest{tess::Coord3{2, 2, 0}, tess::Coord3{5, 5, 0}});
+    (void)runtime.submit(
+        tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{20, 20, 0}});
+    (void)runtime.submit(
+        tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{16, 16, 0}});
+    (void)runtime.submit(
+        tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{5, 0, 0}});
+  };
+
+  tess::PathRequestRuntime unit_runtime;
+  submit_mixed(unit_runtime);
+  const auto unit_results =
+      unit_runtime.process_unit_cached<World, PassableTag>(world);
+  ASSERT_EQ(unit_results.size(), 4u);
+  auto stats = unit_runtime.stats();
+  EXPECT_EQ(stats.invalid_start, 1u);
+  EXPECT_EQ(stats.invalid_goal, 1u);
+  EXPECT_EQ(stats.no_path, 1u);
+  EXPECT_EQ(stats.found, 1u);
+
+  tess::PathRequestRuntime weighted_runtime;
+  submit_mixed(weighted_runtime);
+  const auto weighted_results =
+      weighted_runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(
+          world);
+  ASSERT_EQ(weighted_results.size(), 4u);
+  stats = weighted_runtime.stats();
+  EXPECT_EQ(stats.invalid_start, 1u);
+  EXPECT_EQ(stats.invalid_goal, 1u);
+  EXPECT_EQ(stats.no_path, 1u);
+  EXPECT_EQ(stats.found, 1u);
+}
+
+// The runtime policy byte budget must drive real eviction inside
+// process_unit_cached: two world-sized products cannot coexist under a
+// budget sized for one, so alternating goal groups evict each other.
+TEST(TessPathRuntime, UnitFieldProductByteBudgetEvictsThroughProcessing) {
+  World world;
+  fill_world(world);
+
+  tess::PathRequestRuntime runtime;
+  runtime.reserve_search_nodes(RuntimeTileCount);
+  const auto policy = tess::PathRuntimeCachePolicy{
+      .use_unit_field_product_cache = true,
+      .unit_field_product_min_start_chunks = 1,
+      .unit_field_product_cache_byte_budget = 6144,
+  };
+
+  const auto submit_group = [&runtime](tess::Coord3 goal) {
+    (void)runtime.submit(tess::PathRequest{tess::Coord3{0, 0, 0}, goal});
+    (void)runtime.submit(tess::PathRequest{tess::Coord3{8, 0, 0}, goal});
+    (void)runtime.submit(tess::PathRequest{tess::Coord3{0, 8, 0}, goal});
+  };
+
+  submit_group(tess::Coord3{31, 31, 0});
+  (void)runtime.process_unit_cached<World, PassableTag>(world, policy);
+  auto cache_stats = runtime.stats().field_product_cache;
+  EXPECT_EQ(cache_stats.entries, 1u);
+  EXPECT_EQ(cache_stats.evictions, 0u);
+  EXPECT_LE(cache_stats.bytes, 6144u);
+
+  runtime.clear_requests();
+  submit_group(tess::Coord3{31, 0, 0});
+  (void)runtime.process_unit_cached<World, PassableTag>(world, policy);
+  cache_stats = runtime.stats().field_product_cache;
+  EXPECT_EQ(cache_stats.entries, 1u);
+  EXPECT_EQ(cache_stats.evictions, 1u);
+
+  // The evicted first goal misses again and evicts the second in turn.
+  runtime.clear_requests();
+  submit_group(tess::Coord3{31, 31, 0});
+  (void)runtime.process_unit_cached<World, PassableTag>(world, policy);
+  cache_stats = runtime.stats().field_product_cache;
+  EXPECT_EQ(cache_stats.entries, 1u);
+  EXPECT_EQ(cache_stats.evictions, 2u);
+  EXPECT_EQ(cache_stats.misses, 3u);
+  EXPECT_EQ(runtime.stats().field_product_used_groups, 1u);
+}
+
+// Seeded randomized equivalence: grouped field-product processing must
+// return the same statuses and costs as per-request A*, and the group
+// counters must match a straightforward reference computation. This pins
+// the grouping semantics across the flat-map grouping rewrite.
+TEST(TessPathRuntime, RepeatedGoalGroupingMatchesAstarOracle) {
+  for (const auto seed : {11u, 29u, 47u}) {
+    for (const auto min_start_chunks : {std::size_t{1}, std::size_t{2}}) {
+      World world;
+      fill_world(world);
+      std::mt19937 rng(seed);
+      std::uniform_int_distribution<std::int64_t> coord_dist(0, 31);
+      for (int i = 0; i < 60; ++i) {
+        const auto coord = tess::Coord3{coord_dist(rng), coord_dist(rng), 0};
+        world.template field<PassableTag>(coord) = false;
+      }
+
+      std::vector<tess::Coord3> passable;
+      for (std::int64_t y = 0; y < 32; ++y) {
+        for (std::int64_t x = 0; x < 32; ++x) {
+          const auto coord = tess::Coord3{x, y, 0};
+          if (world.template field<PassableTag>(coord)) {
+            passable.push_back(coord);
+          }
+        }
+      }
+      ASSERT_GT(passable.size(), 64u);
+      auto blocked_goal = tess::Coord3{0, 0, 0};
+      auto blocked_goal_found = false;
+      for (std::int64_t y = 0; y < 32 && !blocked_goal_found; ++y) {
+        for (std::int64_t x = 0; x < 32 && !blocked_goal_found; ++x) {
+          const auto coord = tess::Coord3{x, y, 0};
+          if (!world.template field<PassableTag>(coord)) {
+            blocked_goal = coord;
+            blocked_goal_found = true;
+          }
+        }
+      }
+      ASSERT_TRUE(blocked_goal_found);
+
+      std::uniform_int_distribution<std::size_t> pick(0, passable.size() - 1);
+      std::vector<tess::Coord3> goal_pool;
+      for (int i = 0; i < 6; ++i) {
+        goal_pool.push_back(passable[pick(rng)]);
+      }
+      goal_pool.push_back(blocked_goal);
+
+      std::vector<tess::PathRequest> requests;
+      std::uniform_int_distribution<std::size_t> goal_pick(
+          0, goal_pool.size() - 1);
+      std::uniform_int_distribution<int> unique_dist(0, 99);
+      for (int i = 0; i < 120; ++i) {
+        const auto start = passable[pick(rng)];
+        const auto goal = unique_dist(rng) < 25 ? passable[pick(rng)]
+                                                : goal_pool[goal_pick(rng)];
+        requests.push_back(tess::PathRequest{start, goal});
+      }
+
+      tess::PathRequestRuntime runtime;
+      runtime.reserve_search_nodes(RuntimeTileCount);
+      for (const auto& request : requests) {
+        (void)runtime.submit(request);
+      }
+      const auto policy = tess::PathRuntimeCachePolicy{
+          .use_unit_field_product_cache = true,
+          .unit_field_product_min_start_chunks = min_start_chunks,
+      };
+      const auto results =
+          runtime.process_unit_cached<World, PassableTag>(world, policy);
+      ASSERT_EQ(results.size(), requests.size());
+
+      tess::PathScratch oracle_scratch;
+      for (std::size_t i = 0; i < requests.size(); ++i) {
+        const auto oracle = tess::astar_path<World, PassableTag>(
+            world, requests[i], oracle_scratch);
+        ASSERT_EQ(results[i].status, oracle.status)
+            << "seed " << seed << " chunks " << min_start_chunks << " request "
+            << i;
+        ASSERT_EQ(results[i].cost, oracle.cost)
+            << "seed " << seed << " chunks " << min_start_chunks << " request "
+            << i;
+        if (oracle.status == tess::PathStatus::Found) {
+          ASSERT_FALSE(results[i].path.empty());
+          EXPECT_EQ(results[i].path.front(), requests[i].start);
+          EXPECT_EQ(results[i].path.back(), requests[i].goal);
+        }
+      }
+
+      // Reference group counters over first-occurrence goal groups.
+      std::vector<tess::Coord3> goals;
+      std::vector<std::vector<tess::Coord3>> starts;
+      for (const auto& request : requests) {
+        auto found = false;
+        for (std::size_t g = 0; g < goals.size(); ++g) {
+          if (goals[g] == request.goal) {
+            starts[g].push_back(request.start);
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          goals.push_back(request.goal);
+          starts.push_back({request.start});
+        }
+      }
+      auto candidates = std::size_t{0};
+      auto used = std::size_t{0};
+      auto skipped = std::size_t{0};
+      for (std::size_t g = 0; g < goals.size(); ++g) {
+        if (starts[g].size() < 2) {
+          continue;
+        }
+        ++candidates;
+        std::set<std::uint64_t> chunks;
+        for (const auto start : starts[g]) {
+          chunks.insert(
+              tess::chunk_key<Runtime2D>(tess::tile_key<Runtime2D>(start))
+                  .value);
+        }
+        if (chunks.size() < min_start_chunks ||
+            !world.template field<PassableTag>(goals[g])) {
+          ++skipped;
+        } else {
+          ++used;
+        }
+      }
+      const auto stats = runtime.stats();
+      EXPECT_EQ(stats.field_product_candidate_groups, candidates)
+          << "seed " << seed << " chunks " << min_start_chunks;
+      EXPECT_EQ(stats.field_product_used_groups, used)
+          << "seed " << seed << " chunks " << min_start_chunks;
+      EXPECT_EQ(stats.field_product_skipped_groups, skipped)
+          << "seed " << seed << " chunks " << min_start_chunks;
+    }
+  }
+}
+
+// A warm second frame over identical requests must not allocate: grouping
+// scratch, result storage, and cache lookups all reuse runtime-owned
+// storage.
+TEST(TessPathRuntime, RepeatedGoalGroupingWarmFrameIsAllocationFree) {
+  World world;
+  fill_world(world);
+
+  tess::PathRequestRuntime runtime;
+  runtime.reserve_requests(16);
+  runtime.reserve_search_nodes(RuntimeTileCount);
+  runtime.reserve_path_nodes(4096);
+  runtime.reserve_unit_routes(16);
+  runtime.reserve_unit_field_products(2);
+  runtime.reserve_unit_field_product_dependencies(World::chunk_count);
+
+  const auto submit_frame = [&runtime]() {
+    for (std::int64_t i = 0; i < 4; ++i) {
+      (void)runtime.submit(tess::PathRequest{tess::Coord3{i * 8, 0, 0},
+                                             tess::Coord3{31, 31, 0}});
+      (void)runtime.submit(
+          tess::PathRequest{tess::Coord3{0, i * 8, 0}, tess::Coord3{31, 0, 0}});
+      (void)runtime.submit(
+          tess::PathRequest{tess::Coord3{i, 0, 0}, tess::Coord3{i, 31, 0}});
+    }
+  };
+  const auto policy = tess::PathRuntimeCachePolicy{
+      .use_unit_field_product_cache = true,
+  };
+
+  submit_frame();
+  auto results = runtime.process_unit_cached<World, PassableTag>(world, policy);
+  ASSERT_EQ(results.size(), 12u);
+  runtime.clear_requests();
+  submit_frame();
+  results = runtime.process_unit_cached<World, PassableTag>(world, policy);
+  ASSERT_EQ(results.size(), 12u);
+
+  runtime.clear_requests();
+  submit_frame();
+  {
+    tess_test::ScopedAllocationCounter counter;
+    results = runtime.process_unit_cached<World, PassableTag>(world, policy);
+    ASSERT_EQ(results.size(), 12u);
+    EXPECT_EQ(counter.count(), 0u);
+    EXPECT_EQ(counter.bytes(), 0u);
+  }
+  for (const auto result : results) {
+    EXPECT_EQ(result.status, tess::PathStatus::Found);
+  }
 }
 
 }  // namespace
