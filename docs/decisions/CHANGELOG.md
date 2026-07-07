@@ -13,6 +13,35 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-06 - Byte-Array Backing For BlockScratch Object Lifetimes
+
+- Changed: `BlockScratch` now owns heap `std::byte[]` storage
+  (`std::unique_ptr<std::byte[]>` + explicit capacity accounting) instead
+  of `std::vector<std::max_align_t>`, and `allocate<T>` returns
+  `std::launder`ed pointers into that buffer. Growth allocates a fresh
+  buffer without preserving contents (previously returned spans were
+  already invalidated; byte accounting still carries over), a wrapped
+  capacity computation now throws `std::bad_alloc` instead of silently
+  wrapping, and a `static_assert` pins
+  `__STDCPP_DEFAULT_NEW_ALIGNMENT__ >= alignof(std::max_align_t)` so the
+  buffer base keeps the documented max-align guarantee. The class is now
+  move-only; moved-from scratches read as empty. Tests pin zero-count
+  allocation, byte-count overflow rejection, mixed-alignment disjoint
+  spans, growth accounting, and runtime `WritePolicy` dispatch for
+  `UniquePerTile`, `UniquePerChunk`, and the first-ever `Unsafe`
+  instantiation.
+- Reason: Reinterpreting `std::vector<std::max_align_t>` storage as `T*`
+  never created `T` objects, which is undefined behavior under the C++20
+  object model even for trivial `T` (and per-element pointer arithmetic is
+  per-object UB before C++23 `start_lifetime_as_array`). A `std::byte`
+  array-new implicitly creates implicit-lifetime objects in its storage
+  ([intro.object]/13), and `allocate<T>` already requires trivially
+  default-constructible, trivially destructible `T`, making the returned
+  spans well-defined. The defect was formal-model-only and not observable
+  under ASan/UBSan.
+- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`
+
 ## 2026-07-06 - Structural Serial-Executor Guard For Shared-Dirty Phase Execution
 
 - Changed: `execute_phase_deferred_dirty_with<Policy>` now requires the new

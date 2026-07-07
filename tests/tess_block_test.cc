@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <type_traits>
 #include <vector>
@@ -12,6 +14,10 @@ namespace {
 
 struct TerrainTag {};
 struct CostTag {};
+
+struct alignas(alignof(std::max_align_t)) MaxAligned {
+  unsigned char data[alignof(std::max_align_t)];
+};
 
 constexpr std::uint32_t DirtyTerrain = 1u << 0u;
 constexpr std::uint32_t DirtyCost = 1u << 1u;
@@ -234,6 +240,96 @@ TEST(TessBlock, BlockScratchExhaustionReturnsEmptySpanWithoutAdvancing) {
   EXPECT_EQ(scratch.used_bytes(), used);
 }
 
+TEST(TessBlock, BlockScratchZeroCountAllocationReturnsEmptyWithoutAdvancing) {
+  tess::BlockScratch scratch;
+
+  const auto unreserved = scratch.allocate<std::uint32_t>(0);
+  EXPECT_TRUE(unreserved.empty());
+  EXPECT_EQ(unreserved.data(), nullptr);
+  EXPECT_EQ(scratch.used_bytes(), 0u);
+
+  scratch.reserve_bytes(64);
+  const auto first = scratch.allocate<std::uint32_t>(2);
+  ASSERT_EQ(first.size(), 2u);
+  const auto used = scratch.used_bytes();
+
+  const auto empty = scratch.allocate<std::uint32_t>(0);
+
+  EXPECT_TRUE(empty.empty());
+  EXPECT_EQ(empty.data(), nullptr);
+  EXPECT_EQ(scratch.used_bytes(), used);
+}
+
+TEST(TessBlock, BlockScratchOverflowingByteCountReturnsEmptyWithoutWrapping) {
+  tess::BlockScratch scratch;
+  tess::BlockDiagnostics diagnostics;
+  scratch.reserve_bytes(64);
+
+  const auto used = scratch.used_bytes();
+  // count * sizeof(std::uint32_t) wraps to 0 in std::size_t arithmetic; a
+  // missing guard would report success with a tiny (empty) allocation.
+  constexpr auto overflow_count =
+      std::numeric_limits<std::size_t>::max() / sizeof(std::uint32_t) + 1;
+
+  const auto values = scratch.allocate<std::uint32_t>(overflow_count);
+
+  EXPECT_TRUE(values.empty());
+  EXPECT_EQ(values.data(), nullptr);
+  EXPECT_EQ(scratch.used_bytes(), used);
+
+  if (values.empty()) {
+    diagnostics.record_scratch_allocation_failure();
+  }
+  EXPECT_EQ(diagnostics.scratch_allocation_failures(), 1u);
+}
+
+TEST(TessBlock, BlockScratchMixedAlignmentsProduceAlignedDisjointSpans) {
+  tess::BlockScratch scratch;
+  scratch.reserve_bytes(256);
+
+  const auto chars = scratch.allocate<char>(3);
+  const auto words = scratch.allocate<std::uint64_t>(2);
+  const auto maxes = scratch.allocate<MaxAligned>(1);
+
+  ASSERT_EQ(chars.size(), 3u);
+  ASSERT_EQ(words.size(), 2u);
+  ASSERT_EQ(maxes.size(), 1u);
+
+  const auto char_begin = reinterpret_cast<std::uintptr_t>(chars.data());
+  const auto word_begin = reinterpret_cast<std::uintptr_t>(words.data());
+  const auto max_begin = reinterpret_cast<std::uintptr_t>(maxes.data());
+
+  EXPECT_EQ(word_begin % alignof(std::uint64_t), 0u);
+  EXPECT_EQ(max_begin % alignof(MaxAligned), 0u);
+
+  EXPECT_LE(char_begin + chars.size_bytes(), word_begin);
+  EXPECT_LE(word_begin + words.size_bytes(), max_begin);
+}
+
+TEST(TessBlock, BlockScratchGrowthKeepsUsedBytesAndServesNewAllocations) {
+  tess::BlockScratch scratch;
+  scratch.reserve_bytes(sizeof(std::uint32_t) * 4);
+
+  auto first = scratch.allocate<std::uint32_t>(4);
+  ASSERT_EQ(first.size(), 4u);
+  const auto used = scratch.used_bytes();
+  const auto old_capacity = scratch.capacity_bytes();
+
+  // Growth invalidates previously returned spans and does not preserve
+  // scratch contents; only the byte accounting carries over.
+  scratch.reserve_bytes(old_capacity * 4);
+
+  EXPECT_GE(scratch.capacity_bytes(), old_capacity * 4);
+  EXPECT_EQ(scratch.used_bytes(), used);
+
+  const auto second = scratch.allocate<std::uint64_t>(2);
+  ASSERT_EQ(second.size(), 2u);
+  EXPECT_EQ(
+      reinterpret_cast<std::uintptr_t>(second.data()) % alignof(std::uint64_t),
+      0u);
+  EXPECT_GT(scratch.used_bytes(), used);
+}
+
 TEST(TessBlock, BlockDiagnosticsCountsAndResetsScratchAllocationFailures) {
   tess::BlockDiagnostics diagnostics;
 
@@ -448,6 +544,65 @@ TEST(TessBlock, RuntimeInvalidWritePolicyFailsFast) {
             static_cast<tess::WritePolicy>(255), [](auto) {});
       },
       ".*");
+}
+
+TEST(TessBlock, RuntimeUniqueWritePoliciesDispatchMutableViews) {
+  const auto policies = std::vector<tess::WritePolicy>{
+      tess::WritePolicy::UniquePerTile,
+      tess::WritePolicy::UniquePerChunk,
+  };
+
+  std::uint16_t expected = 10;
+  for (const auto policy : policies) {
+    World<TopDown2D> world;
+    constexpr auto key = tess::ChunkKey{1};
+    const auto keys = std::vector<tess::ChunkKey>{key};
+    std::size_t visited = 0;
+
+    tess::for_each_chunk(
+        world, tess::chunk_domain(keys), policy,
+        [&](tess::ChunkView<World<TopDown2D>> view) {
+          auto terrain = view.template field_span<TerrainTag>();
+          static_assert(
+              std::is_same_v<decltype(terrain), std::span<std::uint16_t>>);
+
+          terrain[0] = expected;
+          view.meta().entity_count = expected;
+          ++visited;
+        });
+
+    EXPECT_EQ(visited, 1u);
+    EXPECT_EQ(world.chunk(key).template field<TerrainTag>(tess::LocalTileId{0}),
+              expected);
+    EXPECT_EQ(world.meta(key).entity_count, expected);
+    ++expected;
+  }
+}
+
+TEST(TessBlock, RuntimeUnsafePolicyDispatchesMutableViews) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{3};
+  const auto keys = std::vector<tess::ChunkKey>{key};
+  std::size_t visited = 0;
+
+  ASSERT_TRUE(tess::is_valid_write_policy(tess::WritePolicy::Unsafe));
+
+  tess::for_each_chunk(
+      world, tess::chunk_domain(keys), tess::WritePolicy::Unsafe,
+      [&](tess::ChunkView<World<TopDown2D>> view) {
+        auto terrain = view.template field_span<TerrainTag>();
+        static_assert(
+            std::is_same_v<decltype(terrain), std::span<std::uint16_t>>);
+
+        terrain[5] = 77;
+        view.meta().entity_count = 4;
+        ++visited;
+      });
+
+  EXPECT_EQ(visited, 1u);
+  EXPECT_EQ(world.chunk(key).template field<TerrainTag>(tess::LocalTileId{5}),
+            77);
+  EXPECT_EQ(world.meta(key).entity_count, 4u);
 }
 
 TEST(TessBlock, ReadOnlyBlockCtxChunkViewsAreConstForMutableWorld) {

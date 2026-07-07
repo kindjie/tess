@@ -16,15 +16,20 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
   `ChunkKey` order.
 - `dirty_chunk_domain(world, flags)` and `active_chunk_domain(world, flags)`
   return owning domains using the current always-resident metadata queries.
-- `BlockScratch` owns caller-reusable temporary storage backed by
-  `std::vector<std::max_align_t>`. `reserve_bytes(bytes)` grows the backing
-  store when needed, `reset()` rewinds the bump offset, and
-  `capacity_bytes()`, `used_bytes()`, and `remaining_bytes()` expose byte
-  accounting.
+- `BlockScratch` owns caller-reusable temporary storage backed by a heap
+  `std::byte[]` buffer aligned for `std::max_align_t`. `reserve_bytes(bytes)`
+  grows the backing store when needed by allocating a fresh buffer: growth
+  invalidates previously returned spans and does not preserve contents,
+  while `used_bytes()` accounting carries over. `reset()` rewinds the bump
+  offset, and `capacity_bytes()`, `used_bytes()`, and `remaining_bytes()`
+  expose byte accounting. The class is move-only.
 - `BlockScratch::allocate<T>(count)` returns an aligned `std::span<T>` from
   the current bump offset. It does not allocate when existing capacity is
-  sufficient. Capacity exhaustion returns an empty span and leaves
-  `used_bytes()` unchanged.
+  sufficient. Zero-count requests, byte-count overflow, and capacity
+  exhaustion all return an empty span and leave `used_bytes()` unchanged.
+  `T` must be trivially default-constructible and trivially destructible
+  (implicit-lifetime), so the spans over the implicitly created objects in
+  the `std::byte` array storage are well-defined.
 - `BlockDiagnostics` owns caller-reusable counters for serial block execution.
   It currently records `scratch_allocation_failures`, with explicit
   `record_scratch_allocation_failure()` and `reset()` calls.
