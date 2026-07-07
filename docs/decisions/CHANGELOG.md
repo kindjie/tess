@@ -13,6 +13,36 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-06 - Topology CSR Reachability and Incremental Region Graph
+
+- Changed: `RegionGraph` now maintains a dense global region index
+  (per-chunk prefix sums over 1-based local region ids, exposed through
+  `region_count()` / `region_index(RegionRef)` with an
+  `invalid_region_index` sentinel) and a CSR portal adjacency rebuilt after
+  portal pairing. `reachable()` traverses the CSR adjacency with
+  epoch-stamped visited marks in `RegionGraphScratch`, replacing the
+  per-frontier-pop portal rescan and linear visited scan (O(V*P + V^2))
+  with O(V + P) while preserving the public signature, statuses, and
+  visited-region counts. Added the checked
+  `LocalChunkTopology::region(LocalRegionId)` accessor for the 1-based id
+  convention, defaulted equality for `LocalRegion`, `LocalBoundaryExit`,
+  and `RegionPortal`, and `update_region_graph<World, PassableTag>(world,
+  scratch, graph, dirty_chunks)` which incrementally rebuilds dirty chunk
+  topologies, patches portals, and restores canonical portal order so the
+  patched graph is identical to a full rebuild. Incremental portal patching
+  drops and re-derives all portals originating from dirty chunks and their
+  face neighbors (a superset of the strictly invalidated portals), then
+  stable-sorts by from-chunk; this keeps the portal array byte-identical to
+  a fresh build, which a minimal to-dirty-only filter cannot guarantee.
+- Reason: Reachability queries scaled quadratically with region count, the
+  1-based `LocalRegionId` convention had no checked accessor (naive
+  `regions()[id.value]` indexing reads the wrong region or out of bounds),
+  and consumers such as a sibling game had to run a full
+  `build_region_graph` per tile edit because graph internals are private.
+- Affected docs: `docs/architecture/topology.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/topology/topology.h`,
+  `tests/tess_topology_test.cc`
+
 ## 2026-06-08 - Concurrent Tile-World TDD Split
 
 - Changed: Added a concurrent tile-world TDD addendum that separates scoped
