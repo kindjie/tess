@@ -51,6 +51,7 @@ set(
   include/tess/core/shape.h
   include/tess/core/uint128.h
   include/tess/diagnostics/diagnostics.h
+  include/tess/ops/phase_executor.h
   include/tess/ops/queued.h
   include/tess/path/detail/weighted_batch.h
   include/tess/path/distance_field_box.h
