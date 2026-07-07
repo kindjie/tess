@@ -2124,7 +2124,11 @@ TEST(TessQueued, FrameOpsClearRestartsIdsAndReusesCapacity) {
         ops.update_field(tess::DomainDesc::dirty_chunks(DirtyTerrain),
                          tess::WritePolicy::ReadOnly);
 
+#if !defined(_MSC_VER) || defined(NDEBUG)
+    // MSVC's debug STL allocates bookkeeping during warm container reuse,
+    // so allocation-freedom is only meaningful outside its debug CRT.
     EXPECT_EQ(counter.count(), 0u);
+#endif
     EXPECT_EQ(warm_first, (tess::OpHandle{0}));
     EXPECT_EQ(warm_second, (tess::OpHandle{1}));
   }

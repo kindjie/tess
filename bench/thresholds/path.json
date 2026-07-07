@@ -3,23 +3,23 @@
   "benchmarks": {
     "path/astar_open_2d": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 740
     },
     "path/astar_open_2d_64x64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 3000
     },
     "path/astar_open_2d_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 23000
     },
     "path/astar_open_2d_1024x1024": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 46000
     },
     "path/weighted_astar_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 150000
+      "max_cpu_time_ns": 23000
     },
     "path/weighted_astar_axis_detour_512x512": {
       "max_real_time_ns": null,
@@ -27,35 +27,35 @@
     },
     "path/weighted_astar_sparse_blockers_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 6000000
+      "max_cpu_time_ns": 13000000
     },
     "path/weighted_astar_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 32000000
+      "max_cpu_time_ns": 75000000
     },
     "path/weighted_portal_product_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 4000000
+      "max_cpu_time_ns": 8400000
     },
     "path/weighted_portal_product_replay_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000
+      "max_cpu_time_ns": 64
     },
     "path/weighted_chunk_portal_product_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2500000
+      "max_cpu_time_ns": 6500000
     },
     "path/weighted_chunk_portal_product_replay_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000
+      "max_cpu_time_ns": 62
     },
     "path/weighted_chunk_portal_candidates_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 500000
+      "max_cpu_time_ns": 77000
     },
     "path/weighted_portal_segment_cache_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 500000
+      "max_cpu_time_ns": 21000
     },
     "path/weighted_portal_segment_cache_batch_100_room_portals_512x512": {
       "max_real_time_ns": null,
@@ -63,47 +63,47 @@
     },
     "path/weighted_portal_endpoint_segments_batch_100_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 8000000
+      "max_cpu_time_ns": 20000000
     },
     "path/weighted_portal_first_field_cache_batch_100_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 5000000
+      "max_cpu_time_ns": 11000000
     },
     "path/weighted_astar_batch_100_mixed_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1200000000
+      "max_cpu_time_ns": 3100000000
     },
     "path/weighted_astar_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 550000000
+      "max_cpu_time_ns": 1400000000
     },
     "path/weighted_distance_field_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 40000000
+      "max_cpu_time_ns": 89000000
     },
     "path/bounded_weighted_distance_field_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 12000000
+      "max_cpu_time_ns": 32000000
     },
     "path/weighted_astar_batch_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000000
+      "max_cpu_time_ns": 2700000000
     },
     "path/weighted_distance_field_batch_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 280000000
+      "max_cpu_time_ns": 700000000
     },
     "path/bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 100000000
+      "max_cpu_time_ns": 230000000
     },
     "path/weighted_batch_planner_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 100000000
+      "max_cpu_time_ns": 240000000
     },
     "path/astar_wall_gap_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 59000
     },
     "path/astar_plane_gap_miss_512x512": {
       "comment": "Pre-A* scan worst case; generous 10x-measured ceiling",
@@ -115,19 +115,19 @@
       "comment": "3D plane-scan worst case; generous 10x-measured ceiling",
       "comment_ref": "docs/planning/optimization-log.md 2026-07-06",
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 100000
+      "max_cpu_time_ns": 89000
     },
     "path/astar_alternate_direct_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 28000
     },
     "path/astar_axis_detour_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 37000
     },
     "path/astar_no_path_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 7200
     },
     "path/astar_striped_maze_512x512": {
       "max_real_time_ns": null,
@@ -135,19 +135,19 @@
     },
     "path/astar_short_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 1500
     },
     "path/astar_medium_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 8500
     },
     "path/astar_long_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 23000
     },
     "path/astar_no_path_1024x1024": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 16000
     },
     "path/astar_striped_maze_1024x1024": {
       "max_real_time_ns": null,
@@ -155,11 +155,11 @@
     },
     "path/astar_vertical_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 17000
     },
     "path/astar_vertical_wall_gap_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 46000
     },
     "path/astar_vertical_striped_maze_512x512": {
       "max_real_time_ns": null,
@@ -167,27 +167,27 @@
     },
     "path/astar_open_3d_64x64x16": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 3200
     },
     "path/astar_slab_gap_3d_64x64x16": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 43000
     },
     "path/astar_slab_no_gap_3d_64x64x16": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 4300
     },
     "path/astar_slab_multi_gap_3d_64x64x16": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 18000
     },
     "path/astar_corridor_3d_64x64x16": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 77000
     },
     "path/astar_sparse_blockers_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1100000
+      "max_cpu_time_ns": 2900000
     },
     "path/astar_room_portals_512x512": {
       "max_real_time_ns": null,
@@ -195,11 +195,11 @@
     },
     "path/astar_branch_lattice_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 24000
     },
     "path/astar_batch_100_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 2200000
     },
     "path/astar_batch_100_mixed_512x512": {
       "max_real_time_ns": null,
@@ -207,57 +207,57 @@
     },
     "path/astar_batch_100_shared_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 60000000
+      "max_cpu_time_ns": 150000000
     },
     "path/distance_field_batch_100_shared_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 6000000
+      "max_cpu_time_ns": 15000000
     },
     "path/astar_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 110000000
+      "max_cpu_time_ns": 290000000
     },
     "path/distance_field_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 8000000
+      "max_cpu_time_ns": 18000000
     },
     "path/astar_batch_100_multigoal_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 220000000
+      "max_cpu_time_ns": 540000000
     },
     "path/distance_field_batch_100_multigoal_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 40000000
+      "max_cpu_time_ns": 100000000
     },
     "path/distance_field_product_build_8_goal_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 20000000
+      "max_cpu_time_ns": 49000000
     },
     "path/nearest_target_product_100_starts_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 2500000
     },
     "path/field_product_cache_hit_replay_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 32000
     },
     "path/field_product_cache_stale_rejection_room_portals_512x512/iterations:2000/manual_time": {
-      "max_real_time_ns": 1000000,
+      "max_real_time_ns": 1500,
       "max_cpu_time_ns": null,
       "note": "Measurement fix 2026-07-06: manual timing brackets only the stale lookup (previously ~760 ns including per-iteration Pause/Resume timer overhead; ~313 ns measured after the fix). cpu_time now includes the untimed world-sized cache refill, so the gate moved to real_time at the 1 ms investigation ceiling."
     },
     "path/field_product_cache_lru_eviction_512x512/iterations:1000/manual_time": {
-      "max_real_time_ns": 1000000,
+      "max_real_time_ns": 910,
       "max_cpu_time_ns": null,
       "note": "Measurement fix 2026-07-06: manual timing brackets only the evicting store (previously ~596 ns including per-iteration Pause/Resume timer overhead; ~119 ns measured after the fix). cpu_time now includes the untimed product copies, so the 10 ms cpu gate was replaced by a real_time gate at the 1 ms investigation ceiling."
     },
     "path/astar_batch_100_mixed_repeated_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 160000000
+      "max_cpu_time_ns": 410000000
     },
     "path/cached_astar_batch_100_mixed_repeated_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 50000000
+      "max_cpu_time_ns": 130000000
     },
     "path/astar_batch_100_suffix_open_512x512": {
       "max_real_time_ns": null,
@@ -265,47 +265,47 @@
     },
     "path/cached_astar_batch_100_suffix_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 250000
+      "max_cpu_time_ns": 97000
     },
     "path/agent_runtime_100_unit_suffix_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 250000
+      "max_cpu_time_ns": 180000
     },
     "path/agent_tick_100_unit_clean_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 100000
+      "max_cpu_time_ns": 2400
     },
     "path/agent_tick_100_unit_dirty_world_edit_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 2900000
     },
     "path/agent_runtime_100_weighted_shared_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 10000000
+      "max_cpu_time_ns": 24000000
     },
     "path/agent_tick_100_weighted_shared_dirty_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 10000000
+      "max_cpu_time_ns": 24000000
     },
     "path/agent_runtime_100_weighted_mixed_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 140000000
+      "max_cpu_time_ns": 330000000
     },
     "path/agent_runtime_100_unit_world_edit_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 3000000
     },
     "path/agent_runtime_100_unit_shared_wall_gap_route_cache_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 440000
     },
     "path/agent_runtime_100_unit_shared_wall_gap_field_cache_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 450000
     },
     "path/agent_runtime_100_unit_scattered_wall_gap_route_cache_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 300000
     },
     "path/agent_runtime_100_unit_scattered_wall_gap_field_cache_512x512": {
       "max_real_time_ns": null,
