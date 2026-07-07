@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/core/uint128.h>
 
 #include <cstdint>
 #include <limits>
@@ -87,8 +88,6 @@ struct ResolvedTile {
 }
 
 namespace detail {
-
-using UInt128 = unsigned __int128;
 
 [[nodiscard]] constexpr bool is_power_of_two(std::uint64_t value) noexcept {
   return value != 0 && (value & (value - 1)) == 0;
@@ -307,22 +306,37 @@ template <typename Shape>
 [[nodiscard]] constexpr TileKey<Shape> tile_key(Coord3 coord) noexcept {
   using Traits = ShapeTraits<Shape>;
   TESS_ASSERT(contains<Shape>(coord));
-  const auto chunk = chunk_key<Shape>(chunk_coord<Shape>(coord));
   const auto local = local_tile_id<Shape>(local_coord<Shape>(coord));
   using Storage = Traits::TileKeyStorage;
 
-  return TileKey<Shape>{
-      (static_cast<Storage>(chunk.value) << Traits::local_bits) |
-          static_cast<Storage>(local.value),
-  };
+  if constexpr (Traits::chunk_bits == 0) {
+    // Single-chunk shapes: the key is the local id. Shifting the chunk key
+    // into place would shift by local_bits, which may equal the storage
+    // width and would be undefined behavior.
+    return TileKey<Shape>{static_cast<Storage>(local.value)};
+  } else {
+    const auto chunk = chunk_key<Shape>(chunk_coord<Shape>(coord));
+    return TileKey<Shape>{
+        (static_cast<Storage>(chunk.value) << Traits::local_bits) |
+            static_cast<Storage>(local.value),
+    };
+  }
 }
 
 template <typename Shape>
 [[nodiscard]] constexpr ChunkKey chunk_key(TileKey<Shape> key) noexcept {
   using Traits = ShapeTraits<Shape>;
-  return ChunkKey{
-      static_cast<std::uint64_t>(key.value >> Traits::local_bits),
-  };
+  if constexpr (Traits::chunk_bits == 0) {
+    // Single-chunk shapes store only the local id; shifting right by
+    // local_bits may equal the storage width and would be undefined
+    // behavior.
+    static_cast<void>(key);
+    return ChunkKey{0};
+  } else {
+    return ChunkKey{
+        static_cast<std::uint64_t>(key.value >> Traits::local_bits),
+    };
+  }
 }
 
 template <typename Shape>

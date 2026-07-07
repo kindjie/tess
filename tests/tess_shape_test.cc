@@ -18,6 +18,13 @@ using Chunked3D =
 using SingleChunk = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{8, 8, 1}>;
 using HugeBounded = tess::Shape<tess::Extent3{1ull << 34, 1ull << 33, 256},
                                 tess::Extent3{32, 32, 4}>;
+// Largest legal single-chunk shape: chunk dims must be powers of two and the
+// local tile count must fit std::uint64_t, so the maximum local tile count is
+// 2^63 (local_bits == 63, chunk_bits == 0, tile keys in std::uint64_t). A
+// 64-bit local tile count (for example 2^64 - 1 via 4294967295 x 4294967297)
+// is unrepresentable because such chunk dims are not powers of two.
+using MaxSingleChunk = tess::Shape<tess::Extent3{1ull << 31, 1ull << 31, 2},
+                                   tess::Extent3{1ull << 31, 1ull << 31, 2}>;
 
 TEST(TessShape, PublicValueTypesDefaultInitialize) {
   static_assert(tess::Extent3{} == tess::Extent3{0, 0, 1});
@@ -160,7 +167,7 @@ TEST(TessShape, InfersHugeBoundedShapeKeyWidth) {
   static_assert(Traits::local_bits == 12);
   static_assert(Traits::chunk_bits == 63);
   static_assert(Traits::tile_key_bits == 75);
-  static_assert(std::is_same_v<Traits::TileKeyStorage, unsigned __int128>);
+  static_assert(std::is_same_v<Traits::TileKeyStorage, tess::detail::UInt128>);
 
   EXPECT_EQ(Traits::local_bits, 12);
   EXPECT_EQ(Traits::tile_key_bits, 75);
@@ -290,6 +297,167 @@ TEST(TessShape, KeyConversionsDoNotAllocate) {
 
   EXPECT_GT(observed, 0u);
   EXPECT_EQ(tess_test::allocation_count(), 0);
+}
+
+TEST(TessUInt128, MultipliesWithCarriesAcrossThe64BitBoundary) {
+  using tess::detail::UInt128;
+  constexpr auto max64 = std::numeric_limits<std::uint64_t>::max();
+
+  static_assert(UInt128{max64} * UInt128{max64} ==
+                UInt128::from_parts(0xfffffffffffffffeULL, 1));
+  static_assert(UInt128{1ull << 32} * UInt128{1ull << 32} ==
+                UInt128::from_parts(1, 0));
+  static_assert(UInt128::from_parts(1, 2) * UInt128::from_parts(3, 4) ==
+                UInt128::from_parts(10, 8));
+  static_assert(UInt128{3} * UInt128{5} == UInt128{15});
+
+  EXPECT_EQ(UInt128{max64} * UInt128{max64},
+            UInt128::from_parts(0xfffffffffffffffeULL, 1));
+  EXPECT_EQ(UInt128{1ull << 32} * UInt128{1ull << 32},
+            UInt128::from_parts(1, 0));
+}
+
+TEST(TessUInt128, ShiftsAcrossThe64BitBoundary) {
+  using tess::detail::UInt128;
+
+  static_assert((UInt128{1} << 0) == UInt128{1});
+  static_assert((UInt128{1} << 63) == UInt128{1ull << 63});
+  static_assert((UInt128{1} << 64) == UInt128::from_parts(1, 0));
+  static_assert((UInt128{0xff} << 60) ==
+                UInt128::from_parts(0xf, 0xf000000000000000ULL));
+  static_assert((UInt128{1} << 127) == UInt128::from_parts(1ull << 63, 0));
+  static_assert((UInt128{1} << 128) == UInt128{0});
+  static_assert((UInt128{1} << 200) == UInt128{0});
+
+  static_assert((UInt128::from_parts(1, 0) >> 0) == UInt128::from_parts(1, 0));
+  static_assert((UInt128::from_parts(1, 0) >> 64) == UInt128{1});
+  static_assert((UInt128::from_parts(0xf, 0xf000000000000000ULL) >> 60) ==
+                UInt128{0xff});
+  static_assert((UInt128::from_parts(1ull << 63, 0) >> 127) == UInt128{1});
+  static_assert((UInt128::from_parts(1ull << 63, 0) >> 128) == UInt128{0});
+  static_assert((UInt128::from_parts(1ull << 63, 0) >> 200) == UInt128{0});
+
+  auto value = UInt128{1};
+  value <<= 100;
+  EXPECT_EQ(value, UInt128::from_parts(1ull << 36, 0));
+  value >>= 100;
+  EXPECT_EQ(value, UInt128{1});
+}
+
+TEST(TessUInt128, SubtractsBorrowsComparesAndNarrows) {
+  using tess::detail::UInt128;
+  constexpr auto max64 = std::numeric_limits<std::uint64_t>::max();
+
+  static_assert(UInt128::from_parts(1, 0) - UInt128{1} ==
+                UInt128::from_parts(0, max64));
+  static_assert(UInt128::from_parts(5, 10) - UInt128::from_parts(2, 3) ==
+                UInt128::from_parts(3, 7));
+
+  static_assert(UInt128::from_parts(1, 0) > UInt128::from_parts(0, max64));
+  static_assert(UInt128{2} < UInt128::from_parts(0, 3));
+  static_assert(UInt128{7} == UInt128{7});
+  static_assert(UInt128{7} <= 7);
+  static_assert(UInt128::from_parts(0, 2) - 1 <= 1);
+
+  static_assert(
+      (UInt128::from_parts(0xf0, 0x0f) & UInt128::from_parts(0x10, 0x0e)) ==
+      UInt128::from_parts(0x10, 0x0e));
+  static_assert(
+      (UInt128::from_parts(0xf0, 0x0f) | UInt128::from_parts(0x01, 0x30)) ==
+      UInt128::from_parts(0xf1, 0x3f));
+
+  static_assert(static_cast<std::uint64_t>(UInt128::from_parts(123, 456)) ==
+                456);
+
+  EXPECT_EQ(UInt128::from_parts(1, 0) - UInt128{1},
+            UInt128::from_parts(0, max64));
+  EXPECT_GT(UInt128::from_parts(1, 0), UInt128::from_parts(0, max64));
+  EXPECT_EQ(static_cast<std::uint64_t>(UInt128::from_parts(123, 456)), 456u);
+}
+
+TEST(TessUInt128, MeasuresBitWidthAtThe64BitBoundary) {
+  using tess::detail::UInt128;
+
+  static_assert(tess::detail::bit_width(UInt128{0}) == 0);
+  static_assert(tess::detail::bit_width(UInt128{1}) == 1);
+  static_assert(tess::detail::bit_width(UInt128::from_parts(1, 0)) == 65);
+  static_assert(tess::detail::bits_for_count(UInt128::from_parts(1, 0)) == 64);
+  static_assert(tess::detail::bits_for_count(UInt128{1ull << 63}) == 63);
+  static_assert(tess::detail::bits_for_count(
+                    UInt128::from_parts(0, (1ull << 63) + 1)) == 64);
+
+  EXPECT_EQ(tess::detail::bit_width(UInt128::from_parts(1, 0)), 65u);
+  EXPECT_EQ(tess::detail::bits_for_count(UInt128::from_parts(1, 0)), 64u);
+}
+
+TEST(TessShape, RoundTripsHugeBoundedTileKeys) {
+  using Traits = tess::ShapeTraits<HugeBounded>;
+  constexpr auto max = tess::Coord3{
+      static_cast<std::int64_t>(Traits::size.x) - 1,
+      static_cast<std::int64_t>(Traits::size.y) - 1,
+      static_cast<std::int64_t>(Traits::size.z) - 1,
+  };
+  constexpr tess::Coord3 corners[] = {
+      tess::Coord3{0, 0, 0},
+      max,
+      tess::Coord3{max.x, 0, 0},
+      tess::Coord3{0, max.y, max.z},
+      tess::Coord3{123456789, 87654321, 200},
+  };
+
+  for (const auto coord : corners) {
+    const auto tile = tess::tile_key<HugeBounded>(coord);
+    EXPECT_EQ(
+        tess::chunk_key<HugeBounded>(tile),
+        tess::chunk_key<HugeBounded>(tess::chunk_coord<HugeBounded>(coord)));
+    EXPECT_EQ(tess::local_tile_id<HugeBounded>(tile),
+              tess::local_tile_id<HugeBounded>(
+                  tess::local_coord<HugeBounded>(coord)));
+    EXPECT_EQ(tess::coord<HugeBounded>(tile), coord);
+  }
+
+  constexpr auto tile = tess::tile_key<HugeBounded>(max);
+  static_assert(tess::coord<HugeBounded>(tile) == max);
+  static_assert(
+      tess::chunk_key<HugeBounded>(tile) ==
+      tess::chunk_key<HugeBounded>(tess::chunk_coord<HugeBounded>(max)));
+  static_assert(
+      tess::local_tile_id<HugeBounded>(tile) ==
+      tess::local_tile_id<HugeBounded>(tess::local_coord<HugeBounded>(max)));
+}
+
+TEST(TessShape, RoundTripsMaxSingleChunkTileKeysWithoutWideShifts) {
+  using Traits = tess::ShapeTraits<MaxSingleChunk>;
+
+  static_assert(Traits::single_chunk);
+  static_assert(Traits::chunk_bits == 0);
+  static_assert(Traits::local_bits == 63);
+  static_assert(Traits::tile_key_bits == 63);
+  static_assert(std::is_same_v<Traits::TileKeyStorage, std::uint64_t>);
+  static_assert(Traits::precise_local_tile_count ==
+                tess::detail::UInt128{1ull << 63});
+
+  constexpr auto max = tess::Coord3{(1ll << 31) - 1, (1ll << 31) - 1, 1};
+  constexpr tess::Coord3 corners[] = {
+      tess::Coord3{0, 0, 0},         max,
+      tess::Coord3{max.x, 0, 1},     tess::Coord3{0, max.y, 0},
+      tess::Coord3{12345, 67890, 1},
+  };
+
+  for (const auto coord : corners) {
+    const auto tile = tess::tile_key<MaxSingleChunk>(coord);
+    EXPECT_EQ(tess::chunk_key<MaxSingleChunk>(tile), tess::ChunkKey{0});
+    EXPECT_EQ(tess::local_tile_id<MaxSingleChunk>(tile),
+              tess::local_tile_id<MaxSingleChunk>(
+                  tess::local_coord<MaxSingleChunk>(coord)));
+    EXPECT_EQ(tess::coord<MaxSingleChunk>(tile), coord);
+  }
+
+  constexpr auto tile = tess::tile_key<MaxSingleChunk>(max);
+  static_assert(tess::chunk_key<MaxSingleChunk>(tile) == tess::ChunkKey{0});
+  static_assert(tess::local_tile_id<MaxSingleChunk>(tile).value ==
+                (1ull << 63) - 1);
+  static_assert(tess::coord<MaxSingleChunk>(tile) == max);
 }
 
 TEST(TessShape, RepresentsSingleChunkTilesWithZeroChunkKey) {

@@ -13,6 +13,35 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-06 - Portable UInt128 Key Storage And Boundary Shift Guards
+
+- Changed: Replaced the unconditional `unsigned __int128` alias in
+  `include/tess/core/shape.h` with a hand-rolled constexpr
+  `tess::detail::UInt128` struct (`include/tess/core/uint128.h`) used
+  unconditionally on every compiler, so Clang and GCC CI exercise exactly
+  the code MSVC will compile. The struct provides only the operations
+  shape.h needs (wrap-around multiply, subtract with borrow, and/or,
+  boundary-safe shifts, defaulted comparisons, explicit narrowing).
+  `tile_key<Shape>(Coord3)` and `chunk_key(TileKey<Shape>)` gained
+  `if constexpr (chunk_bits == 0)` short-circuits so single-chunk shapes
+  never shift `std::uint64_t` storage by `local_bits == 64` (undefined
+  behavior), mirroring the existing `local_bits == 64` mask guard in
+  `local_tile_id(TileKey<Shape>)`. Added a Windows MSVC configure/build/
+  test preset (condition-gated to Windows hosts) and `/permissive-`
+  `/EHsc` to the MSVC warning options.
+- Reason: MSVC has no `unsigned __int128`, so >64-bit tile keys could not
+  compile on Windows; a conditional typedef would leave the MSVC path
+  untested by Clang CI. The builtin also rejects shift counts >= 128 in
+  constant expressions, while the portable type defines them as zero.
+  Note: with power-of-two chunk dims and the 64-bit local-tile-count fit
+  static_assert, `local_bits` maxes out at 63, so the shift-by-64 guards
+  are defensive hardening for the 2^63-tile single-chunk boundary shape
+  rather than a reachable-bug fix.
+- Affected docs: `docs/decisions/CHANGELOG.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/core/uint128.h`,
+  `include/tess/core/shape.h`, `tests/tess_shape_test.cc`,
+  `CMakeLists.txt`, `CMakePresets.json`, `cmake/TessProjectOptions.cmake`
+
 ## 2026-07-06 - Debug Assertion Policy For Unchecked APIs
 
 - Changed: Added `TESS_ASSERT`/`TESS_ASSERT_MSG` in
