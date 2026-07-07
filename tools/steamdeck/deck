@@ -26,7 +26,8 @@ Usage: tools/steamdeck/deck <command> [args]
 Setup (once):
   setup            Mac: verify Docker/Rosetta, install watchexec, build the
                    build image, start the container, configure linux-dev.
-  deck-setup [ip]  Deck: discover it on the LAN (or pass [ip]), set up the ssh
+  deck-setup [ip]  Deck: discover it on the LAN (or pass [ip]), show the host
+                   key fingerprint for confirmation, then set up the ssh
                    'deck' alias + key, verify. FIRST, on the Deck once, run:
                      passwd && sudo systemctl enable --now sshd
   doctor           Check every prerequisite and print ✓/✗.
@@ -39,15 +40,24 @@ Develop (on the Mac):
 Run on the device:
   bench [--pin] [tess_bench args]   Build, ship, run on real hardware.
                    --pin fixes the CPU governor for accurate numbers.
+                   Configures the linux-bench preset automatically.
 
-Env: DECK_HOST (default 'deck'), TESS_STEAMRT_IMAGE, DECK_SSH_KEY.
+Env: DECK_HOST (default 'deck'), TESS_STEAMRT_IMAGE, DECK_SSH_KEY,
+     DECK_PRESET (override the per-command cmake preset).
 EOF
 }
 
-ensure_container() {
+ensure_container() {  # $1 = cmake preset the caller needs configured
+  local preset="${1:-linux-dev}"
+  case "$preset" in
+    ''|*[!A-Za-z0-9._-]*) die "invalid preset '${preset}'" ;;
+  esac
   if [ "$(docker inspect -f '{{.State.Running}}' "${CONTAINER}" 2>/dev/null)" != "true" ]; then
     say "container '${CONTAINER}' not running; starting it ..."
-    "${HERE}/container-up.sh" linux-dev
+    "${HERE}/container-up.sh" "$preset"
+  elif [ ! -f "${REPO_ROOT}/build/${preset}/CMakeCache.txt" ]; then
+    say "configuring preset '${preset}' in container '${CONTAINER}' ..."
+    docker exec "${CONTAINER}" cmake --preset "$preset"
   fi
 }
 
@@ -93,6 +103,32 @@ ensure_ssh_alias() {  # $1 = ip
   fi
 }
 
+# Discovery only proves "some host with SSH open" — never hand our key to an
+# unverified box. Show the host key fingerprint, make the user confirm, and
+# pin the key in known_hosts so ssh-copy-id is not a blind TOFU accept.
+confirm_deck_host() {  # $1 = ip
+  local keys fprints reply
+  keys="$(ssh-keyscan -T 5 "$1" 2>/dev/null)" || true
+  [ -n "$keys" ] || die "no SSH host key from $1 — is sshd running on the Deck?"
+  fprints="$(printf '%s\n' "$keys" | ssh-keygen -lf /dev/stdin 2>/dev/null)" \
+    || die "could not fingerprint the host key from $1"
+  say "SSH host key fingerprint(s) for $1:"
+  printf '%s\n' "$fprints" | sed 's/^/     /'
+  [ -t 0 ] || die "refusing to install an SSH key non-interactively — \
+rerun 'deck deck-setup $1' in a terminal"
+  printf 'Is this your Steam Deck? Install the SSH key on it? [y/N] '
+  read -r reply
+  case "$reply" in
+    y|Y|yes|YES) ;;
+    *) die "aborted — no key installed on $1" ;;
+  esac
+  if ! ssh-keygen -F "$1" >/dev/null 2>&1; then
+    mkdir -p "$HOME/.ssh"
+    printf '%s\n' "$keys" >> "$HOME/.ssh/known_hosts"
+    say "pinned $1 host key in ~/.ssh/known_hosts"
+  fi
+}
+
 cmd_deck_setup() {
   local ip="${1:-}"
   [ -f "${SSH_KEY}.pub" ] || die "no ssh key at ${SSH_KEY}.pub (set DECK_SSH_KEY or run: ssh-keygen -t ed25519)"
@@ -102,13 +138,25 @@ cmd_deck_setup() {
    On the Deck (Desktop Mode → Konsole) first run: passwd && sudo systemctl enable --now sshd"
     say "found Deck at $ip"
   fi
+  confirm_deck_host "$ip"
   ensure_ssh_alias "$ip"
   say "installing SSH key (enter the Deck password once if prompted) ..."
   ssh-copy-id -o IdentitiesOnly=yes -i "${SSH_KEY}.pub" "$DECK_HOST" >/dev/null 2>&1 \
     || ssh-copy-id -o IdentitiesOnly=yes -i "${SSH_KEY}.pub" "$DECK_HOST" \
     || die "ssh-copy-id failed — check the Deck password / that sshd is enabled"
-  ssh -o BatchMode=yes -o ConnectTimeout=8 "$DECK_HOST" 'echo "connected: $(uname -srm)"' \
-    && say "Deck ready. Try: 'deck bench --pin'."
+  local ident
+  ident="$(ssh -o BatchMode=yes -o ConnectTimeout=8 "$DECK_HOST" \
+    'uname -n; cat /etc/os-release 2>/dev/null' 2>/dev/null)" \
+    || die "could not reach ${DECK_HOST} after installing the key"
+  if printf '%s\n' "$ident" | grep -qiE '^steamdeck$|steamos'; then
+    say "verified: host identifies as a Steam Deck ($(printf '%s\n' "$ident" | head -n1))"
+  else
+    say "warning: ${DECK_HOST} does NOT identify as a Steam Deck:"
+    printf '%s\n' "$ident" | sed 's/^/     /'
+    say "if this is the wrong machine, remove the key you just installed:"
+    say "  ssh ${DECK_HOST}  then edit ~/.ssh/authorized_keys (drop the new line)"
+  fi
+  say "Deck ready. Try: 'deck bench --pin'."
 }
 
 cmd_doctor() {
@@ -127,15 +175,36 @@ cmd_doctor() {
   fi
 }
 
-cmd_test() { ensure_container; docker exec "$CONTAINER" sh -c 'cmake --build --preset linux-dev && ctest --preset linux-dev --output-on-failure'; }
-cmd_asan() { ensure_container; docker exec "$CONTAINER" sh -c 'cmake --preset linux-asan && cmake --build --preset linux-asan && ctest --preset linux-asan --output-on-failure'; }
+cmd_test() {
+  local preset="${DECK_PRESET:-linux-dev}"
+  ensure_container "$preset"
+  docker exec "$CONTAINER" sh -c \
+    "cmake --build --preset '${preset}' && ctest --preset '${preset}' --output-on-failure"
+}
+cmd_asan() {
+  local preset="${DECK_PRESET:-linux-asan}"
+  ensure_container "$preset"
+  docker exec "$CONTAINER" sh -c \
+    "cmake --preset '${preset}' && cmake --build --preset '${preset}' \
+     && ctest --preset '${preset}' --output-on-failure"
+}
 cmd_watch() {
+  local preset="${DECK_PRESET:-linux-dev}"
   command -v watchexec >/dev/null 2>&1 || die "watchexec not installed (brew install watchexec)"
-  ensure_container
+  ensure_container "$preset"
   say "watching for changes — rebuild + ctest on save (Ctrl-C to stop)"
-  exec watchexec -w "${REPO_ROOT}/include" -w "${REPO_ROOT}/tests" -w "${REPO_ROOT}/examples" \
-    -e cc,h,hpp,cpp,cmake,json -- \
-    docker exec "$CONTAINER" sh -c 'cmake --build --preset linux-dev && ctest --preset linux-dev --output-on-failure'
+  exec watchexec \
+    -w "${REPO_ROOT}/include" -w "${REPO_ROOT}/tests" \
+    -w "${REPO_ROOT}/examples" -w "${REPO_ROOT}/bench" \
+    -w "${REPO_ROOT}/cmake" -w "${REPO_ROOT}/CMakeLists.txt" \
+    -e cc,h,hpp,cpp,cmake,json,txt -- \
+    docker exec "$CONTAINER" sh -c \
+    "cmake --build --preset '${preset}' && ctest --preset '${preset}' --output-on-failure"
+}
+cmd_bench() {
+  local preset="${DECK_PRESET:-linux-bench}"
+  ensure_container "$preset"
+  PRESET="$preset" exec "${HERE}/deck-bench.sh" "$@"
 }
 
 cmd="${1:-help}"; shift 2>/dev/null || true
@@ -147,6 +216,6 @@ case "$cmd" in
   test)           cmd_test "$@" ;;
   asan)           cmd_asan "$@" ;;
   watch)          cmd_watch "$@" ;;
-  bench)          exec "${HERE}/deck-bench.sh" "$@" ;;
+  bench)          cmd_bench "$@" ;;
   *)              die "unknown command '$cmd' — try: tools/steamdeck/deck help" ;;
 esac

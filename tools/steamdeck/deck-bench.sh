@@ -36,6 +36,20 @@ CONTAINER_RUNTIME="${DECK_CONTAINER_RUNTIME:-podman}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 
+# DECK_DIR is rsync'd with --delete and spliced into remote commands: reject
+# values that would escape $HOME (or wipe it) before anything touches the Deck.
+case "${DECK_DIR}" in
+  ''|.|/*|..|../*|*/..|*/../*)
+    echo "!! invalid DECK_DIR='${DECK_DIR}': must be a non-empty relative" >&2
+    echo "!! path inside the Deck user's HOME (no leading '/', no '..')" >&2
+    exit 1
+    ;;
+  *[!A-Za-z0-9._/-]*)
+    echo "!! invalid DECK_DIR='${DECK_DIR}': only [A-Za-z0-9._/-] allowed" >&2
+    exit 1
+    ;;
+esac
+
 # Parse --pin out of the args; everything else is forwarded to tess_bench.
 ARGS=()
 for a in "$@"; do
@@ -45,6 +59,12 @@ for a in "$@"; do
   esac
 done
 BENCH_ARGS=("${ARGS[@]:---benchmark_min_time=0.20s}")
+
+# The remote side of ssh re-parses the command line with the login shell
+# (bash on SteamOS), so everything user-controlled is %q-quoted once for that
+# shell. All three run branches below use the same BENCH_ARGS_Q/BENCH_BIN_Q.
+BENCH_ARGS_Q="$(printf '%q ' "${BENCH_ARGS[@]}")"
+BENCH_BIN_Q="$(printf '%q' "${BENCH_BIN}")"
 
 # 1. Build the benchmark locally in the container.
 echo ">> building ${PRESET} in container '${CONTAINER}' ..."
@@ -58,20 +78,23 @@ rsync -az --delete "${REPO_ROOT}/build/${PRESET}/" "${DECK}:${DECK_DIR}/"
 if [ "${USE_CONTAINER}" = "1" ]; then
   [ "${PIN_GOVERNOR}" = "1" ] && echo ">> note: --pin is ignored with USE_CONTAINER=1" >&2
   echo ">> running ${BENCH_BIN} on ${DECK} inside ${RUN_IMAGE} ..."
+  # The container's sh gets the binary name and bench args as positional
+  # parameters, so nothing user-controlled is spliced into its -c script.
   ssh "${DECK}" "${CONTAINER_RUNTIME} run --rm -v \"\$HOME/${DECK_DIR}:/b\" -w /b ${RUN_IMAGE} \
-    sh -c 'bin=\$(find . -type f -name ${BENCH_BIN} | head -n1); \
-           [ -n \"\$bin\" ] || { echo \"${BENCH_BIN} not found under /b\" >&2; exit 1; }; \
-           exec \"\$bin\" ${BENCH_ARGS[*]}'"
+    sh -c 'bin=\$(find . -type f -name \"\$1\" | head -n1); \
+           [ -n \"\$bin\" ] || { echo \"\$1 not found under /b\" >&2; exit 1; }; \
+           shift; exec \"\$bin\" \"\$@\"' run-bench ${BENCH_BIN_Q} ${BENCH_ARGS_Q}"
 elif [ "${PIN_GOVERNOR}" = "1" ]; then
   # Ship the on-Deck pin helper (kept outside DECK_DIR so --delete won't drop it),
   # then run it over a TTY so sudo can prompt for the Deck password.
   echo ">> pinning governor + running ${BENCH_BIN} on ${DECK} (sudo may prompt) ..."
   scp -q "${HERE}/deck-run-pinned.sh" "${DECK}:.tess-deck-run-pinned.sh"
-  ssh -t "${DECK}" "TESS_BENCH_DIR=\"\$HOME/${DECK_DIR}\" bash .tess-deck-run-pinned.sh" "${BENCH_ARGS[@]}"
+  ssh -t "${DECK}" "TESS_BENCH_DIR=\"\$HOME/${DECK_DIR}\" \
+    bash .tess-deck-run-pinned.sh ${BENCH_ARGS_Q}"
 else
   echo ">> running ${BENCH_BIN} DIRECTLY on stock SteamOS (no container) ..."
   ssh "${DECK}" "cd \"\$HOME/${DECK_DIR}\" && \
-    bin=\$(find . -type f -name ${BENCH_BIN} | head -n1); \
-    [ -n \"\$bin\" ] || { echo \"${BENCH_BIN} not found under ~/${DECK_DIR}\" >&2; exit 1; }; \
-    exec \"\$bin\" ${BENCH_ARGS[*]}"
+    bin=\$(find . -type f -name ${BENCH_BIN_Q} | head -n1); \
+    [ -n \"\$bin\" ] || { echo \"benchmark binary not found under ~/${DECK_DIR}\" >&2; exit 1; }; \
+    exec \"\$bin\" ${BENCH_ARGS_Q}"
 fi

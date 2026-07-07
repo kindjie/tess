@@ -23,12 +23,26 @@ set_gov() {
 }
 
 OLD="$(gov)"
+[ -n "$OLD" ] \
+  || echo ">> [deck] warning: could not read current governor" >&2
 echo ">> [deck] governor: ${OLD:-?} -> performance (sudo; enter Deck password if prompted)"
-set_gov performance
+if ! set_gov performance; then
+  echo ">> [deck] error: failed to pin governor (sudo denied?) — aborting" >&2
+  echo ">> [deck] rerun without --pin to benchmark unpinned" >&2
+  exit 1
+fi
 
 restore() {
-  [ -n "$OLD" ] || return 0
-  set_gov "$OLD" 2>/dev/null && echo ">> [deck] governor restored -> $OLD"
+  # If the original governor could not be read, fall back to SteamOS's
+  # default rather than leaving the machine pinned to 'performance'.
+  target="${OLD:-schedutil}"
+  [ -n "$OLD" ] \
+    || echo ">> [deck] original governor unknown; restoring '$target'" >&2
+  if set_gov "$target" 2>/dev/null; then
+    echo ">> [deck] governor restored -> $target"
+  else
+    echo ">> [deck] warning: failed to restore governor (now: $(gov))" >&2
+  fi
 }
 trap restore EXIT INT TERM
 
