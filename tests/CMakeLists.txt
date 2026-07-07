@@ -58,6 +58,15 @@ tess_apply_project_options(tess_path_test)
 
 gtest_discover_tests(tess_path_test)
 
+add_executable(tess_path_search_test tess_path_search_test.cc)
+target_link_libraries(
+  tess_path_search_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_path_search_test)
+
+gtest_discover_tests(tess_path_search_test)
+
 add_executable(tess_path_cache_test tess_path_cache_test.cc)
 target_link_libraries(tess_path_cache_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_path_cache_test)
