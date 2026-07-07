@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -153,6 +154,85 @@ TEST(TessTime, FixedAccumulatorHonorsPauseSpeedAndClamp) {
   EXPECT_EQ(frame.ticks, 8u);
   EXPECT_GT(accumulator.accumulated_seconds(), 0.0);
   EXPECT_LE(frame.alpha, 1.0);
+}
+
+TEST(TessTime, FixedAccumulatorDropsBacklogBeyondOneStepWhenCapped) {
+  tess::FixedStepAccumulator accumulator(20, 8);
+
+  // A 10 s stall at 4x banks 40 s of sim time; only the capped frame's
+  // ticks plus at most one step of carry may survive it.
+  auto frame = accumulator.consume(10.0, {tess::SimSpeed::Speed4x});
+  EXPECT_EQ(frame.ticks, 8u);
+  EXPECT_LE(accumulator.accumulated_seconds(), 0.05 + 1e-9);
+
+  std::size_t drained = 0;
+  for (int i = 0; i < 20; ++i) {
+    drained += accumulator.consume(0.0, {tess::SimSpeed::Speed4x}).ticks;
+  }
+  EXPECT_LE(drained, 1u);
+}
+
+TEST(TessTime, FixedAccumulatorReportsDroppedSecondsOnCapOverflow) {
+  tess::FixedStepAccumulator accumulator(20, 8);
+
+  auto frame = accumulator.consume(10.0, {tess::SimSpeed::Speed4x});
+  EXPECT_EQ(frame.ticks, 8u);
+  // 40 s banked, 8 ticks (0.4 s) executed, one step (0.05 s) of carry kept.
+  EXPECT_NEAR(frame.dropped_seconds, 40.0 - 0.4 - 0.05, 1e-9);
+
+  frame = accumulator.consume(0.05, {tess::SimSpeed::Speed1x});
+  EXPECT_DOUBLE_EQ(frame.dropped_seconds, 0.0);
+}
+
+TEST(TessTime, FixedAccumulatorGuardsZeroRatesAndReset) {
+  tess::FixedStepAccumulator zero_tps(0, 8);
+  auto frame = zero_tps.consume(1.0, {tess::SimSpeed::Speed1x});
+  EXPECT_EQ(frame.ticks, 0u);
+  EXPECT_DOUBLE_EQ(frame.alpha, 0.0);
+
+  tess::FixedStepAccumulator zero_ticks(20, 0);
+  frame = zero_ticks.consume(1.0, {tess::SimSpeed::Speed1x});
+  EXPECT_EQ(frame.ticks, 0u);
+
+  tess::FixedStepAccumulator accumulator(20, 8);
+  static_cast<void>(accumulator.consume(0.07, {tess::SimSpeed::Speed1x}));
+  EXPECT_GT(accumulator.accumulated_seconds(), 0.0);
+  accumulator.reset();
+  EXPECT_DOUBLE_EQ(accumulator.accumulated_seconds(), 0.0);
+  EXPECT_EQ(accumulator.base_tps(), 20u);
+  EXPECT_EQ(accumulator.max_ticks_per_frame(), 8u);
+}
+
+TEST(TessTime, SpeedMultiplierAndEffectiveTpsCoverAllSpeeds) {
+  EXPECT_EQ(tess::sim_speed_multiplier(tess::SimSpeed::Paused), 0u);
+  EXPECT_EQ(tess::sim_speed_multiplier(tess::SimSpeed::Speed1x), 1u);
+  EXPECT_EQ(tess::sim_speed_multiplier(tess::SimSpeed::Speed2x), 2u);
+  EXPECT_EQ(tess::sim_speed_multiplier(tess::SimSpeed::Speed4x), 4u);
+
+  EXPECT_EQ(tess::effective_tps(20, tess::SimSpeed::Speed4x), 80u);
+  EXPECT_EQ(tess::effective_tps(20, tess::SimSpeed::Paused), 0u);
+
+  // Saturates instead of wrapping when base_tps * multiplier overflows.
+  constexpr auto max_tps = std::numeric_limits<std::uint32_t>::max();
+  EXPECT_EQ(tess::effective_tps(max_tps, tess::SimSpeed::Speed4x), max_tps);
+}
+
+TEST(TessTime, FixedAccumulatorSurvivesHugeAndInvalidDeltas) {
+  tess::FixedStepAccumulator accumulator(20, 8);
+
+  auto frame = accumulator.consume(1e300, {tess::SimSpeed::Speed1x});
+  EXPECT_EQ(frame.ticks, 8u);
+  EXPECT_LE(accumulator.accumulated_seconds(), 0.05 + 1e-9);
+  EXPECT_GE(frame.alpha, 0.0);
+  EXPECT_LE(frame.alpha, 1.0);
+
+  frame = accumulator.consume(-5.0, {tess::SimSpeed::Speed1x});
+  EXPECT_GE(accumulator.accumulated_seconds(), 0.0);
+
+  frame = accumulator.consume(std::numeric_limits<double>::quiet_NaN(),
+                              {tess::SimSpeed::Speed1x});
+  EXPECT_EQ(frame.ticks, 0u);
+  EXPECT_GE(accumulator.accumulated_seconds(), 0.0);
 }
 
 TEST(TessRenderDelta, CollectsDirtyBoundsAndClearsRenderMask) {
