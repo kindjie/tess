@@ -10,10 +10,16 @@ cache benchmarks gained `/iterations:N/manual_time` names gated on real time,
 and `bench/thresholds/*.json` ceilings changed accordingly. The snapshot below
 predates all of that and must not be used for calibration.
 
+Thresholds were recalibrated 2026-07-07 from the first reworked-harness CI
+baseline artifact (run 28888943908, 10 repetitions per benchmark, CVs
+under 2%): every gate now carries a ceiling of roughly three times the
+observed CI maximum, replacing the 1 ms investigation scaffolds.
+
 TODO(regenerate-snapshot): after CI has collected at least 5 baseline
-artifacts from the reworked harness, regenerate the SVG and this table from
-those artifacts per the regeneration policy below (the threshold change is
-the trigger; the recalibrated CI baselines are the missing input).
+artifacts from the reworked harness, regenerate the SVG and this table
+from those artifacts per the regeneration policy below (1 of 5 collected
+as of 2026-07-07). Revisit ceilings with the 10-artifact rule before any
+further tightening.
 
 The SVG snapshot in `docs/assets/benchmark-trends.svg` is a labeled
 summary, not the source of truth. Use CI benchmark baseline artifacts
