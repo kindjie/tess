@@ -3,6 +3,7 @@
 #include <tess/core/assert.h>
 
 #include <compare>
+#include <concepts>
 #include <cstdint>
 
 namespace tess::detail {
@@ -22,9 +23,15 @@ struct UInt128 {
 
   constexpr UInt128() noexcept = default;
 
-  // Implicit, so existing std::uint64_t expressions keep working as counts.
+  // Implicit, so existing unsigned expressions keep working as counts.
+  // Templated over all unsigned integral types because std::uint64_t is
+  // unsigned long on Linux LP64 but unsigned long long on macOS/Windows;
+  // a single std::uint64_t overload leaves `1ull` literals ambiguous
+  // against the int constructor on whichever platform differs.
+  template <typename T>
+    requires std::unsigned_integral<T>
   // NOLINTNEXTLINE(google-explicit-constructor)
-  constexpr UInt128(std::uint64_t value) noexcept : lo(value) {}
+  constexpr UInt128(T value) noexcept : lo(value) {}
 
   // Implicit, so integer literals in existing code keep working.
   // NOLINTNEXTLINE(google-explicit-constructor)
