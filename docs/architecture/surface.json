@@ -249,6 +249,7 @@
     "event_queued_phase_failure",
     "event_queued_phase_invalid_range",
     "event_queued_scoped_thread_dispatch",
+    "event_queued_worker_pool_dispatch",
     "record_allocation",
     "record_deallocation"
   ]
