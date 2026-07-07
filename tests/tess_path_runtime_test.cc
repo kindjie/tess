@@ -414,10 +414,12 @@ TEST(TessPathRuntime, PortalSegmentCacheStatsTrackAccessorStoresAndClear) {
           product);
 
   ASSERT_EQ(built.status, tess::PathStatus::Found);
-  EXPECT_EQ(runtime.stats().portal_segment_cache_entries, 2u);
+  EXPECT_EQ(runtime.stats().portal_segment_cache.entries, 2u);
+  EXPECT_GT(runtime.stats().portal_segment_cache.path_nodes, 0u);
 
   runtime.clear_caches();
-  EXPECT_EQ(runtime.stats().portal_segment_cache_entries, 0u);
+  EXPECT_EQ(runtime.stats().portal_segment_cache.entries, 0u);
+  EXPECT_EQ(runtime.stats().portal_segment_cache.path_nodes, 0u);
 }
 
 }  // namespace

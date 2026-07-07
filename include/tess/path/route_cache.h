@@ -15,17 +15,35 @@ struct RouteCacheStats {
   std::size_t suffix_hits = 0;
   std::size_t misses = 0;
   std::size_t path_nodes = 0;
+  std::size_t cap_invalidations = 0;
 };
 
+// Exact (start, goal) lookups and same-goal suffix lookups are served by two
+// open-addressed flat hash indexes (power-of-two capacity, linear probing)
+// instead of linear scans. The suffix index is populated per stored
+// Found-path node with first-write-wins, which preserves the earlier
+// linear-scan determinism: the earliest stored entry containing a queried
+// suffix node keeps winning. Both indexes are rebuilt from scratch on
+// `invalidate()`/`clear()`. Storage is bounded by entry and path-node caps;
+// an insert that would exceed either cap invalidates the whole cache first
+// (matching the world-change invalidation lifecycle) and counts a cap
+// invalidation in the stats.
 class RouteCacheScratch {
  public:
+  static constexpr std::size_t default_max_entries = 512;
+  static constexpr std::size_t default_max_path_nodes = std::size_t{1} << 20u;
+
+  void set_caps(std::size_t max_entries, std::size_t max_path_nodes) noexcept {
+    max_entries_ = max_entries;
+    max_path_nodes_ = max_path_nodes;
+  }
+
   void reserve_routes(std::size_t route_count) {
     entries_.reserve(route_count);
   }
 
   void reserve_path_nodes(std::size_t node_count) {
     paths_.reserve(node_count);
-    temp_path_.reserve(node_count);
   }
 
   void clear() noexcept {
@@ -33,18 +51,22 @@ class RouteCacheScratch {
     hits_ = 0;
     suffix_hits_ = 0;
     misses_ = 0;
+    cap_invalidations_ = 0;
   }
 
   void invalidate() noexcept {
     entries_.clear();
     paths_.clear();
-    temp_path_.clear();
+    exact_slots_.clear();
+    suffix_slots_.clear();
+    suffix_count_ = 0;
   }
 
   void reset_stats() noexcept {
     hits_ = 0;
     suffix_hits_ = 0;
     misses_ = 0;
+    cap_invalidations_ = 0;
   }
 
   template <typename World>
@@ -72,7 +94,8 @@ class RouteCacheScratch {
 
   [[nodiscard]] auto stats() const noexcept -> RouteCacheStats {
     return RouteCacheStats{
-        entries_.size(), hits_, suffix_hits_, misses_, paths_.size(),
+        entries_.size(), hits_,         suffix_hits_,
+        misses_,         paths_.size(), cap_invalidations_,
     };
   }
 
@@ -88,16 +111,45 @@ class RouteCacheScratch {
     std::size_t path_size = 0;
   };
 
+  struct SuffixSlot {
+    std::uint32_t entry_plus_one = 0;
+    std::uint32_t offset = 0;
+  };
+
   template <typename World, typename Tag>
   friend auto cached_astar_path(const World& world, PathRequest request,
                                 PathScratch& scratch, RouteCacheScratch& cache)
       -> PathResult;
 
+  // FNV-style lane combine with one final avalanche: cheap per stored path
+  // node, well distributed for power-of-two linear probing.
+  [[nodiscard]] static auto hash_pair(Coord3 first, Coord3 second) noexcept
+      -> std::uint64_t {
+    auto hash = std::uint64_t{0xcbf29ce484222325ull};
+    hash = (hash ^ static_cast<std::uint64_t>(first.x)) * 0x100000001b3ull;
+    hash = (hash ^ static_cast<std::uint64_t>(first.y)) * 0x100000001b3ull;
+    hash = (hash ^ static_cast<std::uint64_t>(first.z)) * 0x100000001b3ull;
+    hash = (hash ^ static_cast<std::uint64_t>(second.x)) * 0x100000001b3ull;
+    hash = (hash ^ static_cast<std::uint64_t>(second.y)) * 0x100000001b3ull;
+    hash = (hash ^ static_cast<std::uint64_t>(second.z)) * 0x100000001b3ull;
+    hash = (hash ^ (hash >> 30u)) * 0xbf58476d1ce4e5b9ull;
+    hash = (hash ^ (hash >> 27u)) * 0x94d049bb133111ebull;
+    return hash ^ (hash >> 31u);
+  }
+
   [[nodiscard]] auto find(PathRequest request) const noexcept -> const Entry* {
-    for (const auto& entry : entries_) {
+    if (exact_slots_.empty()) {
+      return nullptr;
+    }
+    const auto mask = exact_slots_.size() - 1u;
+    auto slot =
+        static_cast<std::size_t>(hash_pair(request.start, request.goal)) & mask;
+    while (exact_slots_[slot] != 0) {
+      const auto& entry = entries_[exact_slots_[slot] - 1u];
       if (entry.start == request.start && entry.goal == request.goal) {
         return &entry;
       }
+      slot = (slot + 1u) & mask;
     }
     return nullptr;
   }
@@ -105,18 +157,128 @@ class RouteCacheScratch {
   [[nodiscard]] auto find_suffix(PathRequest request,
                                  std::size_t& suffix_offset) const noexcept
       -> const Entry* {
-    for (const auto& entry : entries_) {
-      if (entry.goal != request.goal || entry.status != PathStatus::Found) {
-        continue;
+    if (suffix_slots_.empty()) {
+      return nullptr;
+    }
+    const auto mask = suffix_slots_.size() - 1u;
+    auto slot =
+        static_cast<std::size_t>(hash_pair(request.start, request.goal)) & mask;
+    while (suffix_slots_[slot].entry_plus_one != 0) {
+      const auto& candidate = suffix_slots_[slot];
+      const auto& entry = entries_[candidate.entry_plus_one - 1u];
+      if (entry.goal == request.goal &&
+          paths_[entry.path_offset + candidate.offset] == request.start) {
+        suffix_offset = candidate.offset;
+        return &entry;
       }
-      for (std::size_t i = 0; i < entry.path_size; ++i) {
-        if (paths_[entry.path_offset + i] == request.start) {
-          suffix_offset = i;
-          return &entry;
-        }
-      }
+      slot = (slot + 1u) & mask;
     }
     return nullptr;
+  }
+
+  void store(PathRequest request, const PathResult& result) {
+    if ((max_entries_ != 0 && entries_.size() + 1u > max_entries_) ||
+        (max_path_nodes_ != 0 &&
+         paths_.size() + result.path.size() > max_path_nodes_)) {
+      invalidate();
+      ++cap_invalidations_;
+    }
+    const auto entry_index = entries_.size();
+    const auto path_offset = paths_.size();
+    paths_.insert(paths_.end(), result.path.begin(), result.path.end());
+    entries_.push_back(Entry{
+        request.start,
+        request.goal,
+        result.status,
+        result.cost,
+        result.expanded_nodes,
+        result.reached_nodes,
+        path_offset,
+        result.path.size(),
+    });
+    exact_insert(entry_index);
+    if (result.status == PathStatus::Found) {
+      suffix_insert(entry_index);
+    }
+  }
+
+  void exact_insert(std::size_t entry_index) {
+    if (exact_slots_.size() < (entries_.size() + 1u) * 2u) {
+      grow_exact_index();
+      return;
+    }
+    exact_place(entry_index);
+  }
+
+  void exact_place(std::size_t entry_index) noexcept {
+    const auto mask = exact_slots_.size() - 1u;
+    const auto& entry = entries_[entry_index];
+    auto slot =
+        static_cast<std::size_t>(hash_pair(entry.start, entry.goal)) & mask;
+    while (exact_slots_[slot] != 0) {
+      slot = (slot + 1u) & mask;
+    }
+    exact_slots_[slot] = static_cast<std::uint32_t>(entry_index + 1u);
+  }
+
+  void grow_exact_index() {
+    auto capacity = std::size_t{16};
+    while (capacity < (entries_.size() + 1u) * 2u) {
+      capacity *= 2u;
+    }
+    exact_slots_.assign(capacity, 0u);
+    for (std::size_t i = 0; i < entries_.size(); ++i) {
+      exact_place(i);
+    }
+  }
+
+  // First-write-wins per (node, goal): the earliest stored entry containing
+  // a node keeps serving suffix queries for it, matching the pre-index
+  // linear-scan order.
+  void suffix_insert(std::size_t entry_index) {
+    const auto& entry = entries_[entry_index];
+    if (suffix_slots_.size() < (suffix_count_ + entry.path_size + 1u) * 2u) {
+      grow_suffix_index(entry.path_size);
+    }
+    for (std::size_t i = 0; i < entry.path_size; ++i) {
+      suffix_place(entry_index, i);
+    }
+  }
+
+  void suffix_place(std::size_t entry_index, std::size_t offset) noexcept {
+    const auto mask = suffix_slots_.size() - 1u;
+    const auto& entry = entries_[entry_index];
+    const auto node = paths_[entry.path_offset + offset];
+    auto slot = static_cast<std::size_t>(hash_pair(node, entry.goal)) & mask;
+    while (suffix_slots_[slot].entry_plus_one != 0) {
+      const auto& occupant = suffix_slots_[slot];
+      const auto& occupant_entry = entries_[occupant.entry_plus_one - 1u];
+      if (occupant_entry.goal == entry.goal &&
+          paths_[occupant_entry.path_offset + occupant.offset] == node) {
+        return;  // First write wins.
+      }
+      slot = (slot + 1u) & mask;
+    }
+    suffix_slots_[slot] = SuffixSlot{
+        static_cast<std::uint32_t>(entry_index + 1u),
+        static_cast<std::uint32_t>(offset),
+    };
+    ++suffix_count_;
+  }
+
+  void grow_suffix_index(std::size_t additional) {
+    auto capacity = std::size_t{16};
+    while (capacity < (suffix_count_ + additional + 1u) * 2u) {
+      capacity *= 2u;
+    }
+    const auto old_slots = suffix_slots_;
+    suffix_slots_.assign(capacity, SuffixSlot{});
+    suffix_count_ = 0;
+    for (const auto slot : old_slots) {
+      if (slot.entry_plus_one != 0) {
+        suffix_place(slot.entry_plus_one - 1u, slot.offset);
+      }
+    }
   }
 
   [[nodiscard]] auto path_span(const Entry& entry,
@@ -131,10 +293,15 @@ class RouteCacheScratch {
 
   std::vector<Entry> entries_;
   std::vector<Coord3> paths_;
-  std::vector<Coord3> temp_path_;
+  std::vector<std::uint32_t> exact_slots_;
+  std::vector<SuffixSlot> suffix_slots_;
+  std::size_t suffix_count_ = 0;
+  std::size_t max_entries_ = default_max_entries;
+  std::size_t max_path_nodes_ = default_max_path_nodes;
   std::size_t hits_ = 0;
   std::size_t suffix_hits_ = 0;
   std::size_t misses_ = 0;
+  std::size_t cap_invalidations_ = 0;
   std::uint64_t world_fingerprint_ = 0;
   bool has_world_fingerprint_ = false;
 
@@ -192,20 +359,7 @@ auto cached_astar_path(const World& world, PathRequest request,
 
   ++cache.misses_;
   const auto result = astar_path<World, Tag>(world, request, scratch);
-  cache.temp_path_.assign(result.path.begin(), result.path.end());
-  const auto path_offset = cache.paths_.size();
-  cache.paths_.insert(cache.paths_.end(), cache.temp_path_.begin(),
-                      cache.temp_path_.end());
-  cache.entries_.push_back(RouteCacheScratch::Entry{
-      request.start,
-      request.goal,
-      result.status,
-      result.cost,
-      result.expanded_nodes,
-      result.reached_nodes,
-      path_offset,
-      cache.temp_path_.size(),
-  });
+  cache.store(request, result);
   return result;
 }
 

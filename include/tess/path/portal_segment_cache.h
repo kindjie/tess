@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace tess {
@@ -15,11 +16,34 @@ struct SegmentHit {
   std::uint32_t cost = 0;
 };
 
+struct PortalSegmentCacheStats {
+  std::size_t entries = 0;
+  std::size_t path_nodes = 0;
+  std::size_t sweeps = 0;
+  std::size_t evictions = 0;
+  std::size_t stale_rejections = 0;
+};
+
 // Cached segment paths are only handed out by appending into caller-owned
 // storage. The cache never returns pointers or spans into its own path
 // storage, so later `store()` growth cannot invalidate a previous lookup.
+//
+// Storage is bounded by a segment budget (default 256 entries). When a store
+// reaches the budget it first sweeps stale entries in one compaction pass
+// (rebuilding both the entry list and the path-node append arena, so stale
+// path storage is reclaimed), then evicts the oldest live entries in
+// insertion order if the sweep alone cannot make room. A zero budget stores
+// nothing.
 class WeightedPortalSegmentCache {
  public:
+  static constexpr std::size_t default_segment_budget = 256;
+
+  void set_segment_budget(std::size_t budget) noexcept { budget_ = budget; }
+
+  [[nodiscard]] auto segment_budget() const noexcept -> std::size_t {
+    return budget_;
+  }
+
   void reserve_segments(std::size_t count) { entries_.reserve(count); }
 
   void reserve_path_nodes(std::size_t count) { paths_.reserve(count); }
@@ -27,6 +51,18 @@ class WeightedPortalSegmentCache {
   void clear() noexcept {
     entries_.clear();
     paths_.clear();
+  }
+
+  void reset_stats() noexcept {
+    sweeps_ = 0;
+    evictions_ = 0;
+    stale_rejections_ = 0;
+  }
+
+  [[nodiscard]] auto stats() const noexcept -> PortalSegmentCacheStats {
+    return PortalSegmentCacheStats{
+        entries_.size(), paths_.size(), sweeps_, evictions_, stale_rejections_,
+    };
   }
 
   // Appends the cached path for `request` into `out_path` on a hit. When
@@ -54,8 +90,15 @@ class WeightedPortalSegmentCache {
   void store(const World& world, PathRequest request, PathResult result) {
     using Shape = World::shape_type;
 
-    if (result.status != PathStatus::Found || find(world, request) != nullptr) {
+    if (budget_ == 0 || result.status != PathStatus::Found ||
+        find(world, request) != nullptr) {
       return;
+    }
+    if (entries_.size() >= budget_) {
+      sweep_stale(world);
+      if (entries_.size() >= budget_) {
+        evict_oldest(entries_.size() - budget_ + 1);
+      }
     }
     const auto offset = paths_.size();
     paths_.insert(paths_.end(), result.path.begin(), result.path.end());
@@ -69,6 +112,16 @@ class WeightedPortalSegmentCache {
       entry.dependencies.add_chunk(world,
                                    chunk_key<Shape>(tile_key<Shape>(coord)));
     }
+  }
+
+  // One compaction pass keeping only entries whose chunk-version
+  // dependencies still validate against `world`. Rebuilds the path-node
+  // arena so storage held by dropped entries is reclaimed.
+  template <typename World>
+  void sweep_stale(const World& world) {
+    ++sweeps_;
+    compact(
+        [&](const Entry& entry) { return entry.dependencies.is_valid(world); });
   }
 
   [[nodiscard]] auto size() const noexcept -> std::size_t {
@@ -86,14 +139,18 @@ class WeightedPortalSegmentCache {
   };
 
   template <typename World>
-  [[nodiscard]] auto find(const World& world,
-                          PathRequest request) const noexcept -> const Entry* {
+  [[nodiscard]] auto find(const World& world, PathRequest request) noexcept
+      -> const Entry* {
     for (const auto& entry : entries_) {
-      if (entry.request.start == request.start &&
-          entry.request.goal == request.goal &&
-          entry.dependencies.is_valid(world)) {
-        return &entry;
+      if (entry.request.start != request.start ||
+          entry.request.goal != request.goal) {
+        continue;
       }
+      if (!entry.dependencies.is_valid(world)) {
+        ++stale_rejections_;
+        continue;
+      }
+      return &entry;
     }
     return nullptr;
   }
@@ -104,8 +161,44 @@ class WeightedPortalSegmentCache {
                                    entry.path_size};
   }
 
+  // Drops the `count` oldest entries (insertion order) via compaction so
+  // their path-node storage is reclaimed with them.
+  void evict_oldest(std::size_t count) {
+    const auto evicted = count < entries_.size() ? count : entries_.size();
+    auto index = std::size_t{0};
+    compact([&](const Entry&) { return index++ >= count; });
+    evictions_ += evicted;
+  }
+
+  template <typename Keep>
+  void compact(Keep keep) {
+    compact_entries_.clear();
+    compact_paths_.clear();
+    for (auto& entry : entries_) {
+      if (!keep(entry)) {
+        continue;
+      }
+      const auto offset = compact_paths_.size();
+      compact_paths_.insert(
+          compact_paths_.end(),
+          paths_.begin() + static_cast<std::ptrdiff_t>(entry.path_offset),
+          paths_.begin() +
+              static_cast<std::ptrdiff_t>(entry.path_offset + entry.path_size));
+      entry.path_offset = offset;
+      compact_entries_.push_back(std::move(entry));
+    }
+    entries_.swap(compact_entries_);
+    paths_.swap(compact_paths_);
+  }
+
   std::vector<Entry> entries_;
   std::vector<Coord3> paths_;
+  std::vector<Entry> compact_entries_;
+  std::vector<Coord3> compact_paths_;
+  std::size_t budget_ = default_segment_budget;
+  std::size_t sweeps_ = 0;
+  std::size_t evictions_ = 0;
+  std::size_t stale_rejections_ = 0;
 };
 
 template <typename World, typename PassableTag, typename CostTag>

@@ -26,6 +26,10 @@ struct PathRuntimeCachePolicy {
   std::size_t unit_field_product_min_start_chunks = 2;
   std::size_t unit_field_product_cache_byte_budget =
       std::numeric_limits<std::size_t>::max();
+  std::size_t max_route_entries = RouteCacheScratch::default_max_entries;
+  std::size_t max_route_path_nodes = RouteCacheScratch::default_max_path_nodes;
+  std::size_t portal_segment_budget =
+      WeightedPortalSegmentCache::default_segment_budget;
 };
 
 struct PathRuntimeStats {
@@ -44,7 +48,7 @@ struct PathRuntimeStats {
   std::size_t field_product_used_groups = 0;
   std::size_t field_product_skipped_groups = 0;
   WeightedPathBatchStats weighted_batch{};
-  std::size_t portal_segment_cache_entries = 0;
+  PortalSegmentCacheStats portal_segment_cache{};
 };
 
 class PathRequestRuntime {
@@ -149,7 +153,7 @@ class PathRequestRuntime {
     stats.route_cache = unit_route_cache_.stats();
     stats.field_product_cache = unit_field_product_cache_.stats();
     stats.weighted_batch = weighted_batch_.stats();
-    stats.portal_segment_cache_entries = portal_segment_cache_.size();
+    stats.portal_segment_cache = portal_segment_cache_.stats();
     stats.cache_clears = cache_clears_;
     return stats;
   }
@@ -218,6 +222,9 @@ class PathRequestRuntime {
 
   template <typename World>
   void prepare_process(const World& world, PathRuntimeCachePolicy policy) {
+    unit_route_cache_.set_caps(policy.max_route_entries,
+                               policy.max_route_path_nodes);
+    portal_segment_cache_.set_segment_budget(policy.portal_segment_budget);
     if (!policy.invalidate_unit_route_cache_on_world_change) {
       return;
     }
