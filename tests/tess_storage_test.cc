@@ -448,6 +448,92 @@ TEST(TessStorage, WorldDirtyFlagsUnionClearAndIncrementVersion) {
   EXPECT_EQ(world.meta(key).version, 2u);
 }
 
+TEST(TessStorage, WorldObserveDirtyReturnsRequestedSubsetBoundsAndVersion) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{3};
+  const auto bounds =
+      tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{4, 2, 1}};
+
+  world.mark_dirty(key, DirtyTerrain | DirtyCost, bounds);
+
+  const auto observed = world.observe_dirty(key, DirtyTerrain | DirtyTopology);
+  EXPECT_EQ(observed.flags, DirtyTerrain);
+  EXPECT_EQ(observed.bounds, bounds);
+  EXPECT_EQ(observed.version, world.meta(key).version);
+
+  const auto clean = world.observe_dirty(tess::ChunkKey{4}, DirtyTerrain);
+  EXPECT_EQ(clean.flags, 0u);
+  EXPECT_EQ(clean.bounds, (tess::Box3{}));
+  EXPECT_EQ(clean.version, 0u);
+}
+
+TEST(TessStorage, WorldClearDirtyObservedClearsExactlyObservedGeneration) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{5};
+  const auto bounds =
+      tess::Box3{tess::Coord3{40, 18, 0}, tess::Extent3{2, 2, 1}};
+
+  world.mark_dirty(key, DirtyTerrain | DirtyCost, bounds);
+  const auto observed = world.observe_dirty(key, DirtyTerrain);
+  const auto version_before = world.meta(key).version;
+
+  EXPECT_TRUE(world.clear_dirty_observed(key, observed));
+  EXPECT_EQ(world.meta(key).field_dirty_flags, DirtyCost);
+  EXPECT_EQ(world.meta(key).dirty_bounds, bounds);
+  EXPECT_EQ(world.meta(key).version, version_before);
+}
+
+TEST(TessStorage, WorldClearDirtyObservedPreservesMarksAfterObservation) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{7};
+  const auto first =
+      tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{2, 2, 1}};
+  const auto second =
+      tess::Box3{tess::Coord3{44, 20, 0}, tess::Extent3{2, 2, 1}};
+
+  world.mark_dirty(key, DirtyTerrain, first);
+  const auto observed = world.observe_dirty(key, DirtyTerrain);
+
+  // A mark that lands after observation advances the generation, even for
+  // the same category. The stale clear must preserve every flag and bound.
+  world.mark_dirty(key, DirtyTerrain, second);
+  EXPECT_FALSE(world.clear_dirty_observed(key, observed));
+  EXPECT_EQ(world.meta(key).field_dirty_flags, DirtyTerrain);
+  EXPECT_EQ(world.meta(key).dirty_bounds,
+            (tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{14, 6, 1}}));
+
+  // Re-observing the current generation makes the clear valid again.
+  const auto refreshed = world.observe_dirty(key, DirtyTerrain);
+  EXPECT_TRUE(world.clear_dirty_observed(key, refreshed));
+  EXPECT_EQ(world.meta(key).field_dirty_flags, 0u);
+  EXPECT_EQ(world.meta(key).dirty_bounds, (tess::Box3{}));
+}
+
+TEST(TessStorage, WorldClearDirtyObservedIgnoresEmptyObservations) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{9};
+  const auto bounds =
+      tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{2, 2, 1}};
+
+  const auto clean = world.observe_dirty(key, DirtyTerrain);
+  EXPECT_TRUE(world.clear_dirty_observed(key, clean));
+
+  world.mark_dirty(key, DirtyCost, bounds);
+  const auto unrelated = world.observe_dirty(key, DirtyTerrain);
+  EXPECT_EQ(unrelated.flags, 0u);
+  EXPECT_TRUE(world.clear_dirty_observed(key, unrelated));
+  EXPECT_EQ(world.meta(key).field_dirty_flags, DirtyCost);
+  EXPECT_EQ(world.meta(key).dirty_bounds, bounds);
+}
+
+TEST(TessStorage, WorldObserveDirtyAccessorsAreNoexcept) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{0};
+  static_assert(noexcept(world.observe_dirty(key, DirtyTerrain)));
+  static_assert(
+      noexcept(world.clear_dirty_observed(key, tess::DirtyObservation{})));
+}
+
 TEST(TessStorage, WorldDirtyBoundsUnionCoversAllRelativeOrientations) {
   const auto union_via_mark = [](tess::Box3 lhs, tess::Box3 rhs) {
     World<TopDown2D> world;
