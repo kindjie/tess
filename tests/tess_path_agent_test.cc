@@ -199,13 +199,11 @@ TEST(TessPathAgent, WarmUnitAgentProcessingDoesNotAllocate) {
   (void)tess::process_unit_path_agents<World, PassableTag>(world, agents,
                                                            runtime);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
   (void)tess::process_unit_path_agents<World, PassableTag>(world, agents,
                                                            runtime);
-  tess_test::set_allocation_counting(false);
 
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessPathAgent, WarmUnitFieldProductProcessingDoesNotAllocate) {
@@ -227,14 +225,12 @@ TEST(TessPathAgent, WarmUnitFieldProductProcessingDoesNotAllocate) {
   (void)tess::process_unit_path_agents<World, PassableTag>(world, agents,
                                                            runtime, policy);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
   (void)tess::process_unit_path_agents<World, PassableTag>(world, agents,
                                                            runtime, policy);
-  tess_test::set_allocation_counting(false);
 
   EXPECT_EQ(runtime.stats().field_product_cache.entries, 1u);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessPathAgent, WarmWeightedAgentProcessingDoesNotAllocate) {
@@ -252,13 +248,11 @@ TEST(TessPathAgent, WarmWeightedAgentProcessingDoesNotAllocate) {
   (void)tess::process_weighted_path_agents<World, PassableTag, CostTag, 8>(
       world, agents, runtime);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
   (void)tess::process_weighted_path_agents<World, PassableTag, CostTag, 8>(
       world, agents, runtime);
-  tess_test::set_allocation_counting(false);
 
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 }  // namespace

@@ -1002,8 +1002,7 @@ TEST(TessQueued, PrebuiltPlannedExecutionDoesNotAllocate) {
   ASSERT_TRUE(report.ok());
   ASSERT_EQ(report.plan().operations().size(), 1u);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
 
   const auto result =
       tess::execute_planned_operation<tess::WritePolicy::UniquePerChunk>(
@@ -1012,11 +1011,9 @@ TEST(TessQueued, PrebuiltPlannedExecutionDoesNotAllocate) {
             terrain[0] = static_cast<std::uint16_t>(view.key().value);
           });
 
-  tess_test::set_allocation_counting(false);
-
   EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
   EXPECT_EQ(result.chunk_count, World::chunk_count);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessQueued, PreReservedDeferredPlannedExecutionDoesNotAllocate) {
@@ -1036,8 +1033,7 @@ TEST(TessQueued, PreReservedDeferredPlannedExecutionDoesNotAllocate) {
   ASSERT_TRUE(report.ok());
   ASSERT_EQ(report.plan().operations().size(), 1u);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
 
   const auto result =
       tess::execute_plan_deferred_dirty<tess::WritePolicy::UniquePerChunk>(
@@ -1047,12 +1043,10 @@ TEST(TessQueued, PreReservedDeferredPlannedExecutionDoesNotAllocate) {
           });
   const auto merged = tess::merge_planned_dirty(world, dirty);
 
-  tess_test::set_allocation_counting(false);
-
   EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
   EXPECT_EQ(result.chunk_count, World::chunk_count);
   EXPECT_EQ(merged, World::chunk_count);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessQueued, ExecutePhaseDeferredDirtyVisitsOnlyPhaseRange) {
@@ -1819,8 +1813,7 @@ TEST(TessQueued, PreReservedPartitionedPhaseExecutionDoesNotAllocate) {
   ASSERT_EQ(phases.phases().size(), 1u);
   scratch.prepare_for_operation_count(phases.phases()[0].operation_count);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
 
   const auto result = tess::execute_phase_partitioned_dirty_with<
       tess::WritePolicy::UniquePerChunk>(
@@ -1831,12 +1824,10 @@ TEST(TessQueued, PreReservedPartitionedPhaseExecutionDoesNotAllocate) {
       });
   const auto merged = tess::merge_planned_dirty(world, scratch);
 
-  tess_test::set_allocation_counting(false);
-
   EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
   EXPECT_EQ(result.chunk_count, 2u);
   EXPECT_EQ(merged, 2u);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessQueued, ExecutingPhasesMatchesDeferredPlanExecution) {
@@ -1908,8 +1899,7 @@ TEST(TessQueued, PrebuiltPlannedBlockCtxIterationDoesNotAllocate) {
   ASSERT_TRUE(report.ok());
   ASSERT_EQ(report.plan().operations().size(), 1u);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
 
   auto ctx = tess::try_planned_block_ctx<tess::WritePolicy::ReadOnly>(
       world, report.plan().operations()[0]);
@@ -1922,12 +1912,10 @@ TEST(TessQueued, PrebuiltPlannedBlockCtxIterationDoesNotAllocate) {
     });
   }
 
-  tess_test::set_allocation_counting(false);
-
   ASSERT_TRUE(ctx);
   EXPECT_EQ(visited, World::chunk_count);
   EXPECT_EQ(key_sum, 120u);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessQueued, SourceLocationIsCapturedForDiagnostics) {
@@ -1962,22 +1950,19 @@ TEST(TessQueued, InspectingQueuedAndPlannedOperationsDoesNotAllocate) {
                          tess::WritePolicy::ReadOnly);
   const auto report = tess::plan_operations(world, ops);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
 
   const auto queued = ops.operations();
   const auto* operation = ops.operation(tess::OpHandle{0});
   const auto reports = report.operations();
   const auto planned = report.plan().operations();
 
-  tess_test::set_allocation_counting(false);
-
   ASSERT_NE(operation, nullptr);
   EXPECT_EQ(queued.size(), 1u);
   EXPECT_EQ(operation->id, (tess::OpId{0}));
   EXPECT_EQ(reports.size(), 1u);
   EXPECT_EQ(planned.size(), 1u);
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 }  // namespace

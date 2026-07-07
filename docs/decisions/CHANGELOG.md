@@ -13,6 +13,45 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-06 - RAII Allocation Counting And Complete New/Delete Coverage
+
+- Changed: Replaced the raw `set_allocation_counting(bool)` /
+  `reset_allocation_count()` test API with an RAII-only
+  `tess_test::ScopedAllocationCounter` (constructor resets and enables,
+  destructor disables; `count()`/`bytes()` accessors) and migrated all 23
+  call sites across seven test binaries. The non-sanitizer backend of
+  `tests/allocation_counter.cc` no longer dlsym-chains to Itanium-mangled
+  `_Znwm`/`_Znam` symbols; it now replaces the complete standard
+  `operator new`/`delete` overload set (plain, array, aligned, nothrow)
+  backed by `std::malloc`/`posix_memalign` (`_aligned_malloc`/
+  `_aligned_free` behind a `_WIN32` guard for MSVC), so aligned and
+  nothrow allocations are counted. The sanitizer-hook route now also
+  covers ThreadSanitizer. `bench/tess_diagnostics_alloc_hooks.cc` gained
+  the same ASan/TSan guard: under a sanitizer it forwards
+  `__sanitizer_malloc_hook`/`__sanitizer_free_hook` to the diagnostics
+  counters (free-hook bytes are best-effort zero, matching unsized
+  delete) behind a pthread-specific re-entrancy guard, because first
+  `thread_local` access can malloc and re-enter the hook; without a
+  sanitizer it now defines the missing aligned-nothrow new and
+  aligned/nothrow delete counterparts. Added
+  `tests/tess_allocation_counter_test.cc` covering every allocation form
+  and RAII unwind on fatal gtest failures.
+- Reason: The old dlsym chaining breaks on MSVC and silently missed
+  aligned and nothrow allocations, and a failed `ASSERT_*` between
+  `set_allocation_counting(true/false)` leaked counting enabled,
+  poisoning every later allocation assertion in the binary. The
+  unguarded global `new`/`delete` replacement in the bench hooks blinded
+  ASan's new/delete-mismatch and alloc-dealloc-size checks in
+  `tess_diagnostics_enabled_test`, violating the sanitizer rule in
+  `tests/AGENTS.md`.
+- Affected docs: `docs/decisions/CHANGELOG.md`, `tests/AGENTS.md`
+- Affected code: `tests/allocation_counter.{h,cc}`,
+  `tests/tess_allocation_counter_test.cc`, `tests/CMakeLists.txt`,
+  `bench/tess_diagnostics_alloc_hooks.cc`, `tests/tess_block_test.cc`,
+  `tests/tess_shape_test.cc`, `tests/tess_storage_test.cc`,
+  `tests/tess_path_test.cc`, `tests/tess_queued_test.cc`,
+  `tests/tess_path_agent_test.cc`, `tests/tess_path_agent_tick_test.cc`
+
 ## 2026-07-06 - Portable UInt128 Key Storage And Boundary Shift Guards
 
 - Changed: Replaced the unconditional `unsigned __int128` alias in

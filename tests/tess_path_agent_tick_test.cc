@@ -221,13 +221,11 @@ TEST(TessPathAgentTick, WarmUnitTickWithoutDirtyPathingDoesNotAllocate) {
   (void)tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
                                                         agents, runtime);
 
-  tess_test::reset_allocation_count();
-  tess_test::set_allocation_counting(true);
+  tess_test::ScopedAllocationCounter counter;
   (void)tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
                                                         agents, runtime);
-  tess_test::set_allocation_counting(false);
 
-  EXPECT_EQ(tess_test::allocation_count(), 0);
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 }  // namespace
