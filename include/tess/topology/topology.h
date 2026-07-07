@@ -2,6 +2,7 @@
 
 #include <tess/core/shape.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -10,6 +11,10 @@
 
 namespace tess {
 
+// Local region ids are 1-based: 0 is the invalid sentinel
+// (`invalid_local_region`). A valid id maps to
+// `LocalChunkTopology::regions()[value - 1]`; use
+// `LocalChunkTopology::region(id)` for checked access.
 struct LocalRegionId {
   std::uint32_t value = 0;
 
@@ -18,6 +23,11 @@ struct LocalRegionId {
 };
 
 inline constexpr LocalRegionId invalid_local_region{};
+
+// Sentinel returned by RegionGraph::region_index for invalid or
+// out-of-range region references.
+inline constexpr std::uint32_t invalid_region_index =
+    std::numeric_limits<std::uint32_t>::max();
 
 enum class BoundaryFace : std::uint8_t {
   NegativeX,
@@ -38,6 +48,9 @@ struct LocalRegion {
   std::size_t tile_count = 0;
   Box3 bounds{};
   std::size_t boundary_exit_count = 0;
+
+  friend constexpr bool operator==(const LocalRegion& lhs,
+                                   const LocalRegion& rhs) noexcept = default;
 };
 
 struct LocalBoundaryExit {
@@ -46,6 +59,10 @@ struct LocalBoundaryExit {
   Coord3 coord{};
   BoundaryFace face = BoundaryFace::NegativeX;
   ChunkKey target_chunk{};
+
+  friend constexpr bool operator==(const LocalBoundaryExit& lhs,
+                                   const LocalBoundaryExit& rhs) noexcept =
+      default;
 };
 
 struct LocalTopologyResult {
@@ -70,6 +87,9 @@ struct RegionPortal {
   Coord3 from_coord{};
   Coord3 to_coord{};
   BoundaryFace face = BoundaryFace::NegativeX;
+
+  friend constexpr bool operator==(const RegionPortal& lhs,
+                                   const RegionPortal& rhs) noexcept = default;
 };
 
 enum class ReachabilityStatus : std::uint8_t {
@@ -106,7 +126,7 @@ class RegionGraphScratch {
  public:
   void reserve_regions(std::size_t count) {
     frontier_.reserve(count);
-    visited_.reserve(count);
+    visited_epoch_.reserve(count);
   }
 
   [[nodiscard]] auto capacity() const noexcept -> std::size_t {
@@ -119,8 +139,33 @@ class RegionGraphScratch {
                         Coord3 goal, RegionGraphScratch& scratch)
       -> ReachabilityResult;
 
-  std::vector<RegionRef> frontier_;
-  std::vector<RegionRef> visited_;
+  // Epoch-stamped visited marks: a region index is visited when its
+  // generation stamp matches the current epoch, so traversals reset in
+  // O(1) instead of clearing the whole vector.
+  void begin_traversal(std::size_t region_count) {
+    frontier_.clear();
+    if (visited_epoch_.size() < region_count) {
+      visited_epoch_.resize(region_count, 0);
+    }
+    ++epoch_;
+    if (epoch_ == 0) {
+      std::fill(visited_epoch_.begin(), visited_epoch_.end(), 0);
+      epoch_ = 1;
+    }
+  }
+
+  [[nodiscard]] auto is_visited(std::uint32_t region_index) const noexcept
+      -> bool {
+    return visited_epoch_[static_cast<std::size_t>(region_index)] == epoch_;
+  }
+
+  void visit(std::uint32_t region_index) noexcept {
+    visited_epoch_[static_cast<std::size_t>(region_index)] = epoch_;
+  }
+
+  std::vector<std::uint32_t> frontier_;
+  std::vector<std::uint32_t> visited_epoch_;
+  std::uint32_t epoch_ = 0;
 };
 
 class LocalChunkTopology {
@@ -151,6 +196,17 @@ class LocalChunkTopology {
 
   [[nodiscard]] auto regions() const noexcept -> std::span<const LocalRegion> {
     return {regions_.data(), regions_.size()};
+  }
+
+  // Checked accessor for the 1-based LocalRegionId convention: id N maps to
+  // regions()[N - 1]. Returns nullptr for the invalid sentinel and for
+  // out-of-range ids.
+  [[nodiscard]] auto region(LocalRegionId id) const noexcept
+      -> const LocalRegion* {
+    if (id.value == 0 || id.value > regions_.size()) {
+      return nullptr;
+    }
+    return &regions_[static_cast<std::size_t>(id.value) - 1];
   }
 
   [[nodiscard]] auto boundary_exits() const noexcept
@@ -192,6 +248,9 @@ class RegionGraph {
   void clear() noexcept {
     local_topologies_.clear();
     portals_.clear();
+    region_offsets_.clear();
+    adjacency_starts_.clear();
+    adjacency_targets_.clear();
   }
 
   [[nodiscard]] auto local_topologies() const noexcept
@@ -226,14 +285,79 @@ class RegionGraph {
         key, local->region_at(local_tile_id<Shape>(local_coord<Shape>(coord)))};
   }
 
+  // Total region count across all chunks in the dense global region index.
+  [[nodiscard]] auto region_count() const noexcept -> std::uint32_t {
+    return region_offsets_.empty() ? 0U : region_offsets_.back();
+  }
+
+  // Maps a region reference to its dense global index:
+  // region_offsets_[chunk] + (1-based local id - 1). Returns
+  // invalid_region_index for invalid or out-of-range references.
+  [[nodiscard]] auto region_index(RegionRef ref) const noexcept
+      -> std::uint32_t {
+    if (ref.region == invalid_local_region ||
+        ref.chunk.value + 1 >= region_offsets_.size()) {
+      return invalid_region_index;
+    }
+    const auto chunk = static_cast<std::size_t>(ref.chunk.value);
+    const auto index = region_offsets_[chunk] + ref.region.value - 1;
+    if (index >= region_offsets_[chunk + 1]) {
+      return invalid_region_index;
+    }
+    return index;
+  }
+
  private:
   template <typename World, typename PassableTag>
   friend auto build_region_graph(const World& world,
                                  LocalTopologyScratch& scratch,
                                  RegionGraph& graph) -> LocalTopologyResult;
 
+  template <typename World, typename PassableTag>
+  friend auto update_region_graph(const World& world,
+                                  LocalTopologyScratch& scratch,
+                                  RegionGraph& graph,
+                                  std::span<const ChunkKey> dirty_chunks)
+      -> LocalTopologyResult;
+
+  template <typename Shape>
+  friend auto reachable(const RegionGraph& graph, Coord3 start, Coord3 goal,
+                        RegionGraphScratch& scratch) -> ReachabilityResult;
+
+  // Rebuilds the dense region index and the CSR portal adjacency. The CSR
+  // fill preserves portal order within each from-region bucket so
+  // traversal remains deterministic.
+  void rebuild_region_index() {
+    region_offsets_.assign(local_topologies_.size() + 1, 0);
+    for (std::size_t i = 0; i < local_topologies_.size(); ++i) {
+      region_offsets_[i + 1] =
+          region_offsets_[i] +
+          static_cast<std::uint32_t>(local_topologies_[i].regions().size());
+    }
+
+    adjacency_starts_.assign(static_cast<std::size_t>(region_count()) + 1, 0);
+    for (const auto& portal : portals_) {
+      ++adjacency_starts_[static_cast<std::size_t>(region_index(portal.from)) +
+                          1];
+    }
+    for (std::size_t i = 1; i < adjacency_starts_.size(); ++i) {
+      adjacency_starts_[i] += adjacency_starts_[i - 1];
+    }
+
+    adjacency_targets_.resize(portals_.size());
+    auto cursor = adjacency_starts_;
+    for (const auto& portal : portals_) {
+      const auto from = static_cast<std::size_t>(region_index(portal.from));
+      adjacency_targets_[static_cast<std::size_t>(cursor[from]++)] =
+          region_index(portal.to);
+    }
+  }
+
   std::vector<LocalChunkTopology> local_topologies_;
   std::vector<RegionPortal> portals_;
+  std::vector<std::uint32_t> region_offsets_;
+  std::vector<std::uint32_t> adjacency_starts_;
+  std::vector<std::uint32_t> adjacency_targets_;
 };
 
 namespace detail {
@@ -394,14 +518,62 @@ constexpr void include_coord_in_bounds(LocalRegion& region,
   return coord;
 }
 
-[[nodiscard]] constexpr auto is_visited(std::span<const RegionRef> visited,
-                                        RegionRef region) noexcept -> bool {
-  for (const auto item : visited) {
-    if (item == region) {
-      return true;
-    }
+template <typename Shape, typename Fn>
+constexpr void for_each_face_neighbor_chunk(ChunkCoord3 coord, Fn&& fn) {
+  using Traits = ShapeTraits<Shape>;
+  if (coord.x > 0) {
+    auto target = coord;
+    --target.x;
+    fn(target);
   }
-  return false;
+  if (coord.x + 1 < Traits::chunk_count_x) {
+    auto target = coord;
+    ++target.x;
+    fn(target);
+  }
+  if (coord.y > 0) {
+    auto target = coord;
+    --target.y;
+    fn(target);
+  }
+  if (coord.y + 1 < Traits::chunk_count_y) {
+    auto target = coord;
+    ++target.y;
+    fn(target);
+  }
+  if (coord.z > 0) {
+    auto target = coord;
+    --target.z;
+    fn(target);
+  }
+  if (coord.z + 1 < Traits::chunk_count_z) {
+    auto target = coord;
+    ++target.z;
+    fn(target);
+  }
+}
+
+// Derives directed portals for every boundary exit of one chunk topology,
+// in exit order, appending only exits whose neighbor tile maps to a
+// passable region.
+template <typename Shape>
+void append_chunk_portals(const RegionGraph& graph,
+                          const LocalChunkTopology& topology,
+                          std::vector<RegionPortal>& portals) {
+  for (const auto& exit : topology.boundary_exits()) {
+    const auto to_coord = neighbor_coord(exit.coord, exit.face);
+    const auto target = graph.region_of<Shape>(to_coord);
+    if (target.region == invalid_local_region) {
+      continue;
+    }
+    portals.push_back(RegionPortal{
+        RegionRef{topology.chunk(), exit.region},
+        target,
+        exit.coord,
+        to_coord,
+        exit.face,
+    });
+  }
 }
 
 }  // namespace detail
@@ -495,6 +667,7 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
         world, ChunkKey{raw_chunk}, scratch, topology);
     if (local_result.status != TopologyStatus::Built) {
       result.status = local_result.status;
+      graph.rebuild_region_index();
       return result;
     }
     result.region_count += local_result.region_count;
@@ -504,22 +677,99 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
   }
 
   for (const auto& topology : graph.local_topologies_) {
-    for (const auto& exit : topology.boundary_exits()) {
-      const auto to_coord = detail::neighbor_coord(exit.coord, exit.face);
-      const auto target = graph.region_of<Shape>(to_coord);
-      if (target.region == invalid_local_region) {
-        continue;
-      }
-      graph.portals_.push_back(RegionPortal{
-          RegionRef{topology.chunk(), exit.region},
-          target,
-          exit.coord,
-          to_coord,
-          exit.face,
-      });
+    detail::append_chunk_portals<Shape>(graph, topology, graph.portals_);
+  }
+  graph.rebuild_region_index();
+
+  return result;
+}
+
+// Incrementally patches an already-built region graph after passability
+// edits confined to `dirty_chunks`. Rebuilds local topology for each dirty
+// chunk, re-derives portals for dirty chunks and their face neighbors, and
+// restores the canonical full-build portal order, so the resulting graph is
+// identical to a fresh build_region_graph over the edited world. An empty
+// dirty set leaves the graph untouched. Returns the aggregate
+// LocalTopologyResult over all chunks, mirroring build_region_graph. If the
+// graph was not built for this world shape, falls back to a full build.
+template <typename World, typename PassableTag>
+auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
+                         RegionGraph& graph,
+                         std::span<const ChunkKey> dirty_chunks)
+    -> LocalTopologyResult {
+  using Shape = typename World::shape_type;
+  using Traits = ShapeTraits<Shape>;
+
+  const auto chunk_count = static_cast<std::size_t>(Traits::chunk_count);
+  if (graph.local_topologies_.size() != chunk_count) {
+    return build_region_graph<World, PassableTag>(world, scratch, graph);
+  }
+  for (const auto chunk : dirty_chunks) {
+    if (chunk.value >= Traits::chunk_count) {
+      return LocalTopologyResult{TopologyStatus::InvalidChunk, 0, 0, 0, 0};
     }
   }
 
+  if (!dirty_chunks.empty()) {
+    // Mark dirty chunks, then widen to every face neighbor: those are the
+    // only chunks whose outgoing portals can reference a dirty chunk.
+    std::vector<std::uint8_t> dirty(chunk_count, 0);
+    std::vector<std::uint8_t> affected(chunk_count, 0);
+    for (const auto chunk : dirty_chunks) {
+      const auto offset = static_cast<std::size_t>(chunk.value);
+      dirty[offset] = 1;
+      affected[offset] = 1;
+    }
+    for (std::size_t raw_chunk = 0; raw_chunk < chunk_count; ++raw_chunk) {
+      if (dirty[raw_chunk] == 0) {
+        continue;
+      }
+      detail::for_each_face_neighbor_chunk<Shape>(
+          chunk_coord<Shape>(ChunkKey{raw_chunk}), [&](ChunkCoord3 neighbor) {
+            const auto key = chunk_key<Shape>(neighbor);
+            affected[static_cast<std::size_t>(key.value)] = 1;
+          });
+    }
+
+    for (std::size_t raw_chunk = 0; raw_chunk < chunk_count; ++raw_chunk) {
+      if (dirty[raw_chunk] == 0) {
+        continue;
+      }
+      build_local_chunk_topology<World, PassableTag>(
+          world, ChunkKey{raw_chunk}, scratch,
+          graph.local_topologies_[raw_chunk]);
+    }
+
+    // Every invalidated portal originates from an affected chunk, because
+    // portals only span face-adjacent chunks. Drop them in one filtered
+    // pass, re-derive all portals of affected chunks in exit order, then
+    // stable-sort by from-chunk to restore the canonical build order.
+    std::erase_if(graph.portals_, [&](const RegionPortal& portal) {
+      return affected[static_cast<std::size_t>(portal.from.chunk.value)] != 0;
+    });
+    for (std::size_t raw_chunk = 0; raw_chunk < chunk_count; ++raw_chunk) {
+      if (affected[raw_chunk] == 0) {
+        continue;
+      }
+      detail::append_chunk_portals<Shape>(
+          graph, graph.local_topologies_[raw_chunk], graph.portals_);
+    }
+    std::stable_sort(graph.portals_.begin(), graph.portals_.end(),
+                     [](const RegionPortal& lhs, const RegionPortal& rhs) {
+                       return lhs.from.chunk.value < rhs.from.chunk.value;
+                     });
+    graph.rebuild_region_index();
+  }
+
+  auto result = LocalTopologyResult{};
+  for (const auto& topology : graph.local_topologies_) {
+    result.region_count += topology.regions().size();
+    for (const auto& region : topology.regions()) {
+      result.passable_tile_count += region.tile_count;
+    }
+    result.boundary_exit_count += topology.boundary_exits().size();
+    result.version += topology.version();
+  }
   return result;
 }
 
@@ -545,34 +795,44 @@ auto reachable(const RegionGraph& graph, Coord3 start, Coord3 goal,
     return ReachabilityResult{ReachabilityStatus::Reachable, 1};
   }
 
-  scratch.frontier_.clear();
-  scratch.visited_.clear();
-  scratch.frontier_.push_back(start_region);
-  scratch.visited_.push_back(start_region);
+  const auto start_index = graph.region_index(start_region);
+  if (start_index == invalid_region_index) {
+    return ReachabilityResult{ReachabilityStatus::InvalidStart, 0};
+  }
+  const auto goal_index = graph.region_index(goal_region);
+  if (goal_index == invalid_region_index) {
+    return ReachabilityResult{ReachabilityStatus::InvalidGoal, 0};
+  }
+
+  scratch.begin_traversal(static_cast<std::size_t>(graph.region_count()));
+  scratch.visit(start_index);
+  std::size_t visited_count = 1;
+  scratch.frontier_.push_back(start_index);
 
   while (!scratch.frontier_.empty()) {
     const auto current = scratch.frontier_.back();
     scratch.frontier_.pop_back();
 
-    for (const auto& portal : graph.portals()) {
-      if (portal.from != current ||
-          detail::is_visited(
-              std::span<const RegionRef>{scratch.visited_.data(),
-                                         scratch.visited_.size()},
-              portal.to)) {
+    const auto begin = static_cast<std::size_t>(
+        graph.adjacency_starts_[static_cast<std::size_t>(current)]);
+    const auto end = static_cast<std::size_t>(
+        graph.adjacency_starts_[static_cast<std::size_t>(current) + 1]);
+    for (std::size_t edge = begin; edge < end; ++edge) {
+      const auto target = graph.adjacency_targets_[edge];
+      if (scratch.is_visited(target)) {
         continue;
       }
-      if (portal.to == goal_region) {
+      if (target == goal_index) {
         return ReachabilityResult{ReachabilityStatus::Reachable,
-                                  scratch.visited_.size() + 1};
+                                  visited_count + 1};
       }
-      scratch.visited_.push_back(portal.to);
-      scratch.frontier_.push_back(portal.to);
+      scratch.visit(target);
+      ++visited_count;
+      scratch.frontier_.push_back(target);
     }
   }
 
-  return ReachabilityResult{ReachabilityStatus::Unreachable,
-                            scratch.visited_.size()};
+  return ReachabilityResult{ReachabilityStatus::Unreachable, visited_count};
 }
 
 }  // namespace tess
