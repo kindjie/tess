@@ -13,6 +13,67 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-06 - Docs Audit Sweep Closes Drift and Adds Surface Manifest
+
+- Changed: Final workstream of the 29-part audit remediation; documentation
+  drift found "at the seams" is closed and a prevention gate is added.
+  `docs/architecture/simulation.md` now documents the full current
+  `include/tess/sim/` surface: `SimSchedulerStats`,
+  `run_queued_operations`, the four `tick_*_path_agents` /
+  `tick_*_path_agents_with_movement` wrappers and their state/options/stats
+  types, the path-agent batch helpers, `MovementResult`,
+  `MovementVersionCheck`, `MovementFailureCounts` /
+  `record_movement_failure` / `is_transient_movement_failure` /
+  `movement_versions_match`, the `PathAgentPhase` lifecycle interplay
+  across layers, and the fixed-step time types including
+  `FixedStepFrame::dropped_seconds`. New maintained docs
+  `docs/architecture/shape.md` (Shape/ShapeTraits, coordinate types, key
+  packing including the portable `detail::UInt128` and the 64-bit boundary
+  guards, the default-member-initializer zero-init guarantee, `contains` /
+  `manhattan_distance`, and the `TESS_ASSERT` policy) and
+  `docs/architecture/diagnostics.md` (`TESS_ENABLE_DIAGNOSTICS`, event
+  macros, scoped counters, and the `thread_local` scope limitation:
+  counters do not aggregate across worker threads) join the maintained
+  list. `docs/architecture/queued-operations.md` no longer contradicts
+  itself about phase sharing: both prose passages now match
+  `detail::parallel_phase_conflict` (a mutable operation conflicts with
+  any overlapping operation, read-only included), and the
+  `OperationFailure` enumerator list is complete (including `None`) and
+  well-formed. `docs/tdd/README.md` indexes the Work Contracts and tile
+  layout addenda; `docs/README.md` frames the TDD archive as original TDDs
+  plus proposed addenda, non-authoritative. `docs/performance.md` marks
+  the snapshot stale relative to the 2026-07-06 harness rework and
+  threshold changes with an explicit regeneration TODO (no numbers
+  fabricated). `README.md` lists both examples and the hooks-backstop CI
+  job. Historical corrections: the 2026-06-08 "Concurrent Tile-World TDD
+  Split" entry's "Affected code: none" gained a bracketed correction
+  (commit 2e22c05 changed public headers), and the 2026-06-05 "One
+  Millisecond Benchmark Investigation Gate" entry gained a superseded
+  annotation pointing at calibrated per-benchmark ceilings. Prevention
+  gate: `docs/architecture/surface.json` maps each maintained doc to the
+  public symbol names it documents (233 symbols across 9 docs), and
+  `tools/check_public_surface.py` extracts type and free-function names
+  from every `TESS_PUBLIC_HEADERS` header (24 headers; simple line-based
+  parser with a `detail`/`internal` namespace allowlist) and fails when a
+  symbol is missing from the manifest. It runs as an advisory
+  (`::warning`) step in the CI hooks-backstop job, with pytest coverage in
+  `tests/test_check_public_surface.py` including a completeness test
+  against the real tree.
+- Reason: A docs audit found the architecture docs had drifted where
+  subsystems meet (scheduler/tick/movement seams, phase-conflict rules,
+  unindexed addenda, stale benchmark framing), and nothing prevented new
+  public symbols from landing undocumented.
+- Affected docs: `docs/architecture/simulation.md`,
+  `docs/architecture/shape.md` (new), `docs/architecture/diagnostics.md`
+  (new), `docs/architecture/queued-operations.md`,
+  `docs/architecture/path.md`, `docs/architecture/topology.md`,
+  `docs/architecture/block.md`, `docs/architecture/README.md`,
+  `docs/architecture/surface.json` (new), `docs/tdd/README.md`,
+  `docs/README.md`, `docs/performance.md`, `docs/decisions/CHANGELOG.md`,
+  `README.md`, `tests/AGENTS.md`
+- Affected code: `tools/check_public_surface.py` (new),
+  `tests/test_check_public_surface.py` (new), `.github/workflows/ci.yml`
+
 ## 2026-07-06 - CI Gains TSan, macOS, and Advisory MSVC Platform Gates
 
 - Changed: The sanitizer toggle is generalized — `TESS_ENABLE_SANITIZERS`
@@ -516,7 +577,12 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `docs/tdd/tdd_addendum_concurrent_tile_world.md`,
   `docs/tdd/tdd_addendum_work_contracts.md`, `docs/tdd/README.md`,
   `docs/dependencies.md`, `docs/architecture/queued-operations.md`
-- Affected code: none
+- Affected code: none [Correction 2026-07-06: inaccurate. The commit that
+  landed this entry (2e22c05) also changed public headers: it added default
+  member initializers to the core value types in
+  `include/tess/core/shape.h` and `include/tess/topology/topology.h` (with
+  matching zero-init tests in `tests/tess_shape_test.cc` and
+  `tests/tess_topology_test.cc`).]
 
 ## 2026-06-06 - Queued Parallel Phase Planning
 
@@ -893,6 +959,14 @@ Records meaningful design changes from the original TDDs.
 - Affected code: none
 
 ## 2026-06-05 - One Millisecond Benchmark Investigation Gate
+
+[Superseded 2026-07-06: the flat 1 ms ceiling is no longer the gate policy.
+Thresholds now carry calibrated per-benchmark CPU-time ceilings per
+`bench/thresholds/*.json` and `docs/planning/benchmark-plan.md` (the path
+suite carries values both below and far above 1 ms for investigated batch
+profiles, and two manual-time cache benchmarks gate on real time instead).
+The 1 ms value survives only as the default investigation ceiling for
+benchmarks that have not yet been individually calibrated.]
 
 - Changed: Current benchmark threshold scaffolds now enforce a 1 ms CPU-time
   ceiling for each named benchmark while leaving real-time limits unset. The

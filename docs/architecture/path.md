@@ -49,7 +49,8 @@ other entries cannot move.
   cache-internal storage without invalidating results returned through other
   scratches. Storage is capped (`set_caps`; defaults 512 entries and 2^20
   path nodes): an insert that would exceed either cap invalidates the whole
-  cache first and counts a `cap_invalidations` stat. `invalidate()` drops
+  cache first and counts a `cap_invalidations` stat; `stats()` reports the
+  counters as `RouteCacheStats`. `invalidate()` drops
   cached route data and both indexes while preserving hit/miss counters;
   `clear()` drops routes and resets counters. `capture_world_versions(world)`
   and `invalidate_if_world_changed(world)` provide coarse whole-cache
@@ -82,7 +83,8 @@ other entries cannot move.
   store at budget first sweeps stale entries in one compaction pass that
   also rebuilds the path-node arena, then evicts the oldest live entries in
   insertion order if needed; a zero budget stores nothing. `stats()` reports
-  entries, path nodes, sweeps, evictions, and stale rejections.
+  entries, path nodes, sweeps, evictions, and stale rejections as
+  `PortalSegmentCacheStats`.
 - `WeightedPathBatchScratch` owns reusable search scratch and stable copied
   result paths for weighted batch planning.
 - `PathRequestRuntime` owns a small deterministic request/result lifecycle for
@@ -177,8 +179,9 @@ other entries cannot move.
 - `build_distance_field_product<World, PassableTag>(world, goals, scratch,
   product)` builds a multi-source unit-cost product for an ordered `GoalSet`.
 - `distance_field_product_path<World, PassableTag>(world, start, product,
-  scratch)` replays a path from a valid product; `nearest_target` returns the
-  reached goal and path by following decreasing distances.
+  scratch)` replays a path from a valid product; `nearest_target` follows
+  decreasing distances and returns a `NearestTargetResult` with the status,
+  cost, reached goal coordinate, node counts, and path span.
 - `build_weighted_distance_field<World, PassableTag, CostTag>(world, goal,
   scratch)` builds a weighted reverse Dijkstra field for positive integral
   entry costs.
@@ -347,7 +350,9 @@ whose entry exceeds the byte budget on its own cannot be cached: that store
 deliberately clears the entire cache and returns false, and a zero byte
 budget therefore caches nothing. The cache evicts least-recently-used entries
 (by lookup/store recency, not insertion order) to a byte budget and reports
-entries, bytes, hits, misses, evictions, and stale rejections. `PathRequestRuntime` owns one such cache and uses it only when
+entries, bytes, hits, misses, evictions, and stale rejections as
+`FieldProductCacheStats`. `PathRequestRuntime` owns one such cache and uses
+it only when
 `PathRuntimeCachePolicy::use_unit_field_product_cache` is set. Runtime use is
 conservative: only repeated single-goal groups at or above
 `unit_field_product_min_goal_reuse` are product candidates, singleton requests

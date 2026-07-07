@@ -25,9 +25,9 @@ by `tess/tess.h`.
   statuses are `Planned`, `InvalidWritePolicy`, `InvalidDomain`,
   `InvalidFieldAccess`, and `HazardConflict`.
 - `OperationFailure` records the stable reason for an invalid operation. The
-  current reasons are `InvalidWritePolicyValue` and
-  `ExplicitChunkOutOfRange`, `ReadOnlyWriteMask`, and
-  `FieldHazardConflict`.
+  current values are `None` (carried by planned operations),
+  `InvalidWritePolicyValue`, `ExplicitChunkOutOfRange`, `ReadOnlyWriteMask`,
+  and `FieldHazardConflict`.
 - `DomainDesc` owns a minimal operation domain descriptor:
   `explicit_chunks(keys)`, `dirty_chunks(mask)`, `active_chunks(mask)`, or
   `resident_chunks()`.
@@ -35,25 +35,28 @@ by `tess/tess.h`.
   `read_mask`, `write_mask`, and `dirty_mask`. These are planner metadata only
   in this slice; they do not mutate world dirty flags and are not field-tag
   reflection.
-- `QueuedOperation` stores the submitted operation kind, handle, id, domain,
-  field access, `WritePolicy`, priority, budget policy, and
-  `std::source_location`.
+- `QueuedOperation` stores the submitted `OperationKind` (currently only
+  `UpdateField`), handle, id, domain, field access, `WritePolicy`,
+  priority, budget policy, and `std::source_location`.
 - `OperationAccess` records the diagnostic access metadata known to the
-  planner: write policy, domain kind, and domain mask. It is diagnostic
+  planner: write policy, `DomainKind` (`ExplicitChunks`, `DirtyChunks`,
+  `ActiveChunks`, or `ResidentChunks`), and domain mask. It is diagnostic
   metadata only in this slice, not a hazard solver.
-- `ExecutionPlan` stores planned operations in enqueue order. Each planned
-  operation contains the diagnostic access metadata and expanded chunk-key
-  vector.
-- `ExecutionPhasePlan` stores deterministic contiguous ranges of planned
-  operations that are eligible to run in the same future parallel phase.
-  `plan_parallel_execution_phases(plan)` accepts only `ReadOnly` and
-  `UniquePerChunk` planned operations for now. If a mutable chunk operation
-  touches a chunk already present in the current phase, the planner starts a
-  later phase so chunk field data and dirty/version metadata are not mutated
-  concurrently. `UniquePerTile` is deliberately rejected until tile subdomains
-  and tile-level ownership validation exist.
-- `ExecutionReport` stores one report entry per queued operation and the plan
-  entries for operations that passed validation.
+- `ExecutionPlan` stores `PlannedOperation` entries in enqueue order. Each
+  planned operation contains the diagnostic access metadata and expanded
+  chunk-key vector.
+- `ExecutionPhasePlan` stores deterministic contiguous `ExecutionPhase`
+  ranges of planned operations that are eligible to run in the same future
+  parallel phase, plus an `ExecutionPhaseStatus` (`Ready` or
+  `UnsupportedWritePolicy`). `plan_parallel_execution_phases(plan)` accepts
+  only `ReadOnly` and `UniquePerChunk` planned operations for now. If a
+  mutable chunk operation touches a chunk already present in the current
+  phase, the planner starts a later phase so chunk field data and
+  dirty/version metadata are not mutated concurrently. `UniquePerTile` is
+  deliberately rejected until tile subdomains and tile-level ownership
+  validation exist.
+- `ExecutionReport` stores one `OperationReport` per queued operation and
+  the plan entries for operations that passed validation.
 - `planned_chunk_domain(planned)` adapts a successful planned operation into a
   non-owning `ChunkDomain` span over the planned operation's owned chunk
   vector.
@@ -62,8 +65,9 @@ by `tess/tess.h`.
 - `try_planned_block_ctx<Policy>(world, planned)` returns a policy-typed
   `BlockCtx` over the planned chunk domain when the policies match, or
   `std::nullopt` on mismatch.
-- `PlannedDirtyAccumulator` records `{chunk, dirty_mask, bounds}` dirty events
-  produced during planned execution without mutating chunk metadata.
+- `PlannedDirtyAccumulator` records `PlannedDirtyRecord` entries
+  (`{chunk, dirty_mask, bounds}`) produced during planned execution without
+  mutating chunk metadata.
   `merge_planned_dirty(world, accumulator)` sorts records by chunk key,
   coalesces repeated chunk records into one dirty mask and unioned bounds,
   applies `world.mark_dirty` once per touched chunk, clears the accumulator,
@@ -120,10 +124,12 @@ planned operation.
 successful plan. It does not execute work and does not relax existing hazard
 validation. It groups already-planned operations into deterministic phase
 ranges that preserve operation order. Read-only operations can share a phase
-with other read-only operations. `UniquePerChunk` operations can share a phase
-only when their chunk domains are disjoint from other mutable work in that
-phase. Same-chunk mutable work is separated even if field masks are disjoint,
-because chunk dirty bounds and version metadata are shared at chunk scope.
+with other read-only operations. A `UniquePerChunk` operation can share a
+phase only when its chunk domain is disjoint from every other operation
+already in that phase, read-only work included: a mutable operation
+conflicts with any overlapping operation even when field masks are
+disjoint, because chunk dirty bounds and version metadata are shared at
+chunk scope.
 
 The plan-to-block adapter is intentionally non-owning. The planned operation
 must outlive any `ChunkDomain` or `BlockCtx` produced from it, because those
@@ -146,7 +152,9 @@ auto result = tess::execute_planned_operation<
 the callback. On success, it creates a policy-typed `BlockCtx`, visits the
 planned chunks in deterministic key order, invokes the callback once per chunk
 view, and marks each visited chunk dirty when the planned operation declares a
-nonzero `dirty_mask`.
+nonzero `dirty_mask`. Execution helpers return a `PlannedExecutionResult`
+carrying a `PlannedExecutionStatus` (`Executed`, `PolicyMismatch`, or
+`InvalidPhase`) plus the executed chunk count.
 
 `execute_plan<Policy>` applies the same callback to each planned operation in
 plan order and stops at the first policy mismatch. This is still a synchronous
@@ -236,9 +244,11 @@ contract with a test-only `std::thread` executor over disjoint chunk mutations
 and overlapping read-only chunk access, plus deterministic replay stress that
 compares serial phase execution against `ScopedThreadPhaseExecutor` across
 many shuffled legal phase plans. The ownership rule is deliberately small:
-`ReadOnly` phase operations may overlap chunk domains and receive const views,
-while `UniquePerChunk` phase operations may run concurrently only after phase
-planning proves their mutable chunk domains are disjoint. User callbacks must
+`ReadOnly` phase operations may overlap chunk domains with each other and
+receive const views, while `UniquePerChunk` phase operations may run
+concurrently only after phase planning proves their chunk domains are
+disjoint from every other operation in the phase, including read-only
+overlap. User callbacks must
 still synchronize any mutable state they capture themselves. Production worker
 pools, cancellation, and result-channel completion remain outside this layer.
 Diagnostics also count validated phase calls, partition counts, invalid phase
