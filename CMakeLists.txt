@@ -41,6 +41,7 @@ target_compile_features(tess INTERFACE cxx_std_20)
 set(
   TESS_PUBLIC_HEADERS
   include/tess/block/block.h
+  include/tess/core/assert.h
   include/tess/core/shape.h
   include/tess/diagnostics/diagnostics.h
   include/tess/ops/queued.h

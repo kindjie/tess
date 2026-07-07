@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tess/core/assert.h>
 #include <tess/path/field_product_cache.h>
 #include <tess/path/path.h>
 #include <tess/path/portal_segment_cache.h>
@@ -117,6 +118,7 @@ class PathRequestRuntime {
   }
 
   [[nodiscard]] auto result(PathTicket ticket) const noexcept -> PathResult {
+    TESS_ASSERT(ticket.value < results_.size());
     return results_[ticket.value];
   }
 
