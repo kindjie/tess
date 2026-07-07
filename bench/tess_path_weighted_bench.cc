@@ -3,6 +3,8 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include <span>
 #include <vector>
@@ -169,6 +171,85 @@ void record_path_counters(benchmark::State& state,
   state.counters["reached_nodes"] = static_cast<double>(result.reached_nodes);
 }
 
+// Correctness checks mandated by docs/planning/benchmark-plan.md run outside
+// the timed regions; a failed check aborts the benchmark binary so threshold
+// runs cannot silently gate on wrong results.
+void bench_check(bool condition, const char* message) {
+  if (!condition) {
+    std::fprintf(stderr, "tess_bench correctness check failed: %s\n", message);
+    std::abort();
+  }
+}
+
+// Validates a Found route: endpoints match the request and every step is a
+// unit move onto a passable tile.
+void check_found_route(WeightedPathScaleWorld& world,
+                       const tess::PathResult& result,
+                       tess::PathRequest request) {
+  bench_check(result.status == tess::PathStatus::Found,
+              "route status is not Found");
+  bench_check(!result.path.empty(), "found route is empty");
+  bench_check(result.path.front() == request.start,
+              "route does not begin at the requested start");
+  bench_check(result.path.back() == request.goal,
+              "route does not end at the requested goal");
+  for (std::size_t i = 1; i < result.path.size(); ++i) {
+    bench_check(
+        tess::manhattan_distance(result.path[i - 1], result.path[i]) == 1,
+        "route contains a non-unit step");
+    bench_check(world.template field<PassableTag>(result.path[i]) != 0,
+                "route crosses an impassable tile");
+  }
+}
+
+// Additionally pins the cost to an expected value captured from an untimed
+// setup run of the same deterministic search.
+void check_found_route(WeightedPathScaleWorld& world,
+                       const tess::PathResult& result,
+                       tess::PathRequest request, std::uint64_t expected_cost) {
+  check_found_route(world, result, request);
+  bench_check(result.cost == expected_cost,
+              "route cost differs from the expected setup-run cost");
+}
+
+// Untimed reference run used by batch benchmarks to pin the last request's
+// cost for the post-loop correctness check.
+[[nodiscard]] auto expected_weighted_path_cost(WeightedPathScaleWorld& world,
+                                               tess::PathRequest request)
+    -> std::uint64_t {
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto result =
+      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
+          world, request, scratch);
+  bench_check(result.status == tess::PathStatus::Found,
+              "setup reference path not found");
+  return result.cost;
+}
+
+// Mirrors the grouped multigoal batch loops: the last processed request is
+// the last request whose goal matches the final first-occurrence goal group.
+template <std::size_t Count>
+[[nodiscard]] auto last_grouped_request(
+    const std::array<tess::PathRequest, Count>& requests) -> tess::PathRequest {
+  auto last_request = requests.front();
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    auto already_built = false;
+    for (std::size_t j = 0; j < i; ++j) {
+      already_built = already_built || requests[j].goal == requests[i].goal;
+    }
+    if (already_built) {
+      continue;
+    }
+    for (const auto request : requests) {
+      if (request.goal == requests[i].goal) {
+        last_request = request;
+      }
+    }
+  }
+  return last_request;
+}
+
 void record_portal_product_counters(
     benchmark::State& state, const tess::WeightedPortalRouteProduct& product,
     const tess::PathResult& result, std::uint32_t optimal_cost) {
@@ -186,9 +267,14 @@ void record_portal_product_counters(
 }
 
 template <std::size_t Count>
-void record_batch_counters(benchmark::State& state,
+void record_batch_counters(benchmark::State& state, std::uint64_t total_cost,
                            std::uint64_t total_expanded) {
   state.counters["agents"] = static_cast<double>(Count);
+  // Whole-batch aggregates: the per-request counter names (cost,
+  // expanded_nodes, ...) previously published the LAST request only, which
+  // made per-node timing math ~100x off for 100-request batches.
+  state.counters["batch.cost_total"] = static_cast<double>(total_cost);
+  state.counters["batch.expanded_total"] = static_cast<double>(total_expanded);
   state.counters["batch.avg_expanded_nodes"] =
       static_cast<double>(total_expanded) / static_cast<double>(Count);
 }
@@ -308,6 +394,8 @@ void BM_path_weighted_portal_product_room_portals_512x512(
   const auto optimal =
       tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
           world, request, optimal_scratch);
+  bench_check(optimal.status == tess::PathStatus::Found,
+              "setup optimal path not found");
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   tess::WeightedPortalRouteProduct product;
@@ -326,6 +414,9 @@ void BM_path_weighted_portal_product_room_portals_512x512(
     benchmark::DoNotOptimize(cost);
     benchmark::DoNotOptimize(result.path.data());
   }
+  check_found_route(world, result, request);
+  bench_check(result.cost >= optimal.cost,
+              "portal route cost beat the optimal cost");
   record_path_counters(state, result);
   record_portal_product_counters(state, product, result, optimal.cost);
   TESS_PATH_DIAG_RECORD(state);
@@ -346,6 +437,8 @@ void BM_path_weighted_portal_product_replay_room_portals_512x512(
   const auto optimal =
       tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
           world, request, optimal_scratch);
+  bench_check(optimal.status == tess::PathStatus::Found,
+              "setup optimal path not found");
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   tess::WeightedPortalRouteProduct product;
@@ -363,6 +456,9 @@ void BM_path_weighted_portal_product_replay_room_portals_512x512(
     benchmark::DoNotOptimize(cost);
     benchmark::DoNotOptimize(result.path.data());
   }
+  check_found_route(world, result, request);
+  bench_check(result.cost >= optimal.cost,
+              "portal route cost beat the optimal cost");
   record_path_counters(state, result);
   record_portal_product_counters(state, product, result, optimal.cost);
 }
@@ -381,6 +477,8 @@ void BM_path_weighted_chunk_portal_product_room_portals_512x512(
   const auto optimal =
       tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
           world, request, optimal_scratch);
+  bench_check(optimal.status == tess::PathStatus::Found,
+              "setup optimal path not found");
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   tess::WeightedPortalRouteProduct product;
@@ -399,6 +497,9 @@ void BM_path_weighted_chunk_portal_product_room_portals_512x512(
     benchmark::DoNotOptimize(cost);
     benchmark::DoNotOptimize(result.path.data());
   }
+  check_found_route(world, result, request);
+  bench_check(result.cost >= optimal.cost,
+              "portal route cost beat the optimal cost");
   record_path_counters(state, result);
   record_portal_product_counters(state, product, result, optimal.cost);
   TESS_PATH_DIAG_RECORD(state);
@@ -418,6 +519,8 @@ void BM_path_weighted_chunk_portal_product_replay_room_portals_512x512(
   const auto optimal =
       tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
           world, request, optimal_scratch);
+  bench_check(optimal.status == tess::PathStatus::Found,
+              "setup optimal path not found");
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   tess::WeightedPortalRouteProduct product;
@@ -435,6 +538,9 @@ void BM_path_weighted_chunk_portal_product_replay_room_portals_512x512(
     benchmark::DoNotOptimize(cost);
     benchmark::DoNotOptimize(result.path.data());
   }
+  check_found_route(world, result, request);
+  bench_check(result.cost >= optimal.cost,
+              "portal route cost beat the optimal cost");
   record_path_counters(state, result);
   record_portal_product_counters(state, product, result, optimal.cost);
 }
@@ -465,11 +571,14 @@ void BM_path_weighted_chunk_portal_candidates_room_portals_512x512(
   std::vector<tess::Coord3> waypoints;
   waypoints.reserve(32);
   tess::detail::PortalRouteCandidate candidate;
+  auto best_score = std::numeric_limits<std::uint32_t>::max();
+  auto total_scan_tiles = std::size_t{0};
+  auto total_waypoints = std::size_t{0};
 
   for (auto _ : state) {
-    auto best_score = std::numeric_limits<std::uint32_t>::max();
-    auto total_scan_tiles = std::size_t{0};
-    auto total_waypoints = std::size_t{0};
+    best_score = std::numeric_limits<std::uint32_t>::max();
+    total_scan_tiles = 0;
+    total_waypoints = 0;
     for (const auto& order : orders) {
       candidate =
           tess::detail::build_chunk_portal_candidate<WeightedPathScaleWorld,
@@ -492,11 +601,14 @@ void BM_path_weighted_chunk_portal_candidates_room_portals_512x512(
     benchmark::DoNotOptimize(total_scan_tiles);
     benchmark::DoNotOptimize(total_waypoints);
   }
+  bench_check(best_score != std::numeric_limits<std::uint32_t>::max(),
+              "no portal route candidate was found");
   state.counters["portal.route_candidates"] =
       static_cast<double>(orders.size() + 1u);
-  state.counters["portal.scan_tiles"] =
-      static_cast<double>((30u * 32u * orders.size()) + candidate.scan_tiles);
-  state.counters["portal.waypoints"] = static_cast<double>(waypoints.size());
+  // Publish the values the loop actually measured; this previously reported
+  // a hardcoded scan-tile formula while the measured totals were discarded.
+  state.counters["portal.scan_tiles"] = static_cast<double>(total_scan_tiles);
+  state.counters["portal.waypoints"] = static_cast<double>(total_waypoints);
 }
 
 void BM_path_weighted_portal_segment_cache_room_portals_512x512(
@@ -514,6 +626,8 @@ void BM_path_weighted_portal_segment_cache_room_portals_512x512(
   const auto optimal =
       tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
           world, request, optimal_scratch);
+  bench_check(optimal.status == tess::PathStatus::Found,
+              "setup optimal path not found");
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
   tess::WeightedPortalSegmentCache cache;
@@ -536,6 +650,9 @@ void BM_path_weighted_portal_segment_cache_room_portals_512x512(
     benchmark::DoNotOptimize(cost);
     benchmark::DoNotOptimize(result.path.data());
   }
+  check_found_route(world, result, request);
+  bench_check(result.cost >= optimal.cost,
+              "portal route cost beat the optimal cost");
   record_path_counters(state, result);
   record_portal_product_counters(state, product, result, optimal.cost);
   state.counters["portal.segment_cache_entries"] =
@@ -563,8 +680,8 @@ void BM_path_weighted_portal_segment_cache_batch_100_room_portals_512x512(
   product.reserve_path_nodes(2048);
   product.reserve_dependencies(64);
   tess::PathResult result;
-  std::uint64_t total_expanded = 0;
   std::uint64_t total_cost = 0;
+  std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     cache.clear();
@@ -581,8 +698,8 @@ void BM_path_weighted_portal_segment_cache_batch_100_room_portals_512x512(
     benchmark::DoNotOptimize(total_expanded);
     benchmark::DoNotOptimize(result.path.data());
   }
-  record_batch_counters<count>(state, total_expanded);
-  record_path_counters(state, result);
+  check_found_route(world, result, requests.back());
+  record_batch_counters<count>(state, total_cost, total_expanded);
   state.counters["portal.segment_cache_entries"] =
       static_cast<double>(cache.size());
   state.counters["portal.waypoints"] = static_cast<double>(waypoints.size());
@@ -628,8 +745,9 @@ void BM_path_weighted_portal_endpoint_segments_batch_100_room_portals_512x512(
     benchmark::DoNotOptimize(total_first_expanded);
     benchmark::DoNotOptimize(last_expanded);
   }
-  record_batch_counters<count>(state, total_first_expanded);
-  record_path_counters(state, result);
+  check_found_route(world, result,
+                    tess::PathRequest{last_portal, requests.front().goal});
+  record_batch_counters<count>(state, total_cost, total_first_expanded);
   state.counters["portal.first_segment_avg_expanded"] =
       static_cast<double>(total_first_expanded) / static_cast<double>(count);
   state.counters["portal.last_segment_expanded"] =
@@ -693,8 +811,9 @@ void BM_path_weighted_portal_first_field_cache_batch_100_room_portals_512x512(
     benchmark::DoNotOptimize(field.expanded_nodes);
     benchmark::DoNotOptimize(result.path.data());
   }
-  record_batch_counters<count>(state, total_reconstruct_expanded);
-  record_path_counters(state, result);
+  check_found_route(world, result,
+                    tess::PathRequest{first_portal, requests.back().goal});
+  record_batch_counters<count>(state, total_cost, total_reconstruct_expanded);
   state.counters["field_expanded_nodes"] =
       static_cast<double>(field.expanded_nodes);
   state.counters["field_reached_nodes"] =
@@ -715,13 +834,16 @@ void BM_path_weighted_astar_batch_100_shared_sparse_512x512(
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_weighted_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL();
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
       result = tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag,
@@ -732,8 +854,8 @@ void BM_path_weighted_astar_batch_100_shared_sparse_512x512(
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  record_batch_counters<requests.size()>(state, total_expanded);
-  record_path_counters(state, result);
+  check_found_route(world, result, requests.back(), expected_last_cost);
+  record_batch_counters<requests.size()>(state, total_cost, total_expanded);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -748,14 +870,17 @@ void BM_path_weighted_distance_field_batch_100_shared_sparse_512x512(
 
   tess::DistanceFieldScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_weighted_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL();
   tess::DistanceFieldResult field;
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(
         field = tess::build_weighted_distance_field<WeightedPathScaleWorld,
@@ -772,12 +897,14 @@ void BM_path_weighted_distance_field_batch_100_shared_sparse_512x512(
     benchmark::DoNotOptimize(total_expanded);
     benchmark::DoNotOptimize(field.expanded_nodes);
   }
-  record_batch_counters<requests.size()>(state, total_expanded);
+  bench_check(field.status == tess::PathStatus::Found,
+              "distance field build failed");
+  check_found_route(world, result, requests.back(), expected_last_cost);
+  record_batch_counters<requests.size()>(state, total_cost, total_expanded);
   state.counters["field_expanded_nodes"] =
       static_cast<double>(field.expanded_nodes);
   state.counters["field_reached_nodes"] =
       static_cast<double>(field.reached_nodes);
-  record_path_counters(state, result);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -792,14 +919,17 @@ void BM_path_bounded_weighted_distance_field_batch_100_shared_sparse_512x512(
 
   tess::DistanceFieldScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_weighted_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL();
   tess::DistanceFieldResult field;
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(
         field = tess::build_bounded_weighted_distance_field<
@@ -816,12 +946,14 @@ void BM_path_bounded_weighted_distance_field_batch_100_shared_sparse_512x512(
     benchmark::DoNotOptimize(total_expanded);
     benchmark::DoNotOptimize(field.expanded_nodes);
   }
-  record_batch_counters<requests.size()>(state, total_expanded);
+  bench_check(field.status == tess::PathStatus::Found,
+              "distance field build failed");
+  check_found_route(world, result, requests.back(), expected_last_cost);
+  record_batch_counters<requests.size()>(state, total_cost, total_expanded);
   state.counters["field_expanded_nodes"] =
       static_cast<double>(field.expanded_nodes);
   state.counters["field_reached_nodes"] =
       static_cast<double>(field.reached_nodes);
-  record_path_counters(state, result);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -835,13 +967,16 @@ void BM_path_weighted_astar_batch_100_multigoal_sparse_512x512(
 
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto expected_last_cost =
+      expected_weighted_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL();
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     TESS_PATH_DIAG_RUN(for (const auto request : requests) {
       result = tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag,
@@ -852,10 +987,10 @@ void BM_path_weighted_astar_batch_100_multigoal_sparse_512x512(
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(total_expanded);
   }
-  record_batch_counters<requests.size()>(state, total_expanded);
+  check_found_route(world, result, requests.back(), expected_last_cost);
+  record_batch_counters<requests.size()>(state, total_cost, total_expanded);
   state.counters["batch.unique_goals"] =
       static_cast<double>(unique_goal_count(requests));
-  record_path_counters(state, result);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -869,15 +1004,19 @@ void BM_path_weighted_distance_field_batch_100_multigoal_sparse_512x512(
 
   tess::DistanceFieldScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto last_request = last_grouped_request(requests);
+  const auto expected_last_cost =
+      expected_weighted_path_cost(world, last_request);
   TESS_PATH_DIAG_DECL();
   tess::DistanceFieldResult field;
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
   std::uint64_t total_field_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     total_field_expanded = 0;
     TESS_PATH_DIAG_RUN(for (std::size_t i = 0; i < requests.size(); ++i) {
@@ -907,14 +1046,16 @@ void BM_path_weighted_distance_field_batch_100_multigoal_sparse_512x512(
     benchmark::DoNotOptimize(total_expanded);
     benchmark::DoNotOptimize(total_field_expanded);
   }
-  record_batch_counters<requests.size()>(state, total_expanded);
+  bench_check(field.status == tess::PathStatus::Found,
+              "distance field build failed");
+  check_found_route(world, result, last_request, expected_last_cost);
+  record_batch_counters<requests.size()>(state, total_cost, total_expanded);
   state.counters["batch.unique_goals"] =
       static_cast<double>(unique_goal_count(requests));
   state.counters["field_expanded_nodes"] =
       static_cast<double>(total_field_expanded);
   state.counters["field_reached_nodes"] =
       static_cast<double>(field.reached_nodes);
-  record_path_counters(state, result);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -928,15 +1069,19 @@ void BM_path_bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512(
 
   tess::DistanceFieldScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  const auto last_request = last_grouped_request(requests);
+  const auto expected_last_cost =
+      expected_weighted_path_cost(world, last_request);
   TESS_PATH_DIAG_DECL();
   tess::DistanceFieldResult field;
   tess::PathResult result;
+  std::uint64_t total_cost = 0;
   std::uint64_t total_expanded = 0;
   std::uint64_t total_field_expanded = 0;
 
   for (auto _ : state) {
     TESS_PATH_DIAG_RESET();
-    std::uint64_t total_cost = 0;
+    total_cost = 0;
     total_expanded = 0;
     total_field_expanded = 0;
     TESS_PATH_DIAG_RUN(for (std::size_t i = 0; i < requests.size(); ++i) {
@@ -967,14 +1112,16 @@ void BM_path_bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512(
     benchmark::DoNotOptimize(total_expanded);
     benchmark::DoNotOptimize(total_field_expanded);
   }
-  record_batch_counters<requests.size()>(state, total_expanded);
+  bench_check(field.status == tess::PathStatus::Found,
+              "distance field build failed");
+  check_found_route(world, result, last_request, expected_last_cost);
+  record_batch_counters<requests.size()>(state, total_cost, total_expanded);
   state.counters["batch.unique_goals"] =
       static_cast<double>(unique_goal_count(requests));
   state.counters["field_expanded_nodes"] =
       static_cast<double>(total_field_expanded);
   state.counters["field_reached_nodes"] =
       static_cast<double>(field.reached_nodes);
-  record_path_counters(state, result);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -990,6 +1137,8 @@ void BM_path_weighted_batch_planner_100_multigoal_sparse_512x512(
   scratch.reserve_search_nodes(path_node_count<PathScaleShape>());
   scratch.reserve_requests(requests.size());
   scratch.reserve_path_nodes(requests.size() * 1024u);
+  const auto expected_last_cost =
+      expected_weighted_path_cost(world, requests.back());
   TESS_PATH_DIAG_DECL();
   std::span<const tess::PathResult> results;
   std::uint64_t total_expanded = 0;
@@ -1011,7 +1160,7 @@ void BM_path_weighted_batch_planner_100_multigoal_sparse_512x512(
     benchmark::DoNotOptimize(total_expanded);
     benchmark::DoNotOptimize(results.data());
   }
-  record_batch_counters<requests.size()>(state, total_expanded);
+  record_batch_counters<requests.size()>(state, total_cost, total_expanded);
   state.counters["batch.unique_goals"] =
       static_cast<double>(scratch.stats().unique_goals);
   state.counters["batch.field_builds"] =
@@ -1020,9 +1169,9 @@ void BM_path_weighted_batch_planner_100_multigoal_sparse_512x512(
       static_cast<double>(scratch.stats().astar_fallbacks);
   state.counters["batch.path_nodes"] =
       static_cast<double>(scratch.stats().path_nodes);
-  if (!results.empty()) {
-    record_path_counters(state, results.back());
-  }
+  bench_check(results.size() == requests.size(),
+              "planner did not return a result per request");
+  check_found_route(world, results.back(), requests.back(), expected_last_cost);
   TESS_PATH_DIAG_RECORD(state);
 }
 

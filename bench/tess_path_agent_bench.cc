@@ -3,8 +3,32 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 
 namespace {
+
+// Correctness checks mandated by docs/planning/benchmark-plan.md run outside
+// the timed regions; a failed check aborts the benchmark binary so threshold
+// runs cannot silently gate on wrong results.
+void bench_check(bool condition, const char* message) {
+  if (!condition) {
+    std::fprintf(stderr, "tess_bench correctness check failed: %s\n", message);
+    std::abort();
+  }
+}
+
+void check_all_agents_found(tess::PathAgentFrameStats stats,
+                            std::size_t agent_count) {
+  bench_check(stats.submitted == agent_count,
+              "not every agent submitted a path request");
+  bench_check(stats.completed == stats.submitted,
+              "not every submitted request completed");
+  bench_check(stats.found == agent_count, "not every agent found a path");
+  bench_check(
+      stats.invalid_start == 0 && stats.invalid_goal == 0 && stats.no_path == 0,
+      "agent batch reported failed requests");
+}
 
 using PathScaleShape =
     tess::Shape<tess::Extent3{512, 512, 1}, tess::Extent3{32, 32, 1}>;
@@ -129,6 +153,7 @@ void BM_path_agent_runtime_100_unit_suffix_512x512(benchmark::State& state) {
     benchmark::DoNotOptimize(runtime.results().data());
   }
 
+  check_all_agents_found(frame_stats, agents.size());
   record_agent_counters(state, frame_stats);
   const auto stats = runtime.stats();
   record_route_cache_counters(state, stats.route_cache);
@@ -157,7 +182,10 @@ void BM_path_agent_tick_100_unit_clean_512x512(benchmark::State& state) {
 
   tess::PathAgentTickStats tick_stats;
   for (auto _ : state) {
-    state.PauseTiming();
+    // The agent reset stays inside the timed region on purpose: it is ~500
+    // trivial stores, while the per-iteration PauseTiming()/ResumeTiming()
+    // pair it previously hid behind costs a comparable amount to the whole
+    // measured tick and distorted this sub-microsecond benchmark.
     for (std::size_t i = 0; i < agents.size(); ++i) {
       agents[i].position = starts[i];
       agents[i].goal = goal;
@@ -165,7 +193,6 @@ void BM_path_agent_tick_100_unit_clean_512x512(benchmark::State& state) {
       agents[i].status = tess::PathStatus::Found;
       agents[i].has_goal = true;
     }
-    state.ResumeTiming();
 
     tick_stats = tess::tick_unit_path_agents<PathWorld, PassableTag>(
         tick_state, world, agents, runtime, options);
@@ -173,6 +200,8 @@ void BM_path_agent_tick_100_unit_clean_512x512(benchmark::State& state) {
     benchmark::DoNotOptimize(agents.data());
   }
 
+  bench_check(tick_stats.movement.advanced == agents.size(),
+              "clean tick did not advance every agent");
   record_tick_counters(state, tick_stats);
   const auto stats = runtime.stats();
   record_route_cache_counters(state, stats.route_cache);
@@ -223,6 +252,7 @@ void BM_path_agent_tick_100_unit_dirty_world_edit_512x512(
   }
 
   record_tick_counters(state, tick_stats);
+  check_all_agents_found(tick_stats.pathing, agents.size());
   record_agent_counters(state, tick_stats.pathing);
   const auto stats = runtime.stats();
   record_route_cache_counters(state, stats.route_cache);
@@ -262,6 +292,7 @@ void BM_path_agent_runtime_100_weighted_shared_512x512(
     benchmark::DoNotOptimize(runtime.results().data());
   }
 
+  check_all_agents_found(frame_stats, agents.size());
   record_agent_counters(state, frame_stats);
   const auto stats = runtime.stats();
   state.counters["batch.unique_goals"] =
@@ -306,6 +337,7 @@ void BM_path_agent_tick_100_weighted_shared_dirty_512x512(
   }
 
   record_tick_counters(state, tick_stats);
+  check_all_agents_found(tick_stats.pathing, agents.size());
   record_agent_counters(state, tick_stats.pathing);
   const auto stats = runtime.stats();
   state.counters["batch.unique_goals"] =
@@ -346,6 +378,7 @@ void BM_path_agent_runtime_100_weighted_mixed_512x512(benchmark::State& state) {
     benchmark::DoNotOptimize(runtime.results().data());
   }
 
+  check_all_agents_found(frame_stats, agents.size());
   record_agent_counters(state, frame_stats);
   const auto stats = runtime.stats();
   state.counters["batch.unique_goals"] =
@@ -392,6 +425,7 @@ void BM_path_agent_runtime_100_unit_world_edit_512x512(
     benchmark::DoNotOptimize(runtime.results().data());
   }
 
+  check_all_agents_found(frame_stats, agents.size());
   record_agent_counters(state, frame_stats);
   const auto stats = runtime.stats();
   record_route_cache_counters(state, stats.route_cache);
@@ -431,6 +465,7 @@ void run_unit_shared_goal_wall_gap_runtime(benchmark::State& state,
     benchmark::DoNotOptimize(runtime.results().data());
   }
 
+  check_all_agents_found(frame_stats, agents.size());
   record_agent_counters(state, frame_stats);
   const auto stats = runtime.stats();
   record_route_cache_counters(state, stats.route_cache);
@@ -491,6 +526,7 @@ void run_unit_scattered_goal_wall_gap_runtime(benchmark::State& state,
     benchmark::DoNotOptimize(runtime.results().data());
   }
 
+  check_all_agents_found(frame_stats, agents.size());
   record_agent_counters(state, frame_stats);
   const auto stats = runtime.stats();
   record_route_cache_counters(state, stats.route_cache);
