@@ -71,8 +71,11 @@ function(tess_target_cppcheck_options target)
         "--error-exitcode=1"
         "--inline-suppr"
         "--suppress=internalError:${PROJECT_SOURCE_DIR}/include/tess/core/shape.h"
-        "--suppress=syntaxError:${PROJECT_SOURCE_DIR}/tests/tess_diagnostics_default_test.cc"
-        "--suppress=syntaxError:${PROJECT_SOURCE_DIR}/tests/tess_diagnostics_enabled_test.cc"
+        # cppcheck's parser trips false-positive syntaxErrors on modern
+        # constructs in gtest-macro-heavy test files (a different file each
+        # release). Tests compile under clang on six other gating presets,
+        # so suppress for tests/ as a whole; product headers stay checked.
+        "--suppress=syntaxError:${PROJECT_SOURCE_DIR}/tests/*"
         "--suppress=missingIncludeSystem"
         "--std=c++20"
   )
