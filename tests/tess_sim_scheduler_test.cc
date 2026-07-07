@@ -377,7 +377,9 @@ TEST(TessScheduler, QueuedEditDirtiesPathingAndEmitsRenderDeltas) {
   EXPECT_GE(stats.render_delta_count, 1u);
   EXPECT_FALSE(render_deltas.empty());
 
-  std::vector<tess::Coord3> visited{agents[0].position};
+  std::vector<tess::Coord3> visited;
+  visited.reserve(33);
+  visited.push_back(agents[0].position);
   for (int tick = 0; tick < 32 && agents[0].has_goal; ++tick) {
     stats = tess::tick_unit_scheduler<World, PassableTag,
                                       tess::WritePolicy::UniquePerChunk>(
@@ -595,7 +597,9 @@ auto run_weighted_movement_to_arrival(World& world,
       false,        movement_dirty_mask,
   };
 
-  std::vector<tess::Coord3> visited{agents[0].position};
+  std::vector<tess::Coord3> visited;
+  visited.reserve(33);
+  visited.push_back(agents[0].position);
   for (int tick = 0; tick < 32 && agents[0].has_goal; ++tick) {
     (void)tess::tick_weighted_movement_scheduler<
         World, PassableTag, CostTag, WeightedMaxCost, OccupancyTag,

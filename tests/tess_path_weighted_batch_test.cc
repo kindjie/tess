@@ -308,6 +308,7 @@ TEST(TessPathWeightedBatch, SeededBatchesMatchSingleRequestOracle) {
 
     std::uniform_int_distribution<std::size_t> pick(0, passable.size() - 1);
     std::vector<tess::Coord3> goal_pool;
+    goal_pool.reserve(11);
     for (int i = 0; i < 10; ++i) {
       goal_pool.push_back(passable[pick(rng)]);
     }
@@ -395,7 +396,7 @@ TEST(TessPathWeightedBatch, WarmRepeatBatchIsAllocationFree) {
 
   tess::WeightedPathBatchScratch scratch;
   scratch.reserve_requests(requests.size());
-  scratch.reserve_search_nodes(32u * 32u);
+  scratch.reserve_search_nodes(std::size_t{32} * 32);
   scratch.reserve_path_nodes(4096);
 
   auto results = tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
