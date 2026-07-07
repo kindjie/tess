@@ -87,6 +87,11 @@
   explicit dirty-mark requirements after world edits, dirty reprocessing after
   world edits and goal changes, unreachable goals, weighted shared-goal ticks,
   and allocation-free warm clean ticks.
+- `tess_assert_test`: verifies the `TESS_ASSERT` debug precondition policy —
+  death tests for out-of-shape coordinates and out-of-range keys/tickets on
+  unchecked accessors (`World::resolve`, `World::chunk`, `World::meta`,
+  `tile_key`, `PathRequestRuntime::result`), that the disabled form does not
+  evaluate its condition, and that guarded accessors stay `noexcept`.
 - `tess_diagnostics_default_test`: verifies public diagnostic macros are
   disabled by default and do not evaluate arguments, including generic events.
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate

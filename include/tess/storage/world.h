@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tess/core/assert.h>
 #include <tess/core/shape.h>
 #include <tess/storage/chunk_page.h>
 
@@ -76,10 +77,12 @@ class World<Shape, Schema, AlwaysResident> {
   }
 
   [[nodiscard]] auto chunk(ChunkKey key) noexcept -> page_type& {
+    TESS_ASSERT(key.value < chunk_count);
     return pages_[static_cast<std::size_t>(key.value)];
   }
 
   [[nodiscard]] auto chunk(ChunkKey key) const noexcept -> const page_type& {
+    TESS_ASSERT(key.value < chunk_count);
     return pages_[static_cast<std::size_t>(key.value)];
   }
 
@@ -123,10 +126,12 @@ class World<Shape, Schema, AlwaysResident> {
   }
 
   [[nodiscard]] auto meta(ChunkKey key) noexcept -> ChunkMeta& {
+    TESS_ASSERT(key.value < chunk_count);
     return metadata_[static_cast<std::size_t>(key.value)];
   }
 
   [[nodiscard]] auto meta(ChunkKey key) const noexcept -> const ChunkMeta& {
+    TESS_ASSERT(key.value < chunk_count);
     return metadata_[static_cast<std::size_t>(key.value)];
   }
 
@@ -256,6 +261,7 @@ class World<Shape, Schema, AlwaysResident> {
 
   [[nodiscard]] auto resolve(Coord3 coord) const noexcept
       -> ResolvedTile<Shape> {
+    TESS_ASSERT(contains<Shape>(coord));
     const auto chunk_coord_value = chunk_coord<Shape>(coord);
     return ResolvedTile<Shape>{
         chunk_key<Shape>(chunk_coord_value),
