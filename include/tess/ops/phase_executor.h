@@ -5,8 +5,10 @@
 #include <algorithm>
 #include <atomic>
 #include <concepts>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -172,6 +174,161 @@ class ScopedThreadPhaseExecutor {
 
  private:
   std::size_t worker_count_ = 1;
+};
+
+// Prototype persistent worker-pool backend behind the PhaseExecutor
+// contract: workers are created once and reused across phases, so phase
+// dispatch does not create threads. It invokes callbacks concurrently, so
+// like ScopedThreadPhaseExecutor it does not declare serial_execution_tag
+// and pairs only with execute_phase_partitioned_dirty_with. It exists so
+// the concurrency plan can compare a persistent pool against the serial
+// baseline and the scoped-thread prototype; it is not yet the production
+// scheduler backend. Callbacks must not throw. After reserve_operations,
+// warm for_each_operation calls perform no dynamic allocation.
+class WorkerPoolPhaseExecutor {
+ public:
+  explicit WorkerPoolPhaseExecutor(std::size_t worker_count) {
+    const auto count = worker_count == 0 ? std::size_t{1} : worker_count;
+    workers_.reserve(count);
+    for (std::size_t worker = 0; worker < count; ++worker) {
+      workers_.emplace_back([this] { run_worker(); });
+    }
+  }
+
+  WorkerPoolPhaseExecutor()
+      : WorkerPoolPhaseExecutor(std::thread::hardware_concurrency()) {}
+
+  WorkerPoolPhaseExecutor(const WorkerPoolPhaseExecutor&) = delete;
+  auto operator=(const WorkerPoolPhaseExecutor&)
+      -> WorkerPoolPhaseExecutor& = delete;
+  WorkerPoolPhaseExecutor(WorkerPoolPhaseExecutor&&) = delete;
+  auto operator=(WorkerPoolPhaseExecutor&&)
+      -> WorkerPoolPhaseExecutor& = delete;
+
+  ~WorkerPoolPhaseExecutor() {
+    {
+      const std::scoped_lock lock{mutex_};
+      stop_ = true;
+    }
+    work_cv_.notify_all();
+    for (auto& worker : workers_) {
+      worker.join();
+    }
+  }
+
+  [[nodiscard]] auto worker_count() const noexcept -> std::size_t {
+    return workers_.size();
+  }
+
+  // Pre-sizes the per-operation result buffer so warm phases of up to
+  // `count` operations do not allocate. A larger phase grows the buffer on
+  // that dispatch.
+  void reserve_operations(std::size_t count) const {
+    const std::scoped_lock lock{mutex_};
+    if (results_.size() < count) {
+      results_.resize(count);
+    }
+  }
+
+  template <typename Fn>
+  auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn) const
+      -> PlannedExecutionResult {
+    if (count == 0) {
+      return PlannedExecutionResult{};
+    }
+    TESS_DIAG_EVENT_VALUE(queued_worker_pool_dispatch,
+                          std::min(workers_.size(), count));
+
+    auto&& callback = fn;
+    using Callback = std::remove_reference_t<decltype(callback)>;
+    {
+      const std::scoped_lock lock{mutex_};
+      if (results_.size() < count) {
+        results_.resize(count);
+      }
+      job_context_ = &callback;
+      job_invoke_ = [](void* context,
+                       std::size_t index) -> PlannedExecutionResult {
+        return (*static_cast<Callback*>(context))(index);
+      };
+      job_first_ = first;
+      job_count_ = count;
+      next_offset_.store(0, std::memory_order_relaxed);
+      finished_operations_.store(0, std::memory_order_relaxed);
+      ++job_epoch_;
+      job_active_ = true;
+    }
+    work_cv_.notify_all();
+
+    {
+      std::unique_lock lock{mutex_};
+      done_cv_.wait(lock, [&] {
+        return finished_operations_.load(std::memory_order_acquire) == count &&
+               active_workers_ == 0;
+      });
+      job_active_ = false;
+    }
+
+    for (std::size_t offset = 0; offset < count; ++offset) {
+      if (results_[offset].status != PlannedExecutionStatus::Executed) {
+        return results_[offset];
+      }
+    }
+    return PlannedExecutionResult{};
+  }
+
+ private:
+  using JobInvoke = auto (*)(void*, std::size_t) -> PlannedExecutionResult;
+
+  void run_worker() {
+    std::uint64_t seen_epoch = 0;
+    while (true) {
+      std::unique_lock lock{mutex_};
+      work_cv_.wait(lock, [&] {
+        return stop_ || (job_active_ && job_epoch_ != seen_epoch);
+      });
+      if (stop_) {
+        return;
+      }
+      seen_epoch = job_epoch_;
+      ++active_workers_;
+      auto* const context = job_context_;
+      const auto invoke = job_invoke_;
+      const auto first = job_first_;
+      const auto count = job_count_;
+      lock.unlock();
+
+      while (true) {
+        const auto offset =
+            next_offset_.fetch_add(1, std::memory_order_relaxed);
+        if (offset >= count) {
+          break;
+        }
+        results_[offset] = invoke(context, first + offset);
+        finished_operations_.fetch_add(1, std::memory_order_release);
+      }
+
+      lock.lock();
+      --active_workers_;
+      done_cv_.notify_all();
+    }
+  }
+
+  mutable std::mutex mutex_;
+  mutable std::condition_variable work_cv_;
+  mutable std::condition_variable done_cv_;
+  mutable std::vector<PlannedExecutionResult> results_;
+  mutable std::atomic<std::size_t> next_offset_ = 0;
+  mutable std::atomic<std::size_t> finished_operations_ = 0;
+  mutable void* job_context_ = nullptr;
+  mutable JobInvoke job_invoke_ = nullptr;
+  mutable std::size_t job_first_ = 0;
+  mutable std::size_t job_count_ = 0;
+  mutable std::uint64_t job_epoch_ = 0;
+  mutable std::size_t active_workers_ = 0;
+  mutable bool job_active_ = false;
+  bool stop_ = false;
+  std::vector<std::thread> workers_;
 };
 
 template <typename Executor, typename Fn>

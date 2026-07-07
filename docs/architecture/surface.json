@@ -81,6 +81,7 @@
     "QueuedOperation",
     "ScopedThreadPhaseExecutor",
     "SerialPhaseExecutor",
+    "WorkerPoolPhaseExecutor",
     "collect_planned_dirty",
     "execute_operation_index_range",
     "execute_phase_deferred_dirty",

@@ -13,6 +13,28 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-07 - Persistent Worker-Pool Phase Executor Prototype
+
+- Changed: `tess/ops/phase_executor.h` gains `WorkerPoolPhaseExecutor`, a
+  persistent-pool prototype satisfying the `PhaseExecutor` concept: workers
+  are created once and reused across phases (no per-phase thread creation),
+  jobs are published type-erased under the pool mutex, completion blocks
+  until all claimed operations finish and all adopted workers leave the
+  claim loop, failures report in operation order, and
+  `reserve_operations(count)` makes warm dispatch allocation-free. It does
+  not declare `serial_execution_tag` and pairs only with
+  `execute_phase_partitioned_dirty_with`.
+- Reason: The concurrent tile-world addendum requires a Tess-owned
+  persistent pool prototype behind the executor interface before any
+  external backend is evaluated; this is the S1 slice of the v1 concurrency
+  stream, providing the comparison point for the parallel benchmarks and
+  the candidate promoted to production in the scheduler stage (S7).
+- Affected docs: `docs/architecture/queued-operations.md`,
+  `docs/architecture/surface.json`
+- Affected code: `include/tess/ops/phase_executor.h`,
+  `tests/tess_phase_executor_test.cc`, `tests/tess_queued_test.cc`,
+  `tests/AGENTS.md`
+
 ## 2026-07-07 - Phase Executor Contract Promoted to Its Own Public Header
 
 - Changed: The backend-facing executor pieces (`PlannedExecutionStatus`,
