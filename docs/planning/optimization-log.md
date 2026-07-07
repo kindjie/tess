@@ -825,3 +825,35 @@ deferred for scope reasons. Keep entries short and concrete:
 - Retry conditions: Profile the affected weighted and batch workloads before
   further threshold changes if future PRs exceed these calibrated runner
   bounds.
+
+## 2026-07-06 - Pre-A* Scan Cost Model Accepted; Grouping Rescans Removed
+
+- Area: `astar_path` pre-A* fast-path scans;
+  `PathRequestRuntime::process_repeated_goal_fields` and
+  `weighted_path_batch` goal grouping.
+- Hypothesis: The plane-gap/forced-gap/barrier fast paths carry an
+  O(world-slice) worst case when they all miss, and the repeated-goal
+  grouping passes carried O(n^2)/O(n^3) request rescans that a flat-hash
+  grouping pass removes without behavior change.
+- Evidence: Two new worst-case benchmarks pin the scan-miss cost:
+  `path/astar_plane_gap_miss_512x512` measured about 1.76 ms (sealed wall
+  gap, every 2D scan fails, full-flood NoPath A* of about 131k nodes) and
+  `path/astar_plane_gap_miss_3d_64x64x16` about 9.0 us (sealed best 3D
+  gap, A* reroutes through a second gap). Seeded randomized equivalence
+  tests (fixed `std::mt19937` seeds) pin grouped statuses, costs, and all
+  `field_product_*`/batch stats counters against per-request A* oracles
+  before and after the grouping rewrite, and warm reruns of both grouping
+  passes are allocation-free under `ScopedAllocationCounter`.
+- Accepted: Rewrite both grouping passes as single O(n) flat-hash passes
+  (goal -> group id, counting-sort member buckets, sort+unique distinct
+  start chunks) with runtime/scratch-owned reusable storage. Add the two
+  scan-miss benchmarks to `bench/thresholds/path.json` with deliberately
+  generous 10x-measured ceilings as documentation gates.
+- Deferred: No structural change to the pre-A* scans themselves. The miss
+  cost is bounded by one world slice per failed scan and the fast paths
+  win on real layouts; the accepted evidence is the benchmark pair plus
+  the cost-model section in `docs/architecture/path.md`.
+- Retry conditions: Revisit the scan ordering (or gate the plane scans
+  behind a cheap occupancy summary) if the miss benchmarks regress past
+  their generous ceilings or profiling shows scan overhead dominating
+  realistic mixed workloads.
