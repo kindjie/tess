@@ -619,6 +619,7 @@ TEST(TessPathRuntime, RepeatedGoalGroupingMatchesAstarOracle) {
 
       std::uniform_int_distribution<std::size_t> pick(0, passable.size() - 1);
       std::vector<tess::Coord3> goal_pool;
+      goal_pool.reserve(7);
       for (int i = 0; i < 6; ++i) {
         goal_pool.push_back(passable[pick(rng)]);
       }
