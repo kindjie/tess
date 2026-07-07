@@ -89,6 +89,8 @@ struct QueuedPhaseCounters {
   std::uint64_t dirty_partitions = 0;
   std::uint64_t scoped_thread_calls = 0;
   std::uint64_t scoped_thread_workers = 0;
+  std::uint64_t worker_pool_calls = 0;
+  std::uint64_t worker_pool_workers = 0;
   std::uint64_t dirty_records_collected = 0;
   std::uint64_t dirty_chunks_merged = 0;
 
@@ -301,6 +303,13 @@ inline void event_queued_scoped_thread_dispatch(
   if (active_queued_phase_counters != nullptr) {
     ++active_queued_phase_counters->scoped_thread_calls;
     active_queued_phase_counters->scoped_thread_workers += workers;
+  }
+}
+
+inline void event_queued_worker_pool_dispatch(std::uint64_t workers) noexcept {
+  if (active_queued_phase_counters != nullptr) {
+    ++active_queued_phase_counters->worker_pool_calls;
+    active_queued_phase_counters->worker_pool_workers += workers;
   }
 }
 

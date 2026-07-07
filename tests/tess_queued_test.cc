@@ -1606,6 +1606,45 @@ TEST(TessQueued, ScopedThreadPhaseExecutorReplaysStressPlansLikeSerial) {
   }
 }
 
+TEST(TessQueued, WorkerPoolPhaseExecutorReplaysStressPlansLikeSerial) {
+  tess::WorkerPoolPhaseExecutor pool_executor{4};
+
+  for (std::uint32_t seed = 1; seed <= 24u; ++seed) {
+    World serial_world;
+    World pool_world;
+    tess::FrameOps ops;
+    tess::PlannedPhaseExecutionScratch serial_scratch;
+    tess::PlannedPhaseExecutionScratch pool_scratch;
+    tess::SerialPhaseExecutor serial_executor;
+
+    for (const auto entry : replay_entries(seed)) {
+      const std::vector<tess::ChunkKey> keys{entry.key};
+      (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys),
+                             entry.access, tess::WritePolicy::UniquePerChunk);
+    }
+
+    const auto report = tess::plan_operations(serial_world, ops);
+    ASSERT_TRUE(report.ok()) << "seed " << seed;
+
+    const auto phase_plan = tess::plan_parallel_execution_phases(report.plan());
+    ASSERT_TRUE(phase_plan.ok()) << "seed " << seed;
+
+    serial_scratch.reserve_operations(ops.size());
+    serial_scratch.reserve_dirty_records_per_operation(1);
+    serial_scratch.reserve_merged_dirty_records(World::chunk_count);
+    pool_scratch.reserve_operations(ops.size());
+    pool_scratch.reserve_dirty_records_per_operation(1);
+    pool_scratch.reserve_merged_dirty_records(World::chunk_count);
+
+    execute_replay_phases(serial_executor, serial_world, report.plan(),
+                          phase_plan.phases(), serial_scratch, seed);
+    execute_replay_phases(pool_executor, pool_world, report.plan(),
+                          phase_plan.phases(), pool_scratch, seed);
+
+    expect_worlds_match(serial_world, pool_world);
+  }
+}
+
 TEST(TessQueued, ScopedThreadPhaseExecutorReportsFirstFailureInPlanOrder) {
   World world;
   tess::FrameOps ops;
