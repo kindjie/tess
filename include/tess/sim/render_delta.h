@@ -2,6 +2,7 @@
 
 #include <tess/core/shape.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -43,27 +44,40 @@ void collect_render_tile_deltas(const World& world, std::uint32_t dirty_mask,
       continue;
     }
 
-    const auto end_x = detail::axis_end(meta.dirty_bounds.origin.x,
-                                        meta.dirty_bounds.extent.x);
-    const auto end_y = detail::axis_end(meta.dirty_bounds.origin.y,
-                                        meta.dirty_bounds.extent.y);
-    const auto end_z = detail::axis_end(meta.dirty_bounds.origin.z,
-                                        meta.dirty_bounds.extent.z);
-    for (auto z = meta.dirty_bounds.origin.z; z < end_z; ++z) {
-      for (auto y = meta.dirty_bounds.origin.y; y < end_y; ++y) {
-        for (auto x = meta.dirty_bounds.origin.x; x < end_x; ++x) {
+    // Clip the dirty bounds to this chunk's own world-space box before the
+    // per-tile loop. Every tile in the clipped box is inside the shape and
+    // resolves to this chunk, so no per-tile filtering is needed.
+    using Traits = ShapeTraits<Shape>;
+    const auto chunk = chunk_coord<Shape>(chunk_key);
+    const auto chunk_begin_x =
+        static_cast<std::int64_t>(chunk.x * Traits::chunk.x);
+    const auto chunk_begin_y =
+        static_cast<std::int64_t>(chunk.y * Traits::chunk.y);
+    const auto chunk_begin_z =
+        static_cast<std::int64_t>(chunk.z * Traits::chunk.z);
+    const auto begin_x = std::max(meta.dirty_bounds.origin.x, chunk_begin_x);
+    const auto begin_y = std::max(meta.dirty_bounds.origin.y, chunk_begin_y);
+    const auto begin_z = std::max(meta.dirty_bounds.origin.z, chunk_begin_z);
+    const auto end_x =
+        std::min(detail::axis_end(meta.dirty_bounds.origin.x,
+                                  meta.dirty_bounds.extent.x),
+                 chunk_begin_x + static_cast<std::int64_t>(Traits::chunk.x));
+    const auto end_y =
+        std::min(detail::axis_end(meta.dirty_bounds.origin.y,
+                                  meta.dirty_bounds.extent.y),
+                 chunk_begin_y + static_cast<std::int64_t>(Traits::chunk.y));
+    const auto end_z =
+        std::min(detail::axis_end(meta.dirty_bounds.origin.z,
+                                  meta.dirty_bounds.extent.z),
+                 chunk_begin_z + static_cast<std::int64_t>(Traits::chunk.z));
+    for (auto z = begin_z; z < end_z; ++z) {
+      for (auto y = begin_y; y < end_y; ++y) {
+        for (auto x = begin_x; x < end_x; ++x) {
           const auto coord = Coord3{x, y, z};
-          if (!contains<Shape>(coord)) {
-            continue;
-          }
-          const auto resolved = world.resolve(coord);
-          if (resolved.chunk_key != chunk_key) {
-            continue;
-          }
           out.push_back(RenderTileDelta{
               coord,
               chunk_key,
-              resolved.local_tile_id,
+              local_tile_id<Shape>(local_coord<Shape>(coord)),
               flags,
               meta.version,
           });
