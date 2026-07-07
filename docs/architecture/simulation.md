@@ -38,8 +38,21 @@ deltas.
   queued operations through the existing serial block bridge, marks pathing
   dirty when planned work dirtied configured pathing fields, ticks unit-cost
   path agents, and emits render deltas.
+- `tick_unit_movement_scheduler<World, PassableTag, OccupancyTag,
+  ReservationTag, Policy>(...)` runs the same sequence and commits agent
+  movement through `commit_movement_intent`, marking moved-agent chunks
+  dirty with the configured movement dirty mask.
 - `tick_weighted_scheduler<World, PassableTag, CostTag, MaxCost, Policy>(...)`
   runs the same sequence through the weighted path-agent batch tick.
+- `tick_weighted_movement_scheduler<World, PassableTag, CostTag, MaxCost,
+  OccupancyTag, ReservationTag, Policy>(...)` combines the weighted batch
+  tick with movement commits and the movement dirty mask.
+
+All four scheduler variants share one internal tick sequence
+(`detail::tick_scheduler_core`); they differ only in the path-agent tick
+they run. When queued operations fail planning, the tick reports
+`planned_ops` without `executed_ops`, leaves the world untouched, and still
+ticks path agents.
 
 ## Behavior
 
@@ -68,7 +81,9 @@ Render deltas are based on current chunk dirty bounds. If multiple dirty masks
 share a chunk, the current dirty bound is the union maintained by storage. A
 caller that needs per-field exact rectangles should keep its own field-level
 presentation data or drain deltas before broadening the chunk dirty bound with
-unrelated edits.
+unrelated edits. Collection clips each chunk's dirty bounds to the chunk's
+own world-space box before visiting tiles, so bounds that span chunk borders
+or leave the shape emit deltas only for tiles the chunk owns.
 
 ## Deliberate Limits
 

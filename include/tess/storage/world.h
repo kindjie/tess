@@ -244,14 +244,28 @@ class World<Shape, Schema, AlwaysResident> {
     }
   }
 
+  void collect_dirty_chunks(std::uint32_t flags,
+                            std::vector<ChunkKey>& out) const {
+    collect_matching_chunks(flags, &ChunkMeta::field_dirty_flags, out);
+  }
+
+  void collect_active_chunks(std::uint32_t flags,
+                             std::vector<ChunkKey>& out) const {
+    collect_matching_chunks(flags, &ChunkMeta::active_flags, out);
+  }
+
   [[nodiscard]] auto dirty_chunks(std::uint32_t flags) const
       -> std::vector<ChunkKey> {
-    return matching_chunks(flags, &ChunkMeta::field_dirty_flags);
+    std::vector<ChunkKey> chunks;
+    collect_dirty_chunks(flags, chunks);
+    return chunks;
   }
 
   [[nodiscard]] auto active_chunks(std::uint32_t flags) const
       -> std::vector<ChunkKey> {
-    return matching_chunks(flags, &ChunkMeta::active_flags);
+    std::vector<ChunkKey> chunks;
+    collect_active_chunks(flags, chunks);
+    return chunks;
   }
 
   [[nodiscard]] auto resolve(Coord3 coord) const noexcept
@@ -379,16 +393,14 @@ class World<Shape, Schema, AlwaysResident> {
     return count;
   }
 
-  auto matching_chunks(std::uint32_t flags,
-                       std::uint32_t ChunkMeta::* member) const
-      -> std::vector<ChunkKey> {
-    std::vector<ChunkKey> chunks;
+  void collect_matching_chunks(std::uint32_t flags,
+                               std::uint32_t ChunkMeta::* member,
+                               std::vector<ChunkKey>& out) const {
     for (std::uint64_t key = 0; key < chunk_count; ++key) {
       if ((metadata_[static_cast<std::size_t>(key)].*member & flags) != 0) {
-        chunks.push_back(ChunkKey{key});
+        out.push_back(ChunkKey{key});
       }
     }
-    return chunks;
   }
 
   std::vector<page_type> pages_;

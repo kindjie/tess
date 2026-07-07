@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace tess {
@@ -48,14 +49,21 @@ auto run_queued_operations(World& world, const FrameOps& ops, Fn&& fn)
   return stats;
 }
 
-template <typename World, typename PassableTag, WritePolicy Policy, typename Fn>
-auto tick_unit_scheduler(SimSchedulerState& state, World& world,
-                         const FrameOps& ops, std::span<PathAgentState> agents,
-                         PathRequestRuntime& runtime,
+namespace detail {
+
+// Shared tick sequence for all scheduler variants: run queued operations,
+// mark pathing dirty when planned work dirtied configured pathing fields,
+// run the variant-specific path-agent tick, then collect (and optionally
+// clear) render deltas. `path_tick` returns the variant's
+// `PathAgentTickStats`.
+template <typename World, WritePolicy Policy, typename Fn, typename PathTick>
+auto tick_scheduler_core(SimSchedulerState& state, World& world,
+                         const FrameOps& ops,
                          std::vector<RenderTileDelta>& render_deltas, Fn&& fn,
-                         SimSchedulerOptions options = {})
-    -> SimSchedulerStats {
-  auto stats = run_queued_operations<World, Policy>(world, ops, fn);
+                         const SimSchedulerOptions& options,
+                         PathTick&& path_tick) -> SimSchedulerStats {
+  auto stats =
+      run_queued_operations<World, Policy>(world, ops, std::forward<Fn>(fn));
   if (stats.executed_ops && options.pathing_dirty_mask != 0) {
     for (const auto& report : stats.op_report.operations()) {
       if (report.status == OperationStatus::Planned &&
@@ -66,8 +74,7 @@ auto tick_unit_scheduler(SimSchedulerState& state, World& world,
     }
   }
 
-  stats.path_agents = tick_unit_path_agents<World, PassableTag>(
-      state.path_agents, world, agents, runtime, options.path_agent_options);
+  stats.path_agents = path_tick();
   stats.tick = stats.path_agents.tick;
 
   const auto old_size = render_deltas.size();
@@ -77,6 +84,23 @@ auto tick_unit_scheduler(SimSchedulerState& state, World& world,
     clear_render_delta_dirty(world, options.render_dirty_mask);
   }
   return stats;
+}
+
+}  // namespace detail
+
+template <typename World, typename PassableTag, WritePolicy Policy, typename Fn>
+auto tick_unit_scheduler(SimSchedulerState& state, World& world,
+                         const FrameOps& ops, std::span<PathAgentState> agents,
+                         PathRequestRuntime& runtime,
+                         std::vector<RenderTileDelta>& render_deltas, Fn&& fn,
+                         SimSchedulerOptions options = {})
+    -> SimSchedulerStats {
+  return detail::tick_scheduler_core<World, Policy>(
+      state, world, ops, render_deltas, std::forward<Fn>(fn), options, [&] {
+        return tick_unit_path_agents<World, PassableTag>(
+            state.path_agents, world, agents, runtime,
+            options.path_agent_options);
+      });
 }
 
 template <typename World, typename PassableTag, typename OccupancyTag,
@@ -88,31 +112,13 @@ auto tick_unit_movement_scheduler(SimSchedulerState& state, World& world,
                                   std::vector<RenderTileDelta>& render_deltas,
                                   Fn&& fn, SimSchedulerOptions options = {})
     -> SimSchedulerStats {
-  auto stats = run_queued_operations<World, Policy>(world, ops, fn);
-  if (stats.executed_ops && options.pathing_dirty_mask != 0) {
-    for (const auto& report : stats.op_report.operations()) {
-      if (report.status == OperationStatus::Planned &&
-          (report.field_access.dirty_mask & options.pathing_dirty_mask) != 0) {
-        mark_pathing_dirty(state.path_agents);
-        break;
-      }
-    }
-  }
-
-  stats.path_agents =
-      tick_unit_path_agents_with_movement<World, PassableTag, OccupancyTag,
-                                          ReservationTag>(
-          state.path_agents, world, agents, runtime, options.path_agent_options,
-          options.movement_dirty_mask);
-  stats.tick = stats.path_agents.tick;
-
-  const auto old_size = render_deltas.size();
-  collect_render_tile_deltas(world, options.render_dirty_mask, render_deltas);
-  stats.render_delta_count = render_deltas.size() - old_size;
-  if (options.clear_render_dirty) {
-    clear_render_delta_dirty(world, options.render_dirty_mask);
-  }
-  return stats;
+  return detail::tick_scheduler_core<World, Policy>(
+      state, world, ops, render_deltas, std::forward<Fn>(fn), options, [&] {
+        return tick_unit_path_agents_with_movement<
+            World, PassableTag, OccupancyTag, ReservationTag>(
+            state.path_agents, world, agents, runtime,
+            options.path_agent_options, options.movement_dirty_mask);
+      });
 }
 
 template <typename World, typename PassableTag, typename CostTag,
@@ -124,30 +130,12 @@ auto tick_weighted_scheduler(SimSchedulerState& state, World& world,
                              std::vector<RenderTileDelta>& render_deltas,
                              Fn&& fn, SimSchedulerOptions options = {})
     -> SimSchedulerStats {
-  auto stats = run_queued_operations<World, Policy>(world, ops, fn);
-  if (stats.executed_ops && options.pathing_dirty_mask != 0) {
-    for (const auto& report : stats.op_report.operations()) {
-      if (report.status == OperationStatus::Planned &&
-          (report.field_access.dirty_mask & options.pathing_dirty_mask) != 0) {
-        mark_pathing_dirty(state.path_agents);
-        break;
-      }
-    }
-  }
-
-  stats.path_agents =
-      tick_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(
-          state.path_agents, world, agents, runtime,
-          options.path_agent_options);
-  stats.tick = stats.path_agents.tick;
-
-  const auto old_size = render_deltas.size();
-  collect_render_tile_deltas(world, options.render_dirty_mask, render_deltas);
-  stats.render_delta_count = render_deltas.size() - old_size;
-  if (options.clear_render_dirty) {
-    clear_render_delta_dirty(world, options.render_dirty_mask);
-  }
-  return stats;
+  return detail::tick_scheduler_core<World, Policy>(
+      state, world, ops, render_deltas, std::forward<Fn>(fn), options, [&] {
+        return tick_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(
+            state.path_agents, world, agents, runtime,
+            options.path_agent_options);
+      });
 }
 
 template <typename World, typename PassableTag, typename CostTag,
@@ -158,30 +146,13 @@ auto tick_weighted_movement_scheduler(
     std::span<PathAgentState> agents, PathRequestRuntime& runtime,
     std::vector<RenderTileDelta>& render_deltas, Fn&& fn,
     SimSchedulerOptions options = {}) -> SimSchedulerStats {
-  auto stats = run_queued_operations<World, Policy>(world, ops, fn);
-  if (stats.executed_ops && options.pathing_dirty_mask != 0) {
-    for (const auto& report : stats.op_report.operations()) {
-      if (report.status == OperationStatus::Planned &&
-          (report.field_access.dirty_mask & options.pathing_dirty_mask) != 0) {
-        mark_pathing_dirty(state.path_agents);
-        break;
-      }
-    }
-  }
-
-  stats.path_agents = tick_weighted_path_agents_with_movement<
-      World, PassableTag, CostTag, MaxCost, OccupancyTag, ReservationTag>(
-      state.path_agents, world, agents, runtime, options.path_agent_options,
-      options.movement_dirty_mask);
-  stats.tick = stats.path_agents.tick;
-
-  const auto old_size = render_deltas.size();
-  collect_render_tile_deltas(world, options.render_dirty_mask, render_deltas);
-  stats.render_delta_count = render_deltas.size() - old_size;
-  if (options.clear_render_dirty) {
-    clear_render_delta_dirty(world, options.render_dirty_mask);
-  }
-  return stats;
+  return detail::tick_scheduler_core<World, Policy>(
+      state, world, ops, render_deltas, std::forward<Fn>(fn), options, [&] {
+        return tick_weighted_path_agents_with_movement<
+            World, PassableTag, CostTag, MaxCost, OccupancyTag, ReservationTag>(
+            state.path_agents, world, agents, runtime,
+            options.path_agent_options, options.movement_dirty_mask);
+      });
 }
 
 }  // namespace tess
