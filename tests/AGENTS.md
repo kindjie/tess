@@ -87,6 +87,14 @@
   explicit dirty-mark requirements after world edits, dirty reprocessing after
   world edits and goal changes, unreachable goals, weighted shared-goal ticks,
   and allocation-free warm clean ticks.
+- `tess_sim_scheduler_test`: verifies the simulation scheduler scaffold,
+  including movement commits that validate passability, occupancy,
+  reservations, and versions, path-agent movement occupancy commits and
+  conflict rejection, fixed-timestep accumulation with pause/speed/clamp,
+  render-delta dirty-bounds collection and render-mask clearing,
+  queued-edit pathing invalidation with render deltas, movement-scheduler
+  occupancy commits with emitted deltas, and weighted ticks through batch
+  pathing.
 - `tess_diagnostics_default_test`: verifies public diagnostic macros are
   disabled by default and do not evaluate arguments, including generic events.
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate
