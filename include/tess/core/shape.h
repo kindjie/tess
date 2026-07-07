@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tess/core/assert.h>
+
 #include <cstdint>
 #include <limits>
 #include <type_traits>
@@ -304,6 +306,7 @@ template <typename Shape>
 template <typename Shape>
 [[nodiscard]] constexpr TileKey<Shape> tile_key(Coord3 coord) noexcept {
   using Traits = ShapeTraits<Shape>;
+  TESS_ASSERT(contains<Shape>(coord));
   const auto chunk = chunk_key<Shape>(chunk_coord<Shape>(coord));
   const auto local = local_tile_id<Shape>(local_coord<Shape>(coord));
   using Storage = Traits::TileKeyStorage;

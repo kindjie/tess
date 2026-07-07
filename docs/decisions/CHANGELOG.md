@@ -13,6 +13,24 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-06 - Debug Assertion Policy For Unchecked APIs
+
+- Changed: Added `TESS_ASSERT`/`TESS_ASSERT_MSG` in
+  `include/tess/core/assert.h`, enabled by default outside `NDEBUG` and
+  overridable via `TESS_ENABLE_ASSERTS`. Unchecked fast-path accessors now
+  assert their preconditions in debug builds: `World::chunk(ChunkKey)`,
+  `World::meta(ChunkKey)`, `World::resolve`, `tile_key<Shape>(Coord3)`, and
+  `PathRequestRuntime::result(PathTicket)`. Checked `try_*` entry points
+  remain the runtime-validated API and are unchanged.
+- Reason: Out-of-shape coordinates previously wrapped through
+  `static_cast<std::uint64_t>` into out-of-bounds indexing with no debug
+  diagnostic anywhere in the library. Release and bench builds define
+  `NDEBUG`, so the asserts have zero cost in gated performance paths.
+- Affected docs: `docs/decisions/CHANGELOG.md`
+- Affected code: `include/tess/core/assert.h`, `include/tess/core/shape.h`,
+  `include/tess/storage/world.h`, `include/tess/path/path_runtime.h`,
+  `tests/tess_assert_test.cc`, `tests/CMakeLists.txt`, `CMakeLists.txt`
+
 ## 2026-06-08 - Concurrent Tile-World TDD Split
 
 - Changed: Added a concurrent tile-world TDD addendum that separates scoped

@@ -93,6 +93,12 @@ tess_apply_project_options(tess_sim_scheduler_test)
 
 gtest_discover_tests(tess_sim_scheduler_test)
 
+add_executable(tess_assert_test tess_assert_test.cc)
+target_link_libraries(tess_assert_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_assert_test)
+
+gtest_discover_tests(tess_assert_test)
+
 add_executable(tess_diagnostics_default_test tess_diagnostics_default_test.cc)
 target_link_libraries(
   tess_diagnostics_default_test
