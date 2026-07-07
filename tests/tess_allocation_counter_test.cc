@@ -26,6 +26,11 @@ TEST(TessAllocationCounter, CountsPlainAndArrayNew) {
   ::operator delete(plain);
 }
 
+// The analyzer treats every gtest ASSERT_* early-return between a raw
+// operator new and its matching delete as a leak path. These tests
+// exercise the raw allocation forms on purpose; the deletes run on every
+// passing path.
+// NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks)
 TEST(TessAllocationCounter, CountsAlignedNew) {
   constexpr std::size_t alignment = 64;
   tess_test::ScopedAllocationCounter counter;
@@ -117,5 +122,6 @@ TEST(TessAllocationCounter, ConstructionResetsCounters) {
   EXPECT_EQ(counter.count(), 0u);
   EXPECT_EQ(counter.bytes(), 0u);
 }
+// NOLINTEND(clang-analyzer-cplusplus.NewDeleteLeaks)
 
 }  // namespace
