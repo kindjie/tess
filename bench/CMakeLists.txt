@@ -7,6 +7,7 @@ tess_require_google_benchmark()
 add_executable(
   tess_bench
   tess_bench.cc
+  tess_parallel_bench.cc
   tess_path_agent_bench.cc
   tess_path_product_bench.cc
   tess_path_scan_bench.cc
@@ -18,6 +19,7 @@ tess_apply_project_options(tess_bench)
 add_executable(
   tess_bench_diagnostics
   tess_bench.cc
+  tess_parallel_bench.cc
   tess_path_agent_bench.cc
   tess_path_product_bench.cc
   tess_path_scan_bench.cc

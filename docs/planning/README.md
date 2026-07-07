@@ -1,6 +1,7 @@
 # Planning
 
 - [v1 milestone plan](v1-milestone-plan.md)
+- [Concurrency plan](concurrency-plan.md)
 - [Benchmark plan](benchmark-plan.md)
 - [Optimization log](optimization-log.md)
 

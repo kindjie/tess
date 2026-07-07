@@ -13,6 +13,26 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-07 - Parallel Benchmark Family and Concurrency Plan
+
+- Changed: New `bench/tess_parallel_bench.cc` compares serial,
+  scoped-thread, and worker-pool phase executors on identical partitioned
+  one-op-per-chunk phases (dispatch-bound, memory-bound, and compute-bound
+  workloads, fixed worker counts, worker/chunk counters). Parallel cases
+  are deliberately ungated pending CI baselines. New
+  `docs/planning/concurrency-plan.md` records the S1 concurrency-stream
+  decisions: planner-anchored write-policy enforcement in v1 (claim-table
+  checking deferred to the scheduler stage), internal backends before
+  external `work_contract` evaluation, ungated parallel benchmarks, and the
+  non-atomic `ChunkMeta` invariant, plus measured dispatch-cost evidence.
+- Reason: The concurrent tile-world addendum requires baseline benchmark
+  data before thresholds and requires Tess-owned backends to establish
+  correctness and performance before any external scheduler dependency is
+  considered.
+- Affected docs: `docs/planning/concurrency-plan.md`,
+  `docs/planning/README.md`
+- Affected code: `bench/tess_parallel_bench.cc`, `bench/CMakeLists.txt`
+
 ## 2026-07-07 - Persistent Worker-Pool Phase Executor Prototype
 
 - Changed: `tess/ops/phase_executor.h` gains `WorkerPoolPhaseExecutor`, a
