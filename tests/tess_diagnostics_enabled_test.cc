@@ -5,6 +5,8 @@
 #include <new>
 #include <vector>
 
+#include "path_test_util.h"
+
 namespace {
 
 struct DiagTerrainTag {};
@@ -158,6 +160,55 @@ TEST(TessDiagnostics, ScopedQueuedPhaseCountersObservePartitionedExecution) {
   EXPECT_EQ(counters.scoped_thread_workers, 2u);
   EXPECT_EQ(counters.dirty_records_collected, 2u);
   EXPECT_EQ(counters.dirty_chunks_merged, 2u);
+}
+
+// Mutation guard: the serpentine mazes must be answered by the real A*
+// heap loop, never by a pre-A* fast path. Fast paths never push onto the
+// open list, so heap_pushes > 0 pins the heap loop as the producer of the
+// Found result. If a future fast path learns to answer these fixtures,
+// this test fails and the fixtures must be strengthened.
+TEST(TessDiagnostics, SerpentineMazeReachesUnitHeapSearch) {
+  tess::AlwaysResidentWorld<tess_test::SerpTopDown2D, tess_test::SerpSchema>
+      world;
+  const auto endpoints = tess_test::build_serpentine_topdown(world);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::diagnostics::PathCounters counters;
+  {
+    tess::diagnostics::ScopedPathCounters scope{counters};
+    const auto result =
+        tess::astar_path<decltype(world), tess_test::SerpPassableTag>(
+            world, tess::PathRequest{endpoints.start, endpoints.goal}, scratch);
+    ASSERT_EQ(result.status, tess::PathStatus::Found);
+    EXPECT_GT(result.expanded_nodes, result.path.size());
+  }
+
+  EXPECT_GT(counters.heap_pushes, 0u);
+  EXPECT_GT(counters.heap_pops, 0u);
+}
+
+TEST(TessDiagnostics, SerpentineMazeReachesWeightedHeapSearch) {
+  tess::AlwaysResidentWorld<tess_test::SerpTopDown2D, tess_test::SerpSchema>
+      world;
+  const auto endpoints = tess_test::build_serpentine_topdown(world);
+  tess_test::fill_cost(world, 1);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::diagnostics::PathCounters counters;
+  {
+    tess::diagnostics::ScopedPathCounters scope{counters};
+    const auto result =
+        tess::weighted_astar_path<decltype(world), tess_test::SerpPassableTag,
+                                  tess_test::SerpCostTag>(
+            world, tess::PathRequest{endpoints.start, endpoints.goal}, scratch);
+    ASSERT_EQ(result.status, tess::PathStatus::Found);
+    EXPECT_GT(result.expanded_nodes, result.path.size());
+  }
+
+  EXPECT_GT(counters.heap_pushes, 0u);
+  EXPECT_GT(counters.heap_pops, 0u);
 }
 
 TEST(TessDiagnostics, ScopedAllocationCountersRecordGlobalNewAndDelete) {
