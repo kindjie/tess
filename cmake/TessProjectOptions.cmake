@@ -71,6 +71,9 @@ function(tess_target_cppcheck_options target)
         "--error-exitcode=1"
         "--inline-suppr"
         "--suppress=internalError:${PROJECT_SOURCE_DIR}/include/tess/core/shape.h"
+        # cppcheck misparses std::byte* as void* in BlockScratch::allocate;
+        # std::byte pointer arithmetic is well-defined.
+        "--suppress=arithOperationsOnVoidPointer:${PROJECT_SOURCE_DIR}/include/tess/block/block.h"
         # cppcheck's parser trips false-positive syntaxErrors on modern
         # constructs in gtest-macro-heavy test files (a different file each
         # release). Tests compile under clang on six other gating presets,

@@ -158,6 +158,9 @@ template <typename Shape>
 template <typename Shape, typename Fn>
 void oracle_for_each_neighbor(tess::Coord3 coord, Fn&& fn) {
   constexpr auto size = tess::ShapeTraits<Shape>::size;
+  // NOLINTBEGIN(clang-analyzer-core.UndefinedBinaryOperatorResult)
+  // The analyzer cannot see that the constexpr trait extents are fully
+  // initialized and reports their reads as garbage values.
   const auto consider = [&](tess::Coord3 next) {
     if (next.x < 0 || next.y < 0 || next.z < 0 ||
         next.x >= static_cast<std::int64_t>(size.x) ||
@@ -167,6 +170,7 @@ void oracle_for_each_neighbor(tess::Coord3 coord, Fn&& fn) {
     }
     fn(next);
   };
+  // NOLINTEND(clang-analyzer-core.UndefinedBinaryOperatorResult)
   consider(tess::Coord3{coord.x + 1, coord.y, coord.z});
   consider(tess::Coord3{coord.x - 1, coord.y, coord.z});
   consider(tess::Coord3{coord.x, coord.y + 1, coord.z});
