@@ -13,6 +13,53 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-06 - Path Caches Gain Eviction Budgets and Hash-Indexed Lookups
+
+- Changed: `WeightedPortalSegmentCache` is now bounded by a segment budget
+  (default 256 entries, `set_segment_budget`, plumbed through
+  `PathRuntimeCachePolicy::portal_segment_budget`). A store at budget first
+  sweeps stale entries in one compaction pass that rebuilds both the entry
+  list and the path-node append arena (piecemeal erase would leak the
+  arena), then evicts the oldest live entries in insertion order if the
+  sweep cannot make room; a zero budget stores nothing. This fixes two
+  audit findings: unbounded growth in any edited world (50 edit/rebuild
+  cycles grew the cache to 100 entries pre-fix) and the compounding
+  duplicate bug where `store()` deduped through a stale-rejecting lookup,
+  so re-storing the same request after a world change appended an identical
+  entry forever (2 entries for one request pre-fix). The cache reports
+  `PortalSegmentCacheStats` (entries, path_nodes, sweeps, evictions,
+  stale_rejections — mirroring `FieldProductCacheStats` conventions) via
+  `stats()`/`reset_stats()`; `PathRuntimeStats` now embeds the full struct
+  as `portal_segment_cache`, replacing the old
+  `portal_segment_cache_entries` field. `RouteCacheScratch` replaced its
+  O(entries) exact scan and O(entries × path nodes) suffix scan with two
+  open-addressed flat hash indexes (power-of-two capacity, linear probing,
+  plain vectors): exact (start, goal) lookups, and a suffix index keyed by
+  hash(node, goal) populated per stored Found-path node with
+  first-write-wins, preserving the linear scan's earliest-stored-entry
+  determinism (pinned by test before the change). Route storage is capped
+  (`max_route_entries` default 512, `max_route_path_nodes` default 2^20,
+  `set_caps`, plumbed through `PathRuntimeCachePolicy`); an insert that
+  would exceed either cap invalidates the whole cache first — the same
+  lifecycle as world-change invalidation — and counts
+  `RouteCacheStats::cap_invalidations`. `ChunkVersionDependencies::
+  add_chunk` checks the most recent entry before its linear scan, since
+  path nodes are chunk-coherent during product builds.
+- Reason: Both caches grew without bound and rescanned dead or unrelated
+  entries on every lookup; an edited long-lived world leaked entries and
+  path storage forever, and route lookups degraded linearly with cache
+  population. Budgeted compaction plus cheap cap-triggered invalidation
+  match the library's existing world-change lifecycle, and the flat hash
+  indexes keep the no-std-map style while making exact/suffix lookups
+  O(1) expected. Bench evidence: cached_astar_batch_100_suffix_open
+  17.27us -> 16.94us mean, cached_astar_batch_100_mixed_repeated_room_
+  portals 13.13ms -> 12.89ms mean; all path thresholds green.
+- Affected docs: `docs/architecture/path.md`, `tests/AGENTS.md`.
+- Affected code: `include/tess/path/portal_segment_cache.h`,
+  `include/tess/path/route_cache.h`, `include/tess/path/path.h`,
+  `include/tess/path/path_runtime.h`, `tests/tess_path_cache_test.cc`,
+  `tests/tess_path_runtime_test.cc`, `tests/CMakeLists.txt`.
+
 ## 2026-07-06 - Path Caches Stop Handing Out Views Into Reallocatable Storage
 
 - Changed: All three path caches now follow one lifetime policy — no

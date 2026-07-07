@@ -119,6 +119,15 @@
   weighted shared-goal fields, bounded weighted field builds and fallback,
   weighted batch grouping, endpoint validation, and allocation-free repeated
   queries with pre-reserved path scratch.
+- `tess_path_cache_test`: verifies path-cache eviction and indexing, including
+  the portal segment-cache budget (stale-entry sweeps that compact both the
+  entry list and the path-node arena across repeated world edits, sweep
+  removal of stale same-request duplicates, insertion-order eviction of live
+  entries at budget, and sweep/eviction/stale-rejection stats), and the route
+  cache's hash-indexed lookups (first-stored-entry-wins suffix determinism
+  pinned against the pre-index linear scan, exact hits under aliased
+  low-bit coordinate patterns, and entry/path-node cap breaches invalidating
+  the whole cache with a `cap_invalidations` stat).
 - `tess_path_runtime_test`: verifies the path request runtime MVP, including
   ticketed request/result lookup, stable copied result spans, unit route-cache
   reuse and invalidation across world edits, opt-in unit field-product cache

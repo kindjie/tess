@@ -38,15 +38,22 @@ other entries cannot move.
   chunk-version dependencies, and can be stored in a byte-budgeted LRU cache.
 - `RouteCacheScratch` (in `tess/path/route_cache.h`) owns reusable
   route-cache entries and cached path nodes for exact route and same-goal
-  suffix reuse. Cache hits copy the cached route into the caller's
-  `PathScratch` and return a span into that scratch, so hit and miss results
-  share one lifetime: valid until the next path call that uses the same
-  scratch. Later misses may grow cache-internal storage without invalidating
-  results returned through other scratches. `invalidate()` drops cached route
-  data while preserving hit/miss counters; `clear()` drops routes and resets
-  counters. `capture_world_versions(world)` and
-  `invalidate_if_world_changed(world)` provide coarse whole-cache invalidation
-  from chunk version fingerprints.
+  suffix reuse. Exact `(start, goal)` lookups and suffix lookups are served
+  by open-addressed flat hash indexes (power-of-two capacity, linear
+  probing) instead of linear scans; the suffix index is populated per stored
+  Found-path node with first-write-wins, so the earliest stored entry
+  containing a queried node keeps winning deterministically. Cache hits copy
+  the cached route into the caller's `PathScratch` and return a span into
+  that scratch, so hit and miss results share one lifetime: valid until the
+  next path call that uses the same scratch. Later misses may grow
+  cache-internal storage without invalidating results returned through other
+  scratches. Storage is capped (`set_caps`; defaults 512 entries and 2^20
+  path nodes): an insert that would exceed either cap invalidates the whole
+  cache first and counts a `cap_invalidations` stat. `invalidate()` drops
+  cached route data and both indexes while preserving hit/miss counters;
+  `clear()` drops routes and resets counters. `capture_world_versions(world)`
+  and `invalidate_if_world_changed(world)` provide coarse whole-cache
+  invalidation from chunk version fingerprints.
 - `ChunkVersionDependencies` records explicit chunk/version pairs and can
   validate whether those chunks are unchanged. It is supporting infrastructure
   for future route products; current route-cache hits still use conservative
@@ -70,10 +77,12 @@ other entries cannot move.
   invalidate a previous lookup. Found segments record chunk-version
   dependencies for the chunks touched by the segment path; cache hits are
   reused only while those versions still match. Failed segments are not
-  cached, and stale hits leave the output storage untouched. Stale entries
-  remain retained until the caller invokes `clear()`, so long-lived
-  simulations that edit pathing data should clear or replace the cache on a
-  memory-budget cadence.
+  cached, and stale hits leave the output storage untouched. Storage is
+  bounded by a segment budget (`set_segment_budget`, default 256 entries): a
+  store at budget first sweeps stale entries in one compaction pass that
+  also rebuilds the path-node arena, then evicts the oldest live entries in
+  insertion order if needed; a zero budget stores nothing. `stats()` reports
+  entries, path nodes, sweeps, evictions, and stale rejections.
 - `WeightedPathBatchScratch` owns reusable search scratch and stable copied
   result paths for weighted batch planning.
 - `PathRequestRuntime` owns a small deterministic request/result lifecycle for
@@ -85,7 +94,11 @@ other entries cannot move.
   caches; `clear_caches()` drops the owned unit route cache, unit
   field-product cache, and weighted portal segment cache.
   `PathRuntimeCachePolicy::clear_every_world_change` lets long-lived callers
-  reclaim caller-managed cache storage after repeated world edits.
+  reclaim caller-managed cache storage after repeated world edits, and the
+  policy also carries the route-cache caps (`max_route_entries`,
+  `max_route_path_nodes`) and the portal segment budget
+  (`portal_segment_budget`), applied to the owned caches at the start of
+  each processing pass.
 - `PathAgentState` and the path-agent helper functions provide the first
   simulation-facing path wrapper. Agents store position, goal, path ticket,
   path index, status, and active-goal state. The helpers submit active agents
@@ -266,12 +279,14 @@ search non-Manhattan chunk routes or prove global portal optimality.
 `WeightedPortalSegmentCache` can reuse previously verified segment paths for
 repeated supplied-waypoint portal builds. Cached hits avoid A* expansion for
 the segment, but still rebuild the route-product path and dependencies.
-Segments carry chunk-version dependencies and stale entries are ignored on
-lookup. Recomputing a stale segment appends the new entry and path storage next
-to the ignored stale entry; `clear()` is the compaction/reclamation boundary.
-The cache deliberately stays caller-managed for retention and memory budgeting,
-and it does not imply region-selective optimality before the topology layer
-exists.
+Segments carry chunk-version dependencies and stale entries are rejected on
+lookup (counted as stale rejections). Recomputing a stale segment appends the
+new entry next to the rejected stale one until the segment budget is reached;
+the budget-triggered sweep then compacts stale entries and their path storage
+away in one pass, and insertion-order eviction of live entries keeps the
+cache at budget in fully live worlds. The cache stays caller-managed for
+retention (budget choice and `clear()`), and it does not imply
+region-selective optimality before the topology layer exists.
 
 For many agents sharing a goal, `DistanceFieldScratch` can amortize search
 work. A unit-cost field build visits reachable passable tiles once from the
