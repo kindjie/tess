@@ -166,7 +166,33 @@
   after repeated world edits, field-product-cache lookup-pointer stability
   across stores of other keys, and portal segment-cache runtime stats and
   `clear_caches()` for entries stored through the runtime accessor (the
-  runtime's own processing passes do not populate that cache).
+  runtime's own processing passes do not populate that cache). It also
+  covers runtime lifecycle: `clear_requests()` starting a fresh frame with
+  regenerated tickets, empty request lists processing to empty results,
+  failure stat tallies (invalid start/goal, no path) over mixed unit and
+  weighted batches, and the policy byte budget driving real field-product
+  eviction through `process_unit_cached`. Seeded (`std::mt19937`, fixed
+  seeds) randomized equivalence pins repeated-goal grouping against a
+  per-request A* oracle — statuses, costs, and the candidate/used/skipped
+  group counters versus a reference computation — across both start-chunk
+  policies, and a warm identical frame is allocation-free.
+- `tess_path_weighted_batch_test`: verifies `weighted_path_batch` edges:
+  empty batches, all-distinct goals (pure A* fallbacks, no field builds),
+  duplicate identical requests sharing one field build, per-member statuses
+  for failed shared-goal groups matching `weighted_astar_path`'s endpoint
+  validation precedence (invalid starts are not mislabeled with the goal's
+  failure status), >MaxCost corridor tiles engaging the unbounded fallback
+  (exact costs plus bounded-vs-unbounded build equality), seeded random-cost
+  bounded/unbounded field equivalence, seeded batch-vs-oracle equivalence
+  including the grouping stats counters, and allocation-free warm repeat
+  batches.
+- `tess_path_portal_route_test`: verifies chunk-portal route product corner
+  cases: invalid endpoints reported before any candidate search, sealed
+  start chunks yielding NoPath after all seven candidates (six axis orders
+  plus greedy) fail, segment failure clearing the partially assembled path,
+  a blocked-seam layout where only the greedy interleaved candidate finds a
+  route (axis-order candidates all fail), and a multi-seam L-shaped route
+  crossing several chunk boundaries with a contiguous stitched path.
 - `tess_path_agent_test`: verifies the public path-agent wrapper, including
   goal assignment, runtime-backed request/result processing, tile-by-tile
   advancement and arrival, conservative reprocessing after world edits,
