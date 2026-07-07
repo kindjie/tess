@@ -41,6 +41,10 @@ void fill_cost(World& world, std::uint32_t value) {
   }
 }
 
+// This maze is answered by the 2D plane-gap fast path (gap at {1, 3, 0}),
+// not the A* heap loop; real heap-search coverage lives in
+// tess_path_search_test.cc on serpentine fixtures that defeat every fast
+// path. Optimal cost through the gap is exactly 9.
 TEST(TessPath, FindsTopDown2DPathAroundBlockedTiles) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
   fill_passable(world, true);
@@ -59,7 +63,7 @@ TEST(TessPath, FindsTopDown2DPathAroundBlockedTiles) {
   ASSERT_FALSE(result.path.empty());
   EXPECT_EQ(result.path.front(), (tess::Coord3{0, 0, 0}));
   EXPECT_EQ(result.path.back(), (tess::Coord3{3, 0, 0}));
-  EXPECT_GT(result.cost, 3u);
+  EXPECT_EQ(result.cost, 9u);
   EXPECT_GE(result.expanded_nodes, result.path.size());
   EXPECT_GE(result.reached_nodes, result.expanded_nodes);
   for (const auto coord : result.path) {
