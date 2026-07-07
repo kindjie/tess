@@ -31,9 +31,11 @@ measurements from running.
 - Hosted runner documentation:
   https://docs.github.com/actions/reference/runners/github-hosted-runners
 
-CI pins `ubuntu-24.04` instead of `ubuntu-latest` to avoid runner image drift.
+CI pins explicit runner images — `ubuntu-24.04`, `macos-15`, and
+`windows-2025` — instead of `-latest` labels to avoid runner image drift.
 Benchmark baseline JSON is uploaded from CI artifacts so timing thresholds can
-be calibrated against the same runner family that will enforce them.
+be calibrated against the same runner family that will enforce them; benchmark
+gates therefore run only on the Linux runner family they were calibrated on.
 
 ## tiktoken
 

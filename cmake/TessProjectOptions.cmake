@@ -83,23 +83,27 @@ function(tess_target_sanitizer_options target)
     return()
   endif()
 
+  string(REPLACE "," ";" sanitizer_list "${TESS_SANITIZERS}")
+  if("address" IN_LIST sanitizer_list AND "thread" IN_LIST sanitizer_list)
+    message(
+      FATAL_ERROR
+      "TESS_SANITIZERS='${TESS_SANITIZERS}' combines address and thread; "
+      "ASan and TSan cannot be linked into the same binary"
+    )
+  endif()
+
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    # -fno-sanitize-recover makes UBSan findings fatal; without it the
-    # runtime prints and continues with exit code 0, so CI cannot fail.
-    target_compile_options(
-      ${target}
-      PRIVATE
-        -fsanitize=address,undefined
-        -fno-sanitize-recover=undefined
-        -fno-omit-frame-pointer
+    set(sanitizer_options
+      -fsanitize=${TESS_SANITIZERS}
+      -fno-omit-frame-pointer
     )
-    target_link_options(
-      ${target}
-      PRIVATE
-        -fsanitize=address,undefined
-        -fno-sanitize-recover=undefined
-        -fno-omit-frame-pointer
-    )
+    if("undefined" IN_LIST sanitizer_list)
+      # -fno-sanitize-recover makes UBSan findings fatal; without it the
+      # runtime prints and continues with exit code 0, so CI cannot fail.
+      list(APPEND sanitizer_options -fno-sanitize-recover=undefined)
+    endif()
+    target_compile_options(${target} PRIVATE ${sanitizer_options})
+    target_link_options(${target} PRIVATE ${sanitizer_options})
   else()
     message(
       WARNING
