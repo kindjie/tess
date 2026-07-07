@@ -2,10 +2,23 @@
 #include <tess/tess.h>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <utility>
 
 namespace {
+
+// Correctness checks mandated by docs/planning/benchmark-plan.md run outside
+// the timed regions; a failed check aborts the benchmark binary so threshold
+// runs cannot silently gate on wrong results.
+void bench_check(bool condition, const char* message) {
+  if (!condition) {
+    std::fprintf(stderr, "tess_bench correctness check failed: %s\n", message);
+    std::abort();
+  }
+}
 
 using PathScaleShape =
     tess::Shape<tess::Extent3{512, 512, 1}, tess::Extent3{32, 32, 1}>;
@@ -209,6 +222,9 @@ void BM_path_distance_field_product_build_8_goal_room_portals_512x512(
     benchmark::DoNotOptimize(field.expanded_nodes);
     benchmark::DoNotOptimize(product.byte_size());
   }
+  bench_check(field.status == tess::PathStatus::Found,
+              "distance field product build failed");
+  bench_check(product.byte_size() > 0, "distance field product is empty");
   state.counters["field_expanded_nodes"] =
       static_cast<double>(field.expanded_nodes);
   state.counters["field_reached_nodes"] =
@@ -257,10 +273,16 @@ void BM_path_nearest_target_product_100_starts_room_portals_512x512(
     benchmark::DoNotOptimize(total_cost);
     benchmark::DoNotOptimize(result.path.data());
   }
+  bench_check(result.status == tess::PathStatus::Found,
+              "nearest-target query found no target");
+  bench_check(!result.path.empty() && result.path.front() == starts.back(),
+              "nearest-target path does not begin at the last start");
+  bench_check(result.path.back() == result.target,
+              "nearest-target path does not end at the reported target");
   state.counters["agents"] = static_cast<double>(starts.size());
-  state.counters["cost"] = static_cast<double>(result.cost);
-  state.counters["path_nodes"] = static_cast<double>(result.path.size());
-  state.counters["reached_nodes"] = static_cast<double>(result.reached_nodes);
+  // Whole-batch aggregate; the previous per-request counters published only
+  // the last start's cost/path length under single-query names.
+  state.counters["batch.cost_total"] = static_cast<double>(total_cost);
   TESS_PATH_DIAG_RECORD(state);
 }
 
@@ -289,9 +311,9 @@ void BM_path_field_product_cache_hit_replay_room_portals_512x512(
   const auto start = tess::Coord3{1, 1, 0};
   world.template field<PassableTag>(start) = 1;
   tess::PathResult result;
+  const tess::DistanceFieldProduct* cached = nullptr;
   for (auto _ : state) {
-    const auto* cached =
-        cache.lookup<PathScaleWorld, PassableTag>(world, goals);
+    cached = cache.lookup<PathScaleWorld, PassableTag>(world, goals);
     if (cached != nullptr) {
       result = tess::distance_field_product_path<PathScaleWorld, PassableTag>(
           world, start, *cached, scratch);
@@ -299,6 +321,12 @@ void BM_path_field_product_cache_hit_replay_room_portals_512x512(
     benchmark::DoNotOptimize(cached);
     benchmark::DoNotOptimize(result.path.data());
   }
+  bench_check(cached != nullptr, "cache replay lookup missed");
+  bench_check(result.status == tess::PathStatus::Found,
+              "cache replay path not found");
+  bench_check(!result.path.empty() && result.path.front() == start &&
+                  result.path.back() == tess::Coord3{510, 510, 0},
+              "cache replay path endpoints are wrong");
   record_field_product_cache_counters(state, cache.stats());
   record_path_counters(state, result);
 }
@@ -327,16 +355,25 @@ void BM_path_field_product_cache_stale_rejection_room_portals_512x512(
   cache.reserve_entries(1);
   const tess::DistanceFieldProduct* cached = nullptr;
   for (auto _ : state) {
-    state.PauseTiming();
+    // The cache refill (a world-sized product copy plus store) runs untimed;
+    // manual timing brackets only the stale lookup. The previous
+    // PauseTiming()/ResumeTiming() pair cost about as much as the measured
+    // lookup itself, so the timer overhead dominated the reported number.
     cache.clear();
     cache.reset_stats();
     auto stored_product = product;
     (void)cache.store<PathScaleWorld, PassableTag>(std::move(stored_product));
-    state.ResumeTiming();
 
+    const auto begin = std::chrono::steady_clock::now();
     cached = cache.lookup<PathScaleWorld, PassableTag>(world, goals);
+    const auto end = std::chrono::steady_clock::now();
+    state.SetIterationTime(std::chrono::duration<double>(end - begin).count());
     benchmark::DoNotOptimize(cached);
   }
+  bench_check(cached == nullptr,
+              "stale lookup unexpectedly returned a product");
+  bench_check(cache.stats().stale_rejections == 1,
+              "stale lookup did not record a stale rejection");
   record_field_product_cache_counters(state, cache.stats());
 }
 
@@ -371,20 +408,29 @@ void BM_path_field_product_cache_lru_eviction_512x512(benchmark::State& state) {
 
   tess::FieldProductCache cache{budget};
   cache.reserve_entries(2);
+  int stored = 0;
   for (auto _ : state) {
-    state.PauseTiming();
+    // Refill (clear plus two world-sized product copies) runs untimed;
+    // manual timing brackets only the evicting store. The previous
+    // PauseTiming()/ResumeTiming() pair cost about as much as the measured
+    // store, so the timer overhead dominated the reported number.
     cache.clear();
     cache.reset_stats();
     auto first_copy = first;
     (void)cache.store<PathScaleWorld, PassableTag>(std::move(first_copy));
     auto second_copy = second;
-    state.ResumeTiming();
 
-    auto stored =
-        cache.store<PathScaleWorld, PassableTag>(std::move(second_copy)) ? 1
-                                                                         : 0;
+    const auto begin = std::chrono::steady_clock::now();
+    stored = cache.store<PathScaleWorld, PassableTag>(std::move(second_copy))
+                 ? 1
+                 : 0;
+    const auto end = std::chrono::steady_clock::now();
+    state.SetIterationTime(std::chrono::duration<double>(end - begin).count());
     benchmark::DoNotOptimize(stored);
   }
+  bench_check(stored == 1, "evicting store was rejected");
+  bench_check(cache.stats().evictions == 1,
+              "evicting store did not evict the resident product");
   record_field_product_cache_counters(state, cache.stats());
 }
 
@@ -394,9 +440,16 @@ BENCHMARK(BM_path_nearest_target_product_100_starts_room_portals_512x512)
     ->Name("path/nearest_target_product_100_starts_room_portals_512x512");
 BENCHMARK(BM_path_field_product_cache_hit_replay_room_portals_512x512)
     ->Name("path/field_product_cache_hit_replay_room_portals_512x512");
+// Manual timing needs pinned iteration counts: Google Benchmark would
+// otherwise size iterations from the tiny measured op while every iteration
+// still pays an untimed world-sized product refill.
 BENCHMARK(BM_path_field_product_cache_stale_rejection_room_portals_512x512)
-    ->Name("path/field_product_cache_stale_rejection_room_portals_512x512");
+    ->Name("path/field_product_cache_stale_rejection_room_portals_512x512")
+    ->Iterations(2000)
+    ->UseManualTime();
 BENCHMARK(BM_path_field_product_cache_lru_eviction_512x512)
-    ->Name("path/field_product_cache_lru_eviction_512x512");
+    ->Name("path/field_product_cache_lru_eviction_512x512")
+    ->Iterations(1000)
+    ->UseManualTime();
 
 }  // namespace

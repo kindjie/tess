@@ -148,6 +148,15 @@ documented from measurement.
 
 Strictly check no allocations after warmup for hot path/field builds. Measure scratch, arenas, frontiers, product caches, result channels, render deltas.
 
+Allocation assertions live in the gated diagnostics benchmark binary
+(`tess_bench_diagnostics`): the default `tess_bench` binary used by the
+threshold targets links no allocation hooks, so it cannot observe
+allocations without invasive global-new replacement. The representative
+warm-path assertion runs in `path/astar_open_2d` (the diagnostics smoke
+benchmark exercised by `ctest --preset bench`): after the timed loop it
+aborts unless the diagnostics allocation counters report zero allocations
+for the final, fully warmed iteration.
+
 ## 15. Render delta benchmarks
 
 - entity moves
@@ -188,6 +197,15 @@ lifecycle, fallback, stale readback, cache eviction. Real GPU benchmarks future.
 Benchmarks must check correctness: legal paths, decreasing distance fields,
 topology reference matches, dirty matches dense reference, fused equals
 materialized, delta replay matches projected state.
+
+The path, agent, product, and storage benchmark families validate their last
+result outside the timed regions via a `bench_check` helper that aborts the
+binary with a message on mismatch: Found status, endpoints matching the
+request, unit steps onto passable tiles, and (where an untimed setup run of
+the same deterministic search is cheap) an exact expected cost. No-path cases
+assert `NoPath` with an empty path; agent benchmarks assert every agent
+submitted/completed/found; the dirty-chunk storage benchmark pins the
+collected count; cache benchmarks pin hit/stale/eviction outcomes.
 
 ## 21. Reproducibility
 
@@ -270,6 +288,22 @@ Batch path benchmarks also report agents, unique starts, unique goals, unique
 start/goal chunks, and average expanded nodes so repeated-work opportunities
 are visible in benchmark output. Cached path benchmarks also report route-cache
 entries, exact hits, suffix hits, misses, and stored path nodes.
+Since 2026-07-06, batch benchmarks publish whole-batch aggregates
+(`batch.cost_total`, `batch.expanded_total`) and no longer emit the
+single-request counter names (`cost`, `path_nodes`, `expanded_nodes`,
+`reached_nodes`), which previously reported only the final request of a
+100-request batch and made per-node timing math ~100x off. Two cache
+lifecycle benchmarks use manual timing with pinned iteration counts so the
+measured op (stale lookup, evicting store) dominates instead of Google
+Benchmark's per-iteration Pause/Resume timer overhead; their gated names
+carry the `/iterations:N/manual_time` suffixes and their gates moved to
+`max_real_time_ns` because cpu_time now includes the untimed cache refill.
+`tools/benchmark_thresholds.py` rejects duplicate benchmark entries, prefers
+repetition aggregates (median by default, `--aggregate` to override), and
+reports missing or malformed input files with clear errors;
+`tools/benchmark_baseline_summary.py` filters aggregates via `run_type` and
+emits proper CSV quoting. Both are covered by
+`tests/test_benchmark_tools.py`.
 Additional A* investigation benchmarks cover short/medium/long 512x512 open
 paths, wall-gap detours, failed wall-separated paths, striped mazes, and
 100-request batches. They also include alternate direct-axis-order and
