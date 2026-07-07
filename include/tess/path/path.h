@@ -98,6 +98,12 @@ class ChunkVersionDependencies {
   template <typename World>
   void add_chunk(const World& world, ChunkKey key) {
     const auto version = world.meta(key).version;
+    // Path nodes are chunk-coherent: consecutive additions usually repeat
+    // the previous chunk, so check the last entry before scanning.
+    if (!chunks_.empty() && chunks_.back().key == key) {
+      chunks_.back().version = version;
+      return;
+    }
     for (auto& chunk : chunks_) {
       if (chunk.key == key) {
         chunk.version = version;
