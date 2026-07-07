@@ -75,6 +75,55 @@ Records meaningful design changes from the original TDDs.
 - Affected code: `tests/path_test_util.h`, `tests/tess_path_search_test.cc`,
   `tests/tess_diagnostics_enabled_test.cc`, `tests/tess_path_test.cc`,
   `tests/CMakeLists.txt`
+## 2026-07-06 - Benchmark Harness Measures What It Claims and Checks Results
+
+- Changed: Fixed five measurement bugs in the benchmark suite.
+  `storage/world_dirty_chunks_iteration` collects into a hoisted reserved
+  vector via `collect_dirty_chunks` and iterates the keys (it previously
+  timed only the by-value vector allocation and never iterated; 295 ns
+  before, 126 ns after on an M-series dev box). `key/coord_from_tile_key_*`
+  precompute encoded keys in setup so the loop measures decode only
+  (encode was double-counted; 2.67/2.84/2.76 ns before vs 0.68/0.57/0.64 ns
+  after for 2d/3d/u128). The field-product cache stale-rejection and LRU
+  eviction benchmarks replace per-iteration `PauseTiming`/`ResumeTiming`
+  (timer overhead comparable to the measured op) with manual timing plus
+  pinned iterations; their gated names gained `/iterations:N/manual_time`
+  suffixes and their thresholds moved from `max_cpu_time_ns` to
+  `max_real_time_ns` at the 1 ms investigation ceiling because cpu_time now
+  includes the untimed cache refill (measured op: ~313 ns stale lookup,
+  ~119 ns evicting store, vs ~760/~596 ns reported before). The agent
+  clean-tick benchmark keeps its cheap agent reset inside the timed region
+  instead of hiding it behind a Pause/Resume pair that cost as much as the
+  tick. `path/weighted_chunk_portal_candidates_*` publishes the measured
+  scan-tile/waypoint totals instead of a hardcoded formula, and all batch
+  benchmarks publish `batch.cost_total`/`batch.expanded_total` aggregates
+  instead of the last request's values under single-query counter names
+  (which made per-node math ~100x off). Per benchmark-plan sections 14/20,
+  benchmark families now validate the last result outside timed regions
+  (aborting `bench_check`: Found status, endpoints, legal unit steps onto
+  passable tiles, setup-run expected costs, agent frame stats, cache
+  outcomes), and `tess_bench_diagnostics` asserts the warm
+  `path/astar_open_2d` iteration allocates nothing.
+  `tools/benchmark_thresholds.py` now rejects duplicate benchmark names
+  (previously a dict comprehension silently kept the last duplicate),
+  prefers `--benchmark_repetitions` aggregates keyed by `run_name` (median
+  default, `--aggregate` flag), and reports missing/malformed files
+  without tracebacks; `tools/benchmark_baseline_summary.py` filters
+  aggregates by `run_type` instead of name suffixes and writes real CSV.
+  New `tests/test_benchmark_tools.py` covers both tools and runs in the CI
+  hooks-backstop job.
+- Reason: Q10 audit remediation — several benchmarks measured allocation or
+  encode instead of the named operation, per-iteration Google Benchmark
+  timer overhead dominated microsecond cache ops, batch counters
+  misrepresented totals, thresholds could silently gate on the wrong
+  duplicate entry, and the plan-mandated correctness/allocation assertions
+  were missing.
+- Affected docs: `docs/planning/benchmark-plan.md`, `tests/AGENTS.md`.
+- Affected code: `bench/tess_bench.cc`, `bench/tess_path_agent_bench.cc`,
+  `bench/tess_path_product_bench.cc`, `bench/tess_path_weighted_bench.cc`,
+  `bench/thresholds/path.json`, `tools/benchmark_thresholds.py`,
+  `tools/benchmark_baseline_summary.py`, `tests/test_benchmark_tools.py`,
+  `.github/workflows/ci.yml`.
 
 ## 2026-07-06 - Path Caches Gain Eviction Budgets and Hash-Indexed Lookups
 

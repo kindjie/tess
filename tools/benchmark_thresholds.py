@@ -10,18 +10,33 @@ from pathlib import Path
 from typing import Any
 
 
-def main() -> int:
+class ToolError(Exception):
+  """Input error that should be reported without a traceback."""
+
+
+def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser()
   parser.add_argument("--results", required=True, type=Path)
   parser.add_argument("--thresholds", required=True, type=Path)
-  args = parser.parse_args()
+  parser.add_argument(
+      "--aggregate",
+      default="median",
+      help=(
+          "Aggregate to gate on when --benchmark_repetitions output is "
+          "present (default: median)."
+      ),
+  )
+  args = parser.parse_args(argv)
 
-  results = load_json(args.results)
-  thresholds = load_json(args.thresholds)
-  result_by_name = {
-      benchmark["name"]: benchmark
-      for benchmark in results.get("benchmarks", [])
-  }
+  try:
+    results = load_json(args.results)
+    thresholds = load_json(args.thresholds)
+    result_by_name = select_benchmarks(
+        results.get("benchmarks", []), args.aggregate
+    )
+  except ToolError as error:
+    print(f"benchmark_thresholds: {error}", file=sys.stderr)
+    return 1
 
   failures: list[str] = []
   for name, limits in thresholds.get("benchmarks", {}).items():
@@ -39,11 +54,61 @@ def main() -> int:
 
 
 def load_json(path: Path) -> dict[str, Any]:
-  with path.open(encoding="utf-8") as file:
-    data = json.load(file)
+  try:
+    with path.open(encoding="utf-8") as file:
+      data = json.load(file)
+  except OSError as error:
+    raise ToolError(f"{path}: cannot read file: {error}") from error
+  except json.JSONDecodeError as error:
+    raise ToolError(f"{path}: malformed JSON: {error}") from error
   if not isinstance(data, dict):
-    raise TypeError(f"{path} must contain a JSON object")
+    raise ToolError(f"{path} must contain a JSON object")
   return data
+
+
+def base_name(benchmark: dict[str, Any]) -> str:
+  # Repetition entries and their aggregates share `run_name`; aggregate
+  # entries suffix `name` (for example `_median`), so `run_name` is the
+  # stable threshold key.
+  name = benchmark.get("run_name", benchmark.get("name"))
+  if not isinstance(name, str):
+    raise ToolError("benchmark entry without a usable name")
+  return name
+
+
+def select_benchmarks(
+    benchmarks: list[dict[str, Any]], aggregate: str
+) -> dict[str, dict[str, Any]]:
+  grouped: dict[str, list[dict[str, Any]]] = {}
+  for benchmark in benchmarks:
+    grouped.setdefault(base_name(benchmark), []).append(benchmark)
+
+  selected: dict[str, dict[str, Any]] = {}
+  for name, entries in grouped.items():
+    aggregates = [
+        entry for entry in entries if entry.get("run_type") == "aggregate"
+    ]
+    if aggregates:
+      matches = [
+          entry
+          for entry in aggregates
+          if entry.get("aggregate_name") == aggregate
+      ]
+      if not matches:
+        raise ToolError(
+            f"{name}: repetition output has no '{aggregate}' aggregate"
+        )
+      if len(matches) > 1:
+        raise ToolError(f"{name}: duplicate '{aggregate}' aggregate entries")
+      selected[name] = matches[0]
+      continue
+    if len(entries) > 1:
+      raise ToolError(
+          f"{name}: duplicate benchmark entries without aggregates; "
+          "results are ambiguous"
+      )
+    selected[name] = entries[0]
+  return selected
 
 
 def check_limit(
