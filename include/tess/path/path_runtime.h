@@ -136,7 +136,9 @@ class PathRequestRuntime {
     TESS_ASSERT(ticket.generation == generation_);
     TESS_ASSERT(ticket.value < results_.size());
     if (ticket.generation != generation_ || ticket.value >= results_.size()) {
-      return PathResult{.status = PathStatus::NoPath};
+      auto stale = PathResult{};
+      stale.status = PathStatus::NoPath;
+      return stale;
     }
     return results_[ticket.value];
   }

@@ -87,6 +87,9 @@ extern "C" void __sanitizer_free_hook(const volatile void* ptr) {
 #else
 
 #include <cstdlib>
+#if defined(_WIN32)
+#include <malloc.h>
+#endif
 #include <new>
 
 namespace {
@@ -103,7 +106,14 @@ namespace {
                                            std::align_val_t alignment) {
   void* ptr = nullptr;
   const auto align = static_cast<std::size_t>(alignment);
-  if (posix_memalign(&ptr, align, size) == 0) {
+#if defined(_WIN32)
+  ptr = _aligned_malloc(size, align);
+#else
+  if (posix_memalign(&ptr, align, size) != 0) {
+    ptr = nullptr;
+  }
+#endif
+  if (ptr != nullptr) {
     tess::diagnostics::record_allocation(size);
     return ptr;
   }
@@ -113,6 +123,17 @@ namespace {
 void release_bytes(void* ptr, std::size_t size = 0) noexcept {
   tess::diagnostics::record_deallocation(size);
   std::free(ptr);
+}
+
+// Windows aligned allocations come from _aligned_malloc and must be
+// released with _aligned_free; elsewhere posix_memalign memory is free()d.
+void release_aligned_bytes(void* ptr, std::size_t size = 0) noexcept {
+  tess::diagnostics::record_deallocation(size);
+#if defined(_WIN32)
+  _aligned_free(ptr);
+#else
+  std::free(ptr);
+#endif
 }
 
 }  // namespace
@@ -176,19 +197,19 @@ void operator delete[](void* ptr, std::size_t size) noexcept {
 }
 
 void operator delete(void* ptr, std::align_val_t) noexcept {
-  release_bytes(ptr);
+  release_aligned_bytes(ptr);
 }
 
 void operator delete(void* ptr, std::size_t size, std::align_val_t) noexcept {
-  release_bytes(ptr, size);
+  release_aligned_bytes(ptr, size);
 }
 
 void operator delete[](void* ptr, std::align_val_t) noexcept {
-  release_bytes(ptr);
+  release_aligned_bytes(ptr);
 }
 
 void operator delete[](void* ptr, std::size_t size, std::align_val_t) noexcept {
-  release_bytes(ptr, size);
+  release_aligned_bytes(ptr, size);
 }
 
 void operator delete(void* ptr, const std::nothrow_t&) noexcept {
@@ -201,12 +222,12 @@ void operator delete[](void* ptr, const std::nothrow_t&) noexcept {
 
 void operator delete(void* ptr, std::align_val_t,
                      const std::nothrow_t&) noexcept {
-  release_bytes(ptr);
+  release_aligned_bytes(ptr);
 }
 
 void operator delete[](void* ptr, std::align_val_t,
                        const std::nothrow_t&) noexcept {
-  release_bytes(ptr);
+  release_aligned_bytes(ptr);
 }
 
 #endif
