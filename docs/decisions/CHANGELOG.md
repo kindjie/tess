@@ -13,6 +13,40 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-06 - Structural Serial-Executor Guard For Shared-Dirty Phase Execution
+
+- Changed: `execute_phase_deferred_dirty_with<Policy>` now requires the new
+  `tess::SerialExecutor` concept (a nested `serial_execution_tag` type
+  alias declared by the executor), so passing a concurrent executor such as
+  `ScopedThreadPhaseExecutor` to the shared-`PlannedDirtyAccumulator`
+  helper is a compile error instead of a data race on the shared
+  accumulator and non-atomic chunk counter. `SerialPhaseExecutor` declares
+  the tag; `ScopedThreadPhaseExecutor` is documented as a prototype that
+  pairs only with `execute_phase_partitioned_dirty_with<Policy>`, which
+  stays unconstrained (per-operation dirty partitions and result slots) as
+  does the `execute_operation_index_range` adapter it uses. Also:
+  `OpId`/`OpHandle` gained `= 0` default member initializers so
+  default-constructed values compare equal to zero instead of reading
+  indeterminate storage; `DomainDesc::explicit_chunks` now deduplicates
+  keys after sorting so a planned operation never visits one chunk twice
+  (repeated keys under `UniquePerChunk` would break the per-chunk
+  ownership rule phase planning relies on); `FrameOps::clear()` resets a
+  frame for reuse while keeping vector capacity (handles invalidated,
+  handle/id assignment restarts at zero, warm re-enqueue is
+  allocation-free); and the queued replay stress world comparison now
+  checks every tile of every chunk via field spans instead of tile 0 only.
+- Reason: A concurrency audit flagged the shared-accumulator deferred-dirty
+  helper as its top finding: the helper hands a callback capturing shared
+  mutable state to any executor's `for_each_operation`, and the public
+  threaded executor satisfied that contract silently. The serial contract
+  existed only as documentation, so the unsafe pairing compiled cleanly.
+  The remaining changes close audit test gaps (write-then-read hazards,
+  phase-range boundaries, explicit-domain edge cases, executor clamps) and
+  align `OpId`/`OpHandle` with the codebase default-init convention.
+- Affected docs: `docs/architecture/queued-operations.md`,
+  `docs/decisions/CHANGELOG.md`, `tests/AGENTS.md`
+- Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
+
 ## 2026-07-06 - RAII Allocation Counting And Complete New/Delete Coverage
 
 - Changed: Replaced the raw `set_allocation_counting(bool)` /
