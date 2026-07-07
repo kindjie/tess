@@ -91,6 +91,16 @@
   `ScopedThreadPhaseExecutor` worker-count clamping and zero-count early
   return. Threaded replay stress compares every tile of every chunk between
   serial and threaded worlds via field spans.
+- `tess_phase_executor_test`: verifies the public `tess/ops/phase_executor.h`
+  contract in isolation: compile-time `PhaseExecutor` concept conformance
+  (satisfied by `SerialPhaseExecutor`, `ScopedThreadPhaseExecutor`, and a
+  minimal custom executor; rejected for wrong return types, non-const
+  `for_each_operation`, and non-executors), `SerialExecutor` tag
+  relationships, exact-range single-visit dispatch for serial, threaded, and
+  custom executors, serial first-failure short-circuit ordering, threaded
+  failure reporting after join, concept-constrained
+  `execute_operation_index_range` dispatch, and allocation-free warm serial
+  dispatch.
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.

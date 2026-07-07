@@ -13,6 +13,29 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-07 - Phase Executor Contract Promoted to Its Own Public Header
+
+- Changed: The backend-facing executor pieces (`PlannedExecutionStatus`,
+  `PlannedExecutionResult`, `ExecutorPhaseRange`, `SerialPhaseExecutor`, the
+  `SerialExecutor` concept, `ScopedThreadPhaseExecutor`, and
+  `execute_operation_index_range`) moved from `tess/ops/queued.h` into a new
+  public header `tess/ops/phase_executor.h`, which also adds a structural
+  `PhaseExecutor` concept stating the
+  `for_each_operation(first, count, fn) -> PlannedExecutionResult` contract
+  and documents the executor thread contract (non-atomic world metadata,
+  planner-proven disjoint mutable ownership, caller-owned dirty partitions
+  reduced in plan order). `executor_phase_range(ExecutionPhase)` stays in
+  `queued.h` as the plan-side bridge. No symbol was renamed.
+- Reason: The v1 concurrency stream (plan S1) lands API-shaping work first;
+  worker backends must be writable and testable against a small stable
+  header without pulling in the planner, and later stages (result channels,
+  scheduler auto-exec, production pool) build on the same concept.
+- Affected docs: `docs/architecture/queued-operations.md`
+- Affected code: `include/tess/ops/phase_executor.h`,
+  `include/tess/ops/queued.h`, `include/tess/tess.h`, `CMakeLists.txt`,
+  `tests/tess_phase_executor_test.cc`, `tests/CMakeLists.txt`,
+  `tests/AGENTS.md`
+
 ## 2026-07-07 - Generation-Stamped Dirty Observe/Clear Protocol
 
 - Changed: `World` gains `observe_dirty(key, flags)` returning a
