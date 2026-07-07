@@ -36,6 +36,16 @@
       }
     },
     {
+      "name": "dev-tsan",
+      "displayName": "Developer Debug TSan",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "TESS_ENABLE_SANITIZERS": "ON",
+        "TESS_SANITIZERS": "thread"
+      }
+    },
+    {
       "name": "dev-clang-tidy",
       "displayName": "Developer Debug clang-tidy Gate",
       "inherits": "dev",
@@ -156,6 +166,10 @@
       "configurePreset": "dev-asan"
     },
     {
+      "name": "dev-tsan",
+      "configurePreset": "dev-tsan"
+    },
+    {
       "name": "dev-clang-tidy",
       "configurePreset": "dev-clang-tidy"
     },
@@ -206,6 +220,16 @@
     {
       "name": "dev-asan",
       "configurePreset": "dev-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-tsan",
+      "configurePreset": "dev-tsan",
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1 second_deadlock_stack=1"
+      },
       "output": {
         "outputOnFailure": true
       }

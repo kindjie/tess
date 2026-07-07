@@ -21,7 +21,13 @@ option(TESS_WARNINGS_AS_ERRORS "Treat tess local target warnings as errors" OFF)
 option(TESS_ENABLE_CLANG_TIDY "Enable clang-tidy on tess local targets" OFF)
 set(TESS_CLANG_TIDY_CONFIG "" CACHE FILEPATH "Optional clang-tidy config file")
 option(TESS_ENABLE_CPPCHECK "Enable cppcheck on tess local targets" OFF)
-option(TESS_ENABLE_SANITIZERS "Enable ASan and UBSan on tess local targets" OFF)
+option(TESS_ENABLE_SANITIZERS "Enable sanitizers on tess local targets" OFF)
+set(
+  TESS_SANITIZERS
+  "address,undefined"
+  CACHE STRING
+  "Comma-separated -fsanitize= list used when TESS_ENABLE_SANITIZERS=ON"
+)
 
 include(TessProjectOptions)
 

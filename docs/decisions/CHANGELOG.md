@@ -13,6 +13,39 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-06 - CI Gains TSan, macOS, and Advisory MSVC Platform Gates
+
+- Changed: The sanitizer toggle is generalized — `TESS_ENABLE_SANITIZERS`
+  now applies the comma-separated `TESS_SANITIZERS` cache string (default
+  `address,undefined`, so existing presets are unchanged), with a
+  configure-time `FATAL_ERROR` when the list combines `address` and
+  `thread` (they cannot link into one binary) and
+  `-fno-sanitize-recover=undefined` still applied whenever `undefined` is
+  in the list. New `dev-tsan` configure/build/test presets build the suite
+  with `-fsanitize=thread` and run ctest with
+  `TSAN_OPTIONS=halt_on_error=1 second_deadlock_stack=1`; the preset joins
+  the CI quality matrix (no extra apt packages needed). A new `macos` CI
+  job on `macos-15` runs the `dev` and `dev-asan` presets plus the install
+  smoke test, with no benchmark gates because bench thresholds are
+  calibrated on the Linux runner family. A new advisory `windows` CI job
+  on `windows-2025` (`continue-on-error: true` during shake-out; flip to
+  required after two consecutive green runs on main) builds the
+  condition-gated `windows-msvc` preset, runs ctest, and runs the install
+  smoke under `shell: bash`. `tools/install_smoke.sh` gained
+  `TESS_INSTALL_SMOKE_CONFIG` for multi-config generators: it forwards
+  `--config` to `cmake --install` and the consumer build and looks for
+  the consumer binary in the per-config subdirectory.
+- Reason: The threaded queued executor and scheduler paths had no data
+  race gate (a full local dev-tsan run passed 351/351, and a deliberate
+  unsynchronized-counter race was verified to fail the gate before being
+  discarded), and the library claimed macOS/Windows portability that CI
+  never exercised. Platform pinning (`macos-15`, `windows-2025`) follows
+  the existing anti-drift policy for `ubuntu-24.04`.
+- Affected docs: `README.md`, `docs/dependencies.md`.
+- Affected code: `CMakeLists.txt`, `cmake/TessProjectOptions.cmake`,
+  `CMakePresets.json`, `.github/workflows/ci.yml`,
+  `tools/install_smoke.sh`.
+
 ## 2026-07-06 - Path Caches Gain Eviction Budgets and Hash-Indexed Lookups
 
 - Changed: `WeightedPortalSegmentCache` is now bounded by a segment budget
