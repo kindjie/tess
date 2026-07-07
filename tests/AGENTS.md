@@ -214,3 +214,17 @@
   the `path_test_util.h` fixtures must record `heap_pushes > 0`, which
   permanently fails if a future fast path learns to answer the mazes
   without the heap loop.
+- `tests/test_benchmark_tools.py`: pytest coverage for the benchmark gating
+  tools (run with `uv run --frozen --group dev pytest`, and in the CI
+  hooks-backstop job alongside `tests/test_git_hooks.py`). Verifies
+  `tools/benchmark_thresholds.py` rejects duplicate benchmark names, selects
+  repetition aggregates (median default, `--aggregate` override), converts
+  all four Google Benchmark time units, fails on missing benchmarks, skips
+  null limits, and reports missing/malformed input files as clear errors;
+  and that `tools/benchmark_baseline_summary.py` filters aggregates by
+  `run_type` and quotes CSV fields.
+- The benchmark binaries (`tess_bench`, `tess_bench_diagnostics`) enforce
+  correctness checks after their timed loops via an aborting `bench_check`
+  helper (endpoints, legal unit steps onto passable tiles, expected costs,
+  agent/frame stats, cache outcomes). `tess_bench_diagnostics` additionally
+  asserts the warm `path/astar_open_2d` iteration performs zero allocations.
