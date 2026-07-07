@@ -13,6 +13,23 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-07 - Generation-Stamped Dirty Observe/Clear Protocol
+
+- Changed: `World` gains `observe_dirty(key, flags)` returning a
+  `DirtyObservation` (observed dirty subset, dirty bounds, chunk version)
+  and `clear_dirty_observed(key, observation)`, which clears exactly the
+  observed flags only while the chunk's dirty generation still matches and
+  otherwise preserves all flags/bounds and returns `false`.
+- Reason: The concurrent tile-world addendum requires a generation-aware
+  observe/clear protocol before budgeted or concurrent maintenance may clear
+  dirty metadata, so rebuilds cannot lose marks that land mid-rebuild. This
+  lands the API early in the v1 completion plan (S1) because later scheduler
+  and maintenance stages build on it.
+- Affected docs: `docs/architecture/storage.md`,
+  `docs/architecture/surface.json`
+- Affected code: `include/tess/storage/world.h`,
+  `tests/tess_storage_test.cc`, `tests/AGENTS.md`
+
 ## 2026-07-06 - Docs Audit Sweep Closes Drift and Adds Surface Manifest
 
 - Changed: Final workstream of the 29-part audit remediation; documentation

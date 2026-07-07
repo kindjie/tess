@@ -124,6 +124,17 @@ when the active flag set becomes nonzero or empty.
 version and topology version. `mark_topology_rebuilt` increments only the
 topology version so topology products can observe rebuild/replacement events.
 
+Maintenance passes that rebuild derived state use the generation-stamped
+observe/clear pair instead of raw `clear_dirty`. `observe_dirty(key, flags)`
+snapshots the requested dirty subset, the dirty bounds, and the chunk version
+into a `DirtyObservation`. `clear_dirty_observed(key, observation)` clears
+exactly the observed flags only while the chunk version still matches the
+observation; any `mark_dirty` that lands after the observation advances the
+generation, so a stale clear leaves every flag and bound in place and returns
+`false`, and the caller re-observes before clearing. This is the dirty
+metadata protocol required before concurrent or budgeted maintenance may
+clear flags it did not fully rebuild.
+
 `dirty_chunks(flags)` and `active_chunks(flags)` return matching `ChunkKey`
 values in key order. These query helpers allocate their returned vectors; they
 are intended for planner/domain construction, not inner tile loops.

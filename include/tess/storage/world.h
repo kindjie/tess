@@ -32,6 +32,17 @@ struct ChunkMeta {
   std::uint32_t entity_count = 0;
 };
 
+// Generation-stamped snapshot of one chunk's dirty state, taken by
+// World::observe_dirty and consumed by World::clear_dirty_observed. A
+// maintenance pass observes before rebuilding derived state; the paired
+// clear succeeds only while the observed generation is still current, so
+// marks that land during the rebuild are never lost.
+struct DirtyObservation {
+  std::uint32_t flags = 0;
+  Box3 bounds{};
+  std::uint32_t version = 0;
+};
+
 template <typename Shape, typename Schema, typename Residency>
 class World;
 
@@ -222,6 +233,29 @@ class World<Shape, Schema, AlwaysResident> {
     if (chunk_meta.field_dirty_flags == 0) {
       chunk_meta.dirty_bounds = {};
     }
+  }
+
+  [[nodiscard]] auto observe_dirty(ChunkKey key,
+                                   std::uint32_t flags) const noexcept
+      -> DirtyObservation {
+    const auto& chunk_meta = meta(key);
+    return DirtyObservation{
+        chunk_meta.field_dirty_flags & flags,
+        chunk_meta.dirty_bounds,
+        chunk_meta.version,
+    };
+  }
+
+  // Clears exactly the observed flags iff the chunk's dirty generation still
+  // matches the observation. Any mark_dirty after the observation advances
+  // the generation, so a stale clear leaves every flag and bound in place
+  // and returns false; the caller re-observes and rebuilds.
+  bool clear_dirty_observed(ChunkKey key, DirtyObservation observed) noexcept {
+    if (meta(key).version != observed.version) {
+      return false;
+    }
+    clear_dirty(key, observed.flags);
+    return true;
   }
 
   void mark_active(ChunkKey key, std::uint32_t flags) noexcept {
