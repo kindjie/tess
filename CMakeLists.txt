@@ -43,6 +43,7 @@ set(
   include/tess/block/block.h
   include/tess/core/assert.h
   include/tess/core/shape.h
+  include/tess/core/uint128.h
   include/tess/diagnostics/diagnostics.h
   include/tess/ops/queued.h
   include/tess/path/detail/weighted_batch.h

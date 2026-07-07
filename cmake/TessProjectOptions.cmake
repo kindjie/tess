@@ -23,7 +23,7 @@ function(tess_target_warning_options target)
       list(APPEND warning_options -Wextra-semi)
     endif()
   elseif(MSVC)
-    list(APPEND warning_options /W4)
+    list(APPEND warning_options /W4 /permissive- /EHsc)
   endif()
 
   if(TESS_WARNINGS_AS_ERRORS)

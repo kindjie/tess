@@ -125,6 +125,21 @@
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++"
       }
+    },
+    {
+      "name": "windows-msvc",
+      "displayName": "Windows MSVC (Visual Studio 2022)",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "TESS_BUILD_TESTING": "ON",
+        "TESS_ENABLE_WARNINGS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -166,7 +181,12 @@
     },
     { "name": "linux-dev", "configurePreset": "linux-dev" },
     { "name": "linux-asan", "configurePreset": "linux-asan" },
-    { "name": "linux-bench", "configurePreset": "linux-bench" }
+    { "name": "linux-bench", "configurePreset": "linux-bench" },
+    {
+      "name": "windows-msvc",
+      "configurePreset": "windows-msvc",
+      "configuration": "Debug"
+    }
   ],
   "testPresets": [
     {
@@ -245,6 +265,12 @@
     {
       "name": "linux-bench",
       "configurePreset": "linux-bench",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-msvc",
+      "configurePreset": "windows-msvc",
+      "configuration": "Debug",
       "output": { "outputOnFailure": true }
     }
   ]
