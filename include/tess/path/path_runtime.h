@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace tess {
@@ -301,8 +302,11 @@ class PathRequestRuntime {
         const auto field = build_distance_field_product<World, PassableTag>(
             world, unit_field_goals_, unit_field_scratch_, unit_field_product_);
         if (field.status == PathStatus::Found) {
+          // The cache takes the product by move; the next rebuild through
+          // build_distance_field_product() clears and reassigns
+          // unit_field_product_, so the moved-from state is never observed.
           (void)unit_field_product_cache_.template store<World, PassableTag>(
-              unit_field_product_);
+              std::move(unit_field_product_));
           product =
               unit_field_product_cache_.template lookup<World, PassableTag>(
                   world, unit_field_goals_);

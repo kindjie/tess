@@ -4,7 +4,15 @@ The current path layer is a minimal always-resident path foundation. It lives
 under `include/tess/path/` and is exported by `tess/tess.h`.
 `tess/path/path.h` remains the public umbrella for core path APIs; larger
 implementation sections may live in `include/tess/path/detail/` and are
-included from that umbrella.
+included from that umbrella. The route cache (`RouteCacheScratch`,
+`cached_astar_path`) lives in `tess/path/route_cache.h`, which the umbrella
+includes, so including `tess/path/path.h` or `tess/tess.h` keeps compiling
+the full core path surface.
+
+A shared lifetime policy applies to every path cache: caches never hand out
+views into storage that can reallocate. Results are either copied into
+caller-supplied scratch/storage, or point at per-entry heap allocations that
+other entries cannot move.
 
 ## Public Surface
 
@@ -28,8 +36,13 @@ included from that umbrella.
   unit-cost distance-field products in `tess/path/field_product_cache.h`.
   Products copy stable dense field data out of scratch, track reached
   chunk-version dependencies, and can be stored in a byte-budgeted LRU cache.
-- `RouteCacheScratch` owns reusable route-cache entries and cached path nodes
-  for exact route and same-goal suffix reuse. `invalidate()` drops cached route
+- `RouteCacheScratch` (in `tess/path/route_cache.h`) owns reusable
+  route-cache entries and cached path nodes for exact route and same-goal
+  suffix reuse. Cache hits copy the cached route into the caller's
+  `PathScratch` and return a span into that scratch, so hit and miss results
+  share one lifetime: valid until the next path call that uses the same
+  scratch. Later misses may grow cache-internal storage without invalidating
+  results returned through other scratches. `invalidate()` drops cached route
   data while preserving hit/miss counters; `clear()` drops routes and resets
   counters. `capture_world_versions(world)` and
   `invalidate_if_world_changed(world)` provide coarse whole-cache invalidation
@@ -48,12 +61,19 @@ included from that umbrella.
   first topology MVP, and reports candidate and boundary-scan counters for
   that automatic builder.
 - `WeightedPortalSegmentCache` owns caller-managed weighted portal segment
-  entries for repeated builds with the same portal waypoints. Found segments
-  record chunk-version dependencies for the chunks touched by the segment path;
-  cache hits are reused only while those versions still match. Failed segments
-  are not cached. Stale entries remain retained until the caller invokes
-  `clear()`, so long-lived simulations that edit pathing data should clear or
-  replace the cache on a memory-budget cadence.
+  entries for repeated builds with the same portal waypoints.
+  `lookup_append(world, request, out_path)` is the only read API: on a hit it
+  appends the cached segment path into caller-owned storage (deduplicating a
+  shared junction node when stitching consecutive segments) and returns a
+  `SegmentHit` with the found flag, status, and cost. The cache never returns
+  pointers or spans into its own storage, so `store()` growth cannot
+  invalidate a previous lookup. Found segments record chunk-version
+  dependencies for the chunks touched by the segment path; cache hits are
+  reused only while those versions still match. Failed segments are not
+  cached, and stale hits leave the output storage untouched. Stale entries
+  remain retained until the caller invokes `clear()`, so long-lived
+  simulations that edit pathing data should clear or replace the cache on a
+  memory-budget cadence.
 - `WeightedPathBatchScratch` owns reusable search scratch and stable copied
   result paths for weighted batch planning.
 - `PathRequestRuntime` owns a small deterministic request/result lifecycle for
@@ -126,7 +146,9 @@ included from that umbrella.
   `weighted_path_batch`, while using the same world-change cadence to clear
   owned long-lived caches.
 - `cached_astar_path<World, PassableTag>(world, request, scratch, cache)`
-  checks the route cache before falling back to `astar_path`.
+  checks the route cache before falling back to `astar_path`. Hits copy the
+  cached route into `scratch` and return a span with the same lifetime
+  contract as a miss.
 - `build_distance_field<World, PassableTag>(world, goal, scratch)` builds a
   unit-cost reverse distance field from one passable goal.
 - `distance_field_path<World, PassableTag>(world, start, goal, scratch)`
@@ -210,7 +232,10 @@ For many agents repeating unit-cost point-to-point routes, `RouteCacheScratch`
 can amortize complete path searches. Exact `(start, goal)` hits return the
 cached path without expanding nodes. Same-goal suffix hits are also supported
 when the new start already appears inside a cached optimal path; with unit
-positive edge costs, that suffix is also optimal. The cache assumes the caller
+positive edge costs, that suffix is also optimal. Both hit forms copy the
+cached route into the supplied `PathScratch` before returning, so a returned
+span never points into cache-owned storage that a later miss could
+reallocate; warm hits stay allocation-free when the scratch is pre-reserved. The cache assumes the caller
 invalidates it when passability or movement rules change. The optional world
 version fingerprint support is deliberately conservative: when any chunk
 version changes, `invalidate_if_world_changed(world)` drops the whole cache and
@@ -268,9 +293,17 @@ out of scratch, and captures chunk versions for chunks reached by the field.
 Replay and nearest-target queries reject stale products before returning a
 path. `FieldProductCache` is caller-owned and exact-match only: lookup keys
 include the passability tag identity, shape-compatible tile/chunk metadata,
-and ordered goals. The cache evicts least-recently-used entries to a byte
-budget and reports entries, bytes, hits, misses, evictions, and stale
-rejections. `PathRequestRuntime` owns one such cache and uses it only when
+and ordered goals. Products are world-sized, so the cache stores each one
+behind stable per-entry heap storage and takes ownership on
+`store(DistanceFieldProduct&&)` by move; the moved-from argument is left
+empty but reusable, and no world-sized copy happens. A `lookup()` pointer
+stays valid while other entries are stored or evicted; it is invalidated only
+by a store or eviction touching that exact key, or by `clear()`. A product
+whose entry exceeds the byte budget on its own cannot be cached: that store
+deliberately clears the entire cache and returns false, and a zero byte
+budget therefore caches nothing. The cache evicts least-recently-used entries
+(by lookup/store recency, not insertion order) to a byte budget and reports
+entries, bytes, hits, misses, evictions, and stale rejections. `PathRequestRuntime` owns one such cache and uses it only when
 `PathRuntimeCachePolicy::use_unit_field_product_cache` is set. Runtime use is
 conservative: only repeated single-goal groups at or above
 `unit_field_product_min_goal_reuse` are product candidates, singleton requests

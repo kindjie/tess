@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -283,7 +284,7 @@ void BM_path_field_product_cache_hit_replay_room_portals_512x512(
 
   tess::FieldProductCache cache{product.byte_size() + 4096u};
   cache.reserve_entries(1);
-  (void)cache.store<PathScaleWorld, PassableTag>(product);
+  (void)cache.store<PathScaleWorld, PassableTag>(std::move(product));
 
   const auto start = tess::Coord3{1, 1, 0};
   world.template field<PassableTag>(start) = 1;
@@ -329,7 +330,8 @@ void BM_path_field_product_cache_stale_rejection_room_portals_512x512(
     state.PauseTiming();
     cache.clear();
     cache.reset_stats();
-    (void)cache.store<PathScaleWorld, PassableTag>(product);
+    auto stored_product = product;
+    (void)cache.store<PathScaleWorld, PassableTag>(std::move(stored_product));
     state.ResumeTiming();
 
     cached = cache.lookup<PathScaleWorld, PassableTag>(world, goals);
@@ -354,7 +356,9 @@ void BM_path_field_product_cache_lru_eviction_512x512(benchmark::State& state) {
       world, first_goals, scratch, first);
 
   tess::FieldProductCache sizing_cache{first.byte_size() + 4096u};
-  (void)sizing_cache.store<PathScaleWorld, PassableTag>(first);
+  auto sizing_product = first;
+  (void)sizing_cache.store<PathScaleWorld, PassableTag>(
+      std::move(sizing_product));
   const auto budget = sizing_cache.stats().bytes + 1u;
 
   tess::GoalSet second_goals;
@@ -371,10 +375,14 @@ void BM_path_field_product_cache_lru_eviction_512x512(benchmark::State& state) {
     state.PauseTiming();
     cache.clear();
     cache.reset_stats();
-    (void)cache.store<PathScaleWorld, PassableTag>(first);
+    auto first_copy = first;
+    (void)cache.store<PathScaleWorld, PassableTag>(std::move(first_copy));
+    auto second_copy = second;
     state.ResumeTiming();
 
-    auto stored = cache.store<PathScaleWorld, PassableTag>(second) ? 1 : 0;
+    auto stored =
+        cache.store<PathScaleWorld, PassableTag>(std::move(second_copy)) ? 1
+                                                                         : 0;
     benchmark::DoNotOptimize(stored);
   }
   record_field_product_cache_counters(state, cache.stats());
