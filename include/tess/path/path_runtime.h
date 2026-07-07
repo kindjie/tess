@@ -16,6 +16,7 @@ namespace tess {
 
 struct PathTicket {
   std::size_t value = 0;
+  std::uint32_t generation = 0;
 };
 
 struct PathRuntimeCachePolicy {
@@ -98,6 +99,7 @@ class PathRequestRuntime {
   void clear_requests() noexcept {
     requests_.clear();
     clear_results();
+    ++generation_;
   }
 
   void clear_caches() noexcept {
@@ -109,7 +111,7 @@ class PathRequestRuntime {
   }
 
   [[nodiscard]] auto submit(PathRequest request) -> PathTicket {
-    const auto ticket = PathTicket{requests_.size()};
+    const auto ticket = PathTicket{requests_.size(), generation_};
     requests_.push_back(request);
     return ticket;
   }
@@ -122,8 +124,16 @@ class PathRequestRuntime {
     return results_;
   }
 
+  // Tickets are stamped with the submission generation; clear_requests()
+  // starts a new generation, so a ticket held across it is stale even when
+  // it aliases an in-range slot of the new batch. Stale or out-of-range
+  // tickets assert in debug builds and report NoPath in release builds.
   [[nodiscard]] auto result(PathTicket ticket) const noexcept -> PathResult {
+    TESS_ASSERT(ticket.generation == generation_);
     TESS_ASSERT(ticket.value < results_.size());
+    if (ticket.generation != generation_ || ticket.value >= results_.size()) {
+      return PathResult{PathStatus::NoPath};
+    }
     return results_[ticket.value];
   }
 
@@ -394,6 +404,7 @@ class PathRequestRuntime {
   PathRuntimeStats stats_;
   std::size_t world_changes_since_clear_ = 0;
   std::size_t cache_clears_ = 0;
+  std::uint32_t generation_ = 0;
 };
 
 }  // namespace tess

@@ -79,12 +79,28 @@ inline void record_movement_failure(MovementFailureCounts& counts,
   }
 }
 
-[[nodiscard]] constexpr auto manhattan_distance(Coord3 lhs, Coord3 rhs) noexcept
-    -> std::uint64_t {
-  const auto x = lhs.x > rhs.x ? lhs.x - rhs.x : rhs.x - lhs.x;
-  const auto y = lhs.y > rhs.y ? lhs.y - rhs.y : rhs.y - lhs.y;
-  const auto z = lhs.z > rhs.z ? lhs.z - rhs.z : rhs.z - lhs.z;
-  return static_cast<std::uint64_t>(x + y + z);
+// Transient failures describe a world state that can legitimately change
+// under a routed agent (another agent passing through, a fresh wall, a
+// stale version guard); callers should re-path and retry. The remaining
+// failures (invalid endpoints, non-adjacent steps) indicate a caller bug
+// and are terminal.
+[[nodiscard]] constexpr auto is_transient_movement_failure(
+    MovementStatus status) noexcept -> bool {
+  switch (status) {
+    case MovementStatus::BlockedFrom:
+    case MovementStatus::BlockedTo:
+    case MovementStatus::Occupied:
+    case MovementStatus::Reserved:
+    case MovementStatus::StaleVersion:
+    case MovementStatus::StaleTopology:
+      return true;
+    case MovementStatus::Moved:
+    case MovementStatus::InvalidFrom:
+    case MovementStatus::InvalidTo:
+    case MovementStatus::NotAdjacent:
+      return false;
+  }
+  return false;
 }
 
 template <typename World>

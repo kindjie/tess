@@ -159,12 +159,39 @@ using KeyStorage = std::conditional_t<Bits <= 64, std::uint64_t, UInt128>;
   return axis_delta(origin, coord) < extent;
 }
 
+// Magnitude of the difference between two signed coordinates without the
+// signed-overflow UB of `lhs - rhs` at the int64 extremes.
+[[nodiscard]] constexpr std::uint64_t abs_delta(std::int64_t lhs,
+                                                std::int64_t rhs) noexcept {
+  return lhs < rhs
+             ? static_cast<std::uint64_t>(rhs) - static_cast<std::uint64_t>(lhs)
+             : static_cast<std::uint64_t>(lhs) -
+                   static_cast<std::uint64_t>(rhs);
+}
+
+[[nodiscard]] constexpr std::uint64_t saturating_add(
+    std::uint64_t lhs, std::uint64_t rhs) noexcept {
+  constexpr auto max = std::numeric_limits<std::uint64_t>::max();
+  return lhs > max - rhs ? max : lhs + rhs;
+}
+
 }  // namespace detail
 
 [[nodiscard]] constexpr bool contains(Box3 box, Coord3 coord) noexcept {
   return detail::axis_contains(box.origin.x, box.extent.x, coord.x) &&
          detail::axis_contains(box.origin.y, box.extent.y, coord.y) &&
          detail::axis_contains(box.origin.z, box.extent.z, coord.z);
+}
+
+// Overflow-safe Manhattan distance: per-axis magnitudes are computed in
+// unsigned arithmetic and the sum saturates at the uint64 maximum instead
+// of wrapping.
+[[nodiscard]] constexpr auto manhattan_distance(Coord3 lhs, Coord3 rhs) noexcept
+    -> std::uint64_t {
+  return detail::saturating_add(
+      detail::abs_delta(lhs.x, rhs.x),
+      detail::saturating_add(detail::abs_delta(lhs.y, rhs.y),
+                             detail::abs_delta(lhs.z, rhs.z)));
 }
 
 template <Extent3 Size, Extent3 Chunk>

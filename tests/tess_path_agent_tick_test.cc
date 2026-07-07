@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 #include "allocation_counter.h"
 
@@ -11,11 +12,17 @@ namespace {
 
 struct PassableTag {};
 struct CostTag {};
+struct OccupancyTag {};
+struct ReservationTag {};
 
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
 using Runtime2D = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
 using World = tess::AlwaysResidentWorld<Runtime2D, Schema>;
+using MovementSchema = tess::FieldSchema<
+    tess::Field<PassableTag, bool>, tess::Field<CostTag, std::uint32_t>,
+    tess::Field<OccupancyTag, bool>, tess::Field<ReservationTag, bool>>;
+using MovementWorld = tess::AlwaysResidentWorld<Runtime2D, MovementSchema>;
 constexpr auto RuntimeTileCount =
     Runtime2D::size.x * Runtime2D::size.y * Runtime2D::size.z;
 
@@ -46,6 +53,38 @@ void mark_passable(World& world, tess::Coord3 coord, bool passable) {
   world.template field<PassableTag>(coord) = passable;
   world.mark_dirty(tess::chunk_key<Runtime2D>(tess::tile_key<Runtime2D>(coord)),
                    1u, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+}
+
+void fill_movement_world(MovementWorld& world) {
+  for (auto& page : world.chunks()) {
+    auto passable = page.template field_span<PassableTag>();
+    auto cost = page.template field_span<CostTag>();
+    auto occupancy = page.template field_span<OccupancyTag>();
+    auto reservations = page.template field_span<ReservationTag>();
+    for (std::size_t i = 0; i < passable.size(); ++i) {
+      passable[i] = true;
+      cost[i] = 1u;
+      occupancy[i] = false;
+      reservations[i] = false;
+    }
+  }
+}
+
+void mark_movement_passable(MovementWorld& world, tess::Coord3 coord,
+                            bool passable) {
+  world.template field<PassableTag>(coord) = passable;
+  world.mark_dirty(tess::chunk_key<Runtime2D>(tess::tile_key<Runtime2D>(coord)),
+                   1u, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+}
+
+auto tick_movement(tess::PathAgentTickState& tick_state, MovementWorld& world,
+                   std::span<tess::PathAgentState> agents,
+                   tess::PathRequestRuntime& runtime,
+                   tess::PathAgentTickOptions options = {})
+    -> tess::PathAgentTickStats {
+  return tess::tick_unit_path_agents_with_movement<
+      MovementWorld, PassableTag, OccupancyTag, ReservationTag>(
+      tick_state, world, agents, runtime, options);
 }
 
 TEST(TessPathAgentTick, UnitTicksProcessOnceThenAdvanceUntilArrival) {
@@ -203,6 +242,172 @@ TEST(TessPathAgentTick, WeightedTickProcessesSharedGoalAndAdvances) {
   EXPECT_EQ(stats.pathing.found, agents.size());
   EXPECT_EQ(stats.movement.advanced, agents.size());
   EXPECT_EQ(runtime.stats().weighted_batch.unique_goals, 1u);
+}
+
+TEST(TessPathAgentTick, PlainGoalAssignmentIsProcessedWithoutDirtyMark) {
+  World world;
+  fill_world(world);
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+
+  // Consume the initial dirty flag with no goals assigned.
+  auto stats = tess::tick_unit_path_agents<World, PassableTag>(
+      tick_state, world, agents, runtime);
+  ASSERT_EQ(stats.pathing.submitted, 0u);
+
+  // The two-argument goal overload never touches tick state; the next tick
+  // must still pick the agent up without a manual dirty mark.
+  tess::set_path_agent_goal(agents[0], tess::Coord3{3, 0, 0});
+  stats = tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
+                                                          agents, runtime);
+  EXPECT_TRUE(stats.processed_paths);
+  EXPECT_EQ(stats.pathing.found, 1u);
+  EXPECT_EQ(stats.movement.advanced, 1u);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
+}
+
+TEST(TessPathAgentTick, TransientlyBlockedAgentResumesAndArrives) {
+  MovementWorld world;
+  fill_movement_world(world);
+
+  // The mover's route crosses the blocker's start tile; the blocker walks
+  // off that tile on the same ticks, so the block is transient.
+  std::array<tess::PathAgentState, 2> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+      {.position = tess::Coord3{1, 0, 0}},
+  }};
+  world.template field<OccupancyTag>(agents[0].position) = true;
+  world.template field<OccupancyTag>(agents[1].position) = true;
+  tess::set_path_agent_goal(agents[0], tess::Coord3{3, 0, 0});
+  tess::set_path_agent_goal(agents[1], tess::Coord3{1, 2, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+
+  const auto first = tick_movement(tick_state, world, agents, runtime);
+  EXPECT_EQ(first.movement.movement_failures.occupied, 1u);
+  EXPECT_EQ(first.movement.blocked_waits, 1u);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+  EXPECT_EQ(agents[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{0, 0, 0}));
+  EXPECT_EQ(agents[1].position, (tess::Coord3{1, 1, 0}));
+
+  const auto second = tick_movement(tick_state, world, agents, runtime);
+  EXPECT_TRUE(second.processed_paths);
+  EXPECT_EQ(second.repaths_requested, 1u);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
+
+  for (int tick = 0; tick < 8 && agents[0].has_goal; ++tick) {
+    (void)tick_movement(tick_state, world, agents, runtime);
+  }
+
+  EXPECT_FALSE(agents[0].has_goal);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{3, 0, 0}));
+  EXPECT_FALSE(agents[1].has_goal);
+  EXPECT_EQ(agents[1].position, (tess::Coord3{1, 2, 0}));
+}
+
+TEST(TessPathAgentTick, WallInsertedMidRouteRepathsAroundAndArrives) {
+  MovementWorld world;
+  fill_movement_world(world);
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  world.template field<OccupancyTag>(agents[0].position) = true;
+  tess::set_path_agent_goal(agents[0], tess::Coord3{4, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+
+  auto stats = tick_movement(tick_state, world, agents, runtime);
+  ASSERT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
+
+  // The wall lands on the cached route. Even without a manual dirty mark
+  // the blocked step must trigger a re-path on the next tick.
+  mark_movement_passable(world, tess::Coord3{2, 0, 0}, false);
+  stats = tick_movement(tick_state, world, agents, runtime);
+  EXPECT_EQ(stats.movement.movement_failures.blocked, 1u);
+  EXPECT_EQ(stats.movement.blocked_waits, 1u);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
+
+  stats = tick_movement(tick_state, world, agents, runtime);
+  EXPECT_TRUE(stats.processed_paths);
+  EXPECT_EQ(stats.repaths_requested, 1u);
+  EXPECT_NE(agents[0].position, (tess::Coord3{1, 0, 0}));
+
+  for (int tick = 0; tick < 12 && agents[0].has_goal; ++tick) {
+    (void)tick_movement(tick_state, world, agents, runtime);
+  }
+  EXPECT_FALSE(agents[0].has_goal);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{4, 0, 0}));
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Idle);
+}
+
+TEST(TessPathAgentTick, BoxedInGoalExhaustsRepathsAndStopsProcessing) {
+  MovementWorld world;
+  fill_movement_world(world);
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  world.template field<OccupancyTag>(agents[0].position) = true;
+  tess::set_path_agent_goal(agents[0], tess::Coord3{5, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  const auto options = tess::PathAgentTickOptions{.max_blocked_retries = 3};
+
+  auto stats = tick_movement(tick_state, world, agents, runtime, options);
+  ASSERT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
+
+  // Box the goal in completely and mark pathing dirty like ops would.
+  mark_movement_passable(world, tess::Coord3{4, 0, 0}, false);
+  mark_movement_passable(world, tess::Coord3{6, 0, 0}, false);
+  mark_movement_passable(world, tess::Coord3{5, 1, 0}, false);
+  tess::mark_pathing_dirty(tick_state);
+
+  stats = tick_movement(tick_state, world, agents, runtime, options);
+  ASSERT_TRUE(stats.processed_paths);
+  ASSERT_EQ(stats.pathing.no_path, 1u);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+
+  std::size_t processed_ticks = 0;
+  std::size_t repaths_total = 0;
+  std::size_t exhausted_total = 0;
+  for (int tick = 0; tick < 10; ++tick) {
+    stats = tick_movement(tick_state, world, agents, runtime, options);
+    processed_ticks += stats.processed_paths ? 1u : 0u;
+    repaths_total += stats.repaths_requested;
+    exhausted_total += stats.repath_exhausted;
+  }
+
+  // Retries are bounded: three re-path attempts, then the agent becomes
+  // terminally unreachable and stops consuming processing entirely.
+  EXPECT_EQ(processed_ticks, 3u);
+  EXPECT_EQ(repaths_total, 3u);
+  EXPECT_EQ(exhausted_total, 1u);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Unreachable);
+  EXPECT_EQ(agents[0].status, tess::PathStatus::NoPath);
+  EXPECT_TRUE(agents[0].has_goal);
+  EXPECT_FALSE(stats.processed_paths);
+  EXPECT_EQ(stats.repaths_requested, 0u);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
+
+  // A fresh goal re-arms processing without any manual dirty mark.
+  tess::set_path_agent_goal(agents[0], tess::Coord3{1, 2, 0});
+  stats = tick_movement(tick_state, world, agents, runtime, options);
+  EXPECT_TRUE(stats.processed_paths);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{1, 1, 0}));
 }
 
 TEST(TessPathAgentTick, WarmUnitTickWithoutDirtyPathingDoesNotAllocate) {
