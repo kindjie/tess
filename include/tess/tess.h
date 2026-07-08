@@ -7,6 +7,7 @@
 #include <tess/ops/queued.h>
 #include <tess/path/distance_field_box.h>
 #include <tess/path/field_product_cache.h>
+#include <tess/path/node_index_space.h>
 #include <tess/path/path.h>
 #include <tess/path/path_runtime.h>
 #include <tess/path/portal_route.h>
