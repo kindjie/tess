@@ -13,6 +13,29 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-08 - Sparse Render-Delta Collection
+
+- Changed: `collect_render_tile_deltas` and `clear_render_delta_dirty`
+  (`render_delta.h`) now iterate the resident set on a sparse world instead of
+  scanning `0..chunk_count` and calling unchecked `meta()`/`clear_dirty()` (which
+  read a non-resident slot out of bounds under NDEBUG). Dense keeps the exact
+  `0..chunk_count` loop behind `if constexpr`; the sparse arm iterates
+  `resident_chunk_keys()`. A non-resident chunk holds no data and cannot be
+  dirty, so the resident set captures every delta. The per-chunk emit body was
+  hoisted into a shared `detail::emit_chunk_render_deltas` helper (behavior
+  unchanged, verified by the existing dense scheduler suite).
+- Reason: S2 Slice 5b (sparse consumers) -- the render-delta scan is reachable
+  from the scheduler wrappers on a sparse world (when `render_dirty_mask != 0`),
+  and the downstream sparse adoption uses `render_tile_deltas`. Surfaced by the
+  Slice-5a route-cache verification's scope-completeness lens.
+- Deferred: the queued-ops planner/commit path (`queued.h` `resident_chunk_keys`
+  full scan, `mark_dirty` on try_chunk-validated targets) stays dense-bound --
+  it is dormant on the sparse agent/render path and not used downstream, so it
+  lands with a later queued-ops sparse slice.
+- Affected code: `include/tess/sim/render_delta.h`,
+  `tests/tess_path_runtime_sparse_test.cc`.
+- Affected docs: `docs/architecture/simulation.md`.
+
 ## 2026-07-08 - Sparse Path Runtime (Route Cache + Weighted Batch)
 
 - Changed: the path runtime now runs over sparse (`SparseResidentWorld`) worlds.

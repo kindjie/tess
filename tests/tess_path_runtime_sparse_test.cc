@@ -208,4 +208,28 @@ TEST(TessSparsePathRuntime, MovementIntoNonResidentChunkIsRejectedNotCrash) {
   EXPECT_EQ(versions, tess::MovementStatus::StaleVersion);
 }
 
+TEST(TessSparsePathRuntime, RenderDeltasScanOnlyResidentChunks) {
+  // render_tile_deltas / clear_render_delta_dirty must iterate the resident
+  // set, not 0..chunk_count: a non-resident chunk holds no data and calling
+  // meta() on it would read a non-resident slot out of bounds.
+  Sparse world{tess::ResidencyConfig{2 * Sparse::page_byte_size}};
+  fill_chunk(world, tess::ChunkKey{0});
+  fill_chunk(world, tess::ChunkKey{1});
+  ASSERT_FALSE(world.is_resident(tess::ChunkKey{2}));
+
+  constexpr std::uint32_t mask = 1u;
+  tess::clear_render_delta_dirty(world, ~0u);  // clear any setup residue
+  world.mark_dirty(tess::ChunkKey{1}, mask,
+                   tess::Box3{tess::Coord3{40, 0, 0}, tess::Extent3{2, 1, 1}});
+
+  const auto deltas = tess::render_tile_deltas(world, mask);
+  ASSERT_EQ(deltas.size(), 2u);
+  for (const auto& d : deltas) {
+    EXPECT_EQ(d.chunk_key, tess::ChunkKey{1});
+  }
+
+  tess::clear_render_delta_dirty(world, mask);
+  EXPECT_TRUE(tess::render_tile_deltas(world, mask).empty());
+}
+
 }  // namespace
