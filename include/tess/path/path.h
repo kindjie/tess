@@ -119,6 +119,19 @@ auto build_weighted_distance_field(
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> DistanceFieldResult;
 
+template <typename World, typename PassableTag, typename CostTag>
+auto build_weighted_distance_field_in_box(
+    const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> DistanceFieldResult;
+
+template <typename World, typename PassableTag, typename CostTag,
+          std::uint32_t MaxCost>
+auto build_bounded_weighted_distance_field(
+    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> DistanceFieldResult;
+
 class ChunkVersionDependencies {
  public:
   struct ChunkVersionDependency {
@@ -454,13 +467,14 @@ class DistanceFieldScratch {
   template <typename World, typename PassableTag, typename CostTag>
   friend auto build_weighted_distance_field_in_box(
       const World& world, Coord3 goal, Box3 domain,
-      DistanceFieldScratch& scratch) -> DistanceFieldResult;
+      DistanceFieldScratch& scratch, MissingChunkPolicy policy)
+      -> DistanceFieldResult;
 
   template <typename World, typename PassableTag, typename CostTag,
             std::uint32_t MaxCost>
   friend auto build_bounded_weighted_distance_field(
-      const World& world, Coord3 goal, DistanceFieldScratch& scratch)
-      -> DistanceFieldResult;
+      const World& world, Coord3 goal, DistanceFieldScratch& scratch,
+      MissingChunkPolicy policy) -> DistanceFieldResult;
 
   template <typename World, typename PassableTag, typename CostTag>
   friend auto weighted_distance_field_path(const World& world, Coord3 start,
