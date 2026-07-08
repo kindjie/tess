@@ -30,15 +30,20 @@ other entries cannot move.
   the search exhausts the resident set having skipped a non-resident neighbor.
   It is inert for dense (`AlwaysResident`) worlds, where every chunk is
   resident.
-- Sparse residency currently covers `astar_path`, `weighted_astar_path`,
-  `build_distance_field`, and `distance_field_path`; the searches take an
-  optional trailing `MissingChunkPolicy` (default `TreatAsBlocked`) and run
-  natively over the resident set. The weighted distance-field family
-  (`build_weighted_distance_field` and its box/bounded variants), the
-  distance-field product family (`build_distance_field_product`,
-  `distance_field_product_path`, `nearest_target`), and the route/portal route
-  products remain dense-only -- instantiating them on a sparse world is a
-  compile error -- pending later slices.
+- Sparse residency currently covers the single-shot searches: `astar_path`,
+  `weighted_astar_path`, the unweighted `build_distance_field`, and the
+  weighted `build_weighted_distance_field`, `build_weighted_distance_field_in_box`,
+  and `build_bounded_weighted_distance_field`, plus their readers
+  `distance_field_path` and `weighted_distance_field_path`. Each builder takes
+  an optional trailing `MissingChunkPolicy` (default `TreatAsBlocked`) and runs
+  natively over the resident set; the readers are pure readers (a non-resident
+  start is `InvalidStart`). The distance-field product family
+  (`build_distance_field_product`, `distance_field_product_path`,
+  `nearest_target`) and the route/portal route products remain dense-only --
+  instantiating them on a sparse world is a compile error. Those are persistent,
+  cross-frame cached artifacts indexed by raw tile id, so they carry the same
+  residency-freeze contract as the route cache and land with the sparse-cache
+  slice.
 - `PathResult` returns the status, unit movement cost, expanded-node count,
   reached-node count, and a non-owning span of path coordinates.
 - `DistanceFieldResult` returns the status and node counts for a reverse
@@ -212,19 +217,25 @@ other entries cannot move.
   decreasing distances and returns a `NearestTargetResult` with the status,
   cost, reached goal coordinate, node counts, and path span.
 - `build_weighted_distance_field<World, PassableTag, CostTag>(world, goal,
-  scratch)` builds a weighted reverse Dijkstra field for positive integral
-  entry costs.
+  scratch, policy = TreatAsBlocked)` builds a weighted reverse Dijkstra field
+  for positive integral entry costs. On a sparse world it honors
+  `MissingChunkPolicy`: a field truncated by a non-resident chunk is `Found`
+  under `TreatAsBlocked` and `Indeterminate` under `Indeterminate`.
 - `build_weighted_distance_field_in_box<World, PassableTag, CostTag>(world,
-  goal, domain, scratch)` builds the same exact weighted reverse field, but
-  only inside the supplied `Box3` domain.
+  goal, domain, scratch, policy = TreatAsBlocked)` builds the same exact
+  weighted reverse field, but only inside the supplied `Box3` domain. The
+  domain filter runs ahead of the residency check, so a tile outside the box is
+  never reached even when its chunk is resident.
 - `build_bounded_weighted_distance_field<World, PassableTag, CostTag,
-  MaxCost>(world, goal, scratch)` builds the same exact weighted reverse field
-  through a bounded bucket queue when all reached entry costs are between 1 and
-  `MaxCost`. If it encounters a higher positive entry cost, it falls back to
-  the general weighted field builder.
+  MaxCost>(world, goal, scratch, policy = TreatAsBlocked)` builds the same exact
+  weighted reverse field through a bounded bucket queue when all reached entry
+  costs are between 1 and `MaxCost`. If it encounters a higher positive entry
+  cost, it falls back to the general weighted field builder, forwarding the
+  missing-chunk policy.
 - `weighted_distance_field_path<World, PassableTag, CostTag>(world, start,
   goal, scratch)` reconstructs a weighted start-to-goal path from the most
-  recent matching weighted field.
+  recent matching weighted field. It is a pure reader: on a sparse world a
+  non-resident start is `InvalidStart`.
 
 ## Behavior
 

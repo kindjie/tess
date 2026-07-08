@@ -13,6 +13,41 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-08 - Sparse Weighted Distance-Field Family
+
+- Changed: the weighted single-shot distance-field builders now run natively
+  over sparse worlds -- `build_weighted_distance_field` (weighted Dijkstra heap
+  flood), `build_weighted_distance_field_in_box` (domain-filtered), and
+  `build_bounded_weighted_distance_field` (bucket queue) -- along with the
+  `weighted_distance_field_path` reader. Each mirrors the unweighted sparse
+  pattern: node arrays are sized by `NodeIndexSpace::capacity_hint`, a
+  non-resident goal resolves to `Indeterminate`/`InvalidGoal` by
+  `MissingChunkPolicy` before the goal chunk is read, non-resident neighbors are
+  skipped before their offset is computed, and a field truncated by a missing
+  chunk reports `Indeterminate` under that policy. The box keeps its domain
+  filter ahead of the residency check; the bucket builder forwards the policy
+  through its over-budget fallback. Each builder gained an optional trailing
+  `MissingChunkPolicy` whose default lives on a namespace-scope forward
+  declaration. This completes the distance-field conversion for the single-shot
+  searches (Slice 3).
+- Reason: weighted reverse fields must also flood huge sparsely-resident worlds
+  and never report a wrong result across a non-resident boundary. A five-lens
+  adversarial stronger-model review (offset safety, mirror fidelity, guard
+  completeness, dense byte-identity, and fallback/default-argument correctness)
+  returned clean on all lenses.
+- Decision: the distance-field PRODUCT family and route/portal products stay
+  dense-only. They are persistent, cross-frame cached artifacts indexed by raw
+  tile id, so they share the route cache's residency-freeze contract and land
+  with the sparse-cache slice rather than here.
+- Affected docs: `docs/architecture/path.md`.
+- Affected code: `include/tess/path/path.h`,
+  `include/tess/path/distance_field_box.h`,
+  `include/tess/path/detail/weighted_batch.h`, `tests/tess_residency_test.cc`.
+- Still dense-only (`static_assert`-guarded): the distance-field product family
+  (`build_distance_field_product`, `distance_field_product_path`,
+  `nearest_target`), the weighted route/portal route products, and
+  `weighted_path_batch` -- all pending the sparse-cache and topology slices.
+
 ## 2026-07-08 - Sparse Weighted A* and Unweighted Distance Field
 
 - Changed: `weighted_astar_path` now runs natively over sparse worlds,
@@ -44,8 +79,8 @@ Records meaningful design changes from the original TDDs.
   `include/tess/path/portal_segment_cache.h`,
   `include/tess/path/field_product_cache.h`, `tests/tess_residency_test.cc`.
 - Still dense-only (`static_assert`-guarded so sparse misuse is a compile
-  error, not silent OOB/OOM): the weighted distance-field family, the
-  distance-field product family (`build_distance_field_product`,
+  error, not silent OOB/OOM): the weighted distance-field family (ported in the
+  next entry), the distance-field product family (`build_distance_field_product`,
   `distance_field_product_path`, `nearest_target`), the weighted route/portal
   route products, and `weighted_path_batch` -- all pending later slices.
 
