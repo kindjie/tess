@@ -15,6 +15,13 @@ auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
                                           DistanceFieldScratch& scratch)
     -> DistanceFieldResult {
   using Shape = typename World::shape_type;
+  // Sizes its distance arrays by the global tile count and indexes them by raw
+  // tile id; dense-only until the distance-field family is ported to
+  // NodeIndexSpace. See build_distance_field in path.h.
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "build_weighted_distance_field_in_box is dense-only; the sparse "
+      "distance-field slice lands later.");
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
 
   TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
