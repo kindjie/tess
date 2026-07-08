@@ -187,13 +187,17 @@ range, and returns `InvalidPhase` or `PolicyMismatch` without side effects when
 the phase cannot be executed. The default implementation is serial; future
 worker backends should preserve the same validation and dirty-merge contract.
 
-`ExecutorPhaseRange` is the backend-facing operation-index range shape copied
-from an `ExecutionPhase` by `executor_phase_range(phase)`.
-`execute_operation_index_range(executor, range, fn)` adapts that range to the
-current operation-index executor contract. `SerialPhaseExecutor` is the default
-executor used by `execute_phase_deferred_dirty<Policy>`. Callers that need to
-test a backend integration point can use
-`execute_phase_deferred_dirty_with<Policy>` and pass an executor that provides:
+The executor contract lives in its own public header,
+`tess/ops/phase_executor.h`, so backends can be written and tested without
+pulling in the planner. `ExecutorPhaseRange` is the backend-facing
+operation-index range shape copied from an `ExecutionPhase` by
+`executor_phase_range(phase)` (the plan-side bridge stays in
+`tess/ops/queued.h`). `execute_operation_index_range(executor, range, fn)`
+adapts that range to the current operation-index executor contract.
+`SerialPhaseExecutor` is the default executor used by
+`execute_phase_deferred_dirty<Policy>`. Callers that need to test a backend
+integration point can use `execute_phase_deferred_dirty_with<Policy>` and
+pass an executor that provides:
 
 ```cpp
 auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn)
@@ -202,7 +206,16 @@ auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn)
 
 The executor receives planned operation indexes and must return the first
 non-`Executed` result from the callback, or `Executed` if the whole range
-completed. This helper is a serial bridge over one caller-owned
+completed. The `tess::PhaseExecutor` concept states this contract
+structurally: a const executor must accept
+`for_each_operation(first, count, fn)` for a callback returning
+`PlannedExecutionResult` and return `PlannedExecutionResult`. Implementations
+must complete or join every callback (making all callback writes visible)
+before returning. The header also documents the thread contract: world
+fields and `ChunkMeta` stay non-atomic, concurrent callbacks are safe only
+because phase planning proves disjoint mutable chunk ownership, and worker
+callbacks write dirty records into caller-owned partitions that the caller
+reduces in plan order after the executor returns. This helper is a serial bridge over one caller-owned
 `PlannedDirtyAccumulator` and a shared chunk counter, and the serial
 contract is now enforced structurally instead of by convention:
 `execute_phase_deferred_dirty_with<Policy>` requires the
@@ -231,6 +244,21 @@ before Tess adds a long-lived worker pool. When diagnostics are enabled, it
 records dispatch counts and worker counts before launching threads; the scoped
 queued-phase diagnostics are intentionally owned by the caller thread and are
 not mutated from worker callbacks.
+
+`WorkerPoolPhaseExecutor` is the persistent-pool prototype the concurrent
+tile-world addendum calls for: workers are created once at construction and
+reused across phases, so phase dispatch never creates threads. Each
+`for_each_operation` call publishes one type-erased job under the pool
+mutex, wakes the workers, and blocks until every claimed operation has
+finished and every adopted worker has left the claim loop, so all callback
+writes are visible before it returns; it then reports the first
+non-`Executed` result in operation order. `reserve_operations(count)`
+pre-sizes the per-operation result buffer so warm phases allocate nothing.
+Like the scoped-thread prototype it invokes callbacks concurrently, does not
+declare `serial_execution_tag`, and pairs only with the partitioned dirty
+variant. It is non-copyable and non-movable, stops its workers via RAII, and
+remains a prototype for backend comparison benchmarks rather than the
+production scheduler backend; callbacks must not throw.
 
 `execute_phase_partitioned_dirty_with<Policy>` uses the same executor contract,
 but stores callback dirty records and execution results in
