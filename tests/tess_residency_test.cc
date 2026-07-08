@@ -409,4 +409,105 @@ TEST(TessNodeIndexSpace, SparseSpaceMapsResidentTilesIntoBudgetedOffsets) {
               lo1 + SparseSmall::local_tile_count <= lo0);
 }
 
+// Materializes `key` and marks every tile in it passable (a freshly resident
+// page is zeroed, i.e. impassable, so the search needs tiles turned on).
+void make_chunk_passable(SparseSmall& world, tess::ChunkKey key) {
+  world.ensure_resident(key);
+  auto& page = world.chunk(key);
+  for (std::uint64_t i = 0; i < SparseSmall::local_tile_count; ++i) {
+    page.field<TerrainTag>(tess::LocalTileId{i}) = 1;
+  }
+}
+
+[[nodiscard]] auto sparse_astar(const SparseSmall& world, tess::Coord3 start,
+                                tess::Coord3 goal, tess::PathScratch& scratch,
+                                tess::MissingChunkPolicy policy) {
+  return tess::astar_path<SparseSmall, TerrainTag>(
+      world, tess::PathRequest{start, goal}, scratch, policy);
+}
+
+TEST(TessSparseAstar, FindsRouteWithinAndAcrossResidentChunks) {
+  SparseSmall world{tess::ResidencyConfig{4 * page_bytes<Small>()}};
+  make_chunk_passable(world, tess::ChunkKey{0});  // x in [0, 32)
+  make_chunk_passable(world, tess::ChunkKey{1});  // x in [32, 64)
+  tess::PathScratch scratch;
+
+  const auto within = sparse_astar(world, {0, 0, 0}, {10, 0, 0}, scratch,
+                                   tess::MissingChunkPolicy::TreatAsBlocked);
+  EXPECT_EQ(within.status, tess::PathStatus::Found);
+  EXPECT_EQ(within.cost, 10u);
+
+  // Crossing the chunk-0/chunk-1 boundary succeeds because both are resident.
+  const auto across = sparse_astar(world, {0, 0, 0}, {40, 0, 0}, scratch,
+                                   tess::MissingChunkPolicy::TreatAsBlocked);
+  EXPECT_EQ(across.status, tess::PathStatus::Found);
+  EXPECT_EQ(across.cost, 40u);
+}
+
+TEST(TessSparseAstar, MissingChunkOnRouteIsBlockedOrIndeterminateByPolicy) {
+  // Start in chunk 0 and goal in chunk 2, with chunk 1 (the only bridge)
+  // deliberately not resident. Both endpoints are resident so the search runs.
+  SparseSmall world{tess::ResidencyConfig{4 * page_bytes<Small>()}};
+  make_chunk_passable(world, tess::ChunkKey{0});  // x in [0, 32)
+  make_chunk_passable(world, tess::ChunkKey{2});  // x in [64, 96)
+  ASSERT_FALSE(world.is_resident(tess::ChunkKey{1}));
+  tess::PathScratch scratch;
+
+  const auto blocked = sparse_astar(world, {0, 0, 0}, {64, 0, 0}, scratch,
+                                    tess::MissingChunkPolicy::TreatAsBlocked);
+  EXPECT_EQ(blocked.status, tess::PathStatus::NoPath);
+
+  const auto indeterminate =
+      sparse_astar(world, {0, 0, 0}, {64, 0, 0}, scratch,
+                   tess::MissingChunkPolicy::Indeterminate);
+  EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
+}
+
+TEST(TessSparseAstar, RealWallStaysNoPathEvenUnderIndeterminate) {
+  // A single-chunk world has no neighboring chunks, so the reachable region is
+  // bounded only by the world edges and a real wall. The search never touches a
+  // non-resident neighbor, so Indeterminate must not fire for a genuine wall.
+  using Solo = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{32, 32, 1}>;
+  using SparseSolo = tess::SparseResidentWorld<Solo, Schema>;
+  static_assert(SparseSolo::chunk_count == 1);
+
+  SparseSolo world{tess::ResidencyConfig{page_bytes<Solo>()}};
+  world.ensure_resident(tess::ChunkKey{0});
+  auto& page = world.chunk(tess::ChunkKey{0});
+  for (std::uint64_t i = 0; i < SparseSolo::local_tile_count; ++i) {
+    page.field<TerrainTag>(tess::LocalTileId{i}) = 1;
+  }
+  for (std::int32_t y = 0; y < 32; ++y) {
+    world.field<TerrainTag>(tess::Coord3{5, y, 0}) = 0;  // full-height wall
+  }
+  tess::PathScratch scratch;
+
+  const auto result = tess::astar_path<SparseSolo, TerrainTag>(
+      world, tess::PathRequest{{0, 0, 0}, {10, 0, 0}}, scratch,
+      tess::MissingChunkPolicy::Indeterminate);
+  EXPECT_EQ(result.status, tess::PathStatus::NoPath);
+}
+
+TEST(TessSparseAstar, NonResidentEndpointsRespectPolicy) {
+  SparseSmall world{tess::ResidencyConfig{2 * page_bytes<Small>()}};
+  make_chunk_passable(world, tess::ChunkKey{0});
+  // Goal (40,0,0) lives in chunk 1, which is not resident.
+  ASSERT_FALSE(world.is_resident(tess::ChunkKey{1}));
+  tess::PathScratch scratch;
+
+  const auto blocked = sparse_astar(world, {0, 0, 0}, {40, 0, 0}, scratch,
+                                    tess::MissingChunkPolicy::TreatAsBlocked);
+  EXPECT_EQ(blocked.status, tess::PathStatus::InvalidGoal);
+
+  const auto indeterminate =
+      sparse_astar(world, {0, 0, 0}, {40, 0, 0}, scratch,
+                   tess::MissingChunkPolicy::Indeterminate);
+  EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
+
+  // A non-resident start is symmetric: chunk 3 holds (100,0,0).
+  const auto bad_start = sparse_astar(world, {100, 0, 0}, {0, 0, 0}, scratch,
+                                      tess::MissingChunkPolicy::Indeterminate);
+  EXPECT_EQ(bad_start.status, tess::PathStatus::Indeterminate);
+}
+
 }  // namespace
