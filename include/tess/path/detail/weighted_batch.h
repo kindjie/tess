@@ -146,11 +146,20 @@ template <typename World, typename PassableTag, typename CostTag>
 auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
                                   DistanceFieldScratch& scratch) -> PathResult {
   using Shape = typename World::shape_type;
+  using Space = detail::NodeIndexSpace<World>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
 
   scratch.clear_path();
   if (!contains<Shape>(start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+  }
+  if constexpr (!Space::is_dense) {
+    // Pure reader: a non-resident start is not in the field (its slot would be
+    // out of bounds). The field's own truncation status came from the build.
+    const Space residency{world};
+    if (!residency.is_resident_index(detail::tile_index<Shape>(start))) {
+      return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+    }
   }
   TESS_DIAG_EVENT(path_start_passability_check);
   if (!detail::is_passable<World, PassableTag>(world, start)) {
@@ -163,6 +172,7 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
     return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
   }
 
+  const Space space{world};
   const auto start_index = detail::tile_index<Shape>(start);
   if (detail::tile_entry_cost_index<World, CostTag>(world, start_index) == 0) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
@@ -170,7 +180,7 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
 
   auto current = start_index;
   auto current_distance =
-      scratch.distance_at(static_cast<std::size_t>(current), infinite_distance);
+      scratch.distance_at(space.offset(current), infinite_distance);
   if (current_distance == infinite_distance) {
     return PathResult{PathStatus::NoPath, 0, 0, scratch.touched_.size(),
                       scratch.path_};
@@ -185,8 +195,13 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
     auto next_distance = current_distance;
     detail::for_each_indexed_axis_neighbor<Shape>(
         current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
+          if constexpr (!Space::is_dense) {
+            if (!space.is_resident_index(neighbor_index)) {
+              return;
+            }
+          }
           const auto neighbor_distance = scratch.distance_at(
-              static_cast<std::size_t>(neighbor_index), infinite_distance);
+              space.offset(neighbor_index), infinite_distance);
           if (neighbor_distance == infinite_distance ||
               neighbor_distance >= next_distance) {
             return;
