@@ -41,6 +41,10 @@ struct PathRuntimeStats {
   std::size_t invalid_start = 0;
   std::size_t invalid_goal = 0;
   std::size_t no_path = 0;
+  // Sparse worlds: the search could not rule out a route through a
+  // non-resident chunk (PathStatus::Indeterminate). Kept distinct from
+  // no_path so a stale/partial residency set is never counted as "no route".
+  std::size_t indeterminate = 0;
   std::size_t world_cache_invalidations = 0;
   std::size_t cache_clears = 0;
   std::size_t path_nodes = 0;
@@ -426,6 +430,9 @@ class PathRequestRuntime {
         return;
       case PathStatus::NoPath:
         ++stats_.no_path;
+        return;
+      case PathStatus::Indeterminate:
+        ++stats_.indeterminate;
         return;
     }
   }

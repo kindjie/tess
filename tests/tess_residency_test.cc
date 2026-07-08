@@ -350,4 +350,63 @@ TEST(TessResidency, EvictionReusingSlotsStaysWithinCapacityAllocations) {
   EXPECT_LE(world.resident_count(), world.capacity());
 }
 
+using DenseSmall = tess::AlwaysResidentWorld<Small, Schema>;
+using SparseSmall = Sparse<Small>;
+
+TEST(TessNodeIndexSpace, DenseSpaceIsIdentityOverTheWholeTileCount) {
+  DenseSmall world;
+  const tess::detail::NodeIndexSpace<DenseSmall> space{world};
+
+  static_assert(tess::detail::NodeIndexSpace<DenseSmall>::is_dense,
+                "AlwaysResident node index space must be dense.");
+  EXPECT_EQ(space.capacity_hint(),
+            DenseSmall::chunk_count * DenseSmall::local_tile_count);
+
+  // Every tile is resident and maps to itself, so dense A* indexes node
+  // arrays exactly as it did before the trait existed.
+  for (const std::uint64_t index : {0ull, 1ull, 1023ull, 5000ull}) {
+    EXPECT_TRUE(space.is_resident_index(index));
+    EXPECT_EQ(space.offset(index), index);
+  }
+}
+
+TEST(TessNodeIndexSpace, SparseSpaceMapsResidentTilesIntoBudgetedOffsets) {
+  SparseSmall world{tess::ResidencyConfig{2 * page_bytes<Small>()}};
+  const tess::detail::NodeIndexSpace<SparseSmall> space{world};
+
+  static_assert(!tess::detail::NodeIndexSpace<SparseSmall>::is_dense,
+                "SparseResident node index space must not be dense.");
+  EXPECT_EQ(space.capacity_hint(),
+            world.capacity() * SparseSmall::local_tile_count);
+
+  // Chunk (0,0,0) is key 0; chunk (1,0,0) is key 1 for this 4-wide shape.
+  const auto index0 = tess::tile_key<Small>(tess::Coord3{0, 0, 0}).value;
+  const auto index1 = tess::tile_key<Small>(tess::Coord3{32, 0, 0}).value;
+
+  // Nothing is resident yet, so neither tile has a node-array offset.
+  EXPECT_FALSE(space.is_resident_index(index0));
+  EXPECT_FALSE(space.is_resident_index(index1));
+
+  world.ensure_resident(tess::ChunkKey{0});
+  EXPECT_TRUE(space.is_resident_index(index0));
+  EXPECT_FALSE(space.is_resident_index(index1));
+
+  const auto slot0 = world.resident_slot(tess::ChunkKey{0});
+  EXPECT_EQ(space.offset(index0), slot0 * SparseSmall::local_tile_count);
+  EXPECT_LT(space.offset(index0), space.capacity_hint());
+
+  // A second resident chunk occupies a disjoint offset block bounded by the
+  // per-chunk tile count, so node arrays never alias across resident chunks.
+  world.ensure_resident(tess::ChunkKey{1});
+  const auto slot1 = world.resident_slot(tess::ChunkKey{1});
+  EXPECT_NE(slot0, slot1);
+  EXPECT_EQ(space.offset(index1), slot1 * SparseSmall::local_tile_count);
+  EXPECT_LT(space.offset(index1), space.capacity_hint());
+
+  const auto lo0 = slot0 * SparseSmall::local_tile_count;
+  const auto lo1 = slot1 * SparseSmall::local_tile_count;
+  EXPECT_TRUE(lo0 + SparseSmall::local_tile_count <= lo1 ||
+              lo1 + SparseSmall::local_tile_count <= lo0);
+}
+
 }  // namespace

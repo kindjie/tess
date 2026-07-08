@@ -17,7 +17,19 @@ other entries cannot move.
 ## Public Surface
 
 - `PathRequest` contains a start and goal `Coord3`.
-- `PathStatus` reports `Found`, `InvalidStart`, `InvalidGoal`, or `NoPath`.
+- `PathStatus` reports `Found`, `InvalidStart`, `InvalidGoal`, `NoPath`, or
+  `Indeterminate`. `Indeterminate` occurs only on sparse worlds: the search
+  reached the edge of the resident set and could not rule out a route through a
+  non-resident chunk, so it is deliberately distinct from `NoPath` (which
+  asserts no route exists). A caller that receives `Indeterminate` can
+  materialize the missing chunks and retry.
+- `MissingChunkPolicy` selects how a search treats a step into a non-resident
+  chunk of a sparse world: `TreatAsBlocked` treats it as impassable (the search
+  stays within the resident set and may report `NoPath`), while `Indeterminate`
+  returns `PathStatus::Indeterminate` rather than a possibly-wrong `NoPath` when
+  the search exhausts the resident set having skipped a non-resident neighbor.
+  It is inert for dense (`AlwaysResident`) worlds, where every chunk is
+  resident.
 - `PathResult` returns the status, unit movement cost, expanded-node count,
   reached-node count, and a non-owning span of path coordinates.
 - `DistanceFieldResult` returns the status and node counts for a reverse

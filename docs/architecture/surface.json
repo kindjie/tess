@@ -132,6 +132,7 @@
     "FieldProductCache",
     "FieldProductCacheStats",
     "GoalSet",
+    "MissingChunkPolicy",
     "NearestTargetResult",
     "PathRequest",
     "PathRequestRuntime",

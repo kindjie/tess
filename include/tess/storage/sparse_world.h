@@ -168,12 +168,26 @@ class World<Shape, Schema, SparseResident> {
     return resident_keys_.size() * page_byte_size;
   }
 
+  // Sentinel returned by resident_slot for a non-resident chunk. Mirrors the
+  // directory's npos so NodeIndexSpace can test residency without a second
+  // lookup.
+  static constexpr std::size_t npos_slot = detail::ChunkDirectory::npos;
+
   [[nodiscard]] static constexpr bool contains(ChunkKey key) noexcept {
     return key.value < chunk_count;
   }
 
   [[nodiscard]] bool is_resident(ChunkKey key) const noexcept {
     return directory_.find(key) != detail::ChunkDirectory::npos;
+  }
+
+  // Returns the fixed slot index backing a resident chunk, or npos_slot when
+  // the chunk is not resident. The slot is stable for as long as the chunk
+  // stays resident, so a search may index node arrays by slot for the whole of
+  // a single traversal (the world is const during a search, so no eviction can
+  // move the mapping mid-search).
+  [[nodiscard]] std::size_t resident_slot(ChunkKey key) const noexcept {
+    return directory_.find(key);
   }
 
   // Returns the resident chunk's generation, or 0 if it is not resident.
