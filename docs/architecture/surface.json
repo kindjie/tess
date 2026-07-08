@@ -27,12 +27,17 @@
   ],
   "docs/architecture/storage.md": [
     "AlwaysResident",
+    "AlwaysResidentWorld",
     "ChunkMeta",
     "ChunkPage",
     "ChunkState",
     "DirtyObservation",
     "Field",
     "FieldSchema",
+    "ResidencyConfig",
+    "ResidencyHandle",
+    "SparseResident",
+    "SparseResidentWorld",
     "World"
   ],
   "docs/architecture/block.md": [
