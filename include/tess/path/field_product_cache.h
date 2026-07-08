@@ -457,6 +457,13 @@ auto distance_field_product_path(const World& world, Coord3 start,
                                  const DistanceFieldProduct& product,
                                  DistanceFieldScratch& scratch) -> PathResult {
   using Shape = typename World::shape_type;
+  // Indexes product.distance_ by raw tile id, so it is dense-only until the
+  // distance-field product family is ported to NodeIndexSpace. The single-goal
+  // build_distance_field / distance_field_path pair is already sparse-capable.
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "distance_field_product_path is dense-only; the sparse distance-field "
+      "product slice lands later.");
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
 
   scratch.clear_path();
@@ -522,6 +529,12 @@ template <typename World, typename Tag>
 auto nearest_target(const World& world, Coord3 start,
                     const DistanceFieldProduct& product,
                     DistanceFieldScratch& scratch) -> NearestTargetResult {
+  // Consumes a dense-only distance-field product; guarded directly rather than
+  // only transitively through distance_field_product_path below.
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "nearest_target is dense-only; the sparse distance-field product slice "
+      "lands later.");
   const auto path =
       distance_field_product_path<World, Tag>(world, start, product, scratch);
   auto target = Coord3{};
