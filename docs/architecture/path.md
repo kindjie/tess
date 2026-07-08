@@ -30,20 +30,33 @@ other entries cannot move.
   the search exhausts the resident set having skipped a non-resident neighbor.
   It is inert for dense (`AlwaysResident`) worlds, where every chunk is
   resident.
-- Sparse residency currently covers the single-shot searches: `astar_path`,
-  `weighted_astar_path`, the unweighted `build_distance_field`, and the
-  weighted `build_weighted_distance_field`, `build_weighted_distance_field_in_box`,
-  and `build_bounded_weighted_distance_field`, plus their readers
-  `distance_field_path` and `weighted_distance_field_path`. Each builder takes
-  an optional trailing `MissingChunkPolicy` (default `TreatAsBlocked`) and runs
-  natively over the resident set; the readers are pure readers (a non-resident
-  start is `InvalidStart`). The distance-field product family
+- Sparse residency covers the single-shot searches -- `astar_path`,
+  `weighted_astar_path`, the unweighted `build_distance_field`, and the weighted
+  `build_weighted_distance_field`, `build_weighted_distance_field_in_box`, and
+  `build_bounded_weighted_distance_field`, plus their readers
+  `distance_field_path` and `weighted_distance_field_path` -- and the path
+  runtime built on them: `weighted_path_batch`, the unit route cache
+  (`RouteCacheScratch`, `cached_astar_path`), and
+  `PathRequestRuntime::process_unit_cached` / `process_weighted_batch`. The route
+  cache's world fingerprint is residency-aware -- it folds each resident chunk's
+  key, `residency_generation`, and topology version through an order-independent
+  sum -- so any eviction, reload, or in-place edit changes the fingerprint and
+  invalidates the whole cache before a stale route can be served. Each single-shot
+  builder takes an optional trailing `MissingChunkPolicy` (default
+  `TreatAsBlocked`); the runtime path uses that default, so a route across a
+  non-resident chunk reports `NoPath` rather than `Indeterminate` (threading the
+  policy through the runtime is deferred). Agent movement commit is residency-safe
+  to match: `validate_movement_intent` and `movement_versions_match` reject a move
+  into or out of a non-resident chunk (`InvalidFrom`/`InvalidTo`/`StaleVersion`),
+  so an agent whose route crosses a chunk evicted since planning re-plans instead
+  of walking into unloaded data. The readers are pure readers (a non-resident
+  start is `InvalidStart`). Still dense-only -- a compile error to
+  instantiate on a sparse world -- are the distance-field product family
   (`build_distance_field_product`, `distance_field_product_path`,
-  `nearest_target`) and the route/portal route products remain dense-only --
-  instantiating them on a sparse world is a compile error. Those are persistent,
-  cross-frame cached artifacts indexed by raw tile id, so they carry the same
-  residency-freeze contract as the route cache and land with the sparse-cache
-  slice.
+  `nearest_target`), the unit field-product cache (`process_unit_cached`'s
+  repeated-goal pass, guarded out for sparse worlds), and the route/portal route
+  products. Those are persistent, cross-frame cached artifacts indexed by raw tile
+  id and land with a later sparse-cache slice.
 - `PathResult` returns the status, unit movement cost, expanded-node count,
   reached-node count, and a non-owning span of path coordinates.
 - `DistanceFieldResult` returns the status and node counts for a reverse

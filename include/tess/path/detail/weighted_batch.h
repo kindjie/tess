@@ -287,15 +287,15 @@ auto weighted_path_batch(const World& world,
                          std::span<const PathRequest> requests,
                          WeightedPathBatchScratch& scratch)
     -> std::span<const PathResult> {
-  // Fans out to weighted_astar_path (now sparse-native) and
-  // build_bounded_weighted_distance_field (dense-only). Guard here directly so
-  // sparse misuse stays a clear compile error even if a future path skips the
-  // field build and calls only the sparse-capable weighted search; dense-only
-  // until the sparse weighted distance-field slice.
-  static_assert(
-      std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "weighted_path_batch is dense-only; the sparse weighted distance-field "
-      "slice lands later.");
+  // Residency-agnostic: fans out to weighted_astar_path,
+  // build_bounded_weighted_distance_field (-> build_weighted_distance_field on
+  // cost overflow), weighted_distance_field_path, and
+  // detail::weighted_group_member_failure, all sparse-native. Grouping is
+  // Coord3/request-index space; node arrays live in the callees' scratch sized
+  // by NodeIndexSpace::capacity_hint. With the default
+  // MissingChunkPolicy::TreatAsBlocked a non-resident chunk reads as a wall, so
+  // the batch yields NoPath (not Indeterminate) across a missing chunk; policy
+  // threading is deferred.
   scratch.clear();
   scratch.results_.resize(requests.size());
   scratch.offsets_.assign(requests.size(), 0);

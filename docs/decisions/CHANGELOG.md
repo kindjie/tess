@@ -13,6 +13,58 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-08 - Sparse Path Runtime (Route Cache + Weighted Batch)
+
+- Changed: the path runtime now runs over sparse (`SparseResidentWorld`) worlds.
+  `RouteCacheScratch::world_version_fingerprint` became residency-aware: for a
+  sparse world it folds only the resident set (bounded by `resident_count`, never
+  `chunk_count`) as an order-independent sum over each chunk's `(key,
+  residency_generation, meta().version)` -- version catches in-place edits and the
+  world-monotonic `residency_generation` catches evict/reload/swap even when
+  `ensure_resident` resets a reloaded chunk's version to 0. The commutative sum is
+  invariant to `resident_chunk_keys()` order (eviction swap-with-last reorders it).
+  The dense-only `static_assert`s on `cached_astar_path` and `weighted_path_batch`
+  were removed (both already delegate to sparse-native primitives), and
+  `PathRequestRuntime::process_unit_cached`'s field-product block is now behind
+  `if constexpr` so the dense-only `process_repeated_goal_fields` is never
+  instantiated for a sparse world. Result: `process_unit_cached`,
+  `process_weighted_batch`, and `tick_*_path_agents_with_movement` compile and run
+  on sparse worlds; a chunk evicted/reloaded/edited invalidates the whole route
+  cache before a stale route is served. The agent movement commit was made
+  residency-safe to match: `validate_movement_intent` and `movement_versions_match`
+  now guard non-resident endpoints behind `if constexpr` (`try_resolve` is
+  containment-only, so an in-bounds non-resident endpoint would otherwise reach an
+  unchecked `field()`/`meta()` and read a non-resident slot out of bounds under
+  NDEBUG). A move into or out of a non-resident chunk is rejected
+  (`InvalidFrom`/`InvalidTo`; `StaleVersion` for the version check) so an agent
+  re-plans rather than walking a route across a chunk evicted since planning.
+- Reason: S2 Slice 5a -- unblock the path runtime on sparse worlds, the
+  dependency the downstream sparse adoption needs. Scope and the order-independence
+  requirement came from an adversarial proposer-panel + synthesis design review.
+- Design: dense codegen byte-identical (the fingerprint's dense arm is the exact
+  prior FNV-over-`chunk_count` loop; every sparse branch is behind `if constexpr`).
+  Default `MissingChunkPolicy::TreatAsBlocked` on the runtime path is
+  correct-but-conservative: a route across a non-resident chunk is `NoPath`, never
+  a wrong stale route and never `Indeterminate` (policy threading deferred).
+- Deferred (later sparse-cache slice): the distance-field product family, the unit
+  field-product cache, `WeightedPortalSegmentCache` / route-portal products (their
+  `ChunkVersionDependencies` read `meta().version` and would assert on a
+  non-resident key -- they need a residency-tolerant dependency check); and
+  threading `MissingChunkPolicy` through the runtime so agents can distinguish
+  "unloaded" from "unreachable".
+- Still dense-bound (separate sparse-consumer slice, not the path runtime):
+  `render_delta.h` (`collect_render_tile_deltas` / `clear_render_delta_dirty` scan
+  `0..chunk_count` and call unchecked `meta()`) and the queued-ops commit path
+  (`queued.h` `mark_dirty`). The scheduler wrappers `tick_*_movement_scheduler`
+  reach the render-delta scan only when `render_dirty_mask != 0` (the default is
+  0); the agent tick `tick_*_path_agents_with_movement` itself is sparse-safe.
+  These land with the sparse-consumer port that precedes the downstream adoption.
+- Affected code: `include/tess/path/route_cache.h`,
+  `include/tess/path/path_runtime.h`, `include/tess/path/detail/weighted_batch.h`,
+  `include/tess/sim/movement.h`, `tests/tess_path_runtime_sparse_test.cc`,
+  `tests/CMakeLists.txt`.
+- Affected docs: `docs/architecture/path.md`.
+
 ## 2026-07-08 - Sparse Topology (RegionGraph) and Reachability Indeterminate
 
 - Changed: `RegionGraph` became a class template `RegionGraphT<Residency>` with
