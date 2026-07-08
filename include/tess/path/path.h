@@ -23,8 +23,26 @@ enum class PathStatus : std::uint8_t {
   InvalidStart,
   InvalidGoal,
   NoPath,
+  // Sparse worlds only: the search reached the edge of the resident set and
+  // could not rule out a path through a non-resident chunk. Distinguished from
+  // NoPath so a caller never mistakes "not searched" for "no route exists" and
+  // can materialize the missing chunks and retry.
+  Indeterminate,
 };
 static_assert(sizeof(PathStatus) == sizeof(std::uint8_t));
+
+// How a search treats a step into a non-resident chunk of a sparse world.
+// Inert for dense worlds, where every chunk is resident.
+enum class MissingChunkPolicy : std::uint8_t {
+  // Treat a non-resident chunk as impassable. The search stays within the
+  // resident set and may report NoPath even when a route exists through
+  // chunks that are not currently materialized.
+  TreatAsBlocked,
+  // Never report a wrong NoPath across a non-resident boundary: if the search
+  // exhausts the resident set having skipped at least one non-resident
+  // neighbor, it returns Indeterminate instead of NoPath.
+  Indeterminate,
+};
 
 struct PathRequest {
   Coord3 start;

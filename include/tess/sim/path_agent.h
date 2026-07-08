@@ -43,6 +43,10 @@ struct PathAgentFrameStats {
   std::size_t invalid_start = 0;
   std::size_t invalid_goal = 0;
   std::size_t no_path = 0;
+  // Sparse worlds: the search stopped at the resident-set boundary without
+  // ruling out a route through a non-resident chunk
+  // (PathStatus::Indeterminate).
+  std::size_t indeterminate = 0;
   std::size_t advanced = 0;
   std::size_t arrived = 0;
   std::size_t blocked_waits = 0;
@@ -105,6 +109,9 @@ inline void record_path_agent_status(PathAgentFrameStats& stats,
       return;
     case PathStatus::NoPath:
       ++stats.no_path;
+      return;
+    case PathStatus::Indeterminate:
+      ++stats.indeterminate;
       return;
   }
 }
@@ -249,6 +256,7 @@ inline void add_path_agent_stats(PathAgentFrameStats& lhs,
   lhs.invalid_start += rhs.invalid_start;
   lhs.invalid_goal += rhs.invalid_goal;
   lhs.no_path += rhs.no_path;
+  lhs.indeterminate += rhs.indeterminate;
   lhs.advanced += rhs.advanced;
   lhs.arrived += rhs.arrived;
   lhs.blocked_waits += rhs.blocked_waits;
