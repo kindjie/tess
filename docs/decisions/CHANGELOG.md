@@ -13,6 +13,44 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-08 - Sparse Topology (RegionGraph) and Reachability Indeterminate
+
+- Changed: `RegionGraph` became a class template `RegionGraphT<Residency>` with
+  `using RegionGraph = RegionGraphT<AlwaysResident>` and a new
+  `SparseRegionGraph = RegionGraphT<SparseResident>`. A sparse graph builds and
+  updates only over a world's resident chunk set (sized by resident count, never
+  the total chunk count) and resolves a chunk key to a local index through a
+  frozen, sorted key table (`std::lower_bound`), so it is self-contained and
+  eviction after the build cannot invalidate it. `reachable` gained
+  `ReachabilityStatus::Indeterminate`: a non-resident endpoint, or a BFS that
+  exhausts without reaching the goal while touching a region that exits into a
+  non-resident chunk, returns `Indeterminate` instead of a wrong `Unreachable`;
+  a route found within the resident set still wins, and a fully-resident
+  enclosed component is a definite `Unreachable`. `update_region_graph` on a
+  sparse world checks a frozen residency snapshot (resident count plus per-key
+  generation) and falls back to a full rebuild on any residency change.
+- Reason: S2 Slice 4 -- topology must run natively over huge sparsely-resident
+  worlds. The chosen representation (class template on residency, world-free
+  frozen key table, membership-based missing-frontier bit distinguishing
+  "unknown" from "wall") came from an adversarial proposer-panel + synthesis
+  design review, which disqualified a runtime-bool design (its world-free
+  accessors cannot be `if constexpr`-gated) and corrected a per-chunk vs. world
+  residency-generation misreading.
+- Design: `Indeterminate`-only `reachable` (no `MissingChunkPolicy` knob this
+  slice) fully satisfies "never a wrong Unreachable" and avoids pulling path.h's
+  `MissingChunkPolicy` into topology.h. Dense codegen is byte-identical: every
+  sparse branch is behind `if constexpr`, and the sparse-only graph state lives
+  in a `[[no_unique_address]]` companion that is empty for a dense graph, so the
+  `RegionGraph` alias keeps every existing dense call site and layout unchanged.
+- Affected docs: `docs/architecture/topology.md`,
+  `docs/architecture/surface.json`.
+- Affected code: `include/tess/topology/topology.h`,
+  `tests/tess_topology_sparse_test.cc`, `tests/CMakeLists.txt`.
+- Deferred (Slice 5+): a `MissingChunkPolicy` knob on `reachable`; O(1)
+  chunk->local resolution (a graph-owned `ChunkDirectory`) and O(1) staleness
+  (a world residency epoch); streaming residency change with a live graph;
+  consumer wiring of `Indeterminate`.
+
 ## 2026-07-08 - Sparse Weighted Distance-Field Family
 
 - Changed: the weighted single-shot distance-field builders now run natively
