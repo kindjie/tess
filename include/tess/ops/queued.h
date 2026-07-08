@@ -3,17 +3,15 @@
 #include <tess/block/block.h>
 #include <tess/core/shape.h>
 #include <tess/diagnostics/diagnostics.h>
+#include <tess/ops/phase_executor.h>
 #include <tess/storage/world.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <source_location>
 #include <span>
-#include <thread>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -71,13 +69,6 @@ enum class OperationFailure : std::uint8_t {
   FieldHazardConflict,
 };
 static_assert(sizeof(OperationFailure) == sizeof(std::uint8_t));
-
-enum class PlannedExecutionStatus : std::uint8_t {
-  Executed,
-  PolicyMismatch,
-  InvalidPhase,
-};
-static_assert(sizeof(PlannedExecutionStatus) == sizeof(std::uint8_t));
 
 enum class ExecutionPhaseStatus : std::uint8_t {
   Ready,
@@ -215,11 +206,6 @@ struct ExecutionPhase {
   std::size_t operation_count = 0;
 };
 
-struct ExecutorPhaseRange {
-  std::size_t first_operation = 0;
-  std::size_t operation_count = 0;
-};
-
 [[nodiscard]] constexpr auto executor_phase_range(ExecutionPhase phase) noexcept
     -> ExecutorPhaseRange {
   return ExecutorPhaseRange{
@@ -283,118 +269,6 @@ struct OperationReport {
   std::size_t chunk_count = 0;
   std::source_location source = std::source_location::current();
 };
-
-struct PlannedExecutionResult {
-  PlannedExecutionStatus status = PlannedExecutionStatus::Executed;
-  std::size_t chunk_count = 0;
-};
-
-struct SerialPhaseExecutor {
-  // Serialized-callback promise; see the SerialExecutor concept below.
-  using serial_execution_tag = void;
-
-  template <typename Fn>
-  auto for_each_operation(ExecutorPhaseRange range, Fn&& fn) const
-      -> PlannedExecutionResult {
-    return for_each_operation(range.first_operation, range.operation_count,
-                              std::forward<Fn>(fn));
-  }
-
-  template <typename Fn>
-  auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn) const
-      -> PlannedExecutionResult {
-    auto&& callback = fn;
-    const auto end = first + count;
-    for (std::size_t i = first; i < end; ++i) {
-      auto result = callback(i);
-      if (result.status != PlannedExecutionStatus::Executed) {
-        return result;
-      }
-    }
-    return PlannedExecutionResult{};
-  }
-};
-
-// Custom executors declare `using serial_execution_tag = void;` to promise
-// that for_each_operation invokes the per-operation callback strictly one
-// at a time (never concurrently). execute_phase_deferred_dirty_with
-// requires this promise because it shares one PlannedDirtyAccumulator and
-// a non-atomic chunk counter across all callbacks. Concurrent executors
-// must not declare the tag and must use
-// execute_phase_partitioned_dirty_with, which gives every operation its
-// own dirty partition and result slot.
-template <typename Executor>
-concept SerialExecutor =
-    requires { typename std::remove_cvref_t<Executor>::serial_execution_tag; };
-
-// Documented prototype, not the production backend: spawns and joins raw
-// std::thread workers per phase call to prove the phase handoff and
-// visibility rules. It invokes callbacks concurrently, so it deliberately
-// does not declare serial_execution_tag and pairs only with
-// execute_phase_partitioned_dirty_with; the shared-accumulator
-// execute_phase_deferred_dirty_with rejects it at compile time.
-class ScopedThreadPhaseExecutor {
- public:
-  explicit ScopedThreadPhaseExecutor(std::size_t worker_count) noexcept
-      : worker_count_(worker_count == 0 ? 1 : worker_count) {}
-
-  ScopedThreadPhaseExecutor() noexcept
-      : ScopedThreadPhaseExecutor(std::thread::hardware_concurrency()) {}
-
-  [[nodiscard]] auto worker_count() const noexcept -> std::size_t {
-    return worker_count_;
-  }
-
-  template <typename Fn>
-  auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn) const
-      -> PlannedExecutionResult {
-    if (count == 0) {
-      return PlannedExecutionResult{};
-    }
-
-    const auto thread_count = std::min(worker_count_, count);
-    TESS_DIAG_EVENT_VALUE(queued_scoped_thread_dispatch, thread_count);
-    std::atomic<std::size_t> next_offset = 0;
-    std::vector<PlannedExecutionResult> results(count);
-    std::vector<std::thread> threads;
-    threads.reserve(thread_count);
-    auto&& callback = fn;
-
-    for (std::size_t worker = 0; worker < thread_count; ++worker) {
-      threads.emplace_back([&] {
-        while (true) {
-          const auto offset = next_offset.fetch_add(1);
-          if (offset >= count) {
-            return;
-          }
-          results[offset] = callback(first + offset);
-        }
-      });
-    }
-
-    for (auto& thread : threads) {
-      thread.join();
-    }
-
-    for (const auto result : results) {
-      if (result.status != PlannedExecutionStatus::Executed) {
-        return result;
-      }
-    }
-    return PlannedExecutionResult{};
-  }
-
- private:
-  std::size_t worker_count_ = 1;
-};
-
-template <typename Executor, typename Fn>
-auto execute_operation_index_range(Executor&& executor,
-                                   ExecutorPhaseRange range, Fn&& fn)
-    -> PlannedExecutionResult {
-  return executor.for_each_operation(
-      range.first_operation, range.operation_count, std::forward<Fn>(fn));
-}
 
 struct PlannedDirtyRecord {
   ChunkKey chunk{};

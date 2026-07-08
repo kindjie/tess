@@ -46,6 +46,19 @@ tess_apply_project_options(tess_queued_test)
 
 gtest_discover_tests(tess_queued_test)
 
+add_executable(
+  tess_phase_executor_test
+  allocation_counter.cc
+  tess_phase_executor_test.cc
+)
+target_link_libraries(
+  tess_phase_executor_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_phase_executor_test)
+
+gtest_discover_tests(tess_phase_executor_test)
+
 add_executable(tess_topology_test tess_topology_test.cc)
 target_link_libraries(tess_topology_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_topology_test)

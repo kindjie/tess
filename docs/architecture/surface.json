@@ -30,6 +30,7 @@
     "ChunkMeta",
     "ChunkPage",
     "ChunkState",
+    "DirtyObservation",
     "Field",
     "FieldSchema",
     "World"
@@ -80,6 +81,7 @@
     "QueuedOperation",
     "ScopedThreadPhaseExecutor",
     "SerialPhaseExecutor",
+    "WorkerPoolPhaseExecutor",
     "collect_planned_dirty",
     "execute_operation_index_range",
     "execute_phase_deferred_dirty",
@@ -247,6 +249,7 @@
     "event_queued_phase_failure",
     "event_queued_phase_invalid_range",
     "event_queued_scoped_thread_dispatch",
+    "event_queued_worker_pool_dispatch",
     "record_allocation",
     "record_deallocation"
   ]
