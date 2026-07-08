@@ -23,10 +23,11 @@ using CostField = tess::Field<CostTag, float>;
 using Schema = tess::FieldSchema<TerrainField, CostField>;
 
 // A bounded world far too large to ever materialize densely: 1,000,000 x
-// 1,000,000 x 256 tiles in 32 x 32 x 8 chunks is ~3.05e13 chunks. An
+// 1,000,000 x 256 tiles in 32 x 32 x 8 chunks is ~3e10 chunks. An
 // AlwaysResident world of this shape cannot be constructed; a sparse one
-// with a small byte budget must construct instantly and allocate nothing
-// until chunks are made resident.
+// with a small byte budget constructs instantly. Its footprint is the fixed
+// slot pool (capacity pages sized to the budget), allocated once up front —
+// resident_byte_size() reports occupancy of that pool, not lazy growth.
 using HugeSparse = tess::Shape<tess::Extent3{1'000'000, 1'000'000, 256},
                                tess::Extent3{32, 32, 8}>;
 using Small = tess::Shape<tess::Extent3{128, 128, 1}, tess::Extent3{32, 32, 1}>;
@@ -70,6 +71,21 @@ TEST(TessResidency, HugeSparseWorldConstructsAndStaysEmptyUntilResident) {
   EXPECT_FALSE(world.is_resident(tess::ChunkKey{0}));
 }
 
+TEST(TessResidency, TinyBudgetClampsCapacityToOneWithoutUb) {
+  // A budget smaller than one page must still yield a usable world (capacity
+  // 1), never a zero-capacity world that would evict from an empty slot set.
+  // This path is unguarded in release (asserts compile out), so it must be a
+  // runtime clamp.
+  Sparse<Small> world{tess::ResidencyConfig{page_bytes<Small>() / 2}};
+  EXPECT_EQ(world.capacity(), 1u);
+
+  world.ensure_resident(tess::ChunkKey{0});
+  world.ensure_resident(tess::ChunkKey{1});  // evicts 0
+  EXPECT_EQ(world.resident_count(), 1u);
+  EXPECT_TRUE(world.is_resident(tess::ChunkKey{1}));
+  EXPECT_FALSE(world.is_resident(tess::ChunkKey{0}));
+}
+
 TEST(TessResidency, EnsureResidentMaterializesZeroedChunkAndReportsResidency) {
   Sparse<Small> world{tess::ResidencyConfig{8 * page_bytes<Small>()}};
   constexpr auto key = tess::ChunkKey{5};
@@ -96,6 +112,58 @@ TEST(TessResidency, EnsureResidentMaterializesZeroedChunkAndReportsResidency) {
   }
   page->field<TerrainTag>(tess::LocalTileId{3}) = 42;
   EXPECT_EQ(world.chunk(key).field<TerrainTag>(tess::LocalTileId{3}), 42);
+}
+
+TEST(TessResidency, CoordinateAccessorsResolveThroughResidentChunks) {
+  Sparse<Small> world{tess::ResidencyConfig{4 * page_bytes<Small>()}};
+  constexpr auto coord = tess::Coord3{40, 20, 0};
+  const auto resolved = world.resolve(coord);
+
+  // try_field is residency-tolerant: null before the chunk is resident, even
+  // though the coordinate is in bounds.
+  EXPECT_EQ(world.try_field<TerrainTag>(coord), nullptr);
+  EXPECT_FALSE(world.is_resident(resolved.chunk_key));
+
+  world.ensure_resident(resolved.chunk_key);
+  world.field<TerrainTag>(coord) = 55;
+  world.field<CostTag>(coord) = 2.25F;
+
+  auto* terrain = world.try_field<TerrainTag>(coord);
+  ASSERT_NE(terrain, nullptr);
+  EXPECT_EQ(*terrain, 55);
+  EXPECT_FLOAT_EQ(world.field<CostTag>(coord), 2.25F);
+  EXPECT_EQ(world.field_span<TerrainTag>(
+                resolved.chunk_key)[resolved.local_tile_id.value],
+            55);
+
+  // Out-of-bounds coordinates resolve to nullptr/nullopt regardless.
+  EXPECT_FALSE(world.try_resolve(tess::Coord3{-1, 0, 0}).has_value());
+  EXPECT_EQ(world.try_field<TerrainTag>(tess::Coord3{128, 0, 0}), nullptr);
+}
+
+TEST(TessResidency, ResidentMetadataProtocolMatchesDenseSemantics) {
+  Sparse<Small> world{tess::ResidencyConfig{4 * page_bytes<Small>()}};
+  constexpr auto key = tess::ChunkKey{2};
+  const auto bounds =
+      tess::Box3{tess::Coord3{64, 32, 0}, tess::Extent3{2, 2, 1}};
+  world.ensure_resident(key);
+
+  world.mark_topology_dirty(key, DirtyTerrain, bounds);
+  EXPECT_EQ(world.meta(key).field_dirty_flags, DirtyTerrain);
+  EXPECT_EQ(world.meta(key).topology_version, 1u);
+
+  const auto observed = world.observe_dirty(key, DirtyTerrain);
+  EXPECT_EQ(observed.flags, DirtyTerrain);
+  world.mark_dirty(key, DirtyCost, bounds);  // advances generation
+  EXPECT_FALSE(world.clear_dirty_observed(key, observed));
+  EXPECT_EQ(world.meta(key).field_dirty_flags, DirtyTerrain | DirtyCost);
+
+  const auto refreshed = world.observe_dirty(key, DirtyTerrain | DirtyCost);
+  EXPECT_TRUE(world.clear_dirty_observed(key, refreshed));
+  EXPECT_EQ(world.meta(key).field_dirty_flags, 0u);
+
+  world.set_chunk_state(key, tess::ChunkState::ResidentActive);
+  EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);
 }
 
 TEST(TessResidency, OutOfBoundsKeysAreNeverResidentAndYieldNullptr) {
