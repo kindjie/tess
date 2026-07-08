@@ -41,8 +41,10 @@
   metadata, dirty-bounds union across all relative box orientations including
   z cases, zero-initialized fresh-world field values without prior writes,
   appending out-parameter dirty/active chunk queries that match the by-value
-  queries and do not allocate into reserved vectors, noexcept hot accessors,
-  and allocation-free local field/span/world access after construction.
+  queries and do not allocate into reserved vectors, generation-stamped
+  `observe_dirty`/`clear_dirty_observed` maintenance clears that preserve
+  marks landing after observation, noexcept hot accessors, and
+  allocation-free local field/span/world access after construction.
 - `tess_block_test`: verifies chunk-domain builders, policy-typed `BlockCtx`
   construction and iteration, serial block iteration, owned domain lifetimes,
   const-correct chunk views and world access including compile-time and runtime
@@ -88,7 +90,23 @@
   duplicate-key deduplication and empty explicit domains, and
   `ScopedThreadPhaseExecutor` worker-count clamping and zero-count early
   return. Threaded replay stress compares every tile of every chunk between
-  serial and threaded worlds via field spans.
+  serial and threaded worlds via field spans, and the same replay harness
+  drives one reused `WorkerPoolPhaseExecutor` across all stress seeds to pin
+  persistent-pool equivalence with serial execution.
+- `tess_phase_executor_test`: verifies the public `tess/ops/phase_executor.h`
+  contract in isolation: compile-time `PhaseExecutor` concept conformance
+  (satisfied by `SerialPhaseExecutor`, `ScopedThreadPhaseExecutor`,
+  `WorkerPoolPhaseExecutor`, and a minimal custom executor; rejected for
+  wrong return types, non-const `for_each_operation`, and non-executors),
+  `SerialExecutor` tag relationships, exact-range single-visit dispatch for
+  serial, threaded, pool, and custom executors, serial first-failure
+  short-circuit ordering, threaded failure reporting after join,
+  concept-constrained `execute_operation_index_range` dispatch, and
+  allocation-free warm serial dispatch. Worker-pool coverage adds
+  worker-count clamping, empty-range early return, worker reuse across many
+  phases, first-failure reporting in operation order, allocation-free warm
+  dispatch after `reserve_operations`, repeated create/run/stop lifecycle
+  cycles, and destruction without ever running a phase.
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.
