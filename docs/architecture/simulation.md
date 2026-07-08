@@ -47,11 +47,15 @@ deltas.
 - `RenderTileDelta` records a changed tile coordinate, chunk key, local tile
   id, matching dirty flags, and chunk version.
 - `collect_render_tile_deltas(world, dirty_mask, out)` appends one delta per
-  dirty tile in each matching chunk dirty bound.
+  dirty tile in each matching chunk dirty bound. On a dense world it scans every
+  chunk; on a sparse world it scans only the resident set (a non-resident chunk
+  holds no data and cannot be dirty, so this misses no delta and never reads a
+  non-resident slot or runs a full `chunk_count` scan).
 - `render_tile_deltas(world, dirty_mask)` returns an owning vector of render
   deltas for simple consumers.
 - `clear_render_delta_dirty(world, dirty_mask)` clears the render-relevant
-  dirty bits after a presentation layer has consumed them.
+  dirty bits after a presentation layer has consumed them; it iterates the
+  resident set on a sparse world.
 
 ### Path-Agent Batch Helpers
 

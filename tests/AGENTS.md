@@ -227,8 +227,10 @@
   (Found, never Indeterminate under the default policy) then reporting NoPath
   after a wall edit, and `validate_movement_intent` / `movement_versions_match`
   rejecting a move into or out of an evicted chunk (`InvalidFrom`/`InvalidTo`/
-  `StaleVersion`) rather than reading a non-resident slot out of bounds (run
-  under ASan).
+  `StaleVersion`) rather than reading a non-resident slot out of bounds, and
+  `render_tile_deltas` / `clear_render_delta_dirty` scanning only the resident
+  set (a dirty resident chunk contributes its deltas; a non-resident chunk is
+  never scanned) — all run under ASan.
 - `tess_path_weighted_batch_test`: verifies `weighted_path_batch` edges:
   empty batches, all-distinct goals (pure A* fallbacks, no field builds),
   duplicate identical requests sharing one field build, per-member statuses
