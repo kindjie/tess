@@ -11,6 +11,13 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
     -> DistanceFieldResult {
   static_assert(MaxCost > 0);
   using Shape = typename World::shape_type;
+  // Sizes its distance arrays by the global tile count; dense-only until the
+  // distance-field family is ported to NodeIndexSpace. This also guards
+  // weighted_path_batch, which builds its per-goal fields here.
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "build_bounded_weighted_distance_field is dense-only; the sparse "
+      "distance-field slice lands later.");
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
   constexpr auto bucket_count = static_cast<std::size_t>(MaxCost) + 1u;
 

@@ -308,6 +308,14 @@ class RouteCacheScratch {
   template <typename World>
   [[nodiscard]] static auto world_version_fingerprint(
       const World& world) noexcept -> std::uint64_t {
+    // Scans every chunk and calls the unchecked meta() accessor, which would
+    // read a non-resident slot out of bounds on a sparse world (and is a
+    // hidden full-world scan). Dense-only until the route cache learns
+    // resident-set fingerprinting.
+    static_assert(
+        std::is_same_v<typename World::residency_type, AlwaysResident>,
+        "route-cache world fingerprinting is dense-only; the sparse "
+        "route-cache slice lands later.");
     auto fingerprint = std::uint64_t{0xcbf29ce484222325ull};
     for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
       const auto version = world.meta(ChunkKey{i}).version;
@@ -330,6 +338,14 @@ template <typename World, typename Tag>
 auto cached_astar_path(const World& world, PathRequest request,
                        PathScratch& scratch, RouteCacheScratch& cache)
     -> PathResult {
+  // The route cache keys and invalidates by whole-world version fingerprints
+  // and does not yet track residency, so a chunk evicted and reloaded between
+  // calls could serve a stale route. Dense-only pending the sparse port; use
+  // astar_path directly for sparse worlds.
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "cached_astar_path is dense-only; use astar_path for sparse worlds "
+      "until the sparse route-cache slice lands.");
   if (const auto* entry = cache.find(request); entry != nullptr) {
     ++cache.hits_;
     const auto cached = cache.path_span(*entry);

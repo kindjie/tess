@@ -409,6 +409,21 @@ TEST(TessNodeIndexSpace, SparseSpaceMapsResidentTilesIntoBudgetedOffsets) {
               lo1 + SparseSmall::local_tile_count <= lo0);
 }
 
+TEST(TessNodeIndexSpace, OffsetUsesResidentSlotNotChunkKey) {
+  // Materialize chunks out of key order so a chunk's resident slot differs from
+  // its key. An offset() that indexed by chunk key instead of slot would stay
+  // in bounds on this tiny world and silently corrupt; assert the slot mapping.
+  SparseSmall world{tess::ResidencyConfig{2 * page_bytes<Small>()}};
+  world.ensure_resident(tess::ChunkKey{1});  // takes the first slot
+  world.ensure_resident(tess::ChunkKey{0});  // takes the second slot
+  const tess::detail::NodeIndexSpace<SparseSmall> space{world};
+
+  const auto slot_of_key0 = world.resident_slot(tess::ChunkKey{0});
+  ASSERT_NE(slot_of_key0, static_cast<std::size_t>(0));  // slot != key value 0
+  const auto index0 = tess::tile_key<Small>(tess::Coord3{0, 0, 0}).value;
+  EXPECT_EQ(space.offset(index0), slot_of_key0 * SparseSmall::local_tile_count);
+}
+
 // Materializes `key` and marks every tile in it passable (a freshly resident
 // page is zeroed, i.e. impassable, so the search needs tiles turned on).
 void make_chunk_passable(SparseSmall& world, tess::ChunkKey key) {
@@ -508,6 +523,27 @@ TEST(TessSparseAstar, NonResidentEndpointsRespectPolicy) {
   const auto bad_start = sparse_astar(world, {100, 0, 0}, {0, 0, 0}, scratch,
                                       tess::MissingChunkPolicy::Indeterminate);
   EXPECT_EQ(bad_start.status, tess::PathStatus::Indeterminate);
+
+  const auto bad_start_blocked =
+      sparse_astar(world, {100, 0, 0}, {0, 0, 0}, scratch,
+                   tess::MissingChunkPolicy::TreatAsBlocked);
+  EXPECT_EQ(bad_start_blocked.status, tess::PathStatus::InvalidStart);
+}
+
+TEST(TessSparseAstar, FindsRouteWhenResidentSlotsDifferFromChunkKeys) {
+  // Resident slots assigned out of key order, so the search must route through
+  // the resident-slot mapping, not the chunk keys.
+  SparseSmall world{tess::ResidencyConfig{2 * page_bytes<Small>()}};
+  make_chunk_passable(world, tess::ChunkKey{1});  // slot 0
+  make_chunk_passable(world, tess::ChunkKey{0});  // slot 1
+  ASSERT_NE(world.resident_slot(tess::ChunkKey{0}),
+            static_cast<std::size_t>(0));
+  tess::PathScratch scratch;
+
+  const auto across = sparse_astar(world, {0, 0, 0}, {40, 0, 0}, scratch,
+                                   tess::MissingChunkPolicy::TreatAsBlocked);
+  EXPECT_EQ(across.status, tess::PathStatus::Found);
+  EXPECT_EQ(across.cost, 40u);
 }
 
 }  // namespace
