@@ -13,6 +13,42 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-08 - Sparse Weighted A* and Unweighted Distance Field
+
+- Changed: `weighted_astar_path` now runs natively over sparse worlds,
+  mirroring `astar_path` exactly -- its unit-cost direct and blocked-axis
+  detour fast paths compile out for sparse (`if constexpr (Space::is_dense)`),
+  the neighbor loop skips non-resident tiles before computing any node-array
+  offset, and non-resident endpoints or an exhausted search that crossed a
+  missing chunk return `Indeterminate` under `MissingChunkPolicy`. The
+  unweighted distance field is likewise sparse: `build_distance_field` floods
+  only the resident set (a field truncated by a non-resident chunk reports
+  `Indeterminate` under that policy) and `distance_field_path` is a pure
+  gradient reader that stays offset-safe (non-resident start is `InvalidStart`).
+  `DistanceFieldScratch::touch_node` gained an offset-taking form (a
+  dense-identity 1-arg overload serves the still-guarded callers). Both search
+  functions take an optional trailing `MissingChunkPolicy` whose default lives
+  on a namespace-scope forward declaration. The A* cores also moved to a new
+  `include/tess/path/detail/astar.h` (pure split) to keep `path.h` under the
+  24k-token header budget.
+- Reason: continue Slice 3 -- weighted search and reverse distance fields must
+  also run over huge sparsely-resident worlds and never report a wrong
+  `NoPath`/`InvalidStart` across a non-resident boundary. An adversarial
+  stronger-model review (mirror fidelity, offset safety, guard completeness,
+  dense byte-identity) confirmed the ports and flagged the one missing direct
+  guard, now added.
+- Affected docs: `docs/architecture/path.md`.
+- Affected code: `include/tess/path/detail/astar.h`,
+  `include/tess/path/path.h`, `include/tess/path/detail/weighted_batch.h`,
+  `include/tess/path/portal_route.h`,
+  `include/tess/path/portal_segment_cache.h`,
+  `include/tess/path/field_product_cache.h`, `tests/tess_residency_test.cc`.
+- Still dense-only (`static_assert`-guarded so sparse misuse is a compile
+  error, not silent OOB/OOM): the weighted distance-field family, the
+  distance-field product family (`build_distance_field_product`,
+  `distance_field_product_path`, `nearest_target`), the weighted route/portal
+  route products, and `weighted_path_batch` -- all pending later slices.
+
 ## 2026-07-08 - Sparse A* Node Mapping and Missing-Chunk Path Policy
 
 - Changed: `tess::detail::NodeIndexSpace` gains a `SparseResident`
@@ -33,8 +69,9 @@ Records meaningful design changes from the original TDDs.
   `if constexpr (!is_dense)`); the new status flows through `PathRuntimeStats`
   and `PathAgentFrameStats` with a dedicated `indeterminate` bucket.
   `weighted_astar_path`, `build_distance_field`, and
-  `build_weighted_distance_field` are `static_assert`-guarded dense-only until
-  their sparse port in the next slice.
+  `build_weighted_distance_field` are `static_assert`-guarded dense-only in this
+  commit; the weighted A* and unweighted distance-field ports land in the entry
+  above.
 - Reason: Slice 3 of the full-sparse stage: A* must run natively over huge
   sparsely-resident worlds and must never report a wrong `NoPath` across a
   non-resident boundary. Design (dense-only fast-path scan vs. surgical
