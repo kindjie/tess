@@ -30,6 +30,15 @@ other entries cannot move.
   the search exhausts the resident set having skipped a non-resident neighbor.
   It is inert for dense (`AlwaysResident`) worlds, where every chunk is
   resident.
+- Sparse residency currently covers `astar_path`, `weighted_astar_path`,
+  `build_distance_field`, and `distance_field_path`; the searches take an
+  optional trailing `MissingChunkPolicy` (default `TreatAsBlocked`) and run
+  natively over the resident set. The weighted distance-field family
+  (`build_weighted_distance_field` and its box/bounded variants), the
+  distance-field product family (`build_distance_field_product`,
+  `distance_field_product_path`, `nearest_target`), and the route/portal route
+  products remain dense-only -- instantiating them on a sparse world is a
+  compile error -- pending later slices.
 - `PathResult` returns the status, unit movement cost, expanded-node count,
   reached-node count, and a non-owning span of path coordinates.
 - `DistanceFieldResult` returns the status and node counts for a reverse
@@ -140,13 +149,16 @@ other entries cannot move.
   `options.max_blocked_retries` runs out and they turn terminally
   `Unreachable`, no longer requesting processing. `mark_pathing_dirty(state)`
   remains the hook for conservative replans after world edits.
-- `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
-  unit-cost deterministic pathfinding over the existing always-resident world
-  storage. The passability field is treated as boolean-like.
-- `weighted_astar_path<World, PassableTag, CostTag>(world, request, scratch)`
-  runs deterministic weighted A* over passability plus an integral entry-cost
-  field. It includes exact unit-cost direct and blocked-axis detour fast paths
-  when their local optimality proofs apply.
+- `astar_path<World, PassableTag>(world, request, scratch, policy)` runs
+  optimized unit-cost deterministic pathfinding. The passability field is
+  treated as boolean-like. It runs natively on sparse worlds, honoring
+  `MissingChunkPolicy` (the pre-A* fast-path scan is compiled out there).
+- `weighted_astar_path<World, PassableTag, CostTag>(world, request, scratch,
+  policy)` runs deterministic weighted A* over passability plus an integral
+  entry-cost field. It includes exact unit-cost direct and blocked-axis detour
+  fast paths when their local optimality proofs apply. Like `astar_path`, it is
+  sparse-capable and honors `MissingChunkPolicy` (the fast paths are compiled
+  out for sparse worlds).
 - `build_weighted_route_product<World, PassableTag, CostTag>(world, request,
   scratch, product)` builds and stores a weighted route product.
 - `weighted_route_product_path(world, product)` replays a stored weighted
@@ -184,10 +196,15 @@ other entries cannot move.
   checks the route cache before falling back to `astar_path`. Hits copy the
   cached route into `scratch` and return a span with the same lifetime
   contract as a miss.
-- `build_distance_field<World, PassableTag>(world, goal, scratch)` builds a
-  unit-cost reverse distance field from one passable goal.
+- `build_distance_field<World, PassableTag>(world, goal, scratch, policy)`
+  builds a unit-cost reverse distance field from one passable goal. On a sparse
+  world it floods only the resident set; under `MissingChunkPolicy::
+  Indeterminate` a field truncated by a non-resident chunk reports
+  `PathStatus::Indeterminate` instead of `Found`.
 - `distance_field_path<World, PassableTag>(world, start, goal, scratch)`
-  reconstructs a start-to-goal path from the most recent matching field.
+  reconstructs a start-to-goal path from the most recent matching field. It is
+  a pure reader: on a sparse world a non-resident start is `InvalidStart` and a
+  start the flood never reached is `NoPath`.
 - `build_distance_field_product<World, PassableTag>(world, goals, scratch,
   product)` builds a multi-source unit-cost product for an ordered `GoalSet`.
 - `distance_field_product_path<World, PassableTag>(world, start, product,
