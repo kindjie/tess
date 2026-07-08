@@ -13,6 +13,30 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-08 - NodeIndexSpace Trait for A* Node Storage
+
+- Changed: New internal `tess::detail::NodeIndexSpace<World>`
+  (`include/tess/path/node_index_space.h`) maps a global tile index to a
+  node-array offset and reports the array capacity a search must allocate.
+  `astar_path` and `weighted_astar_path` now size and index their
+  `PathScratch` node arrays through this trait instead of `tile_count<World>()`
+  and raw `static_cast<std::size_t>(index)`. The `AlwaysResident`
+  specialization is the identity (`offset(i) == i`, capacity == the whole tile
+  count), so the dense search is byte-identical and stays allocation-free after
+  warmup. `PathScratch::touch_node` now takes the pre-computed offset alongside
+  the global index.
+- Reason: Slice 2 of the full-sparse stage. Decoupling A* node storage from the
+  global tile count is the prerequisite for running A* over sparse worlds,
+  whose global tile index can reach ~1e17 and cannot size a dense array. The
+  sparse `NodeIndexSpace` specialization (resident-slot remap, bounded by the
+  residency budget) and the missing-chunk path policy land in the next slice;
+  this slice ships only the trait and the dense identity so the change is a
+  provably behavior-preserving refactor.
+- Affected docs: `docs/decisions/CHANGELOG.md`.
+- Affected code: `include/tess/path/node_index_space.h` (new),
+  `include/tess/path/path.h` (astar_path/weighted_astar_path offset threading,
+  PathScratch::touch_node signature), `include/tess/tess.h`, `CMakeLists.txt`.
+
 ## 2026-07-08 - Sparse-Resident World (Storage Core)
 
 - Changed: New `tess::World<Shape, Schema, tess::SparseResident>` (alias
