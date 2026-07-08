@@ -13,6 +13,39 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-08 - Sparse-Resident World (Storage Core)
+
+- Changed: New `tess::World<Shape, Schema, tess::SparseResident>` (alias
+  `SparseResidentWorld`) materializes only a byte-budgeted, least-recently-used
+  subset of a bounded shape, so worlds spanning trillions of chunks cost only
+  their residency budget. New public `tess/storage/residency.h`
+  (`SparseResident`, `ResidencyConfig`, `ResidencyHandle`) and
+  `tess/storage/sparse_world.h` (the specialization plus an internal
+  fixed-capacity `ChunkDirectory` with backward-shift deletion). `ChunkMeta`,
+  `ChunkState`, `DirtyObservation`, and every `ChunkMeta` mutation
+  (dirty/active/version) moved to a new shared `tess/storage/chunk_meta.h`, so
+  the dense and sparse worlds share one metadata implementation. Residency is
+  explicit (`ensure_resident`/`touch`/`evict`) with world-monotonic per-load
+  generations that invalidate stale handles across eviction; `is_resident`
+  distinguishes `Missing` in-bounds chunks from out-of-bounds; `try_chunk`/
+  `try_meta`/`try_field` are the residency-tolerant readers. All iteration is
+  bounded by the resident set or fixed slot capacity, never `chunk_count`.
+- Reason: Milestone M2 requires sparse residency early because it changes the
+  storage API that topology, pathing, queued ops, and block views all consume.
+  This is Slice 1 of the full-sparse stage: the self-contained storage core the
+  later topology/path/consumer slices build on. Extracting the shared metadata
+  ops keeps dirty/active/version semantics identical across both worlds
+  (guarded by the unchanged dense storage tests).
+- Affected docs: `docs/architecture/storage.md` (new Sparse-Resident World
+  section, revised Out Of Scope), `docs/architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: `include/tess/storage/chunk_meta.h` (new),
+  `include/tess/storage/residency.h` (new),
+  `include/tess/storage/sparse_world.h` (new),
+  `include/tess/storage/world.h` (delegates to shared meta ops),
+  `include/tess/tess.h`, `CMakeLists.txt`, `tests/tess_residency_test.cc` (new),
+  `tests/CMakeLists.txt`.
+
 ## 2026-07-07 - Parallel Benchmark Family and Concurrency Plan
 
 - Changed: New `bench/tess_parallel_bench.cc` compares serial,
