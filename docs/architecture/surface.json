@@ -116,6 +116,7 @@
     "ReachabilityStatus",
     "RegionGraph",
     "RegionGraphScratch",
+    "RegionGraphT",
     "RegionPortal",
     "RegionRef",
     "TopologyStatus",
