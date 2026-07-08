@@ -10,24 +10,28 @@
 namespace tess {
 
 template <typename World, typename PassableTag, typename CostTag>
-auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
-                                          Box3 domain,
-                                          DistanceFieldScratch& scratch)
-    -> DistanceFieldResult {
+auto build_weighted_distance_field_in_box(
+    const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
+    [[maybe_unused]] MissingChunkPolicy policy) -> DistanceFieldResult {
   using Shape = typename World::shape_type;
-  // Sizes its distance arrays by the global tile count and indexes them by raw
-  // tile id; dense-only until the distance-field family is ported to
-  // NodeIndexSpace. See build_distance_field in path.h.
-  static_assert(
-      std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "build_weighted_distance_field_in_box is dense-only; the sparse "
-      "distance-field slice lands later.");
+  using Space = detail::NodeIndexSpace<World>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
 
   TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
   scratch.clear_build();
   if (!contains<Shape>(goal) || !contains(domain, goal)) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
+  }
+  if constexpr (!Space::is_dense) {
+    // A non-resident goal cannot seed the flood; resolve before is_passable /
+    // the entry-cost read index the goal chunk.
+    const Space residency{world};
+    if (!residency.is_resident_index(detail::tile_index<Shape>(goal))) {
+      return DistanceFieldResult{policy == MissingChunkPolicy::Indeterminate
+                                     ? PathStatus::Indeterminate
+                                     : PathStatus::InvalidGoal,
+                                 0, 0};
+    }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
   if (!detail::is_passable<World, PassableTag>(world, goal)) {
@@ -39,17 +43,19 @@ auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
   }
 
-  const auto node_count = detail::tile_count<World>();
+  const Space space{world};
+  const auto node_count = space.capacity_hint();
   if (scratch.distance_.size() != node_count) {
     TESS_DIAG_EVENT(path_initialize);
     scratch.generation_.assign(node_count, 0);
     scratch.distance_.assign(node_count, infinite_distance);
   }
 
+  const auto goal_offset = space.offset(goal_index);
   scratch.goal_ = goal;
   scratch.has_goal_ = true;
-  scratch.distance_[static_cast<std::size_t>(goal_index)] = 0;
-  scratch.touch_node(goal_index);
+  scratch.distance_[goal_offset] = 0;
+  scratch.touch_node(goal_offset, goal_index);
   TESS_DIAG_EVENT(path_touch_node);
   scratch.weighted_frontier_.push_back(PathScratch::OpenNode{goal_index, 0, 0});
   std::push_heap(scratch.weighted_frontier_.begin(),
@@ -57,6 +63,7 @@ auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
   TESS_DIAG_EVENT(path_heap_push);
 
   std::size_t expanded_nodes = 0;
+  [[maybe_unused]] bool crossed_missing = false;
   while (!scratch.weighted_frontier_.empty()) {
     TESS_DIAG_EVENT(path_heap_pop);
     std::pop_heap(scratch.weighted_frontier_.begin(),
@@ -64,7 +71,7 @@ auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
     const auto current = scratch.weighted_frontier_.back();
     scratch.weighted_frontier_.pop_back();
 
-    const auto current_offset = static_cast<std::size_t>(current.index);
+    const auto current_offset = space.offset(current.index);
     const auto current_distance =
         scratch.distance_at(current_offset, infinite_distance);
     if (current.g != current_distance) {
@@ -86,7 +93,13 @@ auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
             return;
           }
           TESS_DIAG_EVENT(path_neighbor_candidate);
-          const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
+          if constexpr (!Space::is_dense) {
+            if (!space.is_resident_index(neighbor_index)) {
+              crossed_missing = true;
+              return;
+            }
+          }
+          const auto neighbor_offset = space.offset(neighbor_index);
           TESS_DIAG_EVENT(path_relax_attempt);
           if (!scratch.is_current(neighbor_offset)) {
             TESS_DIAG_EVENT(path_passability_check);
@@ -101,7 +114,7 @@ auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
               return;
             }
             scratch.distance_[neighbor_offset] = infinite_distance;
-            scratch.touch_node(neighbor_index);
+            scratch.touch_node(neighbor_offset, neighbor_index);
             TESS_DIAG_EVENT(path_touch_node);
           }
 
@@ -127,6 +140,12 @@ auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
         });
   }
 
+  if constexpr (!Space::is_dense) {
+    if (crossed_missing && policy == MissingChunkPolicy::Indeterminate) {
+      return DistanceFieldResult{PathStatus::Indeterminate, expanded_nodes,
+                                 scratch.touched_.size()};
+    }
+  }
   return DistanceFieldResult{PathStatus::Found, expanded_nodes,
                              scratch.touched_.size()};
 }
