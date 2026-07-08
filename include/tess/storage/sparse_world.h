@@ -137,10 +137,7 @@ class World<Shape, Schema, SparseResident> {
 
   explicit World(ResidencyConfig config)
       : byte_budget_(config.byte_budget),
-        capacity_(config.byte_budget / page_byte_size) {
-    TESS_ASSERT(page_byte_size > 0);
-    TESS_ASSERT(capacity_ >= 1);
-
+        capacity_(clamp_capacity(config.byte_budget)) {
     pages_.reserve(capacity_);
     for (std::size_t slot = 0; slot < capacity_; ++slot) {
       pages_.emplace_back(ChunkKey{0}, ChunkCoord3{});
@@ -149,7 +146,6 @@ class World<Shape, Schema, SparseResident> {
     slot_key_.assign(capacity_, ChunkKey{});
     slot_generation_.assign(capacity_, 0);
     slot_lru_.assign(capacity_, 0);
-    slot_occupied_.assign(capacity_, 0u);
     slot_position_.assign(capacity_, 0);
 
     resident_keys_.reserve(capacity_);
@@ -211,12 +207,11 @@ class World<Shape, Schema, SparseResident> {
       return ResidencyHandle{key, slot_generation_[slot]};
     }
     slot = acquire_slot();
-    pages_[slot] = page_type{key, chunk_coord<Shape>(key)};
+    pages_[slot].reset(key, chunk_coord<Shape>(key));
     metadata_[slot] = ChunkMeta{};
     slot_key_[slot] = key;
     slot_generation_[slot] = ++generation_clock_;
     slot_lru_[slot] = ++lru_clock_;
-    slot_occupied_[slot] = 1u;
     slot_position_[slot] = resident_keys_.size();
     resident_keys_.push_back(key);
     resident_slots_.push_back(slot);
@@ -241,6 +236,7 @@ class World<Shape, Schema, SparseResident> {
       return false;
     }
     release_slot(slot);
+    free_slots_.push_back(slot);
     return true;
   }
 
@@ -375,7 +371,7 @@ class World<Shape, Schema, SparseResident> {
 
   [[nodiscard]] auto resolve(Coord3 coord) const noexcept
       -> ResolvedTile<Shape> {
-    TESS_ASSERT(contains<Shape>(coord));
+    TESS_ASSERT(tess::contains<Shape>(coord));
     return ResolvedTile<Shape>{
         chunk_key<Shape>(chunk_coord<Shape>(coord)),
         local_tile_id<Shape>(local_coord<Shape>(coord)),
@@ -384,7 +380,7 @@ class World<Shape, Schema, SparseResident> {
 
   [[nodiscard]] auto try_resolve(Coord3 coord) const noexcept
       -> std::optional<ResolvedTile<Shape>> {
-    if (!contains<Shape>(coord)) {
+    if (!tess::contains<Shape>(coord)) {
       return std::nullopt;
     }
     return resolve(coord);
@@ -456,6 +452,12 @@ class World<Shape, Schema, SparseResident> {
     return evict_least_recently_used();
   }
 
+  // Scans the resident slots (bounded by capacity) for the least-recently
+  // ensured/touched chunk, releases it, and returns the freed slot ready to
+  // be reassigned. O(resident_count) per eviction, which is bounded by the
+  // byte budget; a streaming, miss-heavy workload over a very large budget
+  // would benefit from an intrusive O(1) LRU list, deferred as an
+  // optimization.
   std::size_t evict_least_recently_used() {
     TESS_ASSERT(!resident_slots_.empty());
     std::size_t victim = resident_slots_[0];
@@ -466,13 +468,15 @@ class World<Shape, Schema, SparseResident> {
         victim = slot;
       }
     }
+    // The victim is handed straight back for reuse, so it is deliberately not
+    // returned to the free list.
     release_slot(victim);
-    // release_slot pushed the victim onto free_slots_; take it back.
-    const auto slot = free_slots_.back();
-    free_slots_.pop_back();
-    return slot;
+    return victim;
   }
 
+  // Removes a resident chunk from the directory and resident set. The caller
+  // decides the slot's fate: explicit evict returns it to the free list;
+  // eviction under budget pressure reuses it immediately.
   void release_slot(std::size_t slot) {
     directory_.erase(slot_key_[slot]);
     const auto position = slot_position_[slot];
@@ -482,8 +486,15 @@ class World<Shape, Schema, SparseResident> {
     slot_position_[resident_slots_[position]] = position;
     resident_keys_.pop_back();
     resident_slots_.pop_back();
-    slot_occupied_[slot] = 0u;
-    free_slots_.push_back(slot);
+  }
+
+  [[nodiscard]] static constexpr std::size_t clamp_capacity(
+      std::size_t byte_budget) noexcept {
+    if (page_byte_size == 0) {
+      return 1;
+    }
+    const auto count = byte_budget / page_byte_size;
+    return count < 1 ? 1 : count;
   }
 
   void collect_matching_chunks(std::uint32_t flags,
@@ -506,7 +517,6 @@ class World<Shape, Schema, SparseResident> {
   std::vector<ChunkKey> slot_key_;
   std::vector<std::uint64_t> slot_generation_;
   std::vector<std::uint64_t> slot_lru_;
-  std::vector<std::uint8_t> slot_occupied_;
   std::vector<std::size_t> slot_position_;
 
   std::vector<ChunkKey> resident_keys_;

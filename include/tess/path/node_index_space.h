@@ -18,7 +18,11 @@ namespace tess::detail {
 // bounded by the residency budget rather than the global tile count, letting
 // A* run over worlds far too large to index densely.
 template <typename World, typename Residency = typename World::residency_type>
-struct NodeIndexSpace;
+struct NodeIndexSpace {
+  static_assert(sizeof(World) == 0,
+                "NodeIndexSpace has no specialization for this residency "
+                "policy; the SparseResident mapping lands in a later slice.");
+};
 
 template <typename World>
 struct NodeIndexSpace<World, AlwaysResident> {

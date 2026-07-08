@@ -114,7 +114,12 @@ world.chunk(tess::ChunkKey{k}).field<TerrainTag>(tess::LocalTileId{0}) = 7;
 - `ensure_resident(key)` materializes the chunk (evicting the
   least-recently-used chunk when the budget is full), marks it
   most-recently-used, and returns a `tess::ResidencyHandle`. It is idempotent:
-  an already resident chunk keeps its data and generation.
+  an already resident chunk keeps its data and generation. Choosing the
+  eviction victim scans the resident slots (O(resident capacity), bounded by
+  the byte budget); a streaming, miss-heavy workload over a very large budget
+  would benefit from an intrusive O(1) LRU list, which is a deferred
+  optimization. A budget smaller than one page clamps the capacity to one
+  chunk rather than producing an unusable zero-capacity world.
 - `touch(key)` refreshes recency; `evict(key)` releases a chunk immediately.
 - `is_resident(key)` distinguishes a resident chunk from a `Missing` one;
   `contains(key)` reports only in-bounds-ness. Both differ from out-of-bounds.
