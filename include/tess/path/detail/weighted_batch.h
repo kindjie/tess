@@ -254,6 +254,15 @@ auto weighted_path_batch(const World& world,
                          std::span<const PathRequest> requests,
                          WeightedPathBatchScratch& scratch)
     -> std::span<const PathResult> {
+  // Fans out to weighted_astar_path (now sparse-native) and
+  // build_bounded_weighted_distance_field (dense-only). Guard here directly so
+  // sparse misuse stays a clear compile error even if a future path skips the
+  // field build and calls only the sparse-capable weighted search; dense-only
+  // until the sparse weighted distance-field slice.
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "weighted_path_batch is dense-only; the sparse weighted distance-field "
+      "slice lands later.");
   scratch.clear();
   scratch.results_.resize(requests.size());
   scratch.offsets_.assign(requests.size(), 0);

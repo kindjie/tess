@@ -714,16 +714,11 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
 
 template <typename World, typename PassableTag, typename CostTag>
 auto weighted_astar_path(const World& world, PathRequest request,
-                         PathScratch& scratch) -> PathResult {
+                         PathScratch& scratch,
+                         [[maybe_unused]] MissingChunkPolicy policy)
+    -> PathResult {
   using Shape = typename World::shape_type;
-  // Sparse residency is not yet ported to the weighted search (its node arrays
-  // and pre-A* scan still assume every neighbor is resident). Guarded so a
-  // sparse world fails to compile here rather than indexing out of bounds; the
-  // port lands in a later slice. Use astar_path for sparse worlds today.
-  static_assert(
-      std::is_same_v<typename World::residency_type, AlwaysResident>,
-      "weighted_astar_path does not yet support sparse (SparseResident) "
-      "worlds; use astar_path, or await the sparse weighted-search slice.");
+  using Space = detail::NodeIndexSpace<World>;
   constexpr auto unseen = std::uint8_t{0};
   constexpr auto open = std::uint8_t{1};
   constexpr auto closed = std::uint8_t{2};
@@ -735,12 +730,34 @@ auto weighted_astar_path(const World& world, PathRequest request,
   if (!contains<Shape>(request.start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
+  if constexpr (!Space::is_dense) {
+    // A non-resident start is not a definite failure: under Indeterminate the
+    // search cannot rule out a route, and indexing the node arrays below with a
+    // non-resident tile would go out of bounds. Resolve it before either.
+    const Space residency{world};
+    if (!residency.is_resident_index(
+            detail::tile_index<Shape>(request.start))) {
+      return PathResult{policy == MissingChunkPolicy::Indeterminate
+                            ? PathStatus::Indeterminate
+                            : PathStatus::InvalidStart,
+                        0, 0, 0, scratch.path_};
+    }
+  }
   TESS_DIAG_EVENT(path_start_passability_check);
   if (!detail::is_passable<World, PassableTag>(world, request.start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
   if (!contains<Shape>(request.goal)) {
     return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
+  }
+  if constexpr (!Space::is_dense) {
+    const Space residency{world};
+    if (!residency.is_resident_index(detail::tile_index<Shape>(request.goal))) {
+      return PathResult{policy == MissingChunkPolicy::Indeterminate
+                            ? PathStatus::Indeterminate
+                            : PathStatus::InvalidGoal,
+                        0, 0, 0, scratch.path_};
+    }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
   if (!detail::is_passable<World, PassableTag>(world, request.goal)) {
@@ -756,145 +773,158 @@ auto weighted_astar_path(const World& world, PathRequest request,
     return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
   }
 
-  auto direct_current = request.start;
-  auto direct_axis_blocked = false;
-  const auto append_unit_axis = [&](auto Coord3::* member) {
-    while (direct_current.*member != request.goal.*member) {
-      direct_current.*member +=
-          direct_current.*member < request.goal.*member ? 1 : -1;
-      const auto direct_index = detail::tile_index<Shape>(direct_current);
-      TESS_DIAG_EVENT(path_passability_check);
-      if (!detail::is_passable_index<World, PassableTag>(world, direct_index)) {
-        direct_axis_blocked = true;
-        scratch.path_.clear();
-        return false;
+  // The pre-A* fast-path scan reasons from definite passability along straight
+  // lines and detours. A sparse world cannot answer definitely across a
+  // non-resident chunk (a missing chunk reads as blocked), so the scan would
+  // risk a false NoPath; it runs for dense worlds only. Sparse searches fall
+  // straight through to the full A* below, which honors MissingChunkPolicy.
+  // Dense codegen is unchanged (the guard is compiled away).
+  if constexpr (Space::is_dense) {
+    auto direct_current = request.start;
+    auto direct_axis_blocked = false;
+    const auto append_unit_axis = [&](auto Coord3::* member) {
+      while (direct_current.*member != request.goal.*member) {
+        direct_current.*member +=
+            direct_current.*member < request.goal.*member ? 1 : -1;
+        const auto direct_index = detail::tile_index<Shape>(direct_current);
+        TESS_DIAG_EVENT(path_passability_check);
+        if (!detail::is_passable_index<World, PassableTag>(world,
+                                                           direct_index)) {
+          direct_axis_blocked = true;
+          scratch.path_.clear();
+          return false;
+        }
+        const auto entry_cost =
+            detail::tile_entry_cost_index<World, CostTag>(world, direct_index);
+        if (entry_cost == 0) {
+          direct_axis_blocked = true;
+          scratch.path_.clear();
+          return false;
+        }
+        if (entry_cost != 1) {
+          scratch.path_.clear();
+          return false;
+        }
+        scratch.path_.push_back(direct_current);
+        TESS_DIAG_EVENT(path_reconstruct_node);
       }
-      const auto entry_cost =
-          detail::tile_entry_cost_index<World, CostTag>(world, direct_index);
-      if (entry_cost == 0) {
-        direct_axis_blocked = true;
-        scratch.path_.clear();
-        return false;
-      }
-      if (entry_cost != 1) {
-        scratch.path_.clear();
-        return false;
-      }
-      scratch.path_.push_back(direct_current);
-      TESS_DIAG_EVENT(path_reconstruct_node);
-    }
-    return true;
-  };
-  const auto try_unit_direct_order = [&](auto first_member, auto second_member,
-                                         auto third_member) {
-    direct_current = request.start;
-    scratch.path_.clear();
-    scratch.path_.push_back(direct_current);
-    TESS_DIAG_EVENT(path_reconstruct_node);
-    return append_unit_axis(first_member) && append_unit_axis(second_member) &&
-           append_unit_axis(third_member);
-  };
-  auto direct_path_found = false;
-  if constexpr (ShapeTraits<Shape>::degenerate_z) {
-    direct_path_found =
-        try_unit_direct_order(&Coord3::x, &Coord3::y, &Coord3::z) ||
-        try_unit_direct_order(&Coord3::y, &Coord3::x, &Coord3::z);
-  } else if constexpr (ShapeTraits<Shape>::degenerate_y) {
-    direct_path_found =
-        try_unit_direct_order(&Coord3::x, &Coord3::z, &Coord3::y) ||
-        try_unit_direct_order(&Coord3::z, &Coord3::x, &Coord3::y);
-  } else if constexpr (ShapeTraits<Shape>::degenerate_x) {
-    direct_path_found =
-        try_unit_direct_order(&Coord3::y, &Coord3::z, &Coord3::x) ||
-        try_unit_direct_order(&Coord3::z, &Coord3::y, &Coord3::x);
-  } else {
-    direct_path_found =
-        try_unit_direct_order(&Coord3::x, &Coord3::y, &Coord3::z) ||
-        try_unit_direct_order(&Coord3::x, &Coord3::z, &Coord3::y) ||
-        try_unit_direct_order(&Coord3::y, &Coord3::x, &Coord3::z) ||
-        try_unit_direct_order(&Coord3::y, &Coord3::z, &Coord3::x) ||
-        try_unit_direct_order(&Coord3::z, &Coord3::x, &Coord3::y) ||
-        try_unit_direct_order(&Coord3::z, &Coord3::y, &Coord3::x);
-  }
-  if (direct_path_found) {
-    const auto cost = detail::manhattan(request.start, request.goal);
-    return PathResult{PathStatus::Found, cost, scratch.path_.size(),
-                      scratch.path_.size(), scratch.path_};
-  }
-
-  const auto append_unit_detour_axis = [&](auto Coord3::* primary,
-                                           auto Coord3::* detour,
-                                           std::int64_t detour_step) {
-    if (!direct_axis_blocked) {
-      return false;
-    }
-    direct_current = request.start;
-    direct_current.*detour += detour_step;
-    if (!contains<Shape>(direct_current)) {
-      return false;
-    }
-    const auto append_checked = [&](Coord3 coord) {
-      const auto index = detail::tile_index<Shape>(coord);
-      TESS_DIAG_EVENT(path_passability_check);
-      if (!detail::is_passable_index<World, PassableTag>(world, index)) {
-        scratch.path_.clear();
-        return false;
-      }
-      if (detail::tile_entry_cost_index<World, CostTag>(world, index) != 1) {
-        scratch.path_.clear();
-        return false;
-      }
-      scratch.path_.push_back(coord);
-      TESS_DIAG_EVENT(path_reconstruct_node);
       return true;
     };
-
-    scratch.path_.clear();
-    scratch.path_.push_back(request.start);
-    TESS_DIAG_EVENT(path_reconstruct_node);
-    if (!append_checked(direct_current)) {
-      return false;
+    const auto try_unit_direct_order =
+        [&](auto first_member, auto second_member, auto third_member) {
+          direct_current = request.start;
+          scratch.path_.clear();
+          scratch.path_.push_back(direct_current);
+          TESS_DIAG_EVENT(path_reconstruct_node);
+          return append_unit_axis(first_member) &&
+                 append_unit_axis(second_member) &&
+                 append_unit_axis(third_member);
+        };
+    auto direct_path_found = false;
+    if constexpr (ShapeTraits<Shape>::degenerate_z) {
+      direct_path_found =
+          try_unit_direct_order(&Coord3::x, &Coord3::y, &Coord3::z) ||
+          try_unit_direct_order(&Coord3::y, &Coord3::x, &Coord3::z);
+    } else if constexpr (ShapeTraits<Shape>::degenerate_y) {
+      direct_path_found =
+          try_unit_direct_order(&Coord3::x, &Coord3::z, &Coord3::y) ||
+          try_unit_direct_order(&Coord3::z, &Coord3::x, &Coord3::y);
+    } else if constexpr (ShapeTraits<Shape>::degenerate_x) {
+      direct_path_found =
+          try_unit_direct_order(&Coord3::y, &Coord3::z, &Coord3::x) ||
+          try_unit_direct_order(&Coord3::z, &Coord3::y, &Coord3::x);
+    } else {
+      direct_path_found =
+          try_unit_direct_order(&Coord3::x, &Coord3::y, &Coord3::z) ||
+          try_unit_direct_order(&Coord3::x, &Coord3::z, &Coord3::y) ||
+          try_unit_direct_order(&Coord3::y, &Coord3::x, &Coord3::z) ||
+          try_unit_direct_order(&Coord3::y, &Coord3::z, &Coord3::x) ||
+          try_unit_direct_order(&Coord3::z, &Coord3::x, &Coord3::y) ||
+          try_unit_direct_order(&Coord3::z, &Coord3::y, &Coord3::x);
+    }
+    if (direct_path_found) {
+      const auto cost = detail::manhattan(request.start, request.goal);
+      return PathResult{PathStatus::Found, cost, scratch.path_.size(),
+                        scratch.path_.size(), scratch.path_};
     }
 
-    while (direct_current.*primary != request.goal.*primary) {
-      direct_current.*primary +=
-          direct_current.*primary < request.goal.*primary ? 1 : -1;
+    const auto append_unit_detour_axis = [&](auto Coord3::* primary,
+                                             auto Coord3::* detour,
+                                             std::int64_t detour_step) {
+      if (!direct_axis_blocked) {
+        return false;
+      }
+      direct_current = request.start;
+      direct_current.*detour += detour_step;
+      if (!contains<Shape>(direct_current)) {
+        return false;
+      }
+      const auto append_checked = [&](Coord3 coord) {
+        const auto index = detail::tile_index<Shape>(coord);
+        TESS_DIAG_EVENT(path_passability_check);
+        if (!detail::is_passable_index<World, PassableTag>(world, index)) {
+          scratch.path_.clear();
+          return false;
+        }
+        if (detail::tile_entry_cost_index<World, CostTag>(world, index) != 1) {
+          scratch.path_.clear();
+          return false;
+        }
+        scratch.path_.push_back(coord);
+        TESS_DIAG_EVENT(path_reconstruct_node);
+        return true;
+      };
+
+      scratch.path_.clear();
+      scratch.path_.push_back(request.start);
+      TESS_DIAG_EVENT(path_reconstruct_node);
       if (!append_checked(direct_current)) {
         return false;
       }
-    }
 
-    direct_current.*detour -= detour_step;
-    if (!append_checked(direct_current)) {
-      return false;
+      while (direct_current.*primary != request.goal.*primary) {
+        direct_current.*primary +=
+            direct_current.*primary < request.goal.*primary ? 1 : -1;
+        if (!append_checked(direct_current)) {
+          return false;
+        }
+      }
+
+      direct_current.*detour -= detour_step;
+      if (!append_checked(direct_current)) {
+        return false;
+      }
+      return true;
+    };
+    const auto detour_cost = detail::manhattan(request.start, request.goal) + 2;
+    if (request.start.y == request.goal.y &&
+        request.start.z == request.goal.z &&
+        (append_unit_detour_axis(&Coord3::x, &Coord3::y, 1) ||
+         append_unit_detour_axis(&Coord3::x, &Coord3::y, -1) ||
+         append_unit_detour_axis(&Coord3::x, &Coord3::z, 1) ||
+         append_unit_detour_axis(&Coord3::x, &Coord3::z, -1))) {
+      return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
+                        scratch.path_.size(), scratch.path_};
     }
-    return true;
-  };
-  const auto detour_cost = detail::manhattan(request.start, request.goal) + 2;
-  if (request.start.y == request.goal.y && request.start.z == request.goal.z &&
-      (append_unit_detour_axis(&Coord3::x, &Coord3::y, 1) ||
-       append_unit_detour_axis(&Coord3::x, &Coord3::y, -1) ||
-       append_unit_detour_axis(&Coord3::x, &Coord3::z, 1) ||
-       append_unit_detour_axis(&Coord3::x, &Coord3::z, -1))) {
-    return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
-                      scratch.path_.size(), scratch.path_};
-  }
-  if (request.start.x == request.goal.x && request.start.z == request.goal.z &&
-      (append_unit_detour_axis(&Coord3::y, &Coord3::x, 1) ||
-       append_unit_detour_axis(&Coord3::y, &Coord3::x, -1) ||
-       append_unit_detour_axis(&Coord3::y, &Coord3::z, 1) ||
-       append_unit_detour_axis(&Coord3::y, &Coord3::z, -1))) {
-    return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
-                      scratch.path_.size(), scratch.path_};
-  }
-  if (request.start.x == request.goal.x && request.start.y == request.goal.y &&
-      (append_unit_detour_axis(&Coord3::z, &Coord3::x, 1) ||
-       append_unit_detour_axis(&Coord3::z, &Coord3::x, -1) ||
-       append_unit_detour_axis(&Coord3::z, &Coord3::y, 1) ||
-       append_unit_detour_axis(&Coord3::z, &Coord3::y, -1))) {
-    return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
-                      scratch.path_.size(), scratch.path_};
-  }
+    if (request.start.x == request.goal.x &&
+        request.start.z == request.goal.z &&
+        (append_unit_detour_axis(&Coord3::y, &Coord3::x, 1) ||
+         append_unit_detour_axis(&Coord3::y, &Coord3::x, -1) ||
+         append_unit_detour_axis(&Coord3::y, &Coord3::z, 1) ||
+         append_unit_detour_axis(&Coord3::y, &Coord3::z, -1))) {
+      return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
+                        scratch.path_.size(), scratch.path_};
+    }
+    if (request.start.x == request.goal.x &&
+        request.start.y == request.goal.y &&
+        (append_unit_detour_axis(&Coord3::z, &Coord3::x, 1) ||
+         append_unit_detour_axis(&Coord3::z, &Coord3::x, -1) ||
+         append_unit_detour_axis(&Coord3::z, &Coord3::y, 1) ||
+         append_unit_detour_axis(&Coord3::z, &Coord3::y, -1))) {
+      return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
+                        scratch.path_.size(), scratch.path_};
+    }
+  }  // if constexpr (Space::is_dense)
 
   const detail::NodeIndexSpace<World> space{world};
   const auto node_count = space.capacity_hint();
@@ -922,6 +952,11 @@ auto weighted_astar_path(const World& world, PathRequest request,
   TESS_DIAG_EVENT(path_heap_push);
 
   std::size_t expanded_nodes = 0;
+  // Sparse worlds: set when the search skips a neighbor because its chunk is
+  // not resident, so an exhausted search can return Indeterminate rather than
+  // a NoPath it cannot justify. Never written for dense worlds (the guard that
+  // sets it is compiled away), so dense still reports NoPath on exhaustion.
+  [[maybe_unused]] bool crossed_missing = false;
   while (!scratch.open_.empty()) {
     TESS_DIAG_EVENT(path_heap_pop);
     std::pop_heap(scratch.open_.begin(), scratch.open_.end(),
@@ -959,6 +994,15 @@ auto weighted_astar_path(const World& world, PathRequest request,
         current_coord, current.index,
         [&](Coord3 neighbor, std::uint64_t neighbor_index) {
           TESS_DIAG_EVENT(path_neighbor_candidate);
+          if constexpr (!Space::is_dense) {
+            // A non-resident neighbor has no node-array slot, so its offset
+            // must not be computed. Remember the boundary and skip it; whether
+            // that means "blocked" or "unknown" is decided at exhaustion.
+            if (!space.is_resident_index(neighbor_index)) {
+              crossed_missing = true;
+              return;
+            }
+          }
           const auto neighbor_offset = space.offset(neighbor_index);
           const auto neighbor_state = scratch.state_at(neighbor_offset, unseen);
           if (neighbor_state == closed) {
@@ -1009,6 +1053,12 @@ auto weighted_astar_path(const World& world, PathRequest request,
         });
   }
 
+  if constexpr (!Space::is_dense) {
+    if (crossed_missing && policy == MissingChunkPolicy::Indeterminate) {
+      return PathResult{PathStatus::Indeterminate, 0, expanded_nodes,
+                        scratch.touched_.size(), scratch.path_};
+    }
+  }
   return PathResult{PathStatus::NoPath, 0, expanded_nodes,
                     scratch.touched_.size(), scratch.path_};
 }

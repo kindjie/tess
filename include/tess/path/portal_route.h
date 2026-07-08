@@ -100,6 +100,14 @@ auto build_weighted_chunk_portal_route_product(
     const World& world, PathRequest request, PathScratch& scratch,
     WeightedPortalRouteProduct& product) -> PathResult {
   using Shape = typename World::shape_type;
+  // Builds a portal route over the dense chunk-portal topology graph and tracks
+  // chunk-version dependencies; dense-only until sparse topology (Slice 4) and
+  // the sparse route-cache slice land. Its per-segment weighted A* already runs
+  // natively on sparse worlds via weighted_astar_path.
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "build_weighted_chunk_portal_route_product is dense-only; it needs "
+      "sparse topology and route-cache support from a later slice.");
 
   product.clear();
   product.request_ = request;
