@@ -85,6 +85,12 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                 MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> PathResult;
 
+template <typename World, typename PassableTag, typename CostTag>
+auto weighted_astar_path(
+    const World& world, PathRequest request, PathScratch& scratch,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> PathResult;
+
 template <typename World, typename Tag>
 auto build_distance_field_product(const World& world, const GoalSet& goals,
                                   DistanceFieldScratch& scratch,
@@ -346,7 +352,8 @@ class PathScratch {
 
   template <typename World, typename PassableTag, typename CostTag>
   friend auto weighted_astar_path(const World& world, PathRequest request,
-                                  PathScratch& scratch) -> PathResult;
+                                  PathScratch& scratch,
+                                  MissingChunkPolicy policy) -> PathResult;
 
   template <typename World, typename Tag>
   friend auto cached_astar_path(const World& world, PathRequest request,
@@ -1009,6 +1016,15 @@ auto build_weighted_route_product(const World& world, PathRequest request,
                                   PathScratch& scratch,
                                   WeightedRouteProduct& product) -> PathResult {
   using Shape = typename World::shape_type;
+  // Route products track chunk-version dependencies for cached replay
+  // (weighted_route_product_path -> is_valid), which reads meta() for chunks a
+  // sparse world may have since evicted. Dense-only until the sparse
+  // route-cache slice defines dependency validity under eviction; weighted A*
+  // itself runs natively on sparse worlds via weighted_astar_path.
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "build_weighted_route_product is dense-only; call weighted_astar_path "
+      "directly for sparse worlds, or await the sparse route-cache slice.");
 
   product.clear();
   const auto result =
@@ -1046,6 +1062,14 @@ auto build_weighted_portal_route_product(const World& world,
                                          WeightedPortalRouteProduct& product)
     -> PathResult {
   using Shape = typename World::shape_type;
+  // Same chunk-version dependency tracking as build_weighted_route_product, so
+  // dense-only until the sparse route-cache slice. The per-segment weighted A*
+  // it chains already supports sparse worlds via weighted_astar_path.
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "build_weighted_portal_route_product is dense-only; chain "
+      "weighted_astar_path directly for sparse worlds, or await the sparse "
+      "route-cache slice.");
 
   product.clear();
   product.request_ = request;
