@@ -13,6 +13,41 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-08 - Sparse A* Node Mapping and Missing-Chunk Path Policy
+
+- Changed: `tess::detail::NodeIndexSpace` gains a `SparseResident`
+  specialization mapping a global tile index to a resident-slot-bounded
+  node-array offset (`resident_slot * local_tile_count + local id`), so a search
+  over a sparse world allocates node arrays sized to the residency budget, not
+  the global tile count. Both specializations expose `is_dense` and
+  `is_resident_index`; `World<...,SparseResident>` exposes
+  `resident_slot`/`npos_slot`. New path vocabulary: `PathStatus::Indeterminate`
+  and `MissingChunkPolicy{TreatAsBlocked, Indeterminate}`. `astar_path` is now
+  sparse-capable: its pre-A* fast-path scan is compiled out for sparse worlds
+  (it cannot answer definitely across a non-resident chunk), the neighbor loop
+  skips non-resident neighbors before computing any offset, non-resident
+  start/goal and an exhausted search that touched a missing chunk return
+  `Indeterminate` under that policy rather than a wrong `InvalidStart`/
+  `InvalidGoal`/`NoPath`. `is_passable_index` treats a non-resident chunk as
+  impassable. Dense codegen is unchanged (every sparse branch is behind
+  `if constexpr (!is_dense)`); the new status flows through `PathRuntimeStats`
+  and `PathAgentFrameStats` with a dedicated `indeterminate` bucket.
+  `weighted_astar_path`, `build_distance_field`, and
+  `build_weighted_distance_field` are `static_assert`-guarded dense-only until
+  their sparse port in the next slice.
+- Reason: Slice 3 of the full-sparse stage: A* must run natively over huge
+  sparsely-resident worlds and must never report a wrong `NoPath` across a
+  non-resident boundary. Design (dense-only fast-path scan vs. surgical
+  gating) reviewed with an independent stronger-model pass, which caught the
+  start/goal-residency hole, the weighted clone, and the residency-freeze
+  contract.
+- Affected docs: `docs/architecture/path.md`, `docs/architecture/surface.json`,
+  `docs/decisions/CHANGELOG.md`.
+- Affected code: `include/tess/path/node_index_space.h`,
+  `include/tess/path/path.h`, `include/tess/path/path_runtime.h`,
+  `include/tess/sim/path_agent.h`, `include/tess/storage/sparse_world.h`,
+  `tests/tess_residency_test.cc`.
+
 ## 2026-07-08 - NodeIndexSpace Trait for A* Node Storage
 
 - Changed: New internal `tess::detail::NodeIndexSpace<World>`
