@@ -4,6 +4,7 @@
 
 #include <tess/core/shape.h>
 #include <tess/diagnostics/diagnostics.h>
+#include <tess/path/node_index_space.h>
 
 #include <algorithm>
 #include <array>
@@ -350,8 +351,10 @@ class PathScratch {
     return is_current(offset) ? g_[offset] : infinite_cost;
   }
 
-  void touch_node(std::uint64_t index) {
-    const auto offset = static_cast<std::size_t>(index);
+  // offset is the node-array slot for index under the search's
+  // NodeIndexSpace; index is the global tile index recorded for the
+  // expansion metric. For the dense world offset == index.
+  void touch_node(std::size_t offset, std::uint64_t index) {
     generation_[offset] = epoch_;
     touched_.push_back(index);
   }
@@ -1494,7 +1497,8 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
                       scratch.path_.size(), scratch.path_};
   }
 
-  const auto node_count = detail::tile_count<World>();
+  const detail::NodeIndexSpace<World> space{world};
+  const auto node_count = space.capacity_hint();
   if (scratch.state_.size() != node_count) {
     TESS_DIAG_EVENT(path_initialize);
     scratch.generation_.assign(node_count, 0);
@@ -1505,9 +1509,10 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
 
   const auto start = detail::tile_index<Shape>(request.start);
   const auto goal = detail::tile_index<Shape>(request.goal);
-  scratch.g_[static_cast<std::size_t>(start)] = 0;
-  scratch.state_[static_cast<std::size_t>(start)] = open;
-  scratch.touch_node(start);
+  const auto start_offset = space.offset(start);
+  scratch.g_[start_offset] = 0;
+  scratch.state_[start_offset] = open;
+  scratch.touch_node(start_offset, start);
   TESS_DIAG_EVENT(path_touch_node);
   TESS_DIAG_EVENT(path_heuristic);
   auto current_f = detail::manhattan(request.start, request.goal);
@@ -1529,7 +1534,7 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
     const auto current = scratch.open_.back();
     scratch.open_.pop_back();
 
-    const auto current_offset = static_cast<std::size_t>(current.index);
+    const auto current_offset = space.offset(current.index);
     const auto current_state = scratch.state_at(current_offset, unseen);
     if (current_state == closed ||
         current.g != scratch.g_at(current_offset, infinite_cost)) {
@@ -1547,7 +1552,7 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
         if (step == start) {
           break;
         }
-        step = scratch.parent_[static_cast<std::size_t>(step)];
+        step = scratch.parent_[space.offset(step)];
       }
       std::reverse(scratch.path_.begin(), scratch.path_.end());
       return PathResult{PathStatus::Found, current.g, expanded_nodes,
@@ -1559,7 +1564,7 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
         current_coord, current.index,
         [&](Coord3 neighbor, std::uint64_t neighbor_index) {
           TESS_DIAG_EVENT(path_neighbor_candidate);
-          const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
+          const auto neighbor_offset = space.offset(neighbor_index);
           const auto neighbor_state = scratch.state_at(neighbor_offset, unseen);
           if (neighbor_state == closed) {
             TESS_DIAG_EVENT(path_neighbor_closed);
@@ -1577,7 +1582,7 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch)
           if (tentative_g < scratch.g_at(neighbor_offset, infinite_cost)) {
             TESS_DIAG_EVENT(path_relax_success);
             if (neighbor_state == unseen) {
-              scratch.touch_node(neighbor_index);
+              scratch.touch_node(neighbor_offset, neighbor_index);
               TESS_DIAG_EVENT(path_touch_node);
             }
             scratch.g_[neighbor_offset] = tentative_g;
@@ -1779,7 +1784,8 @@ auto weighted_astar_path(const World& world, PathRequest request,
                       scratch.path_.size(), scratch.path_};
   }
 
-  const auto node_count = detail::tile_count<World>();
+  const detail::NodeIndexSpace<World> space{world};
+  const auto node_count = space.capacity_hint();
   if (scratch.state_.size() != node_count) {
     TESS_DIAG_EVENT(path_initialize);
     scratch.generation_.assign(node_count, 0);
@@ -1788,9 +1794,10 @@ auto weighted_astar_path(const World& world, PathRequest request,
     scratch.parent_.assign(node_count, no_parent);
   }
 
-  scratch.g_[static_cast<std::size_t>(start)] = 0;
-  scratch.state_[static_cast<std::size_t>(start)] = open;
-  scratch.touch_node(start);
+  const auto start_offset = space.offset(start);
+  scratch.g_[start_offset] = 0;
+  scratch.state_[start_offset] = open;
+  scratch.touch_node(start_offset, start);
   TESS_DIAG_EVENT(path_touch_node);
   TESS_DIAG_EVENT(path_heuristic);
   scratch.open_.push_back(PathScratch::OpenNode{
@@ -1810,7 +1817,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
     const auto current = scratch.open_.back();
     scratch.open_.pop_back();
 
-    const auto current_offset = static_cast<std::size_t>(current.index);
+    const auto current_offset = space.offset(current.index);
     const auto current_state = scratch.state_at(current_offset, unseen);
     if (current_state == closed ||
         current.g != scratch.g_at(current_offset, infinite_cost)) {
@@ -1828,7 +1835,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
         if (step == start) {
           break;
         }
-        step = scratch.parent_[static_cast<std::size_t>(step)];
+        step = scratch.parent_[space.offset(step)];
       }
       std::reverse(scratch.path_.begin(), scratch.path_.end());
       return PathResult{PathStatus::Found, current.g, expanded_nodes,
@@ -1840,7 +1847,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
         current_coord, current.index,
         [&](Coord3 neighbor, std::uint64_t neighbor_index) {
           TESS_DIAG_EVENT(path_neighbor_candidate);
-          const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
+          const auto neighbor_offset = space.offset(neighbor_index);
           const auto neighbor_state = scratch.state_at(neighbor_offset, unseen);
           if (neighbor_state == closed) {
             TESS_DIAG_EVENT(path_neighbor_closed);
@@ -1870,7 +1877,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
           if (tentative_g < scratch.g_at(neighbor_offset, infinite_cost)) {
             TESS_DIAG_EVENT(path_relax_success);
             if (neighbor_state == unseen) {
-              scratch.touch_node(neighbor_index);
+              scratch.touch_node(neighbor_offset, neighbor_index);
               TESS_DIAG_EVENT(path_touch_node);
             }
             scratch.g_[neighbor_offset] = tentative_g;
