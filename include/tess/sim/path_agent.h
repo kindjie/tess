@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/path/path_runtime.h>
+#include <tess/path/precheck.h>
 #include <tess/sim/movement.h>
 
 #include <cstddef>
@@ -47,6 +48,9 @@ struct PathAgentFrameStats {
   // ruling out a route through a non-resident chunk
   // (PathStatus::Indeterminate).
   std::size_t indeterminate = 0;
+  // Agents whose goal an optional topology precheck proved unreachable before
+  // A* (a subset of no_path). See PathRuntimeStats::precheck_ruled_out.
+  std::size_t precheck_ruled_out = 0;
   std::size_t advanced = 0;
   std::size_t arrived = 0;
   std::size_t blocked_waits = 0;
@@ -257,6 +261,7 @@ inline void add_path_agent_stats(PathAgentFrameStats& lhs,
   lhs.invalid_goal += rhs.invalid_goal;
   lhs.no_path += rhs.no_path;
   lhs.indeterminate += rhs.indeterminate;
+  lhs.precheck_ruled_out += rhs.precheck_ruled_out;
   lhs.advanced += rhs.advanced;
   lhs.arrived += rhs.arrived;
   lhs.blocked_waits += rhs.blocked_waits;
@@ -269,14 +274,16 @@ inline void add_path_agent_stats(PathAgentFrameStats& lhs,
 }
 
 template <typename World, typename PassableTag>
-[[nodiscard]] auto process_unit_path_agents(const World& world,
-                                            std::span<PathAgentState> agents,
-                                            PathRequestRuntime& runtime,
-                                            PathRuntimeCachePolicy policy = {})
+[[nodiscard]] auto process_unit_path_agents(
+    const World& world, std::span<PathAgentState> agents,
+    PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
+    const RegionGraphT<typename World::residency_type>* graph = nullptr)
     -> PathAgentFrameStats {
   auto stats = submit_path_agents(agents, runtime);
-  (void)runtime.template process_unit_cached<World, PassableTag>(world, policy);
+  (void)runtime.template process_unit_cached<World, PassableTag>(world, policy,
+                                                                 graph);
   add_path_agent_stats(stats, apply_path_agent_results(agents, runtime));
+  stats.precheck_ruled_out = runtime.stats().precheck_ruled_out;
   return stats;
 }
 
@@ -284,13 +291,15 @@ template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost>
 [[nodiscard]] auto process_weighted_path_agents(
     const World& world, std::span<PathAgentState> agents,
-    PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {})
+    PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
+    const RegionGraphT<typename World::residency_type>* graph = nullptr)
     -> PathAgentFrameStats {
   auto stats = submit_path_agents(agents, runtime);
   (void)runtime
       .template process_weighted_batch<World, PassableTag, CostTag, MaxCost>(
-          world, policy);
+          world, policy, graph);
   add_path_agent_stats(stats, apply_path_agent_results(agents, runtime));
+  stats.precheck_ruled_out = runtime.stats().precheck_ruled_out;
   return stats;
 }
 
