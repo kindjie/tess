@@ -34,15 +34,21 @@ workflow and a cross-lab codex pass), fixed on the branch before merge.
   calls could rebind a slot to a different chunk and make the reader return
   `Found` with a path to the wrong coordinate (and across impassable tiles).
   Each build stamps `world.residency_epoch()` (new monotonic accessor on
-  `SparseResidentWorld`, bumped by every `ensure_resident`); each reader refuses
-  a mismatch with `NoPath` so the caller rebuilds. Dense worlds never evict, so
-  the stamp/check compile to a no-op and stay byte-identical.
-- Changed (queued ops, safety): `plan_operations` (`ops/queued.h`) now
-  `static_assert`s an `AlwaysResidentWorld`. `expand_domain`'s `ResidentChunks`
-  case enumerates `0..chunk_count` (an OOM on a huge sparse world, yielding
-  non-resident keys the executor would write through), and queued ops are not
-  yet sparse-ported. This fails loudly at compile time -- matching every other
-  deferred sparse-unsafe family -- instead of silently OOMing.
+  `SparseResidentWorld`, bumped by every `ensure_resident` *and* `evict` -- an
+  explicit eviction also rebinds a slot, so it must advance the epoch too); each
+  reader refuses a mismatch with `NoPath` so the caller rebuilds. Dense worlds
+  never evict, so the stamp/check compile to a no-op and stay byte-identical.
+- Changed (queued ops, safety): the queued planner *and* executor now
+  `static_assert` an `AlwaysResidentWorld` at all three public choke points --
+  `plan_operations` (planning; its `expand_domain` `ResidentChunks` case
+  enumerates `0..chunk_count`, an OOM on a huge sparse world),
+  `try_planned_block_ctx` (execution; every `execute_planned_operation*` and
+  batch executor funnels through it, and a hand-built `PlannedOperation` naming
+  a non-resident chunk would read its page/meta out of bounds), and
+  `merge_planned_dirty` (dirty apply; `world.mark_dirty` on a non-resident chunk
+  is out of bounds). Queued ops are not yet sparse-ported, so this fails loudly
+  at compile time -- matching every other deferred sparse-unsafe family --
+  instead of silently OOMing or reading out of bounds.
 - Reason: pre-merge correctness of the headline sparse feature. The movement
   defect is reachable in the shipped agent tick with ordinary input; the
   distance-field and queued defects had no in-tree trigger but are silent

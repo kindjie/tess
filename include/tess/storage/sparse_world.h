@@ -261,6 +261,11 @@ class World<Shape, Schema, SparseResident> {
     }
     release_slot(slot);
     free_slots_.push_back(slot);
+    // Explicit eviction changes residency (a slot's chunk binding is gone), so
+    // advance the residency epoch just like ensure_resident does -- otherwise a
+    // resident-slot-indexed artifact built before this evict (e.g. a distance
+    // field) could pass its residency_epoch staleness check and be read stale.
+    ++lru_clock_;
     return true;
   }
 
