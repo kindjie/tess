@@ -211,18 +211,27 @@ class World<Shape, Schema, SparseResident> {
   }
 
   // Order-independent content fingerprint of the resident set: a commutative
-  // sum over each resident chunk's (key, residency_generation, topology
-  // version). Unlike a bare counter it identifies the resident STATE itself,
-  // so it changes on any eviction, reload, or in-place edit and -- because it
-  // reads actual content, not a per-world clock -- never collides across two
-  // different worlds' residency (a counter starts low in every world). A
-  // resident-slot-indexed artifact (e.g. a built distance field) captures this
-  // before building and rejects a mismatch after, catching any slot rebind
-  // (including one via world copy/swap or being read against the wrong world)
-  // that would otherwise serve a stale path. Mirrors route_cache.h's
-  // world_version_fingerprint (sparse branch) so the two staleness mechanisms
-  // agree; O(resident_count), never touches a non-resident chunk. Commutative
-  // because resident_chunk_keys() order is not stable (eviction swaps last in).
+  // sum over each resident chunk's (key, resident_slot, residency_generation,
+  // topology version). Unlike a bare counter it identifies the resident STATE
+  // itself, so it changes on any eviction, reload, or in-place edit and --
+  // because it reads actual content, not a per-world clock -- never collides
+  // across two different worlds' residency (a counter starts low in every
+  // world). A resident-slot-indexed artifact (e.g. a built distance field)
+  // captures this before building and rejects a mismatch after, catching any
+  // slot rebind (including one via world copy/swap or being read against the
+  // wrong world) that would otherwise serve a stale path.
+  //
+  // resident_slot is folded in ADDITION to route_cache.h's
+  // world_version_fingerprint terms: that cache is keyed by tile coordinate,
+  // but a distance field is indexed by resident SLOT, so it also depends on the
+  // key->slot binding. Two worlds can hold the same {key: generation, version}
+  // set with the slots permuted (different eviction orders); including the slot
+  // makes equal fingerprints imply identical slot indexing, so a match is truly
+  // safe. Within one world the slot is redundant (a slot only changes via an
+  // evict that drops the key or a reload that bumps the generation, both
+  // already folded), so it never over-invalidates. O(resident_count), never
+  // touches a non-resident chunk; commutative because resident_chunk_keys()
+  // order is not stable (eviction swaps last in).
   [[nodiscard]] std::uint64_t residency_fingerprint() const noexcept {
     const auto mix = [](std::uint64_t x) noexcept -> std::uint64_t {
       x = (x ^ (x >> 30u)) * 0xbf58476d1ce4e5b9ull;
@@ -232,6 +241,7 @@ class World<Shape, Schema, SparseResident> {
     auto acc = std::uint64_t{0};
     for (const auto key : resident_chunk_keys()) {
       auto h = mix(key.value);
+      h ^= mix(h + static_cast<std::uint64_t>(resident_slot(key)));
       h ^= mix(h + residency_generation(key));
       h ^= mix(h + static_cast<std::uint64_t>(meta(key).version));
       acc += h;

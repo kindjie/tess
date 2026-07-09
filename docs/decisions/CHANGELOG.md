@@ -34,14 +34,16 @@ workflow and a cross-lab codex pass), fixed on the branch before merge.
   rebind a slot to a different chunk and make the reader return `Found` with a
   path to the wrong coordinate (and across impassable tiles). Each build stamps
   `world.residency_fingerprint()` (new accessor on `SparseResidentWorld`: a
-  commutative content hash over the resident set's `(key, generation, version)`,
-  mirroring `route_cache.h`'s `world_version_fingerprint` so the two staleness
-  mechanisms agree); each reader refuses a mismatch with `NoPath` so the caller
-  rebuilds. Because it hashes the resident *state* rather than a per-world
-  counter, it catches any eviction, reload, in-place edit, or read against a
-  different/copied/swapped world (a bare counter aliases across worlds that did
-  the same number of ops). Dense worlds never evict, so the stamp/check compile
-  to a no-op and stay byte-identical.
+  commutative content hash over the resident set's `(key, resident_slot,
+  generation, version)` -- the route cache's fingerprint terms plus the key->slot
+  binding, because a distance field is indexed by resident slot where the route
+  cache is keyed by coordinate); each reader refuses a mismatch with `NoPath` so
+  the caller rebuilds. Because it hashes the resident *state* rather than a
+  per-world counter, it catches any eviction, reload, in-place edit, or read
+  against a different/copied/swapped world -- including two worlds that reach the
+  same resident set with the slots permuted (a bare counter, or a slot-less hash,
+  aliases these). Dense worlds never evict, so the stamp/check compile to a
+  no-op and stay byte-identical.
 - Changed (queued ops, safety): the queued planner *and* executor now
   `static_assert` an `AlwaysResidentWorld` at all three public choke points --
   `plan_operations` (planning; its `expand_domain` `ResidentChunks` case
