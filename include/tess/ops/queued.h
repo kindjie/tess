@@ -12,6 +12,7 @@
 #include <optional>
 #include <source_location>
 #include <span>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -749,6 +750,16 @@ template <typename World>
 [[nodiscard]] auto plan_operations(const World& world,
                                    std::span<const QueuedOperation> operations)
     -> ExecutionReport {
+  // Queued operations are not yet sparse-aware: expand_domain's ResidentChunks
+  // case enumerates 0..chunk_count (an OOM on a huge sparse world, and it would
+  // yield non-resident keys the executor then writes through), so restrict the
+  // whole planner to always-resident worlds until the sparse queued-ops slice
+  // ports it. This fails loudly at compile time rather than silently OOMing --
+  // matching how every other deferred sparse-unsafe family is guarded.
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "Queued operations require an AlwaysResidentWorld; sparse queued-ops "
+      "support is deferred to a later slice.");
   ExecutionReport report;
   report.reserve(operations.size());
 

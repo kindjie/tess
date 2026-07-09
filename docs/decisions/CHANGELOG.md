@@ -13,6 +13,46 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-08 - Sparse Residency Pre-Merge Review Fixes
+
+Three defects found by the S2 pre-merge review (independent Opus + Fable-5
+workflow and a cross-lab codex pass), fixed on the branch before merge.
+
+- Changed (movement, MAJOR): `validate_movement_intent` (`sim/movement.h`) now
+  returns transient `StaleVersion` for a non-resident endpoint on a sparse
+  world, not terminal `InvalidFrom`/`InvalidTo`. `Invalid*` is not in
+  `is_transient_movement_failure`, so the agent lifecycle treated ordinary LRU
+  eviction of a chunk under a Following agent as a permanent caller bug and
+  stranded the agent at `Unreachable` (retries unused, never re-pathed) --
+  contradicting the function's own comment and `movement_versions_match`, which
+  already returned `StaleVersion` for the identical condition. Now both agree
+  and the agent re-plans against the changed residency.
+- Changed (distance field, MAJOR): the two-call `build_distance_field` /
+  `distance_field_path` API (and the weighted / box / bounded variants) now
+  carries a residency-epoch fingerprint in `DistanceFieldScratch`. A field is
+  indexed by resident-slot offset, so an eviction/reload between the paired
+  calls could rebind a slot to a different chunk and make the reader return
+  `Found` with a path to the wrong coordinate (and across impassable tiles).
+  Each build stamps `world.residency_epoch()` (new monotonic accessor on
+  `SparseResidentWorld`, bumped by every `ensure_resident`); each reader refuses
+  a mismatch with `NoPath` so the caller rebuilds. Dense worlds never evict, so
+  the stamp/check compile to a no-op and stay byte-identical.
+- Changed (queued ops, safety): `plan_operations` (`ops/queued.h`) now
+  `static_assert`s an `AlwaysResidentWorld`. `expand_domain`'s `ResidentChunks`
+  case enumerates `0..chunk_count` (an OOM on a huge sparse world, yielding
+  non-resident keys the executor would write through), and queued ops are not
+  yet sparse-ported. This fails loudly at compile time -- matching every other
+  deferred sparse-unsafe family -- instead of silently OOMing.
+- Reason: pre-merge correctness of the headline sparse feature. The movement
+  defect is reachable in the shipped agent tick with ordinary input; the
+  distance-field and queued defects had no in-tree trigger but are silent
+  corruption / OOM footguns for external sparse users.
+- Affected code: `include/tess/sim/movement.h`,
+  `include/tess/path/{path.h,distance_field_box.h,detail/weighted_batch.h}`,
+  `include/tess/storage/sparse_world.h`, `include/tess/ops/queued.h`,
+  `tests/{tess_path_runtime_sparse_test.cc,tess_residency_test.cc}`.
+- Affected docs: `docs/architecture/path.md`.
+
 ## 2026-07-08 - Sparse Render-Delta Collection
 
 - Changed: `collect_render_tile_deltas` and `clear_render_delta_dirty`
