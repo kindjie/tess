@@ -12,6 +12,7 @@
 #include <optional>
 #include <source_location>
 #include <span>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -749,6 +750,16 @@ template <typename World>
 [[nodiscard]] auto plan_operations(const World& world,
                                    std::span<const QueuedOperation> operations)
     -> ExecutionReport {
+  // Queued operations are not yet sparse-aware: expand_domain's ResidentChunks
+  // case enumerates 0..chunk_count (an OOM on a huge sparse world, and it would
+  // yield non-resident keys the executor then writes through), so restrict the
+  // whole planner to always-resident worlds until the sparse queued-ops slice
+  // ports it. This fails loudly at compile time rather than silently OOMing --
+  // matching how every other deferred sparse-unsafe family is guarded.
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "Queued operations require an AlwaysResidentWorld; sparse queued-ops "
+      "support is deferred to a later slice.");
   ExecutionReport report;
   report.reserve(operations.size());
 
@@ -884,6 +895,15 @@ template <typename World>
 template <typename World>
 auto merge_planned_dirty(World& world, PlannedDirtyAccumulator& dirty) noexcept
     -> std::size_t {
+  // Applies accumulated dirty records straight to world.mark_dirty (-> meta()),
+  // which reads a non-resident chunk out of bounds. The records are normally
+  // produced by the (now dense-only) executor, but PlannedDirtyAccumulator is
+  // public and could be filled by hand, so guard here too. The partition and
+  // phase-scratch overloads both funnel through this one.
+  static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
+                "Queued-op dirty merge requires an AlwaysResidentWorld; sparse "
+                "queued-ops "
+                "support is deferred to a later slice.");
   auto& records = dirty.records_;
   std::sort(records.begin(), records.end(),
             [](PlannedDirtyRecord lhs, PlannedDirtyRecord rhs) {
@@ -952,6 +972,17 @@ template <WritePolicy Policy, typename World>
 [[nodiscard]] constexpr auto try_planned_block_ctx(
     World& world, const PlannedOperation& operation) noexcept
     -> std::optional<BlockCtx<World, Policy>> {
+  // Execution choke point for every queued executor (execute_planned_operation
+  // and its deferred-dirty variant both funnel through here, and the batch
+  // executors funnel through those). A PlannedOperation is a public aggregate,
+  // so a caller could hand one naming a non-resident chunk directly to an
+  // executor, bypassing the guarded planner; the block context would then read
+  // that chunk's page/meta out of bounds. Restrict execution to always-resident
+  // worlds until the sparse queued-ops slice, matching plan_operations.
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "Queued-op execution requires an AlwaysResidentWorld; sparse queued-ops "
+      "support is deferred to a later slice.");
   if (!planned_policy_matches<Policy>(operation)) {
     return std::nullopt;
   }

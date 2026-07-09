@@ -41,6 +41,10 @@ struct PathRuntimeStats {
   std::size_t invalid_start = 0;
   std::size_t invalid_goal = 0;
   std::size_t no_path = 0;
+  // Sparse worlds: the search could not rule out a route through a
+  // non-resident chunk (PathStatus::Indeterminate). Kept distinct from
+  // no_path so a stale/partial residency set is never counted as "no route".
+  std::size_t indeterminate = 0;
   std::size_t world_cache_invalidations = 0;
   std::size_t cache_clears = 0;
   std::size_t path_nodes = 0;
@@ -185,8 +189,16 @@ class PathRequestRuntime {
     processed_.assign(requests_.size(), 0);
     stats_ = {};
     prepare_process(world, policy);
-    if (policy.use_unit_field_product_cache) {
-      process_repeated_goal_fields<World, PassableTag>(world, policy);
+    if constexpr (std::is_same_v<typename World::residency_type,
+                                 AlwaysResident>) {
+      // The unit field-product cache is dense-only (it sizes distance arrays by
+      // the global tile count). if constexpr, not a runtime if, so the
+      // dense-only process_repeated_goal_fields is never instantiated for a
+      // sparse world; the sparse unit path routes each request through
+      // cached_astar_path until a sparse field-product slice lands.
+      if (policy.use_unit_field_product_cache) {
+        process_repeated_goal_fields<World, PassableTag>(world, policy);
+      }
     }
 
     for (std::size_t i = 0; i < requests_.size(); ++i) {
@@ -426,6 +438,9 @@ class PathRequestRuntime {
         return;
       case PathStatus::NoPath:
         ++stats_.no_path;
+        return;
+      case PathStatus::Indeterminate:
+        ++stats_.indeterminate;
         return;
     }
   }

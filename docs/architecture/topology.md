@@ -22,11 +22,20 @@ The current topology layer is a local chunk-region foundation. It lives under
 - `RegionRef` identifies a local region in a specific chunk.
 - `RegionPortal` records one directed passable transition between neighboring
   chunk-local regions.
-- `RegionGraph` owns all local chunk topologies, paired directed portals for
-  an always-resident world, and a dense global region index with a CSR
-  portal adjacency. `region_count()` reports the dense index size and
-  `region_index(RegionRef)` maps a region reference to its dense index
-  (`invalid_region_index` for invalid or out-of-range references).
+- `RegionGraphT<Residency>` owns all local chunk topologies, paired directed
+  portals, and a global region index with a CSR portal adjacency.
+  `region_count()` reports the index size and `region_index(RegionRef)` maps a
+  region reference to its index (`invalid_region_index` for invalid or
+  out-of-range references). It is a class template on the world residency
+  policy: `RegionGraph` (the alias `RegionGraphT<AlwaysResident>`) is the dense
+  graph and indexes its containers directly by chunk key; `SparseRegionGraph`
+  (`RegionGraphT<SparseResident>`) is built only over a world's resident chunk
+  set, sized by the resident count rather than the total chunk count, and
+  resolves a chunk key to a local index through a frozen, sorted key table
+  (`std::lower_bound`) so the graph is self-contained and cannot be invalidated
+  by later eviction. All existing dense call sites are unchanged via the alias,
+  and dense codegen is byte-identical (every sparse branch is behind
+  `if constexpr`; the sparse-only state is empty for a dense graph).
 - `RegionGraphScratch` owns reusable reachability traversal storage with
   epoch-stamped visited marks.
 - `LocalTopologyResult` summarizes one build: a `TopologyStatus` (`Built`,
@@ -37,17 +46,27 @@ The current topology layer is a local chunk-region foundation. It lives under
   topology)` labels passable connected components for one chunk and records
   boundary exits.
 - `build_region_graph<World, PassableTag>(world, scratch, graph)` rebuilds
-  local topology for every chunk, pairs boundary exits whose neighbor tile is
-  passable, and rebuilds the dense region index and CSR adjacency.
+  local topology, pairs boundary exits whose neighbor tile is passable, and
+  rebuilds the region index and CSR adjacency. The graph type is deduced from
+  the world's residency: a dense world rebuilds every chunk; a sparse world
+  builds only its resident chunks (sorted ascending) and freezes their keys and
+  residency generations onto the graph.
 - `update_region_graph<World, PassableTag>(world, scratch, graph,
   dirty_chunks)` incrementally patches a built graph after passability edits
   confined to the dirty chunks and returns the same aggregate result a full
-  rebuild would.
+  rebuild would. On a sparse world it first checks the frozen residency
+  snapshot (resident count plus per-key generation); any residency change since
+  the build forces a full rebuild rather than trusting a stale graph.
 - `reachable<Shape>(graph, start, goal, scratch)` checks whether two
   coordinates are connected through local regions and paired portals. It
   returns a `ReachabilityResult`: a `ReachabilityStatus` (`Reachable`,
-  `Unreachable`, `InvalidStart`, or `InvalidGoal`) plus the number of
-  visited regions.
+  `Unreachable`, `InvalidStart`, or `InvalidGoal`) plus the number of visited
+  regions. On a sparse graph it also returns `Indeterminate`: a non-resident
+  endpoint, or a BFS that exhausts without reaching the goal while touching a
+  region that exits into a non-resident chunk, yields `Indeterminate` rather
+  than a wrong `Unreachable`. A route found within the resident set still wins
+  (`Reachable`), and a component fully enclosed by resident walls is a definite
+  `Unreachable`.
 
 ## Behavior
 
