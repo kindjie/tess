@@ -69,8 +69,33 @@ guarded (tests use dedicated diagnostics-enabled targets). Instrumentation
 sites in library code use only the macros, which compile away cleanly in
 non-diagnostic builds.
 
+## Warning Sink
+
+`include/tess/diagnostics/warning_sink.h` adds an opt-in channel for
+structured warnings, gated by the same `TESS_ENABLE_DIAGNOSTICS` switch (the
+types do not exist when it is undefined).
+
+- `Warning` is a non-owning record: a `WarningCategory` origin tag, a
+  `std::string_view message`, a numeric `detail`, and a `std::source_location
+  where` that defaults to the construction site. As with `PathView`, the
+  `message` must reference storage that outlives every sink that retains the
+  warning (string literals or other static storage); a sink copies the record
+  by value but never the pointed-to characters. This precondition is not
+  compiler-enforceable.
+- `WarningSink` is a concept: any type with a `noexcept warn(const Warning&)`.
+  `NullWarningSink` discards every warning and is the zero-cost default for a
+  parameter that must satisfy the concept.
+- `BufferedWarningSink<Capacity>` is a caller-owned fixed-capacity ring with
+  inline `std::array` storage, so `warn()` never allocates. When full it
+  overwrites the oldest warning and counts the loss in `dropped()`; indexing
+  is oldest-first (`operator[](0)` is the oldest retained warning). `clear()`
+  resets the window and the dropped count.
+
+No tess library code raises warnings yet; the sink is a foundational primitive
+for later stages (queued-ops result reasons, scheduler budgets).
+
 ## Deliberate Limits
 
-This slice is counters only. It does not implement structured event logs,
-timing capture, sampling profiler hooks, cross-thread aggregation, or any
-runtime toggle; enabling or disabling diagnostics is a recompile.
+Beyond the counters and the warning sink above, this layer does not yet
+implement sampling profiler hooks, cross-thread aggregation, or any runtime
+toggle; enabling or disabling diagnostics is a recompile.
