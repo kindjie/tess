@@ -210,6 +210,16 @@ class World<Shape, Schema, SparseResident> {
     return {resident_keys_.data(), resident_keys_.size()};
   }
 
+  // Monotonic counter bumped on every ensure_resident -- the only operation
+  // that changes residency, and thus the slot->chunk bindings a resident-slot-
+  // indexed artifact (e.g. a built distance field) depends on. A caller that
+  // captures this before building and compares after can detect any eviction/
+  // reload that happened in between. It also advances on a plain touch, which
+  // merely over-invalidates (forces a rebuild) and never serves stale data.
+  [[nodiscard]] std::uint64_t residency_epoch() const noexcept {
+    return lru_clock_;
+  }
+
   // Makes `key` resident (evicting the least-recently-used chunk if the
   // budget is full) and marks it most-recently-used. Idempotent: an already
   // resident chunk keeps its data and generation.

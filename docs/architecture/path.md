@@ -41,16 +41,22 @@ other entries cannot move.
   cache's world fingerprint is residency-aware -- it folds each resident chunk's
   key, `residency_generation`, and topology version through an order-independent
   sum -- so any eviction, reload, or in-place edit changes the fingerprint and
-  invalidates the whole cache before a stale route can be served. Each single-shot
+  invalidates the whole cache before a stale route can be served. The two-call
+  builder/reader distance-field API additionally fingerprints the world's
+  `residency_epoch` in `DistanceFieldScratch` at build time; a reader whose world
+  changed residency between the paired calls returns `NoPath` (forcing a rebuild)
+  rather than descending a slot-rebound stale field. Each single-shot
   builder takes an optional trailing `MissingChunkPolicy` (default
   `TreatAsBlocked`); the runtime path uses that default, so a route across a
   non-resident chunk reports `NoPath` rather than `Indeterminate` (threading the
   policy through the runtime is deferred). Agent movement commit is residency-safe
   to match: `validate_movement_intent` and `movement_versions_match` reject a move
-  into or out of a non-resident chunk (`InvalidFrom`/`InvalidTo`/`StaleVersion`),
-  so an agent whose route crosses a chunk evicted since planning re-plans instead
-  of walking into unloaded data. The readers are pure readers (a non-resident
-  start is `InvalidStart`). Still dense-only -- a compile error to
+  into or out of a non-resident chunk with the transient `StaleVersion` (a
+  non-resident chunk is a reloadable, not terminal, condition), so an agent whose
+  route crosses a chunk evicted since planning re-plans against the changed
+  residency instead of stranding or walking into unloaded data. The readers are
+  pure readers (a non-resident start is `InvalidStart`). Still dense-only -- a
+  compile error to
   instantiate on a sparse world -- are the distance-field product family
   (`build_distance_field_product`, `distance_field_product_path`,
   `nearest_target`), the unit field-product cache (`process_unit_cached`'s

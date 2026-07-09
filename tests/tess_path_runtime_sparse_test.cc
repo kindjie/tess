@@ -167,11 +167,15 @@ TEST(TessSparsePathRuntime, WeightedBatchRoutesOverSparseWorld) {
   EXPECT_EQ(runtime.result(a).status, tess::PathStatus::NoPath);
 }
 
-TEST(TessSparsePathRuntime, MovementIntoNonResidentChunkIsRejectedNotCrash) {
+TEST(TessSparsePathRuntime,
+     MovementIntoNonResidentChunkIsTransientNotTerminal) {
   // The movement commit half of tick_*_path_agents_with_movement reads chunk
   // data through unchecked field()/meta() accessors. On a sparse world an agent
-  // following a route across a chunk evicted since planning must be rejected,
-  // never walked into a non-resident slot (an out-of-bounds read under NDEBUG).
+  // whose route crosses a chunk evicted since planning must be rejected with a
+  // TRANSIENT status (never a non-resident-slot read, an out-of-bounds under
+  // NDEBUG), so the agent lifecycle re-plans against the changed residency
+  // instead of stranding at a terminal Unreachable. Ordinary LRU eviction is
+  // not a permanent caller bug.
   Sparse world{tess::ResidencyConfig{1 * Sparse::page_byte_size}};
   fill_chunk(world, tess::ChunkKey{0});
 
@@ -185,13 +189,15 @@ TEST(TessSparsePathRuntime, MovementIntoNonResidentChunkIsRejectedNotCrash) {
   ASSERT_FALSE(world.is_resident(tess::ChunkKey{0}));
   ASSERT_TRUE(world.is_resident(tess::ChunkKey{1}));
 
-  // `from` in the now-non-resident chunk 0.
+  // `from` in the now-non-resident chunk 0: transient StaleVersion, not a
+  // terminal Invalid* that the agent lifecycle treats as unrecoverable.
   const auto from_missing =
       tess::validate_movement_intent<Sparse, PassableTag, OccupancyTag,
                                      ReservationTag>(
           world,
           tess::MovementIntent{tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}});
-  EXPECT_EQ(from_missing.status, tess::MovementStatus::InvalidFrom);
+  EXPECT_EQ(from_missing.status, tess::MovementStatus::StaleVersion);
+  EXPECT_TRUE(tess::is_transient_movement_failure(from_missing.status));
 
   // `to` in the non-resident chunk 0, `from` in resident chunk 1.
   const auto to_missing =
@@ -199,13 +205,69 @@ TEST(TessSparsePathRuntime, MovementIntoNonResidentChunkIsRejectedNotCrash) {
                                      ReservationTag>(
           world,
           tess::MovementIntent{tess::Coord3{32, 0, 0}, tess::Coord3{31, 0, 0}});
-  EXPECT_EQ(to_missing.status, tess::MovementStatus::InvalidTo);
+  EXPECT_EQ(to_missing.status, tess::MovementStatus::StaleVersion);
+  EXPECT_TRUE(tess::is_transient_movement_failure(to_missing.status));
 
-  // The version check helper is likewise residency-safe on a direct call.
+  // The version check helper reports the same transient status for the same
+  // condition (the two must agree, which was the defect).
   const auto versions = tess::movement_versions_match(
       world,
       tess::MovementIntent{tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}});
   EXPECT_EQ(versions, tess::MovementStatus::StaleVersion);
+  EXPECT_TRUE(tess::is_transient_movement_failure(versions));
+}
+
+TEST(TessSparsePathRuntime, EvictedRouteChunkReplansInsteadOfStranding) {
+  // End-to-end strand repro: an agent Following a route has its own chunk
+  // evicted by ordinary LRU pressure. Because the movement commit now reports a
+  // TRANSIENT failure for a non-resident endpoint, the agent lifecycle parks it
+  // at Blocked (re-path/retry) rather than the terminal Unreachable that would
+  // permanently strand it. Budget 1 makes the eviction deterministic.
+  Sparse world{tess::ResidencyConfig{1 * Sparse::page_byte_size}};
+  fill_chunk(world, tess::ChunkKey{0});
+
+  tess::PathAgentTickState tick_state;
+  auto runtime = make_runtime();
+  std::vector<tess::PathAgentState> agents(1);
+  agents[0].position = tess::Coord3{0, 0, 0};
+  world.field<OccupancyTag>(agents[0].position) = true;
+  tess::set_path_agent_goal(tick_state, agents[0], tess::Coord3{20, 0, 0});
+
+  const auto tick = [&] {
+    (void)tess::tick_weighted_path_agents_with_movement<
+        Sparse, PassableTag, CostTag, 64, OccupancyTag, ReservationTag>(
+        tick_state, world, agents, runtime,
+        tess::PathAgentTickOptions{.max_steps = 1}, 0u);
+  };
+
+  // Drive the agent until it is Following a route inside chunk 0 and has moved.
+  for (int i = 0; i < 8 && agents[0].phase != tess::PathAgentPhase::Following;
+       ++i) {
+    tick();
+  }
+  ASSERT_EQ(agents[0].phase, tess::PathAgentPhase::Following);
+  ASSERT_NE(agents[0].position, (tess::Coord3{0, 0, 0}));
+
+  // Evict chunk 0 (the agent's own chunk) via budget pressure, then tick.
+  world.ensure_resident(tess::ChunkKey{1});
+  ASSERT_FALSE(world.is_resident(tess::ChunkKey{0}));
+  tick();
+  EXPECT_NE(agents[0].phase, tess::PathAgentPhase::Unreachable);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+  EXPECT_GT(agents[0].blocked_retries, 0u);
+
+  // Re-materialize chunk 0: the agent recovers (re-plans and resumes) instead
+  // of being stranded.
+  fill_chunk(world, tess::ChunkKey{0});
+  world.field<OccupancyTag>(agents[0].position) = true;
+  bool recovered = false;
+  for (int i = 0; i < 8 && !recovered; ++i) {
+    tick();
+    recovered = agents[0].phase == tess::PathAgentPhase::Following ||
+                agents[0].phase == tess::PathAgentPhase::Idle;
+  }
+  EXPECT_TRUE(recovered);
+  EXPECT_NE(agents[0].phase, tess::PathAgentPhase::Unreachable);
 }
 
 TEST(TessSparsePathRuntime, RenderDeltasScanOnlyResidentChunks) {

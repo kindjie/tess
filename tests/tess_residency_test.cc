@@ -723,6 +723,40 @@ TEST(TessSparseDistanceField, BuildsFieldAndExtractsPathAcrossResidentChunks) {
 }
 
 TEST(TessSparseDistanceField,
+     ResidencyChangeBetweenBuildAndReadRefusesStaleField) {
+  // The build/read split indexes the field by resident-slot offset. If the
+  // resident set changes between build_distance_field and distance_field_path
+  // -- an eviction/reload can rebind a slot to a different chunk -- the reader
+  // must NOT descend the now-stale field and return a wrong Found; it returns
+  // NoPath so the caller rebuilds. Budget 4 keeps both flooded chunks (and the
+  // start) resident while a third load bumps the world's residency epoch, so
+  // this isolates the residency-epoch guard from the non-resident-start guard.
+  SparseSmall world{tess::ResidencyConfig{4 * page_bytes<Small>()}};
+  make_chunk_passable(world, tess::ChunkKey{0});  // x in [0, 32)
+  make_chunk_passable(world, tess::ChunkKey{1});  // x in [32, 64)
+  tess::DistanceFieldScratch scratch;
+
+  const auto field = sparse_build_field(
+      world, {0, 0, 0}, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+  ASSERT_EQ(field.status, tess::PathStatus::Found);
+  ASSERT_EQ(sparse_field_path(world, {10, 0, 0}, {0, 0, 0}, scratch).status,
+            tess::PathStatus::Found);
+
+  make_chunk_passable(world, tess::ChunkKey{2});  // bumps residency epoch
+  ASSERT_TRUE(world.is_resident(tess::ChunkKey{0}));
+  EXPECT_EQ(sparse_field_path(world, {10, 0, 0}, {0, 0, 0}, scratch).status,
+            tess::PathStatus::NoPath);
+
+  // Rebuilding against the new residency restores service.
+  ASSERT_EQ(sparse_build_field(world, {0, 0, 0}, scratch,
+                               tess::MissingChunkPolicy::TreatAsBlocked)
+                .status,
+            tess::PathStatus::Found);
+  EXPECT_EQ(sparse_field_path(world, {10, 0, 0}, {0, 0, 0}, scratch).status,
+            tess::PathStatus::Found);
+}
+
+TEST(TessSparseDistanceField,
      MissingChunkTruncatesFieldBlockedOrIndeterminateByPolicy) {
   SparseSmall world{tess::ResidencyConfig{4 * page_bytes<Small>()}};
   make_chunk_passable(world, tess::ChunkKey{0});  // x in [0, 32)
