@@ -25,6 +25,14 @@
   do {                                        \
     ::tess::diagnostics::event_##name(value); \
   } while (false)
+#define TESS_DIAG_TRACE(category, label)                      \
+  do {                                                        \
+    ::tess::diagnostics::trace_event((category), (label), 0); \
+  } while (false)
+#define TESS_DIAG_TRACE_VALUE(category, label, value)               \
+  do {                                                              \
+    ::tess::diagnostics::trace_event((category), (label), (value)); \
+  } while (false)
 #else
 #define TESS_DIAGNOSTICS_ENABLED 0
 #define TESS_DIAGNOSTIC_ONLY(expr) \
@@ -41,6 +49,12 @@
   } while (false)
 #define TESS_DIAG_EVENT_VALUE(name, value) \
   do {                                     \
+  } while (false)
+#define TESS_DIAG_TRACE(category, label) \
+  do {                                   \
+  } while (false)
+#define TESS_DIAG_TRACE_VALUE(category, label, value) \
+  do {                                                \
   } while (false)
 #endif
 

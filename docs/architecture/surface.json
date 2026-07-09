@@ -239,6 +239,12 @@
     "ScopedAllocationCounters",
     "ScopedPathCounters",
     "ScopedQueuedPhaseCounters",
+    "ScopedTimer",
+    "ScopedTrace",
+    "TraceBuffer",
+    "TraceCategory",
+    "TraceCategoryStats",
+    "TraceRecord",
     "Warning",
     "WarningCategory",
     "WarningSink",
@@ -268,6 +274,7 @@
     "event_queued_scoped_thread_dispatch",
     "event_queued_worker_pool_dispatch",
     "record_allocation",
-    "record_deallocation"
+    "record_deallocation",
+    "trace_event"
   ]
 }

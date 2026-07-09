@@ -94,8 +94,41 @@ types do not exist when it is undefined).
 No tess library code raises warnings yet; the sink is a foundational primitive
 for later stages (queued-ops result reasons, scheduler budgets).
 
+## Trace Buffer and Timers
+
+`include/tess/diagnostics/trace.h` adds a structured event log and timing
+capture, gated by the same `TESS_ENABLE_DIAGNOSTICS` switch.
+
+- `TraceCategory` is a coarse origin tag (`General`, `Path`, `Topology`,
+  `Queued`, `Planner`, `Scheduler`, `Render`); `Count` is a sentinel used to
+  size the per-category timing array and must not be recorded against.
+- `TraceRecord` is one structured point: a category, a non-owning
+  `std::string_view label` (same static-storage contract as `Warning::message`
+  and `PathView`), a `value` datum, and a monotonic `sequence` ordinal.
+- `TraceBuffer` is caller-owned. It wraps a `std::span<TraceRecord>` the caller
+  supplies (which must outlive the buffer and any scope targeting it) and holds
+  an inline per-category `TraceCategoryStats` accumulator, so nothing here
+  allocates. `record()` appends to the ring (overwriting oldest, counting
+  `dropped()`, keeping sequence gaps visible); an empty span is valid and drops
+  every record. `record_timing()` folds a nanosecond sample into a category's
+  accumulator (`samples`, `total_ns`, `min_ns`, `max_ns`; the first sample sets
+  both min and max; out-of-range categories are ignored). `total_ns` wraps only
+  after ~584 years of accumulated time and is treated as unbounded.
+- `ScopedTrace` installs a `TraceBuffer` as the thread's active buffer with the
+  same nestable, non-copyable RAII pattern as the counter scopes; `trace_event`
+  and the `TESS_DIAG_TRACE` / `TESS_DIAG_TRACE_VALUE` macros route to it (and
+  compile to nothing when diagnostics are off). Worker threads do not feed the
+  installer's buffer -- the same deliberate `thread_local` limit as the
+  counters.
+- `ScopedTimer` is a wall-clock (`steady_clock`) RAII timer. It binds to the
+  buffer active **at construction**, so a timer started outside any
+  `ScopedTrace` records nothing even if a buffer is installed before it ends,
+  and nested scopes attribute timing to the buffer that was active when the span
+  began. On destruction it folds the elapsed nanoseconds into the category's
+  timing accumulator and appends a record whose `value` is that duration.
+
 ## Deliberate Limits
 
-Beyond the counters and the warning sink above, this layer does not yet
-implement sampling profiler hooks, cross-thread aggregation, or any runtime
+Beyond the counters, warning sink, and trace/timing above, this layer does not
+yet implement a sampling profiler, cross-thread aggregation, or any runtime
 toggle; enabling or disabling diagnostics is a recompile.

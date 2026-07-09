@@ -3,6 +3,7 @@
 #include <tess/block/block.h>
 #include <tess/core/shape.h>
 #include <tess/diagnostics/diagnostics.h>
+#include <tess/diagnostics/trace.h>
 #include <tess/diagnostics/warning_sink.h>
 #include <tess/ops/phase_executor.h>
 #include <tess/ops/queued.h>

@@ -1,13 +1,20 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <array>
 #include <cstdint>
+#include <span>
 #include <string_view>
 
 namespace {
 
 using tess::diagnostics::BufferedWarningSink;
 using tess::diagnostics::NullWarningSink;
+using tess::diagnostics::ScopedTimer;
+using tess::diagnostics::ScopedTrace;
+using tess::diagnostics::TraceBuffer;
+using tess::diagnostics::TraceCategory;
+using tess::diagnostics::TraceRecord;
 using tess::diagnostics::Warning;
 using tess::diagnostics::WarningCategory;
 
@@ -103,6 +110,188 @@ TEST(TessWarningSink, WarnIsAllocationFree) {
   }
   EXPECT_EQ(counters.allocations, 0u);
   EXPECT_EQ(sink.dropped(), 24u);
+}
+
+constexpr std::string_view kConflictLabel = "conflict";
+constexpr std::string_view kPlanLabel = "planned";
+
+TEST(TessTraceBuffer, RecordsOldestFirstWithSequences) {
+  std::array<TraceRecord, 4> storage{};
+  TraceBuffer buffer{storage};
+  EXPECT_TRUE(buffer.empty());
+  EXPECT_EQ(buffer.capacity(), 4u);
+
+  buffer.record(TraceCategory::Planner, kPlanLabel, 10);
+  buffer.record(TraceCategory::Planner, kConflictLabel, 11);
+  buffer.record(TraceCategory::Queued, kPlanLabel, 12);
+
+  EXPECT_EQ(buffer.size(), 3u);
+  EXPECT_EQ(buffer.dropped(), 0u);
+  EXPECT_EQ(buffer[0].sequence, 0u);
+  EXPECT_EQ(buffer[0].value, 10u);
+  EXPECT_EQ(buffer[0].label, kPlanLabel);
+  EXPECT_EQ(buffer[1].category, TraceCategory::Planner);
+  EXPECT_EQ(buffer[1].label, kConflictLabel);
+  EXPECT_EQ(buffer[2].sequence, 2u);
+  EXPECT_EQ(buffer[2].category, TraceCategory::Queued);
+}
+
+TEST(TessTraceBuffer, OverflowDropsOldestKeepsSequenceGaps) {
+  std::array<TraceRecord, 3> storage{};
+  TraceBuffer buffer{storage};
+  for (std::uint64_t i = 0; i < 5; ++i) {
+    buffer.record(TraceCategory::Planner, kPlanLabel, i);
+  }
+
+  EXPECT_TRUE(buffer.full());
+  EXPECT_EQ(buffer.size(), 3u);
+  EXPECT_EQ(buffer.dropped(), 2u);
+  // Retained window is values 2,3,4 with their original sequences.
+  EXPECT_EQ(buffer[0].value, 2u);
+  EXPECT_EQ(buffer[0].sequence, 2u);
+  EXPECT_EQ(buffer[2].value, 4u);
+  EXPECT_EQ(buffer[2].sequence, 4u);
+}
+
+TEST(TessTraceBuffer, EmptySpanDropsEveryRecord) {
+  TraceBuffer buffer{std::span<TraceRecord>{}};
+  buffer.record(TraceCategory::Planner, kPlanLabel, 1);
+  buffer.record(TraceCategory::Planner, kPlanLabel, 2);
+
+  EXPECT_EQ(buffer.capacity(), 0u);
+  EXPECT_TRUE(buffer.empty());
+  EXPECT_EQ(buffer.size(), 0u);
+  EXPECT_EQ(buffer.dropped(), 2u);
+}
+
+TEST(TessTraceBuffer, RecordTimingAccumulatesPerCategory) {
+  std::array<TraceRecord, 2> storage{};
+  TraceBuffer buffer{storage};
+
+  buffer.record_timing(TraceCategory::Path, 10);
+  buffer.record_timing(TraceCategory::Path, 30);
+  buffer.record_timing(TraceCategory::Path, 20);
+
+  const auto& path = buffer.stats(TraceCategory::Path);
+  EXPECT_EQ(path.samples, 3u);
+  EXPECT_EQ(path.total_ns, 60u);
+  EXPECT_EQ(path.min_ns, 10u);
+  EXPECT_EQ(path.max_ns, 30u);
+
+  // An untouched category reads clean zeros (no sentinel leakage).
+  const auto& topo = buffer.stats(TraceCategory::Topology);
+  EXPECT_EQ(topo.samples, 0u);
+  EXPECT_EQ(topo.min_ns, 0u);
+  EXPECT_EQ(topo.max_ns, 0u);
+}
+
+TEST(TessTraceBuffer, RecordTimingFirstSampleSetsMinAndMax) {
+  std::array<TraceRecord, 1> storage{};
+  TraceBuffer buffer{storage};
+  buffer.record_timing(TraceCategory::Queued, 15);
+
+  const auto& stats = buffer.stats(TraceCategory::Queued);
+  EXPECT_EQ(stats.samples, 1u);
+  EXPECT_EQ(stats.total_ns, 15u);
+  EXPECT_EQ(stats.min_ns, 15u);
+  EXPECT_EQ(stats.max_ns, 15u);
+}
+
+TEST(TessTraceBuffer, RecordTimingIgnoresCountSentinel) {
+  std::array<TraceRecord, 1> storage{};
+  TraceBuffer buffer{storage};
+  buffer.record_timing(TraceCategory::Count, 99);  // must not index OOB
+
+  const auto& sentinel = buffer.stats(TraceCategory::Count);
+  EXPECT_EQ(sentinel.samples, 0u);
+  EXPECT_EQ(buffer.stats(TraceCategory::Path).samples, 0u);
+}
+
+TEST(TessTraceBuffer, ClearResetsRecordsAndStats) {
+  std::array<TraceRecord, 2> storage{};
+  TraceBuffer buffer{storage};
+  buffer.record(TraceCategory::Planner, kPlanLabel, 1);
+  buffer.record_timing(TraceCategory::Path, 5);
+  buffer.clear();
+
+  EXPECT_TRUE(buffer.empty());
+  EXPECT_EQ(buffer.dropped(), 0u);
+  EXPECT_EQ(buffer.stats(TraceCategory::Path).samples, 0u);
+  // Sequence numbering restarts from zero after a clear.
+  buffer.record(TraceCategory::Planner, kPlanLabel, 7);
+  EXPECT_EQ(buffer[0].sequence, 0u);
+}
+
+TEST(TessScopedTrace, InstallsActiveBufferAndNests) {
+  std::array<TraceRecord, 4> outer_storage{};
+  std::array<TraceRecord, 4> inner_storage{};
+  TraceBuffer outer{outer_storage};
+  TraceBuffer inner{inner_storage};
+
+  // No active buffer: the event is discarded.
+  tess::diagnostics::trace_event(TraceCategory::Planner, kPlanLabel, 0);
+
+  {
+    ScopedTrace outer_scope{outer};
+    tess::diagnostics::trace_event(TraceCategory::Planner, kPlanLabel, 1);
+    {
+      ScopedTrace inner_scope{inner};
+      tess::diagnostics::trace_event(TraceCategory::Planner, kConflictLabel, 2);
+    }
+    // Inner scope restored: events flow back to the outer buffer.
+    tess::diagnostics::trace_event(TraceCategory::Planner, kPlanLabel, 3);
+  }
+
+  EXPECT_EQ(outer.size(), 2u);
+  EXPECT_EQ(outer[0].value, 1u);
+  EXPECT_EQ(outer[1].value, 3u);
+  EXPECT_EQ(inner.size(), 1u);
+  EXPECT_EQ(inner[0].value, 2u);
+}
+
+TEST(TessScopedTimer, RecordsTimingAndRecordWhenTraceActive) {
+  std::array<TraceRecord, 4> storage{};
+  TraceBuffer buffer{storage};
+  constexpr std::string_view kTickLabel = "agent_tick";
+  {
+    ScopedTrace scope{buffer};
+    ScopedTimer timer{TraceCategory::Path, kTickLabel};
+  }
+
+  EXPECT_EQ(buffer.stats(TraceCategory::Path).samples, 1u);
+  ASSERT_EQ(buffer.size(), 1u);
+  EXPECT_EQ(buffer[0].category, TraceCategory::Path);
+  EXPECT_EQ(buffer[0].label, kTickLabel);
+}
+
+TEST(TessScopedTimer, BindsToBufferActiveAtConstruction) {
+  std::array<TraceRecord, 4> storage{};
+  TraceBuffer buffer{storage};
+  {
+    // Timer starts with no active buffer, so it captures nullptr and records
+    // nothing even though a ScopedTrace is installed before it ends.
+    ScopedTimer timer{TraceCategory::Path, "x"};
+    ScopedTrace scope{buffer};
+  }
+
+  EXPECT_EQ(buffer.stats(TraceCategory::Path).samples, 0u);
+  EXPECT_EQ(buffer.size(), 0u);
+}
+
+TEST(TessTraceBuffer, TraceIsAllocationFree) {
+  std::array<TraceRecord, 8> storage{};
+  TraceBuffer buffer{storage};
+  tess::diagnostics::AllocationCounters counters;
+  {
+    tess::diagnostics::ScopedAllocationCounters alloc_scope{counters};
+    ScopedTrace scope{buffer};
+    for (std::uint64_t i = 0; i < 32; ++i) {
+      tess::diagnostics::trace_event(TraceCategory::Planner, kPlanLabel, i);
+      buffer.record_timing(TraceCategory::Planner, i);
+    }
+    ScopedTimer timer{TraceCategory::Queued, kPlanLabel};
+  }
+  EXPECT_EQ(counters.allocations, 0u);
 }
 
 }  // namespace
