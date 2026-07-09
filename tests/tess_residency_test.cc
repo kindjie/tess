@@ -810,6 +810,49 @@ TEST(TessSparseDistanceField, FieldReadAgainstDifferentWorldRefusesStale) {
             tess::PathStatus::NoPath);
 }
 
+TEST(TessSparseDistanceField, SlotPermutedWorldsGetDistinctFingerprints) {
+  // Two capacity-2 worlds reach the SAME resident set {0,1} with identical
+  // per-chunk (generation, version) but the key->slot binding PERMUTED, by
+  // evicting chunk 2 at different points (LIFO slot reuse lands chunks 0 and 1
+  // in opposite slots). A distance field is indexed by resident slot, so a
+  // fingerprint over only (key, generation, version) would match while the two
+  // worlds index the field oppositely -- a scratch built on one, read on the
+  // other, would return a stale Found. Folding resident_slot makes the
+  // fingerprints differ. Cross-lab (codex) round-4 regression.
+  const auto budget = tess::ResidencyConfig{2 * page_bytes<Small>()};
+
+  SparseSmall world_a{budget};
+  make_chunk_passable(world_a, tess::ChunkKey{2});
+  ASSERT_TRUE(world_a.evict(tess::ChunkKey{2}));
+  make_chunk_passable(world_a, tess::ChunkKey{0});
+  make_chunk_passable(world_a, tess::ChunkKey{1});
+
+  SparseSmall world_b{budget};
+  make_chunk_passable(world_b, tess::ChunkKey{2});
+  make_chunk_passable(world_b, tess::ChunkKey{0});
+  ASSERT_TRUE(world_b.evict(tess::ChunkKey{2}));
+  make_chunk_passable(world_b, tess::ChunkKey{1});
+
+  // Same resident set, generations and versions -- but permuted slots.
+  ASSERT_EQ(world_a.residency_generation(tess::ChunkKey{0}),
+            world_b.residency_generation(tess::ChunkKey{0}));
+  ASSERT_EQ(world_a.residency_generation(tess::ChunkKey{1}),
+            world_b.residency_generation(tess::ChunkKey{1}));
+  ASSERT_NE(world_a.resident_slot(tess::ChunkKey{0}),
+            world_b.resident_slot(tess::ChunkKey{0}));
+
+  EXPECT_NE(world_a.residency_fingerprint(), world_b.residency_fingerprint());
+
+  // Behavioral: a field built on A is refused when read on B.
+  tess::DistanceFieldScratch scratch;
+  ASSERT_EQ(sparse_build_field(world_a, {0, 0, 0}, scratch,
+                               tess::MissingChunkPolicy::TreatAsBlocked)
+                .status,
+            tess::PathStatus::Found);
+  EXPECT_EQ(sparse_field_path(world_b, {32, 0, 0}, {0, 0, 0}, scratch).status,
+            tess::PathStatus::NoPath);
+}
+
 TEST(TessSparseDistanceField,
      MissingChunkTruncatesFieldBlockedOrIndeterminateByPolicy) {
   SparseSmall world{tess::ResidencyConfig{4 * page_bytes<Small>()}};
