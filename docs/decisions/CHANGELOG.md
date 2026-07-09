@@ -13,6 +13,335 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-08 - Sparse Residency Pre-Merge Review Fixes
+
+Three defects found by the S2 pre-merge review (independent Opus + Fable-5
+workflow and a cross-lab codex pass), fixed on the branch before merge.
+
+- Changed (movement, MAJOR): `validate_movement_intent` (`sim/movement.h`) now
+  returns transient `StaleVersion` for a non-resident endpoint on a sparse
+  world, not terminal `InvalidFrom`/`InvalidTo`. `Invalid*` is not in
+  `is_transient_movement_failure`, so the agent lifecycle treated ordinary LRU
+  eviction of a chunk under a Following agent as a permanent caller bug and
+  stranded the agent at `Unreachable` (retries unused, never re-pathed) --
+  contradicting the function's own comment and `movement_versions_match`, which
+  already returned `StaleVersion` for the identical condition. Now both agree
+  and the agent re-plans against the changed residency.
+- Changed (distance field, MAJOR): the two-call `build_distance_field` /
+  `distance_field_path` API (and the weighted / box / bounded variants) now
+  carries a residency fingerprint in `DistanceFieldScratch`. A field is indexed
+  by resident-slot offset, so an eviction/reload between the paired calls could
+  rebind a slot to a different chunk and make the reader return `Found` with a
+  path to the wrong coordinate (and across impassable tiles). Each build stamps
+  `world.residency_fingerprint()` (new accessor on `SparseResidentWorld`: a
+  commutative content hash over the resident set's `(key, resident_slot,
+  generation, version)` -- the route cache's fingerprint terms plus the key->slot
+  binding, because a distance field is indexed by resident slot where the route
+  cache is keyed by coordinate); each reader refuses a mismatch with `NoPath` so
+  the caller rebuilds. Because it hashes the resident *state* rather than a
+  per-world counter, it catches any eviction, reload, in-place edit, or read
+  against a different/copied/swapped world -- including two worlds that reach the
+  same resident set with the slots permuted (a bare counter, or a slot-less hash,
+  aliases these). Dense worlds never evict, so the stamp/check compile to a
+  no-op and stay byte-identical.
+- Changed (queued ops, safety): the queued planner *and* executor now
+  `static_assert` an `AlwaysResidentWorld` at all three public choke points --
+  `plan_operations` (planning; its `expand_domain` `ResidentChunks` case
+  enumerates `0..chunk_count`, an OOM on a huge sparse world),
+  `try_planned_block_ctx` (execution; every `execute_planned_operation*` and
+  batch executor funnels through it, and a hand-built `PlannedOperation` naming
+  a non-resident chunk would read its page/meta out of bounds), and
+  `merge_planned_dirty` (dirty apply; `world.mark_dirty` on a non-resident chunk
+  is out of bounds). Queued ops are not yet sparse-ported, so this fails loudly
+  at compile time -- matching every other deferred sparse-unsafe family --
+  instead of silently OOMing or reading out of bounds.
+- Reason: pre-merge correctness of the headline sparse feature. The movement
+  defect is reachable in the shipped agent tick with ordinary input; the
+  distance-field and queued defects had no in-tree trigger but are silent
+  corruption / OOM footguns for external sparse users.
+- Affected code: `include/tess/sim/movement.h`,
+  `include/tess/path/{path.h,distance_field_box.h,detail/weighted_batch.h}`,
+  `include/tess/storage/sparse_world.h`, `include/tess/ops/queued.h`,
+  `tests/{tess_path_runtime_sparse_test.cc,tess_residency_test.cc}`.
+- Affected docs: `docs/architecture/path.md`.
+
+## 2026-07-08 - Sparse Render-Delta Collection
+
+- Changed: `collect_render_tile_deltas` and `clear_render_delta_dirty`
+  (`render_delta.h`) now iterate the resident set on a sparse world instead of
+  scanning `0..chunk_count` and calling unchecked `meta()`/`clear_dirty()` (which
+  read a non-resident slot out of bounds under NDEBUG). Dense keeps the exact
+  `0..chunk_count` loop behind `if constexpr`; the sparse arm iterates
+  `resident_chunk_keys()`. A non-resident chunk holds no data and cannot be
+  dirty, so the resident set captures every delta. The per-chunk emit body was
+  hoisted into a shared `detail::emit_chunk_render_deltas` helper (behavior
+  unchanged, verified by the existing dense scheduler suite).
+- Reason: S2 Slice 5b (sparse consumers) -- the render-delta scan is reachable
+  from the scheduler wrappers on a sparse world (when `render_dirty_mask != 0`),
+  and the downstream sparse adoption uses `render_tile_deltas`. Surfaced by the
+  Slice-5a route-cache verification's scope-completeness lens.
+- Deferred: the queued-ops planner/commit path (`queued.h` `resident_chunk_keys`
+  full scan, `mark_dirty` on try_chunk-validated targets) stays dense-bound --
+  it is dormant on the sparse agent/render path and not used downstream, so it
+  lands with a later queued-ops sparse slice.
+- Affected code: `include/tess/sim/render_delta.h`,
+  `tests/tess_path_runtime_sparse_test.cc`.
+- Affected docs: `docs/architecture/simulation.md`.
+
+## 2026-07-08 - Sparse Path Runtime (Route Cache + Weighted Batch)
+
+- Changed: the path runtime now runs over sparse (`SparseResidentWorld`) worlds.
+  `RouteCacheScratch::world_version_fingerprint` became residency-aware: for a
+  sparse world it folds only the resident set (bounded by `resident_count`, never
+  `chunk_count`) as an order-independent sum over each chunk's `(key,
+  residency_generation, meta().version)` -- version catches in-place edits and the
+  world-monotonic `residency_generation` catches evict/reload/swap even when
+  `ensure_resident` resets a reloaded chunk's version to 0. The commutative sum is
+  invariant to `resident_chunk_keys()` order (eviction swap-with-last reorders it).
+  The dense-only `static_assert`s on `cached_astar_path` and `weighted_path_batch`
+  were removed (both already delegate to sparse-native primitives), and
+  `PathRequestRuntime::process_unit_cached`'s field-product block is now behind
+  `if constexpr` so the dense-only `process_repeated_goal_fields` is never
+  instantiated for a sparse world. Result: `process_unit_cached`,
+  `process_weighted_batch`, and `tick_*_path_agents_with_movement` compile and run
+  on sparse worlds; a chunk evicted/reloaded/edited invalidates the whole route
+  cache before a stale route is served. The agent movement commit was made
+  residency-safe to match: `validate_movement_intent` and `movement_versions_match`
+  now guard non-resident endpoints behind `if constexpr` (`try_resolve` is
+  containment-only, so an in-bounds non-resident endpoint would otherwise reach an
+  unchecked `field()`/`meta()` and read a non-resident slot out of bounds under
+  NDEBUG). A move into or out of a non-resident chunk is rejected
+  (`InvalidFrom`/`InvalidTo`; `StaleVersion` for the version check) so an agent
+  re-plans rather than walking a route across a chunk evicted since planning.
+- Reason: S2 Slice 5a -- unblock the path runtime on sparse worlds, the
+  dependency the downstream sparse adoption needs. Scope and the order-independence
+  requirement came from an adversarial proposer-panel + synthesis design review.
+- Design: dense codegen byte-identical (the fingerprint's dense arm is the exact
+  prior FNV-over-`chunk_count` loop; every sparse branch is behind `if constexpr`).
+  Default `MissingChunkPolicy::TreatAsBlocked` on the runtime path is
+  correct-but-conservative: a route across a non-resident chunk is `NoPath`, never
+  a wrong stale route and never `Indeterminate` (policy threading deferred).
+- Deferred (later sparse-cache slice): the distance-field product family, the unit
+  field-product cache, `WeightedPortalSegmentCache` / route-portal products (their
+  `ChunkVersionDependencies` read `meta().version` and would assert on a
+  non-resident key -- they need a residency-tolerant dependency check); and
+  threading `MissingChunkPolicy` through the runtime so agents can distinguish
+  "unloaded" from "unreachable".
+- Still dense-bound (separate sparse-consumer slice, not the path runtime):
+  `render_delta.h` (`collect_render_tile_deltas` / `clear_render_delta_dirty` scan
+  `0..chunk_count` and call unchecked `meta()`) and the queued-ops commit path
+  (`queued.h` `mark_dirty`). The scheduler wrappers `tick_*_movement_scheduler`
+  reach the render-delta scan only when `render_dirty_mask != 0` (the default is
+  0); the agent tick `tick_*_path_agents_with_movement` itself is sparse-safe.
+  These land with the sparse-consumer port that precedes the downstream adoption.
+- Affected code: `include/tess/path/route_cache.h`,
+  `include/tess/path/path_runtime.h`, `include/tess/path/detail/weighted_batch.h`,
+  `include/tess/sim/movement.h`, `tests/tess_path_runtime_sparse_test.cc`,
+  `tests/CMakeLists.txt`.
+- Affected docs: `docs/architecture/path.md`.
+
+## 2026-07-08 - Sparse Topology (RegionGraph) and Reachability Indeterminate
+
+- Changed: `RegionGraph` became a class template `RegionGraphT<Residency>` with
+  `using RegionGraph = RegionGraphT<AlwaysResident>` and a new
+  `SparseRegionGraph = RegionGraphT<SparseResident>`. A sparse graph builds and
+  updates only over a world's resident chunk set (sized by resident count, never
+  the total chunk count) and resolves a chunk key to a local index through a
+  frozen, sorted key table (`std::lower_bound`), so it is self-contained and
+  eviction after the build cannot invalidate it. `reachable` gained
+  `ReachabilityStatus::Indeterminate`: a non-resident endpoint, or a BFS that
+  exhausts without reaching the goal while touching a region that exits into a
+  non-resident chunk, returns `Indeterminate` instead of a wrong `Unreachable`;
+  a route found within the resident set still wins, and a fully-resident
+  enclosed component is a definite `Unreachable`. `update_region_graph` on a
+  sparse world checks a frozen residency snapshot (resident count plus per-key
+  generation) and falls back to a full rebuild on any residency change.
+- Reason: S2 Slice 4 -- topology must run natively over huge sparsely-resident
+  worlds. The chosen representation (class template on residency, world-free
+  frozen key table, membership-based missing-frontier bit distinguishing
+  "unknown" from "wall") came from an adversarial proposer-panel + synthesis
+  design review, which disqualified a runtime-bool design (its world-free
+  accessors cannot be `if constexpr`-gated) and corrected a per-chunk vs. world
+  residency-generation misreading.
+- Design: `Indeterminate`-only `reachable` (no `MissingChunkPolicy` knob this
+  slice) fully satisfies "never a wrong Unreachable" and avoids pulling path.h's
+  `MissingChunkPolicy` into topology.h. Dense codegen is byte-identical: every
+  sparse branch is behind `if constexpr`, and the sparse-only graph state lives
+  in a `[[no_unique_address]]` companion that is empty for a dense graph, so the
+  `RegionGraph` alias keeps every existing dense call site and layout unchanged.
+- Affected docs: `docs/architecture/topology.md`,
+  `docs/architecture/surface.json`.
+- Affected code: `include/tess/topology/topology.h`,
+  `tests/tess_topology_sparse_test.cc`, `tests/CMakeLists.txt`.
+- Deferred (Slice 5+): a `MissingChunkPolicy` knob on `reachable`; O(1)
+  chunk->local resolution (a graph-owned `ChunkDirectory`) and O(1) staleness
+  (a world residency epoch); streaming residency change with a live graph;
+  consumer wiring of `Indeterminate`.
+
+## 2026-07-08 - Sparse Weighted Distance-Field Family
+
+- Changed: the weighted single-shot distance-field builders now run natively
+  over sparse worlds -- `build_weighted_distance_field` (weighted Dijkstra heap
+  flood), `build_weighted_distance_field_in_box` (domain-filtered), and
+  `build_bounded_weighted_distance_field` (bucket queue) -- along with the
+  `weighted_distance_field_path` reader. Each mirrors the unweighted sparse
+  pattern: node arrays are sized by `NodeIndexSpace::capacity_hint`, a
+  non-resident goal resolves to `Indeterminate`/`InvalidGoal` by
+  `MissingChunkPolicy` before the goal chunk is read, non-resident neighbors are
+  skipped before their offset is computed, and a field truncated by a missing
+  chunk reports `Indeterminate` under that policy. The box keeps its domain
+  filter ahead of the residency check; the bucket builder forwards the policy
+  through its over-budget fallback. Each builder gained an optional trailing
+  `MissingChunkPolicy` whose default lives on a namespace-scope forward
+  declaration. This completes the distance-field conversion for the single-shot
+  searches (Slice 3).
+- Reason: weighted reverse fields must also flood huge sparsely-resident worlds
+  and never report a wrong result across a non-resident boundary. A five-lens
+  adversarial stronger-model review (offset safety, mirror fidelity, guard
+  completeness, dense byte-identity, and fallback/default-argument correctness)
+  returned clean on all lenses.
+- Decision: the distance-field PRODUCT family and route/portal products stay
+  dense-only. They are persistent, cross-frame cached artifacts indexed by raw
+  tile id, so they share the route cache's residency-freeze contract and land
+  with the sparse-cache slice rather than here.
+- Affected docs: `docs/architecture/path.md`.
+- Affected code: `include/tess/path/path.h`,
+  `include/tess/path/distance_field_box.h`,
+  `include/tess/path/detail/weighted_batch.h`, `tests/tess_residency_test.cc`.
+- Still dense-only (`static_assert`-guarded): the distance-field product family
+  (`build_distance_field_product`, `distance_field_product_path`,
+  `nearest_target`), the weighted route/portal route products, and
+  `weighted_path_batch` -- all pending the sparse-cache and topology slices.
+
+## 2026-07-08 - Sparse Weighted A* and Unweighted Distance Field
+
+- Changed: `weighted_astar_path` now runs natively over sparse worlds,
+  mirroring `astar_path` exactly -- its unit-cost direct and blocked-axis
+  detour fast paths compile out for sparse (`if constexpr (Space::is_dense)`),
+  the neighbor loop skips non-resident tiles before computing any node-array
+  offset, and non-resident endpoints or an exhausted search that crossed a
+  missing chunk return `Indeterminate` under `MissingChunkPolicy`. The
+  unweighted distance field is likewise sparse: `build_distance_field` floods
+  only the resident set (a field truncated by a non-resident chunk reports
+  `Indeterminate` under that policy) and `distance_field_path` is a pure
+  gradient reader that stays offset-safe (non-resident start is `InvalidStart`).
+  `DistanceFieldScratch::touch_node` gained an offset-taking form (a
+  dense-identity 1-arg overload serves the still-guarded callers). Both search
+  functions take an optional trailing `MissingChunkPolicy` whose default lives
+  on a namespace-scope forward declaration. The A* cores also moved to a new
+  `include/tess/path/detail/astar.h` (pure split) to keep `path.h` under the
+  24k-token header budget.
+- Reason: continue Slice 3 -- weighted search and reverse distance fields must
+  also run over huge sparsely-resident worlds and never report a wrong
+  `NoPath`/`InvalidStart` across a non-resident boundary. An adversarial
+  stronger-model review (mirror fidelity, offset safety, guard completeness,
+  dense byte-identity) confirmed the ports and flagged the one missing direct
+  guard, now added.
+- Affected docs: `docs/architecture/path.md`.
+- Affected code: `include/tess/path/detail/astar.h`,
+  `include/tess/path/path.h`, `include/tess/path/detail/weighted_batch.h`,
+  `include/tess/path/portal_route.h`,
+  `include/tess/path/portal_segment_cache.h`,
+  `include/tess/path/field_product_cache.h`, `tests/tess_residency_test.cc`.
+- Still dense-only (`static_assert`-guarded so sparse misuse is a compile
+  error, not silent OOB/OOM): the weighted distance-field family (ported in the
+  next entry), the distance-field product family (`build_distance_field_product`,
+  `distance_field_product_path`, `nearest_target`), the weighted route/portal
+  route products, and `weighted_path_batch` -- all pending later slices.
+
+## 2026-07-08 - Sparse A* Node Mapping and Missing-Chunk Path Policy
+
+- Changed: `tess::detail::NodeIndexSpace` gains a `SparseResident`
+  specialization mapping a global tile index to a resident-slot-bounded
+  node-array offset (`resident_slot * local_tile_count + local id`), so a search
+  over a sparse world allocates node arrays sized to the residency budget, not
+  the global tile count. Both specializations expose `is_dense` and
+  `is_resident_index`; `World<...,SparseResident>` exposes
+  `resident_slot`/`npos_slot`. New path vocabulary: `PathStatus::Indeterminate`
+  and `MissingChunkPolicy{TreatAsBlocked, Indeterminate}`. `astar_path` is now
+  sparse-capable: its pre-A* fast-path scan is compiled out for sparse worlds
+  (it cannot answer definitely across a non-resident chunk), the neighbor loop
+  skips non-resident neighbors before computing any offset, non-resident
+  start/goal and an exhausted search that touched a missing chunk return
+  `Indeterminate` under that policy rather than a wrong `InvalidStart`/
+  `InvalidGoal`/`NoPath`. `is_passable_index` treats a non-resident chunk as
+  impassable. Dense codegen is unchanged (every sparse branch is behind
+  `if constexpr (!is_dense)`); the new status flows through `PathRuntimeStats`
+  and `PathAgentFrameStats` with a dedicated `indeterminate` bucket.
+  `weighted_astar_path`, `build_distance_field`, and
+  `build_weighted_distance_field` are `static_assert`-guarded dense-only in this
+  commit; the weighted A* and unweighted distance-field ports land in the entry
+  above.
+- Reason: Slice 3 of the full-sparse stage: A* must run natively over huge
+  sparsely-resident worlds and must never report a wrong `NoPath` across a
+  non-resident boundary. Design (dense-only fast-path scan vs. surgical
+  gating) reviewed with an independent stronger-model pass, which caught the
+  start/goal-residency hole, the weighted clone, and the residency-freeze
+  contract.
+- Affected docs: `docs/architecture/path.md`, `docs/architecture/surface.json`,
+  `docs/decisions/CHANGELOG.md`.
+- Affected code: `include/tess/path/node_index_space.h`,
+  `include/tess/path/path.h`, `include/tess/path/path_runtime.h`,
+  `include/tess/sim/path_agent.h`, `include/tess/storage/sparse_world.h`,
+  `tests/tess_residency_test.cc`.
+
+## 2026-07-08 - NodeIndexSpace Trait for A* Node Storage
+
+- Changed: New internal `tess::detail::NodeIndexSpace<World>`
+  (`include/tess/path/node_index_space.h`) maps a global tile index to a
+  node-array offset and reports the array capacity a search must allocate.
+  `astar_path` and `weighted_astar_path` now size and index their
+  `PathScratch` node arrays through this trait instead of `tile_count<World>()`
+  and raw `static_cast<std::size_t>(index)`. The `AlwaysResident`
+  specialization is the identity (`offset(i) == i`, capacity == the whole tile
+  count), so the dense search is byte-identical and stays allocation-free after
+  warmup. `PathScratch::touch_node` now takes the pre-computed offset alongside
+  the global index.
+- Reason: Slice 2 of the full-sparse stage. Decoupling A* node storage from the
+  global tile count is the prerequisite for running A* over sparse worlds,
+  whose global tile index can reach ~1e17 and cannot size a dense array. The
+  sparse `NodeIndexSpace` specialization (resident-slot remap, bounded by the
+  residency budget) and the missing-chunk path policy land in the next slice;
+  this slice ships only the trait and the dense identity so the change is a
+  provably behavior-preserving refactor.
+- Affected docs: `docs/decisions/CHANGELOG.md`.
+- Affected code: `include/tess/path/node_index_space.h` (new),
+  `include/tess/path/path.h` (astar_path/weighted_astar_path offset threading,
+  PathScratch::touch_node signature), `include/tess/tess.h`, `CMakeLists.txt`.
+
+## 2026-07-08 - Sparse-Resident World (Storage Core)
+
+- Changed: New `tess::World<Shape, Schema, tess::SparseResident>` (alias
+  `SparseResidentWorld`) materializes only a byte-budgeted, least-recently-used
+  subset of a bounded shape, so worlds spanning trillions of chunks cost only
+  their residency budget. New public `tess/storage/residency.h`
+  (`SparseResident`, `ResidencyConfig`, `ResidencyHandle`) and
+  `tess/storage/sparse_world.h` (the specialization plus an internal
+  fixed-capacity `ChunkDirectory` with backward-shift deletion). `ChunkMeta`,
+  `ChunkState`, `DirtyObservation`, and every `ChunkMeta` mutation
+  (dirty/active/version) moved to a new shared `tess/storage/chunk_meta.h`, so
+  the dense and sparse worlds share one metadata implementation. Residency is
+  explicit (`ensure_resident`/`touch`/`evict`) with world-monotonic per-load
+  generations that invalidate stale handles across eviction; `is_resident`
+  distinguishes `Missing` in-bounds chunks from out-of-bounds; `try_chunk`/
+  `try_meta`/`try_field` are the residency-tolerant readers. All iteration is
+  bounded by the resident set or fixed slot capacity, never `chunk_count`.
+- Reason: Milestone M2 requires sparse residency early because it changes the
+  storage API that topology, pathing, queued ops, and block views all consume.
+  This is Slice 1 of the full-sparse stage: the self-contained storage core the
+  later topology/path/consumer slices build on. Extracting the shared metadata
+  ops keeps dirty/active/version semantics identical across both worlds
+  (guarded by the unchanged dense storage tests).
+- Affected docs: `docs/architecture/storage.md` (new Sparse-Resident World
+  section, revised Out Of Scope), `docs/architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: `include/tess/storage/chunk_meta.h` (new),
+  `include/tess/storage/residency.h` (new),
+  `include/tess/storage/sparse_world.h` (new),
+  `include/tess/storage/world.h` (delegates to shared meta ops),
+  `include/tess/tess.h`, `CMakeLists.txt`, `tests/tess_residency_test.cc` (new),
+  `tests/CMakeLists.txt`.
+
 ## 2026-07-07 - Parallel Benchmark Family and Concurrency Plan
 
 - Changed: New `bench/tess_parallel_bench.cc` compares serial,

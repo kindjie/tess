@@ -45,6 +45,19 @@
   `observe_dirty`/`clear_dirty_observed` maintenance clears that preserve
   marks landing after observation, noexcept hot accessors, and
   allocation-free local field/span/world access after construction.
+- `tess_residency_test`: verifies the byte-budgeted `SparseResidentWorld`:
+  an enormous bounded shape (~3e10 chunks) constructs and stays empty until
+  `ensure_resident`, which materializes a zeroed page and reports residency;
+  out-of-bounds keys are never resident and are distinct from `Missing`
+  in-bounds keys; `ensure_resident` is idempotent and preserves data; the
+  byte budget caps resident bytes under least-recently-used eviction; an
+  evicted chunk reloads with a strictly greater generation (invalidating any
+  prior `ResidencyHandle`) and fresh zeroed data; explicit `evict` releases
+  residency and bytes; `resident_chunk_keys` enumerates exactly the resident
+  set; dirty/active queries visit only resident chunks (no full-world scan);
+  residency survives directory backward-shift deletion under churn; and both
+  the warm resident-set access path and evict/reload slot reuse allocate
+  nothing after warmup.
 - `tess_block_test`: verifies chunk-domain builders, policy-typed `BlockCtx`
   construction and iteration, serial block iteration, owned domain lifetimes,
   const-correct chunk views and world access including compile-time and runtime
@@ -122,6 +135,15 @@
   single-chunk and two-chunk seam edits, all-chunks-dirty rebuilds, and 40
   seeded single-tile edits compared graph-for-graph (regions, portals,
   region contents, and reachability probes) after every edit.
+- `tess_topology_sparse_test`: verifies `RegionGraphT<SparseResident>`
+  (`SparseRegionGraph`): building over only the resident chunk set (sized by
+  resident count, not chunk count), reachability across resident chunks,
+  `Indeterminate` across a non-resident boundary and for a non-resident
+  endpoint, `Unreachable` for a fully-resident enclosed component (single-chunk
+  world), sparse `update_region_graph` equivalence with a fresh build after a
+  seam edit (graph-for-graph plus a reachability probe), and the
+  residency-generation staleness guard forcing a full rebuild after a chunk
+  loads post-build.
 - `tess_path_test`: verifies the MVP A* path foundation, including top-down 2D
   paths around blocked tiles, invalid start and goal reporting, no-path
   reporting, direct-path and uniform-cost fast paths across top-down 2D,
@@ -194,6 +216,21 @@
   per-request A* oracle — statuses, costs, and the candidate/used/skipped
   group counters versus a reference computation — across both start-chunk
   policies, and a warm identical frame is allocation-free.
+- `tess_path_runtime_sparse_test`: verifies the path runtime over a
+  `SparseResidentWorld` (Slice 5a): unit route-cache hits within the resident
+  set with no spurious invalidation, an in-place edit invalidating via the
+  version term, an evict+reload of the SAME key at unchanged resident count
+  invalidating via `residency_generation` alone (the case a version-only
+  fingerprint misses, since a reloaded chunk's version resets to 0), an
+  eviction on a cached route re-planning to a non-Found result rather than
+  serving stale, and `process_weighted_batch` routing across resident chunks
+  (Found, never Indeterminate under the default policy) then reporting NoPath
+  after a wall edit, and `validate_movement_intent` / `movement_versions_match`
+  rejecting a move into or out of an evicted chunk (`InvalidFrom`/`InvalidTo`/
+  `StaleVersion`) rather than reading a non-resident slot out of bounds, and
+  `render_tile_deltas` / `clear_render_delta_dirty` scanning only the resident
+  set (a dirty resident chunk contributes its deltas; a non-resident chunk is
+  never scanned) — all run under ASan.
 - `tess_path_weighted_batch_test`: verifies `weighted_path_batch` edges:
   empty batches, all-distinct goals (pure A* fallbacks, no field builds),
   duplicate identical requests sharing one field build, per-member statuses

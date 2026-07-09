@@ -108,6 +108,22 @@ class ChunkPage<Shape, FieldSchema<Fields...>> {
   constexpr ChunkPage(ChunkKey key, ChunkCoord3 coord) noexcept
       : chunk_key_(key), chunk_coord_(coord) {}
 
+  // Reassigns the page's chunk identity and zero-fills every field array in
+  // place. Used when a slot in a sparse world is reassigned to a new chunk;
+  // it avoids materializing a page-sized temporary (a page holds all field
+  // arrays inline and can be tens of kilobytes or more).
+  constexpr void reset(ChunkKey key, ChunkCoord3 coord) noexcept {
+    chunk_key_ = key;
+    chunk_coord_ = coord;
+    std::apply(
+        [](auto&... arrays) {
+          (arrays.fill(typename std::remove_reference_t<
+                       decltype(arrays)>::value_type{}),
+           ...);
+        },
+        fields_);
+  }
+
   [[nodiscard]] constexpr ChunkKey chunk_key() const noexcept {
     return chunk_key_;
   }

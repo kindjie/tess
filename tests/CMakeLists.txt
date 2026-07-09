@@ -34,6 +34,12 @@ tess_apply_project_options(tess_storage_test)
 
 gtest_discover_tests(tess_storage_test)
 
+add_executable(tess_residency_test allocation_counter.cc tess_residency_test.cc)
+target_link_libraries(tess_residency_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_residency_test)
+
+gtest_discover_tests(tess_residency_test)
+
 add_executable(tess_block_test allocation_counter.cc tess_block_test.cc)
 target_link_libraries(tess_block_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_block_test)
@@ -64,6 +70,20 @@ target_link_libraries(tess_topology_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_topology_test)
 
 gtest_discover_tests(tess_topology_test)
+
+add_executable(tess_topology_sparse_test tess_topology_sparse_test.cc)
+target_link_libraries(
+  tess_topology_sparse_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_topology_sparse_test)
+
+gtest_discover_tests(tess_topology_sparse_test)
+
+add_executable(tess_path_runtime_sparse_test tess_path_runtime_sparse_test.cc)
+target_link_libraries(
+  tess_path_runtime_sparse_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_path_runtime_sparse_test)
+
+gtest_discover_tests(tess_path_runtime_sparse_test)
 
 add_executable(tess_path_test allocation_counter.cc tess_path_test.cc)
 target_link_libraries(tess_path_test PRIVATE tess::tess GTest::gtest_main)
