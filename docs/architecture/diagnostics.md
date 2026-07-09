@@ -156,9 +156,34 @@ bundles copies of the `PathCounters`, `AllocationCounters`, and
 and `capture_diagnostics` assemble them as pure copies, so a snapshot outlives
 its sources unchanged.
 
+## ImGui Panels (opt-in)
+
+`include/tess/debug/imgui/panels.h` provides reference Dear ImGui panels over
+the export snapshots. It is doubly gated -- the body exists only when the
+consumer defines both `TESS_ENABLE_IMGUI` and `TESS_ENABLE_DIAGNOSTICS` on its
+own target -- and tess core never fetches or links Dear ImGui. `tess.h` does
+not include it.
+
+- The consumer must include `<imgui.h>` **before** `panels.h`; the header
+  emits a `#error` if `IMGUI_VERSION` is undefined when both gates are on, so a
+  misordered include fails loudly instead of with name-lookup errors.
+- The panels use only the three most stable ImGui text primitives (`Text`,
+  `TextUnformatted`, `Separator`) and print `uint64` values through
+  `unsigned long long` casts for portable printf-style formatting, so they
+  compile across ImGui versions.
+- `draw_timing_panel(TimingSnapshot)` renders the per-category timing table;
+  `draw_path_counters_panel`, `draw_queued_counters_panel`, and
+  `draw_allocation_counters_panel` render their counter structs; and
+  `draw_diagnostics_panel(DiagnosticsSnapshot)` draws every section in order.
+  `category_name(TraceCategory)` maps a category to a label for custom panels.
+
+tess validates the header in CI against a minimal ImGui stub
+(`tests/imgui_stub/imgui.h`, `tess_diagnostics_panels_test`); the real Dear
+ImGui build is exercised by a downstream consumer.
+
 ## Deliberate Limits
 
-Beyond the counters, warning sink, trace/timing, planner trace, and snapshot
-export above, this layer does not yet implement a sampling profiler,
-cross-thread aggregation, or any runtime toggle; enabling or disabling
-diagnostics is a recompile.
+Beyond the counters, warning sink, trace/timing, planner trace, snapshot
+export, and the opt-in ImGui panels above, this layer does not yet implement a
+sampling profiler, cross-thread aggregation, or any runtime toggle; enabling or
+disabling diagnostics is a recompile.
