@@ -13,6 +13,32 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Diagnostics Trace Buffer and Timers (M12, S4 slice 2)
+
+- Added (diagnostics, new header `diagnostics/trace.h`, gated by
+  `TESS_ENABLE_DIAGNOSTICS`): a structured event log and timing capture.
+  `TraceCategory` (coarse origin tag with a `Count` sizing sentinel),
+  `TraceRecord` (category + non-owning `label` + `value` + monotonic
+  `sequence`), `TraceCategoryStats` (samples/total/min/max ns), and
+  `TraceBuffer` -- a caller-owned ring over a `std::span<TraceRecord>` with an
+  inline per-category timing accumulator (allocation-free; empty span drops all
+  records; overflow overwrites oldest and counts `dropped()`). `ScopedTrace`
+  installs the thread's active buffer; `trace_event` and new
+  `TESS_DIAG_TRACE` / `TESS_DIAG_TRACE_VALUE` macros route to it (and compile to
+  nothing when off). `ScopedTimer` is a `steady_clock` RAII timer that binds to
+  the buffer active at construction and, on destruction, folds the elapsed
+  nanoseconds into the category accumulator and appends a duration record.
+- Reason: second slice of the M12 diagnostics close (S4). Trace records and
+  timers are the profiling substrate the ImGui panels and the downstream adoption
+  render, and the planner-trace slice records against them. `ScopedTimer`
+  captures the active buffer at construction (not destruction) so nested scopes
+  and destruction order cannot misattribute a timed span. The `label`
+  non-owning contract mirrors `Warning::message`/`PathView`.
+- Affected docs: `architecture/diagnostics.md`, `architecture/surface.json`.
+- Affected code: new `diagnostics/trace.h`, `diagnostics/diagnostics.h` (the two
+  new trace macros), `tess.h`, `CMakeLists.txt`; extended tests
+  `tess_diagnostics_trace_test.cc` and `tess_diagnostics_default_test.cc`.
+
 ## 2026-07-09 - Diagnostics Warning Sink (M12, S4 slice 1)
 
 - Added (diagnostics, new header `diagnostics/warning_sink.h`, gated by
