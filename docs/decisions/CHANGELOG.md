@@ -13,6 +13,27 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Topology Benchmark Family
+
+- Added: `bench/tess_topology_bench.cc` and `bench/thresholds/topology.json`, a
+  new gated `topology/` benchmark family covering region-graph build over an
+  open 512x512 world, single-chunk incremental update, a far reachability query,
+  and `precheck_path` on both a reachable and a sealed (enclosed-goal)
+  destination. Wired into `tess_bench` / `tess_bench_diagnostics`, the
+  `tess_bench_topology_thresholds` gate target, the non-gating CI baseline
+  collection, a smoke test, and a new CI "Topology benchmark thresholds" step.
+- Headline: `topology/precheck_unreachable_512x512` floods only the region graph
+  (~256 regions) to prove a goal unreachable, versus `path/astar_plane_gap_miss_512x512`
+  which floods the full tile component (~262k tiles) for the same NoPath verdict
+  -- the cost the precheck short-circuits.
+- Reason: the topology precheck (S3) needs a regression guard, and M14 tracks a
+  topology bench family. Per the benchmark policy, initial `max_cpu_time_ns`
+  ceilings are deliberately generous documentation bounds (not tuned gates) to
+  avoid false failures on slower/noisier CI runners; they are tightened once in
+  the S11 consolidation from accumulated CI baselines.
+- Affected code: `bench/tess_topology_bench.cc`, `bench/thresholds/topology.json`,
+  `bench/CMakeLists.txt`, `.github/workflows/ci.yml`.
+
 ## 2026-07-09 - Topology Precheck Wired Into the Path Runtime
 
 - Added (path runtime / sim): `PathRequestRuntime::process_unit_cached` and
