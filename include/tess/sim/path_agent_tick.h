@@ -82,11 +82,11 @@ inline auto prepare_path_agent_processing(std::span<PathAgentState> agents,
 }
 
 template <typename World, typename PassableTag>
-[[nodiscard]] auto tick_unit_path_agents(PathAgentTickState& state,
-                                         const World& world,
-                                         std::span<PathAgentState> agents,
-                                         PathRequestRuntime& runtime,
-                                         PathAgentTickOptions options = {})
+[[nodiscard]] auto tick_unit_path_agents(
+    PathAgentTickState& state, const World& world,
+    std::span<PathAgentState> agents, PathRequestRuntime& runtime,
+    PathAgentTickOptions options = {},
+    const RegionGraphT<typename World::residency_type>* graph = nullptr)
     -> PathAgentTickStats {
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
@@ -95,7 +95,7 @@ template <typename World, typename PassableTag>
       prepare_path_agent_processing(agents, options, stats);
   if (state.pathing_dirty || repath_needed) {
     stats.pathing = process_unit_path_agents<World, PassableTag>(
-        world, agents, runtime, options.cache_policy);
+        world, agents, runtime, options.cache_policy, graph);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -109,7 +109,9 @@ template <typename World, typename PassableTag, typename OccupancyTag,
 [[nodiscard]] auto tick_unit_path_agents_with_movement(
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathAgentTickOptions options = {},
-    std::uint32_t movement_dirty_mask = 0) -> PathAgentTickStats {
+    std::uint32_t movement_dirty_mask = 0,
+    const RegionGraphT<typename World::residency_type>* graph = nullptr)
+    -> PathAgentTickStats {
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
@@ -117,7 +119,7 @@ template <typename World, typename PassableTag, typename OccupancyTag,
       prepare_path_agent_processing(agents, options, stats);
   if (state.pathing_dirty || repath_needed) {
     stats.pathing = process_unit_path_agents<World, PassableTag>(
-        world, agents, runtime, options.cache_policy);
+        world, agents, runtime, options.cache_policy, graph);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -131,11 +133,11 @@ template <typename World, typename PassableTag, typename OccupancyTag,
 
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost>
-[[nodiscard]] auto tick_weighted_path_agents(PathAgentTickState& state,
-                                             const World& world,
-                                             std::span<PathAgentState> agents,
-                                             PathRequestRuntime& runtime,
-                                             PathAgentTickOptions options = {})
+[[nodiscard]] auto tick_weighted_path_agents(
+    PathAgentTickState& state, const World& world,
+    std::span<PathAgentState> agents, PathRequestRuntime& runtime,
+    PathAgentTickOptions options = {},
+    const RegionGraphT<typename World::residency_type>* graph = nullptr)
     -> PathAgentTickStats {
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
@@ -145,7 +147,7 @@ template <typename World, typename PassableTag, typename CostTag,
   if (state.pathing_dirty || repath_needed) {
     stats.pathing =
         process_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(
-            world, agents, runtime, options.cache_policy);
+            world, agents, runtime, options.cache_policy, graph);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -159,7 +161,9 @@ template <typename World, typename PassableTag, typename CostTag,
 [[nodiscard]] auto tick_weighted_path_agents_with_movement(
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathAgentTickOptions options = {},
-    std::uint32_t movement_dirty_mask = 0) -> PathAgentTickStats {
+    std::uint32_t movement_dirty_mask = 0,
+    const RegionGraphT<typename World::residency_type>* graph = nullptr)
+    -> PathAgentTickStats {
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
@@ -168,7 +172,7 @@ template <typename World, typename PassableTag, typename CostTag,
   if (state.pathing_dirty || repath_needed) {
     stats.pathing =
         process_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(
-            world, agents, runtime, options.cache_policy);
+            world, agents, runtime, options.cache_policy, graph);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }

@@ -236,6 +236,19 @@ other entries cannot move.
   MaxCost>(world, policy)` processes the current request set through
   `weighted_path_batch`, while using the same world-change cadence to clear
   owned long-lived caches.
+- Both `process_unit_cached` and `process_weighted_batch` take an optional
+  trailing `const RegionGraphT<World::residency_type>*` (default `nullptr`).
+  When a graph is supplied, a pre-A* pass runs `precheck_path` for each request
+  and resolves the ones it proves `Unreachable` to `NoPath` (zero expanded
+  nodes) without searching, counting them in `PathRuntimeStats::precheck_ruled_out`
+  -- a subset of `no_path`, so aggregate failure counts are unchanged. The unit
+  path skips ruled-out requests in its search loop; the weighted path runs the
+  batch over only the survivors and scatters results back to their original
+  slots. Passing `nullptr` (the default) is byte-identical to the un-gated path.
+  Precondition: the graph must be built over the same `PassableTag` the search
+  uses, and its freshness is checked (`is_region_graph_fresh`); a stale graph
+  degrades to running A* rather than trusting a snapshot, so the gate can only
+  prune provably-unreachable goals, never turn a solvable query into a failure.
 - `cached_astar_path<World, PassableTag>(world, request, scratch, cache)`
   checks the route cache before falling back to `astar_path`. Hits copy the
   cached route into `scratch` and return a span with the same lifetime

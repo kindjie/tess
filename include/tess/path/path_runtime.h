@@ -4,6 +4,7 @@
 #include <tess/path/field_product_cache.h>
 #include <tess/path/path.h>
 #include <tess/path/portal_segment_cache.h>
+#include <tess/path/precheck.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -45,6 +46,11 @@ struct PathRuntimeStats {
   // non-resident chunk (PathStatus::Indeterminate). Kept distinct from
   // no_path so a stale/partial residency set is never counted as "no route".
   std::size_t indeterminate = 0;
+  // Requests an optional topology precheck proved unreachable before A*, so no
+  // grid was expanded for them. A SUBSET of no_path (each ruled-out request is
+  // also counted there): the result is the same NoPath A* would have returned,
+  // this counter only measures how many were resolved without searching.
+  std::size_t precheck_ruled_out = 0;
   std::size_t world_cache_invalidations = 0;
   std::size_t cache_clears = 0;
   std::size_t path_nodes = 0;
@@ -68,6 +74,8 @@ class PathRequestRuntime {
     request_group_.reserve(count);
     group_members_.reserve(count);
     group_start_chunks_.reserve(count);
+    precheck_survivors_.reserve(count);
+    survivor_original_.reserve(count);
     weighted_batch_.reserve_requests(count);
     unit_field_goals_.reserve(1);
   }
@@ -179,8 +187,9 @@ class PathRequestRuntime {
   }
 
   template <typename World, typename PassableTag>
-  [[nodiscard]] auto process_unit_cached(const World& world,
-                                         PathRuntimeCachePolicy policy = {})
+  [[nodiscard]] auto process_unit_cached(
+      const World& world, PathRuntimeCachePolicy policy = {},
+      const RegionGraphT<typename World::residency_type>* graph = nullptr)
       -> std::span<const PathResult> {
     clear_results();
     results_.resize(requests_.size());
@@ -189,6 +198,9 @@ class PathRequestRuntime {
     processed_.assign(requests_.size(), 0);
     stats_ = {};
     prepare_process(world, policy);
+    if (graph != nullptr) {
+      precheck_prepass(world, *graph);
+    }
     if constexpr (std::is_same_v<typename World::residency_type,
                                  AlwaysResident>) {
       // The unit field-product cache is dense-only (it sizes distance arrays by
@@ -216,8 +228,9 @@ class PathRequestRuntime {
 
   template <typename World, typename PassableTag, typename CostTag,
             std::uint32_t MaxCost>
-  [[nodiscard]] auto process_weighted_batch(const World& world,
-                                            PathRuntimeCachePolicy policy = {})
+  [[nodiscard]] auto process_weighted_batch(
+      const World& world, PathRuntimeCachePolicy policy = {},
+      const RegionGraphT<typename World::residency_type>* graph = nullptr)
       -> std::span<const PathResult> {
     clear_results();
     results_.resize(requests_.size());
@@ -227,12 +240,37 @@ class PathRequestRuntime {
     stats_ = {};
     prepare_process(world, policy);
 
+    if (graph == nullptr) {
+      const auto batch =
+          weighted_path_batch<World, PassableTag, CostTag, MaxCost>(
+              world, requests_, weighted_batch_);
+      for (std::size_t i = 0; i < batch.size(); ++i) {
+        copy_result(i, batch[i]);
+        record_status(batch[i].status);
+      }
+      refresh_result_spans();
+      return results_;
+    }
+
+    // Precheck partitions the batch: requests proven unreachable resolve to
+    // NoPath now, and only the survivors run through weighted A*. The batch is
+    // positional, so survivor results scatter back to their original slots.
+    precheck_prepass(world, *graph);
+    precheck_survivors_.clear();
+    survivor_original_.clear();
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (processed_[i] == 0) {
+        survivor_original_.push_back(i);
+        precheck_survivors_.push_back(requests_[i]);
+      }
+    }
     const auto batch =
         weighted_path_batch<World, PassableTag, CostTag, MaxCost>(
-            world, requests_, weighted_batch_);
-    for (std::size_t i = 0; i < batch.size(); ++i) {
-      copy_result(i, batch[i]);
-      record_status(batch[i].status);
+            world, precheck_survivors_, weighted_batch_);
+    for (std::size_t s = 0; s < batch.size(); ++s) {
+      const auto i = survivor_original_[s];
+      copy_result(i, batch[s]);
+      record_status(batch[s].status);
     }
     refresh_result_spans();
     return results_;
@@ -404,6 +442,32 @@ class PathRequestRuntime {
     }
   }
 
+  // Resolves every not-yet-processed request the region graph proves
+  // unreachable to a NoPath result without running A*, marking it processed so
+  // downstream field-product grouping and the search loop skip it. The graph's
+  // freshness and no-false-negative guarantees live in precheck_path.
+  template <typename World>
+  void precheck_prepass(
+      const World& world,
+      const RegionGraphT<typename World::residency_type>& graph) {
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (processed_[i] != 0) {
+        continue;
+      }
+      const auto status = precheck_path(graph, world, requests_[i].start,
+                                        requests_[i].goal, precheck_scratch_);
+      if (!precheck_rules_out_path(status)) {
+        continue;
+      }
+      auto ruled_out = PathResult{};
+      ruled_out.status = PathStatus::NoPath;
+      copy_result(i, ruled_out);
+      record_status(ruled_out.status);
+      ++stats_.precheck_ruled_out;
+      processed_[i] = 1;
+    }
+  }
+
   void copy_result(std::size_t index, PathResult result) {
     offsets_[index] = paths_.size();
     sizes_[index] = result.path.size();
@@ -451,6 +515,12 @@ class PathRequestRuntime {
   std::vector<std::size_t> sizes_;
   std::vector<std::uint8_t> processed_;
   std::vector<Coord3> paths_;
+  // Optional pre-A* topology precheck: reused BFS scratch plus the survivor
+  // partition (surviving requests and their original slot indices) that lets
+  // the monolithic weighted batch skip proven-unreachable requests.
+  RegionGraphScratch precheck_scratch_;
+  std::vector<PathRequest> precheck_survivors_;
+  std::vector<std::size_t> survivor_original_;
   // Reusable repeated-goal grouping scratch: flat-hash goal map slots,
   // per-group goals/counts/member buckets, and start-chunk dedup storage.
   std::vector<std::uint32_t> goal_group_slots_;
