@@ -13,6 +13,28 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Diagnostics ImGui Panels (M12, S4 slice 5)
+
+- Added (new header `debug/imgui/panels.h`, doubly gated by `TESS_ENABLE_IMGUI`
+  && `TESS_ENABLE_DIAGNOSTICS`): reference Dear ImGui panels over the export
+  snapshots -- `draw_timing_panel`, `draw_path_counters_panel`,
+  `draw_queued_counters_panel`, `draw_allocation_counters_panel`, the composite
+  `draw_diagnostics_panel`, and the `category_name` label helper. tess core
+  never fetches or links ImGui; the consumer defines the gates on its own
+  target and includes `<imgui.h>` before the header (a `#error` enforces the
+  order). Only Text/TextUnformatted/Separator are used, with portable
+  `unsigned long long` printf casts. Not included by `tess.h`.
+- Reason: fifth slice of the M12 diagnostics close (S4) -- the ImGui skeleton.
+  The panels are the reference renderer a downstream overlay adopts in the final
+  slice. tess validates the header against a minimal ImGui stub
+  (`tests/imgui_stub/imgui.h`, `tess_diagnostics_panels_test`) so a panel bug is
+  caught in tess CI, not only in the consumer; the stub mirrors the real API for
+  the three primitives used.
+- Affected docs: `architecture/diagnostics.md`, `architecture/surface.json`.
+- Affected code: new `debug/imgui/panels.h`, `tests/imgui_stub/imgui.h`,
+  `tests/tess_diagnostics_panels_test.cc`, `CMakeLists.txt`,
+  `tests/CMakeLists.txt`.
+
 ## 2026-07-09 - Diagnostics Benchmark Family (M12, S4 slice 4)
 
 - Added: `bench/tess_diagnostics_bench.cc` and `bench/thresholds/diagnostics.json`,
