@@ -7,6 +7,7 @@
 #include <tess/ops/queued.h>
 #include <tess/path/distance_field_box.h>
 #include <tess/path/field_product_cache.h>
+#include <tess/path/node_index_space.h>
 #include <tess/path/path.h>
 #include <tess/path/path_runtime.h>
 #include <tess/path/portal_route.h>
@@ -18,7 +19,10 @@
 #include <tess/sim/render_delta.h>
 #include <tess/sim/scheduler.h>
 #include <tess/sim/time.h>
+#include <tess/storage/chunk_meta.h>
 #include <tess/storage/chunk_page.h>
+#include <tess/storage/residency.h>
+#include <tess/storage/sparse_world.h>
 #include <tess/storage/world.h>
 #include <tess/topology/topology.h>
 

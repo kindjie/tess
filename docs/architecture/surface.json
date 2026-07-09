@@ -27,12 +27,17 @@
   ],
   "docs/architecture/storage.md": [
     "AlwaysResident",
+    "AlwaysResidentWorld",
     "ChunkMeta",
     "ChunkPage",
     "ChunkState",
     "DirtyObservation",
     "Field",
     "FieldSchema",
+    "ResidencyConfig",
+    "ResidencyHandle",
+    "SparseResident",
+    "SparseResidentWorld",
     "World"
   ],
   "docs/architecture/block.md": [
@@ -111,6 +116,7 @@
     "ReachabilityStatus",
     "RegionGraph",
     "RegionGraphScratch",
+    "RegionGraphT",
     "RegionPortal",
     "RegionRef",
     "TopologyStatus",
@@ -127,6 +133,7 @@
     "FieldProductCache",
     "FieldProductCacheStats",
     "GoalSet",
+    "MissingChunkPolicy",
     "NearestTargetResult",
     "PathRequest",
     "PathRequestRuntime",

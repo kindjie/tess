@@ -1,10 +1,12 @@
 #pragma once
 
 #include <tess/core/shape.h>
+#include <tess/storage/residency.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <type_traits>
 
 namespace tess {
 
@@ -109,6 +111,16 @@ template <typename World>
     -> MovementStatus {
   const auto from = world.resolve(intent.from);
   const auto to = world.resolve(intent.to);
+  if constexpr (std::is_same_v<typename World::residency_type,
+                               SparseResident>) {
+    // A non-resident chunk has no version snapshot to compare against; treat it
+    // as stale so the move is rejected rather than reading meta() out of
+    // bounds.
+    if (!world.is_resident(from.chunk_key) ||
+        !world.is_resident(to.chunk_key)) {
+      return MovementStatus::StaleVersion;
+    }
+  }
   const auto& from_meta = world.meta(from.chunk_key);
   const auto& to_meta = world.meta(to.chunk_key);
 
@@ -141,6 +153,25 @@ template <typename World, typename PassableTag, typename OccupancyTag,
   }
   if (!world.try_resolve(intent.to).has_value()) {
     return MovementResult{MovementStatus::InvalidTo, intent.from, intent.to};
+  }
+  if constexpr (std::is_same_v<typename World::residency_type,
+                               SparseResident>) {
+    // try_resolve is containment-only, so an in-bounds but non-resident
+    // endpoint passes the checks above. A non-resident chunk carries no data,
+    // but this is a TRANSIENT condition -- the chunk may be reloaded -- so
+    // return StaleVersion (a transient failure, matching
+    // movement_versions_match for the identical condition) rather than a
+    // terminal InvalidFrom/InvalidTo. That routes the agent lifecycle to
+    // re-plan against the now-changed residency instead of permanently
+    // stranding it at Unreachable, and it still short-circuits before the
+    // unchecked field() accessors below so we never read a non-resident slot
+    // out of bounds. Ordinary LRU eviction of a chunk under a Following agent
+    // must not read as a permanent caller bug.
+    if (!world.is_resident(world.resolve(intent.from).chunk_key) ||
+        !world.is_resident(world.resolve(intent.to).chunk_key)) {
+      return MovementResult{MovementStatus::StaleVersion, intent.from,
+                            intent.to};
+    }
   }
   if (manhattan_distance(intent.from, intent.to) != 1) {
     return MovementResult{MovementStatus::NotAdjacent, intent.from, intent.to};

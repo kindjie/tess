@@ -92,6 +92,57 @@ Unchecked accessors require valid chunk keys, chunk coordinates, and tile
 coordinates. Checked `try_*` accessors return `nullptr` or `std::nullopt` for
 out-of-bounds input.
 
+## Sparse-Resident World
+
+`tess::World<Shape, Schema, tess::SparseResident>` (alias
+`tess::SparseResidentWorld<Shape, Schema>`) materializes only a byte-budgeted
+subset of a bounded shape, so a world spanning trillions of chunks costs only
+its residency budget rather than `chunk_count` pages. It is constructed with a
+`tess::ResidencyConfig{byte_budget}`; the resident capacity is
+`byte_budget / page_byte_size` (at least one chunk). Construction allocates the
+fixed slot pool and directory once and never reallocates them.
+
+Residency is managed explicitly:
+
+```cpp
+tess::SparseResidentWorld<HugeShape, MySchema> world{
+    tess::ResidencyConfig{16 * world.page_byte_size}};
+const auto handle = world.ensure_resident(tess::ChunkKey{k});
+world.chunk(tess::ChunkKey{k}).field<TerrainTag>(tess::LocalTileId{0}) = 7;
+```
+
+- `ensure_resident(key)` materializes the chunk (evicting the
+  least-recently-used chunk when the budget is full), marks it
+  most-recently-used, and returns a `tess::ResidencyHandle`. It is idempotent:
+  an already resident chunk keeps its data and generation. Choosing the
+  eviction victim scans the resident slots (O(resident capacity), bounded by
+  the byte budget); a streaming, miss-heavy workload over a very large budget
+  would benefit from an intrusive O(1) LRU list, which is a deferred
+  optimization. A budget smaller than one page clamps the capacity to one
+  chunk rather than producing an unusable zero-capacity world.
+- `touch(key)` refreshes recency; `evict(key)` releases a chunk immediately.
+- `is_resident(key)` distinguishes a resident chunk from a `Missing` one;
+  `contains(key)` reports only in-bounds-ness. Both differ from out-of-bounds.
+- Unchecked `chunk`/`meta` accessors require residency; `try_chunk`/`try_meta`
+  and `try_field` return `nullptr` for a non-resident (or out-of-bounds) chunk
+  — the residency-tolerant readers later slices build missing-chunk policy on.
+
+Eviction and reload are generation-safe. Each residency assigns a
+world-monotonic generation that is never reused, so a `ResidencyHandle` taken
+before an eviction never validates (`world.valid(handle)` returns `false`)
+against the reloaded chunk, which reuses the key but receives a strictly
+greater generation. A reloaded chunk is a fresh, zeroed page — evicted data is
+gone. `residency_generation(key)` returns 0 for a non-resident chunk.
+
+`resident_chunk_keys()` enumerates exactly the resident set, and the
+dirty/active queries and `mark_*` helpers behave identically to the dense world
+but iterate only resident chunks. No accessor or query scans `0..chunk_count`,
+preserving the "no hidden full-world scans" invariant at sparse scale. The
+directory is a fixed-capacity open-addressing map with backward-shift deletion,
+so long-lived evict/reload churn allocates nothing and accumulates no
+tombstones. Both worlds share one `ChunkMeta` mutation implementation
+(`tess/storage/chunk_meta.h`), so dirty/active/version semantics are identical.
+
 ## Chunk Metadata
 
 Each always-resident world owns one `tess::ChunkMeta` per resident page in
@@ -145,7 +196,11 @@ over them.
 
 ## Out Of Scope
 
-This slice does not implement sparse residency, `ChunkDirectory`, generation or
-eviction, typed dirty/active vocabularies, full lifecycle states beyond
-sleeping/active, thread ownership policies, block generation, or planner
-domains.
+Sparse residency, the `ChunkDirectory`, per-chunk generations, and byte-budget
+eviction are now implemented (see Sparse-Resident World). Topology and pathing
+do not yet run natively over a sparse world, and the missing-chunk status
+vocabulary they expose (`Indeterminate` reachability/path results) lands in
+later slices; the residency-tolerant `try_*` readers here are the seam those
+build on. Still out of scope in this layer: typed dirty/active vocabularies,
+full lifecycle states beyond sleeping/active, on-demand chunk materialization
+policy, thread ownership policies, block generation, and planner domains.

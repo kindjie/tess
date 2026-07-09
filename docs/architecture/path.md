@@ -17,7 +17,55 @@ other entries cannot move.
 ## Public Surface
 
 - `PathRequest` contains a start and goal `Coord3`.
-- `PathStatus` reports `Found`, `InvalidStart`, `InvalidGoal`, or `NoPath`.
+- `PathStatus` reports `Found`, `InvalidStart`, `InvalidGoal`, `NoPath`, or
+  `Indeterminate`. `Indeterminate` occurs only on sparse worlds: the search
+  reached the edge of the resident set and could not rule out a route through a
+  non-resident chunk, so it is deliberately distinct from `NoPath` (which
+  asserts no route exists). A caller that receives `Indeterminate` can
+  materialize the missing chunks and retry.
+- `MissingChunkPolicy` selects how a search treats a step into a non-resident
+  chunk of a sparse world: `TreatAsBlocked` treats it as impassable (the search
+  stays within the resident set and may report `NoPath`), while `Indeterminate`
+  returns `PathStatus::Indeterminate` rather than a possibly-wrong `NoPath` when
+  the search exhausts the resident set having skipped a non-resident neighbor.
+  It is inert for dense (`AlwaysResident`) worlds, where every chunk is
+  resident.
+- Sparse residency covers the single-shot searches -- `astar_path`,
+  `weighted_astar_path`, the unweighted `build_distance_field`, and the weighted
+  `build_weighted_distance_field`, `build_weighted_distance_field_in_box`, and
+  `build_bounded_weighted_distance_field`, plus their readers
+  `distance_field_path` and `weighted_distance_field_path` -- and the path
+  runtime built on them: `weighted_path_batch`, the unit route cache
+  (`RouteCacheScratch`, `cached_astar_path`), and
+  `PathRequestRuntime::process_unit_cached` / `process_weighted_batch`. The route
+  cache's world fingerprint is residency-aware -- it folds each resident chunk's
+  key, `residency_generation`, and content version (`meta().version`) through an
+  order-independent sum -- so any eviction, reload, or in-place edit changes the
+  fingerprint and invalidates the whole cache before a stale route can be served.
+  The two-call builder/reader distance-field API stamps
+  `world.residency_fingerprint()` in `DistanceFieldScratch` at build time -- the
+  route cache's terms plus each chunk's resident slot, since a distance field is
+  indexed by slot where the route cache is keyed by coordinate; a reader whose
+  world changed residency between the paired calls -- or a scratch read against a
+  different/copied/swapped world -- returns `NoPath` (forcing a rebuild) rather
+  than descending a slot-rebound stale field. Each single-shot
+  builder takes an optional trailing `MissingChunkPolicy` (default
+  `TreatAsBlocked`); the runtime path uses that default, so a route across a
+  non-resident chunk reports `NoPath` rather than `Indeterminate` (threading the
+  policy through the runtime is deferred). Agent movement commit is residency-safe
+  to match: `validate_movement_intent` and `movement_versions_match` reject a move
+  into or out of a non-resident chunk with the transient `StaleVersion` (a
+  non-resident chunk is a reloadable, not terminal, condition), so an agent whose
+  route crosses a chunk evicted since planning re-plans against the changed
+  residency instead of stranding or walking into unloaded data. The readers are
+  pure readers (a non-resident start is `InvalidStart`). Still dense-only -- a
+  compile error to
+  instantiate on a sparse world -- are the distance-field product family
+  (`build_distance_field_product`, `distance_field_product_path`,
+  `nearest_target`), the unit field-product cache (`process_unit_cached`'s
+  repeated-goal pass, guarded out for sparse worlds), and the route/portal route
+  products. Those are persistent, cross-frame cached artifacts indexed by raw tile
+  id and land with a later sparse-cache slice.
 - `PathResult` returns the status, unit movement cost, expanded-node count,
   reached-node count, and a non-owning span of path coordinates.
 - `DistanceFieldResult` returns the status and node counts for a reverse
@@ -128,13 +176,16 @@ other entries cannot move.
   `options.max_blocked_retries` runs out and they turn terminally
   `Unreachable`, no longer requesting processing. `mark_pathing_dirty(state)`
   remains the hook for conservative replans after world edits.
-- `astar_path<World, PassableTag>(world, request, scratch)` runs optimized
-  unit-cost deterministic pathfinding over the existing always-resident world
-  storage. The passability field is treated as boolean-like.
-- `weighted_astar_path<World, PassableTag, CostTag>(world, request, scratch)`
-  runs deterministic weighted A* over passability plus an integral entry-cost
-  field. It includes exact unit-cost direct and blocked-axis detour fast paths
-  when their local optimality proofs apply.
+- `astar_path<World, PassableTag>(world, request, scratch, policy)` runs
+  optimized unit-cost deterministic pathfinding. The passability field is
+  treated as boolean-like. It runs natively on sparse worlds, honoring
+  `MissingChunkPolicy` (the pre-A* fast-path scan is compiled out there).
+- `weighted_astar_path<World, PassableTag, CostTag>(world, request, scratch,
+  policy)` runs deterministic weighted A* over passability plus an integral
+  entry-cost field. It includes exact unit-cost direct and blocked-axis detour
+  fast paths when their local optimality proofs apply. Like `astar_path`, it is
+  sparse-capable and honors `MissingChunkPolicy` (the fast paths are compiled
+  out for sparse worlds).
 - `build_weighted_route_product<World, PassableTag, CostTag>(world, request,
   scratch, product)` builds and stores a weighted route product.
 - `weighted_route_product_path(world, product)` replays a stored weighted
@@ -172,10 +223,15 @@ other entries cannot move.
   checks the route cache before falling back to `astar_path`. Hits copy the
   cached route into `scratch` and return a span with the same lifetime
   contract as a miss.
-- `build_distance_field<World, PassableTag>(world, goal, scratch)` builds a
-  unit-cost reverse distance field from one passable goal.
+- `build_distance_field<World, PassableTag>(world, goal, scratch, policy)`
+  builds a unit-cost reverse distance field from one passable goal. On a sparse
+  world it floods only the resident set; under `MissingChunkPolicy::
+  Indeterminate` a field truncated by a non-resident chunk reports
+  `PathStatus::Indeterminate` instead of `Found`.
 - `distance_field_path<World, PassableTag>(world, start, goal, scratch)`
-  reconstructs a start-to-goal path from the most recent matching field.
+  reconstructs a start-to-goal path from the most recent matching field. It is
+  a pure reader: on a sparse world a non-resident start is `InvalidStart` and a
+  start the flood never reached is `NoPath`.
 - `build_distance_field_product<World, PassableTag>(world, goals, scratch,
   product)` builds a multi-source unit-cost product for an ordered `GoalSet`.
 - `distance_field_product_path<World, PassableTag>(world, start, product,
@@ -183,19 +239,25 @@ other entries cannot move.
   decreasing distances and returns a `NearestTargetResult` with the status,
   cost, reached goal coordinate, node counts, and path span.
 - `build_weighted_distance_field<World, PassableTag, CostTag>(world, goal,
-  scratch)` builds a weighted reverse Dijkstra field for positive integral
-  entry costs.
+  scratch, policy = TreatAsBlocked)` builds a weighted reverse Dijkstra field
+  for positive integral entry costs. On a sparse world it honors
+  `MissingChunkPolicy`: a field truncated by a non-resident chunk is `Found`
+  under `TreatAsBlocked` and `Indeterminate` under `Indeterminate`.
 - `build_weighted_distance_field_in_box<World, PassableTag, CostTag>(world,
-  goal, domain, scratch)` builds the same exact weighted reverse field, but
-  only inside the supplied `Box3` domain.
+  goal, domain, scratch, policy = TreatAsBlocked)` builds the same exact
+  weighted reverse field, but only inside the supplied `Box3` domain. The
+  domain filter runs ahead of the residency check, so a tile outside the box is
+  never reached even when its chunk is resident.
 - `build_bounded_weighted_distance_field<World, PassableTag, CostTag,
-  MaxCost>(world, goal, scratch)` builds the same exact weighted reverse field
-  through a bounded bucket queue when all reached entry costs are between 1 and
-  `MaxCost`. If it encounters a higher positive entry cost, it falls back to
-  the general weighted field builder.
+  MaxCost>(world, goal, scratch, policy = TreatAsBlocked)` builds the same exact
+  weighted reverse field through a bounded bucket queue when all reached entry
+  costs are between 1 and `MaxCost`. If it encounters a higher positive entry
+  cost, it falls back to the general weighted field builder, forwarding the
+  missing-chunk policy.
 - `weighted_distance_field_path<World, PassableTag, CostTag>(world, start,
   goal, scratch)` reconstructs a weighted start-to-goal path from the most
-  recent matching weighted field.
+  recent matching weighted field. It is a pure reader: on a sparse world a
+  non-resident start is `InvalidStart`.
 
 ## Behavior
 

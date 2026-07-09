@@ -6,11 +6,12 @@
 
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost>
-auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
-                                           DistanceFieldScratch& scratch)
-    -> DistanceFieldResult {
+auto build_bounded_weighted_distance_field(
+    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
+    [[maybe_unused]] MissingChunkPolicy policy) -> DistanceFieldResult {
   static_assert(MaxCost > 0);
   using Shape = typename World::shape_type;
+  using Space = detail::NodeIndexSpace<World>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
   constexpr auto bucket_count = static_cast<std::size_t>(MaxCost) + 1u;
 
@@ -18,6 +19,15 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
   scratch.clear_build();
   if (!contains<Shape>(goal)) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
+  }
+  if constexpr (!Space::is_dense) {
+    const Space residency{world};
+    if (!residency.is_resident_index(detail::tile_index<Shape>(goal))) {
+      return DistanceFieldResult{policy == MissingChunkPolicy::Indeterminate
+                                     ? PathStatus::Indeterminate
+                                     : PathStatus::InvalidGoal,
+                                 0, 0};
+    }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
   if (!detail::is_passable<World, PassableTag>(world, goal)) {
@@ -29,7 +39,8 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
   }
 
-  const auto node_count = detail::tile_count<World>();
+  const Space space{world};
+  const auto node_count = space.capacity_hint();
   if (scratch.distance_.size() != node_count) {
     TESS_DIAG_EVENT(path_initialize);
     scratch.generation_.assign(node_count, 0);
@@ -42,10 +53,12 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
     }
   }
 
+  const auto goal_offset = space.offset(goal_index);
   scratch.goal_ = goal;
   scratch.has_goal_ = true;
-  scratch.distance_[static_cast<std::size_t>(goal_index)] = 0;
-  scratch.touch_node(goal_index);
+  scratch.stamp_residency(world);
+  scratch.distance_[goal_offset] = 0;
+  scratch.touch_node(goal_offset, goal_index);
   TESS_DIAG_EVENT(path_touch_node);
   scratch.weighted_buckets_[0].push_back(goal_index);
   TESS_DIAG_EVENT(path_heap_push);
@@ -53,6 +66,7 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
   auto active_nodes = std::size_t{1};
   auto current_distance = std::uint32_t{0};
   std::size_t expanded_nodes = 0;
+  [[maybe_unused]] bool crossed_missing = false;
   while (active_nodes > 0) {
     auto& bucket = scratch.weighted_buckets_[current_distance % bucket_count];
     if (bucket.empty()) {
@@ -65,7 +79,7 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
     --active_nodes;
     TESS_DIAG_EVENT(path_heap_pop);
 
-    const auto current_offset = static_cast<std::size_t>(current);
+    const auto current_offset = space.offset(current);
     const auto stored_distance =
         scratch.distance_at(current_offset, infinite_distance);
     if (stored_distance != current_distance) {
@@ -88,14 +102,20 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
     }
     if (current_entry_cost > MaxCost) {
       return build_weighted_distance_field<World, PassableTag, CostTag>(
-          world, goal, scratch);
+          world, goal, scratch, policy);
     }
 
     const auto current_coord = detail::tile_coord<Shape>(current);
     detail::for_each_indexed_axis_neighbor<Shape>(
         current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
           TESS_DIAG_EVENT(path_neighbor_candidate);
-          const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
+          if constexpr (!Space::is_dense) {
+            if (!space.is_resident_index(neighbor_index)) {
+              crossed_missing = true;
+              return;
+            }
+          }
+          const auto neighbor_offset = space.offset(neighbor_index);
           TESS_DIAG_EVENT(path_relax_attempt);
           if (!scratch.is_current(neighbor_offset)) {
             TESS_DIAG_EVENT(path_passability_check);
@@ -110,7 +130,7 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
               return;
             }
             scratch.distance_[neighbor_offset] = infinite_distance;
-            scratch.touch_node(neighbor_index);
+            scratch.touch_node(neighbor_offset, neighbor_index);
             TESS_DIAG_EVENT(path_touch_node);
           }
 
@@ -131,6 +151,12 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
         });
   }
 
+  if constexpr (!Space::is_dense) {
+    if (crossed_missing && policy == MissingChunkPolicy::Indeterminate) {
+      return DistanceFieldResult{PathStatus::Indeterminate, expanded_nodes,
+                                 scratch.touched_.size()};
+    }
+  }
   return DistanceFieldResult{PathStatus::Found, expanded_nodes,
                              scratch.touched_.size()};
 }
@@ -139,11 +165,20 @@ template <typename World, typename PassableTag, typename CostTag>
 auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
                                   DistanceFieldScratch& scratch) -> PathResult {
   using Shape = typename World::shape_type;
+  using Space = detail::NodeIndexSpace<World>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
 
   scratch.clear_path();
   if (!contains<Shape>(start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+  }
+  if constexpr (!Space::is_dense) {
+    // Pure reader: a non-resident start is not in the field (its slot would be
+    // out of bounds). The field's own truncation status came from the build.
+    const Space residency{world};
+    if (!residency.is_resident_index(detail::tile_index<Shape>(start))) {
+      return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+    }
   }
   TESS_DIAG_EVENT(path_start_passability_check);
   if (!detail::is_passable<World, PassableTag>(world, start)) {
@@ -152,10 +187,12 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
   if (!contains<Shape>(goal)) {
     return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
   }
-  if (!scratch.has_goal_ || scratch.goal_ != goal) {
+  if (!scratch.has_goal_ || scratch.goal_ != goal ||
+      !scratch.residency_matches(world)) {
     return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
   }
 
+  const Space space{world};
   const auto start_index = detail::tile_index<Shape>(start);
   if (detail::tile_entry_cost_index<World, CostTag>(world, start_index) == 0) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
@@ -163,7 +200,7 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
 
   auto current = start_index;
   auto current_distance =
-      scratch.distance_at(static_cast<std::size_t>(current), infinite_distance);
+      scratch.distance_at(space.offset(current), infinite_distance);
   if (current_distance == infinite_distance) {
     return PathResult{PathStatus::NoPath, 0, 0, scratch.touched_.size(),
                       scratch.path_};
@@ -178,8 +215,13 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
     auto next_distance = current_distance;
     detail::for_each_indexed_axis_neighbor<Shape>(
         current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
+          if constexpr (!Space::is_dense) {
+            if (!space.is_resident_index(neighbor_index)) {
+              return;
+            }
+          }
           const auto neighbor_distance = scratch.distance_at(
-              static_cast<std::size_t>(neighbor_index), infinite_distance);
+              space.offset(neighbor_index), infinite_distance);
           if (neighbor_distance == infinite_distance ||
               neighbor_distance >= next_distance) {
             return;
@@ -247,6 +289,15 @@ auto weighted_path_batch(const World& world,
                          std::span<const PathRequest> requests,
                          WeightedPathBatchScratch& scratch)
     -> std::span<const PathResult> {
+  // Residency-agnostic: fans out to weighted_astar_path,
+  // build_bounded_weighted_distance_field (-> build_weighted_distance_field on
+  // cost overflow), weighted_distance_field_path, and
+  // detail::weighted_group_member_failure, all sparse-native. Grouping is
+  // Coord3/request-index space; node arrays live in the callees' scratch sized
+  // by NodeIndexSpace::capacity_hint. With the default
+  // MissingChunkPolicy::TreatAsBlocked a non-resident chunk reads as a wall, so
+  // the batch yields NoPath (not Indeterminate) across a missing chunk; policy
+  // threading is deferred.
   scratch.clear();
   scratch.results_.resize(requests.size());
   scratch.offsets_.assign(requests.size(), 0);

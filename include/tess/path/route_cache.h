@@ -308,15 +308,45 @@ class RouteCacheScratch {
   template <typename World>
   [[nodiscard]] static auto world_version_fingerprint(
       const World& world) noexcept -> std::uint64_t {
-    auto fingerprint = std::uint64_t{0xcbf29ce484222325ull};
-    for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
-      const auto version = world.meta(ChunkKey{i}).version;
-      fingerprint ^=
-          i + 0x9e3779b97f4a7c15ull + (fingerprint << 6u) + (fingerprint >> 2u);
-      fingerprint ^= version;
-      fingerprint *= 0x100000001b3ull;
+    if constexpr (std::is_same_v<typename World::residency_type,
+                                 AlwaysResident>) {
+      // Dense: fold every chunk's content version (meta().version) in order.
+      auto fingerprint = std::uint64_t{0xcbf29ce484222325ull};
+      for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
+        const auto version = world.meta(ChunkKey{i}).version;
+        fingerprint ^= i + 0x9e3779b97f4a7c15ull + (fingerprint << 6u) +
+                       (fingerprint >> 2u);
+        fingerprint ^= version;
+        fingerprint *= 0x100000001b3ull;
+      }
+      return fingerprint;
+    } else {
+      // Sparse: fold only the resident set (bounded by resident_count, never
+      // chunk_count; meta()/residency_generation() are called only for keys
+      // from resident_chunk_keys(), so never on a non-resident slot). Each
+      // chunk contributes (key, residency_generation, content version):
+      // version catches in-place edits, and residency_generation -- world-
+      // monotonic and strictly greater on any reload, so it changes even when
+      // ensure_resident resets version to 0 -- catches evict/reload/swap. The
+      // per-key terms combine by a COMMUTATIVE sum, because
+      // resident_chunk_keys() order is not stable (eviction swap-with-last
+      // reorders it); an order- dependent chain would false-invalidate on a
+      // mere reorder.
+      const auto mix = [](std::uint64_t x) noexcept -> std::uint64_t {
+        x = (x ^ (x >> 30u)) * 0xbf58476d1ce4e5b9ull;
+        x = (x ^ (x >> 27u)) * 0x94d049bb133111ebull;
+        return x ^ (x >> 31u);
+      };
+      auto acc = std::uint64_t{0};
+      for (const auto key : world.resident_chunk_keys()) {
+        auto h = mix(key.value);
+        h ^= mix(h + world.residency_generation(key));
+        h ^= mix(h + static_cast<std::uint64_t>(world.meta(key).version));
+        acc += h;
+      }
+      return mix(acc + static_cast<std::uint64_t>(world.resident_count()) +
+                 0x9e3779b97f4a7c15ull);
     }
-    return fingerprint;
   }
 };
 
@@ -330,6 +360,12 @@ template <typename World, typename Tag>
 auto cached_astar_path(const World& world, PathRequest request,
                        PathScratch& scratch, RouteCacheScratch& cache)
     -> PathResult {
+  // The cache stores absolute Coord3 keys and routes only (no residency-slot
+  // state). Correctness on sparse rests entirely on the residency-aware
+  // world_version_fingerprint plus prepare_process invalidating the whole cache
+  // before any serve: any evict, reload, or in-place edit changes the
+  // fingerprint and drops the cache, so a stale route can never be served. A
+  // miss runs sparse-native astar_path.
   if (const auto* entry = cache.find(request); entry != nullptr) {
     ++cache.hits_;
     const auto cached = cache.path_span(*entry);

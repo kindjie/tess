@@ -2,6 +2,7 @@
 
 #include <tess/core/assert.h>
 #include <tess/core/shape.h>
+#include <tess/storage/chunk_meta.h>
 #include <tess/storage/chunk_page.h>
 
 #include <cstddef>
@@ -14,34 +15,6 @@
 namespace tess {
 
 struct AlwaysResident {};
-
-enum class ChunkState : std::uint8_t {
-  ResidentSleeping,
-  ResidentActive,
-};
-static_assert(sizeof(ChunkState) == sizeof(std::uint8_t));
-
-struct ChunkMeta {
-  ChunkState state = ChunkState::ResidentSleeping;
-  std::uint32_t version = 0;
-  std::uint32_t topology_version = 0;
-  std::uint32_t field_dirty_flags = 0;
-  std::uint32_t active_flags = 0;
-  Box3 dirty_bounds{};
-  std::uint32_t active_count = 0;
-  std::uint32_t entity_count = 0;
-};
-
-// Generation-stamped snapshot of one chunk's dirty state, taken by
-// World::observe_dirty and consumed by World::clear_dirty_observed. A
-// maintenance pass observes before rebuilding derived state; the paired
-// clear succeeds only while the observed generation is still current, so
-// marks that land during the rebuild are never lost.
-struct DirtyObservation {
-  std::uint32_t flags = 0;
-  Box3 bounds{};
-  std::uint32_t version = 0;
-};
 
 template <typename Shape, typename Schema, typename Residency>
 class World;
@@ -198,17 +171,7 @@ class World<Shape, Schema, AlwaysResident> {
   }
 
   void mark_dirty(ChunkKey key, std::uint32_t flags, Box3 bounds) noexcept {
-    if (flags == 0) {
-      return;
-    }
-    auto& chunk_meta = meta(key);
-    if (chunk_meta.field_dirty_flags == 0) {
-      chunk_meta.dirty_bounds = bounds;
-    } else {
-      chunk_meta.dirty_bounds = union_box(chunk_meta.dirty_bounds, bounds);
-    }
-    chunk_meta.field_dirty_flags |= flags;
-    ++chunk_meta.version;
+    detail::meta_mark_dirty(meta(key), flags, bounds);
   }
 
   void mark_topology_dirty(ChunkKey key, std::uint32_t flags,
@@ -225,25 +188,13 @@ class World<Shape, Schema, AlwaysResident> {
   }
 
   void clear_dirty(ChunkKey key, std::uint32_t flags) noexcept {
-    if (flags == 0) {
-      return;
-    }
-    auto& chunk_meta = meta(key);
-    chunk_meta.field_dirty_flags &= ~flags;
-    if (chunk_meta.field_dirty_flags == 0) {
-      chunk_meta.dirty_bounds = {};
-    }
+    detail::meta_clear_dirty(meta(key), flags);
   }
 
   [[nodiscard]] auto observe_dirty(ChunkKey key,
                                    std::uint32_t flags) const noexcept
       -> DirtyObservation {
-    const auto& chunk_meta = meta(key);
-    return DirtyObservation{
-        chunk_meta.field_dirty_flags & flags,
-        chunk_meta.dirty_bounds,
-        chunk_meta.version,
-    };
+    return detail::meta_observe_dirty(meta(key), flags);
   }
 
   // Clears exactly the observed flags iff the chunk's dirty generation still
@@ -251,36 +202,15 @@ class World<Shape, Schema, AlwaysResident> {
   // the generation, so a stale clear leaves every flag and bound in place
   // and returns false; the caller re-observes and rebuilds.
   bool clear_dirty_observed(ChunkKey key, DirtyObservation observed) noexcept {
-    if (meta(key).version != observed.version) {
-      return false;
-    }
-    clear_dirty(key, observed.flags);
-    return true;
+    return detail::meta_clear_dirty_observed(meta(key), observed);
   }
 
   void mark_active(ChunkKey key, std::uint32_t flags) noexcept {
-    if (flags == 0) {
-      return;
-    }
-    auto& chunk_meta = meta(key);
-    const auto before = chunk_meta.active_flags;
-    chunk_meta.active_flags |= flags;
-    chunk_meta.active_count = popcount(chunk_meta.active_flags);
-    if (before == 0 && chunk_meta.active_flags != 0) {
-      chunk_meta.state = ChunkState::ResidentActive;
-    }
+    detail::meta_mark_active(meta(key), flags);
   }
 
   void clear_active(ChunkKey key, std::uint32_t flags) noexcept {
-    if (flags == 0) {
-      return;
-    }
-    auto& chunk_meta = meta(key);
-    chunk_meta.active_flags &= ~flags;
-    chunk_meta.active_count = popcount(chunk_meta.active_flags);
-    if (chunk_meta.active_flags == 0) {
-      chunk_meta.state = ChunkState::ResidentSleeping;
-    }
+    detail::meta_clear_active(meta(key), flags);
   }
 
   void collect_dirty_chunks(std::uint32_t flags,
@@ -378,59 +308,6 @@ class World<Shape, Schema, AlwaysResident> {
     using Traits = ShapeTraits<Shape>;
     return coord.x < Traits::chunk_count_x && coord.y < Traits::chunk_count_y &&
            coord.z < Traits::chunk_count_z;
-  }
-
-  static constexpr auto axis_end(std::int64_t origin,
-                                 std::uint64_t extent) noexcept
-      -> std::int64_t {
-    return origin + static_cast<std::int64_t>(extent);
-  }
-
-  static constexpr auto min(std::int64_t lhs, std::int64_t rhs) noexcept
-      -> std::int64_t {
-    return lhs < rhs ? lhs : rhs;
-  }
-
-  static constexpr auto max(std::int64_t lhs, std::int64_t rhs) noexcept
-      -> std::int64_t {
-    return lhs < rhs ? rhs : lhs;
-  }
-
-  static constexpr auto union_extent(std::int64_t origin,
-                                     std::int64_t end) noexcept
-      -> std::uint64_t {
-    return static_cast<std::uint64_t>(end - origin);
-  }
-
-  static constexpr auto union_box(Box3 lhs, Box3 rhs) noexcept -> Box3 {
-    const auto min_x = min(lhs.origin.x, rhs.origin.x);
-    const auto min_y = min(lhs.origin.y, rhs.origin.y);
-    const auto min_z = min(lhs.origin.z, rhs.origin.z);
-    const auto max_x = max(axis_end(lhs.origin.x, lhs.extent.x),
-                           axis_end(rhs.origin.x, rhs.extent.x));
-    const auto max_y = max(axis_end(lhs.origin.y, lhs.extent.y),
-                           axis_end(rhs.origin.y, rhs.extent.y));
-    const auto max_z = max(axis_end(lhs.origin.z, lhs.extent.z),
-                           axis_end(rhs.origin.z, rhs.extent.z));
-
-    return Box3{
-        Coord3{min_x, min_y, min_z},
-        Extent3{
-            union_extent(min_x, max_x),
-            union_extent(min_y, max_y),
-            union_extent(min_z, max_z),
-        },
-    };
-  }
-
-  static constexpr auto popcount(std::uint32_t flags) noexcept
-      -> std::uint32_t {
-    std::uint32_t count = 0;
-    while (flags != 0) {
-      count += flags & 1u;
-      flags >>= 1u;
-    }
-    return count;
   }
 
   void collect_matching_chunks(std::uint32_t flags,
