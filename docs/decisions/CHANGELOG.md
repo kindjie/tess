@@ -13,6 +13,31 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Topology Precheck Wired Into the Path Runtime
+
+- Added (path runtime / sim): `PathRequestRuntime::process_unit_cached` and
+  `process_weighted_batch`, the `process_*_path_agents` helpers, and all four
+  `tick_*_path_agents` entry points now take an optional trailing
+  `const RegionGraphT<World::residency_type>*` (default `nullptr`). When a graph
+  is supplied, a pre-A* pass resolves every request `precheck_path` proves
+  `Unreachable` to `NoPath` (zero expanded nodes) without searching, counting
+  them in the new `PathRuntimeStats::precheck_ruled_out` /
+  `PathAgentFrameStats::precheck_ruled_out` -- a SUBSET of `no_path`, so
+  aggregate failure counts are unchanged. The unit path skips ruled-out requests
+  in its search loop; the weighted path runs the monolithic `weighted_path_batch`
+  over only the survivors and scatters results back to their original slots.
+- Reason: closes the runtime half of the M8 precheck gap. `nullptr` (the
+  default) is byte-identical to the previous behavior, so this is opt-in and
+  additive. Precondition: the graph must be built over the same `PassableTag`
+  the search uses; freshness is checked (`is_region_graph_fresh`) and a stale
+  graph degrades to running A*, so the gate can only prune provably-unreachable
+  goals, never turn a solvable query into a wrong failure.
+- Affected docs: `architecture/path.md`, `architecture/simulation.md`.
+- Affected code: `path/path_runtime.h`, `sim/path_agent.h`,
+  `sim/path_agent_tick.h`; new test `tess_path_precheck_runtime_test.cc`.
+  arenarch adoption (passing its `RegionGraph` to the weighted tick and deleting
+  its bespoke reachability gating) lands in a later S3 slice.
+
 ## 2026-07-08 - Topology Precheck (Pre-A* Reachability Gate)
 
 - Added (topology): `is_region_graph_fresh(world, graph)` -- a const,
