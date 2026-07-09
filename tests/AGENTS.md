@@ -191,6 +191,13 @@
   weighted shared-goal fields, bounded weighted field builds and fallback,
   weighted batch grouping, endpoint validation, and allocation-free repeated
   queries with pre-reserved path scratch.
+- `tess_path_view_test`: verifies the non-owning `PathView` handed out by
+  `PathResult`: a default view is empty, a view mirrors its underlying nodes
+  (size, front/back, indexing, iteration, `data()` identity) without copying,
+  `span()` recovers the raw span, `suffix(offset)` returns the remaining path
+  sharing the same storage (composing across suffixes) and bounds-clamps at or
+  past the end, view and suffix operations allocate nothing, and a real
+  `astar_path` result exposes a walkable suffix into its scratch storage.
 - `tess_path_search_test`: verifies the real A* heap search loops against
   reference oracles. `path_test_util.h` provides shared serpentine maze
   builders (top-down 2D, vertical 2D, and multi-chunk 3D shapes) that

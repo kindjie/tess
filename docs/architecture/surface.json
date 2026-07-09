@@ -144,6 +144,7 @@
     "PathScratch",
     "PathStatus",
     "PathTicket",
+    "PathView",
     "PortalSegmentCacheStats",
     "PrecheckStatus",
     "RouteCacheScratch",
