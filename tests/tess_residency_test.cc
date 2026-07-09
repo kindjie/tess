@@ -780,6 +780,36 @@ TEST(TessSparseDistanceField,
             tess::PathStatus::NoPath);
 }
 
+TEST(TessSparseDistanceField, FieldReadAgainstDifferentWorldRefusesStale) {
+  // The residency fingerprint is a CONTENT hash of the resident set, not a
+  // per-world counter, so a scratch built against one world is refused when
+  // read against a DIFFERENT world (a copy/swap, or a plain wrong-world bug)
+  // even though both worlds performed the same number of residency ops -- a
+  // bare per-world epoch would alias and serve a stale Found. Regression from
+  // the cross-lab re-review.
+  SparseSmall world_a{tess::ResidencyConfig{4 * page_bytes<Small>()}};
+  make_chunk_passable(world_a, tess::ChunkKey{0});  // x in [0, 32)
+  make_chunk_passable(world_a, tess::ChunkKey{1});  // x in [32, 64)
+  tess::DistanceFieldScratch scratch;
+  ASSERT_EQ(sparse_build_field(world_a, {0, 0, 0}, scratch,
+                               tess::MissingChunkPolicy::TreatAsBlocked)
+                .status,
+            tess::PathStatus::Found);
+  ASSERT_EQ(sparse_field_path(world_a, {40, 0, 0}, {0, 0, 0}, scratch).status,
+            tess::PathStatus::Found);
+
+  // A distinct world, same residency-op count, different resident set (chunks
+  // 1,2). Chunk 1 (the read start) is resident in both, so the refusal comes
+  // from the fingerprint mismatch, not a non-resident start.
+  SparseSmall world_b{tess::ResidencyConfig{4 * page_bytes<Small>()}};
+  make_chunk_passable(world_b, tess::ChunkKey{1});  // x in [32, 64)
+  make_chunk_passable(world_b, tess::ChunkKey{2});  // x in [64, 96)
+  ASSERT_TRUE(world_b.is_resident(tess::ChunkKey{1}));
+  EXPECT_NE(world_a.residency_fingerprint(), world_b.residency_fingerprint());
+  EXPECT_EQ(sparse_field_path(world_b, {40, 0, 0}, {0, 0, 0}, scratch).status,
+            tess::PathStatus::NoPath);
+}
+
 TEST(TessSparseDistanceField,
      MissingChunkTruncatesFieldBlockedOrIndeterminateByPolicy) {
   SparseSmall world{tess::ResidencyConfig{4 * page_bytes<Small>()}};

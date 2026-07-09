@@ -42,10 +42,11 @@ other entries cannot move.
   key, `residency_generation`, and topology version through an order-independent
   sum -- so any eviction, reload, or in-place edit changes the fingerprint and
   invalidates the whole cache before a stale route can be served. The two-call
-  builder/reader distance-field API additionally fingerprints the world's
-  `residency_epoch` in `DistanceFieldScratch` at build time; a reader whose world
-  changed residency between the paired calls returns `NoPath` (forcing a rebuild)
-  rather than descending a slot-rebound stale field. Each single-shot
+  builder/reader distance-field API stamps the same `world.residency_fingerprint()`
+  content hash in `DistanceFieldScratch` at build time; a reader whose world
+  changed residency between the paired calls -- or a scratch read against a
+  different/copied/swapped world -- returns `NoPath` (forcing a rebuild) rather
+  than descending a slot-rebound stale field. Each single-shot
   builder takes an optional trailing `MissingChunkPolicy` (default
   `TreatAsBlocked`); the runtime path uses that default, so a route across a
   non-resident chunk reports `NoPath` rather than `Indeterminate` (threading the

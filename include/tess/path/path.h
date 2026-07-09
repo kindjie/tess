@@ -556,21 +556,24 @@ class DistanceFieldScratch {
   std::vector<Coord3> path_;
   Coord3 goal_{};
   bool has_goal_ = false;
-  std::uint64_t residency_epoch_ = 0;
+  std::uint64_t residency_fingerprint_ = 0;
 
   // Sparse residency staleness guard for the two-call build/read API. A built
   // distance field is indexed by resident-slot offset; if the resident set
   // changes between build_*distance_field and *distance_field_path (an
   // eviction/reload can rebind a slot to a different chunk), the reader would
   // descend a stale field and return a wrong path. build_* stamps the world's
-  // residency epoch and the readers reject a mismatch (forcing a rebuild)
-  // instead of returning a wrong Found. Dense worlds never evict, so both
-  // methods compile to a no-op / constant true and keep dense byte-identical.
+  // residency fingerprint (a content hash of the resident set, not a per-world
+  // counter -- so it also catches a scratch read against a different/copied/
+  // swapped world, which a bare epoch could alias) and the readers reject a
+  // mismatch (forcing a rebuild) instead of returning a wrong Found. Dense
+  // worlds never evict, so both methods compile to a no-op / constant true and
+  // keep dense byte-identical.
   template <typename World>
   void stamp_residency(const World& world) noexcept {
     if constexpr (!std::is_same_v<typename World::residency_type,
                                   AlwaysResident>) {
-      residency_epoch_ = world.residency_epoch();
+      residency_fingerprint_ = world.residency_fingerprint();
     }
   }
   template <typename World>
@@ -580,7 +583,7 @@ class DistanceFieldScratch {
                                  AlwaysResident>) {
       return true;
     } else {
-      return residency_epoch_ == world.residency_epoch();
+      return residency_fingerprint_ == world.residency_fingerprint();
     }
   }
 };
