@@ -9,6 +9,28 @@
 #include <span>
 #include <string_view>
 
+// Trace macros live here, next to the trace_event/TraceCategory they expand to,
+// so a translation unit that includes this header gets a self-contained macro:
+// TESS_DIAG_TRACE routes to the active trace buffer when diagnostics are on and
+// compiles to an empty statement (never naming its arguments) when off.
+#if TESS_DIAGNOSTICS_ENABLED
+#define TESS_DIAG_TRACE(category, label)                      \
+  do {                                                        \
+    ::tess::diagnostics::trace_event((category), (label), 0); \
+  } while (false)
+#define TESS_DIAG_TRACE_VALUE(category, label, value)               \
+  do {                                                              \
+    ::tess::diagnostics::trace_event((category), (label), (value)); \
+  } while (false)
+#else
+#define TESS_DIAG_TRACE(category, label) \
+  do {                                   \
+  } while (false)
+#define TESS_DIAG_TRACE_VALUE(category, label, value) \
+  do {                                                \
+  } while (false)
+#endif
+
 namespace tess::diagnostics {
 
 #if TESS_DIAGNOSTICS_ENABLED
