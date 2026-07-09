@@ -157,6 +157,17 @@ benchmark exercised by `ctest --preset bench`): after the timed loop it
 aborts unless the diagnostics allocation counters report zero allocations
 for the final, fully warmed iteration.
 
+The same binary also carries the gated `diagnostics/` family
+(`bench/tess_diagnostics_bench.cc`, thresholds in
+`bench/thresholds/diagnostics.json`, target
+`tess_bench_diagnostics_thresholds`), which measures the enabled overhead of
+the diagnostics primitives directly: `diagnostics/trace_record`,
+`diagnostics/record_timing`, `diagnostics/scoped_timer`, and
+`diagnostics/warning_sink`. The compile-down side is proven structurally --
+the default `tess_bench` binary compiles every diagnostic macro to nothing, so
+its `queued/` and `path/` families are the zero-overhead baseline. Ceilings are
+loose bootstrap values pending CI-calibrated tightening.
+
 ## 15. Render delta benchmarks
 
 - entity moves
