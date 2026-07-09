@@ -966,3 +966,33 @@ TEST(TessTopology, UpdateRegionGraphScriptedEditsMatchFullRebuild) {
         std::span<const tess::Coord3>{probes.data(), probes.size()});
   }
 }
+
+TEST(TessTopology, RegionGraphFreshnessTracksTopologyVersion) {
+  // is_region_graph_fresh reports whether a built graph still matches the
+  // world. The S3 precheck relies on it to fall back to A* on a stale graph (a
+  // stale graph could otherwise return a definitive but wrong Unreachable).
+  using Shape = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
+  World<Shape> world;
+  fill_passable(world, 1);
+
+  tess::LocalTopologyScratch local_scratch;
+  tess::RegionGraph graph;
+  const auto built = tess::build_region_graph<decltype(world), PassableTag>(
+      world, local_scratch, graph);
+  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+  EXPECT_TRUE(tess::is_region_graph_fresh(world, graph));
+
+  // A topology-version bump on any chunk makes the graph stale.
+  world.mark_topology_rebuilt(tess::ChunkKey{0});
+  EXPECT_FALSE(tess::is_region_graph_fresh(world, graph));
+
+  // Rebuilding against the current world restores freshness.
+  const auto rebuilt = tess::build_region_graph<decltype(world), PassableTag>(
+      world, local_scratch, graph);
+  ASSERT_EQ(rebuilt.status, tess::TopologyStatus::Built);
+  EXPECT_TRUE(tess::is_region_graph_fresh(world, graph));
+
+  // A never-built graph is never fresh.
+  tess::RegionGraph empty;
+  EXPECT_FALSE(tess::is_region_graph_fresh(world, empty));
+}

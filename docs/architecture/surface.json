@@ -122,6 +122,7 @@
     "TopologyStatus",
     "build_local_chunk_topology",
     "build_region_graph",
+    "is_region_graph_fresh",
     "reachable",
     "update_region_graph"
   ],

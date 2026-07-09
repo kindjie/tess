@@ -198,4 +198,32 @@ TEST(TessSparseTopology, StaleGraphAfterResidencyChangeFallsBackToFullBuild) {
   EXPECT_EQ(graph.local_topologies().size(), 3u);
 }
 
+TEST(TessSparseTopology, RegionGraphFreshnessTracksResidencyAndVersion) {
+  // is_region_graph_fresh over a sparse world is stale after either an in-place
+  // topology-version bump on a resident chunk OR a residency change (eviction),
+  // so the S3 precheck falls back to A* instead of trusting an old snapshot.
+  SparseSmall world{tess::ResidencyConfig{8 * SparseSmall::page_byte_size}};
+  make_chunk_passable(world, tess::ChunkKey{0});
+  make_chunk_passable(world, tess::ChunkKey{1});
+  tess::LocalTopologyScratch scratch;
+  tess::SparseRegionGraph graph;
+  const auto built =
+      tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
+  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+  EXPECT_TRUE(tess::is_region_graph_fresh(world, graph));
+
+  // In-place topology edit on a still-resident chunk -> stale (version).
+  world.mark_topology_rebuilt(tess::ChunkKey{0});
+  EXPECT_FALSE(tess::is_region_graph_fresh(world, graph));
+
+  const auto rebuilt =
+      tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
+  ASSERT_EQ(rebuilt.status, tess::TopologyStatus::Built);
+  EXPECT_TRUE(tess::is_region_graph_fresh(world, graph));
+
+  // Residency change (evict a frozen chunk) -> stale (count/generation).
+  ASSERT_TRUE(world.evict(tess::ChunkKey{1}));
+  EXPECT_FALSE(tess::is_region_graph_fresh(world, graph));
+}
+
 }  // namespace
