@@ -13,6 +13,32 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - PathView Non-Owning Path View (M8)
+
+- Added (path, new header `path/path_view.h`): `PathView`, a non-owning view
+  over a path's coordinates. `PathResult::path` changes type from
+  `std::span<const Coord3>` to `PathView` (an intentional but source-compatible
+  break -- see below). PathView offers read-only span parity (`size`, `empty`,
+  `operator[]`, `front`, `back`, `begin`/`end`, `data`), `span()` to recover the
+  raw `std::span`, and `suffix(offset)`: the bounds-clamped remaining path from a
+  walked index, sharing the same storage without copying. It carries the same
+  lifetime contract as the span it wraps (valid until the A* scratch or runtime
+  node buffer it views is reused).
+- Reason: closes the M8 `PathView` deliverable and gives consumers a named path
+  type plus the one operation real consumers need -- "the remaining path from
+  index N" (an agent advancing along `path_index`, an overlay drawing the rest
+  of a route). PathView is constructible from a `std::span` or a
+  `std::vector<Coord3>`, so every existing result-construction site
+  (`PathResult{..., scratch.path_}`) compiles unchanged, and its span-parity API
+  means the ~250 span-style `.path` reads across the codebase compile unchanged;
+  the only edited call site extracts a raw span via `.path.span()`. Scoped to
+  `PathResult`; `DistanceFieldResult` (no path) and the route-product/waypoint
+  spans are deliberately left as plain spans.
+- Affected docs: `architecture/path.md`, `architecture/surface.json`.
+- Affected code: new `path/path_view.h`, `path/path.h`,
+  `path/portal_segment_cache.h`, `tess.h`, `CMakeLists.txt`; new test
+  `tess_path_view_test.cc`.
+
 ## 2026-07-09 - Topology Benchmark Family
 
 - Added: `bench/tess_topology_bench.cc` and `bench/thresholds/topology.json`, a
