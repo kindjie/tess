@@ -30,6 +30,23 @@ other entries cannot move.
   the search exhausts the resident set having skipped a non-resident neighbor.
   It is inert for dense (`AlwaysResident`) worlds, where every chunk is
   resident.
+- `precheck_path` (in `tess/path/precheck.h`) is a cheap pre-A* topology gate:
+  it consults a `RegionGraph` built over the world for whether `start` can
+  reach `goal` through region connectivity, without expanding the grid, and
+  returns a `PrecheckStatus`. Only `Unreachable` -- the graph definitively
+  rules out any route within known topology -- licenses skipping A*, reported
+  by `precheck_rules_out_path`. Every other status means "run A*": `Reachable`
+  (a region path exists; A* realizes it), `MissingChunk` (the search reached a
+  boundary exit into a non-resident chunk, so a route through unloaded space
+  cannot be ruled out -- sparse worlds only), `InvalidStart` / `InvalidGoal`
+  (A* is authoritative on tile validity), `GraphStale` (the graph no longer
+  matches the world), and `NoGraph` (no built graph supplied). Staleness is
+  resolved conservatively and first: an empty graph is `NoGraph` and a graph
+  that fails `is_region_graph_fresh` is `GraphStale`, both decided before
+  `reachable()` runs, so a stale snapshot can never yield a definitive but
+  wrong `Unreachable`. The query reuses a caller-owned `RegionGraphScratch`
+  (allocation-free once warm); the gate can only ever prune provably
+  unreachable goals, never turn a solvable query into a wrong failure.
 - Sparse residency covers the single-shot searches -- `astar_path`,
   `weighted_astar_path`, the unweighted `build_distance_field`, and the weighted
   `build_weighted_distance_field`, `build_weighted_distance_field_in_box`, and
@@ -67,7 +84,18 @@ other entries cannot move.
   products. Those are persistent, cross-frame cached artifacts indexed by raw tile
   id and land with a later sparse-cache slice.
 - `PathResult` returns the status, unit movement cost, expanded-node count,
-  reached-node count, and a non-owning span of path coordinates.
+  reached-node count, and a `PathView` over the path coordinates.
+- `PathView` (in `tess/path/path_view.h`) is the non-owning view of a path that
+  `PathResult` and the runtime's ticket accessors hand out. It carries the same
+  lifetime contract as the underlying span -- valid only until the storage it
+  views is reused (A* scratch on the next query, the runtime's node buffer on
+  the next process/clear) -- and copying it never copies path data. It offers
+  read-only span parity (`size`, `empty`, `operator[]`, `front`, `back`,
+  `begin`/`end`, `data`), `span()` to recover the raw `std::span` where an API
+  needs it, and `suffix(offset)`: the remaining path from a walked index,
+  bounds-clamped (an offset at or past the end yields an empty view) and sharing
+  the same storage without copying. It is constructible from a `std::span` or a
+  `std::vector<Coord3>`, so existing result-construction sites are unchanged.
 - `DistanceFieldResult` returns the status and node counts for a reverse
   shared-goal field build.
 - `WeightedPathBatchStats` returns request count, unique-goal count, field
@@ -219,6 +247,19 @@ other entries cannot move.
   MaxCost>(world, policy)` processes the current request set through
   `weighted_path_batch`, while using the same world-change cadence to clear
   owned long-lived caches.
+- Both `process_unit_cached` and `process_weighted_batch` take an optional
+  trailing `const RegionGraphT<World::residency_type>*` (default `nullptr`).
+  When a graph is supplied, a pre-A* pass runs `precheck_path` for each request
+  and resolves the ones it proves `Unreachable` to `NoPath` (zero expanded
+  nodes) without searching, counting them in `PathRuntimeStats::precheck_ruled_out`
+  -- a subset of `no_path`, so aggregate failure counts are unchanged. The unit
+  path skips ruled-out requests in its search loop; the weighted path runs the
+  batch over only the survivors and scatters results back to their original
+  slots. Passing `nullptr` (the default) is byte-identical to the un-gated path.
+  Precondition: the graph must be built over the same `PassableTag` the search
+  uses, and its freshness is checked (`is_region_graph_fresh`); a stale graph
+  degrades to running A* rather than trusting a snapshot, so the gate can only
+  prune provably-unreachable goals, never turn a solvable query into a failure.
 - `cached_astar_path<World, PassableTag>(world, request, scratch, cache)`
   checks the route cache before falling back to `astar_path`. Hits copy the
   cached route into `scratch` and return a span with the same lifetime
@@ -446,8 +487,9 @@ next tick that should replan.
 
 ## Deliberate Limits
 
-This MVP slice does not implement topology prechecks, portal graphs, sparse
-residency, async tickets, or rich path diagnostics. Movement commit validation,
+This path core implements a topology precheck (`precheck_path`, wired into the
+runtime and agent ticks) and runs natively over sparse-resident worlds, but does
+not implement async tickets or rich path diagnostics. Movement commit validation,
 reservation checks, queued-operation-driven path dirtying, and render deltas
 now live in the simulation integration MVP, but pathfinding still does not
 automatically infer every dirty cause. Callers must mark the path-agent tick
@@ -473,8 +515,8 @@ be faster when many starts lie on already-cached paths; the runtime therefore
 skips opt-in product use for repeated-goal groups whose starts do not span
 enough distinct chunks. Route caches are suitable for stable maps with repeated
 exact routes or starts that lie on cached same-goal paths. The v1 plan still
-needs topology prechecks, weighted field products, richer runtime policy, and
-hierarchy to cover broad many-agent workloads.
+needs weighted field products, richer runtime policy, and hierarchy to cover
+broad many-agent workloads.
 
 ## Current Profiling Notes
 

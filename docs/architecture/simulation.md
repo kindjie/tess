@@ -70,10 +70,12 @@ deltas.
 - `set_path_agent_goal(agent, goal)` arms the lifecycle (`NeedsPath`, retry
   count reset); `clear_path_agent_goal(agent)` returns the agent to `Idle`.
 - `PathAgentFrameStats` counts submitted, completed, found, invalid-start,
-  invalid-goal, and no-path results plus advanced steps, arrivals, blocked
-  waits, and a `MovementFailureCounts`. `add_path_agent_stats(lhs, rhs)`
-  accumulates two frames; `record_path_agent_status(stats, status)` buckets
-  one path result.
+  invalid-goal, no-path, and indeterminate results plus `precheck_ruled_out`,
+  advanced steps, arrivals, blocked waits, and a `MovementFailureCounts`.
+  `precheck_ruled_out` is the number of agents whose goal an optional topology
+  precheck proved unreachable before A* (a subset of `no_path`; see the path
+  runtime's `precheck_ruled_out`). `add_path_agent_stats(lhs, rhs)` accumulates
+  two frames; `record_path_agent_status(stats, status)` buckets one path result.
 - `submit_path_agents(agents, runtime)` starts a new runtime request set and
   submits one request per agent with an active goal, skipping `Unreachable`
   agents and clearing agents that already stand on their goal (counted as
@@ -94,7 +96,11 @@ deltas.
 - `process_unit_path_agents<World, PassableTag>(...)` and
   `process_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(...)`
   run submit, runtime processing (cached unit or weighted batch), and result
-  application as one synchronous pass.
+  application as one synchronous pass. Both take an optional trailing
+  `const RegionGraphT<World::residency_type>*` (default `nullptr`) that they
+  forward to the runtime's precheck gate; when supplied, goals the region graph
+  proves unreachable are resolved without A* and surfaced in
+  `PathAgentFrameStats::precheck_ruled_out`.
 
 ### Path-Agent Tick
 
@@ -121,7 +127,10 @@ deltas.
   ReservationTag>(...)`, and `tick_weighted_path_agents_with_movement<...>`
   advance the clock, re-process paths when `pathing_dirty` is set or any
   agent requested processing, then advance agents — either freely or
-  through movement commits with the supplied `movement_dirty_mask`.
+  through movement commits with the supplied `movement_dirty_mask`. Each
+  accepts an optional trailing `const RegionGraphT<World::residency_type>*`
+  (default `nullptr`) forwarded to the runtime precheck gate, so a caller that
+  maintains a region graph can skip A* for goals proven unreachable.
 
 ### Scheduler
 

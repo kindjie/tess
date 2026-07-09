@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "topology/region_graph_build_open_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 15000000
+    },
+    "topology/region_graph_update_single_chunk_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 6000000
+    },
+    "topology/reachable_far_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 20000
+    },
+    "topology/precheck_reachable_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 20000
+    },
+    "topology/precheck_unreachable_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 120000
+    }
+  }
+}

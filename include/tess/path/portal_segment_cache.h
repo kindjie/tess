@@ -254,7 +254,7 @@ auto build_weighted_portal_route_product(const World& world,
       return false;
     }
     total_cost = detail::saturating_add(total_cost, result.cost);
-    append_path(result.path);
+    append_path(result.path.span());
     return true;
   };
 

@@ -67,6 +67,14 @@ The current topology layer is a local chunk-region foundation. It lives under
   than a wrong `Unreachable`. A route found within the resident set still wins
   (`Reachable`), and a component fully enclosed by resident walls is a definite
   `Unreachable`.
+- `is_region_graph_fresh(world, graph)` reports, without mutating anything,
+  whether a built graph still matches the world: every chunk's stored topology
+  version is current (dense and sparse) and, on a sparse world, the frozen
+  residency snapshot still holds (resident count plus per-key generation). It
+  recomputes the same staleness test `update_region_graph` applies internally,
+  so a reachability precheck can consult it and fall back to A* on a stale
+  graph rather than trust a definitive but outdated `Unreachable`. Allocation-
+  free; O(chunk_count) dense, O(resident_count) sparse.
 
 ## Behavior
 
