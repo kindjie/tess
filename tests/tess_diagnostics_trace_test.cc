@@ -6,6 +6,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -317,6 +318,132 @@ TEST(TessTraceBuffer, TraceIsAllocationFree) {
     ScopedTimer timer{TraceCategory::Queued, kPlanLabel};
   }
   EXPECT_EQ(counters.allocations, 0u);
+}
+
+// --- Planner trace instrumentation (queued.h) -----------------------------
+
+struct PlannerTerrainTag {};
+
+constexpr std::uint32_t kPlannerDirtyTerrain = 1u << 0u;
+
+using PlannerShape =
+    tess::Shape<tess::Extent3{64, 32, 1}, tess::Extent3{32, 16, 1}>;
+using PlannerSchema =
+    tess::FieldSchema<tess::Field<PlannerTerrainTag, std::uint16_t>>;
+using PlannerWorld = tess::AlwaysResidentWorld<PlannerShape, PlannerSchema>;
+
+// Returns true if the buffer holds a Planner record with the given label and
+// value.
+[[nodiscard]] bool has_planner_record(const TraceBuffer& buffer,
+                                      std::string_view label,
+                                      std::uint64_t value) {
+  for (std::size_t i = 0; i < buffer.size(); ++i) {
+    const auto& record = buffer[i];
+    if (record.category == TraceCategory::Planner && record.label == label &&
+        record.value == value) {
+      return true;
+    }
+  }
+  return false;
+}
+
+TEST(TessPlannerTrace, RecordsPlanDecisionsForConflictingPlan) {
+  PlannerWorld world;
+  tess::FrameOps ops;
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      kPlannerDirtyTerrain,
+      kPlannerDirtyTerrain,
+  };
+  // Two operations writing the same chunk's terrain: the second is a
+  // write-write hazard against the first.
+  const std::vector<tess::ChunkKey> keys{tess::ChunkKey{0}};
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+
+  std::array<TraceRecord, 8> storage{};
+  TraceBuffer buffer{storage};
+  {
+    ScopedTrace scope{buffer};
+    const auto report = tess::plan_operations(world, ops);
+    ASSERT_EQ(report.planned_count(), 1u);
+    ASSERT_EQ(report.failed_count(), 1u);
+  }
+
+  EXPECT_TRUE(has_planner_record(buffer, "planned", 0));
+  EXPECT_TRUE(has_planner_record(buffer, "conflict", 1));
+}
+
+TEST(TessPlannerTrace, RecordsPhaseAssignmentDecisions) {
+  PlannerWorld world;
+  tess::FrameOps ops;
+  constexpr auto writes_terrain = tess::FieldAccessDesc{
+      0,
+      kPlannerDirtyTerrain,
+      kPlannerDirtyTerrain,
+  };
+  // Two operations on different chunks: both plan, and the second merges into
+  // the first parallel phase.
+  const std::vector<tess::ChunkKey> first_keys{tess::ChunkKey{0}};
+  const std::vector<tess::ChunkKey> second_keys{tess::ChunkKey{1}};
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(first_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(second_keys),
+                         writes_terrain, tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_EQ(report.planned_count(), 2u);
+
+  std::array<TraceRecord, 8> storage{};
+  TraceBuffer buffer{storage};
+  {
+    ScopedTrace scope{buffer};
+    const auto phases = tess::plan_parallel_execution_phases(report.plan());
+    ASSERT_TRUE(phases.ok());
+    ASSERT_EQ(phases.phases().size(), 1u);
+  }
+
+  EXPECT_TRUE(has_planner_record(buffer, "new_phase", 0));
+  EXPECT_TRUE(has_planner_record(buffer, "merged", 1));
+}
+
+// --- Snapshot export (export.h) -------------------------------------------
+
+TEST(TessDiagnosticsExport, CapturesCountersAndTiming) {
+  tess::diagnostics::PathCounters path;
+  {
+    tess::diagnostics::ScopedPathCounters scope{path};
+    TESS_DIAG_EVENT(path_heap_push);
+    TESS_DIAG_EVENT(path_heap_push);
+    TESS_DIAG_EVENT(path_heap_pop);
+  }
+
+  std::array<TraceRecord, 4> storage{};
+  TraceBuffer buffer{storage};
+  buffer.record_timing(TraceCategory::Topology, 40);
+  buffer.record_timing(TraceCategory::Topology, 60);
+
+  const tess::diagnostics::AllocationCounters allocation;
+  const tess::diagnostics::QueuedPhaseCounters queued;
+  const auto snapshot =
+      tess::diagnostics::capture_diagnostics(path, allocation, queued, buffer);
+
+  EXPECT_EQ(snapshot.path.heap_pushes, 2u);
+  EXPECT_EQ(snapshot.path.heap_pops, 1u);
+  const auto& topo = snapshot.timing.category(TraceCategory::Topology);
+  EXPECT_EQ(topo.samples, 2u);
+  EXPECT_EQ(topo.total_ns, 100u);
+  EXPECT_EQ(topo.min_ns, 40u);
+  EXPECT_EQ(topo.max_ns, 60u);
+
+  // Every category is copied, including untouched ones, and the Count sentinel
+  // reads clean zeros.
+  EXPECT_EQ(snapshot.timing.category(TraceCategory::Path).samples, 0u);
+  EXPECT_EQ(snapshot.timing.category(TraceCategory::Count).samples, 0u);
+
+  const auto timing_only = tess::diagnostics::capture_timing(buffer);
+  EXPECT_EQ(timing_only.category(TraceCategory::Topology).total_ns, 100u);
 }
 
 }  // namespace

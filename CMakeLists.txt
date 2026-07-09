@@ -51,6 +51,7 @@ set(
   include/tess/core/shape.h
   include/tess/core/uint128.h
   include/tess/diagnostics/diagnostics.h
+  include/tess/diagnostics/export.h
   include/tess/diagnostics/trace.h
   include/tess/diagnostics/warning_sink.h
   include/tess/ops/phase_executor.h
