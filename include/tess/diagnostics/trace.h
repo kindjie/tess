@@ -86,6 +86,17 @@ class TraceBuffer {
   explicit TraceBuffer(std::span<TraceRecord> storage) noexcept
       : storage_{storage} {}
 
+  // Caller-owned and referenced by address: ScopedTrace/ScopedTimer capture a
+  // TraceBuffer* and the ring metadata plus timing accumulators live in the
+  // object while the records live in the shared backing span. Copying or moving
+  // would split that metadata from the storage, so a by-value copy would
+  // collect records the caller's original never sees. The buffer is therefore
+  // pinned to its storage -- construct it in place, pass it by reference.
+  TraceBuffer(const TraceBuffer&) = delete;
+  auto operator=(const TraceBuffer&) -> TraceBuffer& = delete;
+  TraceBuffer(TraceBuffer&&) = delete;
+  auto operator=(TraceBuffer&&) -> TraceBuffer& = delete;
+
   // Append a structured trace record. When the ring is full the oldest record
   // is overwritten and dropped() is bumped; sequence numbers keep advancing so
   // a reader can see the gap. A record against the Count sentinel (or any

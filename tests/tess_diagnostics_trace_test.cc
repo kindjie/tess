@@ -6,6 +6,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -116,6 +117,17 @@ TEST(TessWarningSink, WarnIsAllocationFree) {
 
 constexpr std::string_view kConflictLabel = "conflict";
 constexpr std::string_view kPlanLabel = "planned";
+
+// The buffer owns its ring metadata + timing accumulators but only references
+// caller storage, so a value copy would collect records the original never
+// sees. It must be pinned to its storage (construct in place, pass by ref).
+TEST(TessTraceBuffer, IsNeitherCopyableNorMovable) {
+  static_assert(!std::is_copy_constructible_v<TraceBuffer>);
+  static_assert(!std::is_move_constructible_v<TraceBuffer>);
+  static_assert(!std::is_copy_assignable_v<TraceBuffer>);
+  static_assert(!std::is_move_assignable_v<TraceBuffer>);
+  SUCCEED();
+}
 
 TEST(TessTraceBuffer, RecordsOldestFirstWithSequences) {
   std::array<TraceRecord, 4> storage{};
