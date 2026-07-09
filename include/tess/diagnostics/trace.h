@@ -66,11 +66,14 @@ class TraceBuffer {
 
   // Append a structured trace record. When the ring is full the oldest record
   // is overwritten and dropped() is bumped; sequence numbers keep advancing so
-  // a reader can see the gap.
+  // a reader can see the gap. A record against the Count sentinel (or any
+  // out-of-range category) is rejected and counted as dropped, so the ring
+  // never carries a non-category value.
   void record(TraceCategory category, std::string_view label,
               std::uint64_t value) noexcept {
     const auto seq = sequence_++;
-    if (storage_.empty()) {
+    if (storage_.empty() ||
+        static_cast<std::size_t>(category) >= trace_category_count) {
       ++dropped_;
       return;
     }

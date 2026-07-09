@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string_view>
 
@@ -207,6 +208,20 @@ TEST(TessTraceBuffer, RecordTimingIgnoresCountSentinel) {
   EXPECT_EQ(buffer.stats(TraceCategory::Path).samples, 0u);
 }
 
+TEST(TessTraceBuffer, RecordRejectsCountSentinel) {
+  std::array<TraceRecord, 4> storage{};
+  TraceBuffer buffer{storage};
+  buffer.record(TraceCategory::Count, kPlanLabel, 1);  // sentinel is not a
+                                                       // recordable category
+  buffer.record(TraceCategory::Planner, kPlanLabel, 2);
+
+  // The sentinel record is dropped, never stored; only the real one survives.
+  EXPECT_EQ(buffer.size(), 1u);
+  EXPECT_EQ(buffer.dropped(), 1u);
+  EXPECT_EQ(buffer[0].category, TraceCategory::Planner);
+  EXPECT_EQ(buffer[0].value, 2u);
+}
+
 TEST(TessTraceBuffer, ClearResetsRecordsAndStats) {
   std::array<TraceRecord, 2> storage{};
   TraceBuffer buffer{storage};
@@ -265,17 +280,27 @@ TEST(TessScopedTimer, RecordsTimingAndRecordWhenTraceActive) {
 }
 
 TEST(TessScopedTimer, BindsToBufferActiveAtConstruction) {
-  std::array<TraceRecord, 4> storage{};
-  TraceBuffer buffer{storage};
+  std::array<TraceRecord, 4> a_storage{};
+  std::array<TraceRecord, 4> b_storage{};
+  TraceBuffer buffer_a{a_storage};
+  TraceBuffer buffer_b{b_storage};
+
   {
-    // Timer starts with no active buffer, so it captures nullptr and records
-    // nothing even though a ScopedTrace is installed before it ends.
-    ScopedTimer timer{TraceCategory::Path, "x"};
-    ScopedTrace scope{buffer};
+    ScopedTrace a_scope{buffer_a};
+    // Timer is constructed while buffer A is active, so it binds to A.
+    std::optional<ScopedTimer> timer{std::in_place, TraceCategory::Path, "x"};
+    {
+      ScopedTrace b_scope{buffer_b};
+      // Destroy the timer while buffer B is active. Capture-at-construction
+      // sends the sample to A; a destruction-time binding would send it to B.
+      timer.reset();
+    }
   }
 
-  EXPECT_EQ(buffer.stats(TraceCategory::Path).samples, 0u);
-  EXPECT_EQ(buffer.size(), 0u);
+  EXPECT_EQ(buffer_a.stats(TraceCategory::Path).samples, 1u);
+  EXPECT_EQ(buffer_a.size(), 1u);
+  EXPECT_EQ(buffer_b.stats(TraceCategory::Path).samples, 0u);
+  EXPECT_EQ(buffer_b.size(), 0u);
 }
 
 TEST(TessTraceBuffer, TraceIsAllocationFree) {
