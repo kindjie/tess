@@ -78,6 +78,14 @@ tess_apply_project_options(tess_topology_sparse_test)
 
 gtest_discover_tests(tess_topology_sparse_test)
 
+add_executable(
+  tess_path_precheck_test allocation_counter.cc tess_path_precheck_test.cc)
+target_link_libraries(
+  tess_path_precheck_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_path_precheck_test)
+
+gtest_discover_tests(tess_path_precheck_test)
+
 add_executable(tess_path_runtime_sparse_test tess_path_runtime_sparse_test.cc)
 target_link_libraries(
   tess_path_runtime_sparse_test PRIVATE tess::tess GTest::gtest_main)

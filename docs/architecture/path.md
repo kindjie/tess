@@ -30,6 +30,23 @@ other entries cannot move.
   the search exhausts the resident set having skipped a non-resident neighbor.
   It is inert for dense (`AlwaysResident`) worlds, where every chunk is
   resident.
+- `precheck_path` (in `tess/path/precheck.h`) is a cheap pre-A* topology gate:
+  it consults a `RegionGraph` built over the world for whether `start` can
+  reach `goal` through region connectivity, without expanding the grid, and
+  returns a `PrecheckStatus`. Only `Unreachable` -- the graph definitively
+  rules out any route within known topology -- licenses skipping A*, reported
+  by `precheck_rules_out_path`. Every other status means "run A*": `Reachable`
+  (a region path exists; A* realizes it), `MissingChunk` (the search reached a
+  boundary exit into a non-resident chunk, so a route through unloaded space
+  cannot be ruled out -- sparse worlds only), `InvalidStart` / `InvalidGoal`
+  (A* is authoritative on tile validity), `GraphStale` (the graph no longer
+  matches the world), and `NoGraph` (no built graph supplied). Staleness is
+  resolved conservatively and first: an empty graph is `NoGraph` and a graph
+  that fails `is_region_graph_fresh` is `GraphStale`, both decided before
+  `reachable()` runs, so a stale snapshot can never yield a definitive but
+  wrong `Unreachable`. The query reuses a caller-owned `RegionGraphScratch`
+  (allocation-free once warm); the gate can only ever prune provably
+  unreachable goals, never turn a solvable query into a wrong failure.
 - Sparse residency covers the single-shot searches -- `astar_path`,
   `weighted_astar_path`, the unweighted `build_distance_field`, and the weighted
   `build_weighted_distance_field`, `build_weighted_distance_field_in_box`, and

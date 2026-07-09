@@ -13,6 +13,30 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-08 - Topology Precheck (Pre-A* Reachability Gate)
+
+- Added (topology): `is_region_graph_fresh(world, graph)` -- a const,
+  allocation-free predicate reporting whether a built `RegionGraph` still
+  matches the world (dense: per-chunk topology version; sparse: also the frozen
+  residency snapshot, generation checked before touching `meta()`). Recomputes
+  the staleness test `update_region_graph` applies internally.
+- Added (path, new header `path/precheck.h`): `precheck_path(...)` ->
+  `PrecheckStatus` {`Reachable`, `Unreachable`, `MissingChunk`, `InvalidStart`,
+  `InvalidGoal`, `GraphStale`, `NoGraph`} and `precheck_rules_out_path`. A
+  cheap region-graph reachability gate run before A* (M8). Only `Unreachable`
+  licenses skipping A*; every other status runs A*. Staleness is resolved
+  first: empty graph -> `NoGraph`, stale graph -> `GraphStale`, both decided
+  BEFORE `reachable()`, so a stale snapshot can never yield a wrong definitive
+  `Unreachable`. Sparse `Indeterminate` (non-resident boundary exit) maps to
+  `MissingChunk`. Reuses a caller-owned `RegionGraphScratch`; allocation-free
+  warm. Can only prune provably-unreachable goals, never cause a wrong failure.
+- Affected docs: `architecture/topology.md`, `architecture/path.md`,
+  `architecture/surface.json`.
+- Affected code: `topology/topology.h`, new `path/precheck.h`, `tess.h`,
+  `CMakeLists.txt`; tests `tess_topology_test.cc`,
+  `tess_topology_sparse_test.cc`, new `tess_path_precheck_test.cc`. Runtime
+  wiring and downstream adoption land in later S3 slices.
+
 ## 2026-07-08 - Sparse Residency Pre-Merge Review Fixes
 
 Three defects found by the S2 pre-merge review (independent Opus + Fable-5
