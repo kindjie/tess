@@ -13,6 +13,22 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - TraceBuffer pinned to its storage (M12, S4)
+
+- Changed: `diagnostics::TraceBuffer` is now non-copyable and non-movable (all
+  four special members deleted).
+- Reason: the buffer owns its ring metadata and per-category timing
+  accumulators but only references caller storage through a `std::span`. An
+  implicit value copy produced two buffers with independent metadata over the
+  same backing array, so passing a buffer by value into a helper that installs
+  `ScopedTrace` would collect records the caller's original buffer never sees --
+  `capture_diagnostics` would silently miss them. Pinning the buffer to its
+  storage makes that misuse a compile error; every caller already constructs it
+  in place and passes it by reference, so nothing else changed. Flagged by the
+  Codex connector review of PR #8.
+- Affected docs: `decisions/CHANGELOG.md`.
+- Affected code: `diagnostics/trace.h`, `tests/tess_diagnostics_trace_test.cc`.
+
 ## 2026-07-09 - Diagnostics review follow-up (M12, S4)
 
 - Changed: three review-feedback fixes on the S4 diagnostics branch. (1) Removed
