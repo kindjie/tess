@@ -48,6 +48,15 @@ enum class PrecheckStatus : std::uint8_t {
 // definitive but wrong Unreachable from an outdated snapshot. `scratch` is
 // caller-owned and reused across queries (allocation-free once warm); it must
 // not be shared across concurrent queries.
+//
+// PRECONDITION: `graph` must be built over the SAME passability the search uses
+// (the `PassableTag` passed to build_region_graph must match the search's
+// `PassableTag`; cost weighting is irrelevant, since weights only order
+// passable tiles). The graph type encodes only residency, so a graph built over
+// a different passability compiles and would let `Unreachable` prune a route
+// A* could actually walk -- the one way this gate can turn a solvable query
+// into a wrong failure. Freshness (is_region_graph_fresh) is checked, but a
+// passability mismatch is the caller's responsibility.
 template <typename World>
 [[nodiscard]] auto precheck_path(
     const RegionGraphT<typename World::residency_type>& graph,
