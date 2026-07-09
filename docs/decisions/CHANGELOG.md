@@ -13,6 +13,25 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Diagnostics Benchmark Family (M12, S4 slice 4)
+
+- Added: `bench/tess_diagnostics_bench.cc` and `bench/thresholds/diagnostics.json`,
+  a gated `diagnostics/` benchmark family compiled only into the
+  diagnostics-enabled `tess_bench_diagnostics` binary (the source is an empty TU
+  without `TESS_ENABLE_DIAGNOSTICS`). Benches: `diagnostics/trace_record`,
+  `diagnostics/record_timing`, `diagnostics/scoped_timer`,
+  `diagnostics/warning_sink`. New `tess_bench_diagnostics_thresholds` target, a
+  CI baseline command, and a `tess_bench_diagnostics_family_smoke` CTest.
+- Reason: fourth slice of the M12 diagnostics close (S4). Measures the enabled
+  overhead of the trace/timer/warning primitives directly (local observations
+  ~0.3-32 ns, far under the loose bootstrap ceilings). The compile-down side is
+  proven structurally: the default `tess_bench` compiles every diagnostic macro
+  to nothing, so its `queued/`/`path/` families are the zero-overhead baseline
+  and still pass unchanged with the planner-trace macros present.
+- Affected docs: `planning/benchmark-plan.md`.
+- Affected code: new `bench/tess_diagnostics_bench.cc`,
+  `bench/thresholds/diagnostics.json`, `bench/CMakeLists.txt`.
+
 ## 2026-07-09 - Planner Trace and Snapshot Export (M12, S4 slice 3)
 
 - Added (ops/queued.h): planner-trace instrumentation. `plan_operations` (now
