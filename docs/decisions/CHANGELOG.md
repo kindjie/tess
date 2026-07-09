@@ -13,6 +13,24 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Diagnostics review follow-up (M12, S4)
+
+- Changed: three review-feedback fixes on the S4 diagnostics branch. (1) Removed
+  the private downstream consumer's name from the new diagnostics docs, using
+  generic "downstream consumer/adoption" wording instead -- tracked content is
+  treated as public per `AGENTS.md`. (2) Documented the optional, consumer-
+  provided Dear ImGui integration dependency that `debug/imgui/panels.h`
+  targets. (3) Wired the diagnostics benchmark threshold target into CI so
+  `bench/thresholds/diagnostics.json` actually gates regressions.
+- Reason: the ImGui-panels and diagnostics slices named the private consumer in
+  a repository intended to be public, added an optional dependency without the
+  required entry in `docs/dependencies.md`, and shipped a threshold file that no
+  CI step exercised (a silent no-gate). All three are addressed here without
+  changing any tess API or runtime behavior.
+- Affected docs: `architecture/diagnostics.md`, `decisions/CHANGELOG.md`,
+  `dependencies.md`.
+- Affected code: `.github/workflows/ci.yml`.
+
 ## 2026-07-09 - Diagnostics ImGui Panels (M12, S4 slice 5)
 
 - Added (new header `debug/imgui/panels.h`, doubly gated by `TESS_ENABLE_IMGUI`
