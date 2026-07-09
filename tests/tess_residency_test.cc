@@ -757,6 +757,30 @@ TEST(TessSparseDistanceField,
 }
 
 TEST(TessSparseDistanceField,
+     ExplicitEvictBetweenBuildAndReadRefusesStaleField) {
+  // An explicit world.evict() changes residency just like ensure_resident and
+  // must advance the residency epoch, so a field built before it is refused on
+  // read even when the start's own chunk is still resident. Regression guard:
+  // evict() must not be the one residency op that forgets to bump the epoch.
+  SparseSmall world{tess::ResidencyConfig{4 * page_bytes<Small>()}};
+  make_chunk_passable(world, tess::ChunkKey{0});  // x in [0, 32)
+  make_chunk_passable(world, tess::ChunkKey{1});  // x in [32, 64)
+  tess::DistanceFieldScratch scratch;
+
+  ASSERT_EQ(sparse_build_field(world, {0, 0, 0}, scratch,
+                               tess::MissingChunkPolicy::TreatAsBlocked)
+                .status,
+            tess::PathStatus::Found);
+  ASSERT_EQ(sparse_field_path(world, {10, 0, 0}, {0, 0, 0}, scratch).status,
+            tess::PathStatus::Found);
+
+  ASSERT_TRUE(world.evict(tess::ChunkKey{1}));  // residency change, no reload
+  ASSERT_TRUE(world.is_resident(tess::ChunkKey{0}));
+  EXPECT_EQ(sparse_field_path(world, {10, 0, 0}, {0, 0, 0}, scratch).status,
+            tess::PathStatus::NoPath);
+}
+
+TEST(TessSparseDistanceField,
      MissingChunkTruncatesFieldBlockedOrIndeterminateByPolicy) {
   SparseSmall world{tess::ResidencyConfig{4 * page_bytes<Small>()}};
   make_chunk_passable(world, tess::ChunkKey{0});  // x in [0, 32)
