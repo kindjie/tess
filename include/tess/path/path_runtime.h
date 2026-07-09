@@ -186,6 +186,11 @@ class PathRequestRuntime {
     return stats;
   }
 
+  // An optional `graph` enables the pre-A* topology precheck (see
+  // precheck_path): requests it proves unreachable resolve to NoPath without
+  // searching, counted in stats().precheck_ruled_out. PRECONDITION: `graph`
+  // must be built over the same PassableTag this call searches with, or the
+  // gate could prune a solvable request. Passing nullptr disables it.
   template <typename World, typename PassableTag>
   [[nodiscard]] auto process_unit_cached(
       const World& world, PathRuntimeCachePolicy policy = {},
