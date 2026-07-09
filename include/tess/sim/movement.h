@@ -157,16 +157,20 @@ template <typename World, typename PassableTag, typename OccupancyTag,
   if constexpr (std::is_same_v<typename World::residency_type,
                                SparseResident>) {
     // try_resolve is containment-only, so an in-bounds but non-resident
-    // endpoint passes the checks above. A non-resident chunk carries no data:
-    // reject the move (the agent re-plans against the now-changed residency)
-    // rather than reading a non-resident slot out of bounds in the field
-    // accessors below.
-    if (!world.is_resident(world.resolve(intent.from).chunk_key)) {
-      return MovementResult{MovementStatus::InvalidFrom, intent.from,
+    // endpoint passes the checks above. A non-resident chunk carries no data,
+    // but this is a TRANSIENT condition -- the chunk may be reloaded -- so
+    // return StaleVersion (a transient failure, matching
+    // movement_versions_match for the identical condition) rather than a
+    // terminal InvalidFrom/InvalidTo. That routes the agent lifecycle to
+    // re-plan against the now-changed residency instead of permanently
+    // stranding it at Unreachable, and it still short-circuits before the
+    // unchecked field() accessors below so we never read a non-resident slot
+    // out of bounds. Ordinary LRU eviction of a chunk under a Following agent
+    // must not read as a permanent caller bug.
+    if (!world.is_resident(world.resolve(intent.from).chunk_key) ||
+        !world.is_resident(world.resolve(intent.to).chunk_key)) {
+      return MovementResult{MovementStatus::StaleVersion, intent.from,
                             intent.to};
-    }
-    if (!world.is_resident(world.resolve(intent.to).chunk_key)) {
-      return MovementResult{MovementStatus::InvalidTo, intent.from, intent.to};
     }
   }
   if (manhattan_distance(intent.from, intent.to) != 1) {

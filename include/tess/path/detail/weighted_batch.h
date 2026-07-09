@@ -56,6 +56,7 @@ auto build_bounded_weighted_distance_field(
   const auto goal_offset = space.offset(goal_index);
   scratch.goal_ = goal;
   scratch.has_goal_ = true;
+  scratch.stamp_residency(world);
   scratch.distance_[goal_offset] = 0;
   scratch.touch_node(goal_offset, goal_index);
   TESS_DIAG_EVENT(path_touch_node);
@@ -186,7 +187,8 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
   if (!contains<Shape>(goal)) {
     return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
   }
-  if (!scratch.has_goal_ || scratch.goal_ != goal) {
+  if (!scratch.has_goal_ || scratch.goal_ != goal ||
+      !scratch.residency_matches(world)) {
     return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
   }
 

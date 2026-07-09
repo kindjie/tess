@@ -54,6 +54,7 @@ auto build_weighted_distance_field_in_box(
   const auto goal_offset = space.offset(goal_index);
   scratch.goal_ = goal;
   scratch.has_goal_ = true;
+  scratch.stamp_residency(world);
   scratch.distance_[goal_offset] = 0;
   scratch.touch_node(goal_offset, goal_index);
   TESS_DIAG_EVENT(path_touch_node);
