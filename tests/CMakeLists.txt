@@ -238,3 +238,20 @@ target_compile_definitions(
 tess_apply_project_options(tess_diagnostics_enabled_test)
 
 gtest_discover_tests(tess_diagnostics_enabled_test)
+
+add_executable(
+  tess_diagnostics_trace_test
+  tess_diagnostics_trace_test.cc
+  ../bench/tess_diagnostics_alloc_hooks.cc
+)
+target_link_libraries(
+  tess_diagnostics_trace_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+target_compile_definitions(
+  tess_diagnostics_trace_test
+  PRIVATE TESS_ENABLE_DIAGNOSTICS
+)
+tess_apply_project_options(tess_diagnostics_trace_test)
+
+gtest_discover_tests(tess_diagnostics_trace_test)

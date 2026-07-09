@@ -13,6 +13,26 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Diagnostics Warning Sink (M12, S4 slice 1)
+
+- Added (diagnostics, new header `diagnostics/warning_sink.h`, gated by
+  `TESS_ENABLE_DIAGNOSTICS`): a `Warning` record (a `WarningCategory` origin
+  tag, a non-owning `std::string_view message`, a numeric `detail`, and a
+  defaulting `std::source_location`), the `WarningSink` concept
+  (`noexcept warn(const Warning&)`), `NullWarningSink` (discards), and
+  `BufferedWarningSink<Capacity>` -- a caller-owned fixed-capacity ring with
+  inline storage (allocation-free `warn()`), oldest-first indexing, and a
+  `dropped()` overflow count.
+- Reason: first slice of the M12 diagnostics close (S4). A warning channel is
+  a foundational primitive that later stages consume (queued-ops result
+  reasons in S6, scheduler budget signals in S7); landing it early and
+  independently keeps the trace/timer slice focused. The `message` non-owning
+  contract mirrors `PathView`: warnings are copied by value but never own their
+  text, so the sink stays allocation-free.
+- Affected docs: `architecture/diagnostics.md`, `architecture/surface.json`.
+- Affected code: new `diagnostics/warning_sink.h`, `tess.h`, `CMakeLists.txt`;
+  new test `tess_diagnostics_trace_test.cc`.
+
 ## 2026-07-09 - PathView Non-Owning Path View (M8)
 
 - Added (path, new header `path/path_view.h`): `PathView`, a non-owning view
