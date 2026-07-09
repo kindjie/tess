@@ -310,7 +310,7 @@ class RouteCacheScratch {
       const World& world) noexcept -> std::uint64_t {
     if constexpr (std::is_same_v<typename World::residency_type,
                                  AlwaysResident>) {
-      // Dense: fold every chunk's topology version in chunk order.
+      // Dense: fold every chunk's content version (meta().version) in order.
       auto fingerprint = std::uint64_t{0xcbf29ce484222325ull};
       for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
         const auto version = world.meta(ChunkKey{i}).version;
@@ -324,7 +324,7 @@ class RouteCacheScratch {
       // Sparse: fold only the resident set (bounded by resident_count, never
       // chunk_count; meta()/residency_generation() are called only for keys
       // from resident_chunk_keys(), so never on a non-resident slot). Each
-      // chunk contributes (key, residency_generation, topology version):
+      // chunk contributes (key, residency_generation, content version):
       // version catches in-place edits, and residency_generation -- world-
       // monotonic and strictly greater on any reload, so it changes even when
       // ensure_resident resets version to 0 -- catches evict/reload/swap. The

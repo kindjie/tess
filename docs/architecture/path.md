@@ -39,12 +39,14 @@ other entries cannot move.
   (`RouteCacheScratch`, `cached_astar_path`), and
   `PathRequestRuntime::process_unit_cached` / `process_weighted_batch`. The route
   cache's world fingerprint is residency-aware -- it folds each resident chunk's
-  key, `residency_generation`, and topology version through an order-independent
-  sum -- so any eviction, reload, or in-place edit changes the fingerprint and
-  invalidates the whole cache before a stale route can be served. The two-call
-  builder/reader distance-field API stamps the same `world.residency_fingerprint()`
-  content hash in `DistanceFieldScratch` at build time; a reader whose world
-  changed residency between the paired calls -- or a scratch read against a
+  key, `residency_generation`, and content version (`meta().version`) through an
+  order-independent sum -- so any eviction, reload, or in-place edit changes the
+  fingerprint and invalidates the whole cache before a stale route can be served.
+  The two-call builder/reader distance-field API stamps
+  `world.residency_fingerprint()` in `DistanceFieldScratch` at build time -- the
+  route cache's terms plus each chunk's resident slot, since a distance field is
+  indexed by slot where the route cache is keyed by coordinate; a reader whose
+  world changed residency between the paired calls -- or a scratch read against a
   different/copied/swapped world -- returns `NoPath` (forcing a rebuild) rather
   than descending a slot-rebound stale field. Each single-shot
   builder takes an optional trailing `MissingChunkPolicy` (default
