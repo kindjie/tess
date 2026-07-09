@@ -29,15 +29,19 @@ workflow and a cross-lab codex pass), fixed on the branch before merge.
   and the agent re-plans against the changed residency.
 - Changed (distance field, MAJOR): the two-call `build_distance_field` /
   `distance_field_path` API (and the weighted / box / bounded variants) now
-  carries a residency-epoch fingerprint in `DistanceFieldScratch`. A field is
-  indexed by resident-slot offset, so an eviction/reload between the paired
-  calls could rebind a slot to a different chunk and make the reader return
-  `Found` with a path to the wrong coordinate (and across impassable tiles).
-  Each build stamps `world.residency_epoch()` (new monotonic accessor on
-  `SparseResidentWorld`, bumped by every `ensure_resident` *and* `evict` -- an
-  explicit eviction also rebinds a slot, so it must advance the epoch too); each
-  reader refuses a mismatch with `NoPath` so the caller rebuilds. Dense worlds
-  never evict, so the stamp/check compile to a no-op and stay byte-identical.
+  carries a residency fingerprint in `DistanceFieldScratch`. A field is indexed
+  by resident-slot offset, so an eviction/reload between the paired calls could
+  rebind a slot to a different chunk and make the reader return `Found` with a
+  path to the wrong coordinate (and across impassable tiles). Each build stamps
+  `world.residency_fingerprint()` (new accessor on `SparseResidentWorld`: a
+  commutative content hash over the resident set's `(key, generation, version)`,
+  mirroring `route_cache.h`'s `world_version_fingerprint` so the two staleness
+  mechanisms agree); each reader refuses a mismatch with `NoPath` so the caller
+  rebuilds. Because it hashes the resident *state* rather than a per-world
+  counter, it catches any eviction, reload, in-place edit, or read against a
+  different/copied/swapped world (a bare counter aliases across worlds that did
+  the same number of ops). Dense worlds never evict, so the stamp/check compile
+  to a no-op and stay byte-identical.
 - Changed (queued ops, safety): the queued planner *and* executor now
   `static_assert` an `AlwaysResidentWorld` at all three public choke points --
   `plan_operations` (planning; its `expand_domain` `ResidentChunks` case
