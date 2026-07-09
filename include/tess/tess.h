@@ -12,6 +12,7 @@
 #include <tess/path/path_runtime.h>
 #include <tess/path/portal_route.h>
 #include <tess/path/portal_segment_cache.h>
+#include <tess/path/precheck.h>
 #include <tess/path/route_cache.h>
 #include <tess/sim/movement.h>
 #include <tess/sim/path_agent.h>

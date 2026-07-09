@@ -144,6 +144,14 @@
   seam edit (graph-for-graph plus a reachability probe), and the
   residency-generation staleness guard forcing a full rebuild after a chunk
   loads post-build.
+- `tess_path_precheck_test`: verifies the pre-A* topology gate `precheck_path`
+  and `precheck_rules_out_path`: a reachable goal within a connected region, an
+  `Unreachable` verdict across a walled chunk boundary (the only status that
+  licenses skipping A*), an out-of-bounds goal reported as `InvalidGoal`, an
+  unbuilt graph as `NoGraph`, a post-build topology edit degrading to
+  `GraphStale` rather than a wrong `Unreachable`, a sparse corridor exiting into
+  a non-resident chunk reported as `MissingChunk`, and an allocation-free warm
+  precheck query.
 - `tess_path_test`: verifies the MVP A* path foundation, including top-down 2D
   paths around blocked tiles, invalid start and goal reporting, no-path
   reporting, direct-path and uniform-cost fast paths across top-down 2D,
