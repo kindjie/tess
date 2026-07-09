@@ -13,6 +13,32 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Planner Trace and Snapshot Export (M12, S4 slice 3)
+
+- Added (ops/queued.h): planner-trace instrumentation. `plan_operations` (now
+  an index loop) records `invalid_write_policy` / `invalid_field_access` /
+  `invalid_domain` / `conflict` / `planned` per operation, and
+  `plan_parallel_execution_phases` records `unsupported_write_policy` /
+  `new_phase` / `merged` per operation, all under the `Planner` trace category
+  via `TESS_DIAG_TRACE_VALUE` (value = operation/phase index). Macros only:
+  byte-identical planning when diagnostics are off.
+- Added (diagnostics, new header `diagnostics/export.h`, gated by
+  `TESS_ENABLE_DIAGNOSTICS`): `TimingSnapshot` (a copy of every category's
+  `TraceCategoryStats` with a Count-guarding `category()` accessor),
+  `DiagnosticsSnapshot` (path/allocation/queued counters + timing), and the
+  `capture_timing` / `capture_diagnostics` free functions that assemble them as
+  pure copies decoupled from the live sinks.
+- Reason: third slice of the M12 diagnostics close (S4). The planner was the one
+  major queued-ops surface with zero instrumentation; routing its decisions
+  through the trace buffer gives the profiling panels a real event log, and the
+  export snapshots are the plain structs the ImGui panels and the downstream
+  adoption render. The `plan_operations` loop switched to an index form purely
+  to expose the operation index as the trace value; behavior is unchanged (the
+  full 514-test suite passes).
+- Affected docs: `architecture/diagnostics.md`, `architecture/surface.json`.
+- Affected code: `ops/queued.h`, new `diagnostics/export.h`, `tess.h`,
+  `CMakeLists.txt`; extended test `tess_diagnostics_trace_test.cc`.
+
 ## 2026-07-09 - Diagnostics Trace Buffer and Timers (M12, S4 slice 2)
 
 - Added (diagnostics, new header `diagnostics/trace.h`, gated by

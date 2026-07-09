@@ -127,8 +127,38 @@ capture, gated by the same `TESS_ENABLE_DIAGNOSTICS` switch.
   began. On destruction it folds the elapsed nanoseconds into the category's
   timing accumulator and appends a record whose `value` is that duration.
 
+## Planner Trace
+
+The queued-ops planner (`ops/queued.h`) records its per-operation decisions to
+the active trace buffer under the `Planner` category, using the
+`TESS_DIAG_TRACE_VALUE` macro so the instrumentation compiles away when
+diagnostics are off. Each record's `value` is the operation (or phase) index:
+
+- `plan_operations` emits `invalid_write_policy`, `invalid_field_access`,
+  `invalid_domain`, `conflict` (a field hazard against an earlier operation),
+  or `planned` (accepted) for each operation.
+- `plan_parallel_execution_phases` emits `unsupported_write_policy`,
+  `new_phase` (an operation that opens a new parallel phase, whether the first
+  or one forced by a conflict), or `merged` (an operation folded into the
+  current phase).
+
+This is the first library code to feed the trace buffer; a consumer installs a
+`ScopedTrace` around a plan call to capture the decision log.
+
+## Snapshot Export
+
+`include/tess/diagnostics/export.h` provides plain, self-contained snapshot
+structs so a panel or consumer can hold diagnostics without touching the live
+sinks. `TimingSnapshot` copies every category's `TraceCategoryStats` out of a
+`TraceBuffer` (with a Count-guarding `category()` accessor); `DiagnosticsSnapshot`
+bundles copies of the `PathCounters`, `AllocationCounters`, and
+`QueuedPhaseCounters` a caller owns alongside a `TimingSnapshot`. `capture_timing`
+and `capture_diagnostics` assemble them as pure copies, so a snapshot outlives
+its sources unchanged.
+
 ## Deliberate Limits
 
-Beyond the counters, warning sink, and trace/timing above, this layer does not
-yet implement a sampling profiler, cross-thread aggregation, or any runtime
-toggle; enabling or disabling diagnostics is a recompile.
+Beyond the counters, warning sink, trace/timing, planner trace, and snapshot
+export above, this layer does not yet implement a sampling profiler,
+cross-thread aggregation, or any runtime toggle; enabling or disabling
+diagnostics is a recompile.

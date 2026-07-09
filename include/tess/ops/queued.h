@@ -3,6 +3,7 @@
 #include <tess/block/block.h>
 #include <tess/core/shape.h>
 #include <tess/diagnostics/diagnostics.h>
+#include <tess/diagnostics/trace.h>
 #include <tess/ops/phase_executor.h>
 #include <tess/storage/world.h>
 
@@ -763,7 +764,8 @@ template <typename World>
   ExecutionReport report;
   report.reserve(operations.size());
 
-  for (const auto& op : operations) {
+  for (std::size_t op_index = 0; op_index < operations.size(); ++op_index) {
+    const auto& op = operations[op_index];
     OperationReport op_report{
         op.handle,
         op.id,
@@ -784,6 +786,8 @@ template <typename World>
     if (!is_valid_write_policy(op.write_policy)) {
       op_report.status = OperationStatus::InvalidWritePolicy;
       op_report.failure = OperationFailure::InvalidWritePolicyValue;
+      TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner,
+                            "invalid_write_policy", op_index);
       report.push_report(op_report);
       continue;
     }
@@ -791,6 +795,8 @@ template <typename World>
     if (!detail::is_valid_field_access(op.write_policy, op.field_access)) {
       op_report.status = OperationStatus::InvalidFieldAccess;
       op_report.failure = OperationFailure::ReadOnlyWriteMask;
+      TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner,
+                            "invalid_field_access", op_index);
       report.push_report(op_report);
       continue;
     }
@@ -813,6 +819,8 @@ template <typename World>
       op_report.failure = OperationFailure::ExplicitChunkOutOfRange;
       op_report.detail_chunk = invalid_chunk;
       op_report.has_detail_chunk = true;
+      TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner,
+                            "invalid_domain", op_index);
       report.push_report(op_report);
       continue;
     }
@@ -828,11 +836,15 @@ template <typename World>
           detail::hazard_mask(conflict->field_access, planned.field_access);
       op_report.has_conflict = true;
       op_report.chunk_count = planned.chunks.size();
+      TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner, "conflict",
+                            op_index);
       report.push_report(op_report);
       continue;
     }
 
     op_report.chunk_count = planned.chunks.size();
+    TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner, "planned",
+                          op_index);
     report.push_planned(std::move(planned));
     report.push_report(op_report);
   }
@@ -864,10 +876,14 @@ template <typename World>
       phases.status_ = ExecutionPhaseStatus::UnsupportedWritePolicy;
       phases.failed_operation_index_ = i;
       phases.failed_write_policy_ = operation.write_policy;
+      TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner,
+                            "unsupported_write_policy", i);
       return phases;
     }
 
     if (phases.phases_.empty()) {
+      TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner, "new_phase",
+                            i);
       phases.push_phase(ExecutionPhase{i, 1});
       continue;
     }
@@ -883,8 +899,11 @@ template <typename World>
     }
 
     if (conflicts) {
+      TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner, "new_phase",
+                            i);
       phases.push_phase(ExecutionPhase{i, 1});
     } else {
+      TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner, "merged", i);
       ++phase.operation_count;
     }
   }
