@@ -210,14 +210,34 @@ class World<Shape, Schema, SparseResident> {
     return {resident_keys_.data(), resident_keys_.size()};
   }
 
-  // Monotonic counter bumped on every ensure_resident -- the only operation
-  // that changes residency, and thus the slot->chunk bindings a resident-slot-
-  // indexed artifact (e.g. a built distance field) depends on. A caller that
-  // captures this before building and compares after can detect any eviction/
-  // reload that happened in between. It also advances on a plain touch, which
-  // merely over-invalidates (forces a rebuild) and never serves stale data.
-  [[nodiscard]] std::uint64_t residency_epoch() const noexcept {
-    return lru_clock_;
+  // Order-independent content fingerprint of the resident set: a commutative
+  // sum over each resident chunk's (key, residency_generation, topology
+  // version). Unlike a bare counter it identifies the resident STATE itself,
+  // so it changes on any eviction, reload, or in-place edit and -- because it
+  // reads actual content, not a per-world clock -- never collides across two
+  // different worlds' residency (a counter starts low in every world). A
+  // resident-slot-indexed artifact (e.g. a built distance field) captures this
+  // before building and rejects a mismatch after, catching any slot rebind
+  // (including one via world copy/swap or being read against the wrong world)
+  // that would otherwise serve a stale path. Mirrors route_cache.h's
+  // world_version_fingerprint (sparse branch) so the two staleness mechanisms
+  // agree; O(resident_count), never touches a non-resident chunk. Commutative
+  // because resident_chunk_keys() order is not stable (eviction swaps last in).
+  [[nodiscard]] std::uint64_t residency_fingerprint() const noexcept {
+    const auto mix = [](std::uint64_t x) noexcept -> std::uint64_t {
+      x = (x ^ (x >> 30u)) * 0xbf58476d1ce4e5b9ull;
+      x = (x ^ (x >> 27u)) * 0x94d049bb133111ebull;
+      return x ^ (x >> 31u);
+    };
+    auto acc = std::uint64_t{0};
+    for (const auto key : resident_chunk_keys()) {
+      auto h = mix(key.value);
+      h ^= mix(h + residency_generation(key));
+      h ^= mix(h + static_cast<std::uint64_t>(meta(key).version));
+      acc += h;
+    }
+    return mix(acc + static_cast<std::uint64_t>(resident_count()) +
+               0x9e3779b97f4a7c15ull);
   }
 
   // Makes `key` resident (evicting the least-recently-used chunk if the
@@ -261,11 +281,6 @@ class World<Shape, Schema, SparseResident> {
     }
     release_slot(slot);
     free_slots_.push_back(slot);
-    // Explicit eviction changes residency (a slot's chunk binding is gone), so
-    // advance the residency epoch just like ensure_resident does -- otherwise a
-    // resident-slot-indexed artifact built before this evict (e.g. a distance
-    // field) could pass its residency_epoch staleness check and be read stale.
-    ++lru_clock_;
     return true;
   }
 
