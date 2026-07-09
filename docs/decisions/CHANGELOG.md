@@ -213,8 +213,8 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `architecture/path.md`, `architecture/simulation.md`.
 - Affected code: `path/path_runtime.h`, `sim/path_agent.h`,
   `sim/path_agent_tick.h`; new test `tess_path_precheck_runtime_test.cc`.
-  downstream adoption (passing its `RegionGraph` to the weighted tick and deleting
-  its bespoke reachability gating) lands in a later S3 slice.
+  The downstream adoption (passing its `RegionGraph` to the weighted tick and
+  deleting its bespoke reachability gating) lands in a later S3 slice.
 
 ## 2026-07-08 - Topology Precheck (Pre-A* Reachability Gate)
 
@@ -238,7 +238,7 @@ Records meaningful design changes from the original TDDs.
 - Affected code: `topology/topology.h`, new `path/precheck.h`, `tess.h`,
   `CMakeLists.txt`; tests `tess_topology_test.cc`,
   `tess_topology_sparse_test.cc`, new `tess_path_precheck_test.cc`. Runtime
-  wiring and downstream adoption land in later S3 slices.
+  wiring and the downstream adoption land in later S3 slices.
 
 ## 2026-07-08 - Sparse Residency Pre-Merge Review Fixes
 
@@ -341,8 +341,9 @@ workflow and a cross-lab codex pass), fixed on the branch before merge.
   (`InvalidFrom`/`InvalidTo`; `StaleVersion` for the version check) so an agent
   re-plans rather than walking a route across a chunk evicted since planning.
 - Reason: S2 Slice 5a -- unblock the path runtime on sparse worlds, the
-  dependency the downstream sparse adoption needs. Scope and the order-independence
-  requirement came from an adversarial proposer-panel + synthesis design review.
+  dependency the downstream sparse adoption needs. Scope and the
+  order-independence requirement came from an adversarial proposer-panel +
+  synthesis design review.
 - Design: dense codegen byte-identical (the fingerprint's dense arm is the exact
   prior FNV-over-`chunk_count` loop; every sparse branch is behind `if constexpr`).
   Default `MissingChunkPolicy::TreatAsBlocked` on the runtime path is
@@ -360,7 +361,8 @@ workflow and a cross-lab codex pass), fixed on the branch before merge.
   (`queued.h` `mark_dirty`). The scheduler wrappers `tick_*_movement_scheduler`
   reach the render-delta scan only when `render_dirty_mask != 0` (the default is
   0); the agent tick `tick_*_path_agents_with_movement` itself is sparse-safe.
-  These land with the sparse-consumer port that precedes the downstream adoption.
+  These land with the sparse-consumer port that precedes the downstream
+  adoption.
 - Affected code: `include/tess/path/route_cache.h`,
   `include/tess/path/path_runtime.h`, `include/tess/path/detail/weighted_batch.h`,
   `include/tess/sim/movement.h`, `tests/tess_path_runtime_sparse_test.cc`,

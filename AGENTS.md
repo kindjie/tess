@@ -16,6 +16,12 @@ When adding dependencies, record public dependency documentation in
 `docs/dependencies.md`. Keep this file focused on agent instructions and public
 repository safety.
 
+Refer to other projects by generic terms (for example, "a downstream consumer"
+or "the reference consumer") rather than by name. The one exception is an
+explicit declared dependency recorded in `docs/dependencies.md`, which may be
+named. This keeps private sibling or downstream project names out of this
+public-intended repository.
+
 For performance work, use an iterative optimize/test/benchmark cycle. Record
 accepted, rejected, and deferred experiments in
 `docs/planning/optimization-log.md` instead of architecture docs.
