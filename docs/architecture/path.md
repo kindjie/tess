@@ -487,8 +487,9 @@ next tick that should replan.
 
 ## Deliberate Limits
 
-This MVP slice does not implement topology prechecks, portal graphs, sparse
-residency, async tickets, or rich path diagnostics. Movement commit validation,
+This path core implements a topology precheck (`precheck_path`, wired into the
+runtime and agent ticks) and runs natively over sparse-resident worlds, but does
+not implement async tickets or rich path diagnostics. Movement commit validation,
 reservation checks, queued-operation-driven path dirtying, and render deltas
 now live in the simulation integration MVP, but pathfinding still does not
 automatically infer every dirty cause. Callers must mark the path-agent tick
@@ -514,8 +515,8 @@ be faster when many starts lie on already-cached paths; the runtime therefore
 skips opt-in product use for repeated-goal groups whose starts do not span
 enough distinct chunks. Route caches are suitable for stable maps with repeated
 exact routes or starts that lie on cached same-goal paths. The v1 plan still
-needs topology prechecks, weighted field products, richer runtime policy, and
-hierarchy to cover broad many-agent workloads.
+needs weighted field products, richer runtime policy, and hierarchy to cover
+broad many-agent workloads.
 
 ## Current Profiling Notes
 
