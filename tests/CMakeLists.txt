@@ -112,6 +112,12 @@ tess_apply_project_options(tess_path_test)
 
 gtest_discover_tests(tess_path_test)
 
+add_executable(tess_path_view_test allocation_counter.cc tess_path_view_test.cc)
+target_link_libraries(tess_path_view_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_path_view_test)
+
+gtest_discover_tests(tess_path_view_test)
+
 add_executable(tess_path_search_test tess_path_search_test.cc)
 target_link_libraries(
   tess_path_search_test

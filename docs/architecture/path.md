@@ -84,7 +84,18 @@ other entries cannot move.
   products. Those are persistent, cross-frame cached artifacts indexed by raw tile
   id and land with a later sparse-cache slice.
 - `PathResult` returns the status, unit movement cost, expanded-node count,
-  reached-node count, and a non-owning span of path coordinates.
+  reached-node count, and a `PathView` over the path coordinates.
+- `PathView` (in `tess/path/path_view.h`) is the non-owning view of a path that
+  `PathResult` and the runtime's ticket accessors hand out. It carries the same
+  lifetime contract as the underlying span -- valid only until the storage it
+  views is reused (A* scratch on the next query, the runtime's node buffer on
+  the next process/clear) -- and copying it never copies path data. It offers
+  read-only span parity (`size`, `empty`, `operator[]`, `front`, `back`,
+  `begin`/`end`, `data`), `span()` to recover the raw `std::span` where an API
+  needs it, and `suffix(offset)`: the remaining path from a walked index,
+  bounds-clamped (an offset at or past the end yields an empty view) and sharing
+  the same storage without copying. It is constructible from a `std::span` or a
+  `std::vector<Coord3>`, so existing result-construction sites are unchanged.
 - `DistanceFieldResult` returns the status and node counts for a reverse
   shared-goal field build.
 - `WeightedPathBatchStats` returns request count, unique-goal count, field

@@ -5,6 +5,7 @@
 #include <tess/core/shape.h>
 #include <tess/diagnostics/diagnostics.h>
 #include <tess/path/node_index_space.h>
+#include <tess/path/path_view.h>
 
 #include <algorithm>
 #include <array>
@@ -54,7 +55,7 @@ struct PathResult {
   std::uint32_t cost = 0;
   std::size_t expanded_nodes = 0;
   std::size_t reached_nodes = 0;
-  std::span<const Coord3> path;
+  PathView path;
 };
 
 struct DistanceFieldResult {
