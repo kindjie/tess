@@ -212,8 +212,9 @@ class World<Shape, Schema, SparseResident> {
 
   // Order-independent content fingerprint of the resident set: a commutative
   // sum over each resident chunk's (key, resident_slot, residency_generation,
-  // topology version). Unlike a bare counter it identifies the resident STATE
-  // itself, so it changes on any eviction, reload, or in-place edit and --
+  // content version -- meta().version, bumped on every in-place edit). Unlike a
+  // bare counter it identifies the resident STATE itself, so it changes on any
+  // eviction, reload, or in-place edit and --
   // because it reads actual content, not a per-world clock -- never collides
   // across two different worlds' residency (a counter starts low in every
   // world). A resident-slot-indexed artifact (e.g. a built distance field)
@@ -231,7 +232,10 @@ class World<Shape, Schema, SparseResident> {
   // evict that drops the key or a reload that bumps the generation, both
   // already folded), so it never over-invalidates. O(resident_count), never
   // touches a non-resident chunk; commutative because resident_chunk_keys()
-  // order is not stable (eviction swaps last in).
+  // order is not stable (eviction swaps last in). The readers recompute this
+  // per call; a batch that reads many requests against one unchanging resident
+  // set could hoist it per batch -- a natural optimization if it shows in a
+  // bench.
   [[nodiscard]] std::uint64_t residency_fingerprint() const noexcept {
     const auto mix = [](std::uint64_t x) noexcept -> std::uint64_t {
       x = (x ^ (x >> 30u)) * 0xbf58476d1ce4e5b9ull;
