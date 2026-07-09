@@ -395,6 +395,12 @@ class RegionGraphT {
                         Coord3 goal, RegionGraphScratch& scratch)
       -> ReachabilityResult;
 
+  template <typename OtherWorld>
+  friend auto is_region_graph_fresh(
+      const OtherWorld& world,
+      const RegionGraphT<typename OtherWorld::residency_type>& graph) noexcept
+      -> bool;
+
   // Rebuilds the dense region index and the CSR portal adjacency. The CSR
   // fill preserves portal order within each from-region bucket so
   // traversal remains deterministic.
@@ -1099,6 +1105,58 @@ auto reachable(const RegionGraphT<Residency>& graph, Coord3 start, Coord3 goal,
     }
   }
   return ReachabilityResult{ReachabilityStatus::Unreachable, visited_count};
+}
+
+// Reports whether `graph` still matches `world` -- i.e. whether a reachability
+// query on it would reflect the world's current topology. A precheck MUST
+// consult this and fall back to A* when it returns false: a STALE graph can
+// return a definitive (but wrong) Unreachable from an outdated snapshot. Const
+// and non-mutating -- it recomputes the same staleness test update_region_graph
+// applies, WITHOUT triggering a rebuild. Allocation-free; O(chunk_count) dense,
+// O(resident_count) sparse (never scans non-resident chunks).
+template <typename World>
+[[nodiscard]] auto is_region_graph_fresh(
+    const World& world,
+    const RegionGraphT<typename World::residency_type>& graph) noexcept
+    -> bool {
+  using Residency = typename World::residency_type;
+  if constexpr (std::is_same_v<Residency, AlwaysResident>) {
+    // Dense: every chunk's stored topology version must still be current. A
+    // graph that was never built (or built for a different shape) is not fresh.
+    if (graph.local_topologies_.size() != World::chunk_count) {
+      return false;
+    }
+    for (std::uint64_t c = 0; c < World::chunk_count; ++c) {
+      if (graph.local_topologies_[static_cast<std::size_t>(c)].version() !=
+          world.meta(ChunkKey{c}).topology_version) {
+        return false;
+      }
+    }
+    return true;
+  } else {
+    // Sparse: the frozen residency snapshot must still hold (resident_count
+    // plus per-key generation -- an evicted key reads generation 0, a reloaded
+    // key a strictly greater one), AND every resident chunk's topology version
+    // must still be current (an in-place edit). The generation is checked first
+    // so meta()/version reads only ever touch a still-resident key.
+    const auto count = graph.local_topologies_.size();
+    if (count != world.resident_count() ||
+        graph.sparse_.frozen_generations_.size() != world.resident_count()) {
+      return false;
+    }
+    for (std::size_t i = 0; i < count; ++i) {
+      const auto key = graph.sparse_.topology_keys_[i];
+      if (world.residency_generation(key) !=
+          graph.sparse_.frozen_generations_[i]) {
+        return false;
+      }
+      if (graph.local_topologies_[i].version() !=
+          world.meta(key).topology_version) {
+        return false;
+      }
+    }
+    return true;
+  }
 }
 
 }  // namespace tess

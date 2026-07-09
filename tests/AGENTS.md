@@ -144,6 +144,25 @@
   seam edit (graph-for-graph plus a reachability probe), and the
   residency-generation staleness guard forcing a full rebuild after a chunk
   loads post-build.
+- `tess_path_precheck_test`: verifies the pre-A* topology gate `precheck_path`
+  and `precheck_rules_out_path`: a reachable goal within a connected region, an
+  `Unreachable` verdict across a walled chunk boundary (the only status that
+  licenses skipping A*), an out-of-bounds goal reported as `InvalidGoal`, an
+  unbuilt graph as `NoGraph`, a post-build topology edit degrading to
+  `GraphStale` rather than a wrong `Unreachable`, a sparse corridor exiting into
+  a non-resident chunk reported as `MissingChunk`, and an allocation-free warm
+  precheck query.
+- `tess_path_precheck_runtime_test`: verifies the optional precheck gate wired
+  into `PathRequestRuntime` and the agent tick. A goal sealed off by an
+  enclosing wall (not a full-axis barrier, so A*'s dense fast-path cannot rule
+  it out) is resolved to `NoPath` with zero expanded nodes and counted in
+  `precheck_ruled_out` when a graph is supplied, while the same request without
+  a graph floods A* (expanded nodes > 0) and a reachable goal still runs A*; a
+  post-build topology edit degrades to A* (`GraphStale`) instead of a wrong
+  verdict; a mixed weighted batch proves the survivor partition scatters results
+  back to their original slots; the warm unit rule-out path is allocation-free;
+  and the weighted and unit ticks surface `precheck_ruled_out` through
+  `PathAgentFrameStats` while the ruled-out agent never advances.
 - `tess_path_test`: verifies the MVP A* path foundation, including top-down 2D
   paths around blocked tiles, invalid start and goal reporting, no-path
   reporting, direct-path and uniform-cost fast paths across top-down 2D,
@@ -172,6 +191,13 @@
   weighted shared-goal fields, bounded weighted field builds and fallback,
   weighted batch grouping, endpoint validation, and allocation-free repeated
   queries with pre-reserved path scratch.
+- `tess_path_view_test`: verifies the non-owning `PathView` handed out by
+  `PathResult`: a default view is empty, a view mirrors its underlying nodes
+  (size, front/back, indexing, iteration, `data()` identity) without copying,
+  `span()` recovers the raw span, `suffix(offset)` returns the remaining path
+  sharing the same storage (composing across suffixes) and bounds-clamps at or
+  past the end, view and suffix operations allocate nothing, and a real
+  `astar_path` result exposes a walkable suffix into its scratch storage.
 - `tess_path_search_test`: verifies the real A* heap search loops against
   reference oracles. `path_test_util.h` provides shared serpentine maze
   builders (top-down 2D, vertical 2D, and multi-chunk 3D shapes) that
