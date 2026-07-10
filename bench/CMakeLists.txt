@@ -12,6 +12,7 @@ add_executable(
   tess_path_product_bench.cc
   tess_path_scan_bench.cc
   tess_path_weighted_bench.cc
+  tess_scheduler_bench.cc
   tess_topology_bench.cc
 )
 target_link_libraries(tess_bench PRIVATE tess::tess benchmark::benchmark_main)
@@ -25,6 +26,7 @@ add_executable(
   tess_path_product_bench.cc
   tess_path_scan_bench.cc
   tess_path_weighted_bench.cc
+  tess_scheduler_bench.cc
   tess_diagnostics_bench.cc
   tess_diagnostics_alloc_hooks.cc
 )
@@ -72,6 +74,12 @@ set(
   TESS_TOPOLOGY_BENCHMARK_THRESHOLDS
   "${PROJECT_SOURCE_DIR}/bench/thresholds/topology.json"
   CACHE FILEPATH "Thresholds for topology benchmark regressions"
+)
+
+set(
+  TESS_SCHEDULER_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/scheduler.json"
+  CACHE FILEPATH "Thresholds for scheduler benchmark regressions"
 )
 
 set(
@@ -186,6 +194,23 @@ if(Python3_Interpreter_FOUND)
       --thresholds ${TESS_TOPOLOGY_BENCHMARK_THRESHOLDS}
     DEPENDS tess_bench
     COMMENT "Running topology benchmark threshold checks"
+    VERBATIM
+  )
+
+  add_custom_target(
+    tess_bench_scheduler_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=scheduler/.*
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/scheduler.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/scheduler.json
+      --thresholds ${TESS_SCHEDULER_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running scheduler benchmark threshold checks"
     VERBATIM
   )
 

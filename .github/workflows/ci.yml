@@ -356,6 +356,9 @@ jobs:
       - name: Topology benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_topology_thresholds
 
+      - name: Scheduler benchmark thresholds
+        run: cmake --build --preset bench --target tess_bench_scheduler_thresholds
+
       - name: Diagnostics benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_diagnostics_thresholds
 

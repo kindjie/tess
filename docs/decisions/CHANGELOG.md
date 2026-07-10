@@ -13,6 +13,19 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Scheduler bench family (M5, S7 slice 6)
+
+- Added: `bench/tess_scheduler_bench.cc` + `bench/thresholds/scheduler.json`
+  + the CI threshold step: empty-tick dispatch floor (47 ns local),
+  100-task cadence dispatch (506 ns), the dirty-trigger path (46 ns), and
+  the full auto-exec pipeline per tick over a 64-chunk resident update
+  (564 ns). Bootstrap ceilings pending CI recalibration; parallel speedups
+  stay trend-only per the standing bench policy.
+- Reason: S7 slice 6 -- the plan's scheduler bench family.
+- Affected docs: none.
+- Affected code: `bench/tess_scheduler_bench.cc`, `bench/CMakeLists.txt`,
+  `bench/thresholds/scheduler.json`, `.github/workflows/ci.yml`.
+
 ## 2026-07-10 - Worker pool promoted to the production backend (M5, S7 slice 5)
 
 - Changed: docs only. `WorkerPoolPhaseExecutor` is recorded as the

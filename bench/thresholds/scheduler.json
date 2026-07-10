@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "scheduler/empty_tick": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 500
+    },
+    "scheduler/cadence_dispatch_100": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 4000
+    },
+    "scheduler/dirty_trigger": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 500
+    },
+    "scheduler/auto_exec_tick": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 6000
+    }
+  }
+}
