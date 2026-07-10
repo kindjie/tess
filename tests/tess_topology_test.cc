@@ -1000,6 +1000,50 @@ TEST(TessTopology, UpdateRegionGraphScriptedEditsMatchFullRebuild) {
   }
 }
 
+TEST(TessTopology, UpdateRegionGraphRebuildsAcrossEqualChunkCountShapes) {
+  // Two shapes with the same chunk count (4) and chunk extents but different
+  // chunk grids (2x2x1 vs 4x1x1). A graph built for one must not be
+  // incrementally patched against a world of the other: the size-only check
+  // would silently keep the old grid's adjacency and portal targets.
+  using GridShape = tess::Shape<tess::Extent3{4, 4, 1}, tess::Extent3{2, 2, 1}>;
+  using RowShape = tess::Shape<tess::Extent3{8, 2, 1}, tess::Extent3{2, 2, 1}>;
+  static_assert(tess::ShapeTraits<GridShape>::chunk_count ==
+                tess::ShapeTraits<RowShape>::chunk_count);
+  World<GridShape> grid_world;
+  fill_passable(grid_world, 1);
+  World<RowShape> row_world;
+  fill_passable(row_world, 1);
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  ASSERT_EQ((tess::build_region_graph<decltype(grid_world), PassableTag>(
+                 grid_world, scratch, graph))
+                .status,
+            tess::TopologyStatus::Built);
+  // A graph built for another shape is never fresh, even with equal chunk
+  // counts and untouched topology versions.
+  EXPECT_FALSE(tess::is_region_graph_fresh(row_world, graph));
+
+  const std::array dirty{tess::ChunkKey{0}};
+  const auto updated =
+      tess::update_region_graph<decltype(row_world), PassableTag>(
+          row_world, scratch, graph, dirty);
+  EXPECT_EQ(updated.status, tess::TopologyStatus::Built);
+
+  tess::RegionGraph reference;
+  ASSERT_EQ((tess::build_region_graph<decltype(row_world), PassableTag>(
+                 row_world, scratch, reference))
+                .status,
+            tess::TopologyStatus::Built);
+  expect_graphs_equal(graph, reference);
+  EXPECT_TRUE(tess::is_region_graph_fresh(row_world, graph));
+
+  tess::RegionGraphScratch region_scratch;
+  const auto result = tess::reachable<RowShape>(
+      graph, tess::Coord3{0, 0, 0}, tess::Coord3{7, 1, 0}, region_scratch);
+  EXPECT_EQ(result.status, tess::ReachabilityStatus::Reachable);
+}
+
 TEST(TessTopology, RegionGraphFreshnessTracksTopologyVersion) {
   // is_region_graph_fresh reports whether a built graph still matches the
   // world. The S3 precheck relies on it to fall back to A* on a stale graph (a
