@@ -133,6 +133,15 @@
   dispatches run and only the last must not allocate, since the counter is
   process-global while pool workers are live), repeated create/run/stop
   lifecycle cycles, and destruction without ever running a phase.
+- `tess_movement_class_test`: verifies the compile-time movement vocabulary
+  (`tess::movement`): the `MovementClassFor` concept and `movement_class_of`
+  tag/class normalization, byte-exact `normalize_cost` (zero and negative are
+  impassable, overflow saturates through a u64 compare), composed passability
+  truth tables for a Walker (`AllOf<Field, Not<Field>>`) versus a Builder
+  (`AnyOf`) over construction tiles, per-class entry-cost expressions
+  (`FieldCost`, `SelectCost`, `ConstantCost`), and that the `WalkableField`
+  identity class reproduces the legacy `static_cast<bool>(field)` result and
+  exposes the same `field_span` storage the region flood scans.
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.

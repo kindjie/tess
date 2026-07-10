@@ -123,10 +123,38 @@ equivalent to a full build. Passing a graph that was never built for the
 world shape falls back to a full build, and an out-of-range dirty chunk is
 rejected with `InvalidChunk` before any mutation.
 
+## Movement Vocabulary
+
+`include/tess/topology/movement_class.h` (namespace `tess::movement`) defines a
+compile-time DSL for describing how a class of agent moves, so labeling,
+pathfinding, and commit validation can share ONE vocabulary. A
+`MovementClass<PassExpr, CostExpr>` fuses a passability predicate and an
+entry-cost expression, each composed from typed-field leaves that read the
+constexpr `ChunkPage::field<Tag>(LocalTileId)` at the `(page, tile)` seam
+(world-scope accessors are not constexpr). The whole predicate inlines to the
+same `&&`/`||`/`!` a hand-written cast emits, so threading a class through the
+hot paths keeps single-field codegen.
+
+- Boolean terms: `Field<Tag>` (truthy), `NotZero<Tag>` (non-zero integral),
+  `Not<Term>`, `AllOf<Terms...>`, `AnyOf<Terms...>`.
+- Cost expressions (0 == impassable, u32-saturated): `UnitCost`,
+  `ConstantCost<N>`, `FieldCost<CostTag>`, `SelectCost<SelTag, WhenSet,
+  WhenClear>`. `normalize_cost` is byte-exact with the weighted A* leaf.
+- Identity classes for backward compatibility: `WalkableField<PassableTag>`
+  (unweighted; carries the raw tag and a `passable_span` fast path so the
+  identity region flood stays a byte-identical `field_span` scan),
+  `WalkableCostField<PassableTag, CostTag>` (weighted, cost>0 folded into
+  passability), and `LegacyWeighted<PassableTag, CostTag>` (the legacy
+  cost-agnostic asymmetry). `movement_class_of<T>` normalizes a raw tag OR a
+  class so every legacy `<World, PassableTag>` call site compiles unchanged.
+
+Per-class region labeling, precheck agreement, commit validation, and the
+`TransitionProvider` concept (special transitions such as stairs) build on this
+vocabulary in later M6 slices.
+
 ## Deliberate Limits
 
-This slice does not implement movement-class rule DSL, special transitions,
-dirty rebuild queue, missing-chunk policy, hierarchical/coarse paths, or
-pathfinding precheck integration. The portal graph stores directed
+This slice does not implement per-class region labeling wiring, special
+transitions, or a dirty rebuild queue. The portal graph stores directed
 tile-adjacent portals only; incremental updates require the caller to supply
 the dirty chunk set.
