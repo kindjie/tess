@@ -13,6 +13,80 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Result-bearing queued bench gate (M4, S6 slice 4)
+
+- Added: `queued/execute_resident_update_with_results` -- the resultless
+  resident-update workload through
+  `execute_plan_deferred_dirty_with_results` plus the per-frame drain and
+  channel clear a consumer performs, with a correctness check that exactly
+  one ack is delivered per frame. Gated at 1500 ns CPU next to the 880 ns
+  resultless ceiling (locally 140 vs 114 ns, ~23% ack-delivery overhead);
+  bootstrap threshold pending CI recalibration in the consolidation stage.
+- Reason: S6 slice 4 -- the plan's bounded-overhead requirement for
+  result-bearing versus resultless plan+execute.
+- Affected docs: none.
+- Affected code: `bench/tess_bench.cc`, `bench/thresholds/queued.json`.
+
+## 2026-07-10 - Result-bearing execution wrappers (M4, S6 slice 3)
+
+- Added: `execute_phase_partitioned_dirty_with_results<Policy>` and
+  `execute_plan_deferred_dirty_with_results<Policy>` in
+  `ops/result_channel.h`. The callback gains the operation's channel value
+  (`fn(view, T&)`), accumulated op-exclusively on the executing thread;
+  completions are stamped worker-side because `PlannedExecutionResult`
+  default-constructs to Executed and the serial executor early-stops, so a
+  post-barrier sweep would misread never-run operations as executed. All
+  phase/plan operations are prepared upfront (aborted tails read Pending),
+  and the phase range is validated before the channel is touched.
+- Reason: S6 slice 3 -- the executor-agnostic delivery path: identical
+  drain order and content under serial and threaded executors for
+  successful plans (pinned by test against both), failure reasons instead
+  of values at runtime, allocation-free warm frames.
+- Affected docs: `architecture/queued-operations.md`,
+  `architecture/surface.json`, `tests/AGENTS.md`.
+- Affected code: `ops/result_channel.h`, `ops/queued.h` (one friend
+  declaration + a ResultChannel forward declaration);
+  `tests/tess_queued_results_test.cc`.
+
+## 2026-07-10 - PlannedOperation carries its enqueue source (M4, S6 slice 2)
+
+- Changed: `PlannedOperation` gains a trailing `std::source_location source`
+  member, copied from the queued operation at plan time, so run-time
+  completions can report the enqueue site exactly as plan-time rejections
+  already do through `OperationReport::source`. Behavior-neutral otherwise;
+  the only aggregate-init site is `plan_operations`.
+- Reason: S6 slice 2 -- the result-bearing execute wrappers (next slice)
+  stamp `OpCompletion.source` from the planned operation on the executing
+  thread; without this member they would need the full `ExecutionReport`
+  plumbed through, which breaks for subset-span plans.
+- Affected docs: none (member documented inline; not a surface symbol).
+- Affected code: `ops/queued.h`.
+
+## 2026-07-10 - Result-channel core: OpCompletion + drain-only ResultChannel (M4, S6 slice 1)
+
+- Added: `include/tess/ops/result_channel.h` -- `OpCompletion` (both failure
+  domains plus chunk count and enqueue-site source_location, with a
+  `completed` flag so a default record can never read as success),
+  `OpResultState` (Unbound/Pending/Ready/Failed), the caller-owned dense
+  `ResultChannel<T>` keyed by OpHandle with `drain_results(visitor)` in
+  handle order (failures deliver reasons, never values; drain-once;
+  lookups readable until clear), and `record_plan_completions(report,
+  channel)` delivering plan-time rejections through the same drain.
+- Reason: S6 slice 1 (M4 close). Design review (workflow + two adversarial
+  critiques) converged on a deliberately DRAIN-ONLY v1: the pipeline has no
+  asynchronous execution path, so a poll-only future could never be
+  observed pending and was the source of every footgun found (stale-assert
+  semantics, fail-safe fallbacks, dead expect()); futures return when
+  budget-deferred execution gives them a consumer. Recorded as a TDD
+  divergence alongside the deferred cancelled/superseded states.
+  Publication is executor-agnostic with zero atomics: per-op slot writes on
+  the executing thread, all reads after the synchronous execute call, join
+  barrier supplies visibility.
+- Affected docs: `architecture/queued-operations.md`,
+  `architecture/surface.json`, `tests/AGENTS.md`.
+- Affected code: new `ops/result_channel.h`, `tess.h`, `CMakeLists.txt`;
+  new `tests/tess_queued_results_test.cc`, `tests/CMakeLists.txt`.
+
 ## 2026-07-10 - Codex review fixes: span-path advertisement, stair narrowing, direct route-cache guard (M6, S5)
 
 - Fixed: three of four connector-review findings. (1) `WalkableCostField`
