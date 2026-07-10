@@ -74,7 +74,11 @@ extern "C" void __sanitizer_malloc_hook(const volatile void* ptr,
 }
 
 extern "C" void __sanitizer_free_hook(const volatile void* ptr) {
-  (void)ptr;
+  // free(nullptr)/delete nullptr are legal no-ops; keep the count in step
+  // with the null check in the non-sanitizer release paths below.
+  if (ptr == nullptr) {
+    return;
+  }
   const HookGuard guard;
   if (guard.entered()) {
     // The sanitizer free hook does not expose the allocation size, so
@@ -120,14 +124,24 @@ namespace {
   throw std::bad_alloc();
 }
 
+// operator delete(nullptr) is a legal no-op, so a null release is not a
+// deallocation and must not be counted (it would otherwise skew the
+// deallocations/allocations balance).
 void release_bytes(void* ptr, std::size_t size = 0) noexcept {
+  if (ptr == nullptr) {
+    return;
+  }
   tess::diagnostics::record_deallocation(size);
   std::free(ptr);
 }
 
 // Windows aligned allocations come from _aligned_malloc and must be
 // released with _aligned_free; elsewhere posix_memalign memory is free()d.
+// Null is a legal no-op here too and stays uncounted.
 void release_aligned_bytes(void* ptr, std::size_t size = 0) noexcept {
+  if (ptr == nullptr) {
+    return;
+  }
   tess::diagnostics::record_deallocation(size);
 #if defined(_WIN32)
   _aligned_free(ptr);
