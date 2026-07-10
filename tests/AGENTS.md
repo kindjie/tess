@@ -161,9 +161,15 @@
   (fixed build price via `SelectCost`), unit A* accepts classes for
   passability only, class-driven weighted searches keep the sparse
   missing-chunk contract (blocked by default, `Indeterminate` on request),
-  and plan == commit (S5.5): every step weighted A* accepts for a class
+  plan == commit (S5.5): every step weighted A* accepts for a class
   validates as `Moved` through `validate_movement_intent` for that same
-  class, with `BlockedFrom`/`BlockedTo` per class on both endpoints.
+  class, with `BlockedFrom`/`BlockedTo` per class on both endpoints; and the
+  runtime class binding (S5.6): a `PathRequestRuntime` rebound to another
+  class clears its unit caches instead of serving the previous class's
+  cached `(start, goal)` route (counted in `class_cache_invalidations`),
+  and the class-form weighted ticks route and commit per class (Builder
+  crosses the wall the Walker detours around; neither ever has a movement
+  step rejected, since commit validates with the class the plan used).
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.

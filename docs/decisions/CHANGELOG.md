@@ -13,6 +13,36 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Class-aware agent tick and the runtime class binding (M6, S5 slice 6)
+
+- Changed: the agent pipeline speaks classes end to end.
+  `process_unit_path_agents`, `advance_path_agents_with_movement`,
+  `tick_unit_path_agents[_with_movement]`, and
+  `PathRequestRuntime::process_unit_cached` take `ClassOrTag`;
+  `process_weighted_path_agents`, `tick_weighted_path_agents[_with_movement]`,
+  and `process_weighted_batch` gain `<World, Class, MaxCost>` forms in which
+  ONE movement class drives the search, the precheck, and commit validation,
+  while the legacy `<PassableTag, CostTag>` overloads keep the historical
+  semantics (LegacyWeighted search; precheck on passability only, matching
+  tag-built graphs). `PathRequestRuntime` now binds itself to the movement
+  class of each unit process call: the unit route cache keys entries on
+  (start, goal) plus a world-version fingerprint and nothing on the class, so
+  a rebind clears the unit caches (correct even on misuse) and counts in the
+  new `PathRuntimeStats::class_cache_invalidations`; one runtime per
+  (world, class) is the PERF contract, not a correctness precondition.
+- Reason: S5 slice 6 -- without the binding, a runtime reused across classes
+  would serve one class's cached route to another (same start/goal, same
+  world version, different passability), the exact cross-class collision the
+  graph stamp closes for prechecks. Pinned by test: a Walker-cached 21-step
+  detour is never served to a Builder asking the same (start, goal), which
+  gets its 7-step route through the wall instead.
+- Affected docs: `architecture/path.md`, `architecture/simulation.md`,
+  `tests/AGENTS.md`.
+- Affected code: `path/path_runtime.h` (class binding, weighted impl split),
+  `sim/path_agent.h`, `sim/path_agent_tick.h`;
+  `tests/tess_path_movement_class_test.cc` (stale-route regression,
+  per-class tick divergence with zero movement rejections).
+
 ## 2026-07-09 - Class-aware movement commit validation (M6, S5 slice 5)
 
 - Changed: `validate_movement_intent` / `commit_movement_intent` take a

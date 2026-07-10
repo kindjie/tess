@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <utility>
 
 // S5.2: movement classes threaded through the A* leaves and weighted cores.
 // The identity/LegacyWeighted equivalence cases pin the byte-identity
@@ -296,6 +298,100 @@ TEST(TessPathMovementClass, CommitValidationAgreesWithThePlannedClass) {
       tess::validate_movement_intent<World, Builder, OccupancyTag,
                                      ReservationTag>(world, out_of_site);
   EXPECT_EQ(builder_out.status, tess::MovementStatus::Moved);
+}
+
+// S5.6: the unit route cache keys on (start, goal) only, so a runtime reused
+// across classes must clear rather than serve another class's cached route.
+TEST(TessPathMovementClass, RuntimeReboundToAnotherClassNeverServesStaleRoute) {
+  World world;
+  fill_open(world, 1);
+  for (std::int64_t y = 0; y < 7; ++y) {
+    world.field<PassableTag>(tess::Coord3{3, y, 0}) = false;
+    world.field<ConstructionTag>(tess::Coord3{3, y, 0}) = 1;
+  }
+
+  tess::PathRequestRuntime runtime;
+  runtime.reserve_requests(1);
+  runtime.reserve_search_nodes(64);
+  runtime.reserve_path_nodes(64);
+  runtime.reserve_unit_routes(2);
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
+
+  // Walker detours through the y=7 gap: 21 unit steps.
+  (void)runtime.submit(request);
+  auto results = runtime.process_unit_cached<World, Walker>(world);
+  ASSERT_EQ(results.size(), 1u);
+  ASSERT_EQ(results[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(results[0].cost, 21u);
+  EXPECT_EQ(runtime.stats().class_cache_invalidations, 0u);
+
+  // Same (start, goal), same world version, different class: the rebind
+  // clears the unit caches and the Builder gets ITS 7-step route, not the
+  // Walker's cached 21-step detour.
+  runtime.clear_requests();
+  (void)runtime.submit(request);
+  results = runtime.process_unit_cached<World, Builder>(world);
+  ASSERT_EQ(results.size(), 1u);
+  ASSERT_EQ(results[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(results[0].cost, 7u);
+  EXPECT_EQ(runtime.stats().class_cache_invalidations, 1u);
+
+  // Rebinding back also invalidates; staying on one class does not.
+  runtime.clear_requests();
+  (void)runtime.submit(request);
+  results = runtime.process_unit_cached<World, Builder>(world);
+  EXPECT_EQ(runtime.stats().class_cache_invalidations, 1u);
+  EXPECT_EQ(results[0].cost, 7u);
+}
+
+// S5.6: one movement class drives the whole tick -- pathing, precheck, and
+// commit -- so two classes over one world route and move differently.
+TEST(TessPathMovementClass, WeightedClassTicksRouteAndCommitPerClass) {
+  // Each class gets its own world: an arrived agent's occupancy stays on its
+  // goal tile, which would (correctly) block a second run sharing the world.
+  const auto run_to_goal =
+      [](auto class_probe) -> std::pair<std::size_t, std::size_t> {
+    using Class = decltype(class_probe);
+    World world;
+    fill_open(world, 1);
+    for (std::int64_t y = 0; y < 7; ++y) {
+      world.field<PassableTag>(tess::Coord3{3, y, 0}) = false;
+      world.field<ConstructionTag>(tess::Coord3{3, y, 0}) = 1;
+    }
+    tess::PathAgentTickState state;
+    tess::PathRequestRuntime runtime;
+    runtime.reserve_requests(1);
+    runtime.reserve_search_nodes(64);
+    runtime.reserve_path_nodes(64);
+    runtime.reserve_unit_routes(1);
+    tess::PathAgentState agent;
+    agent.position = tess::Coord3{0, 0, 0};
+    tess::set_path_agent_goal(state, agent, tess::Coord3{7, 0, 0});
+    auto agents = std::span<tess::PathAgentState>{&agent, 1};
+
+    std::size_t ticks = 0;
+    std::size_t blocked = 0;
+    while (agent.has_goal && ticks < 64) {
+      const auto stats = tess::tick_weighted_path_agents_with_movement<
+          World, Class, 64, OccupancyTag, ReservationTag>(state, world, agents,
+                                                          runtime, {});
+      blocked += stats.movement.movement_failures.blocked;
+      ++ticks;
+    }
+    EXPECT_FALSE(agent.has_goal) << "agent never arrived";
+    EXPECT_EQ(agent.position, (tess::Coord3{7, 0, 0}));
+    return {ticks, blocked};
+  };
+
+  // Builder crosses the wall (7 steps); Walker detours (21 steps). Neither
+  // ever has a movement step rejected: the commit validates with the SAME
+  // class the plan used.
+  const auto [builder_ticks, builder_blocked] = run_to_goal(Builder{});
+  const auto [walker_ticks, walker_blocked] = run_to_goal(Walker{});
+  EXPECT_EQ(builder_blocked, 0u);
+  EXPECT_EQ(walker_blocked, 0u);
+  EXPECT_LT(builder_ticks, walker_ticks);
 }
 
 }  // namespace
