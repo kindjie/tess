@@ -42,21 +42,35 @@ The current topology layer is a local chunk-region foundation. It lives under
   or `InvalidChunk` for an out-of-range chunk key), region count, passable
   tile count, boundary exit count, and the captured topology version. The
   chunk and graph builders below all return it.
-- `build_local_chunk_topology<World, PassableTag>(world, chunk, scratch,
+- `build_local_chunk_topology<World, ClassOrTag>(world, chunk, scratch,
   topology)` labels passable connected components for one chunk and records
-  boundary exits.
-- `build_region_graph<World, PassableTag>(world, scratch, graph)` rebuilds
+  boundary exits. The second template argument is a movement class OR a raw
+  passable tag: a raw tag normalizes to the `WalkableField` identity class,
+  whose flood stays the byte-identical legacy `field_span` scan; a composed
+  class evaluates its predicate on the resolved page per tile.
+- `build_region_graph<World, ClassOrTag>(world, scratch, graph)` rebuilds
   local topology, pairs boundary exits whose neighbor tile is passable, and
-  rebuilds the region index and CSR adjacency. The graph type is deduced from
+  rebuilds the region index and CSR adjacency. It also stamps the graph with
+  the normalized movement-class identity (see `matches_class` below). Portal
+  pairing needs no class awareness: it queries labels, so per-class labels
+  yield per-class portals automatically. The graph type is deduced from
   the world's residency: a dense world rebuilds every chunk; a sparse world
   builds only its resident chunks (sorted ascending) and freezes their keys and
   residency generations onto the graph.
-- `update_region_graph<World, PassableTag>(world, scratch, graph,
+- `update_region_graph<World, ClassOrTag>(world, scratch, graph,
   dirty_chunks)` incrementally patches a built graph after passability edits
   confined to the dirty chunks and returns the same aggregate result a full
   rebuild would. On a sparse world it first checks the frozen residency
   snapshot (resident count plus per-key generation); any residency change since
-  the build forces a full rebuild rather than trusting a stale graph.
+  the build forces a full rebuild rather than trusting a stale graph. A
+  movement-class mismatch (the graph was built for a different class) likewise
+  forces a full rebuild with the requested class's labels.
+- `RegionGraphT::matches_class<ClassOrTag>()` reports whether the graph was
+  built for the given class (normalized, so a raw tag and its `WalkableField`
+  identity agree). The stamp is a runtime class-identity token captured at
+  build time, mirroring the shape binding: the graph type encodes neither, so
+  a graph labeled for one class must never answer reachability for another.
+  False until the first build.
 - `reachable<Shape>(graph, start, goal, scratch)` checks whether two
   coordinates are connected through local regions and paired portals. It
   returns a `ReachabilityResult`: a `ReachabilityStatus` (`Reachable`,
@@ -75,6 +89,12 @@ The current topology layer is a local chunk-region foundation. It lives under
   so a reachability precheck can consult it and fall back to A* on a stale
   graph rather than trust a definitive but outdated `Unreachable`. Allocation-
   free; O(chunk_count) dense, O(resident_count) sparse.
+- `is_region_graph_fresh_for<ClassOrTag>(world, graph)` is the class-aware
+  form: additionally requires `matches_class<ClassOrTag>()`, so a graph
+  labeled for another movement class is not fresh for this one even when every
+  topology version is current — its labels answer a different passability
+  question. The class is the explicit first template argument; `World` stays
+  deduced.
 
 ## Behavior
 
@@ -148,13 +168,15 @@ hot paths keeps single-field codegen.
   cost-agnostic asymmetry). `movement_class_of<T>` normalizes a raw tag OR a
   class so every legacy `<World, PassableTag>` call site compiles unchanged.
 
-Per-class region labeling, precheck agreement, commit validation, and the
-`TransitionProvider` concept (special transitions such as stairs) build on this
-vocabulary in later M6 slices.
+Per-class region labeling and the graph class stamp are wired (S5.3): the
+labeling builders take a class or tag, and `RegionGraphT` records the
+normalized class identity it was built for. Precheck agreement, commit
+validation, and the `TransitionProvider` concept (special transitions such as
+stairs) build on this vocabulary in later M6 slices.
 
 ## Deliberate Limits
 
-This slice does not implement per-class region labeling wiring, special
+This slice does not implement precheck/commit class threading, special
 transitions, or a dirty rebuild queue. The portal graph stores directed
 tile-adjacent portals only; incremental updates require the caller to supply
 the dirty chunk set.

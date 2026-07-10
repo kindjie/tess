@@ -134,6 +134,7 @@
     "build_local_chunk_topology",
     "build_region_graph",
     "is_region_graph_fresh",
+    "is_region_graph_fresh_for",
     "movement_class_tag",
     "normalize_cost",
     "reachable",
