@@ -13,6 +13,131 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Codex review fixes: EveryN pokes, hook follow-ups (M5, S7)
+
+- Fixed: two of three connector findings (the third -- the PolicyMismatch
+  clear -- had already landed in the pre-merge hardening commit).
+  (1) `request_run` now arms EveryN tasks too, as its contract says: one
+  extra run without shifting the countdown's lockstep phase (the poke was
+  previously ignored and silently consumed at the next scheduled fire).
+  (2) The auto-exec task clears its queue BEFORE draining, so follow-up
+  operations a result hook enqueues land in the fresh queue for the next
+  run instead of being discarded by the end-of-run clear; the channel
+  still clears after the drain, completing the paired-clear discipline.
+  Both pinned by regression tests.
+- Affected docs: none beyond header comments.
+- Affected code: `sim/schedule.h`, `sim/auto_exec.h`;
+  `tests/tess_sim_schedule_test.cc`, `tests/tess_sim_auto_exec_test.cc`.
+
+## 2026-07-10 - Pre-merge review hardenings: mismatch drop, cadence clamps, reentrancy guard (M5, S7)
+
+- Fixed: three review findings. (1) The auto-exec PolicyMismatch path now
+  drops the queue (paired clears): keeping it would wedge the task forever
+  in release builds, rescanning the same poisoned frame while new enqueues
+  pile on. (2) `Schedule::add_task` validates and re-clamps hand-built
+  cadences (Cadence is a public aggregate, so a zero EveryN bypassing the
+  factory clamp would wrap its countdown to ~4.29B ticks, and a zero
+  background budget would spin in_progress forever). (3) run_tick carries
+  an in-run reentrancy assert, and the header names the two calls task
+  bodies must not make (add_task, nested run_tick) alongside the three
+  that are safe. Also documented: ChunkFn is shared across pool workers
+  and must be safe for concurrent invocation; an OnDirty task poked via
+  request_run receives pending_dirty == 0 (a full-run request, pinned by
+  test).
+- Reason: pre-merge review of the S7 branch (no blockers; these were the
+  should-fixes and note-level hardenings).
+- Affected docs: none beyond header comments.
+- Affected code: `sim/schedule.h`, `sim/auto_exec.h`;
+  `tests/tess_sim_schedule_test.cc`.
+
+## 2026-07-10 - Scheduler bench family (M5, S7 slice 6)
+
+- Added: `bench/tess_scheduler_bench.cc` + `bench/thresholds/scheduler.json`
+  + the CI threshold step: empty-tick dispatch floor (47 ns local),
+  100-task cadence dispatch (506 ns), the dirty-trigger path (46 ns), and
+  the full auto-exec pipeline per tick over a 64-chunk resident update
+  (564 ns). Bootstrap ceilings pending CI recalibration; parallel speedups
+  stay trend-only per the standing bench policy.
+- Reason: S7 slice 6 -- the plan's scheduler bench family.
+- Affected docs: none.
+- Affected code: `bench/tess_scheduler_bench.cc`, `bench/CMakeLists.txt`,
+  `bench/thresholds/scheduler.json`, `.github/workflows/ci.yml`.
+
+## 2026-07-10 - Worker pool promoted to the production backend (M5, S7 slice 5)
+
+- Changed: docs only. `WorkerPoolPhaseExecutor` is recorded as the
+  production parallel backend (the S7 evaluation outcome the concurrency
+  plan called for): auto-exec routes phases to it by operation count,
+  serial == pool is pinned byte-identical, and TSan covers the schedule and
+  auto-exec binaries. work_contract remains an unadopted experiment. The
+  coalesced maintenance lane and runtime ownership claim checking are
+  explicitly deferred post-v1 with rationale (no v1 consumer; they belong
+  with a deferred-edit flow).
+- Reason: S7 slice 5 -- the concurrency stream's landing record.
+- Affected docs: `architecture/queued-operations.md`,
+  `planning/concurrency-plan.md`.
+- Affected code: none.
+
+## 2026-07-10 - Auto-exec task with per-phase routing and goldens (M5, S7 slices 3-4)
+
+- Added: `include/tess/sim/auto_exec.h` -- `AutoExecTask` runs the whole
+  queued-ops pipeline as one schedule task over a caller-owned FrameOps
+  queue: plan, parallel phase planning, execution serial or on the worker
+  pool (chosen per phase by op count), dirty merge after EACH phase (the
+  partitioned scratch is re-prepared per phase; a post-loop merge would
+  drop all but the last phase's records), ack drain through the task's
+  result hook, and paired queue+channel clears ending every run. Policy
+  uniformity is pre-validated so runtime aborts are unreachable, which is
+  what makes serial and pool execution provably identical.
+- Goldens (slice 4): auto-exec == the hand-rolled plan/execute/merge
+  pipeline (whole-world fields, chunk versions, dirty flags); serial ==
+  pool (worlds, metadata, drained ack sequences) with pool phases taken;
+  both binaries green under the TSan preset.
+- Reason: S7 slices 3-4 (M5 close): the plan->execute->dirty-apply->drain
+  requirement with the S1-validated pool as a per-phase production choice.
+- Affected docs: `architecture/simulation.md`, `architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: new `sim/auto_exec.h`, `tess.h`, `CMakeLists.txt`; new
+  `tests/tess_sim_auto_exec_test.cc`, `tests/CMakeLists.txt`.
+
+## 2026-07-10 - Schedule frame driver (M5, S7 slice 2)
+
+- Added: `run_schedule_frame` + `ScheduleFrameSummary` -- the frame-to-ticks
+  bridge over `FixedStepAccumulator`, running the schedule once per granted
+  fixed tick so every cadence counts sim ticks rather than frames (exact
+  under SimSpeed changes, backlog, and pause; pinned by test). The design's
+  proposed task-adapter header was cut: the auto-exec golden composes
+  test-local tasks, and the downstream consumer's agent tick is its own
+  task body, so no adapter had a consumer.
+- Reason: S7 slice 2 (M5 close).
+- Affected docs: `architecture/simulation.md`, `architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: `sim/schedule.h`; `tests/tess_sim_schedule_test.cc`.
+
+## 2026-07-10 - Schedule core: phases, cadences, budgets (M5, S7 slice 1)
+
+- Added: `include/tess/sim/schedule.h` -- the M5 schedule. Ordered
+  `SimPhase` execution of type-erased tasks (fn-pointer + context, no
+  std::function); cadences EveryTick / EveryN (exact under disablement:
+  the countdown advances regardless, so re-enabling never shifts lockstep)
+  / OnDirty (fires iff the task's OWN mask bits are pending; consumes only
+  those bits) / Background (deterministic items-only budget with more_work
+  continuation; a wall-clock valve was cut deliberately -- it would make
+  tick outcomes nondeterministic and had no v1 consumer) / Manual.
+  Task-result dirty masks merge immediately (later phases fire same tick,
+  earlier next tick); notify_dirty/request_run are frame-owner-thread
+  only. `SimClock` hoisted from the path-agent tick header into `time.h`
+  so both layers share one type. Dispatch after seal() is allocation-free.
+- Reason: S7 slice 1 (M5 close). The design review's determinism fixes are
+  folded in from the start: EveryN countdown initialized to n (no
+  first-tick underflow), own-bit-only OnDirty clearing, and dirty-feeding
+  (never scanning) as the structural no-full-world-scans guarantee.
+- Affected docs: `architecture/simulation.md`, `architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: new `sim/schedule.h`, `sim/time.h` (SimClock hoist),
+  `sim/path_agent_tick.h`, `tess.h`, `CMakeLists.txt`; new
+  `tests/tess_sim_schedule_test.cc`, `tests/CMakeLists.txt`.
+
 ## 2026-07-10 - Result-bearing queued bench gate (M4, S6 slice 4)
 
 - Added: `queued/execute_resident_update_with_results` -- the resultless
