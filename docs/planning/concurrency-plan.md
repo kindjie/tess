@@ -92,13 +92,19 @@ scheduler stage should route only such work to the pool by default.
    per-operation result slots follow the partitioned-dirty pattern; the
    conformance suite in `tess_queued_test`/`tess_phase_executor_test`
    extends to result-bearing phases under serial and pool executors.
-2. **S7 (scheduler stage, concurrency landing):** promote a production
-   phase backend (pool or work_contract, per the S7 evaluation) behind
-   `PhaseExecutor`; scheduler auto-exec routes compute-bound phases to it;
-   add the coalesced maintenance lane (addendum Lane 2) on top of the
-   observe/clear protocol; land runtime ownership claim checking with the
-   scheduler's phase storage; add worker-count policy (default, max,
-   no nested dispatch).
+2. **S7 (scheduler stage, concurrency landing) — OUTCOME (2026-07-10):**
+   `WorkerPoolPhaseExecutor` is promoted to the production backend
+   (work_contract stays an unadopted experiment; nothing in the S1-S7
+   workloads needed its self-scheduling). The scheduler's auto-exec task
+   routes phases to an attached pool by operation count, with serial ==
+   pool results pinned byte-identical (policy pre-validation makes runtime
+   aborts unreachable) and TSan coverage over the schedule + auto-exec
+   binaries. Worker counts stay guarded at construction (zero falls back
+   to one; no nested dispatch by the single-dispatch guard). DEFERRED
+   post-v1, with rationale: the coalesced maintenance lane (addendum Lane
+   2) and runtime ownership claim checking — neither has a v1 consumer
+   (the only maintenance-shaped consumer keeps its edits synchronous), and
+   both belong with the deferred-edit flow that would exercise them.
 3. **Threshold follow-up:** after ~5 CI baseline artifacts include the
    parallel family, gate the serial cases and record pool-vs-serial trends
    in `docs/performance.md`.
