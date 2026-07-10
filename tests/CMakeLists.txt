@@ -65,6 +65,14 @@ tess_apply_project_options(tess_phase_executor_test)
 
 gtest_discover_tests(tess_phase_executor_test)
 
+add_executable(
+  tess_queued_results_test allocation_counter.cc tess_queued_results_test.cc)
+target_link_libraries(
+  tess_queued_results_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_queued_results_test)
+
+gtest_discover_tests(tess_queued_results_test)
+
 add_executable(tess_movement_class_test tess_movement_class_test.cc)
 target_link_libraries(
   tess_movement_class_test PRIVATE tess::tess GTest::gtest_main)

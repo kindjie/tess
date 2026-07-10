@@ -133,6 +133,15 @@
   dispatches run and only the last must not allocate, since the counter is
   process-global while pool workers are live), repeated create/run/stop
   lifecycle cycles, and destruction without ever running a phase.
+- `tess_queued_results_test`: verifies the S6 result-channel core: a
+  default `OpCompletion` is never `ok()` (the `completed` flag gates the
+  success triple), `record_plan_completions` copies plan-time rejections
+  into `Failed` slots that deliver reasons -- never values -- through
+  `drain_results`, drain visits handle (== enqueue) order exactly once
+  while `state()`/`completion()` lookups stay readable, `clear()` drops
+  slots and bumps the generation, and warm reuse within reserved capacity
+  is allocation-free. Result-bearing execution (Ready slots) is covered by
+  the execute-wrapper conformance tests.
 - `tess_movement_class_test`: verifies the compile-time movement vocabulary
   (`tess::movement`): the `MovementClassFor` concept and `movement_class_of`
   tag/class normalization, byte-exact `normalize_cost` (zero and negative are
