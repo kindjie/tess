@@ -13,6 +13,35 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Pre-merge review fixes: stair down-transitions, class-binding order (M6, S5)
+
+- Fixed: two defects found (and reproduced) by the pre-merge review.
+  (1) `StairTransitions` never emitted the DOWN transition of a stair whose
+  landing steps sideways across an x/y chunk boundary at a local z below the
+  chunk top: enumeration scanned only the chunk itself and its -z neighbor.
+  It now scans the four sideways same-z neighbors too, so every legal
+  landing chunk (own, +z, or sideways face neighbor) emits its down
+  direction. (2) `PathRequestRuntime::process_unit_cached` bound the
+  movement class BEFORE `prepare_process`, so a policy-triggered
+  `clear_caches()` (e.g. `clear_every_world_change = 1`) zeroed the binding
+  mid-call and the caches refilled under an unbound identity a later class
+  could silently reuse; the binding now happens after the prepare pass.
+  Also: an out-of-range stair field value now reads as `None` instead of
+  leaking an unintended straight-up transition, the `bind_unit_class` and
+  path.md docs now state explicitly that the caller-driven weighted portal
+  segment cache is NOT covered by the class binding (keep one per class,
+  as before), and topology.md notes the sparse reaches-missing pass
+  re-enumerates every resident chunk per update.
+- Reason: both defects lived exactly in the gaps the original fixtures
+  could not reach (multi-z-extent chunks; the `clear_every_world_change`
+  knob) -- each is now pinned by a regression test.
+- Affected docs: `architecture/path.md`, `architecture/topology.md`,
+  `tests/AGENTS.md`.
+- Affected code: `topology/transition_provider.h`, `path/path_runtime.h`;
+  `tests/tess_topology_movement_test.cc` (sideways-crossing stair both
+  directions + incremental equality, out-of-range stair value),
+  `tests/tess_path_movement_class_test.cc` (policy-clear rebind guard).
+
 ## 2026-07-10 - StairTransitions vertical provider (M6, S5 slice 8)
 
 - Added: `StairTransitions<StairTag>` in `topology/transition_provider.h` --

@@ -394,4 +394,46 @@ TEST(TessPathMovementClass, WeightedClassTicksRouteAndCommitPerClass) {
   EXPECT_LT(builder_ticks, walker_ticks);
 }
 
+// Regression (pre-merge review): a policy-triggered cache clear inside a
+// process call zeroes the class binding; binding must happen AFTER that
+// clear, or the call would refill the caches under an unbound identity a
+// later class could silently reuse.
+TEST(TessPathMovementClass, PolicyClearNeverUnbindsTheClassGuard) {
+  World world;
+  fill_open(world, 1);
+  for (std::int64_t y = 0; y < 7; ++y) {
+    world.field<PassableTag>(tess::Coord3{3, y, 0}) = false;
+    world.field<ConstructionTag>(tess::Coord3{3, y, 0}) = 1;
+  }
+
+  tess::PathRequestRuntime runtime;
+  runtime.reserve_requests(1);
+  const auto policy = tess::PathRuntimeCachePolicy{
+      .clear_every_world_change = 1,
+  };
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
+
+  (void)runtime.submit(request);
+  (void)runtime.process_unit_cached<World, Walker>(world, policy);
+
+  // A world edit arms the policy clear inside the NEXT process call.
+  world.mark_dirty(tess::ChunkKey{0}, 1u,
+                   tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
+  runtime.clear_requests();
+  (void)runtime.submit(request);
+  auto results = runtime.process_unit_cached<World, Walker>(world, policy);
+  ASSERT_EQ(results[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(results[0].cost, 21u);  // the Walker detour, freshly cached
+
+  // Same (start, goal), other class: the Builder must get ITS route, never
+  // the Walker's just-cached detour.
+  runtime.clear_requests();
+  (void)runtime.submit(request);
+  results = runtime.process_unit_cached<World, Builder>(world, policy);
+  ASSERT_EQ(results[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(results[0].cost, 7u);
+  EXPECT_GE(runtime.stats().class_cache_invalidations, 1u);
+}
+
 }  // namespace

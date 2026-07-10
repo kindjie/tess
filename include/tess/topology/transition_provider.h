@@ -67,10 +67,13 @@ enum class StairDirection : std::uint8_t {
 // adjacent, so a same-column "stair" would add nothing. Each stair
 // contributes both directions, each emitted from the chunk owning its
 // origin tile: the up transition from the foot's chunk, the down transition
-// from the landing's chunk (which is the foot's chunk or its +z face
-// neighbor). Whether either endpoint is traversable stays a movement-class
-// question -- the graph builders drop transitions whose endpoints hold no
-// region label, so stair edges are automatically per-class.
+// from the landing's chunk -- the foot's chunk, its +z face neighbor (the
+// landing rose off the top layer), or a sideways face neighbor (the landing
+// stepped off the x/y edge at a lower local z). Whether either endpoint is
+// traversable stays a movement-class question -- the graph builders drop
+// transitions whose endpoints hold no region label, so stair edges are
+// automatically per-class. A stair field value outside the StairDirection
+// range reads as None.
 //
 // Limit: a landing must share the foot's chunk or a face-neighbor chunk
 // (the TransitionProviderFor contract). A stair whose landing would cross
@@ -83,29 +86,54 @@ struct StairTransitions {
   void for_each_transition(const World& world, ChunkKey chunk,
                            Sink&& sink) const {
     using Shape = typename World::shape_type;
+    using Traits = ShapeTraits<Shape>;
     static_assert(
         World::schema_type::template contains<StairTag>,
         "StairTransitions references a field absent from the schema.");
     emit_for_feet(world, chunk, chunk, sink);
-    // Down transitions land here from stairs whose foot is one z-level
-    // below, in the -z neighbor chunk.
+    // Down transitions originating here belong to stairs whose FOOT lies in
+    // a face-neighbor chunk: one z-level below (the landing rose off the
+    // foot chunk's top layer) or sideways at the same chunk z (the landing
+    // stepped off the foot chunk's x/y edge with local z below the top).
     const auto coord_of_chunk = chunk_coord<Shape>(chunk);
-    if (coord_of_chunk.z == 0) {
-      return;
-    }
-    auto below = coord_of_chunk;
-    --below.z;
-    const auto below_key = chunk_key<Shape>(below);
-    if constexpr (std::is_same_v<typename World::residency_type,
-                                 SparseResident>) {
-      // A non-resident foot chunk holds no readable stairs; the landing tile
-      // sits on this chunk's bottom layer, whose boundary exit toward the
-      // missing chunk already marks the region as reaching missing topology.
-      if (!world.is_resident(below_key)) {
-        return;
+    const auto scan_foot_chunk = [&](ChunkCoord3 neighbor) {
+      const auto key = chunk_key<Shape>(neighbor);
+      if constexpr (std::is_same_v<typename World::residency_type,
+                                   SparseResident>) {
+        // A non-resident foot chunk holds no readable stairs; the landing
+        // tile sits on this chunk's boundary toward it, whose boundary exit
+        // already marks the region as reaching missing topology.
+        if (!world.is_resident(key)) {
+          return;
+        }
       }
+      emit_for_feet(world, key, chunk, sink);
+    };
+    if (coord_of_chunk.z > 0) {
+      auto below = coord_of_chunk;
+      --below.z;
+      scan_foot_chunk(below);
     }
-    emit_for_feet(world, below_key, chunk, sink);
+    if (coord_of_chunk.x > 0) {
+      auto west = coord_of_chunk;
+      --west.x;
+      scan_foot_chunk(west);
+    }
+    if (coord_of_chunk.x + 1 < Traits::chunk_count_x) {
+      auto east = coord_of_chunk;
+      ++east.x;
+      scan_foot_chunk(east);
+    }
+    if (coord_of_chunk.y > 0) {
+      auto south = coord_of_chunk;
+      --south.y;
+      scan_foot_chunk(south);
+    }
+    if (coord_of_chunk.y + 1 < Traits::chunk_count_y) {
+      auto north = coord_of_chunk;
+      ++north.y;
+      scan_foot_chunk(north);
+    }
   }
 
  private:
@@ -129,8 +157,14 @@ struct StairTransitions {
       const auto value = page.template field<StairTag>(LocalTileId{raw_id});
       static_assert(std::is_integral_v<std::remove_cvref_t<decltype(value)>>,
                     "StairTransitions requires an integral stair field.");
-      const auto direction = static_cast<StairDirection>(value);
-      if (direction == StairDirection::None) {
+      // Out-of-range values read as None rather than leaking an unintended
+      // straight-up transition through the unmatched switch below.
+      if (value == 0) {
+        continue;
+      }
+      const auto direction =
+          static_cast<StairDirection>(static_cast<std::uint8_t>(value));
+      if (direction > StairDirection::NegativeY) {
         continue;
       }
       const auto local = local_coord_of<Shape>(raw_id);

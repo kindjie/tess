@@ -221,9 +221,13 @@ class PathRequestRuntime {
     sizes_.assign(requests_.size(), 0);
     processed_.assign(requests_.size(), 0);
     stats_ = {};
+    // Bind AFTER prepare_process: a policy-triggered clear_caches() there
+    // zeroes the binding, and binding first would let this call refill the
+    // caches under an unbound (0) identity that a later class could then
+    // silently reuse.
+    prepare_process(world, policy);
     bind_unit_class(
         detail::tag_identity<movement::movement_class_of<ClassOrTag>>());
-    prepare_process(world, policy);
     if (graph != nullptr) {
       precheck_prepass<ClassOrTag>(world, *graph);
     }
@@ -339,8 +343,12 @@ class PathRequestRuntime {
   // stats().class_cache_invalidations. One runtime per (world, class) is
   // therefore the PERF contract, not a correctness precondition. The
   // field-product cache already folds the class identity into its keys, and
-  // the weighted batch keeps no cross-call cache, so the unit route cache is
-  // the only artifact this guards.
+  // the weighted batch keeps no cross-call cache. NOT guarded: the portal
+  // segment cache, which is filled by the caller-driven, still pair-tagged
+  // portal-route builders through the portal_segment_cache() accessor and
+  // keys segments on request + chunk versions only -- callers reusing it
+  // across movement classes (or tag pairs) must keep one cache per class,
+  // exactly as before this binding existed.
   void bind_unit_class(std::uintptr_t identity) noexcept {
     if (bound_unit_class_ == identity) {
       return;

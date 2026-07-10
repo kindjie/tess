@@ -618,4 +618,77 @@ TEST(TessTopologyMovement, SameChunkStairConnectsItsOwnLevels) {
             tess::ReachabilityStatus::Reachable);
 }
 
+// Regression (pre-merge review): a stair whose landing steps sideways
+// across an x/y chunk boundary at a local z BELOW the chunk top must emit
+// its down transition too -- the down direction originates in the sideways
+// neighbor chunk, whose enumeration scans adjacent foot chunks.
+TEST(TessTopologyMovement, SidewaysCrossingStairConnectsBothDirections) {
+  // Two chunks along x, both z levels INSIDE each chunk (z extent 2), so the
+  // landing crosses only the x boundary.
+  using TwoWide = tess::Shape<tess::Extent3{8, 4, 2}, tess::Extent3{4, 4, 2}>;
+  using WideWorld = tess::AlwaysResidentWorld<TwoWide, StairSchema>;
+  WideWorld world;
+  // Ground floor open everywhere on the west chunk and the east chunk's
+  // ground is impassable under an east platform at z=1.
+  for (std::int64_t y = 0; y < 4; ++y) {
+    for (std::int64_t x = 0; x < 4; ++x) {
+      world.field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
+    }
+    for (std::int64_t x = 4; x < 8; ++x) {
+      world.field<PassableTag>(tess::Coord3{x, y, 1}) = 1;
+    }
+  }
+  // Foot (3,1,0) in the west chunk, landing (4,1,1) on the east platform:
+  // chunk crossing is sideways-only (z stays inside the chunk).
+  world.field<StairTag>(tess::Coord3{3, 1, 0}) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph plain;
+  tess::build_region_graph<WideWorld, PassableTag>(world, scratch, plain);
+  tess::RegionGraph stairs;
+  tess::build_region_graph<WideWorld, PassableTag>(
+      world, scratch, stairs, tess::StairTransitions<StairTag>{});
+  EXPECT_EQ(stairs.portals().size(), plain.portals().size() + 2);
+
+  tess::RegionGraphScratch reach;
+  const auto ground = tess::Coord3{0, 0, 0};
+  const auto platform = tess::Coord3{7, 3, 1};
+  EXPECT_NE(tess::reachable<TwoWide>(plain, ground, platform, reach).status,
+            tess::ReachabilityStatus::Reachable);
+  EXPECT_EQ(tess::reachable<TwoWide>(stairs, ground, platform, reach).status,
+            tess::ReachabilityStatus::Reachable);
+  EXPECT_EQ(tess::reachable<TwoWide>(stairs, platform, ground, reach).status,
+            tess::ReachabilityStatus::Reachable);
+
+  // Incremental update across the seam stays equal to a full rebuild.
+  world.field<StairTag>(tess::Coord3{3, 2, 0}) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  const auto dirty = std::vector<tess::ChunkKey>{tess::ChunkKey{0}};
+  const auto updated = tess::update_region_graph<WideWorld, PassableTag>(
+      world, scratch, stairs, dirty, tess::StairTransitions<StairTag>{});
+  EXPECT_EQ(updated.status, tess::TopologyStatus::Built);
+  tess::RegionGraph reference;
+  tess::build_region_graph<WideWorld, PassableTag>(
+      world, scratch, reference, tess::StairTransitions<StairTag>{});
+  expect_graphs_equal(stairs, reference);
+}
+
+// Regression (pre-merge review): a stair field value outside the
+// StairDirection range reads as None instead of leaking an unintended
+// straight-up transition.
+TEST(TessTopologyMovement, OutOfRangeStairValueReadsAsNone) {
+  LevelWorld world;
+  build_two_levels(world);
+  world.field<StairTag>(tess::Coord3{2, 1, 0}) = 250;  // garbage
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  tess::build_region_graph<LevelWorld, PassableTag>(
+      world, scratch, graph, tess::StairTransitions<StairTag>{});
+  tess::RegionGraph plain;
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, plain);
+  expect_graphs_equal(graph, plain);
+}
+
 }  // namespace
