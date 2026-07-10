@@ -256,4 +256,118 @@ auto record_plan_completions(const ExecutionReport& report,
   return stamped;
 }
 
+// Result-bearing variant of execute_phase_partitioned_dirty_with: the
+// caller's callback receives each chunk view PLUS a mutable reference to the
+// operation's channel value (`fn(view, T& value)`), accumulated across the
+// op's chunks on whichever thread executes it -- op-exclusive, so no
+// synchronization. Every operation in the phase is prepared upfront on the
+// caller's thread, so an execution that stops early (the serial executor
+// aborts at the first failure) leaves a Pending tail rather than Unbound
+// gaps, and each op's completion is stamped by its executing thread -- a
+// post-barrier sweep over the scratch results would misread never-run
+// operations as Executed, because PlannedExecutionResult default-constructs
+// to that status. Aggregate return and dirty partitioning are identical to
+// the resultless helper.
+template <WritePolicy Policy, typename Executor, typename World, typename T,
+          typename Fn>
+auto execute_phase_partitioned_dirty_with_results(
+    Executor&& executor, World& world, const ExecutionPlan& plan,
+    ExecutionPhase phase, PlannedPhaseExecutionScratch& scratch,
+    ResultChannel<T>& channel, Fn&& fn) -> PlannedExecutionResult {
+  const auto operations = plan.operations();
+  // Range check BEFORE touching the channel: a hand-built out-of-range
+  // phase must fail cleanly, exactly as the resultless helper does.
+  if (phase.first_operation > operations.size() ||
+      phase.operation_count > operations.size() - phase.first_operation) {
+    TESS_DIAG_EVENT(queued_phase_invalid_range);
+    return PlannedExecutionResult{
+        PlannedExecutionStatus::InvalidPhase,
+        0,
+    };
+  }
+
+  TESS_DIAG_EVENT_VALUE(queued_phase_execute, phase.operation_count);
+  TESS_DIAG_EVENT_VALUE(queued_partitioned_phase, phase.operation_count);
+  for (const auto& operation :
+       operations.subspan(phase.first_operation, phase.operation_count)) {
+    channel.prepare_operation(operation.handle, operation.source);
+  }
+  scratch.prepare(phase.operation_count);
+  auto&& callback = fn;
+  auto result = execute_operation_index_range(
+      std::forward<Executor>(executor), executor_phase_range(phase),
+      [&](std::size_t index) {
+        const auto offset = index - phase.first_operation;
+        const auto& operation = operations[index];
+        auto& value = channel.value_for(operation.handle);
+        auto operation_result =
+            execute_planned_operation_deferred_dirty<Policy>(
+                world, operation, scratch.dirty_for_operation(offset),
+                [&](auto view) { callback(view, value); });
+        channel.complete(operation.handle, operation_result, operation.source);
+        scratch.record_result(offset, operation_result);
+        return operation_result;
+      });
+
+  std::size_t chunk_count = 0;
+  for (const auto operation_result : scratch.results()) {
+    if (operation_result.status != PlannedExecutionStatus::Executed) {
+      TESS_DIAG_EVENT(queued_phase_failure);
+      return PlannedExecutionResult{
+          operation_result.status,
+          chunk_count,
+      };
+    }
+    chunk_count += operation_result.chunk_count;
+  }
+
+  if (result.status != PlannedExecutionStatus::Executed) {
+    TESS_DIAG_EVENT(queued_phase_failure);
+    return PlannedExecutionResult{
+        result.status,
+        chunk_count,
+    };
+  }
+
+  return PlannedExecutionResult{
+      PlannedExecutionStatus::Executed,
+      chunk_count,
+  };
+}
+
+// Result-bearing variant of execute_plan_deferred_dirty: serial, whole-plan,
+// aborting at the first non-Executed result with the same partial-execution
+// contract (earlier writes kept, chunk counts reported). All operations are
+// prepared upfront, so the aborted tail reads Pending through the channel.
+template <WritePolicy Policy, typename World, typename T, typename Fn>
+auto execute_plan_deferred_dirty_with_results(World& world,
+                                              const ExecutionPlan& plan,
+                                              PlannedDirtyAccumulator& dirty,
+                                              ResultChannel<T>& channel,
+                                              Fn&& fn)
+    -> PlannedExecutionResult {
+  for (const auto& operation : plan.operations()) {
+    channel.prepare_operation(operation.handle, operation.source);
+  }
+  std::size_t chunk_count = 0;
+  auto&& callback = fn;
+  for (const auto& operation : plan.operations()) {
+    auto& value = channel.value_for(operation.handle);
+    auto result = execute_planned_operation_deferred_dirty<Policy>(
+        world, operation, dirty, [&](auto view) { callback(view, value); });
+    channel.complete(operation.handle, result, operation.source);
+    if (result.status != PlannedExecutionStatus::Executed) {
+      return PlannedExecutionResult{
+          result.status,
+          chunk_count + result.chunk_count,
+      };
+    }
+    chunk_count += result.chunk_count;
+  }
+  return PlannedExecutionResult{
+      PlannedExecutionStatus::Executed,
+      chunk_count,
+  };
+}
+
 }  // namespace tess

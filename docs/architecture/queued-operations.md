@@ -331,6 +331,27 @@ deliberately drain-only, synchronous design:
   rejection out of an `ExecutionReport` into `Failed` slots before
   execution, so validation failures and executed results flow through one
   drain.
+- `execute_phase_partitioned_dirty_with_results<Policy>(executor, world,
+  plan, phase, scratch, channel, fn)` is the result-bearing variant of the
+  partitioned phase helper: the callback receives each chunk view plus a
+  mutable reference to the operation's channel value (`fn(view, T&)`),
+  accumulated op-exclusively on the executing thread. Every operation in
+  the phase is prepared upfront, so a serial early-stop leaves a `Pending`
+  tail rather than gaps, and each op's completion is stamped by its
+  executing thread — a post-barrier sweep of the scratch results would
+  misread never-run operations as executed, because
+  `PlannedExecutionResult` default-constructs to `Executed`. The phase
+  range is validated before the channel is touched; aggregate return and
+  dirty partitioning are identical to the resultless helper. Delivery
+  content and drain order are identical under serial and threaded
+  executors for successful plans; on failure the serial executor's
+  early-stop tail reads `Pending` while threaded executors, which drain
+  the whole range by contract, complete it.
+- `execute_plan_deferred_dirty_with_results<Policy>(world, plan, dirty,
+  channel, fn)` is the serial whole-plan variant with the same
+  partial-execution contract as `execute_plan_deferred_dirty` (aborts keep
+  earlier writes and report their chunks); the aborted tail reads
+  `Pending`.
 
 There is intentionally no future/handle type in v1: the pipeline has no
 asynchronous execution path, so a future could never be observed pending
