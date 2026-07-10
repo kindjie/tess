@@ -42,8 +42,10 @@ Run on the device:
                    --pin fixes the CPU governor for accurate numbers.
                    Configures the linux-bench preset automatically.
 
-Env: DECK_HOST (default 'deck'), TESS_STEAMRT_IMAGE, DECK_SSH_KEY,
-     DECK_PRESET (override the per-command cmake preset).
+Env: DECK_HOST (default 'deck'), TESS_STEAMRT_IMAGE,
+     TESS_STEAMRT_BUILD_IMAGE (build image, default 'tess-steamrt4:local'),
+     TESS_STEAMRT_CONTAINER (container name, default 'tess-rt'),
+     DECK_SSH_KEY, DECK_PRESET (override the per-command cmake preset).
 EOF
 }
 

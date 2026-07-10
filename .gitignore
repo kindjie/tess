@@ -47,6 +47,7 @@ _deps/
 # Python caches and environments
 __pycache__/
 *.py[cod]
+.pytest_cache/
 .venv/
 
 # Logs and local env files
