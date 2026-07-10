@@ -13,6 +13,31 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Precheck class agreement through the graph stamp (M6, S5 slice 4)
+
+- Changed: `precheck_path<ClassOrTag>(graph, world, start, goal, scratch)` --
+  the movement class the search uses is now the explicit first template
+  argument, and the gate checks `is_region_graph_fresh_for<ClassOrTag>`
+  instead of the classless freshness: a graph labeled for a different
+  movement class (or predating any stamp) reports `GraphStale` and degrades
+  to running A*. `PathRequestRuntime::precheck_prepass<ClassOrTag>` threads
+  the class from `process_unit_cached` / `process_weighted_batch` (the
+  weighted batch prechecks on PASSABILITY only, matching the legacy weighted
+  asymmetry it searches with).
+- Reason: S5 slice 4 -- closes the documented precondition hole: the graph
+  type encodes only residency, so before the stamp a graph built over a
+  different passability compiled fine and its definitive `Unreachable` could
+  prune a route the search's own class could walk (the one way the gate could
+  turn a solvable query into a wrong failure). That agreement is now enforced
+  at runtime, not delegated to the caller.
+- Affected docs: `architecture/path.md`, `tests/AGENTS.md`.
+- Affected code: `path/precheck.h`, `path/path_runtime.h`,
+  `bench/tess_topology_bench.cc` (explicit class argument);
+  `tests/tess_path_precheck_test.cc` (wrong-class -> GraphStale, per-class
+  rule-out), `tests/tess_path_precheck_runtime_test.cc` (Builder falls back
+  to A* under a walker-stamped graph, Builder-stamped graph rules out without
+  searching).
+
 ## 2026-07-09 - Per-class region labeling and the graph class stamp (M6, S5 slice 3)
 
 - Changed: `build_local_chunk_topology`, `build_region_graph`, and

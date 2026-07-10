@@ -196,9 +196,11 @@ class PathRequestRuntime {
 
   // An optional `graph` enables the pre-A* topology precheck (see
   // precheck_path): requests it proves unreachable resolve to NoPath without
-  // searching, counted in stats().precheck_ruled_out. PRECONDITION: `graph`
-  // must be built over the same PassableTag this call searches with, or the
-  // gate could prune a solvable request. Passing nullptr disables it.
+  // searching, counted in stats().precheck_ruled_out. Class agreement is
+  // enforced through the graph's movement-class stamp: a graph built for a
+  // different class than this call searches with degrades to GraphStale (no
+  // pruning) instead of cutting a solvable request. Passing nullptr disables
+  // the precheck.
   template <typename World, typename PassableTag>
   [[nodiscard]] auto process_unit_cached(
       const World& world, PathRuntimeCachePolicy policy = {},
@@ -212,7 +214,7 @@ class PathRequestRuntime {
     stats_ = {};
     prepare_process(world, policy);
     if (graph != nullptr) {
-      precheck_prepass(world, *graph);
+      precheck_prepass<PassableTag>(world, *graph);
     }
     if constexpr (std::is_same_v<typename World::residency_type,
                                  AlwaysResident>) {
@@ -268,7 +270,9 @@ class PathRequestRuntime {
     // Precheck partitions the batch: requests proven unreachable resolve to
     // NoPath now, and only the survivors run through weighted A*. The batch is
     // positional, so survivor results scatter back to their original slots.
-    precheck_prepass(world, *graph);
+    // The precheck classes on PASSABILITY only (the graph's labels), exactly
+    // matching the legacy weighted asymmetry the batch searches with.
+    precheck_prepass<PassableTag>(world, *graph);
     precheck_survivors_.clear();
     survivor_original_.clear();
     for (std::size_t i = 0; i < requests_.size(); ++i) {
@@ -458,8 +462,11 @@ class PathRequestRuntime {
   // Resolves every not-yet-processed request the region graph proves
   // unreachable to a NoPath result without running A*, marking it processed so
   // downstream field-product grouping and the search loop skip it. The graph's
-  // freshness and no-false-negative guarantees live in precheck_path.
-  template <typename World>
+  // freshness, class-agreement, and no-false-negative guarantees live in
+  // precheck_path: a graph stamped for another movement class reads as
+  // GraphStale there, so this pass rules nothing out and A* stays
+  // authoritative.
+  template <typename ClassOrTag, typename World>
   void precheck_prepass(
       const World& world,
       const RegionGraphT<typename World::residency_type>& graph) {
@@ -467,8 +474,9 @@ class PathRequestRuntime {
       if (processed_[i] != 0) {
         continue;
       }
-      const auto status = precheck_path(graph, world, requests_[i].start,
-                                        requests_[i].goal, precheck_scratch_);
+      const auto status =
+          precheck_path<ClassOrTag>(graph, world, requests_[i].start,
+                                    requests_[i].goal, precheck_scratch_);
       if (!precheck_rules_out_path(status)) {
         continue;
       }
