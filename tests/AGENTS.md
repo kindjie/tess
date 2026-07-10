@@ -142,6 +142,15 @@
   (`FieldCost`, `SelectCost`, `ConstantCost`), and that the `WalkableField`
   identity class reproduces the legacy `static_cast<bool>(field)` result and
   exposes the same `field_span` storage the region flood scans.
+- `tess_path_movement_class_test`: verifies movement classes threaded through
+  the A* leaves and weighted cores (S5.2): the `WalkableField` identity class
+  matches the raw-tag unit search node-for-node on a serpentine maze,
+  `LegacyWeighted<PassableTag, CostTag>` matches the tag-pair weighted search
+  and weighted distance field exactly (statuses, costs, expansion counts,
+  paths), a Walker routes around a construction wall the Builder cuts through
+  (fixed build price via `SelectCost`), unit A* accepts classes for
+  passability only, and class-driven weighted searches keep the sparse
+  missing-chunk contract (blocked by default, `Indeterminate` on request).
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.
