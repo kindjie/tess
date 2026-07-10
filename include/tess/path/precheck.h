@@ -49,15 +49,16 @@ enum class PrecheckStatus : std::uint8_t {
 // caller-owned and reused across queries (allocation-free once warm); it must
 // not be shared across concurrent queries.
 //
-// PRECONDITION: `graph` must be built over the SAME passability the search uses
-// (the `PassableTag` passed to build_region_graph must match the search's
-// `PassableTag`; cost weighting is irrelevant, since weights only order
-// passable tiles). The graph type encodes only residency, so a graph built over
-// a different passability compiles and would let `Unreachable` prune a route
-// A* could actually walk -- the one way this gate can turn a solvable query
-// into a wrong failure. Freshness (is_region_graph_fresh) is checked, but a
-// passability mismatch is the caller's responsibility.
-template <typename World>
+// `ClassOrTag` (explicit first template argument; `World` stays deduced) is
+// the movement class the SEARCH uses -- a raw passable tag normalizes to its
+// WalkableField identity, exactly as in astar_path. The historical
+// precondition that the graph be built over the same passability is now
+// ENFORCED through the graph's class stamp: a graph built for a different
+// movement class (or predating any stamp) reports GraphStale via
+// is_region_graph_fresh_for, so it degrades to running A* rather than letting
+// `Unreachable` prune a route the search's own class could walk. Cost
+// weighting remains irrelevant (weights only order passable tiles).
+template <typename ClassOrTag, typename World>
 [[nodiscard]] auto precheck_path(
     const RegionGraphT<typename World::residency_type>& graph,
     const World& world, Coord3 start, Coord3 goal, RegionGraphScratch& scratch)
@@ -65,7 +66,7 @@ template <typename World>
   if (graph.local_topologies().empty()) {
     return PrecheckStatus::NoGraph;
   }
-  if (!is_region_graph_fresh(world, graph)) {
+  if (!is_region_graph_fresh_for<ClassOrTag>(world, graph)) {
     return PrecheckStatus::GraphStale;
   }
   const auto result =

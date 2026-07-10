@@ -54,6 +54,10 @@ struct PathRuntimeStats {
   // this counter only measures how many were resolved without searching.
   std::size_t precheck_ruled_out = 0;
   std::size_t world_cache_invalidations = 0;
+  // Unit-cache clears forced by processing with a different movement class
+  // than the runtime was last bound to (see process_unit_cached). Correct but
+  // wasteful: keep one runtime per (world, class) to stay at zero.
+  std::size_t class_cache_invalidations = 0;
   std::size_t cache_clears = 0;
   std::size_t path_nodes = 0;
   RouteCacheStats route_cache{};
@@ -131,6 +135,7 @@ class PathRequestRuntime {
     unit_field_product_cache_.clear();
     portal_segment_cache_.clear();
     world_changes_since_clear_ = 0;
+    bound_unit_class_ = 0;
     ++cache_clears_;
   }
 
@@ -191,15 +196,21 @@ class PathRequestRuntime {
     stats.weighted_batch = weighted_batch_.stats();
     stats.portal_segment_cache = portal_segment_cache_.stats();
     stats.cache_clears = cache_clears_;
+    stats.class_cache_invalidations = class_cache_invalidations_;
     return stats;
   }
 
   // An optional `graph` enables the pre-A* topology precheck (see
   // precheck_path): requests it proves unreachable resolve to NoPath without
-  // searching, counted in stats().precheck_ruled_out. PRECONDITION: `graph`
-  // must be built over the same PassableTag this call searches with, or the
-  // gate could prune a solvable request. Passing nullptr disables it.
-  template <typename World, typename PassableTag>
+  // searching, counted in stats().precheck_ruled_out. Class agreement is
+  // enforced through the graph's movement-class stamp: a graph built for a
+  // different class than this call searches with degrades to GraphStale (no
+  // pruning) instead of cutting a solvable request. Passing nullptr disables
+  // the precheck. `ClassOrTag` is the movement class searched with (a raw tag
+  // normalizes to its WalkableField identity); the unit route cache keys on
+  // (start, goal) only, so the runtime binds itself to the class and a
+  // rebind clears the unit caches rather than serving another class's route.
+  template <typename World, typename ClassOrTag>
   [[nodiscard]] auto process_unit_cached(
       const World& world, PathRuntimeCachePolicy policy = {},
       const RegionGraphT<typename World::residency_type>* graph = nullptr)
@@ -210,9 +221,15 @@ class PathRequestRuntime {
     sizes_.assign(requests_.size(), 0);
     processed_.assign(requests_.size(), 0);
     stats_ = {};
+    // Bind AFTER prepare_process: a policy-triggered clear_caches() there
+    // zeroes the binding, and binding first would let this call refill the
+    // caches under an unbound (0) identity that a later class could then
+    // silently reuse.
     prepare_process(world, policy);
+    bind_unit_class(
+        detail::tag_identity<movement::movement_class_of<ClassOrTag>>());
     if (graph != nullptr) {
-      precheck_prepass(world, *graph);
+      precheck_prepass<ClassOrTag>(world, *graph);
     }
     if constexpr (std::is_same_v<typename World::residency_type,
                                  AlwaysResident>) {
@@ -222,7 +239,7 @@ class PathRequestRuntime {
       // sparse world; the sparse unit path routes each request through
       // cached_astar_path until a sparse field-product slice lands.
       if (policy.use_unit_field_product_cache) {
-        process_repeated_goal_fields<World, PassableTag>(world, policy);
+        process_repeated_goal_fields<World, ClassOrTag>(world, policy);
       }
     }
 
@@ -230,7 +247,7 @@ class PathRequestRuntime {
       if (processed_[i] != 0) {
         continue;
       }
-      const auto result = cached_astar_path<World, PassableTag>(
+      const auto result = cached_astar_path<World, ClassOrTag>(
           world, requests_[i], unit_scratch_, unit_route_cache_);
       copy_result(i, result);
       record_status(result.status);
@@ -239,11 +256,42 @@ class PathRequestRuntime {
     return results_;
   }
 
+  // Class form: one movement class drives BOTH the weighted search and the
+  // precheck, so the supplied graph must be labeled for that same class (a
+  // mismatch degrades to GraphStale -- nothing ruled out).
+  template <typename World, typename Class, std::uint32_t MaxCost>
+  [[nodiscard]] auto process_weighted_batch(
+      const World& world, PathRuntimeCachePolicy policy = {},
+      const RegionGraphT<typename World::residency_type>* graph = nullptr)
+      -> std::span<const PathResult> {
+    static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                  "process_weighted_batch<World, Class, MaxCost> requires a "
+                  "MovementClass; legacy tag pairs go through the "
+                  "<World, PassableTag, CostTag, MaxCost> overload.");
+    return process_weighted_batch_impl<World, Class, MaxCost, Class>(
+        world, policy, graph);
+  }
+
+  // Legacy pair form: the search preserves the historical cost-agnostic
+  // asymmetry through LegacyWeighted, and the precheck classes on PASSABILITY
+  // only (the raw tag's identity class), matching graphs built with that tag.
   template <typename World, typename PassableTag, typename CostTag,
             std::uint32_t MaxCost>
   [[nodiscard]] auto process_weighted_batch(
       const World& world, PathRuntimeCachePolicy policy = {},
       const RegionGraphT<typename World::residency_type>* graph = nullptr)
+      -> std::span<const PathResult> {
+    return process_weighted_batch_impl<
+        World, movement::LegacyWeighted<PassableTag, CostTag>, MaxCost,
+        PassableTag>(world, policy, graph);
+  }
+
+ private:
+  template <typename World, typename BatchClass, std::uint32_t MaxCost,
+            typename PrecheckClassOrTag>
+  [[nodiscard]] auto process_weighted_batch_impl(
+      const World& world, PathRuntimeCachePolicy policy,
+      const RegionGraphT<typename World::residency_type>* graph)
       -> std::span<const PathResult> {
     clear_results();
     results_.resize(requests_.size());
@@ -254,9 +302,8 @@ class PathRequestRuntime {
     prepare_process(world, policy);
 
     if (graph == nullptr) {
-      const auto batch =
-          weighted_path_batch<World, PassableTag, CostTag, MaxCost>(
-              world, requests_, weighted_batch_);
+      const auto batch = weighted_path_batch<World, BatchClass, MaxCost>(
+          world, requests_, weighted_batch_);
       for (std::size_t i = 0; i < batch.size(); ++i) {
         copy_result(i, batch[i]);
         record_status(batch[i].status);
@@ -268,7 +315,7 @@ class PathRequestRuntime {
     // Precheck partitions the batch: requests proven unreachable resolve to
     // NoPath now, and only the survivors run through weighted A*. The batch is
     // positional, so survivor results scatter back to their original slots.
-    precheck_prepass(world, *graph);
+    precheck_prepass<PrecheckClassOrTag>(world, *graph);
     precheck_survivors_.clear();
     survivor_original_.clear();
     for (std::size_t i = 0; i < requests_.size(); ++i) {
@@ -277,9 +324,8 @@ class PathRequestRuntime {
         precheck_survivors_.push_back(requests_[i]);
       }
     }
-    const auto batch =
-        weighted_path_batch<World, PassableTag, CostTag, MaxCost>(
-            world, precheck_survivors_, weighted_batch_);
+    const auto batch = weighted_path_batch<World, BatchClass, MaxCost>(
+        world, precheck_survivors_, weighted_batch_);
     for (std::size_t s = 0; s < batch.size(); ++s) {
       const auto i = survivor_original_[s];
       copy_result(i, batch[s]);
@@ -289,7 +335,32 @@ class PathRequestRuntime {
     return results_;
   }
 
- private:
+  // The unit route cache keys entries on (start, goal) plus a world-version
+  // fingerprint and nothing on the movement class, so a runtime reused
+  // across classes would serve one class's route for another. Each unit
+  // process call binds the runtime to its (normalized) class; a rebind
+  // clears the unit caches -- correct even on misuse -- and counts in
+  // stats().class_cache_invalidations. One runtime per (world, class) is
+  // therefore the PERF contract, not a correctness precondition. The
+  // field-product cache already folds the class identity into its keys, and
+  // the weighted batch keeps no cross-call cache. NOT guarded: the portal
+  // segment cache, which is filled by the caller-driven, still pair-tagged
+  // portal-route builders through the portal_segment_cache() accessor and
+  // keys segments on request + chunk versions only -- callers reusing it
+  // across movement classes (or tag pairs) must keep one cache per class,
+  // exactly as before this binding existed.
+  void bind_unit_class(std::uintptr_t identity) noexcept {
+    if (bound_unit_class_ == identity) {
+      return;
+    }
+    if (bound_unit_class_ != 0) {
+      unit_route_cache_.clear();
+      unit_field_product_cache_.clear();
+      ++class_cache_invalidations_;
+    }
+    bound_unit_class_ = identity;
+  }
+
   void clear_results() noexcept {
     results_.clear();
     offsets_.clear();
@@ -458,8 +529,11 @@ class PathRequestRuntime {
   // Resolves every not-yet-processed request the region graph proves
   // unreachable to a NoPath result without running A*, marking it processed so
   // downstream field-product grouping and the search loop skip it. The graph's
-  // freshness and no-false-negative guarantees live in precheck_path.
-  template <typename World>
+  // freshness, class-agreement, and no-false-negative guarantees live in
+  // precheck_path: a graph stamped for another movement class reads as
+  // GraphStale there, so this pass rules nothing out and A* stays
+  // authoritative.
+  template <typename ClassOrTag, typename World>
   void precheck_prepass(
       const World& world,
       const RegionGraphT<typename World::residency_type>& graph) {
@@ -467,8 +541,9 @@ class PathRequestRuntime {
       if (processed_[i] != 0) {
         continue;
       }
-      const auto status = precheck_path(graph, world, requests_[i].start,
-                                        requests_[i].goal, precheck_scratch_);
+      const auto status =
+          precheck_path<ClassOrTag>(graph, world, requests_[i].start,
+                                    requests_[i].goal, precheck_scratch_);
       if (!precheck_rules_out_path(status)) {
         continue;
       }
@@ -555,6 +630,10 @@ class PathRequestRuntime {
   PathRuntimeStats stats_;
   std::size_t world_changes_since_clear_ = 0;
   std::size_t cache_clears_ = 0;
+  // Movement-class identity the unit caches are bound to (0 = unbound); see
+  // bind_unit_class.
+  std::uintptr_t bound_unit_class_ = 0;
+  std::size_t class_cache_invalidations_ = 0;
   std::uint64_t generation_ = 0;
 };
 

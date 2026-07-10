@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tess/core/tag_identity.h>
 #include <tess/path/path.h>
 
 #include <algorithm>
@@ -272,16 +273,10 @@ class FieldProductCache {
     std::size_t bytes = 0;
   };
 
-  template <typename Tag>
-  [[nodiscard]] static auto tag_identity() noexcept -> std::uintptr_t {
-    static const auto token = std::uint8_t{0};
-    return reinterpret_cast<std::uintptr_t>(&token);
-  }
-
   template <typename World, typename Tag>
   [[nodiscard]] static auto make_key(std::span<const Coord3> goals) -> Key {
     return Key{
-        tag_identity<Tag>(),
+        detail::tag_identity<Tag>(),
         detail::tile_count<World>(),
         World::chunk_count,
         World::local_tile_count,
@@ -305,7 +300,7 @@ class FieldProductCache {
   [[nodiscard]] static auto key_matches(const Key& key,
                                         std::span<const Coord3> goals) noexcept
       -> bool {
-    return key.passability_field == tag_identity<Tag>() &&
+    return key.passability_field == detail::tag_identity<Tag>() &&
            key.tile_count == detail::tile_count<World>() &&
            key.chunk_count == World::chunk_count &&
            key.local_tile_count == World::local_tile_count &&

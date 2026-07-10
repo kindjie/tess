@@ -13,6 +13,287 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Codex review fixes: span-path advertisement, stair narrowing, direct route-cache guard (M6, S5)
+
+- Fixed: three of four connector-review findings. (1) `WalkableCostField`
+  declared `passable_tag`, satisfying `HasPassableSpan` without providing
+  `passable_span`, so using it for region labeling failed to compile inside
+  the topology flood; the marker is removed (its two-field predicate must
+  not take the raw-span fast path) and the concept's contract is documented.
+  (2) `StairTransitions` narrowed the stair value to `uint8_t` before the
+  range check, so a wider field holding 257 wrapped into `PositiveX`; the
+  check now precedes any narrowing and rejects negatives. (3) The public
+  `cached_astar_path` accepts movement classes but `RouteCacheScratch` keys
+  entries on (start, goal) only, so DIRECT callers (outside
+  `PathRequestRuntime`'s binding) could be served another class's route; the
+  cache now binds itself to each call's normalized class and a rebind drops
+  the entries, counted in the new `RouteCacheStats::class_rebinds`.
+- Declined: validating entry cost in `validate_movement_intent`. Commit
+  validates the class's PASSABILITY predicate only -- cost is a search
+  concern, and commit staying more permissive than the weighted search is
+  the deliberate legacy asymmetry (`WalkableCostField` is the opt-in that
+  folds cost into passability at commit too). Documented in simulation.md.
+- Affected docs: `architecture/simulation.md`, `tests/AGENTS.md`.
+- Affected code: `topology/movement_class.h`,
+  `topology/transition_provider.h`, `path/route_cache.h`;
+  `tests/tess_topology_movement_test.cc` (WalkableCostField labeling
+  compiles and excludes zero-cost tiles; wide stair value does not wrap),
+  `tests/tess_path_movement_class_test.cc` (direct route-cache class guard).
+
+## 2026-07-10 - Pre-merge review fixes: stair down-transitions, class-binding order (M6, S5)
+
+- Fixed: two defects found (and reproduced) by the pre-merge review.
+  (1) `StairTransitions` never emitted the DOWN transition of a stair whose
+  landing steps sideways across an x/y chunk boundary at a local z below the
+  chunk top: enumeration scanned only the chunk itself and its -z neighbor.
+  It now scans the four sideways same-z neighbors too, so every legal
+  landing chunk (own, +z, or sideways face neighbor) emits its down
+  direction. (2) `PathRequestRuntime::process_unit_cached` bound the
+  movement class BEFORE `prepare_process`, so a policy-triggered
+  `clear_caches()` (e.g. `clear_every_world_change = 1`) zeroed the binding
+  mid-call and the caches refilled under an unbound identity a later class
+  could silently reuse; the binding now happens after the prepare pass.
+  Also: an out-of-range stair field value now reads as `None` instead of
+  leaking an unintended straight-up transition, the `bind_unit_class` and
+  path.md docs now state explicitly that the caller-driven weighted portal
+  segment cache is NOT covered by the class binding (keep one per class,
+  as before), and topology.md notes the sparse reaches-missing pass
+  re-enumerates every resident chunk per update.
+- Reason: both defects lived exactly in the gaps the original fixtures
+  could not reach (multi-z-extent chunks; the `clear_every_world_change`
+  knob) -- each is now pinned by a regression test.
+- Affected docs: `architecture/path.md`, `architecture/topology.md`,
+  `tests/AGENTS.md`.
+- Affected code: `topology/transition_provider.h`, `path/path_runtime.h`;
+  `tests/tess_topology_movement_test.cc` (sideways-crossing stair both
+  directions + incremental equality, out-of-range stair value),
+  `tests/tess_path_movement_class_test.cc` (policy-clear rebind guard).
+
+## 2026-07-10 - StairTransitions vertical provider (M6, S5 slice 8)
+
+- Added: `StairTransitions<StairTag>` in `topology/transition_provider.h` --
+  an integral field holds a `StairDirection`, marking the tile as the foot
+  of a stair whose landing is one step sideways and one z-level up. The
+  offset form is deliberate: two stacked passable tiles are already six-axis
+  adjacent, so only an offset stair adds connectivity. Both directions are
+  emitted, each from the chunk owning its origin tile (down from the
+  landing's chunk -- the foot's chunk or its +z face neighbor), keeping
+  incremental re-derivation exact. Endpoint traversability stays a
+  movement-class question (label filter), so stair edges are per-class. A
+  landing that would cross two chunk boundaries at once (sideways off the
+  x/y edge AND up off the top z layer) violates the face-neighbor contract
+  and contributes nothing, documented as the placement limit. On sparse
+  worlds a foot in a non-resident chunk needs no special handling: the
+  landing tile's own -z boundary exit already marks its region as reaching
+  missing topology.
+- Reason: S5 slice 8 -- the concrete vertical provider closing M6's
+  stairs/ladders deliverable on the S5.7 contract, with no byte-identity
+  shield (new code), so connectivity, per-class filtering, incremental
+  equality, and the diagonal limit are all pinned by property tests.
+- Affected docs: `architecture/topology.md`, `architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: `topology/transition_provider.h`;
+  `tests/tess_topology_movement_test.cc` (two-level fixture, both-direction
+  reachability, Builder-only stair, incremental == full across stair edits,
+  diagonal skip, same-chunk landing).
+
+## 2026-07-10 - Transition providers for the region graph (M6, S5 slice 7)
+
+- Added: `include/tess/topology/transition_provider.h` -- the
+  `TransitionProviderFor<P, World>` concept and the `AdjacentTransitions`
+  default. A provider contributes EXTRA directed tile-to-tile transitions
+  (stairs, ladders) enumerated once per chunk; `build_region_graph` /
+  `update_region_graph` take an optional trailing provider and append one
+  directed `RegionPortal` per transition whose endpoints both resolve to
+  labeled regions (provider edges are automatically per-class). The landing
+  tile must stay within the origin chunk or a face neighbor -- the exact
+  range incremental updates re-derive -- asserted in debug builds. The
+  provider TYPE is stamped on the graph beside the movement class
+  (`matches_provider`); an update with a different provider type falls back
+  to a full rebuild. On sparse worlds a transition landing in a non-resident
+  chunk marks its origin region as reaching missing topology, so reachability
+  degrades to Indeterminate, never a wrong Unreachable.
+- Reason: S5 slice 7 -- M6's special-transitions contract. The default
+  provider keeps every existing build byte-identical (pinned by test) while
+  giving the vertical stair provider (next slice) a sound, incremental-safe
+  extension point.
+- Affected docs: `architecture/topology.md`, `architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: new `topology/transition_provider.h`;
+  `topology/topology.h` (provider stamp, per-chunk provider portals,
+  reaches-missing pass), `tess.h`, `CMakeLists.txt`;
+  `tests/tess_topology_movement_test.cc` (default identity, bridge portals,
+  incremental == full, provider-mismatch rebuild, sparse Indeterminate).
+
+## 2026-07-09 - Class-aware agent tick and the runtime class binding (M6, S5 slice 6)
+
+- Changed: the agent pipeline speaks classes end to end.
+  `process_unit_path_agents`, `advance_path_agents_with_movement`,
+  `tick_unit_path_agents[_with_movement]`, and
+  `PathRequestRuntime::process_unit_cached` take `ClassOrTag`;
+  `process_weighted_path_agents`, `tick_weighted_path_agents[_with_movement]`,
+  and `process_weighted_batch` gain `<World, Class, MaxCost>` forms in which
+  ONE movement class drives the search, the precheck, and commit validation,
+  while the legacy `<PassableTag, CostTag>` overloads keep the historical
+  semantics (LegacyWeighted search; precheck on passability only, matching
+  tag-built graphs). `PathRequestRuntime` now binds itself to the movement
+  class of each unit process call: the unit route cache keys entries on
+  (start, goal) plus a world-version fingerprint and nothing on the class, so
+  a rebind clears the unit caches (correct even on misuse) and counts in the
+  new `PathRuntimeStats::class_cache_invalidations`; one runtime per
+  (world, class) is the PERF contract, not a correctness precondition.
+- Reason: S5 slice 6 -- without the binding, a runtime reused across classes
+  would serve one class's cached route to another (same start/goal, same
+  world version, different passability), the exact cross-class collision the
+  graph stamp closes for prechecks. Pinned by test: a Walker-cached 21-step
+  detour is never served to a Builder asking the same (start, goal), which
+  gets its 7-step route through the wall instead.
+- Affected docs: `architecture/path.md`, `architecture/simulation.md`,
+  `tests/AGENTS.md`.
+- Affected code: `path/path_runtime.h` (class binding, weighted impl split),
+  `sim/path_agent.h`, `sim/path_agent_tick.h`;
+  `tests/tess_path_movement_class_test.cc` (stale-route regression,
+  per-class tick divergence with zero movement rejections).
+
+## 2026-07-09 - Class-aware movement commit validation (M6, S5 slice 5)
+
+- Changed: `validate_movement_intent` / `commit_movement_intent` take a
+  movement class OR a raw passable tag (`ClassOrTag`, normalized exactly as
+  in astar_path) instead of a bare `PassableTag`. Each endpoint's passability
+  is evaluated on its own resolved page -- from and to may live on different
+  pages -- replacing the coord-scope `field<PassableTag>` point reads; the
+  identity class performs the same resolve+field reads the legacy code did.
+- Reason: S5 slice 5 -- plan == commit. A* (slice 2) and the region graph
+  (slice 3) already speak the class vocabulary; commit validation was the
+  remaining seam still hard-wired to a single global passability, which would
+  let a Builder plan a step through a construction site and then have the
+  commit reject it. Pinned by test: every step weighted A* accepts for a
+  class validates as Moved for that same class, and BlockedFrom/BlockedTo are
+  per class on both endpoints.
+- Affected docs: `architecture/simulation.md`, `tests/AGENTS.md`.
+- Affected code: `sim/movement.h`;
+  `tests/tess_path_movement_class_test.cc` (plan==commit property,
+  per-class block statuses).
+
+## 2026-07-09 - Precheck class agreement through the graph stamp (M6, S5 slice 4)
+
+- Changed: `precheck_path<ClassOrTag>(graph, world, start, goal, scratch)` --
+  the movement class the search uses is now the explicit first template
+  argument, and the gate checks `is_region_graph_fresh_for<ClassOrTag>`
+  instead of the classless freshness: a graph labeled for a different
+  movement class (or predating any stamp) reports `GraphStale` and degrades
+  to running A*. `PathRequestRuntime::precheck_prepass<ClassOrTag>` threads
+  the class from `process_unit_cached` / `process_weighted_batch` (the
+  weighted batch prechecks on PASSABILITY only, matching the legacy weighted
+  asymmetry it searches with).
+- Reason: S5 slice 4 -- closes the documented precondition hole: the graph
+  type encodes only residency, so before the stamp a graph built over a
+  different passability compiled fine and its definitive `Unreachable` could
+  prune a route the search's own class could walk (the one way the gate could
+  turn a solvable query into a wrong failure). That agreement is now enforced
+  at runtime, not delegated to the caller.
+- Affected docs: `architecture/path.md`, `tests/AGENTS.md`.
+- Affected code: `path/precheck.h`, `path/path_runtime.h`,
+  `bench/tess_topology_bench.cc` (explicit class argument);
+  `tests/tess_path_precheck_test.cc` (wrong-class -> GraphStale, per-class
+  rule-out), `tests/tess_path_precheck_runtime_test.cc` (Builder falls back
+  to A* under a walker-stamped graph, Builder-stamped graph rules out without
+  searching).
+
+## 2026-07-09 - Per-class region labeling and the graph class stamp (M6, S5 slice 3)
+
+- Changed: `build_local_chunk_topology`, `build_region_graph`, and
+  `update_region_graph` take a movement class OR a raw passable tag. The
+  identity class floods the raw `field_span` exactly as the legacy single-tag
+  build did (byte-identical labels and codegen, pinned by test); a composed
+  class evaluates its predicate on the resolved page per tile. Portal pairing
+  is untouched -- it queries labels, so per-class labels yield per-class
+  portals automatically. `RegionGraphT` gains a movement-class stamp
+  (`built_class_`, a `core/tag_identity.h` token of the NORMALIZED class)
+  recorded at build time and mirrored on `matches_shape`: a stamp mismatch in
+  `update_region_graph` forces a full rebuild with the requested class's
+  labels, the public `matches_class<ClassOrTag>()` reports the binding, and
+  the new `is_region_graph_fresh_for<ClassOrTag>(world, graph)` is the
+  class-aware freshness form (later slices route precheck through it so a
+  wrong-class graph degrades to GraphStale, never a wrong Unreachable).
+- Reason: S5 slice 3 -- the same vocabulary that drives search (slice 2) now
+  drives labeling, so a Walker graph and a Builder graph over one world are
+  first-class. The stamp closes the documented precheck precondition gap: the
+  graph type encodes neither shape nor class, so binding both at build time is
+  what keeps a definitive Unreachable trustworthy.
+- Affected docs: `architecture/topology.md`, `architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: `topology/topology.h`; new
+  `tests/tess_topology_movement_test.cc` (identity byte-identity,
+  Walker/Builder divergence + Builder-only bridge, per-class incremental ==
+  full, stamp-mismatch rebuild, per-class freshness, alloc-free warm
+  relabel), `tests/CMakeLists.txt`; `bench/tess_topology_bench.cc` +
+  `bench/thresholds/topology.json` (composed-class 512x512 labeling gate;
+  measured on par with the raw scan locally, bootstrap threshold 3x the
+  identity gate pending CI calibration).
+
+## 2026-07-09 - Movement classes through the A* leaves and weighted cores (M6, S5 slice 2)
+
+- Changed: the pathfinding passability/cost leaves (`detail::is_passable`,
+  `is_passable_index`, `tile_entry_cost_index`) now evaluate a movement class
+  at the resolved (page, tile) seam. The passability leaves accept a class OR
+  a raw tag (normalized through `movement_class_of`, so every legacy
+  `<World, Tag>` call site compiles unchanged and stays byte-identical via the
+  `WalkableField` identity); the cost leaf requires an actual class, because a
+  raw tag would normalize to the unit-cost identity and silently discard a
+  legacy `CostTag`. The weighted family -- `weighted_astar_path`,
+  `build_weighted_distance_field`, `build_weighted_distance_field_in_box`,
+  `build_bounded_weighted_distance_field`, `weighted_distance_field_path`,
+  `weighted_path_batch` -- gained single-`Class` cores; the historical
+  `<PassableTag, CostTag>` overloads remain as thin forwarders through
+  `movement::LegacyWeighted` (exact semantics, including the cost-agnostic
+  passability asymmetry). `tag_identity` hoisted from a private
+  `FieldProductCache` member to `include/tess/core/tag_identity.h`
+  (`tess::detail`) so later slices can stamp graphs and runtimes with a class
+  identity. Diagnostics placement is unchanged (`path_cost_read` in the cost
+  leaf, `path_passability_check` at callers), so counters do not drift.
+- Reason: S5 slice 2 -- one vocabulary must drive search so per-class region
+  labeling (slice 3) and precheck/commit agreement (slices 4-5) can share it.
+  Fusing the pair into one class also removes the latent trap of mixing a
+  passability tag and a cost tag from different logical classes. The
+  route-product/portal-route family and the path runtime still carry tag
+  pairs and forward through the legacy overloads; they convert with the
+  runtime in slice 6.
+- Affected docs: `architecture/path.md`, `tests/AGENTS.md`; changelog entries
+  from 2026-07-06 moved to `CHANGELOG-archive.md` (token cap).
+- Affected code: `path/path.h`, `path/detail/astar.h`,
+  `path/detail/weighted_batch.h`, `path/distance_field_box.h`,
+  `path/field_product_cache.h`, new `core/tag_identity.h`, `CMakeLists.txt`;
+  new `tests/tess_path_movement_class_test.cc` (identity and LegacyWeighted
+  node-for-node equivalence, Walker/Builder divergence, sparse missing-chunk
+  contract), `tests/CMakeLists.txt`.
+
+## 2026-07-09 - Movement vocabulary DSL (M6, S5 slice 1)
+
+- Added: `include/tess/topology/movement_class.h` (namespace `tess::movement`) --
+  a compile-time DSL where a `MovementClass<PassExpr, CostExpr>` fuses a
+  passability predicate and an entry-cost expression composed from typed-field
+  leaves. Boolean terms `Field`/`NotZero`/`Not`/`AllOf`/`AnyOf`; cost
+  expressions `UnitCost`/`ConstantCost`/`FieldCost`/`SelectCost` with a
+  `normalize_cost` byte-exact to the weighted A* leaf; identity classes
+  `WalkableField`/`WalkableCostField`/`LegacyWeighted`; the `MovementClassFor`
+  concept and `movement_class_of` tag/class normalization.
+- Reason: first slice of the M6 movement-vocabulary close (S5). Labeling,
+  pathfinding, and commit validation currently each bake in a single global
+  passability (a raw `PassableTag`); this vocabulary is the shared, allocation-
+  free, constexpr foundation later slices thread through region labeling,
+  precheck, the weighted agent tick, and `sim/movement.h` so plan and commit
+  agree. Leaves read the constexpr `ChunkPage::field<Tag>` at the (page, tile)
+  seam because world-scope accessors are not constexpr, and the whole predicate
+  inlines to the same ops a hand-written cast emits. `WalkableField` is a
+  distinct struct (not an alias) carrying the raw tag + a `field_span` fast path
+  so the identity class stays byte-identical to today's single-field scan. Pure
+  vocabulary; no wiring yet.
+- Affected docs: `architecture/topology.md`, `architecture/surface.json`.
+- Affected code: new `topology/movement_class.h`, `tess.h`, `CMakeLists.txt`;
+  new `tests/tess_movement_class_test.cc`, `tests/CMakeLists.txt`,
+  `tests/AGENTS.md`.
+
 ## 2026-07-09 - Path product/cache invalidation contracts (audit-2 W-A)
 
 - Changed: (1) Route, portal-route, and distance-field products treat an empty
@@ -1032,386 +1313,10 @@ workflow and a cross-lab codex pass), fixed on the branch before merge.
   `bench/thresholds/path.json`, `tools/benchmark_thresholds.py`,
   `tools/benchmark_baseline_summary.py`, `tests/test_benchmark_tools.py`,
   `.github/workflows/ci.yml`.
-## 2026-07-06 - Flat-Hash Path Grouping, Batch Status Fix, Scan Cost Model
-
-- Changed: `PathRequestRuntime::process_repeated_goal_fields` no longer
-  rescans the request list per request (O(n^2) with an O(n^3)-worst inner
-  start-chunk dedup); one O(n) pass over a reusable open-addressed flat
-  map (goal -> group id, first-occurrence order, matching the route
-  cache's hashing style) buckets members via counting sort and counts
-  distinct start chunks with sort+unique over runtime-owned scratch.
-  `weighted_path_batch` likewise builds its goal -> request count map once
-  per batch instead of rescanning all requests per request; the map
-  scratch lives in `WeightedPathBatchScratch`. Group processing order and
-  every stats counter (`field_product_candidate_groups`/`used`/`skipped`,
-  `WeightedPathBatchStats`) are pinned unchanged by seeded randomized
-  equivalence tests against per-request A* oracles, and warm reruns of
-  both passes are allocation-free. Behavior fix (red evidence first):
-  members of a failed shared-goal weighted batch group were blanket
-  labeled with the goal's failure status even when their own start was
-  invalid; `detail::weighted_group_member_failure` now mirrors
-  `weighted_astar_path`'s exact endpoint-validation precedence
-  (start containment/passability before goal status, start entry cost
-  after goal containment/passability). Added the pre-A* scan cost model
-  to `docs/architecture/path.md` with two accepted-with-evidence
-  worst-case benchmarks (`path/astar_plane_gap_miss_512x512`,
-  `path/astar_plane_gap_miss_3d_64x64x16`) under deliberately generous
-  10x-measured ceilings, plus new coverage: portal-route corner cases
-  (invalid endpoints, no-candidate NoPath, segment failure clearing the
-  assembled path, a layout where the greedy candidate is the only winner,
-  multi-seam L routes), weighted batch edges (empty batch, all-distinct
-  goals, duplicate requests, >MaxCost fallback engagement evidence,
-  bounded-vs-unbounded random-cost equivalence), and runtime lifecycle
-  (clear_requests regeneration, empty frames, failure counters, byte
-  budget driving real eviction through `process_unit_cached`).
-- Reason: Audit flagged the grouping hot paths as quadratic-plus in
-  request count, the batch fan-out as mislabeling per-member statuses,
-  and the pre-A* scans as an undocumented O(world-slice) cost accepted
-  without evidence. The rewrite keeps deterministic first-occurrence
-  semantics while making grouping linear, and the new tests pin the
-  previously untested corners.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/optimization-log.md`, `tests/AGENTS.md`.
-- Affected code: `include/tess/path/path_runtime.h`,
-  `include/tess/path/path.h`, `include/tess/path/detail/weighted_batch.h`,
-  `tests/tess_path_runtime_test.cc`, `tests/tess_path_weighted_batch_test.cc`,
-  `tests/tess_path_portal_route_test.cc`, `tests/CMakeLists.txt`,
-  `bench/tess_path_scan_bench.cc`, `bench/CMakeLists.txt`,
-  `bench/thresholds/path.json`.
-
-## 2026-07-06 - Path Caches Gain Eviction Budgets and Hash-Indexed Lookups
-
-- Changed: `WeightedPortalSegmentCache` is now bounded by a segment budget
-  (default 256 entries, `set_segment_budget`, plumbed through
-  `PathRuntimeCachePolicy::portal_segment_budget`). A store at budget first
-  sweeps stale entries in one compaction pass that rebuilds both the entry
-  list and the path-node append arena (piecemeal erase would leak the
-  arena), then evicts the oldest live entries in insertion order if the
-  sweep cannot make room; a zero budget stores nothing. This fixes two
-  audit findings: unbounded growth in any edited world (50 edit/rebuild
-  cycles grew the cache to 100 entries pre-fix) and the compounding
-  duplicate bug where `store()` deduped through a stale-rejecting lookup,
-  so re-storing the same request after a world change appended an identical
-  entry forever (2 entries for one request pre-fix). The cache reports
-  `PortalSegmentCacheStats` (entries, path_nodes, sweeps, evictions,
-  stale_rejections — mirroring `FieldProductCacheStats` conventions) via
-  `stats()`/`reset_stats()`; `PathRuntimeStats` now embeds the full struct
-  as `portal_segment_cache`, replacing the old
-  `portal_segment_cache_entries` field. `RouteCacheScratch` replaced its
-  O(entries) exact scan and O(entries × path nodes) suffix scan with two
-  open-addressed flat hash indexes (power-of-two capacity, linear probing,
-  plain vectors): exact (start, goal) lookups, and a suffix index keyed by
-  hash(node, goal) populated per stored Found-path node with
-  first-write-wins, preserving the linear scan's earliest-stored-entry
-  determinism (pinned by test before the change). Route storage is capped
-  (`max_route_entries` default 512, `max_route_path_nodes` default 2^20,
-  `set_caps`, plumbed through `PathRuntimeCachePolicy`); an insert that
-  would exceed either cap invalidates the whole cache first — the same
-  lifecycle as world-change invalidation — and counts
-  `RouteCacheStats::cap_invalidations`. `ChunkVersionDependencies::
-  add_chunk` checks the most recent entry before its linear scan, since
-  path nodes are chunk-coherent during product builds.
-- Reason: Both caches grew without bound and rescanned dead or unrelated
-  entries on every lookup; an edited long-lived world leaked entries and
-  path storage forever, and route lookups degraded linearly with cache
-  population. Budgeted compaction plus cheap cap-triggered invalidation
-  match the library's existing world-change lifecycle, and the flat hash
-  indexes keep the no-std-map style while making exact/suffix lookups
-  O(1) expected. Bench evidence: cached_astar_batch_100_suffix_open
-  17.27us -> 16.94us mean, cached_astar_batch_100_mixed_repeated_room_
-  portals 13.13ms -> 12.89ms mean; all path thresholds green.
-- Affected docs: `docs/architecture/path.md`, `tests/AGENTS.md`.
-- Affected code: `include/tess/path/portal_segment_cache.h`,
-  `include/tess/path/route_cache.h`, `include/tess/path/path.h`,
-  `include/tess/path/path_runtime.h`, `tests/tess_path_cache_test.cc`,
-  `tests/tess_path_runtime_test.cc`, `tests/CMakeLists.txt`.
-
-## 2026-07-06 - Path Caches Stop Handing Out Views Into Reallocatable Storage
-
-- Changed: All three path caches now follow one lifetime policy — no
-  returned view may point into storage that a later cache write can
-  reallocate. `cached_astar_path` hits (exact and suffix) copy the cached
-  route into the caller's `PathScratch` and return a span into that scratch,
-  giving hits the identical lifetime contract as misses (valid until the
-  next call using the same scratch); warm hits stay allocation-free with
-  pre-reserved scratch. `WeightedPortalSegmentCache` deleted its public
-  `find()`/`path()` (a held span dangled across `store()` growth) in favor
-  of `lookup_append(world, request, out_path) -> SegmentHit`, which appends
-  the cached path into caller storage and deduplicates the shared junction
-  node when stitching consecutive segments; `Entry` went private.
-  `FieldProductCache` entries now hold products behind
-  `std::unique_ptr<DistanceFieldProduct>`, so `lookup()` pointers survive
-  stores/evictions of other entries (borrow window: until a store/eviction
-  touching that key, or `clear()`), and `store()` takes
-  `DistanceFieldProduct&&`, moving instead of double-copying world-sized
-  field data (the runtime rebuilds its staging product on the next build).
-  `RouteCacheScratch` + `cached_astar_path` moved to the new public header
-  `include/tess/path/route_cache.h` (included by `path.h`, listed in
-  `TESS_PUBLIC_HEADERS`) to keep `path.h` under the token budget. Audit
-  gaps pinned: oversized-store clears the entire cache, zero byte budget
-  stores nothing, same-key replacement byte accounting, LRU eviction by
-  recency with 3+ entries (verified correct, pinned), distance-field
-  error-status families (InvalidGoal/InvalidStart/empty `GoalSet`) across
-  plain/weighted/product builds and path reconstruction. The placebo
-  portal-segment-cache assertions in the runtime weighted-batch test
-  (asserting 0 entries in a cache the runtime never writes) were replaced
-  by a real contract test: entries stored through the runtime accessor are
-  reported by `stats()` and dropped by `clear_caches()` — the runtime
-  itself intentionally does not populate that cache today.
-- Reason: A lifetime audit reproduced heap-use-after-free under ASan for
-  all three caches: a route-cache hit span dangled after a later miss
-  reallocated `paths_`, a segment-cache `path()` span dangled across
-  `store()`, and a field-product-cache `lookup()` pointer dangled after
-  `entries_` growth. `store()` also copied world-sized products twice
-  (measured 8,800 bytes allocated for a 4,376-byte product store; now a
-  move). Fixes chosen per size class: small routes copy into scratch;
-  world-sized products get stable heap slots plus move-in ownership.
-- Affected docs: `docs/architecture/path.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/path/route_cache.h` (new),
-  `include/tess/path/path.h`, `include/tess/path/portal_segment_cache.h`,
-  `include/tess/path/field_product_cache.h`,
-  `include/tess/path/path_runtime.h`, `include/tess/tess.h`,
-  `CMakeLists.txt`, `bench/tess_path_product_bench.cc`,
-  `tests/tess_path_test.cc`, `tests/tess_path_runtime_test.cc`
-
-## 2026-07-06 - Byte-Array Backing For BlockScratch Object Lifetimes
-
-- Changed: `BlockScratch` now owns heap `std::byte[]` storage
-  (`std::unique_ptr<std::byte[]>` + explicit capacity accounting) instead
-  of `std::vector<std::max_align_t>`, and `allocate<T>` returns
-  `std::launder`ed pointers into that buffer. Growth allocates a fresh
-  buffer without preserving contents (previously returned spans were
-  already invalidated; byte accounting still carries over), a wrapped
-  capacity computation now throws `std::bad_alloc` instead of silently
-  wrapping, and a `static_assert` pins
-  `__STDCPP_DEFAULT_NEW_ALIGNMENT__ >= alignof(std::max_align_t)` so the
-  buffer base keeps the documented max-align guarantee. The class is now
-  move-only; moved-from scratches read as empty. Tests pin zero-count
-  allocation, byte-count overflow rejection, mixed-alignment disjoint
-  spans, growth accounting, and runtime `WritePolicy` dispatch for
-  `UniquePerTile`, `UniquePerChunk`, and the first-ever `Unsafe`
-  instantiation.
-- Reason: Reinterpreting `std::vector<std::max_align_t>` storage as `T*`
-  never created `T` objects, which is undefined behavior under the C++20
-  object model even for trivial `T` (and per-element pointer arithmetic is
-  per-object UB before C++23 `start_lifetime_as_array`). A `std::byte`
-  array-new implicitly creates implicit-lifetime objects in its storage
-  ([intro.object]/13), and `allocate<T>` already requires trivially
-  default-constructible, trivially destructible `T`, making the returned
-  spans well-defined. The defect was formal-model-only and not observable
-  under ASan/UBSan.
-- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`
-
-## 2026-07-06 - Structural Serial-Executor Guard For Shared-Dirty Phase Execution
-
-- Changed: `execute_phase_deferred_dirty_with<Policy>` now requires the new
-  `tess::SerialExecutor` concept (a nested `serial_execution_tag` type
-  alias declared by the executor), so passing a concurrent executor such as
-  `ScopedThreadPhaseExecutor` to the shared-`PlannedDirtyAccumulator`
-  helper is a compile error instead of a data race on the shared
-  accumulator and non-atomic chunk counter. `SerialPhaseExecutor` declares
-  the tag; `ScopedThreadPhaseExecutor` is documented as a prototype that
-  pairs only with `execute_phase_partitioned_dirty_with<Policy>`, which
-  stays unconstrained (per-operation dirty partitions and result slots) as
-  does the `execute_operation_index_range` adapter it uses. Also:
-  `OpId`/`OpHandle` gained `= 0` default member initializers so
-  default-constructed values compare equal to zero instead of reading
-  indeterminate storage; `DomainDesc::explicit_chunks` now deduplicates
-  keys after sorting so a planned operation never visits one chunk twice
-  (repeated keys under `UniquePerChunk` would break the per-chunk
-  ownership rule phase planning relies on); `FrameOps::clear()` resets a
-  frame for reuse while keeping vector capacity (handles invalidated,
-  handle/id assignment restarts at zero, warm re-enqueue is
-  allocation-free); and the queued replay stress world comparison now
-  checks every tile of every chunk via field spans instead of tile 0 only.
-- Reason: A concurrency audit flagged the shared-accumulator deferred-dirty
-  helper as its top finding: the helper hands a callback capturing shared
-  mutable state to any executor's `for_each_operation`, and the public
-  threaded executor satisfied that contract silently. The serial contract
-  existed only as documentation, so the unsafe pairing compiled cleanly.
-  The remaining changes close audit test gaps (write-then-read hazards,
-  phase-range boundaries, explicit-domain edge cases, executor clamps) and
-  align `OpId`/`OpHandle` with the codebase default-init convention.
-- Affected docs: `docs/architecture/queued-operations.md`,
-  `docs/decisions/CHANGELOG.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
-
-## 2026-07-06 - RAII Allocation Counting And Complete New/Delete Coverage
-
-- Changed: Replaced the raw `set_allocation_counting(bool)` /
-  `reset_allocation_count()` test API with an RAII-only
-  `tess_test::ScopedAllocationCounter` (constructor resets and enables,
-  destructor disables; `count()`/`bytes()` accessors) and migrated all 23
-  call sites across seven test binaries. The non-sanitizer backend of
-  `tests/allocation_counter.cc` no longer dlsym-chains to Itanium-mangled
-  `_Znwm`/`_Znam` symbols; it now replaces the complete standard
-  `operator new`/`delete` overload set (plain, array, aligned, nothrow)
-  backed by `std::malloc`/`posix_memalign` (`_aligned_malloc`/
-  `_aligned_free` behind a `_WIN32` guard for MSVC), so aligned and
-  nothrow allocations are counted. The sanitizer-hook route now also
-  covers ThreadSanitizer. `bench/tess_diagnostics_alloc_hooks.cc` gained
-  the same ASan/TSan guard: under a sanitizer it forwards
-  `__sanitizer_malloc_hook`/`__sanitizer_free_hook` to the diagnostics
-  counters (free-hook bytes are best-effort zero, matching unsized
-  delete) behind a pthread-specific re-entrancy guard, because first
-  `thread_local` access can malloc and re-enter the hook; without a
-  sanitizer it now defines the missing aligned-nothrow new and
-  aligned/nothrow delete counterparts. Added
-  `tests/tess_allocation_counter_test.cc` covering every allocation form
-  and RAII unwind on fatal gtest failures.
-- Reason: The old dlsym chaining breaks on MSVC and silently missed
-  aligned and nothrow allocations, and a failed `ASSERT_*` between
-  `set_allocation_counting(true/false)` leaked counting enabled,
-  poisoning every later allocation assertion in the binary. The
-  unguarded global `new`/`delete` replacement in the bench hooks blinded
-  ASan's new/delete-mismatch and alloc-dealloc-size checks in
-  `tess_diagnostics_enabled_test`, violating the sanitizer rule in
-  `tests/AGENTS.md`.
-- Affected docs: `docs/decisions/CHANGELOG.md`, `tests/AGENTS.md`
-- Affected code: `tests/allocation_counter.{h,cc}`,
-  `tests/tess_allocation_counter_test.cc`, `tests/CMakeLists.txt`,
-  `bench/tess_diagnostics_alloc_hooks.cc`, `tests/tess_block_test.cc`,
-  `tests/tess_shape_test.cc`, `tests/tess_storage_test.cc`,
-  `tests/tess_path_test.cc`, `tests/tess_queued_test.cc`,
-  `tests/tess_path_agent_test.cc`, `tests/tess_path_agent_tick_test.cc`
-
-## 2026-07-06 - Path Agent Phase Lifecycle And Bounded Re-Pathing
-
-- Changed: `PathAgentState` gained an explicit `PathAgentPhase` lifecycle
-  (`Idle`, `NeedsPath`, `Following`, `Blocked`, `Unreachable`) plus a
-  `blocked_retries` budget. Transient movement failures (occupied,
-  reserved, blocked, stale version/topology) no longer set `NoPath`; the
-  agent enters `Blocked`, keeps its `Found` route, and the tick drivers
-  schedule bounded re-paths (`PathAgentTickOptions::max_blocked_retries`,
-  default 8) before turning terminally `Unreachable`. Goals assigned via
-  the two-argument `set_path_agent_goal` are now picked up on the next
-  tick without a manual dirty mark (`NeedsPath` requests processing
-  structurally). `PathTicket` carries a generation stamped at submission
-  and invalidated by `clear_requests()`; stale tickets assert in debug
-  and return `NoPath` in release. `manhattan_distance` moved to
-  `core/shape.h` built on overflow-safe `abs_delta` with a saturating
-  sum; the signed implementation in `sim/movement.h` was removed.
-- Reason: an audit found transient movement failures permanently
-  stranded agents (crossing agents froze forever in a static world), the
-  two-argument goal overload silently never scheduled pathing, stale
-  tickets indexed out of bounds, and the signed Manhattan distance was
-  UB at coordinate extremes.
-- Affected docs: `docs/architecture/path.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/sim/path_agent.h`,
-  `include/tess/sim/path_agent_tick.h`, `include/tess/sim/movement.h`,
-  `include/tess/core/shape.h`, `include/tess/path/path.h`,
-  `include/tess/path/path_runtime.h`, `tests/tess_path_agent_test.cc`,
-  `tests/tess_path_agent_tick_test.cc`, `tests/tess_assert_test.cc`
-
-## 2026-07-06 - Portable UInt128 Key Storage And Boundary Shift Guards
-
-- Changed: Replaced the unconditional `unsigned __int128` alias in
-  `include/tess/core/shape.h` with a hand-rolled constexpr
-  `tess::detail::UInt128` struct (`include/tess/core/uint128.h`) used
-  unconditionally on every compiler, so Clang and GCC CI exercise exactly
-  the code MSVC will compile. The struct provides only the operations
-  shape.h needs (wrap-around multiply, subtract with borrow, and/or,
-  boundary-safe shifts, defaulted comparisons, explicit narrowing).
-  `tile_key<Shape>(Coord3)` and `chunk_key(TileKey<Shape>)` gained
-  `if constexpr (chunk_bits == 0)` short-circuits so single-chunk shapes
-  never shift `std::uint64_t` storage by `local_bits == 64` (undefined
-  behavior), mirroring the existing `local_bits == 64` mask guard in
-  `local_tile_id(TileKey<Shape>)`. Added a Windows MSVC configure/build/
-  test preset (condition-gated to Windows hosts) and `/permissive-`
-  `/EHsc` to the MSVC warning options.
-- Reason: MSVC has no `unsigned __int128`, so >64-bit tile keys could not
-  compile on Windows; a conditional typedef would leave the MSVC path
-  untested by Clang CI. The builtin also rejects shift counts >= 128 in
-  constant expressions, while the portable type defines them as zero.
-  Note: with power-of-two chunk dims and the 64-bit local-tile-count fit
-  static_assert, `local_bits` maxes out at 63, so the shift-by-64 guards
-  are defensive hardening for the 2^63-tile single-chunk boundary shape
-  rather than a reachable-bug fix.
-- Affected docs: `docs/decisions/CHANGELOG.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/core/uint128.h`,
-  `include/tess/core/shape.h`, `tests/tess_shape_test.cc`,
-  `CMakeLists.txt`, `CMakePresets.json`, `cmake/TessProjectOptions.cmake`
-
-## 2026-07-06 - Debug Assertion Policy For Unchecked APIs
-
-- Changed: Added `TESS_ASSERT`/`TESS_ASSERT_MSG` in
-  `include/tess/core/assert.h`, enabled by default outside `NDEBUG` and
-  overridable via `TESS_ENABLE_ASSERTS`. Unchecked fast-path accessors now
-  assert their preconditions in debug builds: `World::chunk(ChunkKey)`,
-  `World::meta(ChunkKey)`, `World::resolve`, `tile_key<Shape>(Coord3)`, and
-  `PathRequestRuntime::result(PathTicket)`. Checked `try_*` entry points
-  remain the runtime-validated API and are unchanged.
-- Reason: Out-of-shape coordinates previously wrapped through
-  `static_cast<std::uint64_t>` into out-of-bounds indexing with no debug
-  diagnostic anywhere in the library. Release and bench builds define
-  `NDEBUG`, so the asserts have zero cost in gated performance paths.
-- Affected docs: `docs/decisions/CHANGELOG.md`
-- Affected code: `include/tess/core/assert.h`, `include/tess/core/shape.h`,
-  `include/tess/storage/world.h`, `include/tess/path/path_runtime.h`,
-  `tests/tess_assert_test.cc`, `tests/CMakeLists.txt`, `CMakeLists.txt`
-## 2026-07-06 - Topology CSR Reachability and Incremental Region Graph
-
-- Changed: `RegionGraph` now maintains a dense global region index
-  (per-chunk prefix sums over 1-based local region ids, exposed through
-  `region_count()` / `region_index(RegionRef)` with an
-  `invalid_region_index` sentinel) and a CSR portal adjacency rebuilt after
-  portal pairing. `reachable()` traverses the CSR adjacency with
-  epoch-stamped visited marks in `RegionGraphScratch`, replacing the
-  per-frontier-pop portal rescan and linear visited scan (O(V*P + V^2))
-  with O(V + P) while preserving the public signature, statuses, and
-  visited-region counts. Added the checked
-  `LocalChunkTopology::region(LocalRegionId)` accessor for the 1-based id
-  convention, defaulted equality for `LocalRegion`, `LocalBoundaryExit`,
-  and `RegionPortal`, and `update_region_graph<World, PassableTag>(world,
-  scratch, graph, dirty_chunks)` which incrementally rebuilds dirty chunk
-  topologies, patches portals, and restores canonical portal order so the
-  patched graph is identical to a full rebuild. Incremental portal patching
-  drops and re-derives all portals originating from dirty chunks and their
-  face neighbors (a superset of the strictly invalidated portals), then
-  stable-sorts by from-chunk; this keeps the portal array byte-identical to
-  a fresh build, which a minimal to-dirty-only filter cannot guarantee.
-- Reason: Reachability queries scaled quadratically with region count, the
-  1-based `LocalRegionId` convention had no checked accessor (naive
-  `regions()[id.value]` indexing reads the wrong region or out of bounds),
-  and consumers such as a sibling game had to run a full
-  `build_region_graph` per tile edit because graph internals are private.
-- Affected docs: `docs/architecture/topology.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/topology/topology.h`,
-  `tests/tess_topology_test.cc`
-## 2026-07-06 - Sim Scheduler Coverage, Delta Clipping, Query Out-Params
-
-- Changed: Deduplicated the four `tick_*_scheduler` bodies behind a shared
-  `detail::tick_scheduler_core` helper; public signatures are unchanged.
-  Render-delta collection now clips each chunk's dirty bounds to the chunk's
-  own world-space box before the per-tile loop instead of filtering every
-  tile through shape containment and coordinate resolution
-  (behavior-identical, strictly less work, pinned by new border/clip tests).
-  Added appending `collect_dirty_chunks` / `collect_active_chunks`
-  out-parameter variants on `World`; the by-value queries became thin
-  wrappers. Closed audit coverage gaps with behavioral tests for
-  `tick_weighted_movement_scheduler` and
-  `tick_weighted_path_agents_with_movement` (cheap cost-band detours,
-  occupancy commits, movement dirty-mask interplay), the rejected-plan early
-  return, scheduler-driven render-dirty clearing, cross-chunk and
-  out-of-shape dirty bounds, fresh-world zero-initialization, and dirty
-  bounds `union_box` orientations. Strengthened tautological scheduler test
-  assertions (exact accumulator alpha values, reroute-to-arrival with
-  visited-tile tracking).
-- Reason: A coverage audit found an entirely untested public scheduler
-  variant, untested failure and clearing paths, tautological assertions, and
-  copy-pasted scheduler bodies; pinning behavior first made the mechanical
-  cleanups safe. All new tests passed against the old code, confirming pins
-  rather than latent bugs.
-- Affected docs: `docs/architecture/simulation.md`,
-  `docs/architecture/storage.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/sim/scheduler.h`,
-  `include/tess/sim/render_delta.h`, `include/tess/storage/world.h`,
-  `tests/tess_sim_scheduler_test.cc`, `tests/tess_storage_test.cc`
 
 ## Earlier Entries
 
-Design-changelog entries before 2026-07 are archived in
+Design-changelog entries before 2026-07-07 are archived in
 [`CHANGELOG-archive.md`](CHANGELOG-archive.md) to keep this file under the
 24k-token per-file limit. New entries go at the top of this file; when it
 approaches the limit again, its oldest entries move to the archive.

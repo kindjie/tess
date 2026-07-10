@@ -29,7 +29,9 @@
 #include <tess/storage/residency.h>
 #include <tess/storage/sparse_world.h>
 #include <tess/storage/world.h>
+#include <tess/topology/movement_class.h>
 #include <tess/topology/topology.h>
+#include <tess/topology/transition_provider.h>
 
 #define TESS_VERSION_MAJOR 0
 #define TESS_VERSION_MINOR 2

@@ -6,9 +6,11 @@
 #include <tess/diagnostics/diagnostics.h>
 #include <tess/path/node_index_space.h>
 #include <tess/path/path_view.h>
+#include <tess/topology/movement_class.h>
 
 #include <algorithm>
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -87,6 +89,16 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                 MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> PathResult;
 
+// The weighted searches come in two forms: the core takes one MovementClass
+// fusing passability and entry cost; the legacy <PassableTag, CostTag> pair
+// forwards through movement::LegacyWeighted (identical semantics, including
+// the cost-agnostic passability asymmetry).
+template <typename World, typename Class>
+auto weighted_astar_path(
+    const World& world, PathRequest request, PathScratch& scratch,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> PathResult;
+
 template <typename World, typename PassableTag, typename CostTag>
 auto weighted_astar_path(
     const World& world, PathRequest request, PathScratch& scratch,
@@ -115,15 +127,33 @@ auto build_distance_field(
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> DistanceFieldResult;
 
-template <typename World, typename PassableTag, typename CostTag>
+template <typename World, typename Class>
 auto build_weighted_distance_field(
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> DistanceFieldResult;
 
 template <typename World, typename PassableTag, typename CostTag>
+auto build_weighted_distance_field(
+    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> DistanceFieldResult;
+
+template <typename World, typename Class>
 auto build_weighted_distance_field_in_box(
     const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> DistanceFieldResult;
+
+template <typename World, typename PassableTag, typename CostTag>
+auto build_weighted_distance_field_in_box(
+    const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> DistanceFieldResult;
+
+template <typename World, typename Class, std::uint32_t MaxCost>
+auto build_bounded_weighted_distance_field(
+    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> DistanceFieldResult;
 
@@ -460,6 +490,11 @@ class PathScratch {
                          PathScratch& scratch, MissingChunkPolicy policy)
       -> PathResult;
 
+  template <typename World, typename Class>
+  friend auto weighted_astar_path(const World& world, PathRequest request,
+                                  PathScratch& scratch,
+                                  MissingChunkPolicy policy) -> PathResult;
+
   template <typename World, typename PassableTag, typename CostTag>
   friend auto weighted_astar_path(const World& world, PathRequest request,
                                   PathScratch& scratch,
@@ -543,25 +578,26 @@ class DistanceFieldScratch {
   friend auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
                                   DistanceFieldScratch& scratch) -> PathResult;
 
-  template <typename World, typename PassableTag, typename CostTag>
+  // The weighted friends name the single-Class cores; the legacy tag-pair
+  // overloads are thin forwarders and never touch scratch internals.
+  template <typename World, typename Class>
   friend auto build_weighted_distance_field(const World& world, Coord3 goal,
                                             DistanceFieldScratch& scratch,
                                             MissingChunkPolicy policy)
       -> DistanceFieldResult;
 
-  template <typename World, typename PassableTag, typename CostTag>
+  template <typename World, typename Class>
   friend auto build_weighted_distance_field_in_box(
       const World& world, Coord3 goal, Box3 domain,
       DistanceFieldScratch& scratch, MissingChunkPolicy policy)
       -> DistanceFieldResult;
 
-  template <typename World, typename PassableTag, typename CostTag,
-            std::uint32_t MaxCost>
+  template <typename World, typename Class, std::uint32_t MaxCost>
   friend auto build_bounded_weighted_distance_field(
       const World& world, Coord3 goal, DistanceFieldScratch& scratch,
       MissingChunkPolicy policy) -> DistanceFieldResult;
 
-  template <typename World, typename PassableTag, typename CostTag>
+  template <typename World, typename Class>
   friend auto weighted_distance_field_path(const World& world, Coord3 start,
                                            Coord3 goal,
                                            DistanceFieldScratch& scratch)
@@ -711,8 +747,7 @@ class WeightedPathBatchScratch {
   }
 
  private:
-  template <typename World, typename PassableTag, typename CostTag,
-            std::uint32_t MaxCost>
+  template <typename World, typename Class, std::uint32_t MaxCost>
   friend auto weighted_path_batch(const World& world,
                                   std::span<const PathRequest> requests,
                                   WeightedPathBatchScratch& scratch)
@@ -794,16 +829,32 @@ template <typename Shape>
   return coord<Shape>(TileKey<Shape>{static_cast<Storage>(index)});
 }
 
-template <typename World, typename Tag>
+// The passability/cost leaves take a movement class OR a raw passable tag
+// (normalized through movement_class_of, so every legacy <World, Tag> call
+// site compiles unchanged and the identity class keeps codegen byte-identical
+// to the raw field cast it replaces).
+template <typename World, typename ClassOrTag>
 [[nodiscard]] auto is_passable(const World& world, Coord3 coord) noexcept
     -> bool {
-  const auto* value = world.template try_field<Tag>(coord);
-  return value != nullptr && static_cast<bool>(*value);
+  using Class = movement::movement_class_of<ClassOrTag>;
+  const auto resolved = world.try_resolve(coord);
+  if (!resolved.has_value()) {
+    return false;
+  }
+  if constexpr (std::is_same_v<typename World::residency_type,
+                               SparseResident>) {
+    const auto* page = world.try_chunk(resolved->chunk_key);
+    return page != nullptr && Class::passable(*page, resolved->local_tile_id);
+  } else {
+    return Class::passable(world.chunk(resolved->chunk_key),
+                           resolved->local_tile_id);
+  }
 }
 
-template <typename World, typename Tag>
+template <typename World, typename ClassOrTag>
 [[nodiscard]] auto is_passable_index(const World& world,
                                      std::uint64_t index) noexcept -> bool {
+  using Class = movement::movement_class_of<ClassOrTag>;
   using Shape = typename World::shape_type;
   using Storage = typename ShapeTraits<Shape>::TileKeyStorage;
   const auto key = TileKey<Shape>{static_cast<Storage>(index)};
@@ -816,39 +867,30 @@ template <typename World, typename Tag>
     if (page == nullptr) {
       return false;
     }
-    return static_cast<bool>(
-        page->template field<Tag>(local_tile_id<Shape>(key)));
+    return Class::passable(*page, local_tile_id<Shape>(key));
   } else {
-    const auto& value = world.chunk(chunk_key<Shape>(key))
-                            .template field<Tag>(local_tile_id<Shape>(key));
-    return static_cast<bool>(value);
+    return Class::passable(world.chunk(chunk_key<Shape>(key)),
+                           local_tile_id<Shape>(key));
   }
 }
 
-template <typename World, typename Tag>
+// Unlike the passability leaves this REQUIRES a movement class: a raw tag
+// would normalize to the unit-cost identity class and silently discard the
+// cost field a legacy CostTag caller meant. Legacy <PassableTag, CostTag>
+// entry points forward through movement::LegacyWeighted instead.
+template <typename World, typename Class>
 [[nodiscard]] auto tile_entry_cost_index(const World& world,
                                          std::uint64_t index) noexcept
     -> std::uint32_t {
+  static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                "tile_entry_cost_index requires a MovementClass; wrap legacy "
+                "tags in movement::LegacyWeighted<PassableTag, CostTag>.");
   using Shape = typename World::shape_type;
   using Storage = typename ShapeTraits<Shape>::TileKeyStorage;
   const auto key = TileKey<Shape>{static_cast<Storage>(index)};
   TESS_DIAG_EVENT(path_cost_read);
-  const auto& value = world.chunk(chunk_key<Shape>(key))
-                          .template field<Tag>(local_tile_id<Shape>(key));
-  static_assert(std::is_integral_v<std::remove_cvref_t<decltype(value)>>,
-                "weighted_astar_path requires an integral cost field.");
-  if constexpr (std::is_signed_v<std::remove_cvref_t<decltype(value)>>) {
-    if (value <= 0) {
-      return 0;
-    }
-  } else if (value == 0) {
-    return 0;
-  }
-  if (static_cast<std::uint64_t>(value) >
-      std::numeric_limits<std::uint32_t>::max()) {
-    return std::numeric_limits<std::uint32_t>::max();
-  }
-  return static_cast<std::uint32_t>(value);
+  return Class::entry_cost(world.chunk(chunk_key<Shape>(key)),
+                           local_tile_id<Shape>(key));
 }
 
 [[nodiscard]] constexpr auto saturating_add(std::uint32_t lhs,
@@ -1490,11 +1532,15 @@ auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
       scratch.path_.size(), scratch.touched_.size(), scratch.path_};
 }
 
-template <typename World, typename PassableTag, typename CostTag>
+template <typename World, typename Class>
 auto build_weighted_distance_field(const World& world, Coord3 goal,
                                    DistanceFieldScratch& scratch,
                                    [[maybe_unused]] MissingChunkPolicy policy)
     -> DistanceFieldResult {
+  static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                "build_weighted_distance_field<World, Class> requires a "
+                "MovementClass; legacy tag pairs go through the "
+                "<World, PassableTag, CostTag> overload.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
@@ -1517,12 +1563,12 @@ auto build_weighted_distance_field(const World& world, Coord3 goal,
     }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
-  if (!detail::is_passable<World, PassableTag>(world, goal)) {
+  if (!detail::is_passable<World, Class>(world, goal)) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
   }
 
   const auto goal_index = detail::tile_index<Shape>(goal);
-  if (detail::tile_entry_cost_index<World, CostTag>(world, goal_index) == 0) {
+  if (detail::tile_entry_cost_index<World, Class>(world, goal_index) == 0) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
   }
 
@@ -1565,7 +1611,7 @@ auto build_weighted_distance_field(const World& world, Coord3 goal,
     ++expanded_nodes;
 
     const auto current_entry_cost =
-        detail::tile_entry_cost_index<World, CostTag>(world, current.index);
+        detail::tile_entry_cost_index<World, Class>(world, current.index);
     if (current_entry_cost == 0) {
       continue;
     }
@@ -1584,12 +1630,12 @@ auto build_weighted_distance_field(const World& world, Coord3 goal,
           TESS_DIAG_EVENT(path_relax_attempt);
           if (!scratch.is_current(neighbor_offset)) {
             TESS_DIAG_EVENT(path_passability_check);
-            if (!detail::is_passable_index<World, PassableTag>(
-                    world, neighbor_index)) {
+            if (!detail::is_passable_index<World, Class>(world,
+                                                         neighbor_index)) {
               TESS_DIAG_EVENT(path_neighbor_blocked);
               return;
             }
-            if (detail::tile_entry_cost_index<World, CostTag>(
+            if (detail::tile_entry_cost_index<World, Class>(
                     world, neighbor_index) == 0) {
               TESS_DIAG_EVENT(path_neighbor_blocked);
               return;
@@ -1629,6 +1675,16 @@ auto build_weighted_distance_field(const World& world, Coord3 goal,
   }
   return DistanceFieldResult{PathStatus::Found, expanded_nodes,
                              scratch.touched_.size()};
+}
+
+template <typename World, typename PassableTag, typename CostTag>
+auto build_weighted_distance_field(const World& world, Coord3 goal,
+                                   DistanceFieldScratch& scratch,
+                                   MissingChunkPolicy policy)
+    -> DistanceFieldResult {
+  return build_weighted_distance_field<
+      World, movement::LegacyWeighted<PassableTag, CostTag>>(world, goal,
+                                                             scratch, policy);
 }
 
 #include <tess/path/detail/weighted_batch.h>

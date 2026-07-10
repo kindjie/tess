@@ -2,6 +2,7 @@
 
 #include <tess/core/shape.h>
 #include <tess/storage/residency.h>
+#include <tess/topology/movement_class.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -143,15 +144,23 @@ template <typename World>
   return MovementStatus::Moved;
 }
 
-template <typename World, typename PassableTag, typename OccupancyTag,
+// `ClassOrTag` is the mover's movement class OR a raw passable tag (normalized
+// exactly as in astar_path), so plan and commit share one vocabulary: every
+// step A* accepted for a class passes validation for that same class. The
+// from- and to-tiles may live on different pages; each is resolved and the
+// class predicate evaluated on its own page.
+template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag>
 [[nodiscard]] auto validate_movement_intent(const World& world,
                                             MovementIntent intent) noexcept
     -> MovementResult {
-  if (!world.try_resolve(intent.from).has_value()) {
+  using Class = movement::movement_class_of<ClassOrTag>;
+  const auto resolved_from = world.try_resolve(intent.from);
+  if (!resolved_from.has_value()) {
     return MovementResult{MovementStatus::InvalidFrom, intent.from, intent.to};
   }
-  if (!world.try_resolve(intent.to).has_value()) {
+  const auto resolved_to = world.try_resolve(intent.to);
+  if (!resolved_to.has_value()) {
     return MovementResult{MovementStatus::InvalidTo, intent.from, intent.to};
   }
   if constexpr (std::is_same_v<typename World::residency_type,
@@ -167,8 +176,8 @@ template <typename World, typename PassableTag, typename OccupancyTag,
     // unchecked field() accessors below so we never read a non-resident slot
     // out of bounds. Ordinary LRU eviction of a chunk under a Following agent
     // must not read as a permanent caller bug.
-    if (!world.is_resident(world.resolve(intent.from).chunk_key) ||
-        !world.is_resident(world.resolve(intent.to).chunk_key)) {
+    if (!world.is_resident(resolved_from->chunk_key) ||
+        !world.is_resident(resolved_to->chunk_key)) {
       return MovementResult{MovementStatus::StaleVersion, intent.from,
                             intent.to};
     }
@@ -176,10 +185,12 @@ template <typename World, typename PassableTag, typename OccupancyTag,
   if (manhattan_distance(intent.from, intent.to) != 1) {
     return MovementResult{MovementStatus::NotAdjacent, intent.from, intent.to};
   }
-  if (!static_cast<bool>(world.template field<PassableTag>(intent.from))) {
+  if (!Class::passable(world.chunk(resolved_from->chunk_key),
+                       resolved_from->local_tile_id)) {
     return MovementResult{MovementStatus::BlockedFrom, intent.from, intent.to};
   }
-  if (!static_cast<bool>(world.template field<PassableTag>(intent.to))) {
+  if (!Class::passable(world.chunk(resolved_to->chunk_key),
+                       resolved_to->local_tile_id)) {
     return MovementResult{MovementStatus::BlockedTo, intent.from, intent.to};
   }
   if (static_cast<bool>(world.template field<OccupancyTag>(intent.to))) {
@@ -196,13 +207,14 @@ template <typename World, typename PassableTag, typename OccupancyTag,
   return MovementResult{MovementStatus::Moved, intent.from, intent.to};
 }
 
-template <typename World, typename PassableTag, typename OccupancyTag,
+template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag>
 auto commit_movement_intent(World& world, MovementIntent intent,
                             std::uint32_t dirty_mask = 0) noexcept
     -> MovementResult {
-  const auto result = validate_movement_intent<World, PassableTag, OccupancyTag,
-                                               ReservationTag>(world, intent);
+  const auto result =
+      validate_movement_intent<World, ClassOrTag, OccupancyTag, ReservationTag>(
+          world, intent);
   if (result.status != MovementStatus::Moved) {
     return result;
   }

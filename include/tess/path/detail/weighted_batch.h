@@ -4,11 +4,14 @@
 #error "Include <tess/path/path.h> instead of this internal detail header."
 #endif
 
-template <typename World, typename PassableTag, typename CostTag,
-          std::uint32_t MaxCost>
+template <typename World, typename Class, std::uint32_t MaxCost>
 auto build_bounded_weighted_distance_field(
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
     [[maybe_unused]] MissingChunkPolicy policy) -> DistanceFieldResult {
+  static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                "build_bounded_weighted_distance_field<World, Class, MaxCost> "
+                "requires a MovementClass; legacy tag pairs go through the "
+                "<World, PassableTag, CostTag, MaxCost> overload.");
   static_assert(MaxCost > 0);
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
@@ -30,12 +33,12 @@ auto build_bounded_weighted_distance_field(
     }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
-  if (!detail::is_passable<World, PassableTag>(world, goal)) {
+  if (!detail::is_passable<World, Class>(world, goal)) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
   }
 
   const auto goal_index = detail::tile_index<Shape>(goal);
-  if (detail::tile_entry_cost_index<World, CostTag>(world, goal_index) == 0) {
+  if (detail::tile_entry_cost_index<World, Class>(world, goal_index) == 0) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
   }
 
@@ -96,13 +99,13 @@ auto build_bounded_weighted_distance_field(
     ++expanded_nodes;
 
     const auto current_entry_cost =
-        detail::tile_entry_cost_index<World, CostTag>(world, current);
+        detail::tile_entry_cost_index<World, Class>(world, current);
     if (current_entry_cost == 0) {
       continue;
     }
     if (current_entry_cost > MaxCost) {
-      return build_weighted_distance_field<World, PassableTag, CostTag>(
-          world, goal, scratch, policy);
+      return build_weighted_distance_field<World, Class>(world, goal, scratch,
+                                                         policy);
     }
 
     const auto current_coord = detail::tile_coord<Shape>(current);
@@ -119,12 +122,12 @@ auto build_bounded_weighted_distance_field(
           TESS_DIAG_EVENT(path_relax_attempt);
           if (!scratch.is_current(neighbor_offset)) {
             TESS_DIAG_EVENT(path_passability_check);
-            if (!detail::is_passable_index<World, PassableTag>(
-                    world, neighbor_index)) {
+            if (!detail::is_passable_index<World, Class>(world,
+                                                         neighbor_index)) {
               TESS_DIAG_EVENT(path_neighbor_blocked);
               return;
             }
-            if (detail::tile_entry_cost_index<World, CostTag>(
+            if (detail::tile_entry_cost_index<World, Class>(
                     world, neighbor_index) == 0) {
               TESS_DIAG_EVENT(path_neighbor_blocked);
               return;
@@ -161,9 +164,13 @@ auto build_bounded_weighted_distance_field(
                              scratch.touched_.size()};
 }
 
-template <typename World, typename PassableTag, typename CostTag>
+template <typename World, typename Class>
 auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
                                   DistanceFieldScratch& scratch) -> PathResult {
+  static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                "weighted_distance_field_path<World, Class> requires a "
+                "MovementClass; legacy tag pairs go through the "
+                "<World, PassableTag, CostTag> overload.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
@@ -181,7 +188,7 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
     }
   }
   TESS_DIAG_EVENT(path_start_passability_check);
-  if (!detail::is_passable<World, PassableTag>(world, start)) {
+  if (!detail::is_passable<World, Class>(world, start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
   if (!contains<Shape>(goal)) {
@@ -194,7 +201,7 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
 
   const Space space{world};
   const auto start_index = detail::tile_index<Shape>(start);
-  if (detail::tile_entry_cost_index<World, CostTag>(world, start_index) == 0) {
+  if (detail::tile_entry_cost_index<World, Class>(world, start_index) == 0) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
 
@@ -226,7 +233,7 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
               neighbor_distance >= next_distance) {
             return;
           }
-          const auto entry_cost = detail::tile_entry_cost_index<World, CostTag>(
+          const auto entry_cost = detail::tile_entry_cost_index<World, Class>(
               world, neighbor_index);
           if (entry_cost == 0) {
             return;
@@ -261,19 +268,19 @@ namespace detail {
 // passability) is checked before any goal status, and a zero-entry-cost
 // start outranks only a zero-entry-cost goal, matching the single-request
 // check order exactly.
-template <typename World, typename PassableTag, typename CostTag>
+template <typename World, typename Class>
 [[nodiscard]] auto weighted_group_member_failure(const World& world,
                                                  PathRequest request,
                                                  DistanceFieldResult field)
     -> PathResult {
   using Shape = typename World::shape_type;
   if (!contains<Shape>(request.start) ||
-      !is_passable<World, PassableTag>(world, request.start)) {
+      !is_passable<World, Class>(world, request.start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, {}};
   }
   if (contains<Shape>(request.goal) &&
-      is_passable<World, PassableTag>(world, request.goal) &&
-      tile_entry_cost_index<World, CostTag>(
+      is_passable<World, Class>(world, request.goal) &&
+      tile_entry_cost_index<World, Class>(
           world, tile_index<Shape>(request.start)) == 0) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, {}};
   }
@@ -283,12 +290,15 @@ template <typename World, typename PassableTag, typename CostTag>
 
 }  // namespace detail
 
-template <typename World, typename PassableTag, typename CostTag,
-          std::uint32_t MaxCost>
+template <typename World, typename Class, std::uint32_t MaxCost>
 auto weighted_path_batch(const World& world,
                          std::span<const PathRequest> requests,
                          WeightedPathBatchScratch& scratch)
     -> std::span<const PathResult> {
+  static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                "weighted_path_batch<World, Class, MaxCost> requires a "
+                "MovementClass; legacy tag pairs go through the "
+                "<World, PassableTag, CostTag, MaxCost> overload.");
   // Residency-agnostic: fans out to weighted_astar_path,
   // build_bounded_weighted_distance_field (-> build_weighted_distance_field on
   // cost overflow), weighted_distance_field_path, and
@@ -353,7 +363,7 @@ auto weighted_path_batch(const World& world,
 
     if (goal_count == 1) {
       ++scratch.stats_.astar_fallbacks;
-      const auto result = weighted_astar_path<World, PassableTag, CostTag>(
+      const auto result = weighted_astar_path<World, Class>(
           world, requests[i], scratch.astar_scratch_);
       scratch.offsets_[i] = scratch.paths_.size();
       scratch.sizes_[i] = result.path.size();
@@ -369,20 +379,19 @@ auto weighted_path_batch(const World& world,
     }
 
     ++scratch.stats_.field_builds;
-    const auto field = build_bounded_weighted_distance_field<World, PassableTag,
-                                                             CostTag, MaxCost>(
-        world, requests[i].goal, scratch.field_scratch_);
+    const auto field =
+        build_bounded_weighted_distance_field<World, Class, MaxCost>(
+            world, requests[i].goal, scratch.field_scratch_);
     for (std::size_t j = 0; j < requests.size(); ++j) {
       if (scratch.request_goal_[j] != scratch.request_goal_[i]) {
         continue;
       }
       const auto result =
           field.status == PathStatus::Found
-              ? weighted_distance_field_path<World, PassableTag, CostTag>(
+              ? weighted_distance_field_path<World, Class>(
                     world, requests[j].start, requests[j].goal,
                     scratch.field_scratch_)
-              : detail::weighted_group_member_failure<World, PassableTag,
-                                                      CostTag>(
+              : detail::weighted_group_member_failure<World, Class>(
                     world, requests[j], field);
       scratch.offsets_[j] = scratch.paths_.size();
       scratch.sizes_[j] = result.path.size();
@@ -407,4 +416,40 @@ auto weighted_path_batch(const World& world,
   }
   scratch.stats_.path_nodes = scratch.paths_.size();
   return scratch.results_;
+}
+
+// --- legacy <PassableTag, CostTag> forwarders
+// --------------------------------- One movement class replaces the tag pair;
+// LegacyWeighted preserves the historical semantics exactly, including the
+// cost-agnostic passability asymmetry (the region graph may be more permissive
+// than the weighted search, never the reverse).
+
+template <typename World, typename PassableTag, typename CostTag,
+          std::uint32_t MaxCost>
+auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
+                                           DistanceFieldScratch& scratch,
+                                           MissingChunkPolicy policy)
+    -> DistanceFieldResult {
+  return build_bounded_weighted_distance_field<
+      World, movement::LegacyWeighted<PassableTag, CostTag>, MaxCost>(
+      world, goal, scratch, policy);
+}
+
+template <typename World, typename PassableTag, typename CostTag>
+auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
+                                  DistanceFieldScratch& scratch) -> PathResult {
+  return weighted_distance_field_path<
+      World, movement::LegacyWeighted<PassableTag, CostTag>>(world, start, goal,
+                                                             scratch);
+}
+
+template <typename World, typename PassableTag, typename CostTag,
+          std::uint32_t MaxCost>
+auto weighted_path_batch(const World& world,
+                         std::span<const PathRequest> requests,
+                         WeightedPathBatchScratch& scratch)
+    -> std::span<const PathResult> {
+  return weighted_path_batch<
+      World, movement::LegacyWeighted<PassableTag, CostTag>, MaxCost>(
+      world, requests, scratch);
 }

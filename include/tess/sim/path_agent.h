@@ -187,7 +187,7 @@ inline auto advance_path_agents(std::span<PathAgentState> agents,
   return stats;
 }
 
-template <typename World, typename PassableTag, typename OccupancyTag,
+template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag>
 inline auto advance_path_agents_with_movement(
     World& world, std::span<PathAgentState> agents,
@@ -216,7 +216,7 @@ inline auto advance_path_agents_with_movement(
       const auto from = agent.position;
       const auto to = result.path[agent.path_index + 1];
       const auto movement =
-          commit_movement_intent<World, PassableTag, OccupancyTag,
+          commit_movement_intent<World, ClassOrTag, OccupancyTag,
                                  ReservationTag>(
               world, MovementIntent{from, to, {}}, movement_dirty_mask);
       if (movement.status != MovementStatus::Moved) {
@@ -277,15 +277,29 @@ inline void add_path_agent_stats(PathAgentFrameStats& lhs,
   lhs.movement_failures.stale_topology += rhs.movement_failures.stale_topology;
 }
 
-template <typename World, typename PassableTag>
+template <typename World, typename ClassOrTag>
 [[nodiscard]] auto process_unit_path_agents(
     const World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
     const RegionGraphT<typename World::residency_type>* graph = nullptr)
     -> PathAgentFrameStats {
   auto stats = submit_path_agents(agents, runtime);
-  (void)runtime.template process_unit_cached<World, PassableTag>(world, policy,
-                                                                 graph);
+  (void)runtime.template process_unit_cached<World, ClassOrTag>(world, policy,
+                                                                graph);
+  add_path_agent_stats(stats, apply_path_agent_results(agents, runtime));
+  stats.precheck_ruled_out = runtime.stats().precheck_ruled_out;
+  return stats;
+}
+
+template <typename World, typename Class, std::uint32_t MaxCost>
+[[nodiscard]] auto process_weighted_path_agents(
+    const World& world, std::span<PathAgentState> agents,
+    PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
+    const RegionGraphT<typename World::residency_type>* graph = nullptr)
+    -> PathAgentFrameStats {
+  auto stats = submit_path_agents(agents, runtime);
+  (void)runtime.template process_weighted_batch<World, Class, MaxCost>(
+      world, policy, graph);
   add_path_agent_stats(stats, apply_path_agent_results(agents, runtime));
   stats.precheck_ruled_out = runtime.stats().precheck_ruled_out;
   return stats;
