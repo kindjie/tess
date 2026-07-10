@@ -411,6 +411,16 @@
   `TESS_ASSERT_MSG` aborting with the caller's custom message and passing
   silently when the condition holds, that the disabled forms do not evaluate
   their conditions, and that guarded accessors stay `noexcept`.
+- `tess_sim_schedule_test`: verifies the S7 Schedule core: phase-major then
+  registration-order execution, `every_ticks(n)` exactness with disablement
+  keeping lockstep (the countdown advances while disabled; the due tick is
+  counted as skipped), OnDirty firing iff the task's own mask bits are
+  pending with own-bit-only consumption (foreign bits sit inert), produced
+  dirty reaching later phases the same tick and earlier phases the next
+  tick, deterministic background item budgets with `more_work`
+  continuation, manual single-shot runs, persistent triggers surviving
+  disablement, and allocation-free dispatch (`run_tick`/`notify_dirty`/
+  `request_run`) after `seal()`.
 - `tess_sim_scheduler_test`: verifies the simulation integration slice,
   including movement intent validation and commit, fixed-step accumulator
   pause/speed/clamp behavior with exact interpolation alpha values at known

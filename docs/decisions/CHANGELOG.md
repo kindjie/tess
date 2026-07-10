@@ -13,6 +13,30 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Schedule core: phases, cadences, budgets (M5, S7 slice 1)
+
+- Added: `include/tess/sim/schedule.h` -- the M5 schedule. Ordered
+  `SimPhase` execution of type-erased tasks (fn-pointer + context, no
+  std::function); cadences EveryTick / EveryN (exact under disablement:
+  the countdown advances regardless, so re-enabling never shifts lockstep)
+  / OnDirty (fires iff the task's OWN mask bits are pending; consumes only
+  those bits) / Background (deterministic items-only budget with more_work
+  continuation; a wall-clock valve was cut deliberately -- it would make
+  tick outcomes nondeterministic and had no v1 consumer) / Manual.
+  Task-result dirty masks merge immediately (later phases fire same tick,
+  earlier next tick); notify_dirty/request_run are frame-owner-thread
+  only. `SimClock` hoisted from the path-agent tick header into `time.h`
+  so both layers share one type. Dispatch after seal() is allocation-free.
+- Reason: S7 slice 1 (M5 close). The design review's determinism fixes are
+  folded in from the start: EveryN countdown initialized to n (no
+  first-tick underflow), own-bit-only OnDirty clearing, and dirty-feeding
+  (never scanning) as the structural no-full-world-scans guarantee.
+- Affected docs: `architecture/simulation.md`, `architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: new `sim/schedule.h`, `sim/time.h` (SimClock hoist),
+  `sim/path_agent_tick.h`, `tess.h`, `CMakeLists.txt`; new
+  `tests/tess_sim_schedule_test.cc`, `tests/CMakeLists.txt`.
+
 ## 2026-07-10 - Result-bearing queued bench gate (M4, S6 slice 4)
 
 - Added: `queued/execute_resident_update_with_results` -- the resultless
