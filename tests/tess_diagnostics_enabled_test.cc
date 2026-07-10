@@ -230,4 +230,23 @@ TEST(TessDiagnostics, ScopedAllocationCountersRecordGlobalNewAndDelete) {
   EXPECT_GE(counters.deallocations, 1u);
 }
 
+TEST(TessDiagnostics, DeletingNullDoesNotRecordDeallocation) {
+  tess::diagnostics::AllocationCounters counters;
+  {
+    tess::diagnostics::ScopedAllocationCounters scope{counters};
+
+    // Deleting/freeing a null pointer is a legal no-op and must not count as
+    // a deallocation. volatile keeps the compiler from proving the pointer
+    // null and eliding the calls.
+    int* volatile typed_null = nullptr;
+    delete typed_null;
+
+    void* volatile raw_null = nullptr;
+    ::operator delete(raw_null);
+  }
+
+  EXPECT_EQ(counters.deallocations, 0u);
+  EXPECT_EQ(counters.deallocation_bytes, 0u);
+}
+
 }  // namespace
