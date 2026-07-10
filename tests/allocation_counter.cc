@@ -31,6 +31,13 @@
 namespace tess_test {
 namespace {
 
+// All counter state uses relaxed atomics on purpose: the guard is a test
+// aid, not a synchronization point. A thread that races a counting-scope
+// boundary (enable/disable store) may have its allocation missed, so the
+// guard can UNDER-count cross-thread allocations near scope boundaries. It
+// never over-counts, so `count() == 0` assertions never false-fail; tests
+// that count allocations made on other threads must establish their own
+// happens-before with the scope (e.g. join or a completed dispatch).
 std::atomic<bool> count_allocations{false};
 std::atomic<std::size_t> allocations{0};
 std::atomic<std::size_t> allocated_bytes{0};
