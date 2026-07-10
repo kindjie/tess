@@ -341,14 +341,19 @@
 - `tests/test_benchmark_tools.py`: pytest coverage for the benchmark gating
   tools (run with `uv run --frozen --group dev pytest`, and in the CI
   hooks-backstop job alongside `tests/test_git_hooks.py`). Verifies
-  `tools/benchmark_thresholds.py` rejects duplicate benchmark names, selects
+  `tools/benchmark_thresholds.py` rejects duplicate benchmark names and
+  unknown limit keys, selects
   repetition aggregates (median default, `--aggregate` override), converts
   all four Google Benchmark time units, fails on missing benchmarks, skips
   null limits, and reports missing/malformed input files as clear errors;
-  and that `tools/benchmark_baseline_summary.py` filters aggregates by
-  `run_type` and quotes CSV fields.
-- `tests/test_check_public_surface.py`: pytest coverage for the advisory
-  public-surface manifest checker (`tools/check_public_surface.py`, run in
+  that `tools/benchmark_baseline_summary.py` filters aggregates by
+  `run_type` and quotes CSV fields; that `tools/benchmark_trends.py` reads
+  every result file in a baseline artifact and errors on unmatched
+  `--benchmark` selectors; and that `tools/benchmark_artifact_metadata.py`
+  writes the expected metadata fields.
+- `tests/test_check_public_surface.py`: pytest coverage for the
+  public-surface manifest gate (`tools/check_public_surface.py`, a required
+  CI check since 2026-07-07, run in
   the same CI hooks-backstop pytest invocation). Synthetic header fixtures
   verify type and free-function extraction at namespace scope, skipping of
   members, function-local declarations, comments, macro-body braces, and
