@@ -17,10 +17,13 @@ namespace mv = tess::movement;
 struct PassableTag {};
 struct ConstructionTag {};
 struct CostTag {};
+struct OccupancyTag {};
+struct ReservationTag {};
 
-using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
-                                 tess::Field<ConstructionTag, std::uint8_t>,
-                                 tess::Field<CostTag, std::uint32_t>>;
+using Schema = tess::FieldSchema<
+    tess::Field<PassableTag, bool>, tess::Field<ConstructionTag, std::uint8_t>,
+    tess::Field<CostTag, std::uint32_t>, tess::Field<OccupancyTag, bool>,
+    tess::Field<ReservationTag, bool>>;
 using TopDown2D = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
 using World = tess::AlwaysResidentWorld<TopDown2D, Schema>;
 
@@ -231,6 +234,68 @@ TEST(TessPathMovementClass, ClassSearchHonorsMissingChunksOnSparseWorlds) {
                                 mv::LegacyWeighted<PassableTag, CostTag>>(
           world, request, scratch, tess::MissingChunkPolicy::Indeterminate);
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
+}
+
+// S5.5: plan == commit. Every step weighted A* accepts for a class passes
+// validate_movement_intent for that SAME class, and the block statuses are
+// per class on both endpoints.
+TEST(TessPathMovementClass, CommitValidationAgreesWithThePlannedClass) {
+  World world;
+  fill_open(world, 1);
+  for (std::int64_t y = 0; y < 7; ++y) {
+    world.field<PassableTag>(tess::Coord3{3, y, 0}) = false;
+    world.field<ConstructionTag>(tess::Coord3{3, y, 0}) = 1;
+  }
+
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
+  const auto validate_every_step = [&](const tess::PathResult& result,
+                                       auto class_probe) {
+    using Class = decltype(class_probe);
+    ASSERT_EQ(result.status, tess::PathStatus::Found);
+    for (std::size_t i = 1; i < result.path.size(); ++i) {
+      const auto step =
+          tess::validate_movement_intent<World, Class, OccupancyTag,
+                                         ReservationTag>(
+              world, tess::MovementIntent{result.path[i - 1], result.path[i]});
+      EXPECT_EQ(step.status, tess::MovementStatus::Moved)
+          << "step " << i << " (" << result.path[i].x << "," << result.path[i].y
+          << ")";
+    }
+  };
+
+  tess::PathScratch walker_scratch;
+  const auto walker_path =
+      tess::weighted_astar_path<World, Walker>(world, request, walker_scratch);
+  validate_every_step(walker_path, Walker{});
+
+  tess::PathScratch builder_scratch;
+  const auto builder_path = tess::weighted_astar_path<World, Builder>(
+      world, request, builder_scratch);
+  validate_every_step(builder_path, Builder{});
+
+  // Block statuses are per class on both endpoints: the Walker may neither
+  // enter nor leave a construction site, the Builder may do both.
+  const auto site = tess::Coord3{3, 0, 0};
+  const auto open = tess::Coord3{4, 0, 0};
+  const auto into_site = tess::MovementIntent{open, site};
+  const auto out_of_site = tess::MovementIntent{site, open};
+  const auto walker_in =
+      tess::validate_movement_intent<World, Walker, OccupancyTag,
+                                     ReservationTag>(world, into_site);
+  EXPECT_EQ(walker_in.status, tess::MovementStatus::BlockedTo);
+  const auto walker_out =
+      tess::validate_movement_intent<World, Walker, OccupancyTag,
+                                     ReservationTag>(world, out_of_site);
+  EXPECT_EQ(walker_out.status, tess::MovementStatus::BlockedFrom);
+  const auto builder_in =
+      tess::validate_movement_intent<World, Builder, OccupancyTag,
+                                     ReservationTag>(world, into_site);
+  EXPECT_EQ(builder_in.status, tess::MovementStatus::Moved);
+  const auto builder_out =
+      tess::validate_movement_intent<World, Builder, OccupancyTag,
+                                     ReservationTag>(world, out_of_site);
+  EXPECT_EQ(builder_out.status, tess::MovementStatus::Moved);
 }
 
 }  // namespace

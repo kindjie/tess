@@ -159,8 +159,11 @@
   and weighted distance field exactly (statuses, costs, expansion counts,
   paths), a Walker routes around a construction wall the Builder cuts through
   (fixed build price via `SelectCost`), unit A* accepts classes for
-  passability only, and class-driven weighted searches keep the sparse
-  missing-chunk contract (blocked by default, `Indeterminate` on request).
+  passability only, class-driven weighted searches keep the sparse
+  missing-chunk contract (blocked by default, `Indeterminate` on request),
+  and plan == commit (S5.5): every step weighted A* accepts for a class
+  validates as `Moved` through `validate_movement_intent` for that same
+  class, with `BlockedFrom`/`BlockedTo` per class on both endpoints.
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.
