@@ -39,7 +39,13 @@ deltas.
   that order, without mutating the world. The second template argument is a
   movement class OR a raw passable tag, normalized exactly as in
   `astar_path`, so plan and commit share one vocabulary: every step A*
-  accepted for a class validates for that same class. The from- and to-tiles
+  accepted for a class validates for that same class. Validation checks the
+  class's PASSABILITY predicate only -- entry cost is a search concern, and
+  commit staying more permissive than the weighted search is the deliberate
+  legacy asymmetry (a cost field dropping to zero after planning blocks
+  re-planning, not an already-planned adjacent step). Classes wanting cost
+  folded into commit passability too should use `WalkableCostField`, whose
+  predicate already includes `NotZero<CostTag>`. The from- and to-tiles
   may live on different pages; each endpoint's predicate is evaluated on its
   own resolved page.
 - `commit_movement_intent<World, ClassOrTag, OccupancyTag, ReservationTag>(

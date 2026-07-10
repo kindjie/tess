@@ -157,16 +157,22 @@ struct StairTransitions {
       const auto value = page.template field<StairTag>(LocalTileId{raw_id});
       static_assert(std::is_integral_v<std::remove_cvref_t<decltype(value)>>,
                     "StairTransitions requires an integral stair field.");
-      // Out-of-range values read as None rather than leaking an unintended
-      // straight-up transition through the unmatched switch below.
-      if (value == 0) {
+      // Out-of-range values read as None. Compare BEFORE any narrowing: a
+      // wider field's 257 must not wrap into PositiveX, and a negative value
+      // must not wrap into the valid range.
+      if constexpr (std::is_signed_v<std::remove_cvref_t<decltype(value)>>) {
+        if (value <= 0) {
+          continue;
+        }
+      } else if (value == 0) {
+        continue;
+      }
+      if (static_cast<std::uint64_t>(value) >
+          static_cast<std::uint64_t>(StairDirection::NegativeY)) {
         continue;
       }
       const auto direction =
           static_cast<StairDirection>(static_cast<std::uint8_t>(value));
-      if (direction > StairDirection::NegativeY) {
-        continue;
-      }
       const auto local = local_coord_of<Shape>(raw_id);
       const auto foot =
           Coord3{base.x + local.x, base.y + local.y, base.z + local.z};

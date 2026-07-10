@@ -165,7 +165,9 @@
   landing would cross two chunk boundaries at once contributes nothing, a
   sideways-crossing landing (x/y chunk boundary at a local z below the
   chunk top) emits BOTH directions with incremental equality across the
-  seam, and an out-of-range stair field value reads as `None`.
+  seam, an out-of-range stair field value reads as `None` (including wide
+  fields whose values would wrap when narrowed), and `WalkableCostField`
+  labels a graph without the span fast path (zero-cost tiles unlabeled).
 - `tess_path_movement_class_test`: verifies movement classes threaded through
   the A* leaves and weighted cores (S5.2): the `WalkableField` identity class
   matches the raw-tag unit search node-for-node on a serpentine maze,
@@ -185,7 +187,10 @@
   crosses the wall the Walker detours around; neither ever has a movement
   step rejected, since commit validates with the class the plan used), and
   a policy-triggered cache clear inside a process call never leaves the
-  class binding unbound (the next class still gets its own route).
+  class binding unbound (the next class still gets its own route), and a
+  DIRECT `cached_astar_path` caller alternating classes on one
+  `RouteCacheScratch` is never served the other class's route (the cache
+  binds itself per call; rebinds counted in `class_rebinds`).
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.

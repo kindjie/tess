@@ -193,12 +193,12 @@ struct WalkableField : MovementClass<Field<PassableTag>, UnitCost> {
 
 // Weighted identity that folds cost>0 into passability, so the region graph and
 // the weighted search agree exactly (recommended for new weighted classes).
+// Deliberately does NOT advertise the span fast path: its passability reads
+// two fields, so a raw single-field span scan would label cost-zero tiles.
 template <typename PassableTag, typename CostTag>
 struct WalkableCostField
     : MovementClass<AllOf<Field<PassableTag>, NotZero<CostTag>>,
-                    FieldCost<CostTag>> {
-  using passable_tag = PassableTag;
-};
+                    FieldCost<CostTag>> {};
 
 // Weighted class preserving the legacy asymmetry: passability ignores cost
 // (graph is more permissive than the weighted search, never the reverse), used
@@ -206,7 +206,12 @@ struct WalkableCostField
 template <typename PassableTag, typename CostTag>
 using LegacyWeighted = MovementClass<Field<PassableTag>, FieldCost<CostTag>>;
 
-// True for classes that expose the field_span fast path (the identity classes).
+// True for classes that expose the field_span fast path. `passable_tag` is
+// the advertisement: a class declaring it promises its passability predicate
+// is exactly the raw truthiness of that one field and MUST provide the
+// matching passable_span (the topology flood scans it verbatim). Composed
+// classes -- including WalkableCostField, whose predicate reads two fields --
+// must not declare it.
 template <typename C>
 concept HasPassableSpan = requires { typename C::passable_tag; };
 
