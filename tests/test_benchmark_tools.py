@@ -200,6 +200,48 @@ def test_null_thresholds_are_skipped(tmp_path):
   assert run_thresholds(tmp_path, benchmarks, thresholds) == 0
 
 
+def test_unknown_limit_key_is_rejected(tmp_path, capsys):
+  benchmarks = [entry("key/typo", 100.0)]
+  entry_limits = limits(500.0)
+  entry_limits["max_cpu_tim_ns"] = 1.0
+
+  code = run_thresholds(
+      tmp_path, benchmarks, {"benchmarks": {"key/typo": entry_limits}}
+  )
+
+  assert code == 1
+  err = capsys.readouterr().err
+  assert "max_cpu_tim_ns" in err
+  assert "unknown" in err
+
+
+def test_annotation_keys_are_allowed(tmp_path):
+  benchmarks = [entry("key/annotated", 100.0)]
+  entry_limits = limits(500.0)
+  entry_limits.update(
+      {
+          "comment": "why the ceiling is what it is",
+          "comment_ref": "docs/planning/optimization-log.md",
+          "note": "extra provenance",
+      }
+  )
+
+  code = run_thresholds(
+      tmp_path, benchmarks, {"benchmarks": {"key/annotated": entry_limits}}
+  )
+
+  assert code == 0
+
+
+def test_repo_threshold_files_use_only_allowed_keys():
+  thresholds_dir = Path(__file__).resolve().parents[1] / "bench" / "thresholds"
+  for path in sorted(thresholds_dir.glob("*.json")):
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for name, entry_limits in data.get("benchmarks", {}).items():
+      unknown = set(entry_limits) - benchmark_thresholds.ALLOWED_LIMIT_KEYS
+      assert not unknown, f"{path.name}: {name}: {sorted(unknown)}"
+
+
 def test_malformed_results_file_reports_clear_error(tmp_path, capsys):
   results_path = tmp_path / "results.json"
   results_path.write_text("{not json", encoding="utf-8")
