@@ -130,6 +130,41 @@ Records meaningful design changes from the original TDDs.
 - Affected code: `bench/tess_diagnostics_alloc_hooks.cc`,
   `diagnostics/export.h`, `diagnostics/trace.h`, `debug/imgui/panels.h`,
   `tests/tess_diagnostics_enabled_test.cc`.
+## 2026-07-09 - Test hardening: flake guards, format checking, coverage gaps (audit-2 W-E)
+
+- Changed: test-only hardening from the second audit; no library behavior
+  changes. (1) The worker-pool warm no-alloc test tolerates one-time lazy
+  runtime allocations on live pool workers by requiring only the last of
+  several warm dispatches to be allocation-free (the counter is
+  process-global). (2) The ImGui stub's `Text` now carries real ImGui's
+  printf-format attribute so `-Wformat` checks panel format strings under the
+  `-Werror` presets. (3) The two multi-worker rendezvous spins in the queued
+  tests are bounded (30s, clear failure message) instead of hanging to the
+  ctest timeout on regression. (4) New coverage: `PrecheckStatus::InvalidStart`
+  (out-of-bounds and walled starts), `MovementFailureCounts`
+  reserved/stale buckets plus the full `is_transient_movement_failure`
+  classification, the four previously unasserted `PathCounters` fields
+  (initializations, start/goal passability checks, closed neighbors) via both
+  direct events and a real A* maze, a `TESS_ASSERT_MSG` death test, and a
+  `UInt128` negative-int constructor death test. (5) Weak assertions
+  strengthened: the smoke test pins the released version against a
+  hand-maintained literal mirror of the CMake project version instead of
+  comparing macros to themselves (a `tess.h` bump that forgets the test now
+  fails; a CMake-only bump remains undetectable there), and the warm
+  no-alloc agent/tick tests now also pin observable work (submitted/found
+  stats, skipped processing with advancement) so a no-op cannot pass. The
+  allocation counter documents its relaxed-ordering under-count caveat.
+- Reason: second-audit findings M14/M15 plus grep-verified untested surfaces
+  and tautological or effect-blind assertions; each weakness could hide a real
+  regression (latent flake, unchecked format strings, suite-long hangs,
+  silently skipped work).
+- Affected docs: `tests/AGENTS.md`.
+- Affected code: tests only — `tests/tess_phase_executor_test.cc`,
+  `tests/imgui_stub/imgui.h`, `tests/tess_queued_test.cc`,
+  `tests/tess_path_precheck_test.cc`, `tests/tess_path_agent_test.cc`,
+  `tests/tess_path_agent_tick_test.cc`, `tests/tess_diagnostics_enabled_test.cc`,
+  `tests/tess_assert_test.cc`, `tests/tess_shape_test.cc`,
+  `tests/tess_smoke.cc`, `tests/allocation_counter.cc`.
 
 ## 2026-07-09 - TraceBuffer pinned to its storage (M12, S4)
 

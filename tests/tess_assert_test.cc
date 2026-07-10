@@ -34,10 +34,22 @@ TEST(TessAssert, MacroIsCompiledOutExactlyWhenAssertsDisabled) {
 #if TESS_ENABLE_ASSERTS
   EXPECT_TRUE(TESS_ENABLE_ASSERTS);
 #else
-  // The disabled form must still swallow the condition expression.
+  // The disabled forms must still swallow the condition expression.
   bool evaluated = false;
   TESS_ASSERT((evaluated = true));
   EXPECT_FALSE(evaluated);
+  TESS_ASSERT_MSG((evaluated = true), "unused message");
+  EXPECT_FALSE(evaluated);
+#endif
+}
+
+TEST(TessAssert, AssertMsgPassesWithoutSideEffectsWhenConditionHolds) {
+  int evaluations = 0;
+  TESS_ASSERT_MSG(++evaluations > 0, "condition must be evaluated once");
+#if TESS_ENABLE_ASSERTS
+  EXPECT_EQ(evaluations, 1);
+#else
+  EXPECT_EQ(evaluations, 0);
 #endif
 }
 
@@ -51,6 +63,14 @@ TEST(TessAssert, UncheckedAccessorsStayNoexcept) {
 #if TESS_ENABLE_ASSERTS
 
 using TessAssertDeathTest = ::testing::Test;
+
+TEST(TessAssertDeathTest, AssertMsgAbortsWithTheCustomMessage) {
+  // TESS_ASSERT_MSG replaces the stringified condition with the caller's
+  // message in the abort diagnostic.
+  bool condition = false;
+  EXPECT_DEATH(TESS_ASSERT_MSG(condition, "custom precondition message"),
+               "tess assertion failed: custom precondition message");
+}
 
 TEST(TessAssertDeathTest, ResolveRejectsNegativeCoordinate) {
   World world;

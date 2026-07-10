@@ -10,7 +10,10 @@
   enable/disable API: failed `ASSERT_*`s return early, and a raw flag would
   leak enabled counting into later tests. Read results via `counter.count()`
   / `counter.bytes()` inside the scope, or the read-only
-  `tess_test::allocation_count()` / `allocation_bytes()` snapshots.
+  `tess_test::allocation_count()` / `allocation_bytes()` snapshots. The
+  counter state is relaxed-atomic: it can under-count cross-thread
+  allocations racing a scope boundary (never over-counts, so `== 0`
+  assertions never false-fail).
 - Under AddressSanitizer or ThreadSanitizer, `allocation_counter.cc` and
   `bench/tess_diagnostics_alloc_hooks.cc` must use sanitizer allocation
   hooks instead of replacing global `new`, so the sanitizer's alloc/dealloc
@@ -24,12 +27,18 @@
   a fatal gtest failure inside a counting scope disables counting during
   unwind instead of poisoning later assertions.
 - `tess_smoke`: verifies that the public `tess::tess` target is consumable,
-  that the root public header compiles, and that public version constants match.
+  that the root public header compiles, and that the version macros and
+  `library_version` match a hand-maintained release-version literal in the
+  test (a mirror of the top-level CMake `project(... VERSION ...)`), so a
+  `tess.h` bump that forgets the test fails; a CMake-only bump is not
+  detectable there.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
   degenerate-axis handling, containment helpers, key width inference,
   coordinate/chunk/local/tile key conversion helpers, the portable
   `tess::detail::UInt128` operations (carrying multiply, borrow subtract,
   boundary shifts including counts of 64/127/>=128, comparisons, narrowing,
+  non-negative int construction, a death test for the negative-int
+  constructor precondition when asserts are enabled,
   and `bit_width`/`bits_for_count` at the 64-bit boundary), >64-bit
   tile-key round-trips on the huge bounded shape, and the largest legal
   64-bit boundary shape (single chunk, 2^63 local tiles, `chunk_bits == 0`)
@@ -105,7 +114,9 @@
   return. Threaded replay stress compares every tile of every chunk between
   serial and threaded worlds via field spans, and the same replay harness
   drives one reused `WorkerPoolPhaseExecutor` across all stress seeds to pin
-  persistent-pool equivalence with serial execution.
+  persistent-pool equivalence with serial execution. Multi-worker rendezvous
+  points use a bounded 30s spin (`await_rendezvous`) that fails with a clear
+  message instead of hanging until the ctest timeout.
 - `tess_phase_executor_test`: verifies the public `tess/ops/phase_executor.h`
   contract in isolation: compile-time `PhaseExecutor` concept conformance
   (satisfied by `SerialPhaseExecutor`, `ScopedThreadPhaseExecutor`,
@@ -117,9 +128,11 @@
   concept-constrained `execute_operation_index_range` dispatch, and
   allocation-free warm serial dispatch. Worker-pool coverage adds
   worker-count clamping, empty-range early return, worker reuse across many
-  phases, first-failure reporting in operation order, allocation-free warm
-  dispatch after `reserve_operations`, repeated create/run/stop lifecycle
-  cycles, and destruction without ever running a phase.
+  phases, first-failure reporting in operation order, allocation-free
+  steady-state warm dispatch after `reserve_operations` (several warm
+  dispatches run and only the last must not allocate, since the counter is
+  process-global while pool workers are live), repeated create/run/stop
+  lifecycle cycles, and destruction without ever running a phase.
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.
@@ -147,7 +160,9 @@
 - `tess_path_precheck_test`: verifies the pre-A* topology gate `precheck_path`
   and `precheck_rules_out_path`: a reachable goal within a connected region, an
   `Unreachable` verdict across a walled chunk boundary (the only status that
-  licenses skipping A*), an out-of-bounds goal reported as `InvalidGoal`, an
+  licenses skipping A*), out-of-bounds and walled starts reported as
+  `InvalidStart` (never ruling out), an out-of-bounds goal reported as
+  `InvalidGoal`, an
   unbuilt graph as `NoGraph`, a post-build topology edit degrading to
   `GraphStale` rather than a wrong `Unreachable`, a sparse corridor exiting into
   a non-resident chunk reported as `MissingChunk`, and an allocation-free warm
@@ -291,22 +306,29 @@
   the phase lifecycle (goal set/clear transitions, transient movement
   failures keeping Found status while entering Blocked, structural failures
   turning terminally Unreachable), movement validation rejection statuses
-  including stale topology/version branches, and overflow-safe
-  `manhattan_distance` at `int64` extremes.
+  including stale topology/version branches, `record_movement_failure`
+  bucketing every `MovementStatus` into its dedicated counter, the
+  transient-versus-terminal `is_transient_movement_failure` classification
+  of every status, and overflow-safe `manhattan_distance` at `int64`
+  extremes. The warm no-alloc batches also pin submitted/found stats so a
+  skipped frame cannot pass as allocation-free.
 - `tess_path_agent_tick_test`: verifies the minimal path-agent tick wrapper,
   including tick advancement, dirty-gated path processing, movement ordering,
   explicit dirty-mark requirements after world edits, dirty reprocessing after
   world edits and goal changes, unreachable goals, weighted shared-goal ticks,
-  allocation-free warm clean ticks, two-argument goal assignment processed
+  allocation-free warm clean ticks (pinning that path processing is skipped
+  while every agent still advances), two-argument goal assignment processed
   without a manual dirty mark, transiently blocked agents resuming and
   arriving, mid-route wall insertion triggering bounded re-paths, and boxed-in
   goals exhausting the retry budget into terminal Unreachable that stops
   consuming processing.
-- `tess_assert_test`: verifies the `TESS_ASSERT` debug precondition policy —
-  death tests for out-of-shape coordinates and out-of-range keys/tickets on
-  unchecked accessors (`World::resolve`, `World::chunk`, `World::meta`,
-  `tile_key`, `PathRequestRuntime::result`), that the disabled form does not
-  evaluate its condition, and that guarded accessors stay `noexcept`.
+- `tess_assert_test`: verifies the `TESS_ASSERT`/`TESS_ASSERT_MSG` debug
+  precondition policy — death tests for out-of-shape coordinates and
+  out-of-range keys/tickets on unchecked accessors (`World::resolve`,
+  `World::chunk`, `World::meta`, `tile_key`, `PathRequestRuntime::result`),
+  `TESS_ASSERT_MSG` aborting with the caller's custom message and passing
+  silently when the condition holds, that the disabled forms do not evaluate
+  their conditions, and that guarded accessors stay `noexcept`.
 - `tess_sim_scheduler_test`: verifies the simulation integration slice,
   including movement intent validation and commit, fixed-step accumulator
   pause/speed/clamp behavior with exact interpolation alpha values at known
@@ -329,7 +351,8 @@
   hosts the serpentine-maze mutation guards: unit and weighted searches on
   the `path_test_util.h` fixtures must record `heap_pushes > 0`, which
   permanently fails if a future fast path learns to answer the mazes
-  without the heap loop.
+  without the heap loop; the unit maze additionally pins the
+  initialization, start/goal endpoint-check, and closed-neighbor counters.
 - `tess_diagnostics_trace_test` (diagnostics-enabled, links the allocation
   hooks): covers the S4 trace layer. Warning sink -- `WarningSink` concept
   satisfaction, oldest-first ring semantics with overflow `dropped()` counts,
@@ -345,7 +368,9 @@
 - `tess_diagnostics_panels_test` (diagnostics-enabled, `TESS_ENABLE_IMGUI` on):
   compile-and-run check for the opt-in `debug/imgui/panels.h` against a minimal
   ImGui stub (`tests/imgui_stub/imgui.h`) so a panel bug surfaces here rather
-  than only in a real-ImGui consumer. Exercises every draw function over a
+  than only in a real-ImGui consumer. The stub's `Text` carries real ImGui's
+  printf-format attribute (`IM_FMTARGS` mirror) so `-Wformat` checks panel
+  format strings. Exercises every draw function over a
   populated snapshot and pins `category_name` for every trace category.
 - `tests/test_benchmark_tools.py`: pytest coverage for the benchmark gating
   tools (run with `uv run --frozen --group dev pytest`, and in the CI

@@ -315,6 +315,22 @@ TEST(TessUInt128, MultipliesWithCarriesAcrossThe64BitBoundary) {
             UInt128::from_parts(1, 0));
 }
 
+TEST(TessUInt128, NonNegativeIntConstructionMatchesUnsigned) {
+  using tess::detail::UInt128;
+  static_assert(UInt128{0} == UInt128{0u});
+  static_assert(UInt128{42} == UInt128{42u});
+}
+
+#if TESS_ENABLE_ASSERTS
+TEST(TessUInt128DeathTest, NegativeIntConstructionAsserts) {
+  // The implicit int constructor documents a non-negative precondition
+  // (a negative count is always a caller bug, not a wrapped huge value).
+  int value = -1;
+  EXPECT_DEATH(static_cast<void>(tess::detail::UInt128{value}),
+               "tess assertion failed");
+}
+#endif  // TESS_ENABLE_ASSERTS
+
 TEST(TessUInt128, ShiftsAcrossThe64BitBoundary) {
   using tess::detail::UInt128;
 
