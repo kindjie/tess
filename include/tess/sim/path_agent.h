@@ -224,9 +224,13 @@ inline auto advance_path_agents_with_movement(
         if (is_transient_movement_failure(movement.status)) {
           // The route is still notionally valid; wait in place and let the
           // tick driver schedule a re-path. Found status is retained so a
-          // freed tile can be walked without a fresh plan.
+          // freed tile can be walked without a fresh plan. The blocked
+          // step itself does not consume re-path budget: only the tick
+          // driver's prepare_path_agent_processing counts attempts, so a
+          // budget of N grants N re-paths even when the cycle started
+          // with a movement block (see PathAgentTickOptions::
+          // max_blocked_retries for the full budget semantics).
           agent.phase = PathAgentPhase::Blocked;
-          ++agent.blocked_retries;
           ++stats.blocked_waits;
         } else {
           // Invalid endpoints or a non-adjacent step indicate a caller
