@@ -56,6 +56,37 @@ Records meaningful design changes from the original TDDs.
   `path/field_product_cache.h`, `path/route_cache.h`, `path/path_runtime.h`,
   `tests/tess_path_test.cc`, `tests/tess_path_cache_test.cc`,
   `tests/tess_path_runtime_test.cc`.
+## 2026-07-09 - Executor dispatch guards and partial-plan dirty (audit-2 W-B)
+
+- Changed: (1) `WorkerPoolPhaseExecutor` now documents and enforces its
+  single-dispatch contract -- a `dispatch_active_` flag maintained under the
+  existing dispatch mutex makes nested or concurrent `for_each_operation`, and
+  `reserve_operations` during a dispatch, fail fast via `TESS_ASSERT` in debug
+  builds (release builds compile the check out and keep zero overhead). (2)
+  `execute_plan` / `execute_plan_deferred_dirty` now include the chunks written
+  before an abort in the returned `chunk_count`, and the scheduler tick marks
+  pathing dirty whenever any chunk was written, so a plan aborted partway by a
+  `PolicyMismatch` no longer leaves path caches stale over already-mutated
+  passability. (3) A blocked movement step no longer consumes re-path budget;
+  only `prepare_path_agent_processing` counts attempts, so
+  `max_blocked_retries = N` grants exactly N re-path attempts (previously a
+  movement-blocked cycle was double-counted), and the budget semantics --
+  including the by-design indefinite re-path loop against a permanently parked
+  blocker -- are documented at `max_blocked_retries`. (4) Thread-spawn loops in
+  both executors now join already-started threads and rethrow if a
+  `std::thread` constructor throws mid-spawn instead of terminating via a
+  joinable-thread unwind; `ScopedThreadPhaseExecutor` documents its no-throw
+  callback requirement. (5) `FixedStepAccumulator` clamps the ~1 ulp negative
+  bank left by the rounded-division one-tick borrow.
+- Reason: second-audit findings H3/M2 (nested/concurrent dispatch deadlocks
+  and use-after-realloc were silent), M1 (partially executed plans skipped the
+  pathing-dirty mark), and the workstream's low-severity items.
+- Affected docs: `decisions/CHANGELOG.md`.
+- Affected code: `ops/phase_executor.h`, `ops/queued.h`, `sim/scheduler.h`,
+  `sim/path_agent.h`, `sim/path_agent_tick.h`, `sim/time.h`,
+  `tests/tess_phase_executor_test.cc`, `tests/tess_sim_scheduler_test.cc`,
+  `tests/tess_path_agent_tick_test.cc`, `tests/tess_path_agent_test.cc`,
+  `tests/tess_path_runtime_sparse_test.cc`.
 
 ## 2026-07-09 - TraceBuffer pinned to its storage (M12, S4)
 
