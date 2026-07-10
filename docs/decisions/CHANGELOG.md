@@ -13,6 +13,20 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Result-bearing queued bench gate (M4, S6 slice 4)
+
+- Added: `queued/execute_resident_update_with_results` -- the resultless
+  resident-update workload through
+  `execute_plan_deferred_dirty_with_results` plus the per-frame drain and
+  channel clear a consumer performs, with a correctness check that exactly
+  one ack is delivered per frame. Gated at 1500 ns CPU next to the 880 ns
+  resultless ceiling (locally 140 vs 114 ns, ~23% ack-delivery overhead);
+  bootstrap threshold pending CI recalibration in the consolidation stage.
+- Reason: S6 slice 4 -- the plan's bounded-overhead requirement for
+  result-bearing versus resultless plan+execute.
+- Affected docs: none.
+- Affected code: `bench/tess_bench.cc`, `bench/thresholds/queued.json`.
+
 ## 2026-07-10 - Result-bearing execution wrappers (M4, S6 slice 3)
 
 - Added: `execute_phase_partitioned_dirty_with_results<Policy>` and
