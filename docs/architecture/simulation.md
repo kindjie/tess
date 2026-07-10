@@ -189,6 +189,15 @@ reference.
 - Allocation contract: `reserve_tasks` + registration happen at setup;
   `run_tick`, `notify_dirty`, and `request_run` never allocate after
   `seal()` (pinned by test).
+- `run_schedule_frame(schedule, clock, accumulator, real_delta_seconds,
+  control)` is the frame-to-ticks bridge: it consumes real frame time
+  through the `FixedStepAccumulator` (honoring `SimSpeed` and the per-frame
+  tick cap) and runs the schedule once per granted fixed tick, returning a
+  `ScheduleFrameSummary` (ticks, alpha, dropped seconds, last tick's
+  stats). Cadences therefore count FIXED TICKS, never frames: an EveryN
+  task at 4x fires four times as often in real time and exactly as often in
+  sim time, and a backlogged frame advances every cadence through each
+  granted tick.
 
 ### Scheduler
 

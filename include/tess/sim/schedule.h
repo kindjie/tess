@@ -326,4 +326,33 @@ class Schedule {
   bool sealed_ = false;
 };
 
+// Frame -> ticks bridge: consumes real frame time through the accumulator
+// (honoring SimSpeed and the per-frame tick cap) and runs the schedule once
+// per granted fixed tick. Cadences therefore count FIXED TICKS, never
+// frames: an EveryN task at 2x speed fires twice as often in real time and
+// exactly as often in sim time, and a backlogged frame that grants several
+// ticks advances every cadence through each of them.
+struct ScheduleFrameSummary {
+  std::size_t ticks = 0;
+  double alpha = 0.0;
+  double dropped_seconds = 0.0;
+  // Stats of the LAST tick this frame (zero ticks leaves it default).
+  ScheduleTickStats last_tick{};
+};
+
+inline auto run_schedule_frame(Schedule& schedule, SimClock& clock,
+                               FixedStepAccumulator& accumulator,
+                               double real_delta_seconds,
+                               SimTimeControl control) -> ScheduleFrameSummary {
+  const auto frame = accumulator.consume(real_delta_seconds, control);
+  auto summary = ScheduleFrameSummary{};
+  summary.ticks = frame.ticks;
+  summary.alpha = frame.alpha;
+  summary.dropped_seconds = frame.dropped_seconds;
+  for (std::size_t i = 0; i < frame.ticks; ++i) {
+    summary.last_tick = schedule.run_tick(clock);
+  }
+  return summary;
+}
+
 }  // namespace tess
