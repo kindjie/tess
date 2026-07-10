@@ -472,6 +472,30 @@ TEST(TessStorage, WorldDirtyBoundsUnionSaturatesHugeExtent) {
   EXPECT_EQ(bounds.extent.z, 1u);
 }
 
+TEST(TessStorage, WorldDirtyBoundsUnionSaturatedEndWithNegativeOrigin) {
+  // A saturated axis end paired with a negative min origin must compute the
+  // union extent without signed overflow: the span exceeds int64 range and
+  // only fits uint64.
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{5};
+  const auto negative =
+      tess::Box3{tess::Coord3{-10, 16, 0}, tess::Extent3{2, 3, 1}};
+  const auto huge = tess::Box3{
+      tess::Coord3{0, 16, 0},
+      tess::Extent3{std::uint64_t{1} << 63u, 3, 1},
+  };
+
+  world.mark_dirty(key, DirtyTerrain, negative);
+  world.mark_dirty(key, DirtyCost, huge);
+
+  const auto bounds = world.meta(key).dirty_bounds;
+  EXPECT_EQ(bounds.origin, (tess::Coord3{-10, 16, 0}));
+  constexpr auto max_end = std::numeric_limits<std::int64_t>::max();
+  EXPECT_EQ(bounds.extent.x, static_cast<std::uint64_t>(max_end) + 10u);
+  EXPECT_EQ(bounds.extent.y, 3u);
+  EXPECT_EQ(bounds.extent.z, 1u);
+}
+
 TEST(TessStorage, WorldObserveDirtyReturnsRequestedSubsetBoundsAndVersion) {
   World<TopDown2D> world;
   constexpr auto key = tess::ChunkKey{3};
