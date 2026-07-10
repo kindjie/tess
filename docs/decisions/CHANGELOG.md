@@ -13,6 +13,28 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Diagnostics alloc-hook and capture-contract fixes (audit-2 W-D)
+
+- Changed: three second-audit fixes on the diagnostics layer. (1) M9: the
+  benchmark/test allocation hooks no longer record a deallocation for a null
+  pointer -- `operator delete(nullptr)` / `free(nullptr)` are legal no-ops, so
+  counting them skewed the deallocations/allocations balance; both the plain
+  operator new/delete branch and the sanitizer free hook now null-check before
+  recording. (2) M10: the sanitizer-hook branch is excluded on Windows
+  (`!defined(_MSC_VER)`, covering MSVC and clang-cl) because MSVC
+  /fsanitize=address defines `__SANITIZE_ADDRESS__` but its ASan runtime never
+  calls the `__sanitizer_*` hooks and `<pthread.h>` does not exist there.
+  (3) M11: documented the threading contract of `capture_timing` /
+  `capture_diagnostics` (unsynchronized reads: capture on the recording thread
+  or externally synchronize; only the returned snapshot is safe to share) with
+  matching notes in trace.h and the ImGui panels header. Docs only, no
+  behavior change.
+- Reason: findings M9-M11 of the 2026-07-09 second audit.
+- Affected docs: `decisions/CHANGELOG.md`.
+- Affected code: `bench/tess_diagnostics_alloc_hooks.cc`,
+  `diagnostics/export.h`, `diagnostics/trace.h`, `debug/imgui/panels.h`,
+  `tests/tess_diagnostics_enabled_test.cc`.
+
 ## 2026-07-09 - TraceBuffer pinned to its storage (M12, S4)
 
 - Changed: `diagnostics::TraceBuffer` is now non-copyable and non-movable (all
