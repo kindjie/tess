@@ -110,6 +110,8 @@ class PathRequestRuntime {
     unit_field_product_cache_.reserve_entries(count);
   }
 
+  // Reserve World::chunk_count: dependency sets are bounded by (and for
+  // failure products equal to) the chunk count.
   void reserve_unit_field_product_dependencies(std::size_t count) {
     unit_field_product_.reserve_dependencies(count);
   }

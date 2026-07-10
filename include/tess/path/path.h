@@ -149,9 +149,19 @@ class ChunkVersionDependencies {
   void capture_all(const World& world) {
     chunks_.clear();
     chunks_.reserve(static_cast<std::size_t>(World::chunk_count));
+    // Keys are unique by construction: append directly instead of paying
+    // add_chunk's duplicate scan per key (which would be quadratic here).
     for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
-      add_chunk(world, ChunkKey{i});
+      chunks_.push_back(
+          ChunkVersionDependency{ChunkKey{i}, world.meta(ChunkKey{i}).version});
     }
+  }
+
+  // Appends without add_chunk's duplicate scan; the caller must guarantee
+  // `key` is not already present (e.g. tracked via an external seen set).
+  template <typename World>
+  void add_chunk_unique(const World& world, ChunkKey key) {
+    chunks_.push_back(ChunkVersionDependency{key, world.meta(key).version});
   }
 
   template <typename World>
@@ -197,10 +207,45 @@ class ChunkVersionDependencies {
   std::vector<ChunkVersionDependency> chunks_;
 };
 
+namespace detail {
+
+// Failure-dependency capture shared by the route/portal product builders.
+// NoPath depends on world content the search may never have touched (an
+// opening edit lands on a blocked tile; fast-path early-outs sample barriers
+// far from any expanded node), so precise capture is impractical: depend on
+// every chunk, making any edit invalidate the replay instead of it repeating
+// a stale failure forever. InvalidStart/InvalidGoal depend only on the
+// offending tiles; an out-of-bounds tile contributes nothing (bounds are
+// compile-time), which can leave the set empty -- the product is then
+// permanently invalid and callers rebuild, paying only the cheap bounds
+// rejection.
+template <typename Shape, typename World>
+void capture_failure_dependencies(const World& world, PathRequest request,
+                                  PathStatus status,
+                                  ChunkVersionDependencies& dependencies) {
+  if (status == PathStatus::NoPath) {
+    dependencies.capture_all(world);
+    return;
+  }
+  if (contains<Shape>(request.start)) {
+    dependencies.add_chunk(world,
+                           chunk_key<Shape>(tile_key<Shape>(request.start)));
+  }
+  if (contains<Shape>(request.goal)) {
+    dependencies.add_chunk(world,
+                           chunk_key<Shape>(tile_key<Shape>(request.goal)));
+  }
+}
+
+}  // namespace detail
+
 class WeightedRouteProduct {
  public:
   void reserve_path_nodes(std::size_t node_count) { path_.reserve(node_count); }
 
+  // Dependency sets are bounded by the world's chunk count (failure
+  // products capture every chunk): reserve chunk_count to keep steady-state
+  // rebuilds allocation-free.
   void reserve_dependencies(std::size_t count) { dependencies_.reserve(count); }
 
   void clear() noexcept {
@@ -268,6 +313,9 @@ class WeightedPortalRouteProduct {
     segment_.reserve(node_count);
   }
 
+  // Dependency sets are bounded by the world's chunk count (failure
+  // products capture every chunk): reserve chunk_count to keep steady-state
+  // rebuilds allocation-free.
   void reserve_dependencies(std::size_t count) { dependencies_.reserve(count); }
 
   void clear() noexcept {
@@ -337,6 +385,28 @@ class WeightedPortalRouteProduct {
   friend auto weighted_portal_route_product_path(
       const World& world, const WeightedPortalRouteProduct& product)
       -> PathResult;
+
+  // Rebuild calls may pass spans into this product's own storage --
+  // waypoints() or a previously returned PathResult.path -- and clear() plus
+  // segment stitching invalidate those. Copy product-owned input to `stash`
+  // first; the copy allocates, but only on the aliased rebuild path.
+  [[nodiscard]] auto stash_if_owned(std::span<const Coord3> input,
+                                    std::vector<Coord3>& stash) const
+      -> std::span<const Coord3> {
+    const auto owned = [&](const std::vector<Coord3>& storage) {
+      const auto* begin = storage.data();
+      const auto* end = begin + storage.size();
+      return !input.empty() &&
+             !std::less<const Coord3*>{}(input.data(), begin) &&
+             std::less<const Coord3*>{}(input.data(), end);
+    };
+    if (owned(waypoints_) || owned(path_) || owned(segment_) ||
+        owned(candidate_waypoints_) || owned(best_waypoints_)) {
+      stash.assign(input.begin(), input.end());
+      return std::span<const Coord3>{stash};
+    }
+    return input;
+  }
 
   PathRequest request_{};
   PathStatus status_ = PathStatus::NoPath;
@@ -569,6 +639,9 @@ class DistanceFieldScratch {
   std::vector<std::uint32_t> distance_;
   std::vector<std::uint64_t> touched_;
   std::vector<Coord3> path_;
+  // Per-chunk seen marks for build_distance_field_product's blocked-frontier
+  // dependency pass; sized to the world's chunk count on use.
+  std::vector<std::uint8_t> chunk_seen_;
   Coord3 goal_{};
   bool has_goal_ = false;
   std::uint64_t residency_fingerprint_ = 0;
@@ -1120,12 +1193,10 @@ auto build_weighted_route_product(const World& world, PathRequest request,
       product.dependencies_.add_chunk(world, chunk_key<Shape>(key));
     }
   } else {
-    // A failure depends on world content the search may never have touched
-    // (an opening edit lands on a blocked tile; fast-path early-outs sample
-    // barriers far from any expanded node), so precise capture is
-    // impractical: depend on every chunk, making any edit invalidate the
-    // replay instead of it repeating a stale failure forever.
-    product.dependencies_.capture_all(world);
+    // See detail::capture_failure_dependencies: a replayed failure must be
+    // invalidated by any edit that could change the answer.
+    detail::capture_failure_dependencies<Shape>(world, request, result.status,
+                                                product.dependencies_);
   }
 
   return PathResult{product.status_, product.cost_, product.expanded_nodes_,
@@ -1159,24 +1230,8 @@ auto build_weighted_portal_route_product(const World& world,
       "weighted_astar_path directly for sparse worlds, or await the sparse "
       "route-cache slice.");
 
-  // `waypoints` may alias product.waypoints() (rebuild-from-own-product),
-  // and product.clear() empties the vector that span points into; stash a
-  // copy first in that case. The copy allocates, but only on the aliased
-  // rebuild path.
-  auto source = waypoints;
   std::vector<Coord3> stash;
-  {
-    const auto* wp_begin = product.waypoints_.data();
-    const auto* wp_end = wp_begin + product.waypoints_.size();
-    const auto aliased =
-        !waypoints.empty() &&
-        !std::less<const Coord3*>{}(waypoints.data(), wp_begin) &&
-        std::less<const Coord3*>{}(waypoints.data(), wp_end);
-    if (aliased) {
-      stash.assign(waypoints.begin(), waypoints.end());
-      source = std::span<const Coord3>{stash};
-    }
-  }
+  const auto source = product.stash_if_owned(waypoints, stash);
 
   product.clear();
   product.request_ = request;
@@ -1196,9 +1251,10 @@ auto build_weighted_portal_route_product(const World& world,
       product.status_ = result.status;
       product.expanded_nodes_ = total_expanded;
       product.reached_nodes_ = total_reached;
-      // Same failure-dependency contract as build_weighted_route_product:
-      // any edit must invalidate a replayed failure.
-      product.dependencies_.capture_all(world);
+      // Same failure-dependency contract as build_weighted_route_product;
+      // the failing segment's endpoints are the offending tiles.
+      detail::capture_failure_dependencies<Shape>(
+          world, segment_request, result.status, product.dependencies_);
       return false;
     }
     total_cost = detail::saturating_add(total_cost, result.cost);

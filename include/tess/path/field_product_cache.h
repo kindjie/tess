@@ -50,6 +50,9 @@ class DistanceFieldProduct {
 
   void reserve_nodes(std::size_t node_count) { distance_.reserve(node_count); }
 
+  // Dependency sets are bounded by the world's chunk count (failure
+  // products capture every chunk): reserve chunk_count to keep steady-state
+  // rebuilds allocation-free.
   void reserve_dependencies(std::size_t count) { dependencies_.reserve(count); }
 
   void clear() noexcept {
@@ -454,16 +457,28 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
   // Axis moves cross at most one chunk face: every blocked tile adjacent to
   // the reached region lies in a touched chunk or one of its face
   // neighbors, so depending on those neighbors covers the whole blocked
-  // frontier. Indexing re-reads chunks() each pass because add_chunk may
-  // grow the underlying vector.
+  // frontier. The scratch seen-set keeps this pass linear (add_chunk's
+  // duplicate scan would make it quadratic in chunk count), and indexing
+  // re-reads chunks() each pass because appends may grow the vector.
   {
     using Traits = ShapeTraits<Shape>;
+    auto& seen = scratch.chunk_seen_;
+    seen.assign(static_cast<std::size_t>(World::chunk_count), 0);
     const auto touched_chunks = product.dependencies_.size();
+    for (std::size_t i = 0; i < touched_chunks; ++i) {
+      seen[static_cast<std::size_t>(
+          product.dependencies_.chunks()[i].key.value)] = 1;
+    }
     for (std::size_t i = 0; i < touched_chunks; ++i) {
       const auto center =
           chunk_coord<Shape>(product.dependencies_.chunks()[i].key);
       const auto add = [&](ChunkCoord3 neighbor) {
-        product.dependencies_.add_chunk(world, chunk_key<Shape>(neighbor));
+        const auto key = chunk_key<Shape>(neighbor);
+        auto& mark = seen[static_cast<std::size_t>(key.value)];
+        if (mark == 0) {
+          mark = 1;
+          product.dependencies_.add_chunk_unique(world, key);
+        }
       };
       if (center.x > 0) {
         add(ChunkCoord3{center.x - 1, center.y, center.z});
