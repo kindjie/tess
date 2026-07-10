@@ -50,6 +50,9 @@ class DistanceFieldProduct {
 
   void reserve_nodes(std::size_t node_count) { distance_.reserve(node_count); }
 
+  // Dependency sets are bounded by the world's chunk count (failure
+  // products capture every chunk): reserve chunk_count to keep steady-state
+  // rebuilds allocation-free.
   void reserve_dependencies(std::size_t count) { dependencies_.reserve(count); }
 
   void clear() noexcept {
@@ -64,9 +67,11 @@ class DistanceFieldProduct {
     dependencies_.clear();
   }
 
+  // See WeightedRouteProduct::is_valid: empty dependencies are invalid by
+  // definition so cleared/never-built products never replay vacuously.
   template <typename World>
   [[nodiscard]] auto is_valid(const World& world) const noexcept -> bool {
-    return dependencies_.is_valid(world);
+    return !dependencies_.empty() && dependencies_.is_valid(world);
   }
 
   [[nodiscard]] auto status() const noexcept -> PathStatus { return status_; }
@@ -146,6 +151,9 @@ struct FieldProductCacheStats {
   std::size_t stale_rejections = 0;
 };
 
+// Entries validate against world content versions, not a world instance:
+// keep one cache per world (see RouteCacheScratch fingerprint notes for the
+// aliasing mechanism).
 class FieldProductCache {
  public:
   explicit FieldProductCache(
@@ -443,6 +451,54 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
     product.distance_[offset] = scratch.distance_[offset];
     const auto key = tile_key<Shape>(detail::tile_coord<Shape>(index));
     product.dependencies_.add_chunk(world, chunk_key<Shape>(key));
+  }
+  // The flood never touches a node inside a fully-blocked chunk, but an edit
+  // that opens one changes reachability, so it must invalidate the product.
+  // Axis moves cross at most one chunk face: every blocked tile adjacent to
+  // the reached region lies in a touched chunk or one of its face
+  // neighbors, so depending on those neighbors covers the whole blocked
+  // frontier. The scratch seen-set keeps this pass linear (add_chunk's
+  // duplicate scan would make it quadratic in chunk count), and indexing
+  // re-reads chunks() each pass because appends may grow the vector.
+  {
+    using Traits = ShapeTraits<Shape>;
+    auto& seen = scratch.chunk_seen_;
+    seen.assign(static_cast<std::size_t>(World::chunk_count), 0);
+    const auto touched_chunks = product.dependencies_.size();
+    for (std::size_t i = 0; i < touched_chunks; ++i) {
+      seen[static_cast<std::size_t>(
+          product.dependencies_.chunks()[i].key.value)] = 1;
+    }
+    for (std::size_t i = 0; i < touched_chunks; ++i) {
+      const auto center =
+          chunk_coord<Shape>(product.dependencies_.chunks()[i].key);
+      const auto add = [&](ChunkCoord3 neighbor) {
+        const auto key = chunk_key<Shape>(neighbor);
+        auto& mark = seen[static_cast<std::size_t>(key.value)];
+        if (mark == 0) {
+          mark = 1;
+          product.dependencies_.add_chunk_unique(world, key);
+        }
+      };
+      if (center.x > 0) {
+        add(ChunkCoord3{center.x - 1, center.y, center.z});
+      }
+      if (center.x + 1 < Traits::chunk_count_x) {
+        add(ChunkCoord3{center.x + 1, center.y, center.z});
+      }
+      if (center.y > 0) {
+        add(ChunkCoord3{center.x, center.y - 1, center.z});
+      }
+      if (center.y + 1 < Traits::chunk_count_y) {
+        add(ChunkCoord3{center.x, center.y + 1, center.z});
+      }
+      if (center.z > 0) {
+        add(ChunkCoord3{center.x, center.y, center.z - 1});
+      }
+      if (center.z + 1 < Traits::chunk_count_z) {
+        add(ChunkCoord3{center.x, center.y, center.z + 1});
+      }
+    }
   }
   product.status_ = PathStatus::Found;
   product.expanded_nodes_ = expanded_nodes;

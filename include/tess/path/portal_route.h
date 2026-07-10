@@ -95,6 +95,15 @@ template <typename World, typename PassableTag>
 
 }  // namespace detail
 
+// HEURISTIC TIER: candidates walk only goal-monotone chunk staircases (each
+// step moves one chunk closer on some axis) and only the single
+// best-scoring candidate is stitched, so a NoPath from this builder means
+// "no route found by this tier", NOT "no route exists" -- topologies that
+// require a chunk detour away from the goal (or whose best seam tile is
+// sealed off) yield NoPath here while weighted_astar_path finds a route.
+// Callers needing an authoritative answer must fall back to
+// weighted_astar_path on NoPath. Promoting this to a distinct
+// non-authoritative status is deferred to the next API rev.
 template <typename World, typename PassableTag, typename CostTag>
 auto build_weighted_chunk_portal_route_product(
     const World& world, PathRequest request, PathScratch& scratch,
@@ -164,6 +173,9 @@ auto build_weighted_chunk_portal_route_product(
   }
   if (!found_route) {
     product.status_ = PathStatus::NoPath;
+    // Failure results depend on world content the portal scans sampled;
+    // depend on every chunk so any edit invalidates a replayed failure.
+    product.dependencies_.capture_all(world);
     return PathResult{product.status_, 0, 0, 0, product.path_};
   }
   product.waypoints_.assign(product.best_waypoints_.begin(),
@@ -183,6 +195,10 @@ auto build_weighted_chunk_portal_route_product(
       product.status_ = result.status;
       product.expanded_nodes_ = total_expanded;
       product.reached_nodes_ = total_reached;
+      // Same failure-dependency contract as build_weighted_route_product;
+      // the failing segment's endpoints are the offending tiles.
+      detail::capture_failure_dependencies<Shape>(
+          world, segment_request, result.status, product.dependencies_);
       return false;
     }
     total_cost = detail::saturating_add(total_cost, result.cost);
