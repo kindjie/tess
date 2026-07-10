@@ -180,6 +180,9 @@ struct PlannedOperation {
   Priority priority = Priority::GameplayCritical;
   BudgetPolicy budget_policy = BudgetPolicy::MustRun;
   std::vector<ChunkKey> chunks;
+  // Enqueue-site capture carried through planning so run-time completions
+  // (result channels) can report where the operation came from.
+  std::source_location source = std::source_location::current();
 };
 
 class ExecutionPlan {
@@ -811,6 +814,7 @@ template <typename World>
         op.priority,
         op.budget_policy,
         {},
+        op.source,
     };
     ChunkKey invalid_chunk{};
     if (!detail::expand_domain(world, op.domain, planned.chunks,

@@ -13,6 +13,20 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - PlannedOperation carries its enqueue source (M4, S6 slice 2)
+
+- Changed: `PlannedOperation` gains a trailing `std::source_location source`
+  member, copied from the queued operation at plan time, so run-time
+  completions can report the enqueue site exactly as plan-time rejections
+  already do through `OperationReport::source`. Behavior-neutral otherwise;
+  the only aggregate-init site is `plan_operations`.
+- Reason: S6 slice 2 -- the result-bearing execute wrappers (next slice)
+  stamp `OpCompletion.source` from the planned operation on the executing
+  thread; without this member they would need the full `ExecutionReport`
+  plumbed through, which breaks for subset-span plans.
+- Affected docs: none (member documented inline; not a surface symbol).
+- Affected code: `ops/queued.h`.
+
 ## 2026-07-10 - Result-channel core: OpCompletion + drain-only ResultChannel (M4, S6 slice 1)
 
 - Added: `include/tess/ops/result_channel.h` -- `OpCompletion` (both failure
