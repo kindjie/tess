@@ -13,6 +13,27 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Pre-merge review hardenings: mismatch drop, cadence clamps, reentrancy guard (M5, S7)
+
+- Fixed: three review findings. (1) The auto-exec PolicyMismatch path now
+  drops the queue (paired clears): keeping it would wedge the task forever
+  in release builds, rescanning the same poisoned frame while new enqueues
+  pile on. (2) `Schedule::add_task` validates and re-clamps hand-built
+  cadences (Cadence is a public aggregate, so a zero EveryN bypassing the
+  factory clamp would wrap its countdown to ~4.29B ticks, and a zero
+  background budget would spin in_progress forever). (3) run_tick carries
+  an in-run reentrancy assert, and the header names the two calls task
+  bodies must not make (add_task, nested run_tick) alongside the three
+  that are safe. Also documented: ChunkFn is shared across pool workers
+  and must be safe for concurrent invocation; an OnDirty task poked via
+  request_run receives pending_dirty == 0 (a full-run request, pinned by
+  test).
+- Reason: pre-merge review of the S7 branch (no blockers; these were the
+  should-fixes and note-level hardenings).
+- Affected docs: none beyond header comments.
+- Affected code: `sim/schedule.h`, `sim/auto_exec.h`;
+  `tests/tess_sim_schedule_test.cc`.
+
 ## 2026-07-10 - Scheduler bench family (M5, S7 slice 6)
 
 - Added: `bench/tess_scheduler_bench.cc` + `bench/thresholds/scheduler.json`
