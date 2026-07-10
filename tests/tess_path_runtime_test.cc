@@ -257,6 +257,55 @@ TEST(TessPathRuntime, UnitFieldProductCacheRejectsStaleProductsAfterEdit) {
   EXPECT_EQ(stats.field_product_cache.stale_rejections, 1u);
 }
 
+// An edit that opens a fully-blocked chunk never touches a flooded node, but
+// it changes reachability: the cached product must be rejected as stale, not
+// replayed as a wrong NoPath for starts inside the newly opened chunk.
+TEST(TessPathRuntime,
+     UnitFieldProductCacheRejectsStaleAfterUnreachedChunkEdit) {
+  World world;
+  fill_world(world);
+  for (std::int64_t y = 0; y < 8; ++y) {
+    for (std::int64_t x = 8; x < 16; ++x) {
+      world.template field<PassableTag>(tess::Coord3{x, y, 0}) = false;
+    }
+  }
+
+  tess::PathRequestRuntime runtime;
+  runtime.reserve_requests(3);
+  runtime.reserve_search_nodes(RuntimeTileCount);
+  runtime.reserve_path_nodes(256);
+  runtime.reserve_unit_field_products(1);
+  runtime.reserve_unit_field_product_dependencies(World::chunk_count);
+
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 31, 0}, tess::Coord3{0, 0, 0}});
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{31, 31, 0}, tess::Coord3{0, 0, 0}});
+
+  const auto policy = tess::PathRuntimeCachePolicy{
+      .use_unit_field_product_cache = true,
+      .unit_field_product_min_start_chunks = 1,
+  };
+  auto results = runtime.process_unit_cached<World, PassableTag>(world, policy);
+  ASSERT_EQ(results.size(), 2u);
+  EXPECT_EQ(runtime.stats().found, 2u);
+  EXPECT_EQ(runtime.stats().field_product_cache.entries, 1u);
+
+  world.template field<PassableTag>(tess::Coord3{8, 0, 0}) = true;
+  world.mark_dirty(tess::ChunkKey{1}, 1u,
+                   tess::Box3{tess::Coord3{8, 0, 0}, tess::Extent3{1, 1, 1}});
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{8, 0, 0}, tess::Coord3{0, 0, 0}});
+
+  results = runtime.process_unit_cached<World, PassableTag>(world, policy);
+  ASSERT_EQ(results.size(), 3u);
+
+  const auto stats = runtime.stats();
+  EXPECT_EQ(stats.found, 3u);
+  EXPECT_EQ(stats.no_path, 0u);
+  EXPECT_EQ(stats.field_product_cache.stale_rejections, 1u);
+}
+
 TEST(TessPathRuntime, UnitFieldProductCacheClearsOnWorldChangeCadence) {
   World world;
   fill_world(world);
