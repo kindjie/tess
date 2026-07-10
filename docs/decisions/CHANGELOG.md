@@ -13,6 +13,21 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Worker pool promoted to the production backend (M5, S7 slice 5)
+
+- Changed: docs only. `WorkerPoolPhaseExecutor` is recorded as the
+  production parallel backend (the S7 evaluation outcome the concurrency
+  plan called for): auto-exec routes phases to it by operation count,
+  serial == pool is pinned byte-identical, and TSan covers the schedule and
+  auto-exec binaries. work_contract remains an unadopted experiment. The
+  coalesced maintenance lane and runtime ownership claim checking are
+  explicitly deferred post-v1 with rationale (no v1 consumer; they belong
+  with a deferred-edit flow).
+- Reason: S7 slice 5 -- the concurrency stream's landing record.
+- Affected docs: `architecture/queued-operations.md`,
+  `planning/concurrency-plan.md`.
+- Affected code: none.
+
 ## 2026-07-10 - Auto-exec task with per-phase routing and goldens (M5, S7 slices 3-4)
 
 - Added: `include/tess/sim/auto_exec.h` -- `AutoExecTask` runs the whole
