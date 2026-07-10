@@ -13,6 +13,20 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Schedule frame driver (M5, S7 slice 2)
+
+- Added: `run_schedule_frame` + `ScheduleFrameSummary` -- the frame-to-ticks
+  bridge over `FixedStepAccumulator`, running the schedule once per granted
+  fixed tick so every cadence counts sim ticks rather than frames (exact
+  under SimSpeed changes, backlog, and pause; pinned by test). The design's
+  proposed task-adapter header was cut: the auto-exec golden composes
+  test-local tasks, and the downstream consumer's agent tick is its own
+  task body, so no adapter had a consumer.
+- Reason: S7 slice 2 (M5 close).
+- Affected docs: `architecture/simulation.md`, `architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: `sim/schedule.h`; `tests/tess_sim_schedule_test.cc`.
+
 ## 2026-07-10 - Schedule core: phases, cadences, budgets (M5, S7 slice 1)
 
 - Added: `include/tess/sim/schedule.h` -- the M5 schedule. Ordered

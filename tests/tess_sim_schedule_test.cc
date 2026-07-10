@@ -264,4 +264,57 @@ TEST(TessSchedule, DispatchAfterSealIsAllocationFree) {
   }
 }
 
+// S7.2: the frame driver -- cadences count fixed ticks, never frames, so
+// EveryN stays exact across SimSpeed changes and backlogged frames.
+TEST(TessSchedule, FrameDriverKeepsEveryNExactAcrossSpeedAndBacklog) {
+  LogTask task{"n"};
+  std::vector<std::string> log;
+  task.log = &log;
+  tess::Schedule schedule;
+  const auto id = schedule.add_task(
+      {"n", tess::SimPhase::PreUpdate, tess::Cadence::every_ticks(4)}, task);
+  schedule.seal();
+
+  // 20 ticks/second, up to 8 per frame.
+  tess::FixedStepAccumulator accumulator{20, 8};
+  tess::SimClock clock;
+
+  // 1x: 0.05 s frames grant one tick each; the task fires on ticks 4 and 8.
+  for (int frame = 0; frame < 8; ++frame) {
+    (void)tess::run_schedule_frame(
+        schedule, clock, accumulator, 0.05,
+        tess::SimTimeControl{tess::SimSpeed::Speed1x});
+  }
+  EXPECT_EQ(clock.tick, 8u);
+  EXPECT_EQ(schedule.task_stats(id).runs, 2u);
+
+  // 4x: the same real frames grant four ticks each; two frames add eight
+  // ticks and exactly two more fires (ticks 12 and 16).
+  for (int frame = 0; frame < 2; ++frame) {
+    const auto summary =
+        tess::run_schedule_frame(schedule, clock, accumulator, 0.05,
+                                 tess::SimTimeControl{tess::SimSpeed::Speed4x});
+    EXPECT_EQ(summary.ticks, 4u);
+  }
+  EXPECT_EQ(clock.tick, 16u);
+  EXPECT_EQ(schedule.task_stats(id).runs, 4u);
+
+  // A backlogged frame (0.36 s at 1x banks 7 whole ticks; 0.35 sits at
+  // 6.999... in the double domain and would grant 6) advances the cadence
+  // through every granted tick.
+  const auto backlog =
+      tess::run_schedule_frame(schedule, clock, accumulator, 0.36,
+                               tess::SimTimeControl{tess::SimSpeed::Speed1x});
+  EXPECT_EQ(backlog.ticks, 7u);
+  EXPECT_EQ(clock.tick, 23u);
+  EXPECT_EQ(schedule.task_stats(id).runs, 5u);  // tick 20 fired in-frame
+
+  // Paused frames grant nothing and change nothing.
+  const auto paused =
+      tess::run_schedule_frame(schedule, clock, accumulator, 10.0,
+                               tess::SimTimeControl{tess::SimSpeed::Paused});
+  EXPECT_EQ(paused.ticks, 0u);
+  EXPECT_EQ(clock.tick, 23u);
+}
+
 }  // namespace

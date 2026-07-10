@@ -419,8 +419,10 @@
   dirty reaching later phases the same tick and earlier phases the next
   tick, deterministic background item budgets with `more_work`
   continuation, manual single-shot runs, persistent triggers surviving
-  disablement, and allocation-free dispatch (`run_tick`/`notify_dirty`/
-  `request_run`) after `seal()`.
+  disablement, allocation-free dispatch (`run_tick`/`notify_dirty`/
+  `request_run`) after `seal()`, and the frame driver keeping EveryN exact
+  across SimSpeed changes, backlogged multi-tick frames, and paused frames
+  (cadences count fixed ticks, never frames).
 - `tess_sim_scheduler_test`: verifies the simulation integration slice,
   including movement intent validation and commit, fixed-step accumulator
   pause/speed/clamp behavior with exact interpolation alpha values at known
