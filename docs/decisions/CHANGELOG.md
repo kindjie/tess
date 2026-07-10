@@ -13,6 +13,27 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Result-bearing execution wrappers (M4, S6 slice 3)
+
+- Added: `execute_phase_partitioned_dirty_with_results<Policy>` and
+  `execute_plan_deferred_dirty_with_results<Policy>` in
+  `ops/result_channel.h`. The callback gains the operation's channel value
+  (`fn(view, T&)`), accumulated op-exclusively on the executing thread;
+  completions are stamped worker-side because `PlannedExecutionResult`
+  default-constructs to Executed and the serial executor early-stops, so a
+  post-barrier sweep would misread never-run operations as executed. All
+  phase/plan operations are prepared upfront (aborted tails read Pending),
+  and the phase range is validated before the channel is touched.
+- Reason: S6 slice 3 -- the executor-agnostic delivery path: identical
+  drain order and content under serial and threaded executors for
+  successful plans (pinned by test against both), failure reasons instead
+  of values at runtime, allocation-free warm frames.
+- Affected docs: `architecture/queued-operations.md`,
+  `architecture/surface.json`, `tests/AGENTS.md`.
+- Affected code: `ops/result_channel.h`, `ops/queued.h` (one friend
+  declaration + a ResultChannel forward declaration);
+  `tests/tess_queued_results_test.cc`.
+
 ## 2026-07-10 - PlannedOperation carries its enqueue source (M4, S6 slice 2)
 
 - Changed: `PlannedOperation` gains a trailing `std::source_location source`
