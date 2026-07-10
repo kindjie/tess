@@ -13,6 +13,22 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Codex review fixes: EveryN pokes, hook follow-ups (M5, S7)
+
+- Fixed: two of three connector findings (the third -- the PolicyMismatch
+  clear -- had already landed in the pre-merge hardening commit).
+  (1) `request_run` now arms EveryN tasks too, as its contract says: one
+  extra run without shifting the countdown's lockstep phase (the poke was
+  previously ignored and silently consumed at the next scheduled fire).
+  (2) The auto-exec task clears its queue BEFORE draining, so follow-up
+  operations a result hook enqueues land in the fresh queue for the next
+  run instead of being discarded by the end-of-run clear; the channel
+  still clears after the drain, completing the paired-clear discipline.
+  Both pinned by regression tests.
+- Affected docs: none beyond header comments.
+- Affected code: `sim/schedule.h`, `sim/auto_exec.h`;
+  `tests/tess_sim_schedule_test.cc`, `tests/tess_sim_auto_exec_test.cc`.
+
 ## 2026-07-10 - Pre-merge review hardenings: mismatch drop, cadence clamps, reentrancy guard (M5, S7)
 
 - Fixed: three review findings. (1) The auto-exec PolicyMismatch path now

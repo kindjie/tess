@@ -334,4 +334,21 @@ TEST(TessSchedule, RequestRunPokesOnDirtyWithZeroMask) {
   EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);  // consumed
 }
 
+// Codex review: request_run must arm EveryN tasks too -- one extra run
+// without shifting the countdown's lockstep phase.
+TEST(TessSchedule, RequestRunAddsAnExtraEveryNRun) {
+  LogTask task{"n"};
+  tess::Schedule schedule;
+  const auto id = schedule.add_task(
+      {"n", tess::SimPhase::PreUpdate, tess::Cadence::every_ticks(4)}, task);
+  schedule.seal();
+
+  tess::SimClock clock;
+  schedule.request_run(id);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 1u);  // tick 1: the poke
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);  // consumed
+  (void)schedule.run_tick(clock);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 1u);  // tick 4: lockstep held
+}
+
 }  // namespace

@@ -283,4 +283,51 @@ TEST(TessAutoExecDeathTest, MixedPolicyQueueAsserts) {
 }
 #endif
 
+// Codex review: a result hook may enqueue follow-up work into the same
+// queue; the end-of-run clear must not discard it (the queue clears before
+// the drain, so follow-ups land in the fresh queue for the next tick).
+struct FollowUpHook {
+  tess::FrameOps* ops = nullptr;
+  std::size_t drained = 0;
+  bool enqueue_follow_up = false;
+
+  static void hook(void* ctx, tess::OpHandle, const tess::OpCompletion&,
+                   const Ack*) {
+    auto& self = *static_cast<FollowUpHook*>(ctx);
+    ++self.drained;
+    if (self.enqueue_follow_up) {
+      self.enqueue_follow_up = false;
+      (void)self.ops->update_field(
+          tess::DomainDesc::explicit_chunks(
+              std::vector<tess::ChunkKey>{tess::ChunkKey{2}}),
+          tess::FieldAccessDesc{0, DirtyTerrain, DirtyTerrain},
+          tess::WritePolicy::UniquePerChunk);
+    }
+  }
+};
+
+TEST(TessAutoExec, HookEnqueuedFollowUpsSurviveIntoTheNextRun) {
+  World world;
+  tess::FrameOps ops;
+  StampTask task{world, ops, StampKernel{}};
+  FollowUpHook follow_up{&ops, 0, true};
+  task.set_result_hook(&follow_up, FollowUpHook::hook);
+  tess::Schedule schedule;
+  (void)schedule.add_task(
+      {"ops", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()}, task);
+  schedule.seal();
+
+  tess::SimClock clock;
+  enqueue_stamps(ops, 1);
+  (void)schedule.run_tick(clock);
+  EXPECT_EQ(follow_up.drained, 1u);
+  EXPECT_FALSE(ops.empty());  // the follow-up survived the run's clear
+
+  (void)schedule.run_tick(clock);
+  EXPECT_EQ(follow_up.drained, 2u);  // the follow-up executed and drained
+  EXPECT_EQ(task.last_run().executed_chunks, 1u);
+  EXPECT_EQ(world.chunk(tess::ChunkKey{2}).template field_span<TerrainTag>()[0],
+            static_cast<std::uint16_t>(2 + 11));
+}
+
 }  // namespace

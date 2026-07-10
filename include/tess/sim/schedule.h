@@ -286,12 +286,17 @@ class Schedule {
       case CadenceKind::EveryTick:
         due = true;
         break;
-      case CadenceKind::EveryN:
-        if (--task.ticks_until_due == 0) {
+      case CadenceKind::EveryN: {
+        // The countdown advances independently of manual pokes, so a
+        // request_run never shifts the lockstep phase -- it just adds one
+        // extra run.
+        const auto counted = --task.ticks_until_due == 0;
+        if (counted) {
           task.ticks_until_due = task.desc.cadence.every_n;
-          due = true;
         }
+        due = counted || task.run_requested;
         break;
+      }
       case CadenceKind::OnDirty:
         fired_dirty = task.pending_mask & task.desc.cadence.dirty_mask;
         due = fired_dirty != 0 || task.run_requested;

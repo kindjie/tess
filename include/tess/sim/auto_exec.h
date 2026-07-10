@@ -157,6 +157,10 @@ class AutoExecTask {
                                                      : AutoExecStatus::Executed;
     }
 
+    // Clear the queue BEFORE draining: the plan already copied everything
+    // execution needed, and a result hook may enqueue follow-up work -- it
+    // lands in the fresh queue for the next run instead of being discarded.
+    ops_->clear();
     if (hook_ != nullptr) {
       last_run_.drained += channel_.drain_results(
           [this](OpHandle handle, const OpCompletion& completion,
@@ -164,10 +168,8 @@ class AutoExecTask {
             hook_(hook_ctx_, handle, completion, ack);
           });
     }
-
-    // Paired clears end every run: handles restart at zero next enqueue and
-    // the channel can never alias a previous run's slots.
-    ops_->clear();
+    // The channel clears after the drain, completing the paired-clear
+    // discipline: the next run's prepare can never alias these slots.
     channel_.clear();
     return ScheduleTaskResult{produced_dirty, 0, false};
   }
