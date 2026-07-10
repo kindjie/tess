@@ -436,4 +436,40 @@ TEST(TessPathMovementClass, PolicyClearNeverUnbindsTheClassGuard) {
   EXPECT_GE(runtime.stats().class_cache_invalidations, 1u);
 }
 
+// Codex review: DIRECT cached_astar_path callers get the same class guard
+// the runtime has -- the route cache binds itself to the call's class and a
+// rebind drops the entries instead of serving another class's route.
+TEST(TessPathMovementClass, DirectRouteCacheNeverServesAnotherClass) {
+  World world;
+  fill_open(world, 1);
+  for (std::int64_t y = 0; y < 7; ++y) {
+    world.field<PassableTag>(tess::Coord3{3, y, 0}) = false;
+    world.field<ConstructionTag>(tess::Coord3{3, y, 0}) = 1;
+  }
+
+  tess::PathScratch scratch;
+  tess::RouteCacheScratch cache;
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
+
+  const auto walker =
+      tess::cached_astar_path<World, Walker>(world, request, scratch, cache);
+  ASSERT_EQ(walker.status, tess::PathStatus::Found);
+  EXPECT_EQ(walker.cost, 21u);
+  EXPECT_EQ(cache.stats().class_rebinds, 0u);
+
+  const auto builder =
+      tess::cached_astar_path<World, Builder>(world, request, scratch, cache);
+  ASSERT_EQ(builder.status, tess::PathStatus::Found);
+  EXPECT_EQ(builder.cost, 7u);
+  EXPECT_EQ(cache.stats().class_rebinds, 1u);
+
+  // Staying on one class serves the cache normally.
+  const auto again =
+      tess::cached_astar_path<World, Builder>(world, request, scratch, cache);
+  EXPECT_EQ(again.cost, 7u);
+  EXPECT_EQ(cache.stats().class_rebinds, 1u);
+  EXPECT_GE(cache.stats().hits, 1u);
+}
+
 }  // namespace

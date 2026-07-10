@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tess/core/tag_identity.h>
 #include <tess/path/path.h>
 
 #include <cstddef>
@@ -17,6 +18,10 @@ struct RouteCacheStats {
   std::size_t path_nodes = 0;
   std::size_t cap_invalidations = 0;
   std::size_t oversized_skips = 0;
+  // Whole-cache drops forced by a lookup with a different movement class
+  // than the cache was bound to (see cached_astar_path). Keep one cache per
+  // (world, class) to stay at zero.
+  std::size_t class_rebinds = 0;
 };
 
 // Exact (start, goal) lookups and same-goal suffix lookups are served by two
@@ -55,11 +60,28 @@ class RouteCacheScratch {
 
   void clear() noexcept {
     invalidate();
+    bound_class_ = 0;
     hits_ = 0;
     suffix_hits_ = 0;
     misses_ = 0;
     cap_invalidations_ = 0;
     oversized_skips_ = 0;
+  }
+
+  // Entries are keyed on (start, goal) plus the world fingerprint and
+  // nothing on the movement class, so the cache binds itself to the class
+  // of each cached_astar_path call: a rebind drops every entry (correct
+  // even on misuse) and counts in stats().class_rebinds. One cache per
+  // (world, class) is the PERF contract, not a correctness precondition.
+  void bind_class(std::uintptr_t identity) noexcept {
+    if (bound_class_ == identity) {
+      return;
+    }
+    if (bound_class_ != 0) {
+      invalidate();
+      ++class_rebinds_;
+    }
+    bound_class_ = identity;
   }
 
   void invalidate() noexcept {
@@ -109,9 +131,9 @@ class RouteCacheScratch {
 
   [[nodiscard]] auto stats() const noexcept -> RouteCacheStats {
     return RouteCacheStats{
-        entries_.size(),  hits_,         suffix_hits_,
-        misses_,          paths_.size(), cap_invalidations_,
-        oversized_skips_,
+        entries_.size(),  hits_,          suffix_hits_,
+        misses_,          paths_.size(),  cap_invalidations_,
+        oversized_skips_, class_rebinds_,
     };
   }
 
@@ -329,6 +351,10 @@ class RouteCacheScratch {
   std::size_t misses_ = 0;
   std::size_t cap_invalidations_ = 0;
   std::size_t oversized_skips_ = 0;
+  std::size_t class_rebinds_ = 0;
+  // Movement-class identity the entries are bound to (0 = unbound); see
+  // bind_class.
+  std::uintptr_t bound_class_ = 0;
   std::uint64_t world_fingerprint_ = 0;
   bool has_world_fingerprint_ = false;
 
@@ -395,6 +421,11 @@ template <typename World, typename Tag>
 auto cached_astar_path(const World& world, PathRequest request,
                        PathScratch& scratch, RouteCacheScratch& cache)
     -> PathResult {
+  // Bind the cache to this call's movement class (normalized, so a raw tag
+  // and its WalkableField identity share entries): entries key on
+  // (start, goal) only, so a direct caller alternating classes must never be
+  // served the other class's route -- the rebind drops the cache instead.
+  cache.bind_class(detail::tag_identity<movement::movement_class_of<Tag>>());
   // The cache stores absolute Coord3 keys and routes only (no residency-slot
   // state). Correctness on sparse rests entirely on the residency-aware
   // world_version_fingerprint plus prepare_process invalidating the whole cache

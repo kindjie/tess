@@ -13,6 +13,33 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Codex review fixes: span-path advertisement, stair narrowing, direct route-cache guard (M6, S5)
+
+- Fixed: three of four connector-review findings. (1) `WalkableCostField`
+  declared `passable_tag`, satisfying `HasPassableSpan` without providing
+  `passable_span`, so using it for region labeling failed to compile inside
+  the topology flood; the marker is removed (its two-field predicate must
+  not take the raw-span fast path) and the concept's contract is documented.
+  (2) `StairTransitions` narrowed the stair value to `uint8_t` before the
+  range check, so a wider field holding 257 wrapped into `PositiveX`; the
+  check now precedes any narrowing and rejects negatives. (3) The public
+  `cached_astar_path` accepts movement classes but `RouteCacheScratch` keys
+  entries on (start, goal) only, so DIRECT callers (outside
+  `PathRequestRuntime`'s binding) could be served another class's route; the
+  cache now binds itself to each call's normalized class and a rebind drops
+  the entries, counted in the new `RouteCacheStats::class_rebinds`.
+- Declined: validating entry cost in `validate_movement_intent`. Commit
+  validates the class's PASSABILITY predicate only -- cost is a search
+  concern, and commit staying more permissive than the weighted search is
+  the deliberate legacy asymmetry (`WalkableCostField` is the opt-in that
+  folds cost into passability at commit too). Documented in simulation.md.
+- Affected docs: `architecture/simulation.md`, `tests/AGENTS.md`.
+- Affected code: `topology/movement_class.h`,
+  `topology/transition_provider.h`, `path/route_cache.h`;
+  `tests/tess_topology_movement_test.cc` (WalkableCostField labeling
+  compiles and excludes zero-cost tiles; wide stair value does not wrap),
+  `tests/tess_path_movement_class_test.cc` (direct route-cache class guard).
+
 ## 2026-07-10 - Pre-merge review fixes: stair down-transitions, class-binding order (M6, S5)
 
 - Fixed: two defects found (and reproduced) by the pre-merge review.

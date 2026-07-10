@@ -691,4 +691,62 @@ TEST(TessTopologyMovement, OutOfRangeStairValueReadsAsNone) {
   expect_graphs_equal(graph, plain);
 }
 
+// Codex review: WalkableCostField must not advertise the span fast path --
+// its predicate reads two fields, so the topology flood must evaluate it per
+// tile (this test is primarily "it compiles"; it also pins the behavior that
+// zero-cost tiles hold no label).
+TEST(TessTopologyMovement, WalkableCostFieldLabelsExcludeZeroCostTiles) {
+  struct WeightTag {};
+  using CostSchema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
+                                       tess::Field<WeightTag, std::uint32_t>>;
+  using CostWorld = tess::AlwaysResidentWorld<TopDown2D, CostSchema>;
+  using CostWalker = mv::WalkableCostField<PassableTag, WeightTag>;
+  static_assert(!mv::HasPassableSpan<CostWalker>);
+
+  CostWorld world;
+  for (auto& page : world.chunks()) {
+    auto passable = page.template field_span<PassableTag>();
+    std::fill(passable.begin(), passable.end(), std::uint8_t{1});
+    auto cost = page.template field_span<WeightTag>();
+    std::fill(cost.begin(), cost.end(), std::uint32_t{1});
+  }
+  world.field<WeightTag>(tess::Coord3{4, 4, 0}) = 0;
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  const auto built =
+      tess::build_region_graph<CostWorld, CostWalker>(world, scratch, graph);
+  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+  EXPECT_EQ(graph.region_of<TopDown2D>(tess::Coord3{4, 4, 0}).region,
+            tess::invalid_local_region);
+  EXPECT_NE(graph.region_of<TopDown2D>(tess::Coord3{3, 4, 0}).region,
+            tess::invalid_local_region);
+}
+
+// Codex review: stair values must be range-checked BEFORE narrowing -- a
+// 16-bit field holding 257 must read as None, not wrap into PositiveX.
+TEST(TessTopologyMovement, WideStairFieldValueDoesNotWrapIntoRange) {
+  struct WideStairTag {};
+  using WideSchema =
+      tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
+                        tess::Field<WideStairTag, std::uint16_t>>;
+  using WideWorld = tess::AlwaysResidentWorld<TwoLevel, WideSchema>;
+  WideWorld world;
+  for (std::int64_t y = 0; y < 8; ++y) {
+    for (std::int64_t x = 0; x < 8; ++x) {
+      world.field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
+      world.field<PassableTag>(tess::Coord3{x, y, 1}) = 1;
+    }
+  }
+  world.field<WideStairTag>(tess::Coord3{2, 1, 0}) = 257;  // wraps to 1
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  tess::build_region_graph<WideWorld, PassableTag>(
+      world, scratch, graph, tess::StairTransitions<WideStairTag>{});
+  tess::RegionGraph plain;
+  tess::build_region_graph<WideWorld, PassableTag>(world, scratch, plain);
+  EXPECT_EQ(graph.portals().size(), plain.portals().size());
+}
+
 }  // namespace
