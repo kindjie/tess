@@ -179,12 +179,12 @@ void BM_topology_precheck_reachable_512x512(benchmark::State& state) {
               "region graph build did not report Built");
 
   tess::RegionGraphScratch precheck_scratch;
-  (void)tess::precheck_path(graph, world, kFarStart, kFarGoal,
-                            precheck_scratch);
+  (void)tess::precheck_path<PassableTag>(graph, world, kFarStart, kFarGoal,
+                                         precheck_scratch);
   tess::PrecheckStatus status{};
   for (auto _ : state) {
-    status = tess::precheck_path(graph, world, kFarStart, kFarGoal,
-                                 precheck_scratch);
+    status = tess::precheck_path<PassableTag>(graph, world, kFarStart, kFarGoal,
+                                              precheck_scratch);
     benchmark::DoNotOptimize(status);
   }
   bench_check(status == tess::PrecheckStatus::Reachable,
@@ -204,12 +204,12 @@ void BM_topology_precheck_unreachable_512x512(benchmark::State& state) {
               "region graph build did not report Built");
 
   tess::RegionGraphScratch precheck_scratch;
-  (void)tess::precheck_path(graph, world, kFarStart, kSealedGoal,
-                            precheck_scratch);
+  (void)tess::precheck_path<PassableTag>(graph, world, kFarStart, kSealedGoal,
+                                         precheck_scratch);
   tess::PrecheckStatus status{};
   for (auto _ : state) {
-    status = tess::precheck_path(graph, world, kFarStart, kSealedGoal,
-                                 precheck_scratch);
+    status = tess::precheck_path<PassableTag>(graph, world, kFarStart,
+                                              kSealedGoal, precheck_scratch);
     benchmark::DoNotOptimize(status);
   }
   bench_check(status == tess::PrecheckStatus::Unreachable,

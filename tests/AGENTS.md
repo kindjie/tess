@@ -193,8 +193,12 @@
   `InvalidGoal`, an
   unbuilt graph as `NoGraph`, a post-build topology edit degrading to
   `GraphStale` rather than a wrong `Unreachable`, a sparse corridor exiting into
-  a non-resident chunk reported as `MissingChunk`, and an allocation-free warm
-  precheck query.
+  a non-resident chunk reported as `MissingChunk`, an allocation-free warm
+  precheck query, and class agreement (S5.4): a walker-labeled graph queried
+  for a Builder class is `GraphStale` (never the walker's wrong
+  `Unreachable` across a construction bridge), while a Builder-stamped graph
+  answers `Reachable`/`Unreachable` per class and reads `GraphStale` for the
+  raw walker tag.
 - `tess_path_precheck_runtime_test`: verifies the optional precheck gate wired
   into `PathRequestRuntime` and the agent tick. A goal sealed off by an
   enclosing wall (not a full-axis barrier, so A*'s dense fast-path cannot rule
@@ -205,7 +209,11 @@
   verdict; a mixed weighted batch proves the survivor partition scatters results
   back to their original slots; the warm unit rule-out path is allocation-free;
   and the weighted and unit ticks surface `precheck_ruled_out` through
-  `PathAgentFrameStats` while the ruled-out agent never advances.
+  `PathAgentFrameStats` while the ruled-out agent never advances. Class
+  agreement (S5.4): a walker-stamped graph supplied to a Builder-class
+  `process_unit_cached` rules nothing out (GraphStale) and the Builder's own
+  A* routes through the construction gap, while a Builder-stamped graph rules
+  out a genuinely sealed goal without searching.
 - `tess_path_test`: verifies the MVP A* path foundation, including top-down 2D
   paths around blocked tiles, invalid start and goal reporting, no-path
   reporting, direct-path and uniform-cost fast paths across top-down 2D,

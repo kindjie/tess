@@ -279,3 +279,79 @@ TEST(TessPrecheckRuntime, TickUnitAgentPrecheckRulesOutGoal) {
   EXPECT_EQ(stats.movement.advanced, 0u);
   EXPECT_EQ(agents[0].position, kStart);
 }
+
+namespace {
+
+struct RuntimeConstructionTag {};
+using ClassSchema =
+    tess::FieldSchema<tess::Field<PassableTag, bool>,
+                      tess::Field<RuntimeConstructionTag, std::uint8_t>,
+                      tess::Field<CostTag, std::uint32_t>>;
+using ClassWorld = tess::AlwaysResidentWorld<Grid, ClassSchema>;
+using RuntimeBuilder = tess::movement::MovementClass<
+    tess::movement::AnyOf<tess::movement::Field<PassableTag>,
+                          tess::movement::Field<RuntimeConstructionTag>>,
+    tess::movement::UnitCost>;
+
+}  // namespace
+
+// A graph stamped for the raw walker tag must never prune a Builder request:
+// the runtime's precheck reads it as GraphStale (nothing ruled out) and the
+// Builder's own A* walks through the construction gap.
+TEST(TessPrecheckRuntime, UnitWrongClassGraphFallsBackToAStar) {
+  ClassWorld world;
+  for (auto& page : world.chunks()) {
+    auto passable = page.template field_span<PassableTag>();
+    for (auto& tile : passable) {
+      tile = true;
+    }
+    auto cost = page.template field_span<CostTag>();
+    for (auto& tile : cost) {
+      tile = 1u;
+    }
+  }
+  // Seal the goal for the walker, then turn one wall tile into a site the
+  // Builder may enter.
+  const tess::Coord3 gap{kUnreachableGoal.x - 1, kUnreachableGoal.y, 0};
+  const tess::Coord3 walls[] = {
+      gap,
+      {kUnreachableGoal.x + 1, kUnreachableGoal.y, 0},
+      {kUnreachableGoal.x, kUnreachableGoal.y - 1, 0},
+      {kUnreachableGoal.x, kUnreachableGoal.y + 1, 0},
+  };
+  for (const auto n : walls) {
+    world.field<PassableTag>(n) = false;
+  }
+  world.field<RuntimeConstructionTag>(gap) = 1;
+
+  tess::LocalTopologyScratch local_scratch;
+  tess::RegionGraph graph;
+  const auto built = tess::build_region_graph<ClassWorld, PassableTag>(
+      world, local_scratch, graph);
+  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, 1);
+  const auto ticket = runtime.submit({kStart, kUnreachableGoal});
+  (void)runtime.process_unit_cached<ClassWorld, RuntimeBuilder>(world, {},
+                                                                &graph);
+  // Nothing ruled out (wrong-class graph reads GraphStale), and the Builder
+  // route through the site is found by the search itself.
+  EXPECT_EQ(runtime.stats().precheck_ruled_out, 0u);
+  EXPECT_EQ(runtime.result(ticket).status, tess::PathStatus::Found);
+
+  // A graph stamped FOR the Builder does rule out a genuinely sealed goal.
+  world.field<RuntimeConstructionTag>(gap) = 0;
+  world.mark_topology_rebuilt(tess::chunk_key<Grid>(tess::tile_key<Grid>(gap)));
+  const auto rebuilt = tess::build_region_graph<ClassWorld, RuntimeBuilder>(
+      world, local_scratch, graph);
+  ASSERT_EQ(rebuilt.status, tess::TopologyStatus::Built);
+  const auto sealed_ticket = runtime.submit({kStart, kUnreachableGoal});
+  (void)runtime.process_unit_cached<ClassWorld, RuntimeBuilder>(world, {},
+                                                                &graph);
+  // The queue still holds both requests; the matched-class graph rules out
+  // each of them without a search.
+  EXPECT_EQ(runtime.stats().precheck_ruled_out, 2u);
+  EXPECT_EQ(runtime.result(sealed_ticket).status, tess::PathStatus::NoPath);
+  EXPECT_EQ(runtime.result(ticket).status, tess::PathStatus::NoPath);
+}

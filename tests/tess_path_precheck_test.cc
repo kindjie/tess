@@ -8,7 +8,15 @@
 namespace {
 
 struct PassableTag {};
-using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
+struct ConstructionTag {};
+using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
+                                 tess::Field<ConstructionTag, std::uint8_t>>;
+
+// Builder may enter construction tiles the plain walker cannot (M6).
+using Builder = tess::movement::MovementClass<
+    tess::movement::AnyOf<tess::movement::Field<PassableTag>,
+                          tess::movement::Field<ConstructionTag>>,
+    tess::movement::UnitCost>;
 
 template <typename Shape>
 using DenseWorld = tess::AlwaysResidentWorld<Shape, Schema>;
@@ -61,7 +69,8 @@ TEST(TessPrecheck, ReachableWithinConnectedRegion) {
   ASSERT_EQ(build_disconnected_split(world, graph).status,
             tess::TopologyStatus::Built);
   tess::RegionGraphScratch scratch;
-  EXPECT_EQ(tess::precheck_path(graph, world, {0, 0, 0}, {6, 7, 0}, scratch),
+  EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0}, {6, 7, 0},
+                                             scratch),
             tess::PrecheckStatus::Reachable);
 }
 
@@ -71,8 +80,8 @@ TEST(TessPrecheck, UnreachableAcrossWalledChunkSkipsAStar) {
   ASSERT_EQ(build_disconnected_split(world, graph).status,
             tess::TopologyStatus::Built);
   tess::RegionGraphScratch scratch;
-  const auto status =
-      tess::precheck_path(graph, world, {0, 0, 0}, {15, 7, 0}, scratch);
+  const auto status = tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
+                                                       {15, 7, 0}, scratch);
   EXPECT_EQ(status, tess::PrecheckStatus::Unreachable);
   EXPECT_TRUE(tess::precheck_rules_out_path(status));
   // Only Unreachable licenses skipping A*.
@@ -89,12 +98,13 @@ TEST(TessPrecheck, OutOfBoundsStartIsInvalidStart) {
   ASSERT_EQ(build_disconnected_split(world, graph).status,
             tess::TopologyStatus::Built);
   tess::RegionGraphScratch scratch;
-  EXPECT_EQ(tess::precheck_path(graph, world, {-1, 0, 0}, {6, 7, 0}, scratch),
+  EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {-1, 0, 0},
+                                             {6, 7, 0}, scratch),
             tess::PrecheckStatus::InvalidStart);
   // A walled (in-bounds but region-less) start is InvalidStart too: A* is
   // authoritative on start passability, so the gate must not rule it out.
-  const auto status =
-      tess::precheck_path(graph, world, {7, 0, 0}, {6, 7, 0}, scratch);
+  const auto status = tess::precheck_path<PassableTag>(graph, world, {7, 0, 0},
+                                                       {6, 7, 0}, scratch);
   EXPECT_EQ(status, tess::PrecheckStatus::InvalidStart);
   EXPECT_FALSE(tess::precheck_rules_out_path(status));
 }
@@ -105,7 +115,8 @@ TEST(TessPrecheck, OutOfBoundsGoalIsInvalidGoal) {
   ASSERT_EQ(build_disconnected_split(world, graph).status,
             tess::TopologyStatus::Built);
   tess::RegionGraphScratch scratch;
-  EXPECT_EQ(tess::precheck_path(graph, world, {0, 0, 0}, {16, 0, 0}, scratch),
+  EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
+                                             {16, 0, 0}, scratch),
             tess::PrecheckStatus::InvalidGoal);
 }
 
@@ -114,7 +125,8 @@ TEST(TessPrecheck, EmptyGraphIsNoGraph) {
   fill_passable(world, 1);
   tess::RegionGraph graph;  // never built
   tess::RegionGraphScratch scratch;
-  EXPECT_EQ(tess::precheck_path(graph, world, {0, 0, 0}, {15, 7, 0}, scratch),
+  EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
+                                             {15, 7, 0}, scratch),
             tess::PrecheckStatus::NoGraph);
 }
 
@@ -126,7 +138,8 @@ TEST(TessPrecheck, StaleGraphIsGraphStaleNotWrongUnreachable) {
   tess::RegionGraphScratch scratch;
   // A topology edit after the build must degrade to A*, never a stale verdict.
   world.mark_topology_rebuilt(tess::ChunkKey{0});
-  EXPECT_EQ(tess::precheck_path(graph, world, {0, 0, 0}, {15, 7, 0}, scratch),
+  EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
+                                             {15, 7, 0}, scratch),
             tess::PrecheckStatus::GraphStale);
 }
 
@@ -144,11 +157,13 @@ TEST(TessPrecheck, SparseNonResidentBoundaryIsMissingChunk) {
 
   tess::RegionGraphScratch scratch;
   // Within the resident corridor: reachable.
-  EXPECT_EQ(tess::precheck_path(graph, world, {0, 0, 0}, {40, 0, 0}, scratch),
+  EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
+                                             {40, 0, 0}, scratch),
             tess::PrecheckStatus::Reachable);
   // Toward a goal in a non-resident chunk (x=80, chunk 2): the corridor's edge
   // exits into unloaded space, so the route cannot be ruled out.
-  EXPECT_EQ(tess::precheck_path(graph, world, {0, 0, 0}, {80, 0, 0}, scratch),
+  EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
+                                             {80, 0, 0}, scratch),
             tess::PrecheckStatus::MissingChunk);
 }
 
@@ -159,13 +174,64 @@ TEST(TessPrecheck, WarmPrecheckIsAllocationFree) {
             tess::TopologyStatus::Built);
   tess::RegionGraphScratch scratch;
   // Warm the scratch (its visited-epoch vector) with one query first.
-  (void)tess::precheck_path(graph, world, {0, 0, 0}, {15, 7, 0}, scratch);
+  (void)tess::precheck_path<PassableTag>(graph, world, {0, 0, 0}, {15, 7, 0},
+                                         scratch);
   {
     tess_test::ScopedAllocationCounter counter;
-    const auto status =
-        tess::precheck_path(graph, world, {0, 0, 0}, {15, 7, 0}, scratch);
+    const auto status = tess::precheck_path<PassableTag>(
+        graph, world, {0, 0, 0}, {15, 7, 0}, scratch);
     EXPECT_EQ(status, tess::PrecheckStatus::Unreachable);
     EXPECT_EQ(counter.count(), 0u);
     EXPECT_EQ(counter.bytes(), 0u);
   }
+}
+
+TEST(TessPrecheck, WrongClassGraphIsGraphStaleNotWrongUnreachable) {
+  DenseWorld<Split> world;
+  tess::RegionGraph graph;
+  ASSERT_EQ(build_disconnected_split(world, graph).status,
+            tess::TopologyStatus::Built);
+  // A construction site bridges the wall: the Builder can cross where the
+  // plain walker cannot, so the walker-labeled graph MUST NOT answer for the
+  // Builder -- its definitive Unreachable would prune a route the Builder's
+  // own A* can walk.
+  world.field<ConstructionTag>(tess::Coord3{7, 3, 0}) = 1;
+
+  tess::RegionGraphScratch scratch;
+  EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
+                                             {15, 7, 0}, scratch),
+            tess::PrecheckStatus::Unreachable);
+  EXPECT_EQ(tess::precheck_path<Builder>(graph, world, {0, 0, 0}, {15, 7, 0},
+                                         scratch),
+            tess::PrecheckStatus::GraphStale);
+}
+
+TEST(TessPrecheck, MatchedClassGraphRulesOutPerClass) {
+  DenseWorld<Split> world;
+  tess::RegionGraph graph;
+  ASSERT_EQ(build_disconnected_split(world, graph).status,
+            tess::TopologyStatus::Built);
+  // Rebuild FOR the Builder with a bridge site: reachable for the Builder.
+  world.field<ConstructionTag>(tess::Coord3{7, 3, 0}) = 1;
+  tess::LocalTopologyScratch local_scratch;
+  const auto rebuilt = tess::build_region_graph<DenseWorld<Split>, Builder>(
+      world, local_scratch, graph);
+  ASSERT_EQ(rebuilt.status, tess::TopologyStatus::Built);
+
+  tess::RegionGraphScratch scratch;
+  EXPECT_EQ(tess::precheck_path<Builder>(graph, world, {0, 0, 0}, {15, 7, 0},
+                                         scratch),
+            tess::PrecheckStatus::Reachable);
+  // Remove the bridge and rebuild: now definitively unreachable per class.
+  world.field<ConstructionTag>(tess::Coord3{7, 3, 0}) = 0;
+  const auto sealed = tess::build_region_graph<DenseWorld<Split>, Builder>(
+      world, local_scratch, graph);
+  ASSERT_EQ(sealed.status, tess::TopologyStatus::Built);
+  EXPECT_EQ(tess::precheck_path<Builder>(graph, world, {0, 0, 0}, {15, 7, 0},
+                                         scratch),
+            tess::PrecheckStatus::Unreachable);
+  // And the raw-tag walker gets GraphStale from the Builder-stamped graph.
+  EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
+                                             {15, 7, 0}, scratch),
+            tess::PrecheckStatus::GraphStale);
 }
