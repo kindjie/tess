@@ -30,8 +30,10 @@ Records meaningful design changes from the original TDDs.
   (initializations, start/goal passability checks, closed neighbors) via both
   direct events and a real A* maze, a `TESS_ASSERT_MSG` death test, and a
   `UInt128` negative-int constructor death test. (5) Weak assertions
-  strengthened: the smoke test pins the released version against the CMake
-  project version instead of comparing macros to themselves, and the warm
+  strengthened: the smoke test pins the released version against a
+  hand-maintained literal mirror of the CMake project version instead of
+  comparing macros to themselves (a `tess.h` bump that forgets the test now
+  fails; a CMake-only bump remains undetectable there), and the warm
   no-alloc agent/tick tests now also pin observable work (submitted/found
   stats, skipped processing with advancement) so a no-op cannot pass. The
   allocation counter documents its relaxed-ordering under-count caveat.

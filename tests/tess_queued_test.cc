@@ -40,7 +40,9 @@ auto update_from_helper(tess::FrameOps& ops, tess::DomainDesc domain)
 // Bounded rendezvous spin for concurrency tests: an unbounded
 // `while (entered < expected) yield()` hangs for the whole ctest timeout on
 // regression. Fails the test with a clear message and returns instead, so
-// the worker callback completes and the executor can join.
+// the worker callback completes and the executor can join. The failure path
+// (never reached on a green run) reports from a worker thread, which gtest
+// documents as thread-safe only on pthread-backed builds.
 void await_rendezvous(const std::atomic<std::size_t>& entered,
                       std::size_t expected) {
   const auto deadline =
