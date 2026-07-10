@@ -267,4 +267,170 @@ TEST(TessTopologyMovement, WarmPerClassRelabelIsAllocationFree) {
   }
 }
 
+// S5.7: the TransitionProvider contract. A provider contributes extra
+// directed transitions as portals; the default AdjacentTransitions
+// contributes nothing (byte-identical build), the provider type is stamped
+// on the graph, and a sparse transition into a non-resident chunk degrades
+// reachability to Indeterminate rather than a wrong Unreachable.
+
+// Bridges the x=2 wall inside the south-west chunk: both directions between
+// {1,4} and {3,4} (same chunk, so each direction enumerates from it).
+struct BridgeTransitions {
+  template <typename WorldT, typename Sink>
+  void for_each_transition(const WorldT&, tess::ChunkKey chunk,
+                           Sink&& sink) const {
+    const auto home = tess::chunk_key<TopDown2D>(
+        tess::chunk_coord<TopDown2D>(tess::Coord3{1, 4, 0}));
+    if (chunk.value != home.value) {
+      return;
+    }
+    sink(tess::Coord3{1, 4, 0}, tess::Coord3{3, 4, 0});
+    sink(tess::Coord3{3, 4, 0}, tess::Coord3{1, 4, 0});
+  }
+};
+
+static_assert(tess::TransitionProviderFor<tess::AdjacentTransitions, World>);
+static_assert(tess::TransitionProviderFor<BridgeTransitions, World>);
+static_assert(!tess::TransitionProviderFor<int, World>);
+
+// A provider transition from the resident west chunk into the missing middle
+// chunk of the sparse three-chunk fixture (face-adjacent, per the contract).
+struct EastwardHop {
+  template <typename WorldT, typename Sink>
+  void for_each_transition(const WorldT&, tess::ChunkKey chunk,
+                           Sink&& sink) const {
+    if (chunk.value != 0) {
+      return;
+    }
+    sink(tess::Coord3{30, 0, 0}, tess::Coord3{33, 0, 0});
+  }
+};
+
+TEST(TessTopologyMovement, DefaultProviderBuildIsIdenticalToProviderless) {
+  World world;
+  fill_passable(world, 1);
+  carve_walls(world);
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph plain;
+  tess::RegionGraph with_default;
+  tess::build_region_graph<World, Walker>(world, scratch, plain);
+  tess::build_region_graph<World, Walker>(world, scratch, with_default,
+                                          tess::AdjacentTransitions{});
+  expect_graphs_equal(with_default, plain);
+  EXPECT_TRUE(plain.matches_provider<tess::AdjacentTransitions>());
+  EXPECT_FALSE(plain.matches_provider<BridgeTransitions>());
+}
+
+TEST(TessTopologyMovement, ProviderTransitionsBridgeWalledRegions) {
+  World world;
+  fill_passable(world, 1);
+  carve_walls(world);
+  // Seal the wall's y=5 gap so the bridge is the ONLY link across x=2.
+  world.field<PassableTag>(tess::Coord3{2, 5, 0}) = 0;
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph plain;
+  tess::build_region_graph<World, Walker>(world, scratch, plain);
+  tess::RegionGraph bridged;
+  tess::build_region_graph<World, Walker>(world, scratch, bridged,
+                                          BridgeTransitions{});
+
+  ASSERT_EQ(bridged.portals().size(), plain.portals().size() + 2);
+  const auto start = tess::Coord3{1, 4, 0};
+  const auto goal = tess::Coord3{3, 4, 0};
+  tess::RegionGraphScratch reach;
+  EXPECT_NE(tess::reachable<TopDown2D>(plain, start, goal, reach).status,
+            tess::ReachabilityStatus::Reachable);
+  EXPECT_EQ(tess::reachable<TopDown2D>(bridged, start, goal, reach).status,
+            tess::ReachabilityStatus::Reachable);
+  EXPECT_EQ(tess::reachable<TopDown2D>(bridged, goal, start, reach).status,
+            tess::ReachabilityStatus::Reachable);
+}
+
+TEST(TessTopologyMovement, ProviderIncrementalUpdateEqualsFullRebuild) {
+  World world;
+  fill_passable(world, 1);
+  carve_walls(world);
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  tess::build_region_graph<World, Walker>(world, scratch, graph,
+                                          BridgeTransitions{});
+
+  // Edit passability around one bridge endpoint, in the bridge's chunk.
+  world.field<PassableTag>(tess::Coord3{1, 5, 0}) = 0;
+  world.field<PassableTag>(tess::Coord3{2, 5, 0}) = 1;
+  const auto dirty = std::vector<tess::ChunkKey>{tess::chunk_key<TopDown2D>(
+      tess::chunk_coord<TopDown2D>(tess::Coord3{1, 5, 0}))};
+  const auto updated = tess::update_region_graph<World, Walker>(
+      world, scratch, graph, dirty, BridgeTransitions{});
+  EXPECT_EQ(updated.status, tess::TopologyStatus::Built);
+
+  tess::RegionGraph reference;
+  tess::build_region_graph<World, Walker>(world, scratch, reference,
+                                          BridgeTransitions{});
+  expect_graphs_equal(graph, reference);
+}
+
+TEST(TessTopologyMovement, ProviderMismatchForcesFullRebuildOnUpdate) {
+  World world;
+  fill_passable(world, 1);
+  carve_walls(world);
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  tess::build_region_graph<World, Walker>(world, scratch, graph);
+  ASSERT_TRUE(graph.matches_provider<tess::AdjacentTransitions>());
+
+  // Empty dirty set, different provider type: must be a full rebuild that
+  // carries the bridge portals and restamps the provider.
+  const auto updated = tess::update_region_graph<World, Walker>(
+      world, scratch, graph, {}, BridgeTransitions{});
+  EXPECT_EQ(updated.status, tess::TopologyStatus::Built);
+  EXPECT_TRUE(graph.matches_provider<BridgeTransitions>());
+
+  tess::RegionGraph reference;
+  tess::build_region_graph<World, Walker>(world, scratch, reference,
+                                          BridgeTransitions{});
+  expect_graphs_equal(graph, reference);
+}
+
+TEST(TessTopologyMovement, SparseProviderIntoMissingChunkIsIndeterminate) {
+  using ThreeChunk =
+      tess::Shape<tess::Extent3{96, 32, 1}, tess::Extent3{32, 32, 1}>;
+  using Sparse = tess::SparseResidentWorld<ThreeChunk, Schema>;
+
+  Sparse world{tess::ResidencyConfig{3 * Sparse::page_byte_size}};
+  for (const auto key : {tess::ChunkKey{0}, tess::ChunkKey{2}}) {
+    world.ensure_resident(key);
+    auto& page = world.chunk(key);
+    auto span = page.template field_span<PassableTag>();
+    std::fill(span.begin(), span.end(), std::uint8_t{1});
+  }
+  // Wall the west chunk's east column so it has NO boundary exits: without
+  // the provider its region is definitively enclosed within known walls.
+  auto& west = world.chunk(tess::ChunkKey{0});
+  for (std::uint64_t y = 0; y < 32; ++y) {
+    west.field<PassableTag>(
+        tess::local_tile_id<ThreeChunk>(tess::LocalCoord3{31, y, 0})) = 0;
+  }
+
+  tess::LocalTopologyScratch scratch;
+  const auto start = tess::Coord3{0, 0, 0};
+  const auto goal = tess::Coord3{70, 0, 0};
+  tess::RegionGraphScratch reach;
+
+  tess::SparseRegionGraph plain;
+  tess::build_region_graph<Sparse, Walker>(world, scratch, plain);
+  EXPECT_EQ(tess::reachable<ThreeChunk>(plain, start, goal, reach).status,
+            tess::ReachabilityStatus::Unreachable);
+
+  tess::SparseRegionGraph hopped;
+  tess::build_region_graph<Sparse, Walker>(world, scratch, hopped,
+                                           EastwardHop{});
+  EXPECT_EQ(tess::reachable<ThreeChunk>(hopped, start, goal, reach).status,
+            tess::ReachabilityStatus::Indeterminate);
+}
+
 }  // namespace

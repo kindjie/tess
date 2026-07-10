@@ -105,6 +105,7 @@
     "try_planned_block_ctx"
   ],
   "docs/architecture/topology.md": [
+    "AdjacentTransitions",
     "AllOf",
     "AnyOf",
     "BoundaryFace",

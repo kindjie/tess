@@ -84,6 +84,7 @@ set(
   include/tess/tess.h
   include/tess/topology/movement_class.h
   include/tess/topology/topology.h
+  include/tess/topology/transition_provider.h
 )
 
 target_sources(
