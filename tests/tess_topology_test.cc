@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <set>
 #include <span>
 #include <utility>
@@ -727,6 +728,38 @@ TEST(TessTopology, RegionGraphExposesDenseRegionIndex) {
             tess::invalid_region_index);
   EXPECT_EQ(graph.region_index(
                 tess::RegionRef{tess::ChunkKey{0}, tess::LocalRegionId{3}}),
+            tess::invalid_region_index);
+}
+
+TEST(TessTopology, RegionIndexRejectsWraparoundReferences) {
+  using Shape = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
+  World<Shape> world;
+  fill_passable(world, 1);
+  for (std::int64_t x = 0; x < 16; ++x) {
+    world.field<PassableTag>(tess::Coord3{x, 3, 0}) = 0;
+  }
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
+                 world, scratch, graph))
+                .status,
+            tess::TopologyStatus::Built);
+  ASSERT_EQ(graph.region_count(), 4u);
+
+  // region_of returns this sentinel chunk for out-of-world coordinates; a
+  // nonzero region id alongside it must not wrap the chunk guard.
+  const auto sentinel =
+      tess::ChunkKey{std::numeric_limits<std::uint64_t>::max()};
+  EXPECT_EQ(
+      graph.region_index(tess::RegionRef{sentinel, tess::LocalRegionId{1}}),
+      tess::invalid_region_index);
+  // A region id near 2^32 must not wrap the offset arithmetic back into a
+  // valid dense index (chunk 1's offset is 2, so offset + id - 1 wraps to 0).
+  EXPECT_EQ(graph.region_index(tess::RegionRef{
+                tess::ChunkKey{1},
+                tess::LocalRegionId{std::numeric_limits<std::uint32_t>::max()},
+            }),
             tess::invalid_region_index);
 }
 
