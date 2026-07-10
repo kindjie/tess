@@ -105,8 +105,8 @@ class AutoExecTask {
     // nothing at all (deterministic under any executor).
     for (const auto& operation : ops_->operations()) {
       if (operation.write_policy != Policy) {
-        TESS_ASSERT(false &&
-                    "auto-exec queue contains a mismatched write policy");
+        TESS_ASSERT_MSG(false,
+                        "auto-exec queue contains a mismatched write policy");
         last_run_.status = AutoExecStatus::PolicyMismatch;
         ops_->clear();
         channel_.clear();
