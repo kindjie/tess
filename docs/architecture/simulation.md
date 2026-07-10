@@ -199,6 +199,35 @@ reference.
   sim time, and a backlogged frame advances every cadence through each
   granted tick.
 
+### Auto-Exec
+
+`include/tess/sim/auto_exec.h` closes M5's auto-exec gap: `AutoExecTask
+<World, Policy, Ack, ChunkFn>` is one schedule task running the whole
+queued-ops pipeline -- plan, parallel phase planning, execution (serial or
+worker pool, chosen per phase by an operation-count threshold), per-phase
+dirty apply, and ack drain -- over a caller-owned `FrameOps` queue. Both the
+queue and the task's result channel are cleared together at the end of every
+run (the paired-clear discipline), and the run's `dirty_mask` union feeds
+the schedule so OnDirty tasks in later phases fire the same tick.
+
+- Policy uniformity is PRE-VALIDATED (`AutoExecStatus::PolicyMismatch`
+  executes nothing; asserted in debug), which makes runtime aborts
+  unreachable -- serial and pool execution therefore can never diverge on
+  partially-applied plans, and the serial == pool golden compares whole
+  worlds, chunk metadata, and drained ack sequences byte-for-byte.
+- Dirty records are merged after EACH phase: the partitioned scratch is
+  re-prepared per phase, so a single post-loop merge would silently drop
+  every phase's dirty but the last (pinned by a write-then-read
+  phase-split test).
+- `Policy` must be ReadOnly or UniquePerChunk (the parallel phase planner's
+  set) and the world dense (`merge_planned_dirty` is AlwaysResident-only).
+- Known cost, by design: planning allocates per run (the report has no
+  reuse overloads yet); the schedule's allocation-free contract covers
+  dispatch, not this task's planner.
+- `AutoExecRunStats` (`last_run()`) reports status, planned/rejected ops,
+  executed chunks, merged dirty chunks, drained acks, and phase/pool-phase
+  counts between ticks.
+
 ### Scheduler
 
 - `SimSchedulerState` owns the scheduler-adjacent state currently needed by

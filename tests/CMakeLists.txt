@@ -233,6 +233,13 @@ tess_apply_project_options(tess_path_agent_tick_test)
 
 gtest_discover_tests(tess_path_agent_tick_test)
 
+add_executable(tess_sim_auto_exec_test tess_sim_auto_exec_test.cc)
+target_link_libraries(
+  tess_sim_auto_exec_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_sim_auto_exec_test)
+
+gtest_discover_tests(tess_sim_auto_exec_test)
+
 add_executable(
   tess_sim_schedule_test
   allocation_counter.cc

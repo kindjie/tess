@@ -13,6 +13,28 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Auto-exec task with per-phase routing and goldens (M5, S7 slices 3-4)
+
+- Added: `include/tess/sim/auto_exec.h` -- `AutoExecTask` runs the whole
+  queued-ops pipeline as one schedule task over a caller-owned FrameOps
+  queue: plan, parallel phase planning, execution serial or on the worker
+  pool (chosen per phase by op count), dirty merge after EACH phase (the
+  partitioned scratch is re-prepared per phase; a post-loop merge would
+  drop all but the last phase's records), ack drain through the task's
+  result hook, and paired queue+channel clears ending every run. Policy
+  uniformity is pre-validated so runtime aborts are unreachable, which is
+  what makes serial and pool execution provably identical.
+- Goldens (slice 4): auto-exec == the hand-rolled plan/execute/merge
+  pipeline (whole-world fields, chunk versions, dirty flags); serial ==
+  pool (worlds, metadata, drained ack sequences) with pool phases taken;
+  both binaries green under the TSan preset.
+- Reason: S7 slices 3-4 (M5 close): the plan->execute->dirty-apply->drain
+  requirement with the S1-validated pool as a per-phase production choice.
+- Affected docs: `architecture/simulation.md`, `architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: new `sim/auto_exec.h`, `tess.h`, `CMakeLists.txt`; new
+  `tests/tess_sim_auto_exec_test.cc`, `tests/CMakeLists.txt`.
+
 ## 2026-07-10 - Schedule frame driver (M5, S7 slice 2)
 
 - Added: `run_schedule_frame` + `ScheduleFrameSummary` -- the frame-to-ticks
