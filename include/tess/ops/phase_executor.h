@@ -294,10 +294,14 @@ class WorkerPoolPhaseExecutor {
       TESS_ASSERT_MSG(!dispatch_active_,
                       "WorkerPoolPhaseExecutor::for_each_operation "
                       "re-entered during an active dispatch");
-      dispatch_active_ = true;
       if (results_.size() < count) {
         results_.resize(count);
       }
+      // Set only after the potentially throwing resize so a bad_alloc
+      // cannot leave the flag wedged; the whole block holds mutex_, so
+      // a competing dispatch still observes the flag before touching
+      // any job state.
+      dispatch_active_ = true;
       job_context_ = &callback;
       job_invoke_ = [](void* context,
                        std::size_t index) -> PlannedExecutionResult {
