@@ -11,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <span>
 #include <type_traits>
@@ -185,6 +186,8 @@ class ChunkVersionDependencies {
     return chunks_.size();
   }
 
+  [[nodiscard]] auto empty() const noexcept -> bool { return chunks_.empty(); }
+
   [[nodiscard]] auto chunks() const noexcept
       -> std::span<const ChunkVersionDependency> {
     return chunks_;
@@ -210,9 +213,13 @@ class WeightedRouteProduct {
     dependencies_.clear();
   }
 
+  // An empty dependency set means "never validated", not "depends on
+  // nothing": cleared products and failure products that predate dependency
+  // capture must never replay as vacuously valid. Builders capture_all()
+  // for non-Found results, so any built product carries dependencies.
   template <typename World>
   [[nodiscard]] auto is_valid(const World& world) const noexcept -> bool {
-    return dependencies_.is_valid(world);
+    return !dependencies_.empty() && dependencies_.is_valid(world);
   }
 
   [[nodiscard]] auto request() const noexcept -> PathRequest {
@@ -279,9 +286,11 @@ class WeightedPortalRouteProduct {
     dependencies_.clear();
   }
 
+  // See WeightedRouteProduct::is_valid: empty dependencies are invalid by
+  // definition so failure/cleared products never replay vacuously.
   template <typename World>
   [[nodiscard]] auto is_valid(const World& world) const noexcept -> bool {
-    return dependencies_.is_valid(world);
+    return !dependencies_.empty() && dependencies_.is_valid(world);
   }
 
   [[nodiscard]] auto request() const noexcept -> PathRequest {
@@ -290,6 +299,11 @@ class WeightedPortalRouteProduct {
 
   [[nodiscard]] auto waypoints() const noexcept -> std::span<const Coord3> {
     return waypoints_;
+  }
+
+  [[nodiscard]] auto dependencies() const noexcept
+      -> std::span<const ChunkVersionDependencies::ChunkVersionDependency> {
+    return dependencies_.chunks();
   }
 
   [[nodiscard]] auto route_candidates() const noexcept -> std::size_t {
@@ -1100,9 +1114,18 @@ auto build_weighted_route_product(const World& world, PathRequest request,
   product.expanded_nodes_ = result.expanded_nodes;
   product.reached_nodes_ = result.reached_nodes;
   product.path_.assign(result.path.begin(), result.path.end());
-  for (const auto coord : product.path_) {
-    const auto key = tile_key<Shape>(coord);
-    product.dependencies_.add_chunk(world, chunk_key<Shape>(key));
+  if (result.status == PathStatus::Found) {
+    for (const auto coord : product.path_) {
+      const auto key = tile_key<Shape>(coord);
+      product.dependencies_.add_chunk(world, chunk_key<Shape>(key));
+    }
+  } else {
+    // A failure depends on world content the search may never have touched
+    // (an opening edit lands on a blocked tile; fast-path early-outs sample
+    // barriers far from any expanded node), so precise capture is
+    // impractical: depend on every chunk, making any edit invalidate the
+    // replay instead of it repeating a stale failure forever.
+    product.dependencies_.capture_all(world);
   }
 
   return PathResult{product.status_, product.cost_, product.expanded_nodes_,
@@ -1136,9 +1159,28 @@ auto build_weighted_portal_route_product(const World& world,
       "weighted_astar_path directly for sparse worlds, or await the sparse "
       "route-cache slice.");
 
+  // `waypoints` may alias product.waypoints() (rebuild-from-own-product),
+  // and product.clear() empties the vector that span points into; stash a
+  // copy first in that case. The copy allocates, but only on the aliased
+  // rebuild path.
+  auto source = waypoints;
+  std::vector<Coord3> stash;
+  {
+    const auto* wp_begin = product.waypoints_.data();
+    const auto* wp_end = wp_begin + product.waypoints_.size();
+    const auto aliased =
+        !waypoints.empty() &&
+        !std::less<const Coord3*>{}(waypoints.data(), wp_begin) &&
+        std::less<const Coord3*>{}(waypoints.data(), wp_end);
+    if (aliased) {
+      stash.assign(waypoints.begin(), waypoints.end());
+      source = std::span<const Coord3>{stash};
+    }
+  }
+
   product.clear();
   product.request_ = request;
-  product.waypoints_.assign(waypoints.begin(), waypoints.end());
+  product.waypoints_.assign(source.begin(), source.end());
 
   auto from = request.start;
   auto total_cost = std::uint32_t{0};
@@ -1154,6 +1196,9 @@ auto build_weighted_portal_route_product(const World& world,
       product.status_ = result.status;
       product.expanded_nodes_ = total_expanded;
       product.reached_nodes_ = total_reached;
+      // Same failure-dependency contract as build_weighted_route_product:
+      // any edit must invalidate a replayed failure.
+      product.dependencies_.capture_all(world);
       return false;
     }
     total_cost = detail::saturating_add(total_cost, result.cost);
@@ -1165,7 +1210,7 @@ auto build_weighted_portal_route_product(const World& world,
     return true;
   };
 
-  for (const auto waypoint : waypoints) {
+  for (const auto waypoint : source) {
     if (!append_segment(PathRequest{from, waypoint})) {
       return PathResult{product.status_, 0, total_expanded, total_reached,
                         product.path_};

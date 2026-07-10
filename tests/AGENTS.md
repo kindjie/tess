@@ -221,8 +221,17 @@
   entries at budget, and sweep/eviction/stale-rejection stats), and the route
   cache's hash-indexed lookups (first-stored-entry-wins suffix determinism
   pinned against the pre-index linear scan, exact hits under aliased
-  low-bit coordinate patterns, and entry/path-node cap breaches invalidating
-  the whole cache with a `cap_invalidations` stat).
+  low-bit coordinate patterns, entry/path-node cap breaches invalidating
+  the whole cache with a `cap_invalidations` stat, single oversized routes
+  skipped without eviction via `oversized_skips`, and cap 0 disabling
+  storage).
+- `tess_path_product_test`: verifies the replay-product invalidation
+  contracts: products with empty dependency sets are never valid, failure
+  (NoPath) route and portal-route products capture every chunk version so
+  any world edit invalidates the replayed failure, distance-field products
+  depend on the blocked frontier (face neighbors of touched chunks) so
+  opening a fully-sealed chunk invalidates them, and rebuilding a portal
+  route product from its own `waypoints()` span is safe.
 - `tess_path_runtime_test`: verifies the path request runtime MVP, including
   ticketed request/result lookup, stable copied result spans, unit route-cache
   reuse and invalidation across world edits, opt-in unit field-product cache
