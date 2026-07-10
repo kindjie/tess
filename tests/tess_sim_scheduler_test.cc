@@ -401,6 +401,90 @@ TEST(TessScheduler, QueuedEditDirtiesPathingAndEmitsRenderDeltas) {
   }
 }
 
+TEST(TessScheduler, AbortedPlanStillDirtiesPathingForExecutedOps) {
+  World world;
+  fill_world(world);
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{4, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::SimSchedulerState scheduler;
+  std::vector<tess::RenderTileDelta> render_deltas;
+
+  const auto options = tess::SimSchedulerOptions{
+      DirtyTerrain,
+      DirtyRender,
+      tess::PathAgentTickOptions{1, {}},
+      false,
+  };
+
+  // The first tick consumes the initial pathing-dirty flag and caches a
+  // route straight through (2, 0, 0).
+  auto stats = tess::tick_unit_scheduler<World, PassableTag,
+                                         tess::WritePolicy::UniquePerChunk>(
+      scheduler, world, tess::FrameOps{}, agents, runtime, render_deltas,
+      [](auto) {}, options);
+  ASSERT_TRUE(stats.path_agents.processed_paths);
+  ASSERT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
+
+  // Op 1 executes and closes (2, 0, 0). Op 2 plans fine (disjoint field
+  // masks, so no hazard) but its ReadOnly policy mismatches the
+  // UniquePerChunk execution policy, aborting the plan after op 1's
+  // world writes already landed.
+  const std::vector<tess::ChunkKey> chunks{
+      world.resolve(tess::Coord3{2, 0, 0}).chunk_key,
+  };
+  tess::FrameOps ops;
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(chunks),
+                         tess::FieldAccessDesc{0, DirtyTerrain, DirtyTerrain},
+                         tess::WritePolicy::UniquePerChunk);
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::FieldAccessDesc{DirtyOccupancy, 0, 0},
+                         tess::WritePolicy::ReadOnly);
+
+  stats = tess::tick_unit_scheduler<World, PassableTag,
+                                    tess::WritePolicy::UniquePerChunk>(
+      scheduler, world, ops, agents, runtime, render_deltas,
+      [](auto view) {
+        const auto local = tess::local_tile_id<Shape>(
+            tess::local_coord<Shape>(tess::Coord3{2, 0, 0}));
+        view.template field_span<PassableTag>()[local.value] = false;
+        view.template field_span<TerrainTag>()[local.value] = 7u;
+      },
+      options);
+
+  ASSERT_TRUE(stats.op_report.ok());
+  EXPECT_EQ(stats.op_execution.status,
+            tess::PlannedExecutionStatus::PolicyMismatch);
+  EXPECT_FALSE(stats.executed_ops);
+  // The aborted result still reports the chunks written before the abort.
+  EXPECT_GT(stats.op_execution.chunk_count, 0u);
+  // Op 1 mutated passability, so pathing must reprocess instead of
+  // walking the stale cached route into the closed tile.
+  EXPECT_TRUE(stats.path_agents.processed_paths);
+
+  std::vector<tess::Coord3> visited;
+  visited.reserve(33);
+  visited.push_back(agents[0].position);
+  for (int tick = 0; tick < 32 && agents[0].has_goal; ++tick) {
+    stats = tess::tick_unit_scheduler<World, PassableTag,
+                                      tess::WritePolicy::UniquePerChunk>(
+        scheduler, world, tess::FrameOps{}, agents, runtime, render_deltas,
+        [](auto) {}, options);
+    visited.push_back(agents[0].position);
+  }
+
+  EXPECT_FALSE(agents[0].has_goal);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{4, 0, 0}));
+  for (const auto coord : visited) {
+    EXPECT_NE(coord, (tess::Coord3{2, 0, 0}));
+  }
+}
+
 TEST(TessScheduler, RejectedPlanSkipsExecutionAndStillTicksAgents) {
   World world;
   fill_world(world);

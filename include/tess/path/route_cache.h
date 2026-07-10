@@ -16,6 +16,7 @@ struct RouteCacheStats {
   std::size_t misses = 0;
   std::size_t path_nodes = 0;
   std::size_t cap_invalidations = 0;
+  std::size_t oversized_skips = 0;
 };
 
 // Exact (start, goal) lookups and same-goal suffix lookups are served by two
@@ -27,12 +28,18 @@ struct RouteCacheStats {
 // `invalidate()`/`clear()`. Storage is bounded by entry and path-node caps;
 // an insert that would exceed either cap invalidates the whole cache first
 // (matching the world-change invalidation lifecycle) and counts a cap
-// invalidation in the stats.
+// invalidation in the stats, except a single route larger than the node cap,
+// which is skipped outright (stats().oversized_skips) so it cannot evict
+// resident entries and then violate the cap anyway. A cap of 0 disables
+// storage; it does not mean "unlimited".
 class RouteCacheScratch {
  public:
   static constexpr std::size_t default_max_entries = 512;
   static constexpr std::size_t default_max_path_nodes = std::size_t{1} << 20u;
 
+  // A cap of 0 disables storage (every request recomputes); a single route
+  // larger than max_path_nodes is skipped without disturbing resident
+  // entries (counted in stats().oversized_skips).
   void set_caps(std::size_t max_entries, std::size_t max_path_nodes) noexcept {
     max_entries_ = max_entries;
     max_path_nodes_ = max_path_nodes;
@@ -52,6 +59,7 @@ class RouteCacheScratch {
     suffix_hits_ = 0;
     misses_ = 0;
     cap_invalidations_ = 0;
+    oversized_skips_ = 0;
   }
 
   void invalidate() noexcept {
@@ -67,8 +75,15 @@ class RouteCacheScratch {
     suffix_hits_ = 0;
     misses_ = 0;
     cap_invalidations_ = 0;
+    oversized_skips_ = 0;
   }
 
+  // The fingerprint identifies world CONTENT VERSIONS, not a world
+  // instance: two same-shape worlds whose chunks carry identical version
+  // counters (e.g. both populated without mark_dirty) alias, and a cache
+  // reused across them would serve one world's routes for the other. Keep
+  // one cache per world; only the sparse path self-identifies its world
+  // (residency_generation is world-monotonic).
   template <typename World>
   void capture_world_versions(const World& world) noexcept {
     world_fingerprint_ = world_version_fingerprint(world);
@@ -94,8 +109,9 @@ class RouteCacheScratch {
 
   [[nodiscard]] auto stats() const noexcept -> RouteCacheStats {
     return RouteCacheStats{
-        entries_.size(), hits_,         suffix_hits_,
-        misses_,         paths_.size(), cap_invalidations_,
+        entries_.size(),  hits_,         suffix_hits_,
+        misses_,          paths_.size(), cap_invalidations_,
+        oversized_skips_,
     };
   }
 
@@ -177,9 +193,19 @@ class RouteCacheScratch {
   }
 
   void store(PathRequest request, const PathResult& result) {
-    if ((max_entries_ != 0 && entries_.size() + 1u > max_entries_) ||
-        (max_path_nodes_ != 0 &&
-         paths_.size() + result.path.size() > max_path_nodes_)) {
+    // Cap value 0 disables storage entirely, matching the portal segment
+    // cache's budget semantics; it does not mean "unlimited".
+    if (max_entries_ == 0 || max_path_nodes_ == 0) {
+      return;
+    }
+    // A single result larger than the node cap can never fit; skip it
+    // instead of invalidating resident entries and then violating the cap.
+    if (result.path.size() > max_path_nodes_) {
+      ++oversized_skips_;
+      return;
+    }
+    if (entries_.size() + 1u > max_entries_ ||
+        paths_.size() + result.path.size() > max_path_nodes_) {
       invalidate();
       ++cap_invalidations_;
     }
@@ -302,6 +328,7 @@ class RouteCacheScratch {
   std::size_t suffix_hits_ = 0;
   std::size_t misses_ = 0;
   std::size_t cap_invalidations_ = 0;
+  std::size_t oversized_skips_ = 0;
   std::uint64_t world_fingerprint_ = 0;
   bool has_world_fingerprint_ = false;
 
@@ -356,6 +383,14 @@ class RouteCacheScratch {
 // path call that uses the same `PathScratch`. Cache-internal storage may
 // reallocate on any later miss without invalidating previously returned
 // spans backed by other scratches.
+//
+// STALENESS IS THE CALLER'S JOB, on dense and sparse alike: this function
+// never checks the world fingerprint (that costs O(chunk_count) per call by
+// design), so after any world edit the caller must run
+// cache.invalidate_if_world_changed(world) -- or invalidate()/clear() --
+// before the next lookup, or a stale route can be served. PathRequestRuntime
+// does this once per batch in prepare_process; direct callers own the same
+// obligation.
 template <typename World, typename Tag>
 auto cached_astar_path(const World& world, PathRequest request,
                        PathScratch& scratch, RouteCacheScratch& cache)

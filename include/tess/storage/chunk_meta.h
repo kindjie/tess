@@ -3,6 +3,7 @@
 #include <tess/core/shape.h>
 
 #include <cstdint>
+#include <limits>
 
 namespace tess {
 
@@ -45,9 +46,17 @@ namespace detail {
   return count;
 }
 
+// An extent >= 2^63 would flip the int64 cast negative (and a large origin
+// plus extent would overflow), corrupting dirty-bounds unions; saturate the
+// axis end at the int64 maximum instead.
 [[nodiscard]] constexpr std::int64_t box_axis_end(
     std::int64_t origin, std::uint64_t extent) noexcept {
-  return origin + static_cast<std::int64_t>(extent);
+  constexpr auto max = std::numeric_limits<std::int64_t>::max();
+  if (extent > static_cast<std::uint64_t>(max)) {
+    return max;
+  }
+  const auto delta = static_cast<std::int64_t>(extent);
+  return origin > max - delta ? max : origin + delta;
 }
 
 [[nodiscard]] constexpr std::int64_t box_min(std::int64_t lhs,
@@ -72,10 +81,12 @@ namespace detail {
                              box_axis_end(rhs.origin.z, rhs.extent.z));
   return Box3{
       Coord3{min_x, min_y, min_z},
+      // max >= min on every axis; abs_delta subtracts in unsigned space, so a
+      // saturated end paired with a negative origin cannot overflow int64.
       Extent3{
-          static_cast<std::uint64_t>(max_x - min_x),
-          static_cast<std::uint64_t>(max_y - min_y),
-          static_cast<std::uint64_t>(max_z - min_z),
+          abs_delta(max_x, min_x),
+          abs_delta(max_y, min_y),
+          abs_delta(max_z, min_z),
       },
   };
 }

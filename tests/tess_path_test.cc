@@ -1904,7 +1904,11 @@ TEST(TessPath, FieldProductCacheZeroByteBudgetStoresNothing) {
 }
 
 TEST(TessPath, FieldProductCacheSameKeyReplacementTracksBytes) {
-  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  // A 4x1 chunk row: dependencies cover touched chunks plus their face
+  // neighbors, so the fixture needs a grid where a cut-off flood still
+  // depends on strictly fewer chunks than a full one.
+  using WideRow = tess::Shape<tess::Extent3{16, 4, 1}, tess::Extent3{4, 4, 1}>;
+  tess::AlwaysResidentWorld<WideRow, Schema> world;
   fill_passable(world, true);
 
   tess::DistanceFieldScratch scratch;
@@ -1924,9 +1928,9 @@ TEST(TessPath, FieldProductCacheSameKeyReplacementTracksBytes) {
   const auto wide_entry_bytes = cache.stats().bytes;
   ASSERT_EQ(cache.stats().entries, 1u);
 
-  // Cut off the right half of the world so the rebuilt product reaches
-  // fewer chunks and records fewer dependencies.
-  for (std::int64_t y = 0; y < 8; ++y) {
+  // Cut off everything right of chunk 0: the rebuilt product touches only
+  // chunk 0 and depends on {0, 1}, versus all four chunks when passable.
+  for (std::int64_t y = 0; y < 4; ++y) {
     world.template field<PassableTag>(tess::Coord3{4, y, 0}) = false;
   }
   world.mark_dirty(tess::ChunkKey{1}, 1u,

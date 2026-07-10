@@ -83,6 +83,22 @@ TEST(TessPrecheck, UnreachableAcrossWalledChunkSkipsAStar) {
   EXPECT_FALSE(tess::precheck_rules_out_path(tess::PrecheckStatus::NoGraph));
 }
 
+TEST(TessPrecheck, OutOfBoundsStartIsInvalidStart) {
+  DenseWorld<Split> world;
+  tess::RegionGraph graph;
+  ASSERT_EQ(build_disconnected_split(world, graph).status,
+            tess::TopologyStatus::Built);
+  tess::RegionGraphScratch scratch;
+  EXPECT_EQ(tess::precheck_path(graph, world, {-1, 0, 0}, {6, 7, 0}, scratch),
+            tess::PrecheckStatus::InvalidStart);
+  // A walled (in-bounds but region-less) start is InvalidStart too: A* is
+  // authoritative on start passability, so the gate must not rule it out.
+  const auto status =
+      tess::precheck_path(graph, world, {7, 0, 0}, {6, 7, 0}, scratch);
+  EXPECT_EQ(status, tess::PrecheckStatus::InvalidStart);
+  EXPECT_FALSE(tess::precheck_rules_out_path(status));
+}
+
 TEST(TessPrecheck, OutOfBoundsGoalIsInvalidGoal) {
   DenseWorld<Split> world;
   tess::RegionGraph graph;

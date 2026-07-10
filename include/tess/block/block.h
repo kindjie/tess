@@ -326,6 +326,14 @@ class ChunkView {
     return tess::local_tile_id<shape_type>(coord);
   }
 
+  // True when the tile lies on a chunk face along an axis whose chunk extent
+  // is greater than 1. Along a 1-tile-wide axis every tile touches both faces;
+  // such an axis is deliberately NOT counted as boundary -- even when neighbor
+  // chunks exist along it -- so a degenerate axis does not classify the whole
+  // chunk as boundary. Callers that need "has a neighbor chunk across this
+  // face" must consult the shape's chunk grid (as topology's boundary-exit
+  // derivation does); is_boundary/is_interior only describe the position
+  // within one chunk.
   [[nodiscard]] static constexpr bool is_boundary(LocalCoord3 coord) noexcept {
     const auto chunk = ShapeTraits<shape_type>::chunk;
     return (chunk.x > 1 && (coord.x == 0 || coord.x + 1 == chunk.x)) ||

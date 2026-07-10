@@ -1064,6 +1064,12 @@ auto execute_planned_operation_deferred_dirty(World& world,
   };
 }
 
+// Executes every planned operation in plan order, aborting on the first
+// non-Executed result. Earlier operations' world writes are not rolled
+// back on abort; the returned chunk_count includes the chunks they
+// wrote, so callers can detect a partially applied plan (chunk_count > 0
+// with a non-Executed status) and refresh caches over the mutated
+// fields.
 template <WritePolicy Policy, typename World, typename Fn>
 auto execute_plan(World& world, const ExecutionPlan& plan, Fn&& fn)
     -> PlannedExecutionResult {
@@ -1072,7 +1078,10 @@ auto execute_plan(World& world, const ExecutionPlan& plan, Fn&& fn)
   for (const auto& operation : plan.operations()) {
     auto result = execute_planned_operation<Policy>(world, operation, callback);
     if (result.status != PlannedExecutionStatus::Executed) {
-      return result;
+      return PlannedExecutionResult{
+          result.status,
+          chunk_count + result.chunk_count,
+      };
     }
     chunk_count += result.chunk_count;
   }
@@ -1082,6 +1091,8 @@ auto execute_plan(World& world, const ExecutionPlan& plan, Fn&& fn)
   };
 }
 
+// Deferred-dirty variant of execute_plan; the same partial-execution
+// contract applies (aborts keep earlier writes and report their chunks).
 template <WritePolicy Policy, typename World, typename Fn>
 auto execute_plan_deferred_dirty(World& world, const ExecutionPlan& plan,
                                  PlannedDirtyAccumulator& dirty, Fn&& fn)
@@ -1092,7 +1103,10 @@ auto execute_plan_deferred_dirty(World& world, const ExecutionPlan& plan,
     auto result = execute_planned_operation_deferred_dirty<Policy>(
         world, operation, dirty, callback);
     if (result.status != PlannedExecutionStatus::Executed) {
-      return result;
+      return PlannedExecutionResult{
+          result.status,
+          chunk_count + result.chunk_count,
+      };
     }
     chunk_count += result.chunk_count;
   }

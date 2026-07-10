@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Advisory public-surface manifest check for tess.
+"""Public-surface manifest check for tess (required CI gate since 2026-07-07).
 
 Extracts public symbol names (types and free functions declared at
 namespace scope) from every header listed in ``TESS_PUBLIC_HEADERS`` in

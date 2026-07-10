@@ -254,7 +254,9 @@ TEST(TessSparsePathRuntime, EvictedRouteChunkReplansInsteadOfStranding) {
   tick();
   EXPECT_NE(agents[0].phase, tess::PathAgentPhase::Unreachable);
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
-  EXPECT_GT(agents[0].blocked_retries, 0u);
+  // The blocked step itself consumes no re-path budget; the next
+  // processed tick's prepare pass counts the retry attempt.
+  EXPECT_EQ(agents[0].blocked_retries, 0u);
 
   // Re-materialize chunk 0: the agent recovers (re-plans and resumes) instead
   // of being stranded.

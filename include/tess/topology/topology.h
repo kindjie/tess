@@ -293,6 +293,8 @@ class RegionGraphT {
     region_offsets_.clear();
     adjacency_starts_.clear();
     adjacency_targets_.clear();
+    built_chunk_grid_ = Extent3{0, 0, 0};
+    built_chunk_extent_ = Extent3{0, 0, 0};
     if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
       sparse_.topology_keys_.clear();
       sparse_.region_reaches_missing_.clear();
@@ -347,20 +349,24 @@ class RegionGraphT {
 
   // Maps a region reference to its dense global index:
   // region_offsets_[chunk] + (1-based local id - 1). Returns
-  // invalid_region_index for invalid or out-of-range references.
+  // invalid_region_index for invalid or out-of-range references. The chunk
+  // guard compares without +1 (the sentinel ChunkKey region_of returns for
+  // out-of-world coordinates would wrap past it) and the offset arithmetic
+  // is 64-bit (a region id near 2^32 would wrap back into a valid index).
   [[nodiscard]] auto region_index(RegionRef ref) const noexcept
       -> std::uint32_t {
     if constexpr (std::is_same_v<Residency, AlwaysResident>) {
       if (ref.region == invalid_local_region ||
-          ref.chunk.value + 1 >= region_offsets_.size()) {
+          ref.chunk.value >= local_topologies_.size()) {
         return invalid_region_index;
       }
       const auto chunk = static_cast<std::size_t>(ref.chunk.value);
-      const auto index = region_offsets_[chunk] + ref.region.value - 1;
+      const auto index = static_cast<std::uint64_t>(region_offsets_[chunk]) +
+                         ref.region.value - 1;
       if (index >= region_offsets_[chunk + 1]) {
         return invalid_region_index;
       }
-      return index;
+      return static_cast<std::uint32_t>(index);
     } else {
       if (ref.region == invalid_local_region) {
         return invalid_region_index;
@@ -369,11 +375,12 @@ class RegionGraphT {
       if (li == npos || li + 1 >= region_offsets_.size()) {
         return invalid_region_index;
       }
-      const auto index = region_offsets_[li] + ref.region.value - 1;
+      const auto index = static_cast<std::uint64_t>(region_offsets_[li]) +
+                         ref.region.value - 1;
       if (index >= region_offsets_[li + 1]) {
         return invalid_region_index;
       }
-      return index;
+      return static_cast<std::uint32_t>(index);
     }
   }
 
@@ -452,6 +459,28 @@ class RegionGraphT {
     }
   }
 
+  // Shape binding captured at build time. The graph type is templated on
+  // residency only, so two Shapes with equal chunk counts share it; the
+  // chunk-grid and per-chunk tile extents recorded here tell them apart.
+  // update_region_graph treats a mismatch as "not built for this world" (full
+  // rebuild); is_region_graph_fresh reports it as not fresh.
+  template <typename Shape>
+  [[nodiscard]] auto matches_shape() const noexcept -> bool {
+    using Traits = ShapeTraits<Shape>;
+    return built_chunk_grid_ == Extent3{Traits::chunk_count_x,
+                                        Traits::chunk_count_y,
+                                        Traits::chunk_count_z} &&
+           built_chunk_extent_ == Traits::chunk;
+  }
+
+  template <typename Shape>
+  void bind_shape() noexcept {
+    using Traits = ShapeTraits<Shape>;
+    built_chunk_grid_ = Extent3{Traits::chunk_count_x, Traits::chunk_count_y,
+                                Traits::chunk_count_z};
+    built_chunk_extent_ = Traits::chunk;
+  }
+
   static constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
   // Sparse only: resolve a ChunkKey to its position in the frozen sorted key
@@ -476,6 +505,9 @@ class RegionGraphT {
   std::vector<std::uint32_t> region_offsets_;
   std::vector<std::uint32_t> adjacency_starts_;
   std::vector<std::uint32_t> adjacency_targets_;
+  // Zero until the first build, so an unbuilt graph never matches any shape.
+  Extent3 built_chunk_grid_{0, 0, 0};
+  Extent3 built_chunk_extent_{0, 0, 0};
   [[no_unique_address]] detail::RegionGraphSparseData<Residency> sparse_;
 };
 
@@ -592,7 +624,14 @@ constexpr void include_coord_in_bounds(LocalRegion& region,
   }
 
   const auto end = [](std::int64_t origin, std::uint64_t extent) {
-    return origin + static_cast<std::int64_t>(extent);
+    // Same saturation as detail::box_axis_end in storage/chunk_meta.h: an
+    // extent >= 2^63 would flip the int64 cast negative and corrupt bounds.
+    constexpr auto max = std::numeric_limits<std::int64_t>::max();
+    if (extent > static_cast<std::uint64_t>(max)) {
+      return max;
+    }
+    const auto delta = static_cast<std::int64_t>(extent);
+    return origin > max - delta ? max : origin + delta;
   };
   const auto min = [](std::int64_t lhs, std::int64_t rhs) {
     return lhs < rhs ? lhs : rhs;
@@ -612,10 +651,12 @@ constexpr void include_coord_in_bounds(LocalRegion& region,
 
   region.bounds = Box3{
       Coord3{min_x, min_y, min_z},
+      // max >= min on every axis; abs_delta subtracts in unsigned space, so a
+      // saturated end paired with a negative origin cannot overflow int64.
       Extent3{
-          static_cast<std::uint64_t>(max_x - min_x),
-          static_cast<std::uint64_t>(max_y - min_y),
-          static_cast<std::uint64_t>(max_z - min_z),
+          abs_delta(max_x, min_x),
+          abs_delta(max_y, min_y),
+          abs_delta(max_z, min_z),
       },
   };
 }
@@ -779,6 +820,7 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
   using Traits = ShapeTraits<Shape>;
 
   graph.clear();
+  graph.template bind_shape<Shape>();
   auto result = LocalTopologyResult{};
 
   if constexpr (std::is_same_v<typename World::residency_type,
@@ -860,7 +902,8 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
   if constexpr (std::is_same_v<typename World::residency_type,
                                AlwaysResident>) {
     const auto chunk_count = static_cast<std::size_t>(Traits::chunk_count);
-    if (graph.local_topologies_.size() != chunk_count) {
+    if (graph.local_topologies_.size() != chunk_count ||
+        !graph.template matches_shape<Shape>()) {
       return build_region_graph<World, PassableTag>(world, scratch, graph);
     }
     for (const auto chunk : dirty_chunks) {
@@ -925,9 +968,12 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
     // plus per-key generation: an evicted key reads generation 0, a reloaded
     // key gets a strictly greater monotonic generation, so equal count with all
     // frozen keys still at their frozen generation forces set identity.
+    // Generations are per-WORLD clocks: a graph must only ever be updated
+    // against the world it was built from (see is_region_graph_fresh).
     const auto count = graph.local_topologies_.size();
     if (count != world.resident_count() ||
-        graph.sparse_.frozen_generations_.size() != world.resident_count()) {
+        graph.sparse_.frozen_generations_.size() != world.resident_count() ||
+        !graph.template matches_shape<Shape>()) {
       return build_region_graph<World, PassableTag>(world, scratch, graph);
     }
     for (std::size_t i = 0; i < count; ++i) {
@@ -1114,16 +1160,26 @@ auto reachable(const RegionGraphT<Residency>& graph, Coord3 start, Coord3 goal,
 // and non-mutating -- it recomputes the same staleness test update_region_graph
 // applies, WITHOUT triggering a rebuild. Allocation-free; O(chunk_count) dense,
 // O(resident_count) sparse (never scans non-resident chunks).
+//
+// One-graph-per-world contract (sparse): the staleness test reads per-WORLD
+// residency-generation clocks, so a graph built on world A can validate as
+// fresh against a same-shape world B whose chunks were loaded in the same
+// order -- the same cross-world collision class documented at
+// storage/sparse_world.h residency_fingerprint(). Keep each graph paired
+// with the world it was built from; this check does not detect world swaps.
 template <typename World>
 [[nodiscard]] auto is_region_graph_fresh(
     const World& world,
     const RegionGraphT<typename World::residency_type>& graph) noexcept
     -> bool {
   using Residency = typename World::residency_type;
+  using Shape = typename World::shape_type;
   if constexpr (std::is_same_v<Residency, AlwaysResident>) {
     // Dense: every chunk's stored topology version must still be current. A
-    // graph that was never built (or built for a different shape) is not fresh.
-    if (graph.local_topologies_.size() != World::chunk_count) {
+    // graph that was never built -- or built for a different shape, detected
+    // via the shape binding even when chunk counts coincide -- is not fresh.
+    if (graph.local_topologies_.size() != World::chunk_count ||
+        !graph.template matches_shape<Shape>()) {
       return false;
     }
     for (std::uint64_t c = 0; c < World::chunk_count; ++c) {
@@ -1141,7 +1197,8 @@ template <typename World>
     // so meta()/version reads only ever touch a still-resident key.
     const auto count = graph.local_topologies_.size();
     if (count != world.resident_count() ||
-        graph.sparse_.frozen_generations_.size() != world.resident_count()) {
+        graph.sparse_.frozen_generations_.size() != world.resident_count() ||
+        !graph.template matches_shape<Shape>()) {
       return false;
     }
     for (std::size_t i = 0; i < count; ++i) {
