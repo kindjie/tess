@@ -8,6 +8,7 @@ import html
 import json
 import re
 import statistics
+import sys
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -36,7 +37,7 @@ class Run:
   values: dict[str, float]
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser()
   parser.add_argument("artifacts", nargs="+", type=Path)
   parser.add_argument("--out", type=Path)
@@ -45,7 +46,7 @@ def main() -> int:
   parser.add_argument("--benchmark", action="append", dest="benchmarks")
   parser.add_argument("--source-commit")
   parser.add_argument("--source-run-id")
-  args = parser.parse_args()
+  args = parser.parse_args(argv)
 
   benchmarks = tuple(args.benchmarks or DEFAULT_BENCHMARKS)
   runs = sorted(
@@ -56,6 +57,18 @@ def main() -> int:
       key=lambda run: run.timestamp
       or datetime.min.replace(tzinfo=timezone.utc),
   )
+
+  if args.benchmarks:
+    matched = {name for run in runs for name in run.values}
+    unmatched = [name for name in benchmarks if name not in matched]
+    if unmatched:
+      for name in unmatched:
+        print(
+            f"benchmark_trends: --benchmark {name} matched no results in "
+            "any artifact",
+            file=sys.stderr,
+        )
+      return 1
 
   if args.out is not None:
     write_text(args.out, render_html(runs, benchmarks))
@@ -126,15 +139,26 @@ def load_metadata(directory: Path) -> dict[str, str]:
   return {key: value for key, value in data.items() if isinstance(value, str)}
 
 
+def benchmark_result_files(directory: Path) -> list[Path]:
+  """Every benchmark result JSON in a baseline artifact directory.
+
+  Discovers files instead of hardcoding family names so new benchmark
+  families are picked up automatically; only the artifact metadata file
+  is excluded.
+  """
+  return sorted(
+      path
+      for path in directory.glob("*.json")
+      if path.name != "metadata.json"
+  )
+
+
 def collect_values(
     directory: Path,
     benchmarks: tuple[str, ...],
 ) -> dict[str, float]:
   samples: dict[str, list[float]] = {name: [] for name in benchmarks}
-  for name in ("block.json", "storage.json", "key.json"):
-    path = directory / name
-    if not path.exists():
-      continue
+  for path in benchmark_result_files(directory):
     data = load_json(path)
     for benchmark in data.get("benchmarks", []):
       bench_name = benchmark.get("name")
@@ -163,10 +187,7 @@ def metadata_timestamp(metadata: dict[str, str]) -> datetime | None:
 
 
 def benchmark_timestamp(directory: Path) -> datetime | None:
-  for name in ("block.json", "storage.json", "key.json"):
-    path = directory / name
-    if not path.exists():
-      continue
+  for path in benchmark_result_files(directory):
     context = load_json(path).get("context", {})
     if isinstance(context, dict) and isinstance(context.get("date"), str):
       timestamp = parse_datetime(context["date"])
