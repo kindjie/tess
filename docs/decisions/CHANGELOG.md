@@ -13,6 +13,34 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Transition providers for the region graph (M6, S5 slice 7)
+
+- Added: `include/tess/topology/transition_provider.h` -- the
+  `TransitionProviderFor<P, World>` concept and the `AdjacentTransitions`
+  default. A provider contributes EXTRA directed tile-to-tile transitions
+  (stairs, ladders) enumerated once per chunk; `build_region_graph` /
+  `update_region_graph` take an optional trailing provider and append one
+  directed `RegionPortal` per transition whose endpoints both resolve to
+  labeled regions (provider edges are automatically per-class). The landing
+  tile must stay within the origin chunk or a face neighbor -- the exact
+  range incremental updates re-derive -- asserted in debug builds. The
+  provider TYPE is stamped on the graph beside the movement class
+  (`matches_provider`); an update with a different provider type falls back
+  to a full rebuild. On sparse worlds a transition landing in a non-resident
+  chunk marks its origin region as reaching missing topology, so reachability
+  degrades to Indeterminate, never a wrong Unreachable.
+- Reason: S5 slice 7 -- M6's special-transitions contract. The default
+  provider keeps every existing build byte-identical (pinned by test) while
+  giving the vertical stair provider (next slice) a sound, incremental-safe
+  extension point.
+- Affected docs: `architecture/topology.md`, `architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: new `topology/transition_provider.h`;
+  `topology/topology.h` (provider stamp, per-chunk provider portals,
+  reaches-missing pass), `tess.h`, `CMakeLists.txt`;
+  `tests/tess_topology_movement_test.cc` (default identity, bridge portals,
+  incremental == full, provider-mismatch rebuild, sparse Indeterminate).
+
 ## 2026-07-09 - Class-aware agent tick and the runtime class binding (M6, S5 slice 6)
 
 - Changed: the agent pipeline speaks classes end to end.

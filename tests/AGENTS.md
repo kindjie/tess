@@ -150,8 +150,14 @@
   incremental `update_region_graph` equals a full rebuild, a class-stamp
   mismatch forces a full rebuild even with an empty dirty set,
   `is_region_graph_fresh_for` is per-class (raw tag shares the identity
-  class's stamp; unbuilt graphs match no class), and a warm per-class relabel
-  of one chunk is allocation-free.
+  class's stamp; unbuilt graphs match no class), a warm per-class relabel
+  of one chunk is allocation-free, and the transition-provider contract
+  (S5.7): the default `AdjacentTransitions` build is identical to the
+  providerless build, a bridge provider's directed portals connect walled
+  regions (both directions), incremental update equals a full rebuild with
+  the same provider, a provider-type mismatch forces a full rebuild, and a
+  sparse provider transition into a non-resident chunk degrades reachability
+  to `Indeterminate` instead of a wrong `Unreachable`.
 - `tess_path_movement_class_test`: verifies movement classes threaded through
   the A* leaves and weighted cores (S5.2): the `WalkableField` identity class
   matches the raw-tag unit search node-for-node on a serpentine maze,

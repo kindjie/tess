@@ -48,23 +48,27 @@ The current topology layer is a local chunk-region foundation. It lives under
   passable tag: a raw tag normalizes to the `WalkableField` identity class,
   whose flood stays the byte-identical legacy `field_span` scan; a composed
   class evaluates its predicate on the resolved page per tile.
-- `build_region_graph<World, ClassOrTag>(world, scratch, graph)` rebuilds
-  local topology, pairs boundary exits whose neighbor tile is passable, and
-  rebuilds the region index and CSR adjacency. It also stamps the graph with
-  the normalized movement-class identity (see `matches_class` below). Portal
+- `build_region_graph<World, ClassOrTag>(world, scratch, graph, provider =
+  AdjacentTransitions{})` rebuilds local topology, pairs boundary exits whose
+  neighbor tile is passable, appends the transition provider's extra directed
+  portals (see Transition Providers below), and rebuilds the region index and
+  CSR adjacency. It also stamps the graph with the normalized movement-class
+  identity (see `matches_class` below) and the provider type. Portal
   pairing needs no class awareness: it queries labels, so per-class labels
   yield per-class portals automatically. The graph type is deduced from
   the world's residency: a dense world rebuilds every chunk; a sparse world
   builds only its resident chunks (sorted ascending) and freezes their keys and
   residency generations onto the graph.
 - `update_region_graph<World, ClassOrTag>(world, scratch, graph,
-  dirty_chunks)` incrementally patches a built graph after passability edits
+  dirty_chunks, provider = AdjacentTransitions{})` incrementally patches a
+  built graph after passability edits
   confined to the dirty chunks and returns the same aggregate result a full
   rebuild would. On a sparse world it first checks the frozen residency
   snapshot (resident count plus per-key generation); any residency change since
   the build forces a full rebuild rather than trusting a stale graph. A
   movement-class mismatch (the graph was built for a different class) likewise
-  forces a full rebuild with the requested class's labels.
+  forces a full rebuild with the requested class's labels, as does a
+  transition-provider type mismatch (`matches_provider`).
 - `RegionGraphT::matches_class<ClassOrTag>()` reports whether the graph was
   built for the given class (normalized, so a raw tag and its `WalkableField`
   identity agree). The stamp is a runtime class-identity token captured at
@@ -170,13 +174,36 @@ hot paths keeps single-field codegen.
 
 Per-class region labeling and the graph class stamp are wired (S5.3): the
 labeling builders take a class or tag, and `RegionGraphT` records the
-normalized class identity it was built for. Precheck agreement, commit
-validation, and the `TransitionProvider` concept (special transitions such as
-stairs) build on this vocabulary in later M6 slices.
+normalized class identity it was built for. Precheck agreement (S5.4), commit
+validation (S5.5), and the class-aware agent tick plus runtime class binding
+(S5.6) thread the same vocabulary through the path layer.
+
+## Transition Providers
+
+`include/tess/topology/transition_provider.h` defines the
+`TransitionProviderFor<P, World>` concept: a provider contributes EXTRA
+directed tile-to-tile transitions to the region graph beyond the built-in
+six-axis face adjacency (stairs, ladders, and similar special movement).
+`build_region_graph` and `update_region_graph` take an optional trailing
+provider (default `AdjacentTransitions`, which contributes nothing and is
+byte-identical to the providerless build). The builders enumerate a provider
+once per chunk (`for_each_transition(world, chunk, sink)`, `from` inside the
+chunk) and append one directed `RegionPortal` per transition whose endpoints
+both resolve to labeled regions — so provider edges are automatically
+per-class, and a bidirectional passage emits each direction from its own
+chunk. The landing tile must lie in the same chunk or a face-neighbor chunk
+(asserted in debug builds): incremental updates re-derive portals only for
+dirty chunks and their face neighbors, so a longer-range transition would
+survive, stale, past an edit to its landing chunk. The provider TYPE is
+stamped on the graph like the movement class (`matches_provider`);
+`update_region_graph` with a different provider type falls back to a full
+rebuild. On a sparse world, a provider transition landing in a non-resident
+chunk marks its origin region as reaching missing topology, so reachability
+degrades to `Indeterminate` rather than a wrong `Unreachable`.
 
 ## Deliberate Limits
 
-This slice does not implement precheck/commit class threading, special
-transitions, or a dirty rebuild queue. The portal graph stores directed
-tile-adjacent portals only; incremental updates require the caller to supply
-the dirty chunk set.
+This slice does not implement a concrete vertical provider (stairs land in
+the next slice) or a dirty rebuild queue. The portal graph stores directed
+portals only; incremental updates require the caller to supply the dirty
+chunk set, and provider transitions must stay within face-neighbor range.
