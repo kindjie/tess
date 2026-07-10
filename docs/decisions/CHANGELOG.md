@@ -13,6 +13,197 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Path product/cache invalidation contracts (audit-2 W-A)
+
+- Changed: (1) Route, portal-route, and distance-field products treat an empty
+  dependency set as invalid, and every builder now captures dependencies for
+  non-Found results (`capture_all`), so a cached failure can never replay
+  after a world edit that might change the answer. (2)
+  `build_distance_field_product` additionally depends on the face neighbors
+  of every touched chunk, covering the blocked frontier: an edit that opens a
+  fully-sealed chunk now invalidates the product. (3)
+  `RouteCacheScratch::store` skips a single route larger than the node cap
+  (new `stats().oversized_skips`) instead of invalidating resident entries
+  and storing it anyway, and cap value 0 now disables storage rather than
+  meaning "unlimited", matching the portal segment cache. (4)
+  `build_weighted_portal_route_product` accepts its own `waypoints()` span
+  (rebuild-from-own-product no longer reads a cleared vector). (5)
+  `PathTicket.generation` widened to 64 bits so retained tickets cannot alias
+  across generation wraparound. (6) Documented: the caller-owned staleness
+  contract of `cached_astar_path`, the one-cache/runtime-per-world identity
+  contract, and the chunk-portal route builder's heuristic (non-authoritative)
+  NoPath tier.
+- Changed (review follow-up): the multi-agent review of this branch found
+  the segment-cache overload of `build_weighted_portal_route_product` had
+  been missed (same self-alias UB -- ASan-confirmed -- and missing failure
+  capture); the alias guard now covers all product-owned spans (including a
+  previously returned `PathResult.path`) via a shared `stash_if_owned`
+  helper. It also flagged two quadratic passes and an over-broad capture,
+  fixed as: `capture_all` appends directly (O(chunk_count)), the
+  blocked-frontier pass dedupes through a scratch seen-set +
+  `add_chunk_unique` (linear), and InvalidStart/InvalidGoal products now
+  depend only on the offending in-bounds tiles' chunks instead of every
+  chunk (out-of-bounds failures carry no dependencies and are permanently
+  invalid -- callers pay only the cheap bounds rejection on rebuild).
+  `reserve_dependencies` docs now state the chunk_count bound.
+- Reason: second audit (2026-07-09) findings H1, H2, M3, M4, M5, M6 and cache
+  lows -- failure products carried empty dependency sets that validated
+  vacuously forever, and unreached chunks never invalidated field products,
+  so removing a wall could leave agents permanently pathless.
+- Affected docs: `planning/audit-2026-07-09.md`,
+  `planning/audit-2026-07-09-remediation.md`, `decisions/CHANGELOG.md`.
+- Affected code: `path/path.h`, `path/portal_route.h`,
+  `path/field_product_cache.h`, `path/route_cache.h`, `path/path_runtime.h`,
+  `tests/tess_path_test.cc`, `tests/tess_path_cache_test.cc`,
+  `tests/tess_path_runtime_test.cc`.
+## 2026-07-09 - Executor dispatch guards and partial-plan dirty (audit-2 W-B)
+
+- Changed: (1) `WorkerPoolPhaseExecutor` now documents and enforces its
+  single-dispatch contract -- a `dispatch_active_` flag maintained under the
+  existing dispatch mutex makes nested or concurrent `for_each_operation`, and
+  `reserve_operations` during a dispatch, fail fast via `TESS_ASSERT` in debug
+  builds (release builds compile the check out and keep zero overhead). (2)
+  `execute_plan` / `execute_plan_deferred_dirty` now include the chunks written
+  before an abort in the returned `chunk_count`, and the scheduler tick marks
+  pathing dirty whenever any chunk was written, so a plan aborted partway by a
+  `PolicyMismatch` no longer leaves path caches stale over already-mutated
+  passability. (3) A blocked movement step no longer consumes re-path budget;
+  only `prepare_path_agent_processing` counts attempts, so
+  `max_blocked_retries = N` grants exactly N re-path attempts (previously a
+  movement-blocked cycle was double-counted), and the budget semantics --
+  including the by-design indefinite re-path loop against a permanently parked
+  blocker -- are documented at `max_blocked_retries`. (4) Thread-spawn loops in
+  both executors now join already-started threads and rethrow if a
+  `std::thread` constructor throws mid-spawn instead of terminating via a
+  joinable-thread unwind; `ScopedThreadPhaseExecutor` documents its no-throw
+  callback requirement. (5) `FixedStepAccumulator` clamps the ~1 ulp negative
+  bank left by the rounded-division one-tick borrow.
+- Reason: second-audit findings H3/M2 (nested/concurrent dispatch deadlocks
+  and use-after-realloc were silent), M1 (partially executed plans skipped the
+  pathing-dirty mark), and the workstream's low-severity items.
+- Affected docs: `decisions/CHANGELOG.md`.
+- Affected code: `ops/phase_executor.h`, `ops/queued.h`, `sim/scheduler.h`,
+  `sim/path_agent.h`, `sim/path_agent_tick.h`, `sim/time.h`,
+  `tests/tess_phase_executor_test.cc`, `tests/tess_sim_scheduler_test.cc`,
+  `tests/tess_path_agent_tick_test.cc`, `tests/tess_path_agent_test.cc`,
+  `tests/tess_path_runtime_sparse_test.cc`.
+## 2026-07-09 - Topology index/shape hardening (audit-2 W-C)
+
+- Changed: (1) `RegionGraph::region_index` guards are wrap-proof -- the chunk
+  guard no longer adds 1 before comparing (the out-of-world sentinel ChunkKey
+  wrapped past it into an OOB read) and the offset arithmetic is 64-bit (a
+  region id near 2^32 wrapped back to a valid-but-wrong index). (2) Region
+  graphs now record their build shape (chunk-grid and chunk tile extents);
+  `update_region_graph` fully rebuilds and `is_region_graph_fresh` reports
+  stale on any mismatch, instead of the chunk-count-only check that let
+  equal-count shape mismatches incremental-patch onto wrong adjacency.
+  (3) `ShapeTraits` gains division-based (wrap-proof) compile-time overflow
+  asserts and an int64 bound on size axes. (4) `detail::box_axis_end` and the
+  region-bounds union saturate at int64 max instead of wrapping on extents
+  >= 2^63. (5) Documented `ChunkView::is_boundary` degenerate-axis semantics
+  and the sparse one-graph-per-world staleness contract.
+- Reason: audit findings M7 (region-index wraparound), M8 (shape-mismatch
+  incremental patching leaving dangling portal targets), and the related
+  topology/shape/meta low-severity items.
+- Affected docs: `decisions/CHANGELOG.md`.
+- Affected code: `topology/topology.h`, `core/shape.h`,
+  `storage/chunk_meta.h`, `block/block.h`, `tests/tess_topology_test.cc`,
+  `tests/tess_topology_sparse_test.cc`, `tests/tess_storage_test.cc`.
+## 2026-07-09 - Diagnostics alloc-hook and capture-contract fixes (audit-2 W-D)
+
+- Changed: three second-audit fixes on the diagnostics layer. (1) M9: the
+  benchmark/test allocation hooks no longer record a deallocation for a null
+  pointer -- `operator delete(nullptr)` / `free(nullptr)` are legal no-ops, so
+  counting them skewed the deallocations/allocations balance; both the plain
+  operator new/delete branch and the sanitizer free hook now null-check before
+  recording. (2) M10: the sanitizer-hook branch is excluded on Windows
+  (`!defined(_MSC_VER)`, covering MSVC and clang-cl) because MSVC
+  /fsanitize=address defines `__SANITIZE_ADDRESS__` but its ASan runtime never
+  calls the `__sanitizer_*` hooks and `<pthread.h>` does not exist there.
+  (3) M11: documented the threading contract of `capture_timing` /
+  `capture_diagnostics` (unsynchronized reads: capture on the recording thread
+  or externally synchronize; only the returned snapshot is safe to share) with
+  matching notes in trace.h and the ImGui panels header. Docs only, no
+  behavior change.
+- Reason: findings M9-M11 of the 2026-07-09 second audit.
+- Affected docs: `decisions/CHANGELOG.md`.
+- Affected code: `bench/tess_diagnostics_alloc_hooks.cc`,
+  `diagnostics/export.h`, `diagnostics/trace.h`, `debug/imgui/panels.h`,
+  `tests/tess_diagnostics_enabled_test.cc`.
+## 2026-07-09 - Test hardening: flake guards, format checking, coverage gaps (audit-2 W-E)
+
+- Changed: test-only hardening from the second audit; no library behavior
+  changes. (1) The worker-pool warm no-alloc test tolerates one-time lazy
+  runtime allocations on live pool workers by requiring only the last of
+  several warm dispatches to be allocation-free (the counter is
+  process-global). (2) The ImGui stub's `Text` now carries real ImGui's
+  printf-format attribute so `-Wformat` checks panel format strings under the
+  `-Werror` presets. (3) The two multi-worker rendezvous spins in the queued
+  tests are bounded (30s, clear failure message) instead of hanging to the
+  ctest timeout on regression. (4) New coverage: `PrecheckStatus::InvalidStart`
+  (out-of-bounds and walled starts), `MovementFailureCounts`
+  reserved/stale buckets plus the full `is_transient_movement_failure`
+  classification, the four previously unasserted `PathCounters` fields
+  (initializations, start/goal passability checks, closed neighbors) via both
+  direct events and a real A* maze, a `TESS_ASSERT_MSG` death test, and a
+  `UInt128` negative-int constructor death test. (5) Weak assertions
+  strengthened: the smoke test pins the released version against a
+  hand-maintained literal mirror of the CMake project version instead of
+  comparing macros to themselves (a `tess.h` bump that forgets the test now
+  fails; a CMake-only bump remains undetectable there), and the warm
+  no-alloc agent/tick tests now also pin observable work (submitted/found
+  stats, skipped processing with advancement) so a no-op cannot pass. The
+  allocation counter documents its relaxed-ordering under-count caveat.
+- Reason: second-audit findings M14/M15 plus grep-verified untested surfaces
+  and tautological or effect-blind assertions; each weakness could hide a real
+  regression (latent flake, unchecked format strings, suite-long hangs,
+  silently skipped work).
+- Affected docs: `tests/AGENTS.md`.
+- Affected code: tests only — `tests/tess_phase_executor_test.cc`,
+  `tests/imgui_stub/imgui.h`, `tests/tess_queued_test.cc`,
+  `tests/tess_path_precheck_test.cc`, `tests/tess_path_agent_test.cc`,
+  `tests/tess_path_agent_tick_test.cc`, `tests/tess_diagnostics_enabled_test.cc`,
+  `tests/tess_assert_test.cc`, `tests/tess_shape_test.cc`,
+  `tests/tess_smoke.cc`, `tests/allocation_counter.cc`.
+## 2026-07-09 - CI and tooling audit remediation (audit-2 W-F)
+
+- Changed: five infrastructure fixes from the 2026-07-09 second audit.
+  (1) The `parallel/*` benchmark family is now executed in CI: a
+  `tess_bench_parallel_smoke` CTest in the style of the other family smokes,
+  and a `parallel/.*` command in `tess_bench_ci_baselines` so baseline
+  artifacts accumulate samples. Threshold gating is deliberately deferred:
+  repo policy calibrates ceilings from CI baseline artifacts (~3x observed
+  maximum), none exist yet for this family, and each gating target enumerates
+  an explicit thresholds file, so omitting `bench/thresholds/parallel.json`
+  defers the gate without code changes. (2) `tools/benchmark_trends.py`
+  discovers every result JSON in a baseline artifact (excluding
+  `metadata.json`) instead of reading only block/storage/key, and an
+  explicit `--benchmark` selector that matches nothing is now an error
+  instead of a silent "n/a"; `tools/benchmark_artifact_metadata.py` gained
+  its first tests. (3) `tools/benchmark_thresholds.py` rejects unknown
+  per-benchmark limit keys against an allowlist so a typo cannot silently
+  disable a gate. (4) A public-safety deny pattern for the private
+  downstream consumer's name (split-string style, case-insensitive) so the
+  hooks catch reintroduction. (5) Doc drift from the 2026-07-07 gate
+  promotions: the Windows MSVC job and public-surface manifest check are
+  described as required gates everywhere, the README threshold-suite list
+  includes `topology` and `diagnostics`, the advisory GCC compile job is
+  listed, stale advisory comments in the workflow were removed or dated,
+  and small fixes (path.json note provenance, deck help env vars,
+  `.pytest_cache/` ignore, `actions/cache@v4` in the dependency inventory).
+- Reason: the audit found compiled-but-never-run benchmarks, tools that
+  silently ignored data or typos, a policy without an enforcing pattern,
+  and documentation contradicting the actual CI gate status. All fixes are
+  infrastructure-only; no tess API or runtime behavior changed.
+- Affected docs: `README.md`, `tests/AGENTS.md`, `dependencies.md`,
+  `decisions/CHANGELOG.md`.
+- Affected code: `bench/CMakeLists.txt`, `bench/thresholds/path.json`,
+  `tools/benchmark_trends.py`, `tools/benchmark_artifact_metadata.py`,
+  `tools/benchmark_thresholds.py`, `tools/check_public_surface.py`,
+  `tools/git_hooks.py`, `tools/steamdeck/deck`, `tests/test_git_hooks.py`,
+  `tests/test_benchmark_tools.py`, `.github/workflows/ci.yml`,
+  `.gitignore`.
+
 ## 2026-07-09 - TraceBuffer pinned to its storage (M12, S4)
 
 - Changed: `diagnostics::TraceBuffer` is now non-copyable and non-movable (all

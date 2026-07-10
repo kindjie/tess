@@ -73,6 +73,11 @@ class FixedStepAccumulator {
       ticks = static_cast<std::size_t>(available);
     }
     accumulated_seconds_ -= static_cast<double>(ticks) * step_seconds;
+    // The rounded division above can round `available` up across an
+    // integer boundary, granting one tick that is not quite fully banked
+    // (a bounded one-tick borrow); the subtraction then leaves the bank
+    // ~1 ulp negative. Clamp so consumers never observe a negative bank.
+    accumulated_seconds_ = std::max(accumulated_seconds_, 0.0);
 
     // When the tick cap was hit, drop backlog beyond one step instead of
     // banking it: retained debt would force max-tick catch-up frames (or an

@@ -40,6 +40,7 @@ CPP_EXTENSIONS = {".c", ".cc", ".cpp", ".h", ".hpp"}
 PRIVATE_PATTERNS = (
     re.compile(rb"\b" + rb"main" + rb"tainer" + rb"\b"),
     re.compile(rb"\b" + rb"contri" + rb"butor" + rb"\b"),
+    re.compile(rb"\b" + rb"downstream" + rb"consumer" + rb"\b", re.IGNORECASE),
     re.compile(rb"link" + rb"edin\.com/in", re.IGNORECASE),
     re.compile(rb"/" + rb"Users/"),
     re.compile(rb"/" + rb"private/"),

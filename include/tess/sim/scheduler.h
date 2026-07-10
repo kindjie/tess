@@ -64,7 +64,14 @@ auto tick_scheduler_core(SimSchedulerState& state, World& world,
                          PathTick&& path_tick) -> SimSchedulerStats {
   auto stats =
       run_queued_operations<World, Policy>(world, ops, std::forward<Fn>(fn));
-  if (stats.executed_ops && options.pathing_dirty_mask != 0) {
+  // A plan can abort partway (e.g. PolicyMismatch): operations that
+  // already executed have applied their world writes, and execute_plan
+  // reports their chunks in the aborted result's chunk_count. Gate on any
+  // executed chunk rather than on full-plan success so path caches are
+  // refreshed over partially applied plans too.
+  const bool any_op_wrote =
+      stats.executed_ops || stats.op_execution.chunk_count > 0;
+  if (any_op_wrote && options.pathing_dirty_mask != 0) {
     for (const auto& report : stats.op_report.operations()) {
       if (report.status == OperationStatus::Planned &&
           (report.field_access.dirty_mask & options.pathing_dirty_mask) != 0) {

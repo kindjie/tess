@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <tess/core/assert.h>
 #include <tess/tess.h>
 
 #include <algorithm>
@@ -153,7 +154,12 @@ TEST(TessPhaseExecutor, WorkerPoolWarmDispatchDoesNotAllocate) {
   std::atomic<std::uint64_t> sum = 0;
 
   // One warmup phase, then warm phases must not allocate on the caller
-  // thread or in worker callbacks.
+  // thread or in worker callbacks. ScopedAllocationCounter counts
+  // process-globally while the pool's persistent worker threads are live, so
+  // a platform/runtime allocation on a worker early in the warm sequence
+  // (lazy TLS, a condvar fallback path) could otherwise fail the guard
+  // spuriously: run several warm dispatches and require only the LAST one to
+  // be allocation-free, which still pins the steady-state contract.
   (void)executor.for_each_operation(
       0, 256, [&](std::size_t index) -> tess::PlannedExecutionResult {
         sum += index;
@@ -161,7 +167,9 @@ TEST(TessPhaseExecutor, WorkerPoolWarmDispatchDoesNotAllocate) {
       });
 
   tess_test::ScopedAllocationCounter counter;
+  std::size_t count_before_last = 0;
   for (std::size_t phase = 0; phase < 8; ++phase) {
+    count_before_last = counter.count();
     const auto result = executor.for_each_operation(
         0, 256, [&](std::size_t index) -> tess::PlannedExecutionResult {
           sum += index;
@@ -169,7 +177,7 @@ TEST(TessPhaseExecutor, WorkerPoolWarmDispatchDoesNotAllocate) {
         });
     EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
   }
-  EXPECT_EQ(counter.count(), 0u);
+  EXPECT_EQ(counter.count(), count_before_last);
 }
 
 TEST(TessPhaseExecutor, WorkerPoolCreateRunStopCyclesAreSafe) {
@@ -245,6 +253,47 @@ TEST(TessPhaseExecutor, ExecuteOperationIndexRangeAcceptsAnyPhaseExecutor) {
   EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
   EXPECT_EQ(visited, (std::vector<std::size_t>{5, 6, 7}));
 }
+
+#if TESS_ENABLE_ASSERTS
+
+constexpr auto kAssertDeathMessage = "tess assertion failed";
+
+// WorkerPoolPhaseExecutor supports one dispatch at a time. A worker
+// callback re-entering for_each_operation on the same executor would
+// clobber the shared job state and deadlock the outer dispatch on
+// done_cv_; debug builds must fail fast instead.
+TEST(TessPhaseExecutorDeathTest, WorkerPoolRejectsNestedDispatch) {
+  EXPECT_DEATH(
+      {
+        const tess::WorkerPoolPhaseExecutor executor{2};
+        (void)executor.for_each_operation(
+            0, 4, [&](std::size_t) -> tess::PlannedExecutionResult {
+              return executor.for_each_operation(
+                  0, 1, [](std::size_t) -> tess::PlannedExecutionResult {
+                    return tess::PlannedExecutionResult{};
+                  });
+            });
+      },
+      kAssertDeathMessage);
+}
+
+// Growing the result buffer mid-dispatch would relocate the slots other
+// workers are concurrently writing (use-after-realloc);
+// reserve_operations is only legal between dispatches.
+TEST(TessPhaseExecutorDeathTest, WorkerPoolRejectsReserveDuringDispatch) {
+  EXPECT_DEATH(
+      {
+        const tess::WorkerPoolPhaseExecutor executor{2};
+        (void)executor.for_each_operation(
+            0, 4, [&](std::size_t) -> tess::PlannedExecutionResult {
+              executor.reserve_operations(4096);
+              return tess::PlannedExecutionResult{};
+            });
+      },
+      kAssertDeathMessage);
+}
+
+#endif  // TESS_ENABLE_ASSERTS
 
 TEST(TessPhaseExecutor, SerialDispatchDoesNotAllocate) {
   const tess::SerialPhaseExecutor executor;

@@ -50,6 +50,10 @@ TEST(TessDiagnostics, ScopedPathCountersRecordGenericEvents) {
     tess::diagnostics::ScopedPathCounters scope{counters};
 
     TESS_DIAG_EVENT_VALUE(path_clear, 7);
+    TESS_DIAG_EVENT(path_initialize);
+    TESS_DIAG_EVENT(path_start_passability_check);
+    TESS_DIAG_EVENT(path_goal_passability_check);
+    TESS_DIAG_EVENT(path_neighbor_closed);
     TESS_DIAG_EVENT(path_heap_push);
     TESS_DIAG_EVENT(path_heap_pop);
     TESS_DIAG_EVENT(path_neighbor_candidate);
@@ -67,6 +71,10 @@ TEST(TessDiagnostics, ScopedPathCountersRecordGenericEvents) {
 
   EXPECT_EQ(counters.scratch_clear_calls, 1u);
   EXPECT_EQ(counters.scratch_clear_nodes, 7u);
+  EXPECT_EQ(counters.initializations, 1u);
+  EXPECT_EQ(counters.start_passability_checks, 1u);
+  EXPECT_EQ(counters.goal_passability_checks, 1u);
+  EXPECT_EQ(counters.closed_neighbors, 1u);
   EXPECT_EQ(counters.heap_pushes, 1u);
   EXPECT_EQ(counters.heap_pops, 1u);
   EXPECT_EQ(counters.neighbor_candidates, 1u);
@@ -189,6 +197,13 @@ TEST(TessDiagnostics, SerpentineMazeReachesUnitHeapSearch) {
 
   EXPECT_GT(counters.heap_pushes, 0u);
   EXPECT_GT(counters.heap_pops, 0u);
+  // A real heap search must initialize its scratch, endpoint-check both the
+  // start and the goal, and (in a serpentine corridor, where each expansion
+  // re-offers the closed predecessor tile) skip closed neighbors.
+  EXPECT_GT(counters.initializations, 0u);
+  EXPECT_GT(counters.start_passability_checks, 0u);
+  EXPECT_GT(counters.goal_passability_checks, 0u);
+  EXPECT_GT(counters.closed_neighbors, 0u);
 }
 
 TEST(TessDiagnostics, SerpentineMazeReachesWeightedHeapSearch) {
@@ -228,6 +243,25 @@ TEST(TessDiagnostics, ScopedAllocationCountersRecordGlobalNewAndDelete) {
   EXPECT_GE(counters.allocations, 1u);
   EXPECT_GE(counters.allocation_bytes, sizeof(int));
   EXPECT_GE(counters.deallocations, 1u);
+}
+
+TEST(TessDiagnostics, DeletingNullDoesNotRecordDeallocation) {
+  tess::diagnostics::AllocationCounters counters;
+  {
+    tess::diagnostics::ScopedAllocationCounters scope{counters};
+
+    // Deleting/freeing a null pointer is a legal no-op and must not count as
+    // a deallocation. volatile keeps the compiler from proving the pointer
+    // null and eliding the calls.
+    int* volatile typed_null = nullptr;
+    delete typed_null;
+
+    void* volatile raw_null = nullptr;
+    ::operator delete(raw_null);
+  }
+
+  EXPECT_EQ(counters.deallocations, 0u);
+  EXPECT_EQ(counters.deallocation_bytes, 0u);
 }
 
 }  // namespace

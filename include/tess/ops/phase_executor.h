@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tess/core/assert.h>
 #include <tess/diagnostics/diagnostics.h>
 
 #include <algorithm>
@@ -121,6 +122,8 @@ concept SerialExecutor =
 // does not declare serial_execution_tag and pairs only with
 // execute_phase_partitioned_dirty_with; the shared-accumulator
 // execute_phase_deferred_dirty_with rejects it at compile time.
+// Callbacks must not throw: an exception escaping a callback propagates
+// out of the worker's thread function and terminates the process.
 class ScopedThreadPhaseExecutor {
  public:
   explicit ScopedThreadPhaseExecutor(std::size_t worker_count) noexcept
@@ -149,15 +152,26 @@ class ScopedThreadPhaseExecutor {
     auto&& callback = fn;
 
     for (std::size_t worker = 0; worker < thread_count; ++worker) {
-      threads.emplace_back([&] {
-        while (true) {
-          const auto offset = next_offset.fetch_add(1);
-          if (offset >= count) {
-            return;
+      try {
+        threads.emplace_back([&] {
+          while (true) {
+            const auto offset = next_offset.fetch_add(1);
+            if (offset >= count) {
+              return;
+            }
+            results[offset] = callback(first + offset);
           }
-          results[offset] = callback(first + offset);
+        });
+      } catch (...) {
+        // A std::thread constructor threw mid-spawn: join the workers
+        // that did start (they drain the remaining operations, so the
+        // join is bounded) and rethrow instead of letting the vector
+        // unwind over joinable threads, which would std::terminate.
+        for (auto& thread : threads) {
+          thread.join();
         }
-      });
+        throw;
+      }
     }
 
     for (auto& thread : threads) {
@@ -185,13 +199,40 @@ class ScopedThreadPhaseExecutor {
 // baseline and the scoped-thread prototype; it is not yet the production
 // scheduler backend. Callbacks must not throw. After reserve_operations,
 // warm for_each_operation calls perform no dynamic allocation.
+//
+// Dispatch contract: at most one for_each_operation may be in flight per
+// executor, and callbacks must not re-enter for_each_operation or call
+// reserve_operations on the same executor. All dispatch state
+// (job_context_ through results_) is shared per executor, so a nested or
+// concurrent dispatch clobbers the active job and deadlocks the outer
+// caller, which waits on done_cv_ while its own worker is parked inside
+// the nested call. Debug builds (TESS_ENABLE_ASSERTS) fail fast on both
+// violations; in release builds the assert compiles out (zero cost, per
+// core/assert.h) and the misuse deadlocks or races exactly as documented
+// here. Distinct executors are independent and may dispatch in parallel.
 class WorkerPoolPhaseExecutor {
  public:
   explicit WorkerPoolPhaseExecutor(std::size_t worker_count) {
     const auto count = worker_count == 0 ? std::size_t{1} : worker_count;
     workers_.reserve(count);
-    for (std::size_t worker = 0; worker < count; ++worker) {
-      workers_.emplace_back([this] { run_worker(); });
+    try {
+      for (std::size_t worker = 0; worker < count; ++worker) {
+        workers_.emplace_back([this] { run_worker(); });
+      }
+    } catch (...) {
+      // A std::thread constructor threw mid-pool-construction: stop and
+      // join the workers that did start, then rethrow instead of letting
+      // workers_ unwind over joinable threads, which would
+      // std::terminate.
+      {
+        const std::scoped_lock lock{mutex_};
+        stop_ = true;
+      }
+      work_cv_.notify_all();
+      for (auto& worker : workers_) {
+        worker.join();
+      }
+      throw;
     }
   }
 
@@ -222,9 +263,13 @@ class WorkerPoolPhaseExecutor {
 
   // Pre-sizes the per-operation result buffer so warm phases of up to
   // `count` operations do not allocate. A larger phase grows the buffer on
-  // that dispatch.
+  // that dispatch. Only legal between dispatches: resizing results_ while
+  // workers write into it would relocate their slots (use-after-realloc).
   void reserve_operations(std::size_t count) const {
     const std::scoped_lock lock{mutex_};
+    TESS_ASSERT_MSG(!dispatch_active_,
+                    "WorkerPoolPhaseExecutor::reserve_operations called "
+                    "during an active dispatch");
     if (results_.size() < count) {
       results_.resize(count);
     }
@@ -243,9 +288,20 @@ class WorkerPoolPhaseExecutor {
     using Callback = std::remove_reference_t<decltype(callback)>;
     {
       const std::scoped_lock lock{mutex_};
+      // Single-dispatch guard; see the class comment. The flag is
+      // maintained in release builds too (two stores under an
+      // already-held lock), but only debug builds check it.
+      TESS_ASSERT_MSG(!dispatch_active_,
+                      "WorkerPoolPhaseExecutor::for_each_operation "
+                      "re-entered during an active dispatch");
       if (results_.size() < count) {
         results_.resize(count);
       }
+      // Set only after the potentially throwing resize so a bad_alloc
+      // cannot leave the flag wedged; the whole block holds mutex_, so
+      // a competing dispatch still observes the flag before touching
+      // any job state.
+      dispatch_active_ = true;
       job_context_ = &callback;
       job_invoke_ = [](void* context,
                        std::size_t index) -> PlannedExecutionResult {
@@ -267,6 +323,7 @@ class WorkerPoolPhaseExecutor {
                active_workers_ == 0;
       });
       job_active_ = false;
+      dispatch_active_ = false;
     }
 
     for (std::size_t offset = 0; offset < count; ++offset) {
@@ -327,6 +384,7 @@ class WorkerPoolPhaseExecutor {
   mutable std::uint64_t job_epoch_ = 0;
   mutable std::size_t active_workers_ = 0;
   mutable bool job_active_ = false;
+  mutable bool dispatch_active_ = false;
   bool stop_ = false;
   std::vector<std::thread> workers_;
 };
