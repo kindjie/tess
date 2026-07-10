@@ -11,11 +11,18 @@
 // mismatch and alloc-dealloc-size checks. Both runtimes call the weak
 // __sanitizer_malloc_hook/__sanitizer_free_hook for every allocation, so
 // the diagnostics counters ride on those hooks instead.
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+//
+// Windows is excluded (_MSC_VER covers MSVC and clang-cl): MSVC
+// /fsanitize=address also defines __SANITIZE_ADDRESS__ but its ASan runtime
+// never calls the __sanitizer_* hooks, and <pthread.h> does not exist there,
+// so Windows stays on the operator new/delete branch below.
+#if (__has_feature(address_sanitizer) || __has_feature(thread_sanitizer)) && \
+    !defined(_MSC_VER)
 #define TESS_DIAG_ALLOC_HOOKS_USE_SANITIZER_HOOK 1
 #endif
 
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#if (defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)) && \
+    !defined(_MSC_VER)
 #define TESS_DIAG_ALLOC_HOOKS_USE_SANITIZER_HOOK 1
 #endif
 
