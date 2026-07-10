@@ -32,12 +32,23 @@ deltas.
   guards (chunk versions first, then topology versions) and returns `Moved`
   when every set guard matches. It resolves both endpoints unchecked, so
   callers must validate coordinates first.
-- `validate_movement_intent<World, PassableTag, OccupancyTag,
+- `validate_movement_intent<World, ClassOrTag, OccupancyTag,
   ReservationTag>(world, intent)` checks shape bounds, six-axis adjacency
   (`manhattan_distance == 1`), passability of both endpoints, destination
   occupancy, destination reservation, and the optional version guards, in
-  that order, without mutating the world.
-- `commit_movement_intent<World, PassableTag, OccupancyTag, ReservationTag>(
+  that order, without mutating the world. The second template argument is a
+  movement class OR a raw passable tag, normalized exactly as in
+  `astar_path`, so plan and commit share one vocabulary: every step A*
+  accepted for a class validates for that same class. Validation checks the
+  class's PASSABILITY predicate only -- entry cost is a search concern, and
+  commit staying more permissive than the weighted search is the deliberate
+  legacy asymmetry (a cost field dropping to zero after planning blocks
+  re-planning, not an already-planned adjacent step). Classes wanting cost
+  folded into commit passability too should use `WalkableCostField`, whose
+  predicate already includes `NotZero<CostTag>`. The from- and to-tiles
+  may live on different pages; each endpoint's predicate is evaluated on its
+  own resolved page.
+- `commit_movement_intent<World, ClassOrTag, OccupancyTag, ReservationTag>(
   world, intent, dirty_mask)` validates the same intent, clears source
   occupancy, sets destination occupancy, clears destination reservation, and
   marks source and destination tiles dirty when `dirty_mask` is nonzero.
@@ -86,15 +97,17 @@ deltas.
 - `advance_path_agents(agents, runtime, max_steps)` walks agents with a
   `Found` result up to `max_steps` nodes along runtime-owned paths without
   touching world fields.
-- `advance_path_agents_with_movement<World, PassableTag, OccupancyTag,
+- `advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
   ReservationTag>(world, agents, runtime, max_steps, movement_dirty_mask)`
-  commits each step through `commit_movement_intent` (no version guards).
+  commits each step through `commit_movement_intent` (no version guards),
+  validating with the same movement class the plan used.
   A transient failure leaves the `Found` route intact, moves the agent to
   `Blocked`, consumes one retry, and counts a blocked wait; a structural
   failure is terminal `Unreachable`. Arrival clears the goal and counts an
   arrival.
-- `process_unit_path_agents<World, PassableTag>(...)` and
-  `process_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(...)`
+- `process_unit_path_agents<World, ClassOrTag>(...)` and
+  `process_weighted_path_agents<World, Class, MaxCost>(...)` (plus the legacy
+  `<World, PassableTag, CostTag, MaxCost>` overload)
   run submit, runtime processing (cached unit or weighted batch), and result
   application as one synchronous pass. Both take an optional trailing
   `const RegionGraphT<World::residency_type>*` (default `nullptr`) that they
@@ -121,13 +134,17 @@ deltas.
   mark, and `Blocked` agents consume one re-path attempt per processed tick
   until the retry budget runs out, at which point they turn terminally
   `Unreachable` with `PathStatus::NoPath`.
-- `tick_unit_path_agents<World, PassableTag>(...)`,
-  `tick_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(...)`,
-  `tick_unit_path_agents_with_movement<World, PassableTag, OccupancyTag,
+- `tick_unit_path_agents<World, ClassOrTag>(...)`,
+  `tick_weighted_path_agents<World, Class, MaxCost>(...)`,
+  `tick_unit_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
   ReservationTag>(...)`, and `tick_weighted_path_agents_with_movement<...>`
+  (the weighted forms keep their legacy `<World, PassableTag, CostTag,
+  MaxCost[, ...]>` overloads)
   advance the clock, re-process paths when `pathing_dirty` is set or any
   agent requested processing, then advance agents — either freely or
-  through movement commits with the supplied `movement_dirty_mask`. Each
+  through movement commits with the supplied `movement_dirty_mask`. In the
+  class forms one movement class drives pathing, the precheck, and commit
+  validation, so plan and commit provably agree per class. Each
   accepts an optional trailing `const RegionGraphT<World::residency_type>*`
   (default `nullptr`) forwarded to the runtime precheck gate, so a caller that
   maintains a region graph can skip A* for goals proven unreachable.

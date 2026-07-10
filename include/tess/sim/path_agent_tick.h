@@ -91,7 +91,7 @@ inline auto prepare_path_agent_processing(std::span<PathAgentState> agents,
   return needs_processing;
 }
 
-template <typename World, typename PassableTag>
+template <typename World, typename ClassOrTag>
 [[nodiscard]] auto tick_unit_path_agents(
     PathAgentTickState& state, const World& world,
     std::span<PathAgentState> agents, PathRequestRuntime& runtime,
@@ -104,7 +104,7 @@ template <typename World, typename PassableTag>
   const bool repath_needed =
       prepare_path_agent_processing(agents, options, stats);
   if (state.pathing_dirty || repath_needed) {
-    stats.pathing = process_unit_path_agents<World, PassableTag>(
+    stats.pathing = process_unit_path_agents<World, ClassOrTag>(
         world, agents, runtime, options.cache_policy, graph);
     stats.processed_paths = true;
     state.pathing_dirty = false;
@@ -114,7 +114,7 @@ template <typename World, typename PassableTag>
   return stats;
 }
 
-template <typename World, typename PassableTag, typename OccupancyTag,
+template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag>
 [[nodiscard]] auto tick_unit_path_agents_with_movement(
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
@@ -128,16 +128,67 @@ template <typename World, typename PassableTag, typename OccupancyTag,
   const bool repath_needed =
       prepare_path_agent_processing(agents, options, stats);
   if (state.pathing_dirty || repath_needed) {
-    stats.pathing = process_unit_path_agents<World, PassableTag>(
+    stats.pathing = process_unit_path_agents<World, ClassOrTag>(
         world, agents, runtime, options.cache_policy, graph);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
 
   stats.movement =
-      advance_path_agents_with_movement<World, PassableTag, OccupancyTag,
+      advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
                                         ReservationTag>(
           world, agents, runtime, options.max_steps, movement_dirty_mask);
+  return stats;
+}
+
+// Class forms: one movement class drives pathing, precheck, and (for the
+// movement variant) commit validation, so plan and commit provably agree.
+template <typename World, typename Class, std::uint32_t MaxCost>
+[[nodiscard]] auto tick_weighted_path_agents(
+    PathAgentTickState& state, const World& world,
+    std::span<PathAgentState> agents, PathRequestRuntime& runtime,
+    PathAgentTickOptions options = {},
+    const RegionGraphT<typename World::residency_type>* graph = nullptr)
+    -> PathAgentTickStats {
+  PathAgentTickStats stats;
+  stats.tick = advance_sim_tick(state.clock);
+
+  const bool repath_needed =
+      prepare_path_agent_processing(agents, options, stats);
+  if (state.pathing_dirty || repath_needed) {
+    stats.pathing = process_weighted_path_agents<World, Class, MaxCost>(
+        world, agents, runtime, options.cache_policy, graph);
+    stats.processed_paths = true;
+    state.pathing_dirty = false;
+  }
+
+  stats.movement = advance_path_agents(agents, runtime, options.max_steps);
+  return stats;
+}
+
+template <typename World, typename Class, std::uint32_t MaxCost,
+          typename OccupancyTag, typename ReservationTag>
+[[nodiscard]] auto tick_weighted_path_agents_with_movement(
+    PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
+    PathRequestRuntime& runtime, PathAgentTickOptions options = {},
+    std::uint32_t movement_dirty_mask = 0,
+    const RegionGraphT<typename World::residency_type>* graph = nullptr)
+    -> PathAgentTickStats {
+  PathAgentTickStats stats;
+  stats.tick = advance_sim_tick(state.clock);
+
+  const bool repath_needed =
+      prepare_path_agent_processing(agents, options, stats);
+  if (state.pathing_dirty || repath_needed) {
+    stats.pathing = process_weighted_path_agents<World, Class, MaxCost>(
+        world, agents, runtime, options.cache_policy, graph);
+    stats.processed_paths = true;
+    state.pathing_dirty = false;
+  }
+
+  stats.movement = advance_path_agents_with_movement<World, Class, OccupancyTag,
+                                                     ReservationTag>(
+      world, agents, runtime, options.max_steps, movement_dirty_mask);
   return stats;
 }
 

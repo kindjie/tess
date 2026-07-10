@@ -133,6 +133,64 @@
   dispatches run and only the last must not allocate, since the counter is
   process-global while pool workers are live), repeated create/run/stop
   lifecycle cycles, and destruction without ever running a phase.
+- `tess_movement_class_test`: verifies the compile-time movement vocabulary
+  (`tess::movement`): the `MovementClassFor` concept and `movement_class_of`
+  tag/class normalization, byte-exact `normalize_cost` (zero and negative are
+  impassable, overflow saturates through a u64 compare), composed passability
+  truth tables for a Walker (`AllOf<Field, Not<Field>>`) versus a Builder
+  (`AnyOf`) over construction tiles, per-class entry-cost expressions
+  (`FieldCost`, `SelectCost`, `ConstantCost`), and that the `WalkableField`
+  identity class reproduces the legacy `static_cast<bool>(field)` result and
+  exposes the same `field_span` storage the region flood scans.
+- `tess_topology_movement_test`: verifies per-class region labeling and the
+  graph movement-class stamp (S5.3): the `WalkableField` identity build is
+  byte-identical to the legacy raw-tag build (labels, regions, exits, portals,
+  index), Walker/Builder labels diverge exactly on construction tiles (with
+  the Builder-only region bridge across a wall of sites), per-class
+  incremental `update_region_graph` equals a full rebuild, a class-stamp
+  mismatch forces a full rebuild even with an empty dirty set,
+  `is_region_graph_fresh_for` is per-class (raw tag shares the identity
+  class's stamp; unbuilt graphs match no class), a warm per-class relabel
+  of one chunk is allocation-free, and the transition-provider contract
+  (S5.7): the default `AdjacentTransitions` build is identical to the
+  providerless build, a bridge provider's directed portals connect walled
+  regions (both directions), incremental update equals a full rebuild with
+  the same provider, a provider-type mismatch forces a full rebuild, and a
+  sparse provider transition into a non-resident chunk degrades reachability
+  to `Indeterminate` instead of a wrong `Unreachable`; and the stair provider
+  (S5.8): an offset stair links two z-levels with no vertical face adjacency
+  in both directions (cross-chunk and same-chunk landings), stair edges are
+  per-class (a construction-site landing is Builder-only), incremental
+  update equals a full rebuild across stair add/remove, a stair whose
+  landing would cross two chunk boundaries at once contributes nothing, a
+  sideways-crossing landing (x/y chunk boundary at a local z below the
+  chunk top) emits BOTH directions with incremental equality across the
+  seam, an out-of-range stair field value reads as `None` (including wide
+  fields whose values would wrap when narrowed), and `WalkableCostField`
+  labels a graph without the span fast path (zero-cost tiles unlabeled).
+- `tess_path_movement_class_test`: verifies movement classes threaded through
+  the A* leaves and weighted cores (S5.2): the `WalkableField` identity class
+  matches the raw-tag unit search node-for-node on a serpentine maze,
+  `LegacyWeighted<PassableTag, CostTag>` matches the tag-pair weighted search
+  and weighted distance field exactly (statuses, costs, expansion counts,
+  paths), a Walker routes around a construction wall the Builder cuts through
+  (fixed build price via `SelectCost`), unit A* accepts classes for
+  passability only, class-driven weighted searches keep the sparse
+  missing-chunk contract (blocked by default, `Indeterminate` on request),
+  plan == commit (S5.5): every step weighted A* accepts for a class
+  validates as `Moved` through `validate_movement_intent` for that same
+  class, with `BlockedFrom`/`BlockedTo` per class on both endpoints; and the
+  runtime class binding (S5.6): a `PathRequestRuntime` rebound to another
+  class clears its unit caches instead of serving the previous class's
+  cached `(start, goal)` route (counted in `class_cache_invalidations`),
+  the class-form weighted ticks route and commit per class (Builder
+  crosses the wall the Walker detours around; neither ever has a movement
+  step rejected, since commit validates with the class the plan used), and
+  a policy-triggered cache clear inside a process call never leaves the
+  class binding unbound (the next class still gets its own route), and a
+  DIRECT `cached_astar_path` caller alternating classes on one
+  `RouteCacheScratch` is never served the other class's route (the cache
+  binds itself per call; rebinds counted in `class_rebinds`).
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.
@@ -165,8 +223,12 @@
   `InvalidGoal`, an
   unbuilt graph as `NoGraph`, a post-build topology edit degrading to
   `GraphStale` rather than a wrong `Unreachable`, a sparse corridor exiting into
-  a non-resident chunk reported as `MissingChunk`, and an allocation-free warm
-  precheck query.
+  a non-resident chunk reported as `MissingChunk`, an allocation-free warm
+  precheck query, and class agreement (S5.4): a walker-labeled graph queried
+  for a Builder class is `GraphStale` (never the walker's wrong
+  `Unreachable` across a construction bridge), while a Builder-stamped graph
+  answers `Reachable`/`Unreachable` per class and reads `GraphStale` for the
+  raw walker tag.
 - `tess_path_precheck_runtime_test`: verifies the optional precheck gate wired
   into `PathRequestRuntime` and the agent tick. A goal sealed off by an
   enclosing wall (not a full-axis barrier, so A*'s dense fast-path cannot rule
@@ -177,7 +239,11 @@
   verdict; a mixed weighted batch proves the survivor partition scatters results
   back to their original slots; the warm unit rule-out path is allocation-free;
   and the weighted and unit ticks surface `precheck_ruled_out` through
-  `PathAgentFrameStats` while the ruled-out agent never advances.
+  `PathAgentFrameStats` while the ruled-out agent never advances. Class
+  agreement (S5.4): a walker-stamped graph supplied to a Builder-class
+  `process_unit_cached` rules nothing out (GraphStale) and the Builder's own
+  A* routes through the construction gap, while a Builder-stamped graph rules
+  out a genuinely sealed goal without searching.
 - `tess_path_test`: verifies the MVP A* path foundation, including top-down 2D
   paths around blocked tiles, invalid start and goal reporting, no-path
   reporting, direct-path and uniform-cost fast paths across top-down 2D,

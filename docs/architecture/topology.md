@@ -42,21 +42,39 @@ The current topology layer is a local chunk-region foundation. It lives under
   or `InvalidChunk` for an out-of-range chunk key), region count, passable
   tile count, boundary exit count, and the captured topology version. The
   chunk and graph builders below all return it.
-- `build_local_chunk_topology<World, PassableTag>(world, chunk, scratch,
+- `build_local_chunk_topology<World, ClassOrTag>(world, chunk, scratch,
   topology)` labels passable connected components for one chunk and records
-  boundary exits.
-- `build_region_graph<World, PassableTag>(world, scratch, graph)` rebuilds
-  local topology, pairs boundary exits whose neighbor tile is passable, and
-  rebuilds the region index and CSR adjacency. The graph type is deduced from
+  boundary exits. The second template argument is a movement class OR a raw
+  passable tag: a raw tag normalizes to the `WalkableField` identity class,
+  whose flood stays the byte-identical legacy `field_span` scan; a composed
+  class evaluates its predicate on the resolved page per tile.
+- `build_region_graph<World, ClassOrTag>(world, scratch, graph, provider =
+  AdjacentTransitions{})` rebuilds local topology, pairs boundary exits whose
+  neighbor tile is passable, appends the transition provider's extra directed
+  portals (see Transition Providers below), and rebuilds the region index and
+  CSR adjacency. It also stamps the graph with the normalized movement-class
+  identity (see `matches_class` below) and the provider type. Portal
+  pairing needs no class awareness: it queries labels, so per-class labels
+  yield per-class portals automatically. The graph type is deduced from
   the world's residency: a dense world rebuilds every chunk; a sparse world
   builds only its resident chunks (sorted ascending) and freezes their keys and
   residency generations onto the graph.
-- `update_region_graph<World, PassableTag>(world, scratch, graph,
-  dirty_chunks)` incrementally patches a built graph after passability edits
+- `update_region_graph<World, ClassOrTag>(world, scratch, graph,
+  dirty_chunks, provider = AdjacentTransitions{})` incrementally patches a
+  built graph after passability edits
   confined to the dirty chunks and returns the same aggregate result a full
   rebuild would. On a sparse world it first checks the frozen residency
   snapshot (resident count plus per-key generation); any residency change since
-  the build forces a full rebuild rather than trusting a stale graph.
+  the build forces a full rebuild rather than trusting a stale graph. A
+  movement-class mismatch (the graph was built for a different class) likewise
+  forces a full rebuild with the requested class's labels, as does a
+  transition-provider type mismatch (`matches_provider`).
+- `RegionGraphT::matches_class<ClassOrTag>()` reports whether the graph was
+  built for the given class (normalized, so a raw tag and its `WalkableField`
+  identity agree). The stamp is a runtime class-identity token captured at
+  build time, mirroring the shape binding: the graph type encodes neither, so
+  a graph labeled for one class must never answer reachability for another.
+  False until the first build.
 - `reachable<Shape>(graph, start, goal, scratch)` checks whether two
   coordinates are connected through local regions and paired portals. It
   returns a `ReachabilityResult`: a `ReachabilityStatus` (`Reachable`,
@@ -75,6 +93,12 @@ The current topology layer is a local chunk-region foundation. It lives under
   so a reachability precheck can consult it and fall back to A* on a stale
   graph rather than trust a definitive but outdated `Unreachable`. Allocation-
   free; O(chunk_count) dense, O(resident_count) sparse.
+- `is_region_graph_fresh_for<ClassOrTag>(world, graph)` is the class-aware
+  form: additionally requires `matches_class<ClassOrTag>()`, so a graph
+  labeled for another movement class is not fresh for this one even when every
+  topology version is current — its labels answer a different passability
+  question. The class is the explicit first template argument; `World` stays
+  deduced.
 
 ## Behavior
 
@@ -123,10 +147,83 @@ equivalent to a full build. Passing a graph that was never built for the
 world shape falls back to a full build, and an out-of-range dirty chunk is
 rejected with `InvalidChunk` before any mutation.
 
+## Movement Vocabulary
+
+`include/tess/topology/movement_class.h` (namespace `tess::movement`) defines a
+compile-time DSL for describing how a class of agent moves, so labeling,
+pathfinding, and commit validation can share ONE vocabulary. A
+`MovementClass<PassExpr, CostExpr>` fuses a passability predicate and an
+entry-cost expression, each composed from typed-field leaves that read the
+constexpr `ChunkPage::field<Tag>(LocalTileId)` at the `(page, tile)` seam
+(world-scope accessors are not constexpr). The whole predicate inlines to the
+same `&&`/`||`/`!` a hand-written cast emits, so threading a class through the
+hot paths keeps single-field codegen.
+
+- Boolean terms: `Field<Tag>` (truthy), `NotZero<Tag>` (non-zero integral),
+  `Not<Term>`, `AllOf<Terms...>`, `AnyOf<Terms...>`.
+- Cost expressions (0 == impassable, u32-saturated): `UnitCost`,
+  `ConstantCost<N>`, `FieldCost<CostTag>`, `SelectCost<SelTag, WhenSet,
+  WhenClear>`. `normalize_cost` is byte-exact with the weighted A* leaf.
+- Identity classes for backward compatibility: `WalkableField<PassableTag>`
+  (unweighted; carries the raw tag and a `passable_span` fast path so the
+  identity region flood stays a byte-identical `field_span` scan),
+  `WalkableCostField<PassableTag, CostTag>` (weighted, cost>0 folded into
+  passability), and `LegacyWeighted<PassableTag, CostTag>` (the legacy
+  cost-agnostic asymmetry). `movement_class_of<T>` normalizes a raw tag OR a
+  class so every legacy `<World, PassableTag>` call site compiles unchanged.
+
+Per-class region labeling and the graph class stamp are wired (S5.3): the
+labeling builders take a class or tag, and `RegionGraphT` records the
+normalized class identity it was built for. Precheck agreement (S5.4), commit
+validation (S5.5), and the class-aware agent tick plus runtime class binding
+(S5.6) thread the same vocabulary through the path layer.
+
+## Transition Providers
+
+`include/tess/topology/transition_provider.h` defines the
+`TransitionProviderFor<P, World>` concept: a provider contributes EXTRA
+directed tile-to-tile transitions to the region graph beyond the built-in
+six-axis face adjacency (stairs, ladders, and similar special movement).
+`build_region_graph` and `update_region_graph` take an optional trailing
+provider (default `AdjacentTransitions`, which contributes nothing and is
+byte-identical to the providerless build). The builders enumerate a provider
+once per chunk (`for_each_transition(world, chunk, sink)`, `from` inside the
+chunk) and append one directed `RegionPortal` per transition whose endpoints
+both resolve to labeled regions — so provider edges are automatically
+per-class, and a bidirectional passage emits each direction from its own
+chunk. The landing tile must lie in the same chunk or a face-neighbor chunk
+(asserted in debug builds): incremental updates re-derive portals only for
+dirty chunks and their face neighbors, so a longer-range transition would
+survive, stale, past an edit to its landing chunk. The provider TYPE is
+stamped on the graph like the movement class (`matches_provider`);
+`update_region_graph` with a different provider type falls back to a full
+rebuild. On a sparse world, a provider transition landing in a non-resident
+chunk marks its origin region as reaching missing topology, so reachability
+degrades to `Indeterminate` rather than a wrong `Unreachable`; that
+reaches-missing pass re-enumerates every resident chunk's provider
+transitions after each build or incremental update (index flags are
+reassigned wholesale), so a provider's enumeration cost bounds sparse
+update cost regardless of the dirty-set size.
+
+## Stairs
+
+`StairTransitions<StairTag>` is the concrete vertical provider: an integral
+`StairTag` field holds a `StairDirection` (`None`/`PositiveX`/`NegativeX`/
+`PositiveY`/`NegativeY`), and a non-`None` tile is the FOOT of a stair whose
+landing is one step in that direction and one z-level up. The offset is
+deliberate — two vertically stacked passable tiles are already six-axis
+adjacent, so a same-column stair would add nothing. Each stair contributes
+both directions, each emitted from the chunk owning its origin tile (the down
+direction from the landing's chunk, which is the foot's chunk or its +z face
+neighbor), so incremental re-derivation holds. Whether either endpoint is
+traversable stays a movement-class question: stair edges are automatically
+per-class through the label filter. Limit: a landing that would cross two
+chunk boundaries at once (sideways off the chunk's x/y edge AND up off its
+top z layer) violates the face-neighbor contract and contributes nothing;
+place the foot so the landing stays within face-neighbor range.
+
 ## Deliberate Limits
 
-This slice does not implement movement-class rule DSL, special transitions,
-dirty rebuild queue, missing-chunk policy, hierarchical/coarse paths, or
-pathfinding precheck integration. The portal graph stores directed
-tile-adjacent portals only; incremental updates require the caller to supply
-the dirty chunk set.
+This slice does not implement a dirty rebuild queue. The portal graph stores directed
+portals only; incremental updates require the caller to supply the dirty
+chunk set, and provider transitions must stay within face-neighbor range.

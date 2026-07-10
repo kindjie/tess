@@ -3,16 +3,21 @@
 #include <tess/path/path.h>
 
 #include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 
 namespace tess {
 
-template <typename World, typename PassableTag, typename CostTag>
+template <typename World, typename Class>
 auto build_weighted_distance_field_in_box(
     const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
     [[maybe_unused]] MissingChunkPolicy policy) -> DistanceFieldResult {
+  static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                "build_weighted_distance_field_in_box<World, Class> requires "
+                "a MovementClass; legacy tag pairs go through the "
+                "<World, PassableTag, CostTag> overload.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
@@ -34,12 +39,12 @@ auto build_weighted_distance_field_in_box(
     }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
-  if (!detail::is_passable<World, PassableTag>(world, goal)) {
+  if (!detail::is_passable<World, Class>(world, goal)) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
   }
 
   const auto goal_index = detail::tile_index<Shape>(goal);
-  if (detail::tile_entry_cost_index<World, CostTag>(world, goal_index) == 0) {
+  if (detail::tile_entry_cost_index<World, Class>(world, goal_index) == 0) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
   }
 
@@ -82,7 +87,7 @@ auto build_weighted_distance_field_in_box(
     ++expanded_nodes;
 
     const auto current_entry_cost =
-        detail::tile_entry_cost_index<World, CostTag>(world, current.index);
+        detail::tile_entry_cost_index<World, Class>(world, current.index);
     if (current_entry_cost == 0) {
       continue;
     }
@@ -104,12 +109,12 @@ auto build_weighted_distance_field_in_box(
           TESS_DIAG_EVENT(path_relax_attempt);
           if (!scratch.is_current(neighbor_offset)) {
             TESS_DIAG_EVENT(path_passability_check);
-            if (!detail::is_passable_index<World, PassableTag>(
-                    world, neighbor_index)) {
+            if (!detail::is_passable_index<World, Class>(world,
+                                                         neighbor_index)) {
               TESS_DIAG_EVENT(path_neighbor_blocked);
               return;
             }
-            if (detail::tile_entry_cost_index<World, CostTag>(
+            if (detail::tile_entry_cost_index<World, Class>(
                     world, neighbor_index) == 0) {
               TESS_DIAG_EVENT(path_neighbor_blocked);
               return;
@@ -149,6 +154,19 @@ auto build_weighted_distance_field_in_box(
   }
   return DistanceFieldResult{PathStatus::Found, expanded_nodes,
                              scratch.touched_.size()};
+}
+
+// Legacy <PassableTag, CostTag> forwarder: one movement class replaces the
+// tag pair; LegacyWeighted preserves the historical semantics exactly.
+template <typename World, typename PassableTag, typename CostTag>
+auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
+                                          Box3 domain,
+                                          DistanceFieldScratch& scratch,
+                                          MissingChunkPolicy policy)
+    -> DistanceFieldResult {
+  return build_weighted_distance_field_in_box<
+      World, movement::LegacyWeighted<PassableTag, CostTag>>(
+      world, goal, domain, scratch, policy);
 }
 
 }  // namespace tess

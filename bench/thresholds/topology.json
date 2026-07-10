@@ -5,6 +5,10 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 15000000
     },
+    "topology/region_graph_build_composed_class_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 45000000
+    },
     "topology/region_graph_update_single_chunk_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 6000000

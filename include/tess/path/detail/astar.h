@@ -712,11 +712,15 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                     scratch.touched_.size(), scratch.path_};
 }
 
-template <typename World, typename PassableTag, typename CostTag>
+template <typename World, typename Class>
 auto weighted_astar_path(const World& world, PathRequest request,
                          PathScratch& scratch,
                          [[maybe_unused]] MissingChunkPolicy policy)
     -> PathResult {
+  static_assert(std::derived_from<Class, movement::movement_class_tag>,
+                "weighted_astar_path<World, Class> requires a MovementClass; "
+                "legacy tag pairs go through the <World, PassableTag, CostTag> "
+                "overload.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
   constexpr auto unseen = std::uint8_t{0};
@@ -744,7 +748,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
     }
   }
   TESS_DIAG_EVENT(path_start_passability_check);
-  if (!detail::is_passable<World, PassableTag>(world, request.start)) {
+  if (!detail::is_passable<World, Class>(world, request.start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
   if (!contains<Shape>(request.goal)) {
@@ -760,16 +764,16 @@ auto weighted_astar_path(const World& world, PathRequest request,
     }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
-  if (!detail::is_passable<World, PassableTag>(world, request.goal)) {
+  if (!detail::is_passable<World, Class>(world, request.goal)) {
     return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
   }
 
   const auto start = detail::tile_index<Shape>(request.start);
   const auto goal = detail::tile_index<Shape>(request.goal);
-  if (detail::tile_entry_cost_index<World, CostTag>(world, start) == 0) {
+  if (detail::tile_entry_cost_index<World, Class>(world, start) == 0) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
-  if (detail::tile_entry_cost_index<World, CostTag>(world, goal) == 0) {
+  if (detail::tile_entry_cost_index<World, Class>(world, goal) == 0) {
     return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
   }
 
@@ -788,14 +792,13 @@ auto weighted_astar_path(const World& world, PathRequest request,
             direct_current.*member < request.goal.*member ? 1 : -1;
         const auto direct_index = detail::tile_index<Shape>(direct_current);
         TESS_DIAG_EVENT(path_passability_check);
-        if (!detail::is_passable_index<World, PassableTag>(world,
-                                                           direct_index)) {
+        if (!detail::is_passable_index<World, Class>(world, direct_index)) {
           direct_axis_blocked = true;
           scratch.path_.clear();
           return false;
         }
         const auto entry_cost =
-            detail::tile_entry_cost_index<World, CostTag>(world, direct_index);
+            detail::tile_entry_cost_index<World, Class>(world, direct_index);
         if (entry_cost == 0) {
           direct_axis_blocked = true;
           scratch.path_.clear();
@@ -862,11 +865,11 @@ auto weighted_astar_path(const World& world, PathRequest request,
       const auto append_checked = [&](Coord3 coord) {
         const auto index = detail::tile_index<Shape>(coord);
         TESS_DIAG_EVENT(path_passability_check);
-        if (!detail::is_passable_index<World, PassableTag>(world, index)) {
+        if (!detail::is_passable_index<World, Class>(world, index)) {
           scratch.path_.clear();
           return false;
         }
-        if (detail::tile_entry_cost_index<World, CostTag>(world, index) != 1) {
+        if (detail::tile_entry_cost_index<World, Class>(world, index) != 1) {
           scratch.path_.clear();
           return false;
         }
@@ -1012,14 +1015,14 @@ auto weighted_astar_path(const World& world, PathRequest request,
           TESS_DIAG_EVENT(path_relax_attempt);
           if (neighbor_state == unseen) {
             TESS_DIAG_EVENT(path_passability_check);
-            if (!detail::is_passable_index<World, PassableTag>(
-                    world, neighbor_index)) {
+            if (!detail::is_passable_index<World, Class>(world,
+                                                         neighbor_index)) {
               TESS_DIAG_EVENT(path_neighbor_blocked);
               return;
             }
           }
 
-          const auto entry_cost = detail::tile_entry_cost_index<World, CostTag>(
+          const auto entry_cost = detail::tile_entry_cost_index<World, Class>(
               world, neighbor_index);
           if (entry_cost == 0) {
             TESS_DIAG_EVENT(path_neighbor_blocked);
@@ -1061,4 +1064,16 @@ auto weighted_astar_path(const World& world, PathRequest request,
   }
   return PathResult{PathStatus::NoPath, 0, expanded_nodes,
                     scratch.touched_.size(), scratch.path_};
+}
+
+// Legacy <PassableTag, CostTag> forwarder: one movement class replaces the
+// tag pair; LegacyWeighted preserves the historical semantics exactly,
+// including the cost-agnostic passability asymmetry.
+template <typename World, typename PassableTag, typename CostTag>
+auto weighted_astar_path(const World& world, PathRequest request,
+                         PathScratch& scratch, MissingChunkPolicy policy)
+    -> PathResult {
+  return weighted_astar_path<World,
+                             movement::LegacyWeighted<PassableTag, CostTag>>(
+      world, request, scratch, policy);
 }

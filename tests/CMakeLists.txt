@@ -65,6 +65,28 @@ tess_apply_project_options(tess_phase_executor_test)
 
 gtest_discover_tests(tess_phase_executor_test)
 
+add_executable(tess_movement_class_test tess_movement_class_test.cc)
+target_link_libraries(
+  tess_movement_class_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_movement_class_test)
+
+gtest_discover_tests(tess_movement_class_test)
+
+add_executable(tess_path_movement_class_test tess_path_movement_class_test.cc)
+target_link_libraries(
+  tess_path_movement_class_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_path_movement_class_test)
+
+gtest_discover_tests(tess_path_movement_class_test)
+
+add_executable(tess_topology_movement_test tess_topology_movement_test.cc
+                                            allocation_counter.cc)
+target_link_libraries(
+  tess_topology_movement_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_topology_movement_test)
+
+gtest_discover_tests(tess_topology_movement_test)
+
 add_executable(tess_topology_test tess_topology_test.cc)
 target_link_libraries(tess_topology_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_topology_test)

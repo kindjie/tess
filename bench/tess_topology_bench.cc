@@ -25,6 +25,20 @@ struct PassableTag {};
 using TopoSchema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
 using TopoWorld = tess::AlwaysResidentWorld<TopoShape, TopoSchema>;
 
+// Two-field world for the composed-class labeling benchmark (M6): the Walker
+// predicate reads BOTH fields per tile, measuring the rule-eval overhead of a
+// composed MovementClass against the raw single-field span scan above.
+struct ConstructionTag {};
+using ClassSchema =
+    tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
+                      tess::Field<ConstructionTag, std::uint8_t>>;
+using ClassWorld = tess::AlwaysResidentWorld<TopoShape, ClassSchema>;
+using BenchWalker = tess::movement::MovementClass<
+    tess::movement::AllOf<
+        tess::movement::Field<PassableTag>,
+        tess::movement::Not<tess::movement::Field<ConstructionTag>>>,
+    tess::movement::UnitCost>;
+
 void fill_passable(TopoWorld& world, std::uint8_t value) {
   for (auto& page : world.chunks()) {
     auto field = page.template field_span<PassableTag>();
@@ -72,6 +86,36 @@ void BM_topology_region_graph_build_open_512x512(benchmark::State& state) {
               "region graph build did not report Built");
   bench_check(graph.region_count() > 0,
               "region graph build produced no regions");
+  state.counters["regions"] = static_cast<double>(graph.region_count());
+}
+
+void BM_topology_region_graph_build_composed_class_512x512(
+    benchmark::State& state) {
+  ClassWorld world;
+  for (auto& page : world.chunks()) {
+    auto passable = page.template field_span<PassableTag>();
+    for (auto& tile : passable) {
+      tile = 1;
+    }
+  }
+  // A construction stripe so the Not<Field> term is not constant-foldable.
+  for (std::int64_t y = 0; y < 512; ++y) {
+    world.field<ConstructionTag>(tess::Coord3{256, y, 0}) = 1;
+  }
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  tess::LocalTopologyResult built{};
+  for (auto _ : state) {
+    built = tess::build_region_graph<ClassWorld, BenchWalker>(world, scratch,
+                                                              graph);
+    benchmark::DoNotOptimize(built.region_count);
+    benchmark::DoNotOptimize(graph.region_count());
+  }
+  bench_check(built.status == tess::TopologyStatus::Built,
+              "composed-class region graph build did not report Built");
+  bench_check(graph.region_count() > 0,
+              "composed-class region graph build produced no regions");
   state.counters["regions"] = static_cast<double>(graph.region_count());
 }
 
@@ -135,12 +179,12 @@ void BM_topology_precheck_reachable_512x512(benchmark::State& state) {
               "region graph build did not report Built");
 
   tess::RegionGraphScratch precheck_scratch;
-  (void)tess::precheck_path(graph, world, kFarStart, kFarGoal,
-                            precheck_scratch);
+  (void)tess::precheck_path<PassableTag>(graph, world, kFarStart, kFarGoal,
+                                         precheck_scratch);
   tess::PrecheckStatus status{};
   for (auto _ : state) {
-    status = tess::precheck_path(graph, world, kFarStart, kFarGoal,
-                                 precheck_scratch);
+    status = tess::precheck_path<PassableTag>(graph, world, kFarStart, kFarGoal,
+                                              precheck_scratch);
     benchmark::DoNotOptimize(status);
   }
   bench_check(status == tess::PrecheckStatus::Reachable,
@@ -160,12 +204,12 @@ void BM_topology_precheck_unreachable_512x512(benchmark::State& state) {
               "region graph build did not report Built");
 
   tess::RegionGraphScratch precheck_scratch;
-  (void)tess::precheck_path(graph, world, kFarStart, kSealedGoal,
-                            precheck_scratch);
+  (void)tess::precheck_path<PassableTag>(graph, world, kFarStart, kSealedGoal,
+                                         precheck_scratch);
   tess::PrecheckStatus status{};
   for (auto _ : state) {
-    status = tess::precheck_path(graph, world, kFarStart, kSealedGoal,
-                                 precheck_scratch);
+    status = tess::precheck_path<PassableTag>(graph, world, kFarStart,
+                                              kSealedGoal, precheck_scratch);
     benchmark::DoNotOptimize(status);
   }
   bench_check(status == tess::PrecheckStatus::Unreachable,
@@ -174,6 +218,8 @@ void BM_topology_precheck_unreachable_512x512(benchmark::State& state) {
 
 BENCHMARK(BM_topology_region_graph_build_open_512x512)
     ->Name("topology/region_graph_build_open_512x512");
+BENCHMARK(BM_topology_region_graph_build_composed_class_512x512)
+    ->Name("topology/region_graph_build_composed_class_512x512");
 BENCHMARK(BM_topology_region_graph_update_single_chunk_512x512)
     ->Name("topology/region_graph_update_single_chunk_512x512");
 BENCHMARK(BM_topology_reachable_far_512x512)
