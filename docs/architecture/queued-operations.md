@@ -257,8 +257,12 @@ pre-sizes the per-operation result buffer so warm phases allocate nothing.
 Like the scoped-thread prototype it invokes callbacks concurrently, does not
 declare `serial_execution_tag`, and pairs only with the partitioned dirty
 variant. It is non-copyable and non-movable, stops its workers via RAII, and
-remains a prototype for backend comparison benchmarks rather than the
-production scheduler backend; callbacks must not throw.
+callbacks must not throw. As of the M5 scheduler stage it is the PRODUCTION
+parallel backend: the auto-exec schedule task routes phases to an attached
+pool by operation count, with serial == pool results pinned byte-identical
+(policy pre-validation makes runtime aborts unreachable) and the schedule +
+auto-exec test binaries running under the TSan preset. The work_contract
+library remains an unadopted experiment.
 
 `execute_phase_partitioned_dirty_with<Policy>` uses the same executor contract,
 but stores callback dirty records and execution results in

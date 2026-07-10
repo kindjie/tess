@@ -411,6 +411,29 @@
   `TESS_ASSERT_MSG` aborting with the caller's custom message and passing
   silently when the condition holds, that the disabled forms do not evaluate
   their conditions, and that guarded accessors stay `noexcept`.
+- `tess_sim_schedule_test`: verifies the S7 Schedule core: phase-major then
+  registration-order execution, `every_ticks(n)` exactness with disablement
+  keeping lockstep (the countdown advances while disabled; the due tick is
+  counted as skipped), OnDirty firing iff the task's own mask bits are
+  pending with own-bit-only consumption (foreign bits sit inert), produced
+  dirty reaching later phases the same tick and earlier phases the next
+  tick, deterministic background item budgets with `more_work`
+  continuation, manual single-shot runs, persistent triggers surviving
+  disablement, allocation-free dispatch (`run_tick`/`notify_dirty`/
+  `request_run`) after `seal()`, and the frame driver keeping EveryN exact
+  across SimSpeed changes, backlogged multi-tick frames, and paused frames
+  (cadences count fixed ticks, never frames).
+- `tess_sim_auto_exec_test`: verifies the S7 auto-exec task: the full
+  pipeline through a schedule tick (plan, phases, execute, per-phase dirty
+  apply, drain, paired clears) with the produced dirty mask firing a
+  later-phase OnDirty task the same tick and idle ticks producing nothing;
+  the auto-exec == manual pipeline golden (whole-world fields plus chunk
+  versions and dirty flags); the serial == pool golden (identical worlds,
+  metadata, and drained ack sequences, with pool phases actually taken);
+  per-phase dirty merging across a write-then-read phase split (a
+  last-phase-only merge would drop earlier phases' dirty); and the
+  mixed-policy death test (pre-validation executes nothing). The schedule
+  and auto-exec binaries also run under the TSan preset.
 - `tess_sim_scheduler_test`: verifies the simulation integration slice,
   including movement intent validation and commit, fixed-step accumulator
   pause/speed/clamp behavior with exact interpolation alpha values at known

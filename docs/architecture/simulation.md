@@ -149,6 +149,85 @@ deltas.
   (default `nullptr`) forwarded to the runtime precheck gate, so a caller that
   maintains a region graph can skip A* for goals proven unreachable.
 
+### Schedule
+
+`include/tess/sim/schedule.h` is the M5 schedule: ordered phases of
+type-erased tasks driven by cadences that are pure functions of the fixed
+`SimClock` tick counter and per-task pending dirty masks. The schedule never
+touches a world -- dirty bits are FED to it by task results and
+`notify_dirty` -- so the no-hidden-full-world-scans rule holds by
+construction. Type erasure is a function pointer plus a context pointer;
+world-typed work lives in task objects the caller owns and registers by
+reference.
+
+- `SimPhase` is the fixed phase list, executed in declaration order each
+  tick; tasks run in registration order within a phase. `SimClock` (hoisted
+  into `time.h`; the path-agent tick shares it) is the authoritative
+  fixed-tick counter every cadence derives from.
+- `Cadence` selects `every_tick()`, `every_ticks(n)` (exact: the countdown
+  advances once per `run_tick`, even while the task is disabled, so
+  re-enabling never shifts the lockstep phase; a due-while-disabled tick is
+  counted as skipped), `on_dirty(mask)` (fires iff bits of the task's OWN
+  mask are pending; firing consumes only those bits, so producers'
+  same-tick marks re-arm it for the next tick), `background(budget)`, and
+  `manual()`.
+- `BackgroundBudget` is deliberately items-only: a due background task is
+  offered `max_items` units per run and reports `items_done` plus
+  `more_work` to continue next tick. A wall-clock valve would make tick
+  outcomes nondeterministic; it returns with its first real consumer.
+- `Schedule::add_task(desc, task)` registers a caller-owned task object
+  (or a raw fn-pointer + context); `seal()` freezes registration;
+  `request_run(id)` arms any task for the next tick (the Manual trigger and
+  the Background initial trigger); `notify_dirty(mask)` merges external
+  dirty bits (frame-owner thread only; never from an op callback --
+  worker-side dirty flows exclusively through the task-result mask);
+  `run_tick(clock)` advances the clock and dispatches, returning
+  `ScheduleTickStats`; `task_stats(id)` reports per-task counters.
+- A task result's `dirty_mask` merges into every task's pending mask
+  immediately: later-phase OnDirty tasks fire in the SAME tick,
+  earlier-phase tasks the next tick.
+- Allocation contract: `reserve_tasks` + registration happen at setup;
+  `run_tick`, `notify_dirty`, and `request_run` never allocate after
+  `seal()` (pinned by test).
+- `run_schedule_frame(schedule, clock, accumulator, real_delta_seconds,
+  control)` is the frame-to-ticks bridge: it consumes real frame time
+  through the `FixedStepAccumulator` (honoring `SimSpeed` and the per-frame
+  tick cap) and runs the schedule once per granted fixed tick, returning a
+  `ScheduleFrameSummary` (ticks, alpha, dropped seconds, last tick's
+  stats). Cadences therefore count FIXED TICKS, never frames: an EveryN
+  task at 4x fires four times as often in real time and exactly as often in
+  sim time, and a backlogged frame advances every cadence through each
+  granted tick.
+
+### Auto-Exec
+
+`include/tess/sim/auto_exec.h` closes M5's auto-exec gap: `AutoExecTask
+<World, Policy, Ack, ChunkFn>` is one schedule task running the whole
+queued-ops pipeline -- plan, parallel phase planning, execution (serial or
+worker pool, chosen per phase by an operation-count threshold), per-phase
+dirty apply, and ack drain -- over a caller-owned `FrameOps` queue. Both the
+queue and the task's result channel are cleared together at the end of every
+run (the paired-clear discipline), and the run's `dirty_mask` union feeds
+the schedule so OnDirty tasks in later phases fire the same tick.
+
+- Policy uniformity is PRE-VALIDATED (`AutoExecStatus::PolicyMismatch`
+  executes nothing; asserted in debug), which makes runtime aborts
+  unreachable -- serial and pool execution therefore can never diverge on
+  partially-applied plans, and the serial == pool golden compares whole
+  worlds, chunk metadata, and drained ack sequences byte-for-byte.
+- Dirty records are merged after EACH phase: the partitioned scratch is
+  re-prepared per phase, so a single post-loop merge would silently drop
+  every phase's dirty but the last (pinned by a write-then-read
+  phase-split test).
+- `Policy` must be ReadOnly or UniquePerChunk (the parallel phase planner's
+  set) and the world dense (`merge_planned_dirty` is AlwaysResident-only).
+- Known cost, by design: planning allocates per run (the report has no
+  reuse overloads yet); the schedule's allocation-free contract covers
+  dispatch, not this task's planner.
+- `AutoExecRunStats` (`last_run()`) reports status, planned/rejected ops,
+  executed chunks, merged dirty chunks, drained acks, and phase/pool-phase
+  counts between ticks.
+
 ### Scheduler
 
 - `SimSchedulerState` owns the scheduler-adjacent state currently needed by

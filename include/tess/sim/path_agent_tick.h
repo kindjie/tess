@@ -1,16 +1,13 @@
 #pragma once
 
 #include <tess/sim/path_agent.h>
+#include <tess/sim/time.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 
 namespace tess {
-
-struct SimClock {
-  std::uint64_t tick = 0;
-};
 
 struct PathAgentTickState {
   SimClock clock{};
@@ -41,11 +38,6 @@ struct PathAgentTickStats {
   std::size_t repaths_requested = 0;
   std::size_t repath_exhausted = 0;
 };
-
-inline auto advance_sim_tick(SimClock& clock) noexcept -> std::uint64_t {
-  ++clock.tick;
-  return clock.tick;
-}
 
 inline void mark_pathing_dirty(PathAgentTickState& state) noexcept {
   state.pathing_dirty = true;
