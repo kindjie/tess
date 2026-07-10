@@ -19,6 +19,7 @@
 #include <tess/path/portal_segment_cache.h>
 #include <tess/path/precheck.h>
 #include <tess/path/route_cache.h>
+#include <tess/sim/auto_exec.h>
 #include <tess/sim/movement.h>
 #include <tess/sim/path_agent.h>
 #include <tess/sim/path_agent_tick.h>
