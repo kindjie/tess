@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <set>
 #include <span>
 #include <utility>
@@ -730,6 +731,38 @@ TEST(TessTopology, RegionGraphExposesDenseRegionIndex) {
             tess::invalid_region_index);
 }
 
+TEST(TessTopology, RegionIndexRejectsWraparoundReferences) {
+  using Shape = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
+  World<Shape> world;
+  fill_passable(world, 1);
+  for (std::int64_t x = 0; x < 16; ++x) {
+    world.field<PassableTag>(tess::Coord3{x, 3, 0}) = 0;
+  }
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
+                 world, scratch, graph))
+                .status,
+            tess::TopologyStatus::Built);
+  ASSERT_EQ(graph.region_count(), 4u);
+
+  // region_of returns this sentinel chunk for out-of-world coordinates; a
+  // nonzero region id alongside it must not wrap the chunk guard.
+  const auto sentinel =
+      tess::ChunkKey{std::numeric_limits<std::uint64_t>::max()};
+  EXPECT_EQ(
+      graph.region_index(tess::RegionRef{sentinel, tess::LocalRegionId{1}}),
+      tess::invalid_region_index);
+  // A region id near 2^32 must not wrap the offset arithmetic back into a
+  // valid dense index (chunk 1's offset is 2, so offset + id - 1 wraps to 0).
+  EXPECT_EQ(graph.region_index(tess::RegionRef{
+                tess::ChunkKey{1},
+                tess::LocalRegionId{std::numeric_limits<std::uint32_t>::max()},
+            }),
+            tess::invalid_region_index);
+}
+
 TEST(TessTopology, UpdateRegionGraphEmptyDirtySetIsNoOp) {
   using Shape = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
   World<Shape> world;
@@ -965,6 +998,50 @@ TEST(TessTopology, UpdateRegionGraphScriptedEditsMatchFullRebuild) {
         graph, reference,
         std::span<const tess::Coord3>{probes.data(), probes.size()});
   }
+}
+
+TEST(TessTopology, UpdateRegionGraphRebuildsAcrossEqualChunkCountShapes) {
+  // Two shapes with the same chunk count (4) and chunk extents but different
+  // chunk grids (2x2x1 vs 4x1x1). A graph built for one must not be
+  // incrementally patched against a world of the other: the size-only check
+  // would silently keep the old grid's adjacency and portal targets.
+  using GridShape = tess::Shape<tess::Extent3{4, 4, 1}, tess::Extent3{2, 2, 1}>;
+  using RowShape = tess::Shape<tess::Extent3{8, 2, 1}, tess::Extent3{2, 2, 1}>;
+  static_assert(tess::ShapeTraits<GridShape>::chunk_count ==
+                tess::ShapeTraits<RowShape>::chunk_count);
+  World<GridShape> grid_world;
+  fill_passable(grid_world, 1);
+  World<RowShape> row_world;
+  fill_passable(row_world, 1);
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  ASSERT_EQ((tess::build_region_graph<decltype(grid_world), PassableTag>(
+                 grid_world, scratch, graph))
+                .status,
+            tess::TopologyStatus::Built);
+  // A graph built for another shape is never fresh, even with equal chunk
+  // counts and untouched topology versions.
+  EXPECT_FALSE(tess::is_region_graph_fresh(row_world, graph));
+
+  const std::array dirty{tess::ChunkKey{0}};
+  const auto updated =
+      tess::update_region_graph<decltype(row_world), PassableTag>(
+          row_world, scratch, graph, dirty);
+  EXPECT_EQ(updated.status, tess::TopologyStatus::Built);
+
+  tess::RegionGraph reference;
+  ASSERT_EQ((tess::build_region_graph<decltype(row_world), PassableTag>(
+                 row_world, scratch, reference))
+                .status,
+            tess::TopologyStatus::Built);
+  expect_graphs_equal(graph, reference);
+  EXPECT_TRUE(tess::is_region_graph_fresh(row_world, graph));
+
+  tess::RegionGraphScratch region_scratch;
+  const auto result = tess::reachable<RowShape>(
+      graph, tess::Coord3{0, 0, 0}, tess::Coord3{7, 1, 0}, region_scratch);
+  EXPECT_EQ(result.status, tess::ReachabilityStatus::Reachable);
 }
 
 TEST(TessTopology, RegionGraphFreshnessTracksTopologyVersion) {

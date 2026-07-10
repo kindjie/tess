@@ -103,6 +103,20 @@ namespace detail {
          size.z % chunk.z == 0;
 }
 
+// Wrap-proof "x * y * z fits uint64" for nonzero axes: UInt128 arithmetic
+// wraps mod 2^128, so a triple product of uint64 axes can wrap and satisfy a
+// fits-uint64 comparison it should fail. Division sidesteps that; purely
+// compile-time (used only in ShapeTraits static_asserts).
+[[nodiscard]] constexpr bool product_fits_uint64(std::uint64_t x,
+                                                 std::uint64_t y,
+                                                 std::uint64_t z) noexcept {
+  constexpr auto max = std::numeric_limits<std::uint64_t>::max();
+  if (x > max / y) {
+    return false;
+  }
+  return x * y <= max / z;
+}
+
 [[nodiscard]] constexpr UInt128 product(Extent3 extent) noexcept {
   return static_cast<UInt128>(extent.x) * static_cast<UInt128>(extent.y) *
          static_cast<UInt128>(extent.z);
@@ -223,6 +237,25 @@ struct ShapeTraits {
 
   static constexpr auto precise_chunk_count = detail::chunk_count(size, chunk);
   static constexpr auto precise_local_tile_count = detail::product(chunk);
+
+  // The precise_* UInt128 products wrap mod 2^128 for extreme axes, which
+  // would defeat the fits-uint64 asserts below; establish wrap-proof
+  // (division-based) bounds first. Also require each size axis to fit int64
+  // so coord() cannot wrap a Coord3 component. Compile-time only.
+  static_assert(detail::product_fits_uint64(chunk_count_x, chunk_count_y,
+                                            chunk_count_z),
+                "Shape chunk count must fit std::uint64_t without wrapping.");
+  static_assert(detail::product_fits_uint64(chunk.x, chunk.y, chunk.z),
+                "Shape local tile count must fit std::uint64_t without "
+                "wrapping.");
+  static_assert(
+      size.x <= static_cast<std::uint64_t>(
+                    std::numeric_limits<std::int64_t>::max()) &&
+          size.y <= static_cast<std::uint64_t>(
+                        std::numeric_limits<std::int64_t>::max()) &&
+          size.z <= static_cast<std::uint64_t>(
+                        std::numeric_limits<std::int64_t>::max()),
+      "Shape size axes must fit std::int64_t so coordinates cannot wrap.");
 
   static_assert(precise_chunk_count <=
                     static_cast<detail::UInt128>(
