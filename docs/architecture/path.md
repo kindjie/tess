@@ -208,12 +208,27 @@ other entries cannot move.
   optimized unit-cost deterministic pathfinding. The passability field is
   treated as boolean-like. It runs natively on sparse worlds, honoring
   `MissingChunkPolicy` (the pre-A* fast-path scan is compiled out there).
-- `weighted_astar_path<World, PassableTag, CostTag>(world, request, scratch,
-  policy)` runs deterministic weighted A* over passability plus an integral
-  entry-cost field. It includes exact unit-cost direct and blocked-axis detour
-  fast paths when their local optimality proofs apply. Like `astar_path`, it is
+  The tag parameter also accepts a `tess::movement` class (M6): a raw tag
+  normalizes to the byte-identical `WalkableField` identity class, and a
+  composed class contributes its passability predicate (unit search ignores
+  entry cost).
+- `weighted_astar_path<World, Class>(world, request, scratch, policy)` runs
+  deterministic weighted A* over ONE movement class fusing the passability
+  predicate and the u32-saturated entry-cost expression (0 = impassable). It
+  includes exact unit-cost direct and blocked-axis detour fast paths when
+  their local optimality proofs apply. Like `astar_path`, it is
   sparse-capable and honors `MissingChunkPolicy` (the fast paths are compiled
-  out for sparse worlds).
+  out for sparse worlds). The legacy `weighted_astar_path<World, PassableTag,
+  CostTag>` overload forwards through
+  `movement::LegacyWeighted<PassableTag, CostTag>` with exactly the historical
+  semantics, including the cost-agnostic passability asymmetry; the weighted
+  distance-field family (`build_weighted_distance_field`,
+  `build_weighted_distance_field_in_box`,
+  `build_bounded_weighted_distance_field`, `weighted_distance_field_path`,
+  `weighted_path_batch`) carries the same class core + legacy-pair-forwarder
+  pairing. The class-typed cores reject raw tags at compile time — a raw tag
+  would normalize to the unit-cost identity class and silently discard the
+  cost field.
 - `build_weighted_route_product<World, PassableTag, CostTag>(world, request,
   scratch, product)` builds and stores a weighted route product.
 - `weighted_route_product_path(world, product)` replays a stored weighted

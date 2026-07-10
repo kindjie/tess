@@ -49,6 +49,7 @@ set(
   include/tess/block/block.h
   include/tess/core/assert.h
   include/tess/core/shape.h
+  include/tess/core/tag_identity.h
   include/tess/core/uint128.h
   include/tess/debug/imgui/panels.h
   include/tess/diagnostics/diagnostics.h

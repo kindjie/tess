@@ -1,5 +1,4 @@
-#ifndef TESS_TOPOLOGY_MOVEMENT_CLASS_H
-#define TESS_TOPOLOGY_MOVEMENT_CLASS_H
+#pragma once
 
 #include <tess/storage/chunk_page.h>
 
@@ -220,5 +219,3 @@ using movement_class_of =
                        WalkableField<T>>;
 
 }  // namespace tess::movement
-
-#endif  // TESS_TOPOLOGY_MOVEMENT_CLASS_H
