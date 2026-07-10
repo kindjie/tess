@@ -199,7 +199,11 @@ stamped on the graph like the movement class (`matches_provider`);
 `update_region_graph` with a different provider type falls back to a full
 rebuild. On a sparse world, a provider transition landing in a non-resident
 chunk marks its origin region as reaching missing topology, so reachability
-degrades to `Indeterminate` rather than a wrong `Unreachable`.
+degrades to `Indeterminate` rather than a wrong `Unreachable`; that
+reaches-missing pass re-enumerates every resident chunk's provider
+transitions after each build or incremental update (index flags are
+reassigned wholesale), so a provider's enumeration cost bounds sparse
+update cost regardless of the dirty-set size.
 
 ## Stairs
 

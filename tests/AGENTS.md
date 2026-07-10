@@ -161,8 +161,11 @@
   (S5.8): an offset stair links two z-levels with no vertical face adjacency
   in both directions (cross-chunk and same-chunk landings), stair edges are
   per-class (a construction-site landing is Builder-only), incremental
-  update equals a full rebuild across stair add/remove, and a stair whose
-  landing would cross two chunk boundaries at once contributes nothing.
+  update equals a full rebuild across stair add/remove, a stair whose
+  landing would cross two chunk boundaries at once contributes nothing, a
+  sideways-crossing landing (x/y chunk boundary at a local z below the
+  chunk top) emits BOTH directions with incremental equality across the
+  seam, and an out-of-range stair field value reads as `None`.
 - `tess_path_movement_class_test`: verifies movement classes threaded through
   the A* leaves and weighted cores (S5.2): the `WalkableField` identity class
   matches the raw-tag unit search node-for-node on a serpentine maze,
@@ -178,9 +181,11 @@
   runtime class binding (S5.6): a `PathRequestRuntime` rebound to another
   class clears its unit caches instead of serving the previous class's
   cached `(start, goal)` route (counted in `class_cache_invalidations`),
-  and the class-form weighted ticks route and commit per class (Builder
+  the class-form weighted ticks route and commit per class (Builder
   crosses the wall the Walker detours around; neither ever has a movement
-  step rejected, since commit validates with the class the plan used).
+  step rejected, since commit validates with the class the plan used), and
+  a policy-triggered cache clear inside a process call never leaves the
+  class binding unbound (the next class still gets its own route).
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
   reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.

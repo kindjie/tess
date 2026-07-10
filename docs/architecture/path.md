@@ -273,7 +273,11 @@ other entries cannot move.
   caches -- correct even on misuse -- and counts in
   `PathRuntimeStats::class_cache_invalidations`. One runtime per
   (world, class) is therefore the PERF contract, not a correctness
-  precondition.
+  precondition. The binding does NOT cover the weighted portal segment
+  cache: it is filled by the caller-driven, still pair-tagged portal-route
+  builders through the `portal_segment_cache()` accessor and keys segments
+  on request plus chunk versions only, so callers reusing it across movement
+  classes (or tag pairs) must keep one cache per class.
 - `PathRequestRuntime::process_weighted_batch<World, Class, MaxCost>(world,
   policy)` processes the current request set through `weighted_path_batch`,
   while using the same world-change cadence to clear owned long-lived caches.
