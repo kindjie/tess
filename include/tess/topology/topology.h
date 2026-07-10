@@ -347,20 +347,24 @@ class RegionGraphT {
 
   // Maps a region reference to its dense global index:
   // region_offsets_[chunk] + (1-based local id - 1). Returns
-  // invalid_region_index for invalid or out-of-range references.
+  // invalid_region_index for invalid or out-of-range references. The chunk
+  // guard compares without +1 (the sentinel ChunkKey region_of returns for
+  // out-of-world coordinates would wrap past it) and the offset arithmetic
+  // is 64-bit (a region id near 2^32 would wrap back into a valid index).
   [[nodiscard]] auto region_index(RegionRef ref) const noexcept
       -> std::uint32_t {
     if constexpr (std::is_same_v<Residency, AlwaysResident>) {
       if (ref.region == invalid_local_region ||
-          ref.chunk.value + 1 >= region_offsets_.size()) {
+          ref.chunk.value >= local_topologies_.size()) {
         return invalid_region_index;
       }
       const auto chunk = static_cast<std::size_t>(ref.chunk.value);
-      const auto index = region_offsets_[chunk] + ref.region.value - 1;
+      const auto index = static_cast<std::uint64_t>(region_offsets_[chunk]) +
+                         ref.region.value - 1;
       if (index >= region_offsets_[chunk + 1]) {
         return invalid_region_index;
       }
-      return index;
+      return static_cast<std::uint32_t>(index);
     } else {
       if (ref.region == invalid_local_region) {
         return invalid_region_index;
@@ -369,11 +373,12 @@ class RegionGraphT {
       if (li == npos || li + 1 >= region_offsets_.size()) {
         return invalid_region_index;
       }
-      const auto index = region_offsets_[li] + ref.region.value - 1;
+      const auto index = static_cast<std::uint64_t>(region_offsets_[li]) +
+                         ref.region.value - 1;
       if (index >= region_offsets_[li + 1]) {
         return invalid_region_index;
       }
-      return index;
+      return static_cast<std::uint32_t>(index);
     }
   }
 

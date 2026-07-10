@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace {
 
@@ -224,6 +225,35 @@ TEST(TessSparseTopology, RegionGraphFreshnessTracksResidencyAndVersion) {
   // Residency change (evict a frozen chunk) -> stale (count/generation).
   ASSERT_TRUE(world.evict(tess::ChunkKey{1}));
   EXPECT_FALSE(tess::is_region_graph_fresh(world, graph));
+}
+
+TEST(TessSparseTopology, RegionIndexRejectsWraparoundReferences) {
+  SparseSmall world{tess::ResidencyConfig{8 * SparseSmall::page_byte_size}};
+  make_chunk_passable(world, tess::ChunkKey{0});
+  make_chunk_passable(world, tess::ChunkKey{1});
+  make_chunk_passable(world, tess::ChunkKey{2});
+  tess::LocalTopologyScratch scratch;
+  tess::SparseRegionGraph graph;
+  ASSERT_EQ((tess::build_region_graph<SparseSmall, PassableTag>(world, scratch,
+                                                                graph))
+                .status,
+            tess::TopologyStatus::Built);
+  ASSERT_EQ(graph.region_count(), 3u);
+
+  // The sentinel chunk region_of returns for out-of-world coordinates is
+  // never resident, so it must resolve to the invalid index.
+  EXPECT_EQ(graph.region_index(tess::RegionRef{
+                tess::ChunkKey{std::numeric_limits<std::uint64_t>::max()},
+                tess::LocalRegionId{1},
+            }),
+            tess::invalid_region_index);
+  // A region id near 2^32 must not wrap the offset arithmetic back into a
+  // valid dense index (chunk 2's offset is 2, so offset + id - 1 wraps to 0).
+  EXPECT_EQ(graph.region_index(tess::RegionRef{
+                tess::ChunkKey{2},
+                tess::LocalRegionId{std::numeric_limits<std::uint32_t>::max()},
+            }),
+            tess::invalid_region_index);
 }
 
 }  // namespace
