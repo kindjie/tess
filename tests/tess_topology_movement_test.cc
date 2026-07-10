@@ -293,6 +293,20 @@ static_assert(tess::TransitionProviderFor<tess::AdjacentTransitions, World>);
 static_assert(tess::TransitionProviderFor<BridgeTransitions, World>);
 static_assert(!tess::TransitionProviderFor<int, World>);
 
+// Stair fixtures (S5.8): a schema carrying a stair-direction field plus
+// walker/builder classes over it.
+struct StairTag {};
+using StairSchema =
+    tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
+                      tess::Field<ConstructionTag, std::uint8_t>,
+                      tess::Field<StairTag, std::uint8_t>>;
+using StairWalker = mv::MovementClass<
+    mv::AllOf<mv::Field<PassableTag>, mv::Not<mv::Field<ConstructionTag>>>,
+    mv::UnitCost>;
+using StairBuilder = mv::MovementClass<
+    mv::AnyOf<mv::Field<PassableTag>, mv::Field<ConstructionTag>>,
+    mv::UnitCost>;
+
 // A provider transition from the resident west chunk into the missing middle
 // chunk of the sparse three-chunk fixture (face-adjacent, per the contract).
 struct EastwardHop {
@@ -431,6 +445,177 @@ TEST(TessTopologyMovement, SparseProviderIntoMissingChunkIsIndeterminate) {
                                            EastwardHop{});
   EXPECT_EQ(tess::reachable<ThreeChunk>(hopped, start, goal, reach).status,
             tess::ReachabilityStatus::Indeterminate);
+}
+
+// S5.8: the StairTransitions vertical provider. An offset stair (foot ->
+// one step sideways, one z up) is the vertical special transition: two
+// stacked passable tiles are already six-axis adjacent, so only the offset
+// form adds connectivity. Stairs are per-class through the label filter,
+// incremental-safe, and diagonal chunk crossings contribute nothing.
+
+// Two z-levels in separate chunks (chunk z extent 1): every stair crosses
+// the z chunk boundary, exercising the cross-chunk down-transition path.
+using TwoLevel = tess::Shape<tess::Extent3{8, 8, 2}, tess::Extent3{4, 4, 1}>;
+using LevelWorld = tess::AlwaysResidentWorld<TwoLevel, StairSchema>;
+using Stairs = tess::StairTransitions<StairTag>;
+
+// Ground floor open on rows y < 2; an upper platform over impassable ground
+// (rows y in [2,4)) so no vertical face adjacency connects the levels; the
+// offset stair from the open ground row is the only link.
+void build_two_levels(LevelWorld& world) {
+  for (std::int64_t y = 0; y < 8; ++y) {
+    for (std::int64_t x = 0; x < 8; ++x) {
+      world.field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
+    }
+  }
+  for (std::int64_t y = 2; y < 4; ++y) {
+    for (std::int64_t x = 0; x < 4; ++x) {
+      world.field<PassableTag>(tess::Coord3{x, y, 1}) = 1;
+      world.field<PassableTag>(tess::Coord3{x, y, 0}) = 0;
+    }
+  }
+  // Foot on the open ground row; landing (2,2,1) on the platform.
+  world.field<StairTag>(tess::Coord3{2, 1, 0}) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveY);
+}
+
+TEST(TessTopologyMovement, StairConnectsLevelsInBothDirections) {
+  LevelWorld world;
+  build_two_levels(world);
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraphScratch reach;
+  const auto ground = tess::Coord3{6, 6, 0};
+  const auto platform = tess::Coord3{1, 2, 1};
+
+  tess::RegionGraph plain;
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, plain);
+  EXPECT_EQ(tess::reachable<TwoLevel>(plain, ground, platform, reach).status,
+            tess::ReachabilityStatus::Unreachable);
+
+  tess::RegionGraph stairs;
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, stairs,
+                                                    Stairs{});
+  EXPECT_EQ(tess::reachable<TwoLevel>(stairs, ground, platform, reach).status,
+            tess::ReachabilityStatus::Reachable);
+  EXPECT_EQ(tess::reachable<TwoLevel>(stairs, platform, ground, reach).status,
+            tess::ReachabilityStatus::Reachable);
+}
+
+TEST(TessTopologyMovement, StairEdgesAreFilteredPerClass) {
+  LevelWorld world;
+  build_two_levels(world);
+  // The landing becomes a construction site: passable to the Builder's
+  // AnyOf, invisible to the Walker's Not<Construction>.
+  world.field<PassableTag>(tess::Coord3{2, 2, 1}) = 0;
+  world.field<ConstructionTag>(tess::Coord3{2, 2, 1}) = 1;
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraphScratch reach;
+  const auto ground = tess::Coord3{6, 6, 0};
+  const auto platform = tess::Coord3{1, 2, 1};
+
+  tess::RegionGraph walker_graph;
+  tess::build_region_graph<LevelWorld, StairWalker>(world, scratch,
+                                                    walker_graph, Stairs{});
+  EXPECT_NE(
+      tess::reachable<TwoLevel>(walker_graph, ground, platform, reach).status,
+      tess::ReachabilityStatus::Reachable);
+
+  tess::RegionGraph builder_graph;
+  tess::build_region_graph<LevelWorld, StairBuilder>(world, scratch,
+                                                     builder_graph, Stairs{});
+  EXPECT_EQ(
+      tess::reachable<TwoLevel>(builder_graph, ground, platform, reach).status,
+      tess::ReachabilityStatus::Reachable);
+}
+
+TEST(TessTopologyMovement, StairIncrementalUpdateEqualsFullRebuild) {
+  LevelWorld world;
+  build_two_levels(world);
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, graph,
+                                                    Stairs{});
+
+  // Remove the stair and open a second one elsewhere; dirty the foot chunk.
+  world.field<StairTag>(tess::Coord3{2, 1, 0}) =
+      static_cast<std::uint8_t>(tess::StairDirection::None);
+  world.field<StairTag>(tess::Coord3{0, 1, 0}) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveY);
+  const auto dirty = std::vector<tess::ChunkKey>{tess::chunk_key<TwoLevel>(
+      tess::chunk_coord<TwoLevel>(tess::Coord3{2, 1, 0}))};
+  const auto updated = tess::update_region_graph<LevelWorld, PassableTag>(
+      world, scratch, graph, dirty, Stairs{});
+  EXPECT_EQ(updated.status, tess::TopologyStatus::Built);
+
+  tess::RegionGraph reference;
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, reference,
+                                                    Stairs{});
+  expect_graphs_equal(graph, reference);
+
+  // The new stair (landing {0,2,1} on the platform) restores the link.
+  tess::RegionGraphScratch reach;
+  EXPECT_EQ(tess::reachable<TwoLevel>(graph, tess::Coord3{6, 6, 0},
+                                      tess::Coord3{1, 2, 1}, reach)
+                .status,
+            tess::ReachabilityStatus::Reachable);
+}
+
+TEST(TessTopologyMovement, DiagonalChunkCrossingStairContributesNothing) {
+  LevelWorld world;
+  build_two_levels(world);
+  // Move the stair foot to the chunk's +x edge: the landing would cross the
+  // x boundary AND the z boundary at once, violating the face-neighbor
+  // contract, so the stair is skipped entirely.
+  world.field<StairTag>(tess::Coord3{2, 1, 0}) =
+      static_cast<std::uint8_t>(tess::StairDirection::None);
+  world.field<PassableTag>(tess::Coord3{3, 1, 0}) = 1;
+  world.field<StairTag>(tess::Coord3{3, 1, 0}) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  // Give the would-be landing a passable tile so only the contract, not
+  // labeling, is what drops it.
+  world.field<PassableTag>(tess::Coord3{4, 1, 1}) = 1;
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, graph,
+                                                    Stairs{});
+  tess::RegionGraph plain;
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, plain);
+  EXPECT_EQ(graph.portals().size(), plain.portals().size());
+}
+
+TEST(TessTopologyMovement, SameChunkStairConnectsItsOwnLevels) {
+  using OneChunk = tess::Shape<tess::Extent3{4, 4, 2}, tess::Extent3{4, 4, 2}>;
+  using OneChunkWorld = tess::AlwaysResidentWorld<OneChunk, StairSchema>;
+  OneChunkWorld world;
+  for (std::int64_t y = 0; y < 4; ++y) {
+    for (std::int64_t x = 0; x < 4; ++x) {
+      world.field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
+    }
+  }
+  // Upper platform over impassable ground, foot column excluded as before.
+  for (std::int64_t y = 2; y < 4; ++y) {
+    for (std::int64_t x = 0; x < 4; ++x) {
+      world.field<PassableTag>(tess::Coord3{x, y, 1}) = 1;
+      world.field<PassableTag>(tess::Coord3{x, y, 0}) = 0;
+    }
+  }
+  world.field<PassableTag>(tess::Coord3{1, 1, 0}) = 1;
+  world.field<StairTag>(tess::Coord3{1, 1, 0}) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveY);
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  tess::build_region_graph<OneChunkWorld, PassableTag>(
+      world, scratch, graph, tess::StairTransitions<StairTag>{});
+  tess::RegionGraphScratch reach;
+  EXPECT_EQ(tess::reachable<OneChunk>(graph, tess::Coord3{0, 0, 0},
+                                      tess::Coord3{3, 3, 1}, reach)
+                .status,
+            tess::ReachabilityStatus::Reachable);
 }
 
 }  // namespace

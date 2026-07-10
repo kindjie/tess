@@ -13,6 +13,34 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - StairTransitions vertical provider (M6, S5 slice 8)
+
+- Added: `StairTransitions<StairTag>` in `topology/transition_provider.h` --
+  an integral field holds a `StairDirection`, marking the tile as the foot
+  of a stair whose landing is one step sideways and one z-level up. The
+  offset form is deliberate: two stacked passable tiles are already six-axis
+  adjacent, so only an offset stair adds connectivity. Both directions are
+  emitted, each from the chunk owning its origin tile (down from the
+  landing's chunk -- the foot's chunk or its +z face neighbor), keeping
+  incremental re-derivation exact. Endpoint traversability stays a
+  movement-class question (label filter), so stair edges are per-class. A
+  landing that would cross two chunk boundaries at once (sideways off the
+  x/y edge AND up off the top z layer) violates the face-neighbor contract
+  and contributes nothing, documented as the placement limit. On sparse
+  worlds a foot in a non-resident chunk needs no special handling: the
+  landing tile's own -z boundary exit already marks its region as reaching
+  missing topology.
+- Reason: S5 slice 8 -- the concrete vertical provider closing M6's
+  stairs/ladders deliverable on the S5.7 contract, with no byte-identity
+  shield (new code), so connectivity, per-class filtering, incremental
+  equality, and the diagonal limit are all pinned by property tests.
+- Affected docs: `architecture/topology.md`, `architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: `topology/transition_provider.h`;
+  `tests/tess_topology_movement_test.cc` (two-level fixture, both-direction
+  reachability, Builder-only stair, incremental == full across stair edits,
+  diagonal skip, same-chunk landing).
+
 ## 2026-07-10 - Transition providers for the region graph (M6, S5 slice 7)
 
 - Added: `include/tess/topology/transition_provider.h` -- the

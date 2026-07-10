@@ -157,7 +157,12 @@
   regions (both directions), incremental update equals a full rebuild with
   the same provider, a provider-type mismatch forces a full rebuild, and a
   sparse provider transition into a non-resident chunk degrades reachability
-  to `Indeterminate` instead of a wrong `Unreachable`.
+  to `Indeterminate` instead of a wrong `Unreachable`; and the stair provider
+  (S5.8): an offset stair links two z-levels with no vertical face adjacency
+  in both directions (cross-chunk and same-chunk landings), stair edges are
+  per-class (a construction-site landing is Builder-only), incremental
+  update equals a full rebuild across stair add/remove, and a stair whose
+  landing would cross two chunk boundaries at once contributes nothing.
 - `tess_path_movement_class_test`: verifies movement classes threaded through
   the A* leaves and weighted cores (S5.2): the `WalkableField` identity class
   matches the raw-tag unit search node-for-node on a serpentine maze,
