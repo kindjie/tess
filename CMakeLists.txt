@@ -81,6 +81,7 @@ set(
   include/tess/storage/sparse_world.h
   include/tess/storage/world.h
   include/tess/tess.h
+  include/tess/topology/movement_class.h
   include/tess/topology/topology.h
 )
 

@@ -13,6 +13,32 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Movement vocabulary DSL (M6, S5 slice 1)
+
+- Added: `include/tess/topology/movement_class.h` (namespace `tess::movement`) --
+  a compile-time DSL where a `MovementClass<PassExpr, CostExpr>` fuses a
+  passability predicate and an entry-cost expression composed from typed-field
+  leaves. Boolean terms `Field`/`NotZero`/`Not`/`AllOf`/`AnyOf`; cost
+  expressions `UnitCost`/`ConstantCost`/`FieldCost`/`SelectCost` with a
+  `normalize_cost` byte-exact to the weighted A* leaf; identity classes
+  `WalkableField`/`WalkableCostField`/`LegacyWeighted`; the `MovementClassFor`
+  concept and `movement_class_of` tag/class normalization.
+- Reason: first slice of the M6 movement-vocabulary close (S5). Labeling,
+  pathfinding, and commit validation currently each bake in a single global
+  passability (a raw `PassableTag`); this vocabulary is the shared, allocation-
+  free, constexpr foundation later slices thread through region labeling,
+  precheck, the weighted agent tick, and `sim/movement.h` so plan and commit
+  agree. Leaves read the constexpr `ChunkPage::field<Tag>` at the (page, tile)
+  seam because world-scope accessors are not constexpr, and the whole predicate
+  inlines to the same ops a hand-written cast emits. `WalkableField` is a
+  distinct struct (not an alias) carrying the raw tag + a `field_span` fast path
+  so the identity class stays byte-identical to today's single-field scan. Pure
+  vocabulary; no wiring yet.
+- Affected docs: `architecture/topology.md`, `architecture/surface.json`.
+- Affected code: new `topology/movement_class.h`, `tess.h`, `CMakeLists.txt`;
+  new `tests/tess_movement_class_test.cc`, `tests/CMakeLists.txt`,
+  `tests/AGENTS.md`.
+
 ## 2026-07-09 - Path product/cache invalidation contracts (audit-2 W-A)
 
 - Changed: (1) Route, portal-route, and distance-field products treat an empty
