@@ -471,9 +471,14 @@ TEST(TessPathAgentTick, WarmUnitTickWithoutDirtyPathingDoesNotAllocate) {
                                                         agents, runtime);
 
   tess_test::ScopedAllocationCounter counter;
-  (void)tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
-                                                        agents, runtime);
+  const auto stats = tess::tick_unit_path_agents<World, PassableTag>(
+      tick_state, world, agents, runtime);
 
+  // The warm clean tick must skip path processing yet still advance every
+  // agent along its cached route (an early-return no-op would also count
+  // zero allocations), and do so allocation-free.
+  EXPECT_FALSE(stats.processed_paths);
+  EXPECT_EQ(stats.movement.advanced, agents.size());
   EXPECT_EQ(counter.count(), 0u);
 }
 

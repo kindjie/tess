@@ -165,6 +165,50 @@ TEST(TessMovement, ValidateRejectsStaleTopologyAndToVersionBranches) {
   EXPECT_EQ(result.status, tess::MovementStatus::Moved);
 }
 
+TEST(TessMovement, RecordsEveryFailureStatusInItsOwnCounter) {
+  tess::MovementFailureCounts counts;
+
+  tess::record_movement_failure(counts, tess::MovementStatus::Moved);
+  tess::record_movement_failure(counts, tess::MovementStatus::InvalidFrom);
+  tess::record_movement_failure(counts, tess::MovementStatus::InvalidTo);
+  tess::record_movement_failure(counts, tess::MovementStatus::NotAdjacent);
+  tess::record_movement_failure(counts, tess::MovementStatus::BlockedFrom);
+  tess::record_movement_failure(counts, tess::MovementStatus::BlockedTo);
+  tess::record_movement_failure(counts, tess::MovementStatus::Occupied);
+  tess::record_movement_failure(counts, tess::MovementStatus::Reserved);
+  tess::record_movement_failure(counts, tess::MovementStatus::StaleVersion);
+  tess::record_movement_failure(counts, tess::MovementStatus::StaleTopology);
+
+  // Moved must not count anywhere; the three invalid statuses share one
+  // bucket; every remaining status has its own dedicated counter.
+  EXPECT_EQ(counts.invalid, 3u);
+  EXPECT_EQ(counts.blocked, 2u);
+  EXPECT_EQ(counts.occupied, 1u);
+  EXPECT_EQ(counts.reserved, 1u);
+  EXPECT_EQ(counts.stale_version, 1u);
+  EXPECT_EQ(counts.stale_topology, 1u);
+}
+
+TEST(TessMovement, ClassifiesTransientVersusTerminalFailures) {
+  using tess::is_transient_movement_failure;
+  using tess::MovementStatus;
+
+  // Transient: the world state can legitimately change; re-path and retry.
+  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::BlockedFrom));
+  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::BlockedTo));
+  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::Occupied));
+  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::Reserved));
+  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::StaleVersion));
+  EXPECT_TRUE(is_transient_movement_failure(MovementStatus::StaleTopology));
+
+  // Terminal (the false branch): success and caller bugs must never route an
+  // agent into the blocked-retry lifecycle.
+  EXPECT_FALSE(is_transient_movement_failure(MovementStatus::Moved));
+  EXPECT_FALSE(is_transient_movement_failure(MovementStatus::InvalidFrom));
+  EXPECT_FALSE(is_transient_movement_failure(MovementStatus::InvalidTo));
+  EXPECT_FALSE(is_transient_movement_failure(MovementStatus::NotAdjacent));
+}
+
 TEST(TessMovement, ManhattanDistanceIsOverflowSafeAtInt64Extremes) {
   constexpr auto min = std::numeric_limits<std::int64_t>::min();
   constexpr auto max = std::numeric_limits<std::int64_t>::max();
@@ -425,9 +469,13 @@ TEST(TessPathAgent, WarmUnitAgentProcessingDoesNotAllocate) {
                                                            runtime);
 
   tess_test::ScopedAllocationCounter counter;
-  (void)tess::process_unit_path_agents<World, PassableTag>(world, agents,
-                                                           runtime);
+  const auto stats = tess::process_unit_path_agents<World, PassableTag>(
+      world, agents, runtime);
 
+  // The warm frame must do the real work (an early-return no-op would also
+  // count zero allocations), and do it allocation-free.
+  EXPECT_EQ(stats.submitted, agents.size());
+  EXPECT_EQ(stats.found, agents.size());
   EXPECT_EQ(counter.count(), 0u);
 }
 
@@ -474,9 +522,13 @@ TEST(TessPathAgent, WarmWeightedAgentProcessingDoesNotAllocate) {
       world, agents, runtime);
 
   tess_test::ScopedAllocationCounter counter;
-  (void)tess::process_weighted_path_agents<World, PassableTag, CostTag, 8>(
-      world, agents, runtime);
+  const auto stats =
+      tess::process_weighted_path_agents<World, PassableTag, CostTag, 8>(
+          world, agents, runtime);
 
+  // As above: pin the observable result so a skipped warm frame cannot pass.
+  EXPECT_EQ(stats.submitted, agents.size());
+  EXPECT_EQ(stats.found, agents.size());
   EXPECT_EQ(counter.count(), 0u);
 }
 
