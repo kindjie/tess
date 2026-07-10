@@ -191,19 +191,23 @@ other entries cannot move.
   returned paths. Transient movement failures keep the `Found` route and
   enter `Blocked`; structural failures (invalid endpoints, non-adjacent
   steps) are terminal `Unreachable` until a new goal is assigned.
-- `process_unit_path_agents<World, PassableTag>(world, agents, runtime,
-  policy)` and `process_weighted_path_agents<World, PassableTag, CostTag,
-  MaxCost>(world, agents, runtime, policy)` run the current conservative
-  synchronous agent pathing loop. They resubmit active agents each processing
+- `process_unit_path_agents<World, ClassOrTag>(world, agents, runtime,
+  policy)` and `process_weighted_path_agents<World, Class, MaxCost>(world,
+  agents, runtime, policy)` run the current conservative synchronous agent
+  pathing loop (the weighted form also keeps its legacy `<World, PassableTag,
+  CostTag, MaxCost>` overload). They resubmit active agents each processing
   pass, so stale `PathTicket` values do not survive runtime request clears.
 - `SimClock`, `PathAgentTickState`, `PathAgentTickOptions`, and
   `PathAgentTickStats` provide the first minimal path-agent tick wrapper.
-  `tick_unit_path_agents<World, PassableTag>(state, world, agents, runtime,
-  options)` and `tick_weighted_path_agents<World, PassableTag, CostTag,
-  MaxCost>(state, world, agents, runtime, options)` advance the clock,
-  process paths when `state.pathing_dirty` is set or when any agent is in
-  `NeedsPath` or `Blocked` (with retry budget remaining), then move agents up
-  to `options.max_steps` path nodes. Goals assigned through either
+  `tick_unit_path_agents<World, ClassOrTag>(state, world, agents, runtime,
+  options)` and `tick_weighted_path_agents<World, Class, MaxCost>(state,
+  world, agents, runtime, options)` (plus the legacy `<World, PassableTag,
+  CostTag, MaxCost>` overloads and the `_with_movement` variants) advance the
+  clock, process paths when `state.pathing_dirty` is set or when any agent is
+  in `NeedsPath` or `Blocked` (with retry budget remaining), then move agents
+  up to `options.max_steps` path nodes. In the class forms ONE movement class
+  drives pathing, the precheck, and (for the `_with_movement` variants)
+  commit validation, so plan and commit provably agree per class. Goals assigned through either
   `set_path_agent_goal` overload are picked up on the next tick; `Blocked`
   agents consume one re-path attempt per processed tick until
   `options.max_blocked_retries` runs out and they turn terminally
@@ -254,7 +258,7 @@ other entries cannot move.
   scratch)` groups weighted requests by goal, builds bounded weighted fields
   for repeated goals, uses weighted A* for singleton goals, and returns stable
   result spans owned by `WeightedPathBatchScratch`.
-- `PathRequestRuntime::process_unit_cached<World, PassableTag>(world, policy)`
+- `PathRequestRuntime::process_unit_cached<World, ClassOrTag>(world, policy)`
   processes the current request set through `cached_astar_path`, optionally
   reuses unit distance-field products for repeated goals when
   `policy.use_unit_field_product_cache` is set, invalidates the unit route
@@ -263,10 +267,20 @@ other entries cannot move.
   single-goal groups, requires at least
   `unit_field_product_min_start_chunks` distinct start chunks by default, and
   reports candidate, used, and skipped group counts in `PathRuntimeStats`.
-- `PathRequestRuntime::process_weighted_batch<World, PassableTag, CostTag,
-  MaxCost>(world, policy)` processes the current request set through
-  `weighted_path_batch`, while using the same world-change cadence to clear
-  owned long-lived caches.
+  The unit route cache keys entries on `(start, goal)` plus a world-version
+  fingerprint and nothing on the movement class, so each unit process call
+  binds the runtime to its (normalized) class: a rebind clears the unit
+  caches -- correct even on misuse -- and counts in
+  `PathRuntimeStats::class_cache_invalidations`. One runtime per
+  (world, class) is therefore the PERF contract, not a correctness
+  precondition.
+- `PathRequestRuntime::process_weighted_batch<World, Class, MaxCost>(world,
+  policy)` processes the current request set through `weighted_path_batch`,
+  while using the same world-change cadence to clear owned long-lived caches.
+  One movement class drives both the search and the precheck. The legacy
+  `<World, PassableTag, CostTag, MaxCost>` overload searches through
+  `movement::LegacyWeighted` and prechecks on PASSABILITY only (the raw tag's
+  identity class), matching graphs built with that tag.
 - Both `process_unit_cached` and `process_weighted_batch` take an optional
   trailing `const RegionGraphT<World::residency_type>*` (default `nullptr`).
   When a graph is supplied, a pre-A* pass runs `precheck_path` for each request
@@ -276,9 +290,10 @@ other entries cannot move.
   path skips ruled-out requests in its search loop; the weighted path runs the
   batch over only the survivors and scatters results back to their original
   slots. Passing `nullptr` (the default) is byte-identical to the un-gated path.
-  Precondition: the graph must be built over the same `PassableTag` the search
-  uses, and its freshness is checked (`is_region_graph_fresh`); a stale graph
-  degrades to running A* rather than trusting a snapshot, so the gate can only
+  Class agreement is enforced through the graph's movement-class stamp
+  (`is_region_graph_fresh_for`): a graph labeled for a different class than
+  the call searches with degrades to `GraphStale` (nothing ruled out) rather
+  than pruning a route the search's own class could walk, so the gate can only
   prune provably-unreachable goals, never turn a solvable query into a failure.
 - `cached_astar_path<World, PassableTag>(world, request, scratch, cache)`
   checks the route cache before falling back to `astar_path`. Hits copy the
