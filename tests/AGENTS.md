@@ -142,6 +142,16 @@
   (`FieldCost`, `SelectCost`, `ConstantCost`), and that the `WalkableField`
   identity class reproduces the legacy `static_cast<bool>(field)` result and
   exposes the same `field_span` storage the region flood scans.
+- `tess_topology_movement_test`: verifies per-class region labeling and the
+  graph movement-class stamp (S5.3): the `WalkableField` identity build is
+  byte-identical to the legacy raw-tag build (labels, regions, exits, portals,
+  index), Walker/Builder labels diverge exactly on construction tiles (with
+  the Builder-only region bridge across a wall of sites), per-class
+  incremental `update_region_graph` equals a full rebuild, a class-stamp
+  mismatch forces a full rebuild even with an empty dirty set,
+  `is_region_graph_fresh_for` is per-class (raw tag shares the identity
+  class's stamp; unbuilt graphs match no class), and a warm per-class relabel
+  of one chunk is allocation-free.
 - `tess_path_movement_class_test`: verifies movement classes threaded through
   the A* leaves and weighted cores (S5.2): the `WalkableField` identity class
   matches the raw-tag unit search node-for-node on a serpentine maze,

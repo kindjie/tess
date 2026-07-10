@@ -13,6 +13,38 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Per-class region labeling and the graph class stamp (M6, S5 slice 3)
+
+- Changed: `build_local_chunk_topology`, `build_region_graph`, and
+  `update_region_graph` take a movement class OR a raw passable tag. The
+  identity class floods the raw `field_span` exactly as the legacy single-tag
+  build did (byte-identical labels and codegen, pinned by test); a composed
+  class evaluates its predicate on the resolved page per tile. Portal pairing
+  is untouched -- it queries labels, so per-class labels yield per-class
+  portals automatically. `RegionGraphT` gains a movement-class stamp
+  (`built_class_`, a `core/tag_identity.h` token of the NORMALIZED class)
+  recorded at build time and mirrored on `matches_shape`: a stamp mismatch in
+  `update_region_graph` forces a full rebuild with the requested class's
+  labels, the public `matches_class<ClassOrTag>()` reports the binding, and
+  the new `is_region_graph_fresh_for<ClassOrTag>(world, graph)` is the
+  class-aware freshness form (later slices route precheck through it so a
+  wrong-class graph degrades to GraphStale, never a wrong Unreachable).
+- Reason: S5 slice 3 -- the same vocabulary that drives search (slice 2) now
+  drives labeling, so a Walker graph and a Builder graph over one world are
+  first-class. The stamp closes the documented precheck precondition gap: the
+  graph type encodes neither shape nor class, so binding both at build time is
+  what keeps a definitive Unreachable trustworthy.
+- Affected docs: `architecture/topology.md`, `architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: `topology/topology.h`; new
+  `tests/tess_topology_movement_test.cc` (identity byte-identity,
+  Walker/Builder divergence + Builder-only bridge, per-class incremental ==
+  full, stamp-mismatch rebuild, per-class freshness, alloc-free warm
+  relabel), `tests/CMakeLists.txt`; `bench/tess_topology_bench.cc` +
+  `bench/thresholds/topology.json` (composed-class 512x512 labeling gate;
+  measured on par with the raw scan locally, bootstrap threshold 3x the
+  identity gate pending CI calibration).
+
 ## 2026-07-09 - Movement classes through the A* leaves and weighted cores (M6, S5 slice 2)
 
 - Changed: the pathfinding passability/cost leaves (`detail::is_passable`,

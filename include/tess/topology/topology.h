@@ -1,8 +1,10 @@
 #pragma once
 
 #include <tess/core/shape.h>
+#include <tess/core/tag_identity.h>
 #include <tess/storage/residency.h>
 #include <tess/storage/world.h>
+#include <tess/topology/movement_class.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -295,6 +297,7 @@ class RegionGraphT {
     adjacency_targets_.clear();
     built_chunk_grid_ = Extent3{0, 0, 0};
     built_chunk_extent_ = Extent3{0, 0, 0};
+    built_class_ = 0;
     if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
       sparse_.topology_keys_.clear();
       sparse_.region_reaches_missing_.clear();
@@ -382,6 +385,18 @@ class RegionGraphT {
       }
       return static_cast<std::uint32_t>(index);
     }
+  }
+
+  // True iff this graph was built for `ClassOrTag` (normalized, so a raw tag
+  // and its WalkableField identity agree). The graph type does not encode the
+  // movement class, so a graph labeled for one class must never answer
+  // reachability for another: update_region_graph treats a mismatch as "not
+  // built for this class" (full rebuild) and is_region_graph_fresh_for
+  // reports it as not fresh. False until the first build.
+  template <typename ClassOrTag>
+  [[nodiscard]] auto matches_class() const noexcept -> bool {
+    return built_class_ ==
+           detail::tag_identity<movement::movement_class_of<ClassOrTag>>();
   }
 
  private:
@@ -481,6 +496,14 @@ class RegionGraphT {
     built_chunk_extent_ = Traits::chunk;
   }
 
+  // Movement-class binding captured at build time, mirroring the shape stamp
+  // (see the public matches_class).
+  template <typename ClassOrTag>
+  void bind_class() noexcept {
+    built_class_ =
+        detail::tag_identity<movement::movement_class_of<ClassOrTag>>();
+  }
+
   static constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
   // Sparse only: resolve a ChunkKey to its position in the frozen sorted key
@@ -505,9 +528,11 @@ class RegionGraphT {
   std::vector<std::uint32_t> region_offsets_;
   std::vector<std::uint32_t> adjacency_starts_;
   std::vector<std::uint32_t> adjacency_targets_;
-  // Zero until the first build, so an unbuilt graph never matches any shape.
+  // Zero until the first build, so an unbuilt graph never matches any shape
+  // or movement class.
   Extent3 built_chunk_grid_{0, 0, 0};
   Extent3 built_chunk_extent_{0, 0, 0};
+  std::uintptr_t built_class_ = 0;
   [[no_unique_address]] detail::RegionGraphSparseData<Residency> sparse_;
 };
 
@@ -741,13 +766,14 @@ void append_chunk_portals(const RegionGraphT<Residency>& graph,
 
 }  // namespace detail
 
-template <typename World, typename PassableTag>
+template <typename World, typename ClassOrTag>
 auto build_local_chunk_topology(const World& world, ChunkKey chunk,
                                 LocalTopologyScratch& scratch,
                                 LocalChunkTopology& topology)
     -> LocalTopologyResult {
   using Shape = typename World::shape_type;
   using Traits = ShapeTraits<Shape>;
+  using Class = movement::movement_class_of<ClassOrTag>;
 
   topology.clear();
   if (chunk.value >= Traits::chunk_count) {
@@ -761,13 +787,30 @@ auto build_local_chunk_topology(const World& world, ChunkKey chunk,
       static_cast<std::size_t>(Traits::local_tile_count), invalid_local_region);
   scratch.stack_.clear();
 
-  const auto passable = world.template field_span<PassableTag>(chunk);
+  // Identity classes flood the raw field span exactly as the legacy
+  // single-tag build did (byte-identical labels and codegen); composed
+  // classes evaluate their predicate on the resolved page per tile.
+  const auto& page = world.chunk(chunk);
+  [[maybe_unused]] const auto passable = [&] {
+    if constexpr (movement::HasPassableSpan<Class>) {
+      return Class::passable_span(page);
+    } else {
+      return nullptr;
+    }
+  }();
+  const auto tile_passable = [&](LocalTileId id) -> bool {
+    if constexpr (movement::HasPassableSpan<Class>) {
+      return static_cast<bool>(passable[static_cast<std::size_t>(id.value)]);
+    } else {
+      return Class::passable(page, id);
+    }
+  };
   std::size_t passable_tiles = 0;
 
   for (std::uint64_t raw_id = 0; raw_id < Traits::local_tile_count; ++raw_id) {
     const auto tile = LocalTileId{raw_id};
     const auto offset = static_cast<std::size_t>(raw_id);
-    if (!static_cast<bool>(passable[offset]) ||
+    if (!tile_passable(tile) ||
         topology.region_ids_[offset] != invalid_local_region) {
       continue;
     }
@@ -796,7 +839,7 @@ auto build_local_chunk_topology(const World& world, ChunkKey chunk,
             const auto neighbor = local_tile_id<Shape>(neighbor_coord);
             const auto neighbor_offset =
                 static_cast<std::size_t>(neighbor.value);
-            if (!static_cast<bool>(passable[neighbor_offset]) ||
+            if (!tile_passable(neighbor) ||
                 topology.region_ids_[neighbor_offset] != invalid_local_region) {
               return;
             }
@@ -812,15 +855,17 @@ auto build_local_chunk_topology(const World& world, ChunkKey chunk,
   };
 }
 
-template <typename World, typename PassableTag>
+template <typename World, typename ClassOrTag>
 auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
                         RegionGraphT<typename World::residency_type>& graph)
     -> LocalTopologyResult {
   using Shape = typename World::shape_type;
   using Traits = ShapeTraits<Shape>;
+  using Class = movement::movement_class_of<ClassOrTag>;
 
   graph.clear();
   graph.template bind_shape<Shape>();
+  graph.template bind_class<Class>();
   auto result = LocalTopologyResult{};
 
   if constexpr (std::is_same_v<typename World::residency_type,
@@ -831,7 +876,7 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
          ++raw_chunk) {
       auto& topology =
           graph.local_topologies_[static_cast<std::size_t>(raw_chunk)];
-      const auto local_result = build_local_chunk_topology<World, PassableTag>(
+      const auto local_result = build_local_chunk_topology<World, Class>(
           world, ChunkKey{raw_chunk}, scratch, topology);
       if (local_result.status != TopologyStatus::Built) {
         result.status = local_result.status;
@@ -857,7 +902,7 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
     graph.local_topologies_.resize(count);
     graph.sparse_.frozen_generations_.resize(count);
     for (std::size_t i = 0; i < count; ++i) {
-      const auto local_result = build_local_chunk_topology<World, PassableTag>(
+      const auto local_result = build_local_chunk_topology<World, Class>(
           world, keys[i], scratch, graph.local_topologies_[i]);
       // Resident keys are always in-world, so InvalidChunk cannot arise; keep
       // the status propagation for symmetry with the dense build.
@@ -891,20 +936,22 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
 // dirty set leaves the graph untouched. Returns the aggregate
 // LocalTopologyResult over all chunks, mirroring build_region_graph. If the
 // graph was not built for this world shape, falls back to a full build.
-template <typename World, typename PassableTag>
+template <typename World, typename ClassOrTag>
 auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
                          RegionGraphT<typename World::residency_type>& graph,
                          std::span<const ChunkKey> dirty_chunks)
     -> LocalTopologyResult {
   using Shape = typename World::shape_type;
   using Traits = ShapeTraits<Shape>;
+  using Class = movement::movement_class_of<ClassOrTag>;
 
   if constexpr (std::is_same_v<typename World::residency_type,
                                AlwaysResident>) {
     const auto chunk_count = static_cast<std::size_t>(Traits::chunk_count);
     if (graph.local_topologies_.size() != chunk_count ||
-        !graph.template matches_shape<Shape>()) {
-      return build_region_graph<World, PassableTag>(world, scratch, graph);
+        !graph.template matches_shape<Shape>() ||
+        !graph.template matches_class<Class>()) {
+      return build_region_graph<World, Class>(world, scratch, graph);
     }
     for (const auto chunk : dirty_chunks) {
       if (chunk.value >= Traits::chunk_count) {
@@ -937,7 +984,7 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
         if (dirty[raw_chunk] == 0) {
           continue;
         }
-        build_local_chunk_topology<World, PassableTag>(
+        build_local_chunk_topology<World, Class>(
             world, ChunkKey{raw_chunk}, scratch,
             graph.local_topologies_[raw_chunk]);
       }
@@ -973,13 +1020,14 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
     const auto count = graph.local_topologies_.size();
     if (count != world.resident_count() ||
         graph.sparse_.frozen_generations_.size() != world.resident_count() ||
-        !graph.template matches_shape<Shape>()) {
-      return build_region_graph<World, PassableTag>(world, scratch, graph);
+        !graph.template matches_shape<Shape>() ||
+        !graph.template matches_class<Class>()) {
+      return build_region_graph<World, Class>(world, scratch, graph);
     }
     for (std::size_t i = 0; i < count; ++i) {
       if (world.residency_generation(graph.sparse_.topology_keys_[i]) !=
           graph.sparse_.frozen_generations_[i]) {
-        return build_region_graph<World, PassableTag>(world, scratch, graph);
+        return build_region_graph<World, Class>(world, scratch, graph);
       }
     }
     for (const auto chunk : dirty_chunks) {
@@ -1020,7 +1068,7 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
         if (dirty[i] == 0) {
           continue;
         }
-        build_local_chunk_topology<World, PassableTag>(
+        build_local_chunk_topology<World, Class>(
             world, graph.sparse_.topology_keys_[i], scratch,
             graph.local_topologies_[i]);
       }
@@ -1214,6 +1262,21 @@ template <typename World>
     }
     return true;
   }
+}
+
+// Class-aware freshness: additionally requires the graph's movement-class
+// stamp to match `ClassOrTag` (normalized, so a raw tag and its WalkableField
+// identity agree). A graph labeled for another class is NOT fresh for this
+// one even when every topology version is current -- its labels answer a
+// different passability question. The class is the explicit first template
+// argument; `World` stays deduced.
+template <typename ClassOrTag, typename World>
+[[nodiscard]] auto is_region_graph_fresh_for(
+    const World& world,
+    const RegionGraphT<typename World::residency_type>& graph) noexcept
+    -> bool {
+  return graph.template matches_class<ClassOrTag>() &&
+         is_region_graph_fresh(world, graph);
 }
 
 }  // namespace tess
