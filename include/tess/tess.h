@@ -8,6 +8,7 @@
 #include <tess/diagnostics/warning_sink.h>
 #include <tess/ops/phase_executor.h>
 #include <tess/ops/queued.h>
+#include <tess/ops/result_channel.h>
 #include <tess/path/distance_field_box.h>
 #include <tess/path/field_product_cache.h>
 #include <tess/path/node_index_space.h>

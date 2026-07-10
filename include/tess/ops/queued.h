@@ -180,6 +180,9 @@ struct PlannedOperation {
   Priority priority = Priority::GameplayCritical;
   BudgetPolicy budget_policy = BudgetPolicy::MustRun;
   std::vector<ChunkKey> chunks;
+  // Enqueue-site capture carried through planning so run-time completions
+  // (result channels) can report where the operation came from.
+  std::source_location source = std::source_location::current();
 };
 
 class ExecutionPlan {
@@ -368,6 +371,9 @@ class PlannedDirtyPartitions {
   std::size_t records_per_partition_reserve_ = 0;
 };
 
+template <typename T>
+class ResultChannel;
+
 class PlannedPhaseExecutionScratch {
  public:
   void reserve_operations(std::size_t count) {
@@ -406,6 +412,13 @@ class PlannedPhaseExecutionScratch {
       Executor&& executor, World& world, const ExecutionPlan& plan,
       ExecutionPhase phase, PlannedPhaseExecutionScratch& scratch, Fn&& fn)
       -> PlannedExecutionResult;
+
+  template <WritePolicy Policy, typename Executor, typename World, typename T,
+            typename Fn>
+  friend auto execute_phase_partitioned_dirty_with_results(
+      Executor&& executor, World& world, const ExecutionPlan& plan,
+      ExecutionPhase phase, PlannedPhaseExecutionScratch& scratch,
+      ResultChannel<T>& channel, Fn&& fn) -> PlannedExecutionResult;
 
   template <typename World>
   friend auto merge_planned_dirty(World& world,
@@ -811,6 +824,7 @@ template <typename World>
         op.priority,
         op.budget_policy,
         {},
+        op.source,
     };
     ChunkKey invalid_chunk{};
     if (!detail::expand_domain(world, op.domain, planned.chunks,

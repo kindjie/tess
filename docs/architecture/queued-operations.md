@@ -296,14 +296,77 @@ non-owning spans and does not allocate. Enqueueing and domain/report expansion
 may allocate because `FrameOps`, explicit domains, reports, and planned chunk
 lists own their storage.
 
+## Result Channels
+
+`include/tess/ops/result_channel.h` closes M4's result gap with a
+deliberately drain-only, synchronous design:
+
+- `OpCompletion` is the per-operation completion record, carrying both
+  failure domains -- plan-time verdicts (`OperationStatus` /
+  `OperationFailure`, from the `OperationReport`) and run-time verdicts
+  (`PlannedExecutionStatus`) -- plus the executed chunk count and the
+  enqueue-site `source_location`. A `completed` flag distinguishes a stamped
+  record from a default-constructed one, so `ok()` can never read true for a
+  slot that was never completed.
+- `OpResultState` is the v1 slot vocabulary: `Unbound` (no slot), `Pending`
+  (prepared, not completed -- including the tail of a plan that aborted
+  early), `Ready` (completed, value readable), `Failed` (completed with
+  reasons; no value).
+- `ResultChannel<T>` is caller-owned, fixed-capacity scratch keyed by
+  `OpHandle`. Slots are dense (slot index == handle value; `FrameOps` hands
+  out handles 0..N-1 per frame), so lookup is O(1) with no map. Publication
+  is executor-agnostic without atomics: each op's executing thread writes
+  only its own slot, and every read happens on the frame owner's thread
+  after the synchronous execute call returns, so the phase executor's join
+  barrier supplies visibility. `drain_results(visitor)` visits every
+  completed, not-yet-drained slot in handle (== enqueue) order as
+  `visit(OpHandle, const OpCompletion&, const T* value)` with a null value
+  for `Failed` slots -- failures deliver reasons, never values -- and marks
+  them drained (drain-once); `state()`/`completion()` lookups stay readable
+  until `clear()`. `clear()` must pair with `FrameOps::clear()`: handle
+  assignment restarts at zero there, and a channel kept across it would
+  alias new-frame handles onto stale slots (the `generation()` counter
+  exists so tests and long-lived callers can assert the discipline).
+- `record_plan_completions(report, channel)` copies every plan-time
+  rejection out of an `ExecutionReport` into `Failed` slots before
+  execution, so validation failures and executed results flow through one
+  drain.
+- `execute_phase_partitioned_dirty_with_results<Policy>(executor, world,
+  plan, phase, scratch, channel, fn)` is the result-bearing variant of the
+  partitioned phase helper: the callback receives each chunk view plus a
+  mutable reference to the operation's channel value (`fn(view, T&)`),
+  accumulated op-exclusively on the executing thread. Every operation in
+  the phase is prepared upfront, so a serial early-stop leaves a `Pending`
+  tail rather than gaps, and each op's completion is stamped by its
+  executing thread — a post-barrier sweep of the scratch results would
+  misread never-run operations as executed, because
+  `PlannedExecutionResult` default-constructs to `Executed`. The phase
+  range is validated before the channel is touched; aggregate return and
+  dirty partitioning are identical to the resultless helper. Delivery
+  content and drain order are identical under serial and threaded
+  executors for successful plans; on failure the serial executor's
+  early-stop tail reads `Pending` while threaded executors, which drain
+  the whole range by contract, complete it.
+- `execute_plan_deferred_dirty_with_results<Policy>(world, plan, dirty,
+  channel, fn)` is the serial whole-plan variant with the same
+  partial-execution contract as `execute_plan_deferred_dirty` (aborts keep
+  earlier writes and report their chunks); the aborted tail reads
+  `Pending`.
+
+There is intentionally no future/handle type in v1: the pipeline has no
+asynchronous execution path, so a future could never be observed pending
+across a caller-visible boundary. One returns when budget-deferred execution
+gives it a real consumer; this is a recorded TDD divergence alongside the
+deferred cancelled/superseded states.
+
 ## Deliberate Limits
 
 This slice is a planner scaffold only. It intentionally does not implement:
 
-- queued kernel storage, executor integration, or result channels
-- callback ownership, queued kernel storage, result channels, or async handles
-- persistent worker scheduling, worker pools, async work, or result-channel
-  completion
+- queued kernel storage or callback ownership
+- async handles/futures (results are synchronous and drain-only; see Result
+  Channels above)
+- persistent worker scheduling, worker pools, or async work
 - automatic execution of planned operations through a scheduler
 - thread-local dirty accumulator policy beyond caller-owned per-operation
   phase partitions

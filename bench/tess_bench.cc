@@ -699,6 +699,53 @@ void BM_queued_execute_resident_update(benchmark::State& state) {
               "queued execution did not visit every resident chunk");
 }
 
+// Result-bearing counterpart (S6): same per-chunk write through
+// execute_plan_deferred_dirty_with_results, plus the per-frame channel
+// drain and clear a consumer performs. Gates the ack-delivery overhead
+// against the resultless ceiling above.
+void BM_queued_execute_resident_update_with_results(benchmark::State& state) {
+  StorageWorld world;
+  tess::FrameOps ops;
+  (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                         tess::FieldAccessDesc{0, DirtyTerrain, 0},
+                         tess::WritePolicy::UniquePerChunk);
+  const auto report = tess::plan_operations(world, ops);
+  const auto& plan = report.plan();
+
+  struct Ack {
+    std::uint64_t chunks = 0;
+  };
+  tess::ResultChannel<Ack> channel;
+  channel.reserve_operations(1);
+  tess::PlannedDirtyAccumulator dirty;
+
+  std::uint64_t last_chunk_count = 0;
+  std::uint64_t drained = 0;
+  for (auto _ : state) {
+    const auto result = tess::execute_plan_deferred_dirty_with_results<
+        tess::WritePolicy::UniquePerChunk>(
+        world, plan, dirty, channel, [](auto view, Ack& ack) {
+          auto terrain = view.template field_span<TerrainTag>();
+          terrain[0] = static_cast<std::uint16_t>(view.key().value);
+          ++ack.chunks;
+        });
+    last_chunk_count = result.chunk_count;
+    drained += channel.drain_results([](tess::OpHandle,
+                                        const tess::OpCompletion& completion,
+                                        const Ack* value) {
+      benchmark::DoNotOptimize(completion.chunk_count);
+      benchmark::DoNotOptimize(value);
+    });
+    channel.clear();
+    dirty.clear();
+    benchmark::DoNotOptimize(last_chunk_count);
+  }
+  bench_check(last_chunk_count == StorageWorld::chunk_count,
+              "result-bearing execution did not visit every resident chunk");
+  bench_check(drained == static_cast<std::uint64_t>(state.iterations()),
+              "result-bearing execution did not deliver one ack per frame");
+}
+
 template <typename World>
 void fill_path_passable(World& world, std::uint8_t value) {
   for (auto& page : world.chunks()) {
@@ -2002,6 +2049,8 @@ BENCHMARK(BM_block_chunk_boundary_scan<Block3DWorld>)
     ->Name("block/chunk_boundary_scan_3d");
 BENCHMARK(BM_queued_execute_resident_update)
     ->Name("queued/execute_resident_update");
+BENCHMARK(BM_queued_execute_resident_update_with_results)
+    ->Name("queued/execute_resident_update_with_results");
 BENCHMARK(BM_path_astar_open_2d)->Name("path/astar_open_2d");
 BENCHMARK(BM_path_astar_open_2d_64x64)->Name("path/astar_open_2d_64x64");
 BENCHMARK(BM_path_astar_open_2d_512x512)->Name("path/astar_open_2d_512x512");
