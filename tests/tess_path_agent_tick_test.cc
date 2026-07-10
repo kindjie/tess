@@ -313,6 +313,50 @@ TEST(TessPathAgentTick, TransientlyBlockedAgentResumesAndArrives) {
   EXPECT_EQ(agents[1].position, (tess::Coord3{1, 2, 0}));
 }
 
+TEST(TessPathAgentTick, MovementBlockGetsFullRepathBudget) {
+  MovementWorld world;
+  fill_movement_world(world);
+
+  // A permanently parked blocker occupies the mover's next tile.
+  // Occupancy is not planning passability, so every re-path keeps
+  // planning Found through the occupied tile.
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  world.template field<OccupancyTag>(agents[0].position) = true;
+  world.template field<OccupancyTag>(tess::Coord3{1, 0, 0}) = true;
+  tess::set_path_agent_goal(agents[0], tess::Coord3{2, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  const auto options = tess::PathAgentTickOptions{.max_blocked_retries = 1};
+
+  auto stats = tick_movement(tick_state, world, agents, runtime, options);
+  EXPECT_EQ(stats.movement.blocked_waits, 1u);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+  // A blocked movement tick must not consume re-path budget itself...
+  EXPECT_EQ(agents[0].blocked_retries, 0u);
+
+  // ...so the next processed tick still gets the single budgeted
+  // re-path attempt instead of going terminally Unreachable unheard.
+  stats = tick_movement(tick_state, world, agents, runtime, options);
+  EXPECT_TRUE(stats.processed_paths);
+  EXPECT_EQ(stats.repaths_requested, 1u);
+  EXPECT_EQ(stats.repath_exhausted, 0u);
+  EXPECT_NE(agents[0].phase, tess::PathAgentPhase::Unreachable);
+
+  // Every Found re-path resets the budget, so a permanent blocker keeps
+  // the agent re-pathing indefinitely by design; it never exhausts.
+  for (int tick = 0; tick < 8; ++tick) {
+    stats = tick_movement(tick_state, world, agents, runtime, options);
+    EXPECT_EQ(stats.repaths_requested, 1u);
+    EXPECT_EQ(stats.repath_exhausted, 0u);
+  }
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{0, 0, 0}));
+}
+
 TEST(TessPathAgentTick, WallInsertedMidRouteRepathsAroundAndArrives) {
   MovementWorld world;
   fill_movement_world(world);

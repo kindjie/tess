@@ -20,6 +20,16 @@ struct PathAgentTickState {
 struct PathAgentTickOptions {
   std::size_t max_steps = 1;
   PathRuntimeCachePolicy cache_policy{};
+  // Budget of consecutive failed re-path attempts for a Blocked agent.
+  // Exactly one attempt is consumed per processed tick spent Blocked, by
+  // prepare_path_agent_processing; blocked movement steps do not consume
+  // budget themselves. A Found re-path result resets the count to zero
+  // (apply_path_agent_results), so only consecutive non-Found results
+  // exhaust the budget and turn the agent terminally Unreachable. An
+  // agent whose re-paths keep planning Found but whose next step stays
+  // blocked -- e.g. a permanently parked agent on the route, since
+  // occupancy is not planning passability -- therefore re-paths every
+  // tick indefinitely by design and never becomes Unreachable.
   std::uint32_t max_blocked_retries = 8;
 };
 

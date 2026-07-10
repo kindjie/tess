@@ -229,10 +229,12 @@ TEST(TessPathAgent, TransientMovementFailureKeepsFoundStatusAndBlocks) {
   EXPECT_EQ(stats.movement_failures.occupied, 1u);
   EXPECT_EQ(agents[0].status, tess::PathStatus::Found);
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
-  EXPECT_EQ(agents[0].blocked_retries, 1u);
+  // The blocked step itself consumes no re-path budget; only the tick
+  // driver's prepare pass counts attempts.
+  EXPECT_EQ(agents[0].blocked_retries, 0u);
   EXPECT_EQ(agents[0].position, (tess::Coord3{0, 0, 0}));
 
-  // Once the destination frees up, a successful step resets the budget.
+  // Once the destination frees up, the agent resumes with a clear budget.
   world.template field<OccupancyTag>(tess::Coord3{1, 0, 0}) = false;
   (void)tess::process_unit_path_agents<MovementWorld, PassableTag>(
       world, agents, runtime);
