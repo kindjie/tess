@@ -349,6 +349,7 @@ BASELINE_FILE_NAMES = (
     "queued.json",
     "path.json",
     "topology.json",
+    "parallel.json",
     "diagnostics.json",
 )
 
@@ -392,6 +393,15 @@ def test_trends_skips_metadata_and_aggregate_entries(tmp_path):
       },
   )
   write_json(directory / "metadata.json", {"path/sample": "not a result"})
+
+  values = benchmark_trends.collect_values(directory, ("path/sample",))
+
+  assert values == {"path/sample": 100.0}
+
+
+def test_trends_ignores_non_object_json_files(tmp_path):
+  directory = write_artifact(tmp_path)
+  (directory / "stray.json").write_text("[1, 2, 3]", encoding="utf-8")
 
   values = benchmark_trends.collect_values(directory, ("path/sample",))
 
