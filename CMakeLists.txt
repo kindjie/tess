@@ -75,6 +75,7 @@ set(
   include/tess/sim/path_agent.h
   include/tess/sim/path_agent_tick.h
   include/tess/sim/render_delta.h
+  include/tess/sim/schedule.h
   include/tess/sim/scheduler.h
   include/tess/sim/time.h
   include/tess/storage/chunk_meta.h

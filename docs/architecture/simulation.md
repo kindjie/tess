@@ -149,6 +149,47 @@ deltas.
   (default `nullptr`) forwarded to the runtime precheck gate, so a caller that
   maintains a region graph can skip A* for goals proven unreachable.
 
+### Schedule
+
+`include/tess/sim/schedule.h` is the M5 schedule: ordered phases of
+type-erased tasks driven by cadences that are pure functions of the fixed
+`SimClock` tick counter and per-task pending dirty masks. The schedule never
+touches a world -- dirty bits are FED to it by task results and
+`notify_dirty` -- so the no-hidden-full-world-scans rule holds by
+construction. Type erasure is a function pointer plus a context pointer;
+world-typed work lives in task objects the caller owns and registers by
+reference.
+
+- `SimPhase` is the fixed phase list, executed in declaration order each
+  tick; tasks run in registration order within a phase. `SimClock` (hoisted
+  into `time.h`; the path-agent tick shares it) is the authoritative
+  fixed-tick counter every cadence derives from.
+- `Cadence` selects `every_tick()`, `every_ticks(n)` (exact: the countdown
+  advances once per `run_tick`, even while the task is disabled, so
+  re-enabling never shifts the lockstep phase; a due-while-disabled tick is
+  counted as skipped), `on_dirty(mask)` (fires iff bits of the task's OWN
+  mask are pending; firing consumes only those bits, so producers'
+  same-tick marks re-arm it for the next tick), `background(budget)`, and
+  `manual()`.
+- `BackgroundBudget` is deliberately items-only: a due background task is
+  offered `max_items` units per run and reports `items_done` plus
+  `more_work` to continue next tick. A wall-clock valve would make tick
+  outcomes nondeterministic; it returns with its first real consumer.
+- `Schedule::add_task(desc, task)` registers a caller-owned task object
+  (or a raw fn-pointer + context); `seal()` freezes registration;
+  `request_run(id)` arms any task for the next tick (the Manual trigger and
+  the Background initial trigger); `notify_dirty(mask)` merges external
+  dirty bits (frame-owner thread only; never from an op callback --
+  worker-side dirty flows exclusively through the task-result mask);
+  `run_tick(clock)` advances the clock and dispatches, returning
+  `ScheduleTickStats`; `task_stats(id)` reports per-task counters.
+- A task result's `dirty_mask` merges into every task's pending mask
+  immediately: later-phase OnDirty tasks fire in the SAME tick,
+  earlier-phase tasks the next tick.
+- Allocation contract: `reserve_tasks` + registration happen at setup;
+  `run_tick`, `notify_dirty`, and `request_run` never allocate after
+  `seal()` (pinned by test).
+
 ### Scheduler
 
 - `SimSchedulerState` owns the scheduler-adjacent state currently needed by

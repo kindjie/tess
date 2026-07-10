@@ -19,6 +19,18 @@ struct SimTimeControl {
   SimSpeed speed = SimSpeed::Speed1x;
 };
 
+// The authoritative fixed-tick counter every cadence derives from: the
+// schedule and the path-agent tick share this one type (hoisted here so
+// neither layer redefines it).
+struct SimClock {
+  std::uint64_t tick = 0;
+};
+
+inline auto advance_sim_tick(SimClock& clock) noexcept -> std::uint64_t {
+  ++clock.tick;
+  return clock.tick;
+}
+
 struct FixedStepFrame {
   std::size_t ticks = 0;
   double alpha = 0.0;
