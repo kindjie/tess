@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace {
 
@@ -224,6 +225,63 @@ TEST(TessSparseTopology, RegionGraphFreshnessTracksResidencyAndVersion) {
   // Residency change (evict a frozen chunk) -> stale (count/generation).
   ASSERT_TRUE(world.evict(tess::ChunkKey{1}));
   EXPECT_FALSE(tess::is_region_graph_fresh(world, graph));
+}
+
+TEST(TessSparseTopology, FreshnessRejectsGraphBuiltForAnotherShape) {
+  // Wide is 16x1x1 chunks with Small's chunk extents and chunk count (16).
+  // Loading the same keys in the same order gives both worlds identical
+  // resident counts, residency generations, and topology versions, so only
+  // the shape binding recorded at build time can tell the graphs apart.
+  using Wide = tess::Shape<tess::Extent3{512, 32, 1}, tess::Extent3{32, 32, 1}>;
+  using SparseWide = tess::SparseResidentWorld<Wide, Schema>;
+  static_assert(tess::ShapeTraits<Small>::chunk_count ==
+                tess::ShapeTraits<Wide>::chunk_count);
+
+  SparseSmall small_world{
+      tess::ResidencyConfig{8 * SparseSmall::page_byte_size}};
+  make_chunk_passable(small_world, tess::ChunkKey{0});
+  make_chunk_passable(small_world, tess::ChunkKey{1});
+  SparseWide wide_world{tess::ResidencyConfig{8 * SparseWide::page_byte_size}};
+  make_chunk_passable(wide_world, tess::ChunkKey{0});
+  make_chunk_passable(wide_world, tess::ChunkKey{1});
+
+  tess::LocalTopologyScratch scratch;
+  tess::SparseRegionGraph graph;
+  ASSERT_EQ((tess::build_region_graph<SparseSmall, PassableTag>(small_world,
+                                                                scratch, graph))
+                .status,
+            tess::TopologyStatus::Built);
+  EXPECT_TRUE(tess::is_region_graph_fresh(small_world, graph));
+  EXPECT_FALSE(tess::is_region_graph_fresh(wide_world, graph));
+}
+
+TEST(TessSparseTopology, RegionIndexRejectsWraparoundReferences) {
+  SparseSmall world{tess::ResidencyConfig{8 * SparseSmall::page_byte_size}};
+  make_chunk_passable(world, tess::ChunkKey{0});
+  make_chunk_passable(world, tess::ChunkKey{1});
+  make_chunk_passable(world, tess::ChunkKey{2});
+  tess::LocalTopologyScratch scratch;
+  tess::SparseRegionGraph graph;
+  ASSERT_EQ((tess::build_region_graph<SparseSmall, PassableTag>(world, scratch,
+                                                                graph))
+                .status,
+            tess::TopologyStatus::Built);
+  ASSERT_EQ(graph.region_count(), 3u);
+
+  // The sentinel chunk region_of returns for out-of-world coordinates is
+  // never resident, so it must resolve to the invalid index.
+  EXPECT_EQ(graph.region_index(tess::RegionRef{
+                tess::ChunkKey{std::numeric_limits<std::uint64_t>::max()},
+                tess::LocalRegionId{1},
+            }),
+            tess::invalid_region_index);
+  // A region id near 2^32 must not wrap the offset arithmetic back into a
+  // valid dense index (chunk 2's offset is 2, so offset + id - 1 wraps to 0).
+  EXPECT_EQ(graph.region_index(tess::RegionRef{
+                tess::ChunkKey{2},
+                tess::LocalRegionId{std::numeric_limits<std::uint32_t>::max()},
+            }),
+            tess::invalid_region_index);
 }
 
 }  // namespace
