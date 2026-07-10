@@ -13,6 +13,29 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Topology index/shape hardening (audit-2 W-C)
+
+- Changed: (1) `RegionGraph::region_index` guards are wrap-proof -- the chunk
+  guard no longer adds 1 before comparing (the out-of-world sentinel ChunkKey
+  wrapped past it into an OOB read) and the offset arithmetic is 64-bit (a
+  region id near 2^32 wrapped back to a valid-but-wrong index). (2) Region
+  graphs now record their build shape (chunk-grid and chunk tile extents);
+  `update_region_graph` fully rebuilds and `is_region_graph_fresh` reports
+  stale on any mismatch, instead of the chunk-count-only check that let
+  equal-count shape mismatches incremental-patch onto wrong adjacency.
+  (3) `ShapeTraits` gains division-based (wrap-proof) compile-time overflow
+  asserts and an int64 bound on size axes. (4) `detail::box_axis_end` and the
+  region-bounds union saturate at int64 max instead of wrapping on extents
+  >= 2^63. (5) Documented `ChunkView::is_boundary` degenerate-axis semantics
+  and the sparse one-graph-per-world staleness contract.
+- Reason: audit findings M7 (region-index wraparound), M8 (shape-mismatch
+  incremental patching leaving dangling portal targets), and the related
+  topology/shape/meta low-severity items.
+- Affected docs: `decisions/CHANGELOG.md`.
+- Affected code: `topology/topology.h`, `core/shape.h`,
+  `storage/chunk_meta.h`, `block/block.h`, `tests/tess_topology_test.cc`,
+  `tests/tess_topology_sparse_test.cc`, `tests/tess_storage_test.cc`.
+
 ## 2026-07-09 - TraceBuffer pinned to its storage (M12, S4)
 
 - Changed: `diagnostics::TraceBuffer` is now non-copyable and non-movable (all

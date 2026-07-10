@@ -624,7 +624,14 @@ constexpr void include_coord_in_bounds(LocalRegion& region,
   }
 
   const auto end = [](std::int64_t origin, std::uint64_t extent) {
-    return origin + static_cast<std::int64_t>(extent);
+    // Same saturation as detail::box_axis_end in storage/chunk_meta.h: an
+    // extent >= 2^63 would flip the int64 cast negative and corrupt bounds.
+    constexpr auto max = std::numeric_limits<std::int64_t>::max();
+    if (extent > static_cast<std::uint64_t>(max)) {
+      return max;
+    }
+    const auto delta = static_cast<std::int64_t>(extent);
+    return origin > max - delta ? max : origin + delta;
   };
   const auto min = [](std::int64_t lhs, std::int64_t rhs) {
     return lhs < rhs ? lhs : rhs;
@@ -959,6 +966,8 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
     // plus per-key generation: an evicted key reads generation 0, a reloaded
     // key gets a strictly greater monotonic generation, so equal count with all
     // frozen keys still at their frozen generation forces set identity.
+    // Generations are per-WORLD clocks: a graph must only ever be updated
+    // against the world it was built from (see is_region_graph_fresh).
     const auto count = graph.local_topologies_.size();
     if (count != world.resident_count() ||
         graph.sparse_.frozen_generations_.size() != world.resident_count() ||
@@ -1149,6 +1158,13 @@ auto reachable(const RegionGraphT<Residency>& graph, Coord3 start, Coord3 goal,
 // and non-mutating -- it recomputes the same staleness test update_region_graph
 // applies, WITHOUT triggering a rebuild. Allocation-free; O(chunk_count) dense,
 // O(resident_count) sparse (never scans non-resident chunks).
+//
+// One-graph-per-world contract (sparse): the staleness test reads per-WORLD
+// residency-generation clocks, so a graph built on world A can validate as
+// fresh against a same-shape world B whose chunks were loaded in the same
+// order -- the same cross-world collision class documented at
+// storage/sparse_world.h residency_fingerprint(). Keep each graph paired
+// with the world it was built from; this check does not detect world swaps.
 template <typename World>
 [[nodiscard]] auto is_region_graph_fresh(
     const World& world,
