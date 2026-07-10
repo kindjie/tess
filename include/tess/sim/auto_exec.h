@@ -24,9 +24,11 @@ enum class AutoExecStatus : std::uint8_t {
   // delivered through the drain with reasons.
   Executed,
   // At least one queued operation's write policy differs from the task's
-  // Policy parameter: NOTHING executed (asserted in debug). Pre-validating
-  // keeps runtime aborts unreachable, so serial and pool execution can
-  // never diverge on partially-applied plans.
+  // Policy parameter: NOTHING executed (asserted in debug), and the queue
+  // is DROPPED -- keeping it would wedge the task forever in release,
+  // rescanning and refusing the same poisoned frame while new enqueues pile
+  // on. Pre-validating keeps runtime aborts unreachable, so serial and pool
+  // execution can never diverge on partially-applied plans.
   PolicyMismatch,
 };
 
@@ -47,10 +49,13 @@ struct AutoExecRunStats {
 // supports), and every enqueued operation must carry exactly that policy.
 // `ChunkFn` is the per-chunk kernel `fn(view, Ack&)` from the
 // result-bearing execute wrappers; `Ack` accumulates op-exclusively on the
-// executing thread. When a worker pool is attached, phases with at least
-// `parallel_threshold` operations run on it; smaller phases and everything
-// else stay serial, and results are byte-identical either way because
-// pre-validation makes runtime aborts unreachable.
+// executing thread, but the kernel object itself is SHARED across workers
+// when a pool is attached -- it must be safe for concurrent invocation
+// (stateless, or synchronizing any mutable state itself). When a worker pool is
+// attached, phases with at least `parallel_threshold` operations run on it;
+// smaller phases and everything else stay serial, and results are
+// byte-identical either way because pre-validation makes runtime aborts
+// unreachable.
 //
 // Known cost, by design: planning allocates per run (the report and its
 // per-op chunk lists have no reuse overloads yet); the schedule's
@@ -103,6 +108,8 @@ class AutoExecTask {
         TESS_ASSERT(false &&
                     "auto-exec queue contains a mismatched write policy");
         last_run_.status = AutoExecStatus::PolicyMismatch;
+        ops_->clear();
+        channel_.clear();
         return ScheduleTaskResult{};
       }
     }

@@ -21,6 +21,12 @@
 // notify_dirty and request_run are frame-owner-thread calls and must never
 // be made from queued-operation callbacks (those may run on pool workers);
 // worker-produced dirty flows exclusively through the task-result mask.
+//
+// Reentrancy: task bodies may call notify_dirty, request_run, and
+// set_enabled (field writes on stable storage, with the documented
+// immediate-merge semantics). They must NOT call add_task or run_tick --
+// registration after seal() would reallocate the task array mid-iteration
+// and a nested tick would double-advance every cadence; both are asserted.
 namespace tess {
 
 enum class CadenceKind : std::uint8_t {
@@ -154,12 +160,26 @@ class Schedule {
     TESS_ASSERT(!sealed_);
     TESS_ASSERT(fn != nullptr);
     TESS_ASSERT(desc.phase != SimPhase::Count);
+    // Cadence is a public aggregate, so hand-built descriptors can bypass
+    // the factory clamps; re-clamp here or a zero EveryN would wrap its
+    // countdown to ~4.29B ticks and a zero background budget would spin
+    // in_progress forever with no progress.
+    TESS_ASSERT(desc.cadence.kind != CadenceKind::EveryN ||
+                desc.cadence.every_n != 0);
+    TESS_ASSERT(desc.cadence.kind != CadenceKind::Background ||
+                desc.cadence.budget.max_items != 0);
     auto record = TaskRecord{};
     record.desc = desc;
     record.ctx = ctx;
     record.fn = fn;
+    if (record.desc.cadence.every_n == 0) {
+      record.desc.cadence.every_n = 1;
+    }
+    if (record.desc.cadence.budget.max_items == 0) {
+      record.desc.cadence.budget.max_items = 1;
+    }
     if (desc.cadence.kind == CadenceKind::EveryN) {
-      record.ticks_until_due = desc.cadence.every_n;
+      record.ticks_until_due = record.desc.cadence.every_n;
     }
     tasks_.push_back(record);
     return static_cast<TaskId>(tasks_.size() - 1);
@@ -189,7 +209,9 @@ class Schedule {
   }
 
   // Arms the task to be due on the next run_tick regardless of cadence --
-  // the Manual trigger, and the initial trigger for Background tasks.
+  // the Manual trigger, and the initial trigger for Background tasks. An
+  // OnDirty task poked this way runs with pending_dirty == 0: treat a
+  // zero mask as a full-run request, not a no-op.
   void request_run(TaskId id) noexcept {
     TESS_ASSERT(id < tasks_.size());
     if (id < tasks_.size()) {
@@ -208,6 +230,8 @@ class Schedule {
 
   auto run_tick(SimClock& clock) -> ScheduleTickStats {
     TESS_ASSERT(sealed_);
+    TESS_ASSERT(!in_run_);
+    in_run_ = true;
     auto stats = ScheduleTickStats{};
     stats.tick = advance_sim_tick(clock);
 
@@ -220,6 +244,7 @@ class Schedule {
         run_task_if_due(task, clock, stats);
       }
     }
+    in_run_ = false;
     return stats;
   }
 
@@ -324,6 +349,7 @@ class Schedule {
 
   std::vector<TaskRecord> tasks_;
   bool sealed_ = false;
+  bool in_run_ = false;
 };
 
 // Frame -> ticks bridge: consumes real frame time through the accumulator

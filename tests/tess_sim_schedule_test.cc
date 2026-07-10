@@ -317,4 +317,21 @@ TEST(TessSchedule, FrameDriverKeepsEveryNExactAcrossSpeedAndBacklog) {
   EXPECT_EQ(clock.tick, 23u);
 }
 
+// Review hardening: request_run on an OnDirty task delivers pending_dirty
+// == 0 (a full-run poke, not a no-op) and consumes the request.
+TEST(TessSchedule, RequestRunPokesOnDirtyWithZeroMask) {
+  LogTask task{"gated"};
+  tess::Schedule schedule;
+  const auto id = schedule.add_task(
+      {"gated", tess::SimPhase::Topology, tess::Cadence::on_dirty(1u)}, task);
+  schedule.seal();
+
+  tess::SimClock clock;
+  schedule.request_run(id);
+  task.last_pending = 0xffffffffu;
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 1u);
+  EXPECT_EQ(task.last_pending, 0u);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);  // consumed
+}
+
 }  // namespace
