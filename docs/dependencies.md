@@ -22,6 +22,23 @@ On macOS, benchmark configure or execution may warn that pthread affinity or CPU
 frequency metadata is unavailable. Those warnings do not prevent benchmark
 measurements from running.
 
+## Dear ImGui
+
+- Documentation: https://github.com/ocornut/imgui (README, `docs/`, wiki)
+- Repository and releases: https://github.com/ocornut/imgui
+
+Optional, consumer-provided integration dependency for the header-only reference
+panels in `include/tess/debug/imgui/panels.h`. tess core never fetches, links,
+or requires ImGui: the panels header compiles only when the consumer defines
+`TESS_ENABLE_IMGUI`, and the consumer supplies its own Dear ImGui and includes
+`<imgui.h>` before the header (a `#error` enforces the order). Only the stable
+core API is used -- `ImGui::Text`, `ImGui::TextUnformatted`, `ImGui::Separator`,
+and the `IMGUI_VERSION` macro -- so no specific version is pinned; any recent
+Dear ImGui works. Known-compatible with ocornut/imgui `8936b58`. tess CI
+validates the header against a minimal stub (`tests/imgui_stub/imgui.h`,
+`tess_diagnostics_panels_test`) rather than the real library, so tess builds add
+no ImGui dependency.
+
 ## GitHub Actions
 
 - Checkout action version: `actions/checkout@v6`

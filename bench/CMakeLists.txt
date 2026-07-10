@@ -25,6 +25,7 @@ add_executable(
   tess_path_product_bench.cc
   tess_path_scan_bench.cc
   tess_path_weighted_bench.cc
+  tess_diagnostics_bench.cc
   tess_diagnostics_alloc_hooks.cc
 )
 target_link_libraries(
@@ -71,6 +72,12 @@ set(
   TESS_TOPOLOGY_BENCHMARK_THRESHOLDS
   "${PROJECT_SOURCE_DIR}/bench/thresholds/topology.json"
   CACHE FILEPATH "Thresholds for topology benchmark regressions"
+)
+
+set(
+  TESS_DIAGNOSTICS_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/diagnostics.json"
+  CACHE FILEPATH "Thresholds for diagnostics benchmark regressions"
 )
 
 set(
@@ -181,6 +188,23 @@ if(Python3_Interpreter_FOUND)
     COMMENT "Running topology benchmark threshold checks"
     VERBATIM
   )
+
+  add_custom_target(
+    tess_bench_diagnostics_thresholds
+    COMMAND
+      tess_bench_diagnostics
+      --benchmark_filter=diagnostics/.*
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/diagnostics.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/diagnostics.json
+      --thresholds ${TESS_DIAGNOSTICS_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench_diagnostics
+    COMMENT "Running diagnostics benchmark threshold checks"
+    VERBATIM
+  )
 endif()
 
 add_custom_target(
@@ -224,7 +248,13 @@ add_custom_target(
     --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
     --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/topology.json
     --benchmark_out_format=json
-  DEPENDS tess_bench
+  COMMAND
+    tess_bench_diagnostics
+    --benchmark_filter=diagnostics/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/diagnostics.json
+    --benchmark_out_format=json
+  DEPENDS tess_bench tess_bench_diagnostics
   COMMENT "Collecting non-gating CI benchmark baseline samples"
   VERBATIM
 )
@@ -315,6 +345,14 @@ if(BUILD_TESTING)
     COMMAND
       tess_bench
       --benchmark_filter=topology/precheck_unreachable_512x512
+      --benchmark_min_time=0.001
+  )
+
+  add_test(
+    NAME tess_bench_diagnostics_family_smoke
+    COMMAND
+      tess_bench_diagnostics
+      --benchmark_filter=diagnostics/trace_record
       --benchmark_min_time=0.001
   )
 endif()

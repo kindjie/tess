@@ -238,3 +238,42 @@ target_compile_definitions(
 tess_apply_project_options(tess_diagnostics_enabled_test)
 
 gtest_discover_tests(tess_diagnostics_enabled_test)
+
+add_executable(
+  tess_diagnostics_trace_test
+  tess_diagnostics_trace_test.cc
+  ../bench/tess_diagnostics_alloc_hooks.cc
+)
+target_link_libraries(
+  tess_diagnostics_trace_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+target_compile_definitions(
+  tess_diagnostics_trace_test
+  PRIVATE TESS_ENABLE_DIAGNOSTICS
+)
+tess_apply_project_options(tess_diagnostics_trace_test)
+
+gtest_discover_tests(tess_diagnostics_trace_test)
+
+# Compile-checks the opt-in ImGui panels against a minimal ImGui stub (no real
+# Dear ImGui dependency), with both diagnostics and imgui gates on.
+add_executable(
+  tess_diagnostics_panels_test
+  tess_diagnostics_panels_test.cc
+)
+target_link_libraries(
+  tess_diagnostics_panels_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+target_include_directories(
+  tess_diagnostics_panels_test
+  PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/imgui_stub"
+)
+target_compile_definitions(
+  tess_diagnostics_panels_test
+  PRIVATE TESS_ENABLE_DIAGNOSTICS TESS_ENABLE_IMGUI
+)
+tess_apply_project_options(tess_diagnostics_panels_test)
+
+gtest_discover_tests(tess_diagnostics_panels_test)

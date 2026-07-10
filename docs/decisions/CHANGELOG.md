@@ -13,6 +13,153 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - TraceBuffer pinned to its storage (M12, S4)
+
+- Changed: `diagnostics::TraceBuffer` is now non-copyable and non-movable (all
+  four special members deleted).
+- Reason: the buffer owns its ring metadata and per-category timing
+  accumulators but only references caller storage through a `std::span`. An
+  implicit value copy produced two buffers with independent metadata over the
+  same backing array, so passing a buffer by value into a helper that installs
+  `ScopedTrace` would collect records the caller's original buffer never sees --
+  `capture_diagnostics` would silently miss them. Pinning the buffer to its
+  storage makes that misuse a compile error; every caller already constructs it
+  in place and passes it by reference, so nothing else changed. Flagged by the
+  Codex connector review of PR #8.
+- Affected docs: `decisions/CHANGELOG.md`.
+- Affected code: `diagnostics/trace.h`, `tests/tess_diagnostics_trace_test.cc`.
+
+## 2026-07-09 - Diagnostics review follow-up (M12, S4)
+
+- Changed: three review-feedback fixes on the S4 diagnostics branch. (1) Removed
+  the private downstream consumer's name from the new diagnostics docs, using
+  generic "downstream consumer/adoption" wording instead -- tracked content is
+  treated as public per `AGENTS.md`. (2) Documented the optional, consumer-
+  provided Dear ImGui integration dependency that `debug/imgui/panels.h`
+  targets. (3) Wired the diagnostics benchmark threshold target into CI so
+  `bench/thresholds/diagnostics.json` actually gates regressions.
+- Reason: the ImGui-panels and diagnostics slices named the private consumer in
+  a repository intended to be public, added an optional dependency without the
+  required entry in `docs/dependencies.md`, and shipped a threshold file that no
+  CI step exercised (a silent no-gate). All three are addressed here without
+  changing any tess API or runtime behavior.
+- Affected docs: `architecture/diagnostics.md`, `decisions/CHANGELOG.md`,
+  `dependencies.md`.
+- Affected code: `.github/workflows/ci.yml`.
+
+## 2026-07-09 - Diagnostics ImGui Panels (M12, S4 slice 5)
+
+- Added (new header `debug/imgui/panels.h`, doubly gated by `TESS_ENABLE_IMGUI`
+  && `TESS_ENABLE_DIAGNOSTICS`): reference Dear ImGui panels over the export
+  snapshots -- `draw_timing_panel`, `draw_path_counters_panel`,
+  `draw_queued_counters_panel`, `draw_allocation_counters_panel`, the composite
+  `draw_diagnostics_panel`, and the `category_name` label helper. tess core
+  never fetches or links ImGui; the consumer defines the gates on its own
+  target and includes `<imgui.h>` before the header (a `#error` enforces the
+  order). Only Text/TextUnformatted/Separator are used, with portable
+  `unsigned long long` printf casts. Not included by `tess.h`.
+- Reason: fifth slice of the M12 diagnostics close (S4) -- the ImGui skeleton.
+  The panels are the reference renderer a downstream overlay adopts in the final
+  slice. tess validates the header against a minimal ImGui stub
+  (`tests/imgui_stub/imgui.h`, `tess_diagnostics_panels_test`) so a panel bug is
+  caught in tess CI, not only in the consumer; the stub mirrors the real API for
+  the three primitives used.
+- Affected docs: `architecture/diagnostics.md`, `architecture/surface.json`.
+- Affected code: new `debug/imgui/panels.h`, `tests/imgui_stub/imgui.h`,
+  `tests/tess_diagnostics_panels_test.cc`, `CMakeLists.txt`,
+  `tests/CMakeLists.txt`.
+
+## 2026-07-09 - Diagnostics Benchmark Family (M12, S4 slice 4)
+
+- Added: `bench/tess_diagnostics_bench.cc` and `bench/thresholds/diagnostics.json`,
+  a gated `diagnostics/` benchmark family compiled only into the
+  diagnostics-enabled `tess_bench_diagnostics` binary (the source is an empty TU
+  without `TESS_ENABLE_DIAGNOSTICS`). Benches: `diagnostics/trace_record`,
+  `diagnostics/record_timing`, `diagnostics/scoped_timer`,
+  `diagnostics/warning_sink`. New `tess_bench_diagnostics_thresholds` target, a
+  CI baseline command, and a `tess_bench_diagnostics_family_smoke` CTest.
+- Reason: fourth slice of the M12 diagnostics close (S4). Measures the enabled
+  overhead of the trace/timer/warning primitives directly (local observations
+  ~0.3-32 ns, far under the loose bootstrap ceilings). The compile-down side is
+  proven structurally: the default `tess_bench` compiles every diagnostic macro
+  to nothing, so its `queued/`/`path/` families are the zero-overhead baseline
+  and still pass unchanged with the planner-trace macros present.
+- Affected docs: `planning/benchmark-plan.md`.
+- Affected code: new `bench/tess_diagnostics_bench.cc`,
+  `bench/thresholds/diagnostics.json`, `bench/CMakeLists.txt`.
+
+## 2026-07-09 - Planner Trace and Snapshot Export (M12, S4 slice 3)
+
+- Added (ops/queued.h): planner-trace instrumentation. `plan_operations` (now
+  an index loop) records `invalid_write_policy` / `invalid_field_access` /
+  `invalid_domain` / `conflict` / `planned` per operation, and
+  `plan_parallel_execution_phases` records `unsupported_write_policy` /
+  `new_phase` / `merged` per operation, all under the `Planner` trace category
+  via `TESS_DIAG_TRACE_VALUE` (value = operation/phase index). Macros only:
+  byte-identical planning when diagnostics are off.
+- Added (diagnostics, new header `diagnostics/export.h`, gated by
+  `TESS_ENABLE_DIAGNOSTICS`): `TimingSnapshot` (a copy of every category's
+  `TraceCategoryStats` with a Count-guarding `category()` accessor),
+  `DiagnosticsSnapshot` (path/allocation/queued counters + timing), and the
+  `capture_timing` / `capture_diagnostics` free functions that assemble them as
+  pure copies decoupled from the live sinks.
+- Reason: third slice of the M12 diagnostics close (S4). The planner was the one
+  major queued-ops surface with zero instrumentation; routing its decisions
+  through the trace buffer gives the profiling panels a real event log, and the
+  export snapshots are the plain structs the ImGui panels and the downstream
+  adoption render. The `plan_operations` loop switched to an index form purely
+  to expose the operation index as the trace value; behavior is unchanged (the
+  full 514-test suite passes).
+- Affected docs: `architecture/diagnostics.md`, `architecture/surface.json`.
+- Affected code: `ops/queued.h`, new `diagnostics/export.h`, `tess.h`,
+  `CMakeLists.txt`; extended test `tess_diagnostics_trace_test.cc`.
+
+## 2026-07-09 - Diagnostics Trace Buffer and Timers (M12, S4 slice 2)
+
+- Added (diagnostics, new header `diagnostics/trace.h`, gated by
+  `TESS_ENABLE_DIAGNOSTICS`): a structured event log and timing capture.
+  `TraceCategory` (coarse origin tag with a `Count` sizing sentinel),
+  `TraceRecord` (category + non-owning `label` + `value` + monotonic
+  `sequence`), `TraceCategoryStats` (samples/total/min/max ns), and
+  `TraceBuffer` -- a caller-owned ring over a `std::span<TraceRecord>` with an
+  inline per-category timing accumulator (allocation-free; empty span drops all
+  records; overflow overwrites oldest and counts `dropped()`). `ScopedTrace`
+  installs the thread's active buffer; `trace_event` and new
+  `TESS_DIAG_TRACE` / `TESS_DIAG_TRACE_VALUE` macros route to it (and compile to
+  nothing when off). `ScopedTimer` is a `steady_clock` RAII timer that binds to
+  the buffer active at construction and, on destruction, folds the elapsed
+  nanoseconds into the category accumulator and appends a duration record.
+- Reason: second slice of the M12 diagnostics close (S4). Trace records and
+  timers are the profiling substrate the ImGui panels and the downstream adoption
+  render, and the planner-trace slice records against them. `ScopedTimer`
+  captures the active buffer at construction (not destruction) so nested scopes
+  and destruction order cannot misattribute a timed span. The `label`
+  non-owning contract mirrors `Warning::message`/`PathView`.
+- Affected docs: `architecture/diagnostics.md`, `architecture/surface.json`.
+- Affected code: new `diagnostics/trace.h`, `diagnostics/diagnostics.h` (the two
+  new trace macros), `tess.h`, `CMakeLists.txt`; extended tests
+  `tess_diagnostics_trace_test.cc` and `tess_diagnostics_default_test.cc`.
+
+## 2026-07-09 - Diagnostics Warning Sink (M12, S4 slice 1)
+
+- Added (diagnostics, new header `diagnostics/warning_sink.h`, gated by
+  `TESS_ENABLE_DIAGNOSTICS`): a `Warning` record (a `WarningCategory` origin
+  tag, a non-owning `std::string_view message`, a numeric `detail`, and a
+  defaulting `std::source_location`), the `WarningSink` concept
+  (`noexcept warn(const Warning&)`), `NullWarningSink` (discards), and
+  `BufferedWarningSink<Capacity>` -- a caller-owned fixed-capacity ring with
+  inline storage (allocation-free `warn()`), oldest-first indexing, and a
+  `dropped()` overflow count.
+- Reason: first slice of the M12 diagnostics close (S4). A warning channel is
+  a foundational primitive that later stages consume (queued-ops result
+  reasons in S6, scheduler budget signals in S7); landing it early and
+  independently keeps the trace/timer slice focused. The `message` non-owning
+  contract mirrors `PathView`: warnings are copied by value but never own their
+  text, so the sink stays allocation-free.
+- Affected docs: `architecture/diagnostics.md`, `architecture/surface.json`.
+- Affected code: new `diagnostics/warning_sink.h`, `tess.h`, `CMakeLists.txt`;
+  new test `tess_diagnostics_trace_test.cc`.
+
 ## 2026-07-09 - PathView Non-Owning Path View (M8)
 
 - Added (path, new header `path/path_view.h`): `PathView`, a non-owning view
@@ -82,8 +229,8 @@ Records meaningful design changes from the original TDDs.
 - Affected docs: `architecture/path.md`, `architecture/simulation.md`.
 - Affected code: `path/path_runtime.h`, `sim/path_agent.h`,
   `sim/path_agent_tick.h`; new test `tess_path_precheck_runtime_test.cc`.
-  downstream adoption (passing its `RegionGraph` to the weighted tick and deleting
-  its bespoke reachability gating) lands in a later S3 slice.
+  The downstream adoption (passing its `RegionGraph` to the weighted tick and
+  deleting its bespoke reachability gating) lands in a later S3 slice.
 
 ## 2026-07-08 - Topology Precheck (Pre-A* Reachability Gate)
 
@@ -107,7 +254,7 @@ Records meaningful design changes from the original TDDs.
 - Affected code: `topology/topology.h`, new `path/precheck.h`, `tess.h`,
   `CMakeLists.txt`; tests `tess_topology_test.cc`,
   `tess_topology_sparse_test.cc`, new `tess_path_precheck_test.cc`. Runtime
-  wiring and downstream adoption land in later S3 slices.
+  wiring and the downstream adoption land in later S3 slices.
 
 ## 2026-07-08 - Sparse Residency Pre-Merge Review Fixes
 
@@ -210,8 +357,9 @@ workflow and a cross-lab codex pass), fixed on the branch before merge.
   (`InvalidFrom`/`InvalidTo`; `StaleVersion` for the version check) so an agent
   re-plans rather than walking a route across a chunk evicted since planning.
 - Reason: S2 Slice 5a -- unblock the path runtime on sparse worlds, the
-  dependency the downstream sparse adoption needs. Scope and the order-independence
-  requirement came from an adversarial proposer-panel + synthesis design review.
+  dependency the downstream sparse adoption needs. Scope and the
+  order-independence requirement came from an adversarial proposer-panel +
+  synthesis design review.
 - Design: dense codegen byte-identical (the fingerprint's dense arm is the exact
   prior FNV-over-`chunk_count` loop; every sparse branch is behind `if constexpr`).
   Default `MissingChunkPolicy::TreatAsBlocked` on the runtime path is
@@ -229,7 +377,8 @@ workflow and a cross-lab codex pass), fixed on the branch before merge.
   (`queued.h` `mark_dirty`). The scheduler wrappers `tick_*_movement_scheduler`
   reach the render-delta scan only when `render_dirty_mask != 0` (the default is
   0); the agent tick `tick_*_path_agents_with_movement` itself is sparse-safe.
-  These land with the sparse-consumer port that precedes the downstream adoption.
+  These land with the sparse-consumer port that precedes the downstream
+  adoption.
 - Affected code: `include/tess/path/route_cache.h`,
   `include/tess/path/path_runtime.h`, `include/tess/path/detail/weighted_batch.h`,
   `include/tess/sim/movement.h`, `tests/tess_path_runtime_sparse_test.cc`,
