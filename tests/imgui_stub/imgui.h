@@ -13,7 +13,8 @@
 // declares Text with this attribute; without it the panels test would never
 // diagnose a format/argument mismatch).
 #if defined(__GNUC__) || defined(__clang__)
-#define TESS_STUB_IM_FMTARGS(fmt) __attribute__((format(printf, fmt, fmt + 1)))
+#define TESS_STUB_IM_FMTARGS(fmt) \
+  __attribute__((format(printf, (fmt), (fmt) + 1)))
 #else
 #define TESS_STUB_IM_FMTARGS(fmt)
 #endif
