@@ -28,8 +28,10 @@
   unwind instead of poisoning later assertions.
 - `tess_smoke`: verifies that the public `tess::tess` target is consumable,
   that the root public header compiles, and that the version macros and
-  `library_version` match the released version pinned in the test (mirroring
-  the top-level CMake `project(... VERSION ...)`), so a one-sided bump fails.
+  `library_version` match a hand-maintained release-version literal in the
+  test (a mirror of the top-level CMake `project(... VERSION ...)`), so a
+  `tess.h` bump that forgets the test fails; a CMake-only bump is not
+  detectable there.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
   degenerate-axis handling, containment helpers, key width inference,
   coordinate/chunk/local/tile key conversion helpers, the portable
