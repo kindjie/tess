@@ -81,10 +81,12 @@ namespace detail {
                              box_axis_end(rhs.origin.z, rhs.extent.z));
   return Box3{
       Coord3{min_x, min_y, min_z},
+      // max >= min on every axis; abs_delta subtracts in unsigned space, so a
+      // saturated end paired with a negative origin cannot overflow int64.
       Extent3{
-          static_cast<std::uint64_t>(max_x - min_x),
-          static_cast<std::uint64_t>(max_y - min_y),
-          static_cast<std::uint64_t>(max_z - min_z),
+          abs_delta(max_x, min_x),
+          abs_delta(max_y, min_y),
+          abs_delta(max_z, min_z),
       },
   };
 }
