@@ -244,12 +244,12 @@
     "path/field_product_cache_stale_rejection_room_portals_512x512/iterations:2000/manual_time": {
       "max_real_time_ns": 1500,
       "max_cpu_time_ns": null,
-      "note": "Measurement fix 2026-07-06: manual timing brackets only the stale lookup (previously ~760 ns including per-iteration Pause/Resume timer overhead; ~313 ns measured after the fix). cpu_time now includes the untimed world-sized cache refill, so the gate moved to real_time at the 1 ms investigation ceiling."
+      "note": "Measurement fix 2026-07-06: manual timing brackets only the stale lookup (previously ~760 ns including per-iteration Pause/Resume timer overhead; ~313 ns measured after the fix). cpu_time now includes the untimed world-sized cache refill, so the gate moved to real_time. The ceiling was recalibrated 2026-07-07 to roughly 3x the observed CI maximum (baseline run 28888943908), replacing the initial 1 ms investigation ceiling."
     },
     "path/field_product_cache_lru_eviction_512x512/iterations:1000/manual_time": {
       "max_real_time_ns": 910,
       "max_cpu_time_ns": null,
-      "note": "Measurement fix 2026-07-06: manual timing brackets only the evicting store (previously ~596 ns including per-iteration Pause/Resume timer overhead; ~119 ns measured after the fix). cpu_time now includes the untimed product copies, so the 10 ms cpu gate was replaced by a real_time gate at the 1 ms investigation ceiling."
+      "note": "Measurement fix 2026-07-06: manual timing brackets only the evicting store (previously ~596 ns including per-iteration Pause/Resume timer overhead; ~119 ns measured after the fix). cpu_time now includes the untimed product copies, so the 10 ms cpu gate was replaced by a real_time gate. The ceiling was recalibrated 2026-07-07 to roughly 3x the observed CI maximum (baseline run 28888943908), replacing the initial 1 ms investigation ceiling."
     },
     "path/astar_batch_100_mixed_repeated_room_portals_512x512": {
       "max_real_time_ns": null,

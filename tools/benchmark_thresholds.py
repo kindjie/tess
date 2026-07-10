@@ -14,6 +14,21 @@ class ToolError(Exception):
   """Input error that should be reported without a traceback."""
 
 
+# Keys permitted in a per-benchmark thresholds entry: the two gate limits
+# plus the annotation keys used across bench/thresholds/*.json. A typo in
+# a limit key (for example `max_cpu_tim_ns`) must fail loudly instead of
+# silently disabling the gate.
+ALLOWED_LIMIT_KEYS = frozenset(
+    {
+        "max_real_time_ns",
+        "max_cpu_time_ns",
+        "comment",
+        "comment_ref",
+        "note",
+    }
+)
+
+
 def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser()
   parser.add_argument("--results", required=True, type=Path)
@@ -40,6 +55,10 @@ def main(argv: list[str] | None = None) -> int:
 
   failures: list[str] = []
   for name, limits in thresholds.get("benchmarks", {}).items():
+    unknown = check_limit_keys(name, limits)
+    if unknown:
+      failures.extend(unknown)
+      continue
     benchmark = result_by_name.get(name)
     if benchmark is None:
       failures.append(f"{name}: missing benchmark result")
@@ -109,6 +128,15 @@ def select_benchmarks(
       )
     selected[name] = entries[0]
   return selected
+
+
+def check_limit_keys(name: str, limits: dict[str, Any]) -> list[str]:
+  unknown = sorted(set(limits) - ALLOWED_LIMIT_KEYS)
+  return [
+      f"{name}: unknown limit key '{key}' "
+      f"(allowed: {', '.join(sorted(ALLOWED_LIMIT_KEYS))})"
+      for key in unknown
+  ]
 
 
 def check_limit(

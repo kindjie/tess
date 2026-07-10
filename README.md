@@ -53,24 +53,27 @@ CI runs primarily on `ubuntu-24.04` with Clang and covers:
 - Hook backstop checks: `tools/git_hooks.py ci` repository hygiene plus
   pytest for the repo tools (`tests/test_git_hooks.py`,
   `tests/test_benchmark_tools.py`, `tests/test_check_public_surface.py`)
-  and an advisory public-surface manifest check
+  and the public-surface manifest gate
   (`tools/check_public_surface.py` against
-  `docs/architecture/surface.json`)
+  `docs/architecture/surface.json`; required since 2026-07-07)
 - Warnings-as-errors build and tests: preset `dev-werror`
 - ASan/UBSan build and tests (UBSan findings are fatal): preset `dev-asan`
 - TSan build and tests (`TSAN_OPTIONS=halt_on_error=1`): preset `dev-tsan`
 - Release build and tests: preset `release`
 - macOS build, tests, and install smoke on `macos-15`: presets `dev` and
   `dev-asan` (no benchmark gates there; thresholds are Linux-calibrated)
-- Advisory Windows MSVC build, tests, and install smoke on `windows-2025`:
-  preset `windows-msvc` (non-gating during shake-out)
+- Windows MSVC build, tests, and install smoke on `windows-2025`:
+  preset `windows-msvc` (required gate since 2026-07-07)
 - Strict clang-tidy gate: `cmake --build --preset dev-clang-tidy`
 - cppcheck gate: `cmake --build --preset dev-cppcheck`
 - Advisory (non-gating) clang-tidy profile: preset `dev-clang-tidy-advisory`
+- Advisory (non-gating) GCC compile-only check: preset `dev` built with
+  GCC (`continue-on-error` during shake-out)
 - Benchmark build and smoke tests: presets `bench`
 - Benchmark CPU-time threshold gates, one per suite:
   `cmake --build --preset bench --target tess_bench_<suite>_thresholds`
-  for `key`, `storage`, `block`, `queued`, and `path`
+  for `key`, `storage`, `block`, `queued`, `path`, `topology`, and
+  `diagnostics`
 - Non-gating CI benchmark baseline collection:
   `cmake --build --preset bench --target tess_bench_ci_baselines`
 

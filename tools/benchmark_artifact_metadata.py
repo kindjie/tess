@@ -10,10 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser()
   parser.add_argument("--out", required=True, type=Path)
-  args = parser.parse_args()
+  args = parser.parse_args(argv)
 
   metadata = {
       "commit": env("GITHUB_SHA"),

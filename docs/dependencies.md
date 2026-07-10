@@ -43,6 +43,9 @@ no ImGui dependency.
 
 - Checkout action version: `actions/checkout@v6`
 - Checkout documentation: https://github.com/actions/checkout
+- Cache action version: `actions/cache@v4` (pinned to
+  `0057852bfaa89a56745cba8c7296529d2fc39830`)
+- Cache documentation: https://github.com/actions/cache
 - Upload artifact action version: `actions/upload-artifact@v7`
 - Upload artifact documentation: https://github.com/actions/upload-artifact
 - Hosted runner documentation:

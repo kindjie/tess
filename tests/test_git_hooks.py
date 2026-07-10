@@ -22,6 +22,7 @@ def reader_for(files: dict[str, bytes]):
 PRIVATE_CASES = (
     (b"O" + b"wen was here", b"O" + b"wens was here"),
     (b"W" + b"ig" + b"gins", b"W" + b"ig" + b"ginson"),
+    (b"see aren" + b"arch notes", b"see aren" + b"archy notes"),
     (b"Link" + b"edIn.com/in/example", b"link" + b"edin.org/in/example"),
     (b"/Us" + b"ers/example/notes", b"/Us" + b"er/example/notes"),
     (b"/pri" + b"vate/tmp/thing", b"/pri" + b"vatex/tmp/thing"),
@@ -52,6 +53,19 @@ def test_private_pattern_fires_and_near_miss_passes(
     assert not pattern.search(near_miss), (
         f"pattern {index} matched its near-miss"
     )
+
+
+def test_private_downstream_name_matches_case_variants():
+    # The private downstream consumer's name (PRIVATE_CASES index 2) must
+    # match case-insensitively; the fixture is assembled from fragments so
+    # the name never appears literally in this file.
+    pattern = git_hooks.PRIVATE_PATTERNS[2]
+    for variant in (
+        b"Aren" + b"Arch",
+        b"AREN" + b"ARCH",
+        b"aren" + b"Arch",
+    ):
+        assert pattern.search(b"docs for " + variant + b" consumers"), variant
 
 
 def test_find_private_matches_flags_offenders_and_skips_clean():
