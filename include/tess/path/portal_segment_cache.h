@@ -219,9 +219,12 @@ auto build_weighted_portal_route_product(const World& world,
       "build_weighted_portal_route_product (segment cache) is dense-only; it "
       "needs sparse topology and route-cache support from a later slice.");
 
+  std::vector<Coord3> stash;
+  const auto source = product.stash_if_owned(waypoints, stash);
+
   product.clear();
   product.request_ = request;
-  product.waypoints_.assign(waypoints.begin(), waypoints.end());
+  product.waypoints_.assign(source.begin(), source.end());
 
   auto from = request.start;
   auto total_cost = std::uint32_t{0};
@@ -251,6 +254,10 @@ auto build_weighted_portal_route_product(const World& world,
       product.status_ = result.status;
       product.expanded_nodes_ = total_expanded;
       product.reached_nodes_ = total_reached;
+      // Same failure-dependency contract as build_weighted_route_product;
+      // the failing segment's endpoints are the offending tiles.
+      detail::capture_failure_dependencies<Shape>(
+          world, segment_request, result.status, product.dependencies_);
       return false;
     }
     total_cost = detail::saturating_add(total_cost, result.cost);
@@ -258,7 +265,7 @@ auto build_weighted_portal_route_product(const World& world,
     return true;
   };
 
-  for (const auto waypoint : waypoints) {
+  for (const auto waypoint : source) {
     if (!append_segment(PathRequest{from, waypoint})) {
       return PathResult{product.status_, 0, total_expanded, total_reached,
                         product.path_};

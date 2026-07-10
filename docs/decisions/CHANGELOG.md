@@ -33,6 +33,19 @@ Records meaningful design changes from the original TDDs.
   contract of `cached_astar_path`, the one-cache/runtime-per-world identity
   contract, and the chunk-portal route builder's heuristic (non-authoritative)
   NoPath tier.
+- Changed (review follow-up): the multi-agent review of this branch found
+  the segment-cache overload of `build_weighted_portal_route_product` had
+  been missed (same self-alias UB -- ASan-confirmed -- and missing failure
+  capture); the alias guard now covers all product-owned spans (including a
+  previously returned `PathResult.path`) via a shared `stash_if_owned`
+  helper. It also flagged two quadratic passes and an over-broad capture,
+  fixed as: `capture_all` appends directly (O(chunk_count)), the
+  blocked-frontier pass dedupes through a scratch seen-set +
+  `add_chunk_unique` (linear), and InvalidStart/InvalidGoal products now
+  depend only on the offending in-bounds tiles' chunks instead of every
+  chunk (out-of-bounds failures carry no dependencies and are permanently
+  invalid -- callers pay only the cheap bounds rejection on rebuild).
+  `reserve_dependencies` docs now state the chunk_count bound.
 - Reason: second audit (2026-07-09) findings H1, H2, M3, M4, M5, M6 and cache
   lows -- failure products carried empty dependency sets that validated
   vacuously forever, and unreached chunks never invalidated field products,

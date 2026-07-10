@@ -195,8 +195,10 @@ auto build_weighted_chunk_portal_route_product(
       product.status_ = result.status;
       product.expanded_nodes_ = total_expanded;
       product.reached_nodes_ = total_reached;
-      // Same failure-dependency contract as build_weighted_route_product.
-      product.dependencies_.capture_all(world);
+      // Same failure-dependency contract as build_weighted_route_product;
+      // the failing segment's endpoints are the offending tiles.
+      detail::capture_failure_dependencies<Shape>(
+          world, segment_request, result.status, product.dependencies_);
       return false;
     }
     total_cost = detail::saturating_add(total_cost, result.cost);
