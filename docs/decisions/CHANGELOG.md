@@ -165,6 +165,44 @@ Records meaningful design changes from the original TDDs.
   `tests/tess_path_agent_tick_test.cc`, `tests/tess_diagnostics_enabled_test.cc`,
   `tests/tess_assert_test.cc`, `tests/tess_shape_test.cc`,
   `tests/tess_smoke.cc`, `tests/allocation_counter.cc`.
+## 2026-07-09 - CI and tooling audit remediation (audit-2 W-F)
+
+- Changed: five infrastructure fixes from the 2026-07-09 second audit.
+  (1) The `parallel/*` benchmark family is now executed in CI: a
+  `tess_bench_parallel_smoke` CTest in the style of the other family smokes,
+  and a `parallel/.*` command in `tess_bench_ci_baselines` so baseline
+  artifacts accumulate samples. Threshold gating is deliberately deferred:
+  repo policy calibrates ceilings from CI baseline artifacts (~3x observed
+  maximum), none exist yet for this family, and each gating target enumerates
+  an explicit thresholds file, so omitting `bench/thresholds/parallel.json`
+  defers the gate without code changes. (2) `tools/benchmark_trends.py`
+  discovers every result JSON in a baseline artifact (excluding
+  `metadata.json`) instead of reading only block/storage/key, and an
+  explicit `--benchmark` selector that matches nothing is now an error
+  instead of a silent "n/a"; `tools/benchmark_artifact_metadata.py` gained
+  its first tests. (3) `tools/benchmark_thresholds.py` rejects unknown
+  per-benchmark limit keys against an allowlist so a typo cannot silently
+  disable a gate. (4) A public-safety deny pattern for the private
+  downstream consumer's name (split-string style, case-insensitive) so the
+  hooks catch reintroduction. (5) Doc drift from the 2026-07-07 gate
+  promotions: the Windows MSVC job and public-surface manifest check are
+  described as required gates everywhere, the README threshold-suite list
+  includes `topology` and `diagnostics`, the advisory GCC compile job is
+  listed, stale advisory comments in the workflow were removed or dated,
+  and small fixes (path.json note provenance, deck help env vars,
+  `.pytest_cache/` ignore, `actions/cache@v4` in the dependency inventory).
+- Reason: the audit found compiled-but-never-run benchmarks, tools that
+  silently ignored data or typos, a policy without an enforcing pattern,
+  and documentation contradicting the actual CI gate status. All fixes are
+  infrastructure-only; no tess API or runtime behavior changed.
+- Affected docs: `README.md`, `tests/AGENTS.md`, `dependencies.md`,
+  `decisions/CHANGELOG.md`.
+- Affected code: `bench/CMakeLists.txt`, `bench/thresholds/path.json`,
+  `tools/benchmark_trends.py`, `tools/benchmark_artifact_metadata.py`,
+  `tools/benchmark_thresholds.py`, `tools/check_public_surface.py`,
+  `tools/git_hooks.py`, `tools/steamdeck/deck`, `tests/test_git_hooks.py`,
+  `tests/test_benchmark_tools.py`, `.github/workflows/ci.yml`,
+  `.gitignore`.
 
 ## 2026-07-09 - TraceBuffer pinned to its storage (M12, S4)
 

@@ -60,7 +60,8 @@ jobs:
   # GCC's stricter two-phase name lookup catches header portability breaks
   # that Clang and MSVC accept. Advisory during shake-out (continue-on-error)
   # because the project has not been built with GCC before; flip to required
-  # by removing continue-on-error after two consecutive green main runs.
+  # by removing continue-on-error after two consecutive green main runs
+  # (criterion set 2026-07-07; check the run history before flipping).
   gcc:
     name: GCC Compile
     runs-on: ubuntu-24.04
@@ -271,9 +272,8 @@ jobs:
         if: matrix.preset == 'dev'
         run: tools/install_smoke.sh
 
-  # Advisory during shake-out; flip to required after two consecutive
-  # green runs on main. The Visual Studio generator ignores compiler
-  # launchers, so the workflow-level ccache env vars are inert here.
+  # The Visual Studio generator ignores compiler launchers, so the
+  # workflow-level ccache env vars are inert here.
   windows:
     # Required gate since two consecutive green main runs (2026-07-07).
     # MSVC warnings (for example C4702) are not yet errors; enable

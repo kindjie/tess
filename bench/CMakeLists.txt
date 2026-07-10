@@ -248,6 +248,13 @@ add_custom_target(
     --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
     --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/topology.json
     --benchmark_out_format=json
+  # parallel/ threshold gating deferred until CI baselines exist.
+  COMMAND
+    tess_bench
+    --benchmark_filter=parallel/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/parallel.json
+    --benchmark_out_format=json
   COMMAND
     tess_bench_diagnostics
     --benchmark_filter=diagnostics/.*
@@ -345,6 +352,14 @@ if(BUILD_TESTING)
     COMMAND
       tess_bench
       --benchmark_filter=topology/precheck_unreachable_512x512
+      --benchmark_min_time=0.001
+  )
+
+  add_test(
+    NAME tess_bench_parallel_smoke
+    COMMAND
+      tess_bench
+      --benchmark_filter=parallel/chunk_fill_pool_w2
       --benchmark_min_time=0.001
   )
 
