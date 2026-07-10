@@ -321,6 +321,23 @@
   the `path_test_util.h` fixtures must record `heap_pushes > 0`, which
   permanently fails if a future fast path learns to answer the mazes
   without the heap loop.
+- `tess_diagnostics_trace_test` (diagnostics-enabled, links the allocation
+  hooks): covers the S4 trace layer. Warning sink -- `WarningSink` concept
+  satisfaction, oldest-first ring semantics with overflow `dropped()` counts,
+  `source_location` defaulting to the call site, and allocation-free `warn()`.
+  Trace buffer -- ring insert/overflow with monotonic sequence gaps, empty-span
+  drop, per-category `record_timing` accumulation (first-sample min/max, Count
+  sentinel guarded on both record and record_timing), `clear()`, `ScopedTrace`
+  nesting, the `ScopedTimer` capture-at-construction binding (a second buffer
+  installed before the timer ends must not receive the sample), and
+  allocation-free recording. Planner trace -- a conflicting plan and a
+  phase-assignment plan produce the expected `Planner` records. Snapshot export
+  -- `capture_diagnostics`/`capture_timing` copy every category and counter.
+- `tess_diagnostics_panels_test` (diagnostics-enabled, `TESS_ENABLE_IMGUI` on):
+  compile-and-run check for the opt-in `debug/imgui/panels.h` against a minimal
+  ImGui stub (`tests/imgui_stub/imgui.h`) so a panel bug surfaces here rather
+  than only in a real-ImGui consumer. Exercises every draw function over a
+  populated snapshot and pins `category_name` for every trace category.
 - `tests/test_benchmark_tools.py`: pytest coverage for the benchmark gating
   tools (run with `uv run --frozen --group dev pytest`, and in the CI
   hooks-backstop job alongside `tests/test_git_hooks.py`). Verifies
