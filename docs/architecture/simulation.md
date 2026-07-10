@@ -32,12 +32,17 @@ deltas.
   guards (chunk versions first, then topology versions) and returns `Moved`
   when every set guard matches. It resolves both endpoints unchecked, so
   callers must validate coordinates first.
-- `validate_movement_intent<World, PassableTag, OccupancyTag,
+- `validate_movement_intent<World, ClassOrTag, OccupancyTag,
   ReservationTag>(world, intent)` checks shape bounds, six-axis adjacency
   (`manhattan_distance == 1`), passability of both endpoints, destination
   occupancy, destination reservation, and the optional version guards, in
-  that order, without mutating the world.
-- `commit_movement_intent<World, PassableTag, OccupancyTag, ReservationTag>(
+  that order, without mutating the world. The second template argument is a
+  movement class OR a raw passable tag, normalized exactly as in
+  `astar_path`, so plan and commit share one vocabulary: every step A*
+  accepted for a class validates for that same class. The from- and to-tiles
+  may live on different pages; each endpoint's predicate is evaluated on its
+  own resolved page.
+- `commit_movement_intent<World, ClassOrTag, OccupancyTag, ReservationTag>(
   world, intent, dirty_mask)` validates the same intent, clears source
   occupancy, sets destination occupancy, clears destination reservation, and
   marks source and destination tiles dirty when `dirty_mask` is nonzero.

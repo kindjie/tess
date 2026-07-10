@@ -13,6 +13,26 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Class-aware movement commit validation (M6, S5 slice 5)
+
+- Changed: `validate_movement_intent` / `commit_movement_intent` take a
+  movement class OR a raw passable tag (`ClassOrTag`, normalized exactly as
+  in astar_path) instead of a bare `PassableTag`. Each endpoint's passability
+  is evaluated on its own resolved page -- from and to may live on different
+  pages -- replacing the coord-scope `field<PassableTag>` point reads; the
+  identity class performs the same resolve+field reads the legacy code did.
+- Reason: S5 slice 5 -- plan == commit. A* (slice 2) and the region graph
+  (slice 3) already speak the class vocabulary; commit validation was the
+  remaining seam still hard-wired to a single global passability, which would
+  let a Builder plan a step through a construction site and then have the
+  commit reject it. Pinned by test: every step weighted A* accepts for a
+  class validates as Moved for that same class, and BlockedFrom/BlockedTo are
+  per class on both endpoints.
+- Affected docs: `architecture/simulation.md`, `tests/AGENTS.md`.
+- Affected code: `sim/movement.h`;
+  `tests/tess_path_movement_class_test.cc` (plan==commit property,
+  per-class block statuses).
+
 ## 2026-07-09 - Precheck class agreement through the graph stamp (M6, S5 slice 4)
 
 - Changed: `precheck_path<ClassOrTag>(graph, world, start, goal, scratch)` --
