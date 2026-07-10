@@ -2,6 +2,7 @@
 #include <tess/tess.h>
 
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <type_traits>
 #include <vector>
@@ -446,6 +447,29 @@ TEST(TessStorage, WorldDirtyFlagsUnionClearAndIncrementVersion) {
   EXPECT_EQ(world.meta(key).field_dirty_flags, 0u);
   EXPECT_EQ(world.meta(key).dirty_bounds, (tess::Box3{}));
   EXPECT_EQ(world.meta(key).version, 2u);
+}
+
+TEST(TessStorage, WorldDirtyBoundsUnionSaturatesHugeExtent) {
+  // An extent >= 2^63 would flip negative under box_axis_end's int64 cast
+  // and corrupt the union; the axis end saturates at the int64 maximum.
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{5};
+  const auto small =
+      tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{2, 3, 1}};
+  const auto huge = tess::Box3{
+      tess::Coord3{0, 16, 0},
+      tess::Extent3{std::uint64_t{1} << 63u, 3, 1},
+  };
+
+  world.mark_dirty(key, DirtyTerrain, small);
+  world.mark_dirty(key, DirtyCost, huge);
+
+  const auto bounds = world.meta(key).dirty_bounds;
+  EXPECT_EQ(bounds.origin, (tess::Coord3{0, 16, 0}));
+  constexpr auto max_end = std::numeric_limits<std::int64_t>::max();
+  EXPECT_EQ(bounds.extent.x, static_cast<std::uint64_t>(max_end));
+  EXPECT_EQ(bounds.extent.y, 3u);
+  EXPECT_EQ(bounds.extent.z, 1u);
 }
 
 TEST(TessStorage, WorldObserveDirtyReturnsRequestedSubsetBoundsAndVersion) {

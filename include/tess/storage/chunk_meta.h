@@ -3,6 +3,7 @@
 #include <tess/core/shape.h>
 
 #include <cstdint>
+#include <limits>
 
 namespace tess {
 
@@ -45,9 +46,17 @@ namespace detail {
   return count;
 }
 
+// An extent >= 2^63 would flip the int64 cast negative (and a large origin
+// plus extent would overflow), corrupting dirty-bounds unions; saturate the
+// axis end at the int64 maximum instead.
 [[nodiscard]] constexpr std::int64_t box_axis_end(
     std::int64_t origin, std::uint64_t extent) noexcept {
-  return origin + static_cast<std::int64_t>(extent);
+  constexpr auto max = std::numeric_limits<std::int64_t>::max();
+  if (extent > static_cast<std::uint64_t>(max)) {
+    return max;
+  }
+  const auto delta = static_cast<std::int64_t>(extent);
+  return origin > max - delta ? max : origin + delta;
 }
 
 [[nodiscard]] constexpr std::int64_t box_min(std::int64_t lhs,
