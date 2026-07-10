@@ -39,6 +39,13 @@ struct DiagnosticsSnapshot {
 };
 
 // Copy every category's timing accumulator out of a TraceBuffer.
+//
+// Threading contract: capture performs plain unsynchronized reads of the
+// buffer (and, for capture_diagnostics, of the counter structs). Call it on
+// the thread that records into them -- the same thread_local routing contract
+// documented in trace.h/diagnostics.h -- or externally synchronize capture
+// against all recording. Calling from a UI/render thread while a sim thread
+// is still tracing is a data race.
 [[nodiscard]] inline auto capture_timing(const TraceBuffer& buffer) noexcept
     -> TimingSnapshot {
   TimingSnapshot snapshot;
@@ -48,7 +55,9 @@ struct DiagnosticsSnapshot {
 
 // Assemble a full snapshot from caller-owned counter structs and a trace
 // buffer. Every field is a plain copy, so the snapshot outlives the sources
-// unchanged.
+// unchanged. Same threading contract as capture_timing above: capture on the
+// recording thread or under external synchronization; only the returned
+// snapshot is safe to hand to another thread.
 [[nodiscard]] inline auto capture_diagnostics(
     const PathCounters& path, const AllocationCounters& allocation,
     const QueuedPhaseCounters& queued, const TraceBuffer& buffer) noexcept

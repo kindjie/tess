@@ -11,11 +11,18 @@
 // mismatch and alloc-dealloc-size checks. Both runtimes call the weak
 // __sanitizer_malloc_hook/__sanitizer_free_hook for every allocation, so
 // the diagnostics counters ride on those hooks instead.
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+//
+// Windows is excluded (_MSC_VER covers MSVC and clang-cl): MSVC
+// /fsanitize=address also defines __SANITIZE_ADDRESS__ but its ASan runtime
+// never calls the __sanitizer_* hooks, and <pthread.h> does not exist there,
+// so Windows stays on the operator new/delete branch below.
+#if (__has_feature(address_sanitizer) || __has_feature(thread_sanitizer)) && \
+    !defined(_MSC_VER)
 #define TESS_DIAG_ALLOC_HOOKS_USE_SANITIZER_HOOK 1
 #endif
 
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#if (defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)) && \
+    !defined(_MSC_VER)
 #define TESS_DIAG_ALLOC_HOOKS_USE_SANITIZER_HOOK 1
 #endif
 
@@ -74,7 +81,11 @@ extern "C" void __sanitizer_malloc_hook(const volatile void* ptr,
 }
 
 extern "C" void __sanitizer_free_hook(const volatile void* ptr) {
-  (void)ptr;
+  // free(nullptr)/delete nullptr are legal no-ops; keep the count in step
+  // with the null check in the non-sanitizer release paths below.
+  if (ptr == nullptr) {
+    return;
+  }
   const HookGuard guard;
   if (guard.entered()) {
     // The sanitizer free hook does not expose the allocation size, so
@@ -120,14 +131,24 @@ namespace {
   throw std::bad_alloc();
 }
 
+// operator delete(nullptr) is a legal no-op, so a null release is not a
+// deallocation and must not be counted (it would otherwise skew the
+// deallocations/allocations balance).
 void release_bytes(void* ptr, std::size_t size = 0) noexcept {
+  if (ptr == nullptr) {
+    return;
+  }
   tess::diagnostics::record_deallocation(size);
   std::free(ptr);
 }
 
 // Windows aligned allocations come from _aligned_malloc and must be
 // released with _aligned_free; elsewhere posix_memalign memory is free()d.
+// Null is a legal no-op here too and stays uncounted.
 void release_aligned_bytes(void* ptr, std::size_t size = 0) noexcept {
+  if (ptr == nullptr) {
+    return;
+  }
   tess::diagnostics::record_deallocation(size);
 #if defined(_WIN32)
   _aligned_free(ptr);

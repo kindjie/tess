@@ -14,6 +14,12 @@
 // used (Text, TextUnformatted, Separator) so the panels compile across ImGui
 // versions and uint64 values are printed through unsigned long long casts for
 // portable printf-style formatting.
+//
+// Threading: the panels only read the snapshot copies they are passed, so they
+// are safe on a render thread -- but producing those copies is not. Capture
+// them per export.h's threading contract (on the recording thread, or with
+// capture externally synchronized against recording), then hand the snapshot
+// to the thread that draws.
 
 #include <tess/diagnostics/diagnostics.h>
 

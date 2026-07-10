@@ -208,7 +208,10 @@ class TraceBuffer {
 // Thread-local active buffer, mirroring the counter sinks in diagnostics.h. The
 // TESS_DIAG_TRACE macros and trace_event route to whichever buffer is installed
 // on the current thread; worker threads do not feed the installer's buffer (the
-// same deliberate thread_local limit documented for the counters).
+// same deliberate thread_local limit documented for the counters). Reading a
+// buffer -- including export.h's capture_timing/capture_diagnostics -- is
+// likewise unsynchronized: read on the recording thread, or externally
+// synchronize the read against all recording into that buffer.
 inline thread_local TraceBuffer* active_trace_buffer = nullptr;
 
 // RAII installer for the active trace buffer. Non-copyable and nestable: the
