@@ -16,9 +16,11 @@
 
 namespace tess {
 
+// generation is 64-bit so a ticket retained across clear_requests() calls
+// can never alias a later batch by counter wraparound.
 struct PathTicket {
   std::size_t value = 0;
-  std::uint32_t generation = 0;
+  std::uint64_t generation = 0;
 };
 
 struct PathRuntimeCachePolicy {
@@ -63,6 +65,10 @@ struct PathRuntimeStats {
   PortalSegmentCacheStats portal_segment_cache{};
 };
 
+// ONE RUNTIME PER WORLD: the caches inside identify a world by its chunk
+// content versions, not its identity, so two same-shape worlds with equal
+// version counters alias and a shared runtime would serve one world's
+// routes/fields for the other (see RouteCacheScratch fingerprint notes).
 class PathRequestRuntime {
  public:
   void reserve_requests(std::size_t count) {
@@ -104,6 +110,8 @@ class PathRequestRuntime {
     unit_field_product_cache_.reserve_entries(count);
   }
 
+  // Reserve World::chunk_count: dependency sets are bounded by (and for
+  // failure products equal to) the chunk count.
   void reserve_unit_field_product_dependencies(std::size_t count) {
     unit_field_product_.reserve_dependencies(count);
   }
@@ -547,7 +555,7 @@ class PathRequestRuntime {
   PathRuntimeStats stats_;
   std::size_t world_changes_since_clear_ = 0;
   std::size_t cache_clears_ = 0;
-  std::uint32_t generation_ = 0;
+  std::uint64_t generation_ = 0;
 };
 
 }  // namespace tess

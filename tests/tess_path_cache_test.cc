@@ -357,4 +357,69 @@ TEST(TessPathCache, RouteCachePathNodeCapInvalidatesWholeCache) {
   EXPECT_EQ(stats.path_nodes, 8u);
 }
 
+// A single route larger than the node cap can never fit, so it is skipped
+// outright instead of invalidating resident entries and then violating the
+// cap anyway.
+TEST(TessPathCache, RouteCacheSkipsRouteLargerThanPathNodeCap) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::RouteCacheScratch cache;
+  cache.set_caps(tess::RouteCacheScratch::default_max_entries, 4);
+
+  const auto small =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}};
+  ASSERT_EQ((tess::cached_astar_path<decltype(world), PassableTag>(
+                 world, small, scratch, cache))
+                .status,
+            tess::PathStatus::Found);
+  ASSERT_EQ(cache.stats().entries, 1u);
+
+  const auto oversized =
+      tess::PathRequest{tess::Coord3{0, 1, 0}, tess::Coord3{7, 1, 0}};
+  const auto computed = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, oversized, scratch, cache);
+  ASSERT_EQ(computed.status, tess::PathStatus::Found);
+  ASSERT_EQ(computed.path.size(), 8u);
+
+  const auto stats = cache.stats();
+  EXPECT_EQ(stats.entries, 1u);
+  EXPECT_EQ(stats.path_nodes, 4u);
+  EXPECT_EQ(stats.cap_invalidations, 0u);
+  EXPECT_EQ(stats.oversized_skips, 1u);
+
+  const auto hit = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, small, scratch, cache);
+  ASSERT_EQ(hit.status, tess::PathStatus::Found);
+  EXPECT_EQ(hit.expanded_nodes, 0u);
+}
+
+// Cap value 0 disables storage, matching the portal segment cache's budget
+// semantics; it does not mean "unlimited".
+TEST(TessPathCache, RouteCacheZeroCapsDisableStorage) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::RouteCacheScratch cache;
+  cache.set_caps(0, 0);
+
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
+  for (int i = 0; i < 2; ++i) {
+    const auto result = tess::cached_astar_path<decltype(world), PassableTag>(
+        world, request, scratch, cache);
+    ASSERT_EQ(result.status, tess::PathStatus::Found);
+    EXPECT_GT(result.expanded_nodes, 0u);
+  }
+
+  const auto stats = cache.stats();
+  EXPECT_EQ(stats.entries, 0u);
+  EXPECT_EQ(stats.hits, 0u);
+  EXPECT_EQ(stats.misses, 2u);
+}
+
 }  // namespace

@@ -13,6 +13,50 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-09 - Path product/cache invalidation contracts (audit-2 W-A)
+
+- Changed: (1) Route, portal-route, and distance-field products treat an empty
+  dependency set as invalid, and every builder now captures dependencies for
+  non-Found results (`capture_all`), so a cached failure can never replay
+  after a world edit that might change the answer. (2)
+  `build_distance_field_product` additionally depends on the face neighbors
+  of every touched chunk, covering the blocked frontier: an edit that opens a
+  fully-sealed chunk now invalidates the product. (3)
+  `RouteCacheScratch::store` skips a single route larger than the node cap
+  (new `stats().oversized_skips`) instead of invalidating resident entries
+  and storing it anyway, and cap value 0 now disables storage rather than
+  meaning "unlimited", matching the portal segment cache. (4)
+  `build_weighted_portal_route_product` accepts its own `waypoints()` span
+  (rebuild-from-own-product no longer reads a cleared vector). (5)
+  `PathTicket.generation` widened to 64 bits so retained tickets cannot alias
+  across generation wraparound. (6) Documented: the caller-owned staleness
+  contract of `cached_astar_path`, the one-cache/runtime-per-world identity
+  contract, and the chunk-portal route builder's heuristic (non-authoritative)
+  NoPath tier.
+- Changed (review follow-up): the multi-agent review of this branch found
+  the segment-cache overload of `build_weighted_portal_route_product` had
+  been missed (same self-alias UB -- ASan-confirmed -- and missing failure
+  capture); the alias guard now covers all product-owned spans (including a
+  previously returned `PathResult.path`) via a shared `stash_if_owned`
+  helper. It also flagged two quadratic passes and an over-broad capture,
+  fixed as: `capture_all` appends directly (O(chunk_count)), the
+  blocked-frontier pass dedupes through a scratch seen-set +
+  `add_chunk_unique` (linear), and InvalidStart/InvalidGoal products now
+  depend only on the offending in-bounds tiles' chunks instead of every
+  chunk (out-of-bounds failures carry no dependencies and are permanently
+  invalid -- callers pay only the cheap bounds rejection on rebuild).
+  `reserve_dependencies` docs now state the chunk_count bound.
+- Reason: second audit (2026-07-09) findings H1, H2, M3, M4, M5, M6 and cache
+  lows -- failure products carried empty dependency sets that validated
+  vacuously forever, and unreached chunks never invalidated field products,
+  so removing a wall could leave agents permanently pathless.
+- Affected docs: `planning/audit-2026-07-09.md`,
+  `planning/audit-2026-07-09-remediation.md`, `decisions/CHANGELOG.md`.
+- Affected code: `path/path.h`, `path/portal_route.h`,
+  `path/field_product_cache.h`, `path/route_cache.h`, `path/path_runtime.h`,
+  `tests/tess_path_test.cc`, `tests/tess_path_cache_test.cc`,
+  `tests/tess_path_runtime_test.cc`.
+
 ## 2026-07-09 - TraceBuffer pinned to its storage (M12, S4)
 
 - Changed: `diagnostics::TraceBuffer` is now non-copyable and non-movable (all
