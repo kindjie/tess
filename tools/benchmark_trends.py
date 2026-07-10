@@ -153,13 +153,25 @@ def benchmark_result_files(directory: Path) -> list[Path]:
   )
 
 
+def load_result(path: Path) -> dict[str, Any]:
+  """Load a discovered result file, ignoring non-object JSON.
+
+  Discovery may pick up a stray non-benchmark file; skip it instead of
+  crashing the whole report.
+  """
+  try:
+    return load_json(path)
+  except TypeError:
+    return {}
+
+
 def collect_values(
     directory: Path,
     benchmarks: tuple[str, ...],
 ) -> dict[str, float]:
   samples: dict[str, list[float]] = {name: [] for name in benchmarks}
   for path in benchmark_result_files(directory):
-    data = load_json(path)
+    data = load_result(path)
     for benchmark in data.get("benchmarks", []):
       bench_name = benchmark.get("name")
       if bench_name not in samples:
@@ -188,7 +200,7 @@ def metadata_timestamp(metadata: dict[str, str]) -> datetime | None:
 
 def benchmark_timestamp(directory: Path) -> datetime | None:
   for path in benchmark_result_files(directory):
-    context = load_json(path).get("context", {})
+    context = load_result(path).get("context", {})
     if isinstance(context, dict) and isinstance(context.get("date"), str):
       timestamp = parse_datetime(context["date"])
       if timestamp is not None:
