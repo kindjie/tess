@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -34,6 +35,24 @@ using World = tess::AlwaysResidentWorld<TopDown2D, Schema>;
 auto update_from_helper(tess::FrameOps& ops, tess::DomainDesc domain)
     -> tess::OpHandle {
   return ops.update_field(std::move(domain), tess::WritePolicy::ReadOnly);
+}
+
+// Bounded rendezvous spin for concurrency tests: an unbounded
+// `while (entered < expected) yield()` hangs for the whole ctest timeout on
+// regression. Fails the test with a clear message and returns instead, so
+// the worker callback completes and the executor can join.
+void await_rendezvous(const std::atomic<std::size_t>& entered,
+                      std::size_t expected) {
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds{30};
+  while (entered.load() < expected) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      ADD_FAILURE() << "rendezvous timed out: " << entered.load() << " of "
+                    << expected << " workers entered within 30s";
+      return;
+    }
+    std::this_thread::yield();
+  }
 }
 
 auto planned_keys(const tess::ExecutionReport& report, std::size_t index)
@@ -1400,9 +1419,7 @@ TEST(TessQueued, ExecutePhasePartitionedDirtySupportsThreadedExecutor) {
         }
 
         entered.fetch_add(1);
-        while (entered.load() < expected_workers) {
-          std::this_thread::yield();
-        }
+        await_rendezvous(entered, expected_workers);
 
         auto terrain = view.template field_span<TerrainTag>();
         terrain[0] = static_cast<std::uint16_t>(view.key().value + 80);
@@ -1481,9 +1498,7 @@ TEST(TessQueued, ThreadedReadOnlyPhaseAllowsOverlappingChunksWithConstViews) {
         }
 
         entered.fetch_add(1);
-        while (entered.load() < expected_workers) {
-          std::this_thread::yield();
-        }
+        await_rendezvous(entered, expected_workers);
 
         observed_sum.fetch_add(terrain[0]);
         active.fetch_sub(1);
