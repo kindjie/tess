@@ -201,9 +201,25 @@ rebuild. On a sparse world, a provider transition landing in a non-resident
 chunk marks its origin region as reaching missing topology, so reachability
 degrades to `Indeterminate` rather than a wrong `Unreachable`.
 
+## Stairs
+
+`StairTransitions<StairTag>` is the concrete vertical provider: an integral
+`StairTag` field holds a `StairDirection` (`None`/`PositiveX`/`NegativeX`/
+`PositiveY`/`NegativeY`), and a non-`None` tile is the FOOT of a stair whose
+landing is one step in that direction and one z-level up. The offset is
+deliberate — two vertically stacked passable tiles are already six-axis
+adjacent, so a same-column stair would add nothing. Each stair contributes
+both directions, each emitted from the chunk owning its origin tile (the down
+direction from the landing's chunk, which is the foot's chunk or its +z face
+neighbor), so incremental re-derivation holds. Whether either endpoint is
+traversable stays a movement-class question: stair edges are automatically
+per-class through the label filter. Limit: a landing that would cross two
+chunk boundaries at once (sideways off the chunk's x/y edge AND up off its
+top z layer) violates the face-neighbor contract and contributes nothing;
+place the foot so the landing stays within face-neighbor range.
+
 ## Deliberate Limits
 
-This slice does not implement a concrete vertical provider (stairs land in
-the next slice) or a dirty rebuild queue. The portal graph stores directed
+This slice does not implement a dirty rebuild queue. The portal graph stores directed
 portals only; incremental updates require the caller to supply the dirty
 chunk set, and provider transitions must stay within face-neighbor range.
