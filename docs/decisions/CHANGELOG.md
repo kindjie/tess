@@ -13,6 +13,31 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - Result-channel core: OpCompletion + drain-only ResultChannel (M4, S6 slice 1)
+
+- Added: `include/tess/ops/result_channel.h` -- `OpCompletion` (both failure
+  domains plus chunk count and enqueue-site source_location, with a
+  `completed` flag so a default record can never read as success),
+  `OpResultState` (Unbound/Pending/Ready/Failed), the caller-owned dense
+  `ResultChannel<T>` keyed by OpHandle with `drain_results(visitor)` in
+  handle order (failures deliver reasons, never values; drain-once;
+  lookups readable until clear), and `record_plan_completions(report,
+  channel)` delivering plan-time rejections through the same drain.
+- Reason: S6 slice 1 (M4 close). Design review (workflow + two adversarial
+  critiques) converged on a deliberately DRAIN-ONLY v1: the pipeline has no
+  asynchronous execution path, so a poll-only future could never be
+  observed pending and was the source of every footgun found (stale-assert
+  semantics, fail-safe fallbacks, dead expect()); futures return when
+  budget-deferred execution gives them a consumer. Recorded as a TDD
+  divergence alongside the deferred cancelled/superseded states.
+  Publication is executor-agnostic with zero atomics: per-op slot writes on
+  the executing thread, all reads after the synchronous execute call, join
+  barrier supplies visibility.
+- Affected docs: `architecture/queued-operations.md`,
+  `architecture/surface.json`, `tests/AGENTS.md`.
+- Affected code: new `ops/result_channel.h`, `tess.h`, `CMakeLists.txt`;
+  new `tests/tess_queued_results_test.cc`, `tests/CMakeLists.txt`.
+
 ## 2026-07-10 - Codex review fixes: span-path advertisement, stair narrowing, direct route-cache guard (M6, S5)
 
 - Fixed: three of four connector-review findings. (1) `WalkableCostField`
