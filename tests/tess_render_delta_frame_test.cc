@@ -354,6 +354,65 @@ TEST(TessDeltaFrame, BaselinePublishDropsPendingEntityRecords) {
   EXPECT_TRUE(frame.entities.empty());
 }
 
+TEST(TessDeltaFrame, BaselineAfterTruncationRecoversInOnePublish) {
+  // A pending truncation is superseded by a full baseline: dropped tile
+  // records are covered by the repaint, dropped entity records by the
+  // consumer's baseline re-snapshot. The recovering baseline must be
+  // usable immediately, not truncated by the earlier overflow.
+  World world;
+  tess::DeltaCollector collector;
+  collector.reserve(World::chunk_count, 256, 1);
+  collector.begin_tick(1);
+  collector.record_spawn(tess::EntityHandle{1}, tess::Coord3{0, 0, 0});
+  collector.record_spawn(tess::EntityHandle{2}, tess::Coord3{1, 0, 0});
+  ASSERT_EQ(collector.stats().truncations, 1u);
+
+  tess::collect_baseline(collector, world, kTerrainBit);
+  const auto frame = collector.publish();
+  EXPECT_TRUE(frame.header.baseline);
+  EXPECT_FALSE(frame.header.truncated);
+  EXPECT_TRUE(
+      tess::delta_frame_applicable(frame.header, tess::RenderVersion{0}));
+}
+
+TEST(TessDeltaFrame, TruncatedHeaderOnlyPublishBumpsAndIsNotEmpty) {
+  // clear() drops records unrecoverably; the resulting gap frame must
+  // advance the version chain (a lossy consumer that misses it must not
+  // be able to apply the next delta as if nothing was dropped) and must
+  // not read as an ignorable empty frame.
+  auto collector = make_collector();
+  collector.begin_tick(1);
+  collector.record_spawn(tess::EntityHandle{1}, tess::Coord3{0, 0, 0});
+  collector.clear();
+
+  const auto gap = collector.publish();
+  EXPECT_TRUE(gap.header.truncated);
+  EXPECT_FALSE(gap.empty());
+  EXPECT_EQ(gap.header.to_version.value, gap.header.from_version.value + 1);
+}
+
+TEST(TessDeltaFrame, OversizedDirtyExtentsClipSafely) {
+  // Dirty-bound unions may carry extents at or above 2^63; the clip
+  // must saturate instead of wrapping and still cover the chunk.
+  World world;
+  auto collector = make_collector(/*threshold=*/4);
+  world.mark_dirty(
+      tess::chunk_key<Shape>(tess::tile_key<Shape>(tess::Coord3{2, 2, 0})),
+      kTerrainBit,
+      tess::Box3{
+          tess::Coord3{2, 2, 0},
+          tess::Extent3{std::uint64_t{1} << 63U, std::uint64_t{1} << 63U, 1}});
+
+  tess::collect_tile_deltas(collector, world, kTerrainBit);
+  const auto frame = collector.publish();
+  ASSERT_EQ(frame.chunks.size(), 1u);
+  EXPECT_EQ(frame.chunks[0].tile_count, 0u);
+  // Clipped to the chunk: origin at the mark, ending at the chunk edge.
+  EXPECT_EQ(frame.chunks[0].bounds.origin, (tess::Coord3{2, 2, 0}));
+  EXPECT_EQ(frame.chunks[0].bounds.extent.x, 6u);
+  EXPECT_EQ(frame.chunks[0].bounds.extent.y, 6u);
+}
+
 TEST(TessDeltaFrame, FullBaselineCoversEveryChunkAndHealsTheStream) {
   World world;
   tess::DeltaCollector collector;

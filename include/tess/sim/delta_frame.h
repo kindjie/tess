@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <type_traits>
 #include <vector>
@@ -140,10 +141,11 @@ struct DeltaFrame {
   std::span<const Coord3> overlay_nodes{};
 
   // Overlays are stateless per-frame decorations and never affect
-  // version semantics or emptiness.
+  // version semantics or emptiness. Truncated frames are never empty:
+  // the header itself carries the must-resync signal.
   [[nodiscard]] auto empty() const noexcept -> bool {
     return chunks.empty() && tiles.empty() && entities.empty() &&
-           !header.baseline;
+           !header.baseline && !header.truncated;
   }
 };
 
@@ -330,11 +332,15 @@ class DeltaCollector {
     pending_dirty_mask_ |= dirty_mask;
   }
 
-  // Baseline collection supersedes every pending Dirty record: the
-  // baseline repaints everything they cover.
+  // Baseline collection supersedes every pending Dirty record AND any
+  // pending truncation: dropped tile records are covered by the full
+  // repaint and dropped entity records by the consumer's baseline
+  // re-snapshot, so only a baseline that itself overflows stays
+  // truncated (and therefore unusable).
   void drop_pending_tile_state() noexcept {
     pending_chunks_.clear();
     pending_tiles_.clear();
+    pending_truncated_ = false;
   }
 
   void mark_baseline_pending() noexcept { baseline_pending_ = true; }
@@ -377,9 +383,13 @@ class DeltaCollector {
     if (baseline_pending_) {
       drop_pending_entities();
     }
-    const auto state_carrying = !pending_chunks_.empty() ||
-                                !pending_tiles_.empty() ||
-                                !pending_entities_.empty() || baseline_pending_;
+    // Truncated publishes always advance the chain, even header-only
+    // ones: a lossy consumer that misses a gap frame must not be able
+    // to apply the next delta as if nothing was dropped.
+    const auto state_carrying =
+        !pending_chunks_.empty() || !pending_tiles_.empty() ||
+        !pending_entities_.empty() || baseline_pending_ || pending_truncated_ ||
+        needs_baseline_;
     auto header = DeltaFrameHeader{};
     header.from_version = version_;
     if (state_carrying) {
@@ -623,6 +633,23 @@ namespace detail {
 // intersection (possible when another flag owner's marks widened the
 // union bounds away from this chunk) degrades to the chunk's full box:
 // invalidation must stay conservative.
+// Saturating origin+extent: dirty-bound unions may carry extents at or
+// above 2^63, and a wrapped signed add here would clip to the wrong box
+// (or be outright UB) instead of conservatively covering the chunk.
+[[nodiscard]] constexpr auto saturated_axis_end(std::int64_t origin,
+                                                std::uint64_t extent) noexcept
+    -> std::int64_t {
+  constexpr auto kMax = std::numeric_limits<std::int64_t>::max();
+  if (extent >= static_cast<std::uint64_t>(kMax)) {
+    return kMax;
+  }
+  const auto span = static_cast<std::int64_t>(extent);
+  if (origin > kMax - span) {
+    return kMax;
+  }
+  return origin + span;
+}
+
 template <typename Shape>
 [[nodiscard]] auto clip_dirty_bounds_to_chunk(ChunkKey chunk_key,
                                               Box3 bounds) noexcept -> Box3 {
@@ -639,13 +666,13 @@ template <typename Shape>
   const auto begin = Coord3{std::max(bounds.origin.x, chunk_origin.x),
                             std::max(bounds.origin.y, chunk_origin.y),
                             std::max(bounds.origin.z, chunk_origin.z)};
-  const auto end = Coord3{
-      std::min(bounds.origin.x + static_cast<std::int64_t>(bounds.extent.x),
-               chunk_end.x),
-      std::min(bounds.origin.y + static_cast<std::int64_t>(bounds.extent.y),
-               chunk_end.y),
-      std::min(bounds.origin.z + static_cast<std::int64_t>(bounds.extent.z),
-               chunk_end.z)};
+  const auto end =
+      Coord3{std::min(saturated_axis_end(bounds.origin.x, bounds.extent.x),
+                      chunk_end.x),
+             std::min(saturated_axis_end(bounds.origin.y, bounds.extent.y),
+                      chunk_end.y),
+             std::min(saturated_axis_end(bounds.origin.z, bounds.extent.z),
+                      chunk_end.z)};
   if (begin.x >= end.x || begin.y >= end.y || begin.z >= end.z) {
     return Box3{chunk_origin,
                 Extent3{Traits::chunk.x, Traits::chunk.y, Traits::chunk.z}};
