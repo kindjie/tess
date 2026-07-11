@@ -13,6 +13,94 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - v1.0.0 (S11 close)
+
+- Changed: project version 0.1.0 -> 1.0.0 (CMake `project(VERSION)`,
+  `TESS_VERSION_*` macros, and the smoke test's pinned literals bumped
+  together). The v1 milestone plan is stamped COMPLETE and preserved as
+  the planning record; the architecture README now describes the shipped
+  v1 surface. The consumer's composite 10k-tick soak (its S11.4 test)
+  locks the integrated behavior the acceptance criteria describe.
+- Reason: S11.6 -- every milestone M0-M15 shipped with its gates,
+  documentation, and consumer adoption in place.
+- Affected docs: `docs/planning/v1-milestone-plan.md`,
+  `docs/architecture/README.md`.
+- Affected code: `CMakeLists.txt`, `include/tess/tess.h`,
+  `tests/tess_smoke.cc`.
+
+## 2026-07-11 - Threshold recalibration + trends snapshot (M14, S11.3)
+
+- Changed: every gated benchmark ceiling in `bench/thresholds/` for the
+  key, storage, block, queued, path, topology, and diagnostics families
+  is now twice the maximum observed across ten main-run CI baseline
+  artifacts (runs 29056942917-29167134881, 10 repetitions each),
+  tightened from the single-artifact 3x policy per the 10-artifact rule
+  in `docs/performance.md`; 2x headroom absorbs the shared-runner pool's
+  heterogeneous-CPU spread, and nanosecond-scale gates keep an absolute
+  25 ns floor (2x-of-observed below that fails a correct benchmark on a
+  merely-slower runner SKU -- observed empirically during review; these
+  gates exist for 5-100x gross regressions). The trends snapshot
+  (`docs/assets/benchmark-trends.svg` + the `docs/performance.md` table)
+  is regenerated from the same ten artifacts.
+- Fixed: the `tess_bench_ci_baselines` target had never been extended
+  past the diagnostics family -- scheduler (S7), ecs (S8), render-delta
+  (S9), and fields (S11.1) gates existed with no baseline collection.
+  They are wired in now (through the binaries their threshold targets
+  use), keep their bootstrap ceilings, and get recalibrated once enough
+  artifacts carrying them accumulate.
+- Reason: S11.3 (consolidation) -- the deferred tightening pass and the
+  deferred >=5-artifact snapshot regeneration, done once, reviewably.
+- Affected docs: `docs/performance.md`,
+  `docs/assets/benchmark-trends.svg`.
+- Affected code: `bench/thresholds/{key-conversions,storage,block,
+  queued,path,topology,diagnostics}.json`, `bench/CMakeLists.txt`.
+
+## 2026-07-11 - Consolidation examples + CI example smoke (M15, S11.2)
+
+- Added: three examples closing the M15 checklist.
+  `examples/colony_2d.cc` is the flagship composition -- queued
+  construction edits through an `AutoExecTask` in the PreUpdate phase,
+  an OnDirty Topology-phase task doing the incremental per-class region
+  update and re-path, movement-class (`MovementClass` walker) agents
+  routing around the wall the ops built, and a `DeltaCollector`
+  publishing versioned render frames, all under one `tess::Schedule`
+  driven by `run_schedule_frame`. `examples/ant_farm_vertical.cc` runs
+  a degenerate-axis (y extent 1) x-z cross-section world: one
+  distance-field product flooded from all food chambers, per-ant
+  `nearest_target` descents, and the shared product served from the
+  `FieldProductCache` (asserted hits). `examples/stairs_3d.cc` shows
+  `StairTransitions` connecting two z-levels that share no passable
+  face, the precheck agreeing, and an incremental `update_region_graph`
+  severing the link after demolition. Every example is self-checking
+  (nonzero exit on violated expectations), and the dev CI job gains an
+  "Example smoke" step that executes every built example binary and
+  asserts the expected count ran.
+- Reason: S11.2 (consolidation) -- v1's example checklist and a CI
+  guarantee that examples keep running, not just compiling.
+- Affected docs: `README.md` (stale "two examples" paragraph replaced
+  with the full list).
+- Affected code: new `examples/colony_2d.cc`,
+  `examples/ant_farm_vertical.cc`, `examples/stairs_3d.cc`;
+  `examples/CMakeLists.txt`, `.github/workflows/ci.yml`.
+
+## 2026-07-11 - Fields benchmark family (M9/M14, S11.1)
+
+- Added: `bench/tess_fields_bench.cc` + thresholds + the CI step -- the
+  gated family M9 never had: distance-field product builds scaling with
+  the goal count (1/16/256 goals over an open 64x64 world; 85-103 us
+  local), the nearest-target gradient query over a built product
+  (64 ns), FieldProductCache hit (25 ns), the mixed miss+store steady
+  state, byte-budgeted LRU eviction under a cycling working set, and
+  the warm-build allocation gate (zero allocations into reserved
+  product/scratch storage; family runs through the diagnostics binary).
+  Stateful correctness checks are guarded by iteration count because
+  the harness's one-iteration calibration pass runs them too.
+- Reason: S11.1 (consolidation) -- closes the M14 family checklist.
+- Affected docs: none.
+- Affected code: new `bench/tess_fields_bench.cc`,
+  `bench/thresholds/fields.json`, `bench/CMakeLists.txt`,
+  `.github/workflows/ci.yml`.
+
 ## 2026-07-11 - GPU backend interface, interface only (M13, S10)
 
 - Added: `include/tess/gpu/descriptors.h` (GpuFieldFormat derived from

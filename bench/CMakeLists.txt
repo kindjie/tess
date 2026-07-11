@@ -7,6 +7,7 @@ tess_require_google_benchmark()
 add_executable(
   tess_bench
   tess_bench.cc
+  tess_fields_bench.cc
   tess_parallel_bench.cc
   tess_path_agent_bench.cc
   tess_path_product_bench.cc
@@ -22,6 +23,7 @@ tess_apply_project_options(tess_bench)
 add_executable(
   tess_bench_diagnostics
   tess_bench.cc
+  tess_fields_bench.cc
   tess_parallel_bench.cc
   tess_path_agent_bench.cc
   tess_path_product_bench.cc
@@ -103,6 +105,12 @@ set(
   TESS_ECS_BENCHMARK_THRESHOLDS
   "${PROJECT_SOURCE_DIR}/bench/thresholds/ecs.json"
   CACHE FILEPATH "Thresholds for ecs benchmark regressions"
+)
+
+set(
+  TESS_FIELDS_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/fields.json"
+  CACHE FILEPATH "Thresholds for fields benchmark regressions"
 )
 
 set(
@@ -267,6 +275,23 @@ if(Python3_Interpreter_FOUND)
     )
   endif()
 
+  add_custom_target(
+    tess_bench_fields_thresholds
+    COMMAND
+      tess_bench_diagnostics
+      --benchmark_filter=fields/.*
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/fields.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/fields.json
+      --thresholds ${TESS_FIELDS_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench_diagnostics
+    COMMENT "Running fields benchmark threshold checks"
+    VERBATIM
+  )
+
   # Like the ecs family: run through the diagnostics binary so the
   # allocation gate executes in CI.
   add_custom_target(
@@ -353,10 +378,37 @@ add_custom_target(
     --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/parallel.json
     --benchmark_out_format=json
   COMMAND
+    tess_bench
+    --benchmark_filter=scheduler/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/scheduler.json
+    --benchmark_out_format=json
+  COMMAND
     tess_bench_diagnostics
     --benchmark_filter=diagnostics/.*
     --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
     --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/diagnostics.json
+    --benchmark_out_format=json
+  # ecs/, render_delta/, and fields/ run through the diagnostics binary,
+  # matching their threshold targets (ecs asserts alloc-free steady state,
+  # fields carries the warm-build allocation gate).
+  COMMAND
+    tess_bench_diagnostics
+    --benchmark_filter=ecs/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/ecs.json
+    --benchmark_out_format=json
+  COMMAND
+    tess_bench_diagnostics
+    --benchmark_filter=render_delta/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/render-delta.json
+    --benchmark_out_format=json
+  COMMAND
+    tess_bench_diagnostics
+    --benchmark_filter=fields/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/fields.json
     --benchmark_out_format=json
   DEPENDS tess_bench tess_bench_diagnostics
   COMMENT "Collecting non-gating CI benchmark baseline samples"

@@ -3,19 +3,19 @@
   "benchmarks": {
     "diagnostics/trace_record": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 500
+      "max_cpu_time_ns": 25
     },
     "diagnostics/record_timing": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 500
+      "max_cpu_time_ns": 25
     },
     "diagnostics/scoped_timer": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2000
+      "max_cpu_time_ns": 133
     },
     "diagnostics/warning_sink": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 500
+      "max_cpu_time_ns": 25
     }
   }
 }
