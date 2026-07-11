@@ -1,9 +1,620 @@
 # Design Changelog (Archive)
 
-Archived design-changelog entries predating 2026-07-07. The live changelog
+Archived design-changelog entries predating 2026-07-09. The live changelog
 is [`CHANGELOG.md`](CHANGELOG.md); see it for the format template and the
-most recent entries. Entries below are in reverse-chronological order as
-they were written.
+most recent entries. Entries from June 2026 live in
+[`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md). Entries
+below are in reverse-chronological order as they were written.
+
+## 2026-07-08 - Topology Precheck (Pre-A* Reachability Gate)
+
+- Added (topology): `is_region_graph_fresh(world, graph)` -- a const,
+  allocation-free predicate reporting whether a built `RegionGraph` still
+  matches the world (dense: per-chunk topology version; sparse: also the frozen
+  residency snapshot, generation checked before touching `meta()`). Recomputes
+  the staleness test `update_region_graph` applies internally.
+- Added (path, new header `path/precheck.h`): `precheck_path(...)` ->
+  `PrecheckStatus` {`Reachable`, `Unreachable`, `MissingChunk`, `InvalidStart`,
+  `InvalidGoal`, `GraphStale`, `NoGraph`} and `precheck_rules_out_path`. A
+  cheap region-graph reachability gate run before A* (M8). Only `Unreachable`
+  licenses skipping A*; every other status runs A*. Staleness is resolved
+  first: empty graph -> `NoGraph`, stale graph -> `GraphStale`, both decided
+  BEFORE `reachable()`, so a stale snapshot can never yield a wrong definitive
+  `Unreachable`. Sparse `Indeterminate` (non-resident boundary exit) maps to
+  `MissingChunk`. Reuses a caller-owned `RegionGraphScratch`; allocation-free
+  warm. Can only prune provably-unreachable goals, never cause a wrong failure.
+- Affected docs: `architecture/topology.md`, `architecture/path.md`,
+  `architecture/surface.json`.
+- Affected code: `topology/topology.h`, new `path/precheck.h`, `tess.h`,
+  `CMakeLists.txt`; tests `tess_topology_test.cc`,
+  `tess_topology_sparse_test.cc`, new `tess_path_precheck_test.cc`. Runtime
+  wiring and the downstream adoption land in later S3 slices.
+
+## 2026-07-08 - Sparse Residency Pre-Merge Review Fixes
+
+Three defects found by the S2 pre-merge review (independent Opus + Fable-5
+workflow and a cross-lab codex pass), fixed on the branch before merge.
+
+- Changed (movement, MAJOR): `validate_movement_intent` (`sim/movement.h`) now
+  returns transient `StaleVersion` for a non-resident endpoint on a sparse
+  world, not terminal `InvalidFrom`/`InvalidTo`. `Invalid*` is not in
+  `is_transient_movement_failure`, so the agent lifecycle treated ordinary LRU
+  eviction of a chunk under a Following agent as a permanent caller bug and
+  stranded the agent at `Unreachable` (retries unused, never re-pathed) --
+  contradicting the function's own comment and `movement_versions_match`, which
+  already returned `StaleVersion` for the identical condition. Now both agree
+  and the agent re-plans against the changed residency.
+- Changed (distance field, MAJOR): the two-call `build_distance_field` /
+  `distance_field_path` API (and the weighted / box / bounded variants) now
+  carries a residency fingerprint in `DistanceFieldScratch`. A field is indexed
+  by resident-slot offset, so an eviction/reload between the paired calls could
+  rebind a slot to a different chunk and make the reader return `Found` with a
+  path to the wrong coordinate (and across impassable tiles). Each build stamps
+  `world.residency_fingerprint()` (new accessor on `SparseResidentWorld`: a
+  commutative content hash over the resident set's `(key, resident_slot,
+  generation, version)` -- the route cache's fingerprint terms plus the key->slot
+  binding, because a distance field is indexed by resident slot where the route
+  cache is keyed by coordinate); each reader refuses a mismatch with `NoPath` so
+  the caller rebuilds. Because it hashes the resident *state* rather than a
+  per-world counter, it catches any eviction, reload, in-place edit, or read
+  against a different/copied/swapped world -- including two worlds that reach the
+  same resident set with the slots permuted (a bare counter, or a slot-less hash,
+  aliases these). Dense worlds never evict, so the stamp/check compile to a
+  no-op and stay byte-identical.
+- Changed (queued ops, safety): the queued planner *and* executor now
+  `static_assert` an `AlwaysResidentWorld` at all three public choke points --
+  `plan_operations` (planning; its `expand_domain` `ResidentChunks` case
+  enumerates `0..chunk_count`, an OOM on a huge sparse world),
+  `try_planned_block_ctx` (execution; every `execute_planned_operation*` and
+  batch executor funnels through it, and a hand-built `PlannedOperation` naming
+  a non-resident chunk would read its page/meta out of bounds), and
+  `merge_planned_dirty` (dirty apply; `world.mark_dirty` on a non-resident chunk
+  is out of bounds). Queued ops are not yet sparse-ported, so this fails loudly
+  at compile time -- matching every other deferred sparse-unsafe family --
+  instead of silently OOMing or reading out of bounds.
+- Reason: pre-merge correctness of the headline sparse feature. The movement
+  defect is reachable in the shipped agent tick with ordinary input; the
+  distance-field and queued defects had no in-tree trigger but are silent
+  corruption / OOM footguns for external sparse users.
+- Affected code: `include/tess/sim/movement.h`,
+  `include/tess/path/{path.h,distance_field_box.h,detail/weighted_batch.h}`,
+  `include/tess/storage/sparse_world.h`, `include/tess/ops/queued.h`,
+  `tests/{tess_path_runtime_sparse_test.cc,tess_residency_test.cc}`.
+- Affected docs: `docs/architecture/path.md`.
+
+## 2026-07-08 - Sparse Render-Delta Collection
+
+- Changed: `collect_render_tile_deltas` and `clear_render_delta_dirty`
+  (`render_delta.h`) now iterate the resident set on a sparse world instead of
+  scanning `0..chunk_count` and calling unchecked `meta()`/`clear_dirty()` (which
+  read a non-resident slot out of bounds under NDEBUG). Dense keeps the exact
+  `0..chunk_count` loop behind `if constexpr`; the sparse arm iterates
+  `resident_chunk_keys()`. A non-resident chunk holds no data and cannot be
+  dirty, so the resident set captures every delta. The per-chunk emit body was
+  hoisted into a shared `detail::emit_chunk_render_deltas` helper (behavior
+  unchanged, verified by the existing dense scheduler suite).
+- Reason: S2 Slice 5b (sparse consumers) -- the render-delta scan is reachable
+  from the scheduler wrappers on a sparse world (when `render_dirty_mask != 0`),
+  and the downstream sparse adoption uses `render_tile_deltas`. Surfaced by the
+  Slice-5a route-cache verification's scope-completeness lens.
+- Deferred: the queued-ops planner/commit path (`queued.h` `resident_chunk_keys`
+  full scan, `mark_dirty` on try_chunk-validated targets) stays dense-bound --
+  it is dormant on the sparse agent/render path and not used downstream, so it
+  lands with a later queued-ops sparse slice.
+- Affected code: `include/tess/sim/render_delta.h`,
+  `tests/tess_path_runtime_sparse_test.cc`.
+- Affected docs: `docs/architecture/simulation.md`.
+
+## 2026-07-08 - Sparse Path Runtime (Route Cache + Weighted Batch)
+
+- Changed: the path runtime now runs over sparse (`SparseResidentWorld`) worlds.
+  `RouteCacheScratch::world_version_fingerprint` became residency-aware: for a
+  sparse world it folds only the resident set (bounded by `resident_count`, never
+  `chunk_count`) as an order-independent sum over each chunk's `(key,
+  residency_generation, meta().version)` -- version catches in-place edits and the
+  world-monotonic `residency_generation` catches evict/reload/swap even when
+  `ensure_resident` resets a reloaded chunk's version to 0. The commutative sum is
+  invariant to `resident_chunk_keys()` order (eviction swap-with-last reorders it).
+  The dense-only `static_assert`s on `cached_astar_path` and `weighted_path_batch`
+  were removed (both already delegate to sparse-native primitives), and
+  `PathRequestRuntime::process_unit_cached`'s field-product block is now behind
+  `if constexpr` so the dense-only `process_repeated_goal_fields` is never
+  instantiated for a sparse world. Result: `process_unit_cached`,
+  `process_weighted_batch`, and `tick_*_path_agents_with_movement` compile and run
+  on sparse worlds; a chunk evicted/reloaded/edited invalidates the whole route
+  cache before a stale route is served. The agent movement commit was made
+  residency-safe to match: `validate_movement_intent` and `movement_versions_match`
+  now guard non-resident endpoints behind `if constexpr` (`try_resolve` is
+  containment-only, so an in-bounds non-resident endpoint would otherwise reach an
+  unchecked `field()`/`meta()` and read a non-resident slot out of bounds under
+  NDEBUG). A move into or out of a non-resident chunk is rejected
+  (`InvalidFrom`/`InvalidTo`; `StaleVersion` for the version check) so an agent
+  re-plans rather than walking a route across a chunk evicted since planning.
+- Reason: S2 Slice 5a -- unblock the path runtime on sparse worlds, the
+  dependency the downstream sparse adoption needs. Scope and the
+  order-independence requirement came from an adversarial proposer-panel +
+  synthesis design review.
+- Design: dense codegen byte-identical (the fingerprint's dense arm is the exact
+  prior FNV-over-`chunk_count` loop; every sparse branch is behind `if constexpr`).
+  Default `MissingChunkPolicy::TreatAsBlocked` on the runtime path is
+  correct-but-conservative: a route across a non-resident chunk is `NoPath`, never
+  a wrong stale route and never `Indeterminate` (policy threading deferred).
+- Deferred (later sparse-cache slice): the distance-field product family, the unit
+  field-product cache, `WeightedPortalSegmentCache` / route-portal products (their
+  `ChunkVersionDependencies` read `meta().version` and would assert on a
+  non-resident key -- they need a residency-tolerant dependency check); and
+  threading `MissingChunkPolicy` through the runtime so agents can distinguish
+  "unloaded" from "unreachable".
+- Still dense-bound (separate sparse-consumer slice, not the path runtime):
+  `render_delta.h` (`collect_render_tile_deltas` / `clear_render_delta_dirty` scan
+  `0..chunk_count` and call unchecked `meta()`) and the queued-ops commit path
+  (`queued.h` `mark_dirty`). The scheduler wrappers `tick_*_movement_scheduler`
+  reach the render-delta scan only when `render_dirty_mask != 0` (the default is
+  0); the agent tick `tick_*_path_agents_with_movement` itself is sparse-safe.
+  These land with the sparse-consumer port that precedes the downstream
+  adoption.
+- Affected code: `include/tess/path/route_cache.h`,
+  `include/tess/path/path_runtime.h`, `include/tess/path/detail/weighted_batch.h`,
+  `include/tess/sim/movement.h`, `tests/tess_path_runtime_sparse_test.cc`,
+  `tests/CMakeLists.txt`.
+- Affected docs: `docs/architecture/path.md`.
+
+## 2026-07-08 - Sparse Topology (RegionGraph) and Reachability Indeterminate
+
+- Changed: `RegionGraph` became a class template `RegionGraphT<Residency>` with
+  `using RegionGraph = RegionGraphT<AlwaysResident>` and a new
+  `SparseRegionGraph = RegionGraphT<SparseResident>`. A sparse graph builds and
+  updates only over a world's resident chunk set (sized by resident count, never
+  the total chunk count) and resolves a chunk key to a local index through a
+  frozen, sorted key table (`std::lower_bound`), so it is self-contained and
+  eviction after the build cannot invalidate it. `reachable` gained
+  `ReachabilityStatus::Indeterminate`: a non-resident endpoint, or a BFS that
+  exhausts without reaching the goal while touching a region that exits into a
+  non-resident chunk, returns `Indeterminate` instead of a wrong `Unreachable`;
+  a route found within the resident set still wins, and a fully-resident
+  enclosed component is a definite `Unreachable`. `update_region_graph` on a
+  sparse world checks a frozen residency snapshot (resident count plus per-key
+  generation) and falls back to a full rebuild on any residency change.
+- Reason: S2 Slice 4 -- topology must run natively over huge sparsely-resident
+  worlds. The chosen representation (class template on residency, world-free
+  frozen key table, membership-based missing-frontier bit distinguishing
+  "unknown" from "wall") came from an adversarial proposer-panel + synthesis
+  design review, which disqualified a runtime-bool design (its world-free
+  accessors cannot be `if constexpr`-gated) and corrected a per-chunk vs. world
+  residency-generation misreading.
+- Design: `Indeterminate`-only `reachable` (no `MissingChunkPolicy` knob this
+  slice) fully satisfies "never a wrong Unreachable" and avoids pulling path.h's
+  `MissingChunkPolicy` into topology.h. Dense codegen is byte-identical: every
+  sparse branch is behind `if constexpr`, and the sparse-only graph state lives
+  in a `[[no_unique_address]]` companion that is empty for a dense graph, so the
+  `RegionGraph` alias keeps every existing dense call site and layout unchanged.
+- Affected docs: `docs/architecture/topology.md`,
+  `docs/architecture/surface.json`.
+- Affected code: `include/tess/topology/topology.h`,
+  `tests/tess_topology_sparse_test.cc`, `tests/CMakeLists.txt`.
+- Deferred (Slice 5+): a `MissingChunkPolicy` knob on `reachable`; O(1)
+  chunk->local resolution (a graph-owned `ChunkDirectory`) and O(1) staleness
+  (a world residency epoch); streaming residency change with a live graph;
+  consumer wiring of `Indeterminate`.
+
+## 2026-07-08 - Sparse Weighted Distance-Field Family
+
+- Changed: the weighted single-shot distance-field builders now run natively
+  over sparse worlds -- `build_weighted_distance_field` (weighted Dijkstra heap
+  flood), `build_weighted_distance_field_in_box` (domain-filtered), and
+  `build_bounded_weighted_distance_field` (bucket queue) -- along with the
+  `weighted_distance_field_path` reader. Each mirrors the unweighted sparse
+  pattern: node arrays are sized by `NodeIndexSpace::capacity_hint`, a
+  non-resident goal resolves to `Indeterminate`/`InvalidGoal` by
+  `MissingChunkPolicy` before the goal chunk is read, non-resident neighbors are
+  skipped before their offset is computed, and a field truncated by a missing
+  chunk reports `Indeterminate` under that policy. The box keeps its domain
+  filter ahead of the residency check; the bucket builder forwards the policy
+  through its over-budget fallback. Each builder gained an optional trailing
+  `MissingChunkPolicy` whose default lives on a namespace-scope forward
+  declaration. This completes the distance-field conversion for the single-shot
+  searches (Slice 3).
+- Reason: weighted reverse fields must also flood huge sparsely-resident worlds
+  and never report a wrong result across a non-resident boundary. A five-lens
+  adversarial stronger-model review (offset safety, mirror fidelity, guard
+  completeness, dense byte-identity, and fallback/default-argument correctness)
+  returned clean on all lenses.
+- Decision: the distance-field PRODUCT family and route/portal products stay
+  dense-only. They are persistent, cross-frame cached artifacts indexed by raw
+  tile id, so they share the route cache's residency-freeze contract and land
+  with the sparse-cache slice rather than here.
+- Affected docs: `docs/architecture/path.md`.
+- Affected code: `include/tess/path/path.h`,
+  `include/tess/path/distance_field_box.h`,
+  `include/tess/path/detail/weighted_batch.h`, `tests/tess_residency_test.cc`.
+- Still dense-only (`static_assert`-guarded): the distance-field product family
+  (`build_distance_field_product`, `distance_field_product_path`,
+  `nearest_target`), the weighted route/portal route products, and
+  `weighted_path_batch` -- all pending the sparse-cache and topology slices.
+
+## 2026-07-08 - Sparse Weighted A* and Unweighted Distance Field
+
+- Changed: `weighted_astar_path` now runs natively over sparse worlds,
+  mirroring `astar_path` exactly -- its unit-cost direct and blocked-axis
+  detour fast paths compile out for sparse (`if constexpr (Space::is_dense)`),
+  the neighbor loop skips non-resident tiles before computing any node-array
+  offset, and non-resident endpoints or an exhausted search that crossed a
+  missing chunk return `Indeterminate` under `MissingChunkPolicy`. The
+  unweighted distance field is likewise sparse: `build_distance_field` floods
+  only the resident set (a field truncated by a non-resident chunk reports
+  `Indeterminate` under that policy) and `distance_field_path` is a pure
+  gradient reader that stays offset-safe (non-resident start is `InvalidStart`).
+  `DistanceFieldScratch::touch_node` gained an offset-taking form (a
+  dense-identity 1-arg overload serves the still-guarded callers). Both search
+  functions take an optional trailing `MissingChunkPolicy` whose default lives
+  on a namespace-scope forward declaration. The A* cores also moved to a new
+  `include/tess/path/detail/astar.h` (pure split) to keep `path.h` under the
+  24k-token header budget.
+- Reason: continue Slice 3 -- weighted search and reverse distance fields must
+  also run over huge sparsely-resident worlds and never report a wrong
+  `NoPath`/`InvalidStart` across a non-resident boundary. An adversarial
+  stronger-model review (mirror fidelity, offset safety, guard completeness,
+  dense byte-identity) confirmed the ports and flagged the one missing direct
+  guard, now added.
+- Affected docs: `docs/architecture/path.md`.
+- Affected code: `include/tess/path/detail/astar.h`,
+  `include/tess/path/path.h`, `include/tess/path/detail/weighted_batch.h`,
+  `include/tess/path/portal_route.h`,
+  `include/tess/path/portal_segment_cache.h`,
+  `include/tess/path/field_product_cache.h`, `tests/tess_residency_test.cc`.
+- Still dense-only (`static_assert`-guarded so sparse misuse is a compile
+  error, not silent OOB/OOM): the weighted distance-field family (ported in the
+  next entry), the distance-field product family (`build_distance_field_product`,
+  `distance_field_product_path`, `nearest_target`), the weighted route/portal
+  route products, and `weighted_path_batch` -- all pending later slices.
+
+## 2026-07-08 - Sparse A* Node Mapping and Missing-Chunk Path Policy
+
+- Changed: `tess::detail::NodeIndexSpace` gains a `SparseResident`
+  specialization mapping a global tile index to a resident-slot-bounded
+  node-array offset (`resident_slot * local_tile_count + local id`), so a search
+  over a sparse world allocates node arrays sized to the residency budget, not
+  the global tile count. Both specializations expose `is_dense` and
+  `is_resident_index`; `World<...,SparseResident>` exposes
+  `resident_slot`/`npos_slot`. New path vocabulary: `PathStatus::Indeterminate`
+  and `MissingChunkPolicy{TreatAsBlocked, Indeterminate}`. `astar_path` is now
+  sparse-capable: its pre-A* fast-path scan is compiled out for sparse worlds
+  (it cannot answer definitely across a non-resident chunk), the neighbor loop
+  skips non-resident neighbors before computing any offset, non-resident
+  start/goal and an exhausted search that touched a missing chunk return
+  `Indeterminate` under that policy rather than a wrong `InvalidStart`/
+  `InvalidGoal`/`NoPath`. `is_passable_index` treats a non-resident chunk as
+  impassable. Dense codegen is unchanged (every sparse branch is behind
+  `if constexpr (!is_dense)`); the new status flows through `PathRuntimeStats`
+  and `PathAgentFrameStats` with a dedicated `indeterminate` bucket.
+  `weighted_astar_path`, `build_distance_field`, and
+  `build_weighted_distance_field` are `static_assert`-guarded dense-only in this
+  commit; the weighted A* and unweighted distance-field ports land in the entry
+  above.
+- Reason: Slice 3 of the full-sparse stage: A* must run natively over huge
+  sparsely-resident worlds and must never report a wrong `NoPath` across a
+  non-resident boundary. Design (dense-only fast-path scan vs. surgical
+  gating) reviewed with an independent stronger-model pass, which caught the
+  start/goal-residency hole, the weighted clone, and the residency-freeze
+  contract.
+- Affected docs: `docs/architecture/path.md`, `docs/architecture/surface.json`,
+  `docs/decisions/CHANGELOG.md`.
+- Affected code: `include/tess/path/node_index_space.h`,
+  `include/tess/path/path.h`, `include/tess/path/path_runtime.h`,
+  `include/tess/sim/path_agent.h`, `include/tess/storage/sparse_world.h`,
+  `tests/tess_residency_test.cc`.
+
+## 2026-07-08 - NodeIndexSpace Trait for A* Node Storage
+
+- Changed: New internal `tess::detail::NodeIndexSpace<World>`
+  (`include/tess/path/node_index_space.h`) maps a global tile index to a
+  node-array offset and reports the array capacity a search must allocate.
+  `astar_path` and `weighted_astar_path` now size and index their
+  `PathScratch` node arrays through this trait instead of `tile_count<World>()`
+  and raw `static_cast<std::size_t>(index)`. The `AlwaysResident`
+  specialization is the identity (`offset(i) == i`, capacity == the whole tile
+  count), so the dense search is byte-identical and stays allocation-free after
+  warmup. `PathScratch::touch_node` now takes the pre-computed offset alongside
+  the global index.
+- Reason: Slice 2 of the full-sparse stage. Decoupling A* node storage from the
+  global tile count is the prerequisite for running A* over sparse worlds,
+  whose global tile index can reach ~1e17 and cannot size a dense array. The
+  sparse `NodeIndexSpace` specialization (resident-slot remap, bounded by the
+  residency budget) and the missing-chunk path policy land in the next slice;
+  this slice ships only the trait and the dense identity so the change is a
+  provably behavior-preserving refactor.
+- Affected docs: `docs/decisions/CHANGELOG.md`.
+- Affected code: `include/tess/path/node_index_space.h` (new),
+  `include/tess/path/path.h` (astar_path/weighted_astar_path offset threading,
+  PathScratch::touch_node signature), `include/tess/tess.h`, `CMakeLists.txt`.
+
+## 2026-07-08 - Sparse-Resident World (Storage Core)
+
+- Changed: New `tess::World<Shape, Schema, tess::SparseResident>` (alias
+  `SparseResidentWorld`) materializes only a byte-budgeted, least-recently-used
+  subset of a bounded shape, so worlds spanning trillions of chunks cost only
+  their residency budget. New public `tess/storage/residency.h`
+  (`SparseResident`, `ResidencyConfig`, `ResidencyHandle`) and
+  `tess/storage/sparse_world.h` (the specialization plus an internal
+  fixed-capacity `ChunkDirectory` with backward-shift deletion). `ChunkMeta`,
+  `ChunkState`, `DirtyObservation`, and every `ChunkMeta` mutation
+  (dirty/active/version) moved to a new shared `tess/storage/chunk_meta.h`, so
+  the dense and sparse worlds share one metadata implementation. Residency is
+  explicit (`ensure_resident`/`touch`/`evict`) with world-monotonic per-load
+  generations that invalidate stale handles across eviction; `is_resident`
+  distinguishes `Missing` in-bounds chunks from out-of-bounds; `try_chunk`/
+  `try_meta`/`try_field` are the residency-tolerant readers. All iteration is
+  bounded by the resident set or fixed slot capacity, never `chunk_count`.
+- Reason: Milestone M2 requires sparse residency early because it changes the
+  storage API that topology, pathing, queued ops, and block views all consume.
+  This is Slice 1 of the full-sparse stage: the self-contained storage core the
+  later topology/path/consumer slices build on. Extracting the shared metadata
+  ops keeps dirty/active/version semantics identical across both worlds
+  (guarded by the unchanged dense storage tests).
+- Affected docs: `docs/architecture/storage.md` (new Sparse-Resident World
+  section, revised Out Of Scope), `docs/architecture/surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: `include/tess/storage/chunk_meta.h` (new),
+  `include/tess/storage/residency.h` (new),
+  `include/tess/storage/sparse_world.h` (new),
+  `include/tess/storage/world.h` (delegates to shared meta ops),
+  `include/tess/tess.h`, `CMakeLists.txt`, `tests/tess_residency_test.cc` (new),
+  `tests/CMakeLists.txt`.
+
+## 2026-07-07 - Parallel Benchmark Family and Concurrency Plan
+
+- Changed: New `bench/tess_parallel_bench.cc` compares serial,
+  scoped-thread, and worker-pool phase executors on identical partitioned
+  one-op-per-chunk phases (dispatch-bound, memory-bound, and compute-bound
+  workloads, fixed worker counts, worker/chunk counters). Parallel cases
+  are deliberately ungated pending CI baselines. New
+  `docs/planning/concurrency-plan.md` records the S1 concurrency-stream
+  decisions: planner-anchored write-policy enforcement in v1 (claim-table
+  checking deferred to the scheduler stage), internal backends before
+  external `work_contract` evaluation, ungated parallel benchmarks, and the
+  non-atomic `ChunkMeta` invariant, plus measured dispatch-cost evidence.
+- Reason: The concurrent tile-world addendum requires baseline benchmark
+  data before thresholds and requires Tess-owned backends to establish
+  correctness and performance before any external scheduler dependency is
+  considered.
+- Affected docs: `docs/planning/concurrency-plan.md`,
+  `docs/planning/README.md`
+- Affected code: `bench/tess_parallel_bench.cc`, `bench/CMakeLists.txt`
+
+## 2026-07-07 - Persistent Worker-Pool Phase Executor Prototype
+
+- Changed: `tess/ops/phase_executor.h` gains `WorkerPoolPhaseExecutor`, a
+  persistent-pool prototype satisfying the `PhaseExecutor` concept: workers
+  are created once and reused across phases (no per-phase thread creation),
+  jobs are published type-erased under the pool mutex, completion blocks
+  until all claimed operations finish and all adopted workers leave the
+  claim loop, failures report in operation order, and
+  `reserve_operations(count)` makes warm dispatch allocation-free. It does
+  not declare `serial_execution_tag` and pairs only with
+  `execute_phase_partitioned_dirty_with`.
+- Reason: The concurrent tile-world addendum requires a Tess-owned
+  persistent pool prototype behind the executor interface before any
+  external backend is evaluated; this is the S1 slice of the v1 concurrency
+  stream, providing the comparison point for the parallel benchmarks and
+  the candidate promoted to production in the scheduler stage (S7).
+- Affected docs: `docs/architecture/queued-operations.md`,
+  `docs/architecture/surface.json`
+- Affected code: `include/tess/ops/phase_executor.h`,
+  `tests/tess_phase_executor_test.cc`, `tests/tess_queued_test.cc`,
+  `tests/AGENTS.md`
+
+## 2026-07-07 - Phase Executor Contract Promoted to Its Own Public Header
+
+- Changed: The backend-facing executor pieces (`PlannedExecutionStatus`,
+  `PlannedExecutionResult`, `ExecutorPhaseRange`, `SerialPhaseExecutor`, the
+  `SerialExecutor` concept, `ScopedThreadPhaseExecutor`, and
+  `execute_operation_index_range`) moved from `tess/ops/queued.h` into a new
+  public header `tess/ops/phase_executor.h`, which also adds a structural
+  `PhaseExecutor` concept stating the
+  `for_each_operation(first, count, fn) -> PlannedExecutionResult` contract
+  and documents the executor thread contract (non-atomic world metadata,
+  planner-proven disjoint mutable ownership, caller-owned dirty partitions
+  reduced in plan order). `executor_phase_range(ExecutionPhase)` stays in
+  `queued.h` as the plan-side bridge. No symbol was renamed.
+- Reason: The v1 concurrency stream (plan S1) lands API-shaping work first;
+  worker backends must be writable and testable against a small stable
+  header without pulling in the planner, and later stages (result channels,
+  scheduler auto-exec, production pool) build on the same concept.
+- Affected docs: `docs/architecture/queued-operations.md`
+- Affected code: `include/tess/ops/phase_executor.h`,
+  `include/tess/ops/queued.h`, `include/tess/tess.h`, `CMakeLists.txt`,
+  `tests/tess_phase_executor_test.cc`, `tests/CMakeLists.txt`,
+  `tests/AGENTS.md`
+
+## 2026-07-07 - Generation-Stamped Dirty Observe/Clear Protocol
+
+- Changed: `World` gains `observe_dirty(key, flags)` returning a
+  `DirtyObservation` (observed dirty subset, dirty bounds, chunk version)
+  and `clear_dirty_observed(key, observation)`, which clears exactly the
+  observed flags only while the chunk's dirty generation still matches and
+  otherwise preserves all flags/bounds and returns `false`.
+- Reason: The concurrent tile-world addendum requires a generation-aware
+  observe/clear protocol before budgeted or concurrent maintenance may clear
+  dirty metadata, so rebuilds cannot lose marks that land mid-rebuild. This
+  lands the API early in the v1 completion plan (S1) because later scheduler
+  and maintenance stages build on it.
+- Affected docs: `docs/architecture/storage.md`,
+  `docs/architecture/surface.json`
+- Affected code: `include/tess/storage/world.h`,
+  `tests/tess_storage_test.cc`, `tests/AGENTS.md`
+
+## 2026-07-06 - Docs Audit Sweep Closes Drift and Adds Surface Manifest
+
+- Changed: Final workstream of the 29-part audit remediation; documentation
+  drift found "at the seams" is closed and a prevention gate is added.
+  `docs/architecture/simulation.md` now documents the full current
+  `include/tess/sim/` surface: `SimSchedulerStats`,
+  `run_queued_operations`, the four `tick_*_path_agents` /
+  `tick_*_path_agents_with_movement` wrappers and their state/options/stats
+  types, the path-agent batch helpers, `MovementResult`,
+  `MovementVersionCheck`, `MovementFailureCounts` /
+  `record_movement_failure` / `is_transient_movement_failure` /
+  `movement_versions_match`, the `PathAgentPhase` lifecycle interplay
+  across layers, and the fixed-step time types including
+  `FixedStepFrame::dropped_seconds`. New maintained docs
+  `docs/architecture/shape.md` (Shape/ShapeTraits, coordinate types, key
+  packing including the portable `detail::UInt128` and the 64-bit boundary
+  guards, the default-member-initializer zero-init guarantee, `contains` /
+  `manhattan_distance`, and the `TESS_ASSERT` policy) and
+  `docs/architecture/diagnostics.md` (`TESS_ENABLE_DIAGNOSTICS`, event
+  macros, scoped counters, and the `thread_local` scope limitation:
+  counters do not aggregate across worker threads) join the maintained
+  list. `docs/architecture/queued-operations.md` no longer contradicts
+  itself about phase sharing: both prose passages now match
+  `detail::parallel_phase_conflict` (a mutable operation conflicts with
+  any overlapping operation, read-only included), and the
+  `OperationFailure` enumerator list is complete (including `None`) and
+  well-formed. `docs/tdd/README.md` indexes the Work Contracts and tile
+  layout addenda; `docs/README.md` frames the TDD archive as original TDDs
+  plus proposed addenda, non-authoritative. `docs/performance.md` marks
+  the snapshot stale relative to the 2026-07-06 harness rework and
+  threshold changes with an explicit regeneration TODO (no numbers
+  fabricated). `README.md` lists both examples and the hooks-backstop CI
+  job. Historical corrections: the 2026-06-08 "Concurrent Tile-World TDD
+  Split" entry's "Affected code: none" gained a bracketed correction
+  (commit 2e22c05 changed public headers), and the 2026-06-05 "One
+  Millisecond Benchmark Investigation Gate" entry gained a superseded
+  annotation pointing at calibrated per-benchmark ceilings. Prevention
+  gate: `docs/architecture/surface.json` maps each maintained doc to the
+  public symbol names it documents (233 symbols across 9 docs), and
+  `tools/check_public_surface.py` extracts type and free-function names
+  from every `TESS_PUBLIC_HEADERS` header (24 headers; simple line-based
+  parser with a `detail`/`internal` namespace allowlist) and fails when a
+  symbol is missing from the manifest. It runs as an advisory
+  (`::warning`) step in the CI hooks-backstop job, with pytest coverage in
+  `tests/test_check_public_surface.py` including a completeness test
+  against the real tree.
+- Reason: A docs audit found the architecture docs had drifted where
+  subsystems meet (scheduler/tick/movement seams, phase-conflict rules,
+  unindexed addenda, stale benchmark framing), and nothing prevented new
+  public symbols from landing undocumented.
+- Affected docs: `docs/architecture/simulation.md`,
+  `docs/architecture/shape.md` (new), `docs/architecture/diagnostics.md`
+  (new), `docs/architecture/queued-operations.md`,
+  `docs/architecture/path.md`, `docs/architecture/topology.md`,
+  `docs/architecture/block.md`, `docs/architecture/README.md`,
+  `docs/architecture/surface.json` (new), `docs/tdd/README.md`,
+  `docs/README.md`, `docs/performance.md`, `docs/decisions/CHANGELOG.md`,
+  `README.md`, `tests/AGENTS.md`
+- Affected code: `tools/check_public_surface.py` (new),
+  `tests/test_check_public_surface.py` (new), `.github/workflows/ci.yml`
+
+## 2026-07-06 - CI Gains TSan, macOS, and Advisory MSVC Platform Gates
+
+- Changed: The sanitizer toggle is generalized — `TESS_ENABLE_SANITIZERS`
+  now applies the comma-separated `TESS_SANITIZERS` cache string (default
+  `address,undefined`, so existing presets are unchanged), with a
+  configure-time `FATAL_ERROR` when the list combines `address` and
+  `thread` (they cannot link into one binary) and
+  `-fno-sanitize-recover=undefined` still applied whenever `undefined` is
+  in the list. New `dev-tsan` configure/build/test presets build the suite
+  with `-fsanitize=thread` and run ctest with
+  `TSAN_OPTIONS=halt_on_error=1 second_deadlock_stack=1`; the preset joins
+  the CI quality matrix (no extra apt packages needed). A new `macos` CI
+  job on `macos-15` runs the `dev` and `dev-asan` presets plus the install
+  smoke test, with no benchmark gates because bench thresholds are
+  calibrated on the Linux runner family. A new advisory `windows` CI job
+  on `windows-2025` (`continue-on-error: true` during shake-out; flip to
+  required after two consecutive green runs on main) builds the
+  condition-gated `windows-msvc` preset, runs ctest, and runs the install
+  smoke under `shell: bash`. `tools/install_smoke.sh` gained
+  `TESS_INSTALL_SMOKE_CONFIG` for multi-config generators: it forwards
+  `--config` to `cmake --install` and the consumer build and looks for
+  the consumer binary in the per-config subdirectory.
+- Reason: The threaded queued executor and scheduler paths had no data
+  race gate (a full local dev-tsan run passed 351/351, and a deliberate
+  unsynchronized-counter race was verified to fail the gate before being
+  discarded), and the library claimed macOS/Windows portability that CI
+  never exercised. Platform pinning (`macos-15`, `windows-2025`) follows
+  the existing anti-drift policy for `ubuntu-24.04`.
+- Affected docs: `README.md`, `docs/dependencies.md`.
+- Affected code: `CMakeLists.txt`, `cmake/TessProjectOptions.cmake`,
+  `CMakePresets.json`, `.github/workflows/ci.yml`,
+  `tools/install_smoke.sh`.
+## 2026-07-06 - A* Heap Loops Gain Oracle-Backed Coverage and Mutation Guards
+
+- Changed: Added `tests/tess_path_search_test.cc` (new binary) and
+  `tests/path_test_util.h` with serpentine maze fixtures that defeat every
+  pre-A* fast path (two parallel two-gap walls with gaps at opposite ends,
+  start/goal displaced on both non-degenerate axes), plus independent BFS
+  and Dijkstra oracles. An audit had found the unit A* heap loop was never
+  reached by any Found-status test — every maze was answered by fast paths
+  (heap_pushes = 0 under diagnostics), and pervasive
+  `expanded_nodes == path.size()` assertions structurally required this.
+  The new tests pin exact optimal costs against the oracles across
+  top-down 2D, vertical 2D, and multi-chunk 3D shapes and assert
+  `expanded_nodes > path.size()`; `tess_diagnostics_enabled_test` gains
+  heap-push mutation guards on the same fixtures. Mutation validation
+  (single-gap walls) confirmed the discriminators fail when a fast path
+  answers. The heap loops themselves were verified correct: unit banded
+  search and weighted heap search both matched the oracles exactly, so no
+  library fix was needed. Start == goal now has pinned semantics (Found,
+  single-node path, cost 0) across all public path entry points, all of
+  which already behaved correctly. The flagship
+  `FindsTopDown2DPathAroundBlockedTiles` weak assert
+  (`EXPECT_GT(cost, 3u)`) was tightened to the exact optimal cost 9 and
+  documented as plane-gap-fast-path coverage.
+- Reason: Closes the audit finding that a tie-breaking, band-stride, or
+  parent-reconstruction bug in the real search would ship green, and pins
+  start == goal semantics (audit H4) against regression.
+- Affected docs: `tests/AGENTS.md`
+- Affected code: `tests/path_test_util.h`, `tests/tess_path_search_test.cc`,
+  `tests/tess_diagnostics_enabled_test.cc`, `tests/tess_path_test.cc`,
+  `tests/CMakeLists.txt`
+## 2026-07-06 - Benchmark Harness Measures What It Claims and Checks Results
+
+- Changed: Fixed five measurement bugs in the benchmark suite.
+  `storage/world_dirty_chunks_iteration` collects into a hoisted reserved
+  vector via `collect_dirty_chunks` and iterates the keys (it previously
+  timed only the by-value vector allocation and never iterated; 295 ns
+  before, 126 ns after on an M-series dev box). `key/coord_from_tile_key_*`
+  precompute encoded keys in setup so the loop measures decode only
+  (encode was double-counted; 2.67/2.84/2.76 ns before vs 0.68/0.57/0.64 ns
+  after for 2d/3d/u128). The field-product cache stale-rejection and LRU
+  eviction benchmarks replace per-iteration `PauseTiming`/`ResumeTiming`
+  (timer overhead comparable to the measured op) with manual timing plus
+  pinned iterations; their gated names gained `/iterations:N/manual_time`
+  suffixes and their thresholds moved from `max_cpu_time_ns` to
+  `max_real_time_ns` at the 1 ms investigation ceiling because cpu_time now
+  includes the untimed cache refill (measured op: ~313 ns stale lookup,
+  ~119 ns evicting store, vs ~760/~596 ns reported before). The agent
+  clean-tick benchmark keeps its cheap agent reset inside the timed region
+  instead of hiding it behind a Pause/Resume pair that cost as much as the
+  tick. `path/weighted_chunk_portal_candidates_*` publishes the measured
+  scan-tile/waypoint totals instead of a hardcoded formula, and all batch
+  benchmarks publish `batch.cost_total`/`batch.expanded_total` aggregates
+  instead of the last request's values under single-query counter names
+  (which made per-node math ~100x off). Per benchmark-plan sections 14/20,
+  benchmark families now validate the last result outside timed regions
+  (aborting `bench_check`: Found status, endpoints, legal unit steps onto
+  passable tiles, setup-run expected costs, agent frame stats, cache
+  outcomes), and `tess_bench_diagnostics` asserts the warm
+  `path/astar_open_2d` iteration allocates nothing.
+  `tools/benchmark_thresholds.py` now rejects duplicate benchmark names
+  (previously a dict comprehension silently kept the last duplicate),
+  prefers `--benchmark_repetitions` aggregates keyed by `run_name` (median
+  default, `--aggregate` flag), and reports missing/malformed files
+  without tracebacks; `tools/benchmark_baseline_summary.py` filters
+  aggregates by `run_type` instead of name suffixes and writes real CSV.
+  New `tests/test_benchmark_tools.py` covers both tools and runs in the CI
+  hooks-backstop job.
+- Reason: Q10 audit remediation — several benchmarks measured allocation or
+  encode instead of the named operation, per-iteration Google Benchmark
+  timer overhead dominated microsecond cache ops, batch counters
+  misrepresented totals, thresholds could silently gate on the wrong
+  duplicate entry, and the plan-mandated correctness/allocation assertions
+  were missing.
+- Affected docs: `docs/planning/benchmark-plan.md`, `tests/AGENTS.md`.
+- Affected code: `bench/tess_bench.cc`, `bench/tess_path_agent_bench.cc`,
+  `bench/tess_path_product_bench.cc`, `bench/tess_path_weighted_bench.cc`,
+  `bench/thresholds/path.json`, `tools/benchmark_thresholds.py`,
+  `tools/benchmark_baseline_summary.py`, `tests/test_benchmark_tools.py`,
+  `.github/workflows/ci.yml`.
 
 ## 2026-07-06 - Flat-Hash Path Grouping, Batch Status Fix, Scan Cost Model
 
@@ -381,701 +992,3 @@ they were written.
 - Affected code: `include/tess/sim/scheduler.h`,
   `include/tess/sim/render_delta.h`, `include/tess/storage/world.h`,
   `tests/tess_sim_scheduler_test.cc`, `tests/tess_storage_test.cc`
-
-
-## 2026-06-08 - Concurrent Tile-World TDD Split
-
-- Changed: Added a concurrent tile-world TDD addendum that separates scoped
-  phase execution from coalesced maintenance scheduling. Scoped phase
-  execution remains Tess-owned through deterministic phase barriers,
-  partitioned dirty records, and ordered reduction. Work Contracts and Signal
-  Tree remain deferred candidate infrastructure for backend experiments, not
-  adopted dependencies or direct storage integrations.
-- Reason: Parallel execution and coalesced maintenance have different
-  correctness contracts. Keeping them separate prevents maintenance
-  coalescing semantics from leaking into authoritative simulation events or
-  planned phase execution.
-- Affected docs: `docs/tdd/tdd_addendum_concurrent_tile_world.md`,
-  `docs/tdd/tdd_addendum_work_contracts.md`, `docs/tdd/README.md`,
-  `docs/dependencies.md`, `docs/architecture/queued-operations.md`
-- Affected code: none [Correction 2026-07-06: inaccurate. The commit that
-  landed this entry (2e22c05) also changed public headers: it added default
-  member initializers to the core value types in
-  `include/tess/core/shape.h` and `include/tess/topology/topology.h` (with
-  matching zero-init tests in `tests/tess_shape_test.cc` and
-  `tests/tess_topology_test.cc`).]
-
-## 2026-06-06 - Queued Parallel Phase Planning
-
-- Changed: Added a conservative `ExecutionPhasePlan` over successful queued
-  operation plans. Phase planning accepts only `ReadOnly` and
-  `UniquePerChunk` work, preserves deterministic operation order, groups
-  disjoint mutable chunk operations into the same phase, separates same-chunk
-  mutation behind a phase boundary, and rejects `UniquePerTile` until tile
-  subdomains exist. Added `PlannedDirtyAccumulator` and deferred planned
-  execution helpers so dirty metadata can be recorded during work and merged
-  deterministically after a phase. Added a serial
-  `execute_phase_deferred_dirty` helper that validates and executes one phase
-  range as the future worker-backend handoff, plus `SerialPhaseExecutor` and
-  `execute_phase_deferred_dirty_with` so backend dispatch can be tested without
-  owning threads yet. Added `PlannedDirtyPartitions`,
-  `PlannedPhaseExecutionScratch`, deterministic partition merge helpers, and
-  `execute_phase_partitioned_dirty_with` so future worker backends can avoid
-  sharing dirty buffers or result counters during phase dispatch. Added
-  test-only threaded executor coverage for disjoint mutable chunk phases and
-  overlapping read-only chunk phases with const-view enforcement. Added
-  `ExecutorPhaseRange` and `execute_operation_index_range` as the explicit
-  operation-index adapter contract for later backend integrations. Added
-  `ScopedThreadPhaseExecutor` as a production scoped-thread prototype that
-  joins before returning and preserves deterministic result reduction.
-  Documented partitioned failure semantics and covered completed dirty
-  partitions after a threaded policy mismatch.
-- Reason: Concurrent tile-world execution needs a testable ownership and
-  barrier contract before worker scheduling or external task systems are
-  introduced.
-- Affected docs: `docs/architecture/block.md`,
-  `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/ops/queued.h`,
-  `tests/tess_queued_test.cc`
-
-## 2026-06-06 - Simulation Integration MVP
-
-- Changed: Added movement intent validation/commit helpers, render tile
-  deltas, and synchronous unit/weighted scheduler ticks that execute queued
-  operations, mark path agents dirty from configured field masks, run path
-  ticks, and emit presentation deltas.
-- Reason: Colony-sim consumers need a public integration flow instead of
-  manually coupling queued edits, path dirtying, occupancy checks, and render
-  refreshes.
-- Affected docs: `docs/architecture/README.md`,
-  `docs/architecture/path.md`, `docs/architecture/simulation.md`
-- Affected code: `CMakeLists.txt`, `include/tess/sim/movement.h`,
-  `include/tess/sim/render_delta.h`, `include/tess/sim/scheduler.h`,
-  `include/tess/tess.h`, `tests/CMakeLists.txt`,
-  `tests/tess_sim_scheduler_test.cc`
-
-## 2026-06-06 - Path Agent Runtime MVP
-
-- Changed: Added a public path-agent wrapper over `PathRequestRuntime` for
-  goal assignment, ticketed request processing, result application,
-  tile-by-tile advancement, conservative replanning after world edits, and
-  warm allocation-free unit and weighted agent batches.
-- Reason: Mainline implementation needs a testable simulation-facing path loop
-  before adding a scheduler, ECS adapter, reservations, or local avoidance.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/benchmark-plan.md`, `tests/AGENTS.md`
-- Affected code: `bench/CMakeLists.txt`, `bench/tess_path_agent_bench.cc`,
-  `examples/path_agents.cc`, `examples/CMakeLists.txt`,
-  `include/tess/sim/path_agent.h`, `include/tess/tess.h`,
-  `tests/CMakeLists.txt`, `tests/tess_path_agent_test.cc`
-
-## 2026-06-06 - Quality Gate Ratchet
-
-- Changed: Fixed installed package header drift, added a public-header file-set
-  test, added install smoke to pre-push, made low-noise clang-tidy checks a
-  warnings-as-errors gate with a separate advisory preset, added path-agent
-  benchmark thresholds, consolidated allocation-sensitive test hooks, made the
-  tick dirty contract explicit in tests and docs, and split bounded weighted
-  batch implementation into a path detail header.
-- Reason: A tech-debt review found that installed consumers were broken and
-  that several quality expectations were documented but not enforced.
-- Affected docs: `README.md`, `docs/architecture/path.md`,
-  `docs/dependencies.md`, `docs/planning/benchmark-plan.md`,
-  `tests/AGENTS.md`
-- Affected code: `.clang-tidy`, `.clang-tidy-advisory`,
-  `.github/workflows/ci.yml`, `CMakeLists.txt`, `CMakePresets.json`,
-  `bench/thresholds/path.json`, `cmake/TessProjectOptions.cmake`,
-  `cmake/check-public-headers.cmake`, `include/tess/ops/queued.h`,
-  `include/tess/path/path.h`, `include/tess/path/detail/weighted_batch.h`,
-  `tests/CMakeLists.txt`, `tests/allocation_counter.*`,
-  `tests/tess_path_agent_test.cc`, `tests/tess_path_agent_tick_test.cc`,
-  `tools/git_hooks.py`
-
-## 2026-06-06 - Path Agent Tick MVP
-
-- Changed: Added a minimal synchronous path-agent tick wrapper with a
-  simulation clock, dirty-gated path processing, per-tick movement advancement,
-  a tick-state goal-assignment helper, focused tests, example coverage, and
-  clean/dirty tick benchmarks.
-- Reason: Mainline implementation needs a testable scheduler-adjacent path loop
-  before adding cadence policies, ECS adapters, reservations, local avoidance,
-  or async planning.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/benchmark-plan.md`, `tests/AGENTS.md`
-- Affected code: `bench/tess_path_agent_bench.cc`,
-  `examples/path_agents.cc`, `include/tess/sim/path_agent_tick.h`,
-  `include/tess/tess.h`, `tests/CMakeLists.txt`,
-  `tests/tess_path_agent_tick_test.cc`
-
-## 2026-06-06 - Follow-Up Review Cache And Coverage Tightening
-
-- Changed: Added chunk-version validation to weighted portal segment cache
-  hits, stopped caching failed portal segments, expanded topology reachability
-  coverage, labeled clang-tidy as advisory, removed a redundant block context
-  alias, and narrowed the queued cppcheck false-positive suppression inline.
-- Reason: Follow-up review identified the remaining weighted segment-cache
-  correctness hazard, high-value topology test gaps, and minor quality-gate
-  clarity issues after the first remediation commit.
-- Affected docs: `docs/architecture/path.md`, `docs/dependencies.md`,
-  `tests/AGENTS.md`
-- Affected code: `.github/workflows/ci.yml`,
-  `cmake/TessProjectOptions.cmake`, `include/tess/block/block.h`,
-  `include/tess/ops/queued.h`, `include/tess/path/portal_segment_cache.h`,
-  `tests/tess_path_test.cc`, `tests/tess_topology_test.cc`
-
-## 2026-06-06 - Follow-Up API Fail-Fast And Cache Retention Contract
-
-- Changed: Made the runtime block `for_each_chunk` overload fail fast for
-  invalid `WritePolicy` values in release builds, and covered the weighted
-  portal segment-cache stale-entry retention plus `clear()` reclamation
-  contract in tests and docs.
-- Reason: Follow-up review identified a release-only silent no-op for invalid
-  runtime write policies and called out the caller-managed memory implications
-  of retained stale segment-cache entries.
-- Affected docs: `docs/architecture/block.md`, `docs/architecture/path.md`,
-  `tests/AGENTS.md`
-- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
-  `tests/tess_path_test.cc`
-
-## 2026-06-06 - Path Request Runtime MVP
-
-- Changed: Added a small path request runtime that owns ticketed requests,
-  stable copied result paths, reusable unit A* scratch, the unit route cache,
-  weighted batch scratch, and a caller-managed weighted portal segment cache.
-  Runtime processing supports cached unit paths and many-request weighted batch
-  paths with an explicit world-edit cache clear cadence.
-- Reason: Mainline simulation work needs a testable request/result lifecycle
-  and cache ownership boundary before higher-level scheduling or agent systems.
-- Affected docs: `docs/architecture/path.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/path/path_runtime.h`, `include/tess/tess.h`,
-  `tests/CMakeLists.txt`, `tests/tess_path_runtime_test.cc`
-
-## 2026-06-06 - Runtime Block Read-Only Enforcement
-
-- Changed: Made the runtime `for_each_chunk(world, domain, policy, fn)`
-  overload dispatch policy-selected chunk view types, including
-  `ChunkView<const World>` for `ReadOnly` on mutable worlds. Fixed-policy
-  mutable callers now use the compile-time policy overload.
-- Reason: Follow-up review flagged the previous runtime policy argument as a
-  footgun because it accepted `ReadOnly` without enforcing const callback
-  views.
-- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
-- Affected code: `bench/tess_bench.cc`, `include/tess/block/block.h`,
-  `tests/tess_block_test.cc`
-
-## 2026-06-06 - Review Remediation Gates And API Safety
-
-- Changed: Fixed installed public header coverage, added stricter CI quality
-  gates and install smoke coverage, made block read-only context world access
-  const-correct, documented the runtime block dispatch limitation, added owning
-  chunk domains for allocating domain builders, advanced topology versions
-  through explicit world methods, and tightened tooling diagnostics.
-- Reason: A read-only external review identified package install breakage,
-  unexercised quality gates, and API safety gaps that could hide regressions.
-- Affected docs: `docs/architecture/block.md`,
-  `docs/architecture/storage.md`, `docs/dependencies.md`, `tests/AGENTS.md`
-- Affected code: `.github/workflows/ci.yml`, `CMakeLists.txt`,
-  `cmake/TessProjectOptions.cmake`, `include/tess/block/block.h`,
-  `include/tess/core/shape.h`, `include/tess/storage/world.h`,
-  `include/tess/topology/topology.h`, `tests/tess_block_test.cc`,
-  `tests/tess_storage_test.cc`, `tests/tess_topology_test.cc`,
-  `tools/benchmark_trends.py`, `tools/git_hooks.py`,
-  `tools/install_smoke.sh`
-
-## 2026-06-05 - Local Topology Foundation
-
-- Changed: Added local chunk topology that labels passable connected regions
-  inside one chunk, records boundary exits to adjacent chunks, pairs boundary
-  exits into directed portals, and checks reachability over the resulting
-  region graph.
-- Reason: Path products now need topology-owned domains and portal facts before
-  further portal route quality work can be made exact and reusable.
-- Affected docs: `docs/architecture/README.md`,
-  `docs/architecture/topology.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/topology/topology.h`, `include/tess/tess.h`,
-  `tests/tess_topology_test.cc`, `tests/CMakeLists.txt`
-
-## 2026-06-05 - Portal Route Products
-
-- Changed: Added weighted portal route products that stitch exact weighted A*
-  segments through caller-supplied or chunk-boundary-derived portal waypoints,
-  six-order plus greedy chunk-boundary candidate selection, warmed
-  portal-segment reuse, local-domain weighted fields, and room-portal
-  build/replay/candidate/cache/endpoint benchmarks.
-- Reason: The remaining weighted room-portal bottleneck is search volume.
-  Portal waypoints give measurable product primitives before the repository
-  owns a full topology graph builder, while candidate and cost-ratio counters
-  keep route quality and selection overhead visible.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/benchmark-plan.md`,
-  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/path/path.h`,
-  `include/tess/path/distance_field_box.h`,
-  `include/tess/path/portal_route.h`,
-  `include/tess/path/portal_segment_cache.h`, `include/tess/tess.h`,
-  `tests/tess_path_test.cc`, `bench/tess_path_weighted_bench.cc`,
-  `bench/thresholds/path.json`
-
-## 2026-06-05 - Weighted Batch Planner and Route Products
-
-- Changed: Added a weighted batch planner API, exact weighted route products
-  with chunk-version dependencies, and a narrow blocked-axis weighted detour
-  fast path.
-- Reason: Current weighted reuse needs a public batching surface, route-product
-  dependency wiring needs a concrete exact product primitive, and blocked
-  unit-cost weighted detours can avoid A* without weakening optimality.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/benchmark-plan.md`,
-  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
-  `bench/tess_path_weighted_bench.cc`, `bench/thresholds/path.json`
-
-## 2026-06-05 - Weighted Multi-Goal and Bounded Field Reuse
-
-- Changed: Added weighted multi-goal batch benchmarks, bounded-cost weighted
-  distance-field construction, explicit chunk-version dependency helpers, and
-  threshold gates for the accepted bounded weighted benchmarks.
-- Reason: Weighted many-agent workloads need exact reuse beyond one shared
-  goal, and small integral terrain costs can avoid binary heap field-building
-  overhead while preserving optimal weighted paths.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/benchmark-plan.md`,
-  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
-  `bench/tess_path_weighted_bench.cc`, `bench/thresholds/path.json`
-
-## 2026-06-05 - Route Cache Invalidation Hook
-
-- Changed: Added `RouteCacheScratch::invalidate()` to drop cached route data
-  without resetting cache hit/miss counters.
-- Reason: Stable-map route reuse needs an explicit hook for passability or
-  movement-rule changes, while benchmark and diagnostic callers may want to
-  preserve accumulated cache stats across invalidations.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`
-
-## 2026-06-05 - Weighted Path Reuse and Fast Path
-
-- Changed: Added weighted shared-goal distance fields, an exact weighted
-  unit-cost direct fast path, opt-in route-cache world-version fingerprints,
-  and weighted shared-goal path benchmarks.
-- Reason: Weighted terrain must remain correct, but repeated weighted
-  point-to-point A* is too slow for many-agent shared-goal workloads and
-  unit-cost maps should not pay the general weighted heap cost.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
-  `bench/CMakeLists.txt`, `bench/tess_path_weighted_bench.cc`,
-  `bench/thresholds/path.json`
-
-## 2026-06-05 - Weighted A* Stress Diagnostics
-
-- Changed: Added weighted sparse-blocker, room-portal, and mixed-batch path
-  benchmarks, weighted path threshold gates, and a path diagnostic counter for
-  weighted entry-cost reads.
-- Reason: Weighted terrain needs regression coverage that exercises realistic
-  search volume and exposes whether time is spent in heap churn, neighbor
-  expansion, passability reads, cost reads, or allocations.
-- Affected docs: `docs/planning/benchmark-plan.md`,
-  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/diagnostics/diagnostics.h`,
-  `include/tess/path/path.h`, `tests/tess_diagnostics_enabled_test.cc`,
-  `bench/tess_bench.cc`, `bench/thresholds/path.json`
-
-## 2026-06-05 - Weighted A* Entry Costs
-
-- Changed: Added a separate `weighted_astar_path` API for positive integral
-  entry costs, plus weighted correctness tests and weighted path benchmarks.
-- Reason: Weighted terrain is likely to be important, but the existing
-  unit-cost fast paths and route reuse proofs do not apply to arbitrary entry
-  costs. The weighted API preserves optimal weighted paths while leaving the
-  optimized unit-cost path unchanged.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/benchmark-plan.md`,
-  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
-  `bench/tess_bench.cc`, `bench/thresholds/path.json`
-
-## 2026-06-05 - Symbolicated Benchmark Profiling Workflow
-
-- Changed: Added a `bench-profile` preset and a `tools/profile_benchmark.sh`
-  command helper for non-interactive `samply` captures with debug information,
-  frame pointers, and presymbolication.
-- Reason: Release benchmark profiles were saved without usable symbols and
-  `samply record` launched a local viewer process that could outlive the
-  profiling run. The profiling workflow now emits a direct shell command to run
-  as a separate capture step, producing repeatable saved profiles outside the
-  repository and loading them explicitly only when needed.
-- Affected docs: `docs/planning/benchmark-plan.md`
-- Affected code: `CMakePresets.json`, `tools/profile_benchmark.sh`
-
-## 2026-06-05 - Route Cache Path Reuse
-
-- Changed: Added reusable exact route and same-goal suffix caching for the
-  current unit-cost A* path model. Added cache-hit benchmark counters and
-  monitored batch benchmarks for repeated route and suffix reuse cases.
-- Reason: Many-agent batches can repeat identical routes or ask for suffixes
-  of an already-computed route. Reusing cached optimal path spans avoids
-  rerunning A* while preserving the general fallback.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/benchmark-plan.md`,
-  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
-  `bench/tess_bench.cc`, `bench/thresholds/path.json`
-
-## 2026-06-05 - Shared-Goal Distance Fields
-
-- Changed: Added reusable reverse distance-field scratch and shared-goal path
-  reconstruction for the current unit-cost passability path model. Added
-  many-agent batch benchmarks and reuse counters for unique starts, goals, and
-  chunks.
-- Reason: Independent A* repeats substantial work for agents sharing goals.
-  Reverse distance fields amortize the search across all starts for a goal and
-  are a better fit for 100-agent shared-destination workloads.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/benchmark-plan.md`,
-  `docs/planning/optimization-log.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
-  `bench/tess_bench.cc`, `bench/thresholds/path.json`
-
-## 2026-06-05 - Unit-Cost A* Bucket Open Set
-
-- Changed: Replaced the general fallback A* binary heap with a two-bucket
-  monotone open set for the current unit-cost Manhattan heuristic path model.
-- Reason: With unit-cost axis-adjacent movement and a consistent Manhattan
-  heuristic, generated fallback nodes have the current `f` score or `f + 2`.
-  The bucket queue removes binary heap maintenance while preserving optimal
-  path ordering for this MVP path model.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/optimization-log.md`
-- Affected code: `include/tess/path/path.h`
-
-## 2026-06-05 - Path Direct Fast-Path Prechecks
-
-- Changed: Pathfinding now tries shape-relevant direct Manhattan axis orders,
-  simple axis-aligned detours, verified 2D and 3D plane-gap routes, and 2D
-  forced-gap sequences before fallback A*, and rejects full axis-plane
-  barriers before expanding A* nodes.
-- Reason: Uniform-cost direct paths and fully separating blocked planes can be
-  resolved exactly without general A* search. Axis-aligned one-tile parallel
-  detours and verified routes through a passable plane gap are also optimal
-  under the current unit-cost movement model. Forced single-gap barriers have
-  fixed crossings, while non-matching cases preserve normal A* fallback
-  behavior.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/benchmark-plan.md`,
-  `docs/planning/optimization-log.md`
-- Affected code: `include/tess/path/path.h`, `tests/tess_path_test.cc`,
-  `bench/tess_bench.cc`
-
-## 2026-06-05 - Testable MVP Scope
-
-- Changed: Added an explicit MVP checkpoint that narrows the first end-to-end
-  prototype to always-resident queued execution plus minimal unit-cost A*
-  pathfinding.
-- Reason: The full v1 milestone remains useful design intent, but it is too
-  broad to serve as the first testable implementation target.
-- Affected docs: `docs/planning/v1-milestone-plan.md`
-- Affected code: none
-
-## 2026-06-05 - One Millisecond Benchmark Investigation Gate
-
-[Superseded 2026-07-06: the flat 1 ms ceiling is no longer the gate policy.
-Thresholds now carry calibrated per-benchmark CPU-time ceilings per
-`bench/thresholds/*.json` and `docs/planning/benchmark-plan.md` (the path
-suite carries values both below and far above 1 ms for investigated batch
-profiles, and two manual-time cache benchmarks gate on real time instead).
-The 1 ms value survives only as the default investigation ceiling for
-benchmarks that have not yet been individually calibrated.]
-
-- Changed: Current benchmark threshold scaffolds now enforce a 1 ms CPU-time
-  ceiling for each named benchmark while leaving real-time limits unset. The
-  path threshold set includes 64x64, 512x512, and 1024x1024 open-world A*
-  benchmarks in addition to the cheap smoke path.
-- Reason: Any operation taking longer than 1 ms should be investigated, and the
-  benchmark policy should encode that expectation directly.
-- Affected docs: `docs/planning/benchmark-plan.md`
-- Affected code: `bench/thresholds/key-conversions.json`,
-  `bench/thresholds/storage.json`, `bench/thresholds/block.json`,
-  `bench/thresholds/queued.json`, `bench/thresholds/path.json`
-
-## 2026-06-05 - Path Benchmark Profiling Counters
-
-- Changed: `PathResult` now reports expanded and reached node counts, and path
-  benchmarks publish cost, path-node, expanded-node, and reached-node counters.
-- Reason: Large-world path timing needs to distinguish graph-work growth from
-  per-node overhead. The 1024x1024 open-grid profile currently points to heap
-  maintenance, passability/world lookup, and 2D use of six-axis neighbor
-  generation as the first bottlenecks.
-- Affected docs: `docs/architecture/path.md`,
-  `docs/planning/benchmark-plan.md`
-- Affected code: `include/tess/path/path.h`, `bench/tess_bench.cc`,
-  `tests/tess_path_test.cc`
-
-## 2026-06-05 - Queued Execution Bridge
-
-- Changed: Added explicit execution helpers for planned queued operations and
-  plans. Execution runs caller callbacks through policy-typed serial block
-  contexts and marks visited chunks dirty from declared dirty masks.
-- Reason: The queued planner needed a minimal synchronous execution bridge
-  before scheduler-owned execution, barriers, result channels, or async work.
-- Affected docs: `docs/architecture/queued-operations.md`,
-  `docs/planning/benchmark-plan.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`,
-  `bench/tess_bench.cc`, `bench/CMakeLists.txt`,
-  `bench/thresholds/queued.json`
-
-## 2026-06-05 - MVP Path Foundation
-
-- Changed: Added a minimal always-resident A* path API over boolean-like typed
-  passability fields, reusable `PathScratch`, path tests, benchmark coverage,
-  and equal-score tie-breaking that prefers deeper paths to avoid open-grid
-  wavefront expansion. Path scratch now clears only nodes touched by the prior
-  query instead of resetting dense arrays for the whole world on every query.
-- Reason: The first MVP needs a concrete path query that proves top-down 2D,
-  vertical 2D, and shallow 3D share the existing coordinate/storage model
-  before topology prechecks, portal graphs, weighted movement, or distance
-  fields are introduced.
-- Affected docs: `docs/architecture/path.md`, `docs/architecture/README.md`,
-  `docs/planning/benchmark-plan.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/path/path.h`, `include/tess/tess.h`,
-  `CMakeLists.txt`, `tests/tess_path_test.cc`, `tests/CMakeLists.txt`,
-  `examples/mvp_path.cc`, `examples/CMakeLists.txt`, `bench/tess_bench.cc`,
-  `bench/CMakeLists.txt`, `bench/thresholds/path.json`
-
-## 2026-06-05 - Queued Operations Foundation
-
-- Changed: Added a public `FrameOps` queue, minimal chunk-domain descriptors,
-  deterministic operation handles/ids, and a planner scaffold that validates
-  write policies/domains and expands domains into ordered chunk-key vectors.
-- Reason: M4 needs a stable queued-intent foundation before adding executors,
-  scheduler integration, topology/path systems, richer diagnostics, result
-  channels, or work-contract-style maintenance.
-- Affected docs: `docs/architecture/queued-operations.md`,
-  `docs/architecture/README.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/ops/queued.h`, `include/tess/tess.h`,
-  `tests/tess_queued_test.cc`, `tests/CMakeLists.txt`
-
-## 2026-06-05 - Queued Operation Diagnostics
-
-- Changed: Added structured operation failure reasons, diagnostic access
-  metadata, invalid explicit-chunk detail, and deterministic report lookup and
-  count helpers.
-- Reason: The queued planner needs testable diagnostics and a hazard-metadata
-  foothold before adding executors, barriers, batching, or scheduler behavior.
-- Affected docs: `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
-
-## 2026-06-05 - Planned Operation Block Adapter
-
-- Changed: Added non-owning adapters from successful planned operations to
-  `ChunkDomain` and policy-typed `BlockCtx` instances.
-- Reason: Planned chunk work needs a practical bridge to the existing serial
-  block API before introducing executors, queued callbacks, barriers, or
-  scheduler behavior.
-- Affected docs: `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
-
-## 2026-06-05 - Queued Field Access Metadata
-
-- Changed: Added untyped field access masks to queued, planned, and reported
-  operations, plus validation rejecting read-only operations with write masks.
-- Reason: Planner diagnostics and future hazard checks need explicit
-  read/write metadata before typed field binding, callbacks, barriers, or
-  executors are introduced.
-- Affected docs: `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
-
-## 2026-06-05 - Basic Queued Hazard Validation
-
-- Changed: Added deterministic field-mask hazard validation across overlapping
-  planned chunk domains. Later conflicting operations are rejected with
-  conflict handle/id and conflict-mask diagnostics.
-- Reason: The queued planner should catch obvious write/write and read/write
-  conflicts before adding barriers, reordering, batching, or execution.
-- Affected docs: `docs/architecture/queued-operations.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/ops/queued.h`, `tests/tess_queued_test.cc`
-
-## 2026-06-01 - Documentation Model
-
-- Changed: TDDs are treated as historical design intent, while maintained
-  architecture docs track current implementation behavior.
-- Reason: TDDs are likely to drift as implementation validates and revises the
-  original design.
-- Affected docs: `docs/README.md`, `docs/architecture/README.md`,
-  `docs/tdd/README.md`
-- Affected code: none
-
-## 2026-06-04 - Initial Chunk Key Ordering
-
-- Changed: The first implemented `ChunkKey` layout uses row-major chunk
-  ordering instead of the Morton ordering preferred by the historical TDD.
-- Reason: Row-major ordering keeps the M1 coordinate/key API simple and
-  testable while chunk-order benchmarks are still pending.
-- Affected docs: `docs/tdd/core-shape-coordinate-key-system.md`
-- Affected code: `include/tess/core/shape.h`, `tests/tess_shape_test.cc`
-
-## 2026-06-04 - Key Conversion Performance Gates
-
-- Changed: Added key conversion benchmarks, zero-allocation/noexcept tests, and
-  disabled benchmark threshold scaffolding for future regression gates.
-- Reason: M1 key conversion is hot-path foundation, but wall-clock thresholds
-  should wait until same-machine baselines are stable.
-- Affected docs: `docs/planning/benchmark-plan.md`
-- Affected code: `bench/tess_bench.cc`, `bench/CMakeLists.txt`,
-  `tools/benchmark_thresholds.py`, `tests/tess_shape_test.cc`
-
-## 2026-06-04 - Storage Performance Gate Scaffold
-
-- Changed: Added disabled threshold scaffolding for storage benchmarks,
-  including chunk page access, field iteration, and always-resident world
-  lookup/iteration benchmarks.
-- Reason: Storage hot paths should have named regression gates, but hard
-  wall-clock limits should wait for stable same-machine baselines.
-- Affected docs: `README.md`, `docs/planning/benchmark-plan.md`
-- Affected code: `bench/CMakeLists.txt`, `bench/thresholds/storage.json`
-
-## 2026-06-04 - Always-Resident Chunk Metadata
-
-- Changed: Always-resident worlds now own per-chunk metadata with sleeping and
-  active states plus raw dirty/active flag tracking.
-- Reason: Planner and block domains need chunk-level dirty/active discovery
-  without scanning tile fields.
-- Affected docs: `docs/architecture/storage.md`
-- Affected code: `include/tess/storage/world.h`, `tests/tess_storage_test.cc`,
-  `bench/tess_bench.cc`
-
-## 2026-06-04 - Minimal Serial Block Domains
-
-- Changed: Added a public `tess::block` foundation with chunk-domain builders,
-  const-correct `ChunkView`, and serial `for_each_chunk` execution over
-  always-resident worlds.
-- Reason: M3 needs deterministic block/domain execution before adding planner
-  integration, diagnostics, scratch storage, or external scheduler backends.
-- Affected docs: `docs/architecture/block.md`, `docs/dependencies.md`
-- Affected code: `include/tess/block/block.h`, `include/tess/tess.h`,
-  `tests/tess_block_test.cc`, `bench/tess_bench.cc`
-
-## 2026-06-04 - Chunk-Local Tile Iteration
-
-- Changed: `ChunkView` now exposes local tile coordinate/id conversion,
-  current-chunk world coordinate conversion, and allocation-free serial
-  `for_each_tile` traversal in ascending `LocalTileId` order.
-- Reason: Block executors need deterministic chunk-local tile traversal before
-  adding planners, parallel scheduling, scratch storage, or diagnostics.
-- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
-  `bench/tess_bench.cc`, `bench/CMakeLists.txt`
-
-## 2026-06-04 - Chunk Boundary Helpers
-
-- Changed: `ChunkView` now exposes local bounds, signed local-candidate
-  validation/conversion, non-degenerate boundary/interior predicates, and
-  signed local-candidate world coordinate conversion.
-- Reason: Topology and path systems need allocation-free helpers to identify
-  current-chunk candidates before movement rules, transitions, halos, scratch
-  storage, diagnostics, or parallel execution are introduced.
-- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
-  `bench/tess_bench.cc`, `bench/CMakeLists.txt`
-
-## 2026-06-04 - BlockCtx Foundation
-
-- Changed: Added `BlockCtx` as a non-owning serial block execution context over
-  a world, chunk domain, and write policy. Existing `for_each_chunk` now
-  delegates through the context.
-- Reason: M3 needs an explicit context object before adding planner phases,
-  scratch storage, diagnostics, scheduling, or policy enforcement.
-- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
-  `bench/tess_bench.cc`, `bench/CMakeLists.txt`
-
-## 2026-06-04 - CI Benchmark Baseline Collection
-
-- Changed: Added block benchmark threshold scaffolding, non-gating CI baseline
-  JSON collection for key, storage, and block benchmark groups, a baseline
-  summary helper for threshold calibration, and README-visible benchmark trend
-  snapshot generation.
-- Reason: Timing limits should be calibrated from repeated samples on the
-  pinned CI runner family that will enforce them, not from developer machines.
-- Affected docs: `README.md`, `docs/dependencies.md`, `docs/performance.md`,
-  `docs/planning/benchmark-plan.md`
-- Affected code: `.github/workflows/ci.yml`, `bench/CMakeLists.txt`,
-  `bench/thresholds/block.json`, `tools/benchmark_artifact_metadata.py`,
-  `tools/benchmark_baseline_summary.py`, `tools/benchmark_trends.py`
-
-## 2026-06-04 - ReadOnly Block Policy Enforcement
-
-- Changed: `BlockCtx` is now policy-typed, and `ReadOnly` contexts expose
-  const chunk views even for mutable worlds. Added `for_each_chunk<Policy>` for
-  policy-typed serial execution while keeping the runtime-policy overload as a
-  compatibility path.
-- Reason: M3 write policies need a real enforcement foothold without adding
-  planner phases, scratch storage, diagnostics, or parallel scheduling.
-- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`,
-  `bench/tess_bench.cc`
-
-## 2026-06-04 - Caller-Owned Block Scratch
-
-- Changed: Added `BlockScratch` as reusable caller-owned bump storage and
-  allowed policy-typed `BlockCtx` instances to carry an optional non-owning
-  scratch pointer.
-- Reason: M3 block algorithms need allocation-free temporary storage during
-  serial chunk and tile iteration before planner-owned arenas, diagnostics,
-  worker pools, or parallel scheduling exist.
-- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`
-
-## 2026-06-05 - Block Scratch Benchmark Scaffold
-
-- Changed: Added disabled block benchmark threshold entries and benchmark
-  workloads for scratch allocation/reset and context scratch tile iteration.
-- Reason: Caller-owned scratch needs CI baseline visibility before real
-  wall-clock gates can be calibrated.
-- Affected docs: `docs/performance.md`, `docs/planning/benchmark-plan.md`
-- Affected code: `bench/tess_bench.cc`, `bench/thresholds/block.json`
-
-## 2026-06-05 - Caller-Owned Block Diagnostics
-
-- Changed: Added `BlockDiagnostics` with a scratch allocation failure counter
-  and allowed policy-typed `BlockCtx` instances to carry an optional
-  non-owning diagnostics pointer.
-- Reason: Scratch exhaustion needs an explicit reporting path before
-  planner-owned arenas, rich diagnostics, worker pools, or parallel scheduling
-  exist.
-- Affected docs: `docs/architecture/block.md`, `tests/AGENTS.md`
-- Affected code: `include/tess/block/block.h`, `tests/tess_block_test.cc`
-
-## 2026-06-04 - Local Warning and Analysis Presets
-
-- Changed: Added project-local warning flags, warnings-as-errors,
-  clang-tidy, and ASan/UBSan CMake options plus presets for tests and
-  benchmarks.
-- Reason: M0 scaffolding needs repeatable compiler diagnostics and dynamic
-  analysis without exporting Tess warning policy to downstream consumers.
-- Affected docs: `docs/dependencies.md`, `docs/style.md`
-- Affected code: `.clang-tidy`, `CMakeLists.txt`, `CMakePresets.json`,
-  `cmake/TessProjectOptions.cmake`, `tests/CMakeLists.txt`,
-  `bench/CMakeLists.txt`
-
-## 2026-06-04 - clangd Project Configuration
-
-- Changed: Added `.clangd` to point editor tooling at the default developer
-  compilation database and keep clang-tidy checks on clangd's strict fast-check
-  filter.
-- Reason: clangd needs project configuration plus editor startup flags to
-  provide consistent clang-tidy diagnostics while editing.
-- Affected docs: `docs/dependencies.md`, `docs/style.md`
-- Affected code: `.clangd`
-
-## 2026-06-04 - Opt-In Cppcheck Preset
-
-- Changed: Added a project-local cppcheck CMake option and `dev-cppcheck`
-  preset for local test and benchmark targets.
-- Reason: cppcheck provides a complementary static-analysis pass without
-  exporting project analysis policy to downstream consumers.
-- Affected docs: `docs/dependencies.md`, `docs/style.md`
-- Affected code: `CMakeLists.txt`, `CMakePresets.json`,
-  `cmake/TessProjectOptions.cmake`

@@ -34,6 +34,7 @@ Maintained notes for implemented areas:
 - [Path foundation](path.md)
 - [Simulation integration MVP](simulation.md)
 - [Diagnostics foundation](diagnostics.md)
+- [ECS integration](ecs.md)
 
 The umbrella header `tess/tess.h` exports the whole public surface plus the
 `tess::version` / `tess::library_version` constant.

@@ -16,6 +16,9 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 option(TESS_BUILD_TESTING "Build tess tests" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_EXAMPLES "Build tess examples" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
+option(TESS_ENABLE_ENTT
+       "Build EnTT-gated tess tests, examples, and benchmarks (fetches EnTT)"
+       OFF)
 option(TESS_ENABLE_WARNINGS "Enable tess warning flags on local targets" ON)
 option(TESS_WARNINGS_AS_ERRORS "Treat tess local target warnings as errors" OFF)
 option(TESS_ENABLE_CLANG_TIDY "Enable clang-tidy on tess local targets" OFF)
@@ -56,6 +59,8 @@ set(
   include/tess/diagnostics/export.h
   include/tess/diagnostics/trace.h
   include/tess/diagnostics/warning_sink.h
+  include/tess/ecs/adapter.h
+  include/tess/ecs/entt/entt_adapter.h
   include/tess/ops/phase_executor.h
   include/tess/ops/queued.h
   include/tess/ops/result_channel.h
