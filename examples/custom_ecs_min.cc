@@ -113,9 +113,11 @@ struct MiniAgentSystem {
     info.count = collected.size();
     for (const auto slot : collected) {
       auto& agent = ecs->agents[slot];
-      if (ecs->goals[slot].has_value()) {
-        if (!agent.has_goal || agent.goal != *ecs->goals[slot]) {
-          tess::set_path_agent_goal(agent, *ecs->goals[slot]);
+      // Local copy so the optional provably cannot change between the
+      // has_value check and the access.
+      if (const auto goal = ecs->goals[slot]; goal.has_value()) {
+        if (!agent.has_goal || agent.goal != *goal) {
+          tess::set_path_agent_goal(agent, *goal);
           info.pathing_dirty = true;
         }
       } else if (agent.has_goal) {
@@ -137,8 +139,8 @@ struct MiniAgentSystem {
       ecs->agents[slot] = agent;
       positions.set_position(MiniEntity{slot, ecs->generations[slot]},
                              agent.position);
-      if (ecs->goals[slot].has_value() && !agent.has_goal &&
-          agent.position == *ecs->goals[slot]) {
+      if (const auto goal = ecs->goals[slot];
+          goal.has_value() && !agent.has_goal && agent.position == *goal) {
         ecs->goals[slot].reset();  // consume on arrival
       }
     }
