@@ -13,11 +13,11 @@ TEST(TessSmoke, ExposesLibraryVersion) {
   // CMakeLists.txt, which the build does not inject here): a tess.h macro
   // bump that forgets this test fails here, prompting the CMake check; a
   // CMakeLists-only bump is NOT detectable by this test.
-  static_assert(TESS_VERSION_MAJOR == 0);
-  static_assert(TESS_VERSION_MINOR == 1);
+  static_assert(TESS_VERSION_MAJOR == 1);
+  static_assert(TESS_VERSION_MINOR == 0);
   static_assert(TESS_VERSION_PATCH == 0);
 
-  EXPECT_EQ(tess::library_version.major, 0);
-  EXPECT_EQ(tess::library_version.minor, 1);
+  EXPECT_EQ(tess::library_version.major, 1);
+  EXPECT_EQ(tess::library_version.minor, 0);
   EXPECT_EQ(tess::library_version.patch, 0);
 }
