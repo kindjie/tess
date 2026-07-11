@@ -246,6 +246,15 @@ tess_apply_project_options(tess_ecs_adapter_test)
 
 gtest_discover_tests(tess_ecs_adapter_test)
 
+add_executable(tess_gpu_interface_test tess_gpu_interface_test.cc)
+target_link_libraries(
+  tess_gpu_interface_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_gpu_interface_test)
+
+gtest_discover_tests(tess_gpu_interface_test)
+
 add_executable(
   tess_render_delta_frame_test
   allocation_counter.cc
