@@ -5,3 +5,18 @@ tess_apply_project_options(tess_mvp_path)
 add_executable(tess_path_agents path_agents.cc)
 target_link_libraries(tess_path_agents PRIVATE tess::tess)
 tess_apply_project_options(tess_path_agents)
+
+add_executable(tess_custom_ecs_min custom_ecs_min.cc)
+target_link_libraries(tess_custom_ecs_min PRIVATE tess::tess)
+tess_apply_project_options(tess_custom_ecs_min)
+
+if(TESS_ENABLE_ENTT)
+  include(TessEnttDeps)
+  tess_require_entt()
+
+  add_executable(tess_entt_pawns entt_pawns.cc)
+  target_link_libraries(tess_entt_pawns PRIVATE tess::tess EnTT::EnTT)
+  # Per-target header gate by design; see tests/CMakeLists.txt.
+  target_compile_definitions(tess_entt_pawns PRIVATE TESS_ENABLE_ENTT)
+  tess_apply_project_options(tess_entt_pawns)
+endif()
