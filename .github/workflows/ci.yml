@@ -362,6 +362,9 @@ jobs:
       - name: Ecs benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_ecs_thresholds
 
+      - name: Render delta benchmark thresholds
+        run: cmake --build --preset bench --target tess_bench_render_delta_thresholds
+
       - name: Diagnostics benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_diagnostics_thresholds
 
