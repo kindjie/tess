@@ -246,6 +246,19 @@ tess_apply_project_options(tess_ecs_adapter_test)
 
 gtest_discover_tests(tess_ecs_adapter_test)
 
+add_executable(
+  tess_render_delta_frame_test
+  allocation_counter.cc
+  tess_render_delta_frame_test.cc
+)
+target_link_libraries(
+  tess_render_delta_frame_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_render_delta_frame_test)
+
+gtest_discover_tests(tess_render_delta_frame_test)
+
 if(TESS_ENABLE_ENTT)
   include(TessEnttDeps)
   tess_require_entt()

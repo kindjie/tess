@@ -457,6 +457,21 @@
   valid; the park/place board-edge lifecycle (parked agents excluded,
   double-park and parked-teleport refused, off-board spawn placeable);
   and an allocation-free steady state.
+- `tess_render_delta_frame_test`: verifies the M11 DeltaFrame bridge
+  core: version semantics (empty publishes never bump; state-carrying
+  publishes bump by one; the applicability truth table including the
+  fresh-consumer-only-baseline and truncation-is-a-structural-gap
+  rules); tile encoding (per-tile records matching the legacy
+  `render_tile_deltas` set below the threshold, clipped box records
+  above it and at threshold zero, box degradation without truncation
+  when tile storage cannot hold a chunk); observed-generation dirty
+  clearing (only the collected mask is consumed; a racing mark between
+  observe and clear is never lost); entity recording (last-writer-wins
+  move coalescing with tick stamps, barrier splits, the coalescing
+  window closing at publish, per-step records with coalescing disabled,
+  capacity overflow truncating the frame); `clear()` poisoning the
+  stream until a baseline; baselines dropping pending entity records;
+  and an allocation-free steady-state collection cycle.
 - `tess_sim_auto_exec_test`: verifies the S7 auto-exec task: the full
   pipeline through a schedule tick (plan, phases, execute, per-phase dirty
   apply, drain, paired clears) with the produced dirty mask firing a
