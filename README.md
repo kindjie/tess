@@ -26,10 +26,29 @@ cmake --build --preset bench
 
 The public CMake target is `tess::tess`.
 
-The `dev` preset also builds two examples: `examples/tess_mvp_path`, a small
-end-to-end queued-edit plus A* pathfinding prototype, and
-`examples/tess_path_agents`, a multi-agent path-agent tick loop with goal
-assignment, dirty-driven replanning, and blocked-path handling.
+The `dev` preset also builds the examples (each a self-checking binary,
+smoke-run in CI):
+
+- `examples/tess_mvp_path` — a small end-to-end queued-edit plus A*
+  pathfinding prototype.
+- `examples/tess_path_agents` — a multi-agent path-agent tick loop with
+  goal assignment, dirty-driven replanning, and blocked-path handling.
+- `examples/tess_colony_2d` — the flagship composition: queued
+  construction edits through the auto-exec schedule task, an OnDirty
+  topology rebuild, movement-class agents routing around the new wall,
+  and a DeltaFrame render consumer, all in one `tess::Schedule` loop.
+- `examples/tess_ant_farm_vertical` — a degenerate-axis vertical world
+  (x-z cross-section) sharing one distance-field product across ants via
+  the byte-budgeted `FieldProductCache`.
+- `examples/tess_stairs_3d` — the `StairTransitions` provider connecting
+  two z-levels, with reachability, the path-runtime precheck, and an
+  incremental update after demolishing the stair.
+- `examples/tess_custom_ecs_min` — the ECS adapter concepts implemented
+  by a deliberately non-EnTT-shaped micro ECS.
+- `examples/tess_entt_pawns` — the EnTT adapter driving registry-owned
+  pawns (built when `TESS_ENABLE_ENTT` is on).
+- `examples/tess_render_delta_consumer` — a standalone DeltaFrame
+  consumer rebuilding a shadow grid from published frames.
 
 ## Testing on a Steam Deck
 
