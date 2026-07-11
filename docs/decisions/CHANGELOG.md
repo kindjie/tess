@@ -13,6 +13,30 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - ECS-agnostic adapter layer (M10, S8.2)
+
+- Added: `include/tess/ecs/adapter.h`, the dependency-free ECS layer:
+  `EntityHandle` (+ `kNullEntityHandle`), the `EntityHandleAdapter` /
+  `PositionAdapter` / `PathAgentSource` / `PathAgentSink` concepts, shared
+  POD components (`AgentId`, `TilePosition`, `PathGoal`, `PathState`,
+  `OffBoard`), `PathAgentBatch` SoA scratch, `TileOccupancyIndex`
+  (injective tile->entity open-addressing map with backward-shift
+  deletion; box/radius queries deferred post-v1 -- probing every box
+  coordinate is not a useful spatial query and `entity_at` is the
+  primitive), `advance_path_agents_with_index` over the S8.1 commit
+  observer, and the `tick_ecs_*` pipeline (collect -> dirty-gated
+  exactly-once processing -> index-synchronized movement -> apply).
+- Reason: M10. The seam is "agents in deterministic order in, state
+  write-back out": adapters mirror lifecycle state instead of
+  re-implementing tickets/retries/result application. Determinism
+  contract: sources sort by monotonic `AgentId`, never native entity
+  value or pool order. The runtime is exclusive to the agent system
+  (tickets persist in components across quiet ticks).
+- Affected docs: new `docs/architecture/ecs.md` (+ README index),
+  `surface.json`, `tests/AGENTS.md`.
+- Affected code: new `ecs/adapter.h`, `tess.h`, `CMakeLists.txt`; new
+  `tests/tess_ecs_adapter_test.cc`, `tests/CMakeLists.txt`.
+
 ## 2026-07-10 - Movement-advance commit observer (M10, S8.1)
 
 - Changed: `advance_path_agents_with_movement` gained an observer overload

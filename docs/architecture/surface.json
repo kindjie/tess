@@ -324,5 +324,24 @@
     "record_allocation",
     "record_deallocation",
     "trace_event"
+  ],
+  "docs/architecture/ecs.md": [
+    "AgentId",
+    "EntityHandle",
+    "EntityHandleAdapter",
+    "OffBoard",
+    "PathAgentBatch",
+    "PathAgentCollectInfo",
+    "PathAgentSink",
+    "PathAgentSource",
+    "PathGoal",
+    "PathState",
+    "PositionAdapter",
+    "TileOccupancyIndex",
+    "TilePosition",
+    "advance_path_agents_with_index",
+    "kNullEntityHandle",
+    "tick_ecs_path_agents",
+    "tick_ecs_unit_path_agents"
   ]
 }
