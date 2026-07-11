@@ -803,11 +803,15 @@ void collect_baseline(DeltaCollector& collector, World& world,
 // Stages the remaining route of every agent (or of `selection`, indices
 // into agents/handles). Gates on has_goal && status == Found before
 // touching a ticket: a cleared ticket is value-zero and could alias a
-// live generation-zero slot, and the gate provably avoids the runtime's
-// stale-ticket debug assert (every armed non-Unreachable agent was
-// re-ticketed by the last processing pass). Nodes are copied at call
-// time; the source PathView storage may be reused immediately after.
-// Ordering contract: run lifecycle intents BEFORE the tick and collect
+// live generation-zero slot, and the gate avoids the runtime's
+// stale-ticket debug assert PROVIDED the batch and runtime are
+// generation-consistent -- the guarantee holds for batches collected by
+// the last processing pass (every armed non-Unreachable agent was
+// re-ticketed), but NOT for a batch that outlived a clear_requests()
+// call. Precondition: whenever the runtime is cleared outside the tick
+// pipeline, clear the batch beside it before the next collection. Nodes are
+// copied at call time; the source PathView storage may be reused immediately
+// after. Ordering contract: run lifecycle intents BEFORE the tick and collect
 // overlays AFTER it -- an intent executed between tick and collection
 // leaves that agent's overlay one frame stale (entity deltas themselves
 // stay correct through the hooks).
