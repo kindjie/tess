@@ -14,6 +14,18 @@ add_executable(tess_render_delta_consumer render_delta_consumer.cc)
 target_link_libraries(tess_render_delta_consumer PRIVATE tess::tess)
 tess_apply_project_options(tess_render_delta_consumer)
 
+add_executable(tess_colony_2d colony_2d.cc)
+target_link_libraries(tess_colony_2d PRIVATE tess::tess)
+tess_apply_project_options(tess_colony_2d)
+
+add_executable(tess_ant_farm_vertical ant_farm_vertical.cc)
+target_link_libraries(tess_ant_farm_vertical PRIVATE tess::tess)
+tess_apply_project_options(tess_ant_farm_vertical)
+
+add_executable(tess_stairs_3d stairs_3d.cc)
+target_link_libraries(tess_stairs_3d PRIVATE tess::tess)
+tess_apply_project_options(tess_stairs_3d)
+
 if(TESS_ENABLE_ENTT)
   include(TessEnttDeps)
   tess_require_entt()

@@ -13,6 +13,34 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - Consolidation examples + CI example smoke (M15, S11.2)
+
+- Added: three examples closing the M15 checklist.
+  `examples/colony_2d.cc` is the flagship composition -- queued
+  construction edits through an `AutoExecTask` in the PreUpdate phase,
+  an OnDirty Topology-phase task doing the incremental per-class region
+  update and re-path, movement-class (`MovementClass` walker) agents
+  routing around the wall the ops built, and a `DeltaCollector`
+  publishing versioned render frames, all under one `tess::Schedule`
+  driven by `run_schedule_frame`. `examples/ant_farm_vertical.cc` runs
+  a degenerate-axis (y extent 1) x-z cross-section world: one
+  distance-field product flooded from all food chambers, per-ant
+  `nearest_target` descents, and the shared product served from the
+  `FieldProductCache` (asserted hits). `examples/stairs_3d.cc` shows
+  `StairTransitions` connecting two z-levels that share no passable
+  face, the precheck agreeing, and an incremental `update_region_graph`
+  severing the link after demolition. Every example is self-checking
+  (nonzero exit on violated expectations), and the dev CI job gains an
+  "Example smoke" step that executes every built example binary and
+  asserts the expected count ran.
+- Reason: S11.2 (consolidation) -- v1's example checklist and a CI
+  guarantee that examples keep running, not just compiling.
+- Affected docs: `README.md` (stale "two examples" paragraph replaced
+  with the full list).
+- Affected code: new `examples/colony_2d.cc`,
+  `examples/ant_farm_vertical.cc`, `examples/stairs_3d.cc`;
+  `examples/CMakeLists.txt`, `.github/workflows/ci.yml`.
+
 ## 2026-07-11 - Fields benchmark family (M9/M14, S11.1)
 
 - Added: `bench/tess_fields_bench.cc` + thresholds + the CI step -- the

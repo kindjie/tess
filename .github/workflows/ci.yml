@@ -53,6 +53,18 @@ jobs:
       - name: Test
         run: ctest --preset dev
 
+      - name: Example smoke
+        run: |
+          ran=0
+          for example in build/dev/examples/tess_*; do
+            [ -x "$example" ] || continue
+            echo "::group::$(basename "$example")"
+            "$example"
+            echo "::endgroup::"
+            ran=$((ran + 1))
+          done
+          test "$ran" -ge 8  # every example runs; bump when adding one
+
       - name: Install smoke
         run: tools/install_smoke.sh
 
