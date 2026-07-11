@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "ecs/collect_sort_1k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 110000
+    },
+    "ecs/collect_sort_10k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1100000
+    },
+    "ecs/collect_sort_100k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 11000000
+    },
+    "ecs/apply_1k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 80000
+    },
+    "ecs/apply_10k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 800000
+    },
+    "ecs/index_move": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 100
+    },
+    "ecs/tick_entt_1k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 950000
+    },
+    "ecs/tick_entt_10k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 8500000
+    },
+    "ecs/tick_raw_span_1k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 150000
+    },
+    "ecs/tick_raw_span_10k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1500000
+    },
+    "ecs/tick_entt_alloc_gate": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 300000
+    }
+  }
+}
