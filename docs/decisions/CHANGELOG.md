@@ -13,6 +13,21 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - ECS examples: custom store + EnTT pawns (M10/M15, S8.5)
+
+- Added: `examples/custom_ecs_min.cc` (always built) -- a self-contained
+  hand-rolled store (parallel arrays, generational ids, the game's own
+  position component) implementing every adapter concept and driving the
+  generic `tick_ecs_*` pipeline to arrival, proving the concepts are not
+  EnTT-shaped; and `examples/entt_pawns.cc` (behind `TESS_ENABLE_ENTT`)
+  -- pawn entities spawned through the lifecycle intents, a mid-flight
+  goal reassignment, and a despawn freeing its tile, ending with an index
+  sync check. Covers M15's "EnTT pawn movement" and "custom adapter"
+  example items early.
+- Affected docs: none (examples are self-documenting).
+- Affected code: new `examples/custom_ecs_min.cc`,
+  `examples/entt_pawns.cc`, `examples/CMakeLists.txt`.
+
 ## 2026-07-11 - EnTT adapter (M10, S8.4)
 
 - Added: `include/tess/ecs/entt/entt_adapter.h` (gated by the
