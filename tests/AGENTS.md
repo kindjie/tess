@@ -471,7 +471,12 @@
   window closing at publish, per-step records with coalescing disabled,
   capacity overflow truncating the frame); `clear()` poisoning the
   stream until a baseline; baselines dropping pending entity records;
-  and an allocation-free steady-state collection cycle.
+  full-scope baselines covering every chunk, consuming the mask, and
+  healing the stream (with an overflowing baseline truncated and never
+  applicable -- the truth table pins truncation defeating baselines);
+  overlay staging copying nodes at call time with full-replacement
+  per-frame semantics and overflow dropping the overlay rather than the
+  frame; and an allocation-free steady-state collection cycle.
 - `tess_sim_auto_exec_test`: verifies the S7 auto-exec task: the full
   pipeline through a schedule tick (plan, phases, execute, per-phase dirty
   apply, drain, paired clears) with the produced dirty mask firing a
