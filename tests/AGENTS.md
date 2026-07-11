@@ -476,7 +476,16 @@
   applicable -- the truth table pins truncation defeating baselines);
   overlay staging copying nodes at call time with full-replacement
   per-frame semantics and overflow dropping the overlay rather than the
-  frame; and an allocation-free steady-state collection cycle.
+  frame; the section-8 acceptance through `render_delta_replay.h`'s
+  RenderReplayGrid consumer model (invalidation apply re-reading the
+  current world, a shadow entity map, the version contract enforced):
+  randomized seeded scripts replaying per-tick, as coalesced eight-tick
+  frames (Speed4x/backlog shape, coalesced entity records landing on
+  final tiles), and through a lossy consumer that drops frames, detects
+  the gap, resyncs via a full baseline plus entity re-snapshot, and
+  reconverges; a sparse resident-set replay (no-evict script; residency
+  records deferred); and an allocation-free steady-state collection
+  cycle.
 - `tess_sim_auto_exec_test`: verifies the S7 auto-exec task: the full
   pipeline through a schedule tick (plan, phases, execute, per-phase dirty
   apply, drain, paired clears) with the produced dirty mask firing a
