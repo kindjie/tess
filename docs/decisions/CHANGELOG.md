@@ -13,6 +13,28 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - Ecs benchmark family (M10/M14, S8.6)
+
+- Added: `bench/tess_ecs_bench.cc` + `bench/thresholds/ecs.json` + the CI
+  threshold step: AgentId-sorted collect over churn-scrambled pools at
+  1k/10k/100k (11/104/1092 us local), write-back at 1k/10k (7/75 us),
+  the occupancy-index move hot path (9.4 ns), and the adapter-overhead
+  headline -- the full EnTT tick vs a raw PathAgentState span doing
+  identical marching-agent work (1k: 86 vs 12 us; 10k: 807 vs 140 us
+  local; the ratio is collect+sort+write-back+index maintenance and is
+  trend-only, never gated). Steady-state ticks are timed with resets and
+  re-path ticks absorbed outside the timed region. The family runs
+  through the diagnostics bench binary so `ecs/tick_entt_alloc_gate`
+  (aborts unless a steady-state tick reports zero allocations,
+  benchmark-plan section 14) executes in CI. A separate
+  movement-commit-only case was folded into the tick pair -- quiet ticks
+  are movement-dominated already. Bootstrap ceilings pending CI
+  recalibration in the consolidation stage.
+- Affected docs: none.
+- Affected code: new `bench/tess_ecs_bench.cc`,
+  `bench/thresholds/ecs.json`, `bench/CMakeLists.txt`,
+  `.github/workflows/ci.yml`.
+
 ## 2026-07-11 - ECS examples: custom store + EnTT pawns (M10/M15, S8.5)
 
 - Added: `examples/custom_ecs_min.cc` (always built) -- a self-contained
