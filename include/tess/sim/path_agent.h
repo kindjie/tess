@@ -4,6 +4,7 @@
 #include <tess/path/precheck.h>
 #include <tess/sim/movement.h>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -187,18 +188,30 @@ inline auto advance_path_agents(std::span<PathAgentState> agents,
   return stats;
 }
 
+// Observer form: `on_commit(agent_index, from, to)` is invoked once per
+// successful commit_movement_intent, after the agent's position and the
+// world's occupancy fields are updated and before arrival handling. It is
+// never invoked for a failed validation (nothing was written to the world),
+// so external tile->entity mirrors that update inside the callback stay
+// synchronized with the occupancy field by construction.
 template <typename World, typename ClassOrTag, typename OccupancyTag,
-          typename ReservationTag>
-inline auto advance_path_agents_with_movement(
-    World& world, std::span<PathAgentState> agents,
-    const PathRequestRuntime& runtime, std::size_t max_steps = 1,
-    std::uint32_t movement_dirty_mask = 0) -> PathAgentFrameStats {
+          typename ReservationTag, typename OnCommit>
+  requires std::invocable<OnCommit&, std::size_t, Coord3, Coord3>
+inline auto advance_path_agents_with_movement(World& world,
+                                              std::span<PathAgentState> agents,
+                                              const PathRequestRuntime& runtime,
+                                              std::size_t max_steps,
+                                              std::uint32_t movement_dirty_mask,
+                                              OnCommit&& on_commit)
+    -> PathAgentFrameStats {
   PathAgentFrameStats stats;
   if (max_steps == 0) {
     return stats;
   }
 
-  for (auto& agent : agents) {
+  for (std::size_t agent_index = 0; agent_index < agents.size();
+       ++agent_index) {
+    auto& agent = agents[agent_index];
     if (!agent.has_goal || agent.status != PathStatus::Found) {
       continue;
     }
@@ -243,6 +256,7 @@ inline auto advance_path_agents_with_movement(
 
       ++agent.path_index;
       agent.position = to;
+      on_commit(agent_index, from, to);
       ++stats.advanced;
       if (agent.position == agent.goal) {
         clear_path_agent_goal(agent);
@@ -254,6 +268,18 @@ inline auto advance_path_agents_with_movement(
   }
 
   return stats;
+}
+
+template <typename World, typename ClassOrTag, typename OccupancyTag,
+          typename ReservationTag>
+inline auto advance_path_agents_with_movement(
+    World& world, std::span<PathAgentState> agents,
+    const PathRequestRuntime& runtime, std::size_t max_steps = 1,
+    std::uint32_t movement_dirty_mask = 0) -> PathAgentFrameStats {
+  return advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
+                                           ReservationTag>(
+      world, agents, runtime, max_steps, movement_dirty_mask,
+      [](std::size_t, Coord3, Coord3) {});
 }
 
 inline void add_path_agent_stats(PathAgentFrameStats& lhs,
