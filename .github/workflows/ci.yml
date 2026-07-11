@@ -365,6 +365,9 @@ jobs:
       - name: Render delta benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_render_delta_thresholds
 
+      - name: Fields benchmark thresholds
+        run: cmake --build --preset bench --target tess_bench_fields_thresholds
+
       - name: Diagnostics benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_diagnostics_thresholds
 

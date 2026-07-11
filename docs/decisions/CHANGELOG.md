@@ -13,6 +13,24 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - Fields benchmark family (M9/M14, S11.1)
+
+- Added: `bench/tess_fields_bench.cc` + thresholds + the CI step -- the
+  gated family M9 never had: distance-field product builds scaling with
+  the goal count (1/16/256 goals over an open 64x64 world; 85-103 us
+  local), the nearest-target gradient query over a built product
+  (64 ns), FieldProductCache hit (25 ns), the mixed miss+store steady
+  state, byte-budgeted LRU eviction under a cycling working set, and
+  the warm-build allocation gate (zero allocations into reserved
+  product/scratch storage; family runs through the diagnostics binary).
+  Stateful correctness checks are guarded by iteration count because
+  the harness's one-iteration calibration pass runs them too.
+- Reason: S11.1 (consolidation) -- closes the M14 family checklist.
+- Affected docs: none.
+- Affected code: new `bench/tess_fields_bench.cc`,
+  `bench/thresholds/fields.json`, `bench/CMakeLists.txt`,
+  `.github/workflows/ci.yml`.
+
 ## 2026-07-11 - GPU backend interface, interface only (M13, S10)
 
 - Added: `include/tess/gpu/descriptors.h` (GpuFieldFormat derived from
