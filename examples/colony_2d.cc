@@ -39,11 +39,11 @@ constexpr std::uint32_t kMaxCost = 4;
 
 constexpr std::uint32_t kTerrainDirty = 1U << 0U;
 
-// One queued construction order: a wall segment along x in row `y`.
+// One queued construction order: a wall segment along y in column `x`.
 struct WallOrder {
-  std::int64_t y = 0;
-  std::int64_t x_begin = 0;
-  std::int64_t x_end = 0;
+  std::int64_t x = 0;
+  std::int64_t y_begin = 0;
+  std::int64_t y_end = 0;
 };
 
 struct BuildAck {
@@ -132,8 +132,8 @@ auto run() -> int {
     const auto& wall = colony.pending_wall;
     auto passable = view.template field_span<PassableTag>();
     auto construction = view.template field_span<ConstructionTag>();
-    for (auto x = wall.x_begin; x < wall.x_end; ++x) {
-      const auto coord = tess::Coord3{x, wall.y, 0};
+    for (auto y = wall.y_begin; y < wall.y_end; ++y) {
+      const auto coord = tess::Coord3{wall.x, y, 0};
       if (tess::chunk_key<Shape>(tess::chunk_coord<Shape>(coord)) !=
           view.key()) {
         continue;
@@ -175,14 +175,17 @@ auto run() -> int {
   tess::SimClock clock;
   tess::FixedStepAccumulator accumulator(20, 8);
   auto ordered = false;
-  for (int frame = 0; frame < 40; ++frame) {
+  auto detoured = false;
+  for (int frame = 0; frame < 80; ++frame) {
     if (frame == 4 && !ordered) {
-      // The colony orders a wall straight across the colonists' routes.
+      // The colony orders a wall straight across the colonists' routes:
+      // a vertical segment at x=14 covering every agent row (y 4..27),
+      // open at both ends so the detour exists.
       ordered = true;
-      colony.pending_wall = WallOrder{14, 6, 26};
-      for (std::int64_t chunk_x = 0; chunk_x < 4; ++chunk_x) {
+      colony.pending_wall = WallOrder{14, 4, 28};
+      for (std::int64_t chunk_y = 0; chunk_y < 4; ++chunk_y) {
         const auto key = tess::chunk_key<Shape>(tess::chunk_coord<Shape>(
-            tess::Coord3{chunk_x * 8, colony.pending_wall.y, 0}));
+            tess::Coord3{colony.pending_wall.x, chunk_y * 8, 0}));
         (void)colony.ops.update_field(
             tess::DomainDesc::explicit_chunks(
                 std::span<const tess::ChunkKey>{&key, 1}),
@@ -194,6 +197,13 @@ auto run() -> int {
     (void)tess::run_schedule_frame(
         schedule, clock, accumulator, 1.0 / 20.0,
         tess::SimTimeControl{tess::SimSpeed::Speed1x});
+    // Detour evidence: every start and goal sits on rows 6..24, so any
+    // agent seen at the wall's open ends got there by routing around it.
+    for (const auto& agent : colony.agents) {
+      if (agent.position.y <= 3 || agent.position.y >= 28) {
+        detoured = true;
+      }
+    }
     tess::collect_tile_deltas(colony.deltas, colony.world, kTerrainDirty);
     const auto delta_frame = colony.deltas.publish();
     if (!delta_frame.empty()) {
@@ -211,9 +221,10 @@ auto run() -> int {
     }
   }
   std::cout << "colonists home: " << arrived << "/" << colony.agents.size()
-            << " (routed around the construction)\n";
-  if (colony.built_tiles == 0 || arrived != 4) {
-    std::cerr << "colony did not converge\n";
+            << (detoured ? " (routed around the construction)\n"
+                         : " (never detoured?!)\n");
+  if (colony.built_tiles != 24 || arrived != 4 || !detoured) {
+    std::cerr << "colony did not converge around the wall\n";
     return 1;
   }
   return 0;

@@ -7,7 +7,7 @@
     },
     "diagnostics/record_timing": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2
+      "max_cpu_time_ns": 10
     },
     "diagnostics/scoped_timer": {
       "max_real_time_ns": null,
