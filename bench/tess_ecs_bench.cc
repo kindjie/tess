@@ -357,18 +357,24 @@ void BM_ecs_tick_entt_alloc_gate(benchmark::State& state) {
   EnttMarchFixture<MarchShape> fixture(*world, 256);
   (void)fixture.tick();  // one more warm tick before asserting
 
+  // The reset runs at the TOP of the iteration, outside the counter
+  // scope, so the final iteration's post-loop assertion always reads a
+  // pure steady-state tick -- never a reset/re-path pass.
   tess::diagnostics::AllocationCounters counters;
+  bool need_reset = false;
   for (auto _ : state) {
+    if (need_reset) {
+      state.PauseTiming();
+      fixture.reset();
+      state.ResumeTiming();
+      need_reset = false;
+    }
     counters.reset();
     tess::diagnostics::ScopedAllocationCounters scope{counters};
     const auto stats = fixture.tick();
     auto advanced = stats.movement.advanced;
     benchmark::DoNotOptimize(advanced);
-    if (stats.movement.advanced == 0) {
-      state.PauseTiming();
-      fixture.reset();
-      state.ResumeTiming();
-    }
+    need_reset = advanced == 0;
   }
   ecs_bench_check(counters.allocations == 0,
                   "steady-state entt tick allocated");

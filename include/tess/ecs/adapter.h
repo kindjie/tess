@@ -201,6 +201,8 @@ class TileOccupancyIndex {
   // Maps `tile` to `entity`. Returns false (and mutates nothing) if the
   // tile already maps to a DIFFERENT entity -- occupancy uniqueness is
   // structural, not advisory. Re-inserting the same mapping succeeds.
+  // A refusal is not allocation-free at the growth threshold: the table
+  // rehashes before discovering the duplicate tile.
   [[nodiscard]] auto insert(Coord3 tile, EntityHandle entity) -> bool {
     TESS_ASSERT_MSG(!entity.is_null(),
                     "TileOccupancyIndex cannot map a null entity");
