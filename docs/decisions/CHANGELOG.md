@@ -13,6 +13,36 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - DeltaFrame render bridge core (M11, S9.1)
+
+- Added: `include/tess/sim/delta_frame.h` -- the versioned frame
+  protocol. Tile deltas are INVALIDATION records (no field values;
+  consumers re-read the current world at apply, idempotent convergence);
+  collection happens once per published frame through the lost-update-
+  safe observe/clear-observed protocol, so multi-tick tile coalescing is
+  the storage's native union semantics, free. Per-chunk encoding:
+  per-tile records up to `sparse_tile_threshold`, one clipped box record
+  above it (and as the degradation when tile storage cannot hold a
+  chunk -- never a truncation). Entity records (Moved coalescible
+  last-writer-wins within a frame; Teleported/Spawned/Despawned/Parked/
+  Placed are barriers) with the coalescing map cleared by walking the
+  frame's records (O(records), probe chains kept by backward-shift
+  erase). Versioning: collectors start at 1; 0 is the fresh-consumer
+  echo so late joiners can only start from a baseline; the version bumps
+  iff a frame carries state; truncation (capacity or a hard `clear()`,
+  which poisons the stream until a baseline) is a STRUCTURAL gap in
+  `delta_frame_applicable`, never advisory. Also hoisted `EntityHandle`
+  into `include/tess/ecs/entity_handle.h` so the bridge names entity
+  identity without the ECS pipeline include.
+- Reason: S9.1 (M11 close), per the reviewed design: the pre-review
+  version-0 late-join hole, scoped-baseline gap hazard, silent clear(),
+  and advisory-truncation findings are all closed structurally.
+- Affected docs: `architecture/simulation.md` (DeltaFrame section),
+  `surface.json`, `tests/AGENTS.md`.
+- Affected code: new `sim/delta_frame.h`, new `ecs/entity_handle.h`,
+  `ecs/adapter.h`, `tess.h`, `CMakeLists.txt`; new
+  `tests/tess_render_delta_frame_test.cc`, `tests/CMakeLists.txt`.
+
 ## 2026-07-11 - Ecs benchmark family (M10/M14, S8.6)
 
 - Added: `bench/tess_ecs_bench.cc` + `bench/thresholds/ecs.json` + the CI
