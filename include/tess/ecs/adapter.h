@@ -1,6 +1,8 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/ecs/entity_handle.h>
+#include <tess/sim/delta_frame.h>
 #include <tess/sim/path_agent.h>
 #include <tess/sim/path_agent_tick.h>
 
@@ -21,22 +23,8 @@
 // duplicate or violate it.
 namespace tess {
 
-// Opaque, ECS-agnostic entity identity: stable while tess holds it,
-// comparable, with a null representation. Adapters pack their native id
-// (including any generation/version bits) into the 64-bit value however
-// they like; tess never interprets it.
-struct EntityHandle {
-  std::uint64_t value = 0xFFFF'FFFF'FFFF'FFFFULL;
-
-  [[nodiscard]] constexpr auto is_null() const noexcept -> bool {
-    return value == 0xFFFF'FFFF'FFFF'FFFFULL;
-  }
-
-  friend constexpr auto operator==(EntityHandle, EntityHandle) noexcept
-      -> bool = default;
-};
-
-inline constexpr EntityHandle kNullEntityHandle{};
+// EntityHandle and kNullEntityHandle live in <tess/ecs/entity_handle.h>
+// (re-exported here) so dependency-light layers can name entity identity.
 
 // Converts between an ECS's native entity type and EntityHandle. The
 // mapping must be lossless for live entities and must map the ECS's null
@@ -358,19 +346,27 @@ class TileOccupancyIndex {
 // the committing agent's mapping from -> to, and failed validations touch
 // neither the world nor the index. Arrivals need no extra work -- the
 // arrival step itself was a commit, and the agent legitimately occupies
-// the goal tile afterwards.
+// the goal tile afterwards. An optional render-delta collector records
+// every committed step through the same observer (M11): recording
+// completeness for entity deltas holds exactly for this surface plus the
+// EnTT lifecycle intents.
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag>
 inline auto advance_path_agents_with_index(
     World& world, PathAgentBatch& batch, const PathRequestRuntime& runtime,
     TileOccupancyIndex& index, std::size_t max_steps = 1,
-    std::uint32_t movement_dirty_mask = 0) -> PathAgentFrameStats {
+    std::uint32_t movement_dirty_mask = 0,
+    DeltaCollector* render_deltas = nullptr) -> PathAgentFrameStats {
   const auto handles = batch.handles();
   return advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
                                            ReservationTag>(
       world, batch.agents(), runtime, max_steps, movement_dirty_mask,
-      [&index, handles](std::size_t agent_index, Coord3 from, Coord3 to) {
+      [&index, handles, render_deltas](std::size_t agent_index, Coord3 from,
+                                       Coord3 to) {
         index.move(from, to, handles[agent_index]);
+        if (render_deltas != nullptr) {
+          render_deltas->record_move(handles[agent_index], from, to);
+        }
       });
 }
 
@@ -389,8 +385,8 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
     PathAgentBatch& batch, PathRequestRuntime& runtime,
     TileOccupancyIndex& index, PathAgentTickOptions options = {},
     std::uint32_t movement_dirty_mask = 0,
-    const RegionGraphT<typename World::residency_type>* graph = nullptr)
-    -> PathAgentTickStats {
+    const RegionGraphT<typename World::residency_type>* graph = nullptr,
+    DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
   const auto info = source.collect(batch);
   if (info.pathing_dirty) {
     mark_pathing_dirty(state);
@@ -398,6 +394,10 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
+  if (render_deltas != nullptr) {
+    // Stamp every commit this tick before movement runs.
+    render_deltas->begin_tick(stats.tick);
+  }
 
   const bool repath_needed =
       prepare_path_agent_processing(batch.agents(), options, stats);
@@ -410,7 +410,8 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 
   stats.movement = advance_path_agents_with_index<World, ClassOrTag,
                                                   OccupancyTag, ReservationTag>(
-      world, batch, runtime, index, options.max_steps, movement_dirty_mask);
+      world, batch, runtime, index, options.max_steps, movement_dirty_mask,
+      render_deltas);
   sink.apply(batch);
   return stats;
 }
@@ -425,8 +426,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     PathAgentBatch& batch, PathRequestRuntime& runtime,
     TileOccupancyIndex& index, PathAgentTickOptions options = {},
     std::uint32_t movement_dirty_mask = 0,
-    const RegionGraphT<typename World::residency_type>* graph = nullptr)
-    -> PathAgentTickStats {
+    const RegionGraphT<typename World::residency_type>* graph = nullptr,
+    DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
   const auto info = source.collect(batch);
   if (info.pathing_dirty) {
     mark_pathing_dirty(state);
@@ -434,6 +435,10 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
+  if (render_deltas != nullptr) {
+    // Stamp every commit this tick before movement runs.
+    render_deltas->begin_tick(stats.tick);
+  }
 
   const bool repath_needed =
       prepare_path_agent_processing(batch.agents(), options, stats);
@@ -446,7 +451,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 
   stats.movement = advance_path_agents_with_index<World, Class, OccupancyTag,
                                                   ReservationTag>(
-      world, batch, runtime, index, options.max_steps, movement_dirty_mask);
+      world, batch, runtime, index, options.max_steps, movement_dirty_mask,
+      render_deltas);
   sink.apply(batch);
   return stats;
 }
@@ -461,8 +467,8 @@ template <typename World, typename PassableTag, typename CostTag,
     PathAgentBatch& batch, PathRequestRuntime& runtime,
     TileOccupancyIndex& index, PathAgentTickOptions options = {},
     std::uint32_t movement_dirty_mask = 0,
-    const RegionGraphT<typename World::residency_type>* graph = nullptr)
-    -> PathAgentTickStats {
+    const RegionGraphT<typename World::residency_type>* graph = nullptr,
+    DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
   const auto info = source.collect(batch);
   if (info.pathing_dirty) {
     mark_pathing_dirty(state);
@@ -470,6 +476,10 @@ template <typename World, typename PassableTag, typename CostTag,
 
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
+  if (render_deltas != nullptr) {
+    // Stamp every commit this tick before movement runs.
+    render_deltas->begin_tick(stats.tick);
+  }
 
   const bool repath_needed =
       prepare_path_agent_processing(batch.agents(), options, stats);
@@ -483,7 +493,8 @@ template <typename World, typename PassableTag, typename CostTag,
 
   stats.movement = advance_path_agents_with_index<World, PassableTag,
                                                   OccupancyTag, ReservationTag>(
-      world, batch, runtime, index, options.max_steps, movement_dirty_mask);
+      world, batch, runtime, index, options.max_steps, movement_dirty_mask,
+      render_deltas);
   sink.apply(batch);
   return stats;
 }

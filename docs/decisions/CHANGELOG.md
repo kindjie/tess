@@ -13,6 +13,112 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - Render-delta bench family and headless consumer (M11, S9.5)
+
+- Added: `bench/tess_render_delta_bench.cc` + thresholds + the CI step:
+  sparse-tile collection (64 scattered tiles over 4096 chunks, 2.3 us
+  local), box-granular collection (2.4 us), entity recording at 1k
+  entities x 8 steps coalesced vs per-step (24 vs 40 us -- the
+  coalescing ratio is visible as trend), the full 4096-chunk baseline
+  (14 us), and the allocation gate (zero allocations in a steady
+  mark/collect/record/publish cycle; the family runs through the
+  diagnostics binary so the gate executes in CI). Bootstrap ceilings
+  ~10x local pending the consolidation recalibration. Also
+  `examples/render_delta_consumer.cc`: a headless shadow-grid consumer
+  that late-joins through a baseline, deliberately drops a frame,
+  detects the version gap, and resyncs -- the honest end-to-end home of
+  the gap/baseline protocol.
+- Reason: S9.5 (M11 close on the tess side).
+- Affected docs: none beyond prior slices.
+- Affected code: new `bench/tess_render_delta_bench.cc`,
+  `bench/thresholds/render-delta.json`, `bench/CMakeLists.txt`,
+  `.github/workflows/ci.yml`; new `examples/render_delta_consumer.cc`,
+  `examples/CMakeLists.txt`.
+
+## 2026-07-11 - Replay validator and randomized replay acceptance (M11, S9.4)
+
+- Added: `tests/render_delta_replay.h` -- the consumer-model
+  RenderReplayGrid (invalidation apply that re-reads the current world
+  for covered tiles, a shadow entity->tile map fed by entity deltas,
+  the version contract enforced exactly as a consumer would, baselines
+  clearing shadow + entity state with an explicit re-snapshot seam).
+  Randomized script tests pin the section-8 acceptance "delta replay
+  matches projected state": per-tick consumption, coalesced eight-tick
+  frames, a lossy consumer reconverging through gap detection + full
+  baseline, and a sparse resident-set replay.
+- Reason: S9.4 (M11).
+- Affected docs: `tests/AGENTS.md`.
+- Affected code: new `tests/render_delta_replay.h`;
+  `tests/tess_render_delta_frame_test.cc`.
+
+## 2026-07-11 - Baselines, applicability hardening, path overlays (M11, S9.3)
+
+- Added: `collect_baseline` (full scope ONLY -- scoped baselines are
+  deliberately absent: a partial baseline adopting the frame version
+  would permanently lose out-of-scope invalidations from a gap);
+  `PathOverlayDelta` + `stage_path_overlay` + `collect_path_overlays`
+  (full-replacement per-frame route decorations, nodes copied at call
+  time, gated on `has_goal && Found` to provably avoid stale-ticket
+  asserts; overlay overflow drops the overlay, never the frame).
+  Changed: `delta_frame_applicable` now rejects truncated BASELINES too
+  -- one that overflowed chunk storage covers only part of the world
+  while claiming full sync, so baseline consumers size chunk capacity
+  to the world and the truth table pins the rejection.
+- Reason: S9.3 (M11).
+- Affected docs: `architecture/simulation.md`, `surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: `sim/delta_frame.h`;
+  `tests/tess_render_delta_frame_test.cc`.
+
+## 2026-07-11 - Entity-delta hook seam through the ECS pipeline (M11, S9.2)
+
+- Added: a trailing defaulted `DeltaCollector*` on
+  `advance_path_agents_with_index`, all `tick_ecs_*`/`tick_entt_*`
+  drivers (which stamp `begin_tick` with the new tick before movement),
+  and the EnTT lifecycle intents (recording Spawned/Despawned/
+  Teleported/Parked/Placed exactly when the intent succeeds; a parked
+  despawn records nothing because parking already released its tile).
+  The movement observer records each committed step beside the index
+  move, so entity-delta completeness holds for the sanctioned ECS
+  surface by construction. Source-compatible: all params default to
+  nullptr, and a positional `graph` argument cannot bind to the
+  collector (distinct pointer types).
+- Reason: S9.2 (M11) -- entity deltas are pushed at commit, never
+  diffed from mirrors.
+- Affected docs: `architecture/ecs.md`, `tests/AGENTS.md`.
+- Affected code: `ecs/adapter.h`, `ecs/entt/entt_adapter.h`;
+  `tests/tess_ecs_adapter_test.cc`, `tests/tess_ecs_entt_test.cc`.
+
+## 2026-07-11 - DeltaFrame render bridge core (M11, S9.1)
+
+- Added: `include/tess/sim/delta_frame.h` -- the versioned frame
+  protocol. Tile deltas are INVALIDATION records (no field values;
+  consumers re-read the current world at apply, idempotent convergence);
+  collection happens once per published frame through the lost-update-
+  safe observe/clear-observed protocol, so multi-tick tile coalescing is
+  the storage's native union semantics, free. Per-chunk encoding:
+  per-tile records up to `sparse_tile_threshold`, one clipped box record
+  above it (and as the degradation when tile storage cannot hold a
+  chunk -- never a truncation). Entity records (Moved coalescible
+  last-writer-wins within a frame; Teleported/Spawned/Despawned/Parked/
+  Placed are barriers) with the coalescing map cleared by walking the
+  frame's records (O(records), probe chains kept by backward-shift
+  erase). Versioning: collectors start at 1; 0 is the fresh-consumer
+  echo so late joiners can only start from a baseline; the version bumps
+  iff a frame carries state; truncation (capacity or a hard `clear()`,
+  which poisons the stream until a baseline) is a STRUCTURAL gap in
+  `delta_frame_applicable`, never advisory. Also hoisted `EntityHandle`
+  into `include/tess/ecs/entity_handle.h` so the bridge names entity
+  identity without the ECS pipeline include.
+- Reason: S9.1 (M11 close), per the reviewed design: the pre-review
+  version-0 late-join hole, scoped-baseline gap hazard, silent clear(),
+  and advisory-truncation findings are all closed structurally.
+- Affected docs: `architecture/simulation.md` (DeltaFrame section),
+  `surface.json`, `tests/AGENTS.md`.
+- Affected code: new `sim/delta_frame.h`, new `ecs/entity_handle.h`,
+  `ecs/adapter.h`, `tess.h`, `CMakeLists.txt`; new
+  `tests/tess_render_delta_frame_test.cc`, `tests/CMakeLists.txt`.
+
 ## 2026-07-11 - Ecs benchmark family (M10/M14, S8.6)
 
 - Added: `bench/tess_ecs_bench.cc` + `bench/thresholds/ecs.json` + the CI
