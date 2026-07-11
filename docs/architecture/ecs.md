@@ -82,6 +82,58 @@ lifecycle.
   passable/cost tag-pair form (`<World, PassableTag, CostTag, MaxCost,
   ...>`).
 
+## EnTT Adapter
+
+`include/tess/ecs/entt/entt_adapter.h` compiles only when the consumer
+defines `TESS_ENABLE_ENTT` and includes `<entt/entity/registry.hpp>`
+first (an `#error` on `ENTT_VERSION` enforces the order); it ships in the
+header file set regardless and is inert without the macro. tess core
+never provides EnTT -- see `docs/dependencies.md` for the pin and the
+two-gate build policy.
+
+- `EnttHandleAdapter` converts `entt::entity` <-> `EntityHandle`
+  losslessly, with the null mapping as an explicit special case (entt's
+  null zero-extends to a value that is not `kNullEntityHandle`).
+- `EnttTilePositionAdapter` is the default `PositionAdapter`: it reads
+  and writes the shared `TilePosition` component. Games with their own
+  position component pass their own adapter type to `EnttPathAgentSink`.
+- `EnttAgentEntry` (agent id + entity) and `EnttPathAgentContext` (tick
+  state, batch, sorted-entry scratch, and the monotonic `next_agent_id`
+  counter; `reserve` once) are the persistent per-agent-system state.
+- `EnttPathAgentSource` collects on-board agents (`PathState` +
+  `TilePosition` + `AgentId`, excluding `OffBoard`) in ascending AgentId
+  order -- entries are sorted first, then the batch is filled strictly in
+  sorted order so batch index i and entry i stay one agent. Collection
+  reconciles `PathGoal` into the lifecycle: a present goal differing from
+  the armed one arms it (reported as `pathing_dirty`); an absent goal
+  clears an armed lifecycle. An Unreachable agent with an UNCHANGED
+  `PathGoal` stays terminal because the lifecycle retains the failed
+  goal.
+- `EnttPathAgentSink` (templated on a `PositionAdapter`) mirrors batch
+  state back: `PathState` stored unconditionally, positions through the
+  adapter, and `PathGoal` consumed on arrival so the arrival-cleared
+  agent does not re-arm and oscillate; a goal retained after an
+  Unreachable failure sits inert until the game changes it.
+- Lifecycle intents are the only sanctioned mutation paths (raw
+  `registry.destroy` on an on-board agent leaks a permanently blocked
+  tile): `spawn_entt_path_agent` (claims field + index; refuses
+  unresolvable or occupied tiles by returning `entt::null`),
+  `spawn_entt_path_agent_off_board` (parked from birth),
+  `despawn_entt_path_agent` (releases the tile unless parked, then
+  destroys), `teleport_entt_path_agent` (occupancy-checked relocation;
+  lifecycle resets to Idle; the retained `PathGoal` re-arms from the new
+  position at the next collect -- teleporting onto the goal arrives at
+  the next processed tick), `park_entt_path_agent` /
+  `place_entt_path_agent` (the board-edge pair behind `OffBoard`), and
+  `set_entt_path_agent_goal` / `clear_entt_path_agent_goal` (component
+  writes reconciled by the next collect). Intents accept an optional
+  dirty mask mirroring `commit_movement_intent`.
+- `tick_entt_unit_path_agents` / `tick_entt_path_agents` (weighted class
+  and legacy tag-pair forms) are thin instantiations of the generic
+  `tick_ecs_*` pipeline with the concrete source/sink -- there is one
+  pipeline, not two. The context's `tick_state` owns the sim clock:
+  drive these from at most one place per frame.
+
 ## Invariants
 
 - Index/position sync: after any pipeline entry point returns,
