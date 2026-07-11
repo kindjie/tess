@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>

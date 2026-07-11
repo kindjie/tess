@@ -13,6 +13,30 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - EnTT adapter (M10, S8.4)
+
+- Added: `include/tess/ecs/entt/entt_adapter.h` (gated by the
+  consumer-side `TESS_ENABLE_ENTT` macro + an `ENTT_VERSION` `#error`
+  enforcing include-before): `EnttHandleAdapter` (null special-cased both
+  directions -- entt's null zero-extends to a non-null handle value),
+  `EnttTilePositionAdapter` (default PositionAdapter; games substitute
+  their own), `EnttPathAgentContext`, `EnttPathAgentSource` (AgentId-
+  sorted collection: entries sorted FIRST, batch filled in sorted order;
+  PathGoal reconciled into the lifecycle with Unreachable-stays-terminal
+  semantics), `EnttPathAgentSink` (idempotent mirror; PathGoal consumed
+  on arrival), lifecycle intents (spawn / off-board spawn / despawn /
+  teleport / park / place / set / clear goal -- the only sanctioned
+  mutation paths; teleport RETAINS PathGoal and re-arms from the new
+  position), and `tick_entt_*` drivers that are thin instantiations of
+  the generic `tick_ecs_*` pipeline (one pipeline, not two).
+- Reason: M10. Off-board (`OffBoard` park/place) exists because the
+  downstream consumer parks unplaceable agents after world edits;
+  section-8 sync invariants are scoped to on-board agents.
+- Affected docs: `architecture/ecs.md` (EnTT section), `surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: new `ecs/entt/entt_adapter.h`, `CMakeLists.txt`; new
+  `tests/tess_ecs_entt_test.cc`, `tests/CMakeLists.txt`.
+
 ## 2026-07-10 - EnTT dependency wiring (M10, S8.3)
 
 - Added: `cmake/TessEnttDeps.cmake` pinning EnTT `v3.16.0` at the
