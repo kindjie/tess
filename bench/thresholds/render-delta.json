@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "render_delta/collect_sparse_64": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 25000
+    },
+    "render_delta/collect_box_64": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 25000
+    },
+    "render_delta/entity_moves_1k_coalesced": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 250000
+    },
+    "render_delta/entity_moves_1k_per_step": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 400000
+    },
+    "render_delta/baseline_4096": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 140000
+    },
+    "render_delta/collect_alloc_gate": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 25000
+    }
+  }
+}
