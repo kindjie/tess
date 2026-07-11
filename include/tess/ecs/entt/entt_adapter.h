@@ -238,8 +238,8 @@ static_assert(PathAgentSink<EnttPathAgentSink<>>);
 template <typename World, typename OccupancyTag>
 [[nodiscard]] auto spawn_entt_path_agent(
     entt::registry& registry, EnttPathAgentContext& context, World& world,
-    TileOccupancyIndex& index, Coord3 position, std::uint32_t dirty_mask = 0)
-    -> entt::entity {
+    TileOccupancyIndex& index, Coord3 position, std::uint32_t dirty_mask = 0,
+    DeltaCollector* render_deltas = nullptr) -> entt::entity {
   if (!detail::ecs_tile_resolves(world, position) ||
       static_cast<bool>(world.template field<OccupancyTag>(position)) ||
       !index.entity_at(position).is_null()) {
@@ -257,6 +257,9 @@ template <typename World, typename OccupancyTag>
   TESS_ASSERT(inserted);
   static_cast<void>(inserted);
   detail::ecs_mark_tile_dirty(world, position, dirty_mask);
+  if (render_deltas != nullptr) {
+    render_deltas->record_spawn(EnttHandleAdapter::to_handle(entity), position);
+  }
   return entity;
 }
 
@@ -284,7 +287,8 @@ template <typename World, typename OccupancyTag>
 template <typename World, typename OccupancyTag>
 auto despawn_entt_path_agent(entt::registry& registry, World& world,
                              TileOccupancyIndex& index, entt::entity entity,
-                             std::uint32_t dirty_mask = 0) -> bool {
+                             std::uint32_t dirty_mask = 0,
+                             DeltaCollector* render_deltas = nullptr) -> bool {
   const auto* state = registry.try_get<PathState>(entity);
   if (state == nullptr) {
     return false;
@@ -296,6 +300,12 @@ auto despawn_entt_path_agent(entt::registry& registry, World& world,
     TESS_ASSERT(erased == EnttHandleAdapter::to_handle(entity));
     static_cast<void>(erased);
     detail::ecs_mark_tile_dirty(world, position, dirty_mask);
+    if (render_deltas != nullptr) {
+      // A parked despawn records nothing: parking already released the
+      // tile and recorded it.
+      render_deltas->record_despawn(EnttHandleAdapter::to_handle(entity),
+                                    position);
+    }
   }
   registry.destroy(entity);
   return true;
@@ -311,7 +321,8 @@ auto despawn_entt_path_agent(entt::registry& registry, World& world,
 template <typename World, typename OccupancyTag>
 auto teleport_entt_path_agent(entt::registry& registry, World& world,
                               TileOccupancyIndex& index, entt::entity entity,
-                              Coord3 to, std::uint32_t dirty_mask = 0) -> bool {
+                              Coord3 to, std::uint32_t dirty_mask = 0,
+                              DeltaCollector* render_deltas = nullptr) -> bool {
   auto* state = registry.try_get<PathState>(entity);
   if (state == nullptr || registry.all_of<OffBoard>(entity)) {
     return false;
@@ -331,6 +342,10 @@ auto teleport_entt_path_agent(entt::registry& registry, World& world,
   registry.get<TilePosition>(entity).coord = to;
   detail::ecs_mark_tile_dirty(world, from, dirty_mask);
   detail::ecs_mark_tile_dirty(world, to, dirty_mask);
+  if (render_deltas != nullptr) {
+    render_deltas->record_teleport(EnttHandleAdapter::to_handle(entity), from,
+                                   to);
+  }
   return true;
 }
 
@@ -342,7 +357,8 @@ auto teleport_entt_path_agent(entt::registry& registry, World& world,
 template <typename World, typename OccupancyTag>
 auto park_entt_path_agent(entt::registry& registry, World& world,
                           TileOccupancyIndex& index, entt::entity entity,
-                          std::uint32_t dirty_mask = 0) -> bool {
+                          std::uint32_t dirty_mask = 0,
+                          DeltaCollector* render_deltas = nullptr) -> bool {
   auto* state = registry.try_get<PathState>(entity);
   if (state == nullptr || registry.all_of<OffBoard>(entity)) {
     return false;
@@ -355,6 +371,9 @@ auto park_entt_path_agent(entt::registry& registry, World& world,
   clear_path_agent_goal(state->agent);
   registry.emplace<OffBoard>(entity);
   detail::ecs_mark_tile_dirty(world, position, dirty_mask);
+  if (render_deltas != nullptr) {
+    render_deltas->record_park(EnttHandleAdapter::to_handle(entity), position);
+  }
   return true;
 }
 
@@ -365,8 +384,8 @@ auto park_entt_path_agent(entt::registry& registry, World& world,
 template <typename World, typename OccupancyTag>
 auto place_entt_path_agent(entt::registry& registry, World& world,
                            TileOccupancyIndex& index, entt::entity entity,
-                           Coord3 position, std::uint32_t dirty_mask = 0)
-    -> bool {
+                           Coord3 position, std::uint32_t dirty_mask = 0,
+                           DeltaCollector* render_deltas = nullptr) -> bool {
   auto* state = registry.try_get<PathState>(entity);
   if (state == nullptr || !registry.all_of<OffBoard>(entity)) {
     return false;
@@ -387,6 +406,9 @@ auto place_entt_path_agent(entt::registry& registry, World& world,
   registry.get<TilePosition>(entity).coord = position;
   registry.remove<OffBoard>(entity);
   detail::ecs_mark_tile_dirty(world, position, dirty_mask);
+  if (render_deltas != nullptr) {
+    render_deltas->record_place(EnttHandleAdapter::to_handle(entity), position);
+  }
   return true;
 }
 
@@ -414,14 +436,14 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
     entt::registry& registry, EnttPathAgentContext& context, World& world,
     PathRequestRuntime& runtime, TileOccupancyIndex& index,
     PathAgentTickOptions options = {}, std::uint32_t movement_dirty_mask = 0,
-    const RegionGraphT<typename World::residency_type>* graph = nullptr)
-    -> PathAgentTickStats {
+    const RegionGraphT<typename World::residency_type>* graph = nullptr,
+    DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
   EnttPathAgentSource source(registry, context);
   EnttPathAgentSink<Position> sink(registry, context);
   return tick_ecs_unit_path_agents<World, ClassOrTag, OccupancyTag,
                                    ReservationTag>(
       context.tick_state, world, source, sink, context.batch, runtime, index,
-      options, movement_dirty_mask, graph);
+      options, movement_dirty_mask, graph, render_deltas);
 }
 
 // Weighted movement-class form.
@@ -432,14 +454,14 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     entt::registry& registry, EnttPathAgentContext& context, World& world,
     PathRequestRuntime& runtime, TileOccupancyIndex& index,
     PathAgentTickOptions options = {}, std::uint32_t movement_dirty_mask = 0,
-    const RegionGraphT<typename World::residency_type>* graph = nullptr)
-    -> PathAgentTickStats {
+    const RegionGraphT<typename World::residency_type>* graph = nullptr,
+    DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
   EnttPathAgentSource source(registry, context);
   EnttPathAgentSink<Position> sink(registry, context);
   return tick_ecs_path_agents<World, Class, MaxCost, OccupancyTag,
                               ReservationTag>(
       context.tick_state, world, source, sink, context.batch, runtime, index,
-      options, movement_dirty_mask, graph);
+      options, movement_dirty_mask, graph, render_deltas);
 }
 
 // Legacy passable/cost tag-pair form.
@@ -450,14 +472,14 @@ template <typename World, typename PassableTag, typename CostTag,
     entt::registry& registry, EnttPathAgentContext& context, World& world,
     PathRequestRuntime& runtime, TileOccupancyIndex& index,
     PathAgentTickOptions options = {}, std::uint32_t movement_dirty_mask = 0,
-    const RegionGraphT<typename World::residency_type>* graph = nullptr)
-    -> PathAgentTickStats {
+    const RegionGraphT<typename World::residency_type>* graph = nullptr,
+    DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
   EnttPathAgentSource source(registry, context);
   EnttPathAgentSink<Position> sink(registry, context);
   return tick_ecs_path_agents<World, PassableTag, CostTag, MaxCost,
                               OccupancyTag, ReservationTag>(
       context.tick_state, world, source, sink, context.batch, runtime, index,
-      options, movement_dirty_mask, graph);
+      options, movement_dirty_mask, graph, render_deltas);
 }
 
 }  // namespace tess
