@@ -3,35 +3,35 @@
   "benchmarks": {
     "key/chunk_coord_2d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 5
+      "max_cpu_time_ns": 10
     },
     "key/local_coord_2d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 5
+      "max_cpu_time_ns": 10
     },
     "key/local_tile_id_2d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2
+      "max_cpu_time_ns": 10
     },
     "key/tile_key_2d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 8
+      "max_cpu_time_ns": 10
     },
     "key/coord_from_tile_key_2d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 4
+      "max_cpu_time_ns": 10
     },
     "key/tile_key_3d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 8
+      "max_cpu_time_ns": 10
     },
     "key/coord_from_tile_key_3d_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 4
+      "max_cpu_time_ns": 10
     },
     "key/tile_key_single_chunk_u64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 6
+      "max_cpu_time_ns": 10
     },
     "key/tile_key_huge_u128": {
       "max_real_time_ns": null,
@@ -39,7 +39,7 @@
     },
     "key/coord_from_tile_key_huge_u128": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 5
+      "max_cpu_time_ns": 10
     }
   }
 }

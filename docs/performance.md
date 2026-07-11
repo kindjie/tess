@@ -8,7 +8,11 @@ repetitions each, so 60-100 samples per benchmark; per-benchmark CVs
 mostly 6-15%): every gate is now twice the maximum observed across all
 samples, tightened from the previous single-artifact 3x policy per the
 10-artifact rule. The 2x headroom (rather than the summary tool's 1.5x
-default) absorbs the heterogeneous-CPU spread of the shared-runner pool.
+default) absorbs the heterogeneous-CPU spread of the shared-runner pool,
+and nanosecond-scale gates carry an additional absolute floor of 10 ns:
+below that, 2x-of-observed assumes the artifact window sampled the
+slowest runner SKU, and a merely-slower machine would fail a correct
+benchmark.
 The scheduler, ecs, render-delta, and fields families keep their
 bootstrap ceilings: their baselines were not collected by the
 `tess_bench_ci_baselines` target until S11.3 wired them in, so they are

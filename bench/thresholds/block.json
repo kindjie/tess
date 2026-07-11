@@ -15,7 +15,7 @@
     },
     "block/scratch_allocate_u32": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2
+      "max_cpu_time_ns": 10
     },
     "block/context_scratch_tile_iteration_2d": {
       "max_real_time_ns": null,
