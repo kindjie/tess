@@ -1,25 +1,19 @@
 # Benchmark Trends
 
-Stale snapshot: data from CI run 26980713740 at commit 90ce419, collected 2026-06-04 14:33 PDT.
-Scratch-specific block benchmarks were added after this snapshot and will not
-appear until the next intentional CI-baseline refresh. Queued execution and
-MVP path benchmarks were also added after this snapshot. Since then the
-benchmark harness was reworked (2026-07-06): several benchmarks were fixed to
-measure the named operation, batch counters were renamed, the field-product
-cache benchmarks gained `/iterations:N/manual_time` names gated on real time,
-and `bench/thresholds/*.json` ceilings changed accordingly. The snapshot below
-predates all of that and must not be used for calibration.
+Stale snapshot: data from CI run 29167134881 at commit d8cc9a1, collected 2026-07-11 13:57 PDT.
 
-Thresholds were recalibrated 2026-07-07 from the first reworked-harness CI
-baseline artifact (run 28888943908, 10 repetitions per benchmark, CVs
-under 2%): every gate now carries a ceiling of roughly three times the
-observed CI maximum, replacing the 1 ms investigation scaffolds.
-
-TODO(regenerate-snapshot): after CI has collected at least 5 baseline
-artifacts from the reworked harness, regenerate the SVG and this table
-from those artifacts per the regeneration policy below (1 of 5 collected
-as of 2026-07-07). Revisit ceilings with the 10-artifact rule before any
-further tightening.
+Thresholds were recalibrated 2026-07-11 (S11.3) from ten reworked-harness
+main-run baseline artifacts (runs 29056942917 through 29167134881, 10
+repetitions each, so 60-100 samples per benchmark; per-benchmark CVs
+mostly 6-15%): every gate is now twice the maximum observed across all
+samples, tightened from the previous single-artifact 3x policy per the
+10-artifact rule. The 2x headroom (rather than the summary tool's 1.5x
+default) absorbs the heterogeneous-CPU spread of the shared-runner pool.
+The scheduler, ecs, render-delta, and fields families keep their
+bootstrap ceilings: their baselines were not collected by the
+`tess_bench_ci_baselines` target until S11.3 wired them in, so they are
+recalibrated only once enough artifacts carrying them accumulate
+(10-artifact rule; wired 2026-07-11).
 
 The SVG snapshot in `docs/assets/benchmark-trends.svg` is a labeled
 summary, not the source of truth. Use CI benchmark baseline artifacts
@@ -78,8 +72,8 @@ The final commit remains manual by design:
 
 | Benchmark | Latest median CPU ns |
 | --- | ---: |
-| `block/context_iteration_2d` | 436.332 |
-| `block/chunk_tile_iteration_2d` | 1710.011 |
-| `block/chunk_boundary_scan_2d` | 12332.274 |
-| `storage/world_chunks_iteration` | 93.393 |
-| `storage/world_dirty_chunks_iteration` | 285.844 |
+| `block/context_iteration_2d` | 332.931 |
+| `block/chunk_tile_iteration_2d` | 1323.926 |
+| `block/chunk_boundary_scan_2d` | 9528.104 |
+| `storage/world_chunks_iteration` | 72.522 |
+| `storage/world_dirty_chunks_iteration` | 165.229 |
