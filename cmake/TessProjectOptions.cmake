@@ -79,6 +79,11 @@ function(tess_target_cppcheck_options target)
         # release). Tests compile under clang on six other gating presets,
         # so suppress for tests/ as a whole; product headers stay checked.
         "--suppress=syntaxError:${PROJECT_SOURCE_DIR}/tests/*"
+        # cppcheck probes preprocessor configurations beyond the one the
+        # build uses, including TESS_ENABLE_ENTT without EnTT's headers;
+        # the adapter's include-order #error is the intended behavior of
+        # that configuration, not a defect.
+        "--suppress=preprocessorErrorDirective:${PROJECT_SOURCE_DIR}/include/tess/ecs/entt/entt_adapter.h"
         "--suppress=missingIncludeSystem"
         "--std=c++20"
   )

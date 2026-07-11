@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <vector>
 
 #include "allocation_counter.h"
 
@@ -325,6 +326,107 @@ TEST(TessPathAgent, StructuralMovementFailureIsTerminalUntilNewGoal) {
   tess::set_path_agent_goal(agents[0], tess::Coord3{6, 5, 0});
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::NeedsPath);
   EXPECT_EQ(agents[0].blocked_retries, 0u);
+}
+
+TEST(TessPathAgent, OnCommitHookFiresOncePerSuccessfulCommit) {
+  MovementWorld world;
+  fill_movement_world(world);
+  world.template field<OccupancyTag>(tess::Coord3{0, 0, 0}) = true;
+  world.template field<OccupancyTag>(tess::Coord3{0, 1, 0}) = true;
+
+  std::array<tess::PathAgentState, 2> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+      {.position = tess::Coord3{0, 1, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{2, 0, 0});
+  tess::set_path_agent_goal(agents[1], tess::Coord3{2, 1, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  (void)tess::process_unit_path_agents<MovementWorld, PassableTag>(
+      world, agents, runtime);
+  ASSERT_EQ(agents[0].status, tess::PathStatus::Found);
+  ASSERT_EQ(agents[1].status, tess::PathStatus::Found);
+
+  struct Commit {
+    std::size_t agent_index;
+    tess::Coord3 from;
+    tess::Coord3 to;
+  };
+  std::vector<Commit> commits;
+  const auto stats = tess::advance_path_agents_with_movement<
+      MovementWorld, PassableTag, OccupancyTag, ReservationTag>(
+      world, agents, runtime, 8, 0,
+      [&commits](std::size_t agent_index, tess::Coord3 from, tess::Coord3 to) {
+        commits.push_back(Commit{agent_index, from, to});
+      });
+
+  // One invocation per committed step; the arrival step is itself a commit.
+  EXPECT_EQ(stats.advanced, 4u);
+  EXPECT_EQ(stats.arrived, 2u);
+  ASSERT_EQ(commits.size(), 4u);
+  EXPECT_EQ(commits[0].agent_index, 0u);
+  EXPECT_EQ(commits[0].from, (tess::Coord3{0, 0, 0}));
+  EXPECT_EQ(commits[0].to, (tess::Coord3{1, 0, 0}));
+  EXPECT_EQ(commits[1].agent_index, 0u);
+  EXPECT_EQ(commits[1].from, (tess::Coord3{1, 0, 0}));
+  EXPECT_EQ(commits[1].to, (tess::Coord3{2, 0, 0}));
+  EXPECT_EQ(commits[2].agent_index, 1u);
+  EXPECT_EQ(commits[2].from, (tess::Coord3{0, 1, 0}));
+  EXPECT_EQ(commits[2].to, (tess::Coord3{1, 1, 0}));
+  EXPECT_EQ(commits[3].agent_index, 1u);
+  EXPECT_EQ(commits[3].from, (tess::Coord3{1, 1, 0}));
+  EXPECT_EQ(commits[3].to, (tess::Coord3{2, 1, 0}));
+
+  // The hook observed exactly the occupancy handoffs the world performed.
+  EXPECT_FALSE(world.template field<OccupancyTag>(tess::Coord3{0, 0, 0}));
+  EXPECT_FALSE(world.template field<OccupancyTag>(tess::Coord3{0, 1, 0}));
+  EXPECT_TRUE(world.template field<OccupancyTag>(tess::Coord3{2, 0, 0}));
+  EXPECT_TRUE(world.template field<OccupancyTag>(tess::Coord3{2, 1, 0}));
+}
+
+TEST(TessPathAgent, OnCommitHookSkipsFailedCommits) {
+  MovementWorld world;
+  fill_movement_world(world);
+  world.template field<OccupancyTag>(tess::Coord3{0, 0, 0}) = true;
+  world.template field<OccupancyTag>(tess::Coord3{1, 0, 0}) = true;
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{3, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  (void)tess::process_unit_path_agents<MovementWorld, PassableTag>(
+      world, agents, runtime);
+  ASSERT_EQ(agents[0].status, tess::PathStatus::Found);
+
+  std::size_t commit_count = 0;
+  const auto count_commit = [&commit_count](std::size_t, tess::Coord3,
+                                            tess::Coord3) { ++commit_count; };
+
+  // Transient failure (destination occupied): nothing was written to the
+  // world, so the hook must not fire.
+  auto stats =
+      tess::advance_path_agents_with_movement<MovementWorld, PassableTag,
+                                              OccupancyTag, ReservationTag>(
+          world, agents, runtime, 1, 0, count_commit);
+  EXPECT_EQ(stats.blocked_waits, 1u);
+  EXPECT_EQ(commit_count, 0u);
+
+  // Structural failure (teleported off the route, non-adjacent step): the
+  // commit is rejected before any write, so the hook stays silent.
+  (void)tess::process_unit_path_agents<MovementWorld, PassableTag>(
+      world, agents, runtime);
+  ASSERT_EQ(agents[0].status, tess::PathStatus::Found);
+  agents[0].position = tess::Coord3{5, 5, 0};
+  stats = tess::advance_path_agents_with_movement<MovementWorld, PassableTag,
+                                                  OccupancyTag, ReservationTag>(
+      world, agents, runtime, 1, 0, count_commit);
+  EXPECT_EQ(stats.movement_failures.invalid, 1u);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Unreachable);
+  EXPECT_EQ(commit_count, 0u);
 }
 
 TEST(TessPathAgent, UnitAgentsProcessAdvanceAndArrive) {

@@ -40,6 +40,21 @@ target_compile_definitions(
 )
 tess_apply_project_options(tess_bench_diagnostics)
 
+if(TESS_ENABLE_ENTT)
+  include(TessEnttDeps)
+  tess_require_entt()
+
+  # The ecs family joins both bench binaries only when EnTT is enabled;
+  # the header gate stays a per-target macro on EnTT-linked targets.
+  target_sources(tess_bench PRIVATE tess_ecs_bench.cc)
+  target_link_libraries(tess_bench PRIVATE EnTT::EnTT)
+  target_compile_definitions(tess_bench PRIVATE TESS_ENABLE_ENTT)
+
+  target_sources(tess_bench_diagnostics PRIVATE tess_ecs_bench.cc)
+  target_link_libraries(tess_bench_diagnostics PRIVATE EnTT::EnTT)
+  target_compile_definitions(tess_bench_diagnostics PRIVATE TESS_ENABLE_ENTT)
+endif()
+
 set(
   TESS_KEY_BENCHMARK_THRESHOLDS
   "${PROJECT_SOURCE_DIR}/bench/thresholds/key-conversions.json"
@@ -80,6 +95,12 @@ set(
   TESS_SCHEDULER_BENCHMARK_THRESHOLDS
   "${PROJECT_SOURCE_DIR}/bench/thresholds/scheduler.json"
   CACHE FILEPATH "Thresholds for scheduler benchmark regressions"
+)
+
+set(
+  TESS_ECS_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/ecs.json"
+  CACHE FILEPATH "Thresholds for ecs benchmark regressions"
 )
 
 set(
@@ -213,6 +234,30 @@ if(Python3_Interpreter_FOUND)
     COMMENT "Running scheduler benchmark threshold checks"
     VERBATIM
   )
+
+  if(TESS_ENABLE_ENTT)
+    # The ecs family runs through the diagnostics binary so the
+    # allocation-gate case (ecs/tick_entt_alloc_gate, which aborts unless
+    # the steady-state tick reports zero allocations) executes in CI; the
+    # steady-state ticks it times touch no diagnostics events, so the
+    # ceilings are representative of the plain binary too.
+    add_custom_target(
+      tess_bench_ecs_thresholds
+      COMMAND
+        tess_bench_diagnostics
+        --benchmark_filter=ecs/.*
+        --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ecs.json
+        --benchmark_out_format=json
+      COMMAND
+        "${Python3_EXECUTABLE}"
+        "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+        --results ${CMAKE_CURRENT_BINARY_DIR}/ecs.json
+        --thresholds ${TESS_ECS_BENCHMARK_THRESHOLDS}
+      DEPENDS tess_bench_diagnostics
+      COMMENT "Running ecs benchmark threshold checks"
+      VERBATIM
+    )
+  endif()
 
   add_custom_target(
     tess_bench_diagnostics_thresholds

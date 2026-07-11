@@ -233,6 +233,40 @@ tess_apply_project_options(tess_path_agent_tick_test)
 
 gtest_discover_tests(tess_path_agent_tick_test)
 
+add_executable(
+  tess_ecs_adapter_test
+  allocation_counter.cc
+  tess_ecs_adapter_test.cc
+)
+target_link_libraries(
+  tess_ecs_adapter_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_ecs_adapter_test)
+
+gtest_discover_tests(tess_ecs_adapter_test)
+
+if(TESS_ENABLE_ENTT)
+  include(TessEnttDeps)
+  tess_require_entt()
+
+  add_executable(
+    tess_ecs_entt_test
+    allocation_counter.cc
+    tess_ecs_entt_test.cc
+  )
+  target_link_libraries(
+    tess_ecs_entt_test
+    PRIVATE tess::tess EnTT::EnTT GTest::gtest_main
+  )
+  # The header gate is a per-target macro by design (never a global
+  # definition): only EnTT-linked targets may compile the adapter body.
+  target_compile_definitions(tess_ecs_entt_test PRIVATE TESS_ENABLE_ENTT)
+  tess_apply_project_options(tess_ecs_entt_test)
+
+  gtest_discover_tests(tess_ecs_entt_test)
+endif()
+
 add_executable(tess_sim_auto_exec_test tess_sim_auto_exec_test.cc)
 target_link_libraries(
   tess_sim_auto_exec_test PRIVATE tess::tess GTest::gtest_main)
