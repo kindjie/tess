@@ -39,6 +39,38 @@ validates the header against a minimal stub (`tests/imgui_stub/imgui.h`,
 `tess_diagnostics_panels_test`) rather than the real library, so tess builds add
 no ImGui dependency.
 
+## EnTT
+
+- Version: `v3.16.0` (SHA-pinned in `cmake/TessEnttDeps.cmake` to
+  `b4e58bdd364ad72246c123a0c28538eab3252672`; latest upstream tag as of
+  2026-07-10)
+- Documentation: https://github.com/skypjack/entt (README, wiki) and
+  https://skypjack.github.io/entt/
+- Repository and releases: https://github.com/skypjack/entt
+
+Optional integration dependency for the EnTT adapter in
+`include/tess/ecs/entt/entt_adapter.h`. tess core never fetches, links, or
+requires EnTT; two independent gates exist and both matter:
+
+- `TESS_ENABLE_ENTT` as a **preprocessor macro** is the consumer-side header
+  gate (the ImGui precedent): the adapter header compiles to nothing without
+  it, and the consumer supplies EnTT and includes
+  `<entt/entity/registry.hpp>` before the header (an `#error` on the
+  `ENTT_VERSION` macro enforces the order). The macro must be defined
+  per-target (`target_compile_definitions(... PRIVATE TESS_ENABLE_ENTT)`),
+  never globally.
+- `TESS_ENABLE_ENTT` as a **CMake option** (default `OFF`, `ON` in the
+  `dev`, `release`, `bench`, and `windows-msvc` presets) gates only tess's
+  own EnTT-dependent test, example, and benchmark targets, which acquire
+  real EnTT through `tess_require_entt()` (`find_package` first, then
+  `FetchContent` at the pinned SHA, `SYSTEM`/`EXCLUDE_FROM_ALL`). The
+  default stays `OFF` so network-free consumer builds never fetch.
+
+EnTT requires C++17; tess builds it under `cxx_std_20`. The pinned SHA is
+the downstream consumer's known-good, MSVC-exercised pin -- upgrade the two
+repositories in lockstep only. The dependency-free concepts layer
+(`include/tess/ecs/adapter.h`) is always built and tested without EnTT.
+
 ## GitHub Actions
 
 - Checkout action version: `actions/checkout@v6`

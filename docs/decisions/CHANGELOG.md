@@ -13,6 +13,25 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-10 - EnTT dependency wiring (M10, S8.3)
+
+- Added: `cmake/TessEnttDeps.cmake` pinning EnTT `v3.16.0` at the
+  downstream consumer's known-good, MSVC-exercised SHA (also the latest
+  upstream tag as of 2026-07-10); `tess_require_entt()` prefers an
+  existing `EnTT::EnTT` target or `find_package`, then FetchContent
+  (`SYSTEM`, `EXCLUDE_FROM_ALL`). New CMake option `TESS_ENABLE_ENTT`
+  (default OFF so network-free builds never fetch; ON in the dev,
+  release, bench, bench-profile, and windows-msvc presets) gates only
+  tess's own EnTT-dependent test/example/bench targets -- the adapter
+  header itself stays gated by the same-named consumer-side preprocessor
+  macro, the ImGui precedent.
+- Reason: M10 build policy -- core stays free of third-party CMake
+  surface; the pin pairs with the consumer's and upgrades in lockstep
+  only.
+- Affected docs: `docs/dependencies.md` (new EnTT section).
+- Affected code: new `cmake/TessEnttDeps.cmake`, `CMakeLists.txt`,
+  `CMakePresets.json`.
+
 ## 2026-07-10 - ECS-agnostic adapter layer (M10, S8.2)
 
 - Added: `include/tess/ecs/adapter.h`, the dependency-free ECS layer:
