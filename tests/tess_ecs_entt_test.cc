@@ -440,6 +440,88 @@ TEST(TessEcsEntt, ParkAndPlaceMoveAgentsAcrossTheBoardEdge) {
   sim.expect_synced();
 }
 
+TEST(TessEcsEntt, LifecycleIntentsRecordDeltasOnlyOnSuccess) {
+  Sim sim;
+  tess::DeltaCollector collector;
+  collector.reserve(8, 32, 16);
+
+  // Spawn records; a refused spawn (occupied tile) records nothing.
+  const auto agent = tess::spawn_entt_path_agent<World, OccupancyTag>(
+      sim.registry, sim.context, sim.world, sim.index, tess::Coord3{2, 2, 0}, 0,
+      &collector);
+  ASSERT_NE(agent, static_cast<entt::entity>(entt::null));
+  const auto refused = tess::spawn_entt_path_agent<World, OccupancyTag>(
+      sim.registry, sim.context, sim.world, sim.index, tess::Coord3{2, 2, 0}, 0,
+      &collector);
+  EXPECT_EQ(refused, static_cast<entt::entity>(entt::null));
+
+  // Teleport records; a refused teleport (occupied destination) does not.
+  ASSERT_TRUE((tess::teleport_entt_path_agent<World, OccupancyTag>(
+      sim.registry, sim.world, sim.index, agent, tess::Coord3{4, 4, 0}, 0,
+      &collector)));
+  const auto blocker = sim.spawn(tess::Coord3{5, 5, 0});
+  EXPECT_FALSE((tess::teleport_entt_path_agent<World, OccupancyTag>(
+      sim.registry, sim.world, sim.index, agent, tess::Coord3{5, 5, 0}, 0,
+      &collector)));
+
+  // Park, place, and despawn record their kinds; a parked despawn
+  // records nothing (the park already released the tile).
+  ASSERT_TRUE((tess::park_entt_path_agent<World, OccupancyTag>(
+      sim.registry, sim.world, sim.index, agent, 0, &collector)));
+  ASSERT_TRUE((tess::place_entt_path_agent<World, OccupancyTag>(
+      sim.registry, sim.world, sim.index, agent, tess::Coord3{6, 6, 0}, 0,
+      &collector)));
+  ASSERT_TRUE((tess::park_entt_path_agent<World, OccupancyTag>(
+      sim.registry, sim.world, sim.index, agent, 0, &collector)));
+  ASSERT_TRUE((tess::despawn_entt_path_agent<World, OccupancyTag>(
+      sim.registry, sim.world, sim.index, agent, 0, &collector)));
+  static_cast<void>(blocker);
+
+  const auto frame = collector.publish();
+  ASSERT_EQ(frame.entities.size(), 5u);
+  const auto handle = frame.entities[0].entity;
+  EXPECT_EQ(frame.entities[0].kind, tess::EntityDeltaKind::Spawned);
+  EXPECT_EQ(frame.entities[0].to, (tess::Coord3{2, 2, 0}));
+  EXPECT_EQ(frame.entities[1].kind, tess::EntityDeltaKind::Teleported);
+  EXPECT_EQ(frame.entities[1].from, (tess::Coord3{2, 2, 0}));
+  EXPECT_EQ(frame.entities[1].to, (tess::Coord3{4, 4, 0}));
+  EXPECT_EQ(frame.entities[2].kind, tess::EntityDeltaKind::Parked);
+  EXPECT_EQ(frame.entities[2].to, (tess::Coord3{4, 4, 0}));
+  EXPECT_EQ(frame.entities[3].kind, tess::EntityDeltaKind::Placed);
+  EXPECT_EQ(frame.entities[3].to, (tess::Coord3{6, 6, 0}));
+  EXPECT_EQ(frame.entities[4].kind, tess::EntityDeltaKind::Parked);
+  for (const auto& record : frame.entities) {
+    EXPECT_EQ(record.entity, handle);
+  }
+}
+
+TEST(TessEcsEntt, TickDriverFeedsMovesThroughTheCollector) {
+  Sim sim;
+  tess::DeltaCollector collector;
+  collector.reserve(8, 32, 16);
+  const auto agent = sim.spawn(tess::Coord3{0, 0, 0});
+  tess::set_entt_path_agent_goal(sim.registry, agent, tess::Coord3{4, 0, 0});
+
+  for (int tick = 0; tick < 4; ++tick) {
+    tess::PathAgentTickOptions options;
+    (void)tess::tick_entt_unit_path_agents<World, PassableTag, OccupancyTag,
+                                           ReservationTag>(
+        sim.registry, sim.context, sim.world, sim.runtime, sim.index, options,
+        0, nullptr, &collector);
+  }
+
+  // Default coalescing folds the walk into one Moved record spanning
+  // start to goal, stamped with the arrival tick.
+  const auto frame = collector.publish();
+  ASSERT_EQ(frame.entities.size(), 1u);
+  EXPECT_EQ(frame.entities[0].kind, tess::EntityDeltaKind::Moved);
+  EXPECT_EQ(frame.entities[0].from, (tess::Coord3{0, 0, 0}));
+  EXPECT_EQ(frame.entities[0].to, (tess::Coord3{4, 0, 0}));
+  EXPECT_EQ(frame.entities[0].last_tick, 4u);
+  EXPECT_EQ(frame.header.ticks, 4u);
+  EXPECT_EQ(collector.stats().moves_coalesced, 3u);
+}
+
 TEST(TessEcsEntt, SteadyStateTickIsAllocationFree) {
   Sim sim;
   const auto a = sim.spawn(tess::Coord3{0, 0, 0});
