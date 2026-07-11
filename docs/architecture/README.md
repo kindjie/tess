@@ -3,9 +3,15 @@
 This directory contains maintained architecture documentation for the current
 implementation.
 
-The codebase has an implemented synchronous MVP foundation, with larger async,
-residency, ECS, GPU, and topology-aware routing work still deferred. The
-historical TDD archive provides broader design intent:
+The initial pre-stable surface is complete (see
+[the milestone plan](../planning/v1-milestone-plan.md)): sparse residency,
+queued operations with result channels, the schedule with cadences and the
+selectable parallel phase executor, movement classes with per-class topology
+and transition providers, A* with the region-graph precheck, distance-field
+products and caches, the ECS adapter (EnTT-gated), the versioned DeltaFrame
+render bridge, compile-gated diagnostics, and the GPU backend interface
+(interface only in the initial milestone). The historical TDD archive preserves the original
+design intent behind each area:
 
 - [Project design](../tdd/project-design.md)
 - [Shape, coordinate, and key system](../tdd/core-shape-coordinate-key-system.md)

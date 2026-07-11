@@ -1,5 +1,12 @@
 # TDD: v1 Milestone / Implementation Plan
 
+> **Status: COMPLETE (2026-07-11).** Every milestone M0-M15 shipped; the
+> cross-cutting acceptance criteria in section 8 are pinned by named
+> tests, and the required deliverables in section 7 are all present.
+> `docs/decisions/CHANGELOG.md` records the per-stage design deltas from
+> this plan, and `docs/architecture/` documents what was actually built.
+> This document is preserved as the planning record, not maintained.
+
 ## 1. Summary
 
 This document defines the v1 implementation plan.
