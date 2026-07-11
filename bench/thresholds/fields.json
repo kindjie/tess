@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "fields/goalset_build_1": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 850000
+    },
+    "fields/goalset_build_16": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "fields/goalset_build_256": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1100000
+    },
+    "fields/nearest_target": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 700
+    },
+    "fields/cache_hit": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 300
+    },
+    "fields/cache_miss_store": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 300
+    },
+    "fields/cache_eviction": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    },
+    "fields/build_alloc_gate": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 1000000
+    }
+  }
+}

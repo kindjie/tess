@@ -7,6 +7,7 @@ tess_require_google_benchmark()
 add_executable(
   tess_bench
   tess_bench.cc
+  tess_fields_bench.cc
   tess_parallel_bench.cc
   tess_path_agent_bench.cc
   tess_path_product_bench.cc
@@ -22,6 +23,7 @@ tess_apply_project_options(tess_bench)
 add_executable(
   tess_bench_diagnostics
   tess_bench.cc
+  tess_fields_bench.cc
   tess_parallel_bench.cc
   tess_path_agent_bench.cc
   tess_path_product_bench.cc
@@ -103,6 +105,12 @@ set(
   TESS_ECS_BENCHMARK_THRESHOLDS
   "${PROJECT_SOURCE_DIR}/bench/thresholds/ecs.json"
   CACHE FILEPATH "Thresholds for ecs benchmark regressions"
+)
+
+set(
+  TESS_FIELDS_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/fields.json"
+  CACHE FILEPATH "Thresholds for fields benchmark regressions"
 )
 
 set(
@@ -266,6 +274,23 @@ if(Python3_Interpreter_FOUND)
       VERBATIM
     )
   endif()
+
+  add_custom_target(
+    tess_bench_fields_thresholds
+    COMMAND
+      tess_bench_diagnostics
+      --benchmark_filter=fields/.*
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/fields.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/fields.json
+      --thresholds ${TESS_FIELDS_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench_diagnostics
+    COMMENT "Running fields benchmark threshold checks"
+    VERBATIM
+  )
 
   # Like the ecs family: run through the diagnostics binary so the
   # allocation gate executes in CI.
