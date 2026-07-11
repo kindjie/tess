@@ -107,9 +107,20 @@ frame through the lost-update-safe observe/clear-observed protocol.
 - `DeltaFrame` is an immutable view into collector-owned storage, valid
   until the next mutating collector call; `empty()` ignores overlays.
 - `delta_frame_applicable(header, consumer)` is the consumer's apply
-  gate: baselines always apply (adopt `to_version`, re-snapshot entity
-  presentation), truncated non-baseline frames never apply, and
-  otherwise the chain must match exactly with `consumer.value != 0`.
+  gate: truncated frames never apply -- not even baselines, because a
+  baseline that overflowed chunk storage covers only part of the world
+  (size baseline consumers' chunk capacity to the whole world);
+  un-truncated baselines always apply (adopt `to_version`, re-snapshot
+  entity presentation); otherwise the chain must match exactly with
+  `consumer.value != 0`.
+- `PathOverlayDelta` is one agent's remaining route this frame
+  (`frame.overlay_nodes[first_node .. first_node + node_count)`).
+  Overlays are stateless, full-replacement decorations: every applied
+  frame replaces the consumer's whole overlay set (possibly with the
+  empty set), no create/update/remove lifecycle exists, they never
+  affect version semantics or `empty()`, and overflowing overlay storage
+  drops the overlay (counted in `overlay_truncations`), never the frame.
+  Nodes are copies, valid for the frame's lifetime.
 - `DeltaCollectorOptions` sets the per-chunk `sparse_tile_threshold`
   (records per-tile up to it, box-granular above; 0 = always box) and
   `coalesce_moves` (fold consecutive moves last-writer-wins; disable for
@@ -132,6 +143,21 @@ frame through the lost-update-safe observe/clear-observed protocol.
   `clear()` followed by a full baseline collection. The collector must
   be the sole clearing owner of every dirty bit it collects; shared
   `dirty_bounds` across flag owners only widens boxes (conservative).
+- `collect_baseline(collector, world, dirty_mask)` is the full-scope
+  resync: one box record covering every chunk (dense) or resident chunk
+  (sparse), pending Dirty records dropped as superseded, the mask's
+  dirty bits plainly cleared, and the pending frame marked baseline
+  (which also drops pending entity records at publish). Scoped baselines
+  deliberately do not exist -- a partial baseline that adopts the frame
+  version would permanently lose out-of-scope invalidations from a gap.
+- `collect_path_overlays(collector, runtime, agents, handles[,
+  selection])` stages the remaining route (`path.suffix(path_index)`) of
+  every Following agent, gated on `has_goal && status == Found` before
+  touching a ticket (which provably avoids the runtime's stale-ticket
+  assert and the value-zero cleared-ticket alias). Ordering contract:
+  lifecycle intents run before the tick, overlays collect after it; an
+  intent squeezed between tick and collection leaves that agent's
+  overlay one frame stale while entity deltas stay correct.
 - `collect_tile_deltas(collector, world, dirty_mask)` observes, records,
   and clears (observed-generation-safe: a racing mark leaves the bits
   set for a harmless duplicate next frame) every dirty chunk under the

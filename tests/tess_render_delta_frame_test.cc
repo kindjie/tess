@@ -108,12 +108,13 @@ TEST(TessDeltaFrame, ApplicabilityTruthTable) {
   EXPECT_TRUE(tess::delta_frame_applicable(baseline, tess::RenderVersion{0}));
   EXPECT_TRUE(tess::delta_frame_applicable(baseline, tess::RenderVersion{99}));
 
-  // Truncation is a structural gap unless the frame is a baseline.
+  // Truncation is a structural gap -- even for baselines: a baseline
+  // that overflowed chunk storage covers only part of the world.
   auto truncated = header;
   truncated.truncated = true;
   EXPECT_FALSE(tess::delta_frame_applicable(truncated, tess::RenderVersion{3}));
   truncated.baseline = true;
-  EXPECT_TRUE(tess::delta_frame_applicable(truncated, tess::RenderVersion{3}));
+  EXPECT_FALSE(tess::delta_frame_applicable(truncated, tess::RenderVersion{3}));
 }
 
 TEST(TessDeltaFrame, SmallDirtyBoxesEmitPerTileRecordsMatchingLegacy) {
@@ -350,6 +351,100 @@ TEST(TessDeltaFrame, BaselinePublishDropsPendingEntityRecords) {
   const auto frame = collector.publish();
   EXPECT_TRUE(frame.header.baseline);
   EXPECT_TRUE(frame.entities.empty());
+}
+
+TEST(TessDeltaFrame, FullBaselineCoversEveryChunkAndHealsTheStream) {
+  World world;
+  tess::DeltaCollector collector;
+  collector.reserve(World::chunk_count, 256, 8);
+
+  // Pending dirty records are superseded by the baseline; the dirty
+  // bits under the mask are consumed.
+  mark_box(world, tess::Coord3{3, 3, 0}, tess::Extent3{2, 2, 1}, kTerrainBit);
+  tess::collect_tile_deltas(collector, world, kTerrainBit);
+  mark_box(world, tess::Coord3{20, 20, 0}, tess::Extent3{1, 1, 1}, kTerrainBit);
+  tess::collect_baseline(collector, world, kTerrainBit);
+
+  const auto frame = collector.publish();
+  EXPECT_TRUE(frame.header.baseline);
+  EXPECT_FALSE(frame.header.truncated);
+  ASSERT_EQ(frame.chunks.size(), World::chunk_count);
+  for (const auto& chunk : frame.chunks) {
+    EXPECT_EQ(chunk.tile_count, 0u);
+    EXPECT_EQ(chunk.dirty_flags, kTerrainBit);
+    EXPECT_EQ(chunk.bounds.extent.x, 8u);
+    EXPECT_EQ(chunk.bounds.extent.y, 8u);
+  }
+  // A fresh consumer can adopt it.
+  EXPECT_TRUE(
+      tess::delta_frame_applicable(frame.header, tess::RenderVersion{0}));
+
+  // Everything under the mask was consumed.
+  tess::collect_tile_deltas(collector, world, kTerrainBit);
+  EXPECT_TRUE(collector.publish().empty());
+}
+
+TEST(TessDeltaFrame, OverflowingBaselineIsTruncatedAndNeverApplicable) {
+  World world;
+  tess::DeltaCollector collector;
+  collector.reserve(4, 16, 4);  // world has 16 chunks; only 4 fit
+
+  tess::collect_baseline(collector, world, kTerrainBit);
+  const auto frame = collector.publish();
+  EXPECT_TRUE(frame.header.baseline);
+  EXPECT_TRUE(frame.header.truncated);
+  EXPECT_FALSE(
+      tess::delta_frame_applicable(frame.header, tess::RenderVersion{0}));
+}
+
+TEST(TessDeltaFrame, OverlaysStageCopiesAndReplaceEveryFrame) {
+  tess::DeltaCollector collector;
+  collector.reserve(4, 16, 4, 4, 32);
+
+  std::vector<tess::Coord3> route{{0, 0, 0}, {1, 0, 0}, {2, 0, 0}};
+  {
+    const auto view = tess::PathView{route};
+    collector.stage_path_overlay(tess::EntityHandle{5}, tess::PathTicket{},
+                                 view.suffix(1));
+  }
+  // Mutate the source after staging: the frame must carry the copy.
+  route.assign({{9, 9, 0}, {9, 9, 0}, {9, 9, 0}});
+
+  const auto frame = collector.publish();
+  ASSERT_EQ(frame.overlays.size(), 1u);
+  EXPECT_EQ(frame.overlays[0].entity, (tess::EntityHandle{5}));
+  ASSERT_EQ(frame.overlays[0].node_count, 2u);
+  EXPECT_EQ(frame.overlay_nodes[frame.overlays[0].first_node],
+            (tess::Coord3{1, 0, 0}));
+  EXPECT_EQ(frame.overlay_nodes[frame.overlays[0].first_node + 1],
+            (tess::Coord3{2, 0, 0}));
+
+  // Overlays never affect versioning or emptiness: full replacement,
+  // and the next frame without staging carries none.
+  EXPECT_TRUE(frame.empty());
+  EXPECT_EQ(frame.header.from_version, frame.header.to_version);
+  const auto next = collector.publish();
+  EXPECT_TRUE(next.overlays.empty());
+}
+
+TEST(TessDeltaFrame, OverlayOverflowDropsTheOverlayNotTheFrame) {
+  tess::DeltaCollector collector;
+  collector.reserve(4, 16, 4, 1, 4);
+
+  std::vector<tess::Coord3> long_route(8, tess::Coord3{1, 1, 0});
+  const auto view = tess::PathView{long_route};
+  collector.stage_path_overlay(tess::EntityHandle{1}, tess::PathTicket{}, view);
+  EXPECT_EQ(collector.stats().overlay_truncations, 1u);
+
+  std::vector<tess::Coord3> short_route(3, tess::Coord3{2, 2, 0});
+  const auto short_view = tess::PathView{short_route};
+  collector.stage_path_overlay(tess::EntityHandle{2}, tess::PathTicket{},
+                               short_view);
+
+  const auto frame = collector.publish();
+  ASSERT_EQ(frame.overlays.size(), 1u);
+  EXPECT_EQ(frame.overlays[0].entity, (tess::EntityHandle{2}));
+  EXPECT_FALSE(frame.header.truncated);
 }
 
 TEST(TessDeltaFrame, SteadyStateCollectionIsAllocationFree) {

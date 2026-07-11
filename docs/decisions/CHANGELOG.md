@@ -13,6 +13,25 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - Baselines, applicability hardening, path overlays (M11, S9.3)
+
+- Added: `collect_baseline` (full scope ONLY -- scoped baselines are
+  deliberately absent: a partial baseline adopting the frame version
+  would permanently lose out-of-scope invalidations from a gap);
+  `PathOverlayDelta` + `stage_path_overlay` + `collect_path_overlays`
+  (full-replacement per-frame route decorations, nodes copied at call
+  time, gated on `has_goal && Found` to provably avoid stale-ticket
+  asserts; overlay overflow drops the overlay, never the frame).
+  Changed: `delta_frame_applicable` now rejects truncated BASELINES too
+  -- one that overflowed chunk storage covers only part of the world
+  while claiming full sync, so baseline consumers size chunk capacity
+  to the world and the truth table pins the rejection.
+- Reason: S9.3 (M11).
+- Affected docs: `architecture/simulation.md`, `surface.json`,
+  `tests/AGENTS.md`.
+- Affected code: `sim/delta_frame.h`;
+  `tests/tess_render_delta_frame_test.cc`.
+
 ## 2026-07-11 - Entity-delta hook seam through the ECS pipeline (M11, S9.2)
 
 - Added: a trailing defaulted `DeltaCollector*` on

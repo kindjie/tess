@@ -3,6 +3,9 @@
 #include <tess/core/assert.h>
 #include <tess/core/shape.h>
 #include <tess/ecs/entity_handle.h>
+#include <tess/path/path_runtime.h>
+#include <tess/path/path_view.h>
+#include <tess/sim/path_agent.h>
 #include <tess/storage/residency.h>
 #include <tess/storage/world.h>
 
@@ -91,6 +94,20 @@ struct EntityDelta {
   std::uint64_t last_tick = 0;
 };
 
+// One agent's remaining route this frame:
+// frame.overlay_nodes[first_node .. first_node + node_count). Overlays
+// are FULL-REPLACEMENT decorations: every applied frame replaces the
+// consumer's whole overlay set (possibly with the empty set), so no
+// create/update/remove lifecycle exists. Nodes are copies -- safe for
+// the frame's lifetime, gone at the next publish.
+struct PathOverlayDelta {
+  EntityHandle entity{};
+  // Identity/debugging only; the nodes are already copied.
+  PathTicket ticket{};
+  std::uint32_t first_node = 0;
+  std::uint32_t node_count = 0;
+};
+
 struct DeltaFrameHeader {
   RenderVersion from_version{};
   RenderVersion to_version{};
@@ -119,6 +136,8 @@ struct DeltaFrame {
   std::span<const TileChunkDelta> chunks{};
   std::span<const TileDelta> tiles{};
   std::span<const EntityDelta> entities{};
+  std::span<const PathOverlayDelta> overlays{};
+  std::span<const Coord3> overlay_nodes{};
 
   // Overlays are stateless per-frame decorations and never affect
   // version semantics or emptiness.
@@ -128,20 +147,22 @@ struct DeltaFrame {
   }
 };
 
-// True when a consumer at `consumer` can apply `header`'s frame as a
-// delta: baselines always apply (the consumer adopts to_version
-// unconditionally and re-snapshots its entity presentation); truncated
-// non-baseline frames never apply (entity loss is unrecoverable by the
-// version chain); otherwise the chain must match exactly. A fresh
+// True when a consumer at `consumer` can apply `header`'s frame:
+// truncation never applies -- not even for baselines, because a baseline
+// that overflowed chunk storage covers only part of the world while
+// claiming full sync (size baseline consumers' chunk capacity to the
+// whole world / resident set); un-truncated baselines always apply (the
+// consumer adopts to_version unconditionally and re-snapshots its entity
+// presentation); otherwise the chain must match exactly. A fresh
 // consumer ({0}) can only ever start from a baseline because collectors
 // never publish from_version 0.
 [[nodiscard]] constexpr auto delta_frame_applicable(
     const DeltaFrameHeader& header, RenderVersion consumer) noexcept -> bool {
-  if (header.baseline) {
-    return true;
-  }
   if (header.truncated) {
     return false;
+  }
+  if (header.baseline) {
+    return true;
   }
   return consumer.value != 0 && consumer == header.from_version;
 }
@@ -166,6 +187,11 @@ struct DeltaCollectorStats {
   std::uint64_t box_records = 0;
   std::uint64_t entity_records = 0;
   std::uint64_t moves_coalesced = 0;
+  std::uint64_t overlay_records = 0;
+  std::uint64_t overlay_nodes_copied = 0;
+  // Overlay overflow only: overlays are best-effort decorations, so
+  // dropping them never truncates the frame.
+  std::uint64_t overlay_truncations = 0;
   std::uint64_t truncations = 0;
 };
 
@@ -185,15 +211,23 @@ class DeltaCollector {
   explicit DeltaCollector(DeltaCollectorOptions options) : options_(options) {}
 
   // Setup-time capacities; entity_capacity also sizes the coalescing
-  // map (kept at load factor <= 0.5).
+  // map (kept at load factor <= 0.5). Consumers publishing baselines
+  // must size chunk_capacity to the whole world (dense) or the resident
+  // set (sparse): a baseline that overflows is truncated and therefore
+  // never applicable.
   void reserve(std::size_t chunk_capacity, std::size_t tile_capacity,
-               std::size_t entity_capacity) {
+               std::size_t entity_capacity, std::size_t overlay_capacity = 0,
+               std::size_t overlay_node_capacity = 0) {
     pending_chunks_.reserve(chunk_capacity);
     published_chunks_.reserve(chunk_capacity);
     pending_tiles_.reserve(tile_capacity);
     published_tiles_.reserve(tile_capacity);
     pending_entities_.reserve(entity_capacity);
     published_entities_.reserve(entity_capacity);
+    pending_overlays_.reserve(overlay_capacity);
+    published_overlays_.reserve(overlay_capacity);
+    pending_overlay_nodes_.reserve(overlay_node_capacity);
+    published_overlay_nodes_.reserve(overlay_node_capacity);
     auto slots = std::size_t{8};
     while (slots < entity_capacity * 2) {
       slots *= 2;
@@ -296,7 +330,41 @@ class DeltaCollector {
     pending_dirty_mask_ |= dirty_mask;
   }
 
+  // Baseline collection supersedes every pending Dirty record: the
+  // baseline repaints everything they cover.
+  void drop_pending_tile_state() noexcept {
+    pending_chunks_.clear();
+    pending_tiles_.clear();
+  }
+
   void mark_baseline_pending() noexcept { baseline_pending_ = true; }
+
+  // Copies `remaining`'s nodes into collector storage NOW; the source
+  // view may dangle afterwards. Empty views stage nothing. Overflowing
+  // overlay storage drops the overlay (never the frame): overlays are
+  // best-effort, full-replacement decorations.
+  void stage_path_overlay(EntityHandle entity, PathTicket ticket,
+                          PathView remaining) {
+    if (remaining.empty()) {
+      return;
+    }
+    if (pending_overlays_.size() == pending_overlays_.capacity() ||
+        pending_overlay_nodes_.size() + remaining.size() >
+            pending_overlay_nodes_.capacity()) {
+      ++stats_.overlay_truncations;
+      return;
+    }
+    const auto first_node =
+        static_cast<std::uint32_t>(pending_overlay_nodes_.size());
+    for (const auto& node : remaining) {
+      pending_overlay_nodes_.push_back(node);
+    }
+    pending_overlays_.push_back(
+        PathOverlayDelta{entity, ticket, first_node,
+                         static_cast<std::uint32_t>(remaining.size())});
+    ++stats_.overlay_records;
+    stats_.overlay_nodes_copied += remaining.size();
+  }
 
   // Seals pending state into an immutable frame. The version bumps iff
   // the frame carries chunk/tile/entity state or is a baseline; empty
@@ -333,9 +401,13 @@ class DeltaCollector {
     published_chunks_.swap(pending_chunks_);
     published_tiles_.swap(pending_tiles_);
     published_entities_.swap(pending_entities_);
+    published_overlays_.swap(pending_overlays_);
+    published_overlay_nodes_.swap(pending_overlay_nodes_);
     pending_chunks_.clear();
     pending_tiles_.clear();
     pending_entities_.clear();
+    pending_overlays_.clear();
+    pending_overlay_nodes_.clear();
     pending_dirty_mask_ = 0;
     pending_ticks_ = 0;
     pending_first_tick_ = 0;
@@ -347,8 +419,12 @@ class DeltaCollector {
     if (header.baseline) {
       ++stats_.baselines_published;
     }
-    return DeltaFrame{header, published_chunks_, published_tiles_,
-                      published_entities_};
+    return DeltaFrame{header,
+                      published_chunks_,
+                      published_tiles_,
+                      published_entities_,
+                      published_overlays_,
+                      published_overlay_nodes_};
   }
 
   // Hard reset of pending state. Poisons the stream: dropped records
@@ -360,6 +436,8 @@ class DeltaCollector {
     pending_chunks_.clear();
     pending_tiles_.clear();
     pending_entities_.clear();
+    pending_overlays_.clear();
+    pending_overlay_nodes_.clear();
     pending_dirty_mask_ = 0;
     pending_ticks_ = 0;
     pending_first_tick_ = 0;
@@ -522,6 +600,10 @@ class DeltaCollector {
   std::vector<TileDelta> published_tiles_;
   std::vector<EntityDelta> pending_entities_;
   std::vector<EntityDelta> published_entities_;
+  std::vector<PathOverlayDelta> pending_overlays_;
+  std::vector<PathOverlayDelta> published_overlays_;
+  std::vector<Coord3> pending_overlay_nodes_;
+  std::vector<Coord3> published_overlay_nodes_;
   std::vector<CoalesceSlot> coalesce_slots_;
   std::uint32_t pending_dirty_mask_ = 0;
   std::uint64_t current_tick_ = 0;
@@ -671,6 +753,100 @@ void collect_tile_deltas(DeltaCollector& collector, World& world,
       detail::collect_chunk_tile_deltas(collector, world, chunk_key,
                                         dirty_mask);
     }
+  }
+}
+
+// Full-scope baseline: emits one box record covering every chunk (dense)
+// or every resident chunk (sparse) with `dirty_flags = dirty_mask`,
+// drops pending Dirty records (superseded), clears the mask's dirty bits
+// (plain clears -- the baseline repaints everything, and later marks
+// simply re-dirty), and marks the pending frame as a baseline. Scoped
+// (box / chunk-set) baselines deliberately do not exist: a partial
+// baseline that adopts the frame version would permanently lose every
+// out-of-scope invalidation from a gap.
+template <typename World>
+void collect_baseline(DeltaCollector& collector, World& world,
+                      std::uint32_t dirty_mask) {
+  using Shape = typename World::shape_type;
+  using Traits = ShapeTraits<Shape>;
+  collector.note_collected_mask(dirty_mask);
+  collector.drop_pending_tile_state();
+
+  const auto emit = [&](ChunkKey chunk_key) {
+    const auto chunk = chunk_coord<Shape>(chunk_key);
+    auto record = TileChunkDelta{};
+    record.chunk_key = chunk_key;
+    record.dirty_flags = dirty_mask;
+    record.chunk_version = world.meta(chunk_key).version;
+    record.bounds =
+        Box3{Coord3{static_cast<std::int64_t>(chunk.x * Traits::chunk.x),
+                    static_cast<std::int64_t>(chunk.y * Traits::chunk.y),
+                    static_cast<std::int64_t>(chunk.z * Traits::chunk.z)},
+             Extent3{Traits::chunk.x, Traits::chunk.y, Traits::chunk.z}};
+    (void)collector.append_chunk_record(record);
+    world.clear_dirty(chunk_key, dirty_mask);
+  };
+
+  if constexpr (std::is_same_v<typename World::residency_type,
+                               AlwaysResident>) {
+    for (std::uint64_t key = 0; key < World::chunk_count; ++key) {
+      emit(ChunkKey{key});
+    }
+  } else {
+    for (const auto chunk_key : world.resident_chunk_keys()) {
+      emit(chunk_key);
+    }
+  }
+  collector.mark_baseline_pending();
+}
+
+// Stages the remaining route of every agent (or of `selection`, indices
+// into agents/handles). Gates on has_goal && status == Found before
+// touching a ticket: a cleared ticket is value-zero and could alias a
+// live generation-zero slot, and the gate provably avoids the runtime's
+// stale-ticket debug assert (every armed non-Unreachable agent was
+// re-ticketed by the last processing pass). Nodes are copied at call
+// time; the source PathView storage may be reused immediately after.
+// Ordering contract: run lifecycle intents BEFORE the tick and collect
+// overlays AFTER it -- an intent executed between tick and collection
+// leaves that agent's overlay one frame stale (entity deltas themselves
+// stay correct through the hooks).
+inline void collect_path_overlays(DeltaCollector& collector,
+                                  const PathRequestRuntime& runtime,
+                                  std::span<const PathAgentState> agents,
+                                  std::span<const EntityHandle> handles) {
+  TESS_ASSERT(agents.size() == handles.size());
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    const auto& agent = agents[i];
+    if (!agent.has_goal || agent.status != PathStatus::Found) {
+      continue;
+    }
+    const auto result = runtime.result(agent.ticket);
+    if (result.status != PathStatus::Found || result.path.empty()) {
+      continue;
+    }
+    collector.stage_path_overlay(handles[i], agent.ticket,
+                                 result.path.suffix(agent.path_index));
+  }
+}
+
+inline void collect_path_overlays(DeltaCollector& collector,
+                                  const PathRequestRuntime& runtime,
+                                  std::span<const PathAgentState> agents,
+                                  std::span<const EntityHandle> handles,
+                                  std::span<const std::size_t> selection) {
+  TESS_ASSERT(agents.size() == handles.size());
+  for (const auto index : selection) {
+    const auto& agent = agents[index];
+    if (!agent.has_goal || agent.status != PathStatus::Found) {
+      continue;
+    }
+    const auto result = runtime.result(agent.ticket);
+    if (result.status != PathStatus::Found || result.path.empty()) {
+      continue;
+    }
+    collector.stage_path_overlay(handles[index], agent.ticket,
+                                 result.path.suffix(agent.path_index));
   }
 }
 
