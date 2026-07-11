@@ -13,6 +13,28 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - Render-delta bench family and headless consumer (M11, S9.5)
+
+- Added: `bench/tess_render_delta_bench.cc` + thresholds + the CI step:
+  sparse-tile collection (64 scattered tiles over 4096 chunks, 2.3 us
+  local), box-granular collection (2.4 us), entity recording at 1k
+  entities x 8 steps coalesced vs per-step (24 vs 40 us -- the
+  coalescing ratio is visible as trend), the full 4096-chunk baseline
+  (14 us), and the allocation gate (zero allocations in a steady
+  mark/collect/record/publish cycle; the family runs through the
+  diagnostics binary so the gate executes in CI). Bootstrap ceilings
+  ~10x local pending the consolidation recalibration. Also
+  `examples/render_delta_consumer.cc`: a headless shadow-grid consumer
+  that late-joins through a baseline, deliberately drops a frame,
+  detects the version gap, and resyncs -- the honest end-to-end home of
+  the gap/baseline protocol.
+- Reason: S9.5 (M11 close on the tess side).
+- Affected docs: none beyond prior slices.
+- Affected code: new `bench/tess_render_delta_bench.cc`,
+  `bench/thresholds/render-delta.json`, `bench/CMakeLists.txt`,
+  `.github/workflows/ci.yml`; new `examples/render_delta_consumer.cc`,
+  `examples/CMakeLists.txt`.
+
 ## 2026-07-11 - Replay validator and randomized replay acceptance (M11, S9.4)
 
 - Added: `tests/render_delta_replay.h` -- the consumer-model
