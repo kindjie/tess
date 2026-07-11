@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "allocation_counter.h"
+#include "render_delta_replay.h"
 
 namespace {
 
@@ -445,6 +446,237 @@ TEST(TessDeltaFrame, OverlayOverflowDropsTheOverlayNotTheFrame) {
   ASSERT_EQ(frame.overlays.size(), 1u);
   EXPECT_EQ(frame.overlays[0].entity, (tess::EntityHandle{2}));
   EXPECT_FALSE(frame.header.truncated);
+}
+
+// ---- section-8 acceptance: randomized replay == projected state ----
+
+struct ScriptRng {
+  std::uint32_t state = 0x2545F491U;
+  auto next() -> std::uint32_t {
+    state ^= state << 13U;
+    state ^= state >> 17U;
+    state ^= state << 5U;
+    return state;
+  }
+};
+
+// One scripted mutation step: a handful of field writes with dirty
+// marks, plus synthetic entity motion mirrored into a ground-truth map.
+template <typename WorldT>
+void script_tick(WorldT& world, tess::DeltaCollector& collector,
+                 std::uint64_t tick, ScriptRng& rng,
+                 std::map<std::uint64_t, tess::Coord3>& truth,
+                 std::int64_t max_x, std::int64_t max_y) {
+  collector.begin_tick(tick);
+  const auto writes = 1 + rng.next() % 4;
+  for (std::uint32_t i = 0; i < writes; ++i) {
+    const auto x = static_cast<std::int64_t>(rng.next() % max_x);
+    const auto y = static_cast<std::int64_t>(rng.next() % max_y);
+    const auto coord = tess::Coord3{x, y, 0};
+    world.template field<TerrainTag>(coord) =
+        static_cast<std::uint8_t>(rng.next() % 255U);
+    const auto wide = rng.next() % 8 == 0;
+    const auto extent = wide ? tess::Extent3{5, 5, 1} : tess::Extent3{1, 1, 1};
+    world.mark_dirty(tess::chunk_key<typename WorldT::shape_type>(
+                         tess::tile_key<typename WorldT::shape_type>(coord)),
+                     kTerrainBit, tess::Box3{coord, extent});
+  }
+
+  // Entity churn: spawn up to 8 entities, move/teleport/park them.
+  const auto handle_value = 1 + rng.next() % 8;
+  const auto entity = tess::EntityHandle{handle_value};
+  const auto it = truth.find(handle_value);
+  if (it == truth.end()) {
+    const auto at =
+        tess::Coord3{static_cast<std::int64_t>(rng.next() % max_x),
+                     static_cast<std::int64_t>(rng.next() % max_y), 0};
+    collector.record_spawn(entity, at);
+    truth[handle_value] = at;
+  } else {
+    const auto roll = rng.next() % 8;
+    if (roll < 5) {
+      const auto from = it->second;
+      auto to = from;
+      to.x = std::min<std::int64_t>(
+          max_x - 1,
+          std::max<std::int64_t>(0, to.x + (roll % 2 != 0 ? 1 : -1)));
+      collector.record_move(entity, from, to);
+      it->second = to;
+    } else if (roll < 7) {
+      const auto to =
+          tess::Coord3{static_cast<std::int64_t>(rng.next() % max_x),
+                       static_cast<std::int64_t>(rng.next() % max_y), 0};
+      collector.record_teleport(entity, it->second, to);
+      it->second = to;
+    } else {
+      collector.record_park(entity, it->second);
+      truth.erase(it);
+    }
+  }
+}
+
+template <typename WorldT>
+void expect_entities_match(
+    const tess_test::RenderReplayGrid<WorldT, TerrainTag, DecorTag>& grid,
+    const std::map<std::uint64_t, tess::Coord3>& truth) {
+  ASSERT_EQ(grid.entity_count(), truth.size());
+  for (const auto& [value, coord] : truth) {
+    const auto tile = grid.entity_tile(tess::EntityHandle{value});
+    ASSERT_TRUE(tile.has_value());
+    EXPECT_EQ(*tile, coord);
+  }
+}
+
+TEST(TessDeltaFrame, RandomizedPerTickReplayMatchesProjection) {
+  World world;
+  tess::DeltaCollector collector;
+  collector.reserve(World::chunk_count, 4096, 32);
+  tess_test::RenderReplayGrid<World, TerrainTag, DecorTag> grid;
+  std::map<std::uint64_t, tess::Coord3> truth;
+  ScriptRng rng{1234};
+
+  // Late join: the fresh grid rejects the first delta frame and enters
+  // through a baseline.
+  mark_box(world, tess::Coord3{1, 1, 0}, tess::Extent3{1, 1, 1}, kTerrainBit);
+  tess::collect_tile_deltas(collector, world, kTerrainBit);
+  ASSERT_EQ(grid.apply(collector.publish(), world),
+            tess_test::ReplayApplyStatus::NeedsBaseline);
+  tess::collect_baseline(collector, world, kTerrainBit);
+  ASSERT_EQ(grid.apply(collector.publish(), world),
+            tess_test::ReplayApplyStatus::Applied);
+  ASSERT_TRUE(grid.matches_world(world));
+
+  for (std::uint64_t tick = 1; tick <= 64; ++tick) {
+    script_tick(world, collector, tick, rng, truth, 32, 32);
+    tess::collect_tile_deltas(collector, world, kTerrainBit);
+    ASSERT_EQ(grid.apply(collector.publish(), world),
+              tess_test::ReplayApplyStatus::Applied);
+    if (tick % 4 == 0) {
+      ASSERT_TRUE(grid.matches_world(world));
+      expect_entities_match(grid, truth);
+    }
+  }
+}
+
+TEST(TessDeltaFrame, CoalescedEightTickFramesReplayIdentically) {
+  World world;
+  tess::DeltaCollector collector;
+  collector.reserve(World::chunk_count, 4096, 32);
+  tess_test::RenderReplayGrid<World, TerrainTag, DecorTag> grid;
+  std::map<std::uint64_t, tess::Coord3> truth;
+  ScriptRng rng{777};
+
+  tess::collect_baseline(collector, world, kTerrainBit);
+  ASSERT_EQ(grid.apply(collector.publish(), world),
+            tess_test::ReplayApplyStatus::Applied);
+
+  // Eight sim ticks fold into one published frame (the Speed4x/backlog
+  // shape); replay must still converge to the projection at every
+  // publish, and coalesced entity records must land on final tiles.
+  for (std::uint64_t frame = 0; frame < 12; ++frame) {
+    for (std::uint64_t step = 0; step < 8; ++step) {
+      const auto tick = frame * 8 + step + 1;
+      script_tick(world, collector, tick, rng, truth, 32, 32);
+    }
+    tess::collect_tile_deltas(collector, world, kTerrainBit);
+    const auto published = collector.publish();
+    EXPECT_EQ(published.header.ticks, 8u);
+    ASSERT_EQ(grid.apply(published, world),
+              tess_test::ReplayApplyStatus::Applied);
+    ASSERT_TRUE(grid.matches_world(world));
+    expect_entities_match(grid, truth);
+  }
+}
+
+TEST(TessDeltaFrame, LossyConsumerReconvergesThroughABaseline) {
+  World world;
+  tess::DeltaCollector collector;
+  collector.reserve(World::chunk_count, 4096, 32);
+  tess_test::RenderReplayGrid<World, TerrainTag, DecorTag> grid;
+  std::map<std::uint64_t, tess::Coord3> truth;
+  ScriptRng rng{424242};
+
+  tess::collect_baseline(collector, world, kTerrainBit);
+  ASSERT_EQ(grid.apply(collector.publish(), world),
+            tess_test::ReplayApplyStatus::Applied);
+
+  for (std::uint64_t tick = 1; tick <= 48; ++tick) {
+    script_tick(world, collector, tick, rng, truth, 32, 32);
+    tess::collect_tile_deltas(collector, world, kTerrainBit);
+    const auto frame = collector.publish();
+    if (tick % 5 == 0) {
+      // Drop the frame: the consumer missed a state-carrying publish
+      // and must detect the gap on the next one.
+      continue;
+    }
+    const auto status = grid.apply(frame, world);
+    if (status == tess_test::ReplayApplyStatus::NeedsBaseline) {
+      tess::collect_baseline(collector, world, kTerrainBit);
+      ASSERT_EQ(grid.apply(collector.publish(), world),
+                tess_test::ReplayApplyStatus::Applied);
+      // Model the consumer's entity re-snapshot from ground truth.
+      for (const auto& [value, coord] : truth) {
+        grid.snapshot_entity(tess::EntityHandle{value}, coord);
+      }
+      ASSERT_TRUE(grid.matches_world(world));
+      expect_entities_match(grid, truth);
+    }
+  }
+  // Final convergence: one clean frame after the last drop.
+  tess::collect_tile_deltas(collector, world, kTerrainBit);
+  const auto final_frame = collector.publish();
+  if (grid.apply(final_frame, world) ==
+      tess_test::ReplayApplyStatus::NeedsBaseline) {
+    tess::collect_baseline(collector, world, kTerrainBit);
+    ASSERT_EQ(grid.apply(collector.publish(), world),
+              tess_test::ReplayApplyStatus::Applied);
+    for (const auto& [value, coord] : truth) {
+      grid.snapshot_entity(tess::EntityHandle{value}, coord);
+    }
+  }
+  ASSERT_TRUE(grid.matches_world(world));
+  expect_entities_match(grid, truth);
+}
+
+TEST(TessDeltaFrame, SparseResidentReplayMatchesResidentProjection) {
+  using SparseWorld = tess::SparseResidentWorld<Shape, Schema>;
+  SparseWorld world{tess::ResidencyConfig{1U << 20U}};
+  const auto chunk_a =
+      tess::chunk_key<Shape>(tess::tile_key<Shape>(tess::Coord3{0, 0, 0}));
+  const auto chunk_b =
+      tess::chunk_key<Shape>(tess::tile_key<Shape>(tess::Coord3{16, 16, 0}));
+  (void)world.ensure_resident(chunk_a);
+  (void)world.ensure_resident(chunk_b);
+
+  tess::DeltaCollector collector;
+  collector.reserve(16, 1024, 8);
+  tess_test::RenderReplayGrid<SparseWorld, TerrainTag, DecorTag> grid;
+
+  tess::collect_baseline(collector, world, kTerrainBit);
+  ASSERT_EQ(grid.apply(collector.publish(), world),
+            tess_test::ReplayApplyStatus::Applied);
+  ASSERT_TRUE(grid.matches_world(world));
+
+  ScriptRng rng{99};
+  for (std::uint64_t tick = 1; tick <= 24; ++tick) {
+    collector.begin_tick(tick);
+    // Edits confined to the two resident chunks (no eviction in this
+    // script: residency change records are deferred until a sparse
+    // render consumer exists).
+    const auto base =
+        tick % 2 == 0 ? tess::Coord3{0, 0, 0} : tess::Coord3{16, 16, 0};
+    const auto coord =
+        tess::Coord3{base.x + static_cast<std::int64_t>(rng.next() % 8),
+                     base.y + static_cast<std::int64_t>(rng.next() % 8), 0};
+    world.template field<TerrainTag>(coord) =
+        static_cast<std::uint8_t>(rng.next() % 255U);
+    world.mark_dirty(tess::chunk_key<Shape>(tess::tile_key<Shape>(coord)),
+                     kTerrainBit, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+    tess::collect_tile_deltas(collector, world, kTerrainBit);
+    ASSERT_EQ(grid.apply(collector.publish(), world),
+              tess_test::ReplayApplyStatus::Applied);
+    ASSERT_TRUE(grid.matches_world(world));
+  }
 }
 
 TEST(TessDeltaFrame, SteadyStateCollectionIsAllocationFree) {

@@ -13,6 +13,22 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - Replay validator and randomized replay acceptance (M11, S9.4)
+
+- Added: `tests/render_delta_replay.h` -- the consumer-model
+  RenderReplayGrid (invalidation apply that re-reads the current world
+  for covered tiles, a shadow entity->tile map fed by entity deltas,
+  the version contract enforced exactly as a consumer would, baselines
+  clearing shadow + entity state with an explicit re-snapshot seam).
+  Randomized script tests pin the section-8 acceptance "delta replay
+  matches projected state": per-tick consumption, coalesced eight-tick
+  frames, a lossy consumer reconverging through gap detection + full
+  baseline, and a sparse resident-set replay.
+- Reason: S9.4 (M11).
+- Affected docs: `tests/AGENTS.md`.
+- Affected code: new `tests/render_delta_replay.h`;
+  `tests/tess_render_delta_frame_test.cc`.
+
 ## 2026-07-11 - Baselines, applicability hardening, path overlays (M11, S9.3)
 
 - Added: `collect_baseline` (full scope ONLY -- scoped baselines are
