@@ -13,6 +13,21 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - v0.1.0 (S11 close)
+
+- Changed: project version 0.1.0 -> 0.1.0 (CMake `project(VERSION)`,
+  `TESS_VERSION_*` macros, and the smoke test's pinned literals bumped
+  together). The v1 milestone plan is stamped COMPLETE and preserved as
+  the planning record; the architecture README now describes the shipped
+  v1 surface. The consumer's composite 10k-tick soak (its S11.4 test)
+  locks the integrated behavior the acceptance criteria describe.
+- Reason: S11.6 -- every milestone M0-M15 shipped with its gates,
+  documentation, and consumer adoption in place.
+- Affected docs: `docs/planning/v1-milestone-plan.md`,
+  `docs/architecture/README.md`.
+- Affected code: `CMakeLists.txt`, `include/tess/tess.h`,
+  `tests/tess_smoke.cc`.
+
 ## 2026-07-11 - Threshold recalibration + trends snapshot (M14, S11.3)
 
 - Changed: every gated benchmark ceiling in `bench/thresholds/` for the
