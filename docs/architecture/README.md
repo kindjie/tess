@@ -35,6 +35,7 @@ Maintained notes for implemented areas:
 - [Simulation integration MVP](simulation.md)
 - [Diagnostics foundation](diagnostics.md)
 - [ECS integration](ecs.md)
+- [GPU backend interface](gpu.md)
 
 The umbrella header `tess/tess.h` exports the whole public surface plus the
 `tess::version` / `tess::library_version` constant.

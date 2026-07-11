@@ -13,6 +13,28 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - GPU backend interface, interface only (M13, S10)
+
+- Added: `include/tess/gpu/descriptors.h` (GpuFieldFormat derived from
+  schema value types; FieldMirrorDesc/`field_mirror_desc` computed from
+  compile-time layout facts -- tess pages are SoA per chunk, so mirrors
+  are chunk-key-major slices; UploadDesc/`upload_desc` staging a live
+  chunk span; DispatchDesc; explicit ReadbackPolicy/ReadbackDesc with no
+  full readback by default) and `include/tess/gpu/backend.h`
+  (GpuCapabilities, the compile-time-polymorphic GpuBackend concept
+  with bool-refusal semantics and CPU fallback, and the default
+  NoGpuBackend that compiles everywhere and refuses everything). The
+  test-only MockGpuBackend records call sequences. Benchmarks are
+  deliberately absent: nothing executes in v1 (per the plan's
+  "ungated smoke only" note, resolved as no-bench + this record).
+- Reason: M13 -- a real backend can be added later without redesigning
+  core; CPU-only builds carry zero GPU obligations.
+- Affected docs: new `architecture/gpu.md` (+ README index),
+  `surface.json`, `tests/AGENTS.md`.
+- Affected code: new `gpu/backend.h`, `gpu/descriptors.h`, `tess.h`,
+  `CMakeLists.txt`; new `tests/gpu_mock_backend.h`,
+  `tests/tess_gpu_interface_test.cc`, `tests/CMakeLists.txt`.
+
 ## 2026-07-11 - Render-delta bench family and headless consumer (M11, S9.5)
 
 - Added: `bench/tess_render_delta_bench.cc` + thresholds + the CI step:
