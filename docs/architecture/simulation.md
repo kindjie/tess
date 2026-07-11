@@ -104,7 +104,11 @@ deltas.
   A transient failure leaves the `Found` route intact, moves the agent to
   `Blocked`, consumes one retry, and counts a blocked wait; a structural
   failure is terminal `Unreachable`. Arrival clears the goal and counts an
-  arrival.
+  arrival. An observer overload appends `on_commit(agent_index, from, to)`,
+  invoked once per successful commit (after position/occupancy update,
+  before arrival handling) and never on a failed validation, so external
+  tile-to-entity mirrors updated inside the callback stay synchronized with
+  the occupancy field by construction (the M10 ECS adapter's hook point).
 - `process_unit_path_agents<World, ClassOrTag>(...)` and
   `process_weighted_path_agents<World, Class, MaxCost>(...)` (plus the legacy
   `<World, PassableTag, CostTag, MaxCost>` overload)
