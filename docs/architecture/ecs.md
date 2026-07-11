@@ -133,6 +133,14 @@ two-gate build policy.
   `tick_ecs_*` pipeline with the concrete source/sink -- there is one
   pipeline, not two. The context's `tick_state` owns the sim clock:
   drive these from at most one place per frame.
+- Every tick driver and lifecycle intent accepts a trailing optional
+  `DeltaCollector*` (M11): ticks stamp the collector with `begin_tick`
+  and record each committed step through the same observer that keeps
+  the occupancy index synchronized; intents record their kind exactly
+  when they succeed (refusals mutate nothing and record nothing; a
+  parked despawn records nothing because parking already released the
+  tile). Entity-delta completeness holds exactly for this surface --
+  the legacy span drivers bypass recording by construction.
 
 ## Invariants
 

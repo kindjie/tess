@@ -13,6 +13,25 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - Entity-delta hook seam through the ECS pipeline (M11, S9.2)
+
+- Added: a trailing defaulted `DeltaCollector*` on
+  `advance_path_agents_with_index`, all `tick_ecs_*`/`tick_entt_*`
+  drivers (which stamp `begin_tick` with the new tick before movement),
+  and the EnTT lifecycle intents (recording Spawned/Despawned/
+  Teleported/Parked/Placed exactly when the intent succeeds; a parked
+  despawn records nothing because parking already released its tile).
+  The movement observer records each committed step beside the index
+  move, so entity-delta completeness holds for the sanctioned ECS
+  surface by construction. Source-compatible: all params default to
+  nullptr, and a positional `graph` argument cannot bind to the
+  collector (distinct pointer types).
+- Reason: S9.2 (M11) -- entity deltas are pushed at commit, never
+  diffed from mirrors.
+- Affected docs: `architecture/ecs.md`, `tests/AGENTS.md`.
+- Affected code: `ecs/adapter.h`, `ecs/entt/entt_adapter.h`;
+  `tests/tess_ecs_adapter_test.cc`, `tests/tess_ecs_entt_test.cc`.
+
 ## 2026-07-11 - DeltaFrame render bridge core (M11, S9.1)
 
 - Added: `include/tess/sim/delta_frame.h` -- the versioned frame

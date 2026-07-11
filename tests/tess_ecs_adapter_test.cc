@@ -523,6 +523,53 @@ TEST(TessEcsAdapter, WeightedTickPairFormArrives) {
   EXPECT_EQ(index.entity_at(tess::Coord3{2, 0, 0}), (tess::EntityHandle{70}));
 }
 
+TEST(TessEcsAdapter, TickPipelineRecordsMovementDeltas) {
+  World world;
+  fill_world(world);
+  tess::TileOccupancyIndex index;
+  index.reserve(4);
+  FakeStore store;
+  tess::PathAgentBatch batch;
+  batch.reserve(1);
+
+  store.spawn(0, tess::EntityHandle{40}, tess::Coord3{0, 0, 0});
+  install_agent(world, index, store.entries[0].handle,
+                store.entries[0].agent.position);
+  store.set_goal(0, tess::Coord3{3, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, 1);
+  tess::PathAgentTickState tick_state;
+  tick_state.pathing_dirty = false;
+
+  // Coalescing disabled: every committed step is one Moved record whose
+  // tick stamp is the tick that committed it.
+  tess::DeltaCollector collector(tess::DeltaCollectorOptions{64, false});
+  collector.reserve(4, 16, 8);
+
+  for (int tick = 0; tick < 3; ++tick) {
+    (void)tess::tick_ecs_unit_path_agents<World, PassableTag, OccupancyTag,
+                                          ReservationTag>(
+        tick_state, world, store, store, batch, runtime, index, {}, 0, nullptr,
+        &collector);
+  }
+
+  const auto frame = collector.publish();
+  ASSERT_EQ(frame.entities.size(), 3u);
+  auto previous = tess::Coord3{0, 0, 0};
+  for (std::size_t i = 0; i < frame.entities.size(); ++i) {
+    const auto& record = frame.entities[i];
+    EXPECT_EQ(record.kind, tess::EntityDeltaKind::Moved);
+    EXPECT_EQ(record.entity, (tess::EntityHandle{40}));
+    EXPECT_EQ(record.from, previous);
+    EXPECT_EQ(tess::manhattan_distance(record.from, record.to), 1u);
+    EXPECT_EQ(record.last_tick, i + 1);
+    previous = record.to;
+  }
+  EXPECT_EQ(previous, (tess::Coord3{3, 0, 0}));
+  EXPECT_EQ(frame.header.ticks, 3u);
+}
+
 TEST(TessEcsAdapter, TickPipelineSteadyStateIsAllocationFree) {
   World world;
   fill_world(world);
