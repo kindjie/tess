@@ -44,11 +44,15 @@ auto make_world() -> FieldWorld* {
   return world;
 }
 
+// Distinct scattered goals for any count up to the tile count: x walks
+// the row range, y scatters with a full-period stride plus a lap term,
+// so two indices sharing an x (64 apart) always differ in y.
 void fill_goals(tess::GoalSet& goals, std::size_t count) {
   goals.clear();
   for (std::size_t i = 0; i < count; ++i) {
-    goals.add(tess::Coord3{static_cast<std::int64_t>((i * 13) % 64),
-                           static_cast<std::int64_t>((i * 29) % 64), 0});
+    goals.add(tess::Coord3{static_cast<std::int64_t>(i % 64),
+                           static_cast<std::int64_t>((i * 29 + i / 64) % 64),
+                           0});
   }
 }
 
@@ -147,7 +151,10 @@ void BM_fields_cache_hit(benchmark::State& state) {
 }
 
 // Miss -> build -> store, cycling two goal sets under a budget that
-// holds both: the cold path with LRU bookkeeping.
+// holds only ONE product: every lookup misses and every store evicts
+// the other entry, so this stays on the cold build/store path at every
+// measured iteration (an unbudgeted cache turns resident after two
+// iterations and would time the hit path instead).
 void BM_fields_cache_miss_store(benchmark::State& state) {
   static auto* world = make_world();
   tess::GoalSet goals_a;
@@ -156,7 +163,8 @@ void BM_fields_cache_miss_store(benchmark::State& state) {
   fill_goals(goals_b, 8);
   tess::DistanceFieldScratch scratch;
   scratch.reserve_nodes(kTileCount);
-  tess::FieldProductCache cache;
+  // One product is ~kTileCount * 4 bytes of distances plus metadata.
+  tess::FieldProductCache cache(kTileCount * 4 * 3 / 2);
   cache.reserve_entries(4);
 
   auto flip = false;
@@ -173,12 +181,11 @@ void BM_fields_cache_miss_store(benchmark::State& state) {
           (cache.store<FieldWorld, PassableTag>(std::move(product))));
     }
   }
-  // After warmup both sets are resident and the loop settles into hits.
   // Guarded by iteration count: the harness's 1-iteration calibration
   // pass has only seen the first miss.
   if (state.iterations() >= 8) {
-    fields_bench_check(cache.stats().hits > 0 && cache.stats().misses > 0,
-                       "cache never exercised both hit and miss paths");
+    fields_bench_check(cache.stats().misses >= state.iterations(),
+                       "cache_miss_store left the miss path");
   }
 }
 

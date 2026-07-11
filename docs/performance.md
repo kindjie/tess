@@ -9,10 +9,14 @@ mostly 6-15%): every gate is now twice the maximum observed across all
 samples, tightened from the previous single-artifact 3x policy per the
 10-artifact rule. The 2x headroom (rather than the summary tool's 1.5x
 default) absorbs the heterogeneous-CPU spread of the shared-runner pool,
-and nanosecond-scale gates carry an additional absolute floor of 10 ns:
+and nanosecond-scale gates carry an additional absolute floor of 25 ns:
 below that, 2x-of-observed assumes the artifact window sampled the
-slowest runner SKU, and a merely-slower machine would fail a correct
-benchmark.
+slowest runner SKU, and a merely-slower machine fails a correct
+benchmark (observed empirically: an independent reviewer's VM measured
+`key/tile_key_2d_u64` at 10.3 ns against the pre-floor 8 ns ceiling).
+Nanosecond gates exist to catch gross regressions -- an accidental
+allocation, lock, or complexity change lands 5-100x, well above the
+floor.
 The scheduler, ecs, render-delta, and fields families keep their
 bootstrap ceilings: their baselines were not collected by the
 `tess_bench_ci_baselines` target until S11.3 wired them in, so they are
