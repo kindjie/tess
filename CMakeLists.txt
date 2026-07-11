@@ -62,6 +62,8 @@ set(
   include/tess/ecs/adapter.h
   include/tess/ecs/entity_handle.h
   include/tess/ecs/entt/entt_adapter.h
+  include/tess/gpu/backend.h
+  include/tess/gpu/descriptors.h
   include/tess/ops/phase_executor.h
   include/tess/ops/queued.h
   include/tess/ops/result_channel.h

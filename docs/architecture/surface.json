@@ -374,5 +374,18 @@
     "tick_ecs_unit_path_agents",
     "tick_entt_path_agents",
     "tick_entt_unit_path_agents"
+  ],
+  "docs/architecture/gpu.md": [
+    "DispatchDesc",
+    "FieldMirrorDesc",
+    "GpuBackend",
+    "GpuCapabilities",
+    "GpuFieldFormat",
+    "NoGpuBackend",
+    "ReadbackDesc",
+    "ReadbackPolicy",
+    "UploadDesc",
+    "field_mirror_desc",
+    "upload_desc"
   ]
 }
