@@ -20,7 +20,15 @@ concept, never virtual dispatch). Everything lives in `tess::gpu`.
   SoA per chunk, so a chunk's field values are one contiguous run and a
   mirror buffer is `chunk_count` chunk-key-major slices.
 - `field_mirror_desc<World, Tag>()` computes the mirror description
-  entirely from compile-time layout facts (constexpr).
+  entirely from compile-time layout facts (constexpr). Value types are
+  integral or float32 (a `double` field fails to compile rather than
+  receive a lying format), and the dense mirror's byte counts are
+  compile-time proven to fit `std::uint64_t` -- shapes whose dense
+  mirror cannot be described fail to compile instead of wrapping.
+  The description is the MAXIMAL dense mirror for dense/bounded worlds
+  (the current consumer's case); selective sparse mirrors -- the TDD's
+  GpuMirror tracking chosen chunk copies -- are future work that reuses
+  these structs with differently-computed offsets.
 - `UploadDesc` stages one chunk's worth of one field: the live page span
   (`data`/`byte_size`, valid until the world mutates or evicts the
   chunk) and the destination `buffer_offset` in the chunk-key-major
@@ -31,8 +39,8 @@ concept, never virtual dispatch). Everything lives in `tess::gpu`.
   `workgroups_per_chunk`) -- deliberately abstraction-free; a real
   backend maps it onto its own pipeline and binding model.
 - `ReadbackPolicy` / `ReadbackDesc` make readback explicit: `None`,
-  `Summary` (the steady-state shape), `SelectedTiles`, and `FullField`
-  (debug/explicit only). No full readback by default.
+  `Summary` (the steady-state shape), `SelectedTiles`, `SelectedPath`,
+  and `FullField` (debug/explicit only). No full readback by default.
 - `GpuCapabilities` is what the device can do (`compute`,
   `async_dispatch`, `async_readback`, `max_buffer_bytes`,
   `max_dispatch_chunks`, `buffer_alignment`); a planner checks these
@@ -44,6 +52,11 @@ concept, never virtual dispatch). Everything lives in `tess::gpu`.
 - `NoGpuBackend` is the default backend: reports no capabilities and
   refuses every operation, so CPU-only builds compile untouched and
   carry zero GPU obligations.
+
+The v1 concept is deliberately synchronous-bool only: the fence and
+completion-collection surface named by the TDD arrives with the first
+real backend, as a non-breaking refinement of this concept (the
+`async_dispatch`/`async_readback` capability flags reserve the space).
 
 ## Testing
 

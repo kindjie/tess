@@ -36,8 +36,11 @@ namespace detail {
 
 template <typename Value>
 [[nodiscard]] constexpr auto field_format() noexcept -> GpuFieldFormat {
-  static_assert(std::is_arithmetic_v<Value>,
-                "GPU mirrors support arithmetic field values only");
+  // Integral and float32 only: `double` would otherwise fall through the
+  // is_signed branch into a lying I64 descriptor. Widen the enum before
+  // widening this gate.
+  static_assert(std::is_integral_v<Value> || std::is_same_v<Value, float>,
+                "GPU mirrors support integral and float32 field values only");
   if constexpr (std::is_same_v<Value, float>) {
     return GpuFieldFormat::F32;
   } else if constexpr (std::is_signed_v<Value>) {
@@ -68,7 +71,10 @@ template <typename Value>
 // Byte-level description of one field mirrored to the GPU: enough for a
 // backend to size one buffer holding `chunk_count` chunk-contiguous
 // slices of `bytes_per_chunk` (tess pages are SoA per chunk, so a
-// chunk's field values are one contiguous run).
+// chunk's field values are one contiguous run). This is the MAXIMAL
+// dense mirror, suited to dense/bounded worlds; selective sparse
+// mirrors (the TDD's GpuMirror tracking chosen chunk copies) are future
+// work that reuses these structs with differently-computed offsets.
 struct FieldMirrorDesc {
   std::uint32_t field_index = 0;
   GpuFieldFormat format = GpuFieldFormat::U8;
@@ -93,6 +99,19 @@ template <typename World, typename Tag>
   using Schema = typename World::schema_type;
   using Value = typename Schema::template value_type<Tag>;
   using Traits = ShapeTraits<typename World::shape_type>;
+  // ShapeTraits deliberately does not bound total field bytes (sparse
+  // worlds may span trillions of chunks), so the dense-mirror byte
+  // counts this descriptor promises must be proven to fit u64 here --
+  // a wrapped total_bytes()/buffer_offset would be the exact lie this
+  // layer exists to prevent. Shapes whose dense mirror cannot be
+  // described fail to compile instead.
+  constexpr auto kMaxBytes = ~std::uint64_t{0};
+  static_assert(sizeof(Value) <= kMaxBytes / Traits::local_tile_count,
+                "per-chunk mirror bytes must fit std::uint64_t");
+  static_assert(
+      Traits::chunk_count <= 1 || Traits::local_tile_count * sizeof(Value) <=
+                                      kMaxBytes / Traits::chunk_count,
+      "chunk-key-major mirror byte size must fit std::uint64_t");
   FieldMirrorDesc desc;
   desc.field_index = static_cast<std::uint32_t>(Schema::template index<Tag>);
   desc.format = detail::field_format<Value>();
@@ -149,6 +168,7 @@ enum class ReadbackPolicy : std::uint8_t {
   None,
   Summary,
   SelectedTiles,
+  SelectedPath,
   // Debug/explicit only.
   FullField,
 };
