@@ -522,7 +522,10 @@ void expect_entities_match(
   ASSERT_EQ(grid.entity_count(), truth.size());
   for (const auto& [value, coord] : truth) {
     const auto tile = grid.entity_tile(tess::EntityHandle{value});
-    ASSERT_TRUE(tile.has_value());
+    if (!tile.has_value()) {
+      ADD_FAILURE() << "entity " << value << " missing from the shadow map";
+      continue;
+    }
     EXPECT_EQ(*tile, coord);
   }
 }
