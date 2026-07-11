@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/ecs/entity_handle.h>
 #include <tess/sim/path_agent.h>
 #include <tess/sim/path_agent_tick.h>
 
@@ -21,22 +22,8 @@
 // duplicate or violate it.
 namespace tess {
 
-// Opaque, ECS-agnostic entity identity: stable while tess holds it,
-// comparable, with a null representation. Adapters pack their native id
-// (including any generation/version bits) into the 64-bit value however
-// they like; tess never interprets it.
-struct EntityHandle {
-  std::uint64_t value = 0xFFFF'FFFF'FFFF'FFFFULL;
-
-  [[nodiscard]] constexpr auto is_null() const noexcept -> bool {
-    return value == 0xFFFF'FFFF'FFFF'FFFFULL;
-  }
-
-  friend constexpr auto operator==(EntityHandle, EntityHandle) noexcept
-      -> bool = default;
-};
-
-inline constexpr EntityHandle kNullEntityHandle{};
+// EntityHandle and kNullEntityHandle live in <tess/ecs/entity_handle.h>
+// (re-exported here) so dependency-light layers can name entity identity.
 
 // Converts between an ECS's native entity type and EntityHandle. The
 // mapping must be lossless for live entities and must map the ECS's null

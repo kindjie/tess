@@ -7,6 +7,7 @@
 #include <tess/diagnostics/trace.h>
 #include <tess/diagnostics/warning_sink.h>
 #include <tess/ecs/adapter.h>
+#include <tess/ecs/entity_handle.h>
 #include <tess/ops/phase_executor.h>
 #include <tess/ops/queued.h>
 #include <tess/ops/result_channel.h>
@@ -21,6 +22,7 @@
 #include <tess/path/precheck.h>
 #include <tess/path/route_cache.h>
 #include <tess/sim/auto_exec.h>
+#include <tess/sim/delta_frame.h>
 #include <tess/sim/movement.h>
 #include <tess/sim/path_agent.h>
 #include <tess/sim/path_agent_tick.h>

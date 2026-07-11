@@ -68,6 +68,80 @@ deltas.
   dirty bits after a presentation layer has consumed them; it iterates the
   resident set on a sparse world.
 
+The `RenderTileDelta` family above is the legacy per-tile seam; new
+consumers should use the versioned DeltaFrame bridge below.
+
+### DeltaFrame Render Bridge (M11)
+
+The versioned frame protocol in `sim/delta_frame.h`. Tile deltas are
+invalidation records, not value payloads: the consumer re-reads the
+current world for covered tiles at apply time, which is idempotent and
+convergent. Chunk dirty metadata is already a cross-tick coalescer
+(flags OR, bounds union), so tiles are collected once per published
+frame through the lost-update-safe observe/clear-observed protocol.
+
+- `RenderVersion` is the monotonic frame-chain version. Collectors start
+  at 1; value 0 is reserved for a consumer that has never applied a
+  frame, so a fresh consumer can only start from a baseline.
+- `TileChunkDelta` is one chunk's record: matching dirty flags, the
+  chunk-clipped bounds, and either `tile_count` per-tile entries starting
+  at `first_tile` in `frame.tiles`, or `tile_count == 0` meaning
+  box-granular (repaint every tile in `bounds`). `chunk_version` is
+  debugging only -- clears do not bump it and sparse reloads reset it.
+  Chunk records are the only entry point; consumers never iterate
+  `frame.tiles` directly.
+- `TileDelta` is one changed tile (coordinate, local tile id, flags).
+- `EntityDeltaKind` / `EntityDelta` record entity motion and lifecycle:
+  `Moved` (coalescible), and the barriers `Teleported`, `Spawned`,
+  `Despawned`, `Parked`, `Placed`. `from == to` for spawns/places; parks
+  and despawns carry the released tile. `last_tick` stamps the last
+  coalesced commit so renderers can tell moved-this-frame from resting.
+  Coalesced records are not a serializable per-record sequence: a
+  coalesced move sits at its first commit's position, so consumers key
+  presentation by entity and check tile exclusivity only at frame end.
+- `DeltaFrameHeader` carries `from_version`/`to_version` (equal on empty
+  frames; +1 on state-carrying ones), the folded tick range and count,
+  the union `dirty_mask`, and the `baseline`/`truncated` flags.
+  Truncation (capacity overflow or a hard `clear()`) is a structural
+  gap: entity loss is unrecoverable by the version chain.
+- `DeltaFrame` is an immutable view into collector-owned storage, valid
+  until the next mutating collector call; `empty()` ignores overlays.
+- `delta_frame_applicable(header, consumer)` is the consumer's apply
+  gate: baselines always apply (adopt `to_version`, re-snapshot entity
+  presentation), truncated non-baseline frames never apply, and
+  otherwise the chain must match exactly with `consumer.value != 0`.
+- `DeltaCollectorOptions` sets the per-chunk `sparse_tile_threshold`
+  (records per-tile up to it, box-granular above; 0 = always box) and
+  `coalesce_moves` (fold consecutive moves last-writer-wins; disable for
+  motion-interpolating renderers so each step spans one tile).
+- `DeltaCollectorStats` counts published frames, baselines, record kinds,
+  coalesced moves, and truncations, cumulatively.
+- `DeltaCollector` accumulates records and publishes frames: `reserve`
+  sizes every buffer once (steady state never allocates; records past
+  capacity are dropped and flagged, never grown mid-frame); `begin_tick`
+  stamps subsequent records; `record_move`/`record_teleport`/
+  `record_spawn`/`record_despawn`/`record_park`/`record_place` feed
+  entity deltas (the ECS pipeline hook and lifecycle intents call these
+  on success only); `append_chunk_record`/`append_tile_record`/
+  `pending_tile_count`/`note_collected_mask`/`mark_baseline_pending` are
+  the collection seams; `publish()` seals the frame, bumping the version
+  iff it carries state and dropping pending entity records on baselines
+  (consumers re-snapshot entities on every baseline apply); `clear()`
+  hard-resets pending state and poisons the stream -- the next publish
+  is forced truncated unless it is a baseline, and a world swap is
+  `clear()` followed by a full baseline collection. The collector must
+  be the sole clearing owner of every dirty bit it collects; shared
+  `dirty_bounds` across flag owners only widens boxes (conservative).
+- `collect_tile_deltas(collector, world, dirty_mask)` observes, records,
+  and clears (observed-generation-safe: a racing mark leaves the bits
+  set for a harmless duplicate next frame) every dirty chunk under the
+  mask; dense worlds scan chunk metadata, sparse worlds scan the
+  resident set. Per chunk it emits per-tile records up to the threshold
+  and a clipped box record otherwise, degrading to a box record when
+  tile storage cannot hold a chunk. Sparse residency change records are
+  deferred until a sparse render consumer exists; reloads reset chunk
+  metadata, so such consumers must treat them as baseline triggers.
+
 ### Path-Agent Batch Helpers
 
 - `PathAgentState` stores an agent's position, goal, `PathTicket`, path
