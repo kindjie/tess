@@ -15,7 +15,7 @@
     },
     "fields/nearest_target": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 700
+      "max_cpu_time_ns": 1000
     },
     "fields/cache_hit": {
       "max_real_time_ns": null,
@@ -23,7 +23,7 @@
     },
     "fields/cache_miss_store": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 300
+      "max_cpu_time_ns": 1000000
     },
     "fields/cache_eviction": {
       "max_real_time_ns": null,

@@ -37,8 +37,9 @@ Records meaningful design changes from the original TDDs.
   tightened from the single-artifact 3x policy per the 10-artifact rule
   in `docs/performance.md`; 2x headroom absorbs the shared-runner pool's
   heterogeneous-CPU spread, and nanosecond-scale gates keep an absolute
-  10 ns floor (2x-of-observed below that would fail a correct benchmark
-  on a merely-slower runner SKU). The trends snapshot
+  25 ns floor (2x-of-observed below that fails a correct benchmark on a
+  merely-slower runner SKU -- observed empirically during review; these
+  gates exist for 5-100x gross regressions). The trends snapshot
   (`docs/assets/benchmark-trends.svg` + the `docs/performance.md` table)
   is regenerated from the same ten artifacts.
 - Fixed: the `tess_bench_ci_baselines` target had never been extended
