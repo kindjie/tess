@@ -10,6 +10,10 @@ add_executable(tess_custom_ecs_min custom_ecs_min.cc)
 target_link_libraries(tess_custom_ecs_min PRIVATE tess::tess)
 tess_apply_project_options(tess_custom_ecs_min)
 
+add_executable(tess_render_delta_consumer render_delta_consumer.cc)
+target_link_libraries(tess_render_delta_consumer PRIVATE tess::tess)
+tess_apply_project_options(tess_render_delta_consumer)
+
 if(TESS_ENABLE_ENTT)
   include(TessEnttDeps)
   tess_require_entt()

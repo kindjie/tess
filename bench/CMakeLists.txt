@@ -12,6 +12,7 @@ add_executable(
   tess_path_product_bench.cc
   tess_path_scan_bench.cc
   tess_path_weighted_bench.cc
+  tess_render_delta_bench.cc
   tess_scheduler_bench.cc
   tess_topology_bench.cc
 )
@@ -26,6 +27,7 @@ add_executable(
   tess_path_product_bench.cc
   tess_path_scan_bench.cc
   tess_path_weighted_bench.cc
+  tess_render_delta_bench.cc
   tess_scheduler_bench.cc
   tess_diagnostics_bench.cc
   tess_diagnostics_alloc_hooks.cc
@@ -101,6 +103,12 @@ set(
   TESS_ECS_BENCHMARK_THRESHOLDS
   "${PROJECT_SOURCE_DIR}/bench/thresholds/ecs.json"
   CACHE FILEPATH "Thresholds for ecs benchmark regressions"
+)
+
+set(
+  TESS_RENDER_DELTA_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/render-delta.json"
+  CACHE FILEPATH "Thresholds for render_delta benchmark regressions"
 )
 
 set(
@@ -258,6 +266,25 @@ if(Python3_Interpreter_FOUND)
       VERBATIM
     )
   endif()
+
+  # Like the ecs family: run through the diagnostics binary so the
+  # allocation gate executes in CI.
+  add_custom_target(
+    tess_bench_render_delta_thresholds
+    COMMAND
+      tess_bench_diagnostics
+      --benchmark_filter=render_delta/.*
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/render-delta.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/render-delta.json
+      --thresholds ${TESS_RENDER_DELTA_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench_diagnostics
+    COMMENT "Running render_delta benchmark threshold checks"
+    VERBATIM
+  )
 
   add_custom_target(
     tess_bench_diagnostics_thresholds
