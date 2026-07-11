@@ -3,313 +3,313 @@
   "benchmarks": {
     "path/astar_open_2d": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 740
+      "max_cpu_time_ns": 537
     },
     "path/astar_open_2d_64x64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 3000
+      "max_cpu_time_ns": 2048
     },
     "path/astar_open_2d_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 23000
+      "max_cpu_time_ns": 16278
     },
     "path/astar_open_2d_1024x1024": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 46000
+      "max_cpu_time_ns": 32057
     },
     "path/weighted_astar_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 23000
+      "max_cpu_time_ns": 16206
     },
     "path/weighted_astar_axis_detour_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 100000
+      "max_cpu_time_ns": 125607
     },
     "path/weighted_astar_sparse_blockers_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 13000000
+      "max_cpu_time_ns": 8708851
     },
     "path/weighted_astar_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 75000000
+      "max_cpu_time_ns": 51676413
     },
     "path/weighted_portal_product_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 8400000
+      "max_cpu_time_ns": 5943329
     },
     "path/weighted_portal_product_replay_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 64
+      "max_cpu_time_ns": 42
     },
     "path/weighted_chunk_portal_product_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 6500000
+      "max_cpu_time_ns": 4457508
     },
     "path/weighted_chunk_portal_product_replay_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 62
+      "max_cpu_time_ns": 46
     },
     "path/weighted_chunk_portal_candidates_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 77000
+      "max_cpu_time_ns": 51825
     },
     "path/weighted_portal_segment_cache_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 21000
+      "max_cpu_time_ns": 14862
     },
     "path/weighted_portal_segment_cache_batch_100_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 15000000
+      "max_cpu_time_ns": 21423750
     },
     "path/weighted_portal_endpoint_segments_batch_100_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 20000000
+      "max_cpu_time_ns": 14145312
     },
     "path/weighted_portal_first_field_cache_batch_100_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 11000000
+      "max_cpu_time_ns": 7325032
     },
     "path/weighted_astar_batch_100_mixed_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 3100000000
+      "max_cpu_time_ns": 2166717380
     },
     "path/weighted_astar_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1400000000
+      "max_cpu_time_ns": 1029486443
     },
     "path/weighted_distance_field_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 89000000
+      "max_cpu_time_ns": 67886202
     },
     "path/bounded_weighted_distance_field_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 32000000
+      "max_cpu_time_ns": 24571509
     },
     "path/weighted_astar_batch_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2700000000
+      "max_cpu_time_ns": 2050335832
     },
     "path/weighted_distance_field_batch_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 700000000
+      "max_cpu_time_ns": 533659778
     },
     "path/bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 230000000
+      "max_cpu_time_ns": 173501010
     },
     "path/weighted_batch_planner_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 240000000
+      "max_cpu_time_ns": 176836107
     },
     "path/astar_wall_gap_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 59000
+      "max_cpu_time_ns": 40926
     },
     "path/astar_plane_gap_miss_512x512": {
       "comment": "Pre-A* scan worst case; generous 10x-measured ceiling",
       "comment_ref": "docs/planning/optimization-log.md 2026-07-06",
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 18000000
+      "max_cpu_time_ns": 13169086
     },
     "path/astar_plane_gap_miss_3d_64x64x16": {
       "comment": "3D plane-scan worst case; generous 10x-measured ceiling",
       "comment_ref": "docs/planning/optimization-log.md 2026-07-06",
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 89000
+      "max_cpu_time_ns": 62853
     },
     "path/astar_alternate_direct_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 28000
+      "max_cpu_time_ns": 20139
     },
     "path/astar_axis_detour_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 37000
+      "max_cpu_time_ns": 27487
     },
     "path/astar_no_path_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 7200
+      "max_cpu_time_ns": 5221
     },
     "path/astar_striped_maze_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 1355782
     },
     "path/astar_short_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1500
+      "max_cpu_time_ns": 1063
     },
     "path/astar_medium_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 8500
+      "max_cpu_time_ns": 6077
     },
     "path/astar_long_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 23000
+      "max_cpu_time_ns": 16166
     },
     "path/astar_no_path_1024x1024": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 16000
+      "max_cpu_time_ns": 10420
     },
     "path/astar_striped_maze_1024x1024": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 4000000
+      "max_cpu_time_ns": 5388094
     },
     "path/astar_vertical_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 17000
+      "max_cpu_time_ns": 11970
     },
     "path/astar_vertical_wall_gap_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 46000
+      "max_cpu_time_ns": 32675
     },
     "path/astar_vertical_striped_maze_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 885835
     },
     "path/astar_open_3d_64x64x16": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 3200
+      "max_cpu_time_ns": 2219
     },
     "path/astar_slab_gap_3d_64x64x16": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 43000
+      "max_cpu_time_ns": 33119
     },
     "path/astar_slab_no_gap_3d_64x64x16": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 4300
+      "max_cpu_time_ns": 3108
     },
     "path/astar_slab_multi_gap_3d_64x64x16": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 18000
+      "max_cpu_time_ns": 13904
     },
     "path/astar_corridor_3d_64x64x16": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 77000
+      "max_cpu_time_ns": 57478
     },
     "path/astar_sparse_blockers_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2900000
+      "max_cpu_time_ns": 2023637
     },
     "path/astar_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 1093727
     },
     "path/astar_branch_lattice_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 24000
+      "max_cpu_time_ns": 16807
     },
     "path/astar_batch_100_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2200000
+      "max_cpu_time_ns": 1519814
     },
     "path/astar_batch_100_mixed_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2000000
+      "max_cpu_time_ns": 2138961
     },
     "path/astar_batch_100_shared_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 150000000
+      "max_cpu_time_ns": 108860426
     },
     "path/distance_field_batch_100_shared_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 15000000
+      "max_cpu_time_ns": 10727862
     },
     "path/astar_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 290000000
+      "max_cpu_time_ns": 203726574
     },
     "path/distance_field_batch_100_shared_sparse_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 18000000
+      "max_cpu_time_ns": 12948709
     },
     "path/astar_batch_100_multigoal_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 540000000
+      "max_cpu_time_ns": 405239030
     },
     "path/distance_field_batch_100_multigoal_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 100000000
+      "max_cpu_time_ns": 74809450
     },
     "path/distance_field_product_build_8_goal_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 49000000
+      "max_cpu_time_ns": 55110432
     },
     "path/nearest_target_product_100_starts_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2500000
+      "max_cpu_time_ns": 1783255
     },
     "path/field_product_cache_hit_replay_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 32000
+      "max_cpu_time_ns": 22421
     },
     "path/field_product_cache_stale_rejection_room_portals_512x512/iterations:2000/manual_time": {
-      "max_real_time_ns": 1500,
+      "max_real_time_ns": 1560,
       "max_cpu_time_ns": null,
       "note": "Measurement fix 2026-07-06: manual timing brackets only the stale lookup (previously ~760 ns including per-iteration Pause/Resume timer overhead; ~313 ns measured after the fix). cpu_time now includes the untimed world-sized cache refill, so the gate moved to real_time. The ceiling was recalibrated 2026-07-07 to roughly 3x the observed CI maximum (baseline run 28888943908), replacing the initial 1 ms investigation ceiling."
     },
     "path/field_product_cache_lru_eviction_512x512/iterations:1000/manual_time": {
-      "max_real_time_ns": 910,
+      "max_real_time_ns": 879,
       "max_cpu_time_ns": null,
       "note": "Measurement fix 2026-07-06: manual timing brackets only the evicting store (previously ~596 ns including per-iteration Pause/Resume timer overhead; ~119 ns measured after the fix). cpu_time now includes the untimed product copies, so the 10 ms cpu gate was replaced by a real_time gate. The ceiling was recalibrated 2026-07-07 to roughly 3x the observed CI maximum (baseline run 28888943908), replacing the initial 1 ms investigation ceiling."
     },
     "path/astar_batch_100_mixed_repeated_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 410000000
+      "max_cpu_time_ns": 300677219
     },
     "path/cached_astar_batch_100_mixed_repeated_room_portals_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 130000000
+      "max_cpu_time_ns": 93433352
     },
     "path/astar_batch_100_suffix_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 726734
     },
     "path/cached_astar_batch_100_suffix_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 97000
+      "max_cpu_time_ns": 66363
     },
     "path/agent_runtime_100_unit_suffix_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 180000
+      "max_cpu_time_ns": 128116
     },
     "path/agent_tick_100_unit_clean_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2400
+      "max_cpu_time_ns": 1581
     },
     "path/agent_tick_100_unit_dirty_world_edit_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 2900000
+      "max_cpu_time_ns": 1966278
     },
     "path/agent_runtime_100_weighted_shared_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 24000000
+      "max_cpu_time_ns": 17223965
     },
     "path/agent_tick_100_weighted_shared_dirty_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 24000000
+      "max_cpu_time_ns": 17361600
     },
     "path/agent_runtime_100_weighted_mixed_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 330000000
+      "max_cpu_time_ns": 249819909
     },
     "path/agent_runtime_100_unit_world_edit_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 3000000
+      "max_cpu_time_ns": 1962392
     },
     "path/agent_runtime_100_unit_shared_wall_gap_route_cache_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 440000
+      "max_cpu_time_ns": 394746
     },
     "path/agent_runtime_100_unit_shared_wall_gap_field_cache_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 450000
+      "max_cpu_time_ns": 393206
     },
     "path/agent_runtime_100_unit_scattered_wall_gap_route_cache_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 300000
+      "max_cpu_time_ns": 251555
     },
     "path/agent_runtime_100_unit_scattered_wall_gap_field_cache_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 1355993
     }
   }
 }

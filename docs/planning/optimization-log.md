@@ -857,3 +857,28 @@ deferred for scope reasons. Keep entries short and concrete:
   behind a cheap occupancy summary) if the miss benchmarks regress past
   their generous ceilings or profiling shows scan overhead dominating
   realistic mixed workloads.
+
+## 2026-07-11 - Shared Pathing-Dirty Flag Amplifies Batch Replans (S11.4)
+
+- Observation (sampled while sizing the S11.4 consumer soak; profile
+  dominated by `weighted_astar_path` under `process_weighted_batch`):
+  `set_path_agent_goal` and the consumer's movement-failure handling
+  both mark the SHARED `PathAgentTickState::pathing_dirty` flag, so ONE
+  agent drawing a new goal (arrival, failed-goal re-choose) or ONE
+  blocked step replans the ENTIRE weighted batch next tick. On a
+  building-dense 512x512 map where each weighted search costs
+  milliseconds (`path/agent_runtime_100_weighted_mixed_512x512` ~100 ms
+  per replan of 100), steady state degenerates to a near-per-tick full
+  batch: a 12-agent 10k-tick run took minutes. On mostly-open maps the
+  same amplification exists but each search is microseconds
+  (`weighted_astar_open_512x512`), so it stays invisible.
+- Accepted: keep the coarse flag for v1 -- it is correct (never a stale
+  route), and the consumer soak is sized to open-ish maps where the
+  amplification is cheap. Documented in the soak test's comment.
+- Deferred: per-agent invalidation granularity -- goal arming should
+  only need to (re)submit THAT agent; a world change is what genuinely
+  invalidates everyone. Needs a tess-side distinction between
+  agent-scoped and world-scoped pathing dirt -- post-v1 API work.
+- Retry conditions: revisit when a consumer needs dozens-plus of
+  weighted agents on maze-like maps with frequent goal churn, or if the
+  `agent_runtime` weighted family regresses.

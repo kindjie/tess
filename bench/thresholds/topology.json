@@ -3,27 +3,27 @@
   "benchmarks": {
     "topology/region_graph_build_open_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 15000000
+      "max_cpu_time_ns": 11939024
     },
     "topology/region_graph_build_composed_class_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 45000000
+      "max_cpu_time_ns": 12473322
     },
     "topology/region_graph_update_single_chunk_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 6000000
+      "max_cpu_time_ns": 6277497
     },
     "topology/reachable_far_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 20000
+      "max_cpu_time_ns": 4389
     },
     "topology/precheck_reachable_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 20000
+      "max_cpu_time_ns": 5200
     },
     "topology/precheck_unreachable_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 120000
+      "max_cpu_time_ns": 50219
     }
   }
 }

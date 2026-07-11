@@ -1,40 +1,75 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="920" height="540" viewBox="0 0 920 540" role="img" aria-label="Benchmark trend snapshot">
 <rect width="100%" height="100%" fill="#ffffff"/>
 <text x="20" y="28" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#111827">Tess Benchmark Trends</text>
-<text x="20" y="50" font-family="Arial, sans-serif" font-size="12" fill="#4b5563">Stale snapshot: data from CI run 26980713740 at commit 90ce419, collected 2026-06-04 14:33 PDT.</text>
+<text x="20" y="50" font-family="Arial, sans-serif" font-size="12" fill="#4b5563">Stale snapshot: data from CI run 29167134881 at commit d8cc9a1, collected 2026-07-11 13:57 PDT.</text>
 <text x="20" y="94" font-family="Arial, sans-serif" font-size="12" fill="#111827">block/context_iteration_2d</text>
-<text x="20" y="113" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 436.332 ns</text>
+<text x="20" y="113" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 332.931 ns</text>
 <line x1="235" y1="130" x2="884" y2="130" stroke="#e5e7eb"/>
-<polyline points="235.0,94.9 559.5,94.7 884.0,92.0" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="235.0" cy="94.9" r="3.5" fill="#2563eb"/>
-<circle cx="559.5" cy="94.7" r="3.5" fill="#2563eb"/>
-<circle cx="884.0" cy="92.0" r="3.5" fill="#2563eb"/>
+<polyline points="235.0,107.8 307.1,97.6 379.2,96.5 451.3,98.3 523.4,96.4 595.6,107.3 667.7,98.0 739.8,98.3 811.9,92.0 884.0,98.6" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="235.0" cy="107.8" r="3.5" fill="#2563eb"/>
+<circle cx="307.1" cy="97.6" r="3.5" fill="#2563eb"/>
+<circle cx="379.2" cy="96.5" r="3.5" fill="#2563eb"/>
+<circle cx="451.3" cy="98.3" r="3.5" fill="#2563eb"/>
+<circle cx="523.4" cy="96.4" r="3.5" fill="#2563eb"/>
+<circle cx="595.6" cy="107.3" r="3.5" fill="#2563eb"/>
+<circle cx="667.7" cy="98.0" r="3.5" fill="#2563eb"/>
+<circle cx="739.8" cy="98.3" r="3.5" fill="#2563eb"/>
+<circle cx="811.9" cy="92.0" r="3.5" fill="#2563eb"/>
+<circle cx="884.0" cy="98.6" r="3.5" fill="#2563eb"/>
 <text x="20" y="180" font-family="Arial, sans-serif" font-size="12" fill="#111827">block/chunk_tile_iteration_2d</text>
-<text x="20" y="199" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 1710.011 ns</text>
+<text x="20" y="199" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 1323.926 ns</text>
 <line x1="235" y1="216" x2="884" y2="216" stroke="#e5e7eb"/>
-<polyline points="235.0,178.0 559.5,178.0 884.0,178.0" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="235.0,178.0 307.1,186.8 379.2,186.9 451.3,186.9 523.4,186.8 595.6,178.1 667.7,186.9 739.8,186.9 811.9,182.5 884.0,190.1" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
 <circle cx="235.0" cy="178.0" r="3.5" fill="#16a34a"/>
-<circle cx="559.5" cy="178.0" r="3.5" fill="#16a34a"/>
-<circle cx="884.0" cy="178.0" r="3.5" fill="#16a34a"/>
+<circle cx="307.1" cy="186.8" r="3.5" fill="#16a34a"/>
+<circle cx="379.2" cy="186.9" r="3.5" fill="#16a34a"/>
+<circle cx="451.3" cy="186.9" r="3.5" fill="#16a34a"/>
+<circle cx="523.4" cy="186.8" r="3.5" fill="#16a34a"/>
+<circle cx="595.6" cy="178.1" r="3.5" fill="#16a34a"/>
+<circle cx="667.7" cy="186.9" r="3.5" fill="#16a34a"/>
+<circle cx="739.8" cy="186.9" r="3.5" fill="#16a34a"/>
+<circle cx="811.9" cy="182.5" r="3.5" fill="#16a34a"/>
+<circle cx="884.0" cy="190.1" r="3.5" fill="#16a34a"/>
 <text x="20" y="266" font-family="Arial, sans-serif" font-size="12" fill="#111827">block/chunk_boundary_scan_2d</text>
-<text x="20" y="285" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 12332.274 ns</text>
+<text x="20" y="285" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 9528.104 ns</text>
 <line x1="235" y1="302" x2="884" y2="302" stroke="#e5e7eb"/>
-<polyline points="235.0,264.0 559.5,264.1 884.0,264.0" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="235.0" cy="264.0" r="3.5" fill="#dc2626"/>
-<circle cx="559.5" cy="264.1" r="3.5" fill="#dc2626"/>
-<circle cx="884.0" cy="264.0" r="3.5" fill="#dc2626"/>
+<polyline points="235.0,275.6 307.1,268.4 379.2,268.3 451.3,267.7 523.4,268.3 595.6,275.6 667.7,268.4 739.8,268.3 811.9,264.0 884.0,272.5" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="235.0" cy="275.6" r="3.5" fill="#dc2626"/>
+<circle cx="307.1" cy="268.4" r="3.5" fill="#dc2626"/>
+<circle cx="379.2" cy="268.3" r="3.5" fill="#dc2626"/>
+<circle cx="451.3" cy="267.7" r="3.5" fill="#dc2626"/>
+<circle cx="523.4" cy="268.3" r="3.5" fill="#dc2626"/>
+<circle cx="595.6" cy="275.6" r="3.5" fill="#dc2626"/>
+<circle cx="667.7" cy="268.4" r="3.5" fill="#dc2626"/>
+<circle cx="739.8" cy="268.3" r="3.5" fill="#dc2626"/>
+<circle cx="811.9" cy="264.0" r="3.5" fill="#dc2626"/>
+<circle cx="884.0" cy="272.5" r="3.5" fill="#dc2626"/>
 <text x="20" y="352" font-family="Arial, sans-serif" font-size="12" fill="#111827">storage/world_chunks_iteration</text>
-<text x="20" y="371" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 93.393 ns</text>
+<text x="20" y="371" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 72.522 ns</text>
 <line x1="235" y1="388" x2="884" y2="388" stroke="#e5e7eb"/>
-<polyline points="235.0,350.1 559.5,350.0 884.0,350.0" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="235.0" cy="350.1" r="3.5" fill="#7c3aed"/>
-<circle cx="559.5" cy="350.0" r="3.5" fill="#7c3aed"/>
-<circle cx="884.0" cy="350.0" r="3.5" fill="#7c3aed"/>
+<polyline points="235.0,361.0 307.1,362.8 379.2,362.8 451.3,350.0 523.4,362.8 595.6,361.6 667.7,362.9 739.8,362.8 811.9,366.6 884.0,371.4" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="235.0" cy="361.0" r="3.5" fill="#7c3aed"/>
+<circle cx="307.1" cy="362.8" r="3.5" fill="#7c3aed"/>
+<circle cx="379.2" cy="362.8" r="3.5" fill="#7c3aed"/>
+<circle cx="451.3" cy="350.0" r="3.5" fill="#7c3aed"/>
+<circle cx="523.4" cy="362.8" r="3.5" fill="#7c3aed"/>
+<circle cx="595.6" cy="361.6" r="3.5" fill="#7c3aed"/>
+<circle cx="667.7" cy="362.9" r="3.5" fill="#7c3aed"/>
+<circle cx="739.8" cy="362.8" r="3.5" fill="#7c3aed"/>
+<circle cx="811.9" cy="366.6" r="3.5" fill="#7c3aed"/>
+<circle cx="884.0" cy="371.4" r="3.5" fill="#7c3aed"/>
 <text x="20" y="438" font-family="Arial, sans-serif" font-size="12" fill="#111827">storage/world_dirty_chunks_iteration</text>
-<text x="20" y="457" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 285.844 ns</text>
+<text x="20" y="457" font-family="Arial, sans-serif" font-size="11" fill="#6b7280">latest 165.229 ns</text>
 <line x1="235" y1="474" x2="884" y2="474" stroke="#e5e7eb"/>
-<polyline points="235.0,436.8 559.5,436.6 884.0,436.0" fill="none" stroke="#ca8a04" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="235.0" cy="436.8" r="3.5" fill="#ca8a04"/>
-<circle cx="559.5" cy="436.6" r="3.5" fill="#ca8a04"/>
-<circle cx="884.0" cy="436.0" r="3.5" fill="#ca8a04"/>
+<polyline points="235.0,436.0 307.1,444.8 379.2,439.2 451.3,444.1 523.4,436.5 595.6,443.9 667.7,439.4 739.8,440.4 811.9,440.3 884.0,447.9" fill="none" stroke="#ca8a04" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="235.0" cy="436.0" r="3.5" fill="#ca8a04"/>
+<circle cx="307.1" cy="444.8" r="3.5" fill="#ca8a04"/>
+<circle cx="379.2" cy="439.2" r="3.5" fill="#ca8a04"/>
+<circle cx="451.3" cy="444.1" r="3.5" fill="#ca8a04"/>
+<circle cx="523.4" cy="436.5" r="3.5" fill="#ca8a04"/>
+<circle cx="595.6" cy="443.9" r="3.5" fill="#ca8a04"/>
+<circle cx="667.7" cy="439.4" r="3.5" fill="#ca8a04"/>
+<circle cx="739.8" cy="440.4" r="3.5" fill="#ca8a04"/>
+<circle cx="811.9" cy="440.3" r="3.5" fill="#ca8a04"/>
+<circle cx="884.0" cy="447.9" r="3.5" fill="#ca8a04"/>
 </svg>

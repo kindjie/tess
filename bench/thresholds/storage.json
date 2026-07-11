@@ -3,43 +3,43 @@
   "benchmarks": {
     "storage/field_span_acquisition": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 50
+      "max_cpu_time_ns": 25
     },
     "storage/chunk_field_write_read_iteration": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 50
+      "max_cpu_time_ns": 25
     },
     "storage/single_chunk_page_iteration": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 50
+      "max_cpu_time_ns": 25
     },
     "storage/flat_array_iteration": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 50
+      "max_cpu_time_ns": 25
     },
     "storage/world_chunk_lookup_by_key": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 50
+      "max_cpu_time_ns": 25
     },
     "storage/world_chunk_lookup_by_coord": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 50
+      "max_cpu_time_ns": 25
     },
     "storage/world_chunks_iteration": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 340
+      "max_cpu_time_ns": 345
     },
     "storage/world_metadata_lookup_by_key": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 50
+      "max_cpu_time_ns": 25
     },
     "storage/world_dirty_mark_clear": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 50
+      "max_cpu_time_ns": 28
     },
     "storage/world_dirty_chunks_iteration": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 600
+      "max_cpu_time_ns": 483
     }
   }
 }
