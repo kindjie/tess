@@ -13,6 +13,30 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - Threshold recalibration + trends snapshot (M14, S11.3)
+
+- Changed: every gated benchmark ceiling in `bench/thresholds/` for the
+  key, storage, block, queued, path, topology, and diagnostics families
+  is now twice the maximum observed across ten main-run CI baseline
+  artifacts (runs 29056942917-29167134881, 10 repetitions each),
+  tightened from the single-artifact 3x policy per the 10-artifact rule
+  in `docs/performance.md`; 2x headroom absorbs the shared-runner pool's
+  heterogeneous-CPU spread. The trends snapshot
+  (`docs/assets/benchmark-trends.svg` + the `docs/performance.md` table)
+  is regenerated from the same ten artifacts.
+- Fixed: the `tess_bench_ci_baselines` target had never been extended
+  past the diagnostics family -- scheduler (S7), ecs (S8), render-delta
+  (S9), and fields (S11.1) gates existed with no baseline collection.
+  They are wired in now (through the binaries their threshold targets
+  use), keep their bootstrap ceilings, and get recalibrated once enough
+  artifacts carrying them accumulate.
+- Reason: S11.3 (consolidation) -- the deferred tightening pass and the
+  deferred >=5-artifact snapshot regeneration, done once, reviewably.
+- Affected docs: `docs/performance.md`,
+  `docs/assets/benchmark-trends.svg`.
+- Affected code: `bench/thresholds/{key-conversions,storage,block,
+  queued,path,topology,diagnostics}.json`, `bench/CMakeLists.txt`.
+
 ## 2026-07-11 - Consolidation examples + CI example smoke (M15, S11.2)
 
 - Added: three examples closing the M15 checklist.

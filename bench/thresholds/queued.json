@@ -3,11 +3,11 @@
   "benchmarks": {
     "queued/execute_resident_update": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 880
+      "max_cpu_time_ns": 881
     },
     "queued/execute_resident_update_with_results": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1500
+      "max_cpu_time_ns": 557
     }
   }
 }
