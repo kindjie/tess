@@ -14,7 +14,8 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "TESS_BUILD_TESTING": "ON",
-        "TESS_ENABLE_WARNINGS": "ON"
+        "TESS_ENABLE_WARNINGS": "ON",
+        "TESS_ENABLE_ENTT": "ON"
       }
     },
     {
@@ -80,7 +81,8 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "TESS_BUILD_TESTING": "ON",
-        "TESS_ENABLE_WARNINGS": "ON"
+        "TESS_ENABLE_WARNINGS": "ON",
+        "TESS_ENABLE_ENTT": "ON"
       }
     },
     {
@@ -92,7 +94,8 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "TESS_BUILD_TESTING": "ON",
         "TESS_BUILD_BENCHMARKS": "ON",
-        "TESS_ENABLE_WARNINGS": "ON"
+        "TESS_ENABLE_WARNINGS": "ON",
+        "TESS_ENABLE_ENTT": "ON"
       }
     },
     {
@@ -106,7 +109,8 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "TESS_BUILD_TESTING": "ON",
         "TESS_BUILD_BENCHMARKS": "ON",
-        "TESS_ENABLE_WARNINGS": "ON"
+        "TESS_ENABLE_WARNINGS": "ON",
+        "TESS_ENABLE_ENTT": "ON"
       }
     },
     {
@@ -147,7 +151,8 @@
       },
       "cacheVariables": {
         "TESS_BUILD_TESTING": "ON",
-        "TESS_ENABLE_WARNINGS": "ON"
+        "TESS_ENABLE_WARNINGS": "ON",
+        "TESS_ENABLE_ENTT": "ON"
       }
     }
   ],
