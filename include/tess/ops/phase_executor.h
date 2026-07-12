@@ -210,6 +210,9 @@ class ScopedThreadPhaseExecutor {
 // violations; in release builds the assert compiles out (zero cost, per
 // core/assert.h) and the misuse deadlocks or races exactly as documented
 // here. Distinct executors are independent and may dispatch in parallel.
+// The analyzer's padding complaint is the point: the alignas(128) members
+// below buy false-sharing isolation with those bytes (audit 2026-07-11 M8).
+// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class WorkerPoolPhaseExecutor {
  public:
   explicit WorkerPoolPhaseExecutor(std::size_t worker_count) {
@@ -286,6 +289,7 @@ class WorkerPoolPhaseExecutor {
 
     auto&& callback = fn;
     using Callback = std::remove_reference_t<decltype(callback)>;
+    std::size_t runs = 0;
     {
       const std::scoped_lock lock{mutex_};
       // Single-dispatch guard; see the class comment. The flag is
@@ -318,13 +322,16 @@ class WorkerPoolPhaseExecutor {
       finished_operations_.store(0, std::memory_order_relaxed);
       ++job_epoch_;
       job_active_ = true;
+      // Derived under the lock so the notify count below never reads
+      // job_stride_ across the unlock (safe today with one dispatcher,
+      // but locally obvious beats derivable).
+      runs = (count + job_stride_ - 1) / job_stride_;
     }
     // Wake only as many workers as there are runs to claim; a small phase
     // on a wide pool otherwise storms every thread awake to find nothing
     // (audit 2026-07-11 M8). A worker that reaches wait() on its own sees
     // the live job through the predicate, so under-notification cannot
     // strand work.
-    const auto runs = (count + job_stride_ - 1) / job_stride_;
     if (runs >= workers_.size()) {
       work_cv_.notify_all();
     } else {
@@ -392,9 +399,10 @@ class WorkerPoolPhaseExecutor {
       --active_workers_;
       // Only the last worker out can satisfy the dispatcher's predicate
       // (finished == count AND active_workers_ == 0), so intermediate
-      // notifies were pure wakeup churn.
+      // notifies were pure wakeup churn. notify_one: the single-dispatch
+      // contract means done_cv_ has at most one waiter.
       if (active_workers_ == 0) {
-        done_cv_.notify_all();
+        done_cv_.notify_one();
       }
     }
   }
@@ -403,11 +411,15 @@ class WorkerPoolPhaseExecutor {
   mutable std::condition_variable work_cv_;
   mutable std::condition_variable done_cv_;
   mutable std::vector<PlannedExecutionResult> results_;
-  // Own cache lines: every worker RMWs both counters per claimed chunk;
+  // Own cache lines: every worker RMWs both counters per claimed run;
   // adjacent they ping-pong one line between cores (audit 2026-07-11 M8).
-  alignas(64) mutable std::atomic<std::size_t> next_offset_ = 0;
-  alignas(64) mutable std::atomic<std::size_t> finished_operations_ = 0;
-  alignas(64) mutable void* job_context_ = nullptr;
+  // 128, not 64: Apple Silicon (where the A/B numbers were measured) has
+  // 128-byte lines and x86 prefetches the adjacent line, while alignas
+  // only fixes spacing relative to the object base -- at 64 the pair
+  // could still share one 128-byte line depending on allocation address.
+  alignas(128) mutable std::atomic<std::size_t> next_offset_ = 0;
+  alignas(128) mutable std::atomic<std::size_t> finished_operations_ = 0;
+  alignas(128) mutable void* job_context_ = nullptr;
   mutable JobInvoke job_invoke_ = nullptr;
   mutable std::size_t job_first_ = 0;
   mutable std::size_t job_count_ = 0;
