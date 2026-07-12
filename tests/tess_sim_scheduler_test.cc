@@ -76,8 +76,8 @@ TEST(TessMovement, CommitValidatesPassabilityOccupancyReservationAndVersions) {
   EXPECT_EQ(result.status, tess::MovementStatus::Moved);
   EXPECT_FALSE(world.template field<OccupancyTag>(tess::Coord3{0, 0, 0}));
   EXPECT_TRUE(world.template field<OccupancyTag>(tess::Coord3{1, 0, 0}));
-  EXPECT_EQ(world.meta(from_chunk).field_dirty_flags, DirtyOccupancy);
-  EXPECT_EQ(world.meta(to_chunk).field_dirty_flags, DirtyOccupancy);
+  EXPECT_EQ(world.dirty_flags(from_chunk), DirtyOccupancy);
+  EXPECT_EQ(world.dirty_flags(to_chunk), DirtyOccupancy);
 
   world.template field<ReservationTag>(tess::Coord3{2, 0, 0}) = true;
   result = tess::commit_movement_intent<World, PassableTag, OccupancyTag,
@@ -641,7 +641,7 @@ TEST(TessScheduler, ClearRenderDirtyOptionClearsMetadataAfterCollection) {
 
   EXPECT_TRUE(stats.executed_ops);
   EXPECT_GE(stats.render_delta_count, 1u);
-  EXPECT_EQ(world.meta(edit_chunk).field_dirty_flags & DirtyRender, 0u);
+  EXPECT_EQ(world.dirty_flags(edit_chunk) & DirtyRender, 0u);
   EXPECT_TRUE(world.dirty_chunks(DirtyRender).empty());
 
   const auto collected = render_deltas.size();
@@ -726,12 +726,12 @@ TEST(TessScheduler, WeightedMovementSchedulerTakesCheapDetourAndCommits) {
   EXPECT_TRUE(world.template field<OccupancyTag>(tess::Coord3{4, 0, 0}));
 
   const auto route_chunk = world.resolve(tess::Coord3{0, 0, 0}).chunk_key;
-  EXPECT_NE(world.meta(route_chunk).field_dirty_flags & DirtyOccupancy, 0u);
+  EXPECT_NE(world.dirty_flags(route_chunk) & DirtyOccupancy, 0u);
   for (std::uint64_t key = 0; key < World::chunk_count; ++key) {
     if ((tess::ChunkKey{key}) == route_chunk) {
       continue;
     }
-    EXPECT_EQ(world.meta(tess::ChunkKey{key}).field_dirty_flags, 0u);
+    EXPECT_EQ(world.dirty_flags(tess::ChunkKey{key}), 0u);
   }
   EXPECT_FALSE(render_deltas.empty());
 }
@@ -760,7 +760,7 @@ TEST(TessScheduler, WeightedMovementSchedulerZeroMaskLeavesMetadataClean) {
   EXPECT_TRUE(world.template field<OccupancyTag>(tess::Coord3{4, 0, 0}));
 
   for (std::uint64_t key = 0; key < World::chunk_count; ++key) {
-    EXPECT_EQ(world.meta(tess::ChunkKey{key}).field_dirty_flags, 0u);
+    EXPECT_EQ(world.dirty_flags(tess::ChunkKey{key}), 0u);
   }
   EXPECT_TRUE(render_deltas.empty());
 }

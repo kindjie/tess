@@ -136,9 +136,9 @@ void expect_worlds_match(const World& lhs, const World& rhs) {
     EXPECT_EQ(lhs.meta(key).state, rhs.meta(key).state);
     EXPECT_EQ(lhs.meta(key).version, rhs.meta(key).version);
     EXPECT_EQ(lhs.meta(key).topology_version, rhs.meta(key).topology_version);
-    EXPECT_EQ(lhs.meta(key).field_dirty_flags, rhs.meta(key).field_dirty_flags);
-    EXPECT_EQ(lhs.meta(key).active_flags, rhs.meta(key).active_flags);
-    EXPECT_EQ(lhs.meta(key).dirty_bounds, rhs.meta(key).dirty_bounds);
+    EXPECT_EQ(lhs.dirty_flags(key), rhs.dirty_flags(key));
+    EXPECT_EQ(lhs.active_flags(key), rhs.active_flags(key));
+    EXPECT_EQ(lhs.dirty_bounds(key), rhs.dirty_bounds(key));
 
     const auto lhs_terrain = lhs.chunk(key).template field_span<TerrainTag>();
     const auto rhs_terrain = rhs.chunk(key).template field_span<TerrainTag>();
@@ -987,8 +987,8 @@ TEST(TessQueued, ExecutePlannedOperationRunsCallbackAndMarksDirtyChunks) {
   EXPECT_EQ(world.chunk(tess::ChunkKey{3})
                 .template field<TerrainTag>(tess::LocalTileId{0}),
             13u);
-  EXPECT_EQ(world.meta(tess::ChunkKey{1}).field_dirty_flags, DirtyTerrain);
-  EXPECT_EQ(world.meta(tess::ChunkKey{3}).field_dirty_flags, DirtyTerrain);
+  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{1}), DirtyTerrain);
+  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{3}), DirtyTerrain);
   EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 1u);
   EXPECT_EQ(world.meta(tess::ChunkKey{3}).version, 1u);
 }
@@ -1010,10 +1010,9 @@ TEST(TessQueued, PlannedDirtyMergeCoalescesRecordsInChunkOrder) {
 
   EXPECT_EQ(merged, 1u);
   EXPECT_TRUE(dirty.records().empty());
-  EXPECT_EQ(world.meta(tess::ChunkKey{3}).field_dirty_flags,
-            DirtyTerrain | DirtyCost);
+  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{3}), DirtyTerrain | DirtyCost);
   EXPECT_EQ(world.meta(tess::ChunkKey{3}).version, 1u);
-  EXPECT_EQ(world.meta(tess::ChunkKey{3}).dirty_bounds,
+  EXPECT_EQ(world.dirty_bounds(tess::ChunkKey{3}),
             (tess::Box3{tess::Coord3{96, 48, 0}, tess::Extent3{8, 4, 1}}));
 }
 
@@ -1049,8 +1048,8 @@ TEST(TessQueued, DeferredPlannedExecutionRecordsDirtyBeforeMerge) {
   EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
   EXPECT_EQ(result.chunk_count, 2u);
   EXPECT_EQ(dirty.records().size(), 2u);
-  EXPECT_EQ(world.meta(tess::ChunkKey{1}).field_dirty_flags, 0u);
-  EXPECT_EQ(world.meta(tess::ChunkKey{3}).field_dirty_flags, 0u);
+  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{1}), 0u);
+  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{3}), 0u);
   EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 0u);
   EXPECT_EQ(world.meta(tess::ChunkKey{3}).version, 0u);
 
@@ -1064,8 +1063,8 @@ TEST(TessQueued, DeferredPlannedExecutionRecordsDirtyBeforeMerge) {
   EXPECT_EQ(world.chunk(tess::ChunkKey{3})
                 .template field<TerrainTag>(tess::LocalTileId{0}),
             23u);
-  EXPECT_EQ(world.meta(tess::ChunkKey{1}).field_dirty_flags, DirtyTerrain);
-  EXPECT_EQ(world.meta(tess::ChunkKey{3}).field_dirty_flags, DirtyTerrain);
+  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{1}), DirtyTerrain);
+  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{3}), DirtyTerrain);
   EXPECT_EQ(world.meta(tess::ChunkKey{1}).version, 1u);
   EXPECT_EQ(world.meta(tess::ChunkKey{3}).version, 1u);
 }
@@ -1267,9 +1266,8 @@ TEST(TessQueued, PlannedDirtyPartitionsMergeDeterministically) {
   EXPECT_TRUE(partitions.partition(0).records().empty());
   EXPECT_TRUE(partitions.partition(1).records().empty());
   EXPECT_TRUE(scratch.records().empty());
-  EXPECT_EQ(world.meta(tess::ChunkKey{3}).field_dirty_flags,
-            DirtyTerrain | DirtyCost);
-  EXPECT_EQ(world.meta(tess::ChunkKey{3}).dirty_bounds,
+  EXPECT_EQ(world.dirty_flags(tess::ChunkKey{3}), DirtyTerrain | DirtyCost);
+  EXPECT_EQ(world.dirty_bounds(tess::ChunkKey{3}),
             (tess::Box3{tess::Coord3{96, 48, 0}, tess::Extent3{8, 4, 1}}));
 }
 
