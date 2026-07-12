@@ -13,6 +13,34 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-12 - Tick-engine overhead: schedule, movement, planning (audit3 W3)
+
+- Changed: `Schedule::seal()` builds a phase-major dispatch order (one
+  pass per tick instead of SimPhase::Count full scans) and an
+  OnDirty-only index that dirty merges write to (only OnDirty cadences
+  read `pending_mask`); `run_tick` guards `in_run_` with RAII so a
+  throwing task no longer latches the schedule (audit C2, tested).
+  Movement validation resolves each endpoint once and threads the
+  resolved tiles through passability, occupancy/reservation, version
+  checks, commit writes, and dirty marks (was 4-7 resolves per step);
+  version checks early-return when the intent carries no expectations.
+  `plan_operations` gains a reuse overload planning into a caller-owned
+  `ExecutionReport` (rows, planned ops, and pooled chunk lists recycled;
+  steady state is allocation-free, tested); `expand_domain` fills
+  in place via the collect_* accessors; auto-exec reuses a task-owned
+  report. `dirty_axis_end`/`axis_end` now share chunk_meta's saturating
+  helper (audit C1); `detail::popcount` is `std::popcount`. Scheduler
+  bench medians: empty_tick 50->7 ns, cadence_dispatch_100 510->165 ns,
+  dirty_trigger 49->8 ns (local).
+- Reason: audit-2026-07-11 M4a/b, M6, M7, C1, C2, and the popcount low
+  -- per-tick engine overhead with mechanical fixes.
+- Affected docs: `docs/planning/audit-2026-07-11-remediation.md`.
+- Affected code: `include/tess/sim/schedule.h`,
+  `include/tess/sim/movement.h`, `include/tess/sim/auto_exec.h`,
+  `include/tess/sim/render_delta.h`, `include/tess/ops/queued.h`,
+  `include/tess/storage/chunk_meta.h`, `tests/tess_sim_schedule_test.cc`,
+  `tests/tess_queued_planning_test.cc`, `tests/CMakeLists.txt`.
+
 ## 2026-07-11 - Batch grouping, residency probes, settle-target floods (audit3 W2)
 
 - Changed: `weighted_path_batch` scatters shared-goal results through

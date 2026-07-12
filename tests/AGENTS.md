@@ -83,6 +83,11 @@
   char/`std::uint64_t`/max-aligned allocations staying aligned and
   disjoint, and growth keeping `used_bytes()` while serving new
   allocations from fresh storage.
+- `tess_queued_planning_test`: pins the audit-2026-07-11 M4 planner-reuse
+  contract -- the `plan_operations` overload that plans into a caller-owned
+  `ExecutionReport` recycles report rows, planned operations, and pooled
+  chunk lists, so warm steady-state planning performs zero allocations
+  (counter-backed).
 - `tess_queued_test`: verifies the M4 queued-operations scaffold, including
   empty-frame planning, stable handles and enqueue-order ids, explicit/dirty/
   active/resident chunk-domain expansion, enqueue-order plan preservation,

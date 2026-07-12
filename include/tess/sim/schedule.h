@@ -153,7 +153,11 @@ class Schedule {
 
   // Setup-time capacity; add_task within it never reallocates, and run_tick
   // never allocates at all.
-  void reserve_tasks(std::size_t count) { tasks_.reserve(count); }
+  void reserve_tasks(std::size_t count) {
+    tasks_.reserve(count);
+    phase_order_.reserve(count);
+    dirty_task_ids_.reserve(count);
+  }
 
   auto add_task(const ScheduleTaskDesc& desc, void* ctx, ScheduleTaskFn fn)
       -> TaskId {
@@ -195,9 +199,40 @@ class Schedule {
             -> ScheduleTaskResult { return (*static_cast<T*>(ctx))(context); });
   }
 
-  // Freezes registration. Tasks already run in phase-major, then
-  // registration order without reordering storage, so TaskIds stay stable.
-  void seal() noexcept { sealed_ = true; }
+  // Freezes registration and builds the dispatch indexes: phase_order_
+  // (phase-major, registration-stable -- the order run_tick always had,
+  // now one pass instead of SimPhase::Count passes over every task) and
+  // dirty_task_ids_ (only OnDirty cadences consume pending_mask, so dirty
+  // merges stop writing tasks that never read the value; audit 2026-07-11
+  // M6). Storage is never reordered, so TaskIds stay stable. A contract-
+  // violating add_task after seal() asserts in debug builds; under NDEBUG
+  // the late task registers but never dispatches (it is absent from the
+  // frozen indexes).
+  void seal() {
+    // Idempotent: registration is frozen after the first seal, so there is
+    // nothing to rebuild -- and a redundant seal() from inside a task
+    // callback must not rebuild phase_order_ while run_tick iterates it
+    // (Codex review of the audit3 W3 change).
+    if (sealed_) {
+      return;
+    }
+    phase_order_.clear();
+    dirty_task_ids_.clear();
+    for (std::uint8_t phase = 0;
+         phase < static_cast<std::uint8_t>(SimPhase::Count); ++phase) {
+      for (std::size_t i = 0; i < tasks_.size(); ++i) {
+        if (static_cast<std::uint8_t>(tasks_[i].desc.phase) == phase) {
+          phase_order_.push_back(static_cast<TaskId>(i));
+        }
+      }
+    }
+    for (std::size_t i = 0; i < tasks_.size(); ++i) {
+      if (tasks_[i].desc.cadence.kind == CadenceKind::OnDirty) {
+        dirty_task_ids_.push_back(static_cast<TaskId>(i));
+      }
+    }
+    sealed_ = true;
+  }
 
   [[nodiscard]] auto sealed() const noexcept -> bool { return sealed_; }
 
@@ -219,10 +254,17 @@ class Schedule {
     }
   }
 
-  // Merges external dirty bits into every task's pending mask (OnDirty
-  // tasks fire when their own mask bits are present; foreign bits sit
-  // inert). Frame-owner thread only; never call from an op callback.
+  // Merges external dirty bits into the pending masks that can consume
+  // them (only OnDirty cadences read pending_mask; foreign bits within an
+  // OnDirty task's mask sit inert). Frame-owner thread only; never call
+  // from an op callback.
   void notify_dirty(std::uint32_t mask) noexcept {
+    if (sealed_) {
+      for (const auto id : dirty_task_ids_) {
+        tasks_[id].pending_mask |= mask;
+      }
+      return;
+    }
     for (auto& task : tasks_) {
       task.pending_mask |= mask;
     }
@@ -231,20 +273,21 @@ class Schedule {
   auto run_tick(SimClock& clock) -> ScheduleTickStats {
     TESS_ASSERT(sealed_);
     TESS_ASSERT(!in_run_);
+    // Scope guard rather than a trailing store: a throwing task callback
+    // must not leave the schedule latched "in run", or every subsequent
+    // tick would fail the reentrancy assert (audit 2026-07-11 C2).
+    struct InRunGuard {
+      bool& flag;
+      ~InRunGuard() { flag = false; }
+    };
     in_run_ = true;
+    const InRunGuard guard{in_run_};
     auto stats = ScheduleTickStats{};
     stats.tick = advance_sim_tick(clock);
 
-    for (std::uint8_t phase = 0;
-         phase < static_cast<std::uint8_t>(SimPhase::Count); ++phase) {
-      for (auto& task : tasks_) {
-        if (static_cast<std::uint8_t>(task.desc.phase) != phase) {
-          continue;
-        }
-        run_task_if_due(task, clock, stats);
-      }
+    for (const auto id : phase_order_) {
+      run_task_if_due(tasks_[id], clock, stats);
     }
-    in_run_ = false;
     return stats;
   }
 
@@ -338,9 +381,10 @@ class Schedule {
         task.desc.cadence.kind == CadenceKind::Background && result.more_work;
     if (result.dirty_mask != 0) {
       // Immediate merge: later-phase OnDirty tasks see it this tick,
-      // earlier-phase (and this) tasks next tick.
-      for (auto& other : tasks_) {
-        other.pending_mask |= result.dirty_mask;
+      // earlier-phase (and this) tasks next tick. Only OnDirty tasks
+      // consume pending_mask, so only they receive it.
+      for (const auto id : dirty_task_ids_) {
+        tasks_[id].pending_mask |= result.dirty_mask;
       }
       stats.dirty_mask_produced |= result.dirty_mask;
     }
@@ -353,6 +397,10 @@ class Schedule {
   }
 
   std::vector<TaskRecord> tasks_;
+  // Built at seal(): phase-major dispatch order and the OnDirty consumers
+  // of dirty-mask merges.
+  std::vector<TaskId> phase_order_;
+  std::vector<TaskId> dirty_task_ids_;
   bool sealed_ = false;
   bool in_run_ = false;
 };
