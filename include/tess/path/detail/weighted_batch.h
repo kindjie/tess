@@ -4,10 +4,13 @@
 #error "Include <tess/path/path.h> instead of this internal detail header."
 #endif
 
+namespace detail {
+
 template <typename World, typename Class, std::uint32_t MaxCost>
-auto build_bounded_weighted_distance_field(
+auto build_bounded_weighted_distance_field_core(
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
-    [[maybe_unused]] MissingChunkPolicy policy) -> DistanceFieldResult {
+    [[maybe_unused]] MissingChunkPolicy policy,
+    std::span<const std::uint64_t> settle_targets) -> DistanceFieldResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "build_bounded_weighted_distance_field<World, Class, MaxCost> "
                 "requires a MovementClass; legacy tag pairs go through the "
@@ -48,6 +51,7 @@ auto build_bounded_weighted_distance_field(
     TESS_DIAG_EVENT(path_initialize);
     scratch.generation_.assign(node_count, 0);
     scratch.distance_.assign(node_count, infinite_distance);
+    scratch.target_generation_.assign(node_count, 0);
   }
   if (scratch.weighted_buckets_.size() != bucket_count) {
     scratch.weighted_buckets_.assign(bucket_count, {});
@@ -65,6 +69,27 @@ auto build_bounded_weighted_distance_field(
   TESS_DIAG_EVENT(path_touch_node);
   scratch.weighted_buckets_[0].push_back(goal_index);
   TESS_DIAG_EVENT(path_heap_push);
+
+  // target_generation_ is sized alongside distance_ above; settle targets
+  // against a scratch whose distance_ was sized by a different builder
+  // would index out of bounds.
+  TESS_ASSERT(settle_targets.empty() ||
+              scratch.target_generation_.size() == node_count);
+
+  // Early termination is armed only under TreatAsBlocked: an exhausted
+  // Indeterminate-policy flood must discover whether it ever skipped a
+  // non-resident neighbor, and stopping early could miss that boundary
+  // and misreport Indeterminate as Found.
+  auto targets_remaining = std::size_t{0};
+  if (Space::is_dense || policy == MissingChunkPolicy::TreatAsBlocked) {
+    for (const auto target : settle_targets) {
+      const auto target_offset = space.offset(target);
+      if (!scratch.is_settle_target(target_offset)) {
+        scratch.mark_settle_target(target_offset);
+        ++targets_remaining;
+      }
+    }
+  }
 
   auto active_nodes = std::size_t{1};
   auto current_distance = std::uint32_t{0};
@@ -98,12 +123,30 @@ auto build_bounded_weighted_distance_field(
     }
     ++expanded_nodes;
 
+    // A settled node's distance is final (Dijkstra order), so once every
+    // caller-declared target has settled the rest of the reachable
+    // component is unneeded work. Every node on any settled target's
+    // optimal route has a strictly smaller final distance and is already
+    // settled, so reconstruction never reads an unsettled node. Costs and
+    // statuses are identical to a full flood; among equal-cost optimal
+    // routes the truncated field's leftover tentative labels may tie-break
+    // reconstruction to a different (equally optimal) tile sequence.
+    if (targets_remaining != 0 && scratch.is_settle_target(current_offset)) {
+      --targets_remaining;
+      if (targets_remaining == 0) {
+        return DistanceFieldResult{PathStatus::Found, expanded_nodes,
+                                   scratch.touched_.size()};
+      }
+    }
+
     const auto current_entry_cost =
         detail::tile_entry_cost_index<World, Class>(world, current);
     if (current_entry_cost == 0) {
       continue;
     }
     if (current_entry_cost > MaxCost) {
+      // Targets are dropped on this rare escape hatch: the unbounded
+      // builder floods to exhaustion (correct, just not truncated).
       return build_weighted_distance_field<World, Class>(world, goal, scratch,
                                                          policy);
     }
@@ -164,9 +207,31 @@ auto build_bounded_weighted_distance_field(
                              scratch.touched_.size()};
 }
 
+}  // namespace detail
+
+template <typename World, typename Class, std::uint32_t MaxCost>
+auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
+                                           DistanceFieldScratch& scratch,
+                                           MissingChunkPolicy policy)
+    -> DistanceFieldResult {
+  return detail::build_bounded_weighted_distance_field_core<World, Class,
+                                                            MaxCost>(
+      world, goal, scratch, policy, {});
+}
+
+namespace detail {
+
+// Core of weighted_distance_field_path. verify_residency guards the
+// O(resident_count) fingerprint recompute: standalone readers must verify
+// (the field may be stale against this world), but weighted_path_batch
+// reads each field against the same const world it just built it from, so
+// it verifies once per group and skips the per-member recompute
+// (audit 2026-07-11 M2).
 template <typename World, typename Class>
-auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
-                                  DistanceFieldScratch& scratch) -> PathResult {
+auto weighted_distance_field_path_core(const World& world, Coord3 start,
+                                       Coord3 goal,
+                                       DistanceFieldScratch& scratch,
+                                       bool verify_residency) -> PathResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_distance_field_path<World, Class> requires a "
                 "MovementClass; legacy tag pairs go through the "
@@ -195,7 +260,7 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
     return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
   }
   if (!scratch.has_goal_ || scratch.goal_ != goal ||
-      !scratch.residency_matches(world)) {
+      (verify_residency && !scratch.residency_matches(world))) {
     return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
   }
 
@@ -259,6 +324,15 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
 
   return PathResult{PathStatus::Found, total_cost, scratch.path_.size(),
                     scratch.touched_.size(), scratch.path_};
+}
+
+}  // namespace detail
+
+template <typename World, typename Class>
+auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
+                                  DistanceFieldScratch& scratch) -> PathResult {
+  return detail::weighted_distance_field_path_core<World, Class>(
+      world, start, goal, scratch, /*verify_residency=*/true);
 }
 
 namespace detail {
@@ -352,6 +426,24 @@ auto weighted_path_batch(const World& world,
     ++scratch.goal_counts_[goal_index];
   }
 
+  // Counting-sort the requests into per-goal member buckets so each group
+  // below visits exactly its own members (the old scatter rescanned all n
+  // requests once per multi-member group).
+  scratch.group_offsets_.assign(scratch.goal_coords_.size() + 1u, 0u);
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    ++scratch.group_offsets_[scratch.request_goal_[i] + 1u];
+  }
+  for (std::size_t g = 1; g < scratch.group_offsets_.size(); ++g) {
+    scratch.group_offsets_[g] += scratch.group_offsets_[g - 1u];
+  }
+  scratch.group_cursors_.assign(scratch.group_offsets_.begin(),
+                                scratch.group_offsets_.end());
+  scratch.group_members_.assign(requests.size(), 0u);
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    scratch.group_members_[scratch.group_cursors_[scratch.request_goal_[i]]++] =
+        static_cast<std::uint32_t>(i);
+  }
+
   for (std::size_t i = 0; i < requests.size(); ++i) {
     if (scratch.processed_[i] != 0) {
       continue;
@@ -379,18 +471,53 @@ auto weighted_path_batch(const World& world,
     }
 
     ++scratch.stats_.field_builds;
-    const auto field =
-        build_bounded_weighted_distance_field<World, Class, MaxCost>(
-            world, requests[i].goal, scratch.field_scratch_);
-    for (std::size_t j = 0; j < requests.size(); ++j) {
-      if (scratch.request_goal_[j] != scratch.request_goal_[i]) {
+    const auto group = scratch.request_goal_[i];
+    const auto members_begin = scratch.group_offsets_[group];
+    const auto members_end = scratch.group_offsets_[group + 1u];
+
+    // Hand the build every member start it will be read for (validated
+    // exactly as the read path validates them, so an invalid start never
+    // holds the flood open): once all of them settle, the flood stops
+    // instead of exhausting the reachable component.
+    using Shape = typename World::shape_type;
+    scratch.settle_targets_.clear();
+    for (auto member = members_begin; member < members_end; ++member) {
+      const auto start = requests[scratch.group_members_[member]].start;
+      if (!contains<Shape>(start)) {
         continue;
       }
+      const auto start_index = detail::tile_index<Shape>(start);
+      if constexpr (!detail::NodeIndexSpace<World>::is_dense) {
+        const detail::NodeIndexSpace<World> residency{world};
+        if (!residency.is_resident_index(start_index)) {
+          continue;
+        }
+      }
+      if (!detail::is_passable<World, Class>(world, start) ||
+          detail::tile_entry_cost_index<World, Class>(world, start_index) ==
+              0) {
+        continue;
+      }
+      scratch.settle_targets_.push_back(start_index);
+    }
+
+    const auto field =
+        detail::build_bounded_weighted_distance_field_core<World, Class,
+                                                           MaxCost>(
+            world, requests[i].goal, scratch.field_scratch_,
+            MissingChunkPolicy::TreatAsBlocked, scratch.settle_targets_);
+    // The field was just built from this same const world, so the stamp
+    // matches by construction; verify once per group (debug) instead of
+    // recomputing the O(resident_count) fingerprint per member.
+    TESS_ASSERT(field.status != PathStatus::Found ||
+                scratch.field_scratch_.residency_matches(world));
+    for (auto member = members_begin; member < members_end; ++member) {
+      const auto j = static_cast<std::size_t>(scratch.group_members_[member]);
       const auto result =
           field.status == PathStatus::Found
-              ? weighted_distance_field_path<World, Class>(
+              ? detail::weighted_distance_field_path_core<World, Class>(
                     world, requests[j].start, requests[j].goal,
-                    scratch.field_scratch_)
+                    scratch.field_scratch_, /*verify_residency=*/false)
               : detail::weighted_group_member_failure<World, Class>(
                     world, requests[j], field);
       scratch.offsets_[j] = scratch.paths_.size();

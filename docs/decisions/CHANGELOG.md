@@ -13,6 +13,36 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - Batch grouping, residency probes, settle-target floods (audit3 W2)
+
+- Changed: `weighted_path_batch` scatters shared-goal results through
+  counting-sort member buckets (was an O(groups x requests) rescan) and
+  hands each field build the group's validated start tiles as settle
+  targets -- the goal-rooted flood stops once every consumer start has
+  settled instead of exhausting the reachable component (early exit is
+  armed only under TreatAsBlocked; an Indeterminate-policy flood must
+  still discover missing-chunk boundaries). The batch also verifies the
+  field's residency stamp once per group (debug assert) instead of
+  recomputing the O(resident_count) fingerprint per member;
+  `residency_fingerprint` itself now iterates resident slots directly
+  (was 3 directory probes per chunk) and the sparse region-graph
+  freshness check reads generation+meta through one probe via the new
+  `SparseResidentWorld::resident_ref`. New benches pin the sparse batch
+  and near-goal scenarios; the near-goal open-map batch drops ~118x
+  (5.79 ms -> 49 us local) while the far-goal multigoal batches are
+  unchanged.
+- Reason: audit-2026-07-11 M1/M2/M3 -- the batch-pathing tick is the
+  hot path; these remove its quadratic member scan, its redundant
+  fingerprint traffic, and its whole-map floods for clustered agents.
+- Affected docs: `docs/planning/audit-2026-07-11-remediation.md`,
+  `docs/planning/optimization-log.md`.
+- Affected code: `include/tess/path/path.h`,
+  `include/tess/path/detail/weighted_batch.h`,
+  `include/tess/storage/sparse_world.h`,
+  `include/tess/topology/topology.h`,
+  `tests/tess_path_weighted_batch_test.cc`,
+  `bench/tess_path_weighted_bench.cc`.
+
 ## 2026-07-11 - Bench integrity: de-elision, parallel gates, residency family (audit3 W1)
 
 - Changed: five benchmarks that compiled to empty loops
