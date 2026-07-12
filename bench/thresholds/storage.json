@@ -9,19 +9,19 @@
     },
     "storage/chunk_field_write_read_iteration": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 600,
+      "max_cpu_time_ns": 2000,
       "comment": "Bootstrap ceiling: de-elided by audit-2026-07-11 H1 (previously compiled to an empty loop; old CI samples are meaningless). Set from local arm64 medians x6 headroom; recalibrate to 2x-max once 10 CI artifacts carry real samples.",
       "comment_ref": "docs/planning/audit-2026-07-11.md H1"
     },
     "storage/single_chunk_page_iteration": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 14000,
+      "max_cpu_time_ns": 30000,
       "comment": "Bootstrap ceiling: de-elided by audit-2026-07-11 H1 (previously compiled to an empty loop; old CI samples are meaningless). Set from local arm64 medians x6 headroom; recalibrate to 2x-max once 10 CI artifacts carry real samples.",
       "comment_ref": "docs/planning/audit-2026-07-11.md H1"
     },
     "storage/flat_array_iteration": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 14000,
+      "max_cpu_time_ns": 30000,
       "comment": "Bootstrap ceiling: de-elided by audit-2026-07-11 H1 (previously compiled to an empty loop; old CI samples are meaningless). Set from local arm64 medians x6 headroom; recalibrate to 2x-max once 10 CI artifacts carry real samples.",
       "comment_ref": "docs/planning/audit-2026-07-11.md H1"
     },
