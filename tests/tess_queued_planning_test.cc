@@ -2,6 +2,7 @@
 #include <tess/tess.h>
 
 #include <cstdint>
+#include <limits>
 
 #include "allocation_counter.h"
 
@@ -43,6 +44,13 @@ TEST(TessQueuedPlanning, WarmPlanningReuseIsAllocationFree) {
   (void)tess::plan_operations(world, ops, report);
   (void)tess::plan_operations(world, ops, report);
   ASSERT_EQ(report.planned_count(), 2u);
+#if defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL != 0
+  // MSVC's debug STL heap-allocates a _Container_proxy for every container
+  // constructed or moved, so warm planning can never count zero there even
+  // though it performs no real heap traffic. The zero-allocation guarantee
+  // is asserted on the other toolchains (and by the gated benchmark).
+  GTEST_SKIP() << "MSVC iterator-debug allocates container proxies";
+#else
   {
     tess_test::ScopedAllocationCounter counter;
     for (int frame = 0; frame < 4; ++frame) {
@@ -51,6 +59,33 @@ TEST(TessQueuedPlanning, WarmPlanningReuseIsAllocationFree) {
     }
     EXPECT_EQ(counter.count(), 0u);
   }
+#endif
+}
+
+// Merging a planned dirty record whose extent saturates the axis end
+// (INT64_MAX) with a negative-origin record spans more than int64: the
+// union extent must be computed in unsigned space, not by signed
+// subtraction (audit 2026-07-11 C1, stack review follow-up). Mirrors the
+// chunk_meta union test at TessStorage.
+TEST(TessQueuedPlanning, MergedDirtyUnionSaturatedEndWithNegativeOrigin) {
+  World world;
+  constexpr auto key = tess::ChunkKey{1};
+  tess::PlannedDirtyAccumulator dirty;
+  dirty.record(key, DirtyTerrain,
+               tess::Box3{tess::Coord3{-10, 16, 0}, tess::Extent3{2, 3, 1}});
+  dirty.record(key, DirtyCost,
+               tess::Box3{tess::Coord3{0, 16, 0},
+                          tess::Extent3{std::uint64_t{1} << 63u, 3, 1}});
+
+  const auto merged = tess::merge_planned_dirty(world, dirty);
+  EXPECT_EQ(merged, 1u);
+
+  const auto bounds = world.meta(key).dirty_bounds;
+  EXPECT_EQ(bounds.origin, (tess::Coord3{-10, 16, 0}));
+  constexpr auto max_end = std::numeric_limits<std::int64_t>::max();
+  EXPECT_EQ(bounds.extent.x, static_cast<std::uint64_t>(max_end) + 10u);
+  EXPECT_EQ(bounds.extent.y, 3u);
+  EXPECT_EQ(bounds.extent.z, 1u);
 }
 
 }  // namespace

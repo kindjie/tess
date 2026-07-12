@@ -61,7 +61,7 @@ Records meaningful design changes from the original TDDs.
   `include/tess/sim/movement.h`, `include/tess/sim/auto_exec.h`,
   `include/tess/sim/render_delta.h`, `include/tess/ops/queued.h`,
   `include/tess/storage/chunk_meta.h`, `tests/tess_sim_schedule_test.cc`,
-  `tests/tess_queued_test.cc`.
+  `tests/tess_queued_planning_test.cc`, `tests/CMakeLists.txt`.
 
 ## 2026-07-11 - Batch grouping, residency probes, settle-target floods (audit3 W2)
 
