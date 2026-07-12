@@ -14,6 +14,47 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-11 - Weighted Batch Settle-Target Early Termination
+
+- Area: Shared-goal weighted batches with starts clustered near the goal.
+- Hypothesis: The goal-rooted bounded field floods the entire reachable
+  component, but the batch knows every consumer start up front; stopping
+  once all group starts settle (Dijkstra settlement is final) bounds the
+  flood to the agents' region on open maps (audit-2026-07-11 M3, the
+  S11.4 soak observation).
+- Evidence: New `path/weighted_batch_planner_100_neargoal_open_512x512`
+  drops from 5.79 ms to 49 us locally (~118x); the far-goal multigoal
+  batches (dense and sparse-resident) are unchanged within noise. New
+  unit tests pin oracle-identical results, full-flood behavior for
+  unreachable members, and that invalid starts are excluded from the
+  settle set (failing-first: 1024 reached vs the <200 truncated bound).
+  Early exit arms only under TreatAsBlocked; Indeterminate floods must
+  still discover missing-chunk boundaries. The MaxCost-overflow fallback
+  to the unbounded builder drops targets (rare; floods fully, correct).
+- Decision: Accepted for weighted_path_batch (batch-local scratch). The
+  retained-field two-call build/read API keeps full floods.
+- Follow-up: consider settle targets for the runtime's repeated-goal
+  unit-cost field products if profiles show the same tail.
+
+## 2026-07-11 - Batch Residency Fingerprint Hoist (Structural)
+
+- Area: Sparse weighted batches; per-member field reads.
+- Hypothesis: Recomputing the O(resident_count) residency fingerprint
+  per member (and 3 directory probes per chunk inside it) is avoidable
+  work (audit-2026-07-11 M2).
+- Evidence: Slot-direct fingerprint iteration plus a once-per-group
+  debug assert replacing per-member verification. On the new 256-chunk
+  sparse-resident batch bench the effect is within noise (~0.2 ms of a
+  92 ms batch): at this scale the fingerprint term is dwarfed by
+  per-neighbor directory probes inside the flood itself
+  (NodeIndexSpace re-probes; audit path-micro item, W4). The term
+  scales O(requests x resident_count), so the fix is kept as a scaling
+  guard with no bench regression.
+- Decision: Accepted (structural; no measurable local win, none
+  expected at bench scale). The 2x dense-vs-sparse batch gap the new
+  bench exposes is the W4 slot-threading target, not fingerprint cost.
+
+
 ## 2026-06-07 - Concurrent Phase Backend Library Spike
 
 - Area: Tile-world queued operation phase execution.

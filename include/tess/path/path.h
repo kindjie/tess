@@ -80,7 +80,30 @@ class DistanceFieldScratch;
 class GoalSet;
 class DistanceFieldProduct;
 class RouteCacheScratch;
+class WeightedPathBatchScratch;
 struct NearestTargetResult;
+
+namespace detail {
+// Core behind weighted_distance_field_path; verify_residency lets
+// weighted_path_batch skip the O(resident_count) fingerprint recompute for
+// fields it reads against the same const world it just built them from.
+template <typename World, typename Class>
+auto weighted_distance_field_path_core(const World& world, Coord3 start,
+                                       Coord3 goal,
+                                       DistanceFieldScratch& scratch,
+                                       bool verify_residency) -> PathResult;
+
+// Core behind build_bounded_weighted_distance_field. settle_targets are
+// validated tile indices whose distances the caller will read; once every
+// target is settled the flood stops instead of exhausting the reachable
+// component (audit 2026-07-11 M3). Empty span = flood to exhaustion (the
+// public wrapper's behavior, byte-identical to the pre-M3 build).
+template <typename World, typename Class, std::uint32_t MaxCost>
+auto build_bounded_weighted_distance_field_core(
+    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
+    MissingChunkPolicy policy, std::span<const std::uint64_t> settle_targets)
+    -> DistanceFieldResult;
+}  // namespace detail
 
 // Declared here so the MissingChunkPolicy default lives on the first
 // declaration; the friend declarations and definitions below omit it.
@@ -559,6 +582,7 @@ class DistanceFieldScratch {
     }
     generation_.reserve(node_count);
     distance_.reserve(node_count);
+    target_generation_.reserve(node_count);
     touched_.reserve(node_count);
     path_.reserve(node_count);
   }
@@ -593,15 +617,25 @@ class DistanceFieldScratch {
       -> DistanceFieldResult;
 
   template <typename World, typename Class, std::uint32_t MaxCost>
-  friend auto build_bounded_weighted_distance_field(
+  friend auto detail::build_bounded_weighted_distance_field_core(
       const World& world, Coord3 goal, DistanceFieldScratch& scratch,
-      MissingChunkPolicy policy) -> DistanceFieldResult;
+      MissingChunkPolicy policy, std::span<const std::uint64_t> settle_targets)
+      -> DistanceFieldResult;
 
+  // The public weighted_distance_field_path is a thin forwarder; the
+  // private access lives in the detail core it forwards to.
   template <typename World, typename Class>
-  friend auto weighted_distance_field_path(const World& world, Coord3 start,
-                                           Coord3 goal,
-                                           DistanceFieldScratch& scratch)
-      -> PathResult;
+  friend auto detail::weighted_distance_field_path_core(
+      const World& world, Coord3 start, Coord3 goal,
+      DistanceFieldScratch& scratch, bool verify_residency) -> PathResult;
+
+  // The batch skips the core's per-member residency verification and
+  // instead asserts the stamp once per group build.
+  template <typename World, typename Class, std::uint32_t MaxCost>
+  friend auto weighted_path_batch(const World& world,
+                                  std::span<const PathRequest> requests,
+                                  WeightedPathBatchScratch& scratch)
+      -> std::span<const PathResult>;
 
   template <typename World, typename Tag>
   friend auto build_distance_field_product(const World& world,
@@ -640,6 +674,7 @@ class DistanceFieldScratch {
     ++epoch_;
     if (epoch_ == 0) {
       std::fill(generation_.begin(), generation_.end(), 0);
+      std::fill(target_generation_.begin(), target_generation_.end(), 0);
       epoch_ = 1;
     }
   }
@@ -666,6 +701,18 @@ class DistanceFieldScratch {
     touch_node(static_cast<std::size_t>(index), index);
   }
 
+  // Settle-target marks share the build epoch: clear_build invalidates
+  // them wholesale, and advance_epoch's wrap path re-zeros both stamp
+  // arrays.
+  void mark_settle_target(std::size_t offset) {
+    target_generation_[offset] = epoch_;
+  }
+
+  [[nodiscard]] auto is_settle_target(std::size_t offset) const noexcept
+      -> bool {
+    return target_generation_[offset] == epoch_;
+  }
+
   std::vector<std::uint64_t> frontier_;
   std::vector<PathScratch::OpenNode> weighted_frontier_;
   std::vector<std::vector<std::uint64_t>> weighted_buckets_;
@@ -673,6 +720,7 @@ class DistanceFieldScratch {
   std::vector<std::uint32_t> generation_;
   std::uint32_t epoch_ = 1;
   std::vector<std::uint32_t> distance_;
+  std::vector<std::uint32_t> target_generation_;
   std::vector<std::uint64_t> touched_;
   std::vector<Coord3> path_;
   // Per-chunk seen marks for build_distance_field_product's blocked-frontier
@@ -766,6 +814,16 @@ class WeightedPathBatchScratch {
   std::vector<Coord3> goal_coords_;
   std::vector<std::uint32_t> goal_counts_;
   std::vector<std::uint32_t> request_goal_;
+  // Counting-sort member buckets (group_offsets_[g]..group_offsets_[g+1]
+  // indexes group_members_), mirroring PathRequestRuntime's grouping, so
+  // scattering a group's results touches only its own members instead of
+  // rescanning every request per group (audit 2026-07-11 M1).
+  std::vector<std::uint32_t> group_offsets_;
+  std::vector<std::uint32_t> group_cursors_;
+  std::vector<std::uint32_t> group_members_;
+  // Per-group validated start tile indices handed to the field build as
+  // settle targets (audit 2026-07-11 M3).
+  std::vector<std::uint64_t> settle_targets_;
   WeightedPathBatchStats stats_;
 };
 
