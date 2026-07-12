@@ -35,6 +35,75 @@ deferred for scope reasons. Keep entries short and concrete:
   maintained dirty-chunk SET killing the O(chunk_count) scan floor
   remains the recorded design-level ceiling in the post-v1 backlog.
 
+## 2026-07-12 - Page-by-Slot Passability/Entry-Cost Threading (Rejected)
+
+- Area: Sparse field reads in the A*/flood relaxation loops (the M10
+  follow-up: is_passable_index/tile_entry_cost_index re-probe the chunk
+  directory per neighbor even though resident_offset just resolved the
+  same chunk).
+- Hypothesis: A NodeIndexSpace offset already encodes
+  (slot, local tile); decoding it (two integer ops) and reading the
+  page via a new SparseWorld::page_at_slot kills 1-2 directory probes
+  per neighbor -- the presumed source of the ~2x dense-vs-sparse batch
+  gap noted in the M2 entry.
+- Evidence (paired interleaved A/B, local arm64, release): implemented
+  offset-addressed read leaves (dense delegating to the *_index leaves
+  unchanged) and threaded them through the unweighted A*, weighted A*,
+  and bounded-flood relaxations; 684/684 tests green. Every touched
+  bench FLAT within noise (0.99-1.01x): weighted_astar_sparse_blockers
+  1.928 -> 1.928 ms, weighted multigoal sparse batch 464.9 -> 461.8 ms,
+  sparse-resident planner batch 89.9 -> 88.7 ms, dense controls
+  unchanged. The directory probe the field reads repeat is absorbed by
+  out-of-order execution behind the mandatory resident_offset probe and
+  the page-data cache misses; it was never the gap.
+- Decision: Rejected; reverted (no-win rule). The dense-vs-sparse gap
+  hunt moves to the remaining candidates: the resident_offset probe
+  itself (unavoidable without an index restructure) and scattered
+  page memory vs the dense world's contiguous pages.
+
+## 2026-07-12 - Portal Segment Cache Open-Addressed Index (Rejected)
+
+- Area: `WeightedPortalSegmentCache::find` (the M10 follow-up: lookup
+  and the store dup-check linear-scan up to the 256-entry budget).
+- Hypothesis: An open-addressed (start, goal) index turns the O(budget)
+  scans into O(1) probes.
+- Evidence (paired interleaved A/B, local arm64, release): implemented
+  (u32 slot table, half-full, most-recent-per-key -- semantically
+  equivalent since stale entries never re-validate under monotonic
+  chunk versions; all cache tests passed) and measured:
+  `path/weighted_portal_segment_cache_batch_100_room_portals_512x512`
+  flat (3.72 -> 3.69 ms, within noise -- segment-cache time is
+  negligible against the per-segment A* work), and the single-request
+  `..._room_portals_512x512` REGRESSED 8% (3.26 -> 3.54 us): with the
+  handful of live segments the benches actually produce, the hash +
+  probe costs more than the short linear scan.
+- Decision: Rejected; reverted (same policy as M9). Revisit only if a
+  profile ever shows find() hot with a near-budget cache -- and pair it
+  with the pair-tag conversion entry below if both land.
+
+## 2026-07-12 - Portal-Route Pair-Tag -> MovementClass Conversion (Deferred)
+
+- Area: `portal_route.h` builders + `WeightedPortalSegmentCache`
+  (recorded S11 backlog note; no code change).
+- Status: The unit-route runtime binds a normalized movement class and
+  the field-product cache folds class identity into its keys, but the
+  portal-route builders are still pair-tagged (<PassableTag, CostTag>)
+  and the portal segment cache keys segments on request + chunk
+  versions only -- callers reusing one cache across classes (or tag
+  pairs) must keep one cache per class (documented in
+  `docs/architecture/path.md` and `path_runtime.h`).
+- Conversion sketch, when profiles or a misuse report justify it:
+  (1) add `<World, Class>` builder overloads that resolve the class's
+  tag pair exactly as `weighted_astar_path<World, Class>` does; (2) fold
+  the normalized class identity (`tess::detail::tag_identity`-style)
+  into `WeightedPortalSegmentCache`'s segment key so one cache serves
+  many classes safely; (3) deprecate the raw pair-tag overloads after
+  the consumer migrates. (The open-addressed segment-index idea this
+  once composed with was tried and rejected the same day -- see the
+  entry above.)
+- Decision: Deferred -- the per-class-cache contract is documented and
+  cheap; no evidence of misuse or profile cost today.
+
 ## 2026-07-12 - Intrusive LRU + ECS Hash/Lookup Cuts
 
 - Area: Sparse eviction and ECS adapter hot paths (audit-2026-07-11
