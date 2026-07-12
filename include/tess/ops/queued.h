@@ -762,7 +762,10 @@ template <typename World>
 [[nodiscard]] constexpr auto dirty_union_extent(std::int64_t origin,
                                                 std::int64_t end) noexcept
     -> std::uint64_t {
-  return static_cast<std::uint64_t>(end - origin);
+  // end >= origin, but a saturated INT64_MAX end paired with a negative
+  // origin spans more than int64 can hold, so the subtraction must happen
+  // in unsigned space (mirrors chunk_meta's union; audit 2026-07-11 C1).
+  return abs_delta(end, origin);
 }
 
 [[nodiscard]] constexpr auto union_dirty_bounds(Box3 lhs, Box3 rhs) noexcept
