@@ -223,10 +223,15 @@ frame through the lost-update-safe observe/clear-observed protocol.
 
 - `SimClock` holds the current tick; `advance_sim_tick(clock)` increments
   and returns it.
-- `PathAgentTickState` owns the clock plus the `pathing_dirty` flag;
-  `mark_pathing_dirty(state)` requests a conservative replan on the next
-  tick, and the three-argument `set_path_agent_goal(state, agent, goal)`
-  assigns a goal and marks pathing dirty in one call.
+- `PathAgentTickState` owns the clock, the WORLD-scoped `pathing_dirty`
+  flag, and the per-agent retained routes (`PathAgentRoutes`, index-paired
+  with the agents span). `mark_pathing_dirty(state)` requests a full replan
+  of every agent on the next tick (required after world edits); the
+  three-argument `set_path_agent_goal(state, agent, goal)` arms a goal as
+  agent-scoped dirt -- only that agent replans (the drivers submit with
+  `PathSubmitScope::NeedsOnly`), everyone else keeps their retained route
+  (per-agent pathing dirt; pre-split, one re-arm replanned the whole batch
+  every tick).
 - `PathAgentTickOptions` carries `max_steps` per tick, the runtime
   `PathRuntimeCachePolicy`, and `max_blocked_retries` (default 8).
 - `PathAgentTickStats` reports the tick value, whether paths were processed,

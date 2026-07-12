@@ -205,14 +205,21 @@ other entries cannot move.
   CostTag, MaxCost>` overloads and the `_with_movement` variants) advance the
   clock, process paths when `state.pathing_dirty` is set or when any agent is
   in `NeedsPath` or `Blocked` (with retry budget remaining), then move agents
-  up to `options.max_steps` path nodes. In the class forms ONE movement class
-  drives pathing, the precheck, and (for the `_with_movement` variants)
-  commit validation, so plan and commit provably agree per class. Goals assigned through either
-  `set_path_agent_goal` overload are picked up on the next tick; `Blocked`
-  agents consume one re-path attempt per processed tick until
-  `options.max_blocked_retries` runs out and they turn terminally
-  `Unreachable`, no longer requesting processing. `mark_pathing_dirty(state)`
-  remains the hook for conservative replans after world edits.
+  up to `options.max_steps` path nodes. Processing is SCOPED (per-agent
+  pathing dirt): `state.pathing_dirty` is world-scoped and replans every
+  agent, while agent-scoped needs (a newly armed goal, a Blocked retry)
+  replan only those agents -- `Following` agents keep walking routes
+  retained in `state.routes` (`PathAgentRoutes`; index-paired with the
+  agents span, so reordering or removing agents requires a
+  `mark_pathing_dirty` -- see the struct comment). In the class forms ONE
+  movement class drives pathing, the precheck, and (for the
+  `_with_movement` variants) commit validation, so plan and commit provably
+  agree per class. Goals assigned through either `set_path_agent_goal`
+  overload are picked up on the next tick; `Blocked` agents consume one
+  re-path attempt per processed tick until `options.max_blocked_retries`
+  runs out and they turn terminally `Unreachable`, no longer requesting
+  processing. `mark_pathing_dirty(state)` remains the hook -- and the only
+  correct one -- for replans after world edits.
 - `astar_path<World, PassableTag>(world, request, scratch, policy)` runs
   optimized unit-cost deterministic pathfinding. The passability field is
   treated as boolean-like. It runs natively on sparse worlds, honoring
@@ -520,9 +527,10 @@ centralizes the common path-agent order: advance the simulation tick,
 optionally rebuild active paths after a dirty event, then move agents along
 stable runtime-owned result paths.
 It does not observe world mutations on its own. Any edit to passability,
-movement costs, topology-relevant movement rules, or active agent goals must
-call `mark_pathing_dirty(state)` or use the tick-state goal helper before the
-next tick that should replan.
+movement costs, or topology-relevant movement rules must call
+`mark_pathing_dirty(state)` before the next tick that should replan (goal
+assignments need no mark: an armed goal is agent-scoped and replans just
+that agent).
 
 ## Deliberate Limits
 

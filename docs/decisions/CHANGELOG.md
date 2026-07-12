@@ -13,6 +13,34 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-12 - Per-agent pathing dirt + retained routes
+
+- Changed: the span-based tick drivers process paths with a scope:
+  `state.pathing_dirty` (world-scoped, set by `mark_pathing_dirty`)
+  still replans every agent, but agent-scoped needs -- a goal armed via
+  either `set_path_agent_goal` overload, a Blocked retry -- now replan
+  ONLY those agents while `Following` agents keep walking routes
+  retained in the new `PathAgentRoutes` pool on `PathAgentTickState`.
+  The two-argument `set_path_agent_goal(state, agent, goal)` no longer
+  marks the world flag. New API: `PathSubmitScope`, `PathAgentRoutes`,
+  route-pool overloads of `advance_path_agents{,_with_movement}`, and
+  scope/routes parameters (defaulted -- source-compatible) on
+  `submit_path_agents`, `apply_path_agent_results`, and the three
+  `process_*_path_agents` wrappers. `tick_ecs_*` drivers deliberately
+  keep full-scope processing (registry-collected batches cannot hold
+  the index-pairing contract). Bench: one goal re-arm per tick over
+  100 weighted agents drops 72.5 -> 17.3 ms (4.2x local; new
+  `path/agent_tick_100_weighted_goal_churn_512x512` pins the scoped
+  submit count).
+- Reason: S11.4 soak observation / post-v1 backlog -- the shared flag
+  degenerated steady state to near-per-tick full-batch replans on
+  building-dense maps.
+- Affected docs: `docs/architecture/path.md`,
+  `docs/architecture/simulation.md`, `docs/planning/optimization-log.md`.
+- Affected code: `include/tess/sim/path_agent.h`,
+  `include/tess/sim/path_agent_tick.h`, `bench/tess_path_agent_bench.cc`,
+  `bench/thresholds/path.json`, `tests/tess_path_agent_tick_test.cc`.
+
 ## 2026-07-12 - ChunkMeta hot/cold split, v0.2.0 (audit3 M5)
 
 - Changed: BREAKING (minor bump by decision -- the struct layout was
