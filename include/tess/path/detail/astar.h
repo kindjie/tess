@@ -596,7 +596,7 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
   const auto start_offset = space.offset(start);
   scratch.g_[start_offset] = 0;
   scratch.state_[start_offset] = open;
-  scratch.touch_node(start_offset, start);
+  scratch.touch_node(start_offset);
   TESS_DIAG_EVENT(path_touch_node);
   TESS_DIAG_EVENT(path_heuristic);
   auto current_f = detail::manhattan(request.start, request.goal);
@@ -684,7 +684,7 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
           if (tentative_g < scratch.g_at(neighbor_offset, infinite_cost)) {
             TESS_DIAG_EVENT(path_relax_success);
             if (neighbor_state == unseen) {
-              scratch.touch_node(neighbor_offset, neighbor_index);
+              scratch.touch_node(neighbor_offset);
               TESS_DIAG_EVENT(path_touch_node);
             }
             scratch.g_[neighbor_offset] = tentative_g;
@@ -947,7 +947,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
   const auto start_offset = space.offset(start);
   scratch.g_[start_offset] = 0;
   scratch.state_[start_offset] = open;
-  scratch.touch_node(start_offset, start);
+  scratch.touch_node(start_offset);
   TESS_DIAG_EVENT(path_touch_node);
   TESS_DIAG_EVENT(path_heuristic);
   scratch.open_.push_back(PathScratch::OpenNode{
@@ -1041,7 +1041,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
           if (tentative_g < scratch.g_at(neighbor_offset, infinite_cost)) {
             TESS_DIAG_EVENT(path_relax_success);
             if (neighbor_state == unseen) {
-              scratch.touch_node(neighbor_offset, neighbor_index);
+              scratch.touch_node(neighbor_offset);
               TESS_DIAG_EVENT(path_touch_node);
             }
             scratch.g_[neighbor_offset] = tentative_g;
