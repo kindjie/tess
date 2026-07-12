@@ -14,6 +14,43 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-12 - A* Interleaved Node Record (Rejected)
+
+- Area: A* per-node state layout (audit-2026-07-11 M9).
+- Hypothesis: Interleaving the hot {generation, g, state} trio into one
+  12-byte record cuts per-relaxation cache lines from up to three
+  parallel arrays to one.
+- Evidence: Measured 3-9% SLOWER across the path family (local arm64:
+  weighted_astar_sparse_blockers 1.94 -> 2.11 ms, room_portals
+  10.50 -> 10.84 ms, astar_open_2d_512x512 2.11 -> 2.13 us).
+  Partial-field visits dominate: closed-neighbor checks read only
+  generation+state, and the packed generation_ array keeps 16 entries
+  per cache line vs 5 records. Reverted; a comment in PathScratch
+  records the outcome.
+- Decision: Rejected. Keep the parallel arrays.
+
+## 2026-07-12 - Sparse Neighbor Single-Probe + Reached Counter
+
+- Area: A* / distance-field neighbor loops (audit-2026-07-11 M10 and
+  the sparse-probing low).
+- Evidence: NodeIndexSpace::resident_offset folds the residency test
+  and offset computation into one directory probe (was two); paired
+  A/B on the sparse-resident multigoal batch: 93.9 -> 90.2 ms (~4%).
+  PathScratch::touched_ became a plain counter (only its size was ever
+  read; DistanceFieldScratch keeps its list for dependency capture) --
+  neutral-to-positive on dense benches, removes a world-sized scratch
+  allocation. NOTE: local absolute numbers drifted ~10% across this
+  long session (thermal); only paired A/B runs were trusted.
+- Decision: Accepted. Follow-ups logged, not implemented: thread the
+  resolved slot into passability/entry-cost reads (needs a page-by-slot
+  accessor; remaining sparse gap lives there), and an open-addressed
+  index for WeightedPortalSegmentCache's O(256) linear lookup/store
+  scans (bench exists: weighted_portal_segment_cache_batch family).
+  Also declined: moving the weighted relaxation's entry-cost read
+  behind the g-comparison (audit low) -- tentative_g is computed FROM
+  the entry cost, so the reorder is impossible.
+
+
 ## 2026-07-11 - Weighted Batch Settle-Target Early Termination
 
 - Area: Shared-goal weighted batches with starts clustered near the goal.
