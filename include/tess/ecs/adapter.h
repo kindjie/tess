@@ -194,6 +194,11 @@ class TileOccupancyIndex {
   [[nodiscard]] auto insert(Coord3 tile, EntityHandle entity) -> bool {
     TESS_ASSERT_MSG(!entity.is_null(),
                     "TileOccupancyIndex cannot map a null entity");
+    // probe_start's fast lane combine relies on this domain; see its
+    // comment.
+    TESS_ASSERT_MSG(tile.x >= 0 && tile.y >= 0 && tile.z >= 0,
+                    "TileOccupancyIndex stores world tiles, which are "
+                    "non-negative");
     if (slots_.empty() || (size_ + 1) * 2 > slots_.size()) {
       rehash(slots_.empty() ? 8 : slots_.size() * 2);
     }
@@ -319,6 +324,13 @@ class TileOccupancyIndex {
     // mix() rounds (6 serial multiplies): the lanes now hash in parallel
     // and erase's backward-shift, which recomputes probe_start per
     // displaced entry, pays one round (audit 2026-07-11 low).
+    //
+    // The XOR combine has sign/lane-swap symmetries (Codex review:
+    // (-n, n, 0) collides with (n, -n, 0)), but those inputs are out of
+    // domain -- insert() asserts non-negative world coordinates, and the
+    // symmetry needs a negative lane. Additive and rotated combines were
+    // measured 1.7-1.9x slower here (interleaved A/B), so the domain is
+    // pinned instead of the hash hardened.
     const auto hash =
         mix(static_cast<std::uint64_t>(tile.x) * 0x9E3779B97F4A7C15ULL ^
             static_cast<std::uint64_t>(tile.y) * 0xC2B2AE3D27D4EB4FULL ^
