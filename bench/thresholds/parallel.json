@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "comment": "Gates real_time, not cpu_time: pool benches do their work on worker threads, so the dispatching thread's cpu_time understates the operation; wall time is the concurrency metric. Ceilings are 2x the maximum real_time observed across 10 CI baseline artifacts (runs 29152434769 through 29172701190, 100 samples per benchmark), per the S11.3 recalibration policy. Wired by audit-2026-07-11 remediation (bench lows): the deferred-until-baselines-exist precondition was met.",
+  "benchmarks": {
+    "parallel/chunk_fill_serial": {
+      "max_real_time_ns": 97100,
+      "max_cpu_time_ns": null
+    },
+    "parallel/chunk_fill_scoped_threads_w4": {
+      "max_real_time_ns": 387000,
+      "max_cpu_time_ns": null
+    },
+    "parallel/chunk_fill_pool_w2": {
+      "max_real_time_ns": 164000,
+      "max_cpu_time_ns": null
+    },
+    "parallel/chunk_fill_pool_w4": {
+      "max_real_time_ns": 171000,
+      "max_cpu_time_ns": null
+    },
+    "parallel/chunk_compute_serial": {
+      "max_real_time_ns": 4490000,
+      "max_cpu_time_ns": null
+    },
+    "parallel/chunk_compute_pool_w2": {
+      "max_real_time_ns": 3000000,
+      "max_cpu_time_ns": null
+    },
+    "parallel/chunk_compute_pool_w4": {
+      "max_real_time_ns": 2440000,
+      "max_cpu_time_ns": null
+    },
+    "parallel/tile_touch_serial": {
+      "max_real_time_ns": 8400,
+      "max_cpu_time_ns": null
+    },
+    "parallel/tile_touch_scoped_threads_w4": {
+      "max_real_time_ns": 376000,
+      "max_cpu_time_ns": null
+    },
+    "parallel/tile_touch_pool_w4": {
+      "max_real_time_ns": 61000,
+      "max_cpu_time_ns": null
+    }
+  }
+}
