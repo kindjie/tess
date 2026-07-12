@@ -309,12 +309,29 @@ class WorkerPoolPhaseExecutor {
       };
       job_first_ = first;
       job_count_ = count;
+      // Claim short runs instead of single operations: one contended RMW
+      // per run instead of per op, while ~4 runs per worker keep the
+      // tail balanced (audit 2026-07-11 M8).
+      job_stride_ = std::max<std::size_t>(
+          1, count / (std::max<std::size_t>(1, workers_.size()) * 4));
       next_offset_.store(0, std::memory_order_relaxed);
       finished_operations_.store(0, std::memory_order_relaxed);
       ++job_epoch_;
       job_active_ = true;
     }
-    work_cv_.notify_all();
+    // Wake only as many workers as there are runs to claim; a small phase
+    // on a wide pool otherwise storms every thread awake to find nothing
+    // (audit 2026-07-11 M8). A worker that reaches wait() on its own sees
+    // the live job through the predicate, so under-notification cannot
+    // strand work.
+    const auto runs = (count + job_stride_ - 1) / job_stride_;
+    if (runs >= workers_.size()) {
+      work_cv_.notify_all();
+    } else {
+      for (std::size_t i = 0; i < runs; ++i) {
+        work_cv_.notify_one();
+      }
+    }
 
     {
       std::unique_lock lock{mutex_};
@@ -353,21 +370,32 @@ class WorkerPoolPhaseExecutor {
       const auto invoke = job_invoke_;
       const auto first = job_first_;
       const auto count = job_count_;
+      const auto stride = job_stride_;
       lock.unlock();
 
       while (true) {
-        const auto offset =
-            next_offset_.fetch_add(1, std::memory_order_relaxed);
-        if (offset >= count) {
+        const auto begin =
+            next_offset_.fetch_add(stride, std::memory_order_relaxed);
+        if (begin >= count) {
           break;
         }
-        results_[offset] = invoke(context, first + offset);
-        finished_operations_.fetch_add(1, std::memory_order_release);
+        const auto end = std::min(begin + stride, count);
+        for (auto offset = begin; offset < end; ++offset) {
+          results_[offset] = invoke(context, first + offset);
+        }
+        // One release-add per run publishes the whole run's results to
+        // the dispatcher's acquire wait.
+        finished_operations_.fetch_add(end - begin, std::memory_order_release);
       }
 
       lock.lock();
       --active_workers_;
-      done_cv_.notify_all();
+      // Only the last worker out can satisfy the dispatcher's predicate
+      // (finished == count AND active_workers_ == 0), so intermediate
+      // notifies were pure wakeup churn.
+      if (active_workers_ == 0) {
+        done_cv_.notify_all();
+      }
     }
   }
 
@@ -375,12 +403,15 @@ class WorkerPoolPhaseExecutor {
   mutable std::condition_variable work_cv_;
   mutable std::condition_variable done_cv_;
   mutable std::vector<PlannedExecutionResult> results_;
-  mutable std::atomic<std::size_t> next_offset_ = 0;
-  mutable std::atomic<std::size_t> finished_operations_ = 0;
-  mutable void* job_context_ = nullptr;
+  // Own cache lines: every worker RMWs both counters per claimed chunk;
+  // adjacent they ping-pong one line between cores (audit 2026-07-11 M8).
+  alignas(64) mutable std::atomic<std::size_t> next_offset_ = 0;
+  alignas(64) mutable std::atomic<std::size_t> finished_operations_ = 0;
+  alignas(64) mutable void* job_context_ = nullptr;
   mutable JobInvoke job_invoke_ = nullptr;
   mutable std::size_t job_first_ = 0;
   mutable std::size_t job_count_ = 0;
+  mutable std::size_t job_stride_ = 1;
   mutable std::uint64_t job_epoch_ = 0;
   mutable std::size_t active_workers_ = 0;
   mutable bool job_active_ = false;
