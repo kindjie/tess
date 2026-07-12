@@ -46,6 +46,19 @@ tess_apply_project_options(tess_block_test)
 
 gtest_discover_tests(tess_block_test)
 
+add_executable(
+  tess_queued_planning_test
+  allocation_counter.cc
+  tess_queued_planning_test.cc
+)
+target_link_libraries(
+  tess_queued_planning_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_queued_planning_test)
+
+gtest_discover_tests(tess_queued_planning_test)
+
 add_executable(tess_queued_test allocation_counter.cc tess_queued_test.cc)
 target_link_libraries(tess_queued_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_queued_test)

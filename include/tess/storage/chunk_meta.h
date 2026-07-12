@@ -2,6 +2,7 @@
 
 #include <tess/core/shape.h>
 
+#include <bit>
 #include <cstdint>
 #include <limits>
 
@@ -38,12 +39,9 @@ struct DirtyObservation {
 namespace detail {
 
 [[nodiscard]] constexpr std::uint32_t popcount(std::uint32_t flags) noexcept {
-  std::uint32_t count = 0;
-  while (flags != 0) {
-    count += flags & 1u;
-    flags >>= 1u;
-  }
-  return count;
+  // Single POPCNT/CNT instruction instead of the old 32-iteration bit
+  // loop; runs on every occupancy/state edit (audit 2026-07-11 low).
+  return static_cast<std::uint32_t>(std::popcount(flags));
 }
 
 // An extent >= 2^63 would flip the int64 cast negative (and a large origin

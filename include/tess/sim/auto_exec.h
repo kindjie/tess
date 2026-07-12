@@ -57,9 +57,9 @@ struct AutoExecRunStats {
 // byte-identical either way because pre-validation makes runtime aborts
 // unreachable.
 //
-// Known cost, by design: planning allocates per run (the report and its
-// per-op chunk lists have no reuse overloads yet); the schedule's
-// allocation-free contract covers dispatch, not this task's planner.
+// Planning reuses a task-owned ExecutionReport (its rows, planned ops,
+// and chunk lists are recycled between runs), so steady-state ticks plan
+// allocation-free once capacities warm up (audit 2026-07-11 M4).
 template <typename World, WritePolicy Policy, typename Ack, typename ChunkFn>
 class AutoExecTask {
   static_assert(Policy == WritePolicy::ReadOnly ||
@@ -114,7 +114,7 @@ class AutoExecTask {
       }
     }
 
-    const auto report = plan_operations(*world_, *ops_);
+    const auto& report = plan_operations(*world_, *ops_, plan_report_);
     (void)record_plan_completions(report, channel_);
     last_run_.planned_ops = report.planned_count();
     last_run_.rejected_ops = report.failed_count();
@@ -185,6 +185,8 @@ class AutoExecTask {
   ResultHook hook_ = nullptr;
   void* hook_ctx_ = nullptr;
   AutoExecRunStats last_run_{};
+  // Reused across runs; see the planning note above.
+  ExecutionReport plan_report_;
 };
 
 }  // namespace tess

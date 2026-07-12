@@ -26,7 +26,10 @@ namespace detail {
 [[nodiscard]] constexpr auto axis_end(std::int64_t origin,
                                       std::uint64_t extent) noexcept
     -> std::int64_t {
-  return origin + static_cast<std::int64_t>(extent);
+  // Saturating: an unguarded origin + int64(extent) is UB for huge
+  // caller-supplied extents (audit 2026-07-11 C1); share chunk_meta's
+  // guarded helper.
+  return box_axis_end(origin, extent);
 }
 
 // Emits render-tile deltas for one chunk. Shared by the dense (all chunks) and
