@@ -390,11 +390,22 @@ void BM_coord_from_tile_key(benchmark::State& state) {
   }
 }
 
+// The escape-then-clobber pattern in the next four benchmarks is
+// load-bearing: DoNotOptimize(&page) makes the page observable, and
+// ClobberMemory() forces each iteration's stores to commit (and reloads
+// after it). Without both, dead-store elimination and loop-invariant
+// hoisting collapse these loops to nothing -- all four compiled to
+// empty loops (~0.25 ns) until audit 2026-07-11 finding H1.
 void BM_field_span_acquisition(benchmark::State& state) {
   StoragePage page{tess::ChunkKey{0}, tess::ChunkCoord3{0, 0, 0}};
+  // Span acquisition is pure address arithmetic off the page base, so a
+  // visible &page is not enough -- the offsets hoist as loop-invariant.
+  // An opaque pointer forces the arithmetic to re-run each iteration.
+  StoragePage* opaque_page = &page;
   for (auto _ : state) {
-    auto terrain = page.field_span<TerrainTag>();
-    auto costs = page.field_span<CostTag>();
+    benchmark::DoNotOptimize(opaque_page);
+    auto terrain = opaque_page->field_span<TerrainTag>();
+    auto costs = opaque_page->field_span<CostTag>();
     benchmark::DoNotOptimize(terrain.data());
     benchmark::DoNotOptimize(costs.data());
   }
@@ -402,11 +413,17 @@ void BM_field_span_acquisition(benchmark::State& state) {
 
 void BM_chunk_field_write_read_iteration(benchmark::State& state) {
   StoragePage page{tess::ChunkKey{0}, tess::ChunkCoord3{0, 0, 0}};
+  benchmark::DoNotOptimize(&page);
   for (auto _ : state) {
     auto terrain = page.field_span<TerrainTag>();
-    std::uint64_t sum = 0;
     for (std::uint64_t i = 0; i < StoragePage::local_tile_count; ++i) {
       terrain[i] = static_cast<std::uint16_t>(i);
+    }
+    // Commit the stores and forget their values, so the read loop below
+    // must load instead of store-forwarding the known constants.
+    benchmark::ClobberMemory();
+    std::uint64_t sum = 0;
+    for (std::uint64_t i = 0; i < StoragePage::local_tile_count; ++i) {
       sum += terrain[i];
     }
     benchmark::DoNotOptimize(sum);
@@ -415,12 +432,17 @@ void BM_chunk_field_write_read_iteration(benchmark::State& state) {
 
 void BM_single_chunk_page_iteration(benchmark::State& state) {
   StorageSingleChunkPage page{tess::ChunkKey{0}, tess::ChunkCoord3{0, 0, 0}};
+  benchmark::DoNotOptimize(&page);
   for (auto _ : state) {
     auto terrain = page.field_span<TerrainTag>();
-    std::uint64_t sum = 0;
     for (std::uint64_t i = 0; i < StorageSingleChunkPage::local_tile_count;
          ++i) {
       terrain[i] = static_cast<std::uint16_t>(i);
+    }
+    benchmark::ClobberMemory();
+    std::uint64_t sum = 0;
+    for (std::uint64_t i = 0; i < StorageSingleChunkPage::local_tile_count;
+         ++i) {
       sum += terrain[i];
     }
     benchmark::DoNotOptimize(sum);
@@ -429,10 +451,14 @@ void BM_single_chunk_page_iteration(benchmark::State& state) {
 
 void BM_flat_array_iteration(benchmark::State& state) {
   std::array<std::uint16_t, StorageSingleChunkPage::local_tile_count> terrain{};
+  benchmark::DoNotOptimize(terrain.data());
   for (auto _ : state) {
-    std::uint64_t sum = 0;
     for (std::uint64_t i = 0; i < terrain.size(); ++i) {
       terrain[i] = static_cast<std::uint16_t>(i);
+    }
+    benchmark::ClobberMemory();
+    std::uint64_t sum = 0;
+    for (std::uint64_t i = 0; i < terrain.size(); ++i) {
       sum += terrain[i];
     }
     benchmark::DoNotOptimize(sum);
@@ -586,11 +612,16 @@ void BM_block_scratch_allocate_u32(benchmark::State& state) {
                         StorageWorldShape::chunk.y *
                         StorageWorldShape::chunk.z);
 
+  // With a compile-time-constant size, reset+allocate folds to a single
+  // constant store (audit 2026-07-11 H1: this loop compiled empty). An
+  // opaque runtime size forces the alignment/bounds arithmetic to run.
+  std::size_t count = StorageWorldShape::chunk.x * StorageWorldShape::chunk.y *
+                      StorageWorldShape::chunk.z;
+  benchmark::DoNotOptimize(&scratch);
   for (auto _ : state) {
+    benchmark::DoNotOptimize(count);
     scratch.reset();
-    const auto values = scratch.allocate<std::uint32_t>(
-        StorageWorldShape::chunk.x * StorageWorldShape::chunk.y *
-        StorageWorldShape::chunk.z);
+    const auto values = scratch.allocate<std::uint32_t>(count);
     benchmark::DoNotOptimize(values.data());
     benchmark::DoNotOptimize(values.size());
   }
