@@ -14,6 +14,25 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-12 - Worker Pool: Padded Counters, Run Claiming, Bounded Wakeups
+
+- Area: WorkerPoolPhaseExecutor dispatch overhead (audit-2026-07-11 M8).
+- Hypothesis: Adjacent hot atomics ping-pong one cache line; per-op
+  fetch_add and notify_all-everyone amplify coherence and wakeup traffic
+  on phases of cheap operations.
+- Evidence: alignas(128) on next_offset_/finished_operations_ (128 to
+  cover Apple Silicon lines and the x86 adjacent-line prefetcher; the
+  A/B below ran at 64, where line pairing was allocation-dependent),
+  claiming
+  runs of ~count/(workers*4) ops per RMW (one release-add publishes the
+  run), waking min(runs, workers) threads, and last-worker-only
+  completion notify. Paired A/B (local arm64, real_time):
+  tile_touch_pool_w4 23.9 -> 12.4 us, chunk_fill_pool_w4 44.7 -> 22.1 us
+  (~2x); chunk_compute_pool_w4 flat (compute-bound, as expected). TSan
+  suite green; memory ordering unchanged (release-add chain + mutex
+  handshake).
+- Decision: Accepted.
+
 ## 2026-07-12 - A* Interleaved Node Record (Rejected)
 
 - Area: A* per-node state layout (audit-2026-07-11 M9).

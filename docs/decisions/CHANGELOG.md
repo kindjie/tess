@@ -13,6 +13,19 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-12 - Worker pool: padded counters, run claiming, bounded wakeups (audit3 W5)
+
+- Changed: `WorkerPoolPhaseExecutor` puts its two hot atomics on their
+  own cache lines, claims short runs (~count/(workers*4)) per contended
+  RMW with one release-add publishing each run, wakes only
+  min(runs, workers) threads per dispatch, and only the last worker out
+  signals completion. Paired A/B: tile_touch_pool_w4 23.9 -> 12.4 us,
+  chunk_fill_pool_w4 44.7 -> 22.1 us (~2x); compute-bound phases flat.
+- Reason: audit-2026-07-11 M8 -- pool overhead dominated phases of
+  cheap operations (the audit measured 25x vs serial on one-tile ops).
+- Affected docs: `docs/planning/optimization-log.md`.
+- Affected code: `include/tess/ops/phase_executor.h`.
+
 ## 2026-07-12 - Path micro: reached counter, saturating f, single-probe (audit3 W4)
 
 - Changed: `PathScratch` counts reached nodes instead of recording their
