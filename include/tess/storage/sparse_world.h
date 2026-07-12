@@ -190,6 +190,27 @@ class World<Shape, Schema, SparseResident> {
     return directory_.find(key);
   }
 
+  // One-probe bundle of the per-chunk residency facts: slot, generation,
+  // and metadata. The individual accessors below each pay their own
+  // directory probe, so a caller needing two or more facts about the same
+  // key (the region-graph freshness checks do this per resident chunk per
+  // pathing tick) should take this instead (audit 2026-07-11 M2). meta is
+  // null (and generation 0, slot npos_slot) when the chunk is not resident.
+  struct ResidentChunkRef {
+    std::size_t slot = npos_slot;
+    std::uint64_t generation = 0;
+    const ChunkMeta* meta = nullptr;
+  };
+
+  [[nodiscard]] auto resident_ref(ChunkKey key) const noexcept
+      -> ResidentChunkRef {
+    const auto slot = directory_.find(key);
+    if (slot == detail::ChunkDirectory::npos) {
+      return ResidentChunkRef{};
+    }
+    return ResidentChunkRef{slot, slot_generation_[slot], &metadata_[slot]};
+  }
+
   // Returns the resident chunk's generation, or 0 if it is not resident.
   // Generations are world-monotonic and never reused, so 0 is unambiguous.
   [[nodiscard]] std::uint64_t residency_generation(
@@ -242,12 +263,16 @@ class World<Shape, Schema, SparseResident> {
       x = (x ^ (x >> 27u)) * 0x94d049bb133111ebull;
       return x ^ (x >> 31u);
     };
+    // Slot-direct iteration: resident_slots_ pairs with resident_keys_, so
+    // every term is a direct array read -- the by-key accessors would pay
+    // three directory probes per chunk for the same data (audit
+    // 2026-07-11 M2).
     auto acc = std::uint64_t{0};
-    for (const auto key : resident_chunk_keys()) {
-      auto h = mix(key.value);
-      h ^= mix(h + static_cast<std::uint64_t>(resident_slot(key)));
-      h ^= mix(h + residency_generation(key));
-      h ^= mix(h + static_cast<std::uint64_t>(meta(key).version));
+    for (const auto slot : resident_slots_) {
+      auto h = mix(slot_key_[slot].value);
+      h ^= mix(h + static_cast<std::uint64_t>(slot));
+      h ^= mix(h + slot_generation_[slot]);
+      h ^= mix(h + static_cast<std::uint64_t>(metadata_[slot].version));
       acc += h;
     }
     return mix(acc + static_cast<std::uint64_t>(resident_count()) +

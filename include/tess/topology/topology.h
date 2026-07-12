@@ -1389,12 +1389,15 @@ template <typename World>
     }
     for (std::size_t i = 0; i < count; ++i) {
       const auto key = graph.sparse_.topology_keys_[i];
-      if (world.residency_generation(key) !=
-          graph.sparse_.frozen_generations_[i]) {
+      // One directory probe for both facts; the by-key accessors would
+      // probe twice per chunk on this per-pathing-tick check (audit
+      // 2026-07-11 M2). A non-resident key reads generation 0 (meta null),
+      // failing the generation compare before meta is touched.
+      const auto ref = world.resident_ref(key);
+      if (ref.generation != graph.sparse_.frozen_generations_[i]) {
         return false;
       }
-      if (graph.local_topologies_[i].version() !=
-          world.meta(key).topology_version) {
+      if (graph.local_topologies_[i].version() != ref.meta->topology_version) {
         return false;
       }
     }
