@@ -14,6 +14,32 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-12 - Page-by-Slot Passability/Entry-Cost Threading (Rejected)
+
+- Area: Sparse field reads in the A*/flood relaxation loops (the M10
+  follow-up: is_passable_index/tile_entry_cost_index re-probe the chunk
+  directory per neighbor even though resident_offset just resolved the
+  same chunk).
+- Hypothesis: A NodeIndexSpace offset already encodes
+  (slot, local tile); decoding it (two integer ops) and reading the
+  page via a new SparseWorld::page_at_slot kills 1-2 directory probes
+  per neighbor -- the presumed source of the ~2x dense-vs-sparse batch
+  gap noted in the M2 entry.
+- Evidence (paired interleaved A/B, local arm64, release): implemented
+  offset-addressed read leaves (dense delegating to the *_index leaves
+  unchanged) and threaded them through the unweighted A*, weighted A*,
+  and bounded-flood relaxations; 684/684 tests green. Every touched
+  bench FLAT within noise (0.99-1.01x): weighted_astar_sparse_blockers
+  1.928 -> 1.928 ms, weighted multigoal sparse batch 464.9 -> 461.8 ms,
+  sparse-resident planner batch 89.9 -> 88.7 ms, dense controls
+  unchanged. The directory probe the field reads repeat is absorbed by
+  out-of-order execution behind the mandatory resident_offset probe and
+  the page-data cache misses; it was never the gap.
+- Decision: Rejected; reverted (no-win rule). The dense-vs-sparse gap
+  hunt moves to the remaining candidates: the resident_offset probe
+  itself (unavoidable without an index restructure) and scattered
+  page memory vs the dense world's contiguous pages.
+
 ## 2026-07-12 - Portal Segment Cache Open-Addressed Index (Rejected)
 
 - Area: `WeightedPortalSegmentCache::find` (the M10 follow-up: lookup
