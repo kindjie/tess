@@ -210,6 +210,34 @@ TEST(TessResidency, ByteBudgetCapsResidentBytesUnderLruEviction) {
   EXPECT_TRUE(world.is_resident(tess::ChunkKey{2}));
 }
 
+// Pins the intrusive list's remaining unlink branch -- removing the MRU
+// tail while it has a live predecessor (explicit evict of the newest
+// chunk) -- and that multi-victim pressure eviction still walks the
+// surviving list in true LRU order afterwards.
+TEST(TessResidency, ExplicitMruEvictionKeepsLruOrderForLaterVictims) {
+  Sparse<Small> world{tess::ResidencyConfig{3 * page_bytes<Small>()}};
+  ASSERT_EQ(world.capacity(), 3u);
+
+  // Oldest -> newest: 0, 1, 2; chunk 2 is the MRU tail.
+  world.ensure_resident(tess::ChunkKey{0});
+  world.ensure_resident(tess::ChunkKey{1});
+  world.ensure_resident(tess::ChunkKey{2});
+
+  // Tail unlink with a live predecessor (1 becomes the new tail).
+  EXPECT_TRUE(world.evict(tess::ChunkKey{2}));
+  EXPECT_EQ(world.resident_count(), 2u);
+
+  world.ensure_resident(tess::ChunkKey{3});  // reuses the freed slot
+  world.ensure_resident(tess::ChunkKey{4});  // pressure-evicts 0
+  EXPECT_FALSE(world.is_resident(tess::ChunkKey{0}));
+  EXPECT_TRUE(world.is_resident(tess::ChunkKey{1}));
+  world.ensure_resident(tess::ChunkKey{5});  // pressure-evicts 1
+  EXPECT_FALSE(world.is_resident(tess::ChunkKey{1}));
+  EXPECT_TRUE(world.is_resident(tess::ChunkKey{3}));
+  EXPECT_TRUE(world.is_resident(tess::ChunkKey{4}));
+  EXPECT_TRUE(world.is_resident(tess::ChunkKey{5}));
+}
+
 TEST(TessResidency, EvictedChunkReloadsWithFreshGenerationAndData) {
   Sparse<Small> world{tess::ResidencyConfig{1 * page_bytes<Small>()}};
   ASSERT_EQ(world.capacity(), 1u);

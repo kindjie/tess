@@ -145,7 +145,8 @@ class World<Shape, Schema, SparseResident> {
     metadata_.assign(capacity_, ChunkMeta{});
     slot_key_.assign(capacity_, ChunkKey{});
     slot_generation_.assign(capacity_, 0);
-    slot_lru_.assign(capacity_, 0);
+    lru_prev_.assign(capacity_, npos_slot);
+    lru_next_.assign(capacity_, npos_slot);
     slot_position_.assign(capacity_, 0);
 
     resident_keys_.reserve(capacity_);
@@ -286,7 +287,7 @@ class World<Shape, Schema, SparseResident> {
     TESS_ASSERT(contains(key));
     auto slot = directory_.find(key);
     if (slot != detail::ChunkDirectory::npos) {
-      slot_lru_[slot] = ++lru_clock_;
+      lru_move_to_mru(slot);
       return ResidencyHandle{key, slot_generation_[slot]};
     }
     slot = acquire_slot();
@@ -294,7 +295,7 @@ class World<Shape, Schema, SparseResident> {
     metadata_[slot] = ChunkMeta{};
     slot_key_[slot] = key;
     slot_generation_[slot] = ++generation_clock_;
-    slot_lru_[slot] = ++lru_clock_;
+    lru_push_mru(slot);
     slot_position_[slot] = resident_keys_.size();
     resident_keys_.push_back(key);
     resident_slots_.push_back(slot);
@@ -308,7 +309,7 @@ class World<Shape, Schema, SparseResident> {
     if (slot == detail::ChunkDirectory::npos) {
       return false;
     }
-    slot_lru_[slot] = ++lru_clock_;
+    lru_move_to_mru(slot);
     return true;
   }
 
@@ -535,32 +536,62 @@ class World<Shape, Schema, SparseResident> {
     return evict_least_recently_used();
   }
 
-  // Scans the resident slots (bounded by capacity) for the least-recently
-  // ensured/touched chunk, releases it, and returns the freed slot ready to
-  // be reassigned. O(resident_count) per eviction, which is bounded by the
-  // byte budget; a streaming, miss-heavy workload over a very large budget
-  // would benefit from an intrusive O(1) LRU list, deferred as an
-  // optimization.
+  // Pops the head of the intrusive LRU list -- O(1) per eviction (audit
+  // 2026-07-11 M11b; was an O(resident_count) timestamp scan). The victim
+  // is handed straight back for reuse, so it is deliberately not returned
+  // to the free list.
   std::size_t evict_least_recently_used() {
     TESS_ASSERT(!resident_slots_.empty());
-    std::size_t victim = resident_slots_[0];
-    std::uint64_t oldest = slot_lru_[victim];
-    for (const auto slot : resident_slots_) {
-      if (slot_lru_[slot] < oldest) {
-        oldest = slot_lru_[slot];
-        victim = slot;
-      }
-    }
-    // The victim is handed straight back for reuse, so it is deliberately not
-    // returned to the free list.
+    TESS_ASSERT(lru_head_ != npos_slot);
+    const auto victim = lru_head_;
     release_slot(victim);
     return victim;
+  }
+
+  // Intrusive doubly-linked LRU over slot indices: lru_head_ is the
+  // least-recently-used end (the eviction victim), lru_tail_ the
+  // most-recently-used. All operations are O(1).
+  void lru_unlink(std::size_t slot) noexcept {
+    const auto prev = lru_prev_[slot];
+    const auto next = lru_next_[slot];
+    if (prev != npos_slot) {
+      lru_next_[prev] = next;
+    } else {
+      lru_head_ = next;
+    }
+    if (next != npos_slot) {
+      lru_prev_[next] = prev;
+    } else {
+      lru_tail_ = prev;
+    }
+    lru_prev_[slot] = npos_slot;
+    lru_next_[slot] = npos_slot;
+  }
+
+  void lru_push_mru(std::size_t slot) noexcept {
+    lru_prev_[slot] = lru_tail_;
+    lru_next_[slot] = npos_slot;
+    if (lru_tail_ != npos_slot) {
+      lru_next_[lru_tail_] = slot;
+    } else {
+      lru_head_ = slot;
+    }
+    lru_tail_ = slot;
+  }
+
+  void lru_move_to_mru(std::size_t slot) noexcept {
+    if (lru_tail_ == slot) {
+      return;
+    }
+    lru_unlink(slot);
+    lru_push_mru(slot);
   }
 
   // Removes a resident chunk from the directory and resident set. The caller
   // decides the slot's fate: explicit evict returns it to the free list;
   // eviction under budget pressure reuses it immediately.
   void release_slot(std::size_t slot) {
+    lru_unlink(slot);
     directory_.erase(slot_key_[slot]);
     const auto position = slot_position_[slot];
     const auto last = resident_keys_.size() - 1;
@@ -592,14 +623,17 @@ class World<Shape, Schema, SparseResident> {
 
   std::size_t byte_budget_;
   std::size_t capacity_;
-  std::uint64_t lru_clock_ = 0;
+
   std::uint64_t generation_clock_ = 0;
 
   std::vector<page_type> pages_;
   std::vector<ChunkMeta> metadata_;
   std::vector<ChunkKey> slot_key_;
   std::vector<std::uint64_t> slot_generation_;
-  std::vector<std::uint64_t> slot_lru_;
+  std::vector<std::size_t> lru_prev_;
+  std::vector<std::size_t> lru_next_;
+  std::size_t lru_head_ = npos_slot;
+  std::size_t lru_tail_ = npos_slot;
   std::vector<std::size_t> slot_position_;
 
   std::vector<ChunkKey> resident_keys_;
