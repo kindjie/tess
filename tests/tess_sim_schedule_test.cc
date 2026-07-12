@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -332,6 +333,67 @@ TEST(TessSchedule, RequestRunPokesOnDirtyWithZeroMask) {
   EXPECT_EQ(schedule.run_tick(clock).tasks_run, 1u);
   EXPECT_EQ(task.last_pending, 0u);
   EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);  // consumed
+}
+
+// A task callback that throws must not latch the schedule "in run" --
+// the next tick would fail the reentrancy assert even though the
+// schedule state is recoverable (audit 2026-07-11 C2).
+TEST(TessSchedule, ThrowingTaskDoesNotLatchInRun) {
+  struct ThrowOnceTask {
+    bool armed = true;
+    auto operator()(const tess::ScheduleTaskContext&)
+        -> tess::ScheduleTaskResult {
+      if (armed) {
+        armed = false;
+        throw std::runtime_error{"task failure"};
+      }
+      return {};
+    }
+  };
+  ThrowOnceTask task;
+  tess::Schedule schedule;
+  schedule.add_task(
+      {"throws", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()}, task);
+  schedule.seal();
+
+  tess::SimClock clock;
+  EXPECT_THROW(schedule.run_tick(clock), std::runtime_error);
+  const auto stats = schedule.run_tick(clock);
+  EXPECT_EQ(stats.tasks_run, 1u);
+}
+
+// Codex review (audit3 W3): a redundant seal() -- even from inside a task
+// callback mid-tick -- must be a no-op, not a rebuild of the dispatch
+// order run_tick is iterating.
+TEST(TessSchedule, RedundantSealInsideTaskIsANoOp) {
+  struct ResealTask {
+    tess::Schedule* schedule = nullptr;
+    int runs = 0;
+    auto operator()(const tess::ScheduleTaskContext&)
+        -> tess::ScheduleTaskResult {
+      ++runs;
+      schedule->seal();
+      return {};
+    }
+  };
+  ResealTask reseal;
+  LogTask after{"after"};
+  std::vector<std::string> log;
+  after.log = &log;
+  tess::Schedule schedule;
+  reseal.schedule = &schedule;
+  schedule.add_task(
+      {"reseal", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()},
+      reseal);
+  schedule.add_task(
+      {"after", tess::SimPhase::Movement, tess::Cadence::every_tick()}, after);
+  schedule.seal();
+
+  tess::SimClock clock;
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 2u);
+  EXPECT_EQ(reseal.runs, 1);
+  ASSERT_EQ(log.size(), 1u);
+  EXPECT_EQ(log[0], "after");
 }
 
 // Codex review: request_run must arm EveryN tasks too -- one extra run
