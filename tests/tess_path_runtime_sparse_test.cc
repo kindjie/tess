@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -165,6 +166,39 @@ TEST(TessSparsePathRuntime, WeightedBatchRoutesOverSparseWorld) {
       tess::Box3{tess::Coord3{32, 0, 0}, tess::Extent3{32, 32, 1}});
   (void)runtime.process_weighted_batch<Sparse, PassableTag, CostTag, 64>(world);
   EXPECT_EQ(runtime.result(a).status, tess::PathStatus::NoPath);
+}
+
+// A shared-goal group member whose start sits in a NON-RESIDENT chunk must
+// be excluded from the settle-target set (audit 2026-07-11 M3 arming): it
+// can never settle, so arming it would hold the flood open for the whole
+// resident component, and its node index has no slot in the field arrays.
+// The member itself reports InvalidStart from the reader, exactly like the
+// pre-M3 behavior.
+TEST(TessSparsePathRuntime, NonResidentStartMemberDoesNotHoldFloodOpen) {
+  Sparse world{tess::ResidencyConfig{3 * Sparse::page_byte_size}};
+  fill_chunk(world, tess::ChunkKey{0});
+  fill_chunk(world, tess::ChunkKey{1});
+  ASSERT_FALSE(world.is_resident(tess::ChunkKey{2}));
+
+  // Both members share the goal so the batch takes the field-build path;
+  // the second start lies in never-loaded chunk 2 (x >= 64).
+  const auto goal = tess::Coord3{16, 16, 0};
+  const auto requests = std::array{
+      tess::PathRequest{tess::Coord3{10, 16, 0}, goal},
+      tess::PathRequest{tess::Coord3{70, 16, 0}, goal},
+  };
+  tess::WeightedPathBatchScratch scratch;
+  const auto results =
+      tess::weighted_path_batch<Sparse, PassableTag, CostTag, 64>(
+          world, requests, scratch);
+  ASSERT_EQ(results.size(), 2u);
+  EXPECT_EQ(results[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(results[0].cost, 6u);
+  EXPECT_EQ(results[1].status, tess::PathStatus::InvalidStart);
+  EXPECT_EQ(scratch.stats().field_builds, 1u);
+  // The resident component is 2048 tiles; settling only the distance-6
+  // resident start must truncate the flood far below that.
+  EXPECT_LT(results[0].reached_nodes, 200u);
 }
 
 TEST(TessSparsePathRuntime,
