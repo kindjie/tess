@@ -166,6 +166,11 @@ inline auto apply_path_agent_results(std::span<PathAgentState> agents,
                                      PathAgentRoutes* routes)
     -> PathAgentFrameStats {
   PathAgentFrameStats stats;
+  if (routes != nullptr) {
+    // Callers going through the tick drivers arrive pre-sized; grow here
+    // too so the public process_* overloads cannot index out of bounds.
+    routes->ensure_size(agents.size());
+  }
 
   for (std::size_t i = 0; i < agents.size(); ++i) {
     auto& agent = agents[i];
@@ -351,6 +356,9 @@ inline auto advance_path_agents(std::span<PathAgentState> agents,
                                 const PathAgentRoutes& routes,
                                 std::size_t max_steps = 1)
     -> PathAgentFrameStats {
+  // The pool is const here, so it must already cover the span (the tick
+  // drivers ensure_size before processing; direct callers must too).
+  TESS_ASSERT(routes.routes.size() >= agents.size());
   PathAgentFrameStats stats;
   if (max_steps == 0) {
     return stats;
@@ -396,6 +404,8 @@ inline auto advance_path_agents_with_movement(World& world,
                                               std::uint32_t movement_dirty_mask,
                                               OnCommit&& on_commit)
     -> PathAgentFrameStats {
+  // Same pool-coverage precondition as the plain route-pool advance.
+  TESS_ASSERT(routes.routes.size() >= agents.size());
   PathAgentFrameStats stats;
   if (max_steps == 0) {
     return stats;
