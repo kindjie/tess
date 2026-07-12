@@ -549,6 +549,44 @@ void BM_world_dirty_chunks_iteration(benchmark::State& state) {
               "dirty chunk collection count mismatch");
 }
 
+// Streaming-scale variant of the dirty scan: 4096 chunks with a minimal
+// schema, so the flag data no longer fits the fastest cache levels and the
+// scan pays the layout's true memory cost. Before the M5 SoA split the scan
+// streamed 80-byte ChunkMeta structs (320 KB); the flag column is 16 KB
+// (audit 2026-07-11 M5).
+using StorageScanShape =
+    tess::Shape<tess::Extent3{4096, 4096, 1}, tess::Extent3{64, 64, 1}>;
+using StorageScanSchema = tess::FieldSchema<tess::Field<TerrainTag, bool>>;
+using StorageScanWorld =
+    tess::AlwaysResidentWorld<StorageScanShape, StorageScanSchema>;
+
+void BM_world_dirty_chunks_iteration_4k(benchmark::State& state) {
+  StorageScanWorld world;
+  const auto bounds = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+  std::size_t expected_dirty = 0;
+  for (std::uint64_t key = 0; key < StorageScanWorld::chunk_count; key += 3) {
+    world.mark_dirty(tess::ChunkKey{key}, DirtyTerrain, bounds);
+    ++expected_dirty;
+  }
+  for (std::uint64_t key = 1; key < StorageScanWorld::chunk_count; key += 5) {
+    world.mark_dirty(tess::ChunkKey{key}, DirtyCost, bounds);
+  }
+
+  std::vector<tess::ChunkKey> chunks;
+  chunks.reserve(StorageScanWorld::chunk_count);
+  for (auto _ : state) {
+    chunks.clear();
+    world.collect_dirty_chunks(DirtyTerrain, chunks);
+    std::uint64_t sum = 0;
+    for (const auto key : chunks) {
+      sum += key.value;
+    }
+    benchmark::DoNotOptimize(sum);
+  }
+  bench_check(chunks.size() == expected_dirty,
+              "dirty chunk collection count mismatch (4k)");
+}
+
 void BM_block_explicit_domain_iteration(benchmark::State& state) {
   StorageWorld world;
   std::vector<tess::ChunkKey> keys;
@@ -2060,6 +2098,8 @@ BENCHMARK(BM_world_chunks_iteration)->Name("storage/world_chunks_iteration");
 BENCHMARK(BM_world_metadata_lookup_by_key)
     ->Name("storage/world_metadata_lookup_by_key");
 BENCHMARK(BM_world_dirty_mark_clear)->Name("storage/world_dirty_mark_clear");
+BENCHMARK(BM_world_dirty_chunks_iteration_4k)
+    ->Name("storage/world_dirty_chunks_iteration_4k");
 BENCHMARK(BM_world_dirty_chunks_iteration)
     ->Name("storage/world_dirty_chunks_iteration");
 BENCHMARK(BM_block_explicit_domain_iteration)

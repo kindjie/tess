@@ -50,6 +50,9 @@ class World<Shape, Schema, AlwaysResident> {
       pages_.emplace_back(chunk, chunk_coord<Shape>(chunk));
       metadata_.emplace_back();
     }
+    dirty_flags_.assign(static_cast<std::size_t>(chunk_count), 0u);
+    active_flags_.assign(static_cast<std::size_t>(chunk_count), 0u);
+    dirty_bounds_.assign(static_cast<std::size_t>(chunk_count), Box3{});
   }
 
   [[nodiscard]] auto chunks() noexcept -> std::span<page_type> {
@@ -170,8 +173,28 @@ class World<Shape, Schema, AlwaysResident> {
     meta(key).state = state;
   }
 
+  // Hot-scan SoA columns split out of ChunkMeta (audit 2026-07-11 M5);
+  // read-only -- mutate through mark_/clear_/observe_ as before.
+  [[nodiscard]] auto dirty_flags(ChunkKey key) const noexcept -> std::uint32_t {
+    TESS_ASSERT(key.value < chunk_count);
+    return dirty_flags_[static_cast<std::size_t>(key.value)];
+  }
+
+  [[nodiscard]] auto active_flags(ChunkKey key) const noexcept
+      -> std::uint32_t {
+    TESS_ASSERT(key.value < chunk_count);
+    return active_flags_[static_cast<std::size_t>(key.value)];
+  }
+
+  [[nodiscard]] auto dirty_bounds(ChunkKey key) const noexcept -> Box3 {
+    TESS_ASSERT(key.value < chunk_count);
+    return dirty_bounds_[static_cast<std::size_t>(key.value)];
+  }
+
   void mark_dirty(ChunkKey key, std::uint32_t flags, Box3 bounds) noexcept {
-    detail::meta_mark_dirty(meta(key), flags, bounds);
+    const auto slot = static_cast<std::size_t>(key.value);
+    detail::meta_mark_dirty(dirty_flags_[slot], dirty_bounds_[slot], meta(key),
+                            flags, bounds);
   }
 
   void mark_topology_dirty(ChunkKey key, std::uint32_t flags,
@@ -188,13 +211,16 @@ class World<Shape, Schema, AlwaysResident> {
   }
 
   void clear_dirty(ChunkKey key, std::uint32_t flags) noexcept {
-    detail::meta_clear_dirty(meta(key), flags);
+    const auto slot = static_cast<std::size_t>(key.value);
+    detail::meta_clear_dirty(dirty_flags_[slot], dirty_bounds_[slot], flags);
   }
 
   [[nodiscard]] auto observe_dirty(ChunkKey key,
                                    std::uint32_t flags) const noexcept
       -> DirtyObservation {
-    return detail::meta_observe_dirty(meta(key), flags);
+    const auto slot = static_cast<std::size_t>(key.value);
+    return detail::meta_observe_dirty(dirty_flags_[slot], dirty_bounds_[slot],
+                                      meta(key), flags);
   }
 
   // Clears exactly the observed flags iff the chunk's dirty generation still
@@ -202,25 +228,29 @@ class World<Shape, Schema, AlwaysResident> {
   // the generation, so a stale clear leaves every flag and bound in place
   // and returns false; the caller re-observes and rebuilds.
   bool clear_dirty_observed(ChunkKey key, DirtyObservation observed) noexcept {
-    return detail::meta_clear_dirty_observed(meta(key), observed);
+    const auto slot = static_cast<std::size_t>(key.value);
+    return detail::meta_clear_dirty_observed(
+        dirty_flags_[slot], dirty_bounds_[slot], meta(key), observed);
   }
 
   void mark_active(ChunkKey key, std::uint32_t flags) noexcept {
-    detail::meta_mark_active(meta(key), flags);
+    const auto slot = static_cast<std::size_t>(key.value);
+    detail::meta_mark_active(active_flags_[slot], meta(key), flags);
   }
 
   void clear_active(ChunkKey key, std::uint32_t flags) noexcept {
-    detail::meta_clear_active(meta(key), flags);
+    const auto slot = static_cast<std::size_t>(key.value);
+    detail::meta_clear_active(active_flags_[slot], meta(key), flags);
   }
 
   void collect_dirty_chunks(std::uint32_t flags,
                             std::vector<ChunkKey>& out) const {
-    collect_matching_chunks(flags, &ChunkMeta::field_dirty_flags, out);
+    collect_matching_chunks(flags, dirty_flags_, out);
   }
 
   void collect_active_chunks(std::uint32_t flags,
                              std::vector<ChunkKey>& out) const {
-    collect_matching_chunks(flags, &ChunkMeta::active_flags, out);
+    collect_matching_chunks(flags, active_flags_, out);
   }
 
   [[nodiscard]] auto dirty_chunks(std::uint32_t flags) const
@@ -310,11 +340,13 @@ class World<Shape, Schema, AlwaysResident> {
            coord.z < Traits::chunk_count_z;
   }
 
+  // Scans a dense 4-byte flag column (16 chunks per cache line) instead of
+  // streaming ChunkMeta structs (audit 2026-07-11 M5).
   void collect_matching_chunks(std::uint32_t flags,
-                               std::uint32_t ChunkMeta::* member,
+                               const std::vector<std::uint32_t>& column,
                                std::vector<ChunkKey>& out) const {
     for (std::uint64_t key = 0; key < chunk_count; ++key) {
-      if ((metadata_[static_cast<std::size_t>(key)].*member & flags) != 0) {
+      if ((column[static_cast<std::size_t>(key)] & flags) != 0) {
         out.push_back(ChunkKey{key});
       }
     }
@@ -322,6 +354,9 @@ class World<Shape, Schema, AlwaysResident> {
 
   std::vector<page_type> pages_;
   std::vector<ChunkMeta> metadata_;
+  std::vector<std::uint32_t> dirty_flags_;
+  std::vector<std::uint32_t> active_flags_;
+  std::vector<Box3> dirty_bounds_;
 };
 
 template <typename Shape, typename Schema>

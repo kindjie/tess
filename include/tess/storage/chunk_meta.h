@@ -14,13 +14,17 @@ enum class ChunkState : std::uint8_t {
 };
 static_assert(sizeof(ChunkState) == sizeof(std::uint8_t));
 
+// Hot-scan data intentionally lives OUTSIDE this struct (audit 2026-07-11
+// M5, v0.2.0): the per-chunk dirty/active flag words are SoA columns the
+// worlds scan directly (collect_dirty_chunks/collect_active_chunks touch 16
+// words per cache line instead of streaming 80-byte structs), and the cold
+// Box3 dirty bounds sits in its own parallel array. Read them through
+// World::dirty_flags/active_flags/dirty_bounds or observe_dirty; mutate
+// them through mark_dirty/clear_dirty/mark_active/clear_active as always.
 struct ChunkMeta {
   ChunkState state = ChunkState::ResidentSleeping;
   std::uint32_t version = 0;
   std::uint32_t topology_version = 0;
-  std::uint32_t field_dirty_flags = 0;
-  std::uint32_t active_flags = 0;
-  Box3 dirty_bounds{};
   std::uint32_t active_count = 0;
   std::uint32_t entity_count = 0;
 };
@@ -90,69 +94,77 @@ namespace detail {
 }
 
 // Mutation helpers shared by the AlwaysResident and SparseResident worlds so
-// both maintain identical dirty/active/version semantics on a ChunkMeta.
+// both maintain identical dirty/active/version semantics. The flag word and
+// bounds live in the worlds' SoA columns (see ChunkMeta's comment), so the
+// helpers take them by reference alongside the residual struct.
 
-inline void meta_mark_dirty(ChunkMeta& meta, std::uint32_t flags,
+inline void meta_mark_dirty(std::uint32_t& dirty_flags, Box3& dirty_bounds,
+                            ChunkMeta& meta, std::uint32_t flags,
                             Box3 bounds) noexcept {
   if (flags == 0) {
     return;
   }
-  if (meta.field_dirty_flags == 0) {
-    meta.dirty_bounds = bounds;
+  if (dirty_flags == 0) {
+    dirty_bounds = bounds;
   } else {
-    meta.dirty_bounds = union_box(meta.dirty_bounds, bounds);
+    dirty_bounds = union_box(dirty_bounds, bounds);
   }
-  meta.field_dirty_flags |= flags;
+  dirty_flags |= flags;
   ++meta.version;
 }
 
-inline void meta_clear_dirty(ChunkMeta& meta, std::uint32_t flags) noexcept {
+inline void meta_clear_dirty(std::uint32_t& dirty_flags, Box3& dirty_bounds,
+                             std::uint32_t flags) noexcept {
   if (flags == 0) {
     return;
   }
-  meta.field_dirty_flags &= ~flags;
-  if (meta.field_dirty_flags == 0) {
-    meta.dirty_bounds = {};
+  dirty_flags &= ~flags;
+  if (dirty_flags == 0) {
+    dirty_bounds = {};
   }
 }
 
 [[nodiscard]] inline DirtyObservation meta_observe_dirty(
-    const ChunkMeta& meta, std::uint32_t flags) noexcept {
+    std::uint32_t dirty_flags, Box3 dirty_bounds, const ChunkMeta& meta,
+    std::uint32_t flags) noexcept {
   return DirtyObservation{
-      meta.field_dirty_flags & flags,
-      meta.dirty_bounds,
+      dirty_flags & flags,
+      dirty_bounds,
       meta.version,
   };
 }
 
-inline bool meta_clear_dirty_observed(ChunkMeta& meta,
+inline bool meta_clear_dirty_observed(std::uint32_t& dirty_flags,
+                                      Box3& dirty_bounds, const ChunkMeta& meta,
                                       DirtyObservation observed) noexcept {
   if (meta.version != observed.version) {
     return false;
   }
-  meta_clear_dirty(meta, observed.flags);
+  meta_clear_dirty(dirty_flags, dirty_bounds, observed.flags);
   return true;
 }
 
-inline void meta_mark_active(ChunkMeta& meta, std::uint32_t flags) noexcept {
+inline void meta_mark_active(std::uint32_t& active_flags, ChunkMeta& meta,
+                             std::uint32_t flags) noexcept {
   if (flags == 0) {
     return;
   }
-  const auto before = meta.active_flags;
-  meta.active_flags |= flags;
-  meta.active_count = popcount(meta.active_flags);
-  if (before == 0 && meta.active_flags != 0) {
+  const auto before = active_flags;
+  active_flags |= flags;
+  meta.active_count = popcount(active_flags);
+  if (before == 0 && active_flags != 0) {
     meta.state = ChunkState::ResidentActive;
   }
 }
 
-inline void meta_clear_active(ChunkMeta& meta, std::uint32_t flags) noexcept {
+inline void meta_clear_active(std::uint32_t& active_flags, ChunkMeta& meta,
+                              std::uint32_t flags) noexcept {
   if (flags == 0) {
     return;
   }
-  meta.active_flags &= ~flags;
-  meta.active_count = popcount(meta.active_flags);
-  if (meta.active_flags == 0) {
+  active_flags &= ~flags;
+  meta.active_count = popcount(active_flags);
+  if (active_flags == 0) {
     meta.state = ChunkState::ResidentSleeping;
   }
 }
