@@ -61,7 +61,8 @@ void fill_path_cost(WeightedPathScaleWorld& world, std::uint32_t value) {
   return value;
 }
 
-void carve_sparse_blockers(WeightedPathScaleWorld& world) {
+template <typename World>
+void carve_sparse_blockers(World& world) {
   for (std::int64_t y = 1;
        y + 1 < static_cast<std::int64_t>(PathScaleShape::size.y); ++y) {
     for (std::int64_t x = 1;
@@ -183,8 +184,8 @@ void bench_check(bool condition, const char* message) {
 
 // Validates a Found route: endpoints match the request and every step is a
 // unit move onto a passable tile.
-void check_found_route(WeightedPathScaleWorld& world,
-                       const tess::PathResult& result,
+template <typename World>
+void check_found_route(World& world, const tess::PathResult& result,
                        tess::PathRequest request) {
   bench_check(result.status == tess::PathStatus::Found,
               "route status is not Found");
@@ -204,8 +205,8 @@ void check_found_route(WeightedPathScaleWorld& world,
 
 // Additionally pins the cost to an expected value captured from an untimed
 // setup run of the same deterministic search.
-void check_found_route(WeightedPathScaleWorld& world,
-                       const tess::PathResult& result,
+template <typename World>
+void check_found_route(World& world, const tess::PathResult& result,
                        tess::PathRequest request, std::uint64_t expected_cost) {
   check_found_route(world, result, request);
   bench_check(result.cost == expected_cost,
@@ -214,14 +215,14 @@ void check_found_route(WeightedPathScaleWorld& world,
 
 // Untimed reference run used by batch benchmarks to pin the last request's
 // cost for the post-loop correctness check.
-[[nodiscard]] auto expected_weighted_path_cost(WeightedPathScaleWorld& world,
+template <typename World>
+[[nodiscard]] auto expected_weighted_path_cost(World& world,
                                                tess::PathRequest request)
     -> std::uint64_t {
   tess::PathScratch scratch;
   scratch.reserve_nodes(path_node_count<PathScaleShape>());
-  const auto result =
-      tess::weighted_astar_path<WeightedPathScaleWorld, PassableTag, CostTag>(
-          world, request, scratch);
+  const auto result = tess::weighted_astar_path<World, PassableTag, CostTag>(
+      world, request, scratch);
   bench_check(result.status == tess::PathStatus::Found,
               "setup reference path not found");
   return result.cost;
@@ -338,7 +339,8 @@ auto make_shared_sparse_requests(WeightedPathScaleWorld& world)
   return requests;
 }
 
-auto make_multigoal_sparse_requests(WeightedPathScaleWorld& world)
+template <typename World>
+auto make_multigoal_sparse_requests(World& world)
     -> std::array<tess::PathRequest, 100> {
   constexpr auto goals = std::array{
       tess::Coord3{510, 510, 0}, tess::Coord3{480, 510, 0},
@@ -1175,6 +1177,111 @@ void BM_path_weighted_batch_planner_100_multigoal_sparse_512x512(
   TESS_PATH_DIAG_RECORD(state);
 }
 
+// Same multigoal batch as the planner bench, but on a fully-resident
+// SparseResidentWorld: exercises the sparse-only costs the dense planner
+// bench cannot see -- residency fingerprint stamps/checks per field build
+// and read, and slot-indirect node addressing (audit 2026-07-11 M2).
+void BM_path_weighted_batch_planner_100_multigoal_sparse_resident_512x512(
+    benchmark::State& state) {
+  using SparseScaleWorld =
+      tess::SparseResidentWorld<PathScaleShape, WeightedPathSchema>;
+  SparseScaleWorld world{tess::ResidencyConfig{
+      SparseScaleWorld::chunk_count * SparseScaleWorld::page_byte_size}};
+  for (std::uint64_t key = 0; key < SparseScaleWorld::chunk_count; ++key) {
+    world.ensure_resident(tess::ChunkKey{key});
+    auto& page = world.chunk(tess::ChunkKey{key});
+    for (auto& tile : page.template field_span<PassableTag>()) {
+      tile = 1;
+    }
+    for (auto& tile : page.template field_span<CostTag>()) {
+      tile = 1;
+    }
+  }
+  carve_sparse_blockers(world);
+  const auto requests = make_multigoal_sparse_requests(world);
+
+  tess::WeightedPathBatchScratch scratch;
+  scratch.reserve_search_nodes(path_node_count<PathScaleShape>());
+  scratch.reserve_requests(requests.size());
+  scratch.reserve_path_nodes(requests.size() * 1024u);
+  const auto expected_last_cost =
+      expected_weighted_path_cost(world, requests.back());
+  std::span<const tess::PathResult> results;
+  std::uint64_t total_expanded = 0;
+  std::uint64_t total_cost = 0;
+
+  for (auto _ : state) {
+    total_cost = 0;
+    total_expanded = 0;
+    results =
+        tess::weighted_path_batch<SparseScaleWorld, PassableTag, CostTag, 7>(
+            world, requests, scratch);
+    for (const auto result : results) {
+      total_cost += result.cost;
+      total_expanded += result.expanded_nodes;
+    }
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+    benchmark::DoNotOptimize(results.data());
+  }
+  record_batch_counters<requests.size()>(state, total_cost, total_expanded);
+  state.counters["batch.field_builds"] =
+      static_cast<double>(scratch.stats().field_builds);
+  bench_check(results.size() == requests.size(),
+              "planner did not return a result per request");
+  check_found_route(world, results.back(), requests.back(), expected_last_cost);
+}
+
+// Open map, two shared goals, all 100 starts within a few chunks of the
+// goals: the shared-goal field flood covers the whole 512x512 map while
+// the consumers need only the near-goal region. Pins the cost audit
+// 2026-07-11 M3 (settle-target early termination) is meant to remove.
+void BM_path_weighted_batch_planner_100_neargoal_open_512x512(
+    benchmark::State& state) {
+  WeightedPathScaleWorld world;
+  fill_path_passable(world, 1);
+  fill_path_cost(world, 1);
+
+  constexpr auto goals =
+      std::array{tess::Coord3{256, 256, 0}, tess::Coord3{240, 256, 0}};
+  std::array<tess::PathRequest, 100> requests{};
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    const auto start = tess::Coord3{232 + offset % 10, 244 + offset / 10, 0};
+    requests[i] = tess::PathRequest{start, goals[i % goals.size()]};
+  }
+
+  tess::WeightedPathBatchScratch scratch;
+  scratch.reserve_search_nodes(path_node_count<PathScaleShape>());
+  scratch.reserve_requests(requests.size());
+  scratch.reserve_path_nodes(requests.size() * 1024u);
+  const auto expected_last_cost =
+      expected_weighted_path_cost(world, requests.back());
+  std::span<const tess::PathResult> results;
+  std::uint64_t total_expanded = 0;
+  std::uint64_t total_cost = 0;
+
+  for (auto _ : state) {
+    total_cost = 0;
+    total_expanded = 0;
+    results = tess::weighted_path_batch<WeightedPathScaleWorld, PassableTag,
+                                        CostTag, 7>(world, requests, scratch);
+    for (const auto result : results) {
+      total_cost += result.cost;
+      total_expanded += result.expanded_nodes;
+    }
+    benchmark::DoNotOptimize(total_cost);
+    benchmark::DoNotOptimize(total_expanded);
+    benchmark::DoNotOptimize(results.data());
+  }
+  record_batch_counters<requests.size()>(state, total_cost, total_expanded);
+  state.counters["batch.field_builds"] =
+      static_cast<double>(scratch.stats().field_builds);
+  bench_check(results.size() == requests.size(),
+              "planner did not return a result per request");
+  check_found_route(world, results.back(), requests.back(), expected_last_cost);
+}
+
 BENCHMARK(BM_path_weighted_portal_product_room_portals_512x512)
     ->Name("path/weighted_portal_product_room_portals_512x512");
 BENCHMARK(BM_path_weighted_portal_product_replay_room_portals_512x512)
@@ -1216,6 +1323,10 @@ BENCHMARK(
     ->Name(
         "path/"
         "bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512");
+BENCHMARK(BM_path_weighted_batch_planner_100_multigoal_sparse_resident_512x512)
+    ->Name("path/weighted_batch_planner_100_multigoal_sparse_resident_512x512");
+BENCHMARK(BM_path_weighted_batch_planner_100_neargoal_open_512x512)
+    ->Name("path/weighted_batch_planner_100_neargoal_open_512x512");
 BENCHMARK(BM_path_weighted_batch_planner_100_multigoal_sparse_512x512)
     ->Name("path/weighted_batch_planner_100_multigoal_sparse_512x512");
 

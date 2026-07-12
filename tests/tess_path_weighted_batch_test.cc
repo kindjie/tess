@@ -117,6 +117,106 @@ TEST(TessPathWeightedBatch, DuplicateIdenticalRequestsShareOneFieldBuild) {
 // goal's failure status. weighted_astar_path validates the start (contains,
 // passable) before any goal check, so a member with an invalid start is
 // InvalidStart even when the shared goal is also invalid.
+// A shared-goal group whose starts all sit near the goal must stop the
+// field flood once every start has settled (audit 2026-07-11 M3) instead
+// of flooding the whole reachable component: reached_nodes reported by
+// the members is the build's touched count, so on this open 32x32 map it
+// must stay far below the 1024-tile full flood while costs and paths stay
+// identical to the single-request oracle.
+TEST(TessPathWeightedBatch, NearGoalClusterTruncatesFieldFlood) {
+  MidWorld world;
+  fill_world(world, true, 1);
+  const auto goal = tess::Coord3{16, 16, 0};
+
+  const auto requests = std::array{
+      tess::PathRequest{tess::Coord3{14, 16, 0}, goal},
+      tess::PathRequest{tess::Coord3{16, 13, 0}, goal},
+      tess::PathRequest{tess::Coord3{18, 18, 0}, goal},
+      tess::PathRequest{tess::Coord3{16, 16, 0}, goal},
+  };
+  tess::WeightedPathBatchScratch scratch;
+  const auto results =
+      tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
+          world, requests, scratch);
+  ASSERT_EQ(results.size(), requests.size());
+
+  tess::PathScratch oracle_scratch;
+  for (std::size_t i = 0; i < requests.size(); ++i) {
+    const auto oracle =
+        tess::weighted_astar_path<MidWorld, PassableTag, CostTag>(
+            world, requests[i], oracle_scratch);
+    EXPECT_EQ(results[i].status, tess::PathStatus::Found);
+    EXPECT_EQ(results[i].cost, oracle.cost);
+    EXPECT_EQ(results[i].path.front(), requests[i].start);
+    EXPECT_EQ(results[i].path.back(), requests[i].goal);
+    // The farthest start is 4 tiles out; settling every start needs only
+    // the distance<=4 neighborhood (~41 tiles), so anywhere near the
+    // 1024-tile full flood means early termination did not engage.
+    EXPECT_LT(results[i].reached_nodes, 200u);
+  }
+  EXPECT_EQ(scratch.stats().field_builds, 1u);
+}
+
+// An unreachable (walled-off) member start can never settle, so the flood
+// must run to exhaustion and report NoPath for that member while the
+// near-goal members still resolve correctly.
+TEST(TessPathWeightedBatch, UnreachableMemberFloodsFullyAndReportsNoPath) {
+  MidWorld world;
+  fill_world(world, true, 1);
+  const auto goal = tess::Coord3{16, 16, 0};
+  // Wall in the start at (2,2): a 3x3 ring of impassable tiles.
+  const auto walled_start = tess::Coord3{2, 2, 0};
+  for (std::int64_t dy = -1; dy <= 1; ++dy) {
+    for (std::int64_t dx = -1; dx <= 1; ++dx) {
+      if (dx == 0 && dy == 0) {
+        continue;
+      }
+      world.template field<PassableTag>(
+          tess::Coord3{walled_start.x + dx, walled_start.y + dy, 0}) = false;
+    }
+  }
+
+  const auto requests = std::array{
+      tess::PathRequest{tess::Coord3{15, 16, 0}, goal},
+      tess::PathRequest{walled_start, goal},
+  };
+  tess::WeightedPathBatchScratch scratch;
+  const auto results =
+      tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
+          world, requests, scratch);
+  ASSERT_EQ(results.size(), 2u);
+  EXPECT_EQ(results[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(results[0].cost, 1u);
+  EXPECT_EQ(results[1].status, tess::PathStatus::NoPath);
+  // The walled start held the flood open: the whole component outside the
+  // wall ring was reached.
+  EXPECT_GT(results[0].reached_nodes, 900u);
+}
+
+// An invalid (impassable) member start is excluded from the settle set --
+// it could never settle and must not hold the flood open for the valid
+// members.
+TEST(TessPathWeightedBatch, BlockedStartMemberDoesNotHoldFloodOpen) {
+  MidWorld world;
+  fill_world(world, true, 1);
+  const auto goal = tess::Coord3{16, 16, 0};
+  const auto blocked_start = tess::Coord3{2, 2, 0};
+  world.template field<PassableTag>(blocked_start) = false;
+
+  const auto requests = std::array{
+      tess::PathRequest{tess::Coord3{15, 16, 0}, goal},
+      tess::PathRequest{blocked_start, goal},
+  };
+  tess::WeightedPathBatchScratch scratch;
+  const auto results =
+      tess::weighted_path_batch<MidWorld, PassableTag, CostTag, 8>(
+          world, requests, scratch);
+  ASSERT_EQ(results.size(), 2u);
+  EXPECT_EQ(results[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(results[1].status, tess::PathStatus::InvalidStart);
+  EXPECT_LT(results[0].reached_nodes, 200u);
+}
+
 TEST(TessPathWeightedBatch, FailedGroupFanOutReportsPerMemberStartStatus) {
   MidWorld world;
   fill_world(world, true, 1);
