@@ -173,7 +173,7 @@ TEST(TessPathAgentTick, WorldEditRequiresExplicitDirtyMark) {
   EXPECT_EQ(agents[0].position, (tess::Coord3{2, 0, 0}));
 }
 
-TEST(TessPathAgentTick, TickGoalAssignmentMarksPathingDirty) {
+TEST(TessPathAgentTick, TickGoalAssignmentSchedulesProcessing) {
   World world;
   fill_world(world);
 
@@ -195,6 +195,110 @@ TEST(TessPathAgentTick, TickGoalAssignmentMarksPathingDirty) {
                                                           agents, runtime);
   EXPECT_TRUE(stats.processed_paths);
   EXPECT_EQ(agents[0].position, (tess::Coord3{0, 0, 0}));
+}
+
+// One agent re-arming its goal must replan ONLY itself: the other agent's
+// retained route keeps advancing untouched through the selective
+// (NeedsOnly) pass (per-agent pathing dirt; the S11.4 soak observation was
+// one goal re-arm replanning the whole batch every tick).
+TEST(TessPathAgentTick, GoalRearmReplansOnlyThatAgent) {
+  World world;
+  fill_world(world);
+
+  std::array<tess::PathAgentState, 2> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+      {.position = tess::Coord3{0, 10, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{5, 0, 0});
+  tess::set_path_agent_goal(agents[1], tess::Coord3{5, 10, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+
+  auto stats = tess::tick_unit_path_agents<World, PassableTag>(
+      tick_state, world, agents, runtime);
+  ASSERT_EQ(stats.pathing.submitted, 2u);
+  ASSERT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
+
+  // Re-arm agent 1 every remaining tick; agent 0 must still walk its
+  // retained route one tile per tick and arrive on schedule.
+  for (std::int64_t tick = 2; tick <= 5; ++tick) {
+    tess::set_path_agent_goal(tick_state, agents[1],
+                              tess::Coord3{5, 10 + tick, 0});
+    stats = tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
+                                                            agents, runtime);
+    EXPECT_TRUE(stats.processed_paths);
+    EXPECT_EQ(stats.pathing.submitted, 1u);  // only the re-armed agent
+    EXPECT_EQ(agents[0].position, (tess::Coord3{tick, 0, 0}));
+  }
+  EXPECT_FALSE(agents[0].has_goal);  // arrived at x=5 on tick 5
+  EXPECT_EQ(stats.movement.arrived, 1u);
+}
+
+// mark_pathing_dirty stays world-scoped: after it, EVERY agent replans.
+TEST(TessPathAgentTick, WorldDirtyMarkReplansEveryAgent) {
+  World world;
+  fill_world(world);
+
+  std::array<tess::PathAgentState, 2> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+      {.position = tess::Coord3{0, 10, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{7, 0, 0});
+  tess::set_path_agent_goal(agents[1], tess::Coord3{7, 10, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+
+  auto stats = tess::tick_unit_path_agents<World, PassableTag>(
+      tick_state, world, agents, runtime);
+  ASSERT_EQ(stats.pathing.submitted, 2u);
+
+  tess::mark_pathing_dirty(tick_state);
+  stats = tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
+                                                          agents, runtime);
+  EXPECT_TRUE(stats.processed_paths);
+  EXPECT_EQ(stats.pathing.submitted, 2u);
+}
+
+// Steady goal-churn ticks must stay allocation-free once the runtime and
+// the per-agent route vectors are warm (the retained-route pool reuses
+// capacity across replans).
+TEST(TessPathAgentTick, WarmGoalChurnTicksAreAllocationFree) {
+  World world;
+  fill_world(world);
+
+  std::array<tess::PathAgentState, 2> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+      {.position = tess::Coord3{0, 10, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{20, 0, 0});
+  tess::set_path_agent_goal(agents[1], tess::Coord3{8, 10, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+
+  // Warm: full pass + one re-arm cycle of each churn goal.
+  (void)tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
+                                                        agents, runtime);
+  for (int warm = 0; warm < 2; ++warm) {
+    tess::set_path_agent_goal(tick_state, agents[1],
+                              tess::Coord3{8, warm % 2 == 0 ? 12 : 10, 0});
+    (void)tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
+                                                          agents, runtime);
+  }
+
+  tess_test::ScopedAllocationCounter counter;
+  for (int tick = 0; tick < 4; ++tick) {
+    tess::set_path_agent_goal(tick_state, agents[1],
+                              tess::Coord3{8, tick % 2 == 0 ? 12 : 10, 0});
+    (void)tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
+                                                          agents, runtime);
+  }
+  EXPECT_EQ(counter.count(), 0u);
 }
 
 TEST(TessPathAgentTick, FailedPathsDoNotMove) {

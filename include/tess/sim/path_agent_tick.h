@@ -11,7 +11,17 @@ namespace tess {
 
 struct PathAgentTickState {
   SimClock clock{};
+  // WORLD-scoped pathing dirt: set it (via mark_pathing_dirty) after any
+  // world change that can invalidate existing routes; the next tick then
+  // replans EVERY agent. Agent-scoped needs (a newly armed goal, a Blocked
+  // retry) do not set it -- those agents alone replan while Following
+  // agents keep walking their retained routes (audit/optimization-log
+  // per-agent pathing-dirty item). Starts true so the first tick plans
+  // everyone.
   bool pathing_dirty = true;
+  // Per-agent retained routes; see PathAgentRoutes for the index-pairing
+  // contract (reorder/remove agents => mark_pathing_dirty).
+  PathAgentRoutes routes{};
 };
 
 struct PathAgentTickOptions {
@@ -43,10 +53,15 @@ inline void mark_pathing_dirty(PathAgentTickState& state) noexcept {
   state.pathing_dirty = true;
 }
 
+// Arms a goal WITHOUT touching the world-scoped dirty flag: the agent
+// enters NeedsPath, which the next tick picks up as an agent-scoped
+// (NeedsOnly) processing pass. Before the per-agent split this marked the
+// shared flag and one new goal replanned the whole batch every tick
+// (optimization-log 2026-07-11, S11.4 soak observation).
 inline void set_path_agent_goal(PathAgentTickState& state,
                                 PathAgentState& agent, Coord3 goal) noexcept {
+  static_cast<void>(state);
   set_path_agent_goal(agent, goal);
-  mark_pathing_dirty(state);
 }
 
 // Scans agents ahead of a tick's path processing. NeedsPath agents (goals
@@ -95,14 +110,18 @@ template <typename World, typename ClassOrTag>
 
   const bool repath_needed =
       prepare_path_agent_processing(agents, options, stats);
+  state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
+    const auto scope =
+        state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_unit_path_agents<World, ClassOrTag>(
-        world, agents, runtime, options.cache_policy, graph);
+        world, agents, runtime, options.cache_policy, graph, scope,
+        &state.routes);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
 
-  stats.movement = advance_path_agents(agents, runtime, options.max_steps);
+  stats.movement = advance_path_agents(agents, state.routes, options.max_steps);
   return stats;
 }
 
@@ -119,9 +138,13 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 
   const bool repath_needed =
       prepare_path_agent_processing(agents, options, stats);
+  state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
+    const auto scope =
+        state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_unit_path_agents<World, ClassOrTag>(
-        world, agents, runtime, options.cache_policy, graph);
+        world, agents, runtime, options.cache_policy, graph, scope,
+        &state.routes);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -129,7 +152,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   stats.movement =
       advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
                                         ReservationTag>(
-          world, agents, runtime, options.max_steps, movement_dirty_mask);
+          world, agents, state.routes, options.max_steps, movement_dirty_mask);
   return stats;
 }
 
@@ -147,14 +170,18 @@ template <typename World, typename Class, std::uint32_t MaxCost>
 
   const bool repath_needed =
       prepare_path_agent_processing(agents, options, stats);
+  state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
+    const auto scope =
+        state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_weighted_path_agents<World, Class, MaxCost>(
-        world, agents, runtime, options.cache_policy, graph);
+        world, agents, runtime, options.cache_policy, graph, scope,
+        &state.routes);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
 
-  stats.movement = advance_path_agents(agents, runtime, options.max_steps);
+  stats.movement = advance_path_agents(agents, state.routes, options.max_steps);
   return stats;
 }
 
@@ -171,16 +198,20 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 
   const bool repath_needed =
       prepare_path_agent_processing(agents, options, stats);
+  state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
+    const auto scope =
+        state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_weighted_path_agents<World, Class, MaxCost>(
-        world, agents, runtime, options.cache_policy, graph);
+        world, agents, runtime, options.cache_policy, graph, scope,
+        &state.routes);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
 
   stats.movement = advance_path_agents_with_movement<World, Class, OccupancyTag,
                                                      ReservationTag>(
-      world, agents, runtime, options.max_steps, movement_dirty_mask);
+      world, agents, state.routes, options.max_steps, movement_dirty_mask);
   return stats;
 }
 
@@ -197,15 +228,19 @@ template <typename World, typename PassableTag, typename CostTag,
 
   const bool repath_needed =
       prepare_path_agent_processing(agents, options, stats);
+  state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
+    const auto scope =
+        state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing =
         process_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(
-            world, agents, runtime, options.cache_policy, graph);
+            world, agents, runtime, options.cache_policy, graph, scope,
+            &state.routes);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
 
-  stats.movement = advance_path_agents(agents, runtime, options.max_steps);
+  stats.movement = advance_path_agents(agents, state.routes, options.max_steps);
   return stats;
 }
 
@@ -222,10 +257,14 @@ template <typename World, typename PassableTag, typename CostTag,
 
   const bool repath_needed =
       prepare_path_agent_processing(agents, options, stats);
+  state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
+    const auto scope =
+        state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing =
         process_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(
-            world, agents, runtime, options.cache_policy, graph);
+            world, agents, runtime, options.cache_policy, graph, scope,
+            &state.routes);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -233,7 +272,7 @@ template <typename World, typename PassableTag, typename CostTag,
   stats.movement =
       advance_path_agents_with_movement<World, PassableTag, OccupancyTag,
                                         ReservationTag>(
-          world, agents, runtime, options.max_steps, movement_dirty_mask);
+          world, agents, state.routes, options.max_steps, movement_dirty_mask);
   return stats;
 }
 

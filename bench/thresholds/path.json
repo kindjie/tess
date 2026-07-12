@@ -241,15 +241,18 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 22421
     },
-    "path/field_product_cache_stale_rejection_room_portals_512x512/iterations:2000/manual_time": {
-      "max_real_time_ns": 1560,
-      "max_cpu_time_ns": null,
-      "note": "Measurement fix 2026-07-06: manual timing brackets only the stale lookup (previously ~760 ns including per-iteration Pause/Resume timer overhead; ~313 ns measured after the fix). cpu_time now includes the untimed world-sized cache refill, so the gate moved to real_time. The ceiling was recalibrated 2026-07-07 to roughly 3x the observed CI maximum (baseline run 28888943908), replacing the initial 1 ms investigation ceiling."
-    },
+    "path/field_product_cache_stale_rejection_room_portals_512x512/iterations:2000/manual_time":
+        {
+          "max_real_time_ns": 1560,
+          "max_cpu_time_ns": null,
+          "note":
+              "Measurement fix 2026-07-06: manual timing brackets only the stale lookup (previously ~760 ns including per-iteration Pause/Resume timer overhead; ~313 ns measured after the fix). cpu_time now includes the untimed world-sized cache refill, so the gate moved to real_time. The ceiling was recalibrated 2026-07-07 to roughly 3x the observed CI maximum (baseline run 28888943908), replacing the initial 1 ms investigation ceiling."
+        },
     "path/field_product_cache_lru_eviction_512x512/iterations:1000/manual_time": {
       "max_real_time_ns": 879,
       "max_cpu_time_ns": null,
-      "note": "Measurement fix 2026-07-06: manual timing brackets only the evicting store (previously ~596 ns including per-iteration Pause/Resume timer overhead; ~119 ns measured after the fix). cpu_time now includes the untimed product copies, so the 10 ms cpu gate was replaced by a real_time gate. The ceiling was recalibrated 2026-07-07 to roughly 3x the observed CI maximum (baseline run 28888943908), replacing the initial 1 ms investigation ceiling."
+      "note":
+          "Measurement fix 2026-07-06: manual timing brackets only the evicting store (previously ~596 ns including per-iteration Pause/Resume timer overhead; ~119 ns measured after the fix). cpu_time now includes the untimed product copies, so the 10 ms cpu gate was replaced by a real_time gate. The ceiling was recalibrated 2026-07-07 to roughly 3x the observed CI maximum (baseline run 28888943908), replacing the initial 1 ms investigation ceiling."
     },
     "path/astar_batch_100_mixed_repeated_room_portals_512x512": {
       "max_real_time_ns": null,
@@ -310,6 +313,14 @@
     "path/agent_runtime_100_unit_scattered_wall_gap_field_cache_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1355993
+    },
+    "path/agent_tick_100_weighted_goal_churn_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 104000000,
+      "comment":
+          "Bootstrap ceiling: new with the per-agent pathing-dirty split. One goal re-arm per tick replans only that agent (NeedsOnly scope); pre-split this cost the full 100-agent batch (~72 ms local). Local arm64 median ~17.3 ms x6 headroom; recalibrate to 2x-max once 10 CI artifacts carry real samples.",
+      "comment_ref":
+          "docs/planning/optimization-log.md 2026-07-12 per-agent pathing dirt"
     }
   }
 }
