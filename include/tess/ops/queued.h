@@ -493,11 +493,25 @@ class ExecutionReport {
     return count;
   }
 
+  // Clears all results while keeping every allocation -- report rows,
+  // planned operations, and their chunk lists (parked in a pool) -- so a
+  // caller-owned report makes steady-state planning allocation-free
+  // (audit 2026-07-11 M4).
+  void reset() {
+    for (auto& planned : plan_.operations_) {
+      planned.chunks.clear();
+      chunk_pool_.push_back(std::move(planned.chunks));
+    }
+    plan_.operations_.clear();
+    operations_.clear();
+  }
+
  private:
   template <typename World>
   friend auto plan_operations(const World& world,
-                              std::span<const QueuedOperation> operations)
-      -> ExecutionReport;
+                              std::span<const QueuedOperation> operations,
+                              ExecutionReport& report)
+      -> const ExecutionReport&;
 
   void reserve(std::size_t size) {
     operations_.reserve(size);
@@ -510,8 +524,23 @@ class ExecutionReport {
     plan_.operations_.push_back(std::move(planned));
   }
 
+  [[nodiscard]] auto acquire_chunks() -> std::vector<ChunkKey> {
+    if (chunk_pool_.empty()) {
+      return {};
+    }
+    auto chunks = std::move(chunk_pool_.back());
+    chunk_pool_.pop_back();
+    return chunks;
+  }
+
+  void recycle_chunks(std::vector<ChunkKey>&& chunks) {
+    chunks.clear();
+    chunk_pool_.push_back(std::move(chunks));
+  }
+
   std::vector<OperationReport> operations_;
   ExecutionPlan plan_;
+  std::vector<std::vector<ChunkKey>> chunk_pool_;
 };
 
 class FrameOps {
@@ -612,20 +641,14 @@ template <typename World>
   return true;
 }
 
-template <typename World>
-[[nodiscard]] auto resident_chunk_keys(const World&) -> std::vector<ChunkKey> {
-  std::vector<ChunkKey> chunks;
-  chunks.reserve(static_cast<std::size_t>(World::chunk_count));
-  for (std::uint64_t key = 0; key < World::chunk_count; ++key) {
-    chunks.push_back(ChunkKey{key});
-  }
-  return chunks;
-}
-
+// Fills `chunks` in place (clearing it first) so a caller-supplied vector
+// keeps its capacity across plans instead of being replaced by a fresh
+// allocation per operation (audit 2026-07-11 M4).
 template <typename World>
 [[nodiscard]] auto expand_domain(const World& world, const DomainDesc& domain,
                                  std::vector<ChunkKey>& chunks,
                                  ChunkKey& invalid_chunk) -> bool {
+  chunks.clear();
   switch (domain.kind()) {
     case DomainKind::ExplicitChunks:
       if (!validate_explicit_chunks(world, domain.explicit_chunks(),
@@ -636,13 +659,16 @@ template <typename World>
                     domain.explicit_chunks().end());
       return true;
     case DomainKind::DirtyChunks:
-      chunks = world.dirty_chunks(domain.mask());
+      world.collect_dirty_chunks(domain.mask(), chunks);
       return true;
     case DomainKind::ActiveChunks:
-      chunks = world.active_chunks(domain.mask());
+      world.collect_active_chunks(domain.mask(), chunks);
       return true;
     case DomainKind::ResidentChunks:
-      chunks = resident_chunk_keys(world);
+      chunks.reserve(static_cast<std::size_t>(World::chunk_count));
+      for (std::uint64_t key = 0; key < World::chunk_count; ++key) {
+        chunks.push_back(ChunkKey{key});
+      }
       return true;
   }
   return false;
@@ -715,7 +741,10 @@ template <typename World>
 [[nodiscard]] constexpr auto dirty_axis_end(std::int64_t origin,
                                             std::uint64_t extent) noexcept
     -> std::int64_t {
-  return origin + static_cast<std::int64_t>(extent);
+  // Saturating: an unguarded origin + int64(extent) is UB for huge
+  // caller-supplied extents (audit 2026-07-11 C1); share chunk_meta's
+  // guarded helper.
+  return detail::box_axis_end(origin, extent);
 }
 
 [[nodiscard]] constexpr auto dirty_min(std::int64_t lhs,
@@ -760,10 +789,14 @@ template <typename World>
 
 }  // namespace detail
 
+// Reuse overload: plans into a caller-owned report, recycling its report
+// rows, planned-operation storage, and chunk-list allocations from the
+// previous plan (audit 2026-07-11 M4). Returns the same report for
+// chaining. The by-value overload below forwards here.
 template <typename World>
-[[nodiscard]] auto plan_operations(const World& world,
-                                   std::span<const QueuedOperation> operations)
-    -> ExecutionReport {
+auto plan_operations(const World& world,
+                     std::span<const QueuedOperation> operations,
+                     ExecutionReport& report) -> const ExecutionReport& {
   // Queued operations are not yet sparse-aware: expand_domain's ResidentChunks
   // case enumerates 0..chunk_count (an OOM on a huge sparse world, and it would
   // yield non-resident keys the executor then writes through), so restrict the
@@ -774,7 +807,7 @@ template <typename World>
       std::is_same_v<typename World::residency_type, AlwaysResident>,
       "Queued operations require an AlwaysResidentWorld; sparse queued-ops "
       "support is deferred to a later slice.");
-  ExecutionReport report;
+  report.reset();
   report.reserve(operations.size());
 
   for (std::size_t op_index = 0; op_index < operations.size(); ++op_index) {
@@ -823,7 +856,7 @@ template <typename World>
         op.write_policy,
         op.priority,
         op.budget_policy,
-        {},
+        report.acquire_chunks(),
         op.source,
     };
     ChunkKey invalid_chunk{};
@@ -835,6 +868,7 @@ template <typename World>
       op_report.has_detail_chunk = true;
       TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner,
                             "invalid_domain", op_index);
+      report.recycle_chunks(std::move(planned.chunks));
       report.push_report(op_report);
       continue;
     }
@@ -852,6 +886,7 @@ template <typename World>
       op_report.chunk_count = planned.chunks.size();
       TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner, "conflict",
                             op_index);
+      report.recycle_chunks(std::move(planned.chunks));
       report.push_report(op_report);
       continue;
     }
@@ -864,6 +899,21 @@ template <typename World>
   }
 
   return report;
+}
+
+template <typename World>
+[[nodiscard]] auto plan_operations(const World& world,
+                                   std::span<const QueuedOperation> operations)
+    -> ExecutionReport {
+  ExecutionReport report;
+  plan_operations(world, operations, report);
+  return report;
+}
+
+template <typename World>
+auto plan_operations(const World& world, const FrameOps& ops,
+                     ExecutionReport& report) -> const ExecutionReport& {
+  return plan_operations(world, ops.operations(), report);
 }
 
 template <typename World>

@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -332,6 +333,33 @@ TEST(TessSchedule, RequestRunPokesOnDirtyWithZeroMask) {
   EXPECT_EQ(schedule.run_tick(clock).tasks_run, 1u);
   EXPECT_EQ(task.last_pending, 0u);
   EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);  // consumed
+}
+
+// A task callback that throws must not latch the schedule "in run" --
+// the next tick would fail the reentrancy assert even though the
+// schedule state is recoverable (audit 2026-07-11 C2).
+TEST(TessSchedule, ThrowingTaskDoesNotLatchInRun) {
+  struct ThrowOnceTask {
+    bool armed = true;
+    auto operator()(const tess::ScheduleTaskContext&)
+        -> tess::ScheduleTaskResult {
+      if (armed) {
+        armed = false;
+        throw std::runtime_error{"task failure"};
+      }
+      return {};
+    }
+  };
+  ThrowOnceTask task;
+  tess::Schedule schedule;
+  schedule.add_task(
+      {"throws", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()}, task);
+  schedule.seal();
+
+  tess::SimClock clock;
+  EXPECT_THROW(schedule.run_tick(clock), std::runtime_error);
+  const auto stats = schedule.run_tick(clock);
+  EXPECT_EQ(stats.tasks_run, 1u);
 }
 
 // Codex review: request_run must arm EveryN tasks too -- one extra run
