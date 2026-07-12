@@ -13,6 +13,33 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-12 - ChunkMeta hot/cold split, v1.1.0 (audit3 M5)
+
+- Changed: BREAKING (minor bump by decision -- the struct layout was
+  never a documented guarantee): `ChunkMeta` no longer carries
+  `field_dirty_flags`, `active_flags`, or `dirty_bounds`. The flag words
+  live in per-world SoA columns the collect scans read directly (16
+  chunks per cache line instead of streaming 80-byte structs; struct
+  shrinks 80 -> 20 bytes), and the cold `Box3` bounds sits in its own
+  parallel array. New read accessors: `World::dirty_flags(key)`,
+  `active_flags(key)`, `dirty_bounds(key)`; `observe_dirty` bundles
+  flags+bounds+version as before, and all mutation stays behind
+  `mark_/clear_/observe_`-style methods, which now take the columns.
+  Migration: `meta(key).field_dirty_flags` -> `dirty_flags(key)`,
+  `meta(key).dirty_bounds` -> `dirty_bounds(key)`,
+  `meta(key).active_flags` -> `active_flags(key)`. Evidence: new
+  streaming-scale `storage/world_dirty_chunks_iteration_4k` 2.09 ->
+  1.93 us (~8% local; the 256-chunk scan is cache-resident and flat);
+  no regressions across the storage family. Project version 1.0.0 ->
+  1.1.0.
+- Reason: audit-2026-07-11 M5 (staged migration per the remediation
+  plan; deferred out of the audit stack for the version-bump decision).
+- Affected docs: `docs/planning/optimization-log.md`.
+- Affected code: `include/tess/storage/chunk_meta.h`,
+  `include/tess/storage/world.h`, `include/tess/storage/sparse_world.h`,
+  `include/tess/sim/render_delta.h`, `bench/tess_bench.cc`,
+  `bench/thresholds/storage.json`, `CMakeLists.txt`, tests.
+
 ## 2026-07-12 - Intrusive LRU eviction + ECS hash/lookup cuts (audit3 W6)
 
 - Changed: sparse-world eviction pops an intrusive doubly-linked LRU
