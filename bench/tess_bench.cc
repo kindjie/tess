@@ -416,13 +416,17 @@ void BM_chunk_field_write_read_iteration(benchmark::State& state) {
   benchmark::DoNotOptimize(&page);
   for (auto _ : state) {
     auto terrain = page.field_span<TerrainTag>();
-    std::uint64_t sum = 0;
     for (std::uint64_t i = 0; i < StoragePage::local_tile_count; ++i) {
       terrain[i] = static_cast<std::uint16_t>(i);
+    }
+    // Commit the stores and forget their values, so the read loop below
+    // must load instead of store-forwarding the known constants.
+    benchmark::ClobberMemory();
+    std::uint64_t sum = 0;
+    for (std::uint64_t i = 0; i < StoragePage::local_tile_count; ++i) {
       sum += terrain[i];
     }
     benchmark::DoNotOptimize(sum);
-    benchmark::ClobberMemory();
   }
 }
 
@@ -431,14 +435,17 @@ void BM_single_chunk_page_iteration(benchmark::State& state) {
   benchmark::DoNotOptimize(&page);
   for (auto _ : state) {
     auto terrain = page.field_span<TerrainTag>();
-    std::uint64_t sum = 0;
     for (std::uint64_t i = 0; i < StorageSingleChunkPage::local_tile_count;
          ++i) {
       terrain[i] = static_cast<std::uint16_t>(i);
+    }
+    benchmark::ClobberMemory();
+    std::uint64_t sum = 0;
+    for (std::uint64_t i = 0; i < StorageSingleChunkPage::local_tile_count;
+         ++i) {
       sum += terrain[i];
     }
     benchmark::DoNotOptimize(sum);
-    benchmark::ClobberMemory();
   }
 }
 
@@ -446,13 +453,15 @@ void BM_flat_array_iteration(benchmark::State& state) {
   std::array<std::uint16_t, StorageSingleChunkPage::local_tile_count> terrain{};
   benchmark::DoNotOptimize(terrain.data());
   for (auto _ : state) {
-    std::uint64_t sum = 0;
     for (std::uint64_t i = 0; i < terrain.size(); ++i) {
       terrain[i] = static_cast<std::uint16_t>(i);
+    }
+    benchmark::ClobberMemory();
+    std::uint64_t sum = 0;
+    for (std::uint64_t i = 0; i < terrain.size(); ++i) {
       sum += terrain[i];
     }
     benchmark::DoNotOptimize(sum);
-    benchmark::ClobberMemory();
   }
 }
 
