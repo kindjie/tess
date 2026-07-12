@@ -58,6 +58,38 @@ struct PathAgentFrameStats {
   MovementFailureCounts movement_failures{};
 };
 
+// Which agents a processing pass (re)submits (per-agent pathing dirt,
+// optimization-log 2026-07-11/12):
+// - All: every agent with a goal replans -- required after a WORLD change,
+//   which can invalidate any existing route.
+// - NeedsOnly: only agents that cannot advance without a plan (NeedsPath,
+//   Blocked); Following agents keep walking their retained routes. One
+//   agent arming a goal no longer replans the whole batch.
+enum class PathSubmitScope : std::uint8_t {
+  All,
+  NeedsOnly,
+};
+
+// Per-agent route retention, index-paired with the agents span handed to
+// the tick drivers: routes[i] is agents[i]'s current Found route (empty
+// otherwise). Retention is what makes PathSubmitScope::NeedsOnly sound --
+// the runtime rebuilds its result storage every processing pass, so a
+// non-resubmitted agent's route must live here. Vectors keep their
+// capacity across replans, so warm ticks stay allocation-free.
+//
+// CONTRACT: the pairing is by span index. A caller that reorders, removes,
+// or compacts its agents between ticks must call mark_pathing_dirty on the
+// tick state (forcing one full replan) or keep routes[] in sync itself.
+struct PathAgentRoutes {
+  std::vector<std::vector<Coord3>> routes;
+
+  void ensure_size(std::size_t count) {
+    if (routes.size() < count) {
+      routes.resize(count);
+    }
+  }
+};
+
 inline void set_path_agent_goal(PathAgentState& agent, Coord3 goal) noexcept {
   agent.goal = goal;
   agent.path_index = 0;
@@ -78,12 +110,19 @@ inline void clear_path_agent_goal(PathAgentState& agent) noexcept {
 }
 
 inline auto submit_path_agents(std::span<PathAgentState> agents,
-                               PathRequestRuntime& runtime)
+                               PathRequestRuntime& runtime,
+                               PathSubmitScope scope = PathSubmitScope::All)
     -> PathAgentFrameStats {
   PathAgentFrameStats stats;
   runtime.clear_requests();
 
   for (auto& agent : agents) {
+    if (scope == PathSubmitScope::NeedsOnly &&
+        agent.phase == PathAgentPhase::Following) {
+      // Keeps its retained route and path_index; the runtime rebuild below
+      // makes its old ticket stale, which nothing reads in the scoped flow.
+      continue;
+    }
     agent.path_index = 0;
     if (!agent.has_goal || agent.phase == PathAgentPhase::Unreachable) {
       continue;
@@ -122,11 +161,20 @@ inline void record_path_agent_status(PathAgentFrameStats& stats,
 }
 
 inline auto apply_path_agent_results(std::span<PathAgentState> agents,
-                                     const PathRequestRuntime& runtime)
+                                     const PathRequestRuntime& runtime,
+                                     PathSubmitScope scope,
+                                     PathAgentRoutes* routes)
     -> PathAgentFrameStats {
   PathAgentFrameStats stats;
 
-  for (auto& agent : agents) {
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    auto& agent = agents[i];
+    if (scope == PathSubmitScope::NeedsOnly &&
+        agent.phase == PathAgentPhase::Following) {
+      // Not resubmitted by the matching scoped submit; its runtime ticket
+      // is stale and its retained route stays as-is.
+      continue;
+    }
     if (!agent.has_goal || agent.position == agent.goal ||
         agent.phase == PathAgentPhase::Unreachable) {
       continue;
@@ -138,16 +186,29 @@ inline auto apply_path_agent_results(std::span<PathAgentState> agents,
     if (result.status == PathStatus::Found) {
       agent.phase = PathAgentPhase::Following;
       agent.blocked_retries = 0;
+      if (routes != nullptr) {
+        routes->routes[i].assign(result.path.begin(), result.path.end());
+      }
     } else {
       // Planner failures are retried through the Blocked lifecycle until
       // the tick driver's retry budget runs out.
       agent.phase = PathAgentPhase::Blocked;
+      if (routes != nullptr) {
+        routes->routes[i].clear();
+      }
     }
     ++stats.completed;
     record_path_agent_status(stats, result.status);
   }
 
   return stats;
+}
+
+inline auto apply_path_agent_results(std::span<PathAgentState> agents,
+                                     const PathRequestRuntime& runtime)
+    -> PathAgentFrameStats {
+  return apply_path_agent_results(agents, runtime, PathSubmitScope::All,
+                                  nullptr);
 }
 
 inline auto advance_path_agents(std::span<PathAgentState> agents,
@@ -282,6 +343,129 @@ inline auto advance_path_agents_with_movement(
       [](std::size_t, Coord3, Coord3) {});
 }
 
+// Route-pool advance: identical stepping semantics to the runtime-reading
+// overloads above, but the route comes from the retained pool, so it
+// survives processing passes that did not resubmit this agent
+// (PathSubmitScope::NeedsOnly).
+inline auto advance_path_agents(std::span<PathAgentState> agents,
+                                const PathAgentRoutes& routes,
+                                std::size_t max_steps = 1)
+    -> PathAgentFrameStats {
+  PathAgentFrameStats stats;
+  if (max_steps == 0) {
+    return stats;
+  }
+
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    auto& agent = agents[i];
+    if (!agent.has_goal || agent.status != PathStatus::Found) {
+      continue;
+    }
+
+    const auto& route = routes.routes[i];
+    if (route.empty()) {
+      continue;
+    }
+
+    for (std::size_t step = 0; step < max_steps; ++step) {
+      if (agent.path_index + 1 >= route.size()) {
+        break;
+      }
+      ++agent.path_index;
+      agent.position = route[agent.path_index];
+      ++stats.advanced;
+      if (agent.position == agent.goal) {
+        clear_path_agent_goal(agent);
+        agent.status = PathStatus::Found;
+        ++stats.arrived;
+        break;
+      }
+    }
+  }
+
+  return stats;
+}
+
+template <typename World, typename ClassOrTag, typename OccupancyTag,
+          typename ReservationTag, typename OnCommit>
+  requires std::invocable<OnCommit&, std::size_t, Coord3, Coord3>
+inline auto advance_path_agents_with_movement(World& world,
+                                              std::span<PathAgentState> agents,
+                                              const PathAgentRoutes& routes,
+                                              std::size_t max_steps,
+                                              std::uint32_t movement_dirty_mask,
+                                              OnCommit&& on_commit)
+    -> PathAgentFrameStats {
+  PathAgentFrameStats stats;
+  if (max_steps == 0) {
+    return stats;
+  }
+
+  for (std::size_t agent_index = 0; agent_index < agents.size();
+       ++agent_index) {
+    auto& agent = agents[agent_index];
+    if (!agent.has_goal || agent.status != PathStatus::Found) {
+      continue;
+    }
+
+    const auto& route = routes.routes[agent_index];
+    if (route.empty()) {
+      continue;
+    }
+
+    for (std::size_t step = 0; step < max_steps; ++step) {
+      if (agent.path_index + 1 >= route.size()) {
+        break;
+      }
+
+      const auto from = agent.position;
+      const auto to = route[agent.path_index + 1];
+      const auto movement =
+          commit_movement_intent<World, ClassOrTag, OccupancyTag,
+                                 ReservationTag>(
+              world, MovementIntent{from, to, {}}, movement_dirty_mask);
+      if (movement.status != MovementStatus::Moved) {
+        record_movement_failure(stats.movement_failures, movement.status);
+        if (is_transient_movement_failure(movement.status)) {
+          // Same Blocked/Unreachable split as the runtime-reading overload;
+          // see its comment for the retry-budget semantics.
+          agent.phase = PathAgentPhase::Blocked;
+          ++stats.blocked_waits;
+        } else {
+          agent.status = PathStatus::NoPath;
+          agent.phase = PathAgentPhase::Unreachable;
+        }
+        break;
+      }
+
+      ++agent.path_index;
+      agent.position = to;
+      on_commit(agent_index, from, to);
+      ++stats.advanced;
+      if (agent.position == agent.goal) {
+        clear_path_agent_goal(agent);
+        agent.status = PathStatus::Found;
+        ++stats.arrived;
+        break;
+      }
+    }
+  }
+
+  return stats;
+}
+
+template <typename World, typename ClassOrTag, typename OccupancyTag,
+          typename ReservationTag>
+inline auto advance_path_agents_with_movement(
+    World& world, std::span<PathAgentState> agents,
+    const PathAgentRoutes& routes, std::size_t max_steps = 1,
+    std::uint32_t movement_dirty_mask = 0) -> PathAgentFrameStats {
+  return advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
+                                           ReservationTag>(
+      world, agents, routes, max_steps, movement_dirty_mask,
+      [](std::size_t, Coord3, Coord3) {});
+}
+
 inline void add_path_agent_stats(PathAgentFrameStats& lhs,
                                  PathAgentFrameStats rhs) noexcept {
   lhs.submitted += rhs.submitted;
@@ -307,12 +491,14 @@ template <typename World, typename ClassOrTag>
 [[nodiscard]] auto process_unit_path_agents(
     const World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
-    const RegionGraphT<typename World::residency_type>* graph = nullptr)
-    -> PathAgentFrameStats {
-  auto stats = submit_path_agents(agents, runtime);
+    const RegionGraphT<typename World::residency_type>* graph = nullptr,
+    PathSubmitScope scope = PathSubmitScope::All,
+    PathAgentRoutes* routes = nullptr) -> PathAgentFrameStats {
+  auto stats = submit_path_agents(agents, runtime, scope);
   (void)runtime.template process_unit_cached<World, ClassOrTag>(world, policy,
                                                                 graph);
-  add_path_agent_stats(stats, apply_path_agent_results(agents, runtime));
+  add_path_agent_stats(
+      stats, apply_path_agent_results(agents, runtime, scope, routes));
   stats.precheck_ruled_out = runtime.stats().precheck_ruled_out;
   return stats;
 }
@@ -321,12 +507,14 @@ template <typename World, typename Class, std::uint32_t MaxCost>
 [[nodiscard]] auto process_weighted_path_agents(
     const World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
-    const RegionGraphT<typename World::residency_type>* graph = nullptr)
-    -> PathAgentFrameStats {
-  auto stats = submit_path_agents(agents, runtime);
+    const RegionGraphT<typename World::residency_type>* graph = nullptr,
+    PathSubmitScope scope = PathSubmitScope::All,
+    PathAgentRoutes* routes = nullptr) -> PathAgentFrameStats {
+  auto stats = submit_path_agents(agents, runtime, scope);
   (void)runtime.template process_weighted_batch<World, Class, MaxCost>(
       world, policy, graph);
-  add_path_agent_stats(stats, apply_path_agent_results(agents, runtime));
+  add_path_agent_stats(
+      stats, apply_path_agent_results(agents, runtime, scope, routes));
   stats.precheck_ruled_out = runtime.stats().precheck_ruled_out;
   return stats;
 }
@@ -336,13 +524,15 @@ template <typename World, typename PassableTag, typename CostTag,
 [[nodiscard]] auto process_weighted_path_agents(
     const World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
-    const RegionGraphT<typename World::residency_type>* graph = nullptr)
-    -> PathAgentFrameStats {
-  auto stats = submit_path_agents(agents, runtime);
+    const RegionGraphT<typename World::residency_type>* graph = nullptr,
+    PathSubmitScope scope = PathSubmitScope::All,
+    PathAgentRoutes* routes = nullptr) -> PathAgentFrameStats {
+  auto stats = submit_path_agents(agents, runtime, scope);
   (void)runtime
       .template process_weighted_batch<World, PassableTag, CostTag, MaxCost>(
           world, policy, graph);
-  add_path_agent_stats(stats, apply_path_agent_results(agents, runtime));
+  add_path_agent_stats(
+      stats, apply_path_agent_results(agents, runtime, scope, routes));
   stats.precheck_ruled_out = runtime.stats().precheck_ruled_out;
   return stats;
 }
