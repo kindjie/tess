@@ -13,6 +13,34 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-11 - Bench integrity: de-elision, parallel gates, residency family (audit3 W1)
+
+- Changed: five benchmarks that compiled to empty loops
+  (`storage/field_span_acquisition`, `storage/chunk_field_write_read_iteration`,
+  `storage/single_chunk_page_iteration`, `storage/flat_array_iteration`,
+  `block/scratch_allocate_u32`) and one partially-elided one
+  (`diagnostics/record_timing`) now measure real work via
+  escape-then-clobber and opaque-input patterns; their ceilings are
+  re-set (bootstrap x6-local for the three loop benches, 25 ns floor for
+  the sub-ns ones) pending the 10-artifact recalibration. The
+  `parallel/` family is now gated (`bench/thresholds/parallel.json`,
+  real_time ceilings from 10 CI artifacts -- the deferred precondition
+  was met). Threshold targets gate on the median of
+  `TESS_BENCHMARK_GATE_REPETITIONS` (default 3) repetitions instead of a
+  single unreplicated sample. New ungated `residency/` family
+  (`bench/tess_residency_bench.cc`) covers sparse lookup,
+  ensure_resident hits, and eviction churn at budget -- the baseline
+  evidence for the audit M11b LRU fix.
+- Reason: audit-2026-07-11 H1 and bench lows -- gates that measure
+  nothing protect nothing, and later remediation workstreams need
+  trustworthy before/after numbers.
+- Affected docs: `docs/planning/audit-2026-07-11.md`,
+  `docs/planning/audit-2026-07-11-remediation.md`.
+- Affected code: `bench/tess_bench.cc`, `bench/tess_diagnostics_bench.cc`,
+  `bench/tess_residency_bench.cc`, `bench/CMakeLists.txt`,
+  `bench/thresholds/{storage,block,parallel}.json`,
+  `.github/workflows/ci.yml`.
+
 ## 2026-07-11 - v1.0.0 (S11 close)
 
 - Changed: project version 0.1.0 -> 1.0.0 (CMake `project(VERSION)`,

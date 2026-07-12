@@ -43,10 +43,14 @@ void diagnostics_record_timing(benchmark::State& state) {
   std::array<TraceRecord, 1> storage{};
   TraceBuffer buffer{storage};
   std::uint64_t nanos = 1;
+  // Escape + clobber: observing only total_ns let the compiler
+  // register-promote the accumulator and drop the count/min/max updates
+  // (audit 2026-07-11 H1 follow-up); clobbering forces the full stats
+  // write-back each iteration.
+  benchmark::DoNotOptimize(&buffer);
   for (auto _ : state) {
     buffer.record_timing(TraceCategory::Path, nanos++);
-    // Force the accumulator to be materialized so the write is not elided.
-    benchmark::DoNotOptimize(buffer.stats(TraceCategory::Path).total_ns);
+    benchmark::ClobberMemory();
   }
 }
 BENCHMARK(diagnostics_record_timing)->Name("diagnostics/record_timing");
