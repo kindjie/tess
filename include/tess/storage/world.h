@@ -192,6 +192,7 @@ class World<Shape, Schema, AlwaysResident> {
   }
 
   void mark_dirty(ChunkKey key, std::uint32_t flags, Box3 bounds) noexcept {
+    TESS_ASSERT(key.value < chunk_count);
     const auto slot = static_cast<std::size_t>(key.value);
     detail::meta_mark_dirty(dirty_flags_[slot], dirty_bounds_[slot], meta(key),
                             flags, bounds);
@@ -211,6 +212,7 @@ class World<Shape, Schema, AlwaysResident> {
   }
 
   void clear_dirty(ChunkKey key, std::uint32_t flags) noexcept {
+    TESS_ASSERT(key.value < chunk_count);
     const auto slot = static_cast<std::size_t>(key.value);
     detail::meta_clear_dirty(dirty_flags_[slot], dirty_bounds_[slot], flags);
   }
@@ -218,6 +220,7 @@ class World<Shape, Schema, AlwaysResident> {
   [[nodiscard]] auto observe_dirty(ChunkKey key,
                                    std::uint32_t flags) const noexcept
       -> DirtyObservation {
+    TESS_ASSERT(key.value < chunk_count);
     const auto slot = static_cast<std::size_t>(key.value);
     return detail::meta_observe_dirty(dirty_flags_[slot], dirty_bounds_[slot],
                                       meta(key), flags);
@@ -228,17 +231,20 @@ class World<Shape, Schema, AlwaysResident> {
   // the generation, so a stale clear leaves every flag and bound in place
   // and returns false; the caller re-observes and rebuilds.
   bool clear_dirty_observed(ChunkKey key, DirtyObservation observed) noexcept {
+    TESS_ASSERT(key.value < chunk_count);
     const auto slot = static_cast<std::size_t>(key.value);
     return detail::meta_clear_dirty_observed(
         dirty_flags_[slot], dirty_bounds_[slot], meta(key), observed);
   }
 
   void mark_active(ChunkKey key, std::uint32_t flags) noexcept {
+    TESS_ASSERT(key.value < chunk_count);
     const auto slot = static_cast<std::size_t>(key.value);
     detail::meta_mark_active(active_flags_[slot], meta(key), flags);
   }
 
   void clear_active(ChunkKey key, std::uint32_t flags) noexcept {
+    TESS_ASSERT(key.value < chunk_count);
     const auto slot = static_cast<std::size_t>(key.value);
     detail::meta_clear_active(active_flags_[slot], meta(key), flags);
   }

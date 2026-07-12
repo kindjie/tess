@@ -26,13 +26,11 @@ deferred for scope reasons. Keep entries short and concrete:
   256-chunk `storage/world_dirty_chunks_iteration` is cache-resident
   and flat (125 ns both) -- expected, its whole metadata array fits the
   fast levels. New streaming-scale
-  `storage/world_dirty_chunks_iteration_4k` (4096 chunks): 2.09 ->
-  1.93 us (~8%); mark/clear and metadata lookups flat; no storage-family
-  regressions. ChunkMeta shrinks 80 -> 20 bytes. The honest summary:
-  the scan win is modest at bench scale because even 320 KB of old-
-  layout metadata still sits in L2 when re-scanned hot; the split's
-  value is the cold-scan/footprint ceiling and the structural
-  decoupling (layout no longer load-bearing for the tick floor work).
+  `storage/world_dirty_chunks_iteration_16k` (16384 chunks; sized past
+  L1 on Codex review -- a first 4096-chunk cut showed only ~8% because
+  both layouts still cached): 10.19 -> 7.64 us (1.33x); mark/clear and
+  metadata lookups flat; no storage-family regressions. ChunkMeta
+  shrinks 80 -> 20 bytes, cutting every other meta touch's footprint.
 - Decision: Accepted (structural + user-directed API split). The
   maintained dirty-chunk SET killing the O(chunk_count) scan floor
   remains the recorded design-level ceiling in the post-v1 backlog.
