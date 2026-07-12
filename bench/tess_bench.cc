@@ -549,6 +549,50 @@ void BM_world_dirty_chunks_iteration(benchmark::State& state) {
               "dirty chunk collection count mismatch");
 }
 
+// Streaming-scale variant of the dirty scan: 16384 chunks with a minimal
+// schema, so the scanned state plus the collected-key output (64 KB flag
+// column + 128 KB output vector) exceeds L1 on every target and the scan
+// pays the layout's memory cost, not just loop overhead. Before the M5 SoA
+// split the scan streamed 80-byte ChunkMeta structs (1.3 MB) for the same
+// work (audit 2026-07-11 M5; sized up on Codex review of the split). The
+// world is static: 16k pages are constructed once, not per timing run.
+using StorageScanShape =
+    tess::Shape<tess::Extent3{8192, 8192, 1}, tess::Extent3{64, 64, 1}>;
+using StorageScanSchema = tess::FieldSchema<tess::Field<TerrainTag, bool>>;
+using StorageScanWorld =
+    tess::AlwaysResidentWorld<StorageScanShape, StorageScanSchema>;
+
+void BM_world_dirty_chunks_iteration_16k(benchmark::State& state) {
+  static auto* world = [] {
+    auto* w = new StorageScanWorld();
+    const auto bounds =
+        tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+    for (std::uint64_t key = 0; key < StorageScanWorld::chunk_count; key += 3) {
+      w->mark_dirty(tess::ChunkKey{key}, DirtyTerrain, bounds);
+    }
+    for (std::uint64_t key = 1; key < StorageScanWorld::chunk_count; key += 5) {
+      w->mark_dirty(tess::ChunkKey{key}, DirtyCost, bounds);
+    }
+    return w;
+  }();
+  constexpr auto expected_dirty =
+      (StorageScanWorld::chunk_count + 2) / 3;  // keys 0,3,6,...
+
+  std::vector<tess::ChunkKey> chunks;
+  chunks.reserve(StorageScanWorld::chunk_count);
+  for (auto _ : state) {
+    chunks.clear();
+    world->collect_dirty_chunks(DirtyTerrain, chunks);
+    std::uint64_t sum = 0;
+    for (const auto key : chunks) {
+      sum += key.value;
+    }
+    benchmark::DoNotOptimize(sum);
+  }
+  bench_check(chunks.size() == expected_dirty,
+              "dirty chunk collection count mismatch (16k)");
+}
+
 void BM_block_explicit_domain_iteration(benchmark::State& state) {
   StorageWorld world;
   std::vector<tess::ChunkKey> keys;
@@ -2060,6 +2104,8 @@ BENCHMARK(BM_world_chunks_iteration)->Name("storage/world_chunks_iteration");
 BENCHMARK(BM_world_metadata_lookup_by_key)
     ->Name("storage/world_metadata_lookup_by_key");
 BENCHMARK(BM_world_dirty_mark_clear)->Name("storage/world_dirty_mark_clear");
+BENCHMARK(BM_world_dirty_chunks_iteration_16k)
+    ->Name("storage/world_dirty_chunks_iteration_16k");
 BENCHMARK(BM_world_dirty_chunks_iteration)
     ->Name("storage/world_dirty_chunks_iteration");
 BENCHMARK(BM_block_explicit_domain_iteration)

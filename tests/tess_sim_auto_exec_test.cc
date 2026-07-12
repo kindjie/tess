@@ -113,8 +113,7 @@ TEST(TessAutoExec, RunsThePipelineAndFeedsOnDirtyTasks) {
     EXPECT_EQ(
         world.chunk(tess::ChunkKey{chunk}).template field_span<TerrainTag>()[0],
         static_cast<std::uint16_t>(chunk + 11));
-    EXPECT_NE(
-        world.meta(tess::ChunkKey{chunk}).field_dirty_flags & DirtyTerrain, 0u);
+    EXPECT_NE(world.dirty_flags(tess::ChunkKey{chunk}) & DirtyTerrain, 0u);
   }
 
   // An idle tick is a no-op that produces no dirty.
@@ -169,8 +168,7 @@ TEST(TessAutoExec, MatchesTheManualPipelineGolden) {
       ASSERT_EQ(auto_span[i], manual_span[i]) << chunk << ":" << i;
     }
     EXPECT_EQ(auto_world.meta(key).version, manual_world.meta(key).version);
-    EXPECT_EQ(auto_world.meta(key).field_dirty_flags,
-              manual_world.meta(key).field_dirty_flags);
+    EXPECT_EQ(auto_world.dirty_flags(key), manual_world.dirty_flags(key));
   }
 }
 
@@ -221,8 +219,7 @@ TEST(TessAutoExec, SerialAndPoolRunsAreIdentical) {
     EXPECT_EQ(serial_world.chunk(key).template field_span<TerrainTag>()[0],
               pool_world.chunk(key).template field_span<TerrainTag>()[0]);
     EXPECT_EQ(serial_world.meta(key).version, pool_world.meta(key).version);
-    EXPECT_EQ(serial_world.meta(key).field_dirty_flags,
-              pool_world.meta(key).field_dirty_flags);
+    EXPECT_EQ(serial_world.dirty_flags(key), pool_world.dirty_flags(key));
   }
 }
 
@@ -260,7 +257,7 @@ TEST(TessAutoExec, PerPhaseMergeKeepsEveryPhasesDirty) {
   ASSERT_EQ(task.last_run().phases, 2u);
   // Phase 1 (ops 0 and 2) merged its dirty before phase 2 re-prepared the
   // scratch: chunk 1's masked write survives.
-  EXPECT_NE(world.meta(tess::ChunkKey{1}).field_dirty_flags & DirtyCost, 0u);
+  EXPECT_NE(world.dirty_flags(tess::ChunkKey{1}) & DirtyCost, 0u);
   EXPECT_GT(world.meta(tess::ChunkKey{1}).version, 0u);
 }
 

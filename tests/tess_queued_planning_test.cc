@@ -80,7 +80,7 @@ TEST(TessQueuedPlanning, MergedDirtyUnionSaturatedEndWithNegativeOrigin) {
   const auto merged = tess::merge_planned_dirty(world, dirty);
   EXPECT_EQ(merged, 1u);
 
-  const auto bounds = world.meta(key).dirty_bounds;
+  const auto bounds = world.dirty_bounds(key);
   EXPECT_EQ(bounds.origin, (tess::Coord3{-10, 16, 0}));
   constexpr auto max_end = std::numeric_limits<std::int64_t>::max();
   EXPECT_EQ(bounds.extent.x, static_cast<std::uint64_t>(max_end) + 10u);
