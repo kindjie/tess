@@ -40,11 +40,15 @@ void emit_chunk_render_deltas(const World& world, ChunkKey chunk_key,
                               std::uint32_t dirty_mask,
                               std::vector<RenderTileDelta>& out) {
   using Shape = typename World::shape_type;
-  const auto& meta = world.meta(chunk_key);
-  const auto flags = meta.field_dirty_flags & dirty_mask;
+  // One observation carries the masked flags, bounds, and version -- the
+  // flag word and bounds live in the world's SoA columns, not ChunkMeta
+  // (audit 2026-07-11 M5).
+  const auto observed = world.observe_dirty(chunk_key, dirty_mask);
+  const auto flags = observed.flags;
   if (flags == 0) {
     return;
   }
+  const auto& dirty_bounds = observed.bounds;
 
   // Clip the dirty bounds to this chunk's own world-space box before the
   // per-tile loop. Every tile in the clipped box is inside the shape and
@@ -57,18 +61,18 @@ void emit_chunk_render_deltas(const World& world, ChunkKey chunk_key,
       static_cast<std::int64_t>(chunk.y * Traits::chunk.y);
   const auto chunk_begin_z =
       static_cast<std::int64_t>(chunk.z * Traits::chunk.z);
-  const auto begin_x = std::max(meta.dirty_bounds.origin.x, chunk_begin_x);
-  const auto begin_y = std::max(meta.dirty_bounds.origin.y, chunk_begin_y);
-  const auto begin_z = std::max(meta.dirty_bounds.origin.z, chunk_begin_z);
-  const auto end_x = std::min(
-      detail::axis_end(meta.dirty_bounds.origin.x, meta.dirty_bounds.extent.x),
-      chunk_begin_x + static_cast<std::int64_t>(Traits::chunk.x));
-  const auto end_y = std::min(
-      detail::axis_end(meta.dirty_bounds.origin.y, meta.dirty_bounds.extent.y),
-      chunk_begin_y + static_cast<std::int64_t>(Traits::chunk.y));
-  const auto end_z = std::min(
-      detail::axis_end(meta.dirty_bounds.origin.z, meta.dirty_bounds.extent.z),
-      chunk_begin_z + static_cast<std::int64_t>(Traits::chunk.z));
+  const auto begin_x = std::max(dirty_bounds.origin.x, chunk_begin_x);
+  const auto begin_y = std::max(dirty_bounds.origin.y, chunk_begin_y);
+  const auto begin_z = std::max(dirty_bounds.origin.z, chunk_begin_z);
+  const auto end_x =
+      std::min(detail::axis_end(dirty_bounds.origin.x, dirty_bounds.extent.x),
+               chunk_begin_x + static_cast<std::int64_t>(Traits::chunk.x));
+  const auto end_y =
+      std::min(detail::axis_end(dirty_bounds.origin.y, dirty_bounds.extent.y),
+               chunk_begin_y + static_cast<std::int64_t>(Traits::chunk.y));
+  const auto end_z =
+      std::min(detail::axis_end(dirty_bounds.origin.z, dirty_bounds.extent.z),
+               chunk_begin_z + static_cast<std::int64_t>(Traits::chunk.z));
   for (auto z = begin_z; z < end_z; ++z) {
     for (auto y = begin_y; y < end_y; ++y) {
       for (auto x = begin_x; x < end_x; ++x) {
@@ -78,7 +82,7 @@ void emit_chunk_render_deltas(const World& world, ChunkKey chunk_key,
             chunk_key,
             local_tile_id<Shape>(local_coord<Shape>(coord)),
             flags,
-            meta.version,
+            observed.version,
         });
       }
     }
