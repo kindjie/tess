@@ -132,6 +132,26 @@ TEST(TessPhaseExecutor, WorkerPoolReusesWorkersAcrossManyPhases) {
   }
 }
 
+// Pins the bounded-wakeup branch (audit 2026-07-11 M8): with 8 workers and
+// counts of 1-3 every dispatch has fewer runs than workers, so completion
+// rides on the notify_one loop plus the wait predicate -- a lost wakeup
+// here strands the dispatcher, which the test surfaces as a hang.
+TEST(TessPhaseExecutor, WorkerPoolBoundedWakeupsCompleteSmallPhases) {
+  const tess::WorkerPoolPhaseExecutor executor{8};
+
+  for (std::size_t phase = 0; phase < 256; ++phase) {
+    const auto count = (phase % 3) + 1;
+    const auto expected = [&] {
+      std::vector<std::size_t> indexes;
+      for (std::size_t i = phase; i < phase + count; ++i) {
+        indexes.push_back(i);
+      }
+      return indexes;
+    }();
+    EXPECT_EQ(collect_visited(executor, phase, count), expected);
+  }
+}
+
 TEST(TessPhaseExecutor, WorkerPoolReportsFirstFailureInOperationOrder) {
   const tess::WorkerPoolPhaseExecutor executor{4};
 

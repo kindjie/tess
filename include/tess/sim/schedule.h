@@ -204,7 +204,10 @@ class Schedule {
   // now one pass instead of SimPhase::Count passes over every task) and
   // dirty_task_ids_ (only OnDirty cadences consume pending_mask, so dirty
   // merges stop writing tasks that never read the value; audit 2026-07-11
-  // M6). Storage is never reordered, so TaskIds stay stable.
+  // M6). Storage is never reordered, so TaskIds stay stable. A contract-
+  // violating add_task after seal() asserts in debug builds; under NDEBUG
+  // the late task registers but never dispatches (it is absent from the
+  // frozen indexes).
   void seal() {
     // Idempotent: registration is frozen after the first seal, so there is
     // nothing to rebuild -- and a redundant seal() from inside a task
