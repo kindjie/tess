@@ -28,8 +28,8 @@ Records meaningful design changes from the original TDDs.
   Migration: `meta(key).field_dirty_flags` -> `dirty_flags(key)`,
   `meta(key).dirty_bounds` -> `dirty_bounds(key)`,
   `meta(key).active_flags` -> `active_flags(key)`. Evidence: new
-  streaming-scale `storage/world_dirty_chunks_iteration_4k` 2.09 ->
-  1.93 us (~8% local; the 256-chunk scan is cache-resident and flat);
+  streaming-scale `storage/world_dirty_chunks_iteration_16k` 10.19 ->
+  7.64 us (1.33x local; the 256-chunk scan is cache-resident and flat);
   no regressions across the storage family. Project version 1.0.0 ->
   1.1.0.
 - Reason: audit-2026-07-11 M5 (staged migration per the remediation

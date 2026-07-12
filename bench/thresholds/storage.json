@@ -53,11 +53,11 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 483
     },
-    "storage/world_dirty_chunks_iteration_4k": {
+    "storage/world_dirty_chunks_iteration_16k": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 12000,
+      "max_cpu_time_ns": 46000,
       "comment":
-          "Bootstrap ceiling: new in audit-2026-07-11 M5 (SoA flag columns). Streaming-scale dirty scan over 4096 chunks; local arm64 median ~1.9 us x6 headroom; recalibrate to 2x-max once 10 CI artifacts carry real samples.",
+          "Bootstrap ceiling: new in audit-2026-07-11 M5 (SoA flag columns). Streaming-scale dirty scan over 16384 chunks (64 KB column + 128 KB output vs 1.3 MB of pre-split structs); local arm64 median ~7.6 us x6 headroom; recalibrate to 2x-max once 10 CI artifacts carry real samples.",
       "comment_ref": "docs/planning/audit-2026-07-11.md M5"
     }
   }
