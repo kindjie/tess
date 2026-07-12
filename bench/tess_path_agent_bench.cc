@@ -388,6 +388,65 @@ void BM_path_agent_runtime_100_weighted_mixed_512x512(benchmark::State& state) {
   state.counters["runtime.path_nodes"] = static_cast<double>(stats.path_nodes);
 }
 
+// One goal re-arm per tick on the weighted mixed map. Pre-split, the
+// shared pathing_dirty flag meant this replanned ALL 100 agents every
+// tick (the full runtime_100_weighted_mixed cost, ~100 searches); with
+// per-agent dirt only the re-armed agent replans (NeedsOnly scope) while
+// the other 99 keep their retained routes. max_steps = 0 pins agents in
+// place so every iteration measures the same 1-search + scan work.
+void BM_path_agent_tick_100_weighted_goal_churn_512x512(
+    benchmark::State& state) {
+  WeightedPathWorld world;
+  fill_passable(world, 1);
+  fill_cost(world, 1);
+  carve_sparse_blockers(world);
+
+  std::array<tess::PathAgentState, 100> agents{};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    const auto goal = i % 2 == 0 ? tess::Coord3{510, 510, 0}
+                                 : tess::Coord3{480, 510 - offset % 32, 0};
+    agents[i].position = tess::Coord3{1 + offset % 16, 1 + offset / 16, 0};
+    world.template field<PassableTag>(agents[i].position) = 1;
+    world.template field<CostTag>(agents[i].position) = 1;
+    world.template field<PassableTag>(goal) = 1;
+    world.template field<CostTag>(goal) = 1;
+    tess::set_path_agent_goal(agents[i], goal);
+  }
+  const auto churn_goals =
+      std::array{tess::Coord3{479, 500, 0}, tess::Coord3{500, 479, 0}};
+  for (const auto goal : churn_goals) {
+    world.template field<PassableTag>(goal) = 1;
+    world.template field<CostTag>(goal) = 1;
+  }
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  const auto options = tess::PathAgentTickOptions{.max_steps = 0};
+  // Warm full pass: everyone plans once and turns Following.
+  (void)tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag, CostTag,
+                                        8>(tick_state, world, agents, runtime,
+                                           options);
+
+  tess::PathAgentTickStats tick_stats;
+  std::size_t churn = 0;
+  for (auto _ : state) {
+    auto& agent = agents[churn % agents.size()];
+    tess::set_path_agent_goal(tick_state, agent,
+                              churn_goals[churn % churn_goals.size()]);
+    tick_stats = tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag,
+                                                 CostTag, 8>(
+        tick_state, world, agents, runtime, options);
+    benchmark::DoNotOptimize(tick_stats.tick);
+    ++churn;
+  }
+
+  bench_check(tick_stats.processed_paths && tick_stats.pathing.submitted == 1,
+              "goal churn tick replanned more than the re-armed agent");
+  record_tick_counters(state, tick_stats);
+}
+
 void BM_path_agent_runtime_100_unit_world_edit_512x512(
     benchmark::State& state) {
   PathWorld world;
@@ -567,6 +626,8 @@ BENCHMARK(BM_path_agent_tick_100_weighted_shared_dirty_512x512)
     ->Name("path/agent_tick_100_weighted_shared_dirty_512x512");
 BENCHMARK(BM_path_agent_runtime_100_weighted_mixed_512x512)
     ->Name("path/agent_runtime_100_weighted_mixed_512x512");
+BENCHMARK(BM_path_agent_tick_100_weighted_goal_churn_512x512)
+    ->Name("path/agent_tick_100_weighted_goal_churn_512x512");
 BENCHMARK(BM_path_agent_runtime_100_unit_world_edit_512x512)
     ->Name("path/agent_runtime_100_unit_world_edit_512x512");
 BENCHMARK(BM_path_agent_runtime_100_unit_shared_wall_gap_route_cache_512x512)

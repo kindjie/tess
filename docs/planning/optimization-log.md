@@ -104,6 +104,35 @@ deferred for scope reasons. Keep entries short and concrete:
 - Decision: Deferred -- the per-class-cache contract is documented and
   cheap; no evidence of misuse or profile cost today.
 
+## 2026-07-12 - Per-Agent Pathing Dirt + Retained Routes
+
+- Area: Path-agent tick drivers (the S11.4 backlog item: the shared
+  PathAgentTickState::pathing_dirty flag meant ONE goal re-arm or
+  blocked step replanned the ENTIRE batch next tick).
+- Hypothesis: Goal arming is agent-scoped -- only that agent needs a
+  plan; a WORLD change is what genuinely invalidates everyone. With
+  per-agent routes retained across processing passes, a scoped pass can
+  replan just the needy agents.
+- Evidence: PathSubmitScope::NeedsOnly submits only NeedsPath/Blocked
+  agents; Following agents keep walking routes retained in the new
+  PathAgentRoutes pool (the runtime rebuilds its result storage per
+  pass, so retention is what makes selective submission sound; route
+  vectors keep capacity, warm churn ticks measured allocation-free).
+  mark_pathing_dirty stays world-scoped and forces the full replan; the
+  two-arg set_path_agent_goal(state, agent, goal) no longer touches it.
+  New `path/agent_tick_100_weighted_goal_churn_512x512` (one re-arm per
+  tick, 100 weighted agents, mixed map): 72.5 -> 17.3 ms per tick
+  (4.2x, paired interleaved A/B local arm64; the residual is the single
+  re-armed agent's own weighted search, which dominates). On
+  building-dense maps the pre-split cost scaled with the whole batch.
+- Decision: Accepted. Deliberately NOT converted: the tick_ecs_*
+  drivers keep All-scope processing -- their batch is re-collected from
+  the registry each tick, so index-paired retention would break on
+  entity add/remove; converting them needs entity-keyed route retention
+  (follow-up if consumer profiles ask for it). CONTRACT: span-based
+  callers that reorder/remove agents between ticks must
+  mark_pathing_dirty (documented on PathAgentRoutes).
+
 ## 2026-07-12 - Intrusive LRU + ECS Hash/Lookup Cuts
 
 - Area: Sparse eviction and ECS adapter hot paths (audit-2026-07-11
