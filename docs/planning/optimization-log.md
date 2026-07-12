@@ -63,10 +63,13 @@ deferred for scope reasons. Keep entries short and concrete:
   accessor; remaining sparse gap lives there), and an open-addressed
   index for WeightedPortalSegmentCache's O(256) linear lookup/store
   scans (bench exists: weighted_portal_segment_cache_batch family).
+  The unweighted distance-field build/read loops and the boxed weighted
+  build still use the split is_resident_index+offset double probe --
+  deliberate: none showed in the profiles that motivated M10; convert
+  alongside the page-by-slot work if they ever do.
   Also declined: moving the weighted relaxation's entry-cost read
   behind the g-comparison (audit low) -- tentative_g is computed FROM
   the entry cost, so the reorder is impossible.
-
 
 ## 2026-07-11 - Weighted Batch Settle-Target Early Termination
 
@@ -107,7 +110,6 @@ deferred for scope reasons. Keep entries short and concrete:
 - Decision: Accepted (structural; no measurable local win, none
   expected at bench scale). The 2x dense-vs-sparse batch gap the new
   bench exposes is the W4 slot-threading target, not fingerprint cost.
-
 
 ## 2026-06-07 - Concurrent Phase Backend Library Spike
 

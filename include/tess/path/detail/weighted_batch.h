@@ -70,6 +70,12 @@ auto build_bounded_weighted_distance_field_core(
   scratch.weighted_buckets_[0].push_back(goal_index);
   TESS_DIAG_EVENT(path_heap_push);
 
+  // target_generation_ is sized alongside distance_ above; settle targets
+  // against a scratch whose distance_ was sized by a different builder
+  // would index out of bounds.
+  TESS_ASSERT(settle_targets.empty() ||
+              scratch.target_generation_.size() == node_count);
+
   // Early termination is armed only under TreatAsBlocked: an exhausted
   // Indeterminate-policy flood must discover whether it ever skipped a
   // non-resident neighbor, and stopping early could miss that boundary
@@ -121,7 +127,10 @@ auto build_bounded_weighted_distance_field_core(
     // caller-declared target has settled the rest of the reachable
     // component is unneeded work. Every node on any settled target's
     // optimal route has a strictly smaller final distance and is already
-    // settled, so reconstruction never reads an unsettled node.
+    // settled, so reconstruction never reads an unsettled node. Costs and
+    // statuses are identical to a full flood; among equal-cost optimal
+    // routes the truncated field's leftover tentative labels may tie-break
+    // reconstruction to a different (equally optimal) tile sequence.
     if (targets_remaining != 0 && scratch.is_settle_target(current_offset)) {
       --targets_remaining;
       if (targets_remaining == 0) {
