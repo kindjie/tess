@@ -155,6 +155,16 @@ void BM_fields_cache_hit(benchmark::State& state) {
 // the other entry, so this stays on the cold build/store path at every
 // measured iteration (an unbudgeted cache turns resident after two
 // iterations and would time the hit path instead).
+//
+// Deliberate overlap with cache_eviction below (recorded S11 note):
+// both force the miss+build+store+evict path, so their absolute times
+// track each other. They are kept separate because they bound different
+// regressions: this one is the two-key degenerate case (the evicted
+// entry is always the only other entry, so LRU selection is trivial and
+// the number is ~pure build/store cost), while cache_eviction cycles
+// three keys through a two-product budget, so its delta over this bench
+// is the LRU bookkeeping/selection cost under real multi-entry
+// pressure. A regression in eviction policy code shows only there.
 void BM_fields_cache_miss_store(benchmark::State& state) {
   static auto* world = make_world();
   tess::GoalSet goals_a;

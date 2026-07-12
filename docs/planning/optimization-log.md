@@ -14,6 +14,29 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-12 - Portal-Route Pair-Tag -> MovementClass Conversion (Deferred)
+
+- Area: `portal_route.h` builders + `WeightedPortalSegmentCache`
+  (recorded S11 backlog note; no code change).
+- Status: The unit-route runtime binds a normalized movement class and
+  the field-product cache folds class identity into its keys, but the
+  portal-route builders are still pair-tagged (<PassableTag, CostTag>)
+  and the portal segment cache keys segments on request + chunk
+  versions only -- callers reusing one cache across classes (or tag
+  pairs) must keep one cache per class (documented in
+  `docs/architecture/path.md` and `path_runtime.h`).
+- Conversion sketch, when profiles or a misuse report justify it:
+  (1) add `<World, Class>` builder overloads that resolve the class's
+  tag pair exactly as `weighted_astar_path<World, Class>` does; (2) fold
+  the normalized class identity (`tess::detail::tag_identity`-style)
+  into `WeightedPortalSegmentCache`'s segment key so one cache serves
+  many classes safely; (3) deprecate the raw pair-tag overloads after
+  the consumer migrates. Composes with the open-addressed segment-index
+  follow-up (same file, same keys) -- do both in one pass if either
+  lands.
+- Decision: Deferred -- the per-class-cache contract is documented and
+  cheap; no evidence of misuse or profile cost today.
+
 ## 2026-07-12 - Intrusive LRU + ECS Hash/Lookup Cuts
 
 - Area: Sparse eviction and ECS adapter hot paths (audit-2026-07-11
