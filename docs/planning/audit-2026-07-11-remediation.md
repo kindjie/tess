@@ -78,7 +78,8 @@ owner; M11 is done only when M11b merges.
   cold parallel array. The storage/block bench families gate (a)/(b).
   If step 0's caller migration grows beyond tick-engine's budget, M5
   splits out into its own `perf/audit3-chunk-meta` branch between
-  batch-residency and tick-engine rather than bloating the branch. The deeper design-level fix
+  batch-residency and tick-engine rather than bloating the branch.
+  The deeper design-level fix
   (a maintained dirty-chunk set killing the O(chunk_count) tick floor,
   which would also serve the render/delta scans) is *documented as the
   ceiling* and deferred to the post-v1 backlog next to
