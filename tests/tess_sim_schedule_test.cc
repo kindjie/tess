@@ -362,6 +362,40 @@ TEST(TessSchedule, ThrowingTaskDoesNotLatchInRun) {
   EXPECT_EQ(stats.tasks_run, 1u);
 }
 
+// Codex review (audit3 W3): a redundant seal() -- even from inside a task
+// callback mid-tick -- must be a no-op, not a rebuild of the dispatch
+// order run_tick is iterating.
+TEST(TessSchedule, RedundantSealInsideTaskIsANoOp) {
+  struct ResealTask {
+    tess::Schedule* schedule = nullptr;
+    int runs = 0;
+    auto operator()(const tess::ScheduleTaskContext&)
+        -> tess::ScheduleTaskResult {
+      ++runs;
+      schedule->seal();
+      return {};
+    }
+  };
+  ResealTask reseal;
+  LogTask after{"after"};
+  std::vector<std::string> log;
+  after.log = &log;
+  tess::Schedule schedule;
+  reseal.schedule = &schedule;
+  schedule.add_task(
+      {"reseal", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()},
+      reseal);
+  schedule.add_task(
+      {"after", tess::SimPhase::Movement, tess::Cadence::every_tick()}, after);
+  schedule.seal();
+
+  tess::SimClock clock;
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 2u);
+  EXPECT_EQ(reseal.runs, 1);
+  ASSERT_EQ(log.size(), 1u);
+  EXPECT_EQ(log[0], "after");
+}
+
 // Codex review: request_run must arm EveryN tasks too -- one extra run
 // without shifting the countdown's lockstep phase.
 TEST(TessSchedule, RequestRunAddsAnExtraEveryNRun) {

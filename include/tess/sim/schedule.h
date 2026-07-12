@@ -206,6 +206,13 @@ class Schedule {
   // merges stop writing tasks that never read the value; audit 2026-07-11
   // M6). Storage is never reordered, so TaskIds stay stable.
   void seal() {
+    // Idempotent: registration is frozen after the first seal, so there is
+    // nothing to rebuild -- and a redundant seal() from inside a task
+    // callback must not rebuild phase_order_ while run_tick iterates it
+    // (Codex review of the audit3 W3 change).
+    if (sealed_) {
+      return;
+    }
     phase_order_.clear();
     dirty_task_ids_.clear();
     for (std::uint8_t phase = 0;
