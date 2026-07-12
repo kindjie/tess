@@ -14,6 +14,26 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-12 - Portal Segment Cache Open-Addressed Index (Rejected)
+
+- Area: `WeightedPortalSegmentCache::find` (the M10 follow-up: lookup
+  and the store dup-check linear-scan up to the 256-entry budget).
+- Hypothesis: An open-addressed (start, goal) index turns the O(budget)
+  scans into O(1) probes.
+- Evidence (paired interleaved A/B, local arm64, release): implemented
+  (u32 slot table, half-full, most-recent-per-key -- semantically
+  equivalent since stale entries never re-validate under monotonic
+  chunk versions; all cache tests passed) and measured:
+  `path/weighted_portal_segment_cache_batch_100_room_portals_512x512`
+  flat (3.72 -> 3.69 ms, within noise -- segment-cache time is
+  negligible against the per-segment A* work), and the single-request
+  `..._room_portals_512x512` REGRESSED 8% (3.26 -> 3.54 us): with the
+  handful of live segments the benches actually produce, the hash +
+  probe costs more than the short linear scan.
+- Decision: Rejected; reverted (same policy as M9). Revisit only if a
+  profile ever shows find() hot with a near-budget cache -- and pair it
+  with the pair-tag conversion entry below if both land.
+
 ## 2026-07-12 - Portal-Route Pair-Tag -> MovementClass Conversion (Deferred)
 
 - Area: `portal_route.h` builders + `WeightedPortalSegmentCache`
@@ -31,9 +51,9 @@ deferred for scope reasons. Keep entries short and concrete:
   the normalized class identity (`tess::detail::tag_identity`-style)
   into `WeightedPortalSegmentCache`'s segment key so one cache serves
   many classes safely; (3) deprecate the raw pair-tag overloads after
-  the consumer migrates. Composes with the open-addressed segment-index
-  follow-up (same file, same keys) -- do both in one pass if either
-  lands.
+  the consumer migrates. (The open-addressed segment-index idea this
+  once composed with was tried and rejected the same day -- see the
+  entry above.)
 - Decision: Deferred -- the per-class-cache contract is documented and
   cheap; no evidence of misuse or profile cost today.
 
