@@ -491,7 +491,6 @@ class PathScratch {
     state_.reserve(node_count);
     g_.reserve(node_count);
     parent_.reserve(node_count);
-    touched_.reserve(node_count);
     path_.reserve(node_count);
   }
 
@@ -499,7 +498,7 @@ class PathScratch {
     advance_epoch();
     open_.clear();
     open_next_.clear();
-    touched_.clear();
+    touched_count_ = 0;
     path_.clear();
   }
 
@@ -552,22 +551,31 @@ class PathScratch {
     return is_current(offset) ? g_[offset] : infinite_cost;
   }
 
-  // offset is the node-array slot for index under the search's
-  // NodeIndexSpace; index is the global tile index recorded for the
-  // expansion metric. For the dense world offset == index.
-  void touch_node(std::size_t offset, std::uint64_t index) {
+  // offset is the node-array slot under the search's NodeIndexSpace; only
+  // the touched count survives for the expansion metric (audit 2026-07-11
+  // M10).
+  void touch_node(std::size_t offset) {
     generation_[offset] = epoch_;
-    touched_.push_back(index);
+    ++touched_count_;
   }
 
   std::vector<OpenNode> open_;
   std::vector<OpenNode> open_next_;
+  // Parallel arrays deliberately: an interleaved {generation, g, state}
+  // record was tried (audit 2026-07-11 M9) and measured 3-9% SLOWER --
+  // partial-field visits (closed checks read generation+state only) waste
+  // bandwidth on a 12-byte record, while the packed arrays keep 16
+  // generations per cache line. See the optimization log, 2026-07-12.
   std::vector<std::uint32_t> generation_;
   std::uint32_t epoch_ = 1;
   std::vector<std::uint8_t> state_;
   std::vector<std::uint32_t> g_;
   std::vector<std::uint64_t> parent_;
-  std::vector<std::uint64_t> touched_;
+  // Reached-node count only: unlike DistanceFieldScratch (whose touched
+  // list feeds dependency capture), no A* consumer reads the indices, so
+  // recording them cost an 8-byte store per reached node for nothing
+  // (audit 2026-07-11 M10).
+  std::size_t touched_count_ = 0;
   std::vector<Coord3> path_;
 };
 
