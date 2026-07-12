@@ -143,6 +143,9 @@ class World<Shape, Schema, SparseResident> {
       pages_.emplace_back(ChunkKey{0}, ChunkCoord3{});
     }
     metadata_.assign(capacity_, ChunkMeta{});
+    dirty_flags_.assign(capacity_, 0u);
+    active_flags_.assign(capacity_, 0u);
+    dirty_bounds_.assign(capacity_, Box3{});
     slot_key_.assign(capacity_, ChunkKey{});
     slot_generation_.assign(capacity_, 0);
     lru_prev_.assign(capacity_, npos_slot);
@@ -293,6 +296,9 @@ class World<Shape, Schema, SparseResident> {
     slot = acquire_slot();
     pages_[slot].reset(key, chunk_coord<Shape>(key));
     metadata_[slot] = ChunkMeta{};
+    dirty_flags_[slot] = 0u;
+    active_flags_[slot] = 0u;
+    dirty_bounds_[slot] = Box3{};
     slot_key_[slot] = key;
     slot_generation_[slot] = ++generation_clock_;
     lru_push_mru(slot);
@@ -389,8 +395,26 @@ class World<Shape, Schema, SparseResident> {
     meta(key).state = state;
   }
 
+  // Hot-scan SoA columns split out of ChunkMeta (audit 2026-07-11 M5);
+  // read-only -- mutate through mark_/clear_/observe_ as before. The chunk
+  // must be resident (same contract as meta()).
+  [[nodiscard]] auto dirty_flags(ChunkKey key) const noexcept -> std::uint32_t {
+    return dirty_flags_[resident_slot_checked(key)];
+  }
+
+  [[nodiscard]] auto active_flags(ChunkKey key) const noexcept
+      -> std::uint32_t {
+    return active_flags_[resident_slot_checked(key)];
+  }
+
+  [[nodiscard]] auto dirty_bounds(ChunkKey key) const noexcept -> Box3 {
+    return dirty_bounds_[resident_slot_checked(key)];
+  }
+
   void mark_dirty(ChunkKey key, std::uint32_t flags, Box3 bounds) noexcept {
-    detail::meta_mark_dirty(meta(key), flags, bounds);
+    const auto slot = resident_slot_checked(key);
+    detail::meta_mark_dirty(dirty_flags_[slot], dirty_bounds_[slot],
+                            metadata_[slot], flags, bounds);
   }
 
   void mark_topology_dirty(ChunkKey key, std::uint32_t flags,
@@ -398,9 +422,10 @@ class World<Shape, Schema, SparseResident> {
     if (flags == 0) {
       return;
     }
-    auto& chunk_meta = meta(key);
-    detail::meta_mark_dirty(chunk_meta, flags, bounds);
-    ++chunk_meta.topology_version;
+    const auto slot = resident_slot_checked(key);
+    detail::meta_mark_dirty(dirty_flags_[slot], dirty_bounds_[slot],
+                            metadata_[slot], flags, bounds);
+    ++metadata_[slot].topology_version;
   }
 
   void mark_topology_rebuilt(ChunkKey key) noexcept {
@@ -408,35 +433,42 @@ class World<Shape, Schema, SparseResident> {
   }
 
   void clear_dirty(ChunkKey key, std::uint32_t flags) noexcept {
-    detail::meta_clear_dirty(meta(key), flags);
+    const auto slot = resident_slot_checked(key);
+    detail::meta_clear_dirty(dirty_flags_[slot], dirty_bounds_[slot], flags);
   }
 
   [[nodiscard]] auto observe_dirty(ChunkKey key,
                                    std::uint32_t flags) const noexcept
       -> DirtyObservation {
-    return detail::meta_observe_dirty(meta(key), flags);
+    const auto slot = resident_slot_checked(key);
+    return detail::meta_observe_dirty(dirty_flags_[slot], dirty_bounds_[slot],
+                                      metadata_[slot], flags);
   }
 
   bool clear_dirty_observed(ChunkKey key, DirtyObservation observed) noexcept {
-    return detail::meta_clear_dirty_observed(meta(key), observed);
+    const auto slot = resident_slot_checked(key);
+    return detail::meta_clear_dirty_observed(
+        dirty_flags_[slot], dirty_bounds_[slot], metadata_[slot], observed);
   }
 
   void mark_active(ChunkKey key, std::uint32_t flags) noexcept {
-    detail::meta_mark_active(meta(key), flags);
+    const auto slot = resident_slot_checked(key);
+    detail::meta_mark_active(active_flags_[slot], metadata_[slot], flags);
   }
 
   void clear_active(ChunkKey key, std::uint32_t flags) noexcept {
-    detail::meta_clear_active(meta(key), flags);
+    const auto slot = resident_slot_checked(key);
+    detail::meta_clear_active(active_flags_[slot], metadata_[slot], flags);
   }
 
   void collect_dirty_chunks(std::uint32_t flags,
                             std::vector<ChunkKey>& out) const {
-    collect_matching_chunks(flags, &ChunkMeta::field_dirty_flags, out);
+    collect_matching_chunks(flags, dirty_flags_, out);
   }
 
   void collect_active_chunks(std::uint32_t flags,
                              std::vector<ChunkKey>& out) const {
-    collect_matching_chunks(flags, &ChunkMeta::active_flags, out);
+    collect_matching_chunks(flags, active_flags_, out);
   }
 
   [[nodiscard]] auto dirty_chunks(std::uint32_t flags) const
@@ -611,14 +643,24 @@ class World<Shape, Schema, SparseResident> {
     return count < 1 ? 1 : count;
   }
 
+  // Reads a dense 4-byte flag column by resident slot instead of streaming
+  // ChunkMeta structs (audit 2026-07-11 M5).
   void collect_matching_chunks(std::uint32_t flags,
-                               std::uint32_t ChunkMeta::* member,
+                               const std::vector<std::uint32_t>& column,
                                std::vector<ChunkKey>& out) const {
     for (const auto slot : resident_slots_) {
-      if ((metadata_[slot].*member & flags) != 0) {
+      if ((column[slot] & flags) != 0) {
         out.push_back(slot_key_[slot]);
       }
     }
+  }
+
+  // Directory probe + the meta() residency contract, shared by the
+  // mutation/accessor paths that index the SoA columns by slot.
+  [[nodiscard]] std::size_t resident_slot_checked(ChunkKey key) const noexcept {
+    const auto slot = directory_.find(key);
+    TESS_ASSERT(slot != detail::ChunkDirectory::npos);
+    return slot;
   }
 
   std::size_t byte_budget_;
@@ -628,6 +670,9 @@ class World<Shape, Schema, SparseResident> {
 
   std::vector<page_type> pages_;
   std::vector<ChunkMeta> metadata_;
+  std::vector<std::uint32_t> dirty_flags_;
+  std::vector<std::uint32_t> active_flags_;
+  std::vector<Box3> dirty_bounds_;
   std::vector<ChunkKey> slot_key_;
   std::vector<std::uint64_t> slot_generation_;
   std::vector<std::size_t> lru_prev_;

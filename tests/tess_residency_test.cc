@@ -149,18 +149,18 @@ TEST(TessResidency, ResidentMetadataProtocolMatchesDenseSemantics) {
   world.ensure_resident(key);
 
   world.mark_topology_dirty(key, DirtyTerrain, bounds);
-  EXPECT_EQ(world.meta(key).field_dirty_flags, DirtyTerrain);
+  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain);
   EXPECT_EQ(world.meta(key).topology_version, 1u);
 
   const auto observed = world.observe_dirty(key, DirtyTerrain);
   EXPECT_EQ(observed.flags, DirtyTerrain);
   world.mark_dirty(key, DirtyCost, bounds);  // advances generation
   EXPECT_FALSE(world.clear_dirty_observed(key, observed));
-  EXPECT_EQ(world.meta(key).field_dirty_flags, DirtyTerrain | DirtyCost);
+  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain | DirtyCost);
 
   const auto refreshed = world.observe_dirty(key, DirtyTerrain | DirtyCost);
   EXPECT_TRUE(world.clear_dirty_observed(key, refreshed));
-  EXPECT_EQ(world.meta(key).field_dirty_flags, 0u);
+  EXPECT_EQ(world.dirty_flags(key), 0u);
 
   world.set_chunk_state(key, tess::ChunkState::ResidentActive);
   EXPECT_EQ(world.chunk_state(key), tess::ChunkState::ResidentActive);

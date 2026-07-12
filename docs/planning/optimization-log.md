@@ -14,6 +14,27 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-12 - ChunkMeta Hot/Cold SoA Split (M5, v1.1.0)
+
+- Area: Chunk metadata layout; collect_dirty/active_chunks scans
+  (audit-2026-07-11 M5, deferred from the audit stack for the
+  version-bump decision; shipped as the 1.1.0 minor bump).
+- Hypothesis: The flag scans stream 80-byte ChunkMeta structs to test
+  one 4-byte word; SoA flag columns put 16 chunks per cache line, and
+  moving the cold Box3 bounds out shrinks every other meta touch.
+- Evidence (paired interleaved A/B, local arm64, release): the existing
+  256-chunk `storage/world_dirty_chunks_iteration` is cache-resident
+  and flat (125 ns both) -- expected, its whole metadata array fits the
+  fast levels. New streaming-scale
+  `storage/world_dirty_chunks_iteration_16k` (16384 chunks; sized past
+  L1 on Codex review -- a first 4096-chunk cut showed only ~8% because
+  both layouts still cached): 10.19 -> 7.64 us (1.33x); mark/clear and
+  metadata lookups flat; no storage-family regressions. ChunkMeta
+  shrinks 80 -> 20 bytes, cutting every other meta touch's footprint.
+- Decision: Accepted (structural + user-directed API split). The
+  maintained dirty-chunk SET killing the O(chunk_count) scan floor
+  remains the recorded design-level ceiling in the post-v1 backlog.
+
 ## 2026-07-12 - Page-by-Slot Passability/Entry-Cost Threading (Rejected)
 
 - Area: Sparse field reads in the A*/flood relaxation loops (the M10
