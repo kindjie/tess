@@ -45,6 +45,15 @@ struct NodeIndexSpace<World, AlwaysResident> {
     return static_cast<std::size_t>(index);
   }
 
+  // Dense identity: never npos (mirrors the sparse combined probe).
+  static constexpr std::size_t npos_offset =
+      std::numeric_limits<std::size_t>::max();
+
+  [[nodiscard]] constexpr std::size_t resident_offset(
+      std::uint64_t index) const noexcept {
+    return static_cast<std::size_t>(index);
+  }
+
   [[nodiscard]] constexpr std::size_t capacity_hint() const noexcept {
     static_assert(World::chunk_count <=
                   std::numeric_limits<std::size_t>::max() /
@@ -75,6 +84,22 @@ struct NodeIndexSpace<World, SparseResident> {
 
   [[nodiscard]] std::size_t offset(std::uint64_t index) const noexcept {
     const auto slot = world_->resident_slot(chunk_key_of(index));
+    return slot * static_cast<std::size_t>(local_tile_count) + local_of(index);
+  }
+
+  static constexpr std::size_t npos_offset =
+      std::numeric_limits<std::size_t>::max();
+
+  // Residency test and offset in ONE directory probe (npos_offset when the
+  // chunk is not resident) -- the split is_resident_index-then-offset pair
+  // paid two probes per neighbor in the hottest search loops
+  // (audit 2026-07-11, sparse neighbor probing low).
+  [[nodiscard]] std::size_t resident_offset(
+      std::uint64_t index) const noexcept {
+    const auto slot = world_->resident_slot(chunk_key_of(index));
+    if (slot == World::npos_slot) {
+      return npos_offset;
+    }
     return slot * static_cast<std::size_t>(local_tile_count) + local_of(index);
   }
 

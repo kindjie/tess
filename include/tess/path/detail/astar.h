@@ -19,7 +19,7 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
   constexpr auto no_parent = std::numeric_limits<std::uint64_t>::max();
   constexpr auto infinite_cost = std::numeric_limits<std::uint32_t>::max();
 
-  TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
+  TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_count_);
   scratch.clear();
   if (!contains<Shape>(request.start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
@@ -615,7 +615,11 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
   [[maybe_unused]] bool crossed_missing = false;
   while (!scratch.open_.empty() || !scratch.open_next_.empty()) {
     if (scratch.open_.empty()) {
-      current_f += 2;
+      // Saturating, mirroring the weighted core: a wrapped f would
+      // mis-partition the two-bucket dial and let the goal close with a
+      // non-optimal g (audit 2026-07-11 C3; needs ~2^32-tile distances,
+      // not constructible today, guarded for symmetry).
+      current_f = detail::saturating_add(current_f, 2);
       scratch.open_.swap(scratch.open_next_);
     }
 
@@ -645,7 +649,7 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
       }
       std::reverse(scratch.path_.begin(), scratch.path_.end());
       return PathResult{PathStatus::Found, current.g, expanded_nodes,
-                        scratch.touched_.size(), scratch.path_};
+                        scratch.touched_count_, scratch.path_};
     }
 
     const auto current_coord = detail::tile_coord<Shape>(current.index);
@@ -653,16 +657,16 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
         current_coord, current.index,
         [&](Coord3 neighbor, std::uint64_t neighbor_index) {
           TESS_DIAG_EVENT(path_neighbor_candidate);
+          // Combined residency+offset probe: a non-resident neighbor has no
+          // node-array slot. Remember the boundary and skip it; whether that
+          // means "blocked" or "unknown" is decided at exhaustion.
+          const auto neighbor_offset = space.resident_offset(neighbor_index);
           if constexpr (!Space::is_dense) {
-            // A non-resident neighbor has no node-array slot, so its offset
-            // must not be computed. Remember the boundary and skip it; whether
-            // that means "blocked" or "unknown" is decided at exhaustion.
-            if (!space.is_resident_index(neighbor_index)) {
+            if (neighbor_offset == Space::npos_offset) {
               crossed_missing = true;
               return;
             }
           }
-          const auto neighbor_offset = space.offset(neighbor_index);
           const auto neighbor_state = scratch.state_at(neighbor_offset, unseen);
           if (neighbor_state == closed) {
             TESS_DIAG_EVENT(path_neighbor_closed);
@@ -690,7 +694,8 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
             const auto updated_node = PathScratch::OpenNode{
                 neighbor_index,
                 tentative_g,
-                tentative_g + detail::manhattan(neighbor, request.goal),
+                detail::saturating_add(
+                    tentative_g, detail::manhattan(neighbor, request.goal)),
             };
             if (updated_node.f <= current_f) {
               scratch.open_.push_back(updated_node);
@@ -705,11 +710,11 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
   if constexpr (!Space::is_dense) {
     if (crossed_missing && policy == MissingChunkPolicy::Indeterminate) {
       return PathResult{PathStatus::Indeterminate, 0, expanded_nodes,
-                        scratch.touched_.size(), scratch.path_};
+                        scratch.touched_count_, scratch.path_};
     }
   }
   return PathResult{PathStatus::NoPath, 0, expanded_nodes,
-                    scratch.touched_.size(), scratch.path_};
+                    scratch.touched_count_, scratch.path_};
 }
 
 template <typename World, typename Class>
@@ -729,7 +734,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
   constexpr auto no_parent = std::numeric_limits<std::uint64_t>::max();
   constexpr auto infinite_cost = std::numeric_limits<std::uint32_t>::max();
 
-  TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
+  TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_count_);
   scratch.clear();
   if (!contains<Shape>(request.start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
@@ -989,7 +994,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
       }
       std::reverse(scratch.path_.begin(), scratch.path_.end());
       return PathResult{PathStatus::Found, current.g, expanded_nodes,
-                        scratch.touched_.size(), scratch.path_};
+                        scratch.touched_count_, scratch.path_};
     }
 
     const auto current_coord = detail::tile_coord<Shape>(current.index);
@@ -997,16 +1002,16 @@ auto weighted_astar_path(const World& world, PathRequest request,
         current_coord, current.index,
         [&](Coord3 neighbor, std::uint64_t neighbor_index) {
           TESS_DIAG_EVENT(path_neighbor_candidate);
+          // Combined residency+offset probe: a non-resident neighbor has no
+          // node-array slot. Remember the boundary and skip it; whether that
+          // means "blocked" or "unknown" is decided at exhaustion.
+          const auto neighbor_offset = space.resident_offset(neighbor_index);
           if constexpr (!Space::is_dense) {
-            // A non-resident neighbor has no node-array slot, so its offset
-            // must not be computed. Remember the boundary and skip it; whether
-            // that means "blocked" or "unknown" is decided at exhaustion.
-            if (!space.is_resident_index(neighbor_index)) {
+            if (neighbor_offset == Space::npos_offset) {
               crossed_missing = true;
               return;
             }
           }
-          const auto neighbor_offset = space.offset(neighbor_index);
           const auto neighbor_state = scratch.state_at(neighbor_offset, unseen);
           if (neighbor_state == closed) {
             TESS_DIAG_EVENT(path_neighbor_closed);
@@ -1059,11 +1064,11 @@ auto weighted_astar_path(const World& world, PathRequest request,
   if constexpr (!Space::is_dense) {
     if (crossed_missing && policy == MissingChunkPolicy::Indeterminate) {
       return PathResult{PathStatus::Indeterminate, 0, expanded_nodes,
-                        scratch.touched_.size(), scratch.path_};
+                        scratch.touched_count_, scratch.path_};
     }
   }
   return PathResult{PathStatus::NoPath, 0, expanded_nodes,
-                    scratch.touched_.size(), scratch.path_};
+                    scratch.touched_count_, scratch.path_};
 }
 
 // Legacy <PassableTag, CostTag> forwarder: one movement class replaces the

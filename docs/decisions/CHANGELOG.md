@@ -13,6 +13,28 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-12 - Path micro: reached counter, saturating f, single-probe (audit3 W4)
+
+- Changed: `PathScratch` counts reached nodes instead of recording their
+  indices (only the count was ever read; `DistanceFieldScratch` keeps its
+  list for dependency capture); the unweighted A* core's f arithmetic
+  and dial step saturate, restoring symmetry with the weighted core
+  (audit C3); `NodeIndexSpace::resident_offset` folds the sparse
+  residency test and node offset into one directory probe, used by both
+  A* cores and the weighted field build/read loops (paired A/B: sparse
+  multigoal batch 93.9 -> 90.2 ms local). The audit M9 interleaved
+  node-record experiment measured 3-9% slower and was reverted -- the
+  parallel-array layout now carries a comment pointing at the log
+  entry. Declined by analysis: reordering the weighted relaxation's
+  entry-cost read (tentative_g is computed from it).
+- Reason: audit-2026-07-11 M9 (rejected on evidence), M10, C3, and the
+  sparse neighbor-probing low.
+- Affected docs: `docs/planning/optimization-log.md`.
+- Affected code: `include/tess/path/path.h`,
+  `include/tess/path/detail/astar.h`,
+  `include/tess/path/detail/weighted_batch.h`,
+  `include/tess/path/node_index_space.h`.
+
 ## 2026-07-12 - Tick-engine overhead: schedule, movement, planning (audit3 W3)
 
 - Changed: `Schedule::seal()` builds a phase-major dispatch order (one

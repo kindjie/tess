@@ -146,13 +146,13 @@ auto build_bounded_weighted_distance_field_core(
     detail::for_each_indexed_axis_neighbor<Shape>(
         current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
           TESS_DIAG_EVENT(path_neighbor_candidate);
+          const auto neighbor_offset = space.resident_offset(neighbor_index);
           if constexpr (!Space::is_dense) {
-            if (!space.is_resident_index(neighbor_index)) {
+            if (neighbor_offset == Space::npos_offset) {
               crossed_missing = true;
               return;
             }
           }
-          const auto neighbor_offset = space.offset(neighbor_index);
           TESS_DIAG_EVENT(path_relax_attempt);
           if (!scratch.is_current(neighbor_offset)) {
             TESS_DIAG_EVENT(path_passability_check);
@@ -278,13 +278,14 @@ auto weighted_distance_field_path_core(const World& world, Coord3 start,
     auto next_distance = current_distance;
     detail::for_each_indexed_axis_neighbor<Shape>(
         current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
+          const auto neighbor_offset = space.resident_offset(neighbor_index);
           if constexpr (!Space::is_dense) {
-            if (!space.is_resident_index(neighbor_index)) {
+            if (neighbor_offset == Space::npos_offset) {
               return;
             }
           }
-          const auto neighbor_distance = scratch.distance_at(
-              space.offset(neighbor_index), infinite_distance);
+          const auto neighbor_distance =
+              scratch.distance_at(neighbor_offset, infinite_distance);
           if (neighbor_distance == infinite_distance ||
               neighbor_distance >= next_distance) {
             return;
