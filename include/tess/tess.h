@@ -42,7 +42,7 @@
 #include <tess/topology/transition_provider.h>
 
 #define TESS_VERSION_MAJOR 1
-#define TESS_VERSION_MINOR 0
+#define TESS_VERSION_MINOR 1
 #define TESS_VERSION_PATCH 0
 
 namespace tess {
