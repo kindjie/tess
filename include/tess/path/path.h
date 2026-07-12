@@ -551,10 +551,10 @@ class PathScratch {
     return is_current(offset) ? g_[offset] : infinite_cost;
   }
 
-  // offset is the node-array slot for index under the search's
-  // NodeIndexSpace; index is the global tile index recorded for the
-  // expansion metric. For the dense world offset == index.
-  void touch_node(std::size_t offset, std::uint64_t /*index*/) {
+  // offset is the node-array slot under the search's NodeIndexSpace; only
+  // the touched count survives for the expansion metric (audit 2026-07-11
+  // M10).
+  void touch_node(std::size_t offset) {
     generation_[offset] = epoch_;
     ++touched_count_;
   }
