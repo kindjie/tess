@@ -315,9 +315,14 @@ class TileOccupancyIndex {
   }
 
   [[nodiscard]] auto probe_start(Coord3 tile) const noexcept -> std::size_t {
-    const auto hash = mix(static_cast<std::uint64_t>(tile.x) ^
-                          mix(static_cast<std::uint64_t>(tile.y) ^
-                              mix(static_cast<std::uint64_t>(tile.z))));
+    // One avalanche over per-lane multiplies instead of three chained
+    // mix() rounds (6 serial multiplies): the lanes now hash in parallel
+    // and erase's backward-shift, which recomputes probe_start per
+    // displaced entry, pays one round (audit 2026-07-11 low).
+    const auto hash =
+        mix(static_cast<std::uint64_t>(tile.x) * 0x9E3779B97F4A7C15ULL ^
+            static_cast<std::uint64_t>(tile.y) * 0xC2B2AE3D27D4EB4FULL ^
+            static_cast<std::uint64_t>(tile.z) * 0x165667B19E3779F9ULL);
     return static_cast<std::size_t>(hash) & mask();
   }
 
