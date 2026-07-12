@@ -371,6 +371,9 @@ jobs:
       - name: Scheduler benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_scheduler_thresholds
 
+      - name: Parallel benchmark thresholds
+        run: cmake --build --preset bench --target tess_bench_parallel_thresholds
+
       - name: Ecs benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_ecs_thresholds
 

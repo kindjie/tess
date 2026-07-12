@@ -14,6 +14,7 @@ add_executable(
   tess_path_scan_bench.cc
   tess_path_weighted_bench.cc
   tess_render_delta_bench.cc
+  tess_residency_bench.cc
   tess_scheduler_bench.cc
   tess_topology_bench.cc
 )
@@ -131,12 +132,30 @@ set(
   CACHE STRING "Repeated samples for non-gating CI benchmark baselines"
 )
 
+# Threshold gates run repetitions and gate on the median aggregate
+# (benchmark_thresholds.py's default), so a single outlier sample on a
+# noisy shared runner cannot flake a gate. The 2x/25 ns ceilings were
+# calibrated from 10-repetition medians; gating on an unreplicated
+# sample was the mismatch (audit 2026-07-11, bench lows).
+set(
+  TESS_BENCHMARK_GATE_REPETITIONS
+  "3"
+  CACHE STRING "Repeated samples for gating benchmark threshold checks"
+)
+
+set(
+  TESS_PARALLEL_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/parallel.json"
+  CACHE FILEPATH "Thresholds for parallel benchmark regressions"
+)
+
 if(Python3_Interpreter_FOUND)
   add_custom_target(
     tess_bench_key_thresholds
     COMMAND
       tess_bench
       --benchmark_filter=key/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
       --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/key-conversions.json
       --benchmark_out_format=json
     COMMAND
@@ -154,6 +173,7 @@ if(Python3_Interpreter_FOUND)
     COMMAND
       tess_bench
       --benchmark_filter=storage/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
       --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/storage.json
       --benchmark_out_format=json
     COMMAND
@@ -171,6 +191,7 @@ if(Python3_Interpreter_FOUND)
     COMMAND
       tess_bench
       --benchmark_filter=block/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
       --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/block.json
       --benchmark_out_format=json
     COMMAND
@@ -188,6 +209,7 @@ if(Python3_Interpreter_FOUND)
     COMMAND
       tess_bench
       --benchmark_filter=queued/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
       --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/queued.json
       --benchmark_out_format=json
     COMMAND
@@ -205,6 +227,7 @@ if(Python3_Interpreter_FOUND)
     COMMAND
       tess_bench
       --benchmark_filter=path/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
       --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/path.json
       --benchmark_out_format=json
     COMMAND
@@ -222,6 +245,7 @@ if(Python3_Interpreter_FOUND)
     COMMAND
       tess_bench
       --benchmark_filter=topology/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
       --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/topology.json
       --benchmark_out_format=json
     COMMAND
@@ -239,6 +263,7 @@ if(Python3_Interpreter_FOUND)
     COMMAND
       tess_bench
       --benchmark_filter=scheduler/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
       --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/scheduler.json
       --benchmark_out_format=json
     COMMAND
@@ -262,6 +287,7 @@ if(Python3_Interpreter_FOUND)
       COMMAND
         tess_bench_diagnostics
         --benchmark_filter=ecs/.*
+        --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
         --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ecs.json
         --benchmark_out_format=json
       COMMAND
@@ -280,6 +306,7 @@ if(Python3_Interpreter_FOUND)
     COMMAND
       tess_bench_diagnostics
       --benchmark_filter=fields/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
       --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/fields.json
       --benchmark_out_format=json
     COMMAND
@@ -299,6 +326,7 @@ if(Python3_Interpreter_FOUND)
     COMMAND
       tess_bench_diagnostics
       --benchmark_filter=render_delta/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
       --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/render-delta.json
       --benchmark_out_format=json
     COMMAND
@@ -312,10 +340,29 @@ if(Python3_Interpreter_FOUND)
   )
 
   add_custom_target(
+    tess_bench_parallel_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=parallel/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/parallel.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/parallel.json
+      --thresholds ${TESS_PARALLEL_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running parallel benchmark threshold checks"
+    VERBATIM
+  )
+
+  add_custom_target(
     tess_bench_diagnostics_thresholds
     COMMAND
       tess_bench_diagnostics
       --benchmark_filter=diagnostics/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
       --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/diagnostics.json
       --benchmark_out_format=json
     COMMAND
@@ -370,7 +417,6 @@ add_custom_target(
     --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
     --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/topology.json
     --benchmark_out_format=json
-  # parallel/ threshold gating deferred until CI baselines exist.
   COMMAND
     tess_bench
     --benchmark_filter=parallel/.*
@@ -382,6 +428,15 @@ add_custom_target(
     --benchmark_filter=scheduler/.*
     --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
     --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/scheduler.json
+    --benchmark_out_format=json
+  # residency/ is deliberately ungated: the eviction-churn numbers are the
+  # before/after evidence for the audit-2026-07-11 M11b LRU fix; gates come
+  # once enough baseline artifacts accumulate (10-artifact rule).
+  COMMAND
+    tess_bench
+    --benchmark_filter=residency/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/residency.json
     --benchmark_out_format=json
   COMMAND
     tess_bench_diagnostics
@@ -501,6 +556,14 @@ if(BUILD_TESTING)
     COMMAND
       tess_bench
       --benchmark_filter=topology/precheck_unreachable_512x512
+      --benchmark_min_time=0.001
+  )
+
+  add_test(
+    NAME tess_bench_residency_smoke
+    COMMAND
+      tess_bench
+      --benchmark_filter=residency/eviction_churn_64
       --benchmark_min_time=0.001
   )
 

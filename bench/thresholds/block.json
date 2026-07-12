@@ -15,7 +15,9 @@
     },
     "block/scratch_allocate_u32": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 25
+      "max_cpu_time_ns": 25,
+      "comment": "25 ns floor; de-elided by audit-2026-07-11 H1, real cost is ~0.7 ns of bump-allocation arithmetic via an opaque runtime count.",
+      "comment_ref": "docs/planning/audit-2026-07-11.md H1"
     },
     "block/context_scratch_tile_iteration_2d": {
       "max_real_time_ns": null,
