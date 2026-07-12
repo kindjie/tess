@@ -194,6 +194,11 @@ class TileOccupancyIndex {
   [[nodiscard]] auto insert(Coord3 tile, EntityHandle entity) -> bool {
     TESS_ASSERT_MSG(!entity.is_null(),
                     "TileOccupancyIndex cannot map a null entity");
+    // probe_start's fast lane combine relies on this domain; see its
+    // comment.
+    TESS_ASSERT_MSG(tile.x >= 0 && tile.y >= 0 && tile.z >= 0,
+                    "TileOccupancyIndex stores world tiles, which are "
+                    "non-negative");
     if (slots_.empty() || (size_ + 1) * 2 > slots_.size()) {
       rehash(slots_.empty() ? 8 : slots_.size() * 2);
     }
@@ -257,6 +262,11 @@ class TileOccupancyIndex {
   // with debug asserts that `from` held `entity` and `to` was empty.
   // Never rehashes: the net size is unchanged.
   void move(Coord3 from, Coord3 to, EntityHandle entity) noexcept {
+    // Same pinned domain as insert(): move() is the second write path
+    // into the table, and probe_start's fast lane combine relies on it.
+    TESS_ASSERT_MSG(to.x >= 0 && to.y >= 0 && to.z >= 0,
+                    "TileOccupancyIndex stores world tiles, which are "
+                    "non-negative");
     const auto erased = erase(from);
     TESS_ASSERT_MSG(erased == entity,
                     "TileOccupancyIndex::move source held another entity");
@@ -315,9 +325,21 @@ class TileOccupancyIndex {
   }
 
   [[nodiscard]] auto probe_start(Coord3 tile) const noexcept -> std::size_t {
-    const auto hash = mix(static_cast<std::uint64_t>(tile.x) ^
-                          mix(static_cast<std::uint64_t>(tile.y) ^
-                              mix(static_cast<std::uint64_t>(tile.z))));
+    // One avalanche over per-lane multiplies instead of three chained
+    // mix() rounds (6 serial multiplies): the lanes now hash in parallel
+    // and erase's backward-shift, which recomputes probe_start per
+    // displaced entry, pays one round (audit 2026-07-11 low).
+    //
+    // The XOR combine has sign/lane-swap symmetries (Codex review:
+    // (-n, n, 0) collides with (n, -n, 0)), but those inputs are out of
+    // domain -- insert() asserts non-negative world coordinates, and the
+    // symmetry needs a negative lane. Additive and rotated combines were
+    // measured 1.7-1.9x slower here (interleaved A/B), so the domain is
+    // pinned instead of the hash hardened.
+    const auto hash =
+        mix(static_cast<std::uint64_t>(tile.x) * 0x9E3779B97F4A7C15ULL ^
+            static_cast<std::uint64_t>(tile.y) * 0xC2B2AE3D27D4EB4FULL ^
+            static_cast<std::uint64_t>(tile.z) * 0x165667B19E3779F9ULL);
     return static_cast<std::size_t>(hash) & mask();
   }
 

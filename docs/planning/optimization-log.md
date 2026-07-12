@@ -14,6 +14,24 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-12 - Intrusive LRU + ECS Hash/Lookup Cuts
+
+- Area: Sparse eviction and ECS adapter hot paths (audit-2026-07-11
+  M11b + ecs lows).
+- Evidence (paired A/B, local arm64): intrusive doubly-linked LRU
+  replaces the O(resident_count) timestamp scan --
+  residency/eviction_churn_512 400 -> 114 ns (3.5x) and now
+  capacity-independent (churn_64 100 ns vs churn_512 114 ns; the old
+  scan grew linearly). Documented tradeoff: ensure_resident hits pay
+  the MRU splice (2.75 -> 4.21 ns worst-case round-robin; the
+  already-MRU early-out helps workloads with locality). Occupancy-index
+  probe_start hashes lanes in parallel (one avalanche over per-lane
+  multiplies, was three chained mix rounds): ecs/index_move
+  8.18 -> 5.01 ns. EnTT collect caches PathState* from the view walk
+  (addresses stable; only the entry vector is sorted in between):
+  ecs/tick_entt_10k 687 -> 586 us (~15%).
+- Decision: Accepted, all three.
+
 ## 2026-07-12 - Worker Pool: Padded Counters, Run Claiming, Bounded Wakeups
 
 - Area: WorkerPoolPhaseExecutor dispatch overhead (audit-2026-07-11 M8).
@@ -23,9 +41,9 @@ deferred for scope reasons. Keep entries short and concrete:
 - Evidence: alignas(128) on next_offset_/finished_operations_ (128 to
   cover Apple Silicon lines and the x86 adjacent-line prefetcher; the
   A/B below ran at 64, where line pairing was allocation-dependent),
-  claiming
-  runs of ~count/(workers*4) ops per RMW (one release-add publishes the
-  run), waking min(runs, workers) threads, and last-worker-only
+  claiming runs of ~count/(workers*4) ops per RMW (one release-add
+  publishes the run), waking min(runs, workers) threads, and
+  last-worker-only
   completion notify. Paired A/B (local arm64, real_time):
   tile_touch_pool_w4 23.9 -> 12.4 us, chunk_fill_pool_w4 44.7 -> 22.1 us
   (~2x); chunk_compute_pool_w4 flat (compute-bound, as expected). TSan

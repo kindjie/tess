@@ -76,6 +76,11 @@ static_assert(PositionAdapter<EnttTilePositionAdapter, entt::entity>);
 struct EnttAgentEntry {
   std::uint64_t agent_id = 0;
   entt::entity entity = entt::null;
+  // Cached during the collect view walk (EnTT component addresses are
+  // stable while no PathState is added/removed, and only the entry
+  // vector is sorted in between), saving a registry lookup per agent in
+  // the fill loop (audit 2026-07-11 low).
+  PathState* state = nullptr;
 };
 
 // Persistent per-agent-system state: the tick driver's clock/dirty
@@ -150,8 +155,9 @@ class EnttPathAgentSource {
     auto view = registry_->view<PathState, TilePosition, AgentId>(
         entt::exclude<OffBoard>);
     for (const auto entity : view) {
-      entries.push_back(
-          EnttAgentEntry{view.template get<AgentId>(entity).value, entity});
+      entries.push_back(EnttAgentEntry{view.template get<AgentId>(entity).value,
+                                       entity,
+                                       &view.template get<PathState>(entity)});
     }
     std::sort(entries.begin(), entries.end(),
               [](const EnttAgentEntry& lhs, const EnttAgentEntry& rhs) {
@@ -163,7 +169,7 @@ class EnttPathAgentSource {
     // Fill the batch strictly in sorted-entry order so batch index i and
     // entries[i] stay one agent for the sink's write-back.
     for (const auto& entry : entries) {
-      auto& state = registry_->get<PathState>(entry.entity);
+      auto& state = *entry.state;
       if (const auto* goal = registry_->try_get<PathGoal>(entry.entity)) {
         if (!state.agent.has_goal || state.agent.goal != goal->coord) {
           set_path_agent_goal(state.agent, goal->coord);

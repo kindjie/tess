@@ -13,6 +13,21 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-12 - Intrusive LRU eviction + ECS hash/lookup cuts (audit3 W6)
+
+- Changed: sparse-world eviction pops an intrusive doubly-linked LRU
+  list head -- O(1) per miss, was an O(resident_count) timestamp scan
+  (eviction_churn_512 400 -> 114 ns, capacity-independent; hits pay the
+  MRU splice, 2.75 -> 4.21 ns worst case). The tile-occupancy index
+  hashes coordinate lanes in parallel (index_move 8.18 -> 5.01 ns), and
+  the EnTT adapter caches PathState pointers from the collect view walk
+  (tick_entt_10k 687 -> 586 us).
+- Reason: audit-2026-07-11 M11b (with the W1 residency bench family as
+  its before/after evidence) and the ecs lows.
+- Affected docs: `docs/planning/optimization-log.md`.
+- Affected code: `include/tess/storage/sparse_world.h`,
+  `include/tess/ecs/adapter.h`, `include/tess/ecs/entt/entt_adapter.h`.
+
 ## 2026-07-12 - Worker pool: padded counters, run claiming, bounded wakeups (audit3 W5)
 
 - Changed: `WorkerPoolPhaseExecutor` puts its two hot atomics on their
