@@ -228,9 +228,10 @@ frame through the lost-update-safe observe/clear-observed protocol.
   with the agents span). `mark_pathing_dirty(state)` requests a full replan
   of every agent on the next tick (required after world edits); the
   three-argument `set_path_agent_goal(state, agent, goal)` arms a goal as
-  agent-scoped dirt -- only that agent replans, everyone else keeps their
-  retained route (per-agent pathing dirt; pre-split, one re-arm replanned
-  the whole batch every tick).
+  agent-scoped dirt -- only that agent replans (the drivers submit with
+  `PathSubmitScope::NeedsOnly`), everyone else keeps their retained route
+  (per-agent pathing dirt; pre-split, one re-arm replanned the whole batch
+  every tick).
 - `PathAgentTickOptions` carries `max_steps` per tick, the runtime
   `PathRuntimeCachePolicy`, and `max_blocked_retries` (default 8).
 - `PathAgentTickStats` reports the tick value, whether paths were processed,
