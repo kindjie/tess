@@ -262,6 +262,11 @@ class TileOccupancyIndex {
   // with debug asserts that `from` held `entity` and `to` was empty.
   // Never rehashes: the net size is unchanged.
   void move(Coord3 from, Coord3 to, EntityHandle entity) noexcept {
+    // Same pinned domain as insert(): move() is the second write path
+    // into the table, and probe_start's fast lane combine relies on it.
+    TESS_ASSERT_MSG(to.x >= 0 && to.y >= 0 && to.z >= 0,
+                    "TileOccupancyIndex stores world tiles, which are "
+                    "non-negative");
     const auto erased = erase(from);
     TESS_ASSERT_MSG(erased == entity,
                     "TileOccupancyIndex::move source held another entity");
