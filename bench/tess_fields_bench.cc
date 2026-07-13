@@ -76,7 +76,8 @@ void run_goalset_build_bench(benchmark::State& state, std::size_t goal_count) {
         tess::build_distance_field_product<FieldWorld, PassableTag>(
             *world, goals, scratch, product);
     reached = product.reached_nodes();
-    benchmark::DoNotOptimize(result.status);
+    auto status = result.status;
+    benchmark::DoNotOptimize(status);
   }
   fields_bench_check(reached == kTileCount,
                      "open-world flood did not reach every tile");
@@ -194,8 +195,9 @@ void BM_fields_cache_miss_store(benchmark::State& state) {
   // Guarded by iteration count: the harness's 1-iteration calibration
   // pass has only seen the first miss.
   if (state.iterations() >= 8) {
-    fields_bench_check(cache.stats().misses >= state.iterations(),
-                       "cache_miss_store left the miss path");
+    fields_bench_check(
+        cache.stats().misses >= static_cast<std::size_t>(state.iterations()),
+        "cache_miss_store left the miss path");
   }
 }
 

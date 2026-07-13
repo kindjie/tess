@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "comment": "Ceilings are 2x the maximum CPU time across 10 post-LRU CI artifacts (runs 29181479960, 29182932757, 29206174572, 29206657975, 29208497153, 29208511233, 29208666897, 29211536546, 29213175451, and 29214594728; 100 samples per benchmark). Sub-10 ns cases use the repository's 25 ns floor.",
+  "benchmarks": {
+    "residency/resident_lookup": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 25
+    },
+    "residency/ensure_resident_hit": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 25
+    },
+    "residency/eviction_churn_64": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 299
+    },
+    "residency/eviction_churn_512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 458
+    }
+  }
+}

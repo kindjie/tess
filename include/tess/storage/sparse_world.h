@@ -115,12 +115,21 @@ class ChunkDirectory {
 
 }  // namespace detail
 
-// Byte-budgeted sparse world: only a resident subset of a (possibly enormous)
-// bounded shape is materialized at any time, with least-recently-used
-// eviction. Residency is managed explicitly through ensure_resident/touch;
-// accessors assume the caller has made the chunk resident. All iteration is
-// bounded by the resident set or the fixed slot capacity, never by
-// chunk_count, so a world spanning trillions of chunks costs only its budget.
+/**
+ * Byte-budgeted owner of a sparse, least-recently-used chunk set.
+ *
+ * Only resident pages are materialized, so storage and iteration are bounded
+ * by the configured capacity rather than `chunk_count`. Residency is explicit:
+ * call `ensure_resident()` before unchecked access. Eviction resets the page
+ * before reuse and logically invalidates all pointers, references, spans, slot
+ * indices, and handles associated with that chunk. Use a `ResidencyHandle` when
+ * validity must be checked across residency mutations.
+ *
+ * Construction allocates the fixed-capacity page and bookkeeping storage.
+ * Residency changes and hot accessors allocate nothing afterward. Instances
+ * are not internally synchronized: external synchronization is required when
+ * residency or content can mutate; concurrent reads require a stable world.
+ */
 template <typename Shape, typename Schema>
 class World<Shape, Schema, SparseResident> {
  public:
@@ -135,6 +144,12 @@ class World<Shape, Schema, SparseResident> {
   static constexpr std::size_t field_count = Schema::field_count;
   static constexpr std::size_t page_byte_size = page_type::byte_size;
 
+  /**
+   * Allocates fixed-capacity storage from `config` without loading chunks.
+   *
+   * Capacity is clamped to at least one page, even when the byte budget is
+   * smaller than `page_byte_size`.
+   */
   explicit World(ResidencyConfig config)
       : byte_budget_(config.byte_budget),
         capacity_(clamp_capacity(config.byte_budget)) {
@@ -161,51 +176,60 @@ class World<Shape, Schema, SparseResident> {
     directory_.reset(capacity_);
   }
 
+  /** Returns the maximum number of simultaneously resident chunks. */
   [[nodiscard]] std::size_t capacity() const noexcept { return capacity_; }
+
+  /** Returns the requested page-storage budget in bytes. */
   [[nodiscard]] std::size_t byte_budget() const noexcept {
     return byte_budget_;
   }
+  /** Returns the current number of resident chunks. */
   [[nodiscard]] std::size_t resident_count() const noexcept {
     return resident_keys_.size();
   }
+  /** Returns bytes occupied by current resident pages, excluding metadata. */
   [[nodiscard]] std::size_t resident_byte_size() const noexcept {
     return resident_keys_.size() * page_byte_size;
   }
 
-  // Sentinel returned by resident_slot for a non-resident chunk. Mirrors the
-  // directory's npos so NodeIndexSpace can test residency without a second
-  // lookup.
+  /** Sentinel returned by `resident_slot()` for a non-resident chunk. */
   static constexpr std::size_t npos_slot = detail::ChunkDirectory::npos;
 
+  /** Returns whether `key` is inside the bounded shape. */
   [[nodiscard]] static constexpr bool contains(ChunkKey key) noexcept {
     return key.value < chunk_count;
   }
 
+  /** Returns whether an in-bounds key currently has a resident page. */
   [[nodiscard]] bool is_resident(ChunkKey key) const noexcept {
     return directory_.find(key) != detail::ChunkDirectory::npos;
   }
 
-  // Returns the fixed slot index backing a resident chunk, or npos_slot when
-  // the chunk is not resident. The slot is stable for as long as the chunk
-  // stays resident, so a search may index node arrays by slot for the whole of
-  // a single traversal (the world is const during a search, so no eviction can
-  // move the mapping mid-search).
+  /**
+   * Returns the fixed slot backing a resident chunk, or `npos_slot`.
+   *
+   * The slot is stable only while the chunk stays resident. A traversal may
+   * index by slot while holding the world logically const, but must discard
+   * that indexing before any residency mutation.
+   */
   [[nodiscard]] std::size_t resident_slot(ChunkKey key) const noexcept {
     return directory_.find(key);
   }
 
-  // One-probe bundle of the per-chunk residency facts: slot, generation,
-  // and metadata. The individual accessors below each pay their own
-  // directory probe, so a caller needing two or more facts about the same
-  // key (the region-graph freshness checks do this per resident chunk per
-  // pathing tick) should take this instead (audit 2026-07-11 M2). meta is
-  // null (and generation 0, slot npos_slot) when the chunk is not resident.
+  /** Snapshot of residency facts returned by `resident_ref()`. */
   struct ResidentChunkRef {
     std::size_t slot = npos_slot;
     std::uint64_t generation = 0;
     const ChunkMeta* meta = nullptr;
   };
 
+  /**
+   * Returns slot, generation, and metadata with one directory lookup.
+   *
+   * For a missing chunk, `meta` is null, `generation` is zero, and `slot` is
+   * `npos_slot`. The metadata pointer is valid only while the chunk remains
+   * resident and no non-const world operation runs concurrently.
+   */
   [[nodiscard]] auto resident_ref(ChunkKey key) const noexcept
       -> ResidentChunkRef {
     const auto slot = directory_.find(key);
@@ -215,8 +239,9 @@ class World<Shape, Schema, SparseResident> {
     return ResidentChunkRef{slot, slot_generation_[slot], &metadata_[slot]};
   }
 
-  // Returns the resident chunk's generation, or 0 if it is not resident.
-  // Generations are world-monotonic and never reused, so 0 is unambiguous.
+  /**
+   * Returns a resident chunk's world-monotonic generation, or zero if absent.
+   */
   [[nodiscard]] std::uint64_t residency_generation(
       ChunkKey key) const noexcept {
     const auto slot = directory_.find(key);
@@ -226,41 +251,31 @@ class World<Shape, Schema, SparseResident> {
     return slot_generation_[slot];
   }
 
+  /** Returns whether a handle still names its original residency interval. */
   [[nodiscard]] bool valid(ResidencyHandle handle) const noexcept {
     return handle.generation != 0 &&
            residency_generation(handle.key) == handle.generation;
   }
 
+  /**
+   * Borrows the current resident-key set without allocating.
+   *
+   * Order is unspecified. Any `ensure_resident()` or `evict()` call invalidates
+   * the span's contents and iterators; copy keys when a snapshot is required.
+   */
   [[nodiscard]] std::span<const ChunkKey> resident_chunk_keys() const noexcept {
     return {resident_keys_.data(), resident_keys_.size()};
   }
 
-  // Order-independent content fingerprint of the resident set: a commutative
-  // sum over each resident chunk's (key, resident_slot, residency_generation,
-  // content version -- meta().version, bumped on every in-place edit). Unlike a
-  // bare counter it identifies the resident STATE itself, so it changes on any
-  // eviction, reload, or in-place edit and --
-  // because it reads actual content, not a per-world clock -- never collides
-  // across two different worlds' residency (a counter starts low in every
-  // world). A resident-slot-indexed artifact (e.g. a built distance field)
-  // captures this before building and rejects a mismatch after, catching any
-  // slot rebind (including one via world copy/swap or being read against the
-  // wrong world) that would otherwise serve a stale path.
-  //
-  // resident_slot is folded in ADDITION to route_cache.h's
-  // world_version_fingerprint terms: that cache is keyed by tile coordinate,
-  // but a distance field is indexed by resident SLOT, so it also depends on the
-  // key->slot binding. Two worlds can hold the same {key: generation, version}
-  // set with the slots permuted (different eviction orders); including the slot
-  // makes equal fingerprints imply identical slot indexing, so a match is truly
-  // safe. Within one world the slot is redundant (a slot only changes via an
-  // evict that drops the key or a reload that bumps the generation, both
-  // already folded), so it never over-invalidates. O(resident_count), never
-  // touches a non-resident chunk; commutative because resident_chunk_keys()
-  // order is not stable (eviction swaps last in). The readers recompute this
-  // per call; a batch that reads many requests against one unchanging resident
-  // set could hoist it per batch -- a natural optimization if it shows in a
-  // bench.
+  /**
+   * Returns an order-independent fingerprint of resident content and slots.
+   *
+   * It incorporates eviction/reload generations, content versions, keys, and
+   * slot bindings, so consumers can probabilistically invalidate artifacts
+   * indexed by resident slot. Computing it is `O(resident_count)`,
+   * allocation-free, and never visits non-resident chunks. It is not a
+   * persistent identifier or a collision-proof digest.
+   */
   [[nodiscard]] std::uint64_t residency_fingerprint() const noexcept {
     const auto mix = [](std::uint64_t x) noexcept -> std::uint64_t {
       x = (x ^ (x >> 30u)) * 0xbf58476d1ce4e5b9ull;
@@ -283,9 +298,17 @@ class World<Shape, Schema, SparseResident> {
                0x9e3779b97f4a7c15ull);
   }
 
-  // Makes `key` resident (evicting the least-recently-used chunk if the
-  // budget is full) and marks it most-recently-used. Idempotent: an already
-  // resident chunk keeps its data and generation.
+  /**
+   * Makes an in-bounds key resident and marks it most-recently used.
+   *
+   * When full, the least-recently-used chunk is evicted, invalidating its
+   * handles and borrowed storage. A newly loaded page is zero-initialized and
+   * receives a new generation. Calling this for an already resident key is
+   * idempotent for data and generation. This operation does not allocate after
+   * construction.
+   *
+   * @pre `key` is inside the bounded shape; debug builds assert otherwise.
+   */
   ResidencyHandle ensure_resident(ChunkKey key) {
     TESS_ASSERT(contains(key));
     auto slot = directory_.find(key);
@@ -309,7 +332,7 @@ class World<Shape, Schema, SparseResident> {
     return ResidencyHandle{key, slot_generation_[slot]};
   }
 
-  // Marks a resident chunk most-recently-used; returns false if not resident.
+  /** Marks a resident key most-recently used, or returns false if absent. */
   bool touch(ChunkKey key) noexcept {
     const auto slot = directory_.find(key);
     if (slot == detail::ChunkDirectory::npos) {
@@ -319,7 +342,12 @@ class World<Shape, Schema, SparseResident> {
     return true;
   }
 
-  // Releases a resident chunk immediately; returns false if not resident.
+  /**
+   * Evicts a key immediately, or returns false if it is not resident.
+   *
+   * Success invalidates the chunk's handle, slot, page and metadata borrows,
+   * field references, and resident-key views.
+   */
   bool evict(ChunkKey key) {
     const auto slot = directory_.find(key);
     if (slot == detail::ChunkDirectory::npos) {
@@ -330,18 +358,24 @@ class World<Shape, Schema, SparseResident> {
     return true;
   }
 
+  /**
+   * Returns a resident page without runtime error recovery.
+   * @pre `key` is resident; debug builds assert this precondition.
+   */
   [[nodiscard]] auto chunk(ChunkKey key) noexcept -> page_type& {
     const auto slot = directory_.find(key);
     TESS_ASSERT(slot != detail::ChunkDirectory::npos);
     return pages_[slot];
   }
 
+  /** Const overload of `chunk()` with the same residency precondition. */
   [[nodiscard]] auto chunk(ChunkKey key) const noexcept -> const page_type& {
     const auto slot = directory_.find(key);
     TESS_ASSERT(slot != detail::ChunkDirectory::npos);
     return pages_[slot];
   }
 
+  /** Returns a resident page, or null for missing or out-of-bounds keys. */
   [[nodiscard]] auto try_chunk(ChunkKey key) noexcept -> page_type* {
     const auto slot = directory_.find(key);
     if (slot == detail::ChunkDirectory::npos) {
@@ -350,6 +384,7 @@ class World<Shape, Schema, SparseResident> {
     return &pages_[slot];
   }
 
+  /** Const overload of `try_chunk()` with the same checked behavior. */
   [[nodiscard]] auto try_chunk(ChunkKey key) const noexcept
       -> const page_type* {
     const auto slot = directory_.find(key);
@@ -359,6 +394,10 @@ class World<Shape, Schema, SparseResident> {
     return &pages_[slot];
   }
 
+  /**
+   * Returns resident metadata without runtime error recovery.
+   * @pre `key` is resident; debug builds assert this precondition.
+   */
   [[nodiscard]] auto meta(ChunkKey key) noexcept -> ChunkMeta& {
     const auto slot = directory_.find(key);
     TESS_ASSERT(slot != detail::ChunkDirectory::npos);
@@ -371,6 +410,7 @@ class World<Shape, Schema, SparseResident> {
     return metadata_[slot];
   }
 
+  /** Returns resident metadata, or null when the key is not resident. */
   [[nodiscard]] auto try_meta(ChunkKey key) noexcept -> ChunkMeta* {
     const auto slot = directory_.find(key);
     if (slot == detail::ChunkDirectory::npos) {
@@ -461,16 +501,27 @@ class World<Shape, Schema, SparseResident> {
     detail::meta_clear_active(active_flags_[slot], metadata_[slot], flags);
   }
 
+  /**
+   * Appends matching resident dirty keys to caller-owned storage.
+   *
+   * The scan is `O(resident_count)` and allocates only if `out` grows.
+   */
   void collect_dirty_chunks(std::uint32_t flags,
                             std::vector<ChunkKey>& out) const {
     collect_matching_chunks(flags, dirty_flags_, out);
   }
 
+  /**
+   * Appends matching resident active keys to caller-owned storage.
+   *
+   * The scan and allocation contract matches `collect_dirty_chunks()`.
+   */
   void collect_active_chunks(std::uint32_t flags,
                              std::vector<ChunkKey>& out) const {
     collect_matching_chunks(flags, active_flags_, out);
   }
 
+  /** Returns matching resident dirty keys in a newly allocated vector. */
   [[nodiscard]] auto dirty_chunks(std::uint32_t flags) const
       -> std::vector<ChunkKey> {
     std::vector<ChunkKey> chunks;
@@ -478,6 +529,7 @@ class World<Shape, Schema, SparseResident> {
     return chunks;
   }
 
+  /** Returns matching resident active keys in a newly allocated vector. */
   [[nodiscard]] auto active_chunks(std::uint32_t flags) const
       -> std::vector<ChunkKey> {
     std::vector<ChunkKey> chunks;
@@ -485,6 +537,10 @@ class World<Shape, Schema, SparseResident> {
     return chunks;
   }
 
+  /**
+   * Resolves an in-bounds coordinate without checking residency.
+   * @pre `coord` is inside the world; debug builds assert this precondition.
+   */
   [[nodiscard]] auto resolve(Coord3 coord) const noexcept
       -> ResolvedTile<Shape> {
     TESS_ASSERT(tess::contains<Shape>(coord));
@@ -494,6 +550,11 @@ class World<Shape, Schema, SparseResident> {
     };
   }
 
+  /**
+   * Returns a resolved tile, or `std::nullopt` when out of bounds.
+   *
+   * A successful result does not imply that the chunk is resident.
+   */
   [[nodiscard]] auto try_resolve(Coord3 coord) const noexcept
       -> std::optional<ResolvedTile<Shape>> {
     if (!tess::contains<Shape>(coord)) {
@@ -502,6 +563,10 @@ class World<Shape, Schema, SparseResident> {
     return resolve(coord);
   }
 
+  /**
+   * Returns mutable field storage without runtime error recovery.
+   * @pre `coord` is in bounds, its chunk is resident, and `Tag` is in schema.
+   */
   template <typename Tag>
   [[nodiscard]] auto field(Coord3 coord) noexcept
       -> Schema::template value_type<Tag>& {
@@ -510,6 +575,7 @@ class World<Shape, Schema, SparseResident> {
         .template field<Tag>(resolved.local_tile_id);
   }
 
+  /** Const overload of `field()` with the same preconditions. */
   template <typename Tag>
   [[nodiscard]] auto field(Coord3 coord) const noexcept
       -> const Schema::template value_type<Tag>& {
@@ -518,8 +584,10 @@ class World<Shape, Schema, SparseResident> {
         .template field<Tag>(resolved.local_tile_id);
   }
 
-  // Residency-tolerant reader: returns nullptr when the coordinate is out of
-  // bounds or its chunk is not resident.
+  /**
+   * Returns mutable field storage, or null if out of bounds or non-resident.
+   * `Tag` must belong to the schema.
+   */
   template <typename Tag>
   [[nodiscard]] auto try_field(Coord3 coord) noexcept
       -> Schema::template value_type<Tag>* {
@@ -534,6 +602,7 @@ class World<Shape, Schema, SparseResident> {
     return &page->template field<Tag>(resolved->local_tile_id);
   }
 
+  /** Const overload of `try_field()` with the same checked behavior. */
   template <typename Tag>
   [[nodiscard]] auto try_field(Coord3 coord) const noexcept
       -> const Schema::template value_type<Tag>* {
@@ -548,11 +617,16 @@ class World<Shape, Schema, SparseResident> {
     return &page->template field<Tag>(resolved->local_tile_id);
   }
 
+  /**
+   * Returns a resident chunk's contiguous field column without allocating.
+   * @pre `key` is resident and `Tag` belongs to the schema.
+   */
   template <typename Tag>
   [[nodiscard]] auto field_span(ChunkKey key) noexcept {
     return chunk(key).template field_span<Tag>();
   }
 
+  /** Const overload of `field_span()` with the same lifetime contract. */
   template <typename Tag>
   [[nodiscard]] auto field_span(ChunkKey key) const noexcept {
     return chunk(key).template field_span<Tag>();

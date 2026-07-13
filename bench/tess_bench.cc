@@ -808,7 +808,8 @@ void BM_queued_execute_resident_update_with_results(benchmark::State& state) {
     drained += channel.drain_results([](tess::OpHandle,
                                         const tess::OpCompletion& completion,
                                         const Ack* value) {
-      benchmark::DoNotOptimize(completion.chunk_count);
+      auto chunk_count = completion.chunk_count;
+      benchmark::DoNotOptimize(chunk_count);
       benchmark::DoNotOptimize(value);
     });
     channel.clear();

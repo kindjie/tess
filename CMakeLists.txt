@@ -52,8 +52,6 @@ set(
   include/tess/block/block.h
   include/tess/core/assert.h
   include/tess/core/shape.h
-  include/tess/core/tag_identity.h
-  include/tess/core/uint128.h
   include/tess/debug/imgui/panels.h
   include/tess/diagnostics/diagnostics.h
   include/tess/diagnostics/export.h
@@ -67,8 +65,6 @@ set(
   include/tess/ops/phase_executor.h
   include/tess/ops/queued.h
   include/tess/ops/result_channel.h
-  include/tess/path/detail/astar.h
-  include/tess/path/detail/weighted_batch.h
   include/tess/path/distance_field_box.h
   include/tess/path/field_product_cache.h
   include/tess/path/node_index_space.h
@@ -99,12 +95,26 @@ set(
   include/tess/topology/transition_provider.h
 )
 
+# Installed implementation headers are required by the template definitions in
+# the public headers, but declarations in tess::detail are not supported API.
+# Keep this list separate so surface/documentation checks do not accidentally
+# turn implementation details into compatibility promises.
+set(
+  TESS_IMPLEMENTATION_HEADERS
+  include/tess/core/tag_identity.h
+  include/tess/core/uint128.h
+  include/tess/path/detail/astar.h
+  include/tess/path/detail/weighted_batch.h
+)
+
+set(TESS_INSTALL_HEADERS ${TESS_PUBLIC_HEADERS} ${TESS_IMPLEMENTATION_HEADERS})
+
 target_sources(
   tess
   INTERFACE
     FILE_SET HEADERS
     BASE_DIRS include
-    FILES ${TESS_PUBLIC_HEADERS}
+    FILES ${TESS_INSTALL_HEADERS}
 )
 
 install(
@@ -139,15 +149,20 @@ install(
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/tess"
 )
 
+install(
+  FILES LICENSE
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/tess"
+)
+
 if(TESS_BUILD_TESTING)
   include(CTest)
   if(BUILD_TESTING)
     add_test(
-      NAME tess_public_headers_file_set
+      NAME tess_installed_headers_file_set
       COMMAND
         "${CMAKE_COMMAND}"
         -DTESS_SOURCE_DIR=${PROJECT_SOURCE_DIR}
-        "-DTESS_DECLARED_HEADERS=$<JOIN:${TESS_PUBLIC_HEADERS},;>"
+        "-DTESS_DECLARED_HEADERS=$<JOIN:${TESS_INSTALL_HEADERS},;>"
         -P ${PROJECT_SOURCE_DIR}/cmake/check-public-headers.cmake
     )
     add_subdirectory(tests)

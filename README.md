@@ -26,6 +26,14 @@ cmake --build --preset bench
 
 The public CMake target is `tess::tess`.
 
+Prefer the narrowest public header that owns the API in compile-sensitive
+code. To compare syntax-only header costs on the local compiler, run:
+
+```sh
+python3 tools/header_compile_cost.py \
+  tess/tess.h tess/core/shape.h tess/path/path.h
+```
+
 The `dev` preset also builds the examples (each a self-checking binary,
 smoke-run in CI):
 
@@ -67,7 +75,7 @@ CI runs primarily on `ubuntu-24.04` with Clang and covers:
 
 - Dev build and unit tests: `cmake --build --preset dev`,
   `ctest --preset dev`
-- Public header file-set drift check: `tess_public_headers_file_set`
+- Installed header file-set drift check: `tess_installed_headers_file_set`
 - Installed package smoke test: `tools/install_smoke.sh`
 - Hook backstop checks: `tools/git_hooks.py ci` repository hygiene plus
   pytest for the repo tools (`tests/test_git_hooks.py`,
@@ -75,6 +83,7 @@ CI runs primarily on `ubuntu-24.04` with Clang and covers:
   and the public-surface manifest gate
   (`tools/check_public_surface.py` against
   `docs/architecture/surface.json`; required since 2026-07-07)
+- First-slice public API documentation gate: `tools/check_public_docs.py`
 - Warnings-as-errors build and tests: preset `dev-werror`
 - ASan/UBSan build and tests (UBSan findings are fatal): preset `dev-asan`
 - TSan build and tests (`TSAN_OPTIONS=halt_on_error=1`): preset `dev-tsan`
@@ -86,13 +95,13 @@ CI runs primarily on `ubuntu-24.04` with Clang and covers:
 - Strict clang-tidy gate: `cmake --build --preset dev-clang-tidy`
 - cppcheck gate: `cmake --build --preset dev-cppcheck`
 - Advisory (non-gating) clang-tidy profile: preset `dev-clang-tidy-advisory`
-- Advisory (non-gating) GCC compile-only check: preset `dev` built with
-  GCC (`continue-on-error` during shake-out)
+- Required GCC compile-only portability check: preset `dev` built with GCC
 - Benchmark build and smoke tests: presets `bench`
-- Benchmark CPU-time threshold gates, one per suite:
+- Benchmark threshold gates, one per suite (CPU time except parallel wall
+  time):
   `cmake --build --preset bench --target tess_bench_<suite>_thresholds`
-  for `key`, `storage`, `block`, `queued`, `path`, `topology`, and
-  `diagnostics`
+  for `key`, `storage`, `block`, `queued`, `path`, `topology`, `scheduler`,
+  `residency`, `parallel`, `ecs`, `render_delta`, `fields`, and `diagnostics`
 - Non-gating CI benchmark baseline collection:
   `cmake --build --preset bench --target tess_bench_ci_baselines`
 
@@ -125,3 +134,7 @@ calibration.
 
 `tess` is named after tesserae and tessellation: small spatial pieces composed
 into large, structured worlds for fast simulation, topology, and pathfinding.
+
+## License
+
+Licensed under the [MIT License](LICENSE).

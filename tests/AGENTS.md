@@ -580,6 +580,16 @@
   symbols and missing headers. One test asserts the committed
   `docs/architecture/surface.json` stays complete against the real
   `TESS_PUBLIC_HEADERS` headers.
+- `tests/test_check_public_docs.py`: pytest coverage for the dependency-free,
+  first-slice Doxygen comment gate (`tools/check_public_docs.py`). Synthetic
+  fixtures verify block and line comments across templates, actionable missing
+  documentation and missing-file failures, and exclusion of `detail` symbols.
+  One test gates the explicitly opted-in public headers; it does not claim
+  member-level or full-API documentation coverage.
+- `tests/test_header_compile_cost.py`: pytest coverage for the repeatable
+  syntax-only public-header compile-cost tool. It pins the compiler command,
+  elapsed-sample collection, and invalid repetition handling without making
+  timing-dependent assertions in CI.
 - The benchmark binaries (`tess_bench`, `tess_bench_diagnostics`) enforce
   correctness checks after their timed loops via an aborting `bench_check`
   helper (endpoints, legal unit steps onto passable tiles, expected costs,

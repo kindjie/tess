@@ -114,12 +114,12 @@ world.chunk(tess::ChunkKey{k}).field<TerrainTag>(tess::LocalTileId{0}) = 7;
 - `ensure_resident(key)` materializes the chunk (evicting the
   least-recently-used chunk when the budget is full), marks it
   most-recently-used, and returns a `tess::ResidencyHandle`. It is idempotent:
-  an already resident chunk keeps its data and generation. Choosing the
-  eviction victim scans the resident slots (O(resident capacity), bounded by
-  the byte budget); a streaming, miss-heavy workload over a very large budget
-  would benefit from an intrusive O(1) LRU list, which is a deferred
-  optimization. A budget smaller than one page clamps the capacity to one
-  chunk rather than producing an unusable zero-capacity world.
+  an already resident chunk keeps its data and generation. An intrusive
+  doubly-linked LRU over slot indices makes victim selection and recency
+  updates O(1), independent of the resident capacity; its link arrays are
+  allocated with the fixed slot pool. A budget smaller than one page clamps
+  the capacity to one chunk rather than producing an unusable zero-capacity
+  world.
 - `touch(key)` refreshes recency; `evict(key)` releases a chunk immediately.
 - `is_resident(key)` distinguishes a resident chunk from a `Missing` one;
   `contains(key)` reports only in-bounds-ness. Both differ from out-of-bounds.
@@ -197,10 +197,10 @@ over them.
 ## Out Of Scope
 
 Sparse residency, the `ChunkDirectory`, per-chunk generations, and byte-budget
-eviction are now implemented (see Sparse-Resident World). Topology and pathing
-do not yet run natively over a sparse world, and the missing-chunk status
-vocabulary they expose (`Indeterminate` reachability/path results) lands in
-later slices; the residency-tolerant `try_*` readers here are the seam those
-build on. Still out of scope in this layer: typed dirty/active vocabularies,
-full lifecycle states beyond sleeping/active, on-demand chunk materialization
+eviction are implemented (see Sparse-Resident World). The
+[topology](topology.md) and [path](path.md) layers build on the
+residency-tolerant `try_*` readers to run supported APIs natively over sparse
+worlds and report `Indeterminate` when unloaded space prevents a definitive
+answer. Still out of scope in this layer: typed dirty/active vocabularies, full
+lifecycle states beyond sleeping/active, on-demand chunk materialization
 policy, thread ownership policies, block generation, and planner domains.

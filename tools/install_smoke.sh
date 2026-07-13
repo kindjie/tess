@@ -41,6 +41,11 @@ else
   cmake --install "$build_dir" --prefix "$prefix"
 fi
 
+if [[ ! -f "$prefix/share/licenses/tess/LICENSE" ]]; then
+  echo "error: installed package is missing the MIT license" >&2
+  exit 1
+fi
+
 cat > "$consumer/CMakeLists.txt" <<'EOF'
 cmake_minimum_required(VERSION 3.28)
 project(tess_install_smoke LANGUAGES CXX)

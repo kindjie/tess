@@ -350,12 +350,17 @@ BASELINE_FILE_NAMES = (
     "path.json",
     "topology.json",
     "parallel.json",
+    "scheduler.json",
+    "residency.json",
     "diagnostics.json",
+    "ecs.json",
+    "render-delta.json",
+    "fields.json",
 )
 
 
 def write_artifact(tmp_path: Path, name: str = "artifact") -> Path:
-  """Build a fake CI baseline artifact dir with all seven result files."""
+  """Build a fake CI baseline artifact with every benchmark result file."""
   directory = tmp_path / name
   directory.mkdir()
   for file_name in BASELINE_FILE_NAMES:

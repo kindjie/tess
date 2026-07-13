@@ -1,7 +1,8 @@
 # Path Foundation
 
-The current path layer is a minimal always-resident path foundation. It lives
-under `include/tess/path/` and is exported by `tess/tess.h`.
+The current path layer is a synchronous pathfinding foundation with
+sparse-resident support as detailed below. It lives under `include/tess/path/`
+and is exported by `tess/tess.h`.
 `tess/path/path.h` remains the public umbrella for core path APIs; larger
 implementation sections may live in `include/tess/path/detail/` and are
 included from that umbrella. The route cache (`RouteCacheScratch`,

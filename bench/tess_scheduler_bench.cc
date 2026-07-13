@@ -50,7 +50,8 @@ void BM_scheduler_empty_tick(benchmark::State& state) {
   tess::SimClock clock;
   for (auto _ : state) {
     const auto stats = schedule.run_tick(clock);
-    benchmark::DoNotOptimize(stats.tasks_run);
+    auto tasks_run = stats.tasks_run;
+    benchmark::DoNotOptimize(tasks_run);
   }
   scheduler_bench_check(
       clock.tick == static_cast<std::uint64_t>(state.iterations()),
@@ -98,7 +99,8 @@ void BM_scheduler_dirty_trigger(benchmark::State& state) {
   for (auto _ : state) {
     schedule.notify_dirty(1u);
     const auto stats = schedule.run_tick(clock);
-    benchmark::DoNotOptimize(stats.tasks_run);
+    auto tasks_run = stats.tasks_run;
+    benchmark::DoNotOptimize(tasks_run);
   }
   scheduler_bench_check(
       consumer.fires == static_cast<std::uint64_t>(state.iterations()),

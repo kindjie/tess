@@ -16,13 +16,19 @@
 
 namespace tess {
 
-// generation is 64-bit so a ticket retained across clear_requests() calls
-// can never alias a later batch by counter wraparound.
+/**
+ * Generation-stamped index of a request submitted to `PathRequestRuntime`.
+ *
+ * The ticket is a non-owning value valid only for its originating runtime and
+ * until `clear_requests()`. Its 64-bit generation prevents practical aliasing
+ * with a later batch.
+ */
 struct PathTicket {
   std::size_t value = 0;
   std::uint64_t generation = 0;
 };
 
+/** Controls cache sizing, reuse, and invalidation for one processing call. */
 struct PathRuntimeCachePolicy {
   std::size_t clear_every_world_change = 0;
   bool invalidate_unit_route_cache_on_world_change = true;
@@ -37,6 +43,7 @@ struct PathRuntimeCachePolicy {
       WeightedPortalSegmentCache::default_segment_budget;
 };
 
+/** Snapshot of request, result, search, and cache counters. */
 struct PathRuntimeStats {
   std::size_t submitted = 0;
   std::size_t completed = 0;
@@ -69,12 +76,22 @@ struct PathRuntimeStats {
   PortalSegmentCacheStats portal_segment_cache{};
 };
 
-// ONE RUNTIME PER WORLD: the caches inside identify a world by its chunk
-// content versions, not its identity, so two same-shape worlds with equal
-// version counters alias and a shared runtime would serve one world's
-// routes/fields for the other (see RouteCacheScratch fingerprint notes).
+/**
+ * Owns a reusable batch of path requests, results, scratch, and caches.
+ *
+ * Bind one runtime to one world. Cache fingerprints describe world content,
+ * not object identity, so sharing a runtime between worlds with matching
+ * version counters can serve stale routes. Results and their `PathView` data
+ * are borrowed from runtime-owned buffers and are invalidated by the next
+ * process call or `clear_requests()`.
+ *
+ * Submission and processing may allocate unless the matching `reserve_*()`
+ * methods have provisioned sufficient capacity. The runtime is not internally
+ * synchronized; confine it to one thread or externally synchronize every use.
+ */
 class PathRequestRuntime {
  public:
+  /** Reserves request/result batch storage to reduce later allocations. */
   void reserve_requests(std::size_t count) {
     requests_.reserve(count);
     results_.reserve(count);
@@ -90,6 +107,7 @@ class PathRequestRuntime {
     unit_field_goals_.reserve(1);
   }
 
+  /** Reserves result and cache path-node storage. */
   void reserve_path_nodes(std::size_t count) {
     paths_.reserve(count);
     unit_route_cache_.reserve_path_nodes(count);
@@ -99,6 +117,7 @@ class PathRequestRuntime {
     portal_segment_cache_.reserve_path_nodes(count);
   }
 
+  /** Reserves node-search scratch across unit and weighted searches. */
   void reserve_search_nodes(std::size_t count) {
     unit_scratch_.reserve_nodes(count);
     unit_field_scratch_.reserve_nodes(count);
@@ -106,30 +125,42 @@ class PathRequestRuntime {
     weighted_batch_.reserve_search_nodes(count);
   }
 
+  /** Reserves unit-route cache entries. */
   void reserve_unit_routes(std::size_t count) {
     unit_route_cache_.reserve_routes(count);
   }
 
+  /** Reserves unit distance-field product cache entries. */
   void reserve_unit_field_products(std::size_t count) {
     unit_field_product_cache_.reserve_entries(count);
   }
 
-  // Reserve World::chunk_count: dependency sets are bounded by (and for
-  // failure products equal to) the chunk count.
+  /**
+   * Reserves dependency-key storage for unit field products.
+   *
+   * Reserve `World::chunk_count`: dependency sets are bounded by, and failed
+   * products can equal, that count.
+   */
   void reserve_unit_field_product_dependencies(std::size_t count) {
     unit_field_product_.reserve_dependencies(count);
   }
 
+  /** Reserves weighted portal-segment cache entries. */
   void reserve_portal_segments(std::size_t count) {
     portal_segment_cache_.reserve_segments(count);
   }
 
+  /**
+   * Clears requests and results and invalidates every outstanding ticket and
+   * result view. Cache contents are retained for reuse.
+   */
   void clear_requests() noexcept {
     requests_.clear();
     clear_results();
     ++generation_;
   }
 
+  /** Clears all caches without removing submitted requests. */
   void clear_caches() noexcept {
     unit_route_cache_.clear();
     unit_field_product_cache_.clear();
@@ -139,24 +170,39 @@ class PathRequestRuntime {
     ++cache_clears_;
   }
 
+  /**
+   * Appends a request and returns its generation-stamped ticket.
+   *
+   * This may allocate unless request storage was reserved.
+   */
   [[nodiscard]] auto submit(PathRequest request) -> PathTicket {
     const auto ticket = PathTicket{requests_.size(), generation_};
     requests_.push_back(request);
     return ticket;
   }
 
+  /**
+   * Borrows submitted requests until the next submission or clear operation.
+   */
   [[nodiscard]] auto requests() const noexcept -> std::span<const PathRequest> {
     return requests_;
   }
 
+  /**
+   * Borrows the current result array until the next process or clear operation.
+   */
   [[nodiscard]] auto results() const noexcept -> std::span<const PathResult> {
     return results_;
   }
 
-  // Tickets are stamped with the submission generation; clear_requests()
-  // starts a new generation, so a ticket held across it is stale even when
-  // it aliases an in-range slot of the new batch. Stale or out-of-range
-  // tickets assert in debug builds and report NoPath in release builds.
+  /**
+   * Returns a result by ticket.
+   *
+   * The ticket must originate from this runtime. Stale and out-of-range
+   * tickets assert in debug builds and return `PathStatus::NoPath` in release
+   * builds. The returned result's path view follows the runtime result lifetime
+   * documented on the class.
+   */
   [[nodiscard]] auto result(PathTicket ticket) const noexcept -> PathResult {
     TESS_ASSERT(ticket.generation == generation_);
     TESS_ASSERT(ticket.value < results_.size());
@@ -168,24 +214,29 @@ class PathRequestRuntime {
     return results_[ticket.value];
   }
 
+  /** Returns the runtime-owned unit-route cache for tuning or inspection. */
   [[nodiscard]] auto route_cache() noexcept -> RouteCacheScratch& {
     return unit_route_cache_;
   }
 
+  /** Const overload of `route_cache()`. */
   [[nodiscard]] auto route_cache() const noexcept -> const RouteCacheScratch& {
     return unit_route_cache_;
   }
 
+  /** Returns the runtime-owned weighted portal-segment cache. */
   [[nodiscard]] auto portal_segment_cache() noexcept
       -> WeightedPortalSegmentCache& {
     return portal_segment_cache_;
   }
 
+  /** Const overload of `portal_segment_cache()`. */
   [[nodiscard]] auto portal_segment_cache() const noexcept
       -> const WeightedPortalSegmentCache& {
     return portal_segment_cache_;
   }
 
+  /** Returns a by-value snapshot of current runtime and cache counters. */
   [[nodiscard]] auto stats() const noexcept -> PathRuntimeStats {
     auto stats = stats_;
     stats.submitted = requests_.size();
@@ -200,16 +251,16 @@ class PathRequestRuntime {
     return stats;
   }
 
-  // An optional `graph` enables the pre-A* topology precheck (see
-  // precheck_path): requests it proves unreachable resolve to NoPath without
-  // searching, counted in stats().precheck_ruled_out. Class agreement is
-  // enforced through the graph's movement-class stamp: a graph built for a
-  // different class than this call searches with degrades to GraphStale (no
-  // pruning) instead of cutting a solvable request. Passing nullptr disables
-  // the precheck. `ClassOrTag` is the movement class searched with (a raw tag
-  // normalizes to its WalkableField identity); the unit route cache keys on
-  // (start, goal) only, so the runtime binds itself to the class and a
-  // rebind clears the unit caches rather than serving another class's route.
+  /**
+   * Processes all submitted requests with cached unit-cost A*.
+   *
+   * An optional graph enables a topology precheck. A graph built for another
+   * movement class degrades to no pruning rather than rejecting a valid path.
+   * The runtime binds its unit caches to `ClassOrTag`; changing class clears
+   * those caches. The returned span and every result path are borrowed and are
+   * invalidated by the next process or clear operation. Processing may allocate
+   * unless all relevant runtime and cache capacities were reserved.
+   */
   template <typename World, typename ClassOrTag>
   [[nodiscard]] auto process_unit_cached(
       const World& world, PathRuntimeCachePolicy policy = {},
@@ -256,9 +307,11 @@ class PathRequestRuntime {
     return results_;
   }
 
-  // Class form: one movement class drives BOTH the weighted search and the
-  // precheck, so the supplied graph must be labeled for that same class (a
-  // mismatch degrades to GraphStale -- nothing ruled out).
+  /**
+   * Processes the batch with one movement class for weighted search and
+   * precheck. A mismatched graph disables pruning. Result lifetime and
+   * allocation behavior match `process_unit_cached()`.
+   */
   template <typename World, typename Class, std::uint32_t MaxCost>
   [[nodiscard]] auto process_weighted_batch(
       const World& world, PathRuntimeCachePolicy policy = {},
@@ -272,9 +325,12 @@ class PathRequestRuntime {
         world, policy, graph);
   }
 
-  // Legacy pair form: the search preserves the historical cost-agnostic
-  // asymmetry through LegacyWeighted, and the precheck classes on PASSABILITY
-  // only (the raw tag's identity class), matching graphs built with that tag.
+  /**
+   * Processes a legacy passability/cost-tag pair as a weighted batch.
+   *
+   * The precheck uses the passability tag's identity class. Result lifetime and
+   * allocation behavior match `process_unit_cached()`.
+   */
   template <typename World, typename PassableTag, typename CostTag,
             std::uint32_t MaxCost>
   [[nodiscard]] auto process_weighted_batch(

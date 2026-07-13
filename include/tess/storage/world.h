@@ -14,11 +14,24 @@
 
 namespace tess {
 
+/** Selects the dense world that materializes every chunk at construction. */
 struct AlwaysResident {};
 
+/** Primary template for a world selected by its residency policy. */
 template <typename Shape, typename Schema, typename Residency>
 class World;
 
+/**
+ * Dense owner of every chunk page and its metadata.
+ *
+ * Construction allocates and zero-initializes storage for the complete bounded
+ * shape. No operation changes the number of pages afterward, so page pointers,
+ * references, and spans remain valid until the world is moved from or
+ * destroyed. Query and mutation hot paths do not allocate; methods returning a
+ * `std::vector` may. Instances are not internally synchronized: concurrent
+ * reads are safe, while mutation requires external synchronization with all
+ * accesses to the affected world.
+ */
 template <typename Shape, typename Schema>
 class World<Shape, Schema, AlwaysResident> {
  public:
@@ -42,6 +55,7 @@ class World<Shape, Schema, AlwaysResident> {
                                       static_cast<std::size_t>(chunk_count),
                 "AlwaysResident World storage bytes must fit std::size_t.");
 
+  /** Allocates and zero-initializes all chunk pages and metadata. */
   World() {
     pages_.reserve(static_cast<std::size_t>(chunk_count));
     metadata_.reserve(static_cast<std::size_t>(chunk_count));
@@ -55,33 +69,46 @@ class World<Shape, Schema, AlwaysResident> {
     dirty_bounds_.assign(static_cast<std::size_t>(chunk_count), Box3{});
   }
 
+  /** Returns all pages in chunk-key order without allocating. */
   [[nodiscard]] auto chunks() noexcept -> std::span<page_type> {
     return {pages_.data(), pages_.size()};
   }
 
+  /** Const overload of `chunks()` with the same lifetime contract. */
   [[nodiscard]] auto chunks() const noexcept -> std::span<const page_type> {
     return {pages_.data(), pages_.size()};
   }
 
+  /**
+   * Returns a page by key without runtime error recovery.
+   * @pre `key` is inside the world; debug builds assert this precondition.
+   */
   [[nodiscard]] auto chunk(ChunkKey key) noexcept -> page_type& {
     TESS_ASSERT(key.value < chunk_count);
     return pages_[static_cast<std::size_t>(key.value)];
   }
 
+  /** Const overload of `chunk(ChunkKey)` with the same precondition. */
   [[nodiscard]] auto chunk(ChunkKey key) const noexcept -> const page_type& {
     TESS_ASSERT(key.value < chunk_count);
     return pages_[static_cast<std::size_t>(key.value)];
   }
 
+  /**
+   * Returns a page by coordinate without runtime error recovery.
+   * @pre `coord` is inside the world.
+   */
   [[nodiscard]] auto chunk(ChunkCoord3 coord) noexcept -> page_type& {
     return chunk(chunk_key<Shape>(coord));
   }
 
+  /** Const overload of `chunk(ChunkCoord3)` with the same precondition. */
   [[nodiscard]] auto chunk(ChunkCoord3 coord) const noexcept
       -> const page_type& {
     return chunk(chunk_key<Shape>(coord));
   }
 
+  /** Returns a page by key, or null when the key is out of bounds. */
   [[nodiscard]] auto try_chunk(ChunkKey key) noexcept -> page_type* {
     if (key.value >= chunk_count) {
       return nullptr;
@@ -89,6 +116,7 @@ class World<Shape, Schema, AlwaysResident> {
     return &chunk(key);
   }
 
+  /** Const overload of `try_chunk(ChunkKey)`. */
   [[nodiscard]] auto try_chunk(ChunkKey key) const noexcept
       -> const page_type* {
     if (key.value >= chunk_count) {
@@ -97,6 +125,7 @@ class World<Shape, Schema, AlwaysResident> {
     return &chunk(key);
   }
 
+  /** Returns a page by coordinate, or null when it is out of bounds. */
   [[nodiscard]] auto try_chunk(ChunkCoord3 coord) noexcept -> page_type* {
     if (!contains_chunk(coord)) {
       return nullptr;
@@ -104,6 +133,7 @@ class World<Shape, Schema, AlwaysResident> {
     return &chunk(coord);
   }
 
+  /** Const overload of `try_chunk(ChunkCoord3)`. */
   [[nodiscard]] auto try_chunk(ChunkCoord3 coord) const noexcept
       -> const page_type* {
     if (!contains_chunk(coord)) {
@@ -112,6 +142,10 @@ class World<Shape, Schema, AlwaysResident> {
     return &chunk(coord);
   }
 
+  /**
+   * Returns mutable metadata by key.
+   * @pre `key` is inside the world; debug builds assert this precondition.
+   */
   [[nodiscard]] auto meta(ChunkKey key) noexcept -> ChunkMeta& {
     TESS_ASSERT(key.value < chunk_count);
     return metadata_[static_cast<std::size_t>(key.value)];
@@ -131,6 +165,7 @@ class World<Shape, Schema, AlwaysResident> {
     return meta(chunk_key<Shape>(coord));
   }
 
+  /** Returns mutable metadata, or null when `key` is out of bounds. */
   [[nodiscard]] auto try_meta(ChunkKey key) noexcept -> ChunkMeta* {
     if (key.value >= chunk_count) {
       return nullptr;
@@ -249,16 +284,28 @@ class World<Shape, Schema, AlwaysResident> {
     detail::meta_clear_active(active_flags_[slot], meta(key), flags);
   }
 
+  /**
+   * Appends matching dirty chunk keys to caller-owned storage.
+   *
+   * The scan is `O(chunk_count)`. It allocates only if `out` grows; reserve
+   * enough capacity when allocation-free collection is required.
+   */
   void collect_dirty_chunks(std::uint32_t flags,
                             std::vector<ChunkKey>& out) const {
     collect_matching_chunks(flags, dirty_flags_, out);
   }
 
+  /**
+   * Appends matching active chunk keys to caller-owned storage.
+   *
+   * The scan and allocation contract matches `collect_dirty_chunks()`.
+   */
   void collect_active_chunks(std::uint32_t flags,
                              std::vector<ChunkKey>& out) const {
     collect_matching_chunks(flags, active_flags_, out);
   }
 
+  /** Returns matching dirty keys in a newly allocated vector. */
   [[nodiscard]] auto dirty_chunks(std::uint32_t flags) const
       -> std::vector<ChunkKey> {
     std::vector<ChunkKey> chunks;
@@ -266,6 +313,7 @@ class World<Shape, Schema, AlwaysResident> {
     return chunks;
   }
 
+  /** Returns matching active keys in a newly allocated vector. */
   [[nodiscard]] auto active_chunks(std::uint32_t flags) const
       -> std::vector<ChunkKey> {
     std::vector<ChunkKey> chunks;
@@ -273,6 +321,10 @@ class World<Shape, Schema, AlwaysResident> {
     return chunks;
   }
 
+  /**
+   * Resolves a world coordinate without runtime error recovery.
+   * @pre `coord` is inside the world; debug builds assert this precondition.
+   */
   [[nodiscard]] auto resolve(Coord3 coord) const noexcept
       -> ResolvedTile<Shape> {
     TESS_ASSERT(contains<Shape>(coord));
@@ -283,6 +335,7 @@ class World<Shape, Schema, AlwaysResident> {
     };
   }
 
+  /** Returns a resolved tile, or `std::nullopt` when out of bounds. */
   [[nodiscard]] auto try_resolve(Coord3 coord) const noexcept
       -> std::optional<ResolvedTile<Shape>> {
     if (!contains<Shape>(coord)) {
@@ -291,6 +344,10 @@ class World<Shape, Schema, AlwaysResident> {
     return resolve(coord);
   }
 
+  /**
+   * Returns mutable field storage without runtime error recovery.
+   * @pre `coord` is inside the world and `Tag` belongs to the schema.
+   */
   template <typename Tag>
   [[nodiscard]] auto field(Coord3 coord) noexcept
       -> Schema::template value_type<Tag>& {
@@ -299,6 +356,7 @@ class World<Shape, Schema, AlwaysResident> {
         .template field<Tag>(resolved.local_tile_id);
   }
 
+  /** Const overload of `field()` with the same preconditions. */
   template <typename Tag>
   [[nodiscard]] auto field(Coord3 coord) const noexcept
       -> const Schema::template value_type<Tag>& {
@@ -307,6 +365,10 @@ class World<Shape, Schema, AlwaysResident> {
         .template field<Tag>(resolved.local_tile_id);
   }
 
+  /**
+   * Returns mutable field storage, or null when `coord` is out of bounds.
+   * `Tag` must belong to the schema.
+   */
   template <typename Tag>
   [[nodiscard]] auto try_field(Coord3 coord) noexcept
       -> Schema::template value_type<Tag>* {
@@ -318,6 +380,7 @@ class World<Shape, Schema, AlwaysResident> {
                 .template field<Tag>(resolved->local_tile_id);
   }
 
+  /** Const overload of `try_field()` with the same checked behavior. */
   template <typename Tag>
   [[nodiscard]] auto try_field(Coord3 coord) const noexcept
       -> const Schema::template value_type<Tag>* {
@@ -329,11 +392,16 @@ class World<Shape, Schema, AlwaysResident> {
                 .template field<Tag>(resolved->local_tile_id);
   }
 
+  /**
+   * Returns the contiguous field column for a chunk without allocating.
+   * @pre `key` is inside the world and `Tag` belongs to the schema.
+   */
   template <typename Tag>
   [[nodiscard]] auto field_span(ChunkKey key) noexcept {
     return chunk(key).template field_span<Tag>();
   }
 
+  /** Const overload of `field_span()` with the same lifetime contract. */
   template <typename Tag>
   [[nodiscard]] auto field_span(ChunkKey key) const noexcept {
     return chunk(key).template field_span<Tag>();

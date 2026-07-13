@@ -71,10 +71,8 @@ void BM_residency_ensure_resident_hit(benchmark::State& state) {
 
 // Streaming misses at a full budget: every ensure_resident evicts the
 // least-recently-used chunk first. This is the path audit 2026-07-11
-// finding M11 flags as O(capacity) per miss (linear LRU scan); the two
-// capacities exist to expose that scaling. Ungated on purpose -- the
-// numbers are the before/after evidence for the intrusive-list fix
-// (remediation M11b); gates come with the 10-artifact recalibration rule.
+// finding M11 flagged as O(capacity) per miss before the intrusive-list fix;
+// the two capacities guard the replacement's capacity-independent scaling.
 template <std::size_t Capacity>
 void BM_residency_eviction_churn(benchmark::State& state) {
   auto world = world_with_budget(Capacity);

@@ -10,6 +10,12 @@
 
 namespace tess {
 
+/**
+ * Describes one structure-of-arrays field in a chunk schema.
+ *
+ * `Tag` is a type-level identifier and `Value` is stored once per local tile.
+ * A schema may contain a tag only once.
+ */
 template <typename Tag, typename Value>
 struct Field {
   using tag_type = Tag;
@@ -71,6 +77,13 @@ template <typename... Fields>
 inline constexpr bool is_valid_field_schema_v =
     detail::unique_field_tags_v<Fields...>;
 
+/**
+ * Compile-time schema for the fields stored by each chunk page.
+ *
+ * Field values are stored independently in structure-of-arrays layout. All
+ * tags must be unique; requesting a tag not in the schema is a compile-time
+ * error.
+ */
 template <typename... Fields>
 struct FieldSchema {
   static_assert(is_valid_field_schema_v<Fields...>,
@@ -89,9 +102,19 @@ struct FieldSchema {
       detail::FieldIndex<Tag, 0, Fields...>::value;
 };
 
+/** Primary template for a shape- and schema-specific chunk page. */
 template <typename Shape, typename Schema>
 class ChunkPage;
 
+/**
+ * Owns the field arrays for every local tile in one chunk.
+ *
+ * Storage is inline and zero-initialized. Construction and access do not
+ * allocate. References and spans remain valid until the page is destroyed or
+ * `reset()` reuses it; `reset()` preserves their addresses but replaces all
+ * values, so callers must treat previously observed contents as invalid.
+ * Concurrent reads are safe, but mutation requires external synchronization.
+ */
 template <typename Shape, typename... Fields>
 class ChunkPage<Shape, FieldSchema<Fields...>> {
  public:
@@ -105,13 +128,17 @@ class ChunkPage<Shape, FieldSchema<Fields...>> {
       (std::size_t{0} + ... +
        sizeof(std::array<typename Fields::value_type, local_tile_count>));
 
+  /** Constructs a zero-initialized page with the supplied chunk identity. */
   constexpr ChunkPage(ChunkKey key, ChunkCoord3 coord) noexcept
       : chunk_key_(key), chunk_coord_(coord) {}
 
-  // Reassigns the page's chunk identity and zero-fills every field array in
-  // place. Used when a slot in a sparse world is reassigned to a new chunk;
-  // it avoids materializing a page-sized temporary (a page holds all field
-  // arrays inline and can be tens of kilobytes or more).
+  /**
+   * Reassigns the chunk identity and zero-fills every field array in place.
+   *
+   * This operation does not allocate or materialize a page-sized temporary.
+   * Existing references and spans retain their addresses but now refer to the
+   * reset page and must not be used as snapshots of the previous chunk.
+   */
   constexpr void reset(ChunkKey key, ChunkCoord3 coord) noexcept {
     chunk_key_ = key;
     chunk_coord_ = coord;
@@ -124,14 +151,22 @@ class ChunkPage<Shape, FieldSchema<Fields...>> {
         fields_);
   }
 
+  /** Returns the key of the chunk currently represented by this page. */
   [[nodiscard]] constexpr ChunkKey chunk_key() const noexcept {
     return chunk_key_;
   }
 
+  /** Returns the chunk coordinate currently represented by this page. */
   [[nodiscard]] constexpr ChunkCoord3 chunk_coord() const noexcept {
     return chunk_coord_;
   }
 
+  /**
+   * Returns the mutable contiguous column for `Tag` without allocating.
+   *
+   * The span follows the page lifetime and reset contract documented on the
+   * class. `Tag` must belong to the schema.
+   */
   template <typename Tag>
   [[nodiscard]] constexpr auto field_span() noexcept
       -> std::span<typename schema_type::template value_type<Tag>> {
@@ -139,6 +174,7 @@ class ChunkPage<Shape, FieldSchema<Fields...>> {
     return {values.data(), values.size()};
   }
 
+  /** Const overload of `field_span()` with the same lifetime contract. */
   template <typename Tag>
   [[nodiscard]] constexpr auto field_span() const noexcept
       -> std::span<const typename schema_type::template value_type<Tag>> {
@@ -146,12 +182,19 @@ class ChunkPage<Shape, FieldSchema<Fields...>> {
     return {values.data(), values.size()};
   }
 
+  /**
+   * Returns the field value for a local tile without bounds checking.
+   *
+   * `Tag` must belong to the schema and `id.value` must be less than
+   * `local_tile_count`.
+   */
   template <typename Tag>
   [[nodiscard]] constexpr auto field(LocalTileId id) noexcept
       -> schema_type::template value_type<Tag>& {
     return field_array<Tag>()[id.value];
   }
 
+  /** Const overload of `field()` with the same preconditions. */
   template <typename Tag>
   [[nodiscard]] constexpr auto field(LocalTileId id) const noexcept
       -> const schema_type::template value_type<Tag>& {

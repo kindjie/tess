@@ -52,6 +52,15 @@ The token limit check runs through `uv run --frozen --group dev` so it uses
 the checked-in development dependency lock instead of resolving packages
 during the commit.
 
+`uv` normally uses a cache under the user's home directory. In a restricted
+environment where that location is not writable, point `UV_CACHE_DIR` at a
+writable ignored directory for hook and repository-tool commands:
+
+```sh
+UV_CACHE_DIR=build/uv-cache \
+  uv run --frozen --group dev python tools/git_hooks.py ci
+```
+
 ### Pre-push range semantics
 
 Git feeds the pre-push hook one line per ref being pushed

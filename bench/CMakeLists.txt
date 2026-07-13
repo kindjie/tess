@@ -103,6 +103,12 @@ set(
 )
 
 set(
+  TESS_RESIDENCY_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/residency.json"
+  CACHE FILEPATH "Thresholds for residency benchmark regressions"
+)
+
+set(
   TESS_ECS_BENCHMARK_THRESHOLDS
   "${PROJECT_SOURCE_DIR}/bench/thresholds/ecs.json"
   CACHE FILEPATH "Thresholds for ecs benchmark regressions"
@@ -135,7 +141,7 @@ set(
 # Threshold gates run repetitions and gate on the median aggregate
 # (benchmark_thresholds.py's default), so a single outlier sample on a
 # noisy shared runner cannot flake a gate. The 2x/25 ns ceilings were
-# calibrated from 10-repetition medians; gating on an unreplicated
+# calibrated from 10-repetition baselines; gating on an unreplicated
 # sample was the mismatch (audit 2026-07-11, bench lows).
 set(
   TESS_BENCHMARK_GATE_REPETITIONS
@@ -273,6 +279,24 @@ if(Python3_Interpreter_FOUND)
       --thresholds ${TESS_SCHEDULER_BENCHMARK_THRESHOLDS}
     DEPENDS tess_bench
     COMMENT "Running scheduler benchmark threshold checks"
+    VERBATIM
+  )
+
+  add_custom_target(
+    tess_bench_residency_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=residency/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/residency.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/residency.json
+      --thresholds ${TESS_RESIDENCY_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running residency benchmark threshold checks"
     VERBATIM
   )
 
@@ -429,9 +453,6 @@ add_custom_target(
     --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
     --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/scheduler.json
     --benchmark_out_format=json
-  # residency/ is deliberately ungated: the eviction-churn numbers are the
-  # before/after evidence for the audit-2026-07-11 M11b LRU fix; gates come
-  # once enough baseline artifacts accumulate (10-artifact rule).
   COMMAND
     tess_bench
     --benchmark_filter=residency/.*

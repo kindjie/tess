@@ -68,16 +68,13 @@ jobs:
       - name: Install smoke
         run: tools/install_smoke.sh
 
-  # Minimal GCC portability gate: compile only (no tests/analysis/smoke).
+  # Required minimal GCC portability gate: compile only.
   # GCC's stricter two-phase name lookup catches header portability breaks
-  # that Clang and MSVC accept. Advisory during shake-out (continue-on-error)
-  # because the project has not been built with GCC before; flip to required
-  # by removing continue-on-error after two consecutive green main runs
-  # (criterion set 2026-07-07; check the run history before flipping).
+  # that Clang and MSVC accept. Promoted after three consecutive green main
+  # runs on 2026-07-12.
   gcc:
     name: GCC Compile
     runs-on: ubuntu-24.04
-    continue-on-error: true
     env:
       CC: gcc
       CXX: g++
@@ -130,12 +127,19 @@ jobs:
           tests/test_git_hooks.py
           tests/test_benchmark_tools.py
           tests/test_check_public_surface.py
+          tests/test_check_public_docs.py
+          tests/test_header_compile_cost.py
 
       # Failing gate (promoted 2026-07-07 after a clean shake-out):
       # public symbols must be documented in a maintained architecture
       # doc and listed in docs/architecture/surface.json.
       - name: Public surface manifest
         run: uv run --frozen --group dev python tools/check_public_surface.py
+
+      # First-slice gate: every namespace-scope symbol in the opted-in headers
+      # must carry a Doxygen comment. Expand the header set incrementally.
+      - name: Public API documentation
+        run: uv run --frozen --group dev python tools/check_public_docs.py
 
   quality:
     name: Quality Gates (${{ matrix.preset }})
@@ -370,6 +374,9 @@ jobs:
 
       - name: Scheduler benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_scheduler_thresholds
+
+      - name: Residency benchmark thresholds
+        run: cmake --build --preset bench --target tess_bench_residency_thresholds
 
       - name: Parallel benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_parallel_thresholds

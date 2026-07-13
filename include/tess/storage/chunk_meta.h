@@ -8,19 +8,21 @@
 
 namespace tess {
 
+/** Coarse lifecycle state derived from a chunk's active flags. */
 enum class ChunkState : std::uint8_t {
   ResidentSleeping,
   ResidentActive,
 };
 static_assert(sizeof(ChunkState) == sizeof(std::uint8_t));
 
-// Hot-scan data intentionally lives OUTSIDE this struct (audit 2026-07-11
-// M5, v0.2.0): the per-chunk dirty/active flag words are SoA columns the
-// worlds scan directly (collect_dirty_chunks/collect_active_chunks touch 16
-// words per cache line instead of streaming 80-byte structs), and the cold
-// Box3 dirty bounds sits in its own parallel array. Read them through
-// World::dirty_flags/active_flags/dirty_bounds or observe_dirty; mutate
-// them through mark_dirty/clear_dirty/mark_active/clear_active as always.
+/**
+ * Cold metadata for one resident chunk.
+ *
+ * Dirty and active flags and dirty bounds live in world-owned parallel arrays
+ * for cache-efficient scans. Read and mutate those values through `World`; a
+ * `ChunkMeta` reference alone does not expose the complete chunk state. Sparse
+ * world eviction invalidates references to this object.
+ */
 struct ChunkMeta {
   ChunkState state = ChunkState::ResidentSleeping;
   std::uint32_t version = 0;
@@ -29,11 +31,13 @@ struct ChunkMeta {
   std::uint32_t entity_count = 0;
 };
 
-// Generation-stamped snapshot of one chunk's dirty state, taken by
-// World::observe_dirty and consumed by World::clear_dirty_observed. A
-// maintenance pass observes before rebuilding derived state; the paired
-// clear succeeds only while the observed generation is still current, so
-// marks that land during the rebuild are never lost.
+/**
+ * Generation-stamped snapshot returned by `World::observe_dirty()`.
+ *
+ * Pass it to `World::clear_dirty_observed()` after rebuilding derived state.
+ * The clear succeeds only if no later dirty mark changed the version, so a
+ * maintenance pass cannot erase intervening marks.
+ */
 struct DirtyObservation {
   std::uint32_t flags = 0;
   Box3 bounds{};
