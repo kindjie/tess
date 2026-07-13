@@ -1,6 +1,6 @@
 # Benchmark Trends
 
-Stale snapshot: data from CI run 29167134881 at commit d8cc9a1, collected 2026-07-11 13:57 PDT.
+Stale snapshot: data from CI run 29211536546 at commit cd22285, collected 2026-07-12 16:09 PDT.
 
 Thresholds were recalibrated 2026-07-11 (S11.3) from ten reworked-harness
 main-run baseline artifacts (runs 29056942917 through 29167134881, 10
@@ -22,6 +22,15 @@ bootstrap ceilings: their baselines were not collected by the
 `tess_bench_ci_baselines` target until S11.3 wired them in, so they are
 recalibrated only once enough artifacts carrying them accumulate
 (10-artifact rule; wired 2026-07-11).
+The audit-2026-07-11 remediation (merged 2026-07-12) de-elided five
+storage/block benches whose loops previously compiled away, so their
+history has an intended discontinuity at that date -- pre-audit samples
+of those benches measure nothing. Those five, the new `parallel/` and
+`residency/` families, `storage/world_dirty_chunks_iteration_16k`
+(v0.2 SoA-split evidence), and
+`path/agent_tick_100_weighted_goal_churn_512x512` (per-agent pathing
+dirt) all sit on x6-local bootstrap ceilings awaiting the same
+10-artifact recalibration.
 
 The SVG snapshot in `docs/assets/benchmark-trends.svg` is a labeled
 summary, not the source of truth. Use CI benchmark baseline artifacts
@@ -80,8 +89,8 @@ The final commit remains manual by design:
 
 | Benchmark | Latest median CPU ns |
 | --- | ---: |
-| `block/context_iteration_2d` | 332.931 |
-| `block/chunk_tile_iteration_2d` | 1323.926 |
-| `block/chunk_boundary_scan_2d` | 9528.104 |
-| `storage/world_chunks_iteration` | 72.522 |
-| `storage/world_dirty_chunks_iteration` | 165.229 |
+| `block/context_iteration_2d` | 277.272 |
+| `block/chunk_tile_iteration_2d` | 1484.974 |
+| `block/chunk_boundary_scan_2d` | 11004.955 |
+| `storage/world_chunks_iteration` | 165.552 |
+| `storage/world_dirty_chunks_iteration` | 199.969 |
