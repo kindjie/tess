@@ -193,6 +193,28 @@ def test_missing_benchmark_fails(tmp_path, capsys):
   assert "missing benchmark result" in capsys.readouterr().err
 
 
+def test_unthresholded_benchmark_fails(tmp_path, capsys):
+  benchmarks = [
+      entry("key/covered", 100.0),
+      entry("key/unthresholded", 100.0),
+  ]
+  thresholds = {"benchmarks": {"key/covered": limits(500.0)}}
+
+  code = run_thresholds(tmp_path, benchmarks, thresholds)
+
+  assert code == 1
+  assert "key/unthresholded: missing threshold entry" in (
+      capsys.readouterr().err
+  )
+
+
+def test_empty_benchmark_results_fail(tmp_path, capsys):
+  code = run_thresholds(tmp_path, [], {"benchmarks": {}})
+
+  assert code == 1
+  assert "no benchmark results" in capsys.readouterr().err
+
+
 def test_null_thresholds_are_skipped(tmp_path):
   benchmarks = [entry("key/free", 1e12)]
   thresholds = {"benchmarks": {"key/free": limits(None)}}

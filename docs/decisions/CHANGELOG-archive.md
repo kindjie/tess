@@ -477,7 +477,7 @@ workflow and a cross-lab codex pass), fixed on the branch before merge.
   fabricated). `README.md` lists both examples and the hooks-backstop CI
   job. Historical corrections: the 2026-06-08 "Concurrent Tile-World TDD
   Split" entry's "Affected code: none" gained a bracketed correction
-  (commit 2e22c05 changed public headers), and the 2026-06-05 "One
+  (the same change also touched public headers), and the 2026-06-05 "One
   Millisecond Benchmark Investigation Gate" entry gained a superseded
   annotation pointing at calibrated per-benchmark ceilings. Prevention
   gate: `docs/architecture/surface.json` maps each maintained doc to the

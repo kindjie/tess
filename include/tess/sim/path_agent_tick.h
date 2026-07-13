@@ -9,6 +9,7 @@
 
 namespace tess {
 
+/// Owns the shared clock, world-dirty flag, and retained routes across ticks.
 struct PathAgentTickState {
   SimClock clock{};
   // WORLD-scoped pathing dirt: set it (via mark_pathing_dirty) after any
@@ -24,6 +25,7 @@ struct PathAgentTickState {
   PathAgentRoutes routes{};
 };
 
+/// Configures per-tick movement, caching, and blocked-agent retry limits.
 struct PathAgentTickOptions {
   std::size_t max_steps = 1;
   PathRuntimeCachePolicy cache_policy{};
@@ -40,6 +42,7 @@ struct PathAgentTickOptions {
   std::uint32_t max_blocked_retries = 8;
 };
 
+/// Summarizes path planning and movement performed during one tick.
 struct PathAgentTickStats {
   std::uint64_t tick = 0;
   bool processed_paths = false;
@@ -49,6 +52,7 @@ struct PathAgentTickStats {
   std::size_t repath_exhausted = 0;
 };
 
+/// Requests a full replan after a world-scoped pathing change.
 inline void mark_pathing_dirty(PathAgentTickState& state) noexcept {
   state.pathing_dirty = true;
 }
@@ -58,6 +62,7 @@ inline void mark_pathing_dirty(PathAgentTickState& state) noexcept {
 // (NeedsOnly) processing pass. Before the per-agent split this marked the
 // shared flag and one new goal replanned the whole batch every tick
 // (optimization-log 2026-07-11, S11.4 soak observation).
+/// Arms one agent goal without forcing unrelated following agents to replan.
 inline void set_path_agent_goal(PathAgentTickState& state,
                                 PathAgentState& agent, Coord3 goal) noexcept {
   static_cast<void>(state);
@@ -69,6 +74,7 @@ inline void set_path_agent_goal(PathAgentTickState& state,
 // with no manual dirty mark. Blocked agents consume one re-path attempt per
 // processed tick until the retry budget runs out, at which point they turn
 // terminally Unreachable and stop requesting processing.
+/// Advances retry accounting and reports whether any agent needs planning.
 inline auto prepare_path_agent_processing(std::span<PathAgentState> agents,
                                           PathAgentTickOptions options,
                                           PathAgentTickStats& stats) noexcept
@@ -98,6 +104,7 @@ inline auto prepare_path_agent_processing(std::span<PathAgentState> agents,
   return needs_processing;
 }
 
+/// Advances one unit-cost path-agent tick without world movement validation.
 template <typename World, typename ClassOrTag>
 [[nodiscard]] auto tick_unit_path_agents(
     PathAgentTickState& state, const World& world,
@@ -127,6 +134,7 @@ template <typename World, typename ClassOrTag>
 
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag>
+/// Advances one unit-cost tick using validated occupancy movement commits.
 [[nodiscard]] auto tick_unit_path_agents_with_movement(
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathAgentTickOptions options = {},
@@ -158,6 +166,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 
 // Class forms: one movement class drives pathing, precheck, and (for the
 // movement variant) commit validation, so plan and commit provably agree.
+/// Advances one bounded weighted path-agent tick without movement commits.
 template <typename World, typename Class, std::uint32_t MaxCost>
 [[nodiscard]] auto tick_weighted_path_agents(
     PathAgentTickState& state, const World& world,
@@ -187,6 +196,7 @@ template <typename World, typename Class, std::uint32_t MaxCost>
 
 template <typename World, typename Class, std::uint32_t MaxCost,
           typename OccupancyTag, typename ReservationTag>
+/// Advances one bounded weighted tick using validated movement commits.
 [[nodiscard]] auto tick_weighted_path_agents_with_movement(
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathAgentTickOptions options = {},
@@ -217,6 +227,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost>
+/// Advances a weighted tick using separate legacy passability and cost tags.
 [[nodiscard]] auto tick_weighted_path_agents(
     PathAgentTickState& state, const World& world,
     std::span<PathAgentState> agents, PathRequestRuntime& runtime,
@@ -246,6 +257,7 @@ template <typename World, typename PassableTag, typename CostTag,
 
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost, typename OccupancyTag, typename ReservationTag>
+/// Advances a legacy-tag weighted tick with validated movement commits.
 [[nodiscard]] auto tick_weighted_path_agents_with_movement(
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathAgentTickOptions options = {},

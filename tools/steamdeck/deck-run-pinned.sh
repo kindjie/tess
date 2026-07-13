@@ -4,7 +4,7 @@
 # exit (including Ctrl-C / errors). Needs sudo on the Deck.
 #
 # Invoked by `tools/steamdeck/deck-bench.sh --pin`; not meant to be run from the
-# Mac directly. All args are forwarded to tess_bench.
+# development host directly. All args are forwarded to tess_bench.
 #
 # Note: this fixes CPU *frequency scaling* (the Google Benchmark warning). The
 # Deck's TDP/thermal cap still applies; raising it needs SteamOS power controls

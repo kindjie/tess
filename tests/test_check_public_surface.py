@@ -19,6 +19,11 @@ set(
   include/tess/sim/movement.h
 )
 
+set(
+  TESS_IMPLEMENTATION_HEADERS
+  include/tess/path/detail/weighted_batch.h
+)
+
 target_sources(tess INTERFACE FILE_SET HEADERS)
 """
 
@@ -30,12 +35,18 @@ SYNTHETIC_HEADER = """
 // A struct mentioned in a comment: struct CommentedOut {};
 /* struct BlockCommentedOut {}; */
 
-#define WIDGET_MACRO(expr) \\
+#define TESS_WIDGET_MACRO(expr) \\
   do {                     \\
     expr;                  \\
   } while (false)
 
 namespace tess {
+
+using WidgetCount = std::uint32_t;
+inline constexpr WidgetCount invalid_widget_count = 0;
+
+template <typename T>
+concept WidgetLike = requires(T value) { value.member_field; };
 
 struct Widget {
   int member_field = 0;
@@ -100,6 +111,14 @@ def test_parse_public_headers_extracts_header_lines():
     ]
 
 
+def test_parse_api_headers_includes_installed_implementation_headers():
+    assert cps.parse_api_headers(CMAKE_TEXT) == [
+        "include/tess/core/shape.h",
+        "include/tess/sim/movement.h",
+        "include/tess/path/detail/weighted_batch.h",
+    ]
+
+
 def test_parse_public_headers_requires_the_set_block():
     with pytest.raises(ValueError):
         cps.parse_public_headers("set(OTHER_VAR a.h)")
@@ -116,6 +135,10 @@ def test_extract_finds_types_and_free_functions():
         "reset_widget",
         "make_widget",
         "tick_widget",
+        "WidgetCount",
+        "invalid_widget_count",
+        "WidgetLike",
+        "TESS_WIDGET_MACRO",
     } <= symbols
 
 
@@ -184,6 +207,10 @@ def test_check_headers_passes_with_complete_manifest(synthetic_repo):
             "reset_widget",
             "make_widget",
             "tick_widget",
+            "WidgetCount",
+            "invalid_widget_count",
+            "WidgetLike",
+            "TESS_WIDGET_MACRO",
         ],
     }
     failures = cps.check_headers(
@@ -201,6 +228,10 @@ def test_check_headers_reports_each_missing_symbol(synthetic_repo):
             "ForwardDeclared",
             "widget_valid",
             "reset_widget",
+            "WidgetCount",
+            "invalid_widget_count",
+            "WidgetLike",
+            "TESS_WIDGET_MACRO",
         ],
     }
     failures = cps.check_headers(
@@ -221,10 +252,56 @@ def test_check_headers_reports_missing_header_file(synthetic_repo):
     ]
 
 
+def test_check_headers_reports_stale_manifest_symbols(synthetic_repo):
+    manifest = {
+        "docs/widget.md": [
+            "Widget",
+            "GadgetCache",
+            "WidgetStatus",
+            "ForwardDeclared",
+            "WidgetCount",
+            "WidgetLike",
+            "TESS_WIDGET_MACRO",
+            "invalid_widget_count",
+            "make_widget",
+            "reset_widget",
+            "tick_widget",
+            "widget_valid",
+            "removed_widget_api",
+        ],
+    }
+
+    assert cps.check_headers(
+        synthetic_repo, ["include/tess/widget.h"], manifest
+    ) == [
+        "surface manifest: stale or unknown public symbol "
+        "'removed_widget_api'"
+    ]
+
+
+def test_check_document_mappings_reports_missing_documents(tmp_path):
+    assert cps.check_document_mappings(
+        tmp_path, {"docs/missing.md": ["Widget"]}
+    ) == ["surface manifest: mapped document 'docs/missing.md' not found"]
+
+
+def test_check_document_mappings_requires_symbols_in_assigned_doc(tmp_path):
+    doc = tmp_path / "docs" / "widget.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text("# Widgets\n\n`Widget` is public.\n", encoding="utf-8")
+
+    assert cps.check_document_mappings(
+        tmp_path,
+        {"docs/widget.md": ["Widget", "make_widget"]},
+    ) == [
+        "docs/widget.md: mapped public symbol 'make_widget' is not mentioned"
+    ]
+
+
 def test_real_manifest_covers_real_headers():
     """The committed manifest must stay complete for the real tree."""
     repo_root = Path(__file__).resolve().parents[1]
-    headers = cps.parse_public_headers(
+    headers = cps.parse_api_headers(
         (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
     )
     manifest = cps.load_manifest(
@@ -233,3 +310,4 @@ def test_real_manifest_covers_real_headers():
     for doc in manifest:
         assert (repo_root / doc).is_file(), f"manifest doc {doc} missing"
     assert cps.check_headers(repo_root, headers, manifest) == []
+    assert cps.check_document_mappings(repo_root, manifest) == []

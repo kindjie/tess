@@ -289,8 +289,36 @@ struct BridgeTransitions {
   }
 };
 
+struct RevisionedBridgeTransitions {
+  bool enabled = false;
+  std::uint64_t revision = 0;
+
+  [[nodiscard]] auto transition_revision() const noexcept -> std::uint64_t {
+    return revision;
+  }
+
+  template <typename WorldT, typename Sink>
+  void for_each_transition(const WorldT& world, tess::ChunkKey chunk,
+                           Sink&& sink) const {
+    if (enabled) {
+      BridgeTransitions{}.for_each_transition(world, chunk,
+                                              static_cast<Sink&&>(sink));
+    }
+  }
+};
+
+struct UnrevisionedStatefulTransitions {
+  bool enabled = false;
+
+  template <typename WorldT, typename Sink>
+  void for_each_transition(const WorldT&, tess::ChunkKey, Sink&&) const {}
+};
+
 static_assert(tess::TransitionProviderFor<tess::AdjacentTransitions, World>);
 static_assert(tess::TransitionProviderFor<BridgeTransitions, World>);
+static_assert(tess::TransitionProviderFor<RevisionedBridgeTransitions, World>);
+static_assert(
+    !tess::TransitionProviderFor<UnrevisionedStatefulTransitions, World>);
 static_assert(!tess::TransitionProviderFor<int, World>);
 
 // Stair fixtures (S5.8): a schema carrying a stair-direction field plus
@@ -407,6 +435,38 @@ TEST(TessTopologyMovement, ProviderMismatchForcesFullRebuildOnUpdate) {
   tess::RegionGraph reference;
   tess::build_region_graph<World, Walker>(world, scratch, reference,
                                           BridgeTransitions{});
+  expect_graphs_equal(graph, reference);
+}
+
+TEST(TessTopologyMovement, ProviderRevisionChangeForcesFullRebuildOnUpdate) {
+  World world;
+  fill_passable(world, 1);
+  carve_walls(world);
+  world.field<PassableTag>(tess::Coord3{2, 5, 0}) = 0;
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  auto provider = RevisionedBridgeTransitions{false, 1};
+  tess::build_region_graph<World, Walker>(world, scratch, graph, provider);
+  ASSERT_TRUE(graph.matches_provider(provider));
+
+  const auto start = tess::Coord3{1, 4, 0};
+  const auto goal = tess::Coord3{3, 4, 0};
+  tess::RegionGraphScratch reach;
+  EXPECT_NE(tess::reachable<TopDown2D>(graph, start, goal, reach).status,
+            tess::ReachabilityStatus::Reachable);
+
+  provider.enabled = true;
+  ++provider.revision;
+  const auto updated = tess::update_region_graph<World, Walker>(
+      world, scratch, graph, {}, provider);
+  ASSERT_EQ(updated.status, tess::TopologyStatus::Built);
+  EXPECT_TRUE(graph.matches_provider(provider));
+  EXPECT_EQ(tess::reachable<TopDown2D>(graph, start, goal, reach).status,
+            tess::ReachabilityStatus::Reachable);
+
+  tess::RegionGraph reference;
+  tess::build_region_graph<World, Walker>(world, scratch, reference, provider);
   expect_graphs_equal(graph, reference);
 }
 

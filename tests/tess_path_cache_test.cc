@@ -1,14 +1,23 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <new>
+#include <span>
 #include <vector>
+
+#include "allocation_counter.h"
 
 namespace {
 
 struct PassableTag {};
 struct CostTag {};
+struct OtherCostTag {};
+using PortalClass = tess::movement::LegacyWeighted<PassableTag, CostTag>;
+using OtherPortalClass =
+    tess::movement::LegacyWeighted<PassableTag, OtherCostTag>;
 
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
@@ -33,6 +42,40 @@ void fill_cost(World& world, std::uint32_t value) {
       tile = value;
     }
   }
+}
+
+template <std::size_t Size>
+auto found_path_result(const std::array<tess::Coord3, Size>& path)
+    -> tess::PathResult {
+  return tess::PathResult{
+      tess::PathStatus::Found,
+      static_cast<std::uint32_t>(Size - 1),
+      0,
+      0,
+      tess::PathView{std::span<const tess::Coord3>{path}},
+  };
+}
+
+void expect_portal_stats_eq(const tess::PortalSegmentCacheStats& actual,
+                            const tess::PortalSegmentCacheStats& expected) {
+  EXPECT_EQ(actual.entries, expected.entries);
+  EXPECT_EQ(actual.path_nodes, expected.path_nodes);
+  EXPECT_EQ(actual.sweeps, expected.sweeps);
+  EXPECT_EQ(actual.evictions, expected.evictions);
+  EXPECT_EQ(actual.stale_rejections, expected.stale_rejections);
+  EXPECT_EQ(actual.class_rebinds, expected.class_rebinds);
+}
+
+template <typename CacheView, typename World, std::size_t Size>
+void expect_segment(CacheView& cache, const World& world,
+                    tess::PathRequest request,
+                    const std::array<tess::Coord3, Size>& expected) {
+  std::vector<tess::Coord3> out;
+  const auto hit = cache.lookup_append(world, request, out);
+  ASSERT_TRUE(hit.found);
+  EXPECT_EQ(out.size(), expected.size());
+  EXPECT_TRUE(
+      std::equal(out.begin(), out.end(), expected.begin(), expected.end()));
 }
 
 // Repeatedly editing the world and rebuilding the same portal route must not
@@ -88,6 +131,7 @@ TEST(TessPathCache, PortalSegmentCacheSweepRemovesStaleDuplicate) {
   scratch.reserve_nodes(64);
   tess::WeightedPortalSegmentCache cache;
   cache.set_segment_budget(1);
+  auto class_cache = cache.for_class<PortalClass>();
   const auto request =
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
 
@@ -95,7 +139,7 @@ TEST(TessPathCache, PortalSegmentCacheSweepRemovesStaleDuplicate) {
       tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
           world, request, scratch);
   ASSERT_EQ(first.status, tess::PathStatus::Found);
-  cache.store(world, request, first);
+  class_cache.store(world, request, first);
   ASSERT_EQ(cache.size(), 1u);
 
   world.template field<CostTag>(tess::Coord3{3, 0, 0}) = 9;
@@ -106,7 +150,7 @@ TEST(TessPathCache, PortalSegmentCacheSweepRemovesStaleDuplicate) {
       tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
           world, request, scratch);
   ASSERT_EQ(second.status, tess::PathStatus::Found);
-  cache.store(world, request, second);
+  class_cache.store(world, request, second);
 
   // Pre-fix red evidence: two identical (start, goal) entries, one stale.
   EXPECT_EQ(cache.size(), 1u);
@@ -115,7 +159,7 @@ TEST(TessPathCache, PortalSegmentCacheSweepRemovesStaleDuplicate) {
 
   // The surviving entry is the fresh one.
   std::vector<tess::Coord3> out;
-  const auto hit = cache.lookup_append(world, request, out);
+  const auto hit = class_cache.lookup_append(world, request, out);
   ASSERT_TRUE(hit.found);
   EXPECT_EQ(hit.cost, second.cost);
 }
@@ -131,6 +175,7 @@ TEST(TessPathCache, PortalSegmentCacheEvictsOldestLiveEntryAtBudget) {
   scratch.reserve_nodes(64);
   tess::WeightedPortalSegmentCache cache;
   cache.set_segment_budget(2);
+  auto class_cache = cache.for_class<PortalClass>();
 
   const auto requests = std::array{
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}},
@@ -142,7 +187,7 @@ TEST(TessPathCache, PortalSegmentCacheEvictsOldestLiveEntryAtBudget) {
         tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
             world, request, scratch);
     ASSERT_EQ(result.status, tess::PathStatus::Found);
-    cache.store(world, request, result);
+    class_cache.store(world, request, result);
   }
 
   const auto stats = cache.stats();
@@ -151,10 +196,285 @@ TEST(TessPathCache, PortalSegmentCacheEvictsOldestLiveEntryAtBudget) {
   EXPECT_EQ(stats.evictions, 1u);
 
   std::vector<tess::Coord3> out;
-  EXPECT_FALSE(cache.lookup_append(world, requests[0], out).found);
-  EXPECT_TRUE(cache.lookup_append(world, requests[1], out).found);
+  EXPECT_FALSE(class_cache.lookup_append(world, requests[0], out).found);
+  EXPECT_TRUE(class_cache.lookup_append(world, requests[1], out).found);
   out.clear();
-  EXPECT_TRUE(cache.lookup_append(world, requests[2], out).found);
+  EXPECT_TRUE(class_cache.lookup_append(world, requests[2], out).found);
+}
+
+TEST(TessPathCache, PortalSegmentCacheAppliesLowerBudgetImmediately) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::WeightedPortalSegmentCache cache;
+  cache.set_segment_budget(4);
+  auto class_cache = cache.for_class<PortalClass>();
+  const auto requests = std::array{
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}},
+      tess::PathRequest{tess::Coord3{0, 1, 0}, tess::Coord3{3, 1, 0}},
+      tess::PathRequest{tess::Coord3{0, 2, 0}, tess::Coord3{3, 2, 0}},
+  };
+  for (const auto request : requests) {
+    const auto result =
+        tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+            world, request, scratch);
+    ASSERT_EQ(result.status, tess::PathStatus::Found);
+    class_cache.store(world, request, result);
+  }
+  ASSERT_EQ(cache.size(), 3u);
+
+  cache.set_segment_budget(2);
+  EXPECT_EQ(cache.size(), 2u);
+  EXPECT_EQ(cache.stats().evictions, 1u);
+  std::vector<tess::Coord3> out;
+  EXPECT_FALSE(class_cache.lookup_append(world, requests[0], out).found);
+  EXPECT_TRUE(class_cache.lookup_append(world, requests[1], out).found);
+
+  cache.set_segment_budget(0);
+  EXPECT_EQ(cache.size(), 0u);
+  EXPECT_EQ(cache.stats().path_nodes, 0u);
+  EXPECT_EQ(cache.stats().evictions, 3u);
+  out.clear();
+  EXPECT_FALSE(class_cache.lookup_append(world, requests[2], out).found);
+}
+
+TEST(TessPathCache, PortalSegmentCacheRebindDropsOtherMovementClass) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::WeightedPortalSegmentCache cache;
+  auto class_cache = cache.for_class<PortalClass>();
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}};
+  const auto result =
+      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+          world, request, scratch);
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  class_cache.store(world, request, result);
+  ASSERT_EQ(cache.size(), 1u);
+
+  auto other_class_cache = cache.for_class<OtherPortalClass>();
+  EXPECT_EQ(cache.size(), 0u);
+  EXPECT_EQ(cache.stats().class_rebinds, 1u);
+  std::vector<tess::Coord3> out;
+  EXPECT_FALSE(other_class_cache.lookup_append(world, request, out).found);
+
+  // Even a view retained across another class's bind cannot alias its entry.
+  other_class_cache.store(world, request, result);
+  ASSERT_EQ(cache.size(), 1u);
+  EXPECT_FALSE(class_cache.lookup_append(world, request, out).found);
+  EXPECT_EQ(cache.size(), 0u);
+  EXPECT_EQ(cache.stats().class_rebinds, 2u);
+}
+
+TEST(TessPathCache, PortalSegmentCacheStoreHasStrongAllocationGuarantee) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocator failure injection is unavailable under a "
+                    "sanitizer-owned allocator";
+  }
+
+  constexpr auto first_path = std::array{
+      tess::Coord3{0, 0, 0},
+      tess::Coord3{1, 0, 0},
+      tess::Coord3{2, 0, 0},
+      tess::Coord3{3, 0, 0},
+  };
+  constexpr auto second_path = std::array{
+      tess::Coord3{4, 0, 0},
+      tess::Coord3{5, 0, 0},
+      tess::Coord3{6, 0, 0},
+      tess::Coord3{7, 0, 0},
+  };
+  constexpr auto candidate_path = std::array{
+      tess::Coord3{0, 4, 0},
+      tess::Coord3{1, 4, 0},
+      tess::Coord3{2, 4, 0},
+      tess::Coord3{3, 4, 0},
+  };
+  constexpr auto first_request =
+      tess::PathRequest{first_path.front(), first_path.back()};
+  constexpr auto second_request =
+      tess::PathRequest{second_path.front(), second_path.back()};
+  constexpr auto candidate_request =
+      tess::PathRequest{candidate_path.front(), candidate_path.back()};
+
+  auto saw_failure = false;
+  auto reached_success = false;
+  for (std::size_t failure_index = 0; failure_index < 16; ++failure_index) {
+    tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+    tess::WeightedPortalSegmentCache cache;
+    cache.set_segment_budget(2);
+    cache.reserve_segments(3);
+    cache.reserve_path_nodes(12);
+    auto class_cache = cache.for_class<PortalClass>();
+    class_cache.store(world, first_request, found_path_result(first_path));
+    class_cache.store(world, second_request, found_path_result(second_path));
+    const auto before = cache.stats();
+
+    auto threw = false;
+    {
+      tess_test::ScopedAllocationFailure failure{failure_index};
+      try {
+        class_cache.store(world, candidate_request,
+                          found_path_result(candidate_path));
+      } catch (const std::bad_alloc&) {
+        threw = true;
+      }
+    }
+
+    if (!threw) {
+      reached_success = true;
+      EXPECT_EQ(cache.size(), 2u);
+      EXPECT_EQ(cache.stats().sweeps, 1u);
+      EXPECT_EQ(cache.stats().evictions, 1u);
+      std::vector<tess::Coord3> out;
+      EXPECT_FALSE(class_cache.lookup_append(world, first_request, out).found);
+      expect_segment(class_cache, world, second_request, second_path);
+      expect_segment(class_cache, world, candidate_request, candidate_path);
+      break;
+    }
+
+    saw_failure = true;
+    expect_portal_stats_eq(cache.stats(), before);
+    expect_segment(class_cache, world, first_request, first_path);
+    expect_segment(class_cache, world, second_request, second_path);
+    std::vector<tess::Coord3> out;
+    EXPECT_FALSE(
+        class_cache.lookup_append(world, candidate_request, out).found);
+    EXPECT_TRUE(out.empty());
+  }
+
+  EXPECT_TRUE(saw_failure);
+  EXPECT_TRUE(reached_success);
+}
+
+TEST(TessPathCache, PortalSegmentCacheFailedStoreDefersStaleStats) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocator failure injection is unavailable under a "
+                    "sanitizer-owned allocator";
+  }
+
+  constexpr auto original_path = std::array{
+      tess::Coord3{0, 0, 0},
+      tess::Coord3{1, 0, 0},
+      tess::Coord3{2, 0, 0},
+      tess::Coord3{3, 0, 0},
+  };
+  constexpr auto replacement_path = std::array{
+      tess::Coord3{0, 0, 0}, tess::Coord3{0, 1, 0}, tess::Coord3{0, 2, 0},
+      tess::Coord3{0, 3, 0}, tess::Coord3{0, 4, 0}, tess::Coord3{1, 4, 0},
+      tess::Coord3{2, 4, 0}, tess::Coord3{3, 4, 0}, tess::Coord3{3, 3, 0},
+      tess::Coord3{3, 2, 0}, tess::Coord3{3, 1, 0}, tess::Coord3{3, 0, 0},
+  };
+  constexpr auto request =
+      tess::PathRequest{original_path.front(), original_path.back()};
+
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  tess::WeightedPortalSegmentCache cache;
+  auto class_cache = cache.for_class<PortalClass>();
+  class_cache.store(world, request, found_path_result(original_path));
+  world.mark_dirty(tess::ChunkKey{0}, 1u,
+                   tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
+  const auto before = cache.stats();
+
+  auto threw = false;
+  {
+    tess_test::ScopedAllocationFailure failure{0};
+    try {
+      class_cache.store(world, request, found_path_result(replacement_path));
+    } catch (const std::bad_alloc&) {
+      threw = true;
+    }
+  }
+
+  EXPECT_TRUE(threw);
+  expect_portal_stats_eq(cache.stats(), before);
+  EXPECT_EQ(cache.size(), 1u);
+
+  class_cache.store(world, request, found_path_result(replacement_path));
+  EXPECT_EQ(cache.size(), 2u);
+  EXPECT_EQ(cache.stats().stale_rejections, 1u);
+  expect_segment(class_cache, world, request, replacement_path);
+}
+
+TEST(TessPathCache, PortalSegmentCacheSweepHasStrongAllocationGuarantee) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocator failure injection is unavailable under a "
+                    "sanitizer-owned allocator";
+  }
+
+  constexpr auto stale_path = std::array{
+      tess::Coord3{0, 0, 0},
+      tess::Coord3{1, 0, 0},
+      tess::Coord3{2, 0, 0},
+      tess::Coord3{3, 0, 0},
+  };
+  constexpr auto live_path = std::array{
+      tess::Coord3{4, 0, 0},
+      tess::Coord3{5, 0, 0},
+      tess::Coord3{6, 0, 0},
+      tess::Coord3{7, 0, 0},
+  };
+  constexpr auto stale_request =
+      tess::PathRequest{stale_path.front(), stale_path.back()};
+  constexpr auto live_request =
+      tess::PathRequest{live_path.front(), live_path.back()};
+
+  auto saw_failure = false;
+  auto reached_success = false;
+  for (std::size_t failure_index = 0; failure_index < 16; ++failure_index) {
+    tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+    tess::WeightedPortalSegmentCache cache;
+    cache.reserve_segments(2);
+    cache.reserve_path_nodes(8);
+    auto class_cache = cache.for_class<PortalClass>();
+    class_cache.store(world, stale_request, found_path_result(stale_path));
+    class_cache.store(world, live_request, found_path_result(live_path));
+    world.mark_dirty(tess::ChunkKey{0}, 1u,
+                     tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
+    const auto before = cache.stats();
+
+    auto threw = false;
+    {
+      tess_test::ScopedAllocationFailure failure{failure_index};
+      try {
+        cache.sweep_stale(world);
+      } catch (const std::bad_alloc&) {
+        threw = true;
+      }
+    }
+
+    if (!threw) {
+      reached_success = true;
+      EXPECT_EQ(cache.size(), 1u);
+      EXPECT_EQ(cache.stats().sweeps, 1u);
+      expect_segment(class_cache, world, live_request, live_path);
+      std::vector<tess::Coord3> out;
+      EXPECT_FALSE(class_cache.lookup_append(world, stale_request, out).found);
+      break;
+    }
+
+    saw_failure = true;
+    expect_portal_stats_eq(cache.stats(), before);
+    expect_segment(class_cache, world, live_request, live_path);
+
+    // Retrying after a failed compaction must still read the original source
+    // offsets and dependencies, then commit the same result as a fresh sweep.
+    cache.sweep_stale(world);
+    EXPECT_EQ(cache.size(), 1u);
+    expect_segment(class_cache, world, live_request, live_path);
+    std::vector<tess::Coord3> out;
+    EXPECT_FALSE(class_cache.lookup_append(world, stale_request, out).found);
+  }
+
+  EXPECT_TRUE(saw_failure);
+  EXPECT_TRUE(reached_success);
 }
 
 // A lookup that matches (start, goal) but fails chunk-version validation
@@ -167,6 +487,7 @@ TEST(TessPathCache, PortalSegmentCacheCountsStaleRejections) {
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
   tess::WeightedPortalSegmentCache cache;
+  auto class_cache = cache.for_class<PortalClass>();
   const auto request =
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}};
 
@@ -174,14 +495,14 @@ TEST(TessPathCache, PortalSegmentCacheCountsStaleRejections) {
       tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
           world, request, scratch);
   ASSERT_EQ(result.status, tess::PathStatus::Found);
-  cache.store(world, request, result);
+  class_cache.store(world, request, result);
   ASSERT_EQ(cache.stats().stale_rejections, 0u);
 
   world.mark_dirty(tess::ChunkKey{0}, 1u,
                    tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
 
   std::vector<tess::Coord3> out;
-  EXPECT_FALSE(cache.lookup_append(world, request, out).found);
+  EXPECT_FALSE(class_cache.lookup_append(world, request, out).found);
   EXPECT_TRUE(out.empty());
   EXPECT_EQ(cache.stats().stale_rejections, 1u);
 
@@ -356,6 +677,46 @@ TEST(TessPathCache, RouteCachePathNodeCapInvalidatesWholeCache) {
   EXPECT_EQ(stats.cap_invalidations, 1u);
   EXPECT_EQ(stats.entries, 1u);
   EXPECT_EQ(stats.path_nodes, 8u);
+}
+
+TEST(TessPathCache, RouteCacheAppliesLowerCapsImmediately) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  tess::RouteCacheScratch cache;
+  const auto first =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
+  const auto second =
+      tess::PathRequest{tess::Coord3{0, 1, 0}, tess::Coord3{7, 1, 0}};
+  ASSERT_EQ((tess::cached_astar_path<decltype(world), PassableTag>(
+                 world, first, scratch, cache))
+                .status,
+            tess::PathStatus::Found);
+  ASSERT_EQ((tess::cached_astar_path<decltype(world), PassableTag>(
+                 world, second, scratch, cache))
+                .status,
+            tess::PathStatus::Found);
+  ASSERT_EQ(cache.stats().entries, 2u);
+
+  cache.set_caps(1, tess::RouteCacheScratch::default_max_path_nodes);
+  EXPECT_EQ(cache.stats().entries, 0u);
+  EXPECT_EQ(cache.stats().path_nodes, 0u);
+  EXPECT_EQ(cache.stats().cap_invalidations, 1u);
+
+  const auto recomputed = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, first, scratch, cache);
+  EXPECT_EQ(recomputed.status, tess::PathStatus::Found);
+  EXPECT_GT(recomputed.expanded_nodes, 0u);
+
+  cache.set_caps(0, 0);
+  EXPECT_EQ(cache.stats().entries, 0u);
+  EXPECT_EQ(cache.stats().cap_invalidations, 2u);
+  const auto disabled = tess::cached_astar_path<decltype(world), PassableTag>(
+      world, first, scratch, cache);
+  EXPECT_EQ(disabled.status, tess::PathStatus::Found);
+  EXPECT_GT(disabled.expanded_nodes, 0u);
 }
 
 // A single route larger than the node cap can never fit, so it is skipped

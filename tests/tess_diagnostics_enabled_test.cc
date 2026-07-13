@@ -158,7 +158,9 @@ TEST(TessDiagnostics, ScopedQueuedPhaseCountersObservePartitionedExecution) {
         });
     EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
     EXPECT_EQ(result.chunk_count, 2u);
-    EXPECT_EQ(tess::merge_planned_dirty(world, scratch), 2u);
+    const auto merged = tess::merge_planned_dirty(world, scratch);
+    EXPECT_EQ(merged.status, tess::PlannedDirtyMergeStatus::Merged);
+    EXPECT_EQ(merged.merged_chunk_count, 2u);
   }
 
   EXPECT_EQ(counters.phase_calls, 1u);
@@ -171,6 +173,49 @@ TEST(TessDiagnostics, ScopedQueuedPhaseCountersObservePartitionedExecution) {
   EXPECT_EQ(counters.scoped_thread_workers, 2u);
   EXPECT_EQ(counters.dirty_records_collected, 2u);
   EXPECT_EQ(counters.dirty_chunks_merged, 2u);
+}
+
+TEST(TessDiagnostics, ExceptionDirtyMergeCountsRecordsAndUniqueChunks) {
+  DiagWorld world;
+  tess::FrameOps ops;
+  tess::PlannedPhaseExecutionScratch scratch;
+  constexpr auto key = tess::ChunkKey{0};
+  constexpr auto marks_terrain = tess::FieldAccessDesc{
+      0,
+      0,
+      DiagDirtyTerrain,
+  };
+  const std::vector<tess::ChunkKey> keys{key};
+
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys), marks_terrain,
+                         tess::WritePolicy::ReadOnly);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(keys), marks_terrain,
+                         tess::WritePolicy::ReadOnly);
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+  ASSERT_TRUE(phases.ok());
+  ASSERT_EQ(phases.phases().size(), 1u);
+
+  tess::diagnostics::QueuedPhaseCounters counters;
+  {
+    tess::diagnostics::ScopedQueuedPhaseCounters scope{counters};
+    const auto result =
+        tess::execute_phase_partitioned_dirty_with<tess::WritePolicy::ReadOnly>(
+            tess::SerialPhaseExecutor{}, world, report.plan(),
+            phases.phases()[0], scratch, [](auto) {});
+    ASSERT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+
+    const auto merged =
+        tess::detail::merge_planned_dirty_after_exception(world, scratch);
+    ASSERT_EQ(merged.status, tess::PlannedDirtyMergeStatus::Merged);
+    EXPECT_EQ(merged.merged_chunk_count, 1u);
+  }
+
+  EXPECT_EQ(counters.dirty_records_collected, 2u);
+  EXPECT_EQ(counters.dirty_chunks_merged, 1u);
+  EXPECT_EQ(world.dirty_flags(key), DiagDirtyTerrain);
+  EXPECT_EQ(world.meta(key).version, 1u);
 }
 
 // Mutation guard: the serpentine mazes must be answered by the real A*

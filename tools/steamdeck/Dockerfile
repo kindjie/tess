@@ -1,4 +1,4 @@
-# Steam Runtime SDK + clang, for building tess for the Steam Deck / native Linux.
+# Pinned Steam Runtime SDK for tess Steam Deck and native Linux builds.
 #
 # Valve recommends building native Linux games inside a Steam Runtime container
 # so host libraries do not leak into the binary. steamrt4 (Debian 13) is the
@@ -8,16 +8,12 @@
 # The SDK base image is amd64/i386 only -> on Apple Silicon build and run with
 #   --platform linux/amd64   (Docker Desktop + Rosetta).
 #
-# Verify the exact SDK image tag before pinning it in CI:
-#   https://gitlab.steamos.cloud/steamrt/steamrt4/sdk
-# sniper's is confirmed as registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
-# and steamrt4 follows the same pattern.
-ARG STEAMRT_IMAGE=registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest
+# Immutable steamrt4 SDK manifest resolved from Valve's registry. Override the
+# build argument deliberately when auditing and upgrading the runtime.
+ARG STEAMRT_IMAGE=registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk@sha256:584939ebd7d2f1eec719e771fdde4ae3bd469ee741c783abb7fe812ddaaf3ee4
 FROM ${STEAMRT_IMAGE}
 
-# tess CI builds with clang; use it here too. clang defaults to -stdlib=libstdc++
-# (the C++ runtime the Steam Runtime provides) so binaries stay ABI-compatible.
-# Do NOT switch to libc++ unless you statically bundle it.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends clang \
- && rm -rf /var/lib/apt/lists/*
+# The pinned SDK already contains Clang 19. Using that bundled compiler keeps
+# the toolchain inside the image digest; an apt install would reintroduce live,
+# mutable package metadata. Clang defaults to the SDK's libstdc++, preserving
+# the runtime ABI. Do not switch to libc++ unless it is bundled statically.

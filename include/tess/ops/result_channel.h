@@ -18,7 +18,7 @@
 // owner's thread after the execute call returns, so the S1 executor join
 // barrier supplies visibility and the channel holds no atomics.
 //
-// v1 scope is deliberately drain-only: results are consumed through
+// The current synchronous scope is deliberately drain-only: results use
 // drain_results(visitor) in handle (== enqueue) order. There is no future
 // type -- the pipeline has no asynchronous execution path yet, so a future
 // could never be pending across a caller-visible boundary; one returns with
@@ -27,6 +27,7 @@
 // states.
 namespace tess {
 
+/// Dense per-operation completion and payload channel.
 template <typename T>
 class ResultChannel;
 
@@ -34,6 +35,7 @@ class ResultChannel;
 // slots, so validation failures deliver their reasons through the same
 // drain as executed results (never values). Returns the number of slots
 // stamped. Call once per plan, before executing.
+/// Copies plan-time failures into their result-channel slots.
 template <typename T>
 auto record_plan_completions(const ExecutionReport& report,
                              ResultChannel<T>& channel) -> std::size_t;
@@ -44,6 +46,7 @@ auto record_plan_completions(const ExecutionReport& report,
 // record from a default-constructed one, so a never-completed lookup can
 // never read as success. `execution` is meaningful only for operations
 // that reached execution; plan-time rejections keep its default.
+/// Completion metadata spanning planning and execution failure domains.
 struct OpCompletion {
   OperationStatus status = OperationStatus::Planned;
   OperationFailure failure = OperationFailure::None;
@@ -63,6 +66,7 @@ struct OpCompletion {
 // has not reached it" and "plan aborted before it ran" -- a drain after a
 // partial execution visits only completed slots, and the pending tail is
 // the caller's signal that the plan stopped early.
+/// Lifecycle state of one result-channel slot.
 enum class OpResultState : std::uint8_t {
   Unbound,  // no slot recorded for this handle
   Pending,  // prepared for execution; not yet completed
@@ -83,6 +87,7 @@ enum class OpResultState : std::uint8_t {
 // T must be default-constructible; the warm allocation-free contract
 // additionally requires T's default construction and assignment to be
 // allocation-free (as with any POD ack payload).
+/// Fixed-capacity, handle-indexed completion channel with drain-once delivery.
 template <typename T>
 class ResultChannel {
   static_assert(std::is_default_constructible_v<T>,
@@ -136,25 +141,39 @@ class ResultChannel {
   // Visits every completed, not-yet-drained slot in handle (== enqueue)
   // order as visit(OpHandle, const OpCompletion&, const T* value); `value`
   // is null for Failed slots -- failures deliver reasons, not values. The
-  // references are valid only during the visit. Visited slots are marked
-  // drained (drain-once); state()/completion() stay readable until
-  // clear(). Returns the number of slots visited. Pending slots are
-  // skipped, not consumed: after a partial plan execution they remain for
-  // the caller to inspect.
+  // references are valid only until the visitor mutates this channel's
+  // storage or lifecycle. Visited slots are marked drained (drain-once);
+  // state()/completion() stay readable until clear(). A reentrant clear ends
+  // the current drain. Returns the number of slots visited. Pending slots are
+  // skipped, not consumed: after a partial plan execution they remain for the
+  // caller to inspect.
   template <typename Visitor>
   auto drain_results(Visitor&& visit) -> std::size_t {
     std::size_t visited = 0;
-    for (std::size_t index = 0; index < slots_.size(); ++index) {
-      auto& slot = slots_[index];
-      if (slot.drained || (slot.state != OpResultState::Ready &&
-                           slot.state != OpResultState::Failed)) {
+    const auto drain_generation = generation_;
+    for (std::size_t index = 0;
+         generation_ == drain_generation && index < slots_.size(); ++index) {
+      if (slots_[index].drained ||
+          (slots_[index].state != OpResultState::Ready &&
+           slots_[index].state != OpResultState::Failed)) {
         continue;
       }
-      slot.drained = true;
-      const auto* value =
-          slot.state == OpResultState::Ready ? &slot.value : nullptr;
-      visit(OpHandle{static_cast<std::uint64_t>(index)}, slot.completion,
-            value);
+      const auto has_value = slots_[index].state == OpResultState::Ready;
+      // Preserve the hot-path store ordering while making delivery
+      // transactional: an exceptional visitor restores the current-generation
+      // slot so the caller can retry it. Do not retain a slot reference across
+      // the visitor because it may reallocate or clear the channel.
+      slots_[index].drained = true;
+      try {
+        visit(OpHandle{static_cast<std::uint64_t>(index)},
+              slots_[index].completion,
+              has_value ? &slots_[index].value : nullptr);
+      } catch (...) {
+        if (generation_ == drain_generation && index < slots_.size()) {
+          slots_[index].drained = false;
+        }
+        throw;
+      }
       ++visited;
     }
     return visited;
@@ -230,7 +249,7 @@ class ResultChannel {
             typename Fn>
   friend auto execute_phase_partitioned_dirty_with_results(
       Executor&& executor, World& world, const ExecutionPlan& plan,
-      ExecutionPhase phase, PlannedPhaseExecutionScratch& scratch,
+      const ExecutionPhase& phase, PlannedPhaseExecutionScratch& scratch,
       ResultChannel<U>& channel, Fn&& fn) -> PlannedExecutionResult;
 
   template <WritePolicy Policy, typename World, typename U, typename Fn>
@@ -270,38 +289,41 @@ auto record_plan_completions(const ExecutionReport& report,
 // the resultless helper.
 template <WritePolicy Policy, typename Executor, typename World, typename T,
           typename Fn>
+/// Executes one phase while publishing per-operation payloads and completions.
 auto execute_phase_partitioned_dirty_with_results(
     Executor&& executor, World& world, const ExecutionPlan& plan,
-    ExecutionPhase phase, PlannedPhaseExecutionScratch& scratch,
+    const ExecutionPhase& phase, PlannedPhaseExecutionScratch& scratch,
     ResultChannel<T>& channel, Fn&& fn) -> PlannedExecutionResult {
   const auto operations = plan.operations();
-  // Range check BEFORE touching the channel: a hand-built out-of-range
-  // phase must fail cleanly, exactly as the resultless helper does.
-  if (phase.first_operation > operations.size() ||
-      phase.operation_count > operations.size() - phase.first_operation) {
-    TESS_DIAG_EVENT(queued_phase_invalid_range);
+  // Capability, world, and policy checks happen before touching either the
+  // channel or scratch. A phase issued for another plan or world, or carrying
+  // any other policy, therefore cannot publish partial completion state.
+  const auto phase_validation =
+      detail::execution_phase_validation_status<Policy>(world, plan, phase);
+  if (phase_validation != PlannedExecutionStatus::Executed) {
+    detail::record_execution_phase_validation_failure(phase_validation);
     return PlannedExecutionResult{
-        PlannedExecutionStatus::InvalidPhase,
+        phase_validation,
         0,
     };
   }
 
-  TESS_DIAG_EVENT_VALUE(queued_phase_execute, phase.operation_count);
-  TESS_DIAG_EVENT_VALUE(queued_partitioned_phase, phase.operation_count);
+  TESS_DIAG_EVENT_VALUE(queued_phase_execute, phase.operation_count());
+  TESS_DIAG_EVENT_VALUE(queued_partitioned_phase, phase.operation_count());
   for (const auto& operation :
-       operations.subspan(phase.first_operation, phase.operation_count)) {
+       operations.subspan(phase.first_operation(), phase.operation_count())) {
     channel.prepare_operation(operation.handle, operation.source);
   }
-  scratch.prepare(phase.operation_count);
+  scratch.prepare(world, phase.operation_count());
   auto&& callback = fn;
   auto result = execute_operation_index_range(
       std::forward<Executor>(executor), executor_phase_range(phase),
       [&](std::size_t index) {
-        const auto offset = index - phase.first_operation;
+        const auto offset = index - phase.first_operation();
         const auto& operation = operations[index];
         auto& value = channel.value_for(operation.handle);
         auto operation_result =
-            execute_planned_operation_deferred_dirty<Policy>(
+            detail::execute_validated_phase_operation_deferred_dirty<Policy>(
                 world, operation, scratch.dirty_for_operation(offset),
                 [&](auto view) { callback(view, value); });
         channel.complete(operation.handle, operation_result, operation.source);
@@ -339,6 +361,7 @@ auto execute_phase_partitioned_dirty_with_results(
 // aborting at the first non-Executed result with the same partial-execution
 // contract (earlier writes kept, chunk counts reported). All operations are
 // prepared upfront, so the aborted tail reads Pending through the channel.
+/// Executes a serial plan while publishing per-operation results.
 template <WritePolicy Policy, typename World, typename T, typename Fn>
 auto execute_plan_deferred_dirty_with_results(World& world,
                                               const ExecutionPlan& plan,

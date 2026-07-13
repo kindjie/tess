@@ -46,23 +46,41 @@ def main(argv: list[str] | None = None) -> int:
   try:
     results = load_json(args.results)
     thresholds = load_json(args.thresholds)
-    result_by_name = select_benchmarks(
-        results.get("benchmarks", []), args.aggregate
-    )
+    result_entries = results.get("benchmarks")
+    if not isinstance(result_entries, list):
+      raise ToolError("results 'benchmarks' must be a JSON array")
+    if not result_entries:
+      raise ToolError("no benchmark results")
+    threshold_by_name = thresholds.get("benchmarks")
+    if not isinstance(threshold_by_name, dict):
+      raise ToolError("thresholds 'benchmarks' must be a JSON object")
+    result_by_name = select_benchmarks(result_entries, args.aggregate)
   except ToolError as error:
     print(f"benchmark_thresholds: {error}", file=sys.stderr)
     return 1
 
   failures: list[str] = []
-  for name, limits in thresholds.get("benchmarks", {}).items():
+  result_names = set(result_by_name)
+  threshold_names = set(threshold_by_name)
+  failures.extend(
+      f"{name}: missing benchmark result"
+      for name in sorted(threshold_names - result_names)
+  )
+  failures.extend(
+      f"{name}: missing threshold entry"
+      for name in sorted(result_names - threshold_names)
+  )
+
+  for name in sorted(result_names & threshold_names):
+    limits = threshold_by_name[name]
+    if not isinstance(limits, dict):
+      failures.append(f"{name}: threshold entry must be a JSON object")
+      continue
     unknown = check_limit_keys(name, limits)
     if unknown:
       failures.extend(unknown)
       continue
-    benchmark = result_by_name.get(name)
-    if benchmark is None:
-      failures.append(f"{name}: missing benchmark result")
-      continue
+    benchmark = result_by_name[name]
     failures.extend(check_limit(name, benchmark, limits, "real_time"))
     failures.extend(check_limit(name, benchmark, limits, "cpu_time"))
 

@@ -400,6 +400,20 @@ if(Python3_Interpreter_FOUND)
   )
 endif()
 
+set(TESS_ECS_BASELINE_COMMAND)
+if(TESS_ENABLE_ENTT)
+  list(
+    APPEND
+    TESS_ECS_BASELINE_COMMAND
+    COMMAND
+      tess_bench_diagnostics
+      --benchmark_filter=ecs/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/ecs.json
+      --benchmark_out_format=json
+  )
+endif()
+
 add_custom_target(
   tess_bench_ci_baselines
   COMMAND
@@ -465,15 +479,11 @@ add_custom_target(
     --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
     --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/diagnostics.json
     --benchmark_out_format=json
-  # ecs/, render_delta/, and fields/ run through the diagnostics binary,
-  # matching their threshold targets (ecs asserts alloc-free steady state,
-  # fields carries the warm-build allocation gate).
-  COMMAND
-    tess_bench_diagnostics
-    --benchmark_filter=ecs/.*
-    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
-    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/ecs.json
-    --benchmark_out_format=json
+  # ecs/ runs only when EnTT is enabled. It uses the diagnostics binary to
+  # match the threshold target and assert allocation-free steady state.
+  ${TESS_ECS_BASELINE_COMMAND}
+  # render_delta/ and fields/ use the diagnostics binary; fields carries the
+  # warm-build allocation gate.
   COMMAND
     tess_bench_diagnostics
     --benchmark_filter=render_delta/.*

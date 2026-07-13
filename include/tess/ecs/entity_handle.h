@@ -7,10 +7,12 @@
 // pulling in the agent pipeline; <tess/ecs/adapter.h> re-exports it.
 namespace tess {
 
-// Opaque, ECS-agnostic entity identity: stable while tess holds it,
-// comparable, with a null representation. Adapters pack their native id
-// (including any generation/version bits) into the 64-bit value however
-// they like; tess never interprets it.
+/**
+ * Opaque, comparable entity identity shared across ECS integrations.
+ *
+ * Adapters preserve any native generation bits in `value`; tess interprets
+ * only the distinguished null representation.
+ */
 struct EntityHandle {
   std::uint64_t value = 0xFFFF'FFFF'FFFF'FFFFULL;
 
@@ -22,6 +24,7 @@ struct EntityHandle {
       -> bool = default;
 };
 
+/** Null entity identity used for empty slots and failed lookups. */
 inline constexpr EntityHandle kNullEntityHandle{};
 
 }  // namespace tess

@@ -44,7 +44,7 @@ namespace detail {
 }
 }  // namespace detail
 
-// Human-readable name for a trace category, for panel labels.
+/** Returns the stable display label used for a trace category in panels. */
 [[nodiscard]] inline auto category_name(
     diagnostics::TraceCategory category) noexcept -> const char* {
   switch (category) {
@@ -68,7 +68,7 @@ namespace detail {
   return "?";
 }
 
-// Per-category timing table (nanoseconds): samples, total, average, min, max.
+/** Draws per-category sample totals and nanosecond timing statistics. */
 inline void draw_timing_panel(const diagnostics::TimingSnapshot& timing) {
   ImGui::TextUnformatted("Timing (ns)");
   ImGui::Separator();
@@ -85,7 +85,7 @@ inline void draw_timing_panel(const diagnostics::TimingSnapshot& timing) {
   }
 }
 
-// Path-search counters (the headline A* internals).
+/** Draws headline path-search work counters from a stable snapshot. */
 inline void draw_path_counters_panel(const diagnostics::PathCounters& path) {
   ImGui::TextUnformatted("Path counters");
   ImGui::Separator();
@@ -99,7 +99,7 @@ inline void draw_path_counters_panel(const diagnostics::PathCounters& path) {
               detail::to_ull(path.passability_checks));
 }
 
-// Queued-phase execution counters.
+/** Draws queued-phase execution and dirty-merge counters. */
 inline void draw_queued_counters_panel(
     const diagnostics::QueuedPhaseCounters& queued) {
   ImGui::TextUnformatted("Queued phase counters");
@@ -111,7 +111,7 @@ inline void draw_queued_counters_panel(
   ImGui::Text("dirty merged: %llu", detail::to_ull(queued.dirty_chunks_merged));
 }
 
-// Allocation counters.
+/** Draws allocation counts and byte totals. */
 inline void draw_allocation_counters_panel(
     const diagnostics::AllocationCounters& allocation) {
   ImGui::TextUnformatted("Allocation counters");
@@ -124,7 +124,7 @@ inline void draw_allocation_counters_panel(
               detail::to_ull(allocation.deallocation_bytes));
 }
 
-// Composite panel drawing every section of a DiagnosticsSnapshot in order.
+/** Draws all timing, path, queue, and allocation snapshot sections. */
 inline void draw_diagnostics_panel(
     const diagnostics::DiagnosticsSnapshot& snapshot) {
   draw_timing_panel(snapshot.timing);

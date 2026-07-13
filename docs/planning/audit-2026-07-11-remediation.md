@@ -82,7 +82,7 @@ owner; M11 is done only when M11b merges.
   The deeper design-level fix
   (a maintained dirty-chunk set killing the O(chunk_count) tick floor,
   which would also serve the render/delta scans) is *documented as the
-  ceiling* and deferred to the post-v1 backlog next to
+  ceiling* and deferred to the future backlog next to
   per-agent-dirty — it is an architecture change, not a remediation.
 - **M6:** stable-partition tasks by phase at `seal()` with per-phase
   offset ranges; dirty masks accumulate into a frame-level mask plus an

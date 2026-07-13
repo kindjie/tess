@@ -131,8 +131,10 @@ other entries cannot move.
   cache-internal storage without invalidating results returned through other
   scratches. Storage is capped (`set_caps`; defaults 512 entries and 2^20
   path nodes): an insert that would exceed either cap invalidates the whole
-  cache first and counts a `cap_invalidations` stat; `stats()` reports the
-  counters as `RouteCacheStats`. `invalidate()` drops
+  cache first and counts a `cap_invalidations` stat. Lowering either cap below
+  the live footprint applies the same invalidation immediately, including a
+  zero cap; existing entries can never remain readable above a new limit.
+  `stats()` reports the counters as `RouteCacheStats`. `invalidate()` drops
   cached route data and both indexes while preserving hit/miss counters;
   `clear()` drops routes and resets counters. `capture_world_versions(world)`
   and `invalidate_if_world_changed(world)` provide coarse whole-cache
@@ -151,8 +153,12 @@ other entries cannot move.
   first topology MVP, and reports candidate and boundary-scan counters for
   that automatic builder.
 - `WeightedPortalSegmentCache` owns caller-managed weighted portal segment
-  entries for repeated builds with the same portal waypoints.
-  `lookup_append(world, request, out_path)` is the only read API: on a hit it
+  entries for repeated builds with the same portal waypoints. Entries belong
+  to one movement class. `for_class<ClassOrTag>()` returns the required
+  lightweight view; binding a different class clears all entries, and each
+  view operation rechecks its class so an older retained view cannot alias
+  another class's paths. On a hit, the view's
+  `lookup_append(world, request, out_path)`
   appends the cached segment path into caller-owned storage (deduplicating a
   shared junction node when stitching consecutive segments) and returns a
   `SegmentHit` with the found flag, status, and cost. The cache never returns
@@ -161,12 +167,17 @@ other entries cannot move.
   dependencies for the chunks touched by the segment path; cache hits are
   reused only while those versions still match. Failed segments are not
   cached, and stale hits leave the output storage untouched. Storage is
-  bounded by a segment budget (`set_segment_budget`, default 256 entries): a
+  bounded by a segment budget (`set_segment_budget`, default 256 entries).
+  Lowering the budget immediately evicts the oldest entries and reclaims their
+  path storage. At insertion time, a
   store at budget first sweeps stale entries in one compaction pass that
   also rebuilds the path-node arena, then evicts the oldest live entries in
   insertion order if needed; a zero budget stores nothing. `stats()` reports
   entries, path nodes, sweeps, evictions, and stale rejections as
-  `PortalSegmentCacheStats`.
+  `PortalSegmentCacheStats`. Segment construction and stale compaction commit
+  transactionally. If allocation fails, no partial dependency set becomes
+  visible, live entries and their path-node offsets remain unchanged,
+  observable statistics do not advance, and the operation can be retried.
 - `WeightedPathBatchScratch` owns reusable search scratch and stable copied
   result paths for weighted batch planning.
 - `PathRequestRuntime` owns a small deterministic request/result lifecycle for
@@ -182,7 +193,8 @@ other entries cannot move.
   policy also carries the route-cache caps (`max_route_entries`,
   `max_route_path_nodes`) and the portal segment budget
   (`portal_segment_budget`), applied to the owned caches at the start of
-  each processing pass.
+  each processing pass. Reducing a policy budget therefore takes effect before
+  any lookup in that pass.
 - `PathAgentState` and the path-agent helper functions provide the first
   simulation-facing path wrapper. Agents store position, goal, path ticket,
   path index, status, active-goal state, and an explicit `PathAgentPhase`
@@ -275,17 +287,19 @@ other entries cannot move.
   single-goal groups, requires at least
   `unit_field_product_min_start_chunks` distinct start chunks by default, and
   reports candidate, used, and skipped group counts in `PathRuntimeStats`.
+  Invalid out-of-shape starts are resolved to `InvalidStart` during the
+  existing grouping pass before any unchecked tile-key conversion. This adds
+  no second validation pass and no duplicate passability read.
   The unit route cache keys entries on `(start, goal)` plus a world-version
   fingerprint and nothing on the movement class, so each unit process call
   binds the runtime to its (normalized) class: a rebind clears the unit
   caches -- correct even on misuse -- and counts in
   `PathRuntimeStats::class_cache_invalidations`. One runtime per
   (world, class) is therefore the PERF contract, not a correctness
-  precondition. The binding does NOT cover the weighted portal segment
-  cache: it is filled by the caller-driven, still pair-tagged portal-route
-  builders through the `portal_segment_cache()` accessor and keys segments
-  on request plus chunk versions only, so callers reusing it across movement
-  classes (or tag pairs) must keep one cache per class.
+  precondition. Weighted portal-route builders bind the owned portal segment
+  cache through the same normalized movement-class identity. Reusing one
+  runtime across classes is therefore safe but clears both unit and portal
+  entries; one runtime per `(world, class)` avoids those conservative drops.
 - `PathRequestRuntime::process_weighted_batch<World, Class, MaxCost>(world,
   policy)` processes the current request set through `weighted_path_batch`,
   while using the same world-change cadence to clear owned long-lived caches.
@@ -461,12 +475,16 @@ search non-Manhattan chunk routes or prove global portal optimality.
 `WeightedPortalSegmentCache` can reuse previously verified segment paths for
 repeated supplied-waypoint portal builds. Cached hits avoid A* expansion for
 the segment, but still rebuild the route-product path and dependencies.
+Every lookup and store goes through a movement-class-bound view. A class rebind
+clears the cache, is counted in `class_rebinds`, and makes stale retained views
+rebind safely on their next use.
 Segments carry chunk-version dependencies and stale entries are rejected on
 lookup (counted as stale rejections). Recomputing a stale segment appends the
 new entry next to the rejected stale one until the segment budget is reached;
 the budget-triggered sweep then compacts stale entries and their path storage
 away in one pass, and insertion-order eviction of live entries keeps the
-cache at budget in fully live worlds. The cache stays caller-managed for
+cache at budget in fully live worlds. Lowering the budget evicts immediately,
+using the same oldest-first order. The cache stays caller-managed for
 retention (budget choice and `clear()`), and it does not imply
 region-selective optimality before the topology layer exists.
 
@@ -562,7 +580,8 @@ batches. Runtime field-product reuse is opt-in because route suffix caching can
 be faster when many starts lie on already-cached paths; the runtime therefore
 skips opt-in product use for repeated-goal groups whose starts do not span
 enough distinct chunks. Route caches are suitable for stable maps with repeated
-exact routes or starts that lie on cached same-goal paths. The v1 plan still
+exact routes or starts that lie on cached same-goal paths. The pre-1.0 roadmap
+still
 needs weighted field products, richer runtime policy, and hierarchy to cover
 broad many-agent workloads.
 

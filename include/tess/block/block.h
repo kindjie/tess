@@ -20,6 +20,7 @@
 
 namespace tess {
 
+/** Declares the ownership guarantee a block callback makes for its writes. */
 enum class WritePolicy : std::uint8_t {
   ReadOnly,
   UniquePerTile,
@@ -28,6 +29,7 @@ enum class WritePolicy : std::uint8_t {
 };
 static_assert(sizeof(WritePolicy) == sizeof(std::uint8_t));
 
+/** Returns whether a runtime policy value names a supported enumerator. */
 [[nodiscard]] constexpr bool is_valid_write_policy(
     WritePolicy policy) noexcept {
   switch (policy) {
@@ -40,6 +42,7 @@ static_assert(sizeof(WritePolicy) == sizeof(std::uint8_t));
   return false;
 }
 
+/** Caller-owned, reusable bump storage for allocation-free block kernels. */
 class BlockScratch {
  public:
   BlockScratch() = default;
@@ -145,6 +148,7 @@ class BlockScratch {
   std::size_t used_bytes_ = 0;
 };
 
+/** Counts recoverable block-kernel scratch failures. */
 class BlockDiagnostics {
  public:
   constexpr void record_scratch_allocation_failure() noexcept {
@@ -162,6 +166,7 @@ class BlockDiagnostics {
   std::size_t scratch_allocation_failures_ = 0;
 };
 
+/** Non-owning ordered view of chunk keys selected for a block operation. */
 class ChunkDomain {
  public:
   constexpr ChunkDomain() noexcept = default;
@@ -188,6 +193,7 @@ class ChunkDomain {
   std::span<const ChunkKey> keys_;
 };
 
+/** Owning storage whose stable key span can produce a `ChunkDomain`. */
 class OwnedChunkDomain {
  public:
   OwnedChunkDomain() = default;
@@ -218,18 +224,22 @@ class OwnedChunkDomain {
   std::vector<ChunkKey> keys_;
 };
 
+/** Wraps caller-owned key storage as a non-owning chunk domain. */
 [[nodiscard]] constexpr auto chunk_domain(
     std::span<const ChunkKey> keys) noexcept -> ChunkDomain {
   return ChunkDomain{keys};
 }
 
+/** Views an owned domain without copying its chunk keys. */
 [[nodiscard]] constexpr auto chunk_domain(const OwnedChunkDomain& keys) noexcept
     -> ChunkDomain {
   return keys.view();
 }
 
+/** Rejects a borrowed domain whose owner would be a temporary. */
 auto chunk_domain(OwnedChunkDomain&& keys) noexcept -> ChunkDomain = delete;
 
+/** Copies, sorts, and deduplicates an explicit chunk-key selection. */
 [[nodiscard]] inline auto explicit_chunk_domain(std::span<const ChunkKey> keys)
     -> OwnedChunkDomain {
   std::vector<ChunkKey> domain{keys.begin(), keys.end()};
@@ -239,18 +249,21 @@ auto chunk_domain(OwnedChunkDomain&& keys) noexcept -> ChunkDomain = delete;
 }
 
 template <typename World>
+/** Captures the chunks currently carrying any requested dirty flag. */
 [[nodiscard]] auto dirty_chunk_domain(const World& world, std::uint32_t flags)
     -> OwnedChunkDomain {
   return OwnedChunkDomain{world.dirty_chunks(flags)};
 }
 
 template <typename World>
+/** Captures the chunks currently carrying any requested active flag. */
 [[nodiscard]] auto active_chunk_domain(const World& world, std::uint32_t flags)
     -> OwnedChunkDomain {
   return OwnedChunkDomain{world.active_chunks(flags)};
 }
 
 template <typename World>
+/** Policy-qualified access to one chunk page, metadata record, and bounds. */
 class ChunkView {
  public:
   using world_type = std::remove_reference_t<World>;
@@ -405,6 +418,7 @@ class ChunkView {
 };
 
 template <typename World, WritePolicy Policy>
+/** World and domain context passed to a policy-specialized block kernel. */
 class BlockCtx {
  public:
   static_assert(is_valid_write_policy(Policy));
@@ -491,6 +505,7 @@ class BlockCtx {
 };
 
 template <WritePolicy Policy, typename World>
+/** Constructs a policy-specialized block context without optional scratch. */
 [[nodiscard]] constexpr auto block_ctx(World& world,
                                        ChunkDomain domain) noexcept
     -> BlockCtx<World, Policy> {
@@ -498,6 +513,7 @@ template <WritePolicy Policy, typename World>
 }
 
 template <WritePolicy Policy, typename World>
+/** Constructs a policy-specialized block context with reusable scratch. */
 [[nodiscard]] constexpr auto block_ctx(World& world, ChunkDomain domain,
                                        BlockScratch& scratch) noexcept
     -> BlockCtx<World, Policy> {
@@ -505,6 +521,7 @@ template <WritePolicy Policy, typename World>
 }
 
 template <WritePolicy Policy, typename World>
+/** Constructs a policy-specialized block context with diagnostics. */
 [[nodiscard]] constexpr auto block_ctx(World& world, ChunkDomain domain,
                                        BlockDiagnostics& diagnostics) noexcept
     -> BlockCtx<World, Policy> {
@@ -512,6 +529,7 @@ template <WritePolicy Policy, typename World>
 }
 
 template <WritePolicy Policy, typename World>
+/** Constructs a block context with reusable scratch and diagnostics. */
 [[nodiscard]] constexpr auto block_ctx(World& world, ChunkDomain domain,
                                        BlockScratch& scratch,
                                        BlockDiagnostics& diagnostics) noexcept
@@ -520,6 +538,7 @@ template <WritePolicy Policy, typename World>
 }
 
 template <WritePolicy Policy, typename World, typename Fn>
+/** Invokes a callback once for every chunk in a compile-time policy domain. */
 constexpr void for_each_chunk(World& world, ChunkDomain domain, Fn&& fn) {
   block_ctx<Policy>(world, domain).for_each_chunk(std::forward<Fn>(fn));
 }
@@ -547,6 +566,7 @@ constexpr void for_each_chunk_policy_view(World& world, ChunkDomain domain,
 }  // namespace detail
 
 template <typename World, typename Fn>
+/** Invokes a callback for every chunk using a runtime-selected policy. */
 constexpr void for_each_chunk(World& world, ChunkDomain domain,
                               WritePolicy policy, Fn&& fn) {
   assert(is_valid_write_policy(policy));

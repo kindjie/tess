@@ -13,17 +13,17 @@ if [[ ! -d "$build_dir" ]]; then
   exit 1
 fi
 
-# Derive the expected version from CMakeLists.txt so a version bump cannot
-# silently diverge from this check.
-version="$(sed -n 's/^ *VERSION \([0-9][0-9.]*\)$/\1/p' \
-  "$root/CMakeLists.txt" | head -n 1)"
+# Derive the expected version from the single authoritative version file.
+version="$(sed -n 's/^set(TESS_VERSION \([0-9][0-9.]*\))$/\1/p' \
+  "$root/cmake/tess-version.cmake")"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "error: could not parse project VERSION from CMakeLists.txt" >&2
+  echo "error: could not parse TESS_VERSION" >&2
   exit 1
 fi
 major="${version%%.*}"
 rest="${version#*.}"
 minor="${rest%%.*}"
+patch="${rest#*.}"
 
 mkdir -p "$root/build"
 work="$(mktemp -d "$root/build/tess-install-smoke.XXXXXX")"
@@ -47,10 +47,13 @@ if [[ ! -f "$prefix/share/licenses/tess/LICENSE" ]]; then
   exit 1
 fi
 
-cat > "$consumer/CMakeLists.txt" <<'EOF'
+cat > "$consumer/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.28)
 project(tess_install_smoke LANGUAGES CXX)
-find_package(tess CONFIG REQUIRED)
+find_package(tess ${version} EXACT CONFIG REQUIRED)
+if(NOT tess_VERSION VERSION_EQUAL "${version}")
+  message(FATAL_ERROR "package version does not match ${version}")
+endif()
 add_executable(tess_install_smoke main.cc)
 target_link_libraries(tess_install_smoke PRIVATE tess::tess)
 EOF
@@ -60,7 +63,12 @@ cat > "$consumer/main.cc" <<EOF
 
 int main() {
   static_assert(TESS_VERSION_MAJOR == ${major});
-  return tess::library_version.minor == ${minor}u ? 0 : 1;
+  static_assert(TESS_VERSION_MINOR == ${minor});
+  static_assert(TESS_VERSION_PATCH == ${patch});
+  static_assert(tess::library_version.major == ${major});
+  static_assert(tess::library_version.minor == ${minor});
+  static_assert(tess::library_version.patch == ${patch});
+  return 0;
 }
 EOF
 

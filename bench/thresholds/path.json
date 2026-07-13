@@ -97,6 +97,18 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 173501010
     },
+    "path/weighted_batch_planner_100_multigoal_sparse_resident_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 182000000,
+      "note":
+          "2026-07-12 10-run median: 90,594,312 ns; provisional 2x ceiling"
+    },
+    "path/weighted_batch_planner_100_neargoal_open_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 101000,
+      "note":
+          "2026-07-12 10-run median: 50,096 ns; provisional 2x ceiling"
+    },
     "path/weighted_batch_planner_100_multigoal_sparse_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 176836107

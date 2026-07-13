@@ -1,6 +1,7 @@
 # Benchmark Trends
 
-Stale snapshot: data from CI run 29211536546 at commit cd22285, collected 2026-07-12 16:09 PDT.
+Stale snapshot: data from CI run 29211536546, collected 2026-07-12 16:09
+PDT.
 
 Thresholds were recalibrated 2026-07-11 (S11.3) from ten reworked-harness
 main-run baseline artifacts (runs 29056942917 through 29167134881, 10

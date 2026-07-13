@@ -47,6 +47,9 @@ and key vocabulary every other layer builds on. It lives in
   through default member initializers (zero, except `Extent3::z = 1`), so
   a brace-initialized `Coord3{}` or `TileKey<Shape>{}` never carries
   indeterminate field values.
+- `TESS_ENABLE_ASSERTS` reports whether contract assertions are active;
+  `TESS_ASSERT(expr)` and `TESS_ASSERT_MSG(expr, message)` terminate on a
+  failed contract in those builds and compile out under `NDEBUG`.
 
 ## Key Packing
 

@@ -13,6 +13,55 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-12 - First-audit remediation, v0.3.0
+
+- Changed: BREAKING pre-release hardening. `PlannedOperation` now has checked,
+  immutable construction and an O(1) world-shape stamp; deferred dirty
+  recording, collection, and merge return explicit failure results and reject
+  cross-world use before mutation. `ExecutionPhase` is now a planner-issued,
+  generation-stamped plan capability, preventing hand-built aggregate ranges
+  and stale phases retained across report reuse from bypassing parallel
+  ownership checks. Phase world and policy validation happens once before any
+  callback, scratch, or result-channel mutation. Dirty metadata is recorded
+  before callbacks, and exceptional AutoExec phases conservatively merge all
+  started work before rethrowing the original exception. Sparse local topology
+  reports `MissingChunk`.
+  Stateful transition providers expose a monotonic revision. Route and portal
+  cache budget reductions apply immediately, and portal segments bind to one
+  movement class. Portal segment construction and compaction now commit
+  transactionally, so allocation failure cannot publish incomplete
+  dependencies, evict a live entry, or corrupt surviving path offsets. Result
+  hooks are `noexcept`; throwing result visitors remain retryable across
+  reentrant capacity growth, and a reentrant clear retires the old generation
+  safely. Exceptional auto-exec paths clear transient results without making a
+  partially executed frame safe to retry.
+- Changed: version metadata has one CMake authority and generates the installed
+  `tess/version.h`; the project remains pre-stable at `v0.3.0`, with earlier
+  release points corrected to `v0.1.0` and `v0.2.0`. Dependency acquisition is
+  pinned by default, system-package use is explicit and minimum-versioned, and
+  third-party Actions and the Steam SDK base use immutable pins. Python tools
+  are exact-version and artifact-hash locked, and CI enforces those hashes in
+  one reusable environment. cppcheck's source archive is hash-verified, hosted
+  runner OS labels roll in place, and package-manager `clang-tidy` and
+  `ccache` versions remain unpinned.
+- Changed: public-surface checks now cover aliases, concepts, constants,
+  macros, transitive installed declarations, and stale manifest entries.
+  Namespace-scope Doxygen coverage spans every installed header. Privacy hooks
+  scan every non-binary tracked file and load identity-specific expressions
+  from a local Git path rather than tracked source.
+- Performance: final matched `-O3` A/B runs measured +0.82% direct queued,
+  +0.14% result-bearing, -1.82% in the intentionally dispatch-heavy serial
+  tile touch, and +1.58% integrated auto-exec. Final worker-pool and
+  scoped-thread tile-touch checks were -0.02% and +0.64%. Class-safe
+  portal-cache reads cost 1.5-1.7%. All are inside the 5% regression limit.
+  Rejected variants and full methodology are recorded in the optimization
+  log.
+- Reason: repository-wide audit remediation before any stable API promise.
+- Affected docs: maintained architecture documents, `docs/dependencies.md`,
+  `docs/git-hooks.md`, and `docs/planning/optimization-log.md`.
+- Affected code: public queued, result, path-cache, topology, version, build,
+  CI, benchmark-gate, Steam runtime, and repository-quality tooling surfaces.
+
 ## 2026-07-12 - Per-agent pathing dirt + retained routes
 
 - Changed: the span-based tick drivers process paths with a scope:
@@ -32,7 +81,7 @@ Records meaningful design changes from the original TDDs.
   100 weighted agents drops 72.5 -> 17.3 ms (4.2x local; new
   `path/agent_tick_100_weighted_goal_churn_512x512` pins the scoped
   submit count).
-- Reason: S11.4 soak observation / post-v1 backlog -- the shared flag
+- Reason: S11.4 soak observation / future backlog -- the shared flag
   degenerated steady state to near-per-tick full-batch replans on
   building-dense maps.
 - Affected docs: `docs/architecture/path.md`,
@@ -206,15 +255,15 @@ Records meaningful design changes from the original TDDs.
 
 ## 2026-07-11 - v0.1.0 (S11 close)
 
-- Changed: project version 0.1.0 -> 0.1.0 (CMake `project(VERSION)`,
-  `TESS_VERSION_*` macros, and the smoke test's pinned literals bumped
-  together). The v1 milestone plan is stamped COMPLETE and preserved as
-  the planning record; the architecture README now describes the shipped
-  v1 surface. The consumer's composite 10k-tick soak (its S11.4 test)
+- Changed: the implemented prototype is tagged `v0.1.0` while its public API
+  remains explicitly pre-stable. CMake metadata, `TESS_VERSION_*`, and the
+  smoke test agree. The initial milestone plan is preserved as the planning
+  record; the architecture README describes the shipped pre-1.0 surface. The
+  reference consumer's composite 10k-tick soak (its S11.4 test)
   locks the integrated behavior the acceptance criteria describe.
 - Reason: S11.6 -- every milestone M0-M15 shipped with its gates,
   documentation, and consumer adoption in place.
-- Affected docs: `docs/planning/v1-milestone-plan.md`,
+- Affected docs: `docs/planning/initial-milestone-plan.md`,
   `docs/architecture/README.md`.
 - Affected code: `CMakeLists.txt`, `include/tess/tess.h`,
   `tests/tess_smoke.cc`.
@@ -266,7 +315,8 @@ Records meaningful design changes from the original TDDs.
   (nonzero exit on violated expectations), and the dev CI job gains an
   "Example smoke" step that executes every built example binary and
   asserts the expected count ran.
-- Reason: S11.2 (consolidation) -- v1's example checklist and a CI
+- Reason: S11.2 (consolidation) -- the initial milestone's example checklist
+  and a CI
   guarantee that examples keep running, not just compiling.
 - Affected docs: `README.md` (stale "two examples" paragraph replaced
   with the full list).
@@ -304,7 +354,8 @@ Records meaningful design changes from the original TDDs.
   with bool-refusal semantics and CPU fallback, and the default
   NoGpuBackend that compiles everywhere and refuses everything). The
   test-only MockGpuBackend records call sequences. Benchmarks are
-  deliberately absent: nothing executes in v1 (per the plan's
+  deliberately absent: nothing executes in the initial milestone (per the
+  plan's
   "ungated smoke only" note, resolved as no-bench + this record).
 - Reason: M13 -- a real backend can be added later without redesigning
   core; CPU-only builds carry zero GPU obligations.
@@ -508,7 +559,8 @@ Records meaningful design changes from the original TDDs.
   POD components (`AgentId`, `TilePosition`, `PathGoal`, `PathState`,
   `OffBoard`), `PathAgentBatch` SoA scratch, `TileOccupancyIndex`
   (injective tile->entity open-addressing map with backward-shift
-  deletion; box/radius queries deferred post-v1 -- probing every box
+  deletion; box/radius queries deferred beyond the initial milestone --
+  probing every box
   coordinate is not a useful spatial query and `entity_at` is the
   primitive), `advance_path_agents_with_index` over the S8.1 commit
   observer, and the `tick_ecs_*` pipeline (collect -> dirty-gated
@@ -599,8 +651,8 @@ Records meaningful design changes from the original TDDs.
   serial == pool is pinned byte-identical, and TSan covers the schedule and
   auto-exec binaries. work_contract remains an unadopted experiment. The
   coalesced maintenance lane and runtime ownership claim checking are
-  explicitly deferred post-v1 with rationale (no v1 consumer; they belong
-  with a deferred-edit flow).
+  explicitly deferred beyond the initial milestone with rationale (no
+  initial-milestone consumer; they belong with a deferred-edit flow).
 - Reason: S7 slice 5 -- the concurrency stream's landing record.
 - Affected docs: `architecture/queued-operations.md`,
   `planning/concurrency-plan.md`.
@@ -651,7 +703,8 @@ Records meaningful design changes from the original TDDs.
   / OnDirty (fires iff the task's OWN mask bits are pending; consumes only
   those bits) / Background (deterministic items-only budget with more_work
   continuation; a wall-clock valve was cut deliberately -- it would make
-  tick outcomes nondeterministic and had no v1 consumer) / Manual.
+  tick outcomes nondeterministic and had no initial-milestone consumer) /
+  Manual.
   Task-result dirty masks merge immediately (later phases fire same tick,
   earlier next tick); notify_dirty/request_run are frame-owner-thread
   only. `SimClock` hoisted from the path-agent tick header into `time.h`
@@ -726,8 +779,9 @@ Records meaningful design changes from the original TDDs.
   lookups readable until clear), and `record_plan_completions(report,
   channel)` delivering plan-time rejections through the same drain.
 - Reason: S6 slice 1 (M4 close). Design review (workflow + two adversarial
-  critiques) converged on a deliberately DRAIN-ONLY v1: the pipeline has no
-  asynchronous execution path, so a poll-only future could never be
+  critiques) converged on a deliberately DRAIN-ONLY initial-milestone result
+  surface: the pipeline has no asynchronous execution path, so a poll-only
+  future could never be
   observed pending and was the source of every footgun found (stale-assert
   semantics, fail-safe fallbacks, dead expect()); futures return when
   budget-deferred execution gives them a consumer. Recorded as a TDD

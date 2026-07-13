@@ -1,14 +1,14 @@
-# Developing/testing `tess` for the Steam Deck from macOS
+# Developing and testing `tess` for Steam Deck from an ARM64 macOS host
 
-`tess` is a headless, header-only C++20 library. The dev machine is Apple
-Silicon (ARM64); the Steam Deck is x86_64 (Zen 2). Binaries do not cross that
-architecture gap, so we **build for x86_64 inside a Steam Runtime SDK
+`tess` is a headless, header-only C++20 library. An Apple Silicon host is ARM64;
+the Steam Deck is x86_64 (Zen 2). Binaries do not cross that architecture gap,
+so this workflow **builds for x86_64 inside a Steam Runtime SDK
 container** — the environment Valve recommends for native Linux games — and run
 on the Deck for hardware-accurate benchmarks and on-device validation.
 
 ```
 macOS (ARM64)                                   Steam Deck (x86_64 Zen 2)
-  Neovim ── save ──▶ steamrt4 SDK container         podman run steamrt4 SDK
+  source changes ──▶ steamrt4 SDK container         podman run steamrt4 SDK
                      (amd64, Rosetta): clang        (native): ./tess_bench
                      cmake + ctest  ───rsync binaries───▶  real hardware
 ```
@@ -24,7 +24,7 @@ lists all; `deck doctor` checks prerequisites).
 ```sh
 passwd && sudo systemctl enable --now sshd
 ```
-Then on the Mac:
+Then on the development host:
 ```sh
 tools/steamdeck/deck setup        # Docker/Rosetta check, build image, start container
 tools/steamdeck/deck deck-setup   # find the Deck on the LAN, install ssh key + alias
@@ -34,11 +34,16 @@ tools/steamdeck/deck doctor       # confirm everything is ✓
 `deck-setup` never installs the SSH key blindly: it prints the discovered
 host's SSH key fingerprint (via `ssh-keyscan`) and asks for interactive
 confirmation before running `ssh-copy-id`; the confirmed key is pinned in
-`~/.ssh/known_hosts`. After installing the key it probes the host
-(`uname -n` / `/etc/os-release`) and warns if it does not identify as a
-Steam Deck. It refuses to run non-interactively.
+`~/.ssh/known_hosts`. Key enrollment and the post-install probe connect
+directly to `deck@<confirmed-ip>` with `-F /dev/null`, the explicit identity,
+and strict checking against that pinned file; the convenience alias cannot
+redirect setup. The command also validates the effective `Host deck`
+destination, user, identity, host-key policy, and proxy settings with `ssh -G`
+before installing the key, so later workflow commands cannot inherit an
+unsafe alias. A host that does not report SteamOS is rejected with cleanup
+instructions. Setup refuses to run non-interactively.
 
-**2. Develop (on the Mac — x86_64 parity):**
+**2. Develop on the host with x86_64 parity:**
 ```sh
 tools/steamdeck/deck watch        # rebuild + ctest on every save   (or: deck test)
 ```
@@ -70,26 +75,40 @@ The rest of this document explains what those steps do and why.
 
 ### macOS
 1. Docker Desktop → enable Rosetta for amd64 (above). Default-on for macOS ≥14.1.
-2. `brew install watchexec` (save-triggered rebuilds; fits Neovim/tmux).
-3. `docker pull --platform linux/amd64 registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest`
-   — **verify the exact tag** at <https://gitlab.steamos.cloud/steamrt/steamrt4/sdk>
-   (override with `TESS_STEAMRT_IMAGE=…` / build-arg `STEAMRT_IMAGE`).
+2. `brew install watchexec` for optional save-triggered rebuilds.
+3. `docker pull --platform linux/amd64 registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk@sha256:584939ebd7d2f1eec719e771fdde4ae3bd469ee741c783abb7fe812ddaaf3ee4`
+   — verify the current manifest digest at
+   <https://gitlab.steamos.cloud/steamrt/steamrt4/sdk>
+   (override with `TESS_STEAMRT_IMAGE=…` / build-arg `STEAMRT_IMAGE`). The
+   setup command always re-evaluates the cached image build, so changing this
+   override replaces a local build tag that used a different base.
+   Every `deck test`, `watch`, `asan`, and `bench` invocation also checks the
+   running container's recorded SDK image and recreates the container when the
+   requested override differs.
 
 ### Steam Deck (Desktop Mode → Konsole)
 1. `passwd` (set a sudo password), then `sudo systemctl enable --now sshd`.
    SteamOS root is immutable; `/etc` changes can be reset by a major OS update —
    re-run if SSH stops working afterward. `/home` persists.
-2. `ip addr` → note the LAN IP. On the Mac, `ssh-copy-id deck@<ip>` and add a
-   `~/.ssh/config` alias `Host deck`. Prefer the IP over the `steamdeck` mDNS
-   name (it drops on sleep).
+2. `ip addr` → note the LAN IP. On the development host, run
+   `tools/steamdeck/deck deck-setup <ip>`. It verifies the host key, creates or
+   validates the `Host deck` alias, and only then installs the SSH key. Prefer
+   the IP over the `steamdeck` mDNS name (it drops on sleep).
 3. Get the SDK image onto the Deck (podman is preinstalled on SteamOS ≥3.5):
-   `podman pull registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest`,
-   or ship it: `docker save tess-steamrt4:local | ssh deck podman load`.
+   `podman pull registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk@sha256:584939ebd7d2f1eec719e771fdde4ae3bd469ee741c783abb7fe812ddaaf3ee4`,
+   or transfer it with
+   `docker save tess-steamrt4:local | ssh deck podman load`. The transferred
+   wrapper has a local-only tag, so select it explicitly when running the
+   benchmark in a container:
+   ```sh
+   USE_CONTAINER=1 TESS_STEAMRT_IMAGE=tess-steamrt4:local \
+     tools/steamdeck/deck-bench.sh
+   ```
 
 ## Daily use
 
 ```sh
-# Start the build container (builds the SDK+clang image on first run).
+# Start the build container (prepares the pinned SDK image wrapper).
 tools/steamdeck/container-up.sh              # configures linux-dev
 
 # Inner loop — rebuild + test in the container on every save (x86_64 parity):
@@ -128,8 +147,8 @@ build `linux-dev`, rsync `build/linux-dev/`, then on the Deck:
 ## Alternative: build on the Deck (skip emulation)
 The Deck runs the SDK container natively, so you can rsync **source** and build
 there instead — faster than emulated local builds, at the cost of compiling on
-the Deck. Local build is the default here per preference; switch if emulated
-builds feel slow.
+the Deck. The documented default builds on the host; switch when emulated
+builds are too slow.
 
 ## Files
 - `CMakePresets.json` (repo root) — adds tracked `linux-dev` / `linux-asan` /
@@ -140,7 +159,7 @@ builds feel slow.
   configures the cmake preset it needs (`bench` → `linux-bench`, `test`/
   `watch` → `linux-dev`, `asan` → `linux-asan`); override with
   `DECK_PRESET=<preset>`.
-- `Dockerfile` — steamrt4 SDK + clang.
+- `Dockerfile` — immutable steamrt4 SDK wrapper using its bundled Clang 19.
 - `container-up.sh` — start/refresh the local build container.
 - `deck-bench.sh` — build locally, ship, run on the Deck (direct by default;
   `--pin` for governor-pinned accurate numbers; `USE_CONTAINER=1` for the SDK

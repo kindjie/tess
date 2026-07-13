@@ -433,6 +433,7 @@ class World<Shape, Schema, AlwaysResident> {
   std::vector<Box3> dirty_bounds_;
 };
 
+/** Convenience alias for a dense world that owns every shaped chunk. */
 template <typename Shape, typename Schema>
 using AlwaysResidentWorld = World<Shape, Schema, AlwaysResident>;
 

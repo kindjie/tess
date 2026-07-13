@@ -1,7 +1,8 @@
 # Concurrency Plan
 
 Status: active. This document records the concurrency stream's decisions and
-remaining rollout for the v1 completion plan. Design intent lives in the
+remaining rollout for the initial-milestone completion plan. Design intent
+lives in the
 [concurrent tile-world addendum](../tdd/tdd_addendum_concurrent_tile_world.md)
 and the [work contracts addendum](../tdd/tdd_addendum_work_contracts.md);
 this plan tracks what has landed and what is deliberately deferred.
@@ -44,8 +45,8 @@ supersede these):
   benefit from parallel dispatch: the whole phase costs about one dispatch.
   Compute-bound per-chunk work scales: 1.57 ms serial -> 853 us (w2, 1.8x)
   -> 458 us (w4, 3.4x).
-- External corroboration (kindjie/tile-layout-bench, bare-metal 192-thread
-  run, verified 2026-07-07): independent per-query work with thread-owned
+- External reference-consumer evidence (bare-metal 192-thread run, reviewed
+  2026-07-07): independent per-query work with thread-owned
   state scales to the physical-core knee (~34x at 96 cores); splitting one
   cheap grid pass over a shared buffer anti-scales at every thread count
   (NUMA first-touch plus dispatch). Tess parallelism therefore targets
@@ -60,8 +61,8 @@ scheduler stage should route only such work to the pool by default.
 
 ## Decisions
 
-- **Write-policy enforcement stays planner-anchored in v1.** Parallel
-  mutation is reachable only through planned phases;
+- **Write-policy enforcement stays planner-anchored for the initial
+  milestone.** Parallel mutation is reachable only through planned phases;
   `plan_parallel_execution_phases` accepts only `ReadOnly` and
   `UniquePerChunk`, separates same-chunk mutable work, rejects
   `UniquePerTile`, and explicit domains are deduplicated at enqueue.
@@ -100,11 +101,12 @@ scheduler stage should route only such work to the pool by default.
    pool results pinned byte-identical (policy pre-validation makes runtime
    aborts unreachable) and TSan coverage over the schedule + auto-exec
    binaries. Worker counts stay guarded at construction (zero falls back
-   to one; no nested dispatch by the single-dispatch guard). DEFERRED
-   post-v1, with rationale: the coalesced maintenance lane (addendum Lane
-   2) and runtime ownership claim checking — neither has a v1 consumer
-   (the only maintenance-shaped consumer keeps its edits synchronous), and
-   both belong with the deferred-edit flow that would exercise them.
+   to one; no nested dispatch by the single-dispatch guard). DEFERRED beyond
+   the initial milestone, with rationale: the coalesced maintenance lane
+   (addendum Lane 2) and runtime ownership claim checking — neither has an
+   initial-milestone consumer (the only maintenance-shaped consumer keeps its
+   edits synchronous), and both belong with the deferred-edit flow that would
+   exercise them.
 3. **Threshold follow-up:** after ~5 CI baseline artifacts include the
    parallel family, gate the serial cases and record pool-vs-serial trends
    in `docs/performance.md`.

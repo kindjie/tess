@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """Public-surface manifest check for tess (required CI gate since 2026-07-07).
 
-Extracts public symbol names (types and free functions declared at
-namespace scope) from every header listed in ``TESS_PUBLIC_HEADERS`` in
-``CMakeLists.txt`` and verifies that each name appears in
+Extracts public symbol names (types, aliases, concepts, constants, free
+functions, and ``TESS_*`` macros declared at namespace scope) from every
+installed API-bearing header listed in ``TESS_PUBLIC_HEADERS`` or
+``TESS_IMPLEMENTATION_HEADERS`` in ``CMakeLists.txt`` and verifies that each
+name appears in
 ``docs/architecture/surface.json``, the manifest mapping each maintained
 architecture doc to the public symbols it documents.
 
-The parser is deliberately simple and line-based: it relies on the
+The parser is deliberately conservative and line-based: it relies on the
 clang-format layout used across the tess headers (declaration name and
 opening parenthesis on the same line, one brace style). It tracks brace
 depth so member declarations inside classes and function bodies are not
-reported, and it skips ``detail``/``internal`` namespaces. It is a
-coarse drift tripwire, not a C++ parser.
+reported, and it skips ``detail``/``internal`` namespaces. Member
+documentation remains a manual review obligation; ``check_public_docs.py``
+enforces this same namespace-scope set across every installed API header.
 """
 
 from __future__ import annotations
@@ -27,14 +30,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CMAKE = REPO_ROOT / "CMakeLists.txt"
 DEFAULT_MANIFEST = REPO_ROOT / "docs" / "architecture" / "surface.json"
 
-HEADER_SET_RE = re.compile(
-    r"set\(\s*\n?\s*TESS_PUBLIC_HEADERS\s*(?P<body>[^)]*)\)",
-    re.DOTALL,
-)
 NAMESPACE_RE = re.compile(r"^\s*(?:inline\s+)?namespace\s+([\w:]+)\s*\{")
 TYPE_RE = re.compile(
     r"^\s*(?:enum\s+(?:class|struct)\s+|struct\s+|class\s+)([A-Za-z_]\w*)\b"
 )
+ALIAS_RE = re.compile(r"^\s*using\s+([A-Za-z_]\w*)\s*=")
+CONCEPT_RE = re.compile(r"^\s*concept\s+([A-Za-z_]\w*)\s*=")
+CONSTANT_RE = re.compile(
+    r"^\s*(?:inline\s+)?constexpr\s+(?:[\w:]+(?:<[^;=]*>)?\s+)"
+    r"([A-Za-z_]\w*)\s*(?:=|\{)"
+)
+MACRO_RE = re.compile(r"^\s*#\s*define\s+(TESS_[A-Za-z_]\w*)\b")
 FUNCTION_RES = (
     re.compile(r"\bauto\s+([A-Za-z_]\w*)\s*\("),
     re.compile(r"\bvoid\s+([A-Za-z_]\w*)\s*\("),
@@ -47,13 +53,33 @@ SKIPPED_NAMESPACE_PARTS = frozenset({"detail", "internal"})
 IGNORED_NAMES = frozenset({"operator"})
 
 
-def parse_public_headers(cmake_text: str) -> list[str]:
-    """Return the relative header paths from the TESS_PUBLIC_HEADERS set."""
-    match = HEADER_SET_RE.search(cmake_text)
+def parse_header_set(
+    cmake_text: str, name: str, *, required: bool = True
+) -> list[str]:
+    """Return relative header paths from one simple CMake ``set`` block."""
+    pattern = re.compile(
+        rf"set\(\s*\n?\s*{re.escape(name)}\s*(?P<body>[^)]*)\)",
+        re.DOTALL,
+    )
+    match = pattern.search(cmake_text)
     if match is None:
-        raise ValueError("TESS_PUBLIC_HEADERS set() not found")
+        if not required:
+            return []
+        raise ValueError(f"{name} set() not found")
     headers = [line.strip() for line in match.group("body").splitlines()]
     return [line for line in headers if line.endswith(".h")]
+
+
+def parse_public_headers(cmake_text: str) -> list[str]:
+    """Return paths from the required ``TESS_PUBLIC_HEADERS`` set."""
+    return parse_header_set(cmake_text, "TESS_PUBLIC_HEADERS")
+
+
+def parse_api_headers(cmake_text: str) -> list[str]:
+    """Return installed headers that can expose public namespace symbols."""
+    return parse_public_headers(cmake_text) + parse_header_set(
+        cmake_text, "TESS_IMPLEMENTATION_HEADERS", required=False
+    )
 
 
 def strip_comments(line: str, in_block_comment: bool) -> tuple[str, bool]:
@@ -103,6 +129,11 @@ def extract_public_symbols(text: str) -> set[str]:
         line, in_block_comment = strip_comments(raw_line, in_block_comment)
         stripped = line.strip()
         if stripped.startswith("#"):
+            macro_match = MACRO_RE.match(line)
+            if macro_match is not None:
+                macro_name = macro_match.group(1)
+                if not macro_name.endswith(("_H_INCLUDED", "_H_")):
+                    symbols.add(macro_name)
             # Preprocessor directives (and multi-line macro bodies) are
             # skipped entirely so macro braces cannot corrupt the stack.
             continuation = stripped.endswith("\\")
@@ -114,6 +145,9 @@ def extract_public_symbols(text: str) -> set[str]:
 
         namespace_match = NAMESPACE_RE.match(line)
         type_match = TYPE_RE.match(line)
+        alias_match = ALIAS_RE.match(line)
+        concept_match = CONCEPT_RE.match(line)
+        constant_match = CONSTANT_RE.match(line)
         if namespace_match is not None:
             opened = "namespace"
             parts = set(namespace_match.group(1).split("::"))
@@ -121,6 +155,15 @@ def extract_public_symbols(text: str) -> set[str]:
         elif type_match is not None:
             if eligible and type_match.group(1) not in IGNORED_NAMES:
                 symbols.add(type_match.group(1))
+            opened = "other"
+        elif eligible and alias_match is not None:
+            symbols.add(alias_match.group(1))
+            opened = "other"
+        elif eligible and concept_match is not None:
+            symbols.add(concept_match.group(1))
+            opened = "other"
+        elif eligible and constant_match is not None:
+            symbols.add(constant_match.group(1))
             opened = "other"
         elif eligible:
             for pattern in FUNCTION_RES:
@@ -170,25 +213,69 @@ def documented_symbols(manifest: dict[str, list[str]]) -> set[str]:
     return names
 
 
+def check_document_mappings(
+    repo_root: Path,
+    manifest: dict[str, list[str]],
+) -> list[str]:
+    """Return failures for missing docs or symbols mapped to the wrong doc."""
+    failures: list[str] = []
+    for doc, names in manifest.items():
+        path = repo_root / doc
+        if not path.is_file():
+            failures.append(
+                f"surface manifest: mapped document '{doc}' not found"
+            )
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for name in names:
+            if not isinstance(name, str):
+                raise ValueError(
+                    f"manifest entry for {doc} contains a non-string symbol"
+                )
+            pattern = re.compile(
+                rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])"
+            )
+            if pattern.search(text) is None:
+                failures.append(
+                    f"{doc}: mapped public symbol '{name}' is not mentioned"
+                )
+    return failures
+
+
 def check_headers(
     repo_root: Path,
     headers: list[str],
     manifest: dict[str, list[str]],
 ) -> list[str]:
-    """Return failure messages for undocumented public symbols."""
+    """Return failures for undocumented or stale manifest symbols."""
     documented = documented_symbols(manifest)
     failures: list[str] = []
-    for header in headers:
+    all_public: set[str] = set()
+    checked_headers = list(headers)
+    generated_template = "include/tess/version.h.in"
+    if (
+        generated_template not in checked_headers
+        and (repo_root / generated_template).is_file()
+    ):
+        checked_headers.append(generated_template)
+
+    for header in checked_headers:
         header_path = repo_root / header
         if not header_path.is_file():
             failures.append(f"{header}: listed public header not found")
             continue
         text = header_path.read_text(encoding="utf-8", errors="ignore")
-        missing = sorted(extract_public_symbols(text) - documented)
+        public = extract_public_symbols(text)
+        all_public.update(public)
+        missing = sorted(public - documented)
         failures.extend(
             f"{header}: undocumented public symbol '{name}'"
             for name in missing
         )
+    failures.extend(
+        f"surface manifest: stale or unknown public symbol '{name}'"
+        for name in sorted(documented - all_public)
+    )
     return failures
 
 
@@ -214,26 +301,21 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    headers = parse_public_headers(args.cmake.read_text(encoding="utf-8"))
+    headers = parse_api_headers(args.cmake.read_text(encoding="utf-8"))
     manifest = load_manifest(args.manifest)
 
-    for doc in manifest:
-        if not (args.repo_root / doc).is_file():
-            print(f"warning: manifest doc {doc} does not exist")
-
     failures = check_headers(args.repo_root, headers, manifest)
+    failures.extend(check_document_mappings(args.repo_root, manifest))
     if failures:
         print("\n".join(failures))
         print(
-            "\nPublic symbols above are missing from the surface manifest.\n"
-            "Document each symbol in the maintained architecture doc that\n"
-            "covers its header (docs/architecture/*.md) and add its name to\n"
-            "that doc's list in docs/architecture/surface.json.",
+            "\nKeep public symbols, their assigned maintained architecture "
+            "docs,\nand docs/architecture/surface.json in sync.",
             file=sys.stderr,
         )
         return 1
     print(
-        f"public surface manifest covers {len(headers)} headers "
+        f"public surface manifest covers {len(headers)} installed headers "
         f"across {len(manifest)} docs"
     )
     return 0

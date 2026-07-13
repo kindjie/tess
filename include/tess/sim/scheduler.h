@@ -12,10 +12,12 @@
 
 namespace tess {
 
+/// Owns simulation subsystem state retained across scheduler ticks.
 struct SimSchedulerState {
   PathAgentTickState path_agents{};
 };
 
+/// Configures dirty propagation, path-agent work, and render-delta clearing.
 struct SimSchedulerOptions {
   std::uint32_t pathing_dirty_mask = 0;
   std::uint32_t render_dirty_mask = 0;
@@ -24,6 +26,7 @@ struct SimSchedulerOptions {
   std::uint32_t movement_dirty_mask = 0;
 };
 
+/// Summarizes queued operations, path agents, and render deltas for one tick.
 struct SimSchedulerStats {
   std::uint64_t tick = 0;
   bool planned_ops = false;
@@ -34,6 +37,7 @@ struct SimSchedulerStats {
   std::size_t render_delta_count = 0;
 };
 
+/// Plans and executes one immutable queued-operation frame against `world`.
 template <typename World, WritePolicy Policy, typename Fn>
 auto run_queued_operations(World& world, const FrameOps& ops, Fn&& fn)
     -> SimSchedulerStats {
@@ -95,6 +99,7 @@ auto tick_scheduler_core(SimSchedulerState& state, World& world,
 
 }  // namespace detail
 
+/// Runs queued work, unit-cost path agents, and render-delta collection.
 template <typename World, typename PassableTag, WritePolicy Policy, typename Fn>
 auto tick_unit_scheduler(SimSchedulerState& state, World& world,
                          const FrameOps& ops, std::span<PathAgentState> agents,
@@ -112,6 +117,7 @@ auto tick_unit_scheduler(SimSchedulerState& state, World& world,
 
 template <typename World, typename PassableTag, typename OccupancyTag,
           typename ReservationTag, WritePolicy Policy, typename Fn>
+/// Runs a unit-cost tick whose agent steps commit occupancy changes.
 auto tick_unit_movement_scheduler(SimSchedulerState& state, World& world,
                                   const FrameOps& ops,
                                   std::span<PathAgentState> agents,
@@ -130,6 +136,7 @@ auto tick_unit_movement_scheduler(SimSchedulerState& state, World& world,
 
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost, WritePolicy Policy, typename Fn>
+/// Runs queued work, bounded weighted agents, and render-delta collection.
 auto tick_weighted_scheduler(SimSchedulerState& state, World& world,
                              const FrameOps& ops,
                              std::span<PathAgentState> agents,
@@ -148,6 +155,7 @@ auto tick_weighted_scheduler(SimSchedulerState& state, World& world,
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost, typename OccupancyTag, typename ReservationTag,
           WritePolicy Policy, typename Fn>
+/// Runs a bounded weighted tick whose agent steps commit occupancy changes.
 auto tick_weighted_movement_scheduler(
     SimSchedulerState& state, World& world, const FrameOps& ops,
     std::span<PathAgentState> agents, PathRequestRuntime& runtime,

@@ -33,14 +33,16 @@ search, allocation tracking, and queued phase execution. It lives in
 - `AllocationCounters` records allocation and deallocation counts and bytes
   through `record_allocation(size)` and `record_deallocation(size)`.
 - `QueuedPhaseCounters` records queued phase execution: validated phase
-  calls and operations (`event_queued_phase_execute`), invalid phase ranges
+  calls and operations (`event_queued_phase_execute`), invalid phase tokens
   (`event_queued_phase_invalid_range`), phase failures
   (`event_queued_phase_failure`), partitioned phase calls and dirty
   partitions (`event_queued_partitioned_phase`), scoped-thread dispatches
   and worker counts (`event_queued_scoped_thread_dispatch`), worker-pool
   dispatches and worker counts (`event_queued_worker_pool_dispatch`), and
-  collected and merged dirty records (`event_queued_dirty_collect`,
-  `event_queued_dirty_merge`).
+  collected dirty records and merged dirty chunks
+  (`event_queued_dirty_collect`, `event_queued_dirty_merge`). Exceptional
+  coalescing reports both quantities separately, so duplicate records count
+  toward collection while each affected chunk counts once toward merge.
 - `ScopedPathCounters`, `ScopedAllocationCounters`, and
   `ScopedQueuedPhaseCounters` are RAII scopes that install a caller-owned
   counter struct as the active sink for the current thread and restore the
@@ -102,6 +104,7 @@ capture, gated by the same `TESS_ENABLE_DIAGNOSTICS` switch.
 - `TraceCategory` is a coarse origin tag (`General`, `Path`, `Topology`,
   `Queued`, `Planner`, `Scheduler`, `Render`); `Count` is a sentinel used to
   size the per-category timing array and must not be recorded against.
+  `trace_category_count` is the corresponding public array-bound constant.
 - `TraceRecord` is one structured point: a category, a non-owning
   `std::string_view label` (same static-storage contract as `Warning::message`
   and `PathView`), a `value` datum, and a monotonic `sequence` ordinal.
@@ -134,9 +137,9 @@ the active trace buffer under the `Planner` category, using the
 `TESS_DIAG_TRACE_VALUE` macro so the instrumentation compiles away when
 diagnostics are off. Each record's `value` is the operation (or phase) index:
 
-- `plan_operations` emits `invalid_write_policy`, `invalid_field_access`,
-  `invalid_domain`, `conflict` (a field hazard against an earlier operation),
-  or `planned` (accepted) for each operation.
+- `plan_operations` emits `invalid_identity`, `invalid_write_policy`,
+  `invalid_field_access`, `invalid_domain`, `conflict` (a field hazard against
+  an earlier operation), or `planned` (accepted) for each operation.
 - `plan_parallel_execution_phases` emits `unsupported_write_policy`,
   `new_phase` (an operation that opens a new parallel phase, whether the first
   or one forced by a conflict), or `merged` (an operation folded into the

@@ -12,6 +12,7 @@
 
 namespace tess {
 
+/// Classifies a movement commit or the reason validation rejected it.
 enum class MovementStatus : std::uint8_t {
   Moved,
   InvalidFrom,
@@ -26,6 +27,7 @@ enum class MovementStatus : std::uint8_t {
 };
 static_assert(sizeof(MovementStatus) == sizeof(std::uint8_t));
 
+/// Holds optional optimistic-concurrency versions for both movement endpoints.
 struct MovementVersionCheck {
   std::optional<std::uint32_t> from_chunk_version;
   std::optional<std::uint32_t> to_chunk_version;
@@ -33,18 +35,21 @@ struct MovementVersionCheck {
   std::optional<std::uint32_t> to_topology_version;
 };
 
+/// Describes an adjacent move and any versions it expects to remain current.
 struct MovementIntent {
   Coord3 from{};
   Coord3 to{};
   MovementVersionCheck versions{};
 };
 
+/// Reports the movement status together with the requested endpoints.
 struct MovementResult {
   MovementStatus status = MovementStatus::Moved;
   Coord3 from{};
   Coord3 to{};
 };
 
+/// Aggregates rejected movement attempts by retry-relevant category.
 struct MovementFailureCounts {
   std::size_t invalid = 0;
   std::size_t blocked = 0;
@@ -54,6 +59,7 @@ struct MovementFailureCounts {
   std::size_t stale_topology = 0;
 };
 
+/// Increments the category corresponding to a non-success movement status.
 inline void record_movement_failure(MovementFailureCounts& counts,
                                     MovementStatus status) noexcept {
   switch (status) {
@@ -88,6 +94,7 @@ inline void record_movement_failure(MovementFailureCounts& counts,
 // stale version guard); callers should re-path and retry. The remaining
 // failures (invalid endpoints, non-adjacent steps) indicate a caller bug
 // and are terminal.
+/// Returns whether retrying after world state changes may allow the move.
 [[nodiscard]] constexpr auto is_transient_movement_failure(
     MovementStatus status) noexcept -> bool {
   switch (status) {
@@ -141,6 +148,7 @@ namespace detail {
 
 }  // namespace detail
 
+/// Returns whether every optional version in `intent` still matches.
 template <typename World>
 [[nodiscard]] auto movement_versions_match(const World& world,
                                            MovementIntent intent) noexcept
@@ -271,6 +279,9 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag>
+/// Validates bounds, adjacency, topology, occupancy, and expected versions.
+///
+/// This function does not mutate `world`; success does not reserve the target.
 [[nodiscard]] auto validate_movement_intent(const World& world,
                                             MovementIntent intent) noexcept
     -> MovementResult {
@@ -281,6 +292,10 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag>
+/// Validates and atomically applies a movement intent to `world`.
+///
+/// On failure the world is unchanged. Success updates occupancy and, when
+/// requested, the dirty metadata maintained by the world.
 auto commit_movement_intent(World& world, MovementIntent intent,
                             std::uint32_t dirty_mask = 0) noexcept
     -> MovementResult {

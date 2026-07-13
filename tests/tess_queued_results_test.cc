@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <vector>
 
 #include "allocation_counter.h"
@@ -118,6 +119,75 @@ TEST(TessQueuedResults, DrainVisitsHandleOrderExactlyOnce) {
             0u);
   EXPECT_EQ(channel.state(tess::OpHandle{2}), tess::OpResultState::Failed);
   EXPECT_TRUE(channel.completion(tess::OpHandle{2}).completed);
+}
+
+TEST(TessQueuedResults, ThrowingDrainVisitorCanRetryTheUndeliveredSlot) {
+  World world;
+  tess::FrameOps ops;
+  const auto report = plan_one_good_one_rejected(world, ops);
+  tess::ResultChannel<Ack> channel;
+  ASSERT_EQ(tess::record_plan_completions(report, channel), 1u);
+
+  EXPECT_THROW((void)channel.drain_results(
+                   [](tess::OpHandle, const tess::OpCompletion&, const Ack*) {
+                     throw std::runtime_error{"visitor failure"};
+                   }),
+               std::runtime_error);
+
+  auto retried = std::size_t{0};
+  EXPECT_EQ(channel.drain_results([&](tess::OpHandle handle,
+                                      const tess::OpCompletion&, const Ack*) {
+    ++retried;
+    EXPECT_EQ(handle.value, 1u);
+  }),
+            1u);
+  EXPECT_EQ(retried, 1u);
+  EXPECT_EQ(channel.drain_results(
+                [](tess::OpHandle, const tess::OpCompletion&, const Ack*) {}),
+            0u);
+}
+
+TEST(TessQueuedResults, ReentrantReserveAndThrowKeepsTheSlotRetryable) {
+  World world;
+  tess::FrameOps ops;
+  const auto report = plan_one_good_one_rejected(world, ops);
+  tess::ResultChannel<Ack> channel;
+  ASSERT_EQ(tess::record_plan_completions(report, channel), 1u);
+
+  EXPECT_THROW((void)channel.drain_results(
+                   [&](tess::OpHandle, const tess::OpCompletion&, const Ack*) {
+                     channel.reserve_operations(1024);
+                     throw std::runtime_error{"visitor failure after reserve"};
+                   }),
+               std::runtime_error);
+
+  auto retried = std::size_t{0};
+  EXPECT_EQ(channel.drain_results([&](tess::OpHandle, const tess::OpCompletion&,
+                                      const Ack*) { ++retried; }),
+            1u);
+  EXPECT_EQ(retried, 1u);
+}
+
+TEST(TessQueuedResults, ReentrantClearAndThrowDoesNotTouchTheOldSlot) {
+  World world;
+  tess::FrameOps ops;
+  const auto report = plan_one_good_one_rejected(world, ops);
+  tess::ResultChannel<Ack> channel;
+  ASSERT_EQ(tess::record_plan_completions(report, channel), 1u);
+  const auto generation = channel.generation();
+
+  EXPECT_THROW((void)channel.drain_results(
+                   [&](tess::OpHandle, const tess::OpCompletion&, const Ack*) {
+                     channel.clear();
+                     throw std::runtime_error{"visitor failure after clear"};
+                   }),
+               std::runtime_error);
+
+  EXPECT_EQ(channel.size(), 0u);
+  EXPECT_EQ(channel.generation(), generation + 1u);
+  EXPECT_EQ(channel.drain_results(
+                [](tess::OpHandle, const tess::OpCompletion&, const Ack*) {}),
+            0u);
 }
 
 TEST(TessQueuedResults, ClearDropsSlotsAndBumpsTheGeneration) {
@@ -257,23 +327,26 @@ TEST(TessQueuedResults, DeliveryIsIdenticalUnderSerialAndThreadedExecutors) {
   }
 }
 
-TEST(TessQueuedResults, RuntimeFailuresDeliverReasonsAndSerialTailsPend) {
-  // Mixed write policies plan fine; executing with UniquePerChunk turns the
-  // UniquePerTile op into a runtime PolicyMismatch. The serial executor
-  // aborts there (tail stays Pending); threaded executors drain the whole
-  // range by contract.
+TEST(TessQueuedResults, MixedPolicyPhaseRejectsBeforeResultsOrCallbacks) {
+  // The phase capability carries its complete policy set, so both serial and
+  // concurrent executors reject a mixed phase before publishing results.
   tess::FrameOps ops;
   World serial_world;
   (void)enqueue_chunk_write(ops, 0);
-  (void)enqueue_chunk_write(ops, 1, tess::WritePolicy::UniquePerTile);
+  (void)ops.update_field(tess::DomainDesc::explicit_chunks(
+                             std::vector<tess::ChunkKey>{tess::ChunkKey{1}}),
+                         tess::WritePolicy::ReadOnly);
   (void)enqueue_chunk_write(ops, 2);
   const auto report = tess::plan_operations(serial_world, ops);
   ASSERT_TRUE(report.ok());
-  const auto phase = tess::ExecutionPhase{0, 3};
+  const auto phases = tess::plan_parallel_execution_phases(report.plan());
+  ASSERT_TRUE(phases.ok());
+  ASSERT_EQ(phases.phases().size(), 1u);
+  const auto phase = phases.phases()[0];
 
   const auto run = [&](auto& executor, World& world,
+                       tess::PlannedPhaseExecutionScratch& scratch,
                        tess::ResultChannel<Ack>& channel) {
-    tess::PlannedPhaseExecutionScratch scratch;
     return tess::execute_phase_partitioned_dirty_with_results<
         tess::WritePolicy::UniquePerChunk>(
         executor, world, report.plan(), phase, scratch, channel,
@@ -283,51 +356,55 @@ TEST(TessQueuedResults, RuntimeFailuresDeliverReasonsAndSerialTailsPend) {
   };
 
   tess::SerialPhaseExecutor serial_executor;
+  tess::PlannedPhaseExecutionScratch serial_scratch;
   tess::ResultChannel<Ack> serial_channel;
-  const auto serial_result = run(serial_executor, serial_world, serial_channel);
+  const auto serial_result =
+      run(serial_executor, serial_world, serial_scratch, serial_channel);
   EXPECT_EQ(serial_result.status, tess::PlannedExecutionStatus::PolicyMismatch);
-  EXPECT_EQ(serial_channel.state(tess::OpHandle{0}),
-            tess::OpResultState::Ready);
-  EXPECT_EQ(serial_channel.state(tess::OpHandle{1}),
-            tess::OpResultState::Failed);
-  // Serial early-stop: the tail was prepared but never ran.
-  EXPECT_EQ(serial_channel.state(tess::OpHandle{2}),
-            tess::OpResultState::Pending);
-  const auto failed = serial_channel.completion(tess::OpHandle{1});
-  EXPECT_TRUE(failed.completed);
-  EXPECT_FALSE(failed.ok());
-  EXPECT_EQ(failed.execution, tess::PlannedExecutionStatus::PolicyMismatch);
-  const auto serial_entries = drain_all(serial_channel);
-  ASSERT_EQ(serial_entries.size(), 2u);  // Pending tail is not drained
-  EXPECT_FALSE(serial_entries[1].has_value);
+  EXPECT_EQ(serial_result.chunk_count, 0u);
+  EXPECT_EQ(serial_scratch.operation_count(), 0u);
+  EXPECT_EQ(serial_channel.size(), 0u);
 
   World threaded_world;
   tess::ScopedThreadPhaseExecutor threaded_executor{2};
+  tess::PlannedPhaseExecutionScratch threaded_scratch;
   tess::ResultChannel<Ack> threaded_channel;
-  const auto threaded_result =
-      run(threaded_executor, threaded_world, threaded_channel);
+  const auto threaded_result = run(threaded_executor, threaded_world,
+                                   threaded_scratch, threaded_channel);
   EXPECT_EQ(threaded_result.status,
             tess::PlannedExecutionStatus::PolicyMismatch);
-  // Threaded executors drain the whole range: the tail op completed.
-  EXPECT_EQ(threaded_channel.state(tess::OpHandle{2}),
-            tess::OpResultState::Ready);
-  EXPECT_EQ(threaded_channel.state(tess::OpHandle{1}),
-            tess::OpResultState::Failed);
+  EXPECT_EQ(threaded_result.chunk_count, 0u);
+  EXPECT_EQ(threaded_scratch.operation_count(), 0u);
+  EXPECT_EQ(threaded_channel.size(), 0u);
+  for (const auto key :
+       {tess::ChunkKey{0}, tess::ChunkKey{1}, tess::ChunkKey{2}}) {
+    EXPECT_EQ(serial_world.chunk(key).template field_span<TerrainTag>()[0], 0u);
+    EXPECT_EQ(threaded_world.chunk(key).template field_span<TerrainTag>()[0],
+              0u);
+  }
 }
 
-TEST(TessQueuedResults, InvalidPhaseRangeFailsBeforeTouchingTheChannel) {
+TEST(TessQueuedResults, ForeignPhaseFailsBeforeTouchingTheChannel) {
   tess::FrameOps ops;
+  tess::FrameOps foreign_ops;
   World world;
   (void)enqueue_chunk_write(ops, 0);
+  (void)enqueue_chunk_write(foreign_ops, 1);
   const auto report = tess::plan_operations(world, ops);
+  const auto foreign_report = tess::plan_operations(world, foreign_ops);
   ASSERT_TRUE(report.ok());
+  ASSERT_TRUE(foreign_report.ok());
+  const auto foreign_phases =
+      tess::plan_parallel_execution_phases(foreign_report.plan());
+  ASSERT_TRUE(foreign_phases.ok());
+  ASSERT_EQ(foreign_phases.phases().size(), 1u);
 
   tess::PlannedPhaseExecutionScratch scratch;
   tess::ResultChannel<Ack> channel;
   tess::SerialPhaseExecutor executor;
   const auto result = tess::execute_phase_partitioned_dirty_with_results<
       tess::WritePolicy::UniquePerChunk>(executor, world, report.plan(),
-                                         tess::ExecutionPhase{0, 5}, scratch,
+                                         foreign_phases.phases()[0], scratch,
                                          channel, [](auto, Ack&) {});
   EXPECT_EQ(result.status, tess::PlannedExecutionStatus::InvalidPhase);
   EXPECT_EQ(channel.size(), 0u);

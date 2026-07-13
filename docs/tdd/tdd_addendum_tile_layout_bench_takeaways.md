@@ -6,36 +6,24 @@ Proposed addendum. This document does not duplicate the benchmark repository. It
 
 ## Reference
 
-Primary reference repository:
-
-```text
-https://github.com/kindjie/tile-layout-bench
-```
-
-Use repository-relative documentation links where possible so references remain resilient as the repo evolves:
-
-```text
-README.md
-RESULTS.md
-docs/layouts.md
-docs/relationships.md
-docs/roadmap.md
-```
-
-Treat the benchmark repo as living evidence, not frozen specification. If results change, this library addendum should be updated by changing decisions and success criteria, not by copying benchmark internals into this document.
+The conclusions below originated in a separate reference-consumer benchmark.
+They are retained here as historical design input, not as a dependency or a
+source of current API truth. Revalidate any performance claim with this
+repository's own benchmark suite before using it to change maintained code.
 
 ## Context
 
 The tile-map library needs fast operations for colony-sim, city-builder, 4X, and management-game workloads. Earlier design work considered whether exotic 2D-to-1D layouts such as Hilbert, Morton, Sierpinski, or other space-filling curves should be central to the storage model.
 
-The benchmark repository suggests a more practical direction:
+The reference benchmark suggested a more practical direction:
 
 ```text
 Prefer simple canonical storage and workload-specific acceleration structures.
 Use exotic layouts as optional experiments, not default architecture.
 ```
 
-The library should absorb the benchmark's conclusions as design pressure, while preserving its own API stability and correctness guarantees.
+The library should treat those conclusions as design pressure while preserving
+its own correctness and performance guarantees.
 
 ## Existing Design Alignment
 

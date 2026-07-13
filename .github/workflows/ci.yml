@@ -26,13 +26,15 @@ jobs:
       CXX: clang++
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Install ccache
         run: (sudo apt-get update || true) && sudo apt-get install -y ccache
 
       - name: Restore compiler cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
           key: ccache-dev-${{ github.sha }}
@@ -80,13 +82,15 @@ jobs:
       CXX: g++
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Install ccache
         run: (sudo apt-get update || true) && sudo apt-get install -y ccache
 
       - name: Restore compiler cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
           key: ccache-gcc-${{ github.sha }}
@@ -108,38 +112,50 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        run: pipx install uv==0.11.26
+        # setup-uv v8.3.2.
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
+        with:
+          version: "0.11.28"
+
+      - name: Install development tools
+        run: |
+          uv venv
+          uv pip sync --require-hashes requirements-dev.txt
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Show tool versions
         run: |
           uv --version
-          uv run --frozen --group dev clang-format --version
+          clang-format --version
 
       - name: Repository hook checks
-        run: uv run --frozen --group dev python tools/git_hooks.py ci
+        run: python tools/git_hooks.py ci
 
       - name: Hook unit tests
         run: >-
-          uv run --frozen --group dev pytest
+          pytest
           tests/test_git_hooks.py
           tests/test_benchmark_tools.py
           tests/test_check_public_surface.py
           tests/test_check_public_docs.py
           tests/test_header_compile_cost.py
+          tests/test_steamdeck_tools.py
 
       # Failing gate (promoted 2026-07-07 after a clean shake-out):
       # public symbols must be documented in a maintained architecture
       # doc and listed in docs/architecture/surface.json.
       - name: Public surface manifest
-        run: uv run --frozen --group dev python tools/check_public_surface.py
+        run: python tools/check_public_surface.py
 
-      # First-slice gate: every namespace-scope symbol in the opted-in headers
-      # must carry a Doxygen comment. Expand the header set incrementally.
+      # Every namespace-scope symbol in an installed API-bearing header must
+      # carry a Doxygen comment.
       - name: Public API documentation
-        run: uv run --frozen --group dev python tools/check_public_docs.py
+        run: python tools/check_public_docs.py
 
   quality:
     name: Quality Gates (${{ matrix.preset }})
@@ -159,23 +175,47 @@ jobs:
       CXX: clang++
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Install ccache
         run: (sudo apt-get update || true) && sudo apt-get install -y ccache
 
       - name: Restore compiler cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
           key: ccache-${{ matrix.preset }}-${{ github.sha }}
           restore-keys: ccache-${{ matrix.preset }}-
 
-      - name: Install analysis tools
-        if: matrix.preset == 'dev-cppcheck' || matrix.preset == 'dev-clang-tidy'
+      - name: Install clang-tidy
+        if: matrix.preset == 'dev-clang-tidy'
         run: |
           sudo apt-get update || true
-          sudo apt-get install -y clang-tidy cppcheck
+          sudo apt-get install -y clang-tidy
+
+      - name: Install cppcheck 2.21.0
+        if: matrix.preset == 'dev-cppcheck'
+        env:
+          CPPCHECK_SHA256: >-
+            f028ff75ca5372738f3737c8b3e8611426a6526b6aea2ef01301ab0f5902f044
+        run: |
+          archive="$RUNNER_TEMP/cppcheck-2.21.0.tar.gz"
+          curl -fsSL \
+            https://github.com/danmar/cppcheck/archive/refs/tags/2.21.0.tar.gz \
+            -o "$archive"
+          echo "$CPPCHECK_SHA256  $archive" | sha256sum --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          cmake \
+            -S "$RUNNER_TEMP/cppcheck-2.21.0" \
+            -B "$RUNNER_TEMP/cppcheck-build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+            -DUSE_MATCHCOMPILER=Off
+          cmake --build "$RUNNER_TEMP/cppcheck-build" \
+            --target cppcheck --parallel 2
+          echo "$RUNNER_TEMP/cppcheck-build/bin" >> "$GITHUB_PATH"
 
       - name: Show tool versions
         run: |
@@ -211,13 +251,15 @@ jobs:
       CXX: clang++
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Install ccache
         run: (sudo apt-get update || true) && sudo apt-get install -y ccache
 
       - name: Restore compiler cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
           key: ccache-${{ matrix.preset }}-${{ github.sha }}
@@ -257,10 +299,12 @@ jobs:
       CXX: clang++
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Restore compiler cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
           key: ccache-macos-${{ matrix.preset }}-${{ github.sha }}
@@ -296,7 +340,9 @@ jobs:
     runs-on: windows-2025
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Show tool versions
         run: cmake --version
@@ -326,13 +372,15 @@ jobs:
       CXX: clang++
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Install ccache
         run: (sudo apt-get update || true) && sudo apt-get install -y ccache
 
       - name: Restore compiler cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
           key: ccache-bench-${{ github.sha }}
@@ -368,28 +416,40 @@ jobs:
         run: cmake --build --preset bench --target tess_bench_path_thresholds
 
       - name: Topology benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_topology_thresholds
+        run: >-
+          cmake --build --preset bench --target
+          tess_bench_topology_thresholds
 
       - name: Scheduler benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_scheduler_thresholds
+        run: >-
+          cmake --build --preset bench --target
+          tess_bench_scheduler_thresholds
 
       - name: Residency benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_residency_thresholds
+        run: >-
+          cmake --build --preset bench --target
+          tess_bench_residency_thresholds
 
       - name: Parallel benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_parallel_thresholds
+        run: >-
+          cmake --build --preset bench --target
+          tess_bench_parallel_thresholds
 
       - name: Ecs benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_ecs_thresholds
 
       - name: Render delta benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_render_delta_thresholds
+        run: >-
+          cmake --build --preset bench --target
+          tess_bench_render_delta_thresholds
 
       - name: Fields benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_fields_thresholds
 
       - name: Diagnostics benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_diagnostics_thresholds
+        run: >-
+          cmake --build --preset bench --target
+          tess_bench_diagnostics_thresholds
 
       - name: Collect non-gating benchmark baselines
         run: cmake --build --preset bench --target tess_bench_ci_baselines
@@ -400,7 +460,8 @@ jobs:
             --out build/bench/bench/ci-baselines/metadata.json
 
       - name: Upload benchmark baseline artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        # upload-artifact v7.0.1.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: benchmark-baselines-${{ github.run_id }}
           path: build/bench/bench/ci-baselines/*.json

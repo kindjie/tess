@@ -113,9 +113,11 @@ affecting deterministic state or authoritative ordering.
 
 ## Lane 1: Scoped Phase Execution
 
-Scoped phase execution runs an existing `ExecutionPhase` range from an existing
-`ExecutionPlan`. Planning has already validated the operation domains and
-grouped only compatible operations into a phase.
+Scoped phase execution runs a planner-issued `ExecutionPhase` capability
+against the exact `ExecutionPlan` that issued it. Planning has already
+validated the operation domains and grouped only compatible operations into a
+phase; phase helpers reject capabilities copied from another plan or retained
+after that plan's owning report is reused.
 
 The first production shape remains conservative:
 

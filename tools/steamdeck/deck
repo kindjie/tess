@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Single entrypoint for the tess Steam Deck workflow: build on macOS in the
+# Single entrypoint for the tess Steam Deck workflow: build on the host in the
 # Steam Runtime container, run tests/benchmarks on the Deck. Run `deck help`.
 set -euo pipefail
 
@@ -9,7 +9,13 @@ REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 DECK_HOST="${DECK_HOST:-deck}"
 CONTAINER="${TESS_STEAMRT_CONTAINER:-tess-rt}"
 BUILD_IMAGE="${TESS_STEAMRT_BUILD_IMAGE:-tess-steamrt4:local}"
+DEFAULT_STEAMRT_IMAGE="registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk"
+DEFAULT_STEAMRT_IMAGE+="@sha256:584939ebd7d2f1eec719e771fdde4ae3b"
+DEFAULT_STEAMRT_IMAGE+="d469ee741c783abb7fe812ddaaf3ee4"
+STEAMRT_IMAGE="${TESS_STEAMRT_IMAGE:-${DEFAULT_STEAMRT_IMAGE}}"
+STEAMRT_IMAGE_LABEL="dev.tess.steamrt-image"
 SSH_KEY="${DECK_SSH_KEY:-$HOME/.ssh/id_ed25519}"
+KNOWN_HOSTS="$HOME/.ssh/known_hosts"
 
 say()  { printf '\033[1m>> %s\033[0m\n' "$*"; }
 die()  { printf '\033[31m!! %s\033[0m\n' "$*" >&2; exit 1; }
@@ -19,12 +25,12 @@ no()   { printf '  \033[31m✗\033[0m %s\n' "$*"; }
 cmd_help() {
   cat <<'EOF'
 tess Steam Deck workflow — build for x86_64 in Valve's Steam Runtime container
-on this Mac, run on the Deck's real hardware.
+on an ARM64 macOS host, then run on the Deck's real hardware.
 
 Usage: tools/steamdeck/deck <command> [args]
 
 Setup (once):
-  setup            Mac: verify Docker/Rosetta, install watchexec, build the
+  setup            Host: verify Docker/Rosetta, install watchexec, build the
                    build image, start the container, configure linux-dev.
   deck-setup [ip]  Deck: discover it on the LAN (or pass [ip]), show the host
                    key fingerprint for confirmation, then set up the ssh
@@ -32,7 +38,7 @@ Setup (once):
                      passwd && sudo systemctl enable --now sshd
   doctor           Check every prerequisite and print ✓/✗.
 
-Develop (on the Mac):
+Develop on the host:
   test             Build + ctest (linux-dev) once in the container.
   watch            Rebuild + ctest on every save (needs watchexec).
   asan             Build + ctest under ASan/UBSan (linux-asan).
@@ -51,12 +57,30 @@ EOF
 
 ensure_container() {  # $1 = cmake preset the caller needs configured
   local preset="${1:-linux-dev}"
+  local running runtime_image
   case "$preset" in
     ''|*[!A-Za-z0-9._-]*) die "invalid preset '${preset}'" ;;
   esac
-  if [ "$(docker inspect -f '{{.State.Running}}' "${CONTAINER}" 2>/dev/null)" != "true" ]; then
+  running="$(
+    docker inspect -f '{{.State.Running}}' "${CONTAINER}" 2>/dev/null || true
+  )"
+  runtime_image=""
+  if [ "$running" = "true" ]; then
+    runtime_image="$(
+      docker inspect -f \
+        "{{ index .Config.Labels \"${STEAMRT_IMAGE_LABEL}\" }}" \
+        "${CONTAINER}" 2>/dev/null || true
+    )"
+  fi
+  if [ "$running" != "true" ]; then
     say "container '${CONTAINER}' not running; starting it ..."
-    "${HERE}/container-up.sh" "$preset"
+    TESS_STEAMRT_IMAGE="${STEAMRT_IMAGE}" \
+      "${HERE}/container-up.sh" "$preset"
+  elif [ "$runtime_image" != "$STEAMRT_IMAGE" ]; then
+    say "container '${CONTAINER}' uses a different Steam Runtime;" \
+      "refreshing ..."
+    TESS_STEAMRT_IMAGE="${STEAMRT_IMAGE}" \
+      "${HERE}/container-up.sh" "$preset"
   elif [ ! -f "${REPO_ROOT}/build/${preset}/CMakeCache.txt" ]; then
     say "configuring preset '${preset}' in container '${CONTAINER}' ..."
     docker exec "${CONTAINER}" cmake --preset "$preset"
@@ -93,23 +117,223 @@ discover_deck() {
   esac
 }
 
+ssh_alias_exists() {  # $1 = config path
+  awk -v alias="$DECK_HOST" '
+    tolower($1) == "host" {
+      for (i = 2; i <= NF; ++i) {
+        if (tolower($i) == tolower(alias)) found = 1
+      }
+    }
+    END { exit found ? 0 : 1 }
+  ' "$1"
+}
+
+ssh_config_value() {  # $1 = effective config key; reads `ssh -G` on stdin
+  awk -v wanted="$1" '
+    tolower($1) == tolower(wanted) {
+      $1 = ""
+      sub(/^[[:space:]]+/, "")
+      print
+      exit
+    }
+  '
+}
+
+validate_ssh_alias_config() {  # $1 = confirmed ip
+  local config hostname user port identities strict
+  local proxy_command proxy_jump host_key_alias
+  local global_hosts known_hosts_command control_master control_path
+  local forward_agent permit_local local_command remote_command clear_forwards
+  local check_host_ip verify_host_dns
+  config="$(ssh -G "$DECK_HOST" 2>/dev/null)" \
+    || die "could not resolve SSH alias '${DECK_HOST}'"
+  hostname="$(printf '%s\n' "$config" | ssh_config_value hostname)"
+  user="$(printf '%s\n' "$config" | ssh_config_value user)"
+  port="$(printf '%s\n' "$config" | ssh_config_value port)"
+  identities="$(printf '%s\n' "$config" | ssh_config_value identitiesonly)"
+  strict="$(
+    printf '%s\n' "$config" | ssh_config_value stricthostkeychecking
+  )"
+  proxy_command="$(
+    printf '%s\n' "$config" | ssh_config_value proxycommand
+  )"
+  proxy_jump="$(printf '%s\n' "$config" | ssh_config_value proxyjump)"
+  host_key_alias="$(
+    printf '%s\n' "$config" | ssh_config_value hostkeyalias
+  )"
+  global_hosts="$(
+    printf '%s\n' "$config" | ssh_config_value globalknownhostsfile
+  )"
+  known_hosts_command="$(
+    printf '%s\n' "$config" | ssh_config_value knownhostscommand
+  )"
+  control_master="$(
+    printf '%s\n' "$config" | ssh_config_value controlmaster
+  )"
+  control_path="$(printf '%s\n' "$config" | ssh_config_value controlpath)"
+  forward_agent="$(
+    printf '%s\n' "$config" | ssh_config_value forwardagent
+  )"
+  permit_local="$(
+    printf '%s\n' "$config" | ssh_config_value permitlocalcommand
+  )"
+  local_command="$(
+    printf '%s\n' "$config" | ssh_config_value localcommand
+  )"
+  remote_command="$(
+    printf '%s\n' "$config" | ssh_config_value remotecommand
+  )"
+  clear_forwards="$(
+    printf '%s\n' "$config" | ssh_config_value clearallforwardings
+  )"
+  check_host_ip="$(printf '%s\n' "$config" | ssh_config_value checkhostip)"
+  verify_host_dns="$(
+    printf '%s\n' "$config" | ssh_config_value verifyhostkeydns
+  )"
+
+  [ "$hostname" = "$1" ] \
+    || die "SSH alias '${DECK_HOST}' resolves to ${hostname:-<none>}, not $1; \
+fix ~/.ssh/config before installing a key"
+  [ "$user" = "deck" ] \
+    || die "SSH alias '${DECK_HOST}' effective User is ${user:-<none>}, \
+not deck"
+  [ "$port" = "22" ] \
+    || die "SSH alias '${DECK_HOST}' uses unsafe port ${port:-<none>}"
+  [ "$identities" = "yes" ] \
+    || die "SSH alias '${DECK_HOST}' must set IdentitiesOnly yes"
+  printf '%s\n' "$config" \
+    | awk -v key="$SSH_KEY" '
+        tolower($1) == "identityfile" {
+          ++lines
+          if (NF == 2 && $2 == key) found = 1
+        }
+        END { exit found && lines == 1 ? 0 : 1 }
+      ' \
+    || die "SSH alias '${DECK_HOST}' must use only IdentityFile ${SSH_KEY}"
+  case "$strict" in
+    yes|true) ;;
+    *) die "SSH alias '${DECK_HOST}' bypasses strict host-key checking" ;;
+  esac
+  case "$check_host_ip" in
+    yes|true) ;;
+    *) die "SSH alias '${DECK_HOST}' must set CheckHostIP yes" ;;
+  esac
+  case "$verify_host_dns" in
+    no|false) ;;
+    *) die "SSH alias '${DECK_HOST}' has unsafe VerifyHostKeyDNS" ;;
+  esac
+  [ -z "$proxy_command" ] || [ "$proxy_command" = "none" ] \
+    || die "SSH alias '${DECK_HOST}' has unsafe ProxyCommand"
+  [ -z "$proxy_jump" ] || [ "$proxy_jump" = "none" ] \
+    || die "SSH alias '${DECK_HOST}' has unsafe ProxyJump"
+  [ -z "$host_key_alias" ] \
+    || die "SSH alias '${DECK_HOST}' has unsafe HostKeyAlias"
+  [ "$global_hosts" = "/dev/null" ] \
+    || die "SSH alias '${DECK_HOST}' has unsafe GlobalKnownHostsFile"
+  [ -z "$known_hosts_command" ] \
+    || die "SSH alias '${DECK_HOST}' has unsafe KnownHostsCommand"
+  case "$control_master" in
+    no|false) ;;
+    *) die "SSH alias '${DECK_HOST}' has unsafe ControlMaster" ;;
+  esac
+  [ -z "$control_path" ] \
+    || die "SSH alias '${DECK_HOST}' has unsafe ControlPath"
+  case "$forward_agent" in
+    no|false) ;;
+    *) die "SSH alias '${DECK_HOST}' has unsafe ForwardAgent" ;;
+  esac
+  case "$permit_local" in
+    no|false) ;;
+    *) die "SSH alias '${DECK_HOST}' permits LocalCommand" ;;
+  esac
+  [ -z "$local_command" ] \
+    || die "SSH alias '${DECK_HOST}' has unsafe LocalCommand"
+  [ -z "$remote_command" ] \
+    || die "SSH alias '${DECK_HOST}' has unsafe RemoteCommand"
+  case "$clear_forwards" in
+    yes|true) ;;
+    *) die "SSH alias '${DECK_HOST}' must clear configured forwards" ;;
+  esac
+  printf '%s\n' "$config" \
+    | awk -v known="$KNOWN_HOSTS" '
+        tolower($1) == "userknownhostsfile" {
+          ++lines
+          if (NF == 2 && $2 == known) found = 1
+        }
+        END { exit found && lines == 1 ? 0 : 1 }
+      ' \
+    || die "SSH alias '${DECK_HOST}' must use only ${KNOWN_HOSTS}"
+}
+
 ensure_ssh_alias() {  # $1 = ip
   local cfg="$HOME/.ssh/config"
   touch "$cfg"; chmod 600 "$cfg"
-  if grep -qiE "^[[:space:]]*Host[[:space:]]+${DECK_HOST}([[:space:]]|$)" "$cfg"; then
-    say "ssh config already has '${DECK_HOST}' — leaving it"
+  if ssh_alias_exists "$cfg"; then
+    say "ssh config already has '${DECK_HOST}' — verifying it"
   else
-    printf '\nHost %s\n    HostName %s\n    User deck\n    IdentitiesOnly yes\n    IdentityFile %s\n' \
-      "$DECK_HOST" "$1" "$SSH_KEY" >> "$cfg"
+    {
+      printf '\nHost %s\n' "$DECK_HOST"
+      printf '    HostName %s\n' "$1"
+      printf '    User deck\n'
+      printf '    IdentitiesOnly yes\n'
+      printf '    IdentityFile %s\n' "$SSH_KEY"
+      printf '    StrictHostKeyChecking yes\n'
+      printf '    UserKnownHostsFile ~/.ssh/known_hosts\n'
+      printf '    GlobalKnownHostsFile /dev/null\n'
+      printf '    CheckHostIP yes\n'
+      printf '    VerifyHostKeyDNS no\n'
+      printf '    ClearAllForwardings yes\n'
+      printf '    ControlMaster no\n'
+      printf '    ForwardAgent no\n'
+      printf '    PermitLocalCommand no\n'
+    } >> "$cfg"
     say "added '${DECK_HOST}' -> $1 to ~/.ssh/config"
   fi
+  validate_ssh_alias_config "$1"
+  say "verified '${DECK_HOST}' resolves to the confirmed host $1"
+}
+
+validate_deck_host_alias() {
+  case "$DECK_HOST" in
+    ''|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*)
+      die "invalid DECK_HOST: use a simple SSH alias ([A-Za-z0-9._-])"
+      ;;
+  esac
+}
+
+validate_ssh_key_path() {
+  case "$SSH_KEY" in
+    /*) ;;
+    *) die "unsafe DECK_SSH_KEY: use an absolute path" ;;
+  esac
+  case "$SSH_KEY" in
+    *[!A-Za-z0-9_./+-]*)
+      die "unsafe DECK_SSH_KEY: spaces and SSH config syntax are forbidden"
+      ;;
+  esac
+}
+
+validate_ipv4() {  # $1 = candidate address
+  local octets octet
+  case "$1" in
+    ''|*[!0-9.]*) die "invalid IPv4 address: expected four decimal octets" ;;
+  esac
+  IFS=. read -r -a octets <<< "$1"
+  [ "${#octets[@]}" -eq 4 ] \
+    || die "invalid IPv4 address: expected four decimal octets"
+  for octet in "${octets[@]}"; do
+    [[ "$octet" =~ ^(0|[1-9][0-9]{0,2})$ ]] \
+      || die "invalid IPv4 address: expected four decimal octets"
+    ((10#$octet <= 255)) \
+      || die "invalid IPv4 address: expected four decimal octets"
+  done
 }
 
 # Discovery only proves "some host with SSH open" — never hand our key to an
 # unverified box. Show the host key fingerprint, make the user confirm, and
 # pin the key in known_hosts so ssh-copy-id is not a blind TOFU accept.
 confirm_deck_host() {  # $1 = ip
-  local keys fprints reply
+  local keys fprints reply key
   keys="$(ssh-keyscan -T 5 "$1" 2>/dev/null)" || true
   [ -n "$keys" ] || die "no SSH host key from $1 — is sshd running on the Deck?"
   fprints="$(printf '%s\n' "$keys" | ssh-keygen -lf /dev/stdin 2>/dev/null)" \
@@ -124,15 +348,20 @@ rerun 'deck deck-setup $1' in a terminal"
     y|Y|yes|YES) ;;
     *) die "aborted — no key installed on $1" ;;
   esac
-  if ! ssh-keygen -F "$1" >/dev/null 2>&1; then
-    mkdir -p "$HOME/.ssh"
-    printf '%s\n' "$keys" >> "$HOME/.ssh/known_hosts"
-    say "pinned $1 host key in ~/.ssh/known_hosts"
-  fi
+  mkdir -p "$HOME/.ssh"
+  touch "$KNOWN_HOSTS"
+  chmod 600 "$KNOWN_HOSTS"
+  while IFS= read -r key; do
+    grep -Fqx "$key" "$KNOWN_HOSTS" \
+      || printf '\n%s\n' "$key" >> "$KNOWN_HOSTS"
+  done <<< "$keys"
+  say "pinned $1 host key in ~/.ssh/known_hosts"
 }
 
 cmd_deck_setup() {
   local ip="${1:-}"
+  validate_deck_host_alias
+  validate_ssh_key_path
   [ -f "${SSH_KEY}.pub" ] || die "no ssh key at ${SSH_KEY}.pub (set DECK_SSH_KEY or run: ssh-keygen -t ed25519)"
   if [ -z "$ip" ]; then
     say "discovering the Deck on the LAN ..."
@@ -140,29 +369,57 @@ cmd_deck_setup() {
    On the Deck (Desktop Mode → Konsole) first run: passwd && sudo systemctl enable --now sshd"
     say "found Deck at $ip"
   fi
+  validate_ipv4 "$ip"
   confirm_deck_host "$ip"
   ensure_ssh_alias "$ip"
   say "installing SSH key (enter the Deck password once if prompted) ..."
-  ssh-copy-id -o IdentitiesOnly=yes -i "${SSH_KEY}.pub" "$DECK_HOST" >/dev/null 2>&1 \
-    || ssh-copy-id -o IdentitiesOnly=yes -i "${SSH_KEY}.pub" "$DECK_HOST" \
+  local copy_args=(
+    -F /dev/null
+    -o "UserKnownHostsFile=${KNOWN_HOSTS}"
+    -o GlobalKnownHostsFile=/dev/null
+    -o KnownHostsCommand=none
+    -o StrictHostKeyChecking=yes
+    -o CheckHostIP=yes
+    -o UpdateHostKeys=no
+    -o VerifyHostKeyDNS=no
+    -o ClearAllForwardings=yes
+    -o IdentitiesOnly=yes
+    -o ProxyCommand=none
+    -o ProxyJump=none
+    -i "${SSH_KEY}.pub"
+    "deck@${ip}"
+  )
+  ssh-copy-id "${copy_args[@]}" >/dev/null 2>&1 \
+    || ssh-copy-id "${copy_args[@]}" \
     || die "ssh-copy-id failed — check the Deck password / that sshd is enabled"
   local ident
-  ident="$(ssh -o BatchMode=yes -o ConnectTimeout=8 "$DECK_HOST" \
+  ident="$(ssh -F /dev/null \
+    -o "UserKnownHostsFile=${KNOWN_HOSTS}" \
+    -o GlobalKnownHostsFile=/dev/null -o KnownHostsCommand=none \
+    -o StrictHostKeyChecking=yes -o CheckHostIP=yes \
+    -o UpdateHostKeys=no -o VerifyHostKeyDNS=no \
+    -o ClearAllForwardings=yes \
+    -o IdentitiesOnly=yes \
+    -o ProxyCommand=none -o ProxyJump=none \
+    -o BatchMode=yes -o ConnectTimeout=8 -i "$SSH_KEY" "deck@${ip}" \
     'uname -n; cat /etc/os-release 2>/dev/null' 2>/dev/null)" \
-    || die "could not reach ${DECK_HOST} after installing the key"
-  if printf '%s\n' "$ident" | grep -qiE '^steamdeck$|steamos'; then
-    say "verified: host identifies as a Steam Deck ($(printf '%s\n' "$ident" | head -n1))"
+    || die "could not reach deck@${ip} after installing the key"
+  if printf '%s\n' "$ident" \
+      | grep -qiE '^(ID=steamos|NAME="?SteamOS"?)$'; then
+    say "verified: host reports SteamOS"
   else
-    say "warning: ${DECK_HOST} does NOT identify as a Steam Deck:"
-    printf '%s\n' "$ident" | sed 's/^/     /'
-    say "if this is the wrong machine, remove the key you just installed:"
-    say "  ssh ${DECK_HOST}  then edit ~/.ssh/authorized_keys (drop the new line)"
+    printf 'Host deck@%s does not identify as SteamOS:\n' "$ip" >&2
+    printf 'Remove the matching %s.pub line from ' "$SSH_KEY" >&2
+    printf 'deck@%s:~/.ssh/authorized_keys.\n' "$ip" >&2
+    printf 'Then remove the pin: ssh-keygen -R %q -f %q\n' \
+      "$ip" "$KNOWN_HOSTS" >&2
+    die "refusing to mark an unverified host ready"
   fi
   say "Deck ready. Try: 'deck bench --pin'."
 }
 
 cmd_doctor() {
-  echo "macOS side:"
+  echo "host side:"
   command -v docker >/dev/null 2>&1 && ok "docker installed" || no "docker missing"
   docker info >/dev/null 2>&1 && ok "docker daemon running" || no "docker daemon down (start Docker Desktop)"
   docker image inspect "${BUILD_IMAGE}" >/dev/null 2>&1 && ok "build image ${BUILD_IMAGE}" || no "build image missing (run: deck setup)"

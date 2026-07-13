@@ -11,6 +11,7 @@ namespace tess {
 // the grid. Only `Unreachable` licenses skipping A* -- every other value is
 // "inconclusive, run A*" -- so the precheck can never turn a solvable query
 // into a wrong failure (see precheck_rules_out_path).
+/// Classifies a conservative topology precheck before authoritative search.
 enum class PrecheckStatus : std::uint8_t {
   // The graph admits a region path from start to goal; run A* to realize it.
   Reachable,
@@ -35,6 +36,7 @@ enum class PrecheckStatus : std::uint8_t {
 
 // True iff the precheck definitively established that no path exists, so the
 // caller may skip A* entirely. Every other status means "run A*".
+/// Returns whether `status` alone proves that no path exists.
 [[nodiscard]] constexpr bool precheck_rules_out_path(
     PrecheckStatus status) noexcept {
   return status == PrecheckStatus::Unreachable;
@@ -58,6 +60,10 @@ enum class PrecheckStatus : std::uint8_t {
 // is_region_graph_fresh_for, so it degrades to running A* rather than letting
 // `Unreachable` prune a route the search's own class could walk. Cost
 // weighting remains irrelevant (weights only order passable tiles).
+/// Runs a conservative region-graph reachability check before grid search.
+///
+/// Only `Unreachable` proves failure. Every other result requires the caller
+/// to run authoritative pathfinding. The caller owns and synchronizes scratch.
 template <typename ClassOrTag, typename World>
 [[nodiscard]] auto precheck_path(
     const RegionGraphT<typename World::residency_type>& graph,

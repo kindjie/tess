@@ -73,6 +73,22 @@ TEST(TessSparseTopology, BuildsGraphOverResidentSetOnly) {
   EXPECT_EQ(graph.portals().size(), 64u);
 }
 
+TEST(TessSparseTopology, LocalBuildRejectsNonResidentChunk) {
+  SparseSmall world{tess::ResidencyConfig{SparseSmall::page_byte_size}};
+  ASSERT_FALSE(world.is_resident(tess::ChunkKey{1}));
+  tess::LocalTopologyScratch scratch;
+  tess::LocalChunkTopology topology;
+
+  const auto result =
+      tess::build_local_chunk_topology<SparseSmall, PassableTag>(
+          world, tess::ChunkKey{1}, scratch, topology);
+
+  EXPECT_EQ(result.status, tess::TopologyStatus::MissingChunk);
+  EXPECT_TRUE(topology.region_ids().empty());
+  EXPECT_TRUE(topology.regions().empty());
+  EXPECT_TRUE(topology.boundary_exits().empty());
+}
+
 TEST(TessSparseTopology, ReachableAcrossResidentChunks) {
   SparseSmall world{tess::ResidencyConfig{8 * SparseSmall::page_byte_size}};
   make_chunk_passable(world, tess::ChunkKey{0});
