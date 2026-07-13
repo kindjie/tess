@@ -305,6 +305,7 @@ TEST(TessPathCache, RouteCacheEntryCapInvalidatesWholeCache) {
 
   // Distinct goals so every request is a fresh miss.
   std::vector<tess::PathRequest> requests;
+  requests.reserve(6);
   for (std::int64_t y = 0; y < 6; ++y) {
     requests.push_back(
         tess::PathRequest{tess::Coord3{0, y, 0}, tess::Coord3{7, y, 0}});

@@ -7,7 +7,9 @@ C++ code follows the
 
 - Format C++ with `clang-format` using the repository `.clang-format`.
 - Build local test and benchmark targets with project warning flags by default.
-- Use `dev-werror` when checking that project warnings remain clean as errors.
+- Keep project warnings clean as errors. The `dev-werror`, `dev-asan`,
+  `dev-tsan`, `release`, `bench`, `bench-profile`, and `windows-msvc` presets
+  enable `TESS_WARNINGS_AS_ERRORS`; CI runs GCC through `dev-werror` too.
 - Use `dev-asan` for AddressSanitizer and UndefinedBehaviorSanitizer test
   runs.
 - Use `dev-clang-tidy` for opt-in clang-tidy checks when `clang-tidy` is

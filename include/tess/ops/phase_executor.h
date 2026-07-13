@@ -212,6 +212,12 @@ class ScopedThreadPhaseExecutor {
 // here. Distinct executors are independent and may dispatch in parallel.
 // The analyzer's padding complaint is the point: the alignas(128) members
 // below buy false-sharing isolation with those bytes (audit 2026-07-11 M8).
+#if defined(_MSC_VER)
+#pragma warning(push)
+// C4324 reports padding introduced by alignment. The padding in this class is
+// intentional: it isolates contended worker-pool state from false sharing.
+#pragma warning(disable : 4324)
+#endif
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class WorkerPoolPhaseExecutor {
  public:
@@ -431,6 +437,9 @@ class WorkerPoolPhaseExecutor {
   bool stop_ = false;
   std::vector<std::thread> workers_;
 };
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 template <typename Executor, typename Fn>
 auto execute_operation_index_range(Executor&& executor,

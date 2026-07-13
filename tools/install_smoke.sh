@@ -25,7 +25,8 @@ major="${version%%.*}"
 rest="${version#*.}"
 minor="${rest%%.*}"
 
-work="$(mktemp -d "${TMPDIR:-/tmp}/tess-install-smoke.XXXXXX")"
+mkdir -p "$root/build"
+work="$(mktemp -d "$root/build/tess-install-smoke.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 prefix="$work/prefix"
 consumer="$work/consumer"

@@ -210,63 +210,66 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
     };
     auto plane_gap_cost = infinite_cost;
     const auto try_plane_gap_route_2d = [&]() {
-      if constexpr (!(ShapeTraits<Shape>::degenerate_x ||
-                      ShapeTraits<Shape>::degenerate_y ||
-                      ShapeTraits<Shape>::degenerate_z)) {
-        return false;
-      }
-      if (is_degenerate_axis(direct_blocked_axis)) {
-        return false;
-      }
-
-      const auto scan_axis = other_2d_axis(direct_blocked_axis);
-      const auto blocked_member = coord_member(direct_blocked_axis);
-      const auto scan_member = coord_member(scan_axis);
-
-      auto best_gap = Coord3{0, 0, 0};
-      auto best_cost = infinite_cost;
-      for (std::int64_t value = 0;
-           value < static_cast<std::int64_t>(axis_extent(scan_axis)); ++value) {
-        auto gap = direct_blocked_coord;
-        gap.*scan_member = value;
-        TESS_DIAG_EVENT(path_passability_check);
-        if (!detail::is_passable_index<World, Tag>(
-                world, detail::tile_index<Shape>(gap))) {
-          continue;
+      if constexpr (ShapeTraits<Shape>::degenerate_x ||
+                    ShapeTraits<Shape>::degenerate_y ||
+                    ShapeTraits<Shape>::degenerate_z) {
+        if (is_degenerate_axis(direct_blocked_axis)) {
+          return false;
         }
-        const auto cost = detail::manhattan(request.start, gap) +
-                          detail::manhattan(gap, request.goal);
-        if (cost < best_cost) {
-          best_cost = cost;
-          best_gap = gap;
+
+        const auto scan_axis = other_2d_axis(direct_blocked_axis);
+        const auto blocked_member = coord_member(direct_blocked_axis);
+        const auto scan_member = coord_member(scan_axis);
+
+        auto best_gap = Coord3{0, 0, 0};
+        auto best_cost = infinite_cost;
+        for (std::int64_t value = 0;
+             value < static_cast<std::int64_t>(axis_extent(scan_axis));
+             ++value) {
+          auto gap = direct_blocked_coord;
+          gap.*scan_member = value;
+          TESS_DIAG_EVENT(path_passability_check);
+          if (!detail::is_passable_index<World, Tag>(
+                  world, detail::tile_index<Shape>(gap))) {
+            continue;
+          }
+          const auto cost = detail::manhattan(request.start, gap) +
+                            detail::manhattan(gap, request.goal);
+          if (cost < best_cost) {
+            best_cost = cost;
+            best_gap = gap;
+          }
         }
-      }
 
-      if (best_cost == infinite_cost) {
-        return false;
-      }
+        if (best_cost == infinite_cost) {
+          return false;
+        }
 
-      scratch.path_.clear();
-      scratch.path_.push_back(request.start);
-      TESS_DIAG_EVENT(path_reconstruct_node);
-      const auto first_leg = append_segment_2d(request.start, best_gap,
-                                               blocked_member, scan_member) ||
-                             append_segment_2d(request.start, best_gap,
-                                               scan_member, blocked_member);
-      if (!first_leg) {
         scratch.path_.clear();
+        scratch.path_.push_back(request.start);
+        TESS_DIAG_EVENT(path_reconstruct_node);
+        const auto first_leg = append_segment_2d(request.start, best_gap,
+                                                 blocked_member, scan_member) ||
+                               append_segment_2d(request.start, best_gap,
+                                                 scan_member, blocked_member);
+        if (!first_leg) {
+          scratch.path_.clear();
+          return false;
+        }
+        const auto second_leg =
+            append_segment_2d(best_gap, request.goal, blocked_member,
+                              scan_member) ||
+            append_segment_2d(best_gap, request.goal, scan_member,
+                              blocked_member);
+        if (!second_leg) {
+          scratch.path_.clear();
+          return false;
+        }
+        plane_gap_cost = best_cost;
+        return true;
+      } else {
         return false;
       }
-      const auto second_leg = append_segment_2d(best_gap, request.goal,
-                                                blocked_member, scan_member) ||
-                              append_segment_2d(best_gap, request.goal,
-                                                scan_member, blocked_member);
-      if (!second_leg) {
-        scratch.path_.clear();
-        return false;
-      }
-      plane_gap_cost = best_cost;
-      return true;
     };
     if (try_plane_gap_route_2d()) {
       return PathResult{PathStatus::Found, plane_gap_cost, scratch.path_.size(),
@@ -305,68 +308,68 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
     };
     auto plane_gap_cost_3d = infinite_cost;
     const auto try_plane_gap_route_3d = [&]() {
-      if constexpr (ShapeTraits<Shape>::degenerate_x ||
-                    ShapeTraits<Shape>::degenerate_y ||
-                    ShapeTraits<Shape>::degenerate_z) {
-        return false;
-      }
+      if constexpr (!(ShapeTraits<Shape>::degenerate_x ||
+                      ShapeTraits<Shape>::degenerate_y ||
+                      ShapeTraits<Shape>::degenerate_z)) {
+        auto first_scan_axis = detail::Axis::Y;
+        auto second_scan_axis = detail::Axis::Z;
+        if (direct_blocked_axis == detail::Axis::Y) {
+          first_scan_axis = detail::Axis::X;
+          second_scan_axis = detail::Axis::Z;
+        } else if (direct_blocked_axis == detail::Axis::Z) {
+          first_scan_axis = detail::Axis::X;
+          second_scan_axis = detail::Axis::Y;
+        }
+        const auto first_scan_member = coord_member(first_scan_axis);
+        const auto second_scan_member = coord_member(second_scan_axis);
 
-      auto first_scan_axis = detail::Axis::Y;
-      auto second_scan_axis = detail::Axis::Z;
-      if (direct_blocked_axis == detail::Axis::Y) {
-        first_scan_axis = detail::Axis::X;
-        second_scan_axis = detail::Axis::Z;
-      } else if (direct_blocked_axis == detail::Axis::Z) {
-        first_scan_axis = detail::Axis::X;
-        second_scan_axis = detail::Axis::Y;
-      }
-      const auto first_scan_member = coord_member(first_scan_axis);
-      const auto second_scan_member = coord_member(second_scan_axis);
-
-      auto best_gap = Coord3{0, 0, 0};
-      auto best_cost = infinite_cost;
-      for (std::int64_t first_value = 0;
-           first_value <
-           static_cast<std::int64_t>(axis_extent(first_scan_axis));
-           ++first_value) {
-        for (std::int64_t second_value = 0;
-             second_value <
-             static_cast<std::int64_t>(axis_extent(second_scan_axis));
-             ++second_value) {
-          auto gap = direct_blocked_coord;
-          gap.*first_scan_member = first_value;
-          gap.*second_scan_member = second_value;
-          TESS_DIAG_EVENT(path_passability_check);
-          if (!detail::is_passable_index<World, Tag>(
-                  world, detail::tile_index<Shape>(gap))) {
-            continue;
-          }
-          const auto cost = detail::manhattan(request.start, gap) +
-                            detail::manhattan(gap, request.goal);
-          if (cost < best_cost) {
-            best_cost = cost;
-            best_gap = gap;
+        auto best_gap = Coord3{0, 0, 0};
+        auto best_cost = infinite_cost;
+        for (std::int64_t first_value = 0;
+             first_value <
+             static_cast<std::int64_t>(axis_extent(first_scan_axis));
+             ++first_value) {
+          for (std::int64_t second_value = 0;
+               second_value <
+               static_cast<std::int64_t>(axis_extent(second_scan_axis));
+               ++second_value) {
+            auto gap = direct_blocked_coord;
+            gap.*first_scan_member = first_value;
+            gap.*second_scan_member = second_value;
+            TESS_DIAG_EVENT(path_passability_check);
+            if (!detail::is_passable_index<World, Tag>(
+                    world, detail::tile_index<Shape>(gap))) {
+              continue;
+            }
+            const auto cost = detail::manhattan(request.start, gap) +
+                              detail::manhattan(gap, request.goal);
+            if (cost < best_cost) {
+              best_cost = cost;
+              best_gap = gap;
+            }
           }
         }
-      }
 
-      if (best_cost == infinite_cost) {
-        return false;
-      }
+        if (best_cost == infinite_cost) {
+          return false;
+        }
 
-      scratch.path_.clear();
-      scratch.path_.push_back(request.start);
-      TESS_DIAG_EVENT(path_reconstruct_node);
-      if (!append_any_segment_3d(request.start, best_gap)) {
         scratch.path_.clear();
+        scratch.path_.push_back(request.start);
+        TESS_DIAG_EVENT(path_reconstruct_node);
+        if (!append_any_segment_3d(request.start, best_gap)) {
+          scratch.path_.clear();
+          return false;
+        }
+        if (!append_any_segment_3d(best_gap, request.goal)) {
+          scratch.path_.clear();
+          return false;
+        }
+        plane_gap_cost_3d = best_cost;
+        return true;
+      } else {
         return false;
       }
-      if (!append_any_segment_3d(best_gap, request.goal)) {
-        scratch.path_.clear();
-        return false;
-      }
-      plane_gap_cost_3d = best_cost;
-      return true;
     };
     if (try_plane_gap_route_3d()) {
       return PathResult{PathStatus::Found, plane_gap_cost_3d,
@@ -377,127 +380,128 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
     auto forced_plane_gap_cost = infinite_cost;
     auto forced_plane_gap_no_path = false;
     const auto try_forced_plane_gaps_2d = [&](detail::Axis progress_axis) {
-      if constexpr (!(ShapeTraits<Shape>::degenerate_x ||
-                      ShapeTraits<Shape>::degenerate_y ||
-                      ShapeTraits<Shape>::degenerate_z)) {
-        return false;
-      }
-      if (is_degenerate_axis(progress_axis)) {
-        return false;
-      }
-
-      const auto progress_member = coord_member(progress_axis);
-      const auto gap_axis = other_2d_axis(progress_axis);
-      const auto gap_member = coord_member(gap_axis);
-      if (request.start.*progress_member == request.goal.*progress_member) {
-        return false;
-      }
-
-      const auto progress_step =
-          request.start.*progress_member < request.goal.*progress_member ? 1
-                                                                         : -1;
-      auto current = request.start;
-      auto found_forced_gap = false;
-
-      scratch.path_.clear();
-      scratch.path_.push_back(current);
-      TESS_DIAG_EVENT(path_reconstruct_node);
-
-      const auto append_checked = [&](Coord3 next) {
-        TESS_DIAG_EVENT(path_passability_check);
-        if (!detail::is_passable<World, Tag>(world, next)) {
-          scratch.path_.clear();
+      if constexpr (ShapeTraits<Shape>::degenerate_x ||
+                    ShapeTraits<Shape>::degenerate_y ||
+                    ShapeTraits<Shape>::degenerate_z) {
+        if (is_degenerate_axis(progress_axis)) {
           return false;
         }
-        scratch.path_.push_back(next);
-        TESS_DIAG_EVENT(path_reconstruct_node);
-        current = next;
-        return true;
-      };
-      const auto append_progress = [&](std::int64_t target) {
-        while (current.*progress_member != target) {
-          auto next = current;
-          next.*progress_member += current.*progress_member < target ? 1 : -1;
-          if (!append_checked(next)) {
-            return false;
-          }
-        }
-        return true;
-      };
-      const auto append_gap = [&](std::int64_t target) {
-        while (current.*gap_member != target) {
-          auto next = current;
-          next.*gap_member += current.*gap_member < target ? 1 : -1;
-          if (!append_checked(next)) {
-            return false;
-          }
-        }
-        return true;
-      };
 
-      while (current.*progress_member != request.goal.*progress_member) {
-        auto next = current;
-        next.*progress_member += progress_step;
-        TESS_DIAG_EVENT(path_passability_check);
-        if (detail::is_passable<World, Tag>(world, next)) {
+        const auto progress_member = coord_member(progress_axis);
+        const auto gap_axis = other_2d_axis(progress_axis);
+        const auto gap_member = coord_member(gap_axis);
+        if (request.start.*progress_member == request.goal.*progress_member) {
+          return false;
+        }
+
+        const auto progress_step =
+            request.start.*progress_member < request.goal.*progress_member ? 1
+                                                                           : -1;
+        auto current = request.start;
+        auto found_forced_gap = false;
+
+        scratch.path_.clear();
+        scratch.path_.push_back(current);
+        TESS_DIAG_EVENT(path_reconstruct_node);
+
+        const auto append_checked = [&](Coord3 next) {
+          TESS_DIAG_EVENT(path_passability_check);
+          if (!detail::is_passable<World, Tag>(world, next)) {
+            scratch.path_.clear();
+            return false;
+          }
           scratch.path_.push_back(next);
           TESS_DIAG_EVENT(path_reconstruct_node);
           current = next;
-          continue;
-        }
+          return true;
+        };
+        const auto append_progress = [&](std::int64_t target) {
+          while (current.*progress_member != target) {
+            auto next = current;
+            next.*progress_member += current.*progress_member < target ? 1 : -1;
+            if (!append_checked(next)) {
+              return false;
+            }
+          }
+          return true;
+        };
+        const auto append_gap = [&](std::int64_t target) {
+          while (current.*gap_member != target) {
+            auto next = current;
+            next.*gap_member += current.*gap_member < target ? 1 : -1;
+            if (!append_checked(next)) {
+              return false;
+            }
+          }
+          return true;
+        };
 
-        auto passable_count = std::uint64_t{0};
-        auto gap_value = std::int64_t{0};
-        auto blocked_count = std::uint64_t{0};
-        for (std::int64_t value = 0;
-             value < static_cast<std::int64_t>(axis_extent(gap_axis));
-             ++value) {
-          auto coord = next;
-          coord.*gap_member = value;
+        while (current.*progress_member != request.goal.*progress_member) {
+          auto next = current;
+          next.*progress_member += progress_step;
           TESS_DIAG_EVENT(path_passability_check);
-          if (detail::is_passable_index<World, Tag>(
-                  world, detail::tile_index<Shape>(coord))) {
-            ++passable_count;
-            gap_value = value;
-          } else {
-            ++blocked_count;
+          if (detail::is_passable<World, Tag>(world, next)) {
+            scratch.path_.push_back(next);
+            TESS_DIAG_EVENT(path_reconstruct_node);
+            current = next;
+            continue;
+          }
+
+          auto passable_count = std::uint64_t{0};
+          auto gap_value = std::int64_t{0};
+          auto blocked_count = std::uint64_t{0};
+          for (std::int64_t value = 0;
+               value < static_cast<std::int64_t>(axis_extent(gap_axis));
+               ++value) {
+            auto coord = next;
+            coord.*gap_member = value;
+            TESS_DIAG_EVENT(path_passability_check);
+            if (detail::is_passable_index<World, Tag>(
+                    world, detail::tile_index<Shape>(coord))) {
+              ++passable_count;
+              gap_value = value;
+            } else {
+              ++blocked_count;
+            }
+          }
+
+          if (passable_count == 0) {
+            forced_plane_gap_no_path = true;
+            scratch.path_.clear();
+            return false;
+          }
+          if (blocked_count == 0) {
+            continue;
+          }
+          if (passable_count > 1) {
+            scratch.path_.clear();
+            return false;
+          }
+
+          found_forced_gap = true;
+          auto gap = next;
+          gap.*gap_member = gap_value;
+          if (!append_gap(gap.*gap_member) ||
+              !append_progress(gap.*progress_member)) {
+            return false;
           }
         }
 
-        if (passable_count == 0) {
-          forced_plane_gap_no_path = true;
+        if (!found_forced_gap) {
           scratch.path_.clear();
           return false;
         }
-        if (blocked_count == 0) {
-          continue;
-        }
-        if (passable_count > 1) {
-          scratch.path_.clear();
+        if (!append_progress(request.goal.*progress_member) ||
+            !append_gap(request.goal.*gap_member)) {
           return false;
         }
 
-        found_forced_gap = true;
-        auto gap = next;
-        gap.*gap_member = gap_value;
-        if (!append_gap(gap.*gap_member) ||
-            !append_progress(gap.*progress_member)) {
-          return false;
-        }
-      }
-
-      if (!found_forced_gap) {
-        scratch.path_.clear();
+        forced_plane_gap_cost =
+            static_cast<std::uint32_t>(scratch.path_.size() - 1);
+        return true;
+      } else {
         return false;
       }
-      if (!append_progress(request.goal.*progress_member) ||
-          !append_gap(request.goal.*gap_member)) {
-        return false;
-      }
-
-      forced_plane_gap_cost =
-          static_cast<std::uint32_t>(scratch.path_.size() - 1);
-      return true;
     };
     if (try_forced_plane_gaps_2d(detail::Axis::X) ||
         try_forced_plane_gaps_2d(detail::Axis::Y) ||

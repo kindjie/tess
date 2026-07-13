@@ -68,7 +68,7 @@ jobs:
       - name: Install smoke
         run: tools/install_smoke.sh
 
-  # Required minimal GCC portability gate: compile only.
+  # Required GCC portability and warning-cleanliness gate: compile only.
   # GCC's stricter two-phase name lookup catches header portability breaks
   # that Clang and MSVC accept. Promoted after three consecutive green main
   # runs on 2026-07-12.
@@ -98,10 +98,10 @@ jobs:
           g++ --version
 
       - name: Configure
-        run: cmake --preset dev
+        run: cmake --preset dev-werror
 
       - name: Build
-        run: cmake --build --preset dev
+        run: cmake --build --preset dev-werror
 
   hooks-backstop:
     name: Hook Backstop Checks
@@ -291,9 +291,7 @@ jobs:
   # The Visual Studio generator ignores compiler launchers, so the
   # workflow-level ccache env vars are inert here.
   windows:
-    # Required gate since two consecutive green main runs (2026-07-07).
-    # MSVC warnings (for example C4702) are not yet errors; enable
-    # TESS_WARNINGS_AS_ERRORS here once the warning backlog is cleared.
+    # Required gate; the windows-msvc preset treats project warnings as errors.
     name: Windows MSVC
     runs-on: windows-2025
     steps:

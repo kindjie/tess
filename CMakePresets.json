@@ -33,7 +33,8 @@
       "inherits": "dev",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "TESS_ENABLE_SANITIZERS": "ON"
+        "TESS_ENABLE_SANITIZERS": "ON",
+        "TESS_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -43,7 +44,8 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "TESS_ENABLE_SANITIZERS": "ON",
-        "TESS_SANITIZERS": "thread"
+        "TESS_SANITIZERS": "thread",
+        "TESS_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -82,7 +84,8 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "TESS_BUILD_TESTING": "ON",
         "TESS_ENABLE_WARNINGS": "ON",
-        "TESS_ENABLE_ENTT": "ON"
+        "TESS_ENABLE_ENTT": "ON",
+        "TESS_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -95,7 +98,8 @@
         "TESS_BUILD_TESTING": "ON",
         "TESS_BUILD_BENCHMARKS": "ON",
         "TESS_ENABLE_WARNINGS": "ON",
-        "TESS_ENABLE_ENTT": "ON"
+        "TESS_ENABLE_ENTT": "ON",
+        "TESS_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -110,7 +114,8 @@
         "TESS_BUILD_TESTING": "ON",
         "TESS_BUILD_BENCHMARKS": "ON",
         "TESS_ENABLE_WARNINGS": "ON",
-        "TESS_ENABLE_ENTT": "ON"
+        "TESS_ENABLE_ENTT": "ON",
+        "TESS_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -152,7 +157,8 @@
       "cacheVariables": {
         "TESS_BUILD_TESTING": "ON",
         "TESS_ENABLE_WARNINGS": "ON",
-        "TESS_ENABLE_ENTT": "ON"
+        "TESS_ENABLE_ENTT": "ON",
+        "TESS_WARNINGS_AS_ERRORS": "ON"
       }
     }
   ],

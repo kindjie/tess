@@ -8,7 +8,6 @@
 namespace {
 
 struct TerrainTag {};
-struct PassableTag {};
 
 using TopDown2D =
     tess::Shape<tess::Extent3{128, 64, 1}, tess::Extent3{32, 16, 1}>;
@@ -16,6 +15,10 @@ using TopDown2D =
 using TerrainField = tess::Field<TerrainTag, std::uint16_t>;
 using Schema = tess::FieldSchema<TerrainField>;
 using World = tess::AlwaysResidentWorld<TopDown2D, Schema>;
+
+#if TESS_ENABLE_ASSERTS
+
+struct PassableTag {};
 
 using PathSchema = tess::FieldSchema<tess::Field<PassableTag, bool>>;
 using PathWorld = tess::AlwaysResidentWorld<TopDown2D, PathSchema>;
@@ -29,6 +32,8 @@ void fill_passable(PathWorld& world) {
 }
 
 constexpr auto kAssertDeathMessage = "tess assertion failed";
+
+#endif  // TESS_ENABLE_ASSERTS
 
 TEST(TessAssert, MacroIsCompiledOutExactlyWhenAssertsDisabled) {
 #if TESS_ENABLE_ASSERTS

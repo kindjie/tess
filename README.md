@@ -71,6 +71,10 @@ tools/steamdeck/deck bench --pin                                # run on the Dec
 
 ## Quality Gates
 
+Project warnings are errors in the `dev-werror`, `dev-asan`, `dev-tsan`,
+`release`, `bench`, `bench-profile`, and `windows-msvc` presets. CI also uses
+`dev-werror` for the required GCC portability build.
+
 CI runs primarily on `ubuntu-24.04` with Clang and covers:
 
 - Dev build and unit tests: `cmake --build --preset dev`,
@@ -95,7 +99,8 @@ CI runs primarily on `ubuntu-24.04` with Clang and covers:
 - Strict clang-tidy gate: `cmake --build --preset dev-clang-tidy`
 - cppcheck gate: `cmake --build --preset dev-cppcheck`
 - Advisory (non-gating) clang-tidy profile: preset `dev-clang-tidy-advisory`
-- Required GCC compile-only portability check: preset `dev` built with GCC
+- Required GCC compile-only portability check: preset `dev-werror` built with
+  GCC
 - Benchmark build and smoke tests: presets `bench`
 - Benchmark threshold gates, one per suite (CPU time except parallel wall
   time):

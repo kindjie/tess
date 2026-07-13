@@ -261,7 +261,8 @@ void BM_fields_build_alloc_gate(benchmark::State& state) {
     const auto result =
         tess::build_distance_field_product<FieldWorld, PassableTag>(
             *world, goals, scratch, product);
-    benchmark::DoNotOptimize(result.status);
+    auto status = result.status;
+    benchmark::DoNotOptimize(status);
   }
   fields_bench_check(counters.allocations == 0, "warm field build allocated");
 }

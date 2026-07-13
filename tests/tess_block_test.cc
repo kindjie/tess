@@ -1138,7 +1138,8 @@ TEST(TessBlock, NestedBoundaryPredicateIterationDoesNotAllocate) {
               static_cast<std::int64_t>(coord.y),
               static_cast<std::int64_t>(coord.z),
           };
-          sum += terrain[id.value] + view.contains_local(candidate);
+          sum += static_cast<std::uint64_t>(terrain[id.value]) +
+                 static_cast<std::uint64_t>(view.contains_local(candidate));
         });
       });
 
