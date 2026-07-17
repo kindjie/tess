@@ -275,8 +275,8 @@ TEST(TessPathCache, PortalSegmentCacheRebindDropsOtherMovementClass) {
 
 TEST(TessPathCache, PortalSegmentCacheStoreHasStrongAllocationGuarantee) {
   if (!tess_test::allocation_failure_injection_supported()) {
-    GTEST_SKIP() << "allocator failure injection is unavailable under a "
-                    "sanitizer-owned allocator";
+    GTEST_SKIP() << "allocation failure injection is unavailable with this "
+                    "allocator/runtime configuration";
   }
 
   constexpr auto first_path = std::array{
@@ -356,8 +356,8 @@ TEST(TessPathCache, PortalSegmentCacheStoreHasStrongAllocationGuarantee) {
 
 TEST(TessPathCache, PortalSegmentCacheFailedStoreDefersStaleStats) {
   if (!tess_test::allocation_failure_injection_supported()) {
-    GTEST_SKIP() << "allocator failure injection is unavailable under a "
-                    "sanitizer-owned allocator";
+    GTEST_SKIP() << "allocation failure injection is unavailable with this "
+                    "allocator/runtime configuration";
   }
 
   constexpr auto original_path = std::array{
@@ -405,8 +405,8 @@ TEST(TessPathCache, PortalSegmentCacheFailedStoreDefersStaleStats) {
 
 TEST(TessPathCache, PortalSegmentCacheSweepHasStrongAllocationGuarantee) {
   if (!tess_test::allocation_failure_injection_supported()) {
-    GTEST_SKIP() << "allocator failure injection is unavailable under a "
-                    "sanitizer-owned allocator";
+    GTEST_SKIP() << "allocation failure injection is unavailable with this "
+                    "allocator/runtime configuration";
   }
 
   constexpr auto stale_path = std::array{

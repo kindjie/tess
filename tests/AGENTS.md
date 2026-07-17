@@ -17,9 +17,14 @@
 - `tess_test::ScopedAllocationFailure` rejects one zero-based allocation
   attempt and reports the attempted-allocation count. Use it to prove strong
   allocation-failure guarantees by retrying successive ordinals until the
-  operation succeeds. Rejection is unavailable under AddressSanitizer and
-  ThreadSanitizer because their allocation hooks observe but cannot reject;
-  tests using it must skip in those configurations.
+  operation succeeds. Unsupported guards are inert. Rejection is unavailable
+  under AddressSanitizer and ThreadSanitizer because their allocation hooks
+  observe but cannot reject. It is also unavailable with MSVC checked
+  iterators: their vector constructors and moves allocate proxy state inside
+  `noexcept` functions, so rejecting that bookkeeping would terminate the
+  process. Tests using injection must skip when the capability reports false;
+  Windows CI runs the strong-guarantee cases in Release as well as retaining
+  checked-iterator coverage in Debug.
 - Under AddressSanitizer or ThreadSanitizer, `allocation_counter.cc` and
   `bench/tess_diagnostics_alloc_hooks.cc` must use sanitizer allocation
   hooks instead of replacing global `new`, so the sanitizer's alloc/dealloc
@@ -29,9 +34,11 @@
   counted portably (no dlsym chaining to Itanium-mangled symbols).
 - `tess_allocation_counter_test`: verifies the scoped allocation counter
   itself — plain/array, aligned, nothrow, and aligned-nothrow `operator new`
-  forms are all counted with byte totals, construction resets counters, and
-  a fatal gtest failure inside a counting scope disables counting during
-  unwind instead of poisoning later assertions.
+  forms are counted with byte totals; supported configurations reject selected
+  throwing, nothrow, and aligned allocations; unsupported guards are inert;
+  construction resets counters; and a fatal gtest failure inside a counting
+  scope disables counting during unwind instead of poisoning later
+  assertions.
 - `tess_smoke`: verifies that the public `tess::tess` target is consumable,
   that the root public header compiles, and that the generated version macros
   and `library_version` match the CMake project version derived from the

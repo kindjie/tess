@@ -356,6 +356,21 @@ jobs:
       - name: Test
         run: ctest --preset windows-msvc
 
+      # Checked iterators allocate proxy state inside noexcept STL vector
+      # constructors, so process-wide allocation rejection is unsafe in Debug.
+      # Keep Debug's iterator checks, then exercise failure contracts in the
+      # same toolchain's Release configuration.
+      - name: Build allocation-failure tests without checked iterators
+        run: >-
+          cmake --build build/windows-msvc --config Release
+          --target tess_allocation_counter_test tess_path_cache_test
+
+      - name: Test allocation-failure contracts without checked iterators
+        run: >-
+          ctest --test-dir build/windows-msvc -C Release --output-on-failure
+          --no-tests=error
+          -R "TessAllocationCounter|StrongAllocation|FailedStore"
+
       - name: Install smoke
         shell: bash
         env:

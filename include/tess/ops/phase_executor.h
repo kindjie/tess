@@ -246,7 +246,7 @@ class ScopedThreadPhaseExecutor {
 // intentional: it isolates contended worker-pool state from false sharing.
 #pragma warning(disable : 4324)
 #endif
-// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
+// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
 /**
  * Persistent prototype worker pool for allocation-free repeated dispatch.
  * Callback exceptions are rethrown after join; callbacks must not re-enter
@@ -504,6 +504,7 @@ class WorkerPoolPhaseExecutor {
   bool stop_ = false;
   std::vector<std::thread> workers_;
 };
+// NOLINTEND(clang-analyzer-optin.performance.Padding)
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif

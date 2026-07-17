@@ -74,6 +74,12 @@ auto allocation_bytes() noexcept -> std::size_t {
 auto allocation_failure_injection_supported() noexcept -> bool {
 #if defined(TESS_TEST_ALLOCATION_COUNTER_USE_SANITIZER_HOOK)
   return false;
+#elif defined(_MSC_VER) && defined(_ITERATOR_DEBUG_LEVEL) && \
+    _ITERATOR_DEBUG_LEVEL != 0
+  // MSVC's checked-iterator vector constructors allocate proxy state inside
+  // noexcept functions. Rejecting those bookkeeping allocations terminates
+  // the process before a test can catch std::bad_alloc.
+  return false;
 #else
   return true;
 #endif
@@ -102,18 +108,28 @@ ScopedAllocationFailure::ScopedAllocationFailure(
     : previous_enabled_{fail_allocations.load(std::memory_order_relaxed)},
       previous_failure_index_{failure_index.load(std::memory_order_relaxed)},
       previous_attempts_{allocation_attempts.load(std::memory_order_relaxed)} {
+  if (!allocation_failure_injection_supported()) {
+    return;
+  }
+  active_ = true;
   allocation_attempts.store(0, std::memory_order_relaxed);
   failure_index.store(requested_failure_index, std::memory_order_relaxed);
   fail_allocations.store(true, std::memory_order_relaxed);
 }
 
 ScopedAllocationFailure::~ScopedAllocationFailure() {
+  if (!active_) {
+    return;
+  }
   fail_allocations.store(previous_enabled_, std::memory_order_relaxed);
   failure_index.store(previous_failure_index_, std::memory_order_relaxed);
   allocation_attempts.store(previous_attempts_, std::memory_order_relaxed);
 }
 
 auto ScopedAllocationFailure::attempts() const noexcept -> std::size_t {
+  if (!active_) {
+    return 0;
+  }
   return allocation_attempts.load(std::memory_order_relaxed);
 }
 

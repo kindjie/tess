@@ -13,6 +13,26 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-17 - Preserve portable allocation-failure gates
+
+- Changed: deterministic global allocation rejection now reports itself
+  unavailable, and remains inert, in MSVC checked-iterator builds. The Windows
+  gate retains its full Debug suite and additionally builds and runs the
+  allocation harness and portal-cache strong-guarantee cases in Release, where
+  checked iterators do not inject allocations into `noexcept` vector
+  constructors and moves. Direct harness tests cover selected throwing,
+  nothrow, and aligned failures plus state restoration.
+- Changed: the worker-pool padding analyzer suppression now spans the documented
+  class without changing its deliberate false-sharing layout.
+- Reason: a process-wide fault injector cannot safely reject MSVC Debug STL
+  iterator-proxy bookkeeping; doing so calls `std::terminate` before the cache
+  operation can observe `std::bad_alloc`. Release preserves Windows-specific
+  failure coverage, while the suppression-only worker-pool fix avoids an ABI or
+  performance change.
+- Affected docs: `tests/AGENTS.md`.
+- Affected code: the test allocation harness, Windows CI, and worker-pool
+  analyzer annotations.
+
 ## 2026-07-12 - First-audit remediation, v0.3.0
 
 - Changed: BREAKING pre-release hardening. `PlannedOperation` now has checked,
