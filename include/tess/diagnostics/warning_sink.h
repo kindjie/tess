@@ -12,8 +12,7 @@ namespace tess::diagnostics {
 
 #if TESS_DIAGNOSTICS_ENABLED
 
-// Coarse origin tag for a warning. A small fixed enum so a sink can bucket
-// warnings without parsing the message string.
+/** Origin category used to bucket warnings without parsing their messages. */
 enum class WarningCategory : std::uint8_t {
   General,
   Storage,
@@ -24,15 +23,13 @@ enum class WarningCategory : std::uint8_t {
   Render,
 };
 
-// A single non-owning warning record. `message` MUST reference storage that
-// outlives every sink that retains the warning -- string literals or other
-// static storage. A sink copies the Warning by value but never copies the
-// pointed-to characters, so a message backed by a temporary std::string is a
-// dangling read (the same non-owning contract as PathView). This precondition
-// is not enforceable at compile time; callers must honor it. `detail` carries
-// an optional numeric datum (an index, a byte count, a status code) whose
-// meaning is specific to the category/message pair. `where` defaults to the
-// call site that constructs the Warning.
+/**
+ * Non-owning warning record carrying an origin, message, and numeric detail.
+ *
+ * `message` must outlive every sink retaining the warning. Its `detail`
+ * meaning is defined by the category/message pair, and `where` defaults to the
+ * construction site.
+ */
 struct Warning {
   WarningCategory category = WarningCategory::General;
   std::string_view message;
@@ -40,26 +37,25 @@ struct Warning {
   std::source_location where = std::source_location::current();
 };
 
-// A WarningSink is anything that can absorb a Warning without throwing. The
-// noexcept requirement keeps sinks usable from noexcept instrumentation paths.
+/** Sink capable of accepting a warning without throwing. */
 template <typename T>
 concept WarningSink = requires(T sink, const Warning& warning) {
   { sink.warn(warning) } noexcept;
 };
 
-// Discards every warning. The zero-cost default when a consumer must satisfy a
-// WarningSink parameter but has no interest in the warnings.
+/** No-op warning sink for consumers that do not retain diagnostics. */
 struct NullWarningSink {
   void warn(const Warning&) noexcept {}
 };
 
 static_assert(WarningSink<NullWarningSink>);
 
-// Fixed-capacity ring buffer of the most recent warnings. The caller owns the
-// whole object; storage is an inline std::array, so warn() never allocates.
-// When the ring is full the oldest warning is overwritten and dropped() counts
-// every such loss. Indexing is oldest-first: operator[](0) is the oldest
-// retained warning and operator[](size() - 1) is the newest.
+/**
+ * Fixed-capacity, allocation-free ring retaining the most recent warnings.
+ *
+ * A full sink overwrites its oldest entry and counts the loss. Indexing is
+ * oldest-first and requires an index smaller than `size()`.
+ */
 template <std::size_t Capacity>
 class BufferedWarningSink {
   static_assert(Capacity > 0, "BufferedWarningSink needs a positive capacity");

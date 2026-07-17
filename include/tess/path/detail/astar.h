@@ -8,6 +8,10 @@
 // (Slice 0 pre-split) to keep path.h under the 24k-token hook. Bare detail
 // fragment: included by path.h from inside namespace tess, never directly.
 
+/// Finds a minimum-step path through tiles where field `Tag` is truthy.
+///
+/// The returned path borrows `scratch` until its next mutation. Sparse-world
+/// resident boundaries follow `policy`.
 template <typename World, typename Tag>
 auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                 [[maybe_unused]] MissingChunkPolicy policy) -> PathResult {
@@ -380,6 +384,7 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
     auto forced_plane_gap_cost = infinite_cost;
     auto forced_plane_gap_no_path = false;
     const auto try_forced_plane_gaps_2d = [&](detail::Axis progress_axis) {
+      static_cast<void>(progress_axis);
       if constexpr (ShapeTraits<Shape>::degenerate_x ||
                     ShapeTraits<Shape>::degenerate_y ||
                     ShapeTraits<Shape>::degenerate_z) {
@@ -721,6 +726,10 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                     scratch.touched_count_, scratch.path_};
 }
 
+/// Finds a minimum-cost path using one compile-time movement class.
+///
+/// Zero entry cost is impassable. The returned path borrows `scratch` until
+/// mutation, and sparse-world resident boundaries follow `policy`.
 template <typename World, typename Class>
 auto weighted_astar_path(const World& world, PathRequest request,
                          PathScratch& scratch,

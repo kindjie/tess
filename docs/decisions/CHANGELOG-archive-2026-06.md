@@ -20,8 +20,8 @@ reverse-chronological order as they were written.
 - Affected docs: `docs/tdd/tdd_addendum_concurrent_tile_world.md`,
   `docs/tdd/tdd_addendum_work_contracts.md`, `docs/tdd/README.md`,
   `docs/dependencies.md`, `docs/architecture/queued-operations.md`
-- Affected code: none [Correction 2026-07-06: inaccurate. The commit that
-  landed this entry (2e22c05) also changed public headers: it added default
+- Affected code: none [Correction 2026-07-06: inaccurate. The change that
+  landed this entry also changed public headers: it added default
   member initializers to the core value types in
   `include/tess/core/shape.h` and `include/tess/topology/topology.h` (with
   matching zero-init tests in `tests/tess_shape_test.cc` and
@@ -396,9 +396,10 @@ reverse-chronological order as they were written.
 - Changed: Added an explicit MVP checkpoint that narrows the first end-to-end
   prototype to always-resident queued execution plus minimal unit-cost A*
   pathfinding.
-- Reason: The full v1 milestone remains useful design intent, but it is too
+- Reason: The full initial milestone remains useful design intent, but it is
+  too
   broad to serve as the first testable implementation target.
-- Affected docs: `docs/planning/v1-milestone-plan.md`
+- Affected docs: `docs/planning/initial-milestone-plan.md`
 - Affected code: none
 
 ## 2026-06-05 - One Millisecond Benchmark Investigation Gate

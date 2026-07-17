@@ -12,9 +12,11 @@
 // everything, so CPU-only builds carry zero GPU obligations.
 namespace tess::gpu {
 
-// What the device can do; a planner checks these before ever selecting
-// GPU execution. All-false/zero (the NoGpuBackend answer) means "never
-// choose GPU".
+/**
+ * Device limits and features consulted before selecting GPU execution.
+ *
+ * An all-zero value advertises no GPU execution path.
+ */
 struct GpuCapabilities {
   bool compute = false;
   bool async_dispatch = false;
@@ -28,9 +30,12 @@ struct GpuCapabilities {
       -> bool = default;
 };
 
-// The backend contract. Operations return false when refused (missing
-// capability, exhausted budget, lost device); callers fall back to the
-// CPU path, which stays authoritative for exact results either way.
+/**
+ * Compile-time contract for an optional GPU execution backend.
+ *
+ * Operations return false when refused, allowing the authoritative CPU path
+ * to take over without interpreting backend-specific errors.
+ */
 template <typename B>
 concept GpuBackend =
     requires(B& backend, const B& const_backend, const UploadDesc& upload,
@@ -43,9 +48,7 @@ concept GpuBackend =
       { backend.readback(readback) } -> std::same_as<bool>;
     };
 
-// The default backend: reports no capabilities and refuses every
-// operation. Configurations composed against it must compile untouched
-// -- that is the "CPU-only builds unaffected" acceptance bar.
+/** CPU-only backend that advertises no capabilities and refuses all work. */
 struct NoGpuBackend {
   [[nodiscard]] constexpr auto capabilities() const noexcept
       -> GpuCapabilities {

@@ -267,7 +267,8 @@ touches a world -- dirty bits are FED to it by task results and
 `notify_dirty` -- so the no-hidden-full-world-scans rule holds by
 construction. Type erasure is a function pointer plus a context pointer;
 world-typed work lives in task objects the caller owns and registers by
-reference.
+reference. `ScheduleTaskFn` is the raw erased function-pointer form for callers
+that do not use the object-reference overload.
 
 - `SimPhase` is the fixed phase list, executed in declaration order each
   tick; tasks run in registration order within a phase. `SimClock` (hoisted
@@ -280,6 +281,11 @@ reference.
   mask are pending; firing consumes only those bits, so producers'
   same-tick marks re-arm it for the next tick), `background(budget)`, and
   `manual()`.
+- `CadenceKind` is the stored discriminator for those five cadence forms.
+  `ScheduleTaskDesc` combines a phase and cadence; `ScheduleTaskContext`
+  supplies the current clock and background budget to `ScheduleTaskFn`;
+  `ScheduleTaskResult` returns dirty bits, completed items, and backlog state;
+  and `ScheduleTaskStats` exposes cumulative run, skip, and item counts.
 - `BackgroundBudget` is deliberately items-only: a due background task is
   offered `max_items` units per run and reports `items_done` plus
   `more_work` to continue next tick. A wall-clock valve would make tick
@@ -316,8 +322,13 @@ queued-ops pipeline -- plan, parallel phase planning, execution (serial or
 worker pool, chosen per phase by an operation-count threshold), per-phase
 dirty apply, and ack drain -- over a caller-owned `FrameOps` queue. Both the
 queue and the task's result channel are cleared together at the end of every
-run (the paired-clear discipline), and the run's `dirty_mask` union feeds
-the schedule so OnDirty tasks in later phases fire the same tick.
+successful run (the paired-clear discipline), and the run's `dirty_mask` union
+feeds the schedule so OnDirty tasks in later phases fire the same tick. A
+planning or kernel exception preserves the caller-owned queue for inspection
+or replacement while the exception path clears transient result slots, so old
+completions cannot leak into a later run. Earlier writes may already have
+executed, so blindly retrying that queue is unsafe; chunk callbacks should not
+throw.
 
 - Policy uniformity is PRE-VALIDATED (`AutoExecStatus::PolicyMismatch`
   executes nothing; asserted in debug), which makes runtime aborts
@@ -330,9 +341,13 @@ the schedule so OnDirty tasks in later phases fire the same tick.
   phase-split test).
 - `Policy` must be ReadOnly or UniquePerChunk (the parallel phase planner's
   set) and the world dense (`merge_planned_dirty` is AlwaysResident-only).
-- Known cost, by design: planning allocates per run (the report has no
-  reuse overloads yet); the schedule's allocation-free contract covers
-  dispatch, not this task's planner.
+- Planning reuses a task-owned `ExecutionReport`, and the result channel and
+  phase scratch retain capacity. After callers reserve or warm those buffers,
+  the synchronous planning/execution path is allocation-free for payload types
+  whose default construction and assignment are allocation-free.
+- Result hooks have a `noexcept` function-pointer contract. The queue is
+  cleared before draining, so follow-up operations enqueued by a hook survive
+  for the next run.
 - `AutoExecRunStats` (`last_run()`) reports status, planned/rejected ops,
   executed chunks, merged dirty chunks, drained acks, and phase/pool-phase
   counts between ticks.

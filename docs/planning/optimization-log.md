@@ -14,11 +14,111 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-12 - Transactional Portal Segment Cache
+
+- Area: weighted portal segment-cache insertion and stale compaction under
+  allocation failure.
+- Hypothesis: constructing dependencies off-cache and reserving complete
+  compacted entry/path storage before mutation provides the strong exception
+  guarantee without materially slowing successful stores or warm hits.
+- Evidence: deterministic allocation-failure tests reject every successive
+  allocation in `store()` and stale compaction, proving that all observable
+  entries, paths, and statistics remain unchanged until one transaction
+  succeeds. Matched same-host Release binaries used 10 repetitions and a
+  0.1-second minimum. Median CPU time was 3288 -> 3300 ns (+0.36%) for the
+  warmed single route and 3,708,932 -> 3,738,375 ns (+0.79%) for the 100-agent
+  shared-cache batch.
+- Decision: Accepted. Transactional construction, capacity reservation, and
+  compaction remain below the repository's 5% regression limit.
+
+## 2026-07-12 - Plan-Bound Phase Validation and Dirty Exception Safety
+
+- Area: queued phase dispatch after replacing forgeable aggregate ranges with
+  planner-issued capabilities bound to one `ExecutionPlan`, plus conservative
+  dirty recording when callbacks throw.
+- Hypothesis: one phase-level world stamp and compact policy mask can reject a
+  stale, foreign-world, or mixed-policy phase before any side effect without
+  rescanning operations. Record-only scratch partitions should retain the
+  original cache density, while one scratch stamp protects later merge.
+- Evidence: final matched `-O3` binaries ran in five alternating same-host
+  process pairs, five repetitions per process, and a 0.05-second minimum.
+  Median CPU times were 945.45 -> 928.24 ns (-1.82%) for the deliberately
+  dispatch-heavy 256-operation serial tile touch, 117.24 -> 118.20 ns (+0.82%)
+  for direct queued execution, 136.45 -> 136.63 ns (+0.14%) with results, and
+  507.97 -> 516.00 ns (+1.58%) for integrated auto-exec. A separate final
+  five-pair executor check measured tile touch at 5495.70 -> 5494.71 ns
+  (-0.02%) on the worker pool and 27712.20 -> 27890.49 ns (+0.64%) with scoped
+  threads.
+- Decision: Accepted. Raw direct `PlannedOperation` execution retains its own
+  O(1) validation. Planner-issued phases preflight generation, range, world,
+  and every policy before dispatch; normal dirty merge still coalesces once per
+  chunk. Dirty metadata is recorded before callbacks, and AutoExec uses an
+  allocation-free, coalescing cold merge while preserving the original
+  exception. Every successful-path change remains below the 5% regression
+  limit.
+
+## 2026-07-12 - Movement-Class-Safe Portal Segment Cache
+
+- Area: weighted portal segment-cache hits after binding entries to one
+  movement class.
+- Hypothesis: one precomputed type-token comparison per segment operation
+  prevents cross-class aliasing without materially changing same-class hits.
+- Evidence: paired same-host Release binaries, 10 repetitions and 0.2-second
+  minimum time. Single-route median CPU time was 3275 -> 3332 ns (+1.74%);
+  batch-100 was 3,737,101 -> 3,792,253 ns (+1.48%). Warm same-class lookup
+  remained allocation-free.
+- Decision: Accepted. Both changes are below the 5% serial-regression limit;
+  alternating movement classes safely rebind and clear the single-owner cache.
+
+## 2026-07-12 - Checked Queued-Plan World Binding
+
+- Area: immutable planned operations and shape-bound deferred dirty records.
+- Rejected experiment: tracking and rescanning the maximum key in every record
+  and plan made scheduler auto-exec about 36% slower. Checked construction and
+  private validated recording already guarantee the bound, so that redundant
+  bookkeeping was removed.
+- Evidence: five alternating same-host processes with 10 repetitions each.
+  Direct queued execution was 116.65 -> 116.89 ns (+0.2%), result-bearing
+  execution was 134.82 -> 137.07 ns (+1.7%), and scheduler auto-exec was
+  509.39 -> 469.15 ns (-7.9%).
+- Decision: Accepted the O(1) shape/chunk stamp without maximum-key scans; all
+  measured paths remain inside the 5% regression limit.
+
+## 2026-07-12 - Exception-Safe Result Cleanup
+
+- Area: retryable result drains and auto-exec completion cleanup on exceptions.
+- Rejected experiment: a whole-function scope guard added exception safety but
+  inhibited hot-path optimization, regressing integrated auto-exec by more than
+  14%. The accepted form keeps explicit normal-path clears and uses cold
+  catch/rollback paths.
+- Evidence: 11 alternating same-host process pairs, five repetitions per
+  process. Median CPU times were 117.0105 -> 117.1695 ns (+0.14%) direct,
+  136.2933 -> 135.9555 ns (-0.25%) result-bearing, and 509.1044 -> 474.5871 ns
+  (-6.78%) auto-exec. A separate matched successful-worker-pool A/B used five
+  alternating process pairs, seven repetitions, and a 0.05-second minimum.
+  Median real times were 21,727 -> 21,948 ns (+1.02%) chunk fill, 454,948 ->
+  454,724 ns (-0.05%) chunk compute, and 12,342 -> 12,536 ns (+1.57%) tile
+  touch.
+- Decision: Accepted. Exception cleanup no longer leaks result slots, a
+  throwing visitor remains retryable, and no measured path regresses by 5%.
+
+## 2026-07-12 - Sparse Local-Topology Residency Guard
+
+- Area: reject direct local-topology builds for non-resident sparse chunks
+  before page access.
+- Evidence: eight alternating optimized process pairs, five repetitions each.
+  The deliberately overhead-heavy 1x1 local build was 10.69 -> 11.05 ns
+  (+3.35%); a normal 32x32 chunk was 7,644.30 -> 7,650.53 ns (+0.08%). A
+  fully resident 512x512 sparse graph build was 3.581 -> 3.543 ms (-1.06%),
+  and one-chunk incremental update was 1.914 -> 1.910 ms (-0.21%).
+- Decision: Accepted without an unchecked internal split. The safety check is
+  below 5% even in the artificial one-tile case and flat in real graph work.
+
 ## 2026-07-12 - ChunkMeta Hot/Cold SoA Split (M5, v0.2.0)
 
 - Area: Chunk metadata layout; collect_dirty/active_chunks scans
   (audit-2026-07-11 M5, deferred from the audit stack for the
-  version-bump decision; shipped as the 0.2.0 minor bump).
+  version-bump decision; shipped as the 0.2.0 development minor bump).
 - Hypothesis: The flag scans stream 80-byte ChunkMeta structs to test
   one 4-byte word; SoA flag columns put 16 chunks per cache line, and
   moving the cold Box3 bounds out shrinks every other meta touch.
@@ -33,7 +133,7 @@ deferred for scope reasons. Keep entries short and concrete:
   shrinks 80 -> 20 bytes, cutting every other meta touch's footprint.
 - Decision: Accepted (structural + user-directed API split). The
   maintained dirty-chunk SET killing the O(chunk_count) scan floor
-  remains the recorded design-level ceiling in the post-v1 backlog.
+  remains the recorded design-level ceiling in the future backlog.
 
 ## 2026-07-12 - Page-by-Slot Passability/Entry-Cost Threading (Rejected)
 
@@ -600,7 +700,8 @@ deferred for scope reasons. Keep entries short and concrete:
 - Evidence: Diagnostic fallback benchmarks showed `diag.passability_checks`
   near `diag.neighbor_candidates`, including hundreds of thousands to millions
   of checks against already-closed or already-open nodes.
-- Decision: Accepted in commit `a6d0c52`. A* now rejects closed neighbors
+- Decision: Accepted in the June 5 implementation. A* now rejects closed
+  neighbors
   before passability lookup, skips repeat passability lookup for open nodes,
   and reads neighbor passability by known tile index.
 - Result: Release fallback slice improved modestly, with mixed 100-request
@@ -1108,13 +1209,13 @@ deferred for scope reasons. Keep entries short and concrete:
   batch: a 12-agent 10k-tick run took minutes. On mostly-open maps the
   same amplification exists but each search is microseconds
   (`weighted_astar_open_512x512`), so it stays invisible.
-- Accepted: keep the coarse flag for v1 -- it is correct (never a stale
-  route), and the consumer soak is sized to open-ish maps where the
-  amplification is cheap. Documented in the soak test's comment.
+- Accepted: keep the coarse flag for the initial milestone -- it is correct
+  (never a stale route), and the consumer soak is sized to open-ish maps where
+  the amplification is cheap. Documented in the soak test's comment.
 - Deferred: per-agent invalidation granularity -- goal arming should
   only need to (re)submit THAT agent; a world change is what genuinely
   invalidates everyone. Needs a tess-side distinction between
-  agent-scoped and world-scoped pathing dirt -- post-v1 API work.
+  agent-scoped and world-scoped pathing dirt -- follow-up API work.
 - Retry conditions: revisit when a consumer needs dozens-plus of
   weighted agents on maze-like maps with frequent goal churn, or if the
   `agent_runtime` weighted family regresses.

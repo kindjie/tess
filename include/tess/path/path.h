@@ -22,6 +22,7 @@
 
 namespace tess {
 
+/// Classifies a path query result or a conservative incomplete search.
 enum class PathStatus : std::uint8_t {
   Found,
   InvalidStart,
@@ -37,6 +38,7 @@ static_assert(sizeof(PathStatus) == sizeof(std::uint8_t));
 
 // How a search treats a step into a non-resident chunk of a sparse world.
 // Inert for dense worlds, where every chunk is resident.
+/// Selects how sparse searches report boundaries of the resident set.
 enum class MissingChunkPolicy : std::uint8_t {
   // Treat a non-resident chunk as impassable. The search stays within the
   // resident set and may report NoPath even when a route exists through
@@ -48,11 +50,16 @@ enum class MissingChunkPolicy : std::uint8_t {
   Indeterminate,
 };
 
+/// Specifies inclusive start and goal coordinates for a path query.
 struct PathRequest {
   Coord3 start;
   Coord3 goal;
 };
 
+/// Reports a query outcome and a non-owning view of the resulting path.
+///
+/// The path normally borrows caller-owned scratch or product storage and is
+/// invalidated by that owner's next mutation.
 struct PathResult {
   PathStatus status = PathStatus::NoPath;
   std::uint32_t cost = 0;
@@ -61,12 +68,15 @@ struct PathResult {
   PathView path;
 };
 
+/// Reports distance-field construction status and search work.
 struct DistanceFieldResult {
   PathStatus status = PathStatus::NoPath;
   std::size_t expanded_nodes = 0;
   std::size_t reached_nodes = 0;
 };
 
+/// Summarizes grouping, field reuse, fallbacks, and output for a weighted
+/// batch.
 struct WeightedPathBatchStats {
   std::size_t requests = 0;
   std::size_t unique_goals = 0;
@@ -75,12 +85,19 @@ struct WeightedPathBatchStats {
   std::size_t path_nodes = 0;
 };
 
+/// Owns reusable node and result storage for A* queries.
 class PathScratch;
+/// Owns reusable node and path storage for distance-field queries.
 class DistanceFieldScratch;
+/// Owns the ordered goals for a multi-goal distance product.
 class GoalSet;
+/// Owns a reusable multi-goal distance field and dependency snapshot.
 class DistanceFieldProduct;
+/// Owns reusable route-cache entries and their query scratch.
 class RouteCacheScratch;
+/// Owns reusable grouping, search, and output storage for weighted batches.
 class WeightedPathBatchScratch;
+/// Reports the closest goal and a borrowed path to it.
 struct NearestTargetResult;
 
 namespace detail {
@@ -107,6 +124,10 @@ auto build_bounded_weighted_distance_field_core(
 
 // Declared here so the MissingChunkPolicy default lives on the first
 // declaration; the friend declarations and definitions below omit it.
+/// Finds a minimum-step path using a truthy passability field.
+///
+/// The returned path borrows `scratch` until its next mutation. Invalid
+/// endpoints and exhausted searches are distinguished in `PathStatus`.
 template <typename World, typename Tag>
 auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                 MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
@@ -116,6 +137,9 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
 // fusing passability and entry cost; the legacy <PassableTag, CostTag> pair
 // forwards through movement::LegacyWeighted (identical semantics, including
 // the cost-agnostic passability asymmetry).
+/// Finds a minimum-cost path for a compile-time movement class.
+///
+/// The returned path borrows `scratch` until its next mutation.
 template <typename World, typename Class>
 auto weighted_astar_path(
     const World& world, PathRequest request, PathScratch& scratch,
@@ -123,33 +147,39 @@ auto weighted_astar_path(
     -> PathResult;
 
 template <typename World, typename PassableTag, typename CostTag>
+/// Finds a weighted path using separate legacy passability and cost tags.
 auto weighted_astar_path(
     const World& world, PathRequest request, PathScratch& scratch,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> PathResult;
 
+/// Builds a dense multi-goal field into caller-owned reusable storage.
 template <typename World, typename Tag>
 auto build_distance_field_product(const World& world, const GoalSet& goals,
                                   DistanceFieldScratch& scratch,
                                   DistanceFieldProduct& product)
     -> DistanceFieldResult;
 
+/// Reconstructs a borrowed path from a valid multi-goal product.
 template <typename World, typename Tag>
 auto distance_field_product_path(const World& world, Coord3 start,
                                  const DistanceFieldProduct& product,
                                  DistanceFieldScratch& scratch) -> PathResult;
 
+/// Finds the nearest reachable goal represented by a valid product.
 template <typename World, typename Tag>
 auto nearest_target(const World& world, Coord3 start,
                     const DistanceFieldProduct& product,
                     DistanceFieldScratch& scratch) -> NearestTargetResult;
 
+/// Builds an unweighted field rooted at `goal` into reusable scratch storage.
 template <typename World, typename Tag>
 auto build_distance_field(
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> DistanceFieldResult;
 
+/// Builds a movement-class weighted field rooted at `goal`.
 template <typename World, typename Class>
 auto build_weighted_distance_field(
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
@@ -157,11 +187,13 @@ auto build_weighted_distance_field(
     -> DistanceFieldResult;
 
 template <typename World, typename PassableTag, typename CostTag>
+/// Builds a weighted field using legacy passability and cost tags.
 auto build_weighted_distance_field(
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> DistanceFieldResult;
 
+/// Builds a weighted field restricted to the intersection with `domain`.
 template <typename World, typename Class>
 auto build_weighted_distance_field_in_box(
     const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
@@ -169,11 +201,13 @@ auto build_weighted_distance_field_in_box(
     -> DistanceFieldResult;
 
 template <typename World, typename PassableTag, typename CostTag>
+/// Builds a boxed weighted field using legacy passability and cost tags.
 auto build_weighted_distance_field_in_box(
     const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> DistanceFieldResult;
 
+/// Builds a weighted field using bounded-cost buckets when costs permit.
 template <typename World, typename Class, std::uint32_t MaxCost>
 auto build_bounded_weighted_distance_field(
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
@@ -182,11 +216,15 @@ auto build_bounded_weighted_distance_field(
 
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost>
+/// Builds a bounded weighted field with legacy passability/cost semantics.
 auto build_bounded_weighted_distance_field(
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> DistanceFieldResult;
 
+/// Captures chunk versions used to reject stale cached path products.
+///
+/// The object owns its dependency list and may allocate unless reserved.
 class ChunkVersionDependencies {
  public:
   struct ChunkVersionDependency {
@@ -292,6 +330,9 @@ void capture_failure_dependencies(const World& world, PathRequest request,
 
 }  // namespace detail
 
+/// Owns a weighted route and the chunk versions required to replay it.
+///
+/// Returned path views borrow this product and remain valid until mutation.
 class WeightedRouteProduct {
  public:
   void reserve_path_nodes(std::size_t node_count) { path_.reserve(node_count); }
@@ -351,8 +392,13 @@ class WeightedRouteProduct {
   ChunkVersionDependencies dependencies_;
 };
 
+/// Caches weighted A* segments used to assemble portal-route products.
 class WeightedPortalSegmentCache;
 
+/// Owns a segmented weighted route, waypoints, and replay dependencies.
+///
+/// Returned path and waypoint views borrow this product until its next
+/// mutation. Reserve capacity to keep repeated builds allocation-free.
 class WeightedPortalRouteProduct {
  public:
   void reserve_waypoints(std::size_t count) {
@@ -476,6 +522,10 @@ class WeightedPortalRouteProduct {
   ChunkVersionDependencies dependencies_;
 };
 
+/// Owns reusable A* frontier, node state, and returned path storage.
+///
+/// Instances are caller-owned and require external synchronization. Reserving
+/// for the search space avoids allocation once warm.
 class PathScratch {
  public:
   struct OpenNode {
@@ -579,6 +629,10 @@ class PathScratch {
   std::vector<Coord3> path_;
 };
 
+/// Owns reusable frontier, distance, dependency, and path storage for fields.
+///
+/// Returned paths borrow this object. Instances require external
+/// synchronization; reserve node capacity for allocation-free warm queries.
 class DistanceFieldScratch {
  public:
   void reserve_nodes(std::size_t node_count) {
@@ -768,6 +822,10 @@ class DistanceFieldScratch {
   }
 };
 
+/// Owns all temporary and returned storage for weighted batch pathfinding.
+///
+/// Result spans and their paths remain valid until this object is mutated.
+/// Reserve request, path, and search capacity to avoid warm allocations.
 class WeightedPathBatchScratch {
  public:
   void reserve_requests(std::size_t request_count) {
@@ -1271,6 +1329,9 @@ void for_each_indexed_axis_neighbor(Coord3 coord, std::uint64_t index,
 
 #include <tess/path/detail/astar.h>
 
+/// Builds a dense-world weighted route and records replay dependencies.
+///
+/// The returned path borrows `product` and remains valid until its mutation.
 template <typename World, typename PassableTag, typename CostTag>
 auto build_weighted_route_product(const World& world, PathRequest request,
                                   PathScratch& scratch,
@@ -1311,6 +1372,7 @@ auto build_weighted_route_product(const World& world, PathRequest request,
                     product.reached_nodes_, product.path_};
 }
 
+/// Replays a route product when all captured chunk versions still match.
 template <typename World>
 auto weighted_route_product_path(const World& world,
                                  const WeightedRouteProduct& product)
@@ -1321,6 +1383,10 @@ auto weighted_route_product_path(const World& world,
   return PathResult{product.status_, product.cost_, 0, 0, product.path_};
 }
 
+/// Builds a dense weighted route by joining caller-provided portal waypoints.
+///
+/// The returned path borrows `product`; the function tolerates waypoint spans
+/// that already refer to the product's own storage.
 template <typename World, typename PassableTag, typename CostTag>
 auto build_weighted_portal_route_product(const World& world,
                                          PathRequest request,
@@ -1398,6 +1464,7 @@ auto build_weighted_portal_route_product(const World& world,
                     product.reached_nodes_, product.path_};
 }
 
+/// Replays a portal-route product when its dependencies remain current.
 template <typename World>
 auto weighted_portal_route_product_path(
     const World& world, const WeightedPortalRouteProduct& product)
@@ -1408,6 +1475,10 @@ auto weighted_portal_route_product_path(
   return PathResult{product.status_, product.cost_, 0, 0, product.path_};
 }
 
+/// Builds an unweighted goal-rooted field into caller-owned scratch.
+///
+/// The build may allocate unless scratch was reserved. Sparse residency
+/// boundaries follow `policy` and are reported conservatively.
 template <typename World, typename Tag>
 auto build_distance_field(const World& world, Coord3 goal,
                           DistanceFieldScratch& scratch,
@@ -1512,6 +1583,10 @@ auto build_distance_field(const World& world, Coord3 goal,
                              scratch.touched_.size()};
 }
 
+/// Reconstructs a path by descending the last matching distance-field build.
+///
+/// The returned path borrows `scratch`; stale sparse residency returns
+/// `NoPath` so callers rebuild instead of reading mismatched node slots.
 template <typename World, typename Tag>
 auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
                          DistanceFieldScratch& scratch) -> PathResult {
@@ -1598,6 +1673,10 @@ auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
       scratch.path_.size(), scratch.touched_.size(), scratch.path_};
 }
 
+/// Builds a movement-class weighted field into reusable caller scratch.
+///
+/// The build may allocate unless scratch was reserved. Sparse boundaries
+/// follow `policy` and zero entry cost is impassable.
 template <typename World, typename Class>
 auto build_weighted_distance_field(const World& world, Coord3 goal,
                                    DistanceFieldScratch& scratch,

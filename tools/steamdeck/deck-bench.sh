@@ -30,25 +30,36 @@ DECK="${DECK_HOST:-deck}"
 DECK_DIR="${DECK_DIR:-tess-bench}"        # relative to the Deck user's $HOME
 USE_CONTAINER="${USE_CONTAINER:-0}"
 PIN_GOVERNOR="${PIN_GOVERNOR:-0}"
-RUN_IMAGE="${TESS_STEAMRT_IMAGE:-registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest}"
+DEFAULT_STEAMRT_IMAGE="registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk"
+DEFAULT_STEAMRT_IMAGE+="@sha256:584939ebd7d2f1eec719e771fdde4ae3b"
+DEFAULT_STEAMRT_IMAGE+="d469ee741c783abb7fe812ddaaf3ee4"
+RUN_IMAGE="${TESS_STEAMRT_IMAGE:-${DEFAULT_STEAMRT_IMAGE}}"
 CONTAINER_RUNTIME="${DECK_CONTAINER_RUNTIME:-podman}"
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
+# DECK is passed to ssh-family commands. Keep it to a simple alias so a value
+# beginning with '-' cannot become an option and config syntax cannot leak in.
+case "${DECK}" in
+  ''|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*)
+    echo "!! invalid DECK_HOST: use a simple SSH alias" >&2
+    exit 1
+    ;;
+esac
 
 # DECK_DIR is rsync'd with --delete and spliced into remote commands: reject
 # values that would escape $HOME (or wipe it) before anything touches the Deck.
 case "${DECK_DIR}" in
-  ''|.|/*|..|../*|*/..|*/../*)
-    echo "!! invalid DECK_DIR='${DECK_DIR}': must be a non-empty relative" >&2
-    echo "!! path inside the Deck user's HOME (no leading '/', no '..')" >&2
+  ''|.|..|/*|-*|*/-*|./*|*/.|*/./*|../*|*/..|*/../*|*//*|*/)
+    echo "!! invalid DECK_DIR: use a normalized relative path in HOME" >&2
     exit 1
     ;;
   *[!A-Za-z0-9._/-]*)
-    echo "!! invalid DECK_DIR='${DECK_DIR}': only [A-Za-z0-9._/-] allowed" >&2
+    echo "!! invalid DECK_DIR: only [A-Za-z0-9._/-] is allowed" >&2
     exit 1
     ;;
 esac
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 
 # Parse --pin out of the args; everything else is forwarded to tess_bench.
 ARGS=()
@@ -60,11 +71,13 @@ for a in "$@"; do
 done
 BENCH_ARGS=("${ARGS[@]:---benchmark_min_time=0.20s}")
 
-# The remote side of ssh re-parses the command line with the login shell
-# (bash on SteamOS), so everything user-controlled is %q-quoted once for that
-# shell. All three run branches below use the same BENCH_ARGS_Q/BENCH_BIN_Q.
+# The remote side of ssh re-parses the command line with the login shell. The
+# alias and path are constrained above; remaining remote values are %q-quoted.
+# All three run branches use the same BENCH_ARGS_Q/BENCH_BIN_Q.
 BENCH_ARGS_Q="$(printf '%q ' "${BENCH_ARGS[@]}")"
 BENCH_BIN_Q="$(printf '%q' "${BENCH_BIN}")"
+RUN_IMAGE_Q="$(printf '%q' "${RUN_IMAGE}")"
+CONTAINER_RUNTIME_Q="$(printf '%q' "${CONTAINER_RUNTIME}")"
 
 # 1. Build the benchmark locally in the container.
 echo ">> building ${PRESET} in container '${CONTAINER}' ..."
@@ -80,7 +93,8 @@ if [ "${USE_CONTAINER}" = "1" ]; then
   echo ">> running ${BENCH_BIN} on ${DECK} inside ${RUN_IMAGE} ..."
   # The container's sh gets the binary name and bench args as positional
   # parameters, so nothing user-controlled is spliced into its -c script.
-  ssh "${DECK}" "${CONTAINER_RUNTIME} run --rm -v \"\$HOME/${DECK_DIR}:/b\" -w /b ${RUN_IMAGE} \
+  ssh "${DECK}" "${CONTAINER_RUNTIME_Q} run --rm \
+    -v \"\$HOME/${DECK_DIR}:/b\" -w /b ${RUN_IMAGE_Q} \
     sh -c 'bin=\$(find . -type f -name \"\$1\" | head -n1); \
            [ -n \"\$bin\" ] || { echo \"\$1 not found under /b\" >&2; exit 1; }; \
            shift; exec \"\$bin\" \"\$@\"' run-bench ${BENCH_BIN_Q} ${BENCH_ARGS_Q}"

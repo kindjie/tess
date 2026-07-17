@@ -104,6 +104,10 @@ template <typename World, typename PassableTag>
 // Callers needing an authoritative answer must fall back to
 // weighted_astar_path on NoPath. Promoting this to a distinct
 // non-authoritative status is deferred to the next API rev.
+/// Builds a weighted route from chunk-portal candidates and A* segments.
+///
+/// The returned path borrows `product`; subsequent product mutation invalidates
+/// it. Building reuses caller-owned `scratch` and product capacities.
 template <typename World, typename PassableTag, typename CostTag>
 auto build_weighted_chunk_portal_route_product(
     const World& world, PathRequest request, PathScratch& scratch,

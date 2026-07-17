@@ -10,6 +10,7 @@
 
 namespace tess {
 
+/// Snapshot of unit-route cache occupancy, hits, misses, and invalidations.
 struct RouteCacheStats {
   std::size_t entries = 0;
   std::size_t hits = 0;
@@ -37,6 +38,7 @@ struct RouteCacheStats {
 // which is skipped outright (stats().oversized_skips) so it cannot evict
 // resident entries and then violate the cap anyway. A cap of 0 disables
 // storage; it does not mean "unlimited".
+/// Bounded scratch cache for exact and same-goal suffix unit routes.
 class RouteCacheScratch {
  public:
   static constexpr std::size_t default_max_entries = 512;
@@ -48,6 +50,14 @@ class RouteCacheScratch {
   void set_caps(std::size_t max_entries, std::size_t max_path_nodes) noexcept {
     max_entries_ = max_entries;
     max_path_nodes_ = max_path_nodes;
+    // The normal over-cap insertion policy invalidates the whole cache. Apply
+    // that same deterministic policy immediately when a caller lowers either
+    // cap below the live footprint; otherwise existing hits could bypass a
+    // newly configured zero/smaller limit indefinitely.
+    if (entries_.size() > max_entries_ || paths_.size() > max_path_nodes_) {
+      invalidate();
+      ++cap_invalidations_;
+    }
   }
 
   void reserve_routes(std::size_t route_count) {
@@ -417,6 +427,7 @@ class RouteCacheScratch {
 // before the next lookup, or a stale route can be served. PathRequestRuntime
 // does this once per batch in prepare_process; direct callers own the same
 // obligation.
+/// Runs unit A* with exact and same-goal suffix reuse from caller-owned cache.
 template <typename World, typename Tag>
 auto cached_astar_path(const World& world, PathRequest request,
                        PathScratch& scratch, RouteCacheScratch& cache)

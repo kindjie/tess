@@ -10,8 +10,12 @@ namespace tess::diagnostics {
 
 #if TESS_DIAGNOSTICS_ENABLED
 
-// Per-category timing snapshot, decoupled from TraceBuffer's ring internals so
-// a panel or consumer can hold and display it without touching the live buffer.
+/**
+ * Per-category timing totals copied independently of a live trace buffer.
+ *
+ * A consumer may retain and render the snapshot without retaining or reading
+ * the source buffer.
+ */
 struct TimingSnapshot {
   std::array<TraceCategoryStats, trace_category_count> per_category{};
 
@@ -28,9 +32,11 @@ struct TimingSnapshot {
   }
 };
 
-// Aggregate snapshot of the diagnostic sinks a consumer typically renders
-// together. The counter members are plain copies of caller-owned counter
-// structs; timing is a copy of a TraceBuffer's per-category accumulators.
+/**
+ * Value snapshot of the counters and timings commonly rendered together.
+ *
+ * All members are copies and therefore outlive the corresponding sinks.
+ */
 struct DiagnosticsSnapshot {
   PathCounters path;
   AllocationCounters allocation;
@@ -38,14 +44,12 @@ struct DiagnosticsSnapshot {
   TimingSnapshot timing;
 };
 
-// Copy every category's timing accumulator out of a TraceBuffer.
-//
-// Threading contract: capture performs plain unsynchronized reads of the
-// buffer (and, for capture_diagnostics, of the counter structs). Call it on
-// the thread that records into them -- the same thread_local routing contract
-// documented in trace.h/diagnostics.h -- or externally synchronize capture
-// against all recording. Calling from a UI/render thread while a sim thread
-// is still tracing is a data race.
+/**
+ * Copies every category accumulator from `buffer` without allocating.
+ *
+ * @pre Capture occurs on the recording thread, or access to `buffer` is
+ * externally synchronized against recording.
+ */
 [[nodiscard]] inline auto capture_timing(const TraceBuffer& buffer) noexcept
     -> TimingSnapshot {
   TimingSnapshot snapshot;
@@ -53,11 +57,12 @@ struct DiagnosticsSnapshot {
   return snapshot;
 }
 
-// Assemble a full snapshot from caller-owned counter structs and a trace
-// buffer. Every field is a plain copy, so the snapshot outlives the sources
-// unchanged. Same threading contract as capture_timing above: capture on the
-// recording thread or under external synchronization; only the returned
-// snapshot is safe to hand to another thread.
+/**
+ * Copies caller-owned counters and trace timing into an independent snapshot.
+ *
+ * @pre Capture occurs on the recording thread, or every source is externally
+ * synchronized against recording.
+ */
 [[nodiscard]] inline auto capture_diagnostics(
     const PathCounters& path, const AllocationCounters& allocation,
     const QueuedPhaseCounters& queued, const TraceBuffer& buffer) noexcept

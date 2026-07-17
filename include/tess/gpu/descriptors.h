@@ -9,7 +9,8 @@
 
 // M13 GPU descriptors: the plain data a compile-time-polymorphic backend
 // consumes, derived from the field schema and chunk layout. Interface
-// only in v1 -- no backend implementation ships, CPU stays authoritative
+// only in the current pre-1.0 surface -- no backend implementation ships,
+// CPU stays authoritative
 // for gameplay state, and GPU products are derived/cached/versioned by a
 // future backend without redesigning core (the acceptance bar of the
 // gpu-backend-interface TDD). Nothing here touches a GPU API or adds a
@@ -17,9 +18,11 @@
 // already owns.
 namespace tess::gpu {
 
-// Storage format of one field's per-tile value, derived from the
-// schema's value type. Signedness is preserved so kernels can bind
-// typed buffers; bool maps to U8 (its storage size).
+/**
+ * Storage format of one mirrored field value.
+ *
+ * Signedness is preserved for typed kernel buffers; `bool` maps to `U8`.
+ */
 enum class GpuFieldFormat : std::uint8_t {
   U8,
   U16,
@@ -68,13 +71,13 @@ template <typename Value>
 
 }  // namespace detail
 
-// Byte-level description of one field mirrored to the GPU: enough for a
-// backend to size one buffer holding `chunk_count` chunk-contiguous
-// slices of `bytes_per_chunk` (tess pages are SoA per chunk, so a
-// chunk's field values are one contiguous run). This is the MAXIMAL
-// dense mirror, suited to dense/bounded worlds; selective sparse
-// mirrors (the TDD's GpuMirror tracking chosen chunk copies) are future
-// work that reuses these structs with differently-computed offsets.
+/**
+ * Byte layout of a dense, chunk-key-major field mirror.
+ *
+ * A backend can size one buffer containing `chunk_count` contiguous slices of
+ * `bytes_per_chunk`. Selective sparse mirrors may reuse the layout metadata
+ * while choosing a different chunk set.
+ */
 struct FieldMirrorDesc {
   std::uint32_t field_index = 0;
   GpuFieldFormat format = GpuFieldFormat::U8;
@@ -92,8 +95,7 @@ struct FieldMirrorDesc {
       -> bool = default;
 };
 
-// The mirror description for `Tag` in `World`, computed entirely from
-// compile-time layout facts.
+/** Derives the dense mirror layout for field `Tag` from `World`'s schema. */
 template <typename World, typename Tag>
 [[nodiscard]] constexpr auto field_mirror_desc() noexcept -> FieldMirrorDesc {
   using Schema = typename World::schema_type;
@@ -122,10 +124,12 @@ template <typename World, typename Tag>
   return desc;
 }
 
-// One chunk's worth of one field, staged for upload. `data` points into
-// the live page (valid until the world mutates or evicts the chunk);
-// `buffer_offset` is the destination slice in the mirror buffer, laid
-// out chunk-key-major.
+/**
+ * Non-owning upload view for one chunk of one field.
+ *
+ * `data` remains valid until the world mutates or evicts the chunk;
+ * `buffer_offset` selects its chunk-key-major mirror slice.
+ */
 struct UploadDesc {
   ChunkKey chunk_key{};
   std::uint32_t field_index = 0;
@@ -134,9 +138,11 @@ struct UploadDesc {
   const void* data = nullptr;
 };
 
-// The upload description for one resident chunk of `Tag`. Sparse worlds:
-// callers pass resident keys only (the same contract as every other
-// chunk accessor).
+/**
+ * Builds an upload view for field `Tag` in one resident chunk.
+ *
+ * @pre `chunk_key` is resident when `World` uses sparse residency.
+ */
 template <typename Tag, typename World>
 [[nodiscard]] auto upload_desc(const World& world, ChunkKey chunk_key) noexcept
     -> UploadDesc {
@@ -151,10 +157,7 @@ template <typename Tag, typename World>
   return upload;
 }
 
-// One kernel dispatch over a mirrored product: which product, how many
-// chunks it covers, and a per-chunk workgroup hint. Deliberately
-// abstraction-free -- a real backend maps this onto its own pipeline
-// and binding model.
+/** Backend-neutral request to dispatch work over a mirrored product. */
 struct DispatchDesc {
   std::uint64_t product_key = 0;
   std::uint32_t input_field_index = 0;
@@ -162,8 +165,7 @@ struct DispatchDesc {
   std::uint32_t workgroups_per_chunk = 1;
 };
 
-// Explicit readback policy (TDD section 12): no full readback by
-// default; Summary is the expected steady-state shape.
+/** Selects how much derived GPU data a backend returns to CPU memory. */
 enum class ReadbackPolicy : std::uint8_t {
   None,
   Summary,
@@ -173,6 +175,7 @@ enum class ReadbackPolicy : std::uint8_t {
   FullField,
 };
 
+/** Backend-neutral readback request for a mirrored product. */
 struct ReadbackDesc {
   std::uint64_t product_key = 0;
   ReadbackPolicy policy = ReadbackPolicy::None;

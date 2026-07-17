@@ -145,18 +145,18 @@ tombstones. Both worlds share one `ChunkMeta` mutation implementation
 
 ## Chunk Metadata
 
-Each always-resident world owns one `tess::ChunkMeta` per resident page in
-matching `ChunkKey` order. Metadata defaults to sleeping, clean, inactive
-chunks:
+Each always-resident world owns one cold `tess::ChunkMeta` per resident page in
+matching `ChunkKey` order, plus world-owned parallel arrays for fields scanned
+frequently. A new chunk therefore has this combined state:
 
 - `state = tess::ChunkState::ResidentSleeping`
 - `version = 0`
 - `topology_version = 0`
-- `field_dirty_flags = 0`
-- `active_flags = 0`
-- `dirty_bounds = {}`
 - `active_count = 0`
 - `entity_count = 0`
+- `world.dirty_flags(key) = 0`
+- `world.active_flags(key) = 0`
+- `world.dirty_bounds(key) = {}`
 
 Direct metadata lookup mirrors page lookup:
 
@@ -165,12 +165,17 @@ auto& meta = world.meta(tess::ChunkKey{3});
 auto* checked = world.try_meta(tess::ChunkCoord3{3, 0, 0});
 ```
 
-These direct accessors are `noexcept` and do not allocate. Dirty and active
-flags are raw `std::uint32_t` masks in this slice. `mark_dirty` unions dirty
+These direct accessors are `noexcept` and do not allocate, but a `ChunkMeta`
+reference does not contain the complete dirty/active state. Dirty flags, active
+flags, and dirty bounds must be read through the world accessors and mutated
+through its `mark_*`, `clear_*`, and observation APIs. Keeping those hot-scan
+columns out of `ChunkMeta` avoids pulling cold counters into bulk queries.
+
+Dirty and active flags are raw `std::uint32_t` masks. `mark_dirty` unions dirty
 bounds and increments the chunk version; `clear_dirty` clears selected bits and
 resets bounds when no dirty bits remain. `mark_active` and `clear_active`
-maintain `active_count` and move the chunk between sleeping and active state
-when the active flag set becomes nonzero or empty.
+maintain `ChunkMeta::active_count` and move the chunk between sleeping and
+active state when the active flag set becomes nonzero or empty.
 `mark_topology_dirty` applies dirty metadata and increments both the chunk
 version and topology version. `mark_topology_rebuilt` increments only the
 topology version so topology products can observe rebuild/replacement events.

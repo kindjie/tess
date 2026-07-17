@@ -13,6 +13,7 @@
 
 namespace tess {
 
+/// Identifies one dirty tile for a renderer to reread from the world.
 struct RenderTileDelta {
   Coord3 coord{};
   ChunkKey chunk_key{};
@@ -91,6 +92,10 @@ void emit_chunk_render_deltas(const World& world, ChunkKey chunk_key,
 
 }  // namespace detail
 
+/// Appends deltas for matching dirty tiles without clearing their dirty bits.
+///
+/// Sparse worlds visit resident chunks only. Appending may allocate through
+/// `out`; reserve it first when allocation-free collection is required.
 template <typename World>
 void collect_render_tile_deltas(const World& world, std::uint32_t dirty_mask,
                                 std::vector<RenderTileDelta>& out) {
@@ -113,6 +118,7 @@ void collect_render_tile_deltas(const World& world, std::uint32_t dirty_mask,
   }
 }
 
+/// Collects matching dirty tiles into a newly allocated result vector.
 template <typename World>
 [[nodiscard]] auto render_tile_deltas(const World& world,
                                       std::uint32_t dirty_mask)
@@ -122,6 +128,7 @@ template <typename World>
   return deltas;
 }
 
+/// Clears `dirty_mask` from all dense or resident sparse chunks.
 template <typename World>
 void clear_render_delta_dirty(World& world, std::uint32_t dirty_mask) noexcept {
   if (dirty_mask == 0) {

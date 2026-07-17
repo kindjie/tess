@@ -9,6 +9,7 @@
 
 namespace tess {
 
+/** Unsigned three-axis size used for worlds, chunks, and boxes. */
 struct Extent3 {
   std::uint64_t x = 0;
   std::uint64_t y = 0;
@@ -17,6 +18,7 @@ struct Extent3 {
   friend constexpr bool operator==(Extent3 lhs, Extent3 rhs) noexcept = default;
 };
 
+/** Signed coordinate in a two-dimensional consumer view. */
 struct Coord2 {
   std::int64_t x = 0;
   std::int64_t y = 0;
@@ -24,6 +26,7 @@ struct Coord2 {
   friend constexpr bool operator==(Coord2 lhs, Coord2 rhs) noexcept = default;
 };
 
+/** Canonical signed coordinate used by all world-space APIs. */
 struct Coord3 {
   std::int64_t x = 0;
   std::int64_t y = 0;
@@ -32,6 +35,7 @@ struct Coord3 {
   friend constexpr bool operator==(Coord3 lhs, Coord3 rhs) noexcept = default;
 };
 
+/** Unsigned coordinate of a chunk within a finite shape. */
 struct ChunkCoord3 {
   std::uint64_t x = 0;
   std::uint64_t y = 0;
@@ -41,6 +45,7 @@ struct ChunkCoord3 {
                                    ChunkCoord3 rhs) noexcept = default;
 };
 
+/** Unsigned coordinate of a tile relative to its owning chunk. */
 struct LocalCoord3 {
   std::uint64_t x = 0;
   std::uint64_t y = 0;
@@ -50,6 +55,7 @@ struct LocalCoord3 {
                                    LocalCoord3 rhs) noexcept = default;
 };
 
+/** Linear row-major tile identifier within one chunk. */
 struct LocalTileId {
   std::uint64_t value = 0;
 
@@ -57,6 +63,7 @@ struct LocalTileId {
                                    LocalTileId rhs) noexcept = default;
 };
 
+/** Linear row-major identifier of a chunk within a shape. */
 struct ChunkKey {
   std::uint64_t value = 0;
 
@@ -64,6 +71,7 @@ struct ChunkKey {
                                    ChunkKey rhs) noexcept = default;
 };
 
+/** Half-open axis-aligned world-space box. */
 struct Box3 {
   Coord3 origin{};
   Extent3 extent{};
@@ -72,9 +80,11 @@ struct Box3 {
 };
 
 template <typename Shape>
+/** Shape-specific packed key for one world tile. */
 struct TileKey;
 
 template <typename Shape>
+/** Chunk and local identifiers obtained by resolving one tile. */
 struct ResolvedTile {
   ChunkKey chunk_key{};
   LocalTileId local_tile_id{};
@@ -83,6 +93,7 @@ struct ResolvedTile {
                                    ResolvedTile rhs) noexcept = default;
 };
 
+/** Lifts a two-dimensional coordinate into the canonical z-zero plane. */
 [[nodiscard]] constexpr Coord3 to_coord3(Coord2 coord) noexcept {
   return Coord3{coord.x, coord.y, 0};
 }
@@ -191,15 +202,16 @@ using KeyStorage = std::conditional_t<Bits <= 64, std::uint64_t, UInt128>;
 
 }  // namespace detail
 
+/** Returns whether a coordinate lies in a half-open box without overflow. */
 [[nodiscard]] constexpr bool contains(Box3 box, Coord3 coord) noexcept {
   return detail::axis_contains(box.origin.x, box.extent.x, coord.x) &&
          detail::axis_contains(box.origin.y, box.extent.y, coord.y) &&
          detail::axis_contains(box.origin.z, box.extent.z, coord.z);
 }
 
-// Overflow-safe Manhattan distance: per-axis magnitudes are computed in
-// unsigned arithmetic and the sum saturates at the uint64 maximum instead
-// of wrapping.
+/**
+ * Returns overflow-safe Manhattan distance, saturated at `uint64_t` maximum.
+ */
 [[nodiscard]] constexpr auto manhattan_distance(Coord3 lhs, Coord3 rhs) noexcept
     -> std::uint64_t {
   return detail::saturating_add(
@@ -209,6 +221,7 @@ using KeyStorage = std::conditional_t<Bits <= 64, std::uint64_t, UInt128>;
 }
 
 template <Extent3 Size, Extent3 Chunk>
+/** Compile-time finite world shape and power-of-two chunk geometry. */
 struct Shape {
   static constexpr Extent3 size = Size;
   static constexpr Extent3 chunk = Chunk;
@@ -227,6 +240,7 @@ struct Shape {
 };
 
 template <typename Shape>
+/** Derived counts, bit widths, and degeneracy flags for a `Shape`. */
 struct ShapeTraits {
   static constexpr Extent3 size = Shape::size;
   static constexpr Extent3 chunk = Shape::chunk;
@@ -289,6 +303,7 @@ struct ShapeTraits {
 };
 
 template <typename Shape>
+/** Packed shape-specific tile key using 64 or 128 bits as required. */
 struct TileKey {
   ShapeTraits<Shape>::TileKeyStorage value{};
 
@@ -296,11 +311,13 @@ struct TileKey {
 };
 
 template <typename Shape>
+/** Returns whether a coordinate lies within a compile-time shape. */
 [[nodiscard]] constexpr bool contains(Coord3 coord) noexcept {
   return contains(Box3{Coord3{0, 0, 0}, ShapeTraits<Shape>::size}, coord);
 }
 
 template <typename Shape>
+/** Maps a contained world coordinate to its owning chunk coordinate. */
 [[nodiscard]] constexpr ChunkCoord3 chunk_coord(Coord3 coord) noexcept {
   const auto chunk = ShapeTraits<Shape>::chunk;
   return ChunkCoord3{
@@ -311,6 +328,7 @@ template <typename Shape>
 }
 
 template <typename Shape>
+/** Maps a contained world coordinate to its coordinate within a chunk. */
 [[nodiscard]] constexpr LocalCoord3 local_coord(Coord3 coord) noexcept {
   const auto chunk = ShapeTraits<Shape>::chunk;
   return LocalCoord3{
@@ -321,12 +339,14 @@ template <typename Shape>
 }
 
 template <typename Shape>
+/** Linearizes a local coordinate in the shape's row-major chunk layout. */
 [[nodiscard]] constexpr LocalTileId local_tile_id(LocalCoord3 coord) noexcept {
   const auto chunk = ShapeTraits<Shape>::chunk;
   return LocalTileId{coord.x + coord.y * chunk.x + coord.z * chunk.x * chunk.y};
 }
 
 template <typename Shape>
+/** Reconstructs a world coordinate from chunk and local identifiers. */
 [[nodiscard]] constexpr Coord3 coord(ChunkCoord3 chunk_coord,
                                      LocalTileId local_tile_id) noexcept {
   const auto chunk = ShapeTraits<Shape>::chunk;
@@ -344,6 +364,7 @@ template <typename Shape>
 }
 
 template <typename Shape>
+/** Linearizes an in-shape chunk coordinate into a `ChunkKey`. */
 [[nodiscard]] constexpr ChunkKey chunk_key(ChunkCoord3 coord) noexcept {
   using Traits = ShapeTraits<Shape>;
   return ChunkKey{coord.x + coord.y * Traits::chunk_count_x +
@@ -351,6 +372,7 @@ template <typename Shape>
 }
 
 template <typename Shape>
+/** Decodes a `ChunkKey` into the shape's chunk-grid coordinate. */
 [[nodiscard]] constexpr ChunkCoord3 chunk_coord(ChunkKey key) noexcept {
   using Traits = ShapeTraits<Shape>;
   const auto chunk_xy = Traits::chunk_count_x * Traits::chunk_count_y;
@@ -363,6 +385,7 @@ template <typename Shape>
 }
 
 template <typename Shape>
+/** Encodes a contained world coordinate as a packed tile key. */
 [[nodiscard]] constexpr TileKey<Shape> tile_key(Coord3 coord) noexcept {
   using Traits = ShapeTraits<Shape>;
   TESS_ASSERT(contains<Shape>(coord));
@@ -384,6 +407,7 @@ template <typename Shape>
 }
 
 template <typename Shape>
+/** Extracts the owning chunk from a packed tile key. */
 [[nodiscard]] constexpr ChunkKey chunk_key(TileKey<Shape> key) noexcept {
   using Traits = ShapeTraits<Shape>;
   if constexpr (Traits::chunk_bits == 0) {
@@ -400,6 +424,7 @@ template <typename Shape>
 }
 
 template <typename Shape>
+/** Extracts the chunk-local tile identifier from a packed tile key. */
 [[nodiscard]] constexpr LocalTileId local_tile_id(TileKey<Shape> key) noexcept {
   using Traits = ShapeTraits<Shape>;
   using Storage = Traits::TileKeyStorage;
@@ -414,6 +439,7 @@ template <typename Shape>
 }
 
 template <typename Shape>
+/** Decodes a packed tile key into its world coordinate. */
 [[nodiscard]] constexpr Coord3 coord(TileKey<Shape> key) noexcept {
   return coord<Shape>(chunk_coord<Shape>(chunk_key<Shape>(key)),
                       local_tile_id<Shape>(key));

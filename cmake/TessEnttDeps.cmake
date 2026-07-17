@@ -2,19 +2,26 @@ include_guard(DIRECTORY)
 
 include(FetchContent)
 
-# Commit SHA pinned so upstream tag moves cannot alter builds. This is the
-# downstream consumer's known-good, MSVC-exercised EnTT pin; keep the two
-# repositories' pins in lockstep when upgrading.
+# Commit SHA pinned so upstream tag moves cannot alter builds.
 set(TESS_ENTT_VERSION
     "b4e58bdd364ad72246c123a0c28538eab3252672") # tag v3.16.0
+set(TESS_ENTT_MIN_VERSION "3.16.0")
 
 function(tess_require_entt)
   if(TARGET EnTT::EnTT)
+    message(
+      STATUS
+      "Using trusted pre-existing EnTT::EnTT; version validation is the "
+      "parent project's responsibility"
+    )
     return()
   endif()
 
-  find_package(EnTT CONFIG QUIET)
-  if(TARGET EnTT::EnTT)
+  if(TESS_USE_SYSTEM_DEPENDENCIES)
+    find_package(EnTT ${TESS_ENTT_MIN_VERSION} CONFIG REQUIRED)
+    if(NOT TARGET EnTT::EnTT)
+      message(FATAL_ERROR "EnTT did not provide expected target EnTT::EnTT")
+    endif()
     return()
   endif()
 

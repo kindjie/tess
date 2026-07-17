@@ -14,6 +14,7 @@ namespace {
 
 struct PassableTag {};
 struct CostTag {};
+using PortalClass = tess::movement::LegacyWeighted<PassableTag, CostTag>;
 
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
@@ -1187,6 +1188,7 @@ TEST(TessPath, WeightedPortalSegmentCacheLookupAppendCopiesHits) {
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
   tess::WeightedPortalSegmentCache cache;
+  auto class_cache = cache.for_class<PortalClass>();
 
   const auto first_request =
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
@@ -1196,7 +1198,7 @@ TEST(TessPath, WeightedPortalSegmentCacheLookupAppendCopiesHits) {
   ASSERT_EQ(first.status, tess::PathStatus::Found);
   const auto first_cost = first.cost;
   const auto first_size = first.path.size();
-  cache.store(world, first_request, first);
+  class_cache.store(world, first_request, first);
 
   const auto second_request =
       tess::PathRequest{tess::Coord3{7, 0, 0}, tess::Coord3{7, 7, 0}};
@@ -1205,17 +1207,17 @@ TEST(TessPath, WeightedPortalSegmentCacheLookupAppendCopiesHits) {
           world, second_request, scratch);
   ASSERT_EQ(second.status, tess::PathStatus::Found);
   const auto second_size = second.path.size();
-  cache.store(world, second_request, second);
+  class_cache.store(world, second_request, second);
   ASSERT_EQ(cache.size(), 2u);
 
   std::vector<tess::Coord3> out;
-  const auto miss = cache.lookup_append(
+  const auto miss = class_cache.lookup_append(
       world, tess::PathRequest{tess::Coord3{0, 1, 0}, tess::Coord3{7, 1, 0}},
       out);
   EXPECT_FALSE(miss.found);
   EXPECT_TRUE(out.empty());
 
-  const auto hit = cache.lookup_append(world, first_request, out);
+  const auto hit = class_cache.lookup_append(world, first_request, out);
   ASSERT_TRUE(hit.found);
   EXPECT_EQ(hit.status, tess::PathStatus::Found);
   EXPECT_EQ(hit.cost, first_cost);
@@ -1223,7 +1225,21 @@ TEST(TessPath, WeightedPortalSegmentCacheLookupAppendCopiesHits) {
   EXPECT_EQ(out.front(), first_request.start);
   EXPECT_EQ(out.back(), first_request.goal);
 
-  const auto stitched = cache.lookup_append(world, second_request, out);
+  // Rebinding the already-bound class is one token comparison. The warm
+  // lookup must not allocate, including construction and use of the view.
+  out.clear();
+  auto warm_hit = tess::SegmentHit{};
+  auto warm_allocations = std::size_t{0};
+  {
+    tess_test::ScopedAllocationCounter counter;
+    auto warm_class_cache = cache.for_class<PortalClass>();
+    warm_hit = warm_class_cache.lookup_append(world, first_request, out);
+    warm_allocations = counter.count();
+  }
+  EXPECT_TRUE(warm_hit.found);
+  EXPECT_EQ(warm_allocations, 0u);
+
+  const auto stitched = class_cache.lookup_append(world, second_request, out);
   ASSERT_TRUE(stitched.found);
   EXPECT_EQ(out.size(), first_size + second_size - 1u);
   EXPECT_EQ(out.front(), first_request.start);
@@ -1234,7 +1250,7 @@ TEST(TessPath, WeightedPortalSegmentCacheLookupAppendCopiesHits) {
                    tess::Box3{tess::Coord3{3, 0, 0}, tess::Extent3{1, 1, 1}});
 
   const auto stitched_size = out.size();
-  const auto stale = cache.lookup_append(world, first_request, out);
+  const auto stale = class_cache.lookup_append(world, first_request, out);
   EXPECT_FALSE(stale.found);
   EXPECT_EQ(out.size(), stitched_size);
 }

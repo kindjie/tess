@@ -1,7 +1,8 @@
 # GPU Backend Interface
 
 The M13 layer: interface only, in `include/tess/gpu/`. GPU execution is
-optional and unimplemented in v1 -- CPU stays authoritative for every
+optional and unimplemented in the current pre-1.0 release -- CPU stays
+authoritative for every
 gameplay-exact result, GPU products are derived/cached/versioned by a
 future backend, and the acceptance bar is that a real backend can be
 added later without redesigning core. Nothing here touches a GPU API or
@@ -53,7 +54,7 @@ concept, never virtual dispatch). Everything lives in `tess::gpu`.
   refuses every operation, so CPU-only builds compile untouched and
   carry zero GPU obligations.
 
-The v1 concept is deliberately synchronous-bool only: the fence and
+The current concept is deliberately synchronous-bool only: the fence and
 completion-collection surface named by the TDD arrives with the first
 real backend, as a non-breaking refinement of this concept (the
 `async_dispatch`/`async_readback` capability flags reserve the space).
@@ -63,6 +64,7 @@ real backend, as a non-breaking refinement of this concept (the
 `tests/gpu_mock_backend.h` provides the test-only `MockGpuBackend`: it
 satisfies the concept, enforces its configured capabilities, and records
 the call sequence so tests assert upload -> dispatch -> readback
-ordering and payloads. Benchmarks are deliberately absent in v1 (the
+ordering and payloads. Benchmarks are deliberately absent while no real
+backend exists (the
 benchmark plan's mock-backend note): there is no execution to measure,
 and gating descriptor construction would gate arithmetic.

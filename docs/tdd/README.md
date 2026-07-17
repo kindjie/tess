@@ -3,6 +3,9 @@
 These technical design documents capture design intent at the time they were
 written. They are useful for rationale and tradeoffs, but they are not the
 authoritative source for current implementation behavior once code exists.
+Historical `v1` scope labels in these documents mean the initial prototype
+milestone, which was released as pre-stable `v0.1.0`; they do not describe a
+stable 1.x compatibility promise.
 
 When implementation diverges from a TDD:
 

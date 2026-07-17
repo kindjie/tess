@@ -581,6 +581,30 @@ TEST(TessPathRuntime, FailureStatusCountersTallyMixedBatches) {
   EXPECT_EQ(stats.found, 1u);
 }
 
+TEST(TessPathRuntime, UnitFieldCacheRejectsInvalidEndpointsBeforeGrouping) {
+  World world;
+  fill_world(world);
+
+  tess::PathRequestRuntime runtime;
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{-1, 0, 0}, tess::Coord3{31, 31, 0}});
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{31, 31, 0}});
+  const auto policy = tess::PathRuntimeCachePolicy{
+      .use_unit_field_product_cache = true,
+      .unit_field_product_min_start_chunks = 1,
+  };
+
+  const auto results =
+      runtime.process_unit_cached<World, PassableTag>(world, policy);
+
+  ASSERT_EQ(results.size(), 2u);
+  EXPECT_EQ(results[0].status, tess::PathStatus::InvalidStart);
+  EXPECT_EQ(results[1].status, tess::PathStatus::Found);
+  EXPECT_EQ(runtime.stats().invalid_start, 1u);
+  EXPECT_EQ(runtime.stats().found, 1u);
+}
+
 // The runtime policy byte budget must drive real eviction inside
 // process_unit_cached: two world-sized products cannot coexist under a
 // budget sized for one, so alternating goal groups evict each other.
@@ -719,6 +743,9 @@ TEST(TessPathRuntime, RepeatedGoalGroupingMatchesAstarOracle) {
       std::vector<tess::Coord3> goals;
       std::vector<std::vector<tess::Coord3>> starts;
       for (const auto& request : requests) {
+        if (!tess::contains<Runtime2D>(request.start)) {
+          continue;
+        }
         auto found = false;
         for (std::size_t g = 0; g < goals.size(); ++g) {
           if (goals[g] == request.goal) {

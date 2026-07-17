@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,112 +15,374 @@ import git_hooks  # noqa: E402
 
 
 def reader_for(files: dict[str, bytes]):
-    return lambda path: files.get(path, b"")
+  return lambda path: files.get(path, b"")
 
 
 # Positive/near-miss fixtures for each PRIVATE_PATTERNS entry, in order.
 # Positives are built from concatenated fragments so this test file never
 # contains the flagged byte sequences itself.
 PRIVATE_CASES = (
-    (b"main" + b"tainer was here", b"main" + b"tainers was here"),
-    (b"contri" + b"butor", b"contri" + b"butoron"),
-    (b"see downstream" + b"consumer notes", b"see downstream" + b"consumery notes"),
-    (b"Link" + b"edIn.com/in/example", b"link" + b"edin.org/in/example"),
-    (b"/Us" + b"ers/example/notes", b"/Us" + b"er/example/notes"),
-    (b"/pri" + b"vate/tmp/thing", b"/pri" + b"vatex/tmp/thing"),
-    (b"/ho" + b"me/example/file", b"/ho" + b"me//file"),
-    (b"-----BEGIN " + b"PRIV" + b"ATE KEY-----", b"BEGIN PUBLIC KEY"),
-    (b"AW" + b"S_REGION = value", b"AW" + b"S-REGION = value"),
-    (b"GITHUB_TO" + b"KEN = value", b"GITHUB_TO" + b"KENS value"),
-    (b"github_" + b"pat_" + b"abc123", b"github_" + b"pat_ = value"),
-    (b"gh" + b"p_" + b"a" * 40, b"gh" + b"p_ prefix only"),
-    (b"sk-" + b"a" * 20, b"sk-" + b"a" * 19),
-    (b"pass" + b"word: value", b"pass" + b"words: value"),
+  (b"Link" + b"edIn.com/in/example", b"link" + b"edin.org/in/example"),
+  (b"/Us" + b"ers/example/notes", b"/Us" + b"er/example/notes"),
+  (b"/pri" + b"vate/tmp/thing", b"/pri" + b"vatex/tmp/thing"),
+  (b"/ro" + b"ot/private.txt", b"/ro" + b"ots/private.txt"),
+  (b"/Vol" + b"umes/Private/data", b"/Vol" + b"ume/data"),
+  (b"/ho" + b"me/example/file", b"/ho" + b"me//file"),
+  (b"C:" + b"\\Users\\example\\notes", b"C:" + b"relative\\notes"),
+  (b"\\" + b"\\server\\share\\notes", b"\\" + b"server\\notes"),
+  (b"-----BEGIN " + b"PRIV" + b"ATE KEY-----", b"BEGIN PUBLIC KEY"),
+  (
+    b"AW" + b"S_SECRET_ACCESS_KEY = value",
+    b"AW" + b"S_REGION = value",
+  ),
+  (b"AK" + b"IA" + b"A" * 16, b"AK" + b"IA" + b"A" * 15),
+  (b"GITHUB_TO" + b"KEN = value", b"GITHUB_TO" + b"KENS value"),
+  (b"github_" + b"pat_" + b"abc123", b"github_" + b"pat_ = value"),
+  (b"gh" + b"o_" + b"a" * 40, b"gh" + b"i_" + b"a" * 40),
+  (b"sk-" + b"a" * 20, b"sk-" + b"a" * 19),
+  (b"sk-" + b"proj-" + b"a" * 20, b"sk-" + b"proj-" + b"a" * 19),
+  (b"gl" + b"pat-" + b"a" * 20, b"gl" + b"pat-" + b"a" * 19),
+  (b"xox" + b"b-" + b"a" * 20, b"xox" + b"b-" + b"a" * 19),
+  (b"sk_" + b"live_" + b"a" * 20, b"sk_" + b"live_" + b"a" * 19),
+  (b"person" + b"@example.com", b"person at example.com"),
+  (b"+1 604" + b" 555 0123", b"60455 50123"),
+  (b"pass" + b"word: value", b"pass" + b"words: value"),
 )
 
 
 def test_private_case_table_covers_every_pattern():
-    assert len(PRIVATE_CASES) == len(git_hooks.PRIVATE_PATTERNS)
+  assert len(PRIVATE_CASES) == len(git_hooks.PRIVATE_PATTERNS)
+
+
+def test_unc_pattern_ignores_shell_quote_escaping():
+  unc_pattern = git_hooks.PRIVATE_PATTERNS[7]
+  shell_escape = b"sed s/'/'" + b"\\" * 4 + b"''/g"
+
+  assert not unc_pattern.search(shell_escape)
 
 
 @pytest.mark.parametrize(
-    ("index", "positive", "near_miss"),
-    [(i, pos, neg) for i, (pos, neg) in enumerate(PRIVATE_CASES)],
+  ("index", "positive", "near_miss"),
+  [(i, pos, neg) for i, (pos, neg) in enumerate(PRIVATE_CASES)],
 )
-def test_private_pattern_fires_and_near_miss_passes(
-    index, positive, near_miss
-):
-    pattern = git_hooks.PRIVATE_PATTERNS[index]
-    assert pattern.search(positive), f"pattern {index} missed its fixture"
-    assert not pattern.search(near_miss), (
-        f"pattern {index} matched its near-miss"
-    )
+def test_private_pattern_fires_and_near_miss_passes(index, positive, near_miss):
+  pattern = git_hooks.PRIVATE_PATTERNS[index]
+  assert pattern.search(positive), f"pattern {index} missed its fixture"
+  assert not pattern.search(near_miss), f"pattern {index} matched its near-miss"
 
 
-def test_private_downstream_name_matches_case_variants():
-    # The private downstream consumer's name (PRIVATE_CASES index 2) must
-    # match case-insensitively; the fixture is assembled from fragments so
-    # the name never appears literally in this file.
-    pattern = git_hooks.PRIVATE_PATTERNS[2]
-    for variant in (
-        b"Downstream" + b"Consumer",
-        b"DOWNSTREAM" + b"CONSUMER",
-        b"downstream" + b"Consumer",
-    ):
-        assert pattern.search(b"docs for " + variant + b" consumers"), variant
+def test_load_private_patterns_adds_local_case_insensitive_regexes(tmp_path):
+  path = tmp_path / "patterns"
+  path.write_bytes(b"# local identities\nprivate[-_ ]consumer\n\n")
+
+  patterns = git_hooks.load_private_patterns(path)
+
+  assert patterns[: len(git_hooks.PRIVATE_PATTERNS)] == (
+    git_hooks.PRIVATE_PATTERNS
+  )
+  assert patterns[-1].search(b"PRIVATE Consumer")
+
+
+def test_load_private_patterns_rejects_invalid_regex(tmp_path):
+  path = tmp_path / "patterns"
+  path.write_bytes(b"valid\n(unclosed\n")
+
+  with pytest.raises(ValueError, match=r"patterns:2: invalid byte regex"):
+    git_hooks.load_private_patterns(path)
+
+
+def test_ensure_identity_patterns_adds_escaped_full_name(tmp_path):
+  path = tmp_path / "patterns"
+
+  added = git_hooks.ensure_identity_patterns(path, "Example O'Person")
+
+  assert added == 1
+  patterns = git_hooks.load_private_patterns(path)
+  assert patterns[-1].search(b"EXAMPLE O'PERSON")
+  assert not patterns[-1].search(b"example project")
+  assert not patterns[-1].search(b"another person")
+  assert git_hooks.ensure_identity_patterns(path, "Example O'Person") == 0
+
+
+def test_ensure_identity_patterns_does_not_ban_bot_name_tokens(tmp_path):
+  path = tmp_path / "patterns"
+
+  assert git_hooks.ensure_identity_patterns(path, "CI Bot") == 1
+  pattern = git_hooks.load_private_patterns(path)[-1]
+  assert not pattern.search(b"CI runs the bot checks")
+  assert not pattern.search(b"this GitHub action builds the project")
 
 
 def test_find_private_matches_flags_offenders_and_skips_clean():
-    files = {
-        "bad.md": PRIVATE_CASES[0][0],
-        "good.md": b"\n".join(neg for _, neg in PRIVATE_CASES),
-        "skipped.bin": PRIVATE_CASES[0][0],
-    }
-    offenders = git_hooks.find_private_matches(
-        sorted(files), reader_for(files)
-    )
-    assert offenders == ["bad.md"]
+  files = {
+    "bad.md": PRIVATE_CASES[0][0],
+    "good.md": b"\n".join(neg for _, neg in PRIVATE_CASES),
+    "skipped.bin": b"\x00" + PRIVATE_CASES[0][0],
+  }
+  offenders = git_hooks.find_private_matches(
+    sorted(files), reader_for(files), git_hooks.PRIVATE_PATTERNS
+  )
+  assert offenders == ["bad.md"]
+
+
+def test_find_private_matches_checks_text_regardless_of_filename():
+  files = {
+    "CMakeLists.txt": PRIVATE_CASES[0][0],
+    "Dockerfile": PRIVATE_CASES[0][0],
+    "LICENSE": PRIVATE_CASES[0][0],
+    "config.h.in": PRIVATE_CASES[0][0],
+    "script.sh": PRIVATE_CASES[0][0],
+    "generated.lock": PRIVATE_CASES[0][0],
+  }
+
+  assert git_hooks.find_private_matches(
+    sorted(files), reader_for(files), git_hooks.PRIVATE_PATTERNS
+  ) == sorted(files)
+
+
+def test_find_private_matches_checks_filename_even_for_binary_data():
+  private_name = "notes/person" + "@example.com/archive.bin"
+  files = {private_name: b"\x00binary"}
+
+  assert git_hooks.find_private_matches(
+    files, reader_for(files), git_hooks.PRIVATE_PATTERNS
+  ) == [private_name]
 
 
 def test_find_conflict_markers_detects_each_marker_kind():
-    marker_lines = (
-        b"<<<" + b"<<<< HEAD",
-        b">>>" + b">>>> theirs",
-        b"|||" + b"|||| base",
-        b"===" + b"====",
-    )
-    for line in marker_lines:
-        files = {"a.md": b"text\n" + line + b"\nmore\n"}
-        offenders = git_hooks.find_conflict_markers(
-            ["a.md"], reader_for(files)
-        )
-        assert offenders == ["a.md"], line
+  marker_lines = (
+    b"<<<" + b"<<<< HEAD",
+    b">>>" + b">>>> theirs",
+    b"|||" + b"|||| base",
+    b"===" + b"====",
+  )
+  for line in marker_lines:
+    files = {"a.md": b"text\n" + line + b"\nmore\n"}
+    offenders = git_hooks.find_conflict_markers(["a.md"], reader_for(files))
+    assert offenders == ["a.md"], line
+
+
+def test_find_conflict_markers_checks_generated_text_lockfiles():
+  marker = b"<<<" + b"<<<< HEAD"
+  files = {"generated.lock": b"version = 1\n" + marker + b"\n"}
+
+  assert git_hooks.find_conflict_markers(files, reader_for(files)) == [
+    "generated.lock"
+  ]
 
 
 def test_find_conflict_markers_ignores_near_misses_and_binaries():
-    files = {
-        "a.md": b"====== =\nx <<<" + b"<<<< y\n====" + b"====\n",
-        "b.bin": b"<<<" + b"<<<< HEAD\n",
-    }
-    offenders = git_hooks.find_conflict_markers(
-        sorted(files), reader_for(files)
-    )
-    assert offenders == []
+  files = {
+    "a.md": b"====== =\nx <<<" + b"<<<< y\n====" + b"====\n",
+    "b.bin": b"\x00<<<" + b"<<<< HEAD\n",
+  }
+  offenders = git_hooks.find_conflict_markers(sorted(files), reader_for(files))
+  assert offenders == []
 
 
 def test_find_token_overruns_flags_only_oversized_text_files():
-    tiktoken = pytest.importorskip("tiktoken")
-    encoder = tiktoken.get_encoding("cl100k_base")
-    files = {
-        "big.md": b"word " * 30_000,
-        "small.md": b"short file\n",
-        "big.bin": b"word " * 30_000,
-    }
-    overruns = git_hooks.find_token_overruns(
-        sorted(files), reader_for(files), encoder
+  tiktoken = pytest.importorskip("tiktoken")
+  encoder = tiktoken.encoding_for_model("gpt-5")
+  files = {
+    "big.md": b"word " * 30_000,
+    "small.md": b"short file\n",
+    "big.bin": b"\x00" + b"word " * 30_000,
+  }
+  overruns = git_hooks.find_token_overruns(
+    sorted(files), reader_for(files), encoder
+  )
+  assert [path for path, _ in overruns] == ["big.md"]
+  assert overruns[0][1] > git_hooks.TOKEN_LIMIT
+
+
+def test_find_token_overruns_rejects_exact_limit():
+  class ExactLimitEncoder:
+    def encode(self, _text):
+      return range(git_hooks.TOKEN_LIMIT)
+
+  files = {"exact.md": b"content"}
+
+  assert git_hooks.find_token_overruns(
+    files, reader_for(files), ExactLimitEncoder()
+  ) == [("exact.md", git_hooks.TOKEN_LIMIT)]
+
+
+def test_find_token_overruns_replaces_malformed_utf8():
+  class CapturingEncoder:
+    text = ""
+
+    def encode(self, text):
+      self.text = text
+      return ()
+
+  encoder = CapturingEncoder()
+
+  assert (
+    git_hooks.find_token_overruns(
+      ["malformed.md"],
+      reader_for({"malformed.md": b"before\xffafter"}),
+      encoder,
     )
-    assert [path for path, _ in overruns] == ["big.md"]
-    assert overruns[0][1] > git_hooks.TOKEN_LIMIT
+    == []
+  )
+  assert encoder.text == "before\ufffdafter"
+
+
+def test_token_encoder_matches_the_gpt5_cli_model():
+  tiktoken = pytest.importorskip("tiktoken")
+
+  assert git_hooks.token_encoder().name == "o200k_base"
+  assert git_hooks.token_encoder().name == (
+    tiktoken.encoding_for_model("gpt-5").name
+  )
+
+
+def test_index_paths_and_blobs_are_nul_safe_and_do_not_follow_symlinks(
+  tmp_path,
+):
+  repo = tmp_path / "repo"
+  repo.mkdir()
+  subprocess.run(["git", "init", "-q", str(repo)], check=True)
+  newline_name = "line\nbreak.md"
+  (repo / newline_name).write_text("safe\n", encoding="utf-8")
+  outside = tmp_path / "outside.txt"
+  outside.write_bytes(PRIVATE_CASES[0][0])
+  link = repo / "outside-link"
+  try:
+    link.symlink_to(Path("..") / outside.name)
+  except OSError as error:
+    pytest.skip(f"symlinks unavailable: {error}")
+  subprocess.run(
+    ["git", "-C", str(repo), "add", newline_name, link.name],
+    check=True,
+  )
+
+  assert git_hooks.tracked_files(repo) == [newline_name, link.name]
+  assert git_hooks.staged_files(repo) == [newline_name, link.name]
+  blobs = git_hooks.read_index_blobs([newline_name, link.name], repo_root=repo)
+  assert blobs[newline_name] == b"safe\n"
+  assert blobs[link.name] == os.fsencode("../outside.txt")
+  assert PRIVATE_CASES[0][0] not in blobs[link.name]
+
+
+def test_index_blob_read_fails_closed_for_a_missing_path(tmp_path):
+  repo = tmp_path / "repo"
+  repo.mkdir()
+  subprocess.run(["git", "init", "-q", str(repo)], check=True)
+
+  with pytest.raises(git_hooks.RepositoryReadError, match="missing.md"):
+    git_hooks.read_index_blobs(["missing.md"], repo_root=repo)
+
+
+def test_staged_paths_include_type_changes(monkeypatch):
+  def fake_git_bytes(argv, repo_root):
+    assert argv == [
+      "diff",
+      "--cached",
+      "--name-only",
+      "--diff-filter=ACMRT",
+      "-z",
+    ]
+    assert repo_root == git_hooks.REPO_ROOT
+    return b"changed-link\0"
+
+  monkeypatch.setattr(git_hooks, "git_bytes", fake_git_bytes)
+
+  assert git_hooks.staged_files() == ["changed-link"]
+
+
+def test_diff_paths_uses_nul_delimiters(monkeypatch):
+  def fake_git_bytes(argv, repo_root):
+    assert argv == ["diff", "--name-only", "-z", "base", "HEAD"]
+    assert repo_root == git_hooks.REPO_ROOT
+    return b"docs/line\nbreak.md\0bench/tess.cc\0"
+
+  monkeypatch.setattr(git_hooks, "git_bytes", fake_git_bytes)
+
+  assert git_hooks.diff_paths("base", "HEAD") == [
+    "docs/line\nbreak.md",
+    "bench/tess.cc",
+  ]
+
+
+def test_display_path_escapes_terminal_control_characters():
+  displayed = git_hooks.display_path("line\n\x1b[31mname")
+
+  assert displayed == "'line\\n\\x1b[31mname'"
+  assert "\n" not in displayed
+  assert "\x1b" not in displayed
+
+
+def test_uv_dev_command_uses_compiled_requirements_without_project():
+  command = git_hooks.uv_dev_command("uv-bin", "python", "tool.py")
+
+  assert command == [
+    "uv-bin",
+    "run",
+    "--no-project",
+    "--with-requirements",
+    str(git_hooks.DEV_REQUIREMENTS),
+    "--",
+    "python",
+    "tool.py",
+  ]
+
+
+@pytest.mark.parametrize(
+  ("email", "expected"),
+  [
+    ("123+example" + "@users.noreply.github.com", True),
+    ("example" + "@users.noreply.github.com", True),
+    ("person" + "@example.com", False),
+    ("123+bad" + "@example.com", False),
+  ],
+)
+def test_github_noreply_email_accepts_current_and_legacy_forms(email, expected):
+  assert git_hooks.is_github_noreply_email(email) is expected
+
+
+@pytest.mark.parametrize("returncode", [1, 129])
+def test_config_hooks_require_a_successful_probe(monkeypatch, returncode):
+  result = subprocess.CompletedProcess(
+    args=["git", "hook", "list", "pre-commit"],
+    returncode=returncode,
+    stdout="unsupported\n",
+  )
+  monkeypatch.setattr(git_hooks, "run", lambda *args, **kwargs: result)
+
+  assert git_hooks.supports_config_hooks() is False
+
+
+def test_config_hooks_accept_a_successful_probe(monkeypatch):
+  result = subprocess.CompletedProcess(
+    args=["git", "hook", "list", "pre-commit"],
+    returncode=0,
+    stdout="",
+  )
+  monkeypatch.setattr(git_hooks, "run", lambda *args, **kwargs: result)
+
+  assert git_hooks.supports_config_hooks() is True
+
+
+def test_every_checkout_step_disables_persisted_credentials():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  checkout_count = workflow.count("uses: actions/checkout@")
+
+  assert checkout_count > 0
+  assert workflow.count("persist-credentials: false") == checkout_count
+
+
+def test_hook_backstop_uses_pinned_uv_and_requires_hashes():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+
+  assert (
+    "uses: astral-sh/setup-uv@"
+    "11f9893b081a58869d3b5fccaea48c9e9e46f990" in workflow
+  )
+  assert 'version: "0.11.28"' in workflow
+  assert "uv pip sync --require-hashes requirements-dev.txt" in workflow
 
 
 SHA_A = "a" * 40
@@ -127,52 +391,85 @@ ZEROS = "0" * 40
 
 
 def test_parse_push_refs_parses_update_and_delete_lines():
-    text = (
-        f"refs/heads/main {SHA_A} refs/heads/main {SHA_B}\n"
-        f"refs/heads/gone {ZEROS} refs/heads/gone {SHA_B}\n"
-        f"refs/heads/new {SHA_A} refs/heads/new {ZEROS}\n"
-    )
-    refs = git_hooks.parse_push_refs(text)
-    assert len(refs) == 3
-    update, delete, new = refs
-    assert update.local_ref == "refs/heads/main"
-    assert update.local_sha == SHA_A
-    assert update.remote_ref == "refs/heads/main"
-    assert update.remote_sha == SHA_B
-    assert not update.is_delete() and not update.is_new()
-    assert delete.is_delete() and not delete.is_new()
-    assert new.is_new() and not new.is_delete()
+  text = (
+    f"refs/heads/main {SHA_A} refs/heads/main {SHA_B}\n"
+    f"refs/heads/gone {ZEROS} refs/heads/gone {SHA_B}\n"
+    f"refs/heads/new {SHA_A} refs/heads/new {ZEROS}\n"
+  )
+  refs = git_hooks.parse_push_refs(text)
+  assert len(refs) == 3
+  update, delete, new = refs
+  assert update.local_ref == "refs/heads/main"
+  assert update.local_sha == SHA_A
+  assert update.remote_ref == "refs/heads/main"
+  assert update.remote_sha == SHA_B
+  assert not update.is_delete() and not update.is_new()
+  assert delete.is_delete() and not delete.is_new()
+  assert new.is_new() and not new.is_delete()
 
 
 def test_parse_push_refs_ignores_blank_and_malformed_lines():
-    text = f"\nnot a ref line\n{SHA_A}\nrefs/x {SHA_A} refs/x\n"
-    assert git_hooks.parse_push_refs(text) == []
-    assert git_hooks.parse_push_refs("") == []
+  text = f"\nnot a ref line\n{SHA_A}\nrefs/x {SHA_A} refs/x\n"
+  assert git_hooks.parse_push_refs(text) == []
+  assert git_hooks.parse_push_refs("") == []
 
 
 def test_should_build_bench_for_new_remote_ref():
-    ref = git_hooks.PushRef(
-        "refs/heads/new", SHA_A, "refs/heads/new", ZEROS
-    )
-    assert git_hooks.should_build_bench([ref]) is True
+  ref = git_hooks.PushRef("refs/heads/new", SHA_A, "refs/heads/new", ZEROS)
+  assert git_hooks.should_build_bench([ref]) is True
+
+
+def test_pre_push_configures_bench_before_building_new_ref(monkeypatch):
+  ref = git_hooks.PushRef("refs/heads/new", SHA_A, "refs/heads/new", ZEROS)
+  commands: list[list[str]] = []
+
+  def fake_run(argv, **_kwargs):
+    commands.append(argv)
+    stdout = f"{SHA_A}\n" if argv == ["git", "rev-parse", "HEAD"] else ""
+    return subprocess.CompletedProcess(argv, 0, stdout=stdout)
+
+  monkeypatch.setattr(git_hooks, "read_push_refs", lambda: [ref])
+  monkeypatch.setattr(git_hooks, "run", fake_run)
+
+  assert git_hooks.pre_push() == 0
+  configure = ["cmake", "--preset", "bench"]
+  build = ["cmake", "--build", "--preset", "bench"]
+  assert commands[-2:] == [configure, build]
+
+
+def test_pre_push_skips_bench_commands_when_gating_is_false(monkeypatch):
+  ref = git_hooks.PushRef("refs/heads/main", SHA_A, "refs/heads/main", SHA_B)
+  commands: list[list[str]] = []
+
+  def fake_run(argv, **_kwargs):
+    commands.append(argv)
+    stdout = f"{SHA_A}\n" if argv == ["git", "rev-parse", "HEAD"] else ""
+    return subprocess.CompletedProcess(argv, 0, stdout=stdout)
+
+  monkeypatch.setattr(git_hooks, "read_push_refs", lambda: [ref])
+  monkeypatch.setattr(git_hooks, "should_build_bench", lambda _updates: False)
+  monkeypatch.setattr(git_hooks, "run", fake_run)
+
+  assert git_hooks.pre_push() == 0
+  assert all("bench" not in command for command in commands)
 
 
 def test_should_build_bench_when_range_is_unresolvable():
-    ref = git_hooks.PushRef(
-        "refs/heads/x", SHA_A, "refs/heads/x", SHA_B
-    )
-    assert git_hooks.should_build_bench([ref]) is True
+  ref = git_hooks.PushRef("refs/heads/x", SHA_A, "refs/heads/x", SHA_B)
+  assert git_hooks.should_build_bench([ref]) is True
 
 
 def test_bench_paths_changed_prefixes():
-    assert git_hooks.bench_paths_changed(["bench/foo.cc"])
-    assert git_hooks.bench_paths_changed(["cmake/Foo.cmake"])
-    assert git_hooks.bench_paths_changed(["include/tess/tess.h"])
-    assert git_hooks.bench_paths_changed(["CMakeLists.txt"])
-    assert not git_hooks.bench_paths_changed(
-        ["tests/CMakeLists.txt", "docs/git-hooks.md", "tools/git_hooks.py"]
-    )
-    assert not git_hooks.bench_paths_changed([])
+  assert git_hooks.bench_paths_changed(["bench/foo.cc"])
+  assert git_hooks.bench_paths_changed(["cmake/Foo.cmake"])
+  assert git_hooks.bench_paths_changed(["include/tess/tess.h"])
+  assert git_hooks.bench_paths_changed(["CMakeLists.txt"])
+  assert not git_hooks.bench_paths_changed([
+    "tests/CMakeLists.txt",
+    "docs/git-hooks.md",
+    "tools/git_hooks.py",
+  ])
+  assert not git_hooks.bench_paths_changed([])
 
 
 CMAKE_FIXTURE = """
@@ -197,26 +494,126 @@ AGENTS_FIXTURE = """
 
 
 def test_extract_cmake_test_targets_handles_multiline_forms():
-    targets = git_hooks.extract_cmake_test_targets(CMAKE_FIXTURE)
-    assert targets == ["tess_alpha_test", "tess_beta_test"]
+  targets = git_hooks.extract_cmake_test_targets(CMAKE_FIXTURE)
+  assert targets == ["tess_alpha_test", "tess_beta_test"]
 
 
 def test_missing_agents_targets_reports_undocumented_targets():
-    missing = git_hooks.missing_agents_targets(
-        CMAKE_FIXTURE, AGENTS_FIXTURE
-    )
-    assert missing == ["tess_beta_test"]
+  missing = git_hooks.missing_agents_targets(CMAKE_FIXTURE, AGENTS_FIXTURE)
+  assert missing == ["tess_beta_test"]
 
 
 def test_missing_agents_targets_empty_when_documented():
-    agents = AGENTS_FIXTURE + "- `tess_beta_test`: covers beta.\n"
-    assert git_hooks.missing_agents_targets(CMAKE_FIXTURE, agents) == []
+  agents = AGENTS_FIXTURE + "- `tess_beta_test`: covers beta.\n"
+  assert git_hooks.missing_agents_targets(CMAKE_FIXTURE, agents) == []
 
 
 def test_repo_agents_md_documents_all_cmake_test_targets():
-    root = Path(__file__).resolve().parents[1]
-    missing = git_hooks.missing_agents_targets(
-        (root / "tests" / "CMakeLists.txt").read_text(),
-        (root / "tests" / "AGENTS.md").read_text(),
-    )
-    assert missing == []
+  root = Path(__file__).resolve().parents[1]
+  missing = git_hooks.missing_agents_targets(
+    (root / "tests" / "CMakeLists.txt").read_text(),
+    (root / "tests" / "AGENTS.md").read_text(),
+  )
+  assert missing == []
+
+
+def test_compiled_dev_requirements_include_exact_direct_pins():
+  root = Path(__file__).resolve().parents[1]
+
+  def requirement_blocks(path: Path) -> list[list[str]]:
+    blocks: list[list[str]] = []
+    current: list[str] | None = None
+    for line in path.read_text().splitlines():
+      is_requirement = (
+        bool(line) and not line[0].isspace() and not line.startswith("#")
+      )
+      if is_requirement:
+        current = [line]
+        blocks.append(current)
+      elif current is not None:
+        current.append(line)
+    return blocks
+
+  def requirement_starts(path: Path) -> list[str]:
+    return [
+      block[0].removesuffix("\\").rstrip() for block in requirement_blocks(path)
+    ]
+
+  direct = requirement_starts(root / "requirements-dev.in")
+  lock_path = root / "requirements-dev.txt"
+  compiled = requirement_starts(lock_path)
+
+  assert set(direct) <= set(compiled)
+  for requirement in compiled:
+    package_and_version = requirement.split(";", 1)[0].strip()
+    assert package_and_version.count("==") == 1
+    package, version = package_and_version.split("==", 1)
+    assert package and version
+  for block in requirement_blocks(lock_path):
+    hashes = [
+      line.strip().removesuffix("\\").rstrip()
+      for line in block[1:]
+      if line.lstrip().startswith("--hash=sha256:")
+    ]
+    assert hashes
+    for item in hashes:
+      digest = item.removeprefix("--hash=sha256:")
+      assert len(digest) == 64
+      assert not set(digest) - set("0123456789abcdef")
+
+
+def test_compiled_dev_requirements_records_reproducible_command():
+  root = Path(__file__).resolve().parents[1]
+  header = (root / "requirements-dev.txt").read_text().splitlines()[:2]
+
+  assert header == [
+    "# This file was autogenerated by uv via the following command:",
+    "#    tools/compile_requirements.sh",
+  ]
+
+
+def test_compile_requirements_uses_pinned_uv_and_canonical_command(tmp_path):
+  root = Path(__file__).resolve().parents[1]
+  wrapper = root / "tools" / "compile_requirements.sh"
+  fake_uv = tmp_path / "uv"
+  args_log = tmp_path / "uv-args"
+  output = tmp_path / "requirements-dev.txt"
+  fake_uv.write_text(
+    "#!/bin/sh\n"
+    "set -eu\n"
+    "if [ \"$1\" = --version ]; then\n"
+    "  printf 'uv 0.11.28\\n'\n"
+    "  exit 0\n"
+    "fi\n"
+    "printf '%s\\n' \"$@\" > \"$UV_ARGS_LOG\"\n"
+  )
+  fake_uv.chmod(0o755)
+  env = os.environ.copy()
+  env["PATH"] = f"{tmp_path}:{env['PATH']}"
+  env["UV_ARGS_LOG"] = str(args_log)
+
+  subprocess.run(
+    [wrapper, output],
+    cwd=root,
+    env=env,
+    check=True,
+    text=True,
+    capture_output=True,
+  )
+
+  assert args_log.read_text().splitlines() == [
+    "pip",
+    "compile",
+    "--universal",
+    "--python-version",
+    "3.10",
+    "--upgrade",
+    "--generate-hashes",
+    "--exclude-newer",
+    "2026-07-13T00:00:00Z",
+    "--custom-compile-command",
+    "tools/compile_requirements.sh",
+    "requirements-dev.in",
+    "-o",
+    str(output),
+  ]

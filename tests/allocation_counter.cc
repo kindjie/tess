@@ -41,12 +41,24 @@ namespace {
 std::atomic<bool> count_allocations{false};
 std::atomic<std::size_t> allocations{0};
 std::atomic<std::size_t> allocated_bytes{0};
+std::atomic<bool> fail_allocations{false};
+std::atomic<std::size_t> failure_index{0};
+std::atomic<std::size_t> allocation_attempts{0};
 
 void record_allocation(std::size_t size) noexcept {
   if (count_allocations.load(std::memory_order_relaxed)) {
     allocations.fetch_add(1, std::memory_order_relaxed);
     allocated_bytes.fetch_add(size, std::memory_order_relaxed);
   }
+}
+
+[[nodiscard, maybe_unused]] auto reject_allocation() noexcept -> bool {
+  if (!fail_allocations.load(std::memory_order_relaxed)) {
+    return false;
+  }
+  const auto attempt =
+      allocation_attempts.fetch_add(1, std::memory_order_relaxed);
+  return attempt == failure_index.load(std::memory_order_relaxed);
 }
 
 }  // namespace
@@ -57,6 +69,20 @@ auto allocation_count() noexcept -> std::size_t {
 
 auto allocation_bytes() noexcept -> std::size_t {
   return allocated_bytes.load(std::memory_order_relaxed);
+}
+
+auto allocation_failure_injection_supported() noexcept -> bool {
+#if defined(TESS_TEST_ALLOCATION_COUNTER_USE_SANITIZER_HOOK)
+  return false;
+#elif defined(_MSC_VER) && defined(_ITERATOR_DEBUG_LEVEL) && \
+    _ITERATOR_DEBUG_LEVEL != 0
+  // MSVC's checked-iterator vector constructors allocate proxy state inside
+  // noexcept functions. Rejecting those bookkeeping allocations terminates
+  // the process before a test can catch std::bad_alloc.
+  return false;
+#else
+  return true;
+#endif
 }
 
 ScopedAllocationCounter::ScopedAllocationCounter() noexcept {
@@ -75,6 +101,36 @@ auto ScopedAllocationCounter::count() const noexcept -> std::size_t {
 
 auto ScopedAllocationCounter::bytes() const noexcept -> std::size_t {
   return allocation_bytes();
+}
+
+ScopedAllocationFailure::ScopedAllocationFailure(
+    std::size_t requested_failure_index) noexcept
+    : previous_enabled_{fail_allocations.load(std::memory_order_relaxed)},
+      previous_failure_index_{failure_index.load(std::memory_order_relaxed)},
+      previous_attempts_{allocation_attempts.load(std::memory_order_relaxed)} {
+  if (!allocation_failure_injection_supported()) {
+    return;
+  }
+  active_ = true;
+  allocation_attempts.store(0, std::memory_order_relaxed);
+  failure_index.store(requested_failure_index, std::memory_order_relaxed);
+  fail_allocations.store(true, std::memory_order_relaxed);
+}
+
+ScopedAllocationFailure::~ScopedAllocationFailure() {
+  if (!active_) {
+    return;
+  }
+  fail_allocations.store(previous_enabled_, std::memory_order_relaxed);
+  failure_index.store(previous_failure_index_, std::memory_order_relaxed);
+  allocation_attempts.store(previous_attempts_, std::memory_order_relaxed);
+}
+
+auto ScopedAllocationFailure::attempts() const noexcept -> std::size_t {
+  if (!active_) {
+    return 0;
+  }
+  return allocation_attempts.load(std::memory_order_relaxed);
 }
 
 }  // namespace tess_test
@@ -98,6 +154,9 @@ extern "C" void __sanitizer_malloc_hook(const volatile void* ptr,
 namespace {
 
 void* malloc_counted(std::size_t size) noexcept {
+  if (tess_test::reject_allocation()) {
+    return nullptr;
+  }
   // malloc(0) may return nullptr; replaceable new must return a unique
   // non-null pointer for zero-size requests.
   const std::size_t request = size == 0 ? 1 : size;
@@ -116,6 +175,9 @@ void* malloc_counted(std::size_t size) noexcept {
 
 void* aligned_malloc_counted(std::size_t size,
                              std::align_val_t alignment) noexcept {
+  if (tess_test::reject_allocation()) {
+    return nullptr;
+  }
   std::size_t align = static_cast<std::size_t>(alignment);
   if (align < alignof(void*)) {
     align = alignof(void*);  // posix_memalign minimum alignment.

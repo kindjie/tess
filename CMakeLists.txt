@@ -1,8 +1,10 @@
 cmake_minimum_required(VERSION 3.28)
 
+include(cmake/tess-version.cmake)
+
 project(
   tess
-  VERSION 0.2.0
+  VERSION "${TESS_VERSION}"
   DESCRIPTION "Performance-first tile and path simulation substrate"
   LANGUAGES CXX
 )
@@ -17,7 +19,7 @@ option(TESS_BUILD_TESTING "Build tess tests" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_EXAMPLES "Build tess examples" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
 option(TESS_ENABLE_ENTT
-       "Build EnTT-gated tess tests, examples, and benchmarks (fetches EnTT)"
+       "Build EnTT-gated tess tests, examples, and benchmarks (requires EnTT)"
        OFF)
 option(TESS_ENABLE_WARNINGS "Enable tess warning flags on local targets" ON)
 option(TESS_WARNINGS_AS_ERRORS "Treat tess local target warnings as errors" OFF)
@@ -25,6 +27,11 @@ option(TESS_ENABLE_CLANG_TIDY "Enable clang-tidy on tess local targets" OFF)
 set(TESS_CLANG_TIDY_CONFIG "" CACHE FILEPATH "Optional clang-tidy config file")
 option(TESS_ENABLE_CPPCHECK "Enable cppcheck on tess local targets" OFF)
 option(TESS_ENABLE_SANITIZERS "Enable sanitizers on tess local targets" OFF)
+option(
+  TESS_USE_SYSTEM_DEPENDENCIES
+  "Use compatible system packages instead of pinned fetched dependencies"
+  OFF
+)
 set(
   TESS_SANITIZERS
   "address,undefined"
@@ -46,6 +53,13 @@ add_library(tess INTERFACE)
 add_library(tess::tess ALIAS tess)
 
 target_compile_features(tess INTERFACE cxx_std_20)
+
+set(TESS_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
+configure_file(
+  include/tess/version.h.in
+  "${TESS_GENERATED_INCLUDE_DIR}/tess/version.h"
+  @ONLY
+)
 
 set(
   TESS_PUBLIC_HEADERS
@@ -115,12 +129,18 @@ target_sources(
     FILE_SET HEADERS
     BASE_DIRS include
     FILES ${TESS_INSTALL_HEADERS}
+  INTERFACE
+    FILE_SET generated_headers
+    TYPE HEADERS
+    BASE_DIRS "${TESS_GENERATED_INCLUDE_DIR}"
+    FILES "${TESS_GENERATED_INCLUDE_DIR}/tess/version.h"
 )
 
 install(
   TARGETS tess
   EXPORT tess-targets
   FILE_SET HEADERS
+  FILE_SET generated_headers
 )
 
 install(
@@ -140,6 +160,7 @@ write_basic_package_version_file(
   "${CMAKE_CURRENT_BINARY_DIR}/tess-config-version.cmake"
   VERSION "${PROJECT_VERSION}"
   COMPATIBILITY SameMinorVersion
+  ARCH_INDEPENDENT
 )
 
 install(

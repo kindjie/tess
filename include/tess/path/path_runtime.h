@@ -399,12 +399,10 @@ class PathRequestRuntime {
   // stats().class_cache_invalidations. One runtime per (world, class) is
   // therefore the PERF contract, not a correctness precondition. The
   // field-product cache already folds the class identity into its keys, and
-  // the weighted batch keeps no cross-call cache. NOT guarded: the portal
-  // segment cache, which is filled by the caller-driven, still pair-tagged
-  // portal-route builders through the portal_segment_cache() accessor and
-  // keys segments on request + chunk versions only -- callers reusing it
-  // across movement classes (or tag pairs) must keep one cache per class,
-  // exactly as before this binding existed.
+  // the weighted batch keeps no cross-call cache. The portal segment cache
+  // binds through for_class(), so a class change safely clears its entries.
+  // Keeping one runtime per (world, class) remains the performance contract:
+  // it avoids both kinds of conservative whole-cache rebind invalidation.
   void bind_unit_class(std::uintptr_t identity) noexcept {
     if (bound_unit_class_ == identity) {
       return;
@@ -479,6 +477,18 @@ class PathRequestRuntime {
     const auto slot_mask = slot_capacity - 1u;
     for (std::size_t i = 0; i < requests_.size(); ++i) {
       if (processed_[i] != 0) {
+        continue;
+      }
+      // The grouping fast path converts starts to unchecked tile keys below.
+      // Resolve only out-of-shape starts here, as part of the existing O(n)
+      // grouping pass. Passability and goal validation remain in the field
+      // builder or ordinary A* fallback, avoiding duplicate world reads.
+      if (!contains<Shape>(requests_[i].start)) {
+        auto invalid = PathResult{};
+        invalid.status = PathStatus::InvalidStart;
+        copy_result(i, invalid);
+        record_status(invalid.status);
+        processed_[i] = 1;
         continue;
       }
       const auto goal = requests_[i].goal;

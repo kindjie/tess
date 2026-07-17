@@ -3,6 +3,7 @@
 #include <tess/core/shape.h>
 #include <tess/storage/residency.h>
 
+#include <concepts>
 #include <cstdint>
 #include <type_traits>
 
@@ -31,19 +32,46 @@ namespace tess {
 //   region as reaching missing topology, so reachability degrades to
 //   Indeterminate rather than a wrong Unreachable.
 //
-// The provider TYPE is stamped on the graph at build time (mirroring the
-// movement-class stamp): update_region_graph with a different provider type
-// falls back to a full rebuild rather than patching with mismatched edges.
+// The provider type and revision are stamped on the graph at build time
+// (mirroring the movement-class stamp). Empty providers have revision zero.
+// A stateful provider must expose
+// `std::uint64_t transition_revision() const noexcept` and change that value
+// whenever its emitted transition set can change. update_region_graph falls
+// back to a full rebuild when either stamp differs.
+/// Constrains deterministic special-transition providers for a world type.
 template <typename P, typename World>
-concept TransitionProviderFor =
-    requires(const P& provider, const World& world, ChunkKey chunk,
-             void (*sink)(Coord3, Coord3)) {
-      provider.for_each_transition(world, chunk, sink);
-    };
+concept TransitionProviderFor = requires(const P& provider, const World& world,
+                                         ChunkKey chunk,
+                                         void (*sink)(Coord3, Coord3)) {
+  provider.for_each_transition(world, chunk, sink);
+} && (std::is_empty_v<P> || requires(const P& provider) {
+                                  {
+                                    provider.transition_revision()
+                                  } noexcept -> std::same_as<std::uint64_t>;
+                                });
+
+namespace detail {
+
+// Revision helper shared by graph construction and incremental updates.
+// Empty providers compile to the constant zero; stateful providers pay one
+// cheap revision read per graph build/update, never per transition.
+template <typename P>
+[[nodiscard]] constexpr auto transition_provider_revision(
+    const P& provider) noexcept -> std::uint64_t {
+  if constexpr (std::is_empty_v<P>) {
+    (void)provider;
+    return 0;
+  } else {
+    return provider.transition_revision();
+  }
+}
+
+}  // namespace detail
 
 // The default provider: no transitions beyond the built-in face adjacency
 // the region graph already pairs. Building with it is byte-identical to the
 // providerless build.
+/// Supplies no special transitions beyond ordinary face adjacency.
 struct AdjacentTransitions {
   template <typename World, typename Sink>
   void for_each_transition(const World& /*world*/, ChunkKey /*chunk*/,
@@ -52,6 +80,7 @@ struct AdjacentTransitions {
 
 // Direction a stair's landing lies in, stored as the integral value of the
 // stair field (0 keeps "no stair" as the zero-initialized default).
+/// Encodes the horizontal component of a one-level stair transition.
 enum class StairDirection : std::uint8_t {
   None = 0,
   PositiveX = 1,
@@ -80,6 +109,7 @@ enum class StairDirection : std::uint8_t {
 // two chunk boundaries at once -- sideways off the chunk's x/y edge AND up
 // off its top z layer -- contributes nothing; place the foot so the landing
 // stays within face-neighbor range.
+/// Emits bidirectional stair transitions encoded by an integral world field.
 template <typename StairTag>
 struct StairTransitions {
   template <typename World, typename Sink>

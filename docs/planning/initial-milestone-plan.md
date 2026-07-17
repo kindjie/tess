@@ -1,4 +1,4 @@
-# TDD: v1 Milestone / Implementation Plan
+# TDD: Initial Milestone / Implementation Plan
 
 > **Status: COMPLETE (2026-07-11).** Every milestone M0-M15 shipped; the
 > cross-cutting acceptance criteria in section 8 are pinned by named
@@ -6,14 +6,20 @@
 > `docs/decisions/CHANGELOG.md` records the per-stage design deltas from
 > this plan, and `docs/architecture/` documents what was actually built.
 > This document is preserved as the planning record, not maintained.
+>
+> **Versioning note:** The completed milestone maps to pre-stable `v0.1.0`;
+> no stable compatibility promise was made.
 
 ## 1. Summary
 
-This document defines the v1 implementation plan.
+This document defines the initial implementation plan.
 
-v1 should produce a usable prototype with constexpr shapes, 3D-internal coordinates, chunk-local SoA storage, queued ops, planner/executor foundation, scheduler, topology/local region foundation, A*, distance fields, EnTT integration, render deltas, diagnostics, and benchmarks.
+The initial milestone should produce a usable prototype with constexpr shapes,
+3D-internal coordinates, chunk-local SoA storage, queued ops, planner/executor
+foundation, scheduler, topology/local region foundation, A*, distance fields,
+EnTT integration, render deltas, diagnostics, and benchmarks.
 
-## 2. v1 goals
+## 2. Initial milestone goals
 
 - Establish architecture and type system.
 - Prove 2D, vertical 2D, and 3D share one model.
@@ -26,7 +32,7 @@ v1 should produce a usable prototype with constexpr shapes, 3D-internal coordina
 - Prove render deltas avoid snapshots.
 - Establish benchmarks.
 
-## 3. v1 non-goals
+## 3. Initial milestone non-goals
 
 - No dynamic world shape.
 - No unbounded coordinate space.
@@ -49,8 +55,8 @@ v1 should produce a usable prototype with constexpr shapes, 3D-internal coordina
 
 ## 5. Testable MVP checkpoint
 
-The first testable MVP is narrower than the full v1 vision. It should prove an
-end-to-end synchronous flow over always-resident storage:
+The first testable MVP is narrower than the full milestone vision. It should
+prove an end-to-end synchronous flow over always-resident storage:
 
 - create a compile-time world and typed tile fields;
 - enqueue and plan field update work;
@@ -135,7 +141,7 @@ Shape/key, storage, block, planner, scheduler, topology, pathfinding, fields, ca
 
 2D colony, vertical 2D ant-farm, 3D stair pathing, EnTT pawn movement, render delta consumer, path overlay.
 
-## 7. v1 deliverables
+## 7. Initial milestone deliverables
 
 Required:
 

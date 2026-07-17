@@ -19,11 +19,13 @@ namespace tess::movement {
 
 // Marker base so movement_class_of can distinguish a class from a raw field tag
 // without needing a Page type to probe the MovementClassFor concept.
+/// Marks types that implement the compile-time movement-class contract.
 struct movement_class_tag {};
 
 // --- boolean TERMS over typed fields -----------------------------------------
 
 // Truthy iff the named field is truthy at the tile.
+/// Evaluates the truthiness of field `Tag` at a resolved tile.
 template <typename Tag>
 struct Field {
   template <typename Page>
@@ -36,6 +38,7 @@ struct Field {
 };
 
 // Truthy iff the named (integral) field is non-zero -- e.g. a positive weight.
+/// Evaluates whether integral field `Tag` is nonzero at a resolved tile.
 template <typename Tag>
 struct NotZero {
   template <typename Page>
@@ -47,6 +50,7 @@ struct NotZero {
   }
 };
 
+/// Negates one compile-time passability term.
 template <typename Term>
 struct Not {
   template <typename Page>
@@ -56,6 +60,7 @@ struct Not {
   }
 };
 
+/// Requires every supplied passability term to evaluate true.
 template <typename... Terms>
 struct AllOf {
   template <typename Page>
@@ -65,6 +70,7 @@ struct AllOf {
   }
 };
 
+/// Requires at least one supplied passability term to evaluate true.
 template <typename... Terms>
 struct AnyOf {
   template <typename Page>
@@ -80,6 +86,10 @@ struct AnyOf {
 // non-positive signed value) means impassable, and the result saturates to
 // u32. The overflow compare casts through u64 first, exactly as the A* leaf
 // does, so a class-driven cost read is bit-identical to the legacy read.
+/// Converts an integral entry cost to the movement cost domain.
+///
+/// Nonpositive values become impassable cost zero and positive overflow
+/// saturates at `uint32_t` maximum.
 template <typename Value>
 [[nodiscard]] constexpr std::uint32_t normalize_cost(Value value) noexcept {
   static_assert(std::is_integral_v<std::remove_cvref_t<Value>>,
@@ -100,6 +110,7 @@ template <typename Value>
 
 // --- cost EXPRESSIONS (0 == impassable, u32-saturated) -----------------------
 
+/// Produces unit entry cost for every tile.
 struct UnitCost {
   template <typename Page>
   [[nodiscard]] static constexpr std::uint32_t eval(const Page&,
@@ -108,6 +119,7 @@ struct UnitCost {
   }
 };
 
+/// Produces compile-time constant entry cost `N` for every tile.
 template <std::uint32_t N>
 struct ConstantCost {
   template <typename Page>
@@ -117,6 +129,7 @@ struct ConstantCost {
   }
 };
 
+/// Reads and normalizes integral entry cost field `CostTag`.
 template <typename CostTag>
 struct FieldCost {
   template <typename Page>
@@ -130,6 +143,7 @@ struct FieldCost {
 
 // cost = SelTag(truthy) ? WhenSet::eval(page, id) : WhenClear::eval(page, id).
 // WhenSet/WhenClear are cost EXPRESSION types, not values.
+/// Selects between two cost expressions using field `SelTag`.
 template <typename SelTag, typename WhenSet, typename WhenClear>
 struct SelectCost {
   template <typename Page>
@@ -145,6 +159,7 @@ struct SelectCost {
 
 // --- the class ---------------------------------------------------------------
 
+/// Combines compile-time passability and entry-cost expressions.
 template <typename PassExpr, typename CostExpr>
 struct MovementClass : movement_class_tag {
   using pass_expr = PassExpr;
@@ -164,6 +179,7 @@ struct MovementClass : movement_class_tag {
 };
 
 // A class C is usable against pages of type Page.
+/// Checks that `C` provides movement operations compatible with `Page`.
 template <typename C, typename Page>
 concept MovementClassFor = std::derived_from<C, movement_class_tag> &&
                            requires(const Page& page, LocalTileId id) {
@@ -181,6 +197,7 @@ concept MovementClassFor = std::derived_from<C, movement_class_tag> &&
 // distinct struct (NOT an alias) so it can carry the raw passability tag and
 // expose passable_span: per-class region labeling uses that fast path to keep
 // the identity flood a byte-identical field_span<Tag> scan.
+/// Adapts a truthy passability field to unit-cost movement.
 template <typename PassableTag>
 struct WalkableField : MovementClass<Field<PassableTag>, UnitCost> {
   using passable_tag = PassableTag;
@@ -195,6 +212,7 @@ struct WalkableField : MovementClass<Field<PassableTag>, UnitCost> {
 // the weighted search agree exactly (recommended for new weighted classes).
 // Deliberately does NOT advertise the span fast path: its passability reads
 // two fields, so a raw single-field span scan would label cost-zero tiles.
+/// Combines a truthy field and positive cost field into weighted movement.
 template <typename PassableTag, typename CostTag>
 struct WalkableCostField
     : MovementClass<AllOf<Field<PassableTag>, NotZero<CostTag>>,
@@ -203,6 +221,7 @@ struct WalkableCostField
 // Weighted class preserving the legacy asymmetry: passability ignores cost
 // (graph is more permissive than the weighted search, never the reverse), used
 // by the legacy <World, PassableTag, CostTag> forwarders.
+/// Preserves legacy weighted semantics where cost does not affect passability.
 template <typename PassableTag, typename CostTag>
 using LegacyWeighted = MovementClass<Field<PassableTag>, FieldCost<CostTag>>;
 
@@ -212,12 +231,14 @@ using LegacyWeighted = MovementClass<Field<PassableTag>, FieldCost<CostTag>>;
 // matching passable_span (the topology flood scans it verbatim). Composed
 // classes -- including WalkableCostField, whose predicate reads two fields --
 // must not declare it.
+/// Checks whether a movement class advertises the exact field-span fast path.
 template <typename C>
 concept HasPassableSpan = requires { typename C::passable_tag; };
 
 // Normalize a template argument that is EITHER a movement class OR a raw field
 // tag, so every legacy <World, PassableTag> call site compiles unchanged and
 // resolves to the byte-identical WalkableField.
+/// Normalizes either a movement class or a raw passability field tag.
 template <typename T>
 using movement_class_of =
     std::conditional_t<std::derived_from<T, movement_class_tag>, T,

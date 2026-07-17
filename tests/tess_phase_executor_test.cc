@@ -1,12 +1,14 @@
 #include <gtest/gtest.h>
 #include <tess/core/assert.h>
-#include <tess/tess.h>
+#include <tess/ops/phase_executor.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <stdexcept>
+#include <thread>
 #include <vector>
 
 #include "allocation_counter.h"
@@ -256,6 +258,93 @@ TEST(TessPhaseExecutor, ThreadedExecutorReportsFailureAfterJoin) {
 
   EXPECT_EQ(result.status, tess::PlannedExecutionStatus::InvalidPhase);
   EXPECT_EQ(result.chunk_count, 9u);
+}
+
+TEST(TessPhaseExecutor, ScopedThreadExecutorRethrowsCallbackExceptions) {
+  const tess::ScopedThreadPhaseExecutor executor{4};
+
+  EXPECT_THROW(
+      {
+        (void)executor.for_each_operation(
+            0, 32, [](std::size_t index) -> tess::PlannedExecutionResult {
+              if (index == 9) {
+                throw std::runtime_error{"scoped callback failure"};
+              }
+              return tess::PlannedExecutionResult{};
+            });
+      },
+      std::runtime_error);
+}
+
+template <typename Executor>
+void expect_exception_cancels_unstarted_work_after_join(
+    const Executor& executor) {
+  constexpr auto operation_count = std::size_t{64};
+  std::atomic<bool> first_started = false;
+  std::atomic<bool> throw_started = false;
+  std::atomic<bool> first_finished = false;
+  std::atomic<std::size_t> callback_count = 0;
+
+  EXPECT_THROW(
+      {
+        (void)executor.for_each_operation(
+            0, operation_count,
+            [&](std::size_t index) -> tess::PlannedExecutionResult {
+              callback_count.fetch_add(1, std::memory_order_relaxed);
+              if (index == 0) {
+                first_started.store(true, std::memory_order_release);
+                while (!throw_started.load(std::memory_order_acquire)) {
+                  std::this_thread::yield();
+                }
+                first_finished.store(true, std::memory_order_release);
+                return tess::PlannedExecutionResult{};
+              }
+
+              while (!first_started.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+              }
+              throw_started.store(true, std::memory_order_release);
+              throw std::runtime_error{"callback failure"};
+            });
+      },
+      std::runtime_error);
+
+  EXPECT_TRUE(first_finished.load(std::memory_order_acquire));
+  EXPECT_LT(callback_count.load(std::memory_order_relaxed), operation_count);
+}
+
+TEST(TessPhaseExecutor, ScopedThreadExceptionCancelsAfterJoiningInFlightWork) {
+  const tess::ScopedThreadPhaseExecutor executor{2};
+
+  expect_exception_cancels_unstarted_work_after_join(executor);
+}
+
+TEST(TessPhaseExecutor, WorkerPoolRethrowsAndRemainsReusable) {
+  const tess::WorkerPoolPhaseExecutor executor{4};
+
+  EXPECT_THROW(
+      {
+        (void)executor.for_each_operation(
+            0, 32, [](std::size_t index) -> tess::PlannedExecutionResult {
+              if (index == 9) {
+                throw std::runtime_error{"pool callback failure"};
+              }
+              return tess::PlannedExecutionResult{};
+            });
+      },
+      std::runtime_error);
+
+  const auto result = executor.for_each_operation(
+      0, 16, [](std::size_t) -> tess::PlannedExecutionResult {
+        return tess::PlannedExecutionResult{};
+      });
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+}
+
+TEST(TessPhaseExecutor, WorkerPoolExceptionCancelsAfterJoiningInFlightWork) {
+  const tess::WorkerPoolPhaseExecutor executor{2};
+
+  expect_exception_cancels_unstarted_work_after_join(executor);
 }
 
 TEST(TessPhaseExecutor, ExecuteOperationIndexRangeAcceptsAnyPhaseExecutor) {

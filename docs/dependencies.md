@@ -10,6 +10,14 @@
 
 Used for C++ unit tests.
 
+Developer builds fetch the SHA-pinned source by default. Setting
+`TESS_USE_SYSTEM_DEPENDENCIES=ON` instead requires a CMake package at version
+1.17.0 or newer and fails configuration if the expected imported target is
+missing. As required for composable `add_subdirectory` use, a canonical
+`GTest::gtest_main` target already provided by a parent project takes
+precedence as an explicit injection/trust boundary; tess does not reinterpret
+directory-scoped version variables, so the parent owns its compatibility.
+
 ## Google Benchmark
 
 - Version: `v1.9.5`
@@ -17,6 +25,11 @@ Used for C++ unit tests.
 - Repository and releases: https://github.com/google/benchmark
 
 Used for opt-in C++ benchmarks.
+
+Benchmark builds fetch the SHA-pinned source by default. With
+`TESS_USE_SYSTEM_DEPENDENCIES=ON`, configuration requires Google Benchmark
+1.9.5 or newer. A parent-provided `benchmark::benchmark_main` target follows
+the same explicit trust rule and bypasses tess's package-version validation.
 
 On macOS, benchmark configure or execution may warn that pthread affinity or CPU
 frequency metadata is unavailable. Those warnings do not prevent benchmark
@@ -62,32 +75,48 @@ requires EnTT; two independent gates exist and both matter:
 - `TESS_ENABLE_ENTT` as a **CMake option** (default `OFF`, `ON` in the
   `dev`, `release`, `bench`, and `windows-msvc` presets) gates only tess's
   own EnTT-dependent test, example, and benchmark targets, which acquire
-  real EnTT through `tess_require_entt()` (`find_package` first, then
-  `FetchContent` at the pinned SHA, `SYSTEM`/`EXCLUDE_FROM_ALL`). The
-  default stays `OFF` so network-free consumer builds never fetch.
+  real EnTT through `tess_require_entt()`. The default dependency mode uses
+  `FetchContent` at the pinned SHA (`SYSTEM`/`EXCLUDE_FROM_ALL`);
+  `TESS_USE_SYSTEM_DEPENDENCIES=ON` instead requires EnTT 3.16.0 or newer.
+  The feature default stays `OFF` so ordinary consumer builds never fetch.
+  A parent-provided `EnTT::EnTT` target takes precedence as a documented trust
+  boundary and bypasses tess's package-version validation.
 
 EnTT requires C++17; tess builds it under `cxx_std_20`. The pinned SHA is
-the downstream consumer's known-good, MSVC-exercised pin -- upgrade the two
-repositories in lockstep only. The dependency-free concepts layer
+exercised by the repository's required platform matrix. The dependency-free
+concepts layer
 (`include/tess/ecs/adapter.h`) is always built and tested without EnTT.
 
 ## GitHub Actions
 
-- Checkout action version: `actions/checkout@v6`
+- Checkout action version: `actions/checkout@v7.0.0` (pinned to
+  `9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0`)
 - Checkout documentation: https://github.com/actions/checkout
-- Cache action version: `actions/cache@v4` (pinned to
-  `0057852bfaa89a56745cba8c7296529d2fc39830`)
+- Cache action version: `actions/cache@v6.1.0` (pinned to
+  `55cc8345863c7cc4c66a329aec7e433d2d1c52a9`)
 - Cache documentation: https://github.com/actions/cache
-- Upload artifact action version: `actions/upload-artifact@v7`
+- Upload artifact action version: `actions/upload-artifact@v7.0.1` (pinned to
+  `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`)
 - Upload artifact documentation: https://github.com/actions/upload-artifact
+- setup-uv action version: `astral-sh/setup-uv@v8.3.2` (latest upstream
+  release as of 2026-07-12; pinned to
+  `11f9893b081a58869d3b5fccaea48c9e9e46f990`)
+- setup-uv documentation: https://github.com/astral-sh/setup-uv
+- setup-uv checksum documentation:
+  https://github.com/astral-sh/setup-uv/blob/main/docs/customization.md
 - Hosted runner documentation:
   https://docs.github.com/actions/reference/runners/github-hosted-runners
 
-CI pins explicit runner images — `ubuntu-24.04`, `macos-15`, and
-`windows-2025` — instead of `-latest` labels to avoid runner image drift.
-Benchmark baseline JSON is uploaded from CI artifacts so timing thresholds can
-be calibrated against the same runner family that will enforce them; benchmark
-gates therefore run only on the Linux runner family they were calibrated on.
+CI selects explicit OS-family labels — `ubuntu-24.04`, `macos-15`, and
+`windows-2025` — instead of `-latest` labels. This avoids automatic OS-family
+migrations, but GitHub refreshes each hosted image in place, so its compilers,
+CMake, and preinstalled tools still roll. The jobs also install `ccache` and
+`clang-tidy` from live apt or Homebrew repositories; their resolved versions
+are reported but not pinned. Benchmark baseline JSON is uploaded from CI
+artifacts so timing thresholds can be calibrated against the same runner
+family that will enforce them; benchmark gates therefore run only on the Linux
+runner family they were calibrated on. Every checkout disables persisted Git
+credentials because these jobs only need repository read access.
 
 ## tiktoken
 
@@ -98,6 +127,44 @@ gates therefore run only on the Linux runner family they were calibrated on.
 Used by the Git pre-commit hook to count tokens in staged text files through
 the Python API. The hook reads staged blobs from Git, so the library API is a
 better fit than a filesystem-oriented command-line wrapper.
+
+## Python Development Tools
+
+- uv version: `0.11.28` (latest upstream release as of 2026-07-12)
+- uv documentation: https://docs.astral.sh/uv/
+- pytest version: `9.1.1`
+- pytest documentation: https://docs.pytest.org/
+- clang-format Python package version: `22.1.5`
+- clang-format documentation: https://clang.llvm.org/docs/ClangFormat.html
+- uv requirements locking:
+  https://docs.astral.sh/uv/pip/compile/
+- uv isolated command execution:
+  https://docs.astral.sh/uv/reference/cli/#uv-run
+
+`requirements-dev.in` holds the three direct tool pins.
+`requirements-dev.txt` is a universal `uv pip compile` result containing exact
+transitive versions, environment markers, and distribution hashes; its header
+records the checked-in regeneration wrapper. CI installs the pinned uv release
+through a SHA-pinned setup action, which automatically verifies the known
+release checksum. CI then creates `.venv` and runs
+`uv pip sync --require-hashes requirements-dev.txt`. Subsequent checks execute
+the Python, pytest, and clang-format binaries from that exact environment.
+
+Regenerate the hash lock with uv 0.11.28:
+
+```sh
+tools/compile_requirements.sh
+```
+
+The wrapper checks the uv version, enables upgrades, fixes the package-index
+cutoff at `2026-07-13T00:00:00Z`, and supplies a stable custom header. Pass an
+optional output path to generate a comparison lock without replacing the
+checked-in file. Advance the cutoff deliberately when refreshing dependency
+pins.
+
+The lock includes hashes for every published artifact uv considers, so it
+remains portable across supported Python versions and platforms. The current
+lock is 30,877 bytes and 16,038 GPT-5 tokens, below the repository file limit.
 
 ## CMake clang-tidy Integration
 
@@ -130,7 +197,7 @@ after those findings are either fixed or intentionally suppressed.
 
 ## Cppcheck
 
-- Version: `2.20.0`
+- Version: `2.21.0`
 - Manual: https://cppcheck.sourceforge.io/manual.html
 - CMake target property:
   https://cmake.org/cmake/help/latest/prop_tgt/LANG_CPPCHECK.html
@@ -142,7 +209,7 @@ third-party targets are not analyzed by project policy. The preset enables
 are intentionally deferred because early runs mostly report low-signal advice
 for small value types and static member functions in this template-heavy API.
 The preset narrowly suppresses cppcheck `internalError` for
-`include/tess/core/shape.h`, where cppcheck 2.20.0 fails while analyzing
+`include/tess/core/shape.h`, where cppcheck 2.21.0 fails while analyzing
 `ShapeTraits` non-type template parameter constants. The queued-operation
 planner uses an inline `returnDanglingLifetime` suppression where cppcheck
 reports a false positive for a pointer to an element inside a caller-provided
@@ -160,6 +227,22 @@ those files remain covered by normal, warnings-as-errors, and sanitizer builds.
 Used by the opt-in `dev-asan` preset for tests. Tess applies sanitizer compile
 and link flags to local executables only, because AddressSanitizer must be
 linked into the final executable.
+
+## Steam Runtime SDK
+
+- Image: `registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk`
+- Pinned digest:
+  `sha256:584939ebd7d2f1eec719e771fdde4ae3bd469ee741c783abb7fe812ddaaf3ee4`
+- Documentation: https://gitlab.steamos.cloud/steamrt/steamrt4/sdk
+- Valve runtime guide:
+  https://gitlab.steamos.cloud/steamrt/steam-runtime-tools/-/blob/main/docs/container-runtime.md
+
+The Steam Deck tooling builds and optionally runs inside this immutable SDK
+image so a mutable tag cannot silently change the compiler/sysroot. Developers
+may deliberately test another image with `TESS_STEAMRT_IMAGE`; the override is
+propagated to both the local container build and on-device container path.
+The pinned SDK already supplies Clang 19, so the wrapper performs no live
+`apt-get` step that could drift outside the image digest.
 
 ## Deferred Executor Candidates
 

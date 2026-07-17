@@ -761,6 +761,7 @@ class World<Shape, Schema, SparseResident> {
   detail::ChunkDirectory directory_;
 };
 
+/** Convenience alias for a byte-budgeted, explicitly resident world. */
 template <typename Shape, typename Schema>
 using SparseResidentWorld = World<Shape, Schema, SparseResident>;
 

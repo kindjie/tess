@@ -151,7 +151,7 @@ auto run() -> int {
   build_task.reserve_operations(8);
   build_task.set_result_hook(
       &colony, [](void* ctx, tess::OpHandle, const tess::OpCompletion& done,
-                  const BuildAck* ack) {
+                  const BuildAck* ack) noexcept {
         if (done.ok() && ack != nullptr) {
           static_cast<Colony*>(ctx)->built_tiles += ack->tiles;
         }

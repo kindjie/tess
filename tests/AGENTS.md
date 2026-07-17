@@ -14,6 +14,17 @@
   counter state is relaxed-atomic: it can under-count cross-thread
   allocations racing a scope boundary (never over-counts, so `== 0`
   assertions never false-fail).
+- `tess_test::ScopedAllocationFailure` rejects one zero-based allocation
+  attempt and reports the attempted-allocation count. Use it to prove strong
+  allocation-failure guarantees by retrying successive ordinals until the
+  operation succeeds. Unsupported guards are inert. Rejection is unavailable
+  under AddressSanitizer and ThreadSanitizer because their allocation hooks
+  observe but cannot reject. It is also unavailable with MSVC checked
+  iterators: their vector constructors and moves allocate proxy state inside
+  `noexcept` functions, so rejecting that bookkeeping would terminate the
+  process. Tests using injection must skip when the capability reports false;
+  Windows CI runs the strong-guarantee cases in Release as well as retaining
+  checked-iterator coverage in Debug.
 - Under AddressSanitizer or ThreadSanitizer, `allocation_counter.cc` and
   `bench/tess_diagnostics_alloc_hooks.cc` must use sanitizer allocation
   hooks instead of replacing global `new`, so the sanitizer's alloc/dealloc
@@ -23,15 +34,15 @@
   counted portably (no dlsym chaining to Itanium-mangled symbols).
 - `tess_allocation_counter_test`: verifies the scoped allocation counter
   itself — plain/array, aligned, nothrow, and aligned-nothrow `operator new`
-  forms are all counted with byte totals, construction resets counters, and
-  a fatal gtest failure inside a counting scope disables counting during
-  unwind instead of poisoning later assertions.
+  forms are counted with byte totals; supported configurations reject selected
+  throwing, nothrow, and aligned allocations; unsupported guards are inert;
+  construction resets counters; and a fatal gtest failure inside a counting
+  scope disables counting during unwind instead of poisoning later
+  assertions.
 - `tess_smoke`: verifies that the public `tess::tess` target is consumable,
-  that the root public header compiles, and that the version macros and
-  `library_version` match a hand-maintained release-version literal in the
-  test (a mirror of the top-level CMake `project(... VERSION ...)`), so a
-  `tess.h` bump that forgets the test fails; a CMake-only bump is not
-  detectable there.
+  that the root public header compiles, and that the generated version macros
+  and `library_version` match the CMake project version derived from the
+  repository's single version source.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
   degenerate-axis handling, containment helpers, key width inference,
   coordinate/chunk/local/tile key conversion helpers, the portable
@@ -104,24 +115,40 @@
   replay stress over shuffled legal phase plans, failure ordering, read-only
   const-view enforcement, partitioned threaded failure semantics,
   policy-mismatch execution rejection, allocation-free prebuilt planned
-  execution, source-location capture, and allocation-free inspection of
-  already-built queue/report/plan spans. It also verifies the structural
-  serial-executor guard (compile-time `static_assert`s that
+  execution, and the structural serial-executor guard (compile-time
+  `static_assert`s that
   `execute_phase_deferred_dirty_with` accepts `tess::SerialExecutor`-tagged
   executors and rejects `ScopedThreadPhaseExecutor`, while the partitioned
-  variant accepts both), a tagged custom serial executor end to end,
-  `FrameOps::clear()` id restart and allocation-free warm re-enqueue,
-  zero-value default-constructed `OpId`/`OpHandle`, write-then-read hazard
-  rejection and same-chunk write-then-read phase splitting, legal empty and
-  end-anchored phase ranges plus empty-plan phase planning, explicit-domain
-  duplicate-key deduplication and empty explicit domains, and
-  `ScopedThreadPhaseExecutor` worker-count clamping and zero-count early
-  return. Threaded replay stress compares every tile of every chunk between
+  variant accepts both). Checked-plan coverage additionally pins non-aggregate
+  construction, manual factory validation, cross-shape execution rejection,
+  and checked dirty record/merge rejection without world or accumulator
+  mutation, including rejection of incompatible empty-but-bound accumulators.
+  Threaded replay stress compares every tile of every chunk between
   serial and threaded worlds via field spans, and the same replay harness
   drives one reused `WorkerPoolPhaseExecutor` across all stress seeds to pin
   persistent-pool equivalence with serial execution. Multi-worker rendezvous
   points use a bounded 30s spin (`await_rendezvous`) that fails with a clear
   message instead of hanging until the ctest timeout.
+- `tess_queued_contract_test`: verifies queued-operation lifecycle and boundary
+  contracts, including source-location capture, allocation-free inspection of
+  already-built queue/report/plan spans, allocation-free planned block
+  iteration, a tagged custom serial executor end to end,
+  `FrameOps::clear()` id restart and allocation-free warm re-enqueue,
+  zero-value default-constructed `OpId`/`OpHandle`, write-then-read hazard
+  rejection and same-chunk write-then-read phase splitting, planner-issued
+  full-phase execution and executor-range conversion, contiguous raw range
+  dispatch including empty/end-anchored ranges, empty-plan phase planning,
+  explicit-domain duplicate-key deduplication, empty explicit domains,
+  `ScopedThreadPhaseExecutor` worker-count clamping and zero-count early return,
+  dirty-before-callback ordering for direct, deferred, and phase execution,
+  and coalescing of overlapping read-only dirty records.
+- `tess_execution_phase_safety_test`: verifies executable phases are
+  planner-issued capabilities bound to the exact `ExecutionPlan` that produced
+  them. A phase from a disjoint plan cannot be rebound to dispatch same-chunk
+  mutable operations through serial, partitioned, or result-bearing helpers;
+  phases also expire when a reusable report is replanned or replaced. A wrong
+  execution world or foreign caller-owned dirty accumulator is rejected before
+  callbacks, dirty scratch, or result slots change.
 - `tess_phase_executor_test`: verifies the public `tess/ops/phase_executor.h`
   contract in isolation: compile-time `PhaseExecutor` concept conformance
   (satisfied by `SerialPhaseExecutor`, `ScopedThreadPhaseExecutor`,
@@ -138,6 +165,10 @@
   dispatches run and only the last must not allocate, since the counter is
   process-global while pool workers are live), repeated create/run/stop
   lifecycle cycles, and destruction without ever running a phase.
+  Scoped-thread and worker-pool exception tests require callbacks that throw to
+  cancel work that has not started, join callbacks already in flight, and
+  rethrow on the dispatching thread; the pool must remain usable for a
+  subsequent successful phase.
 - `tess_queued_results_test`: verifies the S6 result-channel core: a
   default `OpCompletion` is never `ok()` (the `completed` flag gates the
   success triple), `record_plan_completions` copies plan-time rejections
@@ -150,10 +181,13 @@
   (handle order, completions, accumulated values, and world fields), a
   runtime PolicyMismatch delivers its reason while the serial early-stop
   tail stays `Pending` (threaded executors complete the whole range by
-  contract), an out-of-range hand-built phase fails before touching the
+  contract), a phase issued for another plan fails before touching the
   channel, the serial whole-plan wrapper prepares every op upfront so an
   aborted tail reads `Pending`, and warm result-bearing execution plus
-  drain plus clear is allocation-free.
+  drain plus clear is allocation-free. A throwing drain visitor leaves that
+  slot undrained so a later call can retry it exactly once, including after
+  reentrant capacity growth; a reentrant clear retires the old slot without a
+  stale recovery write.
 - `tess_movement_class_test`: verifies the compile-time movement vocabulary
   (`tess::movement`): the `MovementClassFor` concept and `movement_class_of`
   tag/class normalization, byte-exact `normalize_cost` (zero and negative are
@@ -176,7 +210,8 @@
   (S5.7): the default `AdjacentTransitions` build is identical to the
   providerless build, a bridge provider's directed portals connect walled
   regions (both directions), incremental update equals a full rebuild with
-  the same provider, a provider-type mismatch forces a full rebuild, and a
+  the same provider, a provider-type or provider-revision mismatch forces a
+  full rebuild, stateful providers without a revision are rejected, and a
   sparse provider transition into a non-resident chunk degrades reachability
   to `Indeterminate` instead of a wrong `Unreachable`; and the stair provider
   (S5.8): an offset stair links two z-levels with no vertical face adjacency
@@ -235,7 +270,8 @@
   world), sparse `update_region_graph` equivalence with a fresh build after a
   seam edit (graph-for-graph plus a reachability probe), and the
   residency-generation staleness guard forcing a full rebuild after a chunk
-  loads post-build.
+  loads post-build. A direct local build for an in-range non-resident chunk
+  returns `MissingChunk` without accessing sparse storage.
 - `tess_path_precheck_test`: verifies the pre-A* topology gate `precheck_path`
   and `precheck_rules_out_path`: a reachable goal within a connected region, an
   `Unreachable` verdict across a walled chunk boundary (the only status that
@@ -320,11 +356,16 @@
   the portal segment-cache budget (stale-entry sweeps that compact both the
   entry list and the path-node arena across repeated world edits, sweep
   removal of stale same-request duplicates, insertion-order eviction of live
-  entries at budget, and sweep/eviction/stale-rejection stats), and the route
+  entries at budget, immediate eviction when a budget is lowered, movement-
+  class-bound views with safe whole-cache rebinding, and sweep/eviction/stale-
+  rejection/rebind stats), strong allocation-failure guarantees for store and
+  stale compaction (unchanged live entries, paths, and observable statistics,
+  plus safe retry), and the route
   cache's hash-indexed lookups (first-stored-entry-wins suffix determinism
   pinned against the pre-index linear scan, exact hits under aliased
-  low-bit coordinate patterns, entry/path-node cap breaches invalidating
-  the whole cache with a `cap_invalidations` stat, single oversized routes
+  low-bit coordinate patterns, entry/path-node cap breaches invalidating the
+  whole cache immediately when caps are lowered and on later stores, with a
+  `cap_invalidations` stat, single oversized routes
   skipped without eviction via `oversized_skips`, and cap 0 disabling
   storage).
 - `tess_path_product_test`: verifies the replay-product invalidation
@@ -352,7 +393,9 @@
   seeds) randomized equivalence pins repeated-goal grouping against a
   per-request A* oracle — statuses, costs, and the candidate/used/skipped
   group counters versus a reference computation — across both start-chunk
-  policies, and a warm identical frame is allocation-free.
+  policies. An out-of-shape start is resolved inside the grouping pass before
+  unchecked tile-key conversion, and a warm identical frame is allocation-
+  free.
 - `tess_path_runtime_sparse_test`: verifies the path runtime over a
   `SparseResidentWorld` (Slice 5a): unit route-cache hits within the resident
   set with no spurious invalidation, an in-place edit invalidating via the
@@ -512,8 +555,12 @@
   metadata, and drained ack sequences, with pool phases actually taken);
   per-phase dirty merging across a write-then-read phase split (a
   last-phase-only merge would drop earlier phases' dirty); and the
-  mixed-policy death test (pre-validation executes nothing). The schedule
-  and auto-exec binaries also run under the TSan preset.
+  mixed-policy death test (pre-validation executes nothing). Result hooks are
+  `noexcept`; a throwing kernel clears the completion channel while leaving
+  queued operations available for caller recovery, conservatively merges
+  dirty metadata for every started serial or pooled callback, coalesces
+  overlapping read-only dirty records, and cannot drain ghost results on the
+  next run. The schedule and auto-exec binaries also run under the TSan preset.
 - `tess_sim_scheduler_test`: verifies the simulation integration slice,
   including movement intent validation and commit, fixed-step accumulator
   pause/speed/clamp behavior with exact interpolation alpha values at known
@@ -530,7 +577,9 @@
 - `tess_diagnostics_enabled_test`: verifies public diagnostic macros evaluate
   exactly once when `TESS_ENABLE_DIAGNOSTICS` is defined, and that scoped path
   and queued phase counters record generic diagnostic events including weighted
-  cost reads and queued partitioned execution. It also links diagnostic
+  cost reads and queued partitioned execution. Exceptional dirty coalescing
+  counts every input record while counting each merged chunk once. It also
+  links diagnostic
   allocation hooks and verifies scoped allocation counters observe global
   `new`/`delete` (via sanitizer malloc/free hooks under ASan/TSan). It
   hosts the serpentine-maze mutation guards: unit and weighted searches on
@@ -558,10 +607,10 @@
   format strings. Exercises every draw function over a
   populated snapshot and pins `category_name` for every trace category.
 - `tests/test_benchmark_tools.py`: pytest coverage for the benchmark gating
-  tools (run with `uv run --frozen --group dev pytest`, and in the CI
+  tools (run with the pinned `requirements-dev.txt` environment, and in the CI
   hooks-backstop job alongside `tests/test_git_hooks.py`). Verifies
-  `tools/benchmark_thresholds.py` rejects duplicate benchmark names and
-  unknown limit keys, selects
+  `tools/benchmark_thresholds.py` rejects duplicate benchmark names,
+  unthresholded results, empty result sets, and unknown limit keys; selects
   repetition aggregates (median default, `--aggregate` override), converts
   all four Google Benchmark time units, fails on missing benchmarks, skips
   null limits, and reports missing/malformed input files as clear errors;
@@ -577,19 +626,45 @@
   verify type and free-function extraction at namespace scope, skipping of
   members, function-local declarations, comments, macro-body braces, and
   `detail`/`internal` namespaces, plus failure messages for undocumented
-  symbols and missing headers. One test asserts the committed
+  symbols, missing headers, missing mapped documents, and symbols absent from
+  their assigned document. One test asserts the committed
   `docs/architecture/surface.json` stays complete against the real
   `TESS_PUBLIC_HEADERS` headers.
+- `tests/test_git_hooks.py`: pytest coverage for the hook and CI backstop
+  helpers. It pins NUL-safe staged/tracked/index-diff path handling, exact
+  indexed-blob reads that do not follow symlinks, fail-closed read errors,
+  filename and content privacy scans, full-name local identity rules, current
+  and legacy GitHub noreply addresses, strict config-hook feature probing,
+  GPT-5 tokenization with malformed UTF-8 replacement and a strict
+  under-24000-token limit, push-range benchmark gating, fresh benchmark
+  configure/build ordering, and the requirements lock contract, including its
+  pinned-uv, index-cutoff canonical regeneration wrapper.
 - `tests/test_check_public_docs.py`: pytest coverage for the dependency-free,
-  first-slice Doxygen comment gate (`tools/check_public_docs.py`). Synthetic
-  fixtures verify block and line comments across templates, actionable missing
-  documentation and missing-file failures, and exclusion of `detail` symbols.
+  all-public-header Doxygen comment gate (`tools/check_public_docs.py`).
+  Synthetic fixtures verify block and line comments across templates,
+  overload-aware coverage, conditional-definition and redeclaration
+  deduplication, actionable missing documentation and missing-file failures,
+  and exclusion of `detail` symbols.
   One test gates the explicitly opted-in public headers; it does not claim
   member-level or full-API documentation coverage.
 - `tests/test_header_compile_cost.py`: pytest coverage for the repeatable
-  syntax-only public-header compile-cost tool. It pins the compiler command,
-  elapsed-sample collection, and invalid repetition handling without making
-  timing-dependent assertions in CI.
+  syntax-only public-header compile-cost tool. It pins the source and generated
+  include paths, compiler command, elapsed-sample collection, compiler-error
+  preservation, configured-header reuse, source-template fallback generation,
+  and invalid repetition handling without making timing-dependent assertions
+  in CI.
+- `tests/test_steamdeck_tools.py`: behavioral shell-tool coverage proving a
+  running Steam Runtime container is reused only when its recorded SDK image
+  matches the requested pinned image, and is rebuilt otherwise. It also
+  exercises interactive Deck setup through a pseudo-terminal: effective SSH
+  alias destinations, users, identities, proxies, and host-key policies must
+  be safe before direct-IP `ssh-copy-id` runs; the verification probe bypasses
+  user SSH configuration; and a non-SteamOS host fails with cleanup guidance.
+  Static README assertions keep setup routed through that safe command, while
+  a mocked benchmark invocation proves a transferred local image tag reaches
+  the remote `podman run` command. Hostile benchmark environment coverage
+  rejects option-like SSH aliases and unsafe remote directories before any
+  Docker, rsync, or SSH command runs.
 - The benchmark binaries (`tess_bench`, `tess_bench_diagnostics`) enforce
   correctness checks after their timed loops via an aborting `bench_check`
   helper (endpoints, legal unit steps onto passable tiles, expected costs,

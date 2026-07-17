@@ -29,6 +29,7 @@
 // and a nested tick would double-advance every cadence; both are asserted.
 namespace tess {
 
+/// Selects the deterministic trigger policy for a scheduled task.
 enum class CadenceKind : std::uint8_t {
   EveryTick,
   EveryN,
@@ -39,14 +40,17 @@ enum class CadenceKind : std::uint8_t {
 
 // Deterministic background bound: a due background task is offered at most
 // max_items work units per run and reports how many it consumed plus
-// whether work remains. There is deliberately no wall-clock budget in v1 --
+// whether work remains. There is deliberately no wall-clock budget in the
+// current pre-1.0 release --
 // a time valve would make tick outcomes nondeterministic, and every
 // consumer bound is expressible in items; it returns with its first real
 // consumer.
+/// Bounds background work in deterministic item units per task invocation.
 struct BackgroundBudget {
   std::uint32_t max_items = 1;
 };
 
+/// Configures when a task becomes due within the fixed-tick schedule.
 struct Cadence {
   CadenceKind kind = CadenceKind::EveryTick;
   std::uint32_t every_n = 1;
@@ -83,6 +87,7 @@ struct Cadence {
 // registration order within a phase. The set matches the simulation TDD's
 // phase vocabulary; custom phase lists are deferred until a consumer needs
 // one.
+/// Selects the fixed order in which task groups execute each tick.
 enum class SimPhase : std::uint8_t {
   Input,
   PreUpdate,
@@ -98,6 +103,7 @@ enum class SimPhase : std::uint8_t {
   Count,
 };
 
+/// Supplies a task with the current tick, trigger bits, and work allowance.
 struct ScheduleTaskContext {
   SimClock clock{};
   // OnDirty: the bits (within the task's own mask) that made it due; they
@@ -108,6 +114,7 @@ struct ScheduleTaskContext {
   std::uint32_t budget_items = 0;
 };
 
+/// Returns produced dirty bits and bounded background progress to the schedule.
 struct ScheduleTaskResult {
   // Dirty bits this run produced; the schedule merges them into every
   // OnDirty task's pending mask immediately, so later-phase tasks can fire
@@ -119,9 +126,11 @@ struct ScheduleTaskResult {
   bool more_work = false;
 };
 
+/// Type-erased, non-owning callback signature used by `Schedule`.
 using ScheduleTaskFn = ScheduleTaskResult (*)(void* ctx,
                                               const ScheduleTaskContext&);
 
+/// Describes a task's static label, phase, and cadence.
 struct ScheduleTaskDesc {
   // Static-storage label (same rule as diagnostics trace labels).
   std::string_view name;
@@ -129,6 +138,7 @@ struct ScheduleTaskDesc {
   Cadence cadence{};
 };
 
+/// Holds cumulative execution counters for one task.
 struct ScheduleTaskStats {
   std::uint64_t runs = 0;
   // Ticks on which the task was due but disabled.
@@ -137,6 +147,7 @@ struct ScheduleTaskStats {
   std::uint64_t last_run_tick = 0;
 };
 
+/// Summarizes task dispatch and dirty propagation for one fixed tick.
 struct ScheduleTickStats {
   std::uint64_t tick = 0;
   std::uint32_t tasks_due = 0;
@@ -147,6 +158,11 @@ struct ScheduleTickStats {
   std::uint32_t dirty_mask_produced = 0;
 };
 
+/// Executes non-owning task callbacks in deterministic phase order.
+///
+/// Registering tasks may allocate until `seal`; dispatch performs no
+/// allocation. Instances require external synchronization and callbacks must
+/// outlive the schedule.
 class Schedule {
  public:
   using TaskId = std::uint32_t;
@@ -411,6 +427,7 @@ class Schedule {
 // frames: an EveryN task at 2x speed fires twice as often in real time and
 // exactly as often in sim time, and a backlogged frame that grants several
 // ticks advances every cadence through each of them.
+/// Summarizes all fixed ticks consumed during one rendered frame.
 struct ScheduleFrameSummary {
   std::size_t ticks = 0;
   double alpha = 0.0;
@@ -419,6 +436,7 @@ struct ScheduleFrameSummary {
   ScheduleTickStats last_tick{};
 };
 
+/// Consumes one real-time frame and runs the schedule for every granted tick.
 inline auto run_schedule_frame(Schedule& schedule, SimClock& clock,
                                FixedStepAccumulator& accumulator,
                                double real_delta_seconds,

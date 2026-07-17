@@ -14,6 +14,7 @@
 
 namespace tess {
 
+/// Owns an ordered set of goals used to build a reusable distance product.
 class GoalSet {
  public:
   void reserve(std::size_t count) { goals_.reserve(count); }
@@ -36,6 +37,7 @@ class GoalSet {
   std::vector<Coord3> goals_;
 };
 
+/// Reports the closest reachable goal and a scratch-owned path to it.
 struct NearestTargetResult {
   PathStatus status = PathStatus::NoPath;
   std::uint32_t cost = 0;
@@ -45,6 +47,10 @@ struct NearestTargetResult {
   std::span<const Coord3> path;
 };
 
+/// Owns a reusable dense-world multi-goal distance field and dependencies.
+///
+/// Building may allocate; reserve goals, nodes, and dependencies for a warm
+/// allocation-free rebuild. A product is invalid after relevant chunk edits.
 class DistanceFieldProduct {
  public:
   void reserve_goals(std::size_t count) { goals_.reserve(count); }
@@ -143,6 +149,7 @@ class DistanceFieldProduct {
   ChunkVersionDependencies dependencies_;
 };
 
+/// Summarizes field-product cache residency and lookup outcomes.
 struct FieldProductCacheStats {
   std::size_t entries = 0;
   std::size_t bytes = 0;
@@ -155,6 +162,11 @@ struct FieldProductCacheStats {
 // Entries validate against world content versions, not a world instance:
 // keep one cache per world (see RouteCacheScratch fingerprint notes for the
 // aliasing mechanism).
+/// Owns LRU-cached distance-field products within a configurable byte budget.
+///
+/// Entries are keyed by field type, shape, and goals, but not by world
+/// identity; use one cache per world. Lookup pointers remain cache-owned and
+/// are invalidated when their entry is replaced, evicted, or cleared.
 class FieldProductCache {
  public:
   explicit FieldProductCache(
@@ -345,6 +357,10 @@ class FieldProductCache {
   std::uint64_t clock_ = 0;
 };
 
+/// Builds a dense-world multi-goal field into caller-owned `product`.
+///
+/// Invalid goals return `InvalidGoal`. Reusing reserved product and scratch
+/// capacity avoids steady-state allocation.
 template <typename World, typename Tag>
 auto build_distance_field_product(const World& world, const GoalSet& goals,
                                   DistanceFieldScratch& scratch,
@@ -503,6 +519,9 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
                              product.reached_nodes_};
 }
 
+/// Reconstructs a path from `start` through a valid dense-world product.
+///
+/// The returned path borrows `scratch` storage until its next mutation.
 template <typename World, typename Tag>
 auto distance_field_product_path(const World& world, Coord3 start,
                                  const DistanceFieldProduct& product,
@@ -576,6 +595,9 @@ auto distance_field_product_path(const World& world, Coord3 start,
                     scratch.path_};
 }
 
+/// Finds the closest reachable goal represented by a valid dense product.
+///
+/// The returned path borrows `scratch` storage until its next mutation.
 template <typename World, typename Tag>
 auto nearest_target(const World& world, Coord3 start,
                     const DistanceFieldProduct& product,

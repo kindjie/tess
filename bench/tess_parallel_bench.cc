@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-// Parallel phase-execution benchmarks for the v1 concurrency stream.
+// Parallel phase-execution benchmarks for the pre-1.0 concurrency stream.
 //
 // These compare the serial baseline against the scoped-thread prototype and
 // the persistent worker-pool prototype on identical partitioned queued
@@ -75,7 +75,7 @@ void run_parallel_phase(benchmark::State& state, const Executor& executor,
   bench_check(phase_plan.phases().size() == 1,
               "disjoint per-chunk updates must plan to one parallel phase");
   const auto phase = phase_plan.phases()[0];
-  bench_check(phase.operation_count == kChunkCount,
+  bench_check(phase.operation_count() == kChunkCount,
               "every chunk must plan to one operation");
 
   tess::PlannedPhaseExecutionScratch scratch;

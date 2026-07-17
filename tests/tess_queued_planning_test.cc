@@ -71,14 +71,19 @@ TEST(TessQueuedPlanning, MergedDirtyUnionSaturatedEndWithNegativeOrigin) {
   World world;
   constexpr auto key = tess::ChunkKey{1};
   tess::PlannedDirtyAccumulator dirty;
-  dirty.record(key, DirtyTerrain,
-               tess::Box3{tess::Coord3{-10, 16, 0}, tess::Extent3{2, 3, 1}});
-  dirty.record(key, DirtyCost,
-               tess::Box3{tess::Coord3{0, 16, 0},
-                          tess::Extent3{std::uint64_t{1} << 63u, 3, 1}});
+  ASSERT_EQ(dirty.record(
+                world, key, DirtyTerrain,
+                tess::Box3{tess::Coord3{-10, 16, 0}, tess::Extent3{2, 3, 1}}),
+            tess::PlannedDirtyRecordStatus::Recorded);
+  ASSERT_EQ(
+      dirty.record(world, key, DirtyCost,
+                   tess::Box3{tess::Coord3{0, 16, 0},
+                              tess::Extent3{std::uint64_t{1} << 63u, 3, 1}}),
+      tess::PlannedDirtyRecordStatus::Recorded);
 
   const auto merged = tess::merge_planned_dirty(world, dirty);
-  EXPECT_EQ(merged, 1u);
+  EXPECT_EQ(merged.status, tess::PlannedDirtyMergeStatus::Merged);
+  EXPECT_EQ(merged.merged_chunk_count, 1u);
 
   const auto bounds = world.dirty_bounds(key);
   EXPECT_EQ(bounds.origin, (tess::Coord3{-10, 16, 0}));

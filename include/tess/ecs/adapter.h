@@ -26,9 +26,12 @@ namespace tess {
 // EntityHandle and kNullEntityHandle live in <tess/ecs/entity_handle.h>
 // (re-exported here) so dependency-light layers can name entity identity.
 
-// Converts between an ECS's native entity type and EntityHandle. The
-// mapping must be lossless for live entities and must map the ECS's null
-// entity to kNullEntityHandle (and back).
+/**
+ * Lossless conversion contract between a native entity and `EntityHandle`.
+ *
+ * Implementations must map the native null entity to `kNullEntityHandle` in
+ * both directions.
+ */
 template <typename A>
 concept EntityHandleAdapter = requires(const A& adapter, EntityHandle handle,
                                        const typename A::entity_type& entity) {
@@ -39,9 +42,7 @@ concept EntityHandleAdapter = requires(const A& adapter, EntityHandle handle,
   } noexcept -> std::same_as<typename A::entity_type>;
 };
 
-// Reads and writes a game-defined position component as tile coordinates.
-// Games own their position representation; the pipeline only needs Coord3
-// get/set per entity.
+/** Converts an entity's game-defined position to and from tile coordinates. */
 template <typename A, typename Entity>
 concept PositionAdapter = requires(A& adapter, const A& const_adapter,
                                    const Entity& entity, Coord3 coord) {
@@ -49,7 +50,7 @@ concept PositionAdapter = requires(A& adapter, const A& const_adapter,
   adapter.set_position(entity, coord);
 };
 
-// What a source's collect pass observed while filling the batch.
+/** Summary of a source collection pass and whether path processing is dirty. */
 struct PathAgentCollectInfo {
   std::size_t count = 0;
   // True iff any goal was armed or re-armed during collection; the tick
@@ -59,9 +60,12 @@ struct PathAgentCollectInfo {
   bool pathing_dirty = false;
 };
 
-// Parallel SoA scratch for one tick: entry i is one agent, handles and
-// lifecycle states in lockstep. reserve() once, then clear() + push() per
-// tick with no heap traffic once warm.
+/**
+ * Reusable parallel arrays of entity handles and agent lifecycle states.
+ *
+ * Reserve during setup; clear and refill each tick to avoid warm-path heap
+ * traffic. Entries at the same index always identify the same agent.
+ */
 class PathAgentBatch {
  public:
   void reserve(std::size_t agent_capacity) {
@@ -101,20 +105,23 @@ class PathAgentBatch {
   std::vector<PathAgentState> agents_;
 };
 
-// Fills the batch with every pathing-relevant agent in a DETERMINISTIC
-// order of the source's choosing. The contract: the order must be stable
-// across storage-packing history and replays -- sort by a monotonic spawn
-// id (AgentId below), never by native entity value or pool order, both of
-// which depend on create/destroy churn.
+/**
+ * Source that fills a batch in deterministic, replay-stable agent order.
+ *
+ * Native entity values and pool iteration order are not valid ordering keys;
+ * use a monotonic spawn identifier such as `AgentId`.
+ */
 template <typename S>
 concept PathAgentSource = requires(S& source, PathAgentBatch& batch) {
   { source.collect(batch) } -> std::same_as<PathAgentCollectInfo>;
 };
 
-// Writes batch state back to the ECS after the tick. Must be an
-// idempotent mirror: it copies state, it never re-applies results
-// (exactly-once application lives in the tess tick pipeline, gated by the
-// pathing-dirty flag, not in the sink).
+/**
+ * Idempotent sink that mirrors processed batch state into an ECS.
+ *
+ * A sink must not reapply path results; exactly-once application belongs to
+ * the tess tick pipeline.
+ */
 template <typename S>
 concept PathAgentSink =
     requires(S& sink, const PathAgentBatch& batch) { sink.apply(batch); };
@@ -123,56 +130,50 @@ concept PathAgentSink =
 // any ECS library, so every adapter (and any game-defined store) can reuse
 // them.
 
-// Monotonic per-spawn id; the deterministic sort key for collection.
-// Never recycled, unlike native entity ids, so collection order is
-// independent of pool-packing history and identical across replays. For
-// replay determinism across save/load, persist the spawn counter that
-// mints these alongside the world.
+/**
+ * Monotonic, non-recycled spawn identifier used for deterministic ordering.
+ *
+ * Persist the producing counter with the world to preserve replay order across
+ * save and load.
+ */
 struct AgentId {
   std::uint64_t value = 0;
 };
 
-// ECS-visible mirror of PathAgentState::position, written back by sinks
-// so game systems (rendering, AI queries) never reach into the lifecycle
-// struct for the current tile.
+/** ECS-facing mirror of an agent's current tile position. */
 struct TilePosition {
   Coord3 coord{};
 };
 
-// Pathing input: presence means "this agent wants to be there". Arming,
-// re-arming, and arrival consumption are the adapter's job; games write
-// this component and read TilePosition/PathState, never the reverse.
+/** ECS input component requesting that an agent move to `coord`. */
 struct PathGoal {
   Coord3 coord{};
 };
 
-// The full agent lifecycle as a component. Deliberately not decomposed:
-// PathAgentState's fields (ticket, phase, retry budget, ...) form one
-// invariant unit maintained by tess; games read phase/status for AI and
-// must never mutate the struct directly.
+/**
+ * ECS component owning the complete tess-maintained agent lifecycle.
+ *
+ * Consumers may inspect its phase and status but must not mutate lifecycle
+ * fields independently.
+ */
 struct PathState {
   PathAgentState agent{};
 };
 
-// Marks an agent that is not on the board: it holds no tile, claims no
-// occupancy, appears in no occupancy index, and is excluded from
-// collection until placed back. Off-board agents are how consumers park
-// units when no free tile exists (e.g. after a world edit shrinks the
-// walkable area).
+/**
+ * Marks a parked agent with no tile or occupancy claim.
+ *
+ * Sources exclude marked agents until an integration explicitly places them.
+ */
 struct OffBoard {};
 
-// Injective tile -> entity occupancy map, the ECS-side mirror of a bool
-// occupancy field. Open addressing over a flat power-of-two table keyed
-// by Coord3; an empty slot holds kNullEntityHandle; erasure backward-
-// shifts trailing probe-chain entries so lookups never need tombstones.
-// reserve() sizes the table for a load factor <= 0.5; steady state
-// performs no allocation, and growth beyond the reserved capacity
-// rehashes (allocates) as a setup-time event only.
-//
-// The index maps at most one entity per tile by construction; the library
-// invariant it mirrors is one-directional (a mapped tile implies the
-// occupancy field is set -- games may set occupancy from non-agent
-// sources the index never sees).
+/**
+ * Injective tile-to-entity index mirroring ECS agent occupancy.
+ *
+ * Reserve for the maximum population to keep steady-state insertions
+ * allocation-free. The index enforces one mapped entity per non-negative tile;
+ * mapped tiles must also be marked in the world's occupancy field.
+ */
 class TileOccupancyIndex {
  public:
   // Sizes the table so `entity_capacity` entries fit without rehashing.
@@ -363,17 +364,14 @@ class TileOccupancyIndex {
   std::size_t size_ = 0;
 };
 
-// advance_path_agents_with_movement over a batch, keeping `index`
-// synchronized through the commit observer: every successful commit moves
-// the committing agent's mapping from -> to, and failed validations touch
-// neither the world nor the index. Arrivals need no extra work -- the
-// arrival step itself was a commit, and the agent legitimately occupies
-// the goal tile afterwards. An optional render-delta collector records
-// every committed step through the same observer (M11): recording
-// completeness for entity deltas holds exactly for this surface plus the
-// EnTT lifecycle intents.
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag>
+/**
+ * Advances a batch while atomically mirroring committed moves into `index`.
+ *
+ * Failed movement validation changes neither world nor index. When supplied,
+ * `render_deltas` receives every committed step through the same observer.
+ */
 inline auto advance_path_agents_with_index(
     World& world, PathAgentBatch& batch, const PathRequestRuntime& runtime,
     TileOccupancyIndex& index, std::size_t max_steps = 1,
@@ -392,16 +390,15 @@ inline auto advance_path_agents_with_index(
       });
 }
 
-// The ECS-agnostic full tick: source.collect -> dirty-gated path
-// processing (the exactly-once seam, identical to the tick_* drivers) ->
-// index-synchronized movement -> sink.apply. The runtime passed here must
-// be exclusive to this agent system: tickets persist inside the collected
-// state across non-processing ticks, and any other submitter calling
-// clear_requests would stale every Following agent's ticket (asserted in
-// debug, silently stalled in release). One runtime per (world, movement
-// class, agent system) is the contract.
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag, PathAgentSource Source, PathAgentSink Sink>
+/**
+ * Runs a complete unit-cost ECS path-agent tick.
+ *
+ * The pipeline collects, processes dirty paths exactly once, advances indexed
+ * movement, then applies the batch. `runtime` must be exclusive to this agent
+ * system so another submitter cannot invalidate its persistent tickets.
+ */
 [[nodiscard]] auto tick_ecs_unit_path_agents(
     PathAgentTickState& state, World& world, Source& source, Sink& sink,
     PathAgentBatch& batch, PathRequestRuntime& runtime,
@@ -438,11 +435,15 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   return stats;
 }
 
-// Weighted movement-class form; see tick_ecs_unit_path_agents for the
-// pipeline and the runtime-exclusivity contract.
 template <typename World, typename Class, std::uint32_t MaxCost,
           typename OccupancyTag, typename ReservationTag,
           PathAgentSource Source, PathAgentSink Sink>
+/**
+ * Runs the ECS tick pipeline for a weighted movement class.
+ *
+ * `runtime` has the same exclusive-ownership requirement as the unit-cost
+ * overload.
+ */
 [[nodiscard]] auto tick_ecs_path_agents(
     PathAgentTickState& state, World& world, Source& source, Sink& sink,
     PathAgentBatch& batch, PathRequestRuntime& runtime,
@@ -479,11 +480,15 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   return stats;
 }
 
-// Legacy passable/cost tag-pair form; see tick_ecs_unit_path_agents for
-// the pipeline and the runtime-exclusivity contract.
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost, typename OccupancyTag, typename ReservationTag,
           PathAgentSource Source, PathAgentSink Sink>
+/**
+ * Runs the weighted ECS tick using separate passability and cost field tags.
+ *
+ * `runtime` has the same exclusive-ownership requirement as the unit-cost
+ * overload.
+ */
 [[nodiscard]] auto tick_ecs_path_agents(
     PathAgentTickState& state, World& world, Source& source, Sink& sink,
     PathAgentBatch& batch, PathRequestRuntime& runtime,

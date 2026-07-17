@@ -17,6 +17,7 @@
 // restart at zero).
 namespace tess {
 
+/// Outcome of the most recent automatic queued-operation execution pass.
 enum class AutoExecStatus : std::uint8_t {
   // No operations were queued; the run was a no-op.
   Idle,
@@ -33,6 +34,7 @@ enum class AutoExecStatus : std::uint8_t {
 };
 
 // Statistics of the most recent run, readable between ticks.
+/// Counts planning, execution, dirty merging, draining, and phase dispatch.
 struct AutoExecRunStats {
   AutoExecStatus status = AutoExecStatus::Idle;
   std::size_t planned_ops = 0;
@@ -60,6 +62,7 @@ struct AutoExecRunStats {
 // Planning reuses a task-owned ExecutionReport (its rows, planned ops,
 // and chunk lists are recycled between runs), so steady-state ticks plan
 // allocation-free once capacities warm up (audit 2026-07-11 M4).
+/// Schedule task that plans, executes, merges, and drains a queued-op frame.
 template <typename World, WritePolicy Policy, typename Ack, typename ChunkFn>
 class AutoExecTask {
   static_assert(Policy == WritePolicy::ReadOnly ||
@@ -68,7 +71,8 @@ class AutoExecTask {
 
  public:
   using ResultHook = void (*)(void* ctx, OpHandle handle,
-                              const OpCompletion& completion, const Ack* ack);
+                              const OpCompletion& completion,
+                              const Ack* ack) noexcept;
 
   AutoExecTask(World& world, FrameOps& ops, ChunkFn fn)
       : world_(&world), ops_(&ops), fn_(static_cast<ChunkFn&&>(fn)) {}
@@ -100,7 +104,19 @@ class AutoExecTask {
     if (ops_->empty()) {
       return ScheduleTaskResult{};
     }
+    try {
+      return run_nonempty();
+    } catch (...) {
+      // Planning/execution exceptions preserve the caller-owned queue for
+      // inspection or replacement, but transient completion slots must never
+      // leak into a later run. Partial world writes make blind retry unsafe.
+      channel_.clear();
+      throw;
+    }
+  }
 
+ private:
+  auto run_nonempty() -> ScheduleTaskResult {
     // Pre-validate policy uniformity BEFORE planning so a mismatch executes
     // nothing at all (deterministic under any executor).
     for (const auto& operation : ops_->operations()) {
@@ -126,27 +142,53 @@ class AutoExecTask {
       // set, so phase planning cannot fail.
       TESS_ASSERT(phases.ok());
       last_run_.phases = phases.phases().size();
-      for (const auto phase : phases.phases()) {
+      for (const auto& phase : phases.phases()) {
         const auto use_pool =
-            pool_ != nullptr && phase.operation_count >= parallel_threshold_;
+            pool_ != nullptr && phase.operation_count() >= parallel_threshold_;
         auto result = PlannedExecutionResult{};
-        if (use_pool) {
-          ++last_run_.pool_phases;
-          result = execute_phase_partitioned_dirty_with_results<Policy>(
-              *pool_, *world_, report.plan(), phase, scratch_, channel_,
-              [this](auto view, Ack& ack) { fn_(view, ack); });
-        } else {
-          const SerialPhaseExecutor serial;
-          result = execute_phase_partitioned_dirty_with_results<Policy>(
-              serial, *world_, report.plan(), phase, scratch_, channel_,
-              [this](auto view, Ack& ack) { fn_(view, ack); });
+        try {
+          if (use_pool) {
+            ++last_run_.pool_phases;
+            result = execute_phase_partitioned_dirty_with_results<Policy>(
+                *pool_, *world_, report.plan(), phase, scratch_, channel_,
+                [this](auto view, Ack& ack) { fn_(view, ack); });
+          } else {
+            const SerialPhaseExecutor serial;
+            result = execute_phase_partitioned_dirty_with_results<Policy>(
+                serial, *world_, report.plan(), phase, scratch_, channel_,
+                [this](auto view, Ack& ack) { fn_(view, ack); });
+          }
+        } catch (...) {
+          // Dirty records are written before each callback. Both concurrent
+          // executors join before rethrowing, and this allocation-free merge
+          // is noexcept, so every started callback is conservatively visible
+          // without replacing the original kernel exception.
+          const auto merged =
+              detail::merge_planned_dirty_after_exception(*world_, scratch_);
+          TESS_ASSERT(merged.status == PlannedDirtyMergeStatus::Merged);
+          last_run_.merged_dirty_chunks += merged.merged_chunk_count;
+          throw;
         }
         TESS_ASSERT(result.status == PlannedExecutionStatus::Executed);
         last_run_.executed_chunks += result.chunk_count;
         // Merge after EACH phase: the partitioned scratch is re-prepared
         // per phase, so a single post-loop merge would drop every phase's
         // dirty records but the last.
-        last_run_.merged_dirty_chunks += merge_planned_dirty(*world_, scratch_);
+        auto merged = PlannedDirtyMergeResult{};
+        try {
+          merged = merge_planned_dirty(*world_, scratch_);
+        } catch (...) {
+          // Normal coalescing reserves before consuming partitions. If that
+          // reserve fails, the no-allocation cold path can still publish every
+          // started callback's dirty metadata before preserving the exception.
+          const auto fallback =
+              detail::merge_planned_dirty_after_exception(*world_, scratch_);
+          TESS_ASSERT(fallback.status == PlannedDirtyMergeStatus::Merged);
+          last_run_.merged_dirty_chunks += fallback.merged_chunk_count;
+          throw;
+        }
+        TESS_ASSERT(merged.status == PlannedDirtyMergeStatus::Merged);
+        last_run_.merged_dirty_chunks += merged.merged_chunk_count;
       }
       for (const auto& operation : report.plan().operations()) {
         produced_dirty |= operation.field_access.dirty_mask;
@@ -164,17 +206,14 @@ class AutoExecTask {
     if (hook_ != nullptr) {
       last_run_.drained += channel_.drain_results(
           [this](OpHandle handle, const OpCompletion& completion,
-                 const Ack* ack) {
+                 const Ack* ack) noexcept {
             hook_(hook_ctx_, handle, completion, ack);
           });
     }
-    // The channel clears after the drain, completing the paired-clear
-    // discipline: the next run's prepare can never alias these slots.
     channel_.clear();
     return ScheduleTaskResult{produced_dirty, 0, false};
   }
 
- private:
   World* world_;
   FrameOps* ops_;
   ChunkFn fn_;

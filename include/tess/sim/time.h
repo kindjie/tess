@@ -7,6 +7,7 @@
 
 namespace tess {
 
+/// Selects the simulation-time multiplier applied to real frame time.
 enum class SimSpeed : std::uint8_t {
   Paused,
   Speed1x,
@@ -15,6 +16,7 @@ enum class SimSpeed : std::uint8_t {
 };
 static_assert(sizeof(SimSpeed) == sizeof(std::uint8_t));
 
+/// Supplies the time-control state consumed for one rendered frame.
 struct SimTimeControl {
   SimSpeed speed = SimSpeed::Speed1x;
 };
@@ -22,15 +24,18 @@ struct SimTimeControl {
 // The authoritative fixed-tick counter every cadence derives from: the
 // schedule and the path-agent tick share this one type (hoisted here so
 // neither layer redefines it).
+/// Stores the authoritative monotonically increasing fixed-tick count.
 struct SimClock {
   std::uint64_t tick = 0;
 };
 
+/// Advances `clock` by one fixed tick and returns the new tick number.
 inline auto advance_sim_tick(SimClock& clock) noexcept -> std::uint64_t {
   ++clock.tick;
   return clock.tick;
 }
 
+/// Reports the fixed-tick grant and interpolation state for one frame.
 struct FixedStepFrame {
   std::size_t ticks = 0;
   double alpha = 0.0;
@@ -40,6 +45,9 @@ struct FixedStepFrame {
   double dropped_seconds = 0.0;
 };
 
+/// Converts real-time deltas into bounded, deterministic fixed-tick grants.
+///
+/// The object owns its carry between frames and performs no allocation.
 class FixedStepAccumulator {
  public:
   constexpr FixedStepAccumulator(std::uint32_t base_tps,
@@ -133,6 +141,7 @@ class FixedStepAccumulator {
   double accumulated_seconds_ = 0.0;
 };
 
+/// Returns the integral multiplier represented by `speed`.
 [[nodiscard]] constexpr auto sim_speed_multiplier(SimSpeed speed) noexcept
     -> std::uint32_t {
   switch (speed) {
@@ -148,6 +157,7 @@ class FixedStepAccumulator {
   return 1;
 }
 
+/// Returns `base_tps` scaled by `speed`, saturating at `uint32_t` maximum.
 [[nodiscard]] constexpr auto effective_tps(std::uint32_t base_tps,
                                            SimSpeed speed) noexcept
     -> std::uint32_t {

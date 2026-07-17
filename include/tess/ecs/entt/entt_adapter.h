@@ -25,10 +25,12 @@
 // <entt/entity/registry.hpp> first; tess core never provides EnTT.
 namespace tess {
 
-// Lossless entt::entity <-> EntityHandle conversion. The null mapping is
-// an explicit special case: entt's null entity zero-extends to a value
-// that is NOT the all-ones kNullEntityHandle, so both directions branch
-// on null instead of trusting the integral cast.
+/**
+ * Lossless conversion between `entt::entity` and `EntityHandle`.
+ *
+ * The native null representation is mapped explicitly rather than through its
+ * integral value.
+ */
 struct EnttHandleAdapter {
   using entity_type = entt::entity;
 
@@ -50,9 +52,7 @@ struct EnttHandleAdapter {
 };
 static_assert(EntityHandleAdapter<EnttHandleAdapter>);
 
-// Default PositionAdapter for EnTT stores: reads and writes the shared
-// TilePosition component. Games with their own position component supply
-// their own adapter to EnttPathAgentSink instead.
+/** Position adapter backed by the shared EnTT `TilePosition` component. */
 class EnttTilePositionAdapter {
  public:
   explicit EnttTilePositionAdapter(entt::registry& registry) noexcept
@@ -71,8 +71,7 @@ class EnttTilePositionAdapter {
 };
 static_assert(PositionAdapter<EnttTilePositionAdapter, entt::entity>);
 
-// One collected agent: the deterministic sort key plus its entity,
-// parallel to the batch entry at the same position.
+/** Collected EnTT entity paired with its deterministic sort key and state. */
 struct EnttAgentEntry {
   std::uint64_t agent_id = 0;
   entt::entity entity = entt::null;
@@ -83,11 +82,12 @@ struct EnttAgentEntry {
   PathState* state = nullptr;
 };
 
-// Persistent per-agent-system state: the tick driver's clock/dirty
-// state, the batch scratch, the sorted entry scratch, and the monotonic
-// spawn-id counter. reserve() once; every per-tick container is
-// clear-and-refill after that. For replay determinism across save/load,
-// persist next_agent_id alongside the world.
+/**
+ * Persistent tick state and reusable scratch for one EnTT agent system.
+ *
+ * Reserve once to avoid warm-path allocations. Persist `next_agent_id` with
+ * the world so collection order remains deterministic across save and load.
+ */
 struct EnttPathAgentContext {
   PathAgentTickState tick_state{};
   PathAgentBatch batch{};
@@ -128,19 +128,13 @@ void ecs_mark_tile_dirty(World& world, Coord3 tile, std::uint32_t mask) {
 
 }  // namespace detail
 
-// Collects every on-board agent (entities holding PathState, TilePosition,
-// and AgentId, excluding OffBoard) in ascending AgentId order -- ids are
-// unique and never recycled, so the order is total and independent of
-// pool-packing history. Collection reconciles the PathGoal component into
-// the lifecycle before batching:
-//   - goal present and differing from the armed goal (or no goal armed):
-//     set_path_agent_goal, reported as pathing_dirty. An Unreachable agent
-//     whose PathGoal is UNCHANGED stays terminal -- the lifecycle retains
-//     the failed goal, so the inequality is false until the game writes a
-//     new goal.
-//   - goal component absent while the lifecycle is armed:
-//     clear_path_agent_goal (not dirty; cleared agents are skipped by
-//     every processing pass).
+/**
+ * Collects on-board EnTT agents in ascending `AgentId` order.
+ *
+ * Collection reconciles changed `PathGoal` components into lifecycle state,
+ * reports newly armed goals as dirty, and leaves unchanged unreachable goals
+ * terminal until the consumer supplies a different goal.
+ */
 class EnttPathAgentSource {
  public:
   EnttPathAgentSource(entt::registry& registry,
@@ -189,16 +183,14 @@ class EnttPathAgentSource {
 };
 static_assert(PathAgentSource<EnttPathAgentSource>);
 
-// Mirrors batch state back to the registry: PathState is stored
-// unconditionally (idempotent -- results were already applied inside the
-// tick pipeline), positions flow through the PositionAdapter, and the
-// PathGoal component is CONSUMED on arrival (present, lifecycle no longer
-// armed, position equals the goal) so the arrival-cleared agent does not
-// re-arm the same goal at the next collect and oscillate. A goal retained
-// after an Unreachable failure is deliberately not consumed: it sits
-// inert until the game changes it.
 template <typename Position = EnttTilePositionAdapter>
   requires PositionAdapter<Position, entt::entity>
+/**
+ * Mirrors a processed batch into EnTT without reapplying path results.
+ *
+ * Arrived goals are consumed to prevent re-arming; unreachable goals remain
+ * present and inert until the consumer changes them.
+ */
 class EnttPathAgentSink {
  public:
   EnttPathAgentSink(entt::registry& registry, EnttPathAgentContext& context,
@@ -235,12 +227,12 @@ class EnttPathAgentSink {
 };
 static_assert(PathAgentSink<EnttPathAgentSink<>>);
 
-// Creates an on-board agent at `position`: AgentId from the context's
-// monotonic counter, TilePosition, PathState (Idle at `position`), the
-// occupancy field claimed, and the index mapping inserted. Returns
-// entt::null (mutating nothing) if the tile does not resolve or is
-// already occupied per field or index -- occupancy uniqueness is checked
-// before any write.
+/**
+ * Creates and indexes an idle on-board agent at `position`.
+ *
+ * Returns `entt::null` without mutation when the tile cannot resolve or is
+ * occupied according to either the world field or occupancy index.
+ */
 template <typename World, typename OccupancyTag>
 [[nodiscard]] auto spawn_entt_path_agent(
     entt::registry& registry, EnttPathAgentContext& context, World& world,
@@ -269,11 +261,11 @@ template <typename World, typename OccupancyTag>
   return entity;
 }
 
-// Creates a parked agent: AgentId + PathState (Idle) + TilePosition (its
-// last-known value is meaningless while parked) + OffBoard. No tile, no
-// occupancy claim, no index entry; place_entt_path_agent puts it on the
-// board later. This is how consumers spawn populations larger than the
-// currently free tile set.
+/**
+ * Creates a parked agent with identity and lifecycle state but no tile claim.
+ *
+ * Use `place_entt_path_agent` to put it on the board later.
+ */
 [[nodiscard]] inline auto spawn_entt_path_agent_off_board(
     entt::registry& registry, EnttPathAgentContext& context) -> entt::entity {
   const auto entity = registry.create();
@@ -284,12 +276,12 @@ template <typename World, typename OccupancyTag>
   return entity;
 }
 
-// Destroys an agent entity, releasing its tile first (occupancy field
-// cleared, index mapping erased) unless it is parked. THE only sanctioned
-// destroy path for agents: raw registry.destroy on an on-board agent
-// leaves its tile permanently blocked because nothing else clears
-// resting-tile occupancy. Returns false (mutating nothing) if `entity`
-// does not hold PathState.
+/**
+ * Releases any claimed tile and destroys an EnTT path-agent entity.
+ *
+ * Returns false without mutation when `entity` has no `PathState`. On-board
+ * agents must use this operation rather than raw registry destruction.
+ */
 template <typename World, typename OccupancyTag>
 auto despawn_entt_path_agent(entt::registry& registry, World& world,
                              TileOccupancyIndex& index, entt::entity entity,
@@ -317,13 +309,12 @@ auto despawn_entt_path_agent(entt::registry& registry, World& world,
   return true;
 }
 
-// Occupancy-checked relocation without identity churn: frees the old
-// tile, claims the new one, and resets the lifecycle to Idle at `to`.
-// The PathGoal component is deliberately RETAINED: the next collect
-// re-arms it from the new position, so relocated agents resume their
-// goals (teleporting onto the goal tile arrives at the next processed
-// tick). Returns false (mutating nothing) if the agent is parked or
-// `to` does not resolve or is occupied per field or index.
+/**
+ * Relocates an on-board agent and resets its lifecycle without changing ID.
+ *
+ * The goal component is retained for the next collection. Returns false
+ * without mutation for parked agents or unavailable destinations.
+ */
 template <typename World, typename OccupancyTag>
 auto teleport_entt_path_agent(entt::registry& registry, World& world,
                               TileOccupancyIndex& index, entt::entity entity,
@@ -355,11 +346,12 @@ auto teleport_entt_path_agent(entt::registry& registry, World& world,
   return true;
 }
 
-// Takes an on-board agent off the board: occupancy field cleared, index
-// mapping erased, lifecycle reset to Idle, OffBoard added. A retained
-// PathGoal component sits inert while parked (parked agents are excluded
-// from collection) and re-arms when the agent is placed back. Returns
-// false if the agent is missing PathState or already parked.
+/**
+ * Parks an on-board agent after releasing its tile and resetting lifecycle.
+ *
+ * A retained goal remains inert until placement. Returns false for a missing
+ * lifecycle component or an agent already parked.
+ */
 template <typename World, typename OccupancyTag>
 auto park_entt_path_agent(entt::registry& registry, World& world,
                           TileOccupancyIndex& index, entt::entity entity,
@@ -383,10 +375,12 @@ auto park_entt_path_agent(entt::registry& registry, World& world,
   return true;
 }
 
-// Puts a parked agent on the board at `position`: the mirror of
-// park_entt_path_agent, with the same availability checks as spawning.
-// Returns false if the agent is not parked or the tile does not resolve
-// or is occupied per field or index.
+/**
+ * Places a parked agent at an available tile and restores its occupancy claim.
+ *
+ * Returns false without mutation when the agent is not parked or the tile is
+ * unavailable.
+ */
 template <typename World, typename OccupancyTag>
 auto place_entt_path_agent(entt::registry& registry, World& world,
                            TileOccupancyIndex& index, entt::entity entity,
@@ -418,26 +412,26 @@ auto place_entt_path_agent(entt::registry& registry, World& world,
   return true;
 }
 
-// Arms (or re-arms) an agent's goal by writing the PathGoal component;
-// the next collect reconciles it into the lifecycle.
+/** Writes a goal component for reconciliation during the next collection. */
 inline void set_entt_path_agent_goal(entt::registry& registry,
                                      entt::entity entity, Coord3 goal) {
   registry.emplace_or_replace<PathGoal>(entity, PathGoal{goal});
 }
 
-// Removes the PathGoal component; the next collect clears the lifecycle.
+/** Removes an agent's goal component for clearing on the next collection. */
 inline void clear_entt_path_agent_goal(entt::registry& registry,
                                        entt::entity entity) {
   registry.remove<PathGoal>(entity);
 }
 
-// The EnTT tick drivers: thin instantiations of the generic tick_ecs_*
-// pipeline with the concrete source/sink above. See
-// tick_ecs_unit_path_agents for the pipeline and the runtime-exclusivity
-// contract; the context's tick_state owns the sim clock, so drive these
-// from at most one place per frame.
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag, typename Position = EnttTilePositionAdapter>
+/**
+ * Runs the unit-cost agent pipeline using EnTT collection and write-back.
+ *
+ * Call from at most one driver per frame for `context`; `runtime` must be
+ * exclusive to this agent system.
+ */
 [[nodiscard]] auto tick_entt_unit_path_agents(
     entt::registry& registry, EnttPathAgentContext& context, World& world,
     PathRequestRuntime& runtime, TileOccupancyIndex& index,
@@ -452,10 +446,10 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
       options, movement_dirty_mask, graph, render_deltas);
 }
 
-// Weighted movement-class form.
 template <typename World, typename Class, std::uint32_t MaxCost,
           typename OccupancyTag, typename ReservationTag,
           typename Position = EnttTilePositionAdapter>
+/** Runs the EnTT agent pipeline for a weighted movement class. */
 [[nodiscard]] auto tick_entt_path_agents(
     entt::registry& registry, EnttPathAgentContext& context, World& world,
     PathRequestRuntime& runtime, TileOccupancyIndex& index,
@@ -470,10 +464,10 @@ template <typename World, typename Class, std::uint32_t MaxCost,
       options, movement_dirty_mask, graph, render_deltas);
 }
 
-// Legacy passable/cost tag-pair form.
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost, typename OccupancyTag, typename ReservationTag,
           typename Position = EnttTilePositionAdapter>
+/** Runs the weighted EnTT pipeline using separate passability and cost tags. */
 [[nodiscard]] auto tick_entt_path_agents(
     entt::registry& registry, EnttPathAgentContext& context, World& world,
     PathRequestRuntime& runtime, TileOccupancyIndex& index,

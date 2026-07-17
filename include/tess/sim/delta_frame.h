@@ -46,6 +46,7 @@ namespace tess {
 // frame's to_version; value 0 is reserved for a consumer that has never
 // applied anything (a collector never publishes from_version 0), so a
 // fresh consumer can only start from a baseline.
+/// Identifies a point in the collector's monotonic published-frame chain.
 struct RenderVersion {
   std::uint64_t value = 0;
 
@@ -57,6 +58,7 @@ struct RenderVersion {
 // repaint every tile in `bounds` (pre-clipped to the chunk). Otherwise
 // frame.tiles[first_tile .. first_tile + tile_count) lists the changed
 // tiles individually.
+/// Describes a chunk-level tile invalidation and any detailed tile slice.
 struct TileChunkDelta {
   ChunkKey chunk_key{};
   std::uint32_t dirty_flags = 0;
@@ -68,12 +70,14 @@ struct TileChunkDelta {
   std::uint32_t tile_count = 0;
 };
 
+/// Identifies one invalidated tile within a detailed chunk record.
 struct TileDelta {
   Coord3 coord{};
   LocalTileId local_tile_id{};
   std::uint32_t dirty_flags = 0;
 };
 
+/// Classifies an entity presentation-state transition.
 enum class EntityDeltaKind : std::uint8_t {
   Moved,
   Teleported,
@@ -83,6 +87,7 @@ enum class EntityDeltaKind : std::uint8_t {
   Placed,
 };
 
+/// Describes one entity transition, possibly coalesced within the frame.
 struct EntityDelta {
   EntityHandle entity{};
   EntityDeltaKind kind = EntityDeltaKind::Moved;
@@ -101,6 +106,7 @@ struct EntityDelta {
 // consumer's whole overlay set (possibly with the empty set), so no
 // create/update/remove lifecycle exists. Nodes are copies -- safe for
 // the frame's lifetime, gone at the next publish.
+/// References one agent's copied route within a frame's overlay-node storage.
 struct PathOverlayDelta {
   EntityHandle entity{};
   // Identity/debugging only; the nodes are already copied.
@@ -109,6 +115,7 @@ struct PathOverlayDelta {
   std::uint32_t node_count = 0;
 };
 
+/// Carries frame-chain continuity, tick coverage, and resync requirements.
 struct DeltaFrameHeader {
   RenderVersion from_version{};
   RenderVersion to_version{};
@@ -132,6 +139,7 @@ struct DeltaFrameHeader {
 // mutating call on the collector (begin_tick / record_* / collect_* /
 // publish / clear). Single-buffered by design: renderers own their
 // persistent presentation memory.
+/// Views collector-owned invalidation records for one published frame.
 struct DeltaFrame {
   DeltaFrameHeader header{};
   std::span<const TileChunkDelta> chunks{};
@@ -158,6 +166,7 @@ struct DeltaFrame {
 // presentation); otherwise the chain must match exactly. A fresh
 // consumer ({0}) can only ever start from a baseline because collectors
 // never publish from_version 0.
+/// Returns whether a consumer can safely apply a published frame header.
 [[nodiscard]] constexpr auto delta_frame_applicable(
     const DeltaFrameHeader& header, RenderVersion consumer) noexcept -> bool {
   if (header.truncated) {
@@ -169,6 +178,7 @@ struct DeltaFrame {
   return consumer.value != 0 && consumer == header.from_version;
 }
 
+/// Configures sparse-tile emission and entity-move coalescing.
 struct DeltaCollectorOptions {
   // Per chunk: emit per-tile records while the clipped dirty box holds
   // at most this many tiles; above it (or when tile storage cannot take
@@ -181,6 +191,7 @@ struct DeltaCollectorOptions {
 };
 
 // Cumulative counters, never reset by publish.
+/// Holds lifetime counters for a delta collector.
 struct DeltaCollectorStats {
   std::uint64_t frames_published = 0;
   std::uint64_t baselines_published = 0;
@@ -207,6 +218,11 @@ struct DeltaCollectorStats {
 // clearing a subset mask retains the union bounds while any other
 // owner's bit is set, so interleaved ownership widens boxes
 // (conservative over-report, never wrong).
+/// Accumulates invalidations into bounded caller-sized frame storage.
+///
+/// The collector owns every returned frame view until its next mutation. After
+/// `reserve`, steady-state recording does not allocate; overflow truncates the
+/// frame and requires a baseline resynchronization.
 class DeltaCollector {
  public:
   DeltaCollector() = default;
@@ -762,6 +778,7 @@ void collect_chunk_tile_deltas(DeltaCollector& collector, World& world,
 // change records are deliberately deferred until a sparse render
 // consumer exists, and such consumers must currently treat reloads as a
 // baseline trigger themselves.
+/// Collects and safely clears matching tile-dirty observations.
 template <typename World>
 void collect_tile_deltas(DeltaCollector& collector, World& world,
                          std::uint32_t dirty_mask) {
@@ -791,6 +808,7 @@ void collect_tile_deltas(DeltaCollector& collector, World& world,
 // (box / chunk-set) baselines deliberately do not exist: a partial
 // baseline that adopts the frame version would permanently lose every
 // out-of-scope invalidation from a gap.
+/// Replaces pending tile deltas with a full dense or resident-sparse baseline.
 template <typename World>
 void collect_baseline(DeltaCollector& collector, World& world,
                       std::uint32_t dirty_mask) {
@@ -842,6 +860,7 @@ void collect_baseline(DeltaCollector& collector, World& world,
 // overlays AFTER it -- an intent executed between tick and collection
 // leaves that agent's overlay one frame stale (entity deltas themselves
 // stay correct through the hooks).
+/// Copies active agents' remaining routes into the pending overlay frame.
 inline void collect_path_overlays(DeltaCollector& collector,
                                   const PathRequestRuntime& runtime,
                                   std::span<const PathAgentState> agents,
@@ -861,6 +880,7 @@ inline void collect_path_overlays(DeltaCollector& collector,
   }
 }
 
+/// Copies selected agents' remaining routes into the pending overlay frame.
 inline void collect_path_overlays(DeltaCollector& collector,
                                   const PathRequestRuntime& runtime,
                                   std::span<const PathAgentState> agents,

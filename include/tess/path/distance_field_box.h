@@ -10,6 +10,10 @@
 
 namespace tess {
 
+/// Builds a weighted distance field constrained to `domain`.
+///
+/// Returns `InvalidGoal` when the goal is outside the world, domain, or
+/// movement class. The caller owns `scratch`; reuse it to avoid allocations.
 template <typename World, typename Class>
 auto build_weighted_distance_field_in_box(
     const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,

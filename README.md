@@ -4,17 +4,49 @@
 
 `tess` is a performance-first C++ tile and path simulation substrate.
 
+The current development release is `v0.3.0`. All `0.x` releases are
+pre-stable: public APIs and data layouts may change without compatibility
+shims while the design is still being validated.
+
 The project has an implemented synchronous MVP foundation. Documentation lives
 in `docs/`. The original TDDs are archived under `docs/tdd/`; maintained
 architecture docs track the current implementation as code lands.
 
-## Build
+## Requirements
+
+- A C++20 compiler (Clang, GCC, AppleClang, or MSVC)
+- CMake 3.28 or newer
+- Git and network access for developer presets that fetch test dependencies
+
+The installed library is header-only. GoogleTest, Google Benchmark, and EnTT
+are development or optional integration dependencies; ordinary consumers do
+not link them through `tess::tess`.
+
+## Build and install
 
 ```sh
 cmake --preset dev
 cmake --build --preset dev
 ctest --preset dev
 ```
+
+Install to a chosen prefix and consume the generated CMake package:
+
+```sh
+cmake --preset release
+cmake --build --preset release
+cmake --install build/release --prefix "$HOME/.local"
+```
+
+```cmake
+find_package(tess 0.3 CONFIG REQUIRED)
+target_link_libraries(my_target PRIVATE tess::tess)
+```
+
+For source-tree integration, add this repository with `add_subdirectory` and
+link the same `tess::tess` target. Set `TESS_BUILD_TESTING`,
+`TESS_BUILD_EXAMPLES`, and `TESS_BUILD_BENCHMARKS` to `OFF` in a parent build;
+they are project-development facilities rather than consumer requirements.
 
 Benchmarks are opt-in and use Google Benchmark:
 
@@ -24,7 +56,11 @@ cmake --build --preset bench
 ./build/bench/bench/tess_bench
 ```
 
-The public CMake target is `tess::tess`.
+The public CMake target is `tess::tess`. `tess/tess.h` is the
+dependency-free umbrella for the core library. The EnTT adapter and Dear ImGui
+panels are opt-in headers that consumers include explicitly after their
+corresponding third-party header; see `docs/architecture/ecs.md` and
+`docs/architecture/diagnostics.md`.
 
 Prefer the narrowest public header that owns the API in compile-sensitive
 code. To compare syntax-only header costs on the local compiler, run:
@@ -84,10 +120,10 @@ CI runs primarily on `ubuntu-24.04` with Clang and covers:
 - Hook backstop checks: `tools/git_hooks.py ci` repository hygiene plus
   pytest for the repo tools (`tests/test_git_hooks.py`,
   `tests/test_benchmark_tools.py`, `tests/test_check_public_surface.py`)
-  and the public-surface manifest gate
+  and the bidirectional public-surface manifest gate
   (`tools/check_public_surface.py` against
   `docs/architecture/surface.json`; required since 2026-07-07)
-- First-slice public API documentation gate: `tools/check_public_docs.py`
+- Installed-header namespace-scope Doxygen gate: `tools/check_public_docs.py`
 - Warnings-as-errors build and tests: preset `dev-werror`
 - ASan/UBSan build and tests (UBSan findings are fatal): preset `dev-asan`
 - TSan build and tests (`TSAN_OPTIONS=halt_on_error=1`): preset `dev-tsan`

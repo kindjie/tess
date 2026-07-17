@@ -19,6 +19,7 @@ namespace tess {
 //   agent re-paths on the next tick until its retry budget runs out.
 // - Unreachable: the retry budget was exhausted or a structural movement
 //   failure occurred; terminal until a new goal is assigned.
+/// Describes the lifecycle phase of an independently routed agent.
 enum class PathAgentPhase : std::uint8_t {
   Idle,
   NeedsPath,
@@ -27,6 +28,7 @@ enum class PathAgentPhase : std::uint8_t {
   Unreachable,
 };
 
+/// Stores one agent's goal, route cursor, and retry lifecycle state.
 struct PathAgentState {
   Coord3 position{};
   Coord3 goal{};
@@ -38,6 +40,7 @@ struct PathAgentState {
   std::uint32_t blocked_retries = 0;
 };
 
+/// Summarizes path submission, results, movement, and failure outcomes.
 struct PathAgentFrameStats {
   std::size_t submitted = 0;
   std::size_t completed = 0;
@@ -65,6 +68,7 @@ struct PathAgentFrameStats {
 // - NeedsOnly: only agents that cannot advance without a plan (NeedsPath,
 //   Blocked); Following agents keep walking their retained routes. One
 //   agent arming a goal no longer replans the whole batch.
+/// Selects whether a processing pass replans all or only waiting agents.
 enum class PathSubmitScope : std::uint8_t {
   All,
   NeedsOnly,
@@ -80,6 +84,7 @@ enum class PathSubmitScope : std::uint8_t {
 // CONTRACT: the pairing is by span index. A caller that reorders, removes,
 // or compacts its agents between ticks must call mark_pathing_dirty on the
 // tick state (forcing one full replan) or keep routes[] in sync itself.
+/// Owns index-paired route copies retained across scoped processing passes.
 struct PathAgentRoutes {
   std::vector<std::vector<Coord3>> routes;
 
@@ -90,6 +95,7 @@ struct PathAgentRoutes {
   }
 };
 
+/// Arms `agent` to plan a route toward `goal` on the next processing pass.
 inline void set_path_agent_goal(PathAgentState& agent, Coord3 goal) noexcept {
   agent.goal = goal;
   agent.path_index = 0;
@@ -99,6 +105,7 @@ inline void set_path_agent_goal(PathAgentState& agent, Coord3 goal) noexcept {
   agent.has_goal = true;
 }
 
+/// Returns `agent` to the idle state and invalidates its route ticket.
 inline void clear_path_agent_goal(PathAgentState& agent) noexcept {
   agent.goal = {};
   agent.ticket = {};
@@ -109,6 +116,7 @@ inline void clear_path_agent_goal(PathAgentState& agent) noexcept {
   agent.has_goal = false;
 }
 
+/// Rebuilds runtime requests according to `scope` and returns submit counts.
 inline auto submit_path_agents(std::span<PathAgentState> agents,
                                PathRequestRuntime& runtime,
                                PathSubmitScope scope = PathSubmitScope::All)
@@ -139,6 +147,7 @@ inline auto submit_path_agents(std::span<PathAgentState> agents,
   return stats;
 }
 
+/// Increments the result counter corresponding to `status`.
 inline void record_path_agent_status(PathAgentFrameStats& stats,
                                      PathStatus status) noexcept {
   switch (status) {
@@ -160,6 +169,8 @@ inline void record_path_agent_status(PathAgentFrameStats& stats,
   }
 }
 
+/// Applies runtime results to matching agent state and optional retained
+/// routes.
 inline auto apply_path_agent_results(std::span<PathAgentState> agents,
                                      const PathRequestRuntime& runtime,
                                      PathSubmitScope scope,
@@ -209,6 +220,7 @@ inline auto apply_path_agent_results(std::span<PathAgentState> agents,
   return stats;
 }
 
+/// Applies completed runtime results to every agent in the span.
 inline auto apply_path_agent_results(std::span<PathAgentState> agents,
                                      const PathRequestRuntime& runtime)
     -> PathAgentFrameStats {
@@ -216,6 +228,7 @@ inline auto apply_path_agent_results(std::span<PathAgentState> agents,
                                   nullptr);
 }
 
+/// Advances agents along runtime-owned paths without validating world movement.
 inline auto advance_path_agents(std::span<PathAgentState> agents,
                                 const PathRequestRuntime& runtime,
                                 std::size_t max_steps = 1)
@@ -263,6 +276,7 @@ inline auto advance_path_agents(std::span<PathAgentState> agents,
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag, typename OnCommit>
   requires std::invocable<OnCommit&, std::size_t, Coord3, Coord3>
+/// Advances runtime paths through validated world movement commits.
 inline auto advance_path_agents_with_movement(World& world,
                                               std::span<PathAgentState> agents,
                                               const PathRequestRuntime& runtime,
@@ -338,6 +352,7 @@ inline auto advance_path_agents_with_movement(World& world,
 
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag>
+/// Advances runtime-routed agents with validated world movement.
 inline auto advance_path_agents_with_movement(
     World& world, std::span<PathAgentState> agents,
     const PathRequestRuntime& runtime, std::size_t max_steps = 1,
@@ -352,6 +367,7 @@ inline auto advance_path_agents_with_movement(
 // overloads above, but the route comes from the retained pool, so it
 // survives processing passes that did not resubmit this agent
 // (PathSubmitScope::NeedsOnly).
+/// Advances agents along retained routes without validating world movement.
 inline auto advance_path_agents(std::span<PathAgentState> agents,
                                 const PathAgentRoutes& routes,
                                 std::size_t max_steps = 1)
@@ -397,6 +413,7 @@ inline auto advance_path_agents(std::span<PathAgentState> agents,
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag, typename OnCommit>
   requires std::invocable<OnCommit&, std::size_t, Coord3, Coord3>
+/// Advances retained routes and reports each validated movement commit.
 inline auto advance_path_agents_with_movement(World& world,
                                               std::span<PathAgentState> agents,
                                               const PathAgentRoutes& routes,
@@ -466,6 +483,7 @@ inline auto advance_path_agents_with_movement(World& world,
 
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag>
+/// Advances retained routes with validated world movement.
 inline auto advance_path_agents_with_movement(
     World& world, std::span<PathAgentState> agents,
     const PathAgentRoutes& routes, std::size_t max_steps = 1,
@@ -476,6 +494,7 @@ inline auto advance_path_agents_with_movement(
       [](std::size_t, Coord3, Coord3) {});
 }
 
+/// Adds every counter in `rhs` into `lhs`.
 inline void add_path_agent_stats(PathAgentFrameStats& lhs,
                                  PathAgentFrameStats rhs) noexcept {
   lhs.submitted += rhs.submitted;
@@ -498,6 +517,7 @@ inline void add_path_agent_stats(PathAgentFrameStats& lhs,
 }
 
 template <typename World, typename ClassOrTag>
+/// Submits, solves, and applies unit-cost paths for a batch of agents.
 [[nodiscard]] auto process_unit_path_agents(
     const World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
@@ -514,6 +534,7 @@ template <typename World, typename ClassOrTag>
 }
 
 template <typename World, typename Class, std::uint32_t MaxCost>
+/// Submits, solves, and applies bounded weighted paths for a batch of agents.
 [[nodiscard]] auto process_weighted_path_agents(
     const World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
@@ -531,6 +552,7 @@ template <typename World, typename Class, std::uint32_t MaxCost>
 
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost>
+/// Processes bounded weighted paths using separate legacy field tags.
 [[nodiscard]] auto process_weighted_path_agents(
     const World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},

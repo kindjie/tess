@@ -2,6 +2,7 @@
 
 #include <tess/block/block.h>
 #include <tess/core/shape.h>
+#include <tess/core/tag_identity.h>
 #include <tess/diagnostics/diagnostics.h>
 #include <tess/diagnostics/trace.h>
 #include <tess/ops/phase_executor.h>
@@ -10,21 +11,66 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <source_location>
 #include <span>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace tess {
 
+namespace detail {
+
+struct PlannedWorldStamp {
+  std::uintptr_t shape_identity = 0;
+  std::uint64_t chunk_limit = 0;
+};
+
+template <typename Shape, std::uint64_t ChunkLimit>
+[[nodiscard]] inline auto planned_world_stamp() noexcept
+    -> const PlannedWorldStamp* {
+  static const auto stamp = PlannedWorldStamp{
+      tag_identity<Shape>(),
+      ChunkLimit,
+  };
+  return &stamp;
+}
+
+template <typename World>
+[[nodiscard]] inline auto planned_world_stamp() noexcept
+    -> const PlannedWorldStamp* {
+  return planned_world_stamp<typename World::shape_type, World::chunk_count>();
+}
+
+template <typename World>
+[[nodiscard]] inline auto validate_planned_world_stamp(
+    const PlannedWorldStamp* stamp) noexcept -> PlannedExecutionStatus {
+  const auto* expected = planned_world_stamp<World>();
+  if (stamp == expected) {
+    return PlannedExecutionStatus::Executed;
+  }
+  if (stamp == nullptr || stamp->shape_identity != expected->shape_identity) {
+    return PlannedExecutionStatus::InvalidShape;
+  }
+  if (stamp->chunk_limit != expected->chunk_limit) {
+    return PlannedExecutionStatus::InvalidChunk;
+  }
+  return PlannedExecutionStatus::Executed;
+}
+
+}  // namespace detail
+
+/** Stable enqueue-order identifier assigned within one `FrameOps` batch. */
 struct OpId {
   std::uint64_t value = 0;
 
   friend constexpr bool operator==(OpId lhs, OpId rhs) noexcept = default;
 };
 
+/** Opaque handle used to inspect and receive one queued operation's result. */
 struct OpHandle {
   std::uint64_t value = 0;
 
@@ -32,11 +78,13 @@ struct OpHandle {
                                    OpHandle rhs) noexcept = default;
 };
 
+/** Identifies the work family carried by a queued operation. */
 enum class OperationKind : std::uint8_t {
   UpdateField,
 };
 static_assert(sizeof(OperationKind) == sizeof(std::uint8_t));
 
+/** Expresses scheduler urgency independently of operation order. */
 enum class Priority : std::uint8_t {
   Immediate,
   GameplayCritical,
@@ -46,6 +94,7 @@ enum class Priority : std::uint8_t {
 };
 static_assert(sizeof(Priority) == sizeof(std::uint8_t));
 
+/** Describes whether budget pressure may defer or omit an operation. */
 enum class BudgetPolicy : std::uint8_t {
   MustRun,
   CanDefer,
@@ -54,8 +103,10 @@ enum class BudgetPolicy : std::uint8_t {
 };
 static_assert(sizeof(BudgetPolicy) == sizeof(std::uint8_t));
 
+/** Describes planning success or the category of planning rejection. */
 enum class OperationStatus : std::uint8_t {
   Planned,
+  InvalidIdentity,
   InvalidWritePolicy,
   InvalidDomain,
   InvalidFieldAccess,
@@ -63,8 +114,11 @@ enum class OperationStatus : std::uint8_t {
 };
 static_assert(sizeof(OperationStatus) == sizeof(std::uint8_t));
 
+/** Gives the specific reason an operation was rejected during planning. */
 enum class OperationFailure : std::uint8_t {
   None,
+  NonDenseHandle,
+  NonDenseId,
   InvalidWritePolicyValue,
   ExplicitChunkOutOfRange,
   ReadOnlyWriteMask,
@@ -72,12 +126,14 @@ enum class OperationFailure : std::uint8_t {
 };
 static_assert(sizeof(OperationFailure) == sizeof(std::uint8_t));
 
+/** Describes whether a parallel phase plan can be executed. */
 enum class ExecutionPhaseStatus : std::uint8_t {
   Ready,
   UnsupportedWritePolicy,
 };
 static_assert(sizeof(ExecutionPhaseStatus) == sizeof(std::uint8_t));
 
+/** Selects how a queued operation expands its chunk domain. */
 enum class DomainKind : std::uint8_t {
   ExplicitChunks,
   DirtyChunks,
@@ -86,6 +142,7 @@ enum class DomainKind : std::uint8_t {
 };
 static_assert(sizeof(DomainKind) == sizeof(std::uint8_t));
 
+/** Owns a chunk-domain selector and any explicit keys required by it. */
 class DomainDesc {
  public:
   // Explicit chunk keys are stored sorted and deduplicated so a planned
@@ -143,6 +200,7 @@ class DomainDesc {
   std::vector<ChunkKey> explicit_chunks_;
 };
 
+/** Declares read, write, and resulting dirty-field masks for hazard checks. */
 struct FieldAccessDesc {
   std::uint32_t read_mask = 0;
   std::uint32_t write_mask = 0;
@@ -152,6 +210,7 @@ struct FieldAccessDesc {
                                    FieldAccessDesc rhs) noexcept = default;
 };
 
+/** Captures one operation request before domain expansion and validation. */
 struct QueuedOperation {
   OperationKind kind = OperationKind::UpdateField;
   OpHandle handle{};
@@ -164,13 +223,27 @@ struct QueuedOperation {
   std::source_location source = std::source_location::current();
 };
 
+/** Diagnostic snapshot of an operation's write policy and domain selector. */
 struct OperationAccess {
   WritePolicy write_policy = WritePolicy::ReadOnly;
   DomainKind domain_kind = DomainKind::ResidentChunks;
   std::uint32_t domain_mask = 0;
 };
 
-struct PlannedOperation {
+/** Describes whether manual checked plan construction accepted every key. */
+enum class PlannedOperationCreateStatus : std::uint8_t {
+  Created,
+  InvalidChunk,
+};
+static_assert(sizeof(PlannedOperationCreateStatus) == sizeof(std::uint8_t));
+
+struct PlannedOperationCreateResult;
+class ExecutionReport;
+class ExecutionPhase;
+
+/** A planner-validated operation whose chunk list cannot be mutated. */
+class PlannedOperation {
+ public:
   OperationKind kind = OperationKind::UpdateField;
   OpHandle handle{};
   OpId id{};
@@ -179,12 +252,109 @@ struct PlannedOperation {
   WritePolicy write_policy = WritePolicy::ReadOnly;
   Priority priority = Priority::GameplayCritical;
   BudgetPolicy budget_policy = BudgetPolicy::MustRun;
-  std::vector<ChunkKey> chunks;
   // Enqueue-site capture carried through planning so run-time completions
   // (result channels) can report where the operation came from.
   std::source_location source = std::source_location::current();
+
+  /**
+   * Creates a checked operation for manual execution.
+   *
+   * Keys are validated against `world`, then sorted and deduplicated. An
+   * invalid key produces no operation and reports the first offending key.
+   */
+  template <typename World>
+  [[nodiscard]] static auto create(const World& world,
+                                   const QueuedOperation& operation,
+                                   std::span<const ChunkKey> chunks)
+      -> PlannedOperationCreateResult;
+
+  /** Returns the validated chunks in ascending order. */
+  [[nodiscard]] constexpr auto chunks() const noexcept
+      -> std::span<const ChunkKey> {
+    return chunks_;
+  }
+
+  /** Checks the O(1) shape/chunk stamp against an execution world. */
+  template <typename World>
+  [[nodiscard]] auto world_validation_status(
+      const World& /*world*/) const noexcept -> PlannedExecutionStatus {
+    static_assert(
+        std::is_same_v<typename World::residency_type, AlwaysResident>,
+        "Queued-op validation requires an AlwaysResidentWorld; sparse "
+        "queued-ops support is deferred to a later slice.");
+    return detail::validate_planned_world_stamp<World>(world_stamp_);
+  }
+
+ private:
+  friend class ExecutionReport;
+  friend class ExecutionPhase;
+
+  PlannedOperation(const QueuedOperation& operation,
+                   std::vector<ChunkKey>&& chunks,
+                   const detail::PlannedWorldStamp* world_stamp) noexcept
+      : kind(operation.kind),
+        handle(operation.handle),
+        id(operation.id),
+        access(OperationAccess{operation.write_policy, operation.domain.kind(),
+                               operation.domain.mask()}),
+        field_access(operation.field_access),
+        write_policy(operation.write_policy),
+        priority(operation.priority),
+        budget_policy(operation.budget_policy),
+        source(operation.source),
+        chunks_(std::move(chunks)),
+        world_stamp_(world_stamp) {}
+
+  std::vector<ChunkKey> chunks_;
+  const detail::PlannedWorldStamp* world_stamp_ = nullptr;
 };
 
+/** Result of checked manual `PlannedOperation` creation. */
+struct PlannedOperationCreateResult {
+  PlannedOperationCreateStatus status =
+      PlannedOperationCreateStatus::InvalidChunk;
+  std::optional<PlannedOperation> operation;
+  ChunkKey invalid_chunk{};
+};
+
+template <typename World>
+auto PlannedOperation::create(const World& /*world*/,
+                              const QueuedOperation& operation,
+                              std::span<const ChunkKey> chunks)
+    -> PlannedOperationCreateResult {
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "Queued operations require an AlwaysResidentWorld; sparse queued-ops "
+      "support is deferred to a later slice.");
+
+  for (const auto key : chunks) {
+    if (key.value >= World::chunk_count) {
+      return PlannedOperationCreateResult{
+          PlannedOperationCreateStatus::InvalidChunk,
+          std::nullopt,
+          key,
+      };
+    }
+  }
+
+  auto validated = std::vector<ChunkKey>{chunks.begin(), chunks.end()};
+  std::sort(validated.begin(), validated.end(),
+            [](ChunkKey lhs, ChunkKey rhs) { return lhs.value < rhs.value; });
+  validated.erase(std::unique(validated.begin(), validated.end()),
+                  validated.end());
+  auto planned = PlannedOperation{
+      operation,
+      std::move(validated),
+      detail::planned_world_stamp<World>(),
+  };
+  return PlannedOperationCreateResult{
+      PlannedOperationCreateStatus::Created,
+      std::optional<PlannedOperation>{std::move(planned)},
+      {},
+  };
+}
+
+/** Immutable ordered view of the operations accepted by one planning pass. */
 class ExecutionPlan {
  public:
   [[nodiscard]] constexpr auto operations() const noexcept
@@ -202,23 +372,129 @@ class ExecutionPlan {
 
  private:
   friend class ExecutionReport;
+  friend class ExecutionPhase;
+
+  ExecutionPlan() noexcept = default;
+  ExecutionPlan(const ExecutionPlan&) = default;
+  ExecutionPlan(ExecutionPlan&&) noexcept = default;
+
+  // generation_ is this plan's capability epoch and must never be copied from
+  // another plan; assignment invalidates it through bump_generation instead.
+  // cppcheck-suppress operatorEqVarError
+  auto operator=(const ExecutionPlan& other) -> ExecutionPlan& {
+    if (this != &other) {
+      // Expire every issued capability before a potentially throwing vector
+      // copy. A failed assignment must not leave an old phase authorized for
+      // whatever state the vector copy preserved or partially replaced.
+      bump_generation();
+      operations_ = other.operations_;
+    }
+    return *this;
+  }
+
+  auto operator=(ExecutionPlan&& other) noexcept -> ExecutionPlan& {
+    if (this != &other) {
+      operations_ = std::move(other.operations_);
+      bump_generation();
+    }
+    return *this;
+  }
+
+  constexpr void bump_generation() noexcept { ++generation_; }
 
   std::vector<PlannedOperation> operations_;
+  std::uint64_t generation_ = 0;
 };
 
-struct ExecutionPhase {
-  std::size_t first_operation = 0;
-  std::size_t operation_count = 0;
+/**
+ * Planner-issued capability naming one executable range in an exact plan.
+ *
+ * The bound `ExecutionPlan` must outlive this non-owning token. Copies remain
+ * bound to that plan generation and expire if its report is reused or
+ * replaced.
+ */
+class ExecutionPhase {
+ public:
+  ExecutionPhase(const ExecutionPhase&) noexcept = default;
+  ExecutionPhase(ExecutionPhase&&) noexcept = default;
+  auto operator=(const ExecutionPhase&) noexcept -> ExecutionPhase& = default;
+  auto operator=(ExecutionPhase&&) noexcept -> ExecutionPhase& = default;
+
+  [[nodiscard]] constexpr auto first_operation() const noexcept -> std::size_t {
+    return first_operation_;
+  }
+
+  [[nodiscard]] constexpr auto operation_count() const noexcept -> std::size_t {
+    return operation_count_;
+  }
+
+  /** Returns whether this capability was issued for `plan`. */
+  [[nodiscard]] constexpr bool belongs_to(
+      const ExecutionPlan& plan) const noexcept {
+    return plan_ == &plan && plan_generation_ == plan.generation_;
+  }
+
+  /** Checks the planner-issued world stamp against an execution world. */
+  template <typename World>
+  [[nodiscard]] auto world_validation_status(
+      const World& /*world*/) const noexcept -> PlannedExecutionStatus {
+    static_assert(
+        std::is_same_v<typename World::residency_type, AlwaysResident>,
+        "Queued-op validation requires an AlwaysResidentWorld; sparse "
+        "queued-ops support is deferred to a later slice.");
+    return detail::validate_planned_world_stamp<World>(world_stamp_);
+  }
+
+  /** Returns whether every operation in this phase uses `Policy`. */
+  template <WritePolicy Policy>
+  [[nodiscard]] constexpr bool policy_matches() const noexcept {
+    static_assert(is_valid_write_policy(Policy));
+    return write_policy_mask_ == policy_bit(Policy);
+  }
+
+ private:
+  friend class ExecutionPhasePlan;
+
+  [[nodiscard]] static constexpr auto policy_bit(WritePolicy policy) noexcept
+      -> std::uint8_t {
+    return static_cast<std::uint8_t>(std::uint8_t{1}
+                                     << static_cast<std::uint8_t>(policy));
+  }
+
+  constexpr ExecutionPhase(const ExecutionPlan& plan,
+                           std::size_t first_operation,
+                           std::size_t operation_count,
+                           const PlannedOperation& operation) noexcept
+      : plan_(&plan),
+        first_operation_(first_operation),
+        operation_count_(operation_count),
+        plan_generation_(plan.generation_),
+        world_stamp_(operation.world_stamp_),
+        write_policy_mask_(policy_bit(operation.write_policy)) {}
+
+  constexpr void extend(const PlannedOperation& operation) noexcept {
+    ++operation_count_;
+    write_policy_mask_ |= policy_bit(operation.write_policy);
+  }
+
+  const ExecutionPlan* plan_;
+  std::size_t first_operation_;
+  std::size_t operation_count_;
+  std::uint64_t plan_generation_;
+  const detail::PlannedWorldStamp* world_stamp_;
+  std::uint8_t write_policy_mask_;
 };
 
-[[nodiscard]] constexpr auto executor_phase_range(ExecutionPhase phase) noexcept
-    -> ExecutorPhaseRange {
+/** Converts a queued-operation phase into the executor range vocabulary. */
+[[nodiscard]] constexpr auto executor_phase_range(
+    const ExecutionPhase& phase) noexcept -> ExecutorPhaseRange {
   return ExecutorPhaseRange{
-      phase.first_operation,
-      phase.operation_count,
+      phase.first_operation(),
+      phase.operation_count(),
   };
 }
 
+/** Owns deterministic parallel phases or an unsupported-policy diagnostic. */
 class ExecutionPhasePlan {
  public:
   [[nodiscard]] constexpr auto phases() const noexcept
@@ -250,7 +526,16 @@ class ExecutionPhasePlan {
 
   void reserve(std::size_t size) { phases_.reserve(size); }
 
-  void push_phase(ExecutionPhase phase) { phases_.push_back(phase); }
+  void push_phase(const ExecutionPlan& plan, std::size_t first_operation,
+                  std::size_t operation_count,
+                  const PlannedOperation& operation) {
+    phases_.push_back(
+        ExecutionPhase{plan, first_operation, operation_count, operation});
+  }
+
+  void extend_last_phase(const PlannedOperation& operation) {
+    phases_.back().extend(operation);
+  }
 
   std::vector<ExecutionPhase> phases_;
   ExecutionPhaseStatus status_ = ExecutionPhaseStatus::Ready;
@@ -258,6 +543,50 @@ class ExecutionPhasePlan {
   WritePolicy failed_write_policy_ = WritePolicy::ReadOnly;
 };
 
+namespace detail {
+
+[[nodiscard]] constexpr bool execution_phase_valid_for(
+    const ExecutionPlan& plan, const ExecutionPhase& phase) noexcept {
+  const auto operations = plan.operations();
+  const auto first = phase.first_operation();
+  const auto count = phase.operation_count();
+  return phase.belongs_to(plan) && first <= operations.size() &&
+         count <= operations.size() - first;
+}
+
+template <WritePolicy Policy, typename World>
+[[nodiscard]] auto execution_phase_validation_status(
+    const World& world, const ExecutionPlan& plan,
+    const ExecutionPhase& phase) noexcept -> PlannedExecutionStatus {
+  if (!execution_phase_valid_for(plan, phase)) {
+    return PlannedExecutionStatus::InvalidPhase;
+  }
+  const auto world_status = phase.world_validation_status(world);
+  if (world_status != PlannedExecutionStatus::Executed) {
+    return world_status;
+  }
+  if (!phase.template policy_matches<Policy>()) {
+    return PlannedExecutionStatus::PolicyMismatch;
+  }
+  return PlannedExecutionStatus::Executed;
+}
+
+inline void record_execution_phase_validation_failure(
+    PlannedExecutionStatus status) noexcept {
+#if TESS_DIAGNOSTICS_ENABLED
+  if (status == PlannedExecutionStatus::InvalidPhase) {
+    TESS_DIAG_EVENT(queued_phase_invalid_range);
+  } else {
+    TESS_DIAG_EVENT(queued_phase_failure);
+  }
+#else
+  (void)status;
+#endif
+}
+
+}  // namespace detail
+
+/** Records planning outcome, diagnostics, and expanded chunk count. */
 struct OperationReport {
   OpHandle handle{};
   OpId id{};
@@ -275,25 +604,116 @@ struct OperationReport {
   std::source_location source = std::source_location::current();
 };
 
+/** Associates one validated chunk with deferred dirty metadata. */
 struct PlannedDirtyRecord {
   ChunkKey chunk{};
   std::uint32_t dirty_mask = 0;
   Box3 bounds{};
 };
 
+/** Describes whether deferred dirty recording changed an accumulator. */
+enum class PlannedDirtyRecordStatus : std::uint8_t {
+  Recorded,
+  IgnoredEmptyMask,
+  InvalidShape,
+  InvalidChunk,
+};
+static_assert(sizeof(PlannedDirtyRecordStatus) == sizeof(std::uint8_t));
+
+/** Describes whether deferred dirty metadata was safely applied. */
+enum class PlannedDirtyMergeStatus : std::uint8_t {
+  Merged,
+  InvalidShape,
+  InvalidChunk,
+};
+static_assert(sizeof(PlannedDirtyMergeStatus) == sizeof(std::uint8_t));
+
+/** Describes whether dirty partitions were collected without stamp mixing. */
+enum class PlannedDirtyCollectStatus : std::uint8_t {
+  Collected,
+  InvalidShape,
+  InvalidChunk,
+};
+static_assert(sizeof(PlannedDirtyCollectStatus) == sizeof(std::uint8_t));
+
+/** Reports dirty-partition collection status and the transferred records. */
+struct PlannedDirtyCollectResult {
+  PlannedDirtyCollectStatus status = PlannedDirtyCollectStatus::Collected;
+  std::size_t record_count = 0;
+
+  [[nodiscard]] constexpr bool ok() const noexcept {
+    return status == PlannedDirtyCollectStatus::Collected;
+  }
+};
+
+/** Reports dirty-merge status and the number of applied chunks. */
+struct PlannedDirtyMergeResult {
+  PlannedDirtyMergeStatus status = PlannedDirtyMergeStatus::Merged;
+  std::size_t merged_chunk_count = 0;
+
+  [[nodiscard]] constexpr bool ok() const noexcept {
+    return status == PlannedDirtyMergeStatus::Merged;
+  }
+};
+
+class PlannedDirtyAccumulator;
+class PlannedPhaseExecutionScratch;
+
+namespace detail {
+
+template <bool BindWorld, WritePolicy Policy, typename World, typename Fn>
+auto execute_validated_planned_operation_deferred_dirty(
+    World& world, const PlannedOperation& operation,
+    PlannedDirtyAccumulator& dirty, Fn&& fn) -> PlannedExecutionResult;
+
+template <typename World>
+auto merge_planned_dirty_after_exception(
+    World& world, PlannedPhaseExecutionScratch& scratch) noexcept
+    -> PlannedDirtyMergeResult;
+
+}  // namespace detail
+
 class PlannedDirtyPartitions;
 
+/** Owns shape-bound deferred dirty records for deterministic later merging. */
 class PlannedDirtyAccumulator {
  public:
   void reserve(std::size_t count) { records_.reserve(count); }
 
-  void clear() noexcept { records_.clear(); }
+  void clear() noexcept {
+    records_.clear();
+    world_stamp_ = nullptr;
+  }
 
-  void record(ChunkKey chunk, std::uint32_t dirty_mask, Box3 bounds) {
+  /** Records a dirty chunk only when it belongs to `world`'s shape. */
+  template <typename World>
+  auto record(const World& /*world*/, ChunkKey chunk, std::uint32_t dirty_mask,
+              Box3 bounds) -> PlannedDirtyRecordStatus {
+    static_assert(
+        std::is_same_v<typename World::residency_type, AlwaysResident>,
+        "Queued-op dirty recording requires an AlwaysResidentWorld; sparse "
+        "queued-ops support is deferred to a later slice.");
     if (dirty_mask == 0) {
-      return;
+      return PlannedDirtyRecordStatus::IgnoredEmptyMask;
     }
+    if (chunk.value >= World::chunk_count) {
+      return PlannedDirtyRecordStatus::InvalidChunk;
+    }
+
+    if (world_stamp_ != nullptr) {
+      const auto validation =
+          detail::validate_planned_world_stamp<World>(world_stamp_);
+      if (validation == PlannedExecutionStatus::InvalidShape) {
+        return PlannedDirtyRecordStatus::InvalidShape;
+      }
+      if (validation == PlannedExecutionStatus::InvalidChunk) {
+        return PlannedDirtyRecordStatus::InvalidChunk;
+      }
+    }
+
     records_.push_back(PlannedDirtyRecord{chunk, dirty_mask, bounds});
+    world_stamp_ = detail::planned_world_stamp<World>();
+    return PlannedDirtyRecordStatus::Recorded;
   }
 
   [[nodiscard]] auto records() const noexcept
@@ -301,18 +721,103 @@ class PlannedDirtyAccumulator {
     return records_;
   }
 
+  /** Validates this accumulator's O(1) shape/chunk stamp for `world`. */
+  template <typename World>
+  [[nodiscard]] auto validation_status(const World& /*world*/) const noexcept
+      -> PlannedDirtyMergeStatus {
+    static_assert(
+        std::is_same_v<typename World::residency_type, AlwaysResident>,
+        "Queued-op dirty validation requires an AlwaysResidentWorld; sparse "
+        "queued-ops support is deferred to a later slice.");
+    if (world_stamp_ == nullptr) {
+      return PlannedDirtyMergeStatus::Merged;
+    }
+    const auto validation =
+        detail::validate_planned_world_stamp<World>(world_stamp_);
+    if (validation == PlannedExecutionStatus::InvalidShape) {
+      return PlannedDirtyMergeStatus::InvalidShape;
+    }
+    if (validation == PlannedExecutionStatus::InvalidChunk) {
+      return PlannedDirtyMergeStatus::InvalidChunk;
+    }
+    return PlannedDirtyMergeStatus::Merged;
+  }
+
  private:
+  friend class PlannedDirtyPartitions;
+
+  template <bool BindWorld, WritePolicy Policy, typename World, typename Fn>
+  friend auto detail::execute_validated_planned_operation_deferred_dirty(
+      World& world, const PlannedOperation& operation,
+      PlannedDirtyAccumulator& dirty, Fn&& fn) -> PlannedExecutionResult;
+
+  template <WritePolicy Policy, typename World, typename Fn>
+  friend auto execute_planned_operation_deferred_dirty(
+      World& world, const PlannedOperation& operation,
+      PlannedDirtyAccumulator& dirty, Fn&& fn) -> PlannedExecutionResult;
   template <typename World>
   friend auto merge_planned_dirty(World& world,
                                   PlannedDirtyAccumulator& dirty) noexcept
-      -> std::size_t;
+      -> PlannedDirtyMergeResult;
+  template <typename World>
+  friend auto merge_planned_dirty(World& world,
+                                  PlannedPhaseExecutionScratch& scratch)
+      -> PlannedDirtyMergeResult;
   friend auto collect_planned_dirty(PlannedDirtyAccumulator& dirty,
                                     PlannedDirtyPartitions& partitions)
-      -> std::size_t;
+      -> PlannedDirtyCollectResult;
+
+  template <typename World>
+  void bind_validated_world(const World& /*world*/) noexcept {
+    if (world_stamp_ == nullptr) {
+      world_stamp_ = detail::planned_world_stamp<World>();
+    }
+  }
+
+  template <typename World>
+  void prepare_for_validated_world(const World& /*world*/) noexcept {
+    records_.clear();
+    world_stamp_ = detail::planned_world_stamp<World>();
+  }
+
+  void record_validated(ChunkKey chunk, std::uint32_t dirty_mask, Box3 bounds) {
+    if (dirty_mask == 0) {
+      return;
+    }
+    records_.push_back(PlannedDirtyRecord{chunk, dirty_mask, bounds});
+  }
 
   std::vector<PlannedDirtyRecord> records_;
+  const detail::PlannedWorldStamp* world_stamp_ = nullptr;
 };
 
+template <bool BindWorld, WritePolicy Policy, typename World, typename Fn>
+auto detail::execute_validated_planned_operation_deferred_dirty(
+    World& world, const PlannedOperation& operation,
+    PlannedDirtyAccumulator& dirty, Fn&& fn) -> PlannedExecutionResult {
+  if constexpr (BindWorld) {
+    if (operation.field_access.dirty_mask != 0) {
+      dirty.bind_validated_world(world);
+    }
+  }
+  auto ctx = block_ctx<Policy>(world, chunk_domain(operation.chunks()));
+
+  std::size_t chunk_count = 0;
+  auto&& callback = fn;
+  ctx.for_each_chunk([&](auto view) {
+    dirty.record_validated(view.key(), operation.field_access.dirty_mask,
+                           view.bounds());
+    callback(view);
+    ++chunk_count;
+  });
+
+  return PlannedExecutionResult{
+      PlannedExecutionStatus::Executed,
+      chunk_count,
+  };
+}
+
+/** Owns isolated dirty accumulators for concurrently executed operations. */
 class PlannedDirtyPartitions {
  public:
   void reserve(std::size_t count) { partitions_.reserve(count); }
@@ -356,7 +861,7 @@ class PlannedDirtyPartitions {
  private:
   friend auto collect_planned_dirty(PlannedDirtyAccumulator& dirty,
                                     PlannedDirtyPartitions& partitions)
-      -> std::size_t;
+      -> PlannedDirtyCollectResult;
   friend class PlannedPhaseExecutionScratch;
 
   void prepare(std::size_t count) {
@@ -367,13 +872,72 @@ class PlannedDirtyPartitions {
     }
   }
 
+  template <typename World>
+  void prepare(const World& world, std::size_t count) {
+    partitions_.resize(count);
+    for (auto& partition : partitions_) {
+      partition.prepare_for_validated_world(world);
+      partition.reserve(records_per_partition_reserve_);
+    }
+  }
+
   std::vector<PlannedDirtyAccumulator> partitions_;
   std::size_t records_per_partition_reserve_ = 0;
 };
 
+namespace detail {
+
+// Scratch-owned phase partitions carry no independent world stamp. The
+// enclosing scratch object owns one capability stamp, and this record-only
+// type cannot be passed to the public dirty-merge APIs for another world.
+class PhaseDirtyPartition {
+ public:
+  void reserve(std::size_t count) { records_.reserve(count); }
+
+  void clear() noexcept { records_.clear(); }
+
+  void record(ChunkKey chunk, std::uint32_t dirty_mask, Box3 bounds) {
+    if (dirty_mask != 0) {
+      records_.push_back(PlannedDirtyRecord{chunk, dirty_mask, bounds});
+    }
+  }
+
+  [[nodiscard]] auto records() const noexcept
+      -> std::span<const PlannedDirtyRecord> {
+    return records_;
+  }
+
+ private:
+  std::vector<PlannedDirtyRecord> records_;
+};
+
+template <WritePolicy Policy, typename World, typename Fn>
+auto execute_validated_phase_operation_deferred_dirty(
+    World& world, const PlannedOperation& operation, PhaseDirtyPartition& dirty,
+    Fn&& fn) -> PlannedExecutionResult {
+  auto ctx = block_ctx<Policy>(world, chunk_domain(operation.chunks()));
+
+  std::size_t chunk_count = 0;
+  auto&& callback = fn;
+  ctx.for_each_chunk([&](auto view) {
+    dirty.record(view.key(), operation.field_access.dirty_mask, view.bounds());
+    callback(view);
+    ++chunk_count;
+  });
+
+  return PlannedExecutionResult{
+      PlannedExecutionStatus::Executed,
+      chunk_count,
+  };
+}
+
+}  // namespace detail
+
+/** Receives typed completion values for queued execution wrappers. */
 template <typename T>
 class ResultChannel;
 
+/** Reusable partitions, results, and merge storage for one execution phase. */
 class PlannedPhaseExecutionScratch {
  public:
   void reserve_operations(std::size_t count) {
@@ -382,7 +946,10 @@ class PlannedPhaseExecutionScratch {
   }
 
   void reserve_dirty_records_per_operation(std::size_t count) {
-    dirty_partitions_.reserve_records_per_partition(count);
+    records_per_partition_reserve_ = count;
+    for (auto& partition : dirty_partitions_) {
+      partition.reserve(count);
+    }
   }
 
   void reserve_merged_dirty_records(std::size_t count) {
@@ -392,9 +959,12 @@ class PlannedPhaseExecutionScratch {
   void prepare_for_operation_count(std::size_t count) { prepare(count); }
 
   void clear() noexcept {
-    dirty_partitions_.clear_records();
+    for (auto& partition : dirty_partitions_) {
+      partition.clear();
+    }
     results_.clear();
     merged_dirty_.clear();
+    world_stamp_ = nullptr;
   }
 
   [[nodiscard]] auto operation_count() const noexcept -> std::size_t {
@@ -402,38 +972,59 @@ class PlannedPhaseExecutionScratch {
   }
 
   [[nodiscard]] auto dirty_partitions() const noexcept
-      -> std::span<const PlannedDirtyAccumulator> {
-    return dirty_partitions_.partitions();
+      -> std::span<const detail::PhaseDirtyPartition> {
+    return dirty_partitions_;
   }
 
  private:
   template <WritePolicy Policy, typename Executor, typename World, typename Fn>
   friend auto execute_phase_partitioned_dirty_with(
       Executor&& executor, World& world, const ExecutionPlan& plan,
-      ExecutionPhase phase, PlannedPhaseExecutionScratch& scratch, Fn&& fn)
-      -> PlannedExecutionResult;
+      const ExecutionPhase& phase, PlannedPhaseExecutionScratch& scratch,
+      Fn&& fn) -> PlannedExecutionResult;
 
   template <WritePolicy Policy, typename Executor, typename World, typename T,
             typename Fn>
   friend auto execute_phase_partitioned_dirty_with_results(
       Executor&& executor, World& world, const ExecutionPlan& plan,
-      ExecutionPhase phase, PlannedPhaseExecutionScratch& scratch,
+      const ExecutionPhase& phase, PlannedPhaseExecutionScratch& scratch,
       ResultChannel<T>& channel, Fn&& fn) -> PlannedExecutionResult;
 
   template <typename World>
   friend auto merge_planned_dirty(World& world,
                                   PlannedPhaseExecutionScratch& scratch)
-      -> std::size_t;
+      -> PlannedDirtyMergeResult;
+  template <typename World>
+  friend auto detail::merge_planned_dirty_after_exception(
+      World& world, PlannedPhaseExecutionScratch& scratch) noexcept
+      -> PlannedDirtyMergeResult;
 
   void prepare(std::size_t operation_count) {
-    dirty_partitions_.prepare(operation_count);
+    prepare_partitions(operation_count);
     results_.assign(operation_count, PlannedExecutionResult{});
     merged_dirty_.clear();
+    world_stamp_ = nullptr;
+  }
+
+  template <typename World>
+  void prepare(const World& /*world*/, std::size_t operation_count) {
+    prepare_partitions(operation_count);
+    results_.assign(operation_count, PlannedExecutionResult{});
+    merged_dirty_.clear();
+    world_stamp_ = detail::planned_world_stamp<World>();
   }
 
   [[nodiscard]] auto dirty_for_operation(std::size_t index) noexcept
-      -> PlannedDirtyAccumulator& {
-    return dirty_partitions_.partition(index);
+      -> detail::PhaseDirtyPartition& {
+    return dirty_partitions_[index];
+  }
+
+  void prepare_partitions(std::size_t operation_count) {
+    dirty_partitions_.resize(operation_count);
+    for (auto& partition : dirty_partitions_) {
+      partition.clear();
+      partition.reserve(records_per_partition_reserve_);
+    }
   }
 
   void record_result(std::size_t index, PlannedExecutionResult result) {
@@ -445,11 +1036,14 @@ class PlannedPhaseExecutionScratch {
     return results_;
   }
 
-  PlannedDirtyPartitions dirty_partitions_;
+  std::vector<detail::PhaseDirtyPartition> dirty_partitions_;
   std::vector<PlannedExecutionResult> results_;
   PlannedDirtyAccumulator merged_dirty_;
+  std::size_t records_per_partition_reserve_ = 0;
+  const detail::PlannedWorldStamp* world_stamp_ = nullptr;
 };
 
+/** Owns ordered planning diagnostics and the corresponding accepted plan. */
 class ExecutionReport {
  public:
   [[nodiscard]] constexpr auto operations() const noexcept
@@ -498,9 +1092,10 @@ class ExecutionReport {
   // caller-owned report makes steady-state planning allocation-free
   // (audit 2026-07-11 M4).
   void reset() {
+    plan_.bump_generation();
     for (auto& planned : plan_.operations_) {
-      planned.chunks.clear();
-      chunk_pool_.push_back(std::move(planned.chunks));
+      planned.chunks_.clear();
+      chunk_pool_.push_back(std::move(planned.chunks_));
     }
     plan_.operations_.clear();
     operations_.clear();
@@ -524,6 +1119,17 @@ class ExecutionReport {
     plan_.operations_.push_back(std::move(planned));
   }
 
+  template <typename World>
+  [[nodiscard]] auto make_planned(const QueuedOperation& operation,
+                                  std::vector<ChunkKey>&& chunks)
+      -> PlannedOperation {
+    return PlannedOperation{
+        operation,
+        std::move(chunks),
+        detail::planned_world_stamp<World>(),
+    };
+  }
+
   [[nodiscard]] auto acquire_chunks() -> std::vector<ChunkKey> {
     if (chunk_pool_.empty()) {
       return {};
@@ -538,11 +1144,16 @@ class ExecutionReport {
     chunk_pool_.push_back(std::move(chunks));
   }
 
+  void recycle_chunks(PlannedOperation&& planned) {
+    recycle_chunks(std::move(planned.chunks_));
+  }
+
   std::vector<OperationReport> operations_;
   ExecutionPlan plan_;
   std::vector<std::vector<ChunkKey>> chunk_pool_;
 };
 
+/** Collects one frame's operations while assigning stable handles and IDs. */
 class FrameOps {
  public:
   [[nodiscard]] auto update_field(
@@ -708,7 +1319,7 @@ template <typename World>
     if (hazard_mask(earlier.field_access, later.field_access) == 0) {
       continue;
     }
-    if (chunks_overlap(earlier.chunks, later.chunks)) {
+    if (chunks_overlap(earlier.chunks(), later.chunks())) {
       // cppcheck-suppress returnDanglingLifetime
       return &earlier;
     }
@@ -728,7 +1339,7 @@ template <typename World>
 
 [[nodiscard]] constexpr bool parallel_phase_conflict(
     const PlannedOperation& lhs, const PlannedOperation& rhs) noexcept {
-  if (!chunks_overlap(lhs.chunks, rhs.chunks)) {
+  if (!chunks_overlap(lhs.chunks(), rhs.chunks())) {
     return false;
   }
   if (is_mutating_policy(lhs.write_policy) ||
@@ -792,10 +1403,10 @@ template <typename World>
 
 }  // namespace detail
 
-// Reuse overload: plans into a caller-owned report, recycling its report
-// rows, planned-operation storage, and chunk-list allocations from the
-// previous plan (audit 2026-07-11 M4). Returns the same report for
-// chaining. The by-value overload below forwards here.
+/**
+ * Validates and expands operations into a caller-owned reusable report.
+ * Existing report and chunk-list capacity is retained for warm planning.
+ */
 template <typename World>
 auto plan_operations(const World& world,
                      std::span<const QueuedOperation> operations,
@@ -815,9 +1426,12 @@ auto plan_operations(const World& world,
 
   for (std::size_t op_index = 0; op_index < operations.size(); ++op_index) {
     const auto& op = operations[op_index];
+    const auto canonical_handle =
+        OpHandle{static_cast<std::uint64_t>(op_index)};
+    const auto canonical_id = OpId{static_cast<std::uint64_t>(op_index)};
     OperationReport op_report{
-        op.handle,
-        op.id,
+        canonical_handle,
+        canonical_id,
         OperationStatus::Planned,
         OperationFailure::None,
         detail::operation_access(op),
@@ -831,6 +1445,17 @@ auto plan_operations(const World& world,
         0,
         op.source,
     };
+
+    if (op.handle != canonical_handle || op.id != canonical_id) {
+      op_report.status = OperationStatus::InvalidIdentity;
+      op_report.failure = op.handle != canonical_handle
+                              ? OperationFailure::NonDenseHandle
+                              : OperationFailure::NonDenseId;
+      TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner,
+                            "invalid_identity", op_index);
+      report.push_report(op_report);
+      continue;
+    }
 
     if (!is_valid_write_policy(op.write_policy)) {
       op_report.status = OperationStatus::InvalidWritePolicy;
@@ -850,20 +1475,9 @@ auto plan_operations(const World& world,
       continue;
     }
 
-    PlannedOperation planned{
-        op.kind,
-        op.handle,
-        op.id,
-        detail::operation_access(op),
-        op.field_access,
-        op.write_policy,
-        op.priority,
-        op.budget_policy,
-        report.acquire_chunks(),
-        op.source,
-    };
+    auto planned_chunks = report.acquire_chunks();
     ChunkKey invalid_chunk{};
-    if (!detail::expand_domain(world, op.domain, planned.chunks,
+    if (!detail::expand_domain(world, op.domain, planned_chunks,
                                invalid_chunk)) {
       op_report.status = OperationStatus::InvalidDomain;
       op_report.failure = OperationFailure::ExplicitChunkOutOfRange;
@@ -871,10 +1485,13 @@ auto plan_operations(const World& world,
       op_report.has_detail_chunk = true;
       TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner,
                             "invalid_domain", op_index);
-      report.recycle_chunks(std::move(planned.chunks));
+      report.recycle_chunks(std::move(planned_chunks));
       report.push_report(op_report);
       continue;
     }
+
+    auto planned =
+        report.template make_planned<World>(op, std::move(planned_chunks));
 
     if (const auto* conflict =
             detail::find_hazard(report.plan().operations(), planned);
@@ -886,15 +1503,15 @@ auto plan_operations(const World& world,
       op_report.conflict_mask =
           detail::hazard_mask(conflict->field_access, planned.field_access);
       op_report.has_conflict = true;
-      op_report.chunk_count = planned.chunks.size();
+      op_report.chunk_count = planned.chunks().size();
       TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner, "conflict",
                             op_index);
-      report.recycle_chunks(std::move(planned.chunks));
+      report.recycle_chunks(std::move(planned));
       report.push_report(op_report);
       continue;
     }
 
-    op_report.chunk_count = planned.chunks.size();
+    op_report.chunk_count = planned.chunks().size();
     TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner, "planned",
                           op_index);
     report.push_planned(std::move(planned));
@@ -905,6 +1522,7 @@ auto plan_operations(const World& world,
 }
 
 template <typename World>
+/** Validates operations and returns a newly allocated execution report. */
 [[nodiscard]] auto plan_operations(const World& world,
                                    std::span<const QueuedOperation> operations)
     -> ExecutionReport {
@@ -914,23 +1532,26 @@ template <typename World>
 }
 
 template <typename World>
+/** Validates frame operations into caller-owned reusable report storage. */
 auto plan_operations(const World& world, const FrameOps& ops,
                      ExecutionReport& report) -> const ExecutionReport& {
   return plan_operations(world, ops.operations(), report);
 }
 
 template <typename World>
+/** Validates frame operations and returns a newly allocated report. */
 [[nodiscard]] auto plan_operations(const World& world, const FrameOps& ops)
     -> ExecutionReport {
   return plan_operations(world, ops.operations());
 }
 
+/** Adapts one immutable planned chunk list to the block-domain API. */
 [[nodiscard]] constexpr auto planned_chunk_domain(
     const PlannedOperation& operation) noexcept -> ChunkDomain {
-  return chunk_domain(std::span<const ChunkKey>{operation.chunks.data(),
-                                                operation.chunks.size()});
+  return chunk_domain(operation.chunks());
 }
 
+/** Groups a validated plan into deterministic non-conflicting phases. */
 [[nodiscard]] inline auto plan_parallel_execution_phases(
     const ExecutionPlan& plan) -> ExecutionPhasePlan {
   const auto operations = plan.operations();
@@ -951,14 +1572,14 @@ template <typename World>
     if (phases.phases_.empty()) {
       TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner, "new_phase",
                             i);
-      phases.push_phase(ExecutionPhase{i, 1});
+      phases.push_phase(plan, i, 1, operation);
       continue;
     }
 
-    auto& phase = phases.phases_.back();
+    const auto& phase = phases.phases_.back();
     auto conflicts = false;
-    const auto end = phase.first_operation + phase.operation_count;
-    for (std::size_t j = phase.first_operation; j < end; ++j) {
+    const auto end = phase.first_operation() + phase.operation_count();
+    for (std::size_t j = phase.first_operation(); j < end; ++j) {
       if (detail::parallel_phase_conflict(operations[j], operation)) {
         conflicts = true;
         break;
@@ -968,34 +1589,44 @@ template <typename World>
     if (conflicts) {
       TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner, "new_phase",
                             i);
-      phases.push_phase(ExecutionPhase{i, 1});
+      phases.push_phase(plan, i, 1, operation);
     } else {
       TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner, "merged", i);
-      ++phase.operation_count;
+      phases.extend_last_phase(operation);
     }
   }
 
   return phases;
 }
 
+/**
+ * Coalesces and applies deferred dirty records after validating their world
+ * stamp. Rejected merges leave both the world and accumulator unchanged.
+ */
 template <typename World>
 auto merge_planned_dirty(World& world, PlannedDirtyAccumulator& dirty) noexcept
-    -> std::size_t {
-  // Applies accumulated dirty records straight to world.mark_dirty (-> meta()),
-  // which reads a non-resident chunk out of bounds. The records are normally
-  // produced by the (now dense-only) executor, but PlannedDirtyAccumulator is
-  // public and could be filled by hand, so guard here too. The partition and
-  // phase-scratch overloads both funnel through this one.
+    -> PlannedDirtyMergeResult {
   static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
                 "Queued-op dirty merge requires an AlwaysResidentWorld; sparse "
-                "queued-ops "
-                "support is deferred to a later slice.");
+                "queued-ops support is deferred to a later slice.");
+
+  const auto validation = dirty.validation_status(world);
+  if (validation != PlannedDirtyMergeStatus::Merged) {
+    return PlannedDirtyMergeResult{
+        validation,
+        0,
+    };
+  }
+
   auto& records = dirty.records_;
   std::sort(records.begin(), records.end(),
             [](PlannedDirtyRecord lhs, PlannedDirtyRecord rhs) {
               return lhs.chunk.value < rhs.chunk.value;
             });
 
+  // Sorting makes duplicate records adjacent so they can be coalesced without
+  // allocating. This noexcept path cannot replace a callback exception while
+  // AutoExec unwinds.
   auto merged_count = std::size_t{0};
   for (std::size_t i = 0; i < records.size();) {
     auto chunk = records[i].chunk;
@@ -1015,85 +1646,297 @@ auto merge_planned_dirty(World& world, PlannedDirtyAccumulator& dirty) noexcept
 
   TESS_DIAG_EVENT_VALUE(queued_dirty_merge, merged_count);
   dirty.clear();
-  return merged_count;
+  return PlannedDirtyMergeResult{
+      PlannedDirtyMergeStatus::Merged,
+      merged_count,
+  };
 }
 
+/** Moves compatible operation partitions into one reusable accumulator. */
 inline auto collect_planned_dirty(PlannedDirtyAccumulator& dirty,
                                   PlannedDirtyPartitions& partitions)
-    -> std::size_t {
-  std::size_t record_count = 0;
+    -> PlannedDirtyCollectResult {
+  auto* world_stamp = dirty.world_stamp_;
+  for (const auto& partition : partitions.partitions_) {
+    const auto* partition_stamp = partition.world_stamp_;
+    if (partition_stamp == nullptr) {
+      continue;
+    }
+    if (world_stamp == nullptr) {
+      world_stamp = partition_stamp;
+      continue;
+    }
+    if (world_stamp->shape_identity != partition_stamp->shape_identity) {
+      return PlannedDirtyCollectResult{
+          PlannedDirtyCollectStatus::InvalidShape,
+          0,
+      };
+    }
+    if (world_stamp->chunk_limit != partition_stamp->chunk_limit) {
+      return PlannedDirtyCollectResult{
+          PlannedDirtyCollectStatus::InvalidChunk,
+          0,
+      };
+    }
+  }
+
+  auto required_capacity = dirty.records_.size();
+  auto record_count = std::size_t{0};
+  for (const auto& partition : partitions.partitions_) {
+    const auto partition_size = partition.records_.size();
+    if (partition_size > dirty.records_.max_size() - required_capacity) {
+      throw std::length_error{"planned dirty record count exceeds max_size"};
+    }
+    required_capacity += partition_size;
+    record_count += partition_size;
+  }
+  // Complete the only potentially allocating step before clearing a source;
+  // a failed reserve therefore preserves both destination and partitions.
+  dirty.records_.reserve(required_capacity);
+
   for (auto& partition : partitions.partitions_) {
-    record_count += partition.records_.size();
+    if (partition.world_stamp_ != nullptr) {
+      dirty.world_stamp_ = partition.world_stamp_;
+    }
     dirty.records_.insert(dirty.records_.end(), partition.records_.begin(),
                           partition.records_.end());
     partition.clear();
   }
   TESS_DIAG_EVENT_VALUE(queued_dirty_collect, record_count);
-  return record_count;
+  return PlannedDirtyCollectResult{
+      PlannedDirtyCollectStatus::Collected,
+      record_count,
+  };
 }
 
 template <typename World>
+/** Collects partitioned dirty records and applies their merged bounds. */
 auto merge_planned_dirty(World& world, PlannedDirtyPartitions& partitions,
                          PlannedDirtyAccumulator& dirty_scratch)
-    -> std::size_t {
+    -> PlannedDirtyMergeResult {
+  for (const auto& partition : partitions.partitions()) {
+    const auto validation = partition.validation_status(world);
+    if (validation != PlannedDirtyMergeStatus::Merged) {
+      return PlannedDirtyMergeResult{validation, 0};
+    }
+  }
   dirty_scratch.clear();
-  (void)collect_planned_dirty(dirty_scratch, partitions);
+  const auto collected = collect_planned_dirty(dirty_scratch, partitions);
+  if (!collected.ok()) {
+    return PlannedDirtyMergeResult{
+        collected.status == PlannedDirtyCollectStatus::InvalidShape
+            ? PlannedDirtyMergeStatus::InvalidShape
+            : PlannedDirtyMergeStatus::InvalidChunk,
+        0,
+    };
+  }
   return merge_planned_dirty(world, dirty_scratch);
 }
 
 template <typename World>
+/** Applies phase dirty records through the scratch object's accumulator. */
 auto merge_planned_dirty(World& world, PlannedPhaseExecutionScratch& scratch)
-    -> std::size_t {
-  return merge_planned_dirty(world, scratch.dirty_partitions_,
-                             scratch.merged_dirty_);
+    -> PlannedDirtyMergeResult {
+  if (scratch.world_stamp_ == nullptr) {
+    return PlannedDirtyMergeResult{
+        PlannedDirtyMergeStatus::Merged,
+        0,
+    };
+  }
+  const auto validation =
+      detail::validate_planned_world_stamp<World>(scratch.world_stamp_);
+  if (validation != PlannedExecutionStatus::Executed) {
+    return PlannedDirtyMergeResult{
+        validation == PlannedExecutionStatus::InvalidShape
+            ? PlannedDirtyMergeStatus::InvalidShape
+            : PlannedDirtyMergeStatus::InvalidChunk,
+        0,
+    };
+  }
+
+  auto& merged = scratch.merged_dirty_;
+  auto record_count = std::size_t{0};
+  for (const auto& partition : scratch.dirty_partitions_) {
+    const auto partition_size = partition.records().size();
+    if (partition_size > merged.records_.max_size() - record_count) {
+      throw std::length_error{"planned dirty record count exceeds max_size"};
+    }
+    record_count += partition_size;
+  }
+  merged.clear();
+  // Reserve before transferring anything, so allocation failure leaves every
+  // phase partition available to the caller.
+  merged.records_.reserve(record_count);
+  merged.world_stamp_ = scratch.world_stamp_;
+  for (auto& partition : scratch.dirty_partitions_) {
+    const auto records = partition.records();
+    merged.records_.insert(merged.records_.end(), records.begin(),
+                           records.end());
+    partition.clear();
+  }
+  TESS_DIAG_EVENT_VALUE(queued_dirty_collect, record_count);
+  (void)record_count;
+  return merge_planned_dirty(world, merged);
 }
 
+/** Conservatively applies started phase records while unwinding a callback. */
+template <typename World>
+auto detail::merge_planned_dirty_after_exception(
+    World& world, PlannedPhaseExecutionScratch& scratch) noexcept
+    -> PlannedDirtyMergeResult {
+  if (scratch.world_stamp_ == nullptr) {
+    return PlannedDirtyMergeResult{
+        PlannedDirtyMergeStatus::Merged,
+        0,
+    };
+  }
+  const auto validation =
+      detail::validate_planned_world_stamp<World>(scratch.world_stamp_);
+  if (validation != PlannedExecutionStatus::Executed) {
+    return PlannedDirtyMergeResult{
+        validation == PlannedExecutionStatus::InvalidShape
+            ? PlannedDirtyMergeStatus::InvalidShape
+            : PlannedDirtyMergeStatus::InvalidChunk,
+        0,
+    };
+  }
+
+  // This cold path must preserve the original callback exception. Coalesce
+  // with an allocation-free quadratic scan: exceptions are rare, and normal
+  // phase sizes should not dictate whether failed work remains observable.
+  auto record_count = std::size_t{0};
+  for (const auto& partition : scratch.dirty_partitions_) {
+    const auto partition_size = partition.records().size();
+    if (partition_size >
+        std::numeric_limits<std::size_t>::max() - record_count) {
+      record_count = std::numeric_limits<std::size_t>::max();
+      break;
+    }
+    record_count += partition_size;
+  }
+  auto merged_count = std::size_t{0};
+  for (std::size_t partition_index = 0;
+       partition_index < scratch.dirty_partitions_.size(); ++partition_index) {
+    const auto records = scratch.dirty_partitions_[partition_index].records();
+    for (std::size_t record_index = 0; record_index < records.size();
+         ++record_index) {
+      const auto record = records[record_index];
+      auto appeared_earlier = false;
+      for (std::size_t earlier_partition = 0;
+           earlier_partition <= partition_index && !appeared_earlier;
+           ++earlier_partition) {
+        const auto earlier_records =
+            scratch.dirty_partitions_[earlier_partition].records();
+        const auto earlier_count = earlier_partition == partition_index
+                                       ? record_index
+                                       : earlier_records.size();
+        for (std::size_t earlier_index = 0; earlier_index < earlier_count;
+             ++earlier_index) {
+          if (earlier_records[earlier_index].chunk == record.chunk) {
+            appeared_earlier = true;
+            break;
+          }
+        }
+      }
+      if (appeared_earlier) {
+        continue;
+      }
+
+      auto dirty_mask = record.dirty_mask;
+      auto bounds = record.bounds;
+      for (std::size_t later_partition = partition_index;
+           later_partition < scratch.dirty_partitions_.size();
+           ++later_partition) {
+        const auto later_records =
+            scratch.dirty_partitions_[later_partition].records();
+        const auto first_later = later_partition == partition_index
+                                     ? record_index + 1
+                                     : std::size_t{0};
+        for (std::size_t later_index = first_later;
+             later_index < later_records.size(); ++later_index) {
+          const auto later = later_records[later_index];
+          if (later.chunk == record.chunk) {
+            dirty_mask |= later.dirty_mask;
+            bounds = detail::union_dirty_bounds(bounds, later.bounds);
+          }
+        }
+      }
+      world.mark_dirty(record.chunk, dirty_mask, bounds);
+      ++merged_count;
+    }
+  }
+  for (auto& partition : scratch.dirty_partitions_) {
+    partition.clear();
+  }
+  TESS_DIAG_EVENT_VALUE(queued_dirty_collect, record_count);
+  TESS_DIAG_EVENT_VALUE(queued_dirty_merge, merged_count);
+  (void)record_count;
+  (void)merged_count;
+  return PlannedDirtyMergeResult{
+      PlannedDirtyMergeStatus::Merged,
+      merged_count,
+  };
+}
+
+/** Reports whether a plan's runtime write policy matches `Policy`. */
 template <WritePolicy Policy>
 [[nodiscard]] constexpr bool planned_policy_matches(
     const PlannedOperation& operation) noexcept {
   return operation.write_policy == Policy;
 }
 
+/** Validates a plan's world binding, chunk bound, and write policy in O(1). */
+template <WritePolicy Policy, typename World>
+[[nodiscard]] auto validate_planned_operation(
+    const World& world, const PlannedOperation& operation) noexcept
+    -> PlannedExecutionStatus {
+  const auto world_status = operation.world_validation_status(world);
+  if (world_status != PlannedExecutionStatus::Executed) {
+    return world_status;
+  }
+  if (!planned_policy_matches<Policy>(operation)) {
+    return PlannedExecutionStatus::PolicyMismatch;
+  }
+  return PlannedExecutionStatus::Executed;
+}
+
+/** Returns a block context only when plan validation succeeds. */
 template <WritePolicy Policy, typename World>
 [[nodiscard]] constexpr auto try_planned_block_ctx(
     World& world, const PlannedOperation& operation) noexcept
     -> std::optional<BlockCtx<World, Policy>> {
-  // Execution choke point for every queued executor (execute_planned_operation
-  // and its deferred-dirty variant both funnel through here, and the batch
-  // executors funnel through those). A PlannedOperation is a public aggregate,
-  // so a caller could hand one naming a non-resident chunk directly to an
-  // executor, bypassing the guarded planner; the block context would then read
-  // that chunk's page/meta out of bounds. Restrict execution to always-resident
-  // worlds until the sparse queued-ops slice, matching plan_operations.
   static_assert(
       std::is_same_v<typename World::residency_type, AlwaysResident>,
       "Queued-op execution requires an AlwaysResidentWorld; sparse queued-ops "
       "support is deferred to a later slice.");
-  if (!planned_policy_matches<Policy>(operation)) {
+  if (validate_planned_operation<Policy>(world, operation) !=
+      PlannedExecutionStatus::Executed) {
     return std::nullopt;
   }
   return block_ctx<Policy>(world, planned_chunk_domain(operation));
 }
 
+/** Executes one validated operation and applies dirty metadata immediately. */
 template <WritePolicy Policy, typename World, typename Fn>
 auto execute_planned_operation(World& world, const PlannedOperation& operation,
                                Fn&& fn) -> PlannedExecutionResult {
-  auto ctx = try_planned_block_ctx<Policy>(world, operation);
-  if (!ctx.has_value()) {
+  const auto validation = validate_planned_operation<Policy>(world, operation);
+  if (validation != PlannedExecutionStatus::Executed) {
     return PlannedExecutionResult{
-        PlannedExecutionStatus::PolicyMismatch,
+        validation,
         0,
     };
   }
+  auto ctx = block_ctx<Policy>(world, planned_chunk_domain(operation));
 
   std::size_t chunk_count = 0;
   auto&& callback = fn;
-  ctx->for_each_chunk([&](auto view) {
-    callback(view);
+  ctx.for_each_chunk([&](auto view) {
     if (operation.field_access.dirty_mask != 0) {
       world.mark_dirty(view.key(), operation.field_access.dirty_mask,
                        view.bounds());
     }
+    callback(view);
     ++chunk_count;
   });
 
@@ -1103,40 +1946,40 @@ auto execute_planned_operation(World& world, const PlannedOperation& operation,
   };
 }
 
+/** Executes one validated operation while deferring dirty metadata. */
 template <WritePolicy Policy, typename World, typename Fn>
 auto execute_planned_operation_deferred_dirty(World& world,
                                               const PlannedOperation& operation,
                                               PlannedDirtyAccumulator& dirty,
                                               Fn&& fn)
     -> PlannedExecutionResult {
-  auto ctx = try_planned_block_ctx<Policy>(world, operation);
-  if (!ctx.has_value()) {
+  const auto validation = validate_planned_operation<Policy>(world, operation);
+  if (validation != PlannedExecutionStatus::Executed) {
     return PlannedExecutionResult{
-        PlannedExecutionStatus::PolicyMismatch,
+        validation,
         0,
     };
   }
-
-  std::size_t chunk_count = 0;
-  auto&& callback = fn;
-  ctx->for_each_chunk([&](auto view) {
-    callback(view);
-    dirty.record(view.key(), operation.field_access.dirty_mask, view.bounds());
-    ++chunk_count;
-  });
-
-  return PlannedExecutionResult{
-      PlannedExecutionStatus::Executed,
-      chunk_count,
-  };
+  if (operation.field_access.dirty_mask != 0) {
+    const auto dirty_validation = dirty.validation_status(world);
+    if (dirty_validation != PlannedDirtyMergeStatus::Merged) {
+      return PlannedExecutionResult{
+          dirty_validation == PlannedDirtyMergeStatus::InvalidShape
+              ? PlannedExecutionStatus::InvalidShape
+              : PlannedExecutionStatus::InvalidChunk,
+          0,
+      };
+    }
+  }
+  return detail::execute_validated_planned_operation_deferred_dirty<true,
+                                                                    Policy>(
+      world, operation, dirty, std::forward<Fn>(fn));
 }
 
-// Executes every planned operation in plan order, aborting on the first
-// non-Executed result. Earlier operations' world writes are not rolled
-// back on abort; the returned chunk_count includes the chunks they
-// wrote, so callers can detect a partially applied plan (chunk_count > 0
-// with a non-Executed status) and refresh caches over the mutated
-// fields.
+/**
+ * Executes a plan in order and stops at its first rejected operation.
+ * Earlier writes remain applied and are included in the returned chunk count.
+ */
 template <WritePolicy Policy, typename World, typename Fn>
 auto execute_plan(World& world, const ExecutionPlan& plan, Fn&& fn)
     -> PlannedExecutionResult {
@@ -1158,8 +2001,7 @@ auto execute_plan(World& world, const ExecutionPlan& plan, Fn&& fn)
   };
 }
 
-// Deferred-dirty variant of execute_plan; the same partial-execution
-// contract applies (aborts keep earlier writes and report their chunks).
+/** Executes a plan in order while accumulating dirty metadata for later. */
 template <WritePolicy Policy, typename World, typename Fn>
 auto execute_plan_deferred_dirty(World& world, const ExecutionPlan& plan,
                                  PlannedDirtyAccumulator& dirty, Fn&& fn)
@@ -1183,34 +2025,44 @@ auto execute_plan_deferred_dirty(World& world, const ExecutionPlan& plan,
   };
 }
 
-// Shares one PlannedDirtyAccumulator and a non-atomic chunk counter across
-// every callback, so the executor must satisfy SerialExecutor; concurrent
-// executors must use execute_phase_partitioned_dirty_with instead.
 template <WritePolicy Policy, typename Executor, typename World, typename Fn>
   requires SerialExecutor<Executor>
+/** Executes a serial phase without per-operation dirty partitions. */
 auto execute_phase_deferred_dirty_with(Executor&& executor, World& world,
                                        const ExecutionPlan& plan,
-                                       ExecutionPhase phase,
+                                       const ExecutionPhase& phase,
                                        PlannedDirtyAccumulator& dirty, Fn&& fn)
     -> PlannedExecutionResult {
   const auto operations = plan.operations();
-  if (phase.first_operation > operations.size() ||
-      phase.operation_count > operations.size() - phase.first_operation) {
-    TESS_DIAG_EVENT(queued_phase_invalid_range);
+  const auto phase_validation =
+      detail::execution_phase_validation_status<Policy>(world, plan, phase);
+  if (phase_validation != PlannedExecutionStatus::Executed) {
+    detail::record_execution_phase_validation_failure(phase_validation);
     return PlannedExecutionResult{
-        PlannedExecutionStatus::InvalidPhase,
+        phase_validation,
+        0,
+    };
+  }
+  const auto dirty_validation = dirty.validation_status(world);
+  if (dirty_validation != PlannedDirtyMergeStatus::Merged) {
+    TESS_DIAG_EVENT(queued_phase_failure);
+    return PlannedExecutionResult{
+        dirty_validation == PlannedDirtyMergeStatus::InvalidShape
+            ? PlannedExecutionStatus::InvalidShape
+            : PlannedExecutionStatus::InvalidChunk,
         0,
     };
   }
 
-  TESS_DIAG_EVENT_VALUE(queued_phase_execute, phase.operation_count);
+  TESS_DIAG_EVENT_VALUE(queued_phase_execute, phase.operation_count());
   std::size_t chunk_count = 0;
   auto&& callback = fn;
   auto result = execute_operation_index_range(
       std::forward<Executor>(executor), executor_phase_range(phase),
       [&](std::size_t index) {
         auto operation_result =
-            execute_planned_operation_deferred_dirty<Policy>(
+            detail::execute_validated_planned_operation_deferred_dirty<true,
+                                                                       Policy>(
                 world, operations[index], dirty, callback);
         if (operation_result.status == PlannedExecutionStatus::Executed) {
           chunk_count += operation_result.chunk_count;
@@ -1229,32 +2081,34 @@ auto execute_phase_deferred_dirty_with(Executor&& executor, World& world,
   };
 }
 
+/** Executes a phase with operation-local dirty partitions for concurrency. */
 template <WritePolicy Policy, typename Executor, typename World, typename Fn>
 auto execute_phase_partitioned_dirty_with(Executor&& executor, World& world,
                                           const ExecutionPlan& plan,
-                                          ExecutionPhase phase,
+                                          const ExecutionPhase& phase,
                                           PlannedPhaseExecutionScratch& scratch,
                                           Fn&& fn) -> PlannedExecutionResult {
   const auto operations = plan.operations();
-  if (phase.first_operation > operations.size() ||
-      phase.operation_count > operations.size() - phase.first_operation) {
-    TESS_DIAG_EVENT(queued_phase_invalid_range);
+  const auto phase_validation =
+      detail::execution_phase_validation_status<Policy>(world, plan, phase);
+  if (phase_validation != PlannedExecutionStatus::Executed) {
+    detail::record_execution_phase_validation_failure(phase_validation);
     return PlannedExecutionResult{
-        PlannedExecutionStatus::InvalidPhase,
+        phase_validation,
         0,
     };
   }
 
-  TESS_DIAG_EVENT_VALUE(queued_phase_execute, phase.operation_count);
-  TESS_DIAG_EVENT_VALUE(queued_partitioned_phase, phase.operation_count);
-  scratch.prepare(phase.operation_count);
+  TESS_DIAG_EVENT_VALUE(queued_phase_execute, phase.operation_count());
+  TESS_DIAG_EVENT_VALUE(queued_partitioned_phase, phase.operation_count());
+  scratch.prepare(world, phase.operation_count());
   auto&& callback = fn;
   auto result = execute_operation_index_range(
       std::forward<Executor>(executor), executor_phase_range(phase),
       [&](std::size_t index) {
-        const auto offset = index - phase.first_operation;
+        const auto offset = index - phase.first_operation();
         auto operation_result =
-            execute_planned_operation_deferred_dirty<Policy>(
+            detail::execute_validated_phase_operation_deferred_dirty<Policy>(
                 world, operations[index], scratch.dirty_for_operation(offset),
                 callback);
         scratch.record_result(offset, operation_result);
@@ -1287,9 +2141,10 @@ auto execute_phase_partitioned_dirty_with(Executor&& executor, World& world,
   };
 }
 
+/** Executes a phase serially while deferring dirty metadata. */
 template <WritePolicy Policy, typename World, typename Fn>
 auto execute_phase_deferred_dirty(World& world, const ExecutionPlan& plan,
-                                  ExecutionPhase phase,
+                                  const ExecutionPhase& phase,
                                   PlannedDirtyAccumulator& dirty, Fn&& fn)
     -> PlannedExecutionResult {
   const SerialPhaseExecutor executor;

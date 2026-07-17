@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <mutex>
 #include <thread>
 #include <type_traits>
@@ -20,9 +21,11 @@
 // Queued-operation planning groups already-validated operations into phases
 // whose members may execute together. A phase executor receives one
 // contiguous planned-operation index range and invokes the per-operation
-// callback for every index in it, completing or joining all callbacks (and
-// making their writes visible) before returning. Executors do not plan, do
-// not reorder result reduction, and do not own dirty metadata: callers
+// callback for every index in it on normal return, completing or joining all
+// callbacks (and making their writes visible) before returning. A callback
+// exception may suppress work that has not started, but the executor still
+// joins callbacks already in flight before rethrowing. Executors do not plan,
+// do not reorder result reduction, and do not own dirty metadata: callers
 // reduce operation results in plan order and merge caller-owned dirty
 // partitions after the executor returns.
 //
@@ -35,18 +38,28 @@
 
 namespace tess {
 
+/** Describes whether planned execution completed or why it was rejected. */
 enum class PlannedExecutionStatus : std::uint8_t {
   Executed,
   PolicyMismatch,
+  InvalidShape,
+  InvalidChunk,
   InvalidPhase,
 };
 static_assert(sizeof(PlannedExecutionStatus) == sizeof(std::uint8_t));
 
+/** Identifies a contiguous half-open range of planned operation indexes. */
 struct ExecutorPhaseRange {
   std::size_t first_operation = 0;
   std::size_t operation_count = 0;
 };
 
+/**
+ * Reports execution status and the successful plan-order chunk prefix.
+ *
+ * Concurrent work after the first failing operation may complete, but those
+ * chunks are intentionally excluded from `chunk_count`.
+ */
 struct PlannedExecutionResult {
   PlannedExecutionStatus status = PlannedExecutionStatus::Executed;
   std::size_t chunk_count = 0;
@@ -65,10 +78,10 @@ struct PhaseExecutorProbeCallback {
 
 }  // namespace detail
 
-// The executor contract: given a contiguous planned-operation index range,
-// invoke the callback once per index and return the first non-Executed
-// result (or success). Implementations must complete or join every callback
-// before returning so all callback writes are visible to the caller.
+/**
+ * Accepts executors that visit a contiguous operation range and return its
+ * first failure after making every completed callback's writes visible.
+ */
 template <typename Executor>
 concept PhaseExecutor =
     requires(const std::remove_cvref_t<Executor>& executor, std::size_t first,
@@ -78,6 +91,7 @@ concept PhaseExecutor =
       } -> std::same_as<PlannedExecutionResult>;
     };
 
+/** Executes operation callbacks serially in increasing index order. */
 struct SerialPhaseExecutor {
   // Serialized-callback promise; see the SerialExecutor concept below.
   using serial_execution_tag = void;
@@ -104,26 +118,20 @@ struct SerialPhaseExecutor {
   }
 };
 
-// Custom executors declare `using serial_execution_tag = void;` to promise
-// that for_each_operation invokes the per-operation callback strictly one
-// at a time (never concurrently). execute_phase_deferred_dirty_with
-// requires this promise because it shares one PlannedDirtyAccumulator and
-// a non-atomic chunk counter across all callbacks. Concurrent executors
-// must not declare the tag and must use
-// execute_phase_partitioned_dirty_with, which gives every operation its
-// own dirty partition and result slot.
+/**
+ * Accepts phase executors that promise callbacks never overlap. Custom serial
+ * executors opt in with `using serial_execution_tag = void`.
+ */
 template <typename Executor>
 concept SerialExecutor =
     requires { typename std::remove_cvref_t<Executor>::serial_execution_tag; };
 
-// Documented prototype, not the production backend: spawns and joins raw
-// std::thread workers per phase call to prove the phase handoff and
-// visibility rules. It invokes callbacks concurrently, so it deliberately
-// does not declare serial_execution_tag and pairs only with
-// execute_phase_partitioned_dirty_with; the shared-accumulator
-// execute_phase_deferred_dirty_with rejects it at compile time.
-// Callbacks must not throw: an exception escaping a callback propagates
-// out of the worker's thread function and terminates the process.
+/**
+ * Prototype executor that spawns and joins worker threads for each phase.
+ * Callback exceptions cancel unclaimed work and are rethrown after all
+ * already-running callbacks have joined. If callbacks throw concurrently,
+ * which exception is propagated is unspecified.
+ */
 class ScopedThreadPhaseExecutor {
  public:
   explicit ScopedThreadPhaseExecutor(std::size_t worker_count) noexcept
@@ -146,6 +154,9 @@ class ScopedThreadPhaseExecutor {
     const auto thread_count = std::min(worker_count_, count);
     TESS_DIAG_EVENT_VALUE(queued_scoped_thread_dispatch, thread_count);
     std::atomic<std::size_t> next_offset = 0;
+    std::atomic<bool> cancelled = false;
+    std::exception_ptr exception;
+    std::mutex exception_mutex;
     std::vector<PlannedExecutionResult> results(count);
     std::vector<std::thread> threads;
     threads.reserve(thread_count);
@@ -156,10 +167,21 @@ class ScopedThreadPhaseExecutor {
         threads.emplace_back([&] {
           while (true) {
             const auto offset = next_offset.fetch_add(1);
-            if (offset >= count) {
+            if (offset >= count || cancelled.load(std::memory_order_acquire)) {
               return;
             }
-            results[offset] = callback(first + offset);
+            try {
+              results[offset] = callback(first + offset);
+            } catch (...) {
+              {
+                const std::scoped_lock lock{exception_mutex};
+                if (!exception) {
+                  exception = std::current_exception();
+                }
+              }
+              cancelled.store(true, std::memory_order_release);
+              return;
+            }
           }
         });
       } catch (...) {
@@ -178,6 +200,10 @@ class ScopedThreadPhaseExecutor {
       thread.join();
     }
 
+    if (exception) {
+      std::rethrow_exception(exception);
+    }
+
     for (const auto result : results) {
       if (result.status != PlannedExecutionStatus::Executed) {
         return result;
@@ -194,11 +220,13 @@ class ScopedThreadPhaseExecutor {
 // contract: workers are created once and reused across phases, so phase
 // dispatch does not create threads. It invokes callbacks concurrently, so
 // like ScopedThreadPhaseExecutor it does not declare serial_execution_tag
-// and pairs only with execute_phase_partitioned_dirty_with. It exists so
-// the concurrency plan can compare a persistent pool against the serial
-// baseline and the scoped-thread prototype; it is not yet the production
-// scheduler backend. Callbacks must not throw. After reserve_operations,
-// warm for_each_operation calls perform no dynamic allocation.
+// and pairs only with execute_phase_partitioned_dirty_with. AutoExec uses it
+// as its synchronous parallel backend when a pool is attached; it is not a
+// general asynchronous scheduler. Callback exceptions cancel unclaimed work
+// and are rethrown on the dispatching thread after already-running callbacks
+// finish.
+// After reserve_operations, successful warm for_each_operation calls perform
+// no dynamic allocation.
 //
 // Dispatch contract: at most one for_each_operation may be in flight per
 // executor, and callbacks must not re-enter for_each_operation or call
@@ -218,7 +246,13 @@ class ScopedThreadPhaseExecutor {
 // intentional: it isolates contended worker-pool state from false sharing.
 #pragma warning(disable : 4324)
 #endif
-// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
+// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
+/**
+ * Persistent prototype worker pool for allocation-free repeated dispatch.
+ * Callback exceptions are rethrown after join; callbacks must not re-enter
+ * the same pool. If callbacks throw concurrently, which exception is
+ * propagated is unspecified.
+ */
 class WorkerPoolPhaseExecutor {
  public:
   explicit WorkerPoolPhaseExecutor(std::size_t worker_count) {
@@ -296,6 +330,7 @@ class WorkerPoolPhaseExecutor {
     auto&& callback = fn;
     using Callback = std::remove_reference_t<decltype(callback)>;
     std::size_t runs = 0;
+    std::exception_ptr exception;
     {
       const std::scoped_lock lock{mutex_};
       // Single-dispatch guard; see the class comment. The flag is
@@ -326,6 +361,8 @@ class WorkerPoolPhaseExecutor {
           1, count / (std::max<std::size_t>(1, workers_.size()) * 4));
       next_offset_.store(0, std::memory_order_relaxed);
       finished_operations_.store(0, std::memory_order_relaxed);
+      job_cancelled_.store(false, std::memory_order_relaxed);
+      job_exception_ = std::exception_ptr{};
       ++job_epoch_;
       job_active_ = true;
       // Derived under the lock so the notify count below never reads
@@ -349,11 +386,17 @@ class WorkerPoolPhaseExecutor {
     {
       std::unique_lock lock{mutex_};
       done_cv_.wait(lock, [&] {
-        return finished_operations_.load(std::memory_order_acquire) == count &&
-               active_workers_ == 0;
+        return active_workers_ == 0 &&
+               (job_exception_ ||
+                finished_operations_.load(std::memory_order_acquire) == count);
       });
+      exception = job_exception_;
       job_active_ = false;
       dispatch_active_ = false;
+    }
+
+    if (exception) {
+      std::rethrow_exception(exception);
     }
 
     for (std::size_t offset = 0; offset < count; ++offset) {
@@ -386,19 +429,41 @@ class WorkerPoolPhaseExecutor {
       const auto stride = job_stride_;
       lock.unlock();
 
-      while (true) {
+      auto cancelled = false;
+      while (!job_cancelled_.load(std::memory_order_acquire)) {
         const auto begin =
             next_offset_.fetch_add(stride, std::memory_order_relaxed);
         if (begin >= count) {
           break;
         }
         const auto end = std::min(begin + stride, count);
+        auto finished = std::size_t{0};
         for (auto offset = begin; offset < end; ++offset) {
-          results_[offset] = invoke(context, first + offset);
+          if (job_cancelled_.load(std::memory_order_acquire)) {
+            cancelled = true;
+            break;
+          }
+          try {
+            results_[offset] = invoke(context, first + offset);
+            ++finished;
+          } catch (...) {
+            job_cancelled_.store(true, std::memory_order_release);
+            {
+              const std::scoped_lock exception_lock{mutex_};
+              if (!job_exception_) {
+                job_exception_ = std::current_exception();
+              }
+            }
+            cancelled = true;
+            break;
+          }
         }
         // One release-add per run publishes the whole run's results to
         // the dispatcher's acquire wait.
-        finished_operations_.fetch_add(end - begin, std::memory_order_release);
+        finished_operations_.fetch_add(finished, std::memory_order_release);
+        if (cancelled) {
+          break;
+        }
       }
 
       lock.lock();
@@ -425,6 +490,7 @@ class WorkerPoolPhaseExecutor {
   // could still share one 128-byte line depending on allocation address.
   alignas(128) mutable std::atomic<std::size_t> next_offset_ = 0;
   alignas(128) mutable std::atomic<std::size_t> finished_operations_ = 0;
+  mutable std::atomic<bool> job_cancelled_ = false;
   alignas(128) mutable void* job_context_ = nullptr;
   mutable JobInvoke job_invoke_ = nullptr;
   mutable std::size_t job_first_ = 0;
@@ -432,15 +498,18 @@ class WorkerPoolPhaseExecutor {
   mutable std::size_t job_stride_ = 1;
   mutable std::uint64_t job_epoch_ = 0;
   mutable std::size_t active_workers_ = 0;
+  mutable std::exception_ptr job_exception_;
   mutable bool job_active_ = false;
   mutable bool dispatch_active_ = false;
   bool stop_ = false;
   std::vector<std::thread> workers_;
 };
+// NOLINTEND(clang-analyzer-optin.performance.Padding)
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
 
+/** Dispatches one explicit index range through a compatible executor. */
 template <typename Executor, typename Fn>
 auto execute_operation_index_range(Executor&& executor,
                                    ExecutorPhaseRange range, Fn&& fn)

@@ -214,7 +214,15 @@
   ],
   "testPresets": [
     {
+      "name": "test-base",
+      "hidden": true,
+      "execution": {
+        "timeout": 60
+      }
+    },
+    {
       "name": "dev",
+      "inherits": "test-base",
       "configurePreset": "dev",
       "output": {
         "outputOnFailure": true
@@ -222,6 +230,7 @@
     },
     {
       "name": "dev-werror",
+      "inherits": "test-base",
       "configurePreset": "dev-werror",
       "output": {
         "outputOnFailure": true
@@ -229,6 +238,7 @@
     },
     {
       "name": "dev-asan",
+      "inherits": "test-base",
       "configurePreset": "dev-asan",
       "output": {
         "outputOnFailure": true
@@ -236,6 +246,7 @@
     },
     {
       "name": "dev-tsan",
+      "inherits": "test-base",
       "configurePreset": "dev-tsan",
       "environment": {
         "TSAN_OPTIONS": "halt_on_error=1 second_deadlock_stack=1"
@@ -246,6 +257,7 @@
     },
     {
       "name": "dev-clang-tidy",
+      "inherits": "test-base",
       "configurePreset": "dev-clang-tidy",
       "output": {
         "outputOnFailure": true
@@ -253,6 +265,7 @@
     },
     {
       "name": "dev-clang-tidy-advisory",
+      "inherits": "test-base",
       "configurePreset": "dev-clang-tidy-advisory",
       "output": {
         "outputOnFailure": true
@@ -260,6 +273,7 @@
     },
     {
       "name": "dev-cppcheck",
+      "inherits": "test-base",
       "configurePreset": "dev-cppcheck",
       "output": {
         "outputOnFailure": true
@@ -267,6 +281,7 @@
     },
     {
       "name": "release",
+      "inherits": "test-base",
       "configurePreset": "release",
       "output": {
         "outputOnFailure": true
@@ -274,6 +289,7 @@
     },
     {
       "name": "bench",
+      "inherits": "test-base",
       "configurePreset": "bench",
       "output": {
         "outputOnFailure": true
@@ -281,6 +297,7 @@
     },
     {
       "name": "bench-profile",
+      "inherits": "test-base",
       "configurePreset": "bench-profile",
       "output": {
         "outputOnFailure": true
@@ -288,21 +305,25 @@
     },
     {
       "name": "linux-dev",
+      "inherits": "test-base",
       "configurePreset": "linux-dev",
       "output": { "outputOnFailure": true }
     },
     {
       "name": "linux-asan",
+      "inherits": "test-base",
       "configurePreset": "linux-asan",
       "output": { "outputOnFailure": true }
     },
     {
       "name": "linux-bench",
+      "inherits": "test-base",
       "configurePreset": "linux-bench",
       "output": { "outputOnFailure": true }
     },
     {
       "name": "windows-msvc",
+      "inherits": "test-base",
       "configurePreset": "windows-msvc",
       "configuration": "Debug",
       "output": { "outputOnFailure": true }

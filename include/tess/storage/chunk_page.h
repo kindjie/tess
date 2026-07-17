@@ -73,6 +73,7 @@ struct FieldIndex<Tag, Index> {};
 
 }  // namespace detail
 
+/** True when every field in a prospective schema has a distinct tag. */
 template <typename... Fields>
 inline constexpr bool is_valid_field_schema_v =
     detail::unique_field_tags_v<Fields...>;

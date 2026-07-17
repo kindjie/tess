@@ -179,7 +179,7 @@ loose bootstrap values pending CI-calibrated tightening.
 
 ## 16. ECS benchmarks
 
-v1: EnTT and custom minimal adapter.
+Initial milestone: EnTT and custom minimal adapter.
 
 Measure request collection, result application, movement commit, spatial index
 update, deterministic sorting.

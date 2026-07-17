@@ -17,6 +17,7 @@
 //   noexcept.
 #if !defined(TESS_ENABLE_ASSERTS)
 #if defined(NDEBUG)
+/** Compile-time switch controlling tess fast-path assertion checks. */
 #define TESS_ENABLE_ASSERTS 0
 #else
 #define TESS_ENABLE_ASSERTS 1
@@ -35,9 +36,11 @@ namespace tess::detail {
 }  // namespace tess::detail
 
 #if TESS_ENABLE_ASSERTS
+/** Aborts when a documented unchecked-API precondition is false. */
 #define TESS_ASSERT(condition)        \
   ((condition) ? static_cast<void>(0) \
                : ::tess::detail::assert_fail(#condition, __FILE__, __LINE__))
+/** Aborts with a supplied diagnostic when a precondition is false. */
 #define TESS_ASSERT_MSG(condition, message) \
   ((condition) ? static_cast<void>(0)       \
                : ::tess::detail::assert_fail(message, __FILE__, __LINE__))

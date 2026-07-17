@@ -209,6 +209,10 @@ auto build_bounded_weighted_distance_field_core(
 
 }  // namespace detail
 
+/// Builds a weighted goal-rooted field using bounded buckets when possible.
+///
+/// Costs above `MaxCost` fall back to the unbounded builder. The result remains
+/// in caller-owned `scratch` and may allocate unless capacity was reserved.
 template <typename World, typename Class, std::uint32_t MaxCost>
 auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
                                            DistanceFieldScratch& scratch,
@@ -329,6 +333,10 @@ auto weighted_distance_field_path_core(const World& world, Coord3 start,
 
 }  // namespace detail
 
+/// Reconstructs a minimum-cost path through the last matching weighted field.
+///
+/// The returned path borrows `scratch` until its next mutation. A mismatched
+/// goal or sparse residency snapshot returns `NoPath`.
 template <typename World, typename Class>
 auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
                                   DistanceFieldScratch& scratch) -> PathResult {
@@ -365,6 +373,10 @@ template <typename World, typename Class>
 
 }  // namespace detail
 
+/// Solves weighted requests while sharing one distance-field build per goal.
+///
+/// Result and path spans borrow `scratch` until mutation. Reserve request,
+/// search, and path storage to avoid allocation once warm.
 template <typename World, typename Class, std::uint32_t MaxCost>
 auto weighted_path_batch(const World& world,
                          std::span<const PathRequest> requests,
@@ -564,6 +576,7 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
 }
 
 template <typename World, typename PassableTag, typename CostTag>
+/// Reconstructs a weighted path using separate legacy field tags.
 auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
                                   DistanceFieldScratch& scratch) -> PathResult {
   return weighted_distance_field_path<
@@ -573,6 +586,7 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
 
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost>
+/// Solves a weighted batch using separate legacy passability and cost tags.
 auto weighted_path_batch(const World& world,
                          std::span<const PathRequest> requests,
                          WeightedPathBatchScratch& scratch)

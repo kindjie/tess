@@ -14,10 +14,12 @@
 // TESS_DIAG_TRACE routes to the active trace buffer when diagnostics are on and
 // compiles to an empty statement (never naming its arguments) when off.
 #if TESS_DIAGNOSTICS_ENABLED
+/** Records a zero-valued trace point in the current thread's active buffer. */
 #define TESS_DIAG_TRACE(category, label)                      \
   do {                                                        \
     ::tess::diagnostics::trace_event((category), (label), 0); \
   } while (false)
+/** Records a valued trace point in the current thread's active buffer. */
 #define TESS_DIAG_TRACE_VALUE(category, label, value)               \
   do {                                                              \
     ::tess::diagnostics::trace_event((category), (label), (value)); \
@@ -35,9 +37,11 @@ namespace tess::diagnostics {
 
 #if TESS_DIAGNOSTICS_ENABLED
 
-// Coarse category for a trace record and its per-category timing bucket.
-// `Count` is a sentinel used to size the per-category stats array; it is not a
-// real category and must not be recorded against.
+/**
+ * Coarse category for a trace record and its timing accumulator.
+ *
+ * `Count` sizes category arrays and must not be recorded as an event.
+ */
 enum class TraceCategory : std::uint8_t {
   General,
   Path,
@@ -49,15 +53,16 @@ enum class TraceCategory : std::uint8_t {
   Count,
 };
 
+/** Number of recordable trace categories, excluding the `Count` sentinel. */
 inline constexpr std::size_t trace_category_count =
     static_cast<std::size_t>(TraceCategory::Count);
 
-// One structured trace point. `label` is a non-owning view that MUST reference
-// storage outliving every reader of the buffer (string literals or other static
-// storage), the same contract as Warning::message and PathView. `value` is a
-// category/label-specific datum (an operation index, a phase number, a duration
-// in nanoseconds). `sequence` is the global ordinal of this record() call on
-// its buffer, so gaps reveal how many records were dropped by ring overflow.
+/**
+ * One structured, non-owning trace point retained by a `TraceBuffer`.
+ *
+ * `label` must outlive every reader of the buffer. `value` is defined by the
+ * category/label pair, while gaps in `sequence` expose dropped records.
+ */
 struct TraceRecord {
   TraceCategory category = TraceCategory::General;
   std::string_view label;
@@ -65,8 +70,7 @@ struct TraceRecord {
   std::uint64_t sequence = 0;
 };
 
-// Accumulated timing for one category. Defaults are all-zero (no sentinel), so
-// a category that has never been sampled reads cleanly in a snapshot.
+/** Timing distribution accumulated for one trace category. */
 struct TraceCategoryStats {
   std::uint64_t samples = 0;
   std::uint64_t total_ns = 0;
@@ -76,11 +80,13 @@ struct TraceCategoryStats {
   void reset() noexcept { *this = TraceCategoryStats{}; }
 };
 
-// A caller-owned trace buffer: a fixed-capacity ring of recent TraceRecords
-// over storage the caller provides, plus a per-category timing accumulator. The
-// backing std::span must outlive the TraceBuffer (and any
-// ScopedTrace/ScopedTimer that targets it). An empty span is valid: records are
-// counted as dropped and nothing is written. Nothing here allocates.
+/**
+ * Fixed-capacity trace ring over caller-owned storage plus timing accumulators.
+ *
+ * The backing span must outlive the buffer and every targeting scope object.
+ * An empty span drops all records. Recording and observation do not allocate
+ * and require external synchronization when performed across threads.
+ */
 class TraceBuffer {
  public:
   explicit TraceBuffer(std::span<TraceRecord> storage) noexcept
@@ -214,8 +220,11 @@ class TraceBuffer {
 // synchronize the read against all recording into that buffer.
 inline thread_local TraceBuffer* active_trace_buffer = nullptr;
 
-// RAII installer for the active trace buffer. Non-copyable and nestable: the
-// innermost scope receives records, and destruction restores the outer buffer.
+/**
+ * Installs a nestable trace buffer on the current thread for a scope.
+ *
+ * Destruction restores the buffer active before construction.
+ */
 class ScopedTrace {
  public:
   explicit ScopedTrace(TraceBuffer& buffer) noexcept
@@ -232,8 +241,7 @@ class ScopedTrace {
   TraceBuffer* previous_;
 };
 
-// Record a structured trace point into the active buffer, if any. A no-op when
-// no ScopedTrace is installed on the current thread.
+/** Records a structured point in the current thread's active buffer, if any. */
 inline void trace_event(TraceCategory category, std::string_view label,
                         std::uint64_t value) noexcept {
   if (active_trace_buffer != nullptr) {
@@ -241,12 +249,13 @@ inline void trace_event(TraceCategory category, std::string_view label,
   }
 }
 
-// RAII wall-clock timer. It binds to the buffer active AT CONSTRUCTION (not at
-// destruction), so a timer started outside any ScopedTrace records nothing even
-// if a buffer is later installed, and nested scopes attribute timing to the
-// buffer that was active when the span began. On destruction it folds the
-// elapsed nanoseconds into the category's timing accumulator and appends a
-// trace record whose value is that duration.
+/**
+ * Measures a scope against the trace buffer active at construction.
+ *
+ * Destruction accumulates elapsed nanoseconds and appends a record carrying
+ * that duration. Installing another buffer while the timer lives does not
+ * change its target.
+ */
 class ScopedTimer {
  public:
   ScopedTimer(TraceCategory category, std::string_view label) noexcept
