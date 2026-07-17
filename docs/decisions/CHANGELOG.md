@@ -13,6 +13,16 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-17 - Configure conditional benchmark builds
+
+- Changed: the pre-push hook configures the benchmark preset before building
+  it when benchmark-sensitive files require that gate. Unrelated pushes still
+  skip both benchmark commands.
+- Reason: CMake build presets require an already-generated build tree, so the
+  previous build-only gate failed in fresh clones.
+- Affected docs: `docs/git-hooks.md` and `tests/AGENTS.md`.
+- Affected code: pre-push orchestration and its Python regression tests.
+
 ## 2026-07-17 - Preserve portable allocation-failure gates
 
 - Changed: deterministic global allocation rejection now reports itself

@@ -636,9 +636,9 @@
   filename and content privacy scans, full-name local identity rules, current
   and legacy GitHub noreply addresses, strict config-hook feature probing,
   GPT-5 tokenization with malformed UTF-8 replacement and a strict
-  under-24000-token limit, push-range benchmark gating, and the requirements
-  lock contract, including its pinned-uv, index-cutoff canonical regeneration
-  wrapper.
+  under-24000-token limit, push-range benchmark gating, fresh benchmark
+  configure/build ordering, and the requirements lock contract, including its
+  pinned-uv, index-cutoff canonical regeneration wrapper.
 - `tests/test_check_public_docs.py`: pytest coverage for the dependency-free,
   all-public-header Doxygen comment gate (`tools/check_public_docs.py`).
   Synthetic fixtures verify block and line comments across templates,

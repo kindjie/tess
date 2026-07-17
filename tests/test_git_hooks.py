@@ -419,6 +419,41 @@ def test_should_build_bench_for_new_remote_ref():
   assert git_hooks.should_build_bench([ref]) is True
 
 
+def test_pre_push_configures_bench_before_building_new_ref(monkeypatch):
+  ref = git_hooks.PushRef("refs/heads/new", SHA_A, "refs/heads/new", ZEROS)
+  commands: list[list[str]] = []
+
+  def fake_run(argv, **_kwargs):
+    commands.append(argv)
+    stdout = f"{SHA_A}\n" if argv == ["git", "rev-parse", "HEAD"] else ""
+    return subprocess.CompletedProcess(argv, 0, stdout=stdout)
+
+  monkeypatch.setattr(git_hooks, "read_push_refs", lambda: [ref])
+  monkeypatch.setattr(git_hooks, "run", fake_run)
+
+  assert git_hooks.pre_push() == 0
+  configure = ["cmake", "--preset", "bench"]
+  build = ["cmake", "--build", "--preset", "bench"]
+  assert commands[-2:] == [configure, build]
+
+
+def test_pre_push_skips_bench_commands_when_gating_is_false(monkeypatch):
+  ref = git_hooks.PushRef("refs/heads/main", SHA_A, "refs/heads/main", SHA_B)
+  commands: list[list[str]] = []
+
+  def fake_run(argv, **_kwargs):
+    commands.append(argv)
+    stdout = f"{SHA_A}\n" if argv == ["git", "rev-parse", "HEAD"] else ""
+    return subprocess.CompletedProcess(argv, 0, stdout=stdout)
+
+  monkeypatch.setattr(git_hooks, "read_push_refs", lambda: [ref])
+  monkeypatch.setattr(git_hooks, "should_build_bench", lambda _updates: False)
+  monkeypatch.setattr(git_hooks, "run", fake_run)
+
+  assert git_hooks.pre_push() == 0
+  assert all("bench" not in command for command in commands)
+
+
 def test_should_build_bench_when_range_is_unresolvable():
   ref = git_hooks.PushRef("refs/heads/x", SHA_A, "refs/heads/x", SHA_B)
   assert git_hooks.should_build_bench([ref]) is True

@@ -59,9 +59,9 @@ The installer prefers Git's config hook interface only when its
 - `pre-commit`: staged whitespace, conflict markers, public-safety patterns,
   C++ formatting, staged-file token limits, and GitHub noreply email.
 - `commit-msg`: non-empty subject and 72-character subject limit.
-- `pre-push`: dev configure, build, and tests. Benchmark build runs when
-  benchmark files, CMake files, or public headers changed in the pushed
-  range.
+- `pre-push`: dev configure, build, and tests. Benchmark configure and build
+  run when benchmark files, CMake files, or public headers changed in the
+  pushed range.
 
 Hooks do not rewrite files or staged content. Conflict, public-safety, and
 token checks read exact blobs from the Git index, including a symlink's link

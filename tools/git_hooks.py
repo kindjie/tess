@@ -803,7 +803,10 @@ def pre_push() -> int:
     ["tools/install_smoke.sh"],
   ]
   if should_build_bench(updates):
-    commands.append(["cmake", "--build", "--preset", "bench"])
+    commands.extend([
+      ["cmake", "--preset", "bench"],
+      ["cmake", "--build", "--preset", "bench"],
+    ])
   for command in commands:
     result = run(command)
     if result.returncode != 0:
