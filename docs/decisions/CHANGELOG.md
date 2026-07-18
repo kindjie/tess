@@ -13,6 +13,23 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-17 - Documentation restructure for adopters
+
+- Changed: the README is now a user-facing overview (features, quickstart,
+  install); contributor workflow moved to a new top-level CONTRIBUTING.md;
+  a top-level CHANGELOG.md backfills release notes from the annotated
+  release tags; docs/getting-started.md adds a concept-ladder tutorial;
+  docs indexes lead with maintained material and mark the TDD archive and
+  planning records as historical. cmake_minimum_required now declares the
+  3.25...3.28 policy range so 3.26-3.28 policies stay NEW on newer CMake.
+- Reason: separate the adoption funnel from maintainer workflow, make
+  release history discoverable, and make the supported CMake policy
+  window explicit.
+- Affected docs: `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`,
+  `docs/getting-started.md`, `docs/README.md`,
+  `docs/architecture/README.md`.
+- Affected code: `CMakeLists.txt`, `tests/test_cmake_compatibility.py`.
+
 ## 2026-07-17 - Support CMake 3.25 consumers
 
 - Changed: the project, presets, and install smoke now support CMake 3.25.
