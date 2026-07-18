@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.25...3.28)
 
 include(cmake/tess-version.cmake)
 include(cmake/TessCMakeCompatibility.cmake)

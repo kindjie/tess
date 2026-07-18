@@ -48,5 +48,7 @@ def test_project_and_presets_declare_the_supported_floor():
     cmake_lists = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     presets = (REPO_ROOT / "CMakePresets.json").read_text(encoding="utf-8")
 
-    assert cmake_lists.startswith("cmake_minimum_required(VERSION 3.25)\n")
+    assert cmake_lists.startswith(
+        "cmake_minimum_required(VERSION 3.25...3.28)\n"
+    )
     assert '"minor": 25' in presets
