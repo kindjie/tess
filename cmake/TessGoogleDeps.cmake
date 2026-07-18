@@ -1,6 +1,7 @@
 include_guard(DIRECTORY)
 
 include(FetchContent)
+include("${CMAKE_CURRENT_LIST_DIR}/TessCMakeCompatibility.cmake")
 
 # Commit SHAs pinned so upstream tag moves cannot alter builds.
 set(TESS_GOOGLETEST_VERSION
@@ -36,7 +37,7 @@ function(tess_require_googletest)
     GIT_REPOSITORY https://github.com/google/googletest.git
     GIT_TAG "${TESS_GOOGLETEST_VERSION}"
     SYSTEM
-    EXCLUDE_FROM_ALL
+    ${TESS_FETCHCONTENT_EXCLUDE_FROM_ALL}
   )
   FetchContent_MakeAvailable(googletest)
 endfunction()
@@ -71,7 +72,7 @@ function(tess_require_google_benchmark)
     GIT_REPOSITORY https://github.com/google/benchmark.git
     GIT_TAG "${TESS_GOOGLE_BENCHMARK_VERSION}"
     SYSTEM
-    EXCLUDE_FROM_ALL
+    ${TESS_FETCHCONTENT_EXCLUDE_FROM_ALL}
   )
   FetchContent_MakeAvailable(googlebenchmark)
 endfunction()

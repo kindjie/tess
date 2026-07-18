@@ -13,6 +13,19 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-17 - Support CMake 3.25 consumers
+
+- Changed: the project, presets, and install smoke now support CMake 3.25.
+  CMake 3.28 and newer retain module-scan suppression and fetched-dependency
+  exclusion from the default build; 3.25 through 3.27 omit those unavailable
+  build-hygiene options without changing the installed library.
+- Reason: the 3.28 floor excluded supported adopter environments even though
+  tess is header-only and its library and packaging features require only
+  CMake 3.25.
+- Affected docs: `README.md` and the Steam Runtime setup notes.
+- Affected code: root and smoke CMake requirements, dependency acquisition,
+  compatibility regression tests, presets, and CI test registration.
+
 ## 2026-07-17 - Configure conditional benchmark builds
 
 - Changed: the pre-push hook configures the benchmark preset before building

@@ -17,7 +17,7 @@ Repository provenance across the pre-public rewrite is described in
 ## Requirements
 
 - A C++20 compiler (Clang, GCC, AppleClang, or MSVC)
-- CMake 3.28 or newer
+- CMake 3.25 or newer
 - Git and network access for developer presets that fetch test dependencies
 
 The installed library is header-only. GoogleTest, Google Benchmark, and EnTT

@@ -61,7 +61,7 @@ The rest of this document explains what those steps do and why.
   container" so host libraries do not leak into the binary. Beats maintaining a
   hand-built cross-GCC + sysroot on Apple Silicon.
 - **steamrt4 (Debian 13).** Recommended for new native Linux games; ships
-  CMake 3.31 (≥ 3.28) and Clang 19 / GCC 14, so `tess` builds unmodified.
+  CMake 3.31 (≥ 3.25) and Clang 19 / GCC 14, so `tess` builds unmodified.
   `sniper` (Debian 11) would need a newer CMake installed.
 - **Clang, not GCC.** The Steam Runtime pins glibc + libstdc++, not the
   compiler. Clang matches `tess` CI and defaults to `-stdlib=libstdc++` (the
