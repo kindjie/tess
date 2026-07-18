@@ -210,6 +210,15 @@ if(TESS_BUILD_DOCS)
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
       "${TESS_GENERATED_INCLUDE_DIR}")
   set(DOXYGEN_USE_MDFILE_AS_MAINPAGE "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+  # Documentation-only feature gates: include the EnTT adapter, diagnostics,
+  # and ImGui panel APIs in the reference without their third-party headers.
+  set(DOXYGEN_PREDEFINED
+      "TESS_ENABLE_ENTT"
+      "ENTT_VERSION=1"
+      "TESS_ENABLE_IMGUI"
+      "IMGUI_VERSION=1"
+      "TESS_ENABLE_DIAGNOSTICS"
+      "TESS_DIAGNOSTICS_ENABLED=1")
   doxygen_add_docs(
     tess_docs
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
