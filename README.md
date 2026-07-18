@@ -11,6 +11,8 @@ shims while the design is still being validated.
 The project has an implemented synchronous MVP foundation. Documentation lives
 in `docs/`. The original TDDs are archived under `docs/tdd/`; maintained
 architecture docs track the current implementation as code lands.
+Repository provenance across the pre-public rewrite is described in
+[`docs/history.md`](docs/history.md).
 
 ## Requirements
 

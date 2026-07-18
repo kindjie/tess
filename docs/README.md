@@ -18,6 +18,8 @@ intent.
 
 ## Design History
 
+- [Repository History](history.md): identifies the canonical repository
+  history and explains how to interpret retained pre-public pull requests.
 - [TDD Archive](tdd/README.md): original technical design documents plus
   proposed addenda that continue to land there. These explain design intent
   and rationale, but they are non-authoritative: maintained architecture
