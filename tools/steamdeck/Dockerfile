@@ -2,7 +2,7 @@
 #
 # Valve recommends building native Linux games inside a Steam Runtime container
 # so host libraries do not leak into the binary. steamrt4 (Debian 13) is the
-# recommended runtime for new native Linux games and ships CMake >= 3.28 and a
+# recommended runtime for new native Linux games and ships CMake >= 3.25 and a
 # C++20 compiler out of the box.
 #
 # The SDK base image is amd64/i386 only -> on Apple Silicon build and run with

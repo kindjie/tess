@@ -1,6 +1,7 @@
 include_guard(DIRECTORY)
 
 include(FetchContent)
+include("${CMAKE_CURRENT_LIST_DIR}/TessCMakeCompatibility.cmake")
 
 # Commit SHA pinned so upstream tag moves cannot alter builds.
 set(TESS_ENTT_VERSION
@@ -30,7 +31,7 @@ function(tess_require_entt)
     GIT_REPOSITORY https://github.com/skypjack/entt.git
     GIT_TAG "${TESS_ENTT_VERSION}"
     SYSTEM
-    EXCLUDE_FROM_ALL
+    ${TESS_FETCHCONTENT_EXCLUDE_FROM_ALL}
   )
   FetchContent_MakeAvailable(entt)
 

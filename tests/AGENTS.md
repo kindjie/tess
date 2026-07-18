@@ -647,6 +647,11 @@
   and exclusion of `detail` symbols.
   One test gates the explicitly opted-in public headers; it does not claim
   member-level or full-API documentation coverage.
+- `tests/test_cmake_compatibility.py`: regression coverage for the supported
+  CMake floor. It simulates the 3.25 and 3.28 feature branches, proving that
+  3.25 omits module scanning and `FetchContent(EXCLUDE_FROM_ALL)` while newer
+  CMake retains both build-hygiene options, and pins the root project and
+  preset minimum versions together.
 - `tests/test_header_compile_cost.py`: pytest coverage for the repeatable
   syntax-only public-header compile-cost tool. It pins the source and generated
   include paths, compiler command, elapsed-sample collection, compiler-error

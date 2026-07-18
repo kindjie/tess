@@ -48,7 +48,7 @@ if [[ ! -f "$prefix/share/licenses/tess/LICENSE" ]]; then
 fi
 
 cat > "$consumer/CMakeLists.txt" <<EOF
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.25)
 project(tess_install_smoke LANGUAGES CXX)
 find_package(tess ${version} EXACT CONFIG REQUIRED)
 if(NOT tess_VERSION VERSION_EQUAL "${version}")

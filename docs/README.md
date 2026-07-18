@@ -5,26 +5,32 @@ intent.
 
 ## Current Docs
 
+- [Getting Started](getting-started.md): tutorial from shapes and schemas
+  to the schedule loop and render bridge.
 - [Architecture](architecture/README.md): maintained design notes that should
   track implementation.
-- [Planning](planning/README.md): milestone and benchmark plans.
 - [Performance](performance.md): benchmark trend snapshots and calibration
   workflow.
-- [Optimization Log](planning/optimization-log.md): accepted, rejected, and
-  deferred performance experiments.
 - [Dependencies](dependencies.md): external library choices and documentation.
 - [Style](style.md): C++ coding style and formatting policy.
 - [Git Hooks](git-hooks.md): local commit and push guardrails.
+
+## Internal Records
+
+- [Planning](planning/README.md): milestone plans and audit records;
+  internal working documents, not a guide to current behavior.
+- [Optimization Log](planning/optimization-log.md): accepted, rejected, and
+  deferred performance experiments.
 
 ## Design History
 
 - [Repository History](history.md): identifies the canonical repository
   history and explains how to interpret retained pre-public pull requests.
 - [TDD Archive](tdd/README.md): original technical design documents plus
-  proposed addenda that continue to land there. These explain design intent
-  and rationale, but they are non-authoritative: maintained architecture
-  docs and code are the source of truth for current implementation
-  behavior.
+  proposed addenda that continue to land there. Historical: these explain
+  design intent and rationale, but they are non-authoritative and not a
+  guide to current behavior - maintained architecture docs and code are
+  the source of truth for the current implementation.
 - [Design Changelog](decisions/CHANGELOG.md): records meaningful changes from
   the original TDDs.
 

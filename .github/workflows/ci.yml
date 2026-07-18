@@ -143,6 +143,7 @@ jobs:
           tests/test_benchmark_tools.py
           tests/test_check_public_surface.py
           tests/test_check_public_docs.py
+          tests/test_cmake_compatibility.py
           tests/test_header_compile_cost.py
           tests/test_steamdeck_tools.py
 

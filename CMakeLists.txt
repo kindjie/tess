@@ -1,6 +1,7 @@
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.25...3.28)
 
 include(cmake/tess-version.cmake)
+include(cmake/TessCMakeCompatibility.cmake)
 
 project(
   tess
@@ -12,7 +13,9 @@ project(
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
-set(CMAKE_CXX_SCAN_FOR_MODULES 0)
+if(TESS_CMAKE_HAS_MODULE_SCAN)
+  set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 option(TESS_BUILD_TESTING "Build tess tests" ${PROJECT_IS_TOP_LEVEL})
