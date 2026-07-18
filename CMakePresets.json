@@ -76,6 +76,19 @@
       }
     },
     {
+      "name": "consumer",
+      "displayName": "Consumer Install",
+      "description": "Headers-only install: no tests or network fetches.",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "TESS_BUILD_TESTING": "OFF",
+        "TESS_BUILD_EXAMPLES": "OFF",
+        "TESS_BUILD_BENCHMARKS": "OFF",
+        "TESS_ENABLE_ENTT": "OFF"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Release",
       "binaryDir": "${sourceDir}/build/${presetName}",

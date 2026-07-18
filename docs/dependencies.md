@@ -35,6 +35,20 @@ On macOS, benchmark configure or execution may warn that pthread affinity or CPU
 frequency metadata is unavailable. Those warnings do not prevent benchmark
 measurements from running.
 
+## Doxygen
+
+- Documentation: https://www.doxygen.nl/manual/
+- Repository and releases: https://github.com/doxygen/doxygen
+
+Optional, docs-only tool dependency for the opt-in `tess_docs` target
+(`TESS_BUILD_DOCS=ON`), which generates a local HTML API reference via
+CMake's `doxygen_add_docs`. Nothing in the library, tests, benchmarks,
+or CI requires it; `find_package(Doxygen REQUIRED)` runs only when the
+option is enabled. Like package-manager `clang-tidy` and `ccache`, the
+version is unpinned; developed against Doxygen 1.16. Documentation-only
+`DOXYGEN_PREDEFINED` gates make the EnTT adapter, diagnostics, and ImGui
+panel APIs visible in the reference without their third-party headers.
+
 ## Dear ImGui
 
 - Documentation: https://github.com/ocornut/imgui (README, `docs/`, wiki)

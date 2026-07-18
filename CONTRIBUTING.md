@@ -26,7 +26,9 @@ ctest --preset dev
 The `dev` preset also builds the examples (each a self-checking binary,
 smoke-run in CI). Other presets: `dev-werror`, `dev-asan`, `dev-tsan`,
 `release`, `bench`, `bench-profile`, `windows-msvc`, `dev-clang-tidy`,
-`dev-cppcheck`, and `dev-clang-tidy-advisory`.
+`dev-cppcheck`, and `dev-clang-tidy-advisory`. (The `consumer` preset is
+the user-facing install path documented in the README, not a dev
+preset.)
 
 Install the local git hooks before your first commit:
 
@@ -114,6 +116,10 @@ python3 tools/header_compile_cost.py \
 ```
 
 ## Testing on a Steam Deck
+
+The Steam Deck is the project's fixed-hardware x86_64 (Zen 2) Linux
+target for hardware-accurate benchmarks and on-device validation —
+numbers there are reproducible in a way shared CI runners cannot be.
 
 Build on macOS (for x86_64, in Valve's Steam Runtime container) and run the
 tests or benchmarks on real Steam Deck hardware via `tools/steamdeck/deck` -

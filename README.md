@@ -6,7 +6,7 @@
 substrate: small spatial pieces composed into large, structured worlds for
 fast simulation, topology, and pathfinding.
 
-The development version is `0.3.0`. All `0.x` releases are pre-stable:
+The latest release is `v0.3.0`. All `0.x` releases are pre-stable:
 public APIs and data layouts may change without compatibility shims while
 the design is still being validated. Release notes live in
 [`CHANGELOG.md`](CHANGELOG.md). Repository provenance across the
@@ -19,7 +19,7 @@ pre-public rewrite is described in [`docs/history.md`](docs/history.md).
 - Chunk-local SoA field storage with optional sparse residency and a
   byte-budgeted residency manager.
 - Queued operations with write-policy enforcement, result channels, and
-  planned parallel execution.
+  plan-driven parallel execution.
 - A simulation schedule with cadences, budgets, auto-exec tasks, and a
   selectable parallel phase executor.
 - Movement classes with per-class topology, transition providers (for
@@ -37,19 +37,26 @@ pre-public rewrite is described in [`docs/history.md`](docs/history.md).
 
 - A C++20 compiler (Clang, GCC, AppleClang, or MSVC)
 - CMake 3.25 or newer
-- Git and network access for developer presets that fetch test dependencies
 
-The installed library is header-only. GoogleTest, Google Benchmark, and EnTT
-are development or optional integration dependencies; ordinary consumers do
-not link them through `tess::tess`.
+The installed library is header-only, and installing it needs no network
+access and builds no code. GoogleTest, Google Benchmark, and EnTT are
+development or optional integration dependencies fetched only by
+developer presets; ordinary consumers do not link them through
+`tess::tess`.
 
 ## Install and consume
 
+The `consumer` preset configures a headers-only install: no tests,
+examples, benchmarks, warnings-as-errors, or network fetches.
+
 ```sh
-cmake --preset release
-cmake --build --preset release
-cmake --install build/release --prefix "$HOME/.local"
+cmake --preset consumer
+cmake --install build/consumer --prefix "$HOME/.local"
 ```
+
+(Equivalently, without presets:
+`cmake -B build -DTESS_BUILD_TESTING=OFF -DTESS_BUILD_EXAMPLES=OFF`
+followed by `cmake --install build --prefix ...`.)
 
 ```cmake
 find_package(tess 0.3 CONFIG REQUIRED)
@@ -107,28 +114,28 @@ write-policy-checked edits.
 
 ## Examples
 
-The `dev` preset builds the examples; each is a self-checking binary,
-smoke-run in CI:
+The `dev` preset builds the examples; each is a self-checking binary
+(built as `tess_<name>`), smoke-run in CI:
 
-- `examples/tess_mvp_path` — a small end-to-end queued-edit plus A*
+- `examples/mvp_path.cc` — a small end-to-end queued-edit plus A*
   pathfinding prototype.
-- `examples/tess_path_agents` — a multi-agent path-agent tick loop with
+- `examples/path_agents.cc` — a multi-agent path-agent tick loop with
   goal assignment, dirty-driven replanning, and blocked-path handling.
-- `examples/tess_colony_2d` — the flagship composition: queued
+- `examples/colony_2d.cc` — the flagship composition: queued
   construction edits through the auto-exec schedule task, an OnDirty
   topology rebuild, movement-class agents routing around the new wall,
   and a DeltaFrame render consumer, all in one `tess::Schedule` loop.
-- `examples/tess_ant_farm_vertical` — a degenerate-axis vertical world
+- `examples/ant_farm_vertical.cc` — a degenerate-axis vertical world
   (x-z cross-section) sharing one distance-field product across ants via
   the byte-budgeted `FieldProductCache`.
-- `examples/tess_stairs_3d` — the `StairTransitions` provider connecting
+- `examples/stairs_3d.cc` — the `StairTransitions` provider connecting
   two z-levels, with reachability, the path-runtime precheck, and an
   incremental update after demolishing the stair.
-- `examples/tess_custom_ecs_min` — the ECS adapter concepts implemented
+- `examples/custom_ecs_min.cc` — the ECS adapter concepts implemented
   by a deliberately non-EnTT-shaped micro ECS.
-- `examples/tess_entt_pawns` — the EnTT adapter driving registry-owned
+- `examples/entt_pawns.cc` — the EnTT adapter driving registry-owned
   pawns (built when `TESS_ENABLE_ENTT` is on).
-- `examples/tess_render_delta_consumer` — a standalone DeltaFrame
+- `examples/render_delta_consumer.cc` — a standalone DeltaFrame
   consumer rebuilding a shadow grid from published frames.
 
 ## Documentation
@@ -140,7 +147,22 @@ smoke-run in CI:
 - [`docs/history.md`](docs/history.md): repository provenance and how to
   interpret retained pre-public pull requests.
 
+A local Doxygen API reference can be generated with
+`cmake --preset consumer -DTESS_BUILD_DOCS=ON` followed by
+`cmake --build build/consumer --target tess_docs` (requires Doxygen);
+output lands in `build/consumer/docs/html`.
+
 ## Benchmarks
+
+For scale, representative medians from the benchmark suite on an
+Apple M3 Max (single-threaded):
+
+- A* across an open 512x512 grid, corner to corner (a 1,022-step path,
+  ~1,023 nodes expanded): ~2.1 us; the weighted variant: ~2.4 us.
+- One clean tick of 100 path agents with retained routes: ~330 ns.
+
+Every suite is also gated in CI with calibrated per-benchmark ceilings,
+so these characteristics are enforced, not aspirational.
 
 ![Benchmark trend snapshot](docs/assets/benchmark-trends.svg)
 
