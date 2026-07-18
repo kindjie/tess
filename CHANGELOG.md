@@ -7,25 +7,52 @@ without compatibility shims. The format loosely follows
 and their rationale are recorded separately in
 [`docs/decisions/CHANGELOG.md`](docs/decisions/CHANGELOG.md).
 
-## [Unreleased]
+## [0.3.0] - 2026-07-17
+
+### Changed
+
+- BREAKING pre-release hardening of the queued-operation and path-cache
+  surfaces: `PlannedOperation` gets checked, immutable construction with
+  a world-shape stamp; `ExecutionPhase` becomes a planner-issued,
+  generation-stamped capability so hand-built or stale phases cannot
+  bypass parallel ownership checks; deferred dirty recording and merge
+  return explicit failure results and reject cross-world use; portal
+  segment construction and compaction commit transactionally, cache
+  budget reductions apply immediately, and result hooks are `noexcept`.
+- Version metadata now has one CMake authority that generates the
+  installed `tess/version.h`; dependency acquisition is pinned by
+  default with hash-verified tooling.
+- CMake floor lowered to 3.25 (3.28 and newer keep module-scan
+  suppression and fetched-dependency hygiene), and the project declares
+  the `3.25...3.28` policy range.
+- README restructured as a user-facing overview with a features list, a
+  quickstart, and measured performance figures; contributor material
+  moved to `CONTRIBUTING.md`.
+- Docs indexes lead with maintained material; the TDD archive and
+  planning records are marked historical.
 
 ### Added
 
+- A `consumer` CMake preset: headers-only configure for installing the
+  library with no tests, examples, benchmarks, warnings-as-errors, or
+  network fetches.
+- An opt-in `tess_docs` Doxygen target (`TESS_BUILD_DOCS=ON`) generating
+  a local HTML API reference.
 - Top-level `CONTRIBUTING.md` (developer workflow, quality gates,
   benchmark policy) and this `CHANGELOG.md`.
 - `docs/getting-started.md`: a tutorial from shapes and schemas to the
   schedule loop and render bridge.
 - GitHub Releases published for the existing `v0.1.0` and `v0.2.0` tags.
+- Sparse local topology reports `MissingChunk`; stateful transition
+  providers expose a monotonic revision.
 
-### Changed
+### Fixed
 
-- CMake floor lowered to 3.25 (3.28 and newer keep module-scan
-  suppression and fetched-dependency hygiene), and the project now
-  declares the `3.25...3.28` policy range.
-- README restructured as a user-facing overview with a features list
-  and quickstart; contributor material moved to `CONTRIBUTING.md`.
-- Docs indexes lead with maintained material; the TDD archive and
-  planning records are marked historical.
+- Deterministic allocation-failure testing reports itself unavailable
+  (and stays inert) under MSVC checked iterators instead of terminating;
+  Windows keeps failure coverage in Release.
+- Cross-platform warning debt cleared across GCC, Clang, AppleClang, and
+  MSVC.
 
 ## [0.2.0] - 2026-07-12
 

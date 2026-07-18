@@ -13,6 +13,29 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-17 - Consumer install path and v0.3.0 release preparation
+
+- Changed: the documented install route is a new `consumer` preset
+  (headers-only: no tests, examples, benchmarks, warnings-as-errors,
+  EnTT, or network fetches), replacing the developer-shaped `release`
+  preset in the README; an opt-in `TESS_BUILD_DOCS` Doxygen target
+  generates a local API reference; the README states measured
+  performance figures and fixes wording an evaluator could misread
+  ("planned" vs plan-driven parallel execution, target vs file names);
+  CHANGELOG.md finalizes the 0.3.0 section ahead of tagging v0.3.0, so
+  the front-page `find_package(tess 0.3)` snippet matches the latest
+  release.
+- Reason: an external adopter-perspective review found the documented
+  install path built the whole test suite under -Werror with network
+  fetches, performance claims lacked adopter-consumable evidence, and
+  main's README described a version newer than any installable release
+  (verified: `find_package(tess 0.3)` fails against an installed
+  v0.2.0 under SameMinorVersion compatibility).
+- Affected docs: `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`,
+  `tests/AGENTS.md`.
+- Affected code: `CMakePresets.json`, `CMakeLists.txt`,
+  `tests/test_cmake_compatibility.py`.
+
 ## 2026-07-17 - Documentation restructure for adopters
 
 - Changed: the README is now a user-facing overview (features, quickstart,
@@ -1382,172 +1405,10 @@ Records meaningful design changes from the original TDDs.
   `tests/tess_diagnostics_panels_test.cc`, `CMakeLists.txt`,
   `tests/CMakeLists.txt`.
 
-## 2026-07-09 - Diagnostics Benchmark Family (M12, S4 slice 4)
-
-- Added: `bench/tess_diagnostics_bench.cc` and `bench/thresholds/diagnostics.json`,
-  a gated `diagnostics/` benchmark family compiled only into the
-  diagnostics-enabled `tess_bench_diagnostics` binary (the source is an empty TU
-  without `TESS_ENABLE_DIAGNOSTICS`). Benches: `diagnostics/trace_record`,
-  `diagnostics/record_timing`, `diagnostics/scoped_timer`,
-  `diagnostics/warning_sink`. New `tess_bench_diagnostics_thresholds` target, a
-  CI baseline command, and a `tess_bench_diagnostics_family_smoke` CTest.
-- Reason: fourth slice of the M12 diagnostics close (S4). Measures the enabled
-  overhead of the trace/timer/warning primitives directly (local observations
-  ~0.3-32 ns, far under the loose bootstrap ceilings). The compile-down side is
-  proven structurally: the default `tess_bench` compiles every diagnostic macro
-  to nothing, so its `queued/`/`path/` families are the zero-overhead baseline
-  and still pass unchanged with the planner-trace macros present.
-- Affected docs: `planning/benchmark-plan.md`.
-- Affected code: new `bench/tess_diagnostics_bench.cc`,
-  `bench/thresholds/diagnostics.json`, `bench/CMakeLists.txt`.
-
-## 2026-07-09 - Planner Trace and Snapshot Export (M12, S4 slice 3)
-
-- Added (ops/queued.h): planner-trace instrumentation. `plan_operations` (now
-  an index loop) records `invalid_write_policy` / `invalid_field_access` /
-  `invalid_domain` / `conflict` / `planned` per operation, and
-  `plan_parallel_execution_phases` records `unsupported_write_policy` /
-  `new_phase` / `merged` per operation, all under the `Planner` trace category
-  via `TESS_DIAG_TRACE_VALUE` (value = operation/phase index). Macros only:
-  byte-identical planning when diagnostics are off.
-- Added (diagnostics, new header `diagnostics/export.h`, gated by
-  `TESS_ENABLE_DIAGNOSTICS`): `TimingSnapshot` (a copy of every category's
-  `TraceCategoryStats` with a Count-guarding `category()` accessor),
-  `DiagnosticsSnapshot` (path/allocation/queued counters + timing), and the
-  `capture_timing` / `capture_diagnostics` free functions that assemble them as
-  pure copies decoupled from the live sinks.
-- Reason: third slice of the M12 diagnostics close (S4). The planner was the one
-  major queued-ops surface with zero instrumentation; routing its decisions
-  through the trace buffer gives the profiling panels a real event log, and the
-  export snapshots are the plain structs the ImGui panels and the downstream
-  adoption render. The `plan_operations` loop switched to an index form purely
-  to expose the operation index as the trace value; behavior is unchanged (the
-  full 514-test suite passes).
-- Affected docs: `architecture/diagnostics.md`, `architecture/surface.json`.
-- Affected code: `ops/queued.h`, new `diagnostics/export.h`, `tess.h`,
-  `CMakeLists.txt`; extended test `tess_diagnostics_trace_test.cc`.
-
-## 2026-07-09 - Diagnostics Trace Buffer and Timers (M12, S4 slice 2)
-
-- Added (diagnostics, new header `diagnostics/trace.h`, gated by
-  `TESS_ENABLE_DIAGNOSTICS`): a structured event log and timing capture.
-  `TraceCategory` (coarse origin tag with a `Count` sizing sentinel),
-  `TraceRecord` (category + non-owning `label` + `value` + monotonic
-  `sequence`), `TraceCategoryStats` (samples/total/min/max ns), and
-  `TraceBuffer` -- a caller-owned ring over a `std::span<TraceRecord>` with an
-  inline per-category timing accumulator (allocation-free; empty span drops all
-  records; overflow overwrites oldest and counts `dropped()`). `ScopedTrace`
-  installs the thread's active buffer; `trace_event` and new
-  `TESS_DIAG_TRACE` / `TESS_DIAG_TRACE_VALUE` macros route to it (and compile to
-  nothing when off). `ScopedTimer` is a `steady_clock` RAII timer that binds to
-  the buffer active at construction and, on destruction, folds the elapsed
-  nanoseconds into the category accumulator and appends a duration record.
-- Reason: second slice of the M12 diagnostics close (S4). Trace records and
-  timers are the profiling substrate the ImGui panels and the downstream adoption
-  render, and the planner-trace slice records against them. `ScopedTimer`
-  captures the active buffer at construction (not destruction) so nested scopes
-  and destruction order cannot misattribute a timed span. The `label`
-  non-owning contract mirrors `Warning::message`/`PathView`.
-- Affected docs: `architecture/diagnostics.md`, `architecture/surface.json`.
-- Affected code: new `diagnostics/trace.h`, `diagnostics/diagnostics.h` (the two
-  new trace macros), `tess.h`, `CMakeLists.txt`; extended tests
-  `tess_diagnostics_trace_test.cc` and `tess_diagnostics_default_test.cc`.
-
-## 2026-07-09 - Diagnostics Warning Sink (M12, S4 slice 1)
-
-- Added (diagnostics, new header `diagnostics/warning_sink.h`, gated by
-  `TESS_ENABLE_DIAGNOSTICS`): a `Warning` record (a `WarningCategory` origin
-  tag, a non-owning `std::string_view message`, a numeric `detail`, and a
-  defaulting `std::source_location`), the `WarningSink` concept
-  (`noexcept warn(const Warning&)`), `NullWarningSink` (discards), and
-  `BufferedWarningSink<Capacity>` -- a caller-owned fixed-capacity ring with
-  inline storage (allocation-free `warn()`), oldest-first indexing, and a
-  `dropped()` overflow count.
-- Reason: first slice of the M12 diagnostics close (S4). A warning channel is
-  a foundational primitive that later stages consume (queued-ops result
-  reasons in S6, scheduler budget signals in S7); landing it early and
-  independently keeps the trace/timer slice focused. The `message` non-owning
-  contract mirrors `PathView`: warnings are copied by value but never own their
-  text, so the sink stays allocation-free.
-- Affected docs: `architecture/diagnostics.md`, `architecture/surface.json`.
-- Affected code: new `diagnostics/warning_sink.h`, `tess.h`, `CMakeLists.txt`;
-  new test `tess_diagnostics_trace_test.cc`.
-
-## 2026-07-09 - PathView Non-Owning Path View (M8)
-
-- Added (path, new header `path/path_view.h`): `PathView`, a non-owning view
-  over a path's coordinates. `PathResult::path` changes type from
-  `std::span<const Coord3>` to `PathView` (an intentional but source-compatible
-  break -- see below). PathView offers read-only span parity (`size`, `empty`,
-  `operator[]`, `front`, `back`, `begin`/`end`, `data`), `span()` to recover the
-  raw `std::span`, and `suffix(offset)`: the bounds-clamped remaining path from a
-  walked index, sharing the same storage without copying. It carries the same
-  lifetime contract as the span it wraps (valid until the A* scratch or runtime
-  node buffer it views is reused).
-- Reason: closes the M8 `PathView` deliverable and gives consumers a named path
-  type plus the one operation real consumers need -- "the remaining path from
-  index N" (an agent advancing along `path_index`, an overlay drawing the rest
-  of a route). PathView is constructible from a `std::span` or a
-  `std::vector<Coord3>`, so every existing result-construction site
-  (`PathResult{..., scratch.path_}`) compiles unchanged, and its span-parity API
-  means the ~250 span-style `.path` reads across the codebase compile unchanged;
-  the only edited call site extracts a raw span via `.path.span()`. Scoped to
-  `PathResult`; `DistanceFieldResult` (no path) and the route-product/waypoint
-  spans are deliberately left as plain spans.
-- Affected docs: `architecture/path.md`, `architecture/surface.json`.
-- Affected code: new `path/path_view.h`, `path/path.h`,
-  `path/portal_segment_cache.h`, `tess.h`, `CMakeLists.txt`; new test
-  `tess_path_view_test.cc`.
-
-## 2026-07-09 - Topology Benchmark Family
-
-- Added: `bench/tess_topology_bench.cc` and `bench/thresholds/topology.json`, a
-  new gated `topology/` benchmark family covering region-graph build over an
-  open 512x512 world, single-chunk incremental update, a far reachability query,
-  and `precheck_path` on both a reachable and a sealed (enclosed-goal)
-  destination. Wired into `tess_bench` / `tess_bench_diagnostics`, the
-  `tess_bench_topology_thresholds` gate target, the non-gating CI baseline
-  collection, a smoke test, and a new CI "Topology benchmark thresholds" step.
-- Headline: `topology/precheck_unreachable_512x512` floods only the region graph
-  (~256 regions) to prove a goal unreachable, versus `path/astar_plane_gap_miss_512x512`
-  which floods the full tile component (~262k tiles) for the same NoPath verdict
-  -- the cost the precheck short-circuits.
-- Reason: the topology precheck (S3) needs a regression guard, and M14 tracks a
-  topology bench family. Per the benchmark policy, initial `max_cpu_time_ns`
-  ceilings are deliberately generous documentation bounds (not tuned gates) to
-  avoid false failures on slower/noisier CI runners; they are tightened once in
-  the S11 consolidation from accumulated CI baselines.
-- Affected code: `bench/tess_topology_bench.cc`, `bench/thresholds/topology.json`,
-  `bench/CMakeLists.txt`, `.github/workflows/ci.yml`.
-
-## 2026-07-09 - Topology Precheck Wired Into the Path Runtime
-
-- Added (path runtime / sim): `PathRequestRuntime::process_unit_cached` and
-  `process_weighted_batch`, the `process_*_path_agents` helpers, and all four
-  `tick_*_path_agents` entry points now take an optional trailing
-  `const RegionGraphT<World::residency_type>*` (default `nullptr`). When a graph
-  is supplied, a pre-A* pass resolves every request `precheck_path` proves
-  `Unreachable` to `NoPath` (zero expanded nodes) without searching, counting
-  them in the new `PathRuntimeStats::precheck_ruled_out` /
-  `PathAgentFrameStats::precheck_ruled_out` -- a SUBSET of `no_path`, so
-  aggregate failure counts are unchanged. The unit path skips ruled-out requests
-  in its search loop; the weighted path runs the monolithic `weighted_path_batch`
-  over only the survivors and scatters results back to their original slots.
-- Reason: closes the runtime half of the M8 precheck gap. `nullptr` (the
-  default) is byte-identical to the previous behavior, so this is opt-in and
-  additive. Precondition: the graph must be built over the same `PassableTag`
-  the search uses; freshness is checked (`is_region_graph_fresh`) and a stale
-  graph degrades to running A*, so the gate can only prune provably-unreachable
-  goals, never turn a solvable query into a wrong failure.
-- Affected docs: `architecture/path.md`, `architecture/simulation.md`.
-- Affected code: `path/path_runtime.h`, `sim/path_agent.h`,
-  `sim/path_agent_tick.h`; new test `tess_path_precheck_runtime_test.cc`.
-  The downstream adoption (passing its `RegionGraph` to the weighted tick and
-  deleting its bespoke reachability gating) lands in a later S3 slice.
-
 ## Earlier Entries
 
-Design-changelog entries before 2026-07-09 are archived in
+Older design-changelog entries are progressively archived in
 [`CHANGELOG-archive.md`](CHANGELOG-archive.md) to keep this file under the
-24k-token per-file limit. New entries go at the top of this file; when it
-approaches the limit again, its oldest entries move to the archive.
+24k-token per-file limit; the split is by file size, not by a clean date
+boundary. New entries go at the top of this file; when it approaches the
+limit again, its oldest entries move to the archive.

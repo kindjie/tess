@@ -21,6 +21,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 option(TESS_BUILD_TESTING "Build tess tests" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_EXAMPLES "Build tess examples" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
+option(TESS_BUILD_DOCS "Build the tess API reference with Doxygen" OFF)
 option(TESS_ENABLE_ENTT
        "Build EnTT-gated tess tests, examples, and benchmarks (requires EnTT)"
        OFF)
@@ -199,4 +200,21 @@ endif()
 
 if(TESS_BUILD_BENCHMARKS)
   add_subdirectory(bench)
+endif()
+
+if(TESS_BUILD_DOCS)
+  find_package(Doxygen REQUIRED)
+  set(DOXYGEN_GENERATE_HTML YES)
+  set(DOXYGEN_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/docs")
+  set(DOXYGEN_STRIP_FROM_INC_PATH
+      "${CMAKE_CURRENT_SOURCE_DIR}/include"
+      "${TESS_GENERATED_INCLUDE_DIR}")
+  set(DOXYGEN_USE_MDFILE_AS_MAINPAGE "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+  doxygen_add_docs(
+    tess_docs
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${TESS_GENERATED_INCLUDE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+    COMMENT "Generating tess API reference"
+  )
 endif()

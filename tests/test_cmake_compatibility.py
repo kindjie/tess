@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -52,3 +53,19 @@ def test_project_and_presets_declare_the_supported_floor():
         "cmake_minimum_required(VERSION 3.25...3.28)\n"
     )
     assert '"minor": 25' in presets
+
+
+def test_consumer_preset_stays_consumer_shaped():
+    presets = json.loads(
+        (REPO_ROOT / "CMakePresets.json").read_text(encoding="utf-8")
+    )
+    by_name = {p["name"]: p for p in presets["configurePresets"]}
+
+    consumer = by_name["consumer"]
+    cache = consumer["cacheVariables"]
+    assert cache["TESS_BUILD_TESTING"] == "OFF"
+    assert cache["TESS_BUILD_EXAMPLES"] == "OFF"
+    assert cache["TESS_BUILD_BENCHMARKS"] == "OFF"
+    assert cache["TESS_ENABLE_ENTT"] == "OFF"
+    assert "TESS_WARNINGS_AS_ERRORS" not in cache
+    assert "inherits" not in consumer
