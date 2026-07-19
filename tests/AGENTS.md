@@ -1,6 +1,9 @@
 # Tests
 
 - Tests use GoogleTest.
+- `test_doc_snippets.py`: verifies named source-region parsing, Markdown drift
+  detection, automatic refresh, and repository-wide synchronization between
+  adopter-facing excerpts and compiled sources.
 - `allocation_counter.{h,cc}` is shared only by allocation-sensitive test
   binaries that need global `new`/`delete` counters. Do not link it into more
   than one translation unit inside the same executable.
@@ -40,9 +43,9 @@
   scope disables counting during unwind instead of poisoning later
   assertions.
 - `tess_smoke`: verifies that the public `tess::tess` target is consumable,
-  that the root public header compiles, and that the generated version macros
-  and `library_version` match the CMake project version derived from the
-  repository's single version source.
+  that the pathfinding, simulation, and compatibility umbrella headers compile,
+  and that the generated version macros and `library_version` match the CMake
+  project version derived from the repository's single version source.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
   degenerate-axis handling, containment helpers, key width inference,
   coordinate/chunk/local/tile key conversion helpers, the portable
@@ -654,7 +657,9 @@
   preset minimum versions together (including the `3.25...3.28` policy
   range). It also pins the `consumer` preset consumer-shaped: dev
   facilities and EnTT off, no warnings-as-errors, no inheritance from a
-  dev preset.
+  dev preset. The network-free `examples` preset and tracked installed-package
+  and `FetchContent` consumer fixtures are covered as adopter-facing build
+  contracts.
 - `tests/test_header_compile_cost.py`: pytest coverage for the repeatable
   syntax-only public-header compile-cost tool. It pins the source and generated
   include paths, compiler command, elapsed-sample collection, compiler-error

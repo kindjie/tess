@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <tess/pathfinding.h>
+#include <tess/simulation.h>
 #include <tess/tess.h>
 
 TEST(TessSmoke, ExposesLibraryVersion) {

@@ -13,6 +13,23 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-18 - Make adoption paths executable and publishable
+
+- Changed: added pathfinding and simulation facade headers without removing
+  the compatibility umbrella; made the front-page quickstart a compiled source
+  region; made installed-package and `FetchContent` consumers tracked smoke
+  fixtures; added a strict MkDocs Pages site and an interactive, single-threaded
+  Emscripten pathfinding example.
+- Reason: adopter success depends on a short, verifiable first path and on
+  documentation that cannot silently drift from C++ and CMake behavior. The
+  single-threaded pathfinder demonstrates the portable core without implying
+  that browser threading or the complete simulation stack is already solved.
+- Affected docs: `README.md`, `docs/index.md`, `docs/getting-started.md`,
+  `docs/packaging.md`, `docs/hosting.md`, `docs/support.md`, and dependency and
+  support metadata.
+- Affected code: facade headers, canonical examples, consumer fixtures,
+  documentation and web build tools, CMake presets, and GitHub workflows.
+
 ## 2026-07-17 - Consumer install path and v0.3.0 release preparation
 
 - Changed: the documented install route is a new `consumer` preset

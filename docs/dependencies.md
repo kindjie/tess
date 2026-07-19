@@ -45,9 +45,48 @@ Optional, docs-only tool dependency for the opt-in `tess_docs` target
 CMake's `doxygen_add_docs`. Nothing in the library, tests, benchmarks,
 or CI requires it; `find_package(Doxygen REQUIRED)` runs only when the
 option is enabled. Like package-manager `clang-tidy` and `ccache`, the
-version is unpinned; developed against Doxygen 1.16. Documentation-only
+version is unpinned; developed against Doxygen 1.17.0. Documentation-only
 `DOXYGEN_PREDEFINED` gates make the EnTT adapter, diagnostics, and ImGui
 panel APIs visible in the reference without their third-party headers.
+
+The latest verified release is Doxygen 1.17.0. Generated API output is not yet
+published: the authored site ships first, while Doxygen warnings and accidental
+exposure of `tess::detail` are treated as release blockers for API publishing.
+
+## Documentation site
+
+- MkDocs version: `1.6.1`
+- Material for MkDocs version: `9.7.6`
+- MkDocs documentation: https://www.mkdocs.org/
+- Material documentation: https://squidfunk.github.io/mkdocs-material/
+- Package releases: https://pypi.org/project/mkdocs-material/
+
+The authored public site is built from `mkdocs.yml` and deployed as a static
+GitHub Pages artifact. `requirements-docs.in` pins the direct theme dependency;
+`requirements-docs.txt` locks all transitive packages and distribution hashes.
+The site remains on MkDocs 1.6.1; MkDocs 2.0 is not an automatic upgrade because
+its current design is incompatible with the existing theme and plugin model.
+
+Regenerate the docs lock with uv 0.11.29:
+
+```sh
+tools/compile_docs_requirements.sh
+```
+
+## Emscripten
+
+- Version: `6.0.3`
+- Documentation: https://emscripten.org/docs/
+- SDK repository: https://github.com/emscripten-core/emsdk
+- Official container: https://hub.docker.com/r/emscripten/emsdk
+- Setup action: `mymindstorm/setup-emsdk@v16` (pinned to
+  `4528d102f7230f0e7b276855c01ea1159be0e984`)
+
+Emscripten builds only the interactive documentation example; it is not a
+library dependency. The Pages workflow uses the action's SDK cache rather than
+pulling the roughly 700 MB official container on every run. The demo is
+single-threaded, uses no filesystem, and compiles the same pathfinding headers
+as the native self-checking model.
 
 ## Dear ImGui
 
@@ -120,6 +159,15 @@ concepts layer
   https://github.com/astral-sh/setup-uv/blob/main/docs/customization.md
 - Hosted runner documentation:
   https://docs.github.com/actions/reference/runners/github-hosted-runners
+- Configure Pages action version: `actions/configure-pages@v6.0.0` (pinned to
+  `45bfe0192ca1faeb007ade9deae92b16b8254a0d`)
+- Upload Pages artifact action version:
+  `actions/upload-pages-artifact@v5.0.0` (pinned to
+  `fc324d3547104276b827a68afc52ff2a11cc49c9`)
+- Deploy Pages action version: `actions/deploy-pages@v5.0.0` (pinned to
+  `cd2ce8fcbc39b97be8ca5fce6e763baed58fa128`)
+- Pages custom-domain documentation:
+  https://docs.github.com/pages/configuring-a-custom-domain-for-your-github-pages-site
 
 CI selects explicit OS-family labels — `ubuntu-24.04`, `macos-15`, and
 `windows-2025` — instead of `-latest` labels. This avoids automatic OS-family

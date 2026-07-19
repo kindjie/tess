@@ -89,6 +89,20 @@
       }
     },
     {
+      "name": "examples",
+      "displayName": "Consumer Examples",
+      "description": "Dependency-free examples without tests or downloads.",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "TESS_BUILD_TESTING": "OFF",
+        "TESS_BUILD_EXAMPLES": "ON",
+        "TESS_BUILD_BENCHMARKS": "OFF",
+        "TESS_BUILD_DOCS": "OFF",
+        "TESS_ENABLE_ENTT": "OFF"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Release",
       "binaryDir": "${sourceDir}/build/${presetName}",
@@ -176,6 +190,10 @@
     }
   ],
   "buildPresets": [
+    {
+      "name": "examples",
+      "configurePreset": "examples"
+    },
     {
       "name": "dev",
       "configurePreset": "dev"

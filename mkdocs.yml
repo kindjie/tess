@@ -1,0 +1,65 @@
+site_name: tess
+site_description: Performance-first C++20 tile and path simulation
+site_url: https://tess.owx.dev/
+repo_url: https://github.com/kindjie/tess
+repo_name: kindjie/tess
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: build/site
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.footer
+    - navigation.instant
+    - navigation.sections
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Concepts:
+      - Overview: architecture/README.md
+      - Shapes: architecture/shape.md
+      - Storage: architecture/storage.md
+      - Pathfinding: architecture/path.md
+      - Topology: architecture/topology.md
+      - Queued operations: architecture/queued-operations.md
+      - Simulation and scheduling: architecture/simulation.md
+      - ECS integration: architecture/ecs.md
+      - Diagnostics: architecture/diagnostics.md
+  - Packaging: packaging.md
+  - Performance: performance.md
+  - Support: support.md
+  - Project history: history.md
+
+exclude_docs: |
+  /README.md
+  decisions/
+  planning/
+  tdd/
+
+copyright: Copyright &copy; tess contributors

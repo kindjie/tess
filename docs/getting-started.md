@@ -4,14 +4,16 @@ This tutorial climbs the `tess` concept ladder in the order the pieces
 compose: shapes, schemas, worlds, writes, pathfinding, topology, the
 schedule loop, and the render bridge. Each stage links the maintained
 architecture note and a runnable example. Every example is a
-self-checking binary built by the `dev` preset (see
-[`../CONTRIBUTING.md`](../CONTRIBUTING.md)).
+self-checking binary built by the `examples` and `dev` presets (see the
+[contributor guide](https://github.com/kindjie/tess/blob/main/CONTRIBUTING.md)).
 
-Consume the library per the [README](../README.md) (installed package or
-`add_subdirectory`), link `tess::tess`, and include the umbrella header:
+Consume the library per the
+[repository README](https://github.com/kindjie/tess#install-and-consume)
+(installed package, `FetchContent`, or `add_subdirectory`), link `tess::tess`,
+and include the pathfinding facade:
 
 ```cpp
-#include <tess/tess.h>
+#include <tess/pathfinding.h>
 ```
 
 ## 1. Shape: the compile-time world model
@@ -40,9 +42,11 @@ never exist at runtime.
 ```cpp
 struct PassableTag {};
 struct CostTag {};
+struct ConstructionTag {};
 
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
-                                 tess::Field<CostTag, std::uint32_t>>;
+                                 tess::Field<CostTag, std::uint32_t>,
+                                 tess::Field<ConstructionTag, std::uint8_t>>;
 ```
 
 Storage is struct-of-arrays per chunk: each field is a contiguous span
@@ -199,8 +203,8 @@ const auto frame = deltas.publish();
 Frame versions let a consumer detect gaps and request resynchronization.
 
 - Architecture: [`architecture/simulation.md`](architecture/simulation.md)
-  (the maintained note; the archived design is
-  [`tdd/render-delta-presentation-bridge.md`](tdd/render-delta-presentation-bridge.md))
+- Archived design:
+  [`tdd/render-delta-presentation-bridge.md`](tdd/render-delta-presentation-bridge.md)
 - Example: `examples/render_delta_consumer.cc` (a standalone consumer
   rebuilding a shadow grid)
 

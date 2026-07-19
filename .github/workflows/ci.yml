@@ -70,6 +70,9 @@ jobs:
       - name: Install smoke
         run: tools/install_smoke.sh
 
+      - name: FetchContent consumer smoke
+        run: tools/fetchcontent_smoke.sh
+
   # Required GCC portability and warning-cleanliness gate: compile only.
   # GCC's stricter two-phase name lookup catches header portability breaks
   # that Clang and MSVC accept. Promoted after three consecutive green main
@@ -144,6 +147,7 @@ jobs:
           tests/test_check_public_surface.py
           tests/test_check_public_docs.py
           tests/test_cmake_compatibility.py
+          tests/test_doc_snippets.py
           tests/test_header_compile_cost.py
           tests/test_steamdeck_tools.py
 
@@ -157,6 +161,10 @@ jobs:
       # carry a Doxygen comment.
       - name: Public API documentation
         run: python tools/check_public_docs.py
+
+      # Markdown examples are copied from named regions in compiled sources.
+      - name: Documentation snippets
+        run: python tools/check_doc_snippets.py
 
   quality:
     name: Quality Gates (${{ matrix.preset }})

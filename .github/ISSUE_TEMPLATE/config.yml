@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Adoption and design questions
+    url: https://github.com/kindjie/tess/discussions
+    about: Ask for integration help or discuss an open-ended idea.
+  - name: Security vulnerability
+    url: https://github.com/kindjie/tess/security/advisories/new
+    about: Report suspected vulnerabilities privately.

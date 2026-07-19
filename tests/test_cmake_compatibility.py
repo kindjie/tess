@@ -69,3 +69,43 @@ def test_consumer_preset_stays_consumer_shaped():
     assert cache["TESS_ENABLE_ENTT"] == "OFF"
     assert "TESS_WARNINGS_AS_ERRORS" not in cache
     assert "inherits" not in consumer
+
+
+def test_examples_preset_is_network_free_and_example_only():
+    presets = json.loads(
+        (REPO_ROOT / "CMakePresets.json").read_text(encoding="utf-8")
+    )
+    by_name = {p["name"]: p for p in presets["configurePresets"]}
+
+    examples = by_name["examples"]
+    cache = examples["cacheVariables"]
+    assert cache["TESS_BUILD_TESTING"] == "OFF"
+    assert cache["TESS_BUILD_EXAMPLES"] == "ON"
+    assert cache["TESS_BUILD_BENCHMARKS"] == "OFF"
+    assert cache["TESS_BUILD_DOCS"] == "OFF"
+    assert cache["TESS_ENABLE_ENTT"] == "OFF"
+    assert "inherits" not in examples
+
+
+def test_install_smoke_uses_the_tracked_consumer_fixture():
+    script = (REPO_ROOT / "tools" / "install_smoke.sh").read_text(
+        encoding="utf-8"
+    )
+    fixture = REPO_ROOT / "tests" / "install_consumer"
+
+    assert (fixture / "CMakeLists.txt").is_file()
+    assert (fixture / "main.cc").is_file()
+    assert 'cmake -S "$root/tests/install_consumer"' in script
+    assert "cat >" not in script
+
+
+def test_fetchcontent_smoke_uses_the_tracked_consumer_fixture():
+    script = (REPO_ROOT / "tools" / "fetchcontent_smoke.sh").read_text(
+        encoding="utf-8"
+    )
+    fixture = REPO_ROOT / "tests" / "fetchcontent_consumer"
+
+    assert (fixture / "CMakeLists.txt").is_file()
+    assert (fixture / "main.cc").is_file()
+    assert 'cmake -S "$root/tests/fetchcontent_consumer"' in script
+    assert "cat >" not in script

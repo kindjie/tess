@@ -7,6 +7,24 @@ without compatibility shims. The format loosely follows
 and their rationale are recorded separately in
 [`docs/decisions/CHANGELOG.md`](docs/decisions/CHANGELOG.md).
 
+## [Unreleased]
+
+### Added
+
+- Curated `<tess/pathfinding.h>` and `<tess/simulation.h>` facade headers;
+  the existing `<tess/tess.h>` compatibility umbrella remains available.
+- A compiled quickstart, tracked installed-package and `FetchContent`
+  consumers, and source-backed documentation snippets enforced in CI.
+- A strict MkDocs site deployed through GitHub Pages, plus a single-threaded
+  interactive pathfinding example compiled with Emscripten 6.0.3.
+- Support, security, and structured issue-reporting metadata.
+
+### Changed
+
+- The README now leads with fit and non-fit guidance, a complete runnable
+  program, dependency-free example commands, and explicit install-prefix and
+  `FetchContent` instructions.
+
 ## [0.3.0] - 2026-07-17
 
 ### Changed

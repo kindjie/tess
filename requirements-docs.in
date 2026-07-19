@@ -1,0 +1,3 @@
+# Documentation site generator. Regenerate requirements-docs.txt with
+# tools/compile_docs_requirements.sh after changing a pin.
+mkdocs-material==9.7.6
