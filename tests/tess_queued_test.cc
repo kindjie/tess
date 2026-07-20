@@ -161,6 +161,7 @@ struct RecordingPhaseExecutor {
 
   std::vector<std::size_t> indexes;
 
+  // [phase-executor]
   template <typename Fn>
   auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn)
       -> tess::PlannedExecutionResult {
@@ -175,6 +176,7 @@ struct RecordingPhaseExecutor {
     }
     return tess::PlannedExecutionResult{};
   }
+  // [phase-executor]
 };
 
 struct RangeRecordingPhaseExecutor {
@@ -1077,12 +1079,14 @@ TEST(TessQueued, ExecutePlannedOperationRunsCallbackAndMarksDirtyChunks) {
   ASSERT_TRUE(report.ok());
   ASSERT_EQ(report.plan().operations().size(), 1u);
 
+  // [execute-planned-operation]
   const auto result =
       tess::execute_planned_operation<tess::WritePolicy::UniquePerChunk>(
           world, report.plan().operations()[0], [](auto view) {
             auto terrain = view.template field_span<TerrainTag>();
             terrain[0] = static_cast<std::uint16_t>(view.key().value + 10);
           });
+  // [execute-planned-operation]
 
   EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
   EXPECT_EQ(result.chunk_count, 2u);

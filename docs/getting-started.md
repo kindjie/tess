@@ -1,5 +1,9 @@
 # Getting Started
 
+This tutorial targets the unreleased `v0.4.0` development API. Users of the
+latest release, `v0.3.0`, should include `<tess/tess.h>` in place of the two
+facade headers used below.
+
 This tutorial climbs the `tess` concept ladder in the order the pieces
 compose: shapes, schemas, worlds, writes, pathfinding, topology, the
 schedule loop, and the render bridge. Each stage links the maintained
@@ -12,9 +16,11 @@ Consume the library per the
 (installed package, `FetchContent`, or `add_subdirectory`), link `tess::tess`,
 and include the pathfinding facade:
 
+<!-- tess-snippet: getting-pathfinding-include source=examples/documentation.cc -->
 ```cpp
 #include <tess/pathfinding.h>
 ```
+<!-- /tess-snippet -->
 
 ## 1. Shape: the compile-time world model
 
@@ -22,9 +28,11 @@ A `tess::Shape` fixes the world and chunk dimensions at compile time.
 Chunk dimensions must be powers of two that evenly divide the world
 dimensions; both are `tess::Extent3` values.
 
+<!-- tess-snippet: getting-shape source=examples/documentation.cc -->
 ```cpp
 using Shape = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
 ```
+<!-- /tess-snippet -->
 
 One model covers 2D (`z = 1`), vertical cross-sections (`y = 1`), and
 full 3D - degenerate axes cost nothing. All world-space APIs use signed
@@ -39,6 +47,7 @@ Fields are declared with empty tag types plus a stored value type, and
 collected into a `tess::FieldSchema`. Tags are type-level names: they
 never exist at runtime.
 
+<!-- tess-snippet: getting-schema source=examples/documentation.cc -->
 ```cpp
 struct PassableTag {};
 struct CostTag {};
@@ -48,6 +57,7 @@ using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
                                  tess::Field<CostTag, std::uint32_t>,
                                  tess::Field<ConstructionTag, std::uint8_t>>;
 ```
+<!-- /tess-snippet -->
 
 Storage is struct-of-arrays per chunk: each field is a contiguous span
 per chunk page, which is what the block kernels and path queries iterate.
@@ -58,10 +68,12 @@ per chunk page, which is what the block kernels and path queries iterate.
 
 A world binds a shape and schema to a residency policy:
 
+<!-- tess-snippet: getting-world source=examples/documentation.cc -->
 ```cpp
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
-World world;  // allocates every chunk, zero-initialized
+World world;  // Allocates every chunk; all fields are zero-initialized.
 ```
+<!-- /tess-snippet -->
 
 `AlwaysResidentWorld` keeps every chunk allocated - the simplest choice
 and the right default for small or dense worlds. `SparseResidentWorld`
@@ -76,9 +88,11 @@ identity movement class below: open tiles before pathing.
 
 For setup and single-threaded code, write fields directly:
 
+<!-- tess-snippet: getting-direct-write source=examples/documentation.cc -->
 ```cpp
 world.field<PassableTag>(tess::Coord3{4, 2, 0}) = 1;
 ```
+<!-- /tess-snippet -->
 
 Simulation-time edits should instead go through queued operations: a
 `tess::FrameOps` collects declared edits (domain, touched fields, dirty
@@ -98,11 +112,13 @@ updates and render deltas downstream.
 
 The basic query needs only a passability field and reusable scratch:
 
+<!-- tess-snippet: getting-astar source=examples/documentation.cc -->
 ```cpp
 tess::PathScratch scratch;
 const auto result = tess::astar_path<World, PassableTag>(
     world, tess::PathRequest{start, goal}, scratch);
 ```
+<!-- /tess-snippet -->
 
 Check `result.status == tess::PathStatus::Found`; `result.cost` is the
 step count and `result.path` is a `tess::PathView` - a non-owning span
@@ -112,6 +128,7 @@ that reuses it.
 Richer rules live in movement classes, which combine passability
 predicates and cost sources over schema fields:
 
+<!-- tess-snippet: getting-movement-class source=examples/documentation.cc -->
 ```cpp
 using Walker = tess::movement::MovementClass<
     tess::movement::AllOf<
@@ -119,6 +136,7 @@ using Walker = tess::movement::MovementClass<
         tess::movement::Not<tess::movement::Field<ConstructionTag>>>,
     tess::movement::FieldCost<CostTag>>;
 ```
+<!-- /tess-snippet -->
 
 `tess::weighted_astar_path` consumes cost fields, and route caches,
 portal-segment caches, and distance-field products (see
@@ -135,6 +153,7 @@ A per-movement-class region graph summarizes connectivity so that
 definitively unreachable queries are rejected without expanding the
 grid:
 
+<!-- tess-snippet: getting-topology source=examples/documentation.cc -->
 ```cpp
 tess::LocalTopologyScratch scratch;
 tess::RegionGraph graph;
@@ -143,6 +162,7 @@ tess::build_region_graph<World, Walker>(world, scratch, graph);
 const auto verdict =
     tess::precheck_path<Walker>(graph, world, start, goal, precheck_scratch);
 ```
+<!-- /tess-snippet -->
 
 The class (or tag) given to `precheck_path` must match the one the graph
 was built for; a mismatch reports `GraphStale` and falls back to A*.
@@ -159,6 +179,14 @@ refreshes only the dirty chunks. Transition providers such as
 
 ## 7. The Schedule: composing a frame
 
+The scheduling and render layers use the broader simulation facade:
+
+<!-- tess-snippet: getting-simulation-include source=examples/documentation.cc -->
+```cpp
+#include <tess/simulation.h>
+```
+<!-- /tess-snippet -->
+
 `tess::Schedule` runs tasks in fixed phases (`PreUpdate`, `Topology`,
 `Movement`, ...) with per-task cadences: every tick, every N ticks, or
 `Cadence::on_dirty(mask)` to run exactly when matching edits landed.
@@ -166,12 +194,15 @@ refreshes only the dirty chunks. Transition providers such as
 ack results) as a schedule task, and `tess::run_schedule_frame` drives
 the whole thing under a fixed-step clock:
 
+<!-- tess-snippet: getting-schedule source=examples/documentation.cc -->
 ```cpp
 tess::Schedule schedule;
-schedule.add_task({"build", tess::SimPhase::PreUpdate,
-                   tess::Cadence::every_tick()}, build_task);
+schedule.add_task(
+    {"build", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()},
+    build_task);
 schedule.add_task({"topology", tess::SimPhase::Topology,
-                   tess::Cadence::on_dirty(kTerrainDirty)}, topology_task);
+                   tess::Cadence::on_dirty(kTerrainDirty)},
+                  topology_task);
 schedule.seal();
 
 tess::SimClock clock;
@@ -179,6 +210,7 @@ tess::FixedStepAccumulator accumulator(20, 8);
 tess::run_schedule_frame(schedule, clock, accumulator, 1.0 / 20.0,
                          tess::SimTimeControl{tess::SimSpeed::Speed1x});
 ```
+<!-- /tess-snippet -->
 
 Schedule tasks themselves run serially; the selectable parallel phase
 executor (see `tess/ops/phase_executor.h`) parallelizes the planned,
@@ -195,18 +227,22 @@ Render consumers never walk the world. A `tess::DeltaCollector` gathers
 dirty-driven tile deltas and publishes immutable, versioned
 `DeltaFrame`s that a consumer applies to its own shadow state:
 
+<!-- tess-snippet: getting-render-deltas source=examples/documentation.cc -->
 ```cpp
 tess::collect_tile_deltas(deltas, world, kTerrainDirty);
 const auto frame = deltas.publish();
 ```
+<!-- /tess-snippet -->
 
 Frame versions let a consumer detect gaps and request resynchronization.
 
 - Architecture: [`architecture/simulation.md`](architecture/simulation.md)
 - Archived design:
-  [`tdd/render-delta-presentation-bridge.md`](tdd/render-delta-presentation-bridge.md)
+  [render delta presentation bridge TDD][render-tdd]
 - Example: `examples/render_delta_consumer.cc` (a standalone consumer
   rebuilding a shadow grid)
+
+[render-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/render-delta-presentation-bridge.md
 
 ## Where next
 

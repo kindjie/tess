@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -373,16 +374,34 @@ def test_every_checkout_step_disables_persisted_credentials():
   assert workflow.count("persist-credentials: false") == checkout_count
 
 
-def test_hook_backstop_uses_pinned_uv_and_requires_hashes():
+def test_hook_backstop_uses_first_party_python_and_requires_hashes():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
 
   assert (
-    "uses: astral-sh/setup-uv@"
-    "11f9893b081a58869d3b5fccaea48c9e9e46f990" in workflow
+    "uses: actions/setup-python@"
+    "5fda3b95a4ea91299a34e894583c3862153e4b97" in workflow
   )
-  assert 'version: "0.11.28"' in workflow
-  assert "uv pip sync --require-hashes requirements-dev.txt" in workflow
+  assert 'python-version: "3.12"' in workflow
+  assert "--require-hashes" in workflow
+  assert "--requirement requirements-dev.txt" in workflow
+
+
+def test_workflows_use_only_github_owned_sha_pinned_actions():
+  root = Path(__file__).resolve().parents[1]
+  action_re = re.compile(r"^\s*uses:\s+([^\s@]+)@([^\s#]+)", re.MULTILINE)
+
+  for workflow_path in sorted((root / ".github" / "workflows").glob("*.yml")):
+    workflow = workflow_path.read_text(encoding="utf-8")
+    actions = action_re.findall(workflow)
+    assert actions, f"{workflow_path.name} has no actions"
+    for action, revision in actions:
+      assert action.startswith("actions/"), (
+        f"{workflow_path.name} uses non-GitHub action {action}"
+      )
+      assert re.fullmatch(r"[0-9a-f]{40}", revision), (
+        f"{workflow_path.name} does not SHA-pin {action}"
+      )
 
 
 SHA_A = "a" * 40

@@ -4,6 +4,8 @@
 - `test_doc_snippets.py`: verifies named source-region parsing, Markdown drift
   detection, automatic refresh, and repository-wide synchronization between
   adopter-facing excerpts and compiled sources.
+- `test_check_docs_links.py`: verifies generated-site link and anchor checks,
+  including root-relative assets and rejection of missing local targets.
 - `allocation_counter.{h,cc}` is shared only by allocation-sensitive test
   binaries that need global `new`/`delete` counters. Do not link it into more
   than one translation unit inside the same executable.

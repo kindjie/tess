@@ -3,6 +3,9 @@
 The library is header-only. A consumer needs a C++20 compiler and CMake 3.25
 or newer; tess itself adds no runtime or link dependency.
 
+This page distinguishes the unreleased `v0.4.0` development package from the
+latest release, `v0.3.0`.
+
 ## Installed CMake package
 
 ```sh
@@ -16,7 +19,14 @@ Point an application at a non-system prefix during its configure step:
 cmake -S . -B build -DCMAKE_PREFIX_PATH="$HOME/.local"
 ```
 
-Then consume the exported target:
+Then consume the exported development target:
+
+```cmake
+find_package(tess 0.4 CONFIG REQUIRED)
+target_link_libraries(my_target PRIVATE tess::tess)
+```
+
+When consuming an installed `v0.3.0` release instead, request its minor line:
 
 ```cmake
 find_package(tess 0.3 CONFIG REQUIRED)
@@ -40,6 +50,10 @@ target_link_libraries(my_target PRIVATE tess::tess)
 Pin a release tag or immutable commit. Because tess sees itself as a
 subproject, its tests and examples default off and no development dependency
 is downloaded.
+
+The `v0.3.0` release exposes the all-in-one `<tess/tess.h>` header. The
+smaller `<tess/pathfinding.h>` and `<tess/simulation.h>` facades belong to the
+unreleased `v0.4.0` development API.
 
 ## Package-manager status
 

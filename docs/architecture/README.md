@@ -49,17 +49,32 @@ The TDD archive preserves the original design intent behind each area.
 These documents are non-authoritative: the maintained notes above and
 the code are the source of truth for current behavior.
 
-- [Project design](../tdd/project-design.md)
-- [Shape, coordinate, and key system](../tdd/core-shape-coordinate-key-system.md)
-- [Chunk storage](../tdd/core-chunk-storage.md)
-- [Queued operations and planner](../tdd/queued-operations-and-planner.md)
-- [Simulation scheduler](../tdd/simulation-scheduler.md)
-- [Topology and region graph](../tdd/topology-and-region-graph.md)
-- [Pathfinding core](../tdd/pathfinding-core.md)
-- [Flow and distance fields](../tdd/flow-distance-fields.md)
-- [ECS integration](../tdd/ecs-integration.md)
-- [Render delta bridge](../tdd/render-delta-presentation-bridge.md)
-- [Block kernel pipeline](../tdd/block-kernel-pipeline.md)
-- [GPU backend interface](../tdd/gpu-backend-interface.md)
-- [Diagnostics and tooling](../tdd/diagnostics-and-tooling.md)
-- [Modern C++ safety](../tdd/modern-cpp-compile-time-safety.md)
+- [Project design][project-design]
+- [Shape, coordinate, and key system][shape-tdd]
+- [Chunk storage][storage-tdd]
+- [Queued operations and planner][queued-tdd]
+- [Simulation scheduler][simulation-tdd]
+- [Topology and region graph][topology-tdd]
+- [Pathfinding core][path-tdd]
+- [Flow and distance fields][fields-tdd]
+- [ECS integration][ecs-tdd]
+- [Render delta bridge][render-tdd]
+- [Block kernel pipeline][block-tdd]
+- [GPU backend interface][gpu-tdd]
+- [Diagnostics and tooling][diagnostics-tdd]
+- [Modern C++ safety][safety-tdd]
+
+[project-design]: https://github.com/kindjie/tess/blob/main/docs/tdd/project-design.md
+[shape-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/core-shape-coordinate-key-system.md
+[storage-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/core-chunk-storage.md
+[queued-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/queued-operations-and-planner.md
+[simulation-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/simulation-scheduler.md
+[topology-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/topology-and-region-graph.md
+[path-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/pathfinding-core.md
+[fields-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/flow-distance-fields.md
+[ecs-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/ecs-integration.md
+[render-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/render-delta-presentation-bridge.md
+[block-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/block-kernel-pipeline.md
+[gpu-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/gpu-backend-interface.md
+[diagnostics-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/diagnostics-and-tooling.md
+[safety-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/modern-cpp-compile-time-safety.md

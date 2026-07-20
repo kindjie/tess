@@ -45,6 +45,9 @@ of the affected TDD pointing to the newer source of truth.
 
 The public authored site is built with MkDocs. A CMake-driven Doxygen target
 already generates a local API reference; publish it only after its warning debt
-and `tess::detail` exposure are resolved. Source-backed snippets in maintained
-Markdown are synchronized with compiled examples by
-`tools/check_doc_snippets.py`.
+and `tess::detail` exposure are resolved. Every C++ fence in maintained
+Markdown is copied from a named region in a compiled example or test;
+`tools/check_doc_snippets.py` rejects drift and unbacked fences. Historical
+design and planning records are exempt because they are non-authoritative.
+`tools/check_doc_versions.py` keeps the development and latest-release
+installation paths distinct.

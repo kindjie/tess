@@ -18,6 +18,9 @@ the design is still being validated. Release notes live in
 [`CHANGELOG.md`](CHANGELOG.md). Repository provenance across the
 pre-public rewrite is described in [`docs/history.md`](docs/history.md).
 
+This checkout documents the unreleased `v0.4.0` development API. The
+`v0.3.0` tag and its README remain the authority for the latest release.
+
 ## Features
 
 - Constexpr world shapes with one model for 2D, vertical 2D, and 3D,
@@ -71,13 +74,14 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH="$HOME/.local"
 `cmake -B build -DTESS_BUILD_TESTING=OFF -DTESS_BUILD_EXAMPLES=OFF`
 followed by `cmake --install build --prefix ...`.)
 
+The commands above install this checkout's development package:
+
 ```cmake
-find_package(tess 0.3 CONFIG REQUIRED)
+find_package(tess 0.4 CONFIG REQUIRED)
 target_link_libraries(my_target PRIVATE tess::tess)
 ```
 
-For source-tree integration, use CMake's `FetchContent` or
-`add_subdirectory`, then link the same target:
+For the latest released source, use CMake's `FetchContent` and pin its tag:
 
 ```cmake
 include(FetchContent)
@@ -95,9 +99,11 @@ Pin a release tag or commit rather than a moving branch. Tests, examples, and
 benchmarks default off when tess is a subproject, so this path does not fetch
 its development dependencies.
 
-The public CMake target is `tess::tess`. Start with
+The public CMake target is `tess::tess`. In the development API, start with
 `<tess/pathfinding.h>` for worlds and routing, `<tess/simulation.h>` for the
-full simulation stack, or `<tess/tess.h>` for the legacy all-in-one umbrella.
+full simulation stack, or `<tess/tess.h>` for the all-in-one compatibility
+umbrella. The facade headers are new in the unreleased `v0.4.0` line;
+`v0.3.0` consumers should include `<tess/tess.h>`.
 The EnTT adapter and Dear ImGui panels are opt-in headers that consumers
 include after their corresponding third-party header; see
 `docs/architecture/ecs.md` and `docs/architecture/diagnostics.md`. In
@@ -109,7 +115,7 @@ Declare a world shape and field schema, open some tiles, and run A*:
 
 <!-- tess-snippet: quickstart source=examples/quickstart.cc -->
 ```cpp
-#include <tess/pathfinding.h>
+#include <tess/tess.h>
 
 #include <cstdint>
 #include <iostream>

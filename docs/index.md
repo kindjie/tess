@@ -5,6 +5,10 @@ topology-aware pathfinding, and deterministic simulation updates. It supplies
 the spatial substrate while leaving rendering, physics, and entity ownership
 to your application.
 
+This site documents the unreleased `v0.4.0` development API. For the latest
+release, use the
+[`v0.3.0` documentation](https://github.com/kindjie/tess/tree/v0.3.0).
+
 [Get started](getting-started.md){ .md-button .md-button--primary }
 [Try the live pathfinder](demo/){ .md-button }
 [Browse the source](https://github.com/kindjie/tess){ .md-button }
@@ -16,7 +20,7 @@ its canonical source file, so documentation drift fails the build.
 
 <!-- tess-snippet: quickstart source=examples/quickstart.cc -->
 ```cpp
-#include <tess/pathfinding.h>
+#include <tess/tess.h>
 
 #include <cstdint>
 #include <iostream>
@@ -65,5 +69,7 @@ expanded nodes: 15
   concepts.
 - `<tess/tess.h>` remains the compatibility umbrella.
 
-All three are dependency-free. Optional EnTT and Dear ImGui adapters remain
-behind explicit integration headers and compile definitions.
+The two facade headers are new in the unreleased `v0.4.0` API; `v0.3.0`
+consumers use `<tess/tess.h>`. All three are dependency-free. Optional EnTT
+and Dear ImGui adapters remain behind explicit integration headers and
+compile definitions.

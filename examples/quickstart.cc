@@ -1,5 +1,5 @@
 // [quickstart]
-#include <tess/pathfinding.h>
+#include <tess/tess.h>
 
 #include <cstdint>
 #include <iostream>

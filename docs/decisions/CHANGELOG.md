@@ -16,10 +16,12 @@ Records meaningful design changes from the original TDDs.
 ## 2026-07-18 - Make adoption paths executable and publishable
 
 - Changed: added pathfinding and simulation facade headers without removing
-  the compatibility umbrella; made the front-page quickstart a compiled source
-  region; made installed-package and `FetchContent` consumers tracked smoke
-  fixtures; added a strict MkDocs Pages site and an interactive, single-threaded
-  Emscripten pathfinding example.
+  the compatibility umbrella; made every maintained C++ fence a region of a
+  CMake-registered compiled example or test; made installed-package and
+  `FetchContent` consumers tracked smoke fixtures; separated the unreleased
+  `v0.4.0` development API from the latest `v0.3.0` release in package and
+  documentation metadata; added a strict MkDocs Pages site and an interactive,
+  single-threaded Emscripten pathfinding example.
 - Reason: adopter success depends on a short, verifiable first path and on
   documentation that cannot silently drift from C++ and CMake behavior. The
   single-threaded pathfinder demonstrates the portable core without implying

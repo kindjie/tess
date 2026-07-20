@@ -51,8 +51,10 @@ copying over the stale label and latest snapshot table while preserving the
 regeneration policy.
 
 For individual optimization experiments, rejected ideas, and deferred
-performance work, use the [optimization log](planning/optimization-log.md)
+performance work, use the [optimization log][optimization-log]
 instead of architecture docs.
+
+[optimization-log]: https://github.com/kindjie/tess/blob/main/docs/planning/optimization-log.md
 
 ## Regeneration Policy
 

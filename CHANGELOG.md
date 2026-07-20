@@ -21,6 +21,8 @@ and their rationale are recorded separately in
 
 ### Changed
 
+- Development package metadata now reports `0.4.0`, keeping unreleased facade
+  documentation distinct from the latest `v0.3.0` release.
 - The README now leads with fit and non-fit guidance, a complete runnable
   program, dependency-free example commands, and explicit install-prefix and
   `FetchContent` instructions.

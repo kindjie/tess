@@ -56,7 +56,7 @@ exposure of `tess::detail` are treated as release blockers for API publishing.
 ## Documentation site
 
 - MkDocs version: `1.6.1`
-- Material for MkDocs version: `9.7.6`
+- Material for MkDocs version: `9.7.7`
 - MkDocs documentation: https://www.mkdocs.org/
 - Material documentation: https://squidfunk.github.io/mkdocs-material/
 - Package releases: https://pypi.org/project/mkdocs-material/
@@ -79,14 +79,14 @@ tools/compile_docs_requirements.sh
 - Documentation: https://emscripten.org/docs/
 - SDK repository: https://github.com/emscripten-core/emsdk
 - Official container: https://hub.docker.com/r/emscripten/emsdk
-- Setup action: `mymindstorm/setup-emsdk@v16` (pinned to
-  `4528d102f7230f0e7b276855c01ea1159be0e984`)
+- Official container digest:
+  `emscripten/emsdk:6.0.3@sha256:bb0910e6a18bb9bd7cb31ae4ed40f9073148b78cb2cdb8ea8676454e0d85425c`
 
 Emscripten builds only the interactive documentation example; it is not a
-library dependency. The Pages workflow uses the action's SDK cache rather than
-pulling the roughly 700 MB official container on every run. The demo is
-single-threaded, uses no filesystem, and compiles the same pathfinding headers
-as the native self-checking model.
+library dependency. CI pulls the upstream project's multi-platform image by
+immutable manifest digest rather than executing a third-party setup action.
+The demo is single-threaded, uses no filesystem, and compiles the same
+pathfinding headers as the native self-checking model.
 
 ## Dear ImGui
 
@@ -151,12 +151,9 @@ concepts layer
 - Upload artifact action version: `actions/upload-artifact@v7.0.1` (pinned to
   `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`)
 - Upload artifact documentation: https://github.com/actions/upload-artifact
-- setup-uv action version: `astral-sh/setup-uv@v8.3.2` (latest upstream
-  release as of 2026-07-12; pinned to
-  `11f9893b081a58869d3b5fccaea48c9e9e46f990`)
-- setup-uv documentation: https://github.com/astral-sh/setup-uv
-- setup-uv checksum documentation:
-  https://github.com/astral-sh/setup-uv/blob/main/docs/customization.md
+- Setup Python action version: `actions/setup-python@v7.0.0` (pinned to
+  `5fda3b95a4ea91299a34e894583c3862153e4b97`)
+- Setup Python documentation: https://github.com/actions/setup-python
 - Hosted runner documentation:
   https://docs.github.com/actions/reference/runners/github-hosted-runners
 - Configure Pages action version: `actions/configure-pages@v6.0.0` (pinned to
@@ -206,11 +203,11 @@ better fit than a filesystem-oriented command-line wrapper.
 `requirements-dev.in` holds the three direct tool pins.
 `requirements-dev.txt` is a universal `uv pip compile` result containing exact
 transitive versions, environment markers, and distribution hashes; its header
-records the checked-in regeneration wrapper. CI installs the pinned uv release
-through a SHA-pinned setup action, which automatically verifies the known
-release checksum. CI then creates `.venv` and runs
-`uv pip sync --require-hashes requirements-dev.txt`. Subsequent checks execute
-the Python, pytest, and clang-format binaries from that exact environment.
+records the checked-in regeneration wrapper. CI uses GitHub's SHA-pinned
+`setup-python` action, creates `.venv`, and installs the lock with
+`pip --require-hashes`. Subsequent checks execute Python, pytest, and
+clang-format from that exact environment. uv remains the local, version-pinned
+lockfile generator but is not executed as a GitHub Action.
 
 Regenerate the hash lock with uv 0.11.28:
 

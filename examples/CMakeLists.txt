@@ -2,6 +2,10 @@ add_executable(tess_quickstart quickstart.cc)
 target_link_libraries(tess_quickstart PRIVATE tess::tess)
 tess_apply_project_options(tess_quickstart)
 
+add_executable(tess_documentation documentation.cc)
+target_link_libraries(tess_documentation PRIVATE tess::tess)
+tess_apply_project_options(tess_documentation)
+
 add_executable(tess_web_pathfinder_model web_pathfinder/pathfinder.cc)
 target_link_libraries(tess_web_pathfinder_model PRIVATE tess::tess)
 tess_apply_project_options(tess_web_pathfinder_model)

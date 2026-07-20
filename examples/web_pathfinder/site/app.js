@@ -151,7 +151,9 @@ createTessDemo().then((module) => {
   height = api.height();
   api.reset();
   update();
+  document.documentElement.dataset.tessDemo = "ready";
 }).catch((error) => {
+  document.documentElement.dataset.tessDemo = "failed";
   message.textContent = "Could not load the WebAssembly demo";
   console.error(error);
 });
