@@ -801,6 +801,7 @@ def pre_push() -> int:
     ["cmake", "--build", "--preset", "dev"],
     ["ctest", "--preset", "dev"],
     ["tools/install_smoke.sh"],
+    ["tools/fetchcontent_smoke.sh"],
   ]
   if should_build_bench(updates):
     commands.extend([

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description"
+          content="Interactive tess WebAssembly pathfinding example">
+    <title>tess pathfinder</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">A live WebAssembly example</p>
+        <h1>Shape a world. Watch tess route through it.</h1>
+        <p>
+          Click and drag to paint walls. Move the endpoints, then let the same
+          C++ A* implementation used by native applications find a route.
+        </p>
+      </header>
+
+      <section class="demo" aria-label="Interactive pathfinding demo">
+        <div class="toolbar" role="toolbar" aria-label="Drawing tools">
+          <button class="active" data-tool="wall">Paint walls</button>
+          <button data-tool="start">Move start</button>
+          <button data-tool="goal">Move goal</button>
+          <button id="clear">Clear walls</button>
+        </div>
+        <canvas id="world" width="960" height="720"
+                aria-label="Pathfinding tile grid"></canvas>
+        <div class="status" aria-live="polite">
+          <span id="message">Loading WebAssembly…</span>
+          <span id="metrics"></span>
+        </div>
+      </section>
+
+      <footer>
+        <a href="../">Read the tess documentation</a>
+        <a
+          href="https://github.com/kindjie/tess/tree/main/examples/web_pathfinder">
+          View this example's source
+        </a>
+      </footer>
+    </main>
+    <script src="tess-demo.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

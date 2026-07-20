@@ -20,19 +20,11 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "error: could not parse TESS_VERSION" >&2
   exit 1
 fi
-major="${version%%.*}"
-rest="${version#*.}"
-minor="${rest%%.*}"
-patch="${rest#*.}"
-
 mkdir -p "$root/build"
 work="$(mktemp -d "$root/build/tess-install-smoke.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 prefix="$work/prefix"
-consumer="$work/consumer"
 build="$work/build"
-
-mkdir -p "$consumer"
 
 # Bash 3.2 (macOS /bin/bash) treats empty-array expansion as an unbound
 # variable under `set -u`, so branch instead of building argument arrays.
@@ -47,36 +39,13 @@ if [[ ! -f "$prefix/share/licenses/tess/LICENSE" ]]; then
   exit 1
 fi
 
-cat > "$consumer/CMakeLists.txt" <<EOF
-cmake_minimum_required(VERSION 3.25)
-project(tess_install_smoke LANGUAGES CXX)
-find_package(tess ${version} EXACT CONFIG REQUIRED)
-if(NOT tess_VERSION VERSION_EQUAL "${version}")
-  message(FATAL_ERROR "package version does not match ${version}")
-endif()
-add_executable(tess_install_smoke main.cc)
-target_link_libraries(tess_install_smoke PRIVATE tess::tess)
-EOF
-
-cat > "$consumer/main.cc" <<EOF
-#include <tess/tess.h>
-
-int main() {
-  static_assert(TESS_VERSION_MAJOR == ${major});
-  static_assert(TESS_VERSION_MINOR == ${minor});
-  static_assert(TESS_VERSION_PATCH == ${patch});
-  static_assert(tess::library_version.major == ${major});
-  static_assert(tess::library_version.minor == ${minor});
-  static_assert(tess::library_version.patch == ${patch});
-  return 0;
-}
-EOF
-
-cmake -S "$consumer" -B "$build" -DCMAKE_PREFIX_PATH="$prefix"
+cmake -S "$root/tests/install_consumer" -B "$build" \
+  -DCMAKE_PREFIX_PATH="$prefix" \
+  -DTESS_EXPECTED_VERSION="$version"
 if [[ -n "$config" ]]; then
   cmake --build "$build" --config "$config"
-  "$build/$config/tess_install_smoke"
+  "$build/$config/tess_install_consumer"
 else
   cmake --build "$build"
-  "$build/tess_install_smoke"
+  "$build/tess_install_consumer"
 fi

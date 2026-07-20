@@ -161,13 +161,16 @@ prebuilt plan do not allocate.
 
 Planned operations can now be executed explicitly through the serial block API:
 
+<!-- tess-snippet: execute-planned-operation source=tests/tess_queued_test.cc -->
 ```cpp
-auto result = tess::execute_planned_operation<
-    tess::WritePolicy::UniquePerChunk>(world, planned, [](auto view) {
-  auto terrain = view.template field_span<TerrainTag>();
-  terrain[0] = 1;
-});
+const auto result =
+    tess::execute_planned_operation<tess::WritePolicy::UniquePerChunk>(
+        world, report.plan().operations()[0], [](auto view) {
+          auto terrain = view.template field_span<TerrainTag>();
+          terrain[0] = static_cast<std::uint16_t>(view.key().value + 10);
+        });
 ```
+<!-- /tess-snippet -->
 
 `execute_planned_operation<Policy>` rejects policy mismatches before invoking
 the callback. On success, it creates a policy-typed `BlockCtx`, visits the
@@ -231,10 +234,24 @@ retains that low-level executor test and integration seam.
 integration point can use `execute_phase_deferred_dirty_with<Policy>` and
 pass an executor that provides:
 
+<!-- tess-snippet: phase-executor source=tests/tess_queued_test.cc -->
 ```cpp
+template <typename Fn>
 auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn)
-    -> tess::PlannedExecutionResult;
+    -> tess::PlannedExecutionResult {
+  auto&& callback = fn;
+  const auto end = first + count;
+  for (std::size_t i = first; i < end; ++i) {
+    indexes.push_back(i);
+    auto result = callback(i);
+    if (result.status != tess::PlannedExecutionStatus::Executed) {
+      return result;
+    }
+  }
+  return tess::PlannedExecutionResult{};
+}
 ```
+<!-- /tess-snippet -->
 
 The executor receives planned operation indexes and must return the first
 non-`Executed` result from the callback, or `Executed` if the whole range

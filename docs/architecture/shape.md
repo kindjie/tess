@@ -5,7 +5,9 @@ and key vocabulary every other layer builds on. It lives in
 `include/tess/core/shape.h` (with `include/tess/core/assert.h` and
 `include/tess/core/uint128.h` as support headers) and is exported by
 `tess/tess.h`. It implements the early slices of the historical
-[shape/coordinate/key TDD](../tdd/core-shape-coordinate-key-system.md).
+[shape/coordinate/key TDD][shape-tdd].
+
+[shape-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/core-shape-coordinate-key-system.md
 
 ## Public Surface
 

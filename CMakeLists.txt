@@ -93,6 +93,7 @@ set(
   include/tess/path/portal_segment_cache.h
   include/tess/path/precheck.h
   include/tess/path/route_cache.h
+  include/tess/pathfinding.h
   include/tess/sim/auto_exec.h
   include/tess/sim/delta_frame.h
   include/tess/sim/movement.h
@@ -107,6 +108,7 @@ set(
   include/tess/storage/residency.h
   include/tess/storage/sparse_world.h
   include/tess/storage/world.h
+  include/tess/simulation.h
   include/tess/tess.h
   include/tess/topology/movement_class.h
   include/tess/topology/topology.h

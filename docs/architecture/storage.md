@@ -3,7 +3,9 @@
 The implemented storage foundation covers typed compile-time field schemas,
 resident chunk pages, an always-resident dense world owner, and per-chunk
 metadata for dirty/active tracking. It implements the early storage slices of
-the historical [chunk storage TDD](../tdd/core-chunk-storage.md).
+the historical [chunk storage TDD][storage-tdd].
+
+[storage-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/core-chunk-storage.md
 
 ## Field Schemas
 
@@ -27,17 +29,23 @@ instantiating an invalid schema.
 `tess::ChunkPage<Shape, Schema>` stores one resident chunk worth of tile data.
 Fields are owned directly by the page object as chunk-local SoA arrays:
 
+<!-- tess-snippet: storage-field-array source=examples/documentation.cc -->
 ```cpp
-std::array<Value, tess::ShapeTraits<Shape>::local_tile_count>
+template <typename Value>
+using ChunkFieldStorage =
+    std::array<Value, tess::ShapeTraits<MyShape>::local_tile_count>;
 ```
+<!-- /tess-snippet -->
 
 The page performs no runtime allocation. Hot code can access each field through
 contiguous typed spans:
 
+<!-- tess-snippet: storage-page-access source=examples/documentation.cc -->
 ```cpp
 auto terrain = page.field_span<TerrainTag>();
 page.field<CostTag>(tess::LocalTileId{42}) = 3.0F;
 ```
+<!-- /tess-snippet -->
 
 Const pages return `std::span<const Value>` and `const Value&`.
 
@@ -79,14 +87,16 @@ The world type exposes static storage metadata:
 Hot accessors are explicitly `noexcept` and do not allocate after
 construction:
 
+<!-- tess-snippet: storage-dense-world source=examples/documentation.cc -->
 ```cpp
-tess::AlwaysResidentWorld<MyShape, MySchema> world;
-auto pages = world.chunks();
-auto& page = world.chunk(tess::ChunkKey{3});
-auto resolved = world.resolve(tess::Coord3{10, 20, 0});
-world.field<TerrainTag>(tess::Coord3{10, 20, 0}) = 7;
-auto terrain = world.field_span<TerrainTag>(tess::ChunkKey{3});
+tess::AlwaysResidentWorld<MyShape, MySchema> dense_world;
+auto pages = dense_world.chunks();
+auto& page = dense_world.chunk(tess::ChunkKey{3});
+auto resolved = dense_world.resolve(tess::Coord3{10, 20, 0});
+dense_world.field<TerrainTag>(tess::Coord3{10, 20, 0}) = 7;
+auto terrain = dense_world.field_span<TerrainTag>(tess::ChunkKey{3});
 ```
+<!-- /tess-snippet -->
 
 Unchecked accessors require valid chunk keys, chunk coordinates, and tile
 coordinates. Checked `try_*` accessors return `nullptr` or `std::nullopt` for
@@ -104,12 +114,15 @@ fixed slot pool and directory once and never reallocates them.
 
 Residency is managed explicitly:
 
+<!-- tess-snippet: storage-sparse-world source=examples/documentation.cc -->
 ```cpp
-tess::SparseResidentWorld<HugeShape, MySchema> world{
-    tess::ResidencyConfig{16 * world.page_byte_size}};
-const auto handle = world.ensure_resident(tess::ChunkKey{k});
-world.chunk(tess::ChunkKey{k}).field<TerrainTag>(tess::LocalTileId{0}) = 7;
+tess::SparseResidentWorld<HugeShape, MySchema> sparse_world{
+    tess::ResidencyConfig{budget}};
+const auto handle = sparse_world.ensure_resident(tess::ChunkKey{0});
+sparse_world.chunk(tess::ChunkKey{0})
+    .field<TerrainTag>(tess::LocalTileId{0}) = 7;
 ```
+<!-- /tess-snippet -->
 
 - `ensure_resident(key)` materializes the chunk (evicting the
   least-recently-used chunk when the budget is full), marks it
@@ -160,10 +173,12 @@ frequently. A new chunk therefore has this combined state:
 
 Direct metadata lookup mirrors page lookup:
 
+<!-- tess-snippet: storage-metadata source=examples/documentation.cc -->
 ```cpp
-auto& meta = world.meta(tess::ChunkKey{3});
-auto* checked = world.try_meta(tess::ChunkCoord3{3, 0, 0});
+auto& meta = dense_world.meta(tess::ChunkKey{3});
+auto* checked = dense_world.try_meta(tess::ChunkCoord3{3, 0, 0});
 ```
+<!-- /tess-snippet -->
 
 These direct accessors are `noexcept` and do not allocate, but a `ChunkMeta`
 reference does not contain the complete dirty/active state. Dirty flags, active

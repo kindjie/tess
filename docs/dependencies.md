@@ -45,9 +45,48 @@ Optional, docs-only tool dependency for the opt-in `tess_docs` target
 CMake's `doxygen_add_docs`. Nothing in the library, tests, benchmarks,
 or CI requires it; `find_package(Doxygen REQUIRED)` runs only when the
 option is enabled. Like package-manager `clang-tidy` and `ccache`, the
-version is unpinned; developed against Doxygen 1.16. Documentation-only
+version is unpinned; developed against Doxygen 1.17.0. Documentation-only
 `DOXYGEN_PREDEFINED` gates make the EnTT adapter, diagnostics, and ImGui
 panel APIs visible in the reference without their third-party headers.
+
+The latest verified release is Doxygen 1.17.0. Generated API output is not yet
+published: the authored site ships first, while Doxygen warnings and accidental
+exposure of `tess::detail` are treated as release blockers for API publishing.
+
+## Documentation site
+
+- MkDocs version: `1.6.1`
+- Material for MkDocs version: `9.7.7`
+- MkDocs documentation: https://www.mkdocs.org/
+- Material documentation: https://squidfunk.github.io/mkdocs-material/
+- Package releases: https://pypi.org/project/mkdocs-material/
+
+The authored public site is built from `mkdocs.yml` and deployed as a static
+GitHub Pages artifact. `requirements-docs.in` pins the direct theme dependency;
+`requirements-docs.txt` locks all transitive packages and distribution hashes.
+The site remains on MkDocs 1.6.1; MkDocs 2.0 is not an automatic upgrade because
+its current design is incompatible with the existing theme and plugin model.
+
+Regenerate the docs lock with uv 0.11.29:
+
+```sh
+tools/compile_docs_requirements.sh
+```
+
+## Emscripten
+
+- Version: `6.0.3`
+- Documentation: https://emscripten.org/docs/
+- SDK repository: https://github.com/emscripten-core/emsdk
+- Official container: https://hub.docker.com/r/emscripten/emsdk
+- Official container digest:
+  `emscripten/emsdk:6.0.3@sha256:bb0910e6a18bb9bd7cb31ae4ed40f9073148b78cb2cdb8ea8676454e0d85425c`
+
+Emscripten builds only the interactive documentation example; it is not a
+library dependency. CI pulls the upstream project's multi-platform image by
+immutable manifest digest rather than executing a third-party setup action.
+The demo is single-threaded, uses no filesystem, and compiles the same
+pathfinding headers as the native self-checking model.
 
 ## Dear ImGui
 
@@ -112,14 +151,20 @@ concepts layer
 - Upload artifact action version: `actions/upload-artifact@v7.0.1` (pinned to
   `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`)
 - Upload artifact documentation: https://github.com/actions/upload-artifact
-- setup-uv action version: `astral-sh/setup-uv@v8.3.2` (latest upstream
-  release as of 2026-07-12; pinned to
-  `11f9893b081a58869d3b5fccaea48c9e9e46f990`)
-- setup-uv documentation: https://github.com/astral-sh/setup-uv
-- setup-uv checksum documentation:
-  https://github.com/astral-sh/setup-uv/blob/main/docs/customization.md
+- Setup Python action version: `actions/setup-python@v7.0.0` (pinned to
+  `5fda3b95a4ea91299a34e894583c3862153e4b97`)
+- Setup Python documentation: https://github.com/actions/setup-python
 - Hosted runner documentation:
   https://docs.github.com/actions/reference/runners/github-hosted-runners
+- Configure Pages action version: `actions/configure-pages@v6.0.0` (pinned to
+  `45bfe0192ca1faeb007ade9deae92b16b8254a0d`)
+- Upload Pages artifact action version:
+  `actions/upload-pages-artifact@v5.0.0` (pinned to
+  `fc324d3547104276b827a68afc52ff2a11cc49c9`)
+- Deploy Pages action version: `actions/deploy-pages@v5.0.0` (pinned to
+  `cd2ce8fcbc39b97be8ca5fce6e763baed58fa128`)
+- Pages custom-domain documentation:
+  https://docs.github.com/pages/configuring-a-custom-domain-for-your-github-pages-site
 
 CI selects explicit OS-family labels — `ubuntu-24.04`, `macos-15`, and
 `windows-2025` — instead of `-latest` labels. This avoids automatic OS-family
@@ -158,11 +203,11 @@ better fit than a filesystem-oriented command-line wrapper.
 `requirements-dev.in` holds the three direct tool pins.
 `requirements-dev.txt` is a universal `uv pip compile` result containing exact
 transitive versions, environment markers, and distribution hashes; its header
-records the checked-in regeneration wrapper. CI installs the pinned uv release
-through a SHA-pinned setup action, which automatically verifies the known
-release checksum. CI then creates `.venv` and runs
-`uv pip sync --require-hashes requirements-dev.txt`. Subsequent checks execute
-the Python, pytest, and clang-format binaries from that exact environment.
+records the checked-in regeneration wrapper. CI uses GitHub's SHA-pinned
+`setup-python` action, creates `.venv`, and installs the lock with
+`pip --require-hashes`. Subsequent checks execute Python, pytest, and
+clang-format from that exact environment. uv remains the local, version-pinned
+lockfile generator but is not executed as a GitHub Action.
 
 Regenerate the hash lock with uv 0.11.28:
 
