@@ -110,19 +110,18 @@ def check_repository(repo_root: Path = REPO_ROOT) -> list[str]:
         f"docs/index.md: identify v{source} as the unreleased development API"
       )
 
+  # The README may omit find_package entirely (installation lives in
+  # docs/packaging.md); any occurrence it does carry must match the source.
   readme_packages = FIND_PACKAGE_RE.findall(readme)
   expected_requirement = source.requirement
-  if not readme_packages:
-    failures.append("README.md: current-checkout find_package not found")
-  else:
-    mismatched = sorted(
-      {".".join(parts) for parts in readme_packages} - {expected_requirement}
+  mismatched = sorted(
+    {".".join(parts) for parts in readme_packages} - {expected_requirement}
+  )
+  for actual_requirement in mismatched:
+    failures.append(
+      "README.md: current-checkout find_package must request "
+      f"{expected_requirement}, not {actual_requirement}"
     )
-    for actual_requirement in mismatched:
-      failures.append(
-        "README.md: current-checkout find_package must request "
-        f"{expected_requirement}, not {actual_requirement}"
-      )
 
   packaging_packages = {
     ".".join(parts) for parts in FIND_PACKAGE_RE.findall(packaging)

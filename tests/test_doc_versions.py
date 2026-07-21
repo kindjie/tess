@@ -93,6 +93,22 @@ def test_check_repository_rejects_stale_later_find_package(tmp_path):
   ]
 
 
+def test_check_repository_accepts_readme_without_find_package(tmp_path):
+  write_fixture(tmp_path)
+  readme = tmp_path / "README.md"
+  readme.write_text(
+    "\n".join(
+      line
+      for line in readme.read_text(encoding="utf-8").splitlines()
+      if "find_package" not in line
+    )
+    + "\n",
+    encoding="utf-8",
+  )
+
+  assert cdv.check_repository(tmp_path) == []
+
+
 def test_check_repository_accepts_release_checkout(tmp_path):
   write_release_fixture(tmp_path)
 
