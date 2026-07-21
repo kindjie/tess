@@ -11,11 +11,17 @@ theme:
   name: material
   logo: assets/tess-symbol-header.svg
   favicon: assets/tess-symbol.svg
+  # No web-font fetch: headings load a vendored face via extra.css; body
+  # text uses the system stack.
+  font: false
   features:
     - content.code.copy
     - navigation.footer
     - navigation.instant
     - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - search.highlight
     - search.suggest
   palette:
     - media: "(prefers-color-scheme: light)"
@@ -36,6 +42,10 @@ theme:
 markdown_extensions:
   - admonition
   - attr_list
+  - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.superfences:
@@ -50,6 +60,8 @@ extra_css:
 nav:
   - Home: index.md
   - Getting started: getting-started.md
+  - Installation: packaging.md
+  - Examples: examples.md
   - API reference: https://tess.owx.dev/api/
   - Concepts:
       - Overview: architecture/README.md
@@ -61,15 +73,20 @@ nav:
       - Simulation and scheduling: architecture/simulation.md
       - ECS integration: architecture/ecs.md
       - Diagnostics: architecture/diagnostics.md
-  - Packaging: packaging.md
   - Performance: performance.md
   - Support: support.md
-  - Project history: history.md
 
 exclude_docs: |
   /README.md
   /api-main.md
+  /assets/fonts/README.md
+  /dependencies.md
+  /git-hooks.md
+  /history.md
+  /hosting.md
+  /style.md
   decisions/
+  doxygen-awesome/
   planning/
   tdd/
 

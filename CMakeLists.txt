@@ -216,6 +216,16 @@ if(TESS_BUILD_DOCS)
       "tess::*::detail"
       "tess::*::detail::*")
   set(DOXYGEN_GENERATE_HTML YES)
+  # doxygen-awesome-css (vendored, docs/doxygen-awesome/README.md) requires
+  # the stock LIGHT base style; brand colors come from tess-theme.css.
+  set(DOXYGEN_HTML_COLORSTYLE LIGHT)
+  set(DOXYGEN_HTML_EXTRA_STYLESHEET
+      "${CMAKE_CURRENT_SOURCE_DIR}/docs/doxygen-awesome/doxygen-awesome.css"
+      "${CMAKE_CURRENT_SOURCE_DIR}/docs/doxygen-awesome/doxygen-awesome-sidebar-only.css"
+      "${CMAKE_CURRENT_SOURCE_DIR}/docs/doxygen-awesome/tess-theme.css")
+  # Ship the vendored stylesheets' MIT permission notice with the copies.
+  set(DOXYGEN_HTML_EXTRA_FILES
+      "${CMAKE_CURRENT_SOURCE_DIR}/docs/doxygen-awesome/LICENSE")
   set(DOXYGEN_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/docs")
   set(DOXYGEN_PROJECT_LOGO
       "${CMAKE_CURRENT_SOURCE_DIR}/docs/assets/tess-symbol.svg")

@@ -14,7 +14,7 @@ LATEST_RELEASE_RE = re.compile(
   r"latest release is `v(\d+)\.(\d+)\.(\d+)`", re.IGNORECASE
 )
 CHANGELOG_RELEASE_RE = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)\]", re.MULTILINE)
-FIND_PACKAGE_RE = re.compile(r"find_package\(tess\s+(\d+)\.(\d+)")
+FIND_PACKAGE_RE = re.compile(r"find_package\(tess\s+([0-9][0-9.]*)")
 FETCH_TAG_RE = re.compile(r"GIT_TAG\s+v(\d+)\.(\d+)\.(\d+)")
 
 
@@ -110,28 +110,24 @@ def check_repository(repo_root: Path = REPO_ROOT) -> list[str]:
         f"docs/index.md: identify v{source} as the unreleased development API"
       )
 
-  readme_packages = FIND_PACKAGE_RE.findall(readme)
+  # The README may omit find_package entirely (installation lives in
+  # docs/packaging.md); any occurrence it does carry must match the source
+  # major.minor exactly, with no patch component.
   expected_requirement = source.requirement
-  if not readme_packages:
-    failures.append("README.md: current-checkout find_package not found")
-  else:
-    mismatched = sorted(
-      {".".join(parts) for parts in readme_packages} - {expected_requirement}
-    )
-    for actual_requirement in mismatched:
+  for label, packages, required in (
+    ("README.md", FIND_PACKAGE_RE.findall(readme), False),
+    ("docs/packaging.md", FIND_PACKAGE_RE.findall(packaging), True),
+  ):
+    if required and not packages:
       failures.append(
-        "README.md: current-checkout find_package must request "
+        f"{label}: current-checkout find_package must request "
+        f"{expected_requirement}"
+      )
+    for actual_requirement in sorted(set(packages) - {expected_requirement}):
+      failures.append(
+        f"{label}: current-checkout find_package must request "
         f"{expected_requirement}, not {actual_requirement}"
       )
-
-  packaging_packages = {
-    ".".join(parts) for parts in FIND_PACKAGE_RE.findall(packaging)
-  }
-  if expected_requirement not in packaging_packages:
-    failures.append(
-      "docs/packaging.md: current-checkout find_package must request "
-      f"{expected_requirement}"
-    )
 
   expected_tag = str(release)
   for label, text in (("README.md", readme), ("docs/packaging.md", packaging)):

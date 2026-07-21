@@ -1,0 +1,6 @@
+# Vendored third-party files are kept byte-identical to their upstream
+# releases (checksums recorded alongside them); exempt them from
+# whitespace checks.
+docs/doxygen-awesome/doxygen-awesome*.css -whitespace
+docs/assets/fonts/OFL-fraunces.txt -whitespace
+docs/assets/fonts/*.woff2 -text -whitespace

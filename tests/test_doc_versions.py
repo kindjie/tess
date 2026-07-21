@@ -93,6 +93,63 @@ def test_check_repository_rejects_stale_later_find_package(tmp_path):
   ]
 
 
+def test_check_repository_rejects_stale_packaging_find_package(tmp_path):
+  write_fixture(tmp_path)
+  packaging = tmp_path / "docs" / "packaging.md"
+  packaging.write_text(
+    packaging.read_text(encoding="utf-8")
+    + "\nfind_package(tess 0.3 CONFIG REQUIRED)\n",
+    encoding="utf-8",
+  )
+
+  assert cdv.check_repository(tmp_path) == [
+    "docs/packaging.md: current-checkout find_package must request "
+    "0.4, not 0.3"
+  ]
+
+
+def test_check_repository_rejects_patch_version_requirement(tmp_path):
+  write_fixture(tmp_path, readme_package="0.4.1")
+
+  assert cdv.check_repository(tmp_path) == [
+    "README.md: current-checkout find_package must request 0.4, not 0.4.1"
+  ]
+
+
+def test_check_repository_rejects_packaging_without_find_package(tmp_path):
+  write_fixture(tmp_path)
+  packaging = tmp_path / "docs" / "packaging.md"
+  packaging.write_text(
+    "\n".join(
+      line
+      for line in packaging.read_text(encoding="utf-8").splitlines()
+      if "find_package" not in line
+    )
+    + "\n",
+    encoding="utf-8",
+  )
+
+  assert cdv.check_repository(tmp_path) == [
+    "docs/packaging.md: current-checkout find_package must request 0.4"
+  ]
+
+
+def test_check_repository_accepts_readme_without_find_package(tmp_path):
+  write_fixture(tmp_path)
+  readme = tmp_path / "README.md"
+  readme.write_text(
+    "\n".join(
+      line
+      for line in readme.read_text(encoding="utf-8").splitlines()
+      if "find_package" not in line
+    )
+    + "\n",
+    encoding="utf-8",
+  )
+
+  assert cdv.check_repository(tmp_path) == []
+
+
 def test_check_repository_accepts_release_checkout(tmp_path):
   write_release_fixture(tmp_path)
 

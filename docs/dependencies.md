@@ -360,3 +360,13 @@ is adopted yet.
 
 [work-contract-commit]: https://github.com/buildingcpp/work_contract/commit/3f56a17e36db57846a086e20d8788478287f3c86
 [signal-tree-commit]: https://github.com/buildingcpp/signal_tree/commit/f7b59510e117bc6156af86a6b8689ca4a3832e3c
+
+## Documentation assets (vendored)
+
+- `doxygen-awesome-css` `v2.4.2` — MIT-licensed stylesheet set for the
+  Doxygen API reference. Vendored with checksums in
+  [`docs/doxygen-awesome/`](doxygen-awesome/README.md).
+  Documentation: https://jothepro.github.io/doxygen-awesome-css/
+- Fraunces (variable, latin subset) — OFL-licensed heading font for the
+  MkDocs site, vendored in [`docs/assets/fonts/`](assets/fonts/README.md).
+  Upstream: https://github.com/undercasetype/Fraunces

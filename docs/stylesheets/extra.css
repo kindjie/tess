@@ -1,9 +1,74 @@
-[data-md-color-scheme="default"] .tess-logo__image--slate,
-[data-md-color-scheme="slate"] .tess-logo__image--default {
-  display: none;
+/**
+ * tess site overrides for mkdocs-material.
+ *
+ * Headings use Fraunces (vendored, docs/assets/fonts/), a close open
+ * match for the Sirenia Light logo wordmark; body text stays on the
+ * system stack (theme.font is false, so no web-font fetch).
+ */
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("../assets/fonts/fraunces-latin.woff2") format("woff2");
+  font-weight: 300 600;
+  font-style: normal;
+  font-display: swap;
 }
 
-[data-md-color-scheme="default"] .tess-logo__image--default,
-[data-md-color-scheme="slate"] .tess-logo__image--slate {
-  display: inline;
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4,
+.md-typeset h5,
+.md-typeset h6 {
+  font-family: "Fraunces", Georgia, serif;
+}
+
+.md-typeset h1 {
+  font-weight: 340;
+}
+
+.md-typeset h2 {
+  font-weight: 380;
+}
+
+.md-header__topic,
+.md-tabs__link {
+  font-family: "Fraunces", Georgia, serif;
+}
+
+/* Landing-page hero: center the logo, tagline, and action row. */
+.tess-hero {
+  text-align: center;
+  margin: 1.5rem 0 2.5rem;
+}
+
+.tess-hero img {
+  max-width: min(520px, 90%);
+}
+
+.tess-hero h1 {
+  margin: 0.6rem 0 0.8rem;
+}
+
+.tess-hero p {
+  max-width: 38rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.tess-hero .md-button {
+  margin: 0.25rem 0.35rem;
+}
+
+/* Version pill under the tagline. */
+.tess-version {
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+.tess-version code {
+  border-radius: 1em;
+  padding: 0.15em 0.7em;
+  background-color: var(--md-primary-fg-color--light);
+  color: var(--md-primary-bg-color);
 }

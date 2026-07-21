@@ -1,7 +1,5 @@
 # Getting Started
 
-This tutorial targets the `v0.4.0` release.
-
 This tutorial climbs the `tess` concept ladder in the order the pieces
 compose: shapes, schemas, worlds, writes, pathfinding, topology, the
 schedule loop, and the render bridge. Each stage links the maintained
@@ -33,10 +31,9 @@ flowchart TB
   Frame --> Renderer["Consumer-owned presentation state"]
 ```
 
-Consume the library per the
-[repository README](https://github.com/kindjie/tess#install-and-consume)
-(installed package, `FetchContent`, or `add_subdirectory`), link `tess::tess`,
-and include the pathfinding facade:
+Consume the library per the [installation guide](packaging.md) (installed
+package, `FetchContent`, or `add_subdirectory`), link `tess::tess`, and
+include the pathfinding facade:
 
 <!-- tess-snippet: getting-pathfinding-include source=examples/documentation.cc -->
 ```cpp

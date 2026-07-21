@@ -5,18 +5,28 @@ intent.
 
 ## Current Docs
 
+Published on the documentation site:
+
 - [Getting Started](getting-started.md): tutorial from shapes and schemas
   to the schedule loop and render bridge.
+- [Installation](packaging.md): supported installation paths and registry
+  status.
+- [Examples](examples.md): the annotated example catalog.
 - [Architecture](architecture/README.md): maintained design notes that should
   track implementation.
-- [Performance](performance.md): benchmark trend snapshots and calibration
-  workflow.
+- [Performance](performance.md): adopter-facing benchmark expectations and
+  the trend snapshot.
+- [Support](support.md): adopter help, issue, and compatibility guidance;
+  the canonical pre-1.0 stability statement.
+
+Contributor and operations pages (in-repo only; excluded from the site):
+
 - [Dependencies](dependencies.md): external library choices and documentation.
-- [Packaging](packaging.md): supported installation paths and registry status.
-- [Support](support.md): adopter help, issue, and compatibility guidance.
 - [Hosting](hosting.md): GitHub Pages and custom-domain runbook.
 - [Style](style.md): C++ coding style and formatting policy.
 - [Git Hooks](git-hooks.md): local commit and push guardrails.
+- [doxygen-awesome](doxygen-awesome/README.md): vendored Doxygen theme.
+- [Fonts](assets/fonts/README.md): vendored heading font.
 
 ## Internal Records
 
@@ -24,6 +34,8 @@ intent.
   internal working documents, not a guide to current behavior.
 - [Optimization Log](planning/optimization-log.md): accepted, rejected, and
   deferred performance experiments.
+- [Benchmark Calibration](planning/benchmark-calibration.md): threshold
+  calibration methodology and history.
 
 ## Design History
 
