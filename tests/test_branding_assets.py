@@ -81,6 +81,33 @@ def test_readme_and_docs_home_use_theme_appropriate_lockups():
   assert "tess-logo-dark.svg#only-dark" in docs_home
 
 
+def test_site_root_favicon_is_a_multi_size_ico():
+  import struct
+
+  data = (ROOT / "docs" / "favicon.ico").read_bytes()
+  reserved, image_type, count = struct.unpack("<HHH", data[:6])
+  assert (reserved, image_type) == (0, 1)
+  assert count >= 3
+
+  sizes = set()
+  for index in range(count):
+    entry = data[6 + 16 * index : 6 + 16 * (index + 1)]
+    width, offset = entry[0], struct.unpack("<I", entry[12:16])[0]
+    sizes.add(width)
+    assert data[offset : offset + 8] == b"\x89PNG\r\n\x1a\n"
+  assert {16, 32, 48} <= sizes
+
+
+def test_social_preview_matches_github_card_dimensions():
+  import struct
+
+  data = (ASSETS / "tess-social-preview.png").read_bytes()
+  assert data[:8] == b"\x89PNG\r\n\x1a\n"
+  width, height = struct.unpack(">II", data[16:24])
+  assert (width, height) == (2560, 1280)
+  assert len(data) < 1024 * 1024  # GitHub's social-preview upload limit.
+
+
 def test_docs_heading_font_is_vendored_with_license():
   docs_css = read("docs/stylesheets/extra.css")
   assert "fraunces-latin.woff2" in docs_css
