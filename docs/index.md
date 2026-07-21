@@ -1,13 +1,7 @@
-<p align="center" class="tess-logo" role="img" aria-label="tess">
-  <img class="tess-logo__image tess-logo__image--default"
-       src="assets/tess-logo.svg"
-       alt=""
-       width="520">
-  <img class="tess-logo__image tess-logo__image--slate"
-       src="assets/tess-logo-dark.svg"
-       alt=""
-       width="520">
-</p>
+<div class="tess-hero" markdown>
+
+![tess](assets/tess-logo.svg#only-light){ width="520" }
+![tess](assets/tess-logo-dark.svg#only-dark){ width="520" }
 
 # Tile worlds and paths, without an engine
 
@@ -16,16 +10,20 @@ topology-aware pathfinding, and deterministic simulation updates. It supplies
 the spatial substrate while leaving rendering, physics, and entity ownership
 to your application.
 
-This site documents the `v0.4.0` release.
+This site documents the `v0.4.0` release. tess is pre-1.0 — see
+[support and compatibility](support.md) for the stability policy.
+{ .tess-version }
 
 [Get started](getting-started.md){ .md-button .md-button--primary }
 [Try the live pathfinder](demo/){ .md-button }
-[Browse the source](https://github.com/kindjie/tess){ .md-button }
+[API reference](https://tess.owx.dev/api/){ .md-button }
+
+</div>
 
 ## A complete path query
 
-This program is compiled and run in CI. The copy below is synchronized with
-its canonical source file, so documentation drift fails the build.
+A world shape, a field schema, and an A* query in one file (compiled and run
+in CI):
 
 <!-- tess-snippet: quickstart source=examples/quickstart.cc -->
 ```cpp
@@ -73,6 +71,9 @@ expanded nodes: 15
 ```
 <!-- /tess-output -->
 
+Add it to your build with one CMake `FetchContent` block or an installed
+package — see [Installation](packaging.md).
+
 ## Choose the smallest surface
 
 - `<tess/pathfinding.h>` provides shapes, worlds, topology, and routing.
@@ -80,6 +81,46 @@ expanded nodes: 15
   concepts.
 - `<tess/tess.h>` remains the compatibility umbrella.
 
-The two facade headers were introduced in `v0.4.0`. All three are
-dependency-free. Optional EnTT and Dear ImGui adapters remain behind explicit
-integration headers and compile definitions.
+All three are dependency-free. Optional EnTT and Dear ImGui adapters remain
+behind explicit integration headers and compile definitions.
+
+## Where next
+
+<div class="grid cards" markdown>
+
+- :material-school:{ .lg .middle } __Getting started__
+
+    ---
+
+    The concept ladder: shapes, schemas, worlds, writes, pathfinding,
+    topology, and the schedule loop.
+
+    [:octicons-arrow-right-24: Tutorial](getting-started.md)
+
+- :material-play-box-multiple:{ .lg .middle } __Examples__
+
+    ---
+
+    Nine annotated, self-checking programs, from the quickstart to the
+    flagship colony simulation.
+
+    [:octicons-arrow-right-24: Example catalog](examples.md)
+
+- :material-layers-triple:{ .lg .middle } __Concepts__
+
+    ---
+
+    Maintained design notes for every layer, from shapes and storage to
+    simulation and diagnostics.
+
+    [:octicons-arrow-right-24: Architecture overview](architecture/README.md)
+
+- :material-speedometer:{ .lg .middle } __Performance__
+
+    ---
+
+    Representative medians and CI-enforced benchmark ceilings.
+
+    [:octicons-arrow-right-24: Benchmarks](performance.md)
+
+</div>

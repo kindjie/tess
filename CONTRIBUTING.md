@@ -84,6 +84,34 @@ CI runs primarily on `ubuntu-24.04` with Clang and covers:
 - Non-gating CI benchmark baseline collection:
   `cmake --build --preset bench --target tess_bench_ci_baselines`
 
+## Documentation
+
+The documentation site is MkDocs Material plus a Doxygen API reference.
+Preview the site locally:
+
+```sh
+python3.12 -m venv .venv-docs
+.venv-docs/bin/python -m pip install \
+  --require-hashes --requirement requirements-docs.txt
+.venv-docs/bin/mkdocs serve
+```
+
+Generate the API reference locally with
+`cmake --preset consumer -DTESS_BUILD_DOCS=ON` followed by
+`cmake --build build/consumer --target tess_docs` (requires Doxygen);
+output lands in `build/consumer/docs/html`. Its theme is the vendored
+[doxygen-awesome-css](docs/doxygen-awesome/README.md).
+
+Documentation is CI-enforced, so adopter pages do not need to say so:
+`tess-snippet` blocks are byte-synchronized with compiled sources
+(`tools/check_doc_snippets.py`), `tess-output` blocks are compared against
+real program stdout (`tools/check_doc_outputs.py`), version statements are
+cross-checked against the CMake source version
+(`tools/check_doc_versions.py`), and every generated-site link and anchor
+is validated (`tools/check_docs_links.py`). Deployment and DNS live in
+[`docs/hosting.md`](docs/hosting.md); the documentation tree map lives in
+[`docs/README.md`](docs/README.md).
+
 ## Benchmarks
 
 Benchmarks are opt-in and use Google Benchmark:
@@ -106,8 +134,41 @@ changes; summarize downloaded artifacts with:
 tools/benchmark_baseline_summary.py path/to/*.json
 ```
 
-See [`docs/performance.md`](docs/performance.md) for the trend snapshot
-workflow and when to regenerate the README image.
+### Trend snapshot regeneration
+
+Regenerate the detailed report with:
+
+```sh
+tools/benchmark_trends.py path/to/benchmark-baselines-* \
+  --out build/bench/benchmark-trends.html \
+  --snapshot-svg docs/assets/benchmark-trends.svg \
+  --summary-md build/bench/benchmark-trends.md
+```
+
+Regenerate and commit `docs/assets/benchmark-trends.svg` and the snapshot
+table in [`docs/performance.md`](docs/performance.md) when the snapshot
+will materially help readers understand current performance:
+
+- before enabling or changing benchmark timing thresholds
+- after benchmark workloads, selected trend benchmarks, or threshold JSON
+  names change
+- after a performance-sensitive optimization or regression fix
+- at milestone or release checkpoints
+- after collecting at least 5 CI baseline artifacts, or 10 artifacts
+  before tightening existing limits
+
+Do not refresh the snapshot for every CI run. A stale snapshot is
+acceptable when its label shows the source CI run, commit, and
+Pacific-time timestamp.
+
+The final commit remains manual by design: CI should not push generated
+images back to branches, maintainers should review trend shape, variance,
+and benchmark relevance before changing tracked performance docs, and the
+threshold JSON files remain the authoritative gate policy — plots are
+calibration evidence. Calibration methodology and history live in
+[`docs/planning/benchmark-calibration.md`](docs/planning/benchmark-calibration.md);
+individual optimization experiments live in
+[`docs/planning/optimization-log.md`](docs/planning/optimization-log.md).
 
 Prefer the narrowest public header that owns the API in compile-sensitive
 code. To compare syntax-only header costs on the local compiler, run:

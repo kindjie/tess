@@ -3,13 +3,13 @@
 This directory contains maintained architecture documentation for the current
 implementation.
 
-The current pre-1.0 surface includes sparse residency,
+The current surface includes sparse residency,
 queued operations with result channels, the schedule with cadences and the
 selectable parallel phase executor, movement classes with per-class topology
 and transition providers, A* with the region-graph precheck, distance-field
 products and caches, the ECS adapter (EnTT-gated), the versioned DeltaFrame
 render bridge, compile-gated diagnostics, and the GPU backend interface
-(interface only in the current pre-1.0 release).
+(interface only in the current release).
 
 ## Layer Map
 
@@ -109,24 +109,12 @@ Maintained notes for implemented areas:
 - [ECS integration](ecs.md)
 - [GPU backend interface](gpu.md)
 
-C++ implementation work follows the active [style policy](../style.md).
-
 The umbrella header `tess/tess.h` exports the dependency-free core surface plus
 the configured `TESS_VERSION_MAJOR`, `TESS_VERSION_MINOR`, and
 `TESS_VERSION_PATCH` macros and their typed `tess::version` /
 `tess::library_version` representation. Optional integrations
 that require consumer-provided EnTT or Dear ImGui declarations are
 deliberately not included; consumers include those adapter headers explicitly.
-
-[surface.json](surface.json) maps each maintained doc to the public symbol
-names it documents; `tools/check_public_surface.py` compares that manifest
-against the headers in `TESS_PUBLIC_HEADERS` and the generated version-header
-template. It covers public types, aliases, concepts, constants, free functions,
-and macros, and rejects both undocumented declarations and stale manifest
-entries. The check is a required gate in CI's hooks-backstop job; the companion
-`tools/check_public_docs.py` requires Doxygen comments for namespace-scope API
-declarations across every installed header, including public declarations
-whose definitions live in an implementation header included by an umbrella.
 
 ## Historical design intent (TDD archive)
 

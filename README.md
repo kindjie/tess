@@ -11,6 +11,9 @@
 # tess
 
 [![CI](https://github.com/kindjie/tess/actions/workflows/ci.yml/badge.svg)](https://github.com/kindjie/tess/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/kindjie/tess)](https://github.com/kindjie/tess/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/kindjie/tess)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-tess.owx.dev-673ab7)](https://tess.owx.dev/)
 
 `tess` is a performance-first, header-only C++20 tile and path simulation
 substrate: small spatial pieces composed into large, structured worlds for
@@ -20,102 +23,12 @@ Use tess when a simulation needs bounded grid storage, topology-aware routing,
 or deterministic queued updates without committing to an engine. It is a good
 fit for games, colony simulations, robotics prototypes, and headless spatial
 models. It is not a renderer, physics engine, navigation-mesh generator, or
-drop-in ECS, and its pre-1.0 API is still evolving.
+drop-in ECS.
 
-The latest release is `v0.4.0`. All `0.x` releases are pre-stable:
-public APIs and data layouts may change without compatibility shims while
-the design is still being validated. Release notes live in
-[`CHANGELOG.md`](CHANGELOG.md). Repository provenance across the
-pre-public rewrite is described in [`docs/history.md`](docs/history.md).
-
-This checkout documents the `v0.4.0` release.
-
-## Features
-
-- Constexpr world shapes with one model for 2D, vertical 2D, and 3D,
-  including degenerate axes.
-- Chunk-local SoA field storage with optional sparse residency and a
-  byte-budgeted residency manager.
-- Queued operations with write-policy enforcement, result channels, and
-  plan-driven parallel execution.
-- A simulation schedule with cadences, budgets, auto-exec tasks, and a
-  selectable parallel phase executor.
-- Movement classes with per-class topology, transition providers (for
-  example stairs across z-levels), and a region-graph reachability
-  precheck that rejects impossible queries before search.
-- A* and weighted routing with route caches, portal-segment caches, and
-  shared distance-field products.
-- An ECS adapter defined by concepts (EnTT adapter included, gated
-  behind `TESS_ENABLE_ENTT`).
-- A versioned DeltaFrame render bridge for decoupled render consumers.
-- Compile-gated diagnostics with optional Dear ImGui panels.
-- A GPU backend interface (interface only in the current release).
-
-## Requirements
-
-- A C++20 compiler (Clang, GCC, AppleClang, or MSVC)
-- CMake 3.25 or newer
-
-The installed library is header-only, and installing it needs no network
-access and builds no code. GoogleTest, Google Benchmark, and EnTT are
-development or optional integration dependencies fetched only by
-developer presets; ordinary consumers do not link them through
-`tess::tess`.
-
-## Install and consume
-
-The `consumer` preset configures a headers-only install: no tests,
-examples, benchmarks, warnings-as-errors, or network fetches.
-
-```sh
-cmake --preset consumer
-cmake --install build/consumer --prefix "$HOME/.local"
-```
-
-When installing to a non-system prefix, point the consuming configure step at
-it:
-
-```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH="$HOME/.local"
-```
-
-(Equivalently, without presets:
-`cmake -B build -DTESS_BUILD_TESTING=OFF -DTESS_BUILD_EXAMPLES=OFF`
-followed by `cmake --install build --prefix ...`.)
-
-The commands above install this checkout's development package:
-
-```cmake
-find_package(tess 0.4 CONFIG REQUIRED)
-target_link_libraries(my_target PRIVATE tess::tess)
-```
-
-For the latest released source, use CMake's `FetchContent` and pin its tag:
-
-```cmake
-include(FetchContent)
-FetchContent_Declare(
-  tess
-  GIT_REPOSITORY https://github.com/kindjie/tess.git
-  GIT_TAG v0.4.0
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(tess)
-target_link_libraries(my_target PRIVATE tess::tess)
-```
-
-Pin a release tag or commit rather than a moving branch. Tests, examples, and
-benchmarks default off when tess is a subproject, so this path does not fetch
-its development dependencies.
-
-The public CMake target is `tess::tess`. For a focused include surface, use
-`<tess/pathfinding.h>` for worlds and routing, `<tess/simulation.h>` for the
-full simulation stack, or `<tess/tess.h>` for the all-in-one compatibility
-umbrella. The facade headers were introduced in the `v0.4.0` release.
-The EnTT adapter and Dear ImGui panels are opt-in headers that consumers
-include after their corresponding third-party header; see
-`docs/architecture/ecs.md` and `docs/architecture/diagnostics.md`. In
-compile-sensitive code, prefer the narrowest public header that owns the API.
+The latest release is `v0.4.0`; this checkout documents the
+`v0.4.0` release. tess is pre-1.0 — see
+[support and compatibility](https://tess.owx.dev/support/) for the stability
+policy. Release notes live in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Quickstart
 
@@ -158,7 +71,7 @@ int main() {
 ```
 <!-- /tess-snippet -->
 
-Build every dependency-free example without downloading test dependencies:
+Build and run it, along with every other dependency-free example:
 
 ```sh
 cmake --preset examples
@@ -176,91 +89,70 @@ expanded nodes: 15
 <!-- /tess-output -->
 
 Chunk dimensions must be powers of two that evenly divide the world
-dimensions. From here, [`docs/getting-started.md`](docs/getting-started.md)
-walks the full concept ladder up to the schedule loop, and
-`examples/mvp_path.cc` shows the same path query driven through queued,
-write-policy-checked edits.
+dimensions. From here, the
+[getting-started tutorial](https://tess.owx.dev/getting-started/) walks the
+full concept ladder up to the schedule loop and render bridge.
 
-## Examples
+## Use in your project
 
-The `examples` and `dev` presets build the examples; each is a self-checking
-binary (built as `tess_<name>`), smoke-run in CI:
+tess is header-only and needs a C++20 compiler and CMake 3.25 or newer:
 
-- [`examples/web_pathfinder`](examples/web_pathfinder) — an interactive,
-  single-threaded WebAssembly pathfinder built from the same C++20 headers and
-  published with the documentation site.
-- [`examples/quickstart.cc`](examples/quickstart.cc) — the complete program
-  shown above.
-- [`examples/mvp_path.cc`](examples/mvp_path.cc) — a small end-to-end
-  queued-edit plus A*
-  pathfinding prototype.
-- [`examples/path_agents.cc`](examples/path_agents.cc) — a multi-agent
-  path-agent tick loop with
-  goal assignment, dirty-driven replanning, and blocked-path handling.
-- [`examples/colony_2d.cc`](examples/colony_2d.cc) — the flagship
-  composition: queued
-  construction edits through the auto-exec schedule task, an OnDirty
-  topology rebuild, movement-class agents routing around the new wall,
-  and a DeltaFrame render consumer, all in one `tess::Schedule` loop.
-- [`examples/ant_farm_vertical.cc`](examples/ant_farm_vertical.cc) — a
-  degenerate-axis vertical world
-  (x-z cross-section) sharing one distance-field product across ants via
-  the byte-budgeted `FieldProductCache`.
-- [`examples/stairs_3d.cc`](examples/stairs_3d.cc) — the
-  `StairTransitions` provider connecting
-  two z-levels, with reachability, the path-runtime precheck, and an
-  incremental update after demolishing the stair.
-- [`examples/custom_ecs_min.cc`](examples/custom_ecs_min.cc) — the ECS
-  adapter concepts implemented
-  by a deliberately non-EnTT-shaped micro ECS.
-- [`examples/entt_pawns.cc`](examples/entt_pawns.cc) — the EnTT adapter
-  driving registry-owned
-  pawns (built when `TESS_ENABLE_ENTT` is on).
-- [`examples/render_delta_consumer.cc`](examples/render_delta_consumer.cc) — a
-  standalone DeltaFrame
-  consumer rebuilding a shadow grid from published frames.
+```cmake
+include(FetchContent)
+FetchContent_Declare(
+  tess
+  GIT_REPOSITORY https://github.com/kindjie/tess.git
+  GIT_TAG v0.4.0
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(tess)
+target_link_libraries(my_target PRIVATE tess::tess)
+```
+
+For an installed `find_package` package, install prefixes, include-surface
+guidance, and package-manager status, see
+[Installation](https://tess.owx.dev/packaging/).
 
 ## Documentation
 
-- [tess.owx.dev](https://tess.owx.dev/): the rendered documentation
-  site, including the interactive WebAssembly pathfinding demo.
-- [API reference](https://tess.owx.dev/api/): generated documentation for the
-  supported C++ surface.
-- [`docs/getting-started.md`](docs/getting-started.md): tutorial from
+- [tess.owx.dev](https://tess.owx.dev/) — the documentation site, including
+  the interactive WebAssembly pathfinding demo.
+- [Getting started](https://tess.owx.dev/getting-started/) — tutorial from
   shapes and schemas to the schedule loop and render bridge.
-- [`docs/architecture/README.md`](docs/architecture/README.md):
-  maintained design notes tracking the current implementation.
-- [`docs/history.md`](docs/history.md): repository provenance and how to
-  interpret retained pre-public pull requests.
+- [API reference](https://tess.owx.dev/api/) — generated documentation for
+  the supported C++ surface.
+- [Examples](https://tess.owx.dev/examples/) — nine annotated, self-checking
+  programs.
 
-The same Doxygen API reference can be generated locally with
-`cmake --preset consumer -DTESS_BUILD_DOCS=ON` followed by
-`cmake --build build/consumer --target tess_docs` (requires Doxygen);
-output lands in `build/consumer/docs/html`.
+## Examples
 
-## Benchmarks
+- [`examples/quickstart.cc`](examples/quickstart.cc) — the complete program
+  shown above.
+- [`examples/colony_2d.cc`](examples/colony_2d.cc) — the flagship
+  composition: queued construction edits, an OnDirty topology rebuild,
+  movement-class agents routing around the new wall, and a DeltaFrame render
+  consumer, all in one `tess::Schedule` loop.
+- [`examples/web_pathfinder`](examples/web_pathfinder) — the interactive
+  WebAssembly pathfinder, [live on the documentation
+  site](https://tess.owx.dev/demo/).
 
-For scale, representative medians from the benchmark suite on an
-Apple M3 Max (single-threaded):
+All nine examples are annotated in the
+[example catalog](https://tess.owx.dev/examples/).
 
-- A* across an open 512x512 grid, corner to corner (a 1,022-step path,
-  ~1,023 nodes expanded): ~2.1 us; the weighted variant: ~2.4 us.
+## Performance
+
+Representative medians on an Apple M3 Max (single-threaded), enforced by
+calibrated CI ceilings:
+
+- A* across an open 512x512 grid, corner to corner: ~2.1 us.
 - One clean tick of 100 path agents with retained routes: ~330 ns.
 
-Every suite is also gated in CI with calibrated per-benchmark ceilings,
-so these characteristics are enforced, not aspirational.
-
-![Benchmark trend snapshot](docs/assets/benchmark-trends.svg)
-
-A labeled snapshot from CI benchmark runs; it may be stale by a few
-commits. See [`docs/performance.md`](docs/performance.md) for the trend
-workflow and [`CONTRIBUTING.md`](CONTRIBUTING.md) for the threshold gates
-and calibration policy.
+Details and trend snapshots: [Performance](https://tess.owx.dev/performance/).
 
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the developer workflow:
-presets, quality gates, benchmarks, and Steam Deck testing. Install the
+presets, quality gates, benchmarks, and documentation tooling. Install the
 local git hooks first with `python3 tools/git_hooks.py install`.
 
 ## Name

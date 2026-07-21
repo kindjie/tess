@@ -77,14 +77,18 @@ def test_readme_and_docs_home_use_theme_appropriate_lockups():
   assert "prefers-color-scheme: dark" in readme
 
   docs_home = read("docs/index.md")
-  assert "tess-logo.svg" in docs_home
-  assert "tess-logo-dark.svg" in docs_home
-  assert "tess-logo__image--default" in docs_home
-  assert "tess-logo__image--slate" in docs_home
+  assert "tess-logo.svg#only-light" in docs_home
+  assert "tess-logo-dark.svg#only-dark" in docs_home
 
+
+def test_docs_heading_font_is_vendored_with_license():
   docs_css = read("docs/stylesheets/extra.css")
-  assert '[data-md-color-scheme="default"]' in docs_css
-  assert '[data-md-color-scheme="slate"]' in docs_css
+  assert "fraunces-latin.woff2" in docs_css
+  assert 'font-family: "Fraunces"' in docs_css
+
+  assert (ASSETS / "fonts" / "fraunces-latin.woff2").is_file()
+  license_text = read("docs/assets/fonts/OFL-fraunces.txt")
+  assert "SIL Open Font License" in license_text
 
 
 def test_mkdocs_uses_compact_symbol_for_navigation_and_favicon():
