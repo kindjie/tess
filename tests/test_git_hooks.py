@@ -387,6 +387,15 @@ def test_hook_backstop_uses_first_party_python_and_requires_hashes():
   assert "--requirement requirements-dev.txt" in workflow
 
 
+def test_pages_build_has_only_the_permissions_needed_to_configure_pages():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "pages.yml").read_text()
+  build_job = workflow.split("  build:\n", 1)[1].split("  deploy:\n", 1)[0]
+
+  assert "    permissions:\n      contents: read\n      pages: read\n" in build_job
+  assert "      id-token: write" not in build_job
+
+
 def test_workflows_use_only_github_owned_sha_pinned_actions():
   root = Path(__file__).resolve().parents[1]
   action_re = re.compile(r"^\s*uses:\s+([^\s@]+)@([^\s#]+)", re.MULTILINE)
