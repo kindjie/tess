@@ -80,6 +80,7 @@ exclude_docs: |
   /README.md
   /api-main.md
   /assets/fonts/README.md
+  /assets/tess-social-preview.png
   /dependencies.md
   /git-hooks.md
   /history.md

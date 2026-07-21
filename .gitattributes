@@ -4,3 +4,5 @@
 docs/doxygen-awesome/doxygen-awesome*.css -whitespace
 docs/assets/fonts/OFL-fraunces.txt -whitespace
 docs/assets/fonts/*.woff2 -text -whitespace
+docs/favicon.ico -text -whitespace
+docs/assets/*.png -text -whitespace
