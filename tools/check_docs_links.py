@@ -43,6 +43,8 @@ def parse_document(path: Path) -> DocumentParser:
 
 def resolve_target(site: Path, source: Path, raw_path: str) -> Path:
   decoded = unquote(raw_path)
+  if not decoded:
+    return source.resolve()
   target = site / decoded.lstrip("/") if decoded.startswith("/") else (
     source.parent / decoded
   )

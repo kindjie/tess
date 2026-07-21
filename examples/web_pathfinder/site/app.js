@@ -130,6 +130,7 @@ buttons.forEach((button) => button.addEventListener("click", () => {
 }));
 
 document.querySelector("#clear").addEventListener("click", () => {
+  if (!api) return;
   api.reset();
   walls = new Set();
   update();

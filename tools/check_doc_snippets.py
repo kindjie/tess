@@ -22,7 +22,7 @@ MARKDOWN_SNIPPET_RE = re.compile(
   re.MULTILINE | re.DOTALL,
 )
 CPP_FENCE_RE = re.compile(
-  r"^```(?:cpp|c\+\+|cc)\n(?P<body>.*?)\n```$",
+  r"^[ \t]*```(?:cpp|c\+\+|cc)[ \t]*\n(?P<body>.*?)\n[ \t]*```[ \t]*$",
   re.MULTILINE | re.DOTALL,
 )
 HISTORICAL_DOC_DIRS = frozenset({"decisions", "planning", "tdd"})
