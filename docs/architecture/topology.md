@@ -3,6 +3,55 @@
 The current topology layer is a local chunk-region foundation. It lives under
 `include/tess/topology/` and is exported by `tess/tess.h`.
 
+## Region Graph Pipeline
+
+### Construction
+
+Local labeling depends only on resident chunks and the normalized movement
+class predicate.
+
+```mermaid
+flowchart TB
+  accTitle: Local topology construction
+  accDescr: A movement predicate labels connected regions inside each resident chunk and records exits at chunk boundaries.
+
+  Inputs["Resident chunks plus movement class"]
+  Local["Flood-fill local regions per chunk"]
+  Exits["Record boundary exits"]
+  Inputs --> Local --> Exits
+```
+
+The graph builder then combines ordinary boundary adjacency with optional
+provider transitions.
+
+```mermaid
+flowchart TB
+  accTitle: Region-graph assembly
+  accDescr: Boundary exits and provider transitions become portals, a dense region index, and CSR adjacency used by reachability queries.
+
+  Sources["Boundary exits plus transition provider"]
+  Portals["Pair exits and add provider transitions"]
+  Index["Build dense region index and CSR adjacency"]
+  Graph["Stamped RegionGraph"]
+  Query["reachable and precheck_path"]
+  Sources --> Portals --> Index --> Graph --> Query
+```
+
+### Incremental Updates
+
+```mermaid
+stateDiagram-v2
+  accTitle: Region-graph incremental update
+  accDescr: Dirty chunks are patched only while graph stamps match; otherwise the builder performs a full rebuild.
+
+  [*] --> CheckStamps: dirty chunks plus face neighbors
+  CheckStamps --> Patch: stamps match
+  CheckStamps --> FullRebuild: stamp mismatch
+  Patch --> Reindex: relabel and replace affected portals
+  Reindex --> [*]: rebuild dense index and CSR adjacency
+  FullRebuild --> [*]
+```
+
 ## Public Surface
 
 - `LocalRegionId` identifies one passable connected component inside one

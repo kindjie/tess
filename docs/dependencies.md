@@ -68,6 +68,13 @@ GitHub Pages artifact. `requirements-docs.in` pins the direct theme dependency;
 The site remains on MkDocs 1.6.1; MkDocs 2.0 is not an automatic upgrade because
 its current design is incompatible with the existing theme and plugin model.
 
+Architecture diagrams use Material for MkDocs' native Mermaid integration:
+https://squidfunk.github.io/mkdocs-material/reference/diagrams/. Mermaid is not
+a separate Python or build dependency; the pinned Material theme owns the
+browser runtime and initializes it only on pages containing a `mermaid` fence.
+The native integration follows the site's fonts and light/dark palettes and
+works with instant navigation.
+
 Regenerate the docs lock with uv 0.11.29:
 
 ```sh

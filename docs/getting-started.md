@@ -9,6 +9,30 @@ architecture note and a runnable example. Every example is a
 self-checking binary built by the `examples` and `dev` presets (see the
 [contributor guide](https://github.com/kindjie/tess/blob/main/CONTRIBUTING.md)).
 
+The pieces form one dirty-driven data flow. Callers own the queue, schedule,
+agent storage, and presentation state; tess connects those objects without
+owning an engine loop.
+
+```mermaid
+flowchart TB
+  accTitle: End-to-end simulation data flow
+  accDescr: Queued edits update the world and dirty metadata, which drives topology, paths, movement, and versioned render deltas.
+
+  Caller["Game systems"] --> Queue["FrameOps"]
+  Queue --> Exec["Plan and execute"]
+  Exec --> World["World fields"]
+  Exec --> Dirty["Dirty masks, bounds, and versions"]
+  Dirty --> Topology["OnDirty topology task"]
+  Dirty --> Paths["Path-agent replanning"]
+  Topology --> Paths
+  Paths --> Move["Validate and commit movement"]
+  Move --> World
+  Move --> Dirty
+  Dirty --> Collector["DeltaCollector"]
+  Collector --> Frame["Versioned DeltaFrame"]
+  Frame --> Renderer["Consumer-owned presentation state"]
+```
+
 Consume the library per the
 [repository README](https://github.com/kindjie/tess#install-and-consume)
 (installed package, `FetchContent`, or `add_subdirectory`), link `tess::tess`,

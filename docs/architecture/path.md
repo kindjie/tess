@@ -15,6 +15,49 @@ views into storage that can reallocate. Results are either copied into
 caller-supplied scratch/storage, or point at per-entry heap allocations that
 other entries cannot move.
 
+## Choosing a Path Strategy
+
+Choose for the workload first; the optional region-graph precheck can guard
+any search and only skips it when connectivity is definitively unreachable.
+
+```mermaid
+flowchart LR
+  accTitle: Optional topology precheck
+  accDescr: Only an Unreachable precheck result skips grid search; every other status continues conservatively.
+
+  Graph["Optional fresh RegionGraph"] --> Precheck["precheck_path"]
+  Precheck -->|Unreachable| Stop["Return without grid search"]
+  Precheck -->|Every other status| Choose["Choose a search strategy"]
+```
+
+### Unit-Cost Workloads
+
+```mermaid
+flowchart TB
+  accTitle: Unit-cost pathfinding strategy
+  accDescr: Shared goals favor fields, stable route reuse favors the cache, and isolated requests use A star.
+
+  Unit["Unit-cost requests"] --> Shared{"Many starts share goals?"}
+  Shared -->|Yes| Field["Distance field or field product"]
+  Shared -->|No| Stable{"Stable map and route reuse?"}
+  Stable -->|Yes| Cached["cached_astar_path or runtime route cache"]
+  Stable -->|No| AStar["astar_path"]
+```
+
+### Weighted Workloads
+
+```mermaid
+flowchart TB
+  accTitle: Weighted pathfinding strategy
+  accDescr: Isolated weighted requests use A star, while shared goals favor weighted fields or bounded batches.
+
+  Weighted["Weighted requests"] --> Shared{"Many starts share goals?"}
+  Shared -->|No| AStar["weighted_astar_path"]
+  Shared -->|Yes| Bounded{"Small known maximum cost?"}
+  Bounded -->|Yes| Batch["bounded field or weighted_path_batch"]
+  Bounded -->|No| Field["weighted distance field"]
+```
+
 ## Public Surface
 
 - `PathRequest` contains a start and goal `Coord3`.

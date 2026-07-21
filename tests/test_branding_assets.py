@@ -60,11 +60,20 @@ def test_brand_assets_are_self_contained_vector_artwork():
 
 
 def test_readme_and_docs_home_use_theme_appropriate_lockups():
-  for document in ("README.md", "docs/index.md"):
-    text = read(document)
-    assert "tess-logo.svg" in text
-    assert "tess-logo-dark.svg" in text
-    assert "prefers-color-scheme: dark" in text
+  readme = read("README.md")
+  assert "tess-logo.svg" in readme
+  assert "tess-logo-dark.svg" in readme
+  assert "prefers-color-scheme: dark" in readme
+
+  docs_home = read("docs/index.md")
+  assert "tess-logo.svg" in docs_home
+  assert "tess-logo-dark.svg" in docs_home
+  assert "tess-logo__image--default" in docs_home
+  assert "tess-logo__image--slate" in docs_home
+
+  docs_css = read("docs/stylesheets/extra.css")
+  assert '[data-md-color-scheme="default"]' in docs_css
+  assert '[data-md-color-scheme="slate"]' in docs_css
 
 
 def test_mkdocs_uses_compact_symbol_for_navigation_and_favicon():

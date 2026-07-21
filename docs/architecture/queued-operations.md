@@ -4,6 +4,37 @@ The current queued-operations layer is the first M4 scaffold over the existing
 storage and block APIs. It lives in `include/tess/ops/queued.h` and is exported
 by `tess/tess.h`.
 
+The guarded scheduler and `AutoExecTask` execution boundary keeps planning and
+metadata reduction on the frame owner. Concurrent callbacks receive only
+planner-proven disjoint mutable chunk domains and isolated result/dirty slots.
+
+```mermaid
+flowchart TB
+  accTitle: Queued-operation planning
+  accDescr: Guarded runners validate the queue before forming deterministic phases that prove disjoint mutable chunk ownership.
+
+  Queue["FrameOps in enqueue order"] --> Plan["plan_operations"]
+  Plan --> Valid{"All operations valid?"}
+  Valid -->|No| Reject["Failure reports;<br/>guarded runners stop"]
+  Valid -->|Yes| Phases["Deterministic<br/>parallel phases"]
+```
+
+### Execution Ownership
+
+```mermaid
+flowchart TB
+  accTitle: Parallel phase ownership and reduction
+  accDescr: The frame owner prepares isolated slots, joins every callback, then merges metadata and drains results in deterministic order.
+
+  Prepare["Frame owner: prepare isolated dirty and result slots"]
+  Execute["Executor callbacks: mutate disjoint chunk fields"]
+  Record["Callbacks: record dirty data and completion"]
+  Join["Frame owner: join every callback"]
+  Merge["Frame owner: collect, sort, coalesce, and mark dirty"]
+  Drain["Frame owner: drain results, then clear queue and channel"]
+  Prepare --> Execute --> Record --> Join --> Merge --> Drain
+```
+
 ## Public Surface
 
 - `FrameOps` owns the operations submitted for one planning frame.

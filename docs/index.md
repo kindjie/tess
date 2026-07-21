@@ -1,11 +1,12 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)"
-            srcset="assets/tess-logo-dark.svg">
-    <img src="assets/tess-logo.svg"
-         alt="tess"
-         width="520">
-  </picture>
+<p align="center" class="tess-logo" role="img" aria-label="tess">
+  <img class="tess-logo__image tess-logo__image--default"
+       src="assets/tess-logo.svg"
+       alt=""
+       width="520">
+  <img class="tess-logo__image tess-logo__image--slate"
+       src="assets/tess-logo-dark.svg"
+       alt=""
+       width="520">
 </p>
 
 # Tile worlds and paths, without an engine
