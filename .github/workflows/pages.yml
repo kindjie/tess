@@ -9,9 +9,11 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded pull-request builds, but never an in-flight main-branch
+# deployment.
 concurrency:
   group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
@@ -70,6 +72,8 @@ jobs:
             curl --fail --silent http://127.0.0.1:8000/demo/ >/dev/null && break
             sleep 0.25
           done
+          # Fail here, not at the DOM grep, if the server never came up.
+          curl --fail --silent http://127.0.0.1:8000/demo/ >/dev/null
           google-chrome \
             --headless=new \
             --no-sandbox \

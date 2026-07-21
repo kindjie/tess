@@ -6,6 +6,9 @@
   adopter-facing excerpts and compiled sources.
 - `test_check_docs_links.py`: verifies generated-site link and anchor checks,
   including root-relative assets and rejection of missing local targets.
+- `test_doc_outputs.py`: verifies documented example-output fences stay
+  synchronized with the stdout of their compiled binaries, including drift,
+  missing/unused `source=binary` mappings, and failing binaries.
 - `allocation_counter.{h,cc}` is shared only by allocation-sensitive test
   binaries that need global `new`/`delete` counters. Do not link it into more
   than one translation unit inside the same executable.

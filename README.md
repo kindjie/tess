@@ -158,10 +158,12 @@ cmake --build --preset examples
 
 Expected output:
 
+<!-- tess-output: quickstart source=examples/quickstart.cc -->
 ```text
 path cost: 14
 expanded nodes: 15
 ```
+<!-- /tess-output -->
 
 Chunk dimensions must be powers of two that evenly divide the world
 dimensions. From here, [`docs/getting-started.md`](docs/getting-started.md)
@@ -210,6 +212,8 @@ binary (built as `tess_<name>`), smoke-run in CI:
 
 ## Documentation
 
+- [tess.owx.dev](https://tess.owx.dev/): the rendered documentation
+  site, including the interactive WebAssembly pathfinding demo.
 - [`docs/getting-started.md`](docs/getting-started.md): tutorial from
   shapes and schemas to the schedule loop and render bridge.
 - [`docs/architecture/README.md`](docs/architecture/README.md):

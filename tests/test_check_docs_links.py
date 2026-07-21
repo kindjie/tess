@@ -57,6 +57,20 @@ def test_check_site_reports_missing_fragment(tmp_path):
   ]
 
 
+def test_check_site_resolves_fragment_only_links_in_flat_pages(tmp_path):
+  write_site(tmp_path)
+  (tmp_path / "404.html").write_text(
+    '<h1 id="top">Not found</h1>'
+    '<a href="#top">Top</a>'
+    '<a href="#absent">Broken</a>',
+    encoding="utf-8",
+  )
+
+  assert cdl.check_site(tmp_path) == [
+    "404.html: missing anchor 'absent' in 404.html"
+  ]
+
+
 def test_check_site_rejects_target_outside_site(tmp_path):
   site = tmp_path / "site"
   site.mkdir()

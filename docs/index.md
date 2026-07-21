@@ -55,10 +55,12 @@ int main() {
 
 It prints:
 
+<!-- tess-output: quickstart source=examples/quickstart.cc -->
 ```text
 path cost: 14
 expanded nodes: 15
 ```
+<!-- /tess-output -->
 
 ## Choose the smallest surface
 

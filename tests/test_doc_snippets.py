@@ -96,6 +96,21 @@ def test_check_markdown_rejects_unbacked_cpp_fence(tmp_path):
   ]
 
 
+def test_check_markdown_rejects_indented_unbacked_cpp_fence(tmp_path):
+  guide = tmp_path / "docs" / "guide.md"
+  guide.parent.mkdir(parents=True)
+  guide.write_text(
+    "# Guide\n\n- A listed example:\n\n  ```cpp\n  int answer = 42;\n  ```\n",
+    encoding="utf-8",
+  )
+
+  failures = cds.check_markdown(tmp_path, guide)
+
+  assert failures == [
+    "docs/guide.md:5: C++ fence is not backed by a compiled source region"
+  ]
+
+
 def test_check_repository_allows_unbacked_historical_cpp(tmp_path):
   history = tmp_path / "docs" / "tdd" / "old-design.md"
   history.parent.mkdir(parents=True)

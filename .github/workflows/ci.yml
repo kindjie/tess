@@ -65,7 +65,14 @@ jobs:
             echo "::endgroup::"
             ran=$((ran + 1))
           done
-          test "$ran" -ge 9  # every example runs; bump when adding one
+          test "$ran" -ge 11  # every example runs; bump when adding one
+
+      # Documented example output is copied from real program runs; drift
+      # between the docs and the compiled quickstart fails the build.
+      - name: Documentation example output
+        run: >-
+          python3 tools/check_doc_outputs.py
+          examples/quickstart.cc=build/dev/examples/tess_quickstart
 
       - name: Install smoke
         run: tools/install_smoke.sh
@@ -150,6 +157,7 @@ jobs:
           tests/test_check_public_docs.py
           tests/test_check_docs_links.py
           tests/test_cmake_compatibility.py
+          tests/test_doc_outputs.py
           tests/test_doc_snippets.py
           tests/test_doc_versions.py
           tests/test_header_compile_cost.py

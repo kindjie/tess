@@ -115,8 +115,10 @@ def check_repository(repo_root: Path = REPO_ROOT) -> list[str]:
   if not readme_packages:
     failures.append("README.md: current-checkout find_package not found")
   else:
-    actual_requirement = ".".join(readme_packages[0])
-    if actual_requirement != expected_requirement:
+    mismatched = sorted(
+      {".".join(parts) for parts in readme_packages} - {expected_requirement}
+    )
+    for actual_requirement in mismatched:
       failures.append(
         "README.md: current-checkout find_package must request "
         f"{expected_requirement}, not {actual_requirement}"

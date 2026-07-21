@@ -3,6 +3,8 @@
 Thanks for working on `tess`. This document collects the developer
 workflow: presets, hooks, quality gates, and benchmark policy. For
 formatting and layout conventions, read [`docs/style.md`](docs/style.md).
+Participation in the project is covered by the
+[code of conduct](CODE_OF_CONDUCT.md).
 
 ## Workflow expectations
 
