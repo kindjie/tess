@@ -1,3 +1,14 @@
+<p align="center" class="tess-logo" role="img" aria-label="tess">
+  <img class="tess-logo__image tess-logo__image--default"
+       src="assets/tess-logo.svg"
+       alt=""
+       width="520">
+  <img class="tess-logo__image tess-logo__image--slate"
+       src="assets/tess-logo-dark.svg"
+       alt=""
+       width="520">
+</p>
+
 # Tile worlds and paths, without an engine
 
 `tess` is a header-only C++20 library for bounded grid storage,

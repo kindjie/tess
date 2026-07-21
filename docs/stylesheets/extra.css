@@ -1,0 +1,9 @@
+[data-md-color-scheme="default"] .tess-logo__image--slate,
+[data-md-color-scheme="slate"] .tess-logo__image--default {
+  display: none;
+}
+
+[data-md-color-scheme="default"] .tess-logo__image--default,
+[data-md-color-scheme="slate"] .tess-logo__image--slate {
+  display: inline;
+}

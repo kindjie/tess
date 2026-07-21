@@ -1,3 +1,13 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)"
+            srcset="docs/assets/tess-logo-dark.svg">
+    <img src="docs/assets/tess-logo.svg"
+         alt="tess"
+         width="520">
+  </picture>
+</p>
+
 # tess
 
 [![CI](https://github.com/kindjie/tess/actions/workflows/ci.yml/badge.svg)](https://github.com/kindjie/tess/actions/workflows/ci.yml)

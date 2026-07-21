@@ -11,6 +11,91 @@ products and caches, the ECS adapter (EnTT-gated), the versioned DeltaFrame
 render bridge, compile-gated diagnostics, and the GPU backend interface
 (interface only in the current pre-1.0 release).
 
+## Layer Map
+
+Arrows point from foundations to the higher-level facilities they enable.
+Optional adapters remain outside the dependency-free core surface.
+
+```mermaid
+flowchart TB
+  accTitle: tess module dependency layers
+  accDescr: Core and storage foundations support block operations and topology, which in turn support queued work, paths, and simulation.
+
+  Core["Core: shapes, coordinates, keys"]
+  Storage["Storage: schema, pages, worlds, residency"]
+  Block["Block: domains, views, write policies"]
+  Ops["Operations: queue, planner, executors, results"]
+  Topology["Topology: movement classes and region graph"]
+  Path["Path: searches, products, and caches"]
+  Sim["Simulation: schedule, agents, movement, deltas"]
+  Core --> Storage
+  Storage --> Block
+  Storage --> Topology
+  Block --> Ops
+  Topology --> Path
+  Storage --> Path
+  Ops --> Sim
+  Path --> Sim
+```
+
+Optional integration headers sit on explicit boundaries and are never pulled
+into the dependency-free umbrella by accident.
+
+```mermaid
+flowchart TB
+  accTitle: Optional integration boundaries
+  accDescr: Consumers opt into ECS adapters, the GPU interface, diagnostics, and ImGui panels without changing the dependency-free core.
+
+  Sim["Simulation"] --> ECS["Consumer-provided ECS or EnTT adapter"]
+  Storage["Storage"] --> GPU["Consumer-provided GPU backend"]
+  Diagnostics["Compile-gated diagnostics"] --> Panels["Consumer-provided ImGui panels"]
+```
+
+## Change Propagation
+
+Mutations are useful downstream only when their metadata is declared
+accurately. Different metadata guards different derived products.
+
+### Dirty-Driven Work
+
+```mermaid
+flowchart TB
+  accTitle: Dirty-driven downstream work
+  accDescr: Accurate dirty masks and bounds trigger scheduled maintenance, path-agent replanning, and versioned render delta publication.
+
+  Mutation["Committed mutation"] --> Dirty["Dirty flags and bounds"]
+  Dirty --> Triggers["OnDirty tasks and configured pathing match"]
+  Triggers --> Work["Rebuild derived state and replan agents"]
+  Dirty --> Collector["DeltaCollector invalidations"]
+  Collector --> Frame["Publish DeltaFrame"]
+```
+
+### Region-Graph Freshness
+
+```mermaid
+flowchart TB
+  accTitle: Region-graph freshness inputs
+  accDescr: Topology versions and graph identity stamps decide whether precheck can trust connectivity or must fall back conservatively.
+
+  TopologyDirty["mark_topology_dirty"] --> Version["Topology version"]
+  Stamps["Residency, class, and provider stamps"] --> Freshness
+  Version --> Freshness["Region-graph freshness"]
+  Freshness --> Precheck["Trust precheck or fall back to A*"]
+```
+
+### Path-Cache Validity
+
+```mermaid
+flowchart TB
+  accTitle: Path cache validity inputs
+  accDescr: Content versions and sparse residency generations invalidate cached routes and products before stale results can be returned.
+
+  Dirty["mark_dirty"] --> Version["Chunk content version"]
+  Residency["Sparse residency generation"] --> Fingerprint
+  Version --> Fingerprint["Cache fingerprint or product dependencies"]
+  Fingerprint --> Decision["Reuse cached result or rebuild"]
+```
+
 Maintained notes for implemented areas:
 
 - [Shape, coordinate, and key foundation](shape.md)

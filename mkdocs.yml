@@ -9,6 +9,8 @@ site_dir: build/site
 
 theme:
   name: material
+  logo: assets/tess-symbol-header.svg
+  favicon: assets/tess-symbol.svg
   features:
     - content.code.copy
     - navigation.footer
@@ -36,7 +38,14 @@ markdown_extensions:
   - attr_list
   - pymdownx.highlight:
       anchor_linenums: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+extra_css:
+  - stylesheets/extra.css
 
 nav:
   - Home: index.md

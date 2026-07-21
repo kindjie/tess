@@ -68,11 +68,33 @@ GitHub Pages artifact. `requirements-docs.in` pins the direct theme dependency;
 The site remains on MkDocs 1.6.1; MkDocs 2.0 is not an automatic upgrade because
 its current design is incompatible with the existing theme and plugin model.
 
+Architecture diagrams use Material for MkDocs' native Mermaid integration:
+https://squidfunk.github.io/mkdocs-material/reference/diagrams/. Mermaid is not
+a separate Python or build dependency; the pinned Material theme owns the
+browser runtime and initializes it only on pages containing a `mermaid` fence.
+The native integration follows the site's fonts and light/dark palettes and
+works with instant navigation.
+
 Regenerate the docs lock with uv 0.11.29:
 
 ```sh
 tools/compile_docs_requirements.sh
 ```
+
+## Logo typeface
+
+The tess wordmark contains static vector outlines derived from Sirenia Light,
+designed by Felix Braden and published by Floodfonts:
+https://fonts.adobe.com/fonts/sirenia. Adobe Fonts permits licensed users to
+create and distribute images and vector artwork, including logos, and to
+modify type after conversion to outlines:
+https://helpx.adobe.com/fonts/using/font-licensing.html.
+
+The repository does not distribute the font software. It contains only the
+finished outline paths. The static SVGs remain reproducible and distributable
+independently of an Adobe Fonts subscription. Anyone who needs to regenerate
+or edit the lettering through the typeface must obtain their own Adobe Fonts
+or desktop font license.
 
 ## Emscripten
 

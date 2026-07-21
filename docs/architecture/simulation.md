@@ -80,6 +80,20 @@ convergent. Chunk dirty metadata is already a cross-tick coalescer
 (flags OR, bounds union), so tiles are collected once per published
 frame through the lost-update-safe observe/clear-observed protocol.
 
+```mermaid
+stateDiagram-v2
+  accTitle: DeltaFrame application and resynchronization
+  accDescr: A consumer starts from a complete baseline, follows a continuous version chain, and returns to baseline recovery after a gap or truncation.
+
+  [*] --> Uninitialized
+  Uninitialized --> Synced: complete baseline, adopt to_version
+  Uninitialized --> NeedsBaseline: delta or truncated frame
+  Synced --> NeedsBaseline: version gap or truncation
+  NeedsBaseline --> Synced: complete baseline, adopt to_version
+  note right of Synced: Apply matching deltas and adopt to_version
+  note right of NeedsBaseline: Reject deltas until a complete baseline arrives
+```
+
 - `RenderVersion` is the monotonic frame-chain version. Collectors start
   at 1; value 0 is reserved for a consumer that has never applied a
   frame, so a fresh consumer can only start from a baseline.
@@ -270,6 +284,30 @@ world-typed work lives in task objects the caller owns and registers by
 reference. `ScheduleTaskFn` is the raw erased function-pointer form for callers
 that do not use the object-reference overload.
 
+```mermaid
+flowchart TB
+  accTitle: Fixed schedule phase order
+  accDescr: Every simulation tick traverses the complete phase list in declaration order and tasks retain registration order within a phase.
+
+  Early["Input → PreUpdate → AI"]
+  Agent["Pathing → Movement → Commit"]
+  Derived["Topology → Fields → Background"]
+  Output["RenderDelta → Diagnostics"]
+  Early --> Agent --> Derived --> Output
+```
+
+Dirty results are merged immediately into every matching `OnDirty` task.
+
+```mermaid
+flowchart TB
+  accTitle: Same-tick and next-tick dirty propagation
+  accDescr: A later matching task consumes dirty bits in the current tick, while an already-run task consumes them on the next tick.
+
+  Produced["Task returns dirty_mask"] --> Remaining{"Target phase<br/>still ahead?"}
+  Remaining -->|Yes| SameTick["Run later OnDirty task<br/>this tick"]
+  Remaining -->|No| NextTick["Run matching task<br/>next tick"]
+```
+
 - `SimPhase` is the fixed phase list, executed in declaration order each
   tick; tasks run in registration order within a phase. `SimClock` (hoisted
   into `time.h`; the path-agent tick shares it) is the authoritative
@@ -439,6 +477,25 @@ land in `Blocked`; each processed tick consumes one of
 retries reset) or exhausts the budget and turns terminally `Unreachable`.
 Structural movement failures (invalid endpoints, non-adjacent steps) skip
 the retry budget entirely. Only a new goal re-arms an `Unreachable` agent.
+Clearing a goal returns any active lifecycle state to `Idle`; those equivalent
+edges are omitted from the diagram to keep the failure paths legible.
+
+```mermaid
+stateDiagram-v2
+  accTitle: Path-agent lifecycle
+  accDescr: Goals arm pathfinding; transient failures retry through Blocked, while structural failures or exhausted retries remain Unreachable.
+
+  [*] --> Idle
+  Idle --> NeedsPath: assign goal
+  NeedsPath --> Following: path found
+  NeedsPath --> Blocked: planning fails
+  Following --> Idle: arrive
+  Following --> Blocked: transient move failure
+  Following --> Unreachable: structural move failure
+  Blocked --> Following: retry finds path
+  Blocked --> Unreachable: retry budget exhausted
+  Unreachable --> NeedsPath: assign new goal
+```
 
 `MovementIntent` version guards are opt-in. They are useful when an external
 system collected path or move intents before queued world edits were applied.

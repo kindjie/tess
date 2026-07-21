@@ -7,6 +7,28 @@ the historical [chunk storage TDD][storage-tdd].
 
 [storage-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/core-chunk-storage.md
 
+```mermaid
+flowchart TB
+  accTitle: Compile-time storage composition
+  accDescr: A shape and typed field schema determine chunk-page layout, which a world owns through dense or sparse residency.
+
+  Shape["Shape: world and chunk extents"]
+  Schema["FieldSchema: typed tile fields"]
+  Page["ChunkPage: one chunk of SoA field arrays"]
+  Choice{"Residency policy"}
+  Dense["AlwaysResidentWorld: every chunk allocated"]
+  Sparse["SparseResidentWorld: fixed-budget LRU slots"]
+  Access["Resolve coordinates and access typed spans"]
+
+  Shape --> Page
+  Schema --> Page
+  Page --> Choice
+  Choice -->|AlwaysResident| Dense
+  Choice -->|SparseResident| Sparse
+  Dense --> Access
+  Sparse --> Access
+```
+
 ## Field Schemas
 
 Tile fields are declared with `tess::Field<Tag, Value>`, where `Tag` is a
@@ -205,6 +227,29 @@ generation, so a stale clear leaves every flag and bound in place and returns
 `false`, and the caller re-observes before clearing. This is the dirty
 metadata protocol required before concurrent or budgeted maintenance may
 clear flags it did not fully rebuild.
+
+```mermaid
+sequenceDiagram
+  accTitle: Lost-update-safe dirty maintenance
+  accDescr: A write during maintenance changes the version, so a stale clear fails and the maintenance pass observes and rebuilds again.
+
+  participant W as Writer
+  participant D as World dirty metadata
+  participant M as Maintenance pass
+
+  W->>D: mark_dirty(flags, bounds)
+  D->>D: union flags and bounds, then increment version
+  M->>D: observe_dirty(flags)
+  D-->>M: observation(flags, bounds, version N)
+  M->>M: rebuild derived state
+  W->>D: mark_dirty(new flags, new bounds)
+  D->>D: increment version to N + 1
+  M->>D: clear_dirty_observed(version N)
+  D-->>M: false, preserve all dirty state
+  M->>D: observe_dirty(flags)
+  D-->>M: observation at version N + 1
+  M->>M: rebuild again, then clear successfully
+```
 
 `dirty_chunks(flags)` and `active_chunks(flags)` return matching `ChunkKey`
 values in key order. These query helpers allocate their returned vectors; they
