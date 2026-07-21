@@ -1,7 +1,8 @@
 # Examples
 
-Every example is a complete, self-checking program built by the `examples`
-and `dev` presets as `tess_<name>`:
+Every example is a complete, self-checking program built as `tess_<name>`
+by the dependency-free `examples` preset (the EnTT adapter example
+additionally needs `TESS_ENABLE_ENTT`, which the `dev` preset turns on):
 
 ```sh
 cmake --preset examples
@@ -11,8 +12,9 @@ cmake --build --preset examples
 
 ## Start here
 
-- [Live pathfinder](../demo/) — the interactive WebAssembly demo, built
-  from the same C++20 headers as the library and published with this site.
+- [Live pathfinder](https://tess.owx.dev/demo/) — the interactive
+  WebAssembly demo, built from the same C++20 headers as the library and
+  published with this site.
 - [`quickstart.cc`][quickstart] — the complete program on the
   [home page](index.md): a world, a schema, and an A* query.
 - [`colony_2d.cc`][colony_2d] — the flagship composition: queued

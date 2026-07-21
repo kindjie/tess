@@ -121,8 +121,8 @@ guidance, and package-manager status, see
   shapes and schemas to the schedule loop and render bridge.
 - [API reference](https://tess.owx.dev/api/) — generated documentation for
   the supported C++ surface.
-- [Examples](https://tess.owx.dev/examples/) — nine annotated, self-checking
-  programs.
+- [Examples](https://tess.owx.dev/examples/) — the annotated catalog of
+  self-checking example programs.
 
 ## Examples
 
@@ -136,7 +136,7 @@ guidance, and package-manager status, see
   WebAssembly pathfinder, [live on the documentation
   site](https://tess.owx.dev/demo/).
 
-All nine examples are annotated in the
+Every example is annotated in the
 [example catalog](https://tess.owx.dev/examples/).
 
 ## Performance
