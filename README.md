@@ -12,14 +12,13 @@ fit for games, colony simulations, robotics prototypes, and headless spatial
 models. It is not a renderer, physics engine, navigation-mesh generator, or
 drop-in ECS, and its pre-1.0 API is still evolving.
 
-The latest release is `v0.3.0`. All `0.x` releases are pre-stable:
+The latest release is `v0.4.0`. All `0.x` releases are pre-stable:
 public APIs and data layouts may change without compatibility shims while
 the design is still being validated. Release notes live in
 [`CHANGELOG.md`](CHANGELOG.md). Repository provenance across the
 pre-public rewrite is described in [`docs/history.md`](docs/history.md).
 
-This checkout documents the unreleased `v0.4.0` development API. The
-`v0.3.0` tag and its README remain the authority for the latest release.
+This checkout documents the `v0.4.0` release.
 
 ## Features
 
@@ -88,7 +87,7 @@ include(FetchContent)
 FetchContent_Declare(
   tess
   GIT_REPOSITORY https://github.com/kindjie/tess.git
-  GIT_TAG v0.3.0
+  GIT_TAG v0.4.0
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(tess)
@@ -99,11 +98,10 @@ Pin a release tag or commit rather than a moving branch. Tests, examples, and
 benchmarks default off when tess is a subproject, so this path does not fetch
 its development dependencies.
 
-The public CMake target is `tess::tess`. In the development API, start with
+The public CMake target is `tess::tess`. For a focused include surface, use
 `<tess/pathfinding.h>` for worlds and routing, `<tess/simulation.h>` for the
 full simulation stack, or `<tess/tess.h>` for the all-in-one compatibility
-umbrella. The facade headers are new in the unreleased `v0.4.0` line;
-`v0.3.0` consumers should include `<tess/tess.h>`.
+umbrella. The facade headers were introduced in the `v0.4.0` release.
 The EnTT adapter and Dear ImGui panels are opt-in headers that consumers
 include after their corresponding third-party header; see
 `docs/architecture/ecs.md` and `docs/architecture/diagnostics.md`. In

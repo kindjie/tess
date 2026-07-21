@@ -18,8 +18,9 @@ deploy credential.
    account-specific value and must not be guessed or copied from another
    account.
 
-The workflow uses only the scoped `GITHUB_TOKEN`, with `contents: read` for the
-build and `pages: write` plus `id-token: write` for deployment.
+The workflow uses only the scoped `GITHUB_TOKEN`. The build gets
+`contents: read` and `pages: read`; deployment alone gets `pages: write` plus
+`id-token: write`.
 
 ## DNS
 

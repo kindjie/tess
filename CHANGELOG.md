@@ -9,6 +9,8 @@ and their rationale are recorded separately in
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-20
+
 ### Added
 
 - Curated `<tess/pathfinding.h>` and `<tess/simulation.h>` facade headers;
@@ -21,8 +23,8 @@ and their rationale are recorded separately in
 
 ### Changed
 
-- Development package metadata now reports `0.4.0`, keeping unreleased facade
-  documentation distinct from the latest `v0.3.0` release.
+- Package metadata and maintained documentation now report `0.4.0`
+  consistently.
 - The README now leads with fit and non-fit guidance, a complete runnable
   program, dependency-free example commands, and explicit install-prefix and
   `FetchContent` instructions.
