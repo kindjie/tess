@@ -507,3 +507,28 @@ jobs:
           name: benchmark-baselines-${{ github.run_id }}
           path: build/bench/bench/ci-baselines/*.json
           retention-days: 30
+
+  # Stable ruleset target for the required jobs in this workflow.
+  # Documentation remains an independent required workflow.
+  ci-gate:
+    name: CI Gate
+    if: ${{ always() }}
+    needs:
+      - dev
+      - gcc
+      - hooks-backstop
+      - quality
+      - macos
+      - windows
+      - bench
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require successful CI jobs
+        run: |
+          test "${{ needs.dev.result }}" = success
+          test "${{ needs.gcc.result }}" = success
+          test "${{ needs.hooks-backstop.result }}" = success
+          test "${{ needs.quality.result }}" = success
+          test "${{ needs.macos.result }}" = success
+          test "${{ needs.windows.result }}" = success
+          test "${{ needs.bench.result }}" = success
