@@ -94,8 +94,15 @@ jobs:
             "$EMSCRIPTEN_IMAGE" \
             bash tools/build_web_demo.sh build/site/demo
 
+      - name: Assemble Pages artifact
+        run: cp -R build/docs-api/docs/html build/site/api
+
       - name: Check generated documentation links
-        run: python3 tools/check_docs_links.py build/site
+        run: |
+          # Doxygen 1.17.0 emits these two quick-index links without anchors.
+          python3 tools/check_docs_links.py build/site \
+            --ignore-missing-anchor api/functions_vars.html#index_b \
+            --ignore-missing-anchor api/functions_vars.html#index_n
 
       - name: Smoke-test WebAssembly in Chrome
         run: |
@@ -117,9 +124,6 @@ jobs:
             http://127.0.0.1:8000/demo/ >build/web-demo-dom.html
           grep -q 'data-tess-demo="ready"' build/web-demo-dom.html
           grep -q '>Route found<' build/web-demo-dom.html
-
-      - name: Assemble Pages artifact
-        run: cp -R build/docs-api/docs/html build/site/api
 
       - name: Configure Pages
         if: github.ref == 'refs/heads/main'

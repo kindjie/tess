@@ -418,9 +418,15 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
   assert build in workflow
   assert publish in workflow
   assert workflow.index(configure) < workflow.index(build)
-  assert workflow.index(build) < workflow.index(link_check)
-  assert workflow.index(link_check) < workflow.index(publish)
+  assert workflow.index(build) < workflow.index(publish)
+  assert workflow.index(publish) < workflow.index(link_check)
   assert workflow.index(publish) < workflow.index("Upload Pages artifact")
+  assert (
+    "--ignore-missing-anchor api/functions_vars.html#index_b" in workflow
+  )
+  assert (
+    "--ignore-missing-anchor api/functions_vars.html#index_n" in workflow
+  )
   assert "set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)" in cmake
   assert "set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)" in cmake
   assert '"tess::detail::*"' in cmake

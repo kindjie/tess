@@ -55,7 +55,11 @@ def resolve_target(site: Path, source: Path, raw_path: str) -> Path:
   return target.resolve()
 
 
-def check_site(site: Path) -> list[str]:
+def check_site(
+  site: Path,
+  *,
+  ignored_missing_anchors: frozenset[tuple[str, str]] = frozenset(),
+) -> list[str]:
   site = site.resolve()
   index = site / "index.html"
   if not index.is_file():
@@ -85,17 +89,37 @@ def check_site(site: Path) -> list[str]:
         fragment = unquote(parsed.fragment)
         if fragment not in parse_document(target).anchors:
           target_label = target.relative_to(site).as_posix()
+          if (target_label, fragment) in ignored_missing_anchors:
+            continue
           failures.append(
             f"{source_label}: missing anchor '{fragment}' in {target_label}"
           )
   return failures
 
 
+def parse_missing_anchor(value: str) -> tuple[str, str]:
+  """Parse a narrowly scoped missing-anchor exception."""
+  path, separator, fragment = value.rpartition("#")
+  if not separator or not path or not fragment:
+    raise argparse.ArgumentTypeError("expected PATH#ANCHOR")
+  return path, unquote(fragment)
+
+
 def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser()
   parser.add_argument("site", nargs="?", type=Path, default=Path("build/site"))
+  parser.add_argument(
+    "--ignore-missing-anchor",
+    action="append",
+    default=[],
+    metavar="PATH#ANCHOR",
+    type=parse_missing_anchor,
+  )
   args = parser.parse_args(argv)
-  failures = check_site(args.site)
+  failures = check_site(
+    args.site,
+    ignored_missing_anchors=frozenset(args.ignore_missing_anchor),
+  )
   for failure in failures:
     print(f"error: {failure}", file=sys.stderr)
   if failures:
