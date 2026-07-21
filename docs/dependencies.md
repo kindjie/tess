@@ -81,6 +81,21 @@ Regenerate the docs lock with uv 0.11.29:
 tools/compile_docs_requirements.sh
 ```
 
+## Logo typeface
+
+The tess wordmark contains static vector outlines derived from Sirenia Light,
+designed by Felix Braden and published by Floodfonts:
+https://fonts.adobe.com/fonts/sirenia. Adobe Fonts permits licensed users to
+create and distribute images and vector artwork, including logos, and to
+modify type after conversion to outlines:
+https://helpx.adobe.com/fonts/using/font-licensing.html.
+
+The repository does not distribute the font software. It contains only the
+finished outline paths. The static SVGs remain reproducible and distributable
+independently of an Adobe Fonts subscription. Anyone who needs to regenerate
+or edit the lettering through the typeface must obtain their own Adobe Fonts
+or desktop font license.
+
 ## Emscripten
 
 - Version: `6.0.3`

@@ -59,6 +59,17 @@ def test_brand_assets_are_self_contained_vector_artwork():
   assert symbol.attrib["height"] == "52"
 
 
+def test_logo_font_provenance_is_publicly_documented():
+  dependencies = read("docs/dependencies.md")
+  assert "Sirenia Light" in dependencies
+  assert "https://fonts.adobe.com/fonts/sirenia" in dependencies
+  assert (
+    "https://helpx.adobe.com/fonts/using/font-licensing.html"
+    in dependencies
+  )
+  assert "does not distribute the font software" in dependencies
+
+
 def test_readme_and_docs_home_use_theme_appropriate_lockups():
   readme = read("README.md")
   assert "tess-logo.svg" in readme
