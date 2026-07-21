@@ -41,6 +41,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting started: getting-started.md
+  - API reference: https://tess.owx.dev/api/
   - Concepts:
       - Overview: architecture/README.md
       - Shapes: architecture/shape.md
@@ -58,6 +59,7 @@ nav:
 
 exclude_docs: |
   /README.md
+  /api-main.md
   decisions/
   planning/
   tdd/

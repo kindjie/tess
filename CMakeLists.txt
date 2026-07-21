@@ -206,12 +206,24 @@ endif()
 
 if(TESS_BUILD_DOCS)
   find_package(Doxygen REQUIRED)
+  # Keep implementation namespaces out of the published reference. The
+  # repository's own gate enforces namespace-scope public API comments;
+  # Doxygen can still list public members without requiring one comment each.
+  set(DOXYGEN_EXCLUDE_PATTERNS "*/detail/*")
+  set(DOXYGEN_EXCLUDE_SYMBOLS
+      "tess::detail"
+      "tess::detail::*"
+      "tess::*::detail"
+      "tess::*::detail::*")
   set(DOXYGEN_GENERATE_HTML YES)
   set(DOXYGEN_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/docs")
   set(DOXYGEN_STRIP_FROM_INC_PATH
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
       "${TESS_GENERATED_INCLUDE_DIR}")
-  set(DOXYGEN_USE_MDFILE_AS_MAINPAGE "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+  set(DOXYGEN_USE_MDFILE_AS_MAINPAGE
+      "${CMAKE_CURRENT_SOURCE_DIR}/docs/api-main.md")
+  set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)
+  set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)
   # Documentation-only feature gates: include the EnTT adapter, diagnostics,
   # and ImGui panel APIs in the reference without their third-party headers.
   set(DOXYGEN_PREDEFINED
@@ -225,7 +237,7 @@ if(TESS_BUILD_DOCS)
     tess_docs
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${TESS_GENERATED_INCLUDE_DIR}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/docs/api-main.md"
     COMMENT "Generating tess API reference"
   )
 endif()

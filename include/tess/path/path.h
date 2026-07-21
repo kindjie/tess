@@ -173,16 +173,22 @@ auto nearest_target(const World& world, Coord3 start,
                     DistanceFieldScratch& scratch) -> NearestTargetResult;
 
 /// Builds an unweighted field rooted at `goal` into reusable scratch storage.
-template <typename World, typename Tag>
+///
+/// The build may allocate unless scratch was reserved. Sparse residency
+/// boundaries follow `policy` and are reported conservatively.
+template <typename WorldType, typename Tag>
 auto build_distance_field(
-    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
+    const WorldType& world, Coord3 goal, DistanceFieldScratch& scratch,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> DistanceFieldResult;
 
 /// Builds a movement-class weighted field rooted at `goal`.
-template <typename World, typename Class>
+///
+/// The build may allocate unless scratch was reserved. Sparse boundaries
+/// follow `policy` and zero entry cost is impassable.
+template <typename WorldType, typename Class>
 auto build_weighted_distance_field(
-    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
+    const WorldType& world, Coord3 goal, DistanceFieldScratch& scratch,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> DistanceFieldResult;
 
@@ -654,8 +660,8 @@ class DistanceFieldScratch {
   }
 
  private:
-  template <typename World, typename Tag>
-  friend auto build_distance_field(const World& world, Coord3 goal,
+  template <typename WorldType, typename Tag>
+  friend auto build_distance_field(const WorldType& world, Coord3 goal,
                                    DistanceFieldScratch& scratch,
                                    MissingChunkPolicy policy)
       -> DistanceFieldResult;
@@ -666,8 +672,8 @@ class DistanceFieldScratch {
 
   // The weighted friends name the single-Class cores; the legacy tag-pair
   // overloads are thin forwarders and never touch scratch internals.
-  template <typename World, typename Class>
-  friend auto build_weighted_distance_field(const World& world, Coord3 goal,
+  template <typename WorldType, typename Class>
+  friend auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
                                             DistanceFieldScratch& scratch,
                                             MissingChunkPolicy policy)
       -> DistanceFieldResult;
@@ -1476,16 +1482,13 @@ auto weighted_portal_route_product_path(
 }
 
 /// Builds an unweighted goal-rooted field into caller-owned scratch.
-///
-/// The build may allocate unless scratch was reserved. Sparse residency
-/// boundaries follow `policy` and are reported conservatively.
-template <typename World, typename Tag>
-auto build_distance_field(const World& world, Coord3 goal,
+template <typename WorldType, typename Tag>
+auto build_distance_field(const WorldType& world, Coord3 goal,
                           DistanceFieldScratch& scratch,
                           [[maybe_unused]] MissingChunkPolicy policy)
     -> DistanceFieldResult {
-  using Shape = typename World::shape_type;
-  using Space = detail::NodeIndexSpace<World>;
+  using Shape = typename WorldType::shape_type;
+  using Space = detail::NodeIndexSpace<WorldType>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
 
   TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
@@ -1505,7 +1508,7 @@ auto build_distance_field(const World& world, Coord3 goal,
     }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
-  if (!detail::is_passable<World, Tag>(world, goal)) {
+  if (!detail::is_passable<WorldType, Tag>(world, goal)) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
   }
 
@@ -1560,7 +1563,8 @@ auto build_distance_field(const World& world, Coord3 goal,
             return;
           }
           TESS_DIAG_EVENT(path_passability_check);
-          if (!detail::is_passable_index<World, Tag>(world, neighbor_index)) {
+          if (!detail::is_passable_index<WorldType, Tag>(world,
+                                                         neighbor_index)) {
             TESS_DIAG_EVENT(path_neighbor_blocked);
             return;
           }
@@ -1674,11 +1678,8 @@ auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
 }
 
 /// Builds a movement-class weighted field into reusable caller scratch.
-///
-/// The build may allocate unless scratch was reserved. Sparse boundaries
-/// follow `policy` and zero entry cost is impassable.
-template <typename World, typename Class>
-auto build_weighted_distance_field(const World& world, Coord3 goal,
+template <typename WorldType, typename Class>
+auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
                                    DistanceFieldScratch& scratch,
                                    [[maybe_unused]] MissingChunkPolicy policy)
     -> DistanceFieldResult {
@@ -1686,8 +1687,8 @@ auto build_weighted_distance_field(const World& world, Coord3 goal,
                 "build_weighted_distance_field<World, Class> requires a "
                 "MovementClass; legacy tag pairs go through the "
                 "<World, PassableTag, CostTag> overload.");
-  using Shape = typename World::shape_type;
-  using Space = detail::NodeIndexSpace<World>;
+  using Shape = typename WorldType::shape_type;
+  using Space = detail::NodeIndexSpace<WorldType>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
 
   TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
@@ -1708,12 +1709,12 @@ auto build_weighted_distance_field(const World& world, Coord3 goal,
     }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
-  if (!detail::is_passable<World, Class>(world, goal)) {
+  if (!detail::is_passable<WorldType, Class>(world, goal)) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
   }
 
   const auto goal_index = detail::tile_index<Shape>(goal);
-  if (detail::tile_entry_cost_index<World, Class>(world, goal_index) == 0) {
+  if (detail::tile_entry_cost_index<WorldType, Class>(world, goal_index) == 0) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
   }
 
@@ -1756,7 +1757,7 @@ auto build_weighted_distance_field(const World& world, Coord3 goal,
     ++expanded_nodes;
 
     const auto current_entry_cost =
-        detail::tile_entry_cost_index<World, Class>(world, current.index);
+        detail::tile_entry_cost_index<WorldType, Class>(world, current.index);
     if (current_entry_cost == 0) {
       continue;
     }
@@ -1775,12 +1776,12 @@ auto build_weighted_distance_field(const World& world, Coord3 goal,
           TESS_DIAG_EVENT(path_relax_attempt);
           if (!scratch.is_current(neighbor_offset)) {
             TESS_DIAG_EVENT(path_passability_check);
-            if (!detail::is_passable_index<World, Class>(world,
-                                                         neighbor_index)) {
+            if (!detail::is_passable_index<WorldType, Class>(world,
+                                                             neighbor_index)) {
               TESS_DIAG_EVENT(path_neighbor_blocked);
               return;
             }
-            if (detail::tile_entry_cost_index<World, Class>(
+            if (detail::tile_entry_cost_index<WorldType, Class>(
                     world, neighbor_index) == 0) {
               TESS_DIAG_EVENT(path_neighbor_blocked);
               return;

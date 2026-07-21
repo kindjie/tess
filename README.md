@@ -214,6 +214,8 @@ binary (built as `tess_<name>`), smoke-run in CI:
 
 - [tess.owx.dev](https://tess.owx.dev/): the rendered documentation
   site, including the interactive WebAssembly pathfinding demo.
+- [API reference](https://tess.owx.dev/api/): generated documentation for the
+  supported C++ surface.
 - [`docs/getting-started.md`](docs/getting-started.md): tutorial from
   shapes and schemas to the schedule loop and render bridge.
 - [`docs/architecture/README.md`](docs/architecture/README.md):
@@ -221,7 +223,7 @@ binary (built as `tess_<name>`), smoke-run in CI:
 - [`docs/history.md`](docs/history.md): repository provenance and how to
   interpret retained pre-public pull requests.
 
-A local Doxygen API reference can be generated with
+The same Doxygen API reference can be generated locally with
 `cmake --preset consumer -DTESS_BUILD_DOCS=ON` followed by
 `cmake --build build/consumer --target tess_docs` (requires Doxygen);
 output lands in `build/consumer/docs/html`.

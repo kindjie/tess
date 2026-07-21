@@ -43,15 +43,16 @@ measurements from running.
 Optional, docs-only tool dependency for the opt-in `tess_docs` target
 (`TESS_BUILD_DOCS=ON`), which generates a local HTML API reference via
 CMake's `doxygen_add_docs`. Nothing in the library, tests, benchmarks,
-or CI requires it; `find_package(Doxygen REQUIRED)` runs only when the
-option is enabled. Like package-manager `clang-tidy` and `ccache`, the
-version is unpinned; developed against Doxygen 1.17.0. Documentation-only
-`DOXYGEN_PREDEFINED` gates make the EnTT adapter, diagnostics, and ImGui
-panel APIs visible in the reference without their third-party headers.
-
-The latest verified release is Doxygen 1.17.0. Generated API output is not yet
-published: the authored site ships first, while Doxygen warnings and accidental
-exposure of `tess::detail` are treated as release blockers for API publishing.
+or normal CI requires it; `find_package(Doxygen REQUIRED)` runs only when the
+option is enabled. Local builds accept the installed version and are developed
+against Doxygen 1.17.0. The Pages workflow pins the official 1.17.0 Linux
+binary and verifies its published SHA-256 digest before extraction.
+Documentation-only `DOXYGEN_PREDEFINED` gates make the EnTT adapter,
+diagnostics, and ImGui panel APIs visible in the reference without their
+third-party headers. The generated reference excludes `tess::detail`, omits
+per-member missing-comment warnings to match the repository's namespace-scope
+comment policy, and fails on remaining Doxygen warnings before its HTML is
+copied under `/api/` in the combined Pages artifact.
 
 ## Documentation site
 
