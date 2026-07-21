@@ -17,9 +17,13 @@ and their rationale are recorded separately in
   the existing `<tess/tess.h>` compatibility umbrella remains available.
 - A compiled quickstart, tracked installed-package and `FetchContent`
   consumers, and source-backed documentation snippets enforced in CI.
+- CI verification that the quickstart's documented output matches the
+  compiled binary.
 - A strict MkDocs site deployed through GitHub Pages, plus a single-threaded
   interactive pathfinding example compiled with Emscripten 6.0.3.
-- Support, security, and structured issue-reporting metadata.
+- Support, security, and structured issue-reporting metadata, a Contributor
+  Covenant code of conduct, and weekly Dependabot updates for GitHub Actions
+  and pip dependencies.
 
 ### Changed
 
