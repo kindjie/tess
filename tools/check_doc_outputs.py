@@ -49,6 +49,13 @@ def extract_output_blocks(text: str, label: str) -> list[OutputBlock]:
         document=label,
       )
     )
+  opening = text.count("<!-- tess-output:")
+  closing = text.count("<!-- /tess-output -->")
+  if opening != len(blocks) or closing != len(blocks):
+    raise ValueError(
+      f"{label}: malformed tess-output block; found {opening} opening and "
+      f"{closing} closing markers for {len(blocks)} well-formed blocks"
+    )
   return blocks
 
 

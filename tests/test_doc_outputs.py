@@ -53,6 +53,38 @@ def test_extract_output_blocks_rejects_duplicate_names():
     cdo.extract_output_blocks(MARKDOWN + "\n" + MARKDOWN, "README.md")
 
 
+def test_extract_output_blocks_rejects_malformed_markers():
+  corrupted = MARKDOWN.replace(
+    "<!-- /tess-output -->", "<!-- /tess-output-typo -->"
+  )
+
+  with pytest.raises(ValueError, match="malformed tess-output block"):
+    cdo.extract_output_blocks(corrupted, "README.md")
+
+
+def test_check_repository_reports_malformed_markers(tmp_path):
+  write_fixture(tmp_path)
+  readme = tmp_path / "README.md"
+  readme.write_text(
+    readme.read_text(encoding="utf-8").replace("```text", "``text"),
+    encoding="utf-8",
+  )
+  binary = write_binary(
+    tmp_path / "quickstart", stdout="path cost: 14\nexpanded nodes: 15"
+  )
+
+  failures = cdo.check_repository(
+    tmp_path, {"examples/quickstart.cc": binary}
+  )
+
+  assert failures == [
+    "README.md: malformed tess-output block; found 1 opening and 1 closing "
+    "markers for 0 well-formed blocks",
+    "binary mapping for examples/quickstart.cc matches no documented "
+    "output block",
+  ]
+
+
 def test_check_repository_accepts_matching_output(tmp_path):
   write_fixture(tmp_path)
   binary = write_binary(
