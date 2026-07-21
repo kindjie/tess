@@ -78,21 +78,37 @@ def check_repository(repo_root: Path = REPO_ROOT) -> list[str]:
       "CHANGELOG.md: newest released version must match README.md "
       f"latest release v{release}"
     )
-  if source <= release:
+  if source < release:
     failures.append(
-      "cmake/tess-version.cmake: development version must be newer "
+      "cmake/tess-version.cmake: source version must not be older "
       f"than latest release v{release}"
     )
-
-  development_phrase = f"`v{source}` development"
-  if development_phrase not in readme or "unreleased" not in readme.lower():
-    failures.append(
-      f"README.md: identify v{source} as the unreleased development API"
-    )
-  if development_phrase not in index or "unreleased" not in index.lower():
-    failures.append(
-      f"docs/index.md: identify v{source} as the unreleased development API"
-    )
+  elif source == release:
+    release_phrase = f"`v{source}` release"
+    unreleased_phrase = f"unreleased `v{source}`"
+    for label, text in (("README.md", readme), ("docs/index.md", index)):
+      if unreleased_phrase in text.lower():
+        failures.append(
+          f"{label}: release checkout still describes v{source} as "
+          "unreleased"
+        )
+      elif release_phrase not in text:
+        failures.append(
+          f"{label}: identify v{source} as the current release"
+        )
+  else:
+    development_phrase = f"`v{source}` development"
+    if (
+      development_phrase not in readme
+      or "unreleased" not in readme.lower()
+    ):
+      failures.append(
+        f"README.md: identify v{source} as the unreleased development API"
+      )
+    if development_phrase not in index or "unreleased" not in index.lower():
+      failures.append(
+        f"docs/index.md: identify v{source} as the unreleased development API"
+      )
 
   readme_packages = FIND_PACKAGE_RE.findall(readme)
   expected_requirement = source.requirement

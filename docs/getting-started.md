@@ -1,8 +1,6 @@
 # Getting Started
 
-This tutorial targets the unreleased `v0.4.0` development API. Users of the
-latest release, `v0.3.0`, should include `<tess/tess.h>` in place of the two
-facade headers used below.
+This tutorial targets the `v0.4.0` release.
 
 This tutorial climbs the `tess` concept ladder in the order the pieces
 compose: shapes, schemas, worlds, writes, pathfinding, topology, the
