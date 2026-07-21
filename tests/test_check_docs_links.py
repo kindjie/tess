@@ -57,6 +57,20 @@ def test_check_site_reports_missing_fragment(tmp_path):
   ]
 
 
+def test_check_site_ignores_only_selected_missing_fragment(tmp_path):
+  write_site(tmp_path)
+  (tmp_path / "index.html").write_text(
+    '<a href="guide/#known">Known issue</a>'
+    '<a href="guide/#unexpected">Broken</a>',
+    encoding="utf-8",
+  )
+
+  assert cdl.check_site(
+    tmp_path,
+    ignored_missing_anchors=frozenset({("guide/index.html", "known")}),
+  ) == ["index.html: missing anchor 'unexpected' in guide/index.html"]
+
+
 def test_check_site_resolves_fragment_only_links_in_flat_pages(tmp_path):
   write_site(tmp_path)
   (tmp_path / "404.html").write_text(

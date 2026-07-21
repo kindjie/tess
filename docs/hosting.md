@@ -1,8 +1,8 @@
 # Documentation hosting runbook
 
-The public documentation is a static MkDocs site deployed by GitHub Actions to
-GitHub Pages. Hosting needs no separate server, database, or deploy
-credential.
+The public documentation is a static MkDocs site with a Doxygen API reference
+under `/api/`, deployed by GitHub Actions to GitHub Pages. Hosting needs no
+separate server, database, or deploy credential.
 
 ## GitHub settings
 
@@ -42,6 +42,8 @@ python3.12 -m venv .venv-docs
 .venv-docs/bin/mkdocs serve
 ```
 
-CI runs `mkdocs build --strict`, checks every generated local link and anchor,
-and loads the WebAssembly demo in headless Chrome. Broken documentation or a
-demo that does not reach its ready state blocks deployment.
+CI runs `mkdocs build --strict`, builds the `tess_docs` target with the pinned
+Doxygen release, checks authored-site links, and loads the WebAssembly demo in
+headless Chrome. It then copies the generated API HTML into `build/site/api`.
+Doxygen warnings, broken authored-site links, or a demo that does not reach its
+ready state block deployment.

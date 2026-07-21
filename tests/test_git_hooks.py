@@ -396,6 +396,43 @@ def test_pages_build_has_only_the_permissions_needed_to_configure_pages():
   assert "      id-token: write" not in build_job
 
 
+def test_pages_build_publishes_warning_clean_public_doxygen_api():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "pages.yml").read_text()
+  cmake = (root / "CMakeLists.txt").read_text()
+  mkdocs = (root / "mkdocs.yml").read_text()
+
+  configure = "cmake -S . -B build/docs-api"
+  build = "cmake --build build/docs-api --target tess_docs"
+  publish = "cp -R build/docs-api/docs/html build/site/api"
+  link_check = "python3 tools/check_docs_links.py build/site"
+
+  assert "DOXYGEN_VERSION: 1.17.0" in workflow
+  assert (
+    "75419ef4f446fc1c24ef12514b574e66"
+    "e898ee6f527c6ae2ad84f91a905823c2" in workflow
+  )
+  assert "sha256sum --check --strict" in workflow
+  assert "-DTESS_BUILD_DOCS=ON" in workflow
+  assert configure in workflow
+  assert build in workflow
+  assert publish in workflow
+  assert workflow.index(configure) < workflow.index(build)
+  assert workflow.index(build) < workflow.index(publish)
+  assert workflow.index(publish) < workflow.index(link_check)
+  assert workflow.index(publish) < workflow.index("Upload Pages artifact")
+  assert (
+    "--ignore-missing-anchor api/functions_vars.html#index_b" in workflow
+  )
+  assert (
+    "--ignore-missing-anchor api/functions_vars.html#index_n" in workflow
+  )
+  assert "set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)" in cmake
+  assert "set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)" in cmake
+  assert '"tess::detail::*"' in cmake
+  assert "API reference: https://tess.owx.dev/api/" in mkdocs
+
+
 def test_workflows_use_only_github_owned_sha_pinned_actions():
   root = Path(__file__).resolve().parents[1]
   action_re = re.compile(r"^\s*uses:\s+([^\s@]+)@([^\s#]+)", re.MULTILINE)

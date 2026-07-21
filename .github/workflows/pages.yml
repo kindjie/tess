@@ -19,6 +19,10 @@ jobs:
   build:
     name: Build documentation
     runs-on: ubuntu-24.04
+    env:
+      DOXYGEN_VERSION: 1.17.0
+      DOXYGEN_SHA256: >-
+        75419ef4f446fc1c24ef12514b574e66e898ee6f527c6ae2ad84f91a905823c2
     permissions:
       contents: read
       pages: read
@@ -40,6 +44,25 @@ jobs:
             --require-hashes \
             --requirement requirements-docs.txt
 
+      - name: Install Doxygen
+        run: |
+          archive="$RUNNER_TEMP/doxygen.tar.gz"
+          install_dir="$RUNNER_TEMP/doxygen"
+          release="Release_${DOXYGEN_VERSION//./_}"
+          asset="doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz"
+          url="https://github.com/doxygen/doxygen/releases/download"
+          curl --fail --location --retry 3 \
+            --output "$archive" \
+            "$url/$release/$asset"
+          echo "$DOXYGEN_SHA256  $archive" | sha256sum --check --strict
+          mkdir -p "$install_dir"
+          tar --extract --gzip --file "$archive" \
+            --directory "$install_dir" --strip-components=1
+          installed_version=$("$install_dir/bin/doxygen" --version)
+          echo "Installed Doxygen $installed_version"
+          test "${installed_version%% *}" = "$DOXYGEN_VERSION"
+          echo "$install_dir/bin" >>"$GITHUB_PATH"
+
       - name: Verify source-backed documentation
         run: |
           python3 tools/check_doc_snippets.py
@@ -47,6 +70,17 @@ jobs:
 
       - name: Build site
         run: .venv-docs/bin/mkdocs build --strict
+
+      - name: Build API reference
+        run: |
+          cmake -S . -B build/docs-api \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DTESS_BUILD_TESTING=OFF \
+            -DTESS_BUILD_EXAMPLES=OFF \
+            -DTESS_BUILD_BENCHMARKS=OFF \
+            -DTESS_BUILD_DOCS=ON \
+            -DTESS_ENABLE_ENTT=OFF
+          cmake --build build/docs-api --target tess_docs
 
       - name: Build WebAssembly example
         env:
@@ -60,8 +94,15 @@ jobs:
             "$EMSCRIPTEN_IMAGE" \
             bash tools/build_web_demo.sh build/site/demo
 
+      - name: Assemble Pages artifact
+        run: cp -R build/docs-api/docs/html build/site/api
+
       - name: Check generated documentation links
-        run: python3 tools/check_docs_links.py build/site
+        run: |
+          # Doxygen 1.17.0 emits these two quick-index links without anchors.
+          python3 tools/check_docs_links.py build/site \
+            --ignore-missing-anchor api/functions_vars.html#index_b \
+            --ignore-missing-anchor api/functions_vars.html#index_n
 
       - name: Smoke-test WebAssembly in Chrome
         run: |
