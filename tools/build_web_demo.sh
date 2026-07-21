@@ -10,6 +10,7 @@ cp "$root/examples/web_pathfinder/site/index.html" "$output/"
 cp "$root/examples/web_pathfinder/site/style.css" "$output/"
 cp "$root/examples/web_pathfinder/site/app.js" "$output/"
 cp "$root/examples/web_pathfinder/site/favicon.svg" "$output/"
+cp "$root/docs/assets/tess-logo-dark.svg" "$output/logo.svg"
 
 cmake \
   -S "$root" \

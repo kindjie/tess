@@ -9,6 +9,8 @@ site_dir: build/site
 
 theme:
   name: material
+  logo: assets/tess-symbol-header.svg
+  favicon: assets/tess-symbol.svg
   features:
     - content.code.copy
     - navigation.footer

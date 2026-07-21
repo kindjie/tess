@@ -217,6 +217,8 @@ if(TESS_BUILD_DOCS)
       "tess::*::detail::*")
   set(DOXYGEN_GENERATE_HTML YES)
   set(DOXYGEN_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/docs")
+  set(DOXYGEN_PROJECT_LOGO
+      "${CMAKE_CURRENT_SOURCE_DIR}/docs/assets/tess-symbol.svg")
   set(DOXYGEN_STRIP_FROM_INC_PATH
       "${CMAKE_CURRENT_SOURCE_DIR}/include"
       "${TESS_GENERATED_INCLUDE_DIR}")
