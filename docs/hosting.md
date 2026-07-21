@@ -1,22 +1,17 @@
 # Documentation hosting runbook
 
 The public documentation is a static MkDocs site deployed by GitHub Actions to
-GitHub Pages. The source repository can remain private on GitHub Pro, although
-the published site is public. Hosting needs no separate server, database, or
-deploy credential.
+GitHub Pages. Hosting needs no separate server, database, or deploy
+credential.
 
 ## GitHub settings
 
-1. Keep the repository private through review, merge, and release-candidate
-   validation. Inspect only the commits newly entering `main`.
-2. In **Settings > Pages**, select **GitHub Actions** as the source. Publish the
-   public site from the private repository for final pre-launch validation.
-3. Set the custom domain to `tess.owx.dev` and enable HTTPS after GitHub has
+1. In **Settings > Pages**, select **GitHub Actions** as the source.
+2. Set the custom domain to `tess.owx.dev` and enable HTTPS after GitHub has
    issued the certificate.
-4. In the owning GitHub account's Pages settings, verify `owx.dev`. GitHub will
-   provide the exact `_github-pages-challenge-kindjie` TXT value; it is an
-   account-specific value and must not be guessed or copied from another
-   account.
+3. In the owning GitHub account's Pages settings, verify the apex domain.
+   GitHub provides an account-specific `_github-pages-challenge-<account>`
+   TXT value; it must not be guessed or copied from another account.
 
 The workflow uses only the scoped `GITHUB_TOKEN`. The build gets
 `contents: read` and `pages: read`; deployment alone gets `pages: write` plus
@@ -24,18 +19,15 @@ The workflow uses only the scoped `GITHUB_TOKEN`. The build gets
 
 ## DNS
 
-The domain is currently delegated to Cloudflare. Add this proxied-off,
-DNS-only record:
+Add this record at the DNS provider, unproxied (DNS-only):
 
 | Type | Name | Target | TTL |
 | --- | --- | --- | --- |
 | CNAME | `tess` | `kindjie.github.io` | Auto |
 
-Keep the record DNS-only. The current wildcard resolves `tess.owx.dev` to
-`34.111.69.97`; inventory hostnames that intentionally depend on the wildcard,
-replace them with explicit records, then remove or narrow it before enabling
-the custom domain. Add and retain GitHub's generated
-`_github-pages-challenge-kindjie` TXT record before adding the CNAME.
+Keep the record DNS-only. Remove or narrow any wildcard record that would
+otherwise answer for the hostname before enabling the custom domain, and add
+GitHub's generated domain-verification TXT record before adding the CNAME.
 
 The custom domain is configured in GitHub's Pages settings. A `CNAME` file in
 the documentation source does not configure a custom Actions deployment and
