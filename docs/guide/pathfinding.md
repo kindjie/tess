@@ -13,10 +13,9 @@ measured workload justifies it.
    `weighted_path_batch` amortizes one bounded field per repeated goal;
    all-distinct goals fall back to per-request weighted A*.
 3. **Do identical routes repeat on a stable map?** →
-   `cached_astar_path`. Invalidation is caller-driven: run
-   `RouteCacheScratch::invalidate_if_world_changed(world)` (or clear)
-   after edits — lookups do not check the world fingerprint themselves,
-   and one edit invalidates the whole cache.
+   `cached_astar_path`, with caller-driven invalidation
+   (`RouteCacheScratch::invalidate_if_world_changed`) — the
+   [pathfinding note](../architecture/path.md) specifies the contract.
 4. **Otherwise** — `astar_path`, or `weighted_astar_path` with a
    movement class when passability or cost differs per unit.
 
@@ -92,8 +91,7 @@ const auto nearest = tess::nearest_target<World, PassableTag>(
 
 !!! note "Planned"
     Congestion, flow, and influence fields are designed but not shipped
-    (see the [roadmap](../roadmap.md)). All shipped routing is optimal
-    per agent: it will not spread or queue a crowd. Today's fallback:
-    write congestion from your simulation into a cost field and route
-    through a weighted movement class. Do not build agent code that
+    (see the [roadmap](../roadmap.md), which includes the interim
+    cost-field fallback). All shipped routing is optimal per agent: it
+    will not spread or queue a crowd. Do not build agent code that
     assumes a congestion API.

@@ -16,10 +16,9 @@ this choice can change later.
 ## The seam
 
 Whatever the branch: deterministic-order agents in, state write-back
-out. Ticket lifecycle — retries, exactly-once results — always lives in
-the substrate's path-agent state; adapters mirror it, never reimplement
-it. Iterate agents in monotonic id order, not pool order, or determinism
-breaks.
+out. The [ECS note](../architecture/ecs.md) specifies the two contracts
+every adapter must uphold — the path-agent lifecycle stays in the
+substrate, and iteration order must be deterministic.
 
 ## Learn and specify
 
