@@ -387,6 +387,32 @@ def test_hook_backstop_uses_first_party_python_and_requires_hashes():
   assert "--requirement requirements-dev.txt" in workflow
 
 
+def test_ci_gate_aggregates_every_required_ci_job():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  ci_gate = workflow.split("  ci-gate:\n", 1)[1]
+  required_jobs = (
+    "dev",
+    "gcc",
+    "hooks-backstop",
+    "quality",
+    "macos",
+    "windows",
+    "bench",
+  )
+  needs = "    needs:\n" + "".join(
+    f"      - {job_id}\n" for job_id in required_jobs
+  )
+
+  assert "    name: CI Gate\n" in ci_gate
+  assert "    if: ${{ always() }}\n" in ci_gate
+  assert needs in ci_gate
+  assert "      - advisory\n" not in ci_gate
+  for job_id in required_jobs:
+    result_check = f'test "${{{{ needs.{job_id}.result }}}}" = success'
+    assert result_check in ci_gate
+
+
 def test_pages_build_has_only_the_permissions_needed_to_configure_pages():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "pages.yml").read_text()
