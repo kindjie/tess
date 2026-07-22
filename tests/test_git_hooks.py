@@ -375,6 +375,23 @@ def test_every_checkout_step_disables_persisted_credentials():
   assert workflow_text.count("persist-credentials: false") == checkout_count
 
 
+def test_documented_checkout_version_matches_workflows():
+  root = Path(__file__).resolve().parents[1]
+  workflows = tuple((root / ".github" / "workflows").glob("*.yml"))
+  workflow_text = "\n".join(path.read_text() for path in workflows)
+  checkout_re = re.compile(
+    r"uses: actions/checkout@([0-9a-f]{40}) # (v[0-9.]+)"
+  )
+  checkout_pins = set(checkout_re.findall(workflow_text))
+
+  assert len(checkout_pins) == 1
+  revision, version = checkout_pins.pop()
+  dependencies = (root / "docs" / "dependencies.md").read_text()
+  documented_version = f"Checkout action version: `actions/checkout@{version}`"
+  assert documented_version in dependencies
+  assert f"`{revision}`" in dependencies
+
+
 def test_hook_backstop_uses_first_party_python_and_requires_hashes():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
@@ -758,6 +775,31 @@ def test_compiled_dev_requirements_include_exact_direct_pins():
       digest = item.removeprefix("--hash=sha256:")
       assert len(digest) == 64
       assert not set(digest) - set("0123456789abcdef")
+
+
+def test_compiled_dev_requirements_keep_supported_environment_dependencies():
+  root = Path(__file__).resolve().parents[1]
+  requirement_lines = {
+    line.split("==", 1)[0]: line
+    for line in (root / "requirements-dev.txt").read_text().splitlines()
+    if line and not line[0].isspace() and not line.startswith("#")
+  }
+
+  assert "sys_platform == 'win32'" in requirement_lines["colorama"]
+  for package in ("exceptiongroup", "tomli", "typing-extensions"):
+    assert "python_full_version < '3.11'" in requirement_lines[package]
+
+
+def test_documented_clang_format_version_matches_direct_pin():
+  root = Path(__file__).resolve().parents[1]
+  direct = (root / "requirements-dev.in").read_text()
+  match = re.search(r"^clang-format==([^\s]+)$", direct, re.MULTILINE)
+
+  assert match is not None
+  dependencies = (root / "docs" / "dependencies.md").read_text()
+  assert (
+    f"clang-format Python package version: `{match.group(1)}`" in dependencies
+  )
 
 
 def test_compiled_dev_requirements_records_reproducible_command():

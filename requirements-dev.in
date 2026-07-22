@@ -1,5 +1,5 @@
 # Direct development tools. Regenerate requirements-dev.txt with
 # tools/compile_requirements.sh after changing a pin.
-clang-format==22.1.5
+clang-format==22.1.8
 pytest==9.1.1
 tiktoken==0.13.0
