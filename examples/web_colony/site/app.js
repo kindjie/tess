@@ -60,13 +60,17 @@ function draw() {
 }
 
 function frame() {
-  const us = api.tick();
-  emaUs = emaUs === 0 ? us : emaUs * 0.9 + us * 0.1;
-  draw();
-  const arrived = api.arrived();
-  message.textContent = 'Colony running';
-  metrics.textContent = `${emaUs.toFixed(0)} µs/tick · ` +
-      `${arrived}/${api.agentCount()} arrived`;
+  try {
+    const us = api.tick();
+    emaUs = emaUs === 0 ? us : emaUs * 0.9 + us * 0.1;
+    draw();
+    const arrived = api.arrived();
+    metrics.textContent = `${emaUs.toFixed(0)} µs/tick · ` +
+        `${arrived}/${api.agentCount()} arrived`;
+  } catch (error) {
+    message.textContent = `Tick failed: ${error}`;
+    return;
+  }
   window.requestAnimationFrame(frame);
 }
 
@@ -127,6 +131,7 @@ createTessColony()
       });
 
       document.documentElement.dataset.tessColony = 'ready';
+      message.textContent = 'Colony running';
       window.requestAnimationFrame(frame);
     })
     .catch((error) => {
