@@ -1,0 +1,32 @@
+# tess
+
+> Header-only C++20 tile and path simulation substrate: bounded grid
+> storage, topology-aware pathfinding, and deterministic queued updates,
+> without an engine. MIT licensed.
+
+Docs are contract-checked: every C++ snippet is byte-matched against
+compiled, self-checking examples. Machine adoption recipe:
+https://tess.owx.dev/for-agents/
+
+## Docs
+
+- [Home](https://tess.owx.dev/): positioning plus a complete checked
+  quickstart with pinned output
+- [Getting started](https://tess.owx.dev/getting-started/): the concept
+  ladder — shapes, schemas, worlds, writes, pathfinding, topology,
+  schedule, render bridge
+- [Installation](https://tess.owx.dev/packaging/): FetchContent /
+  find_package, supported include surface
+- [Examples](https://tess.owx.dev/examples/): annotated self-checking
+  example catalog
+- [Use cases](https://tess.owx.dev/use-cases/): robotics, agent-based
+  modeling, and headless-server framings
+- [Concepts](https://tess.owx.dev/architecture/): normative design notes
+  per subsystem
+- [Performance](https://tess.owx.dev/performance/): measured medians and
+  CI-enforced ceilings (single-threaded)
+- [Roadmap](https://tess.owx.dev/roadmap/): shipped vs
+  designed-but-deferred vs out-of-scope
+- [Support](https://tess.owx.dev/support/): stability policy and channels
+- [API reference](https://tess.owx.dev/api/): generated reference for the
+  supported surface

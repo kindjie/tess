@@ -62,6 +62,7 @@ nav:
   - Getting started: getting-started.md
   - Installation: packaging.md
   - Examples: examples.md
+  - Use cases: use-cases.md
   - API reference: https://tess.owx.dev/api/
   - Concepts:
       - Overview: architecture/README.md
@@ -76,7 +77,9 @@ nav:
       - Diagnostics: architecture/diagnostics.md
       - GPU interface: architecture/gpu.md
   - Performance: performance.md
+  - Roadmap: roadmap.md
   - Support: support.md
+  - For agents: for-agents.md
 
 exclude_docs: |
   /README.md
