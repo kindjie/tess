@@ -13,7 +13,7 @@ struct PassableTag {};
 
 using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
 
-// Act 1: footprint. 1,024 chunks dense vs a 16-page budget.
+// Act 1: field storage. 1,024 chunks dense vs a 16-page budget.
 using HugeShape =
     tess::Shape<tess::Extent3{1024, 1024, 1}, tess::Extent3{32, 32, 1}>;
 using HugeSparse = tess::SparseResidentWorld<HugeShape, Schema>;

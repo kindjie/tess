@@ -41,8 +41,8 @@ cmake --build --preset examples
   through the byte-budgeted `FieldProductCache` instead of searching
   independently.
 - [`sparse_stream.cc`][sparse_stream] — budget-bounded sparse residency:
-  a 1,024-chunk world held to a 16-page budget (64x smaller resident
-  footprint), and a path query that reports `Indeterminate` until the
+  a 1,024-chunk world held to a 16-page budget (64x less resident field
+  storage), and a path query that reports `Indeterminate` until the
   missing bridge chunk is streamed in and the retry succeeds.
 
 ## Integration boundaries

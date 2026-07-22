@@ -14,9 +14,9 @@ Representative medians from the benchmark suite on an Apple M3 Max
   grid: ~50 us.
 
 Memory, not time, but enforced the same way: `examples/sparse_stream.cc`
-self-checks a 1,024-chunk world held to a 16-page residency budget — a
-64x smaller resident footprint than the dense equivalent (1 MiB vs
-16 KiB).
+self-checks a 1,024-chunk world held to a 16-page residency budget — 64x
+less resident field storage than the dense equivalent (1 MiB vs 16 KiB
+of page data; residency metadata is budgeted separately).
 
 ## Trend snapshot
 
