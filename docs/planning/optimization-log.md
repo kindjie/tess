@@ -14,6 +14,23 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-21 - Documentation-Only CI Fast Path
+
+- Area: pull requests and main pushes that change only maintained
+  documentation.
+- Evidence: the implementation pull request classified its workflow and Python
+  changes as code-affecting in six seconds, then ran and passed every existing
+  platform, analysis, and benchmark job. This documentation-only change is the
+  hosted proof of the skip path.
+- Decision: Trial the narrow `docs/**`, Markdown, and `mkdocs.yml` allowlist.
+  Keep the classifier, hook backstop, documentation build, and aggregate gate
+  on every change; skip the 12 compiled jobs only after a complete Git diff
+  matches the allowlist.
+- Risk: a classification bug could suppress relevant signal. Empty changes,
+  invalid revisions, Git errors, and any unmatched path therefore require full
+  CI; renames are evaluated as delete plus add. Accept the fast path only after
+  this pull request proves the expected required-job results on GitHub.
+
 ## 2026-07-21 - CI Critical-Path Work Separated From Calibration
 
 - Area: required clang-tidy and benchmark jobs on pull requests.
