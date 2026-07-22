@@ -26,15 +26,20 @@ cmake --build --preset examples
 
 - [`mvp_path.cc`][mvp_path] — a small end-to-end queued-edit plus A*
   pathfinding prototype.
-- [`path_agents.cc`][path_agents] — a multi-agent path-agent tick loop
-  with goal assignment, dirty-driven replanning, and blocked-path
-  handling.
 - [`stairs_3d.cc`][stairs_3d] — the `StairTransitions` provider connecting
   two z-levels, with reachability, the path-runtime precheck, and an
   incremental update after demolishing the stair.
+
+## Scale: many agents and large worlds
+
+- [`path_agents.cc`][path_agents] — a multi-agent path-agent tick loop
+  with goal assignment, dirty-driven replanning, and blocked-path
+  handling; the focused subset of what [`colony_2d.cc`][colony_2d]
+  composes into a full frame.
 - [`ant_farm_vertical.cc`][ant_farm] — a degenerate-axis vertical world
-  (x-z cross-section) sharing one distance-field product across ants via
-  the byte-budgeted `FieldProductCache`.
+  (x-z cross-section) where many ants share one distance-field product
+  through the byte-budgeted `FieldProductCache` instead of searching
+  independently.
 
 ## Integration boundaries
 

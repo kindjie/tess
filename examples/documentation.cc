@@ -204,13 +204,91 @@ auto access_chunk_metadata() -> bool {
   return &meta == checked;
 }
 
+auto plan_weighted_batch() -> bool {
+  for (std::int64_t y = 0; y < static_cast<std::int64_t>(Shape::size.y); ++y) {
+    for (std::int64_t x = 0; x < static_cast<std::int64_t>(Shape::size.x);
+         ++x) {
+      world.field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
+      world.field<CostTag>(tess::Coord3{x, y, 0}) = 1;
+    }
+  }
+
+  // [path-batch]
+  tess::WeightedPathBatchScratch scratch;
+  const auto requests = std::array{
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{31, 31, 0}},
+      tess::PathRequest{tess::Coord3{0, 1, 0}, tess::Coord3{31, 31, 0}},
+      tess::PathRequest{tess::Coord3{0, 2, 0}, tess::Coord3{31, 31, 0}},
+  };
+  const auto results =
+      tess::weighted_path_batch<World, PassableTag, CostTag, /*MaxCost=*/128>(
+          world, requests, scratch);
+  // [path-batch]
+
+  if (results.size() != requests.size()) {
+    return false;
+  }
+  for (const auto& result : results) {
+    if (result.status != tess::PathStatus::Found) {
+      return false;
+    }
+  }
+  const auto stats = scratch.stats();
+  return stats.requests == requests.size() && stats.unique_goals == 1u;
+}
+
+auto reuse_cached_route() -> bool {
+  // [route-cache]
+  tess::PathScratch scratch;
+  tess::RouteCacheScratch cache;
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{31, 31, 0}};
+
+  const auto miss = tess::cached_astar_path<World, PassableTag>(world, request,
+                                                                scratch, cache);
+  const auto hit = tess::cached_astar_path<World, PassableTag>(
+      world, request, scratch, cache);  // Served from cache: no expansion.
+  // [route-cache]
+
+  return miss.status == tess::PathStatus::Found &&
+         hit.status == tess::PathStatus::Found && miss.expanded_nodes > 0u &&
+         hit.expanded_nodes == 0u && cache.stats().hits == 1u;
+}
+
+auto share_field_product() -> bool {
+  // [field-product]
+  tess::GoalSet goals;
+  goals.add(tess::Coord3{31, 0, 0});
+  goals.add(tess::Coord3{31, 31, 0});
+
+  tess::DistanceFieldScratch scratch;
+  tess::DistanceFieldProduct product;
+  const auto built = tess::build_distance_field_product<World, PassableTag>(
+      world, goals, scratch, product);
+
+  tess::FieldProductCache cache{1u << 20u};  // Byte-budgeted.
+  const auto stored = cache.store<World, PassableTag>(std::move(product));
+  const auto* shared = cache.lookup<World, PassableTag>(world, goals);
+  if (shared == nullptr) {
+    return false;
+  }
+
+  const auto nearest = tess::nearest_target<World, PassableTag>(
+      world, tess::Coord3{0, 31, 0}, *shared, scratch);
+  // [field-product]
+
+  return built.status == tess::PathStatus::Found && stored &&
+         nearest.status == tess::PathStatus::Found;
+}
+
 }  // namespace
 
 int main() {
   const auto ok = find_path() && check_topology() && run_schedule() &&
                   collect_deltas() && access_chunk_page() &&
                   access_dense_world() && access_sparse_world() &&
-                  access_chunk_metadata();
+                  access_chunk_metadata() && plan_weighted_batch() &&
+                  reuse_cached_route() && share_field_product();
   if (!ok) {
     std::cerr << "documentation example failed\n";
     return 1;
