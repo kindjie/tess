@@ -122,9 +122,9 @@ chunk views. The declared write policy (for example
 execution, and the dirty mask is what drives incremental topology
 updates and render deltas downstream.
 
-Queued operations also carry replies: result channels
-(`tess/ops/result_channel.h`) hand each system deterministic
-per-operation acknowledgements and path results without callbacks.
+Queued operations also report back: result channels
+(`tess/ops/result_channel.h`) give each system deterministic, typed
+per-operation completion records, drained once per frame.
 
 - Architecture:
   [`architecture/queued-operations.md`](architecture/queued-operations.md)
@@ -162,11 +162,12 @@ using Walker = tess::movement::MovementClass<
 <!-- /tess-snippet -->
 
 `tess::weighted_astar_path` consumes cost fields. When many agents path
-at once, pick by workload shape: agents sharing a goal set reuse one
-distance-field product (see `tess/path/field_product_cache.h`), per-tick
-batches with distinct goals go through `tess::weighted_path_batch`, and
-repeated identical routes on a stable map are served by the route cache
-via `tess::cached_astar_path`. The
+at once, pick by workload shape: agents sharing a goal set on unit-cost
+terrain reuse one distance-field product (see
+`tess/path/field_product_cache.h`), weighted per-tick batches amortize
+repeated goals through `tess::weighted_path_batch` (all-distinct goals
+fall back to per-request A*), and repeated identical routes on a stable
+map are served by the route cache via `tess::cached_astar_path`. The
 [pathfinding note](architecture/path.md) maps each workload shape to its
 API.
 
