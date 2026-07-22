@@ -54,8 +54,10 @@ foraging, and diffusion-style studies:
 Nothing in the core loop needs a window. A server or batch experiment
 runs the [schedule](architecture/simulation.md) under its own fixed-step
 clock and simply omits the render bridge, which is optional. When
-observers do exist (a network mirror, a
-monitoring UI), `DeltaFrame` versioning gives them gap detection and
-resynchronization without ever walking the world;
-`examples/render_delta_consumer.cc` shows a consumer rebuilding shadow
-state from published frames alone.
+observers do exist (a network mirror, a monitoring UI), `DeltaFrame`
+versioning gives them gap detection and explicit resynchronization:
+frames name which tiles changed, and the consumer re-reads exactly those
+tiles from the authoritative world — or ships the values over its own
+channel — instead of rescanning the map.
+`examples/render_delta_consumer.cc` shows a consumer maintaining shadow
+state this way.
