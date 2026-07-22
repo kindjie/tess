@@ -393,6 +393,7 @@ def test_ci_gate_aggregates_every_required_ci_job():
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
   ci_gate = workflow.split("  ci-gate:\n", 1)[1]
   required_jobs = (
+    "changes",
     "dev",
     "gcc",
     "hooks-backstop",
@@ -412,6 +413,61 @@ def test_ci_gate_aggregates_every_required_ci_job():
   for job_id in required_jobs:
     result_check = f'test "${{{{ needs.{job_id}.result }}}}" = success'
     assert result_check in ci_gate
+
+
+def test_documentation_only_changes_skip_expensive_ci_fail_closed():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  expensive_jobs = (
+    "dev",
+    "gcc",
+    "quality",
+    "macos",
+    "windows",
+    "bench",
+  )
+
+  assert "  changes:\n    name: Classify Changes\n" in workflow
+  assert "      code_required: ${{ steps.classify.outputs.code_required }}\n" in (
+    workflow
+  )
+  assert '          fetch-depth: 0\n' in workflow
+  assert '        id: classify\n' in workflow
+  assert (
+    '          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}\n'
+    in workflow
+  )
+  assert '          PUSH_BASE_SHA: ${{ github.event.before }}\n' in workflow
+  assert '          HEAD_SHA: ${{ github.sha }}\n' in workflow
+  assert "          python3 tools/ci_changes.py\n" in workflow
+  assert '          "${PR_BASE_SHA:-$PUSH_BASE_SHA}" "$HEAD_SHA"\n' in workflow
+  assert '          >> "$GITHUB_OUTPUT"\n' in workflow
+  for job_id in expensive_jobs:
+    assert (
+      f"  {job_id}:\n"
+      "    needs: changes\n"
+      "    if: ${{ needs.changes.outputs.code_required == 'true' }}\n"
+      in workflow
+    )
+
+  assert "  hooks-backstop:\n    name: Hook Backstop Checks\n" in workflow
+  assert "          tests/test_ci_changes.py\n" in workflow
+
+  ci_gate = workflow.split("  ci-gate:\n", 1)[1]
+  assert "      - changes\n" in ci_gate
+  assert 'test "${{ needs.changes.result }}" = success' in ci_gate
+  assert (
+    'test "${{ needs.changes.outputs.code_required }}" = true ||\n'
+    '            test "${{ needs.changes.outputs.code_required }}" = false'
+    in ci_gate
+  )
+  for job_id in expensive_jobs:
+    assert (
+      f'test "${{{{ needs.{job_id}.result }}}}" = success' in ci_gate
+    )
+    assert (
+      f'test "${{{{ needs.{job_id}.result }}}}" = skipped' in ci_gate
+    )
 
 
 def test_noisy_clang_tidy_runs_off_the_per_commit_workflow():
