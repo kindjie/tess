@@ -53,8 +53,8 @@ foraging, and diffusion-style studies:
 
 Nothing in the core loop needs a window. A server or batch experiment
 runs the [schedule](architecture/simulation.md) under its own fixed-step
-clock and simply omits the render bridge — it is the only fully optional
-stage of the pipeline. When observers do exist (a network mirror, a
+clock and simply omits the render bridge, which is optional. When
+observers do exist (a network mirror, a
 monitoring UI), `DeltaFrame` versioning gives them gap detection and
 resynchronization without ever walking the world;
 `examples/render_delta_consumer.cc` shows a consumer rebuilding shadow

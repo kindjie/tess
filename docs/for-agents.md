@@ -2,9 +2,9 @@
 
 tess is unusually verifiable for automated adopters (coding agents, CI
 bots, scripted evaluations): the documentation is contract-checked
-against compiled code, every example is a self-checking binary with
-pinned output, and the simulation is deterministic. This page is the
-minimal adoption recipe.
+against compiled code, every example is a self-checking binary (the
+quickstart's stdout is additionally pinned byte-exact), and the
+simulation is deterministic. This page is the minimal adoption recipe.
 
 ## Install and verify
 
@@ -21,14 +21,19 @@ cmake --build --preset examples
 Expected stdout, byte-exact (CI enforces this against
 `examples/quickstart.cc`):
 
+<!-- tess-output: quickstart source=examples/quickstart.cc -->
 ```text
 path cost: 14
 expanded nodes: 15
 ```
+<!-- /tess-output -->
 
 Every other example binary (`tess_<name>`) exits `0` on success and
 nonzero with a diagnostic on failure, so a build-and-run sweep of
-`build/examples/examples/` is a complete integration check.
+`build/examples/examples/` is a quick smoke test of the toolchain and
+library together. (The EnTT adapter example needs the `dev` preset, and
+installed-package consumption is verified separately — see
+[installation](packaging.md).)
 
 ## Trust model for generated code
 
