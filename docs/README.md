@@ -9,15 +9,23 @@ Published on the documentation site:
 
 - [Getting Started](getting-started.md): tutorial from shapes and schemas
   to the schedule loop and render bridge.
+- [Decision guide](guide/README.md): one page per architectural decision
+  — branches, criteria, and links into the tutorial and concept notes.
 - [Installation](packaging.md): supported installation paths and registry
   status.
 - [Examples](examples.md): the annotated example catalog.
+- [Use cases](use-cases.md): robotics, agent-based-modeling, and
+  headless-server framings of the shipped examples.
 - [Architecture](architecture/README.md): maintained design notes that should
   track implementation.
 - [Performance](performance.md): adopter-facing benchmark expectations and
   the trend snapshot.
+- [Roadmap](roadmap.md): shipped vs designed-but-deferred vs
+  out-of-scope.
 - [Support](support.md): adopter help, issue, and compatibility guidance;
   the canonical pre-1.0 stability statement.
+- [For agents](for-agents.md): machine-adoption recipe; `llms.txt` is
+  the site-root page map for LLM tooling.
 
 Contributor and operations pages (in-repo only; excluded from the site):
 

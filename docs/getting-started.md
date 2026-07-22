@@ -278,6 +278,9 @@ Frame versions let a consumer detect gaps and request resynchronization.
 
 ## Where next
 
+- The [decision guide](guide/README.md) — once the concepts are
+  familiar and you need to choose between residency policies, write
+  paths, and path strategies for a real workload.
 - ECS integration by concepts, with the EnTT adapter and a deliberately
   non-EnTT micro-ECS example:
   [`architecture/ecs.md`](architecture/ecs.md),
