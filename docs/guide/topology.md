@@ -8,13 +8,12 @@ profiling shows failed searches in the hot path.
 
 | Branch | Pick when |
 | --- | --- |
-| No precheck | goals are almost always reachable, so failures stay rare — a *successful* search is cheap (~2 us on an open 512x512), but a *failed* one floods the start's entire reachable component before reporting `NoPath`, which can cost orders of magnitude more |
+| No precheck | goals are almost always reachable, so failures stay rare — a *successful* search is cheap (see [performance](../performance.md)), but a *failed* one floods the start's entire reachable component before reporting `NoPath`, which can cost orders of magnitude more |
 | Precheck before searching | goals are frequently unreachable — doors, mining, multi-floor — or components are large enough that failure floods dominate the path budget |
 
-The gate is asymmetric by design: only `Unreachable` proves failure and
-skips the search; every other verdict means "run A*". It can never turn
-a solvable query into a wrong failure — only occasionally waste its own
-lookup.
+The gate only ever prunes: the [pathfinding note](../architecture/path.md)
+specifies the verdict semantics that make it safe to skip A* solely on
+`Unreachable`.
 
 ## Rebuild cadence
 
@@ -24,9 +23,9 @@ lookup.
 | Every N ticks | edits are continuous and you want bounded, predictable rebuild cost |
 
 Either way `update_region_graph` refreshes only dirty chunks. One graph
-serves one movement class: a class/graph mismatch reports `GraphStale`
-and falls back to A* — safe, but silently wasted work, so keep the pair
-aligned.
+serves one movement class — keep the pair aligned, or the mismatch
+fallback specified in the [topology note](../architecture/topology.md)
+silently wastes the precheck.
 
 ## What it looks like
 

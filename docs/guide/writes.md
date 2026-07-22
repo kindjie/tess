@@ -13,9 +13,10 @@ path. When unsure during simulation, queue.
 | Queued operations | sim-time edits; dirty masks drive topology, replanning, or render deltas; parallel execution may ever matter | declaring a domain, touched fields, dirty mask, and `WritePolicy` per operation |
 
 The declared `WritePolicy` is what licenses parallel execution later —
-declare it honestly even while running serial. Queued operations also
-report back through result channels: typed per-operation completion
-records, drained once per frame.
+declare it honestly even while running serial. Completion reporting
+(result channels) is part of the same contract; the
+[queued-operations note](../architecture/queued-operations.md) specifies
+both.
 
 ## What it looks like
 
