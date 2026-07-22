@@ -84,6 +84,23 @@ package — see [Installation](packaging.md).
 All three are dependency-free. Optional EnTT and Dear ImGui adapters remain
 behind explicit integration headers and compile definitions.
 
+## Who is tess for?
+
+- **Game and colony-sim developers** — construction edits invalidate
+  routes mid-tick, many agents replan around the change, and the whole
+  loop stays deterministic. Start with the
+  [tutorial](getting-started.md) and `examples/colony_2d.cc`.
+- **Engine integrators** — a substrate that owns execution, not your
+  loop: versioned [DeltaFrames](architecture/simulation.md) feed your
+  renderer and [adapter concepts](architecture/ecs.md) bind your ECS.
+- **Robotics prototypers** — occupancy grids, feasibility prechecks, and
+  dirty-driven replanning with reproducible fixed-step runs; see the
+  [robotics walkthrough](use-cases.md).
+- **Headless simulation and research** — agent-based models and servers
+  run the same loop with no renderer at all; see
+  [use cases](use-cases.md) and the machine-adoption recipe in
+  [for agents](for-agents.md).
+
 ## Where next
 
 <div class="grid cards" markdown>
