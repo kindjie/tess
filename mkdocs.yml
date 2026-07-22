@@ -67,12 +67,14 @@ nav:
       - Overview: architecture/README.md
       - Shapes: architecture/shape.md
       - Storage: architecture/storage.md
+      - Block kernels: architecture/block.md
       - Pathfinding: architecture/path.md
       - Topology: architecture/topology.md
       - Queued operations: architecture/queued-operations.md
       - Simulation and scheduling: architecture/simulation.md
       - ECS integration: architecture/ecs.md
       - Diagnostics: architecture/diagnostics.md
+      - GPU interface: architecture/gpu.md
   - Performance: performance.md
   - Support: support.md
 

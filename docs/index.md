@@ -101,8 +101,8 @@ behind explicit integration headers and compile definitions.
 
     ---
 
-    Nine annotated, self-checking programs, from the quickstart to the
-    flagship colony simulation.
+    An annotated catalog of self-checking programs, from the quickstart
+    to the flagship colony simulation.
 
     [:octicons-arrow-right-24: Example catalog](examples.md)
 
