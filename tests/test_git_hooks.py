@@ -430,6 +430,40 @@ def test_noisy_clang_tidy_runs_off_the_per_commit_workflow():
   )
 
 
+def test_required_clang_tidy_uses_bounded_parallelism():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  quality = workflow.split("  quality:\n", 1)[1].split("  macos:\n", 1)[0]
+
+  assert (
+    "      - name: Build\n"
+    "        if: matrix.preset != 'dev-clang-tidy'\n"
+    '        run: cmake --build --preset "${{ matrix.preset }}"\n'
+    in quality
+  )
+  assert "      - name: Build clang-tidy with bounded parallelism\n" in quality
+  assert "        if: matrix.preset == 'dev-clang-tidy'\n" in quality
+  assert (
+    '        run: cmake --build --preset "${{ matrix.preset }}" '
+    "--parallel 2\n" in quality
+  )
+
+
+def test_non_gating_benchmark_baselines_run_only_on_main():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  bench = workflow.split("  bench:\n", 1)[1].split("  ci-gate:\n", 1)[0]
+  main_only_steps = (
+    "Collect non-gating benchmark baselines",
+    "Write benchmark artifact metadata",
+    "Upload benchmark baseline artifact",
+  )
+
+  for name in main_only_steps:
+    step = bench.split(f"      - name: {name}\n", 1)[1]
+    assert step.startswith("        if: github.ref == 'refs/heads/main'\n")
+
+
 def test_pages_build_has_only_the_permissions_needed_to_configure_pages():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "pages.yml").read_text()

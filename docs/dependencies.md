@@ -254,10 +254,14 @@ lock is 30,877 bytes and 16,038 GPT-5 tokens, below the repository file limit.
   https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_CLANG_TIDY.html
 - Target property:
   https://cmake.org/cmake/help/latest/prop_tgt/LANG_CLANG_TIDY.html
+- Build-tool parallelism:
+  https://cmake.org/cmake/help/latest/manual/cmake.1.html#build-a-project
 
 Used by the opt-in `dev-clang-tidy` preset through the `CXX_CLANG_TIDY` target
-property. Tess sets the property only on local test and benchmark targets so
-third-party targets are not linted by project policy.
+property. Tess sets the property only on local example, test, and benchmark
+targets so third-party targets are not linted by project policy. Required CI
+caps this analysis build at two concurrent jobs; an explicit `--parallel 2` is
+portable across CMake generators and avoids unbounded runner memory pressure.
 
 ## clangd
 

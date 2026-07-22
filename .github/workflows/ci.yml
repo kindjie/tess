@@ -254,7 +254,12 @@ jobs:
         run: cmake --preset "${{ matrix.preset }}"
 
       - name: Build
+        if: matrix.preset != 'dev-clang-tidy'
         run: cmake --build --preset "${{ matrix.preset }}"
+
+      - name: Build clang-tidy with bounded parallelism
+        if: matrix.preset == 'dev-clang-tidy'
+        run: cmake --build --preset "${{ matrix.preset }}" --parallel 2
 
       - name: Test
         if: >-
@@ -449,14 +454,17 @@ jobs:
           tess_bench_diagnostics_thresholds
 
       - name: Collect non-gating benchmark baselines
+        if: github.ref == 'refs/heads/main'
         run: cmake --build --preset bench --target tess_bench_ci_baselines
 
       - name: Write benchmark artifact metadata
+        if: github.ref == 'refs/heads/main'
         run: |
           tools/benchmark_artifact_metadata.py \
             --out build/bench/bench/ci-baselines/metadata.json
 
       - name: Upload benchmark baseline artifact
+        if: github.ref == 'refs/heads/main'
         # upload-artifact v7.0.1.
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
