@@ -124,6 +124,15 @@ jobs:
             http://127.0.0.1:8000/demo/ >build/web-demo-dom.html
           grep -q 'data-tess-demo="ready"' build/web-demo-dom.html
           grep -q '>Route found<' build/web-demo-dom.html
+          google-chrome \
+            --headless=new \
+            --no-sandbox \
+            --disable-gpu \
+            --virtual-time-budget=8000 \
+            --dump-dom \
+            http://127.0.0.1:8000/demo/colony/ >build/web-colony-dom.html
+          grep -q 'data-tess-colony="ready"' build/web-colony-dom.html
+          grep -q '>Colony running<' build/web-colony-dom.html
 
       - name: Configure Pages
         if: github.ref == 'refs/heads/main'

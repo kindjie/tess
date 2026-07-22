@@ -10,6 +10,10 @@ add_executable(tess_documentation documentation.cc)
 target_link_libraries(tess_documentation PRIVATE tess::tess)
 tess_apply_project_options(tess_documentation)
 
+add_executable(tess_web_colony_model web_colony/colony.cc)
+target_link_libraries(tess_web_colony_model PRIVATE tess::tess)
+tess_apply_project_options(tess_web_colony_model)
+
 add_executable(tess_web_pathfinder_model web_pathfinder/pathfinder.cc)
 target_link_libraries(tess_web_pathfinder_model PRIVATE tess::tess)
 tess_apply_project_options(tess_web_pathfinder_model)

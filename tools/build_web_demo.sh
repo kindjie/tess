@@ -41,3 +41,34 @@ em++ \
   -sEXPORTED_FUNCTIONS="$exported_functions" \
   -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
   -o "$output/tess-demo.js"
+
+# Colony demo: colony_2d in the browser, published under $output/colony/.
+colony="$output/colony"
+mkdir -p "$colony"
+cp "$root/examples/web_colony/site/index.html" "$colony/"
+cp "$root/examples/web_colony/site/style.css" "$colony/"
+cp "$root/examples/web_colony/site/app.js" "$colony/"
+cp "$root/examples/web_colony/site/favicon.svg" "$colony/"
+cp "$root/docs/assets/tess-logo-dark.svg" "$colony/logo.svg"
+
+colony_exports='["_main","_tess_colony_width","_tess_colony_height"'
+colony_exports+=',"_tess_colony_reset","_tess_colony_set_wall"'
+colony_exports+=',"_tess_colony_set_strategy","_tess_colony_tick"'
+colony_exports+=',"_tess_colony_tiles","_tess_colony_agents"'
+colony_exports+=',"_tess_colony_agent_count","_tess_colony_arrived"]'
+
+em++ \
+  -std=c++20 \
+  -O3 \
+  -DNDEBUG \
+  -I"$root/include" \
+  -I"$config/generated/include" \
+  "$root/examples/web_colony/colony.cc" \
+  -sALLOW_MEMORY_GROWTH=1 \
+  -sENVIRONMENT=web \
+  -sFILESYSTEM=0 \
+  -sMODULARIZE=1 \
+  -sEXPORT_NAME=createTessColony \
+  -sEXPORTED_FUNCTIONS="$colony_exports" \
+  -sEXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","HEAP16"]' \
+  -o "$colony/tess-colony.js"
