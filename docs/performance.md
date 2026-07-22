@@ -13,6 +13,11 @@ Representative medians from the benchmark suite on an Apple M3 Max
 - One `weighted_path_batch` plan of 100 near-goal requests on a 512x512
   grid: ~50 us.
 
+Memory, not time, but enforced the same way: `examples/sparse_stream.cc`
+self-checks a 1,024-chunk world held to a 16-page residency budget — a
+64x smaller resident footprint than the dense equivalent (1 MiB vs
+16 KiB).
+
 ## Trend snapshot
 
 Data from CI run 29211536546, collected 2026-07-12 16:09 PDT; the snapshot

@@ -102,6 +102,8 @@ Zero-initialized fields mean a fresh world is fully blocked for the
 identity movement class below: open tiles before pathing.
 
 - Architecture: [`architecture/storage.md`](architecture/storage.md)
+- Example: `examples/sparse_stream.cc` (budget-bounded residency and the
+  `Indeterminate` stream-and-retry flow)
 
 ## 4. Writing tiles: direct access vs queued operations
 
