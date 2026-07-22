@@ -67,7 +67,6 @@ struct Demo {
   std::vector<std::uint8_t> shadow;    // 0 open, 1 wall, per tile.
   std::vector<std::int16_t> agent_xy;  // x,y pairs for JS.
   tess::RenderVersion version{};
-  tess::Schedule schedule;
   std::size_t built_tiles = 0;
   bool replan_each_tick = false;
   double last_tick_us = 0.0;
@@ -183,6 +182,10 @@ struct Demo {
 
   TopologyTaskFn topology_task{this};
   AgentTaskFn agent_task{this};
+
+  // Declared after every task object it references: members are destroyed
+  // in reverse declaration order, and the non-owning Schedule must go first.
+  tess::Schedule schedule;
 
   void queue_wall(tess::Coord3 coord) {
     pending_walls.push_back(coord);
