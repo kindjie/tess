@@ -20,16 +20,20 @@ deferred for scope reasons. Keep entries short and concrete:
   documentation.
 - Evidence: the implementation pull request classified its workflow and Python
   changes as code-affecting in six seconds, then ran and passed every existing
-  platform, analysis, and benchmark job. This documentation-only change is the
-  hosted proof of the skip path.
-- Decision: Trial the narrow `docs/**`, Markdown, and `mkdocs.yml` allowlist.
+  platform, analysis, and benchmark job. The documentation-only proof then
+  completed its classifier in 6s, hook backstop in 18s, and aggregate gate in
+  2s; the six compiled job groups skipped before matrix expansion. The
+  independent documentation build and C/C++ security analysis set the complete
+  required-check critical path at 1m1s, down from the 16m47s code-path run.
+- Decision: Accepted. Keep the narrow `docs/**`, Markdown, and `mkdocs.yml`
+  allowlist.
   Keep the classifier, hook backstop, documentation build, and aggregate gate
-  on every change; skip the 12 compiled jobs only after a complete Git diff
-  matches the allowlist.
+  on every change; skip compiled jobs only after a complete Git diff matches
+  the allowlist.
 - Risk: a classification bug could suppress relevant signal. Empty changes,
   invalid revisions, Git errors, and any unmatched path therefore require full
-  CI; renames are evaluated as delete plus add. Accept the fast path only after
-  this pull request proves the expected required-job results on GitHub.
+  CI; renames are evaluated as delete plus add. Revisit the allowlist only when
+  another file class has an independent required check with equivalent signal.
 
 ## 2026-07-21 - CI Critical-Path Work Separated From Calibration
 
