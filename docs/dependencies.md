@@ -179,6 +179,10 @@ concepts layer
 - Setup Python documentation: https://github.com/actions/setup-python
 - Hosted runner documentation:
   https://docs.github.com/actions/reference/runners/github-hosted-runners
+- Job-condition documentation:
+  https://docs.github.com/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions
+- Required-check troubleshooting:
+  https://docs.github.com/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks
 - Configure Pages action version: `actions/configure-pages@v6.0.0` (pinned to
   `45bfe0192ca1faeb007ade9deae92b16b8254a0d`)
 - Upload Pages artifact action version:
@@ -201,6 +205,15 @@ thresholds can be calibrated against the same runner family that will enforce
 them; benchmark gates therefore run only on the Linux runner family they were
 calibrated on. Every checkout disables persisted Git credentials because these
 jobs only need repository read access.
+
+The required CI workflow always runs its change classifier, hook backstop, and
+aggregate gate. When a complete NUL-delimited Git diff contains only
+`docs/**`, Markdown files, or `mkdocs.yml`, the platform builds, compiled
+analysis, and performance gates are conditionally skipped. The classifier
+fails closed on empty changes, invalid revisions, and Git errors. This uses
+job conditions rather than workflow path filters: GitHub documents that a
+skipped required workflow can remain pending, while a conditionally skipped
+job reports success. It also avoids the native path filter's 300-file limit.
 
 ## tiktoken
 

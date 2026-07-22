@@ -647,6 +647,11 @@
   under-24000-token limit, push-range benchmark gating, fresh benchmark
   configure/build ordering, and the requirements lock contract, including its
   pinned-uv, index-cutoff canonical regeneration wrapper.
+- `tests/test_ci_changes.py`: pytest coverage for the required CI workflow's
+  fail-closed documentation-only classifier. It pins the narrow path
+  allowlist, empty and mixed change behavior, full nonzero revision validation,
+  NUL-delimited Git output, disabled rename detection, Git-error fallback, and
+  the job-output command-line contract.
 - `tests/test_check_public_docs.py`: pytest coverage for the dependency-free,
   all-public-header Doxygen comment gate (`tools/check_public_docs.py`).
   Synthetic fixtures verify block and line comments across templates,

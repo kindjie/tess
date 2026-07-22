@@ -26,16 +26,18 @@ deferred for scope reasons. Keep entries short and concrete:
   8m21s.
 - Decision: Accepted. Match the public runner's four CPUs with a four-job cap
   for required clang-tidy, and collect benchmark calibration artifacts only on
-  `main`. Every benchmark threshold remains required on code pull requests,
-  and every main run still produces the canonical ten-repetition artifact.
+  code-affecting `main` runs. Every benchmark threshold remains required on
+  code pull requests and code-affecting main pushes; documentation-only merges
+  do not produce redundant calibration artifacts.
 - Risk: four clang-tidy processes increase peak memory and can interleave
   diagnostics. The public runner supplies 16 GB, and the explicit cap prevents
   unbounded parallelism. Pull-request-specific baseline artifacts are no
   longer available, but merge-commit artifacts remain comparable on the same
   runner family. Full required clang-tidy still takes about 16 minutes; retain
-  it for code changes because tests and examples provide template-instantiation
-  coverage that a small representative target would miss, and skip it only
-  when a fail-closed change classifier proves a change is documentation-only.
+  it for code changes because tests and examples provide
+  template-instantiation coverage that a small representative target would
+  miss, and skip it only when a fail-closed change classifier proves a change
+  is documentation-only.
 
 ## 2026-07-21 - Advisory Analysis Removed From Per-Commit CI
 
