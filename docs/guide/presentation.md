@@ -12,16 +12,18 @@ nothing else depends on it.
 | Headless | servers, batch experiments, tests: no observer exists, so skip `DeltaCollector` entirely |
 | DeltaFrame consumer | any renderer, UI, or network mirror: the consumer owns shadow state, applies immutable versioned frames, and resynchronizes on gaps |
 
-Consumers never rescan the world: frame records name which tiles
-changed, and the consumer re-reads exactly those tiles from the
-authoritative world (or receives values over its own channel). Frame
-versions make missed frames detectable and recovery explicit rather
-than silent.
+Consumers never rescan the world: frame records carry either individual
+changed tiles or box-granular dirty bounds, and the consumer re-reads
+the named tiles — or repaints the recorded box — from the authoritative
+world (or receives values over its own channel). Frame versions make
+missed frames detectable and recovery explicit rather than silent.
 
 ## What it looks like
 
 <!-- tess-snippet: getting-render-deltas source=examples/documentation.cc -->
 ```cpp
+tess::collect_tile_deltas(deltas, world, kTerrainDirty);
+const auto frame = deltas.publish();
 ```
 <!-- /tess-snippet -->
 

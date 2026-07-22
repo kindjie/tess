@@ -9,7 +9,7 @@ is a type alias change plus handling for the sparse-only states below.
 | Branch | Pick when | You commit to |
 | --- | --- | --- |
 | `AlwaysResidentWorld` | full storage fits the budget and most chunks are actually used | nothing extra: residency is a no-op, every query is answerable |
-| `SparseResidentWorld` | full storage exceeds the budget, or occupancy is a small fraction of the shape | a `ResidencyConfig` byte budget, explicit residency management, LRU eviction, and handling `PathStatus::Indeterminate` via a `MissingChunkPolicy` |
+| `SparseResidentWorld` | full storage exceeds the budget, or occupancy is a small fraction of the shape | a `ResidencyConfig` byte budget, explicit residency management, LRU eviction, handling `PathStatus::Indeterminate` via a `MissingChunkPolicy`, and losing the dense-only distance-field products ([pathfinding](pathfinding.md)) |
 
 ## Thresholds
 

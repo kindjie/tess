@@ -6,13 +6,17 @@ order and stop at the first match. When unsure, start with plain
 measured workload justifies it.
 
 1. **Do many querents share a goal set?** Shared goals on unit-cost
-   terrain → build one distance-field product and reuse it.
+   terrain → build one distance-field product and reuse it. The product
+   family is dense-only: on a `SparseResidentWorld`, use the batch or
+   per-request branches instead.
 2. **Are requests weighted, with goals that repeat?** →
    `weighted_path_batch` amortizes one bounded field per repeated goal;
    all-distinct goals fall back to per-request weighted A*.
 3. **Do identical routes repeat on a stable map?** →
-   `cached_astar_path`; any world edit invalidates the whole cache via
-   its fingerprint.
+   `cached_astar_path`. Invalidation is caller-driven: run
+   `RouteCacheScratch::invalidate_if_world_changed(world)` (or clear)
+   after edits — lookups do not check the world fingerprint themselves,
+   and one edit invalidates the whole cache.
 4. **Otherwise** — `astar_path`, or `weighted_astar_path` with a
    movement class when passability or cost differs per unit.
 
@@ -22,7 +26,7 @@ measured workload justifies it.
 | --- | --- | --- |
 | Few one-off unit-cost queries | `astar_path` | `examples/mvp_path.cc` |
 | Per-unit rules or terrain costs | `MovementClass` + `weighted_astar_path` | `examples/path_agents.cc` |
-| Many agents, shared goal set | distance-field product + `FieldProductCache` | `examples/ant_farm_vertical.cc` |
+| Many agents, shared goal set (dense worlds only) | distance-field product + `FieldProductCache` | `examples/ant_farm_vertical.cc` |
 | Weighted per-tick batches, repeated goals | `weighted_path_batch` | below |
 | Repeated identical routes, stable map | `cached_astar_path` | below |
 
@@ -54,6 +58,24 @@ const auto results =
 
 <!-- tess-snippet: field-product source=examples/documentation.cc -->
 ```cpp
+tess::GoalSet goals;
+goals.add(tess::Coord3{31, 0, 0});
+goals.add(tess::Coord3{31, 31, 0});
+
+tess::DistanceFieldScratch scratch;
+tess::DistanceFieldProduct product;
+const auto built = tess::build_distance_field_product<World, PassableTag>(
+    world, goals, scratch, product);
+
+tess::FieldProductCache cache{1u << 20u};  // Byte-budgeted.
+const auto stored = cache.store<World, PassableTag>(std::move(product));
+const auto* shared = cache.lookup<World, PassableTag>(world, goals);
+if (shared == nullptr) {
+  return false;
+}
+
+const auto nearest = tess::nearest_target<World, PassableTag>(
+    world, tess::Coord3{0, 31, 0}, *shared, scratch);
 ```
 <!-- /tess-snippet -->
 
