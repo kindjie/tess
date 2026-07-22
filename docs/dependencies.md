@@ -165,8 +165,8 @@ concepts layer
 
 ## GitHub Actions
 
-- Checkout action version: `actions/checkout@v7.0.0` (pinned to
-  `9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0`)
+- Checkout action version: `actions/checkout@v7.0.1` (pinned to
+  `3d3c42e5aac5ba805825da76410c181273ba90b1`)
 - Checkout documentation: https://github.com/actions/checkout
 - Cache action version: `actions/cache@v6.1.0` (pinned to
   `55cc8345863c7cc4c66a329aec7e433d2d1c52a9`)
@@ -231,7 +231,7 @@ better fit than a filesystem-oriented command-line wrapper.
 - uv documentation: https://docs.astral.sh/uv/
 - pytest version: `9.1.1`
 - pytest documentation: https://docs.pytest.org/
-- clang-format Python package version: `22.1.5`
+- clang-format Python package version: `22.1.8`
 - clang-format documentation: https://clang.llvm.org/docs/ClangFormat.html
 - uv requirements locking:
   https://docs.astral.sh/uv/pip/compile/

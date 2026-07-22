@@ -646,7 +646,9 @@
   GPT-5 tokenization with malformed UTF-8 replacement and a strict
   under-24000-token limit, push-range benchmark gating, fresh benchmark
   configure/build ordering, and the requirements lock contract, including its
-  pinned-uv, index-cutoff canonical regeneration wrapper.
+  pinned-uv, index-cutoff canonical regeneration wrapper, universal Windows
+  and Python 3.10 dependency markers, and synchronization between documented
+  dependency versions and their workflow or direct-input pins.
 - `tests/test_ci_changes.py`: pytest coverage for the required CI workflow's
   fail-closed documentation-only classifier. It pins the narrow path
   allowlist, empty and mixed change behavior, full nonzero revision validation,
