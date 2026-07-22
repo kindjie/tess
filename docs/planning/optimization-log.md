@@ -21,8 +21,9 @@ deferred for scope reasons. Keep entries short and concrete:
   40m41s using serial Unix Makefiles. The benchmark thresholds finished at
   about eight minutes, but ten-repetition non-gating baseline collection kept
   that required job running for 32m21s. A two-job clang-tidy trial passed in
-  22m18s, while suppressing PR baseline collection reduced the benchmark job
-  to 8m22s.
+  22m18s. A four-job trial then passed in 15m58s, a 61% reduction from the
+  serial run. Suppressing PR baseline collection reduced the benchmark job to
+  8m21s.
 - Decision: Accepted. Match the public runner's four CPUs with a four-job cap
   for required clang-tidy, and collect benchmark calibration artifacts only on
   `main`. Every benchmark threshold remains required on code pull requests,
@@ -31,7 +32,10 @@ deferred for scope reasons. Keep entries short and concrete:
   diagnostics. The public runner supplies 16 GB, and the explicit cap prevents
   unbounded parallelism. Pull-request-specific baseline artifacts are no
   longer available, but merge-commit artifacts remain comparable on the same
-  runner family.
+  runner family. Full required clang-tidy still takes about 16 minutes; retain
+  it for code changes because tests and examples provide template-instantiation
+  coverage that a small representative target would miss, and skip it only
+  when a fail-closed change classifier proves a change is documentation-only.
 
 ## 2026-07-21 - Advisory Analysis Removed From Per-Commit CI
 
