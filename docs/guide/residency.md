@@ -32,6 +32,35 @@ auto terrain = dense_world.field_span<TerrainTag>(tess::ChunkKey{3});
 ```
 <!-- /tess-snippet -->
 
+<!-- tess-snippet: sparse-budget source=examples/sparse_stream.cc -->
+```cpp
+constexpr auto budget = 16 * HugeSparse::page_byte_size;
+HugeSparse world{tess::ResidencyConfig{budget}};  // Loads no chunks.
+
+for (std::uint64_t key = 0; key < 64; ++key) {
+  (void)world.ensure_resident(tess::ChunkKey{key});  // LRU-evicts at cap.
+}
+
+static_assert(HugeDense::storage_byte_size == 64 * budget);
+const auto ok = world.resident_byte_size() <= world.byte_budget();
+```
+<!-- /tess-snippet -->
+
+<!-- tess-snippet: sparse-indeterminate source=examples/sparse_stream.cc -->
+```cpp
+tess::PathScratch scratch;
+const auto blocked = tess::astar_path<StreamWorld, PassableTag>(
+    world, request, scratch, tess::MissingChunkPolicy::Indeterminate);
+// blocked.status == PathStatus::Indeterminate: a non-resident chunk was
+// skipped, so failure is not proven -- stream the chunk in and retry.
+
+(void)world.ensure_resident(tess::ChunkKey{1});
+open_row(world, 32, 63);
+const auto found = tess::astar_path<StreamWorld, PassableTag>(
+    world, request, scratch, tess::MissingChunkPolicy::Indeterminate);
+```
+<!-- /tess-snippet -->
+
 ## Learn and specify
 
 - Teach: [getting-started §3](../getting-started.md), rung 3.

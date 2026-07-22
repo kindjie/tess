@@ -40,6 +40,10 @@ cmake --build --preset examples
   (x-z cross-section) where many ants share one distance-field product
   through the byte-budgeted `FieldProductCache` instead of searching
   independently.
+- [`sparse_stream.cc`][sparse_stream] — budget-bounded sparse residency:
+  a 1,024-chunk world held to a 16-page budget (64x less resident field
+  storage), and a path query that reports `Indeterminate` until the
+  missing bridge chunk is streamed in and the retry succeeds.
 
 ## Integration boundaries
 
@@ -58,6 +62,7 @@ cmake --build --preset examples
 [path_agents]: https://github.com/kindjie/tess/blob/main/examples/path_agents.cc
 [stairs_3d]: https://github.com/kindjie/tess/blob/main/examples/stairs_3d.cc
 [ant_farm]: https://github.com/kindjie/tess/blob/main/examples/ant_farm_vertical.cc
+[sparse_stream]: https://github.com/kindjie/tess/blob/main/examples/sparse_stream.cc
 [custom_ecs]: https://github.com/kindjie/tess/blob/main/examples/custom_ecs_min.cc
 [entt_pawns]: https://github.com/kindjie/tess/blob/main/examples/entt_pawns.cc
 [render_delta]: https://github.com/kindjie/tess/blob/main/examples/render_delta_consumer.cc

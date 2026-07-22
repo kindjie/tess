@@ -1,3 +1,7 @@
+add_executable(tess_sparse_stream sparse_stream.cc)
+target_link_libraries(tess_sparse_stream PRIVATE tess::tess)
+tess_apply_project_options(tess_sparse_stream)
+
 add_executable(tess_quickstart quickstart.cc)
 target_link_libraries(tess_quickstart PRIVATE tess::tess)
 tess_apply_project_options(tess_quickstart)
