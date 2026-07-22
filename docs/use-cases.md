@@ -56,8 +56,9 @@ runs the [schedule](architecture/simulation.md) under its own fixed-step
 clock and simply omits the render bridge, which is optional. When
 observers do exist (a network mirror, a monitoring UI), `DeltaFrame`
 versioning gives them gap detection and explicit resynchronization:
-frames name which tiles changed, and the consumer re-reads exactly those
-tiles from the authoritative world — or ships the values over its own
-channel — instead of rescanning the map.
+frames record what changed (individual tiles or box-granular dirty
+bounds), and the consumer re-reads those tiles from the authoritative
+world — or ships the values over its own channel — instead of rescanning
+the map.
 `examples/render_delta_consumer.cc` shows a consumer maintaining shadow
 state this way.

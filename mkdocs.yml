@@ -60,6 +60,15 @@ extra_css:
 nav:
   - Home: index.md
   - Getting started: getting-started.md
+  - Decision guide:
+      - Overview: guide/README.md
+      - Residency: guide/residency.md
+      - Writes: guide/writes.md
+      - Pathfinding strategy: guide/pathfinding.md
+      - Topology and precheck: guide/topology.md
+      - Entities and ECS: guide/entities.md
+      - Presentation: guide/presentation.md
+      - Diagnostics: guide/diagnostics.md
   - Installation: packaging.md
   - Examples: examples.md
   - Use cases: use-cases.md
