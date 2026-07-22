@@ -14,6 +14,18 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-21 - Advisory Analysis Removed From Per-Commit CI
+
+- Area: GitHub Actions advisory clang-tidy analysis.
+- Evidence: the advisory preset duplicated the full-tree compilation done by
+  the required clang-tidy gate with a broader, intentionally noisy rule set.
+  Recent pull-request and main runs each spent about 40 minutes on this
+  non-blocking job.
+- Decision: Accepted. Keep the preset and its signal, but run it weekly or on
+  manual request instead of on every pull request and main push.
+- Risk: New advisory findings can remain undetected until the weekly run.
+  Required low-noise clang-tidy checks continue to run on every change.
+
 ## 2026-07-12 - Transactional Portal Segment Cache
 
 - Area: weighted portal segment-cache insertion and stale compaction under
