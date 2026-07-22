@@ -367,11 +367,12 @@ def test_config_hooks_accept_a_successful_probe(monkeypatch):
 
 def test_every_checkout_step_disables_persisted_credentials():
   root = Path(__file__).resolve().parents[1]
-  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
-  checkout_count = workflow.count("uses: actions/checkout@")
+  workflows = tuple((root / ".github" / "workflows").glob("*.yml"))
+  workflow_text = "\n".join(path.read_text() for path in workflows)
+  checkout_count = workflow_text.count("uses: actions/checkout@")
 
   assert checkout_count > 0
-  assert workflow.count("persist-credentials: false") == checkout_count
+  assert workflow_text.count("persist-credentials: false") == checkout_count
 
 
 def test_hook_backstop_uses_first_party_python_and_requires_hashes():
@@ -411,6 +412,22 @@ def test_ci_gate_aggregates_every_required_ci_job():
   for job_id in required_jobs:
     result_check = f'test "${{{{ needs.{job_id}.result }}}}" = success'
     assert result_check in ci_gate
+
+
+def test_noisy_clang_tidy_runs_off_the_per_commit_workflow():
+  root = Path(__file__).resolve().parents[1]
+  ci_workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  advisory_workflow = (
+    root / ".github" / "workflows" / "advisory.yml"
+  ).read_text()
+
+  assert "dev-clang-tidy-advisory" not in ci_workflow
+  assert "  schedule:\n" in advisory_workflow
+  assert "  workflow_dispatch:\n" in advisory_workflow
+  assert "cmake --preset dev-clang-tidy-advisory" in advisory_workflow
+  assert "cmake --build --preset dev-clang-tidy-advisory" in (
+    advisory_workflow
+  )
 
 
 def test_pages_build_has_only_the_permissions_needed_to_configure_pages():

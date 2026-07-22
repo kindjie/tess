@@ -1,0 +1,54 @@
+name: Advisory analysis
+
+on:
+  schedule:
+    - cron: "17 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: advisory-analysis-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CC: clang
+  CXX: clang++
+
+jobs:
+  clang-tidy:
+    name: Advisory clang-tidy
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install analysis tools
+        run: |
+          sudo apt-get update || true
+          sudo apt-get install -y ccache clang-tidy
+
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-dev-clang-tidy-advisory-${{ github.sha }}
+          restore-keys: ccache-dev-clang-tidy-advisory-
+
+      - name: Show tool versions
+        run: |
+          cmake --version
+          clang++ --version
+          clang-tidy --version
+          ccache --version
+
+      - name: Configure
+        run: cmake --preset dev-clang-tidy-advisory
+
+      - name: Build
+        run: cmake --build --preset dev-clang-tidy-advisory

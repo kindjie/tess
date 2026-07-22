@@ -272,10 +272,11 @@ selects the clang-tidy checks.
 The `dev-clang-tidy` preset is a CI quality gate for low-noise
 clang-analyzer, bugprone, performance, and selected readability checks. The
 `dev-clang-tidy-advisory` preset uses `.clang-tidy-advisory` for broader noisy
-checks that should be reviewed but are not yet part of the blocking gate.
-Current advisory findings include known style debt such as redundant
-`typename` and swappable coordinate parameters. Promote advisory checks only
-after those findings are either fixed or intentionally suppressed.
+checks that should be reviewed but are not yet part of the blocking gate. A
+weekly scheduled workflow runs the advisory preset, and maintainers can also
+start it manually. Current advisory findings include known style debt such as
+redundant `typename` and swappable coordinate parameters. Promote advisory
+checks only after those findings are either fixed or intentionally suppressed.
 
 ## Cppcheck
 
