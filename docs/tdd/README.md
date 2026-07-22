@@ -30,6 +30,7 @@ When implementation diverges from a TDD:
 - [GPU backend interface](gpu-backend-interface.md)
 - [Diagnostics and tooling](diagnostics-and-tooling.md)
 - [Modern C++ / compile-time safety](modern-cpp-compile-time-safety.md)
+- [Lattices and the resolved transition model](lattice-and-transition-model.md)
 - [Concurrent tile-world execution and maintenance][concurrent-tile-world]
 - [Work Contracts evaluation and integration][work-contracts] (proposed
   addendum)
