@@ -445,7 +445,7 @@ def test_required_clang_tidy_uses_bounded_parallelism():
   assert "        if: matrix.preset == 'dev-clang-tidy'\n" in quality
   assert (
     '        run: cmake --build --preset "${{ matrix.preset }}" '
-    "--parallel 2\n" in quality
+    "--parallel 4\n" in quality
   )
 
 

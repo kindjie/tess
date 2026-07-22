@@ -259,7 +259,7 @@ jobs:
 
       - name: Build clang-tidy with bounded parallelism
         if: matrix.preset == 'dev-clang-tidy'
-        run: cmake --build --preset "${{ matrix.preset }}" --parallel 2
+        run: cmake --build --preset "${{ matrix.preset }}" --parallel 4
 
       - name: Test
         if: >-
