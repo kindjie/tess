@@ -15,6 +15,9 @@ cmake --build --preset examples
 - [Live pathfinder](https://tess.owx.dev/demo/) — the interactive
   WebAssembly demo, built from the same C++20 headers as the library and
   published with this site.
+- [Live colony](https://tess.owx.dev/demo/colony/) — the scale demo:
+  up to 1,024 agents replanning around walls you draw, with a per-tick
+  cost readout and a retained-routes vs replan-every-tick toggle.
 - [`quickstart.cc`][quickstart] — the complete program on the
   [home page](index.md): a world, a schema, and an A* query.
 - [`colony_2d.cc`][colony_2d] — the flagship composition: queued
@@ -40,6 +43,10 @@ cmake --build --preset examples
   (x-z cross-section) where many ants share one distance-field product
   through the byte-budgeted `FieldProductCache` instead of searching
   independently.
+- [`web_colony`][web_colony_src] — the source of the
+  [live colony demo](https://tess.owx.dev/demo/colony/): the colony_2d
+  composition compiled to WebAssembly, with a native self-checking model
+  binary keeping it under the same CI as every other example.
 - [`sparse_stream.cc`][sparse_stream] — budget-bounded sparse residency:
   a 1,024-chunk world held to a 16-page budget (64x less resident field
   storage), and a path query that reports `Indeterminate` until the
@@ -63,6 +70,7 @@ cmake --build --preset examples
 [stairs_3d]: https://github.com/kindjie/tess/blob/main/examples/stairs_3d.cc
 [ant_farm]: https://github.com/kindjie/tess/blob/main/examples/ant_farm_vertical.cc
 [sparse_stream]: https://github.com/kindjie/tess/blob/main/examples/sparse_stream.cc
+[web_colony_src]: https://github.com/kindjie/tess/tree/main/examples/web_colony
 [custom_ecs]: https://github.com/kindjie/tess/blob/main/examples/custom_ecs_min.cc
 [entt_pawns]: https://github.com/kindjie/tess/blob/main/examples/entt_pawns.cc
 [render_delta]: https://github.com/kindjie/tess/blob/main/examples/render_delta_consumer.cc

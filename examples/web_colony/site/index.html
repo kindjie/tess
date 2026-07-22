@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tess colony demo</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <img src="logo.svg" alt="tess" height="28" />
+      <h1>Colony at scale</h1>
+      <p>
+        Agents route to the far side while you wall off their paths. Every
+        edit is a queued operation: the dirty mask triggers an incremental
+        topology rebuild, agents replan, and the grid you see is a shadow
+        state fed by versioned DeltaFrames. Single-threaded WebAssembly —
+        native numbers are faster; see
+        <a href="https://tess.owx.dev/performance/">performance</a>.
+      </p>
+    </header>
+    <div class="toolbar">
+      <label
+        >Agents
+        <input id="agents" type="range" min="16" max="1024" step="16"
+               value="128" />
+        <span id="agent-count">128</span></label
+      >
+      <label class="toggle"
+        ><input id="replan" type="checkbox" />
+        Replan every tick (drop retained routes)</label
+      >
+      <button id="reset">Reset</button>
+    </div>
+    <canvas id="world" width="768" height="768"
+            aria-label="colony world grid"></canvas>
+    <p class="status">
+      <span id="message">Loading WebAssembly…</span>
+      <span id="metrics"></span>
+    </p>
+    <footer>
+      <a href="../">Pathfinder demo</a> ·
+      <a href="https://tess.owx.dev/">Documentation</a> ·
+      <a href="https://github.com/kindjie/tess/tree/main/examples/web_colony"
+        >Source</a
+      >
+    </footer>
+    <script src="tess-colony.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

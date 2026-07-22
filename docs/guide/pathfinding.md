@@ -38,7 +38,10 @@ workload charts and semantics; this page only routes into them.
 A single A* across an open 512x512 grid measures ~2.1 us (weighted
 ~2.4 us; see [performance](../performance.md)). Below a few hundred
 queries per tick, plain searches are rarely the bottleneck — measure
-before reaching for a sharing strategy.
+before reaching for a sharing strategy. The
+[live colony demo](https://tess.owx.dev/demo/colony/) makes the
+difference tangible: toggle retained routes off and watch the per-tick
+cost climb.
 
 ## What it looks like
 

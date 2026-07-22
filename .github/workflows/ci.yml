@@ -90,7 +90,7 @@ jobs:
             echo "::endgroup::"
             ran=$((ran + 1))
           done
-          test "$ran" -ge 12  # every example runs; bump when adding one
+          test "$ran" -ge 13  # every example runs; bump when adding one
 
       # Documented example output is copied from real program runs; drift
       # between the docs and the compiled quickstart fails the build.
