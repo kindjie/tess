@@ -14,6 +14,29 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-21 - CI Critical-Path Work Separated From Calibration
+
+- Area: required clang-tidy and benchmark jobs on pull requests.
+- Evidence: a protected pull-request run completed required clang-tidy in
+  40m41s using serial Unix Makefiles. The benchmark thresholds finished at
+  about eight minutes, but ten-repetition non-gating baseline collection kept
+  that required job running for 32m21s. A two-job clang-tidy trial passed in
+  22m18s. A four-job trial then passed in 15m58s, a 61% reduction from the
+  serial run. Suppressing PR baseline collection reduced the benchmark job to
+  8m21s.
+- Decision: Accepted. Match the public runner's four CPUs with a four-job cap
+  for required clang-tidy, and collect benchmark calibration artifacts only on
+  `main`. Every benchmark threshold remains required on code pull requests,
+  and every main run still produces the canonical ten-repetition artifact.
+- Risk: four clang-tidy processes increase peak memory and can interleave
+  diagnostics. The public runner supplies 16 GB, and the explicit cap prevents
+  unbounded parallelism. Pull-request-specific baseline artifacts are no
+  longer available, but merge-commit artifacts remain comparable on the same
+  runner family. Full required clang-tidy still takes about 16 minutes; retain
+  it for code changes because tests and examples provide template-instantiation
+  coverage that a small representative target would miss, and skip it only
+  when a fail-closed change classifier proves a change is documentation-only.
+
 ## 2026-07-21 - Advisory Analysis Removed From Per-Commit CI
 
 - Area: GitHub Actions advisory clang-tidy analysis.

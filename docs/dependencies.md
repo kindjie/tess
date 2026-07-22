@@ -192,13 +192,15 @@ concepts layer
 CI selects explicit OS-family labels — `ubuntu-24.04`, `macos-15`, and
 `windows-2025` — instead of `-latest` labels. This avoids automatic OS-family
 migrations, but GitHub refreshes each hosted image in place, so its compilers,
-CMake, and preinstalled tools still roll. The jobs also install `ccache` and
-`clang-tidy` from live apt or Homebrew repositories; their resolved versions
-are reported but not pinned. Benchmark baseline JSON is uploaded from CI
-artifacts so timing thresholds can be calibrated against the same runner
-family that will enforce them; benchmark gates therefore run only on the Linux
-runner family they were calibrated on. Every checkout disables persisted Git
-credentials because these jobs only need repository read access.
+CMake, and preinstalled tools still roll. GitHub currently documents the
+public x64 Ubuntu runner as four CPUs with 16 GB of RAM; the clang-tidy cap
+matches those CPUs. The jobs also install `ccache` and `clang-tidy` from live
+apt or Homebrew repositories; their resolved versions are reported but not
+pinned. Benchmark baseline JSON is uploaded from CI artifacts so timing
+thresholds can be calibrated against the same runner family that will enforce
+them; benchmark gates therefore run only on the Linux runner family they were
+calibrated on. Every checkout disables persisted Git credentials because these
+jobs only need repository read access.
 
 ## tiktoken
 
@@ -254,10 +256,15 @@ lock is 30,877 bytes and 16,038 GPT-5 tokens, below the repository file limit.
   https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_CLANG_TIDY.html
 - Target property:
   https://cmake.org/cmake/help/latest/prop_tgt/LANG_CLANG_TIDY.html
+- Build-tool parallelism:
+  https://cmake.org/cmake/help/latest/manual/cmake.1.html#build-a-project
 
 Used by the opt-in `dev-clang-tidy` preset through the `CXX_CLANG_TIDY` target
-property. Tess sets the property only on local test and benchmark targets so
-third-party targets are not linted by project policy.
+property. The required preset analyzes local example and test targets;
+benchmarks are built in their separate performance job without clang-tidy.
+Third-party targets are not linted by project policy. Required CI caps the
+analysis build at four concurrent jobs; an explicit `--parallel 4` is portable
+across CMake generators and avoids unbounded runner memory pressure.
 
 ## clangd
 
