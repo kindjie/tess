@@ -146,6 +146,8 @@ calibrated CI ceilings:
 
 - A* across an open 512x512 grid, corner to corner: ~2.1 us.
 - One clean tick of 100 path agents with retained routes: ~330 ns.
+- One `weighted_path_batch` plan of 100 near-goal requests on a 512x512
+  grid: ~50 us.
 
 Details and trend snapshots: [Performance](https://tess.owx.dev/performance/).
 

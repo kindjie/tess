@@ -10,6 +10,8 @@ Representative medians from the benchmark suite on an Apple M3 Max
 - A* across an open 512x512 grid, corner to corner (a 1,022-step path,
   ~1,023 nodes expanded): ~2.1 us; the weighted variant: ~2.4 us.
 - One clean tick of 100 path agents with retained routes: ~330 ns.
+- One `weighted_path_batch` plan of 100 near-goal requests on a 512x512
+  grid: ~50 us.
 
 ## Trend snapshot
 

@@ -122,6 +122,10 @@ chunk views. The declared write policy (for example
 execution, and the dirty mask is what drives incremental topology
 updates and render deltas downstream.
 
+Queued operations also report back: result channels
+(`tess/ops/result_channel.h`) give each system deterministic, typed
+per-operation completion records, drained once per frame.
+
 - Architecture:
   [`architecture/queued-operations.md`](architecture/queued-operations.md)
 - Example: `examples/mvp_path.cc` (the smallest end-to-end queued edit
@@ -157,10 +161,15 @@ using Walker = tess::movement::MovementClass<
 ```
 <!-- /tess-snippet -->
 
-`tess::weighted_astar_path` consumes cost fields, and route caches,
-portal-segment caches, and distance-field products (see
-`tess/path/field_product_cache.h`) let many agents share one search
-product.
+`tess::weighted_astar_path` consumes cost fields. When many agents path
+at once, pick by workload shape: agents sharing a goal set on unit-cost
+terrain reuse one distance-field product (see
+`tess/path/field_product_cache.h`), weighted per-tick batches amortize
+repeated goals through `tess::weighted_path_batch` (all-distinct goals
+fall back to per-request A*), and repeated identical routes on a stable
+map are served by the route cache via `tess::cached_astar_path`. The
+[pathfinding note](architecture/path.md) maps each workload shape to its
+API.
 
 - Architecture: [`architecture/path.md`](architecture/path.md)
 - Example: `examples/path_agents.cc` (a multi-agent tick loop with
@@ -233,7 +242,11 @@ tess::run_schedule_frame(schedule, clock, accumulator, 1.0 / 20.0,
 
 Schedule tasks themselves run serially; the selectable parallel phase
 executor (see `tess/ops/phase_executor.h`) parallelizes the planned,
-write-policy-compatible queued operations a task submits.
+write-policy-compatible queued operations a task submits. The parallel
+executors are documented prototypes rather than the production backend,
+and every published performance median is single-threaded. Declaring an
+honest `WritePolicy` on each operation today is what licenses parallel
+execution later, with no changes to operation code.
 
 - Architecture: [`architecture/simulation.md`](architecture/simulation.md)
 - Example: `examples/colony_2d.cc` (the flagship composition: queued

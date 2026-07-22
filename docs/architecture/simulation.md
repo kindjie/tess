@@ -361,7 +361,10 @@ worker pool, chosen per phase by an operation-count threshold), per-phase
 dirty apply, and ack drain -- over a caller-owned `FrameOps` queue. Both the
 queue and the task's result channel are cleared together at the end of every
 successful run (the paired-clear discipline), and the run's `dirty_mask` union
-feeds the schedule so OnDirty tasks in later phases fire the same tick. A
+feeds the schedule so OnDirty tasks in later phases fire the same tick. The
+parallel execution paths remain documented prototypes (see the
+[queued-operations note](queued-operations.md)); every published benchmark
+median is single-threaded. A
 planning or kernel exception preserves the caller-owned queue for inspection
 or replacement while the exception path clears transient result slots, so old
 completions cannot leak into a later run. Earlier writes may already have
