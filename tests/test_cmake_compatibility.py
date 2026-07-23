@@ -157,6 +157,131 @@ def test_fetched_dependencies_use_retrying_exact_revision_populator():
     assert "\n    GIT_TAG" not in google + entt + helper
 
 
+def test_git_population_scrubs_inherited_hook_environment(tmp_path):
+    revision = "0123456789abcdef0123456789abcdef01234567"
+    log = tmp_path / "git.log"
+    fake_git = tmp_path / "git"
+    fake_git.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os\n"
+        "import pathlib\n"
+        "import sys\n"
+        "args = sys.argv[1:]\n"
+        "hook_variables = os.environ['TESS_TEST_HOOK_VARS'].split(':')\n"
+        "leaked = [name for name in hook_variables if name in os.environ]\n"
+        "log = pathlib.Path(os.environ['TESS_TEST_GIT_LOG'])\n"
+        "with log.open('a', encoding='utf-8') as stream:\n"
+        "    stream.write(' '.join(args) + ' leaked=' + ','.join(leaked)\n"
+        "                 + '\\n')\n"
+        "if args[0] == 'init':\n"
+        "    pathlib.Path(args[-1]).mkdir(parents=True, exist_ok=True)\n"
+        "elif 'rev-parse' in args:\n"
+        "    print(os.environ['TESS_TEST_GIT_REVISION'])\n"
+        "elif 'checkout' in args:\n"
+        "    source = pathlib.Path(args[args.index('-C') + 1])\n"
+        "    (source / 'checkout-complete').touch()\n",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    source = tmp_path / "example-src"
+    victim = tmp_path / "victim" / ".git"
+    local_env_vars = subprocess.run(
+        ["git", "rev-parse", "--local-env-vars"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    assert "GIT_DIR" in local_env_vars
+    env = os.environ.copy()
+    env.update(
+        TESS_TEST_GIT_LOG=str(log),
+        TESS_TEST_GIT_REVISION=revision,
+        TESS_TEST_HOOK_VARS=":".join(local_env_vars),
+    )
+    env.update({name: str(victim) for name in local_env_vars})
+
+    result = subprocess.run(
+        [
+            "cmake",
+            f"-DTESS_GIT_EXECUTABLE={fake_git}",
+            "-DTESS_GIT_DEPENDENCY=example",
+            "-DTESS_GIT_REPOSITORY=https://example.invalid/repo.git",
+            f"-DTESS_GIT_REVISION={revision}",
+            f"-DTESS_GIT_SOURCE_DIR={source}",
+            "-P",
+            str(REPO_ROOT / "cmake" / "TessGitPopulate.cmake"),
+        ],
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    log_lines = log.read_text(encoding="utf-8").splitlines()
+    assert log_lines, "fake git was never invoked"
+    for line in log_lines:
+        assert line.endswith(" leaked="), line
+
+
+def test_git_population_reports_every_attempt_error(tmp_path):
+    revision = "0123456789abcdef0123456789abcdef01234567"
+    state = tmp_path / "remote-attempts"
+    fake_git = tmp_path / "git"
+    fake_git.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os\n"
+        "import pathlib\n"
+        "import sys\n"
+        "args = sys.argv[1:]\n"
+        "if args[0] == 'init':\n"
+        "    pathlib.Path(args[-1]).mkdir(parents=True, exist_ok=True)\n"
+        "elif 'remote' in args:\n"
+        "    state = pathlib.Path(os.environ['TESS_TEST_GIT_STATE'])\n"
+        "    attempt = int(state.read_text() if state.exists() else '0') + 1\n"
+        "    state.write_text(str(attempt), encoding='utf-8')\n"
+        "    if attempt > 1:\n"
+        "        print('error: remote origin already exists.',\n"
+        "              file=sys.stderr)\n"
+        "        sys.exit(3)\n"
+        "elif 'fetch' in args:\n"
+        "    print('fatal: unable to access repository', file=sys.stderr)\n"
+        "    sys.exit(128)\n"
+        "elif 'rev-parse' in args:\n"
+        "    print(os.environ['TESS_TEST_GIT_REVISION'])\n",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    source = tmp_path / "example-src"
+    env = os.environ.copy()
+    env.update(
+        TESS_TEST_GIT_STATE=str(state),
+        TESS_TEST_GIT_REVISION=revision,
+    )
+
+    result = subprocess.run(
+        [
+            "cmake",
+            f"-DTESS_GIT_EXECUTABLE={fake_git}",
+            "-DTESS_GIT_DEPENDENCY=example",
+            "-DTESS_GIT_REPOSITORY=https://example.invalid/repo.git",
+            f"-DTESS_GIT_REVISION={revision}",
+            f"-DTESS_GIT_SOURCE_DIR={source}",
+            "-P",
+            str(REPO_ROOT / "cmake" / "TessGitPopulate.cmake"),
+        ],
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "attempt 1: git fetch failed" in output
+    assert "unable to access repository" in output
+    assert "attempt 2: git remote add failed" in output
+    assert "attempt 3: git remote add failed" in output
+
+
 def test_git_population_retries_checkout(tmp_path):
     revision = "0123456789abcdef0123456789abcdef01234567"
     state = tmp_path / "checkout-attempts"
