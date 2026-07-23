@@ -152,9 +152,9 @@ TEST(TessMaintenance, ConcurrentSchedulesNeverOverlapTaskExecution) {
   CountingTask task;
   task.scheduler = &scheduler;
   std::atomic<bool> start = false;
-  std::array<std::jthread, 8> workers;
+  std::array<std::thread, 8> workers;
   for (auto& worker : workers) {
-    worker = std::jthread([&] {
+    worker = std::thread([&] {
       while (!start.load(std::memory_order_acquire)) {
         std::this_thread::yield();
       }
@@ -179,9 +179,9 @@ TEST(TessMaintenance, ConcurrentDrainsNeverRunATaskAgainstItself) {
   task.scheduler = &scheduler;
   EXPECT_TRUE(scheduler.schedule(task));
 
-  std::array<std::jthread, 4> workers;
+  std::array<std::thread, 4> workers;
   for (auto& worker : workers) {
-    worker = std::jthread([&] {
+    worker = std::thread([&] {
       EXPECT_TRUE(scheduler.run_some(maintenance::MaintenanceBudget{}));
     });
   }
