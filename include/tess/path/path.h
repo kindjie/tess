@@ -1753,13 +1753,7 @@ auto build_distance_field(const WorldType& world, Coord3 goal,
     const auto current_distance =
         scratch.distance_at(current_offset, infinite_distance);
     const auto current_coord = detail::tile_coord<Shape>(current);
-    model.for_each_reverse(world, current_coord, current, [&](auto probe) {
-      TESS_DIAG_EVENT(path_neighbor_candidate);
-      if (probe.availability == TransitionAvailability::MissingTopology) {
-        crossed_missing = true;
-        return;
-      }
-      const auto neighbor_index = probe.to_index;
+    const auto visit_neighbor = [&](std::uint64_t neighbor_index) {
       if constexpr (!Space::is_dense) {
         // A non-resident neighbor has no node-array slot; remember the
         // boundary and skip it before computing an out-of-bounds offset.
@@ -1778,7 +1772,37 @@ auto build_distance_field(const WorldType& world, Coord3 goal,
       TESS_DIAG_EVENT(path_touch_node);
       scratch.frontier_.push_back(neighbor_index);
       TESS_DIAG_EVENT(path_heap_push);
-    });
+    };
+    if constexpr (Model::preserves_default_connectivity &&
+                  std::is_same_v<typename Model::step_policy,
+                                 movement::DefaultSteps>) {
+      detail::for_each_indexed_axis_neighbor<Shape>(
+          current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
+            TESS_DIAG_EVENT(path_neighbor_candidate);
+            if constexpr (!Space::is_dense) {
+              if (!space.is_resident_index(neighbor_index)) {
+                crossed_missing = true;
+                return;
+              }
+            }
+            TESS_DIAG_EVENT(path_passability_check);
+            if (!detail::is_passable_index<WorldType, Tag>(world,
+                                                           neighbor_index)) {
+              TESS_DIAG_EVENT(path_neighbor_blocked);
+              return;
+            }
+            visit_neighbor(neighbor_index);
+          });
+    } else {
+      model.for_each_reverse(world, current_coord, current, [&](auto probe) {
+        TESS_DIAG_EVENT(path_neighbor_candidate);
+        if (probe.availability == TransitionAvailability::MissingTopology) {
+          crossed_missing = true;
+          return;
+        }
+        visit_neighbor(probe.to_index);
+      });
+    }
   }
 
   if constexpr (!Space::is_dense) {
@@ -1854,11 +1878,7 @@ auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
     const auto current_coord = detail::tile_coord<Shape>(current);
     auto next = current;
     auto next_distance = current_distance;
-    model.for_each_forward(world, current_coord, current, [&](auto probe) {
-      if (probe.availability != TransitionAvailability::Legal) {
-        return;
-      }
-      const auto neighbor_index = probe.to_index;
+    const auto consider_neighbor = [&](std::uint64_t neighbor_index) {
       if constexpr (!Space::is_dense) {
         // A non-resident neighbor was never touched by the flood, so its
         // distance is infinite and it cannot be the descent step; skip it
@@ -1874,7 +1894,21 @@ auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
         next = neighbor_index;
         next_distance = neighbor_distance;
       }
-    });
+    };
+    if constexpr (Model::preserves_default_connectivity &&
+                  std::is_same_v<typename Model::step_policy,
+                                 movement::DefaultSteps>) {
+      detail::for_each_indexed_axis_neighbor<Shape>(
+          current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
+            consider_neighbor(neighbor_index);
+          });
+    } else {
+      model.for_each_forward(world, current_coord, current, [&](auto probe) {
+        if (probe.availability == TransitionAvailability::Legal) {
+          consider_neighbor(probe.to_index);
+        }
+      });
+    }
 
     if (next == current || next_distance + 1 != current_distance) {
       scratch.path_.clear();

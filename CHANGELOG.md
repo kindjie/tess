@@ -52,12 +52,17 @@ and their rationale are recorded separately in
   rejects incompatible required-data options before probing the toolchain.
 - Persistence decoding, checksum handling, and field validation now compile
   cleanly across the supported GCC, Clang, MSVC, and cppcheck gates.
+- The cppcheck gate now bypasses cppcheck 2.21 template-simplifier crashes
+  while retaining product-header analysis and compiler test coverage.
 
 ### Performance
 
 - Every literal benchmark in a threshold-gated family is covered by a
   calibrated ceiling; newly covered resolved-transition, weighted-product,
   coarse-topology, area-index, and Flecs workloads close the prior gate gaps.
+- Default orthogonal unit fields and products retain direct axis-neighbor
+  iteration while other lattices, step policies, and providers use the
+  resolved transition model.
 
 ## [0.4.0] - 2026-07-20
 

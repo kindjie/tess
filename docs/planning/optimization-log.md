@@ -1458,3 +1458,30 @@ deferred for scope reasons. Keep entries short and concrete:
 - Retry conditions: revisit when a consumer needs dozens-plus of
   weighted agents on maze-like maps with frequent goal churn, or if the
   `agent_runtime` weighted family regresses.
+
+## 2026-07-23 - Preserve the Default Unit-Field Fast Path
+
+- Area: Default orthogonal unit-cost distance fields, multi-goal products,
+  nearest-target replay, and field-product cache replay.
+- Observation: Routing every default axis neighbor through the resolved
+  transition model regressed five existing hosted-runner path gates. The
+  largest regressions were the eight-goal room field at about 139 ms against
+  75 ms and the shared room field at about 18.5 ms against 10.7 ms.
+- Hypothesis: Compile-time specialization can retain the pre-model direct
+  axis-neighbor loop when the resolved model proves default orthogonal steps
+  and the adjacent provider, without changing generalized model semantics.
+- Evidence: After specialization, three-sample local medians were about
+  2.77 ms for the shared room field, 3.50 ms for the shared sparse field,
+  18.3 ms for the eight-goal room field, 0.83 ms for 100 nearest-target
+  replays, and 9.8 us for cached field replay. All are below their existing
+  gates, and 231 focused path/query tests pass under warnings-as-errors.
+- Accepted: Use direct indexed axis-neighbor iteration only when
+  `ResolvedTransitionModel` proves default orthogonal connectivity. Continue
+  using resolved forward/reverse enumeration for hex, diagonal, and
+  provider-composed transitions.
+- Rejected: Raising the five thresholds. The correlated 1.3x-1.9x regression
+  was attributable to avoidable per-edge abstraction overhead rather than
+  hosted-runner noise.
+- Retry conditions: Re-profile if the default fast path and resolved model
+  stop producing identical paths, costs, or dependency stamps, or if a future
+  provider can prove equivalent default connectivity.

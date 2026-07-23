@@ -247,6 +247,8 @@ TEST(TessQuerySpan, RandomizedQueriesMatchReferenceAcrossAllMvpLayouts) {
       case 2:
         check_random_query<Chunked3D>(random, radius_query);
         break;
+      default:
+        FAIL() << "remainder outside [0, 2]";
     }
   }
 }

@@ -659,12 +659,7 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
       const auto current_distance =
           scratch.distance_at(current_offset, infinite_distance);
       const auto current_coord = detail::tile_coord<Shape>(current);
-      model.for_each_reverse(world, current_coord, current, [&](auto probe) {
-        TESS_DIAG_EVENT(path_neighbor_candidate);
-        if (probe.availability != TransitionAvailability::Legal) {
-          return;
-        }
-        const auto neighbor_index = probe.to_index;
+      const auto visit_neighbor = [&](std::uint64_t neighbor_index) {
         const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
         if (scratch.is_current(neighbor_offset)) {
           TESS_DIAG_EVENT(path_neighbor_closed);
@@ -676,7 +671,29 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
         TESS_DIAG_EVENT(path_touch_node);
         scratch.frontier_.push_back(neighbor_index);
         TESS_DIAG_EVENT(path_heap_push);
-      });
+      };
+      if constexpr (Model::preserves_default_connectivity &&
+                    std::is_same_v<typename Model::step_policy,
+                                   movement::DefaultSteps>) {
+        detail::for_each_indexed_axis_neighbor<Shape>(
+            current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
+              TESS_DIAG_EVENT(path_neighbor_candidate);
+              TESS_DIAG_EVENT(path_passability_check);
+              if (!detail::is_passable_index<World, Tag>(world,
+                                                         neighbor_index)) {
+                TESS_DIAG_EVENT(path_neighbor_blocked);
+                return;
+              }
+              visit_neighbor(neighbor_index);
+            });
+      } else {
+        model.for_each_reverse(world, current_coord, current, [&](auto probe) {
+          TESS_DIAG_EVENT(path_neighbor_candidate);
+          if (probe.availability == TransitionAvailability::Legal) {
+            visit_neighbor(probe.to_index);
+          }
+        });
+      }
     }
   } else {
     while (!scratch.weighted_frontier_.empty()) {
@@ -1008,22 +1025,33 @@ auto distance_field_product_path(const World& world, Coord3 start,
     auto next = current;
     auto next_distance = current_distance;
     auto next_cost = std::uint32_t{0};
-    model.for_each_forward(world, current_coord, current, [&](auto probe) {
-      if (probe.availability != TransitionAvailability::Legal ||
-          probe.cost_overflow) {
-        return;
-      }
-      const auto neighbor_index = probe.to_index;
+    const auto consider_neighbor = [&](std::uint64_t neighbor_index,
+                                       std::uint32_t neighbor_cost) {
       const auto neighbor_distance =
           product.distance_[static_cast<std::size_t>(neighbor_index)];
       if (neighbor_distance < next_distance &&
-          detail::saturating_add(neighbor_distance, probe.cost) ==
+          detail::saturating_add(neighbor_distance, neighbor_cost) ==
               current_distance) {
         next = neighbor_index;
         next_distance = neighbor_distance;
-        next_cost = probe.cost;
+        next_cost = neighbor_cost;
       }
-    });
+    };
+    if constexpr (Model::preserves_default_connectivity &&
+                  std::is_same_v<typename Model::step_policy,
+                                 movement::DefaultSteps>) {
+      detail::for_each_indexed_axis_neighbor<Shape>(
+          current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
+            consider_neighbor(neighbor_index, 1);
+          });
+    } else {
+      model.for_each_forward(world, current_coord, current, [&](auto probe) {
+        if (probe.availability == TransitionAvailability::Legal &&
+            !probe.cost_overflow) {
+          consider_neighbor(probe.to_index, probe.cost);
+        }
+      });
+    }
 
     if (next == current ||
         detail::saturating_add(next_distance, next_cost) != current_distance) {

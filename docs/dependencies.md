@@ -386,19 +386,19 @@ checks only after those findings are either fixed or intentionally suppressed.
   https://cmake.org/cmake/help/latest/prop_tgt/LANG_CPPCHECK.html
 
 Used by the opt-in `dev-cppcheck` preset through the `CXX_CPPCHECK` target
-property. Tess sets the property only on local test and benchmark targets so
-third-party targets are not analyzed by project policy. The preset enables
-`warning` and `portability` checks; cppcheck `style` and `performance` checks
-are intentionally deferred because early runs mostly report low-signal advice
-for small value types and static member functions in this template-heavy API.
-The preset narrowly suppresses cppcheck `internalError` for
-`include/tess/core/shape.h`, where cppcheck 2.21.0 fails while analyzing
-`ShapeTraits` non-type template parameter constants. The queued-operation
-planner uses an inline `returnDanglingLifetime` suppression where cppcheck
-reports a false positive for a pointer to an element inside a caller-provided
-span. The preset also suppresses `syntaxError` for the diagnostics macro test
-translation units because cppcheck misparses GoogleTest `TEST` macros there;
-those files remain covered by normal, warnings-as-errors, and sanitizer builds.
+property. Tess sets the property only on the local `tess_smoke` target, whose
+umbrella includes cover the public product headers without analyzing
+third-party targets. Cppcheck 2.21.0 crashes in its template simplifier on
+several valid, template-heavy test instantiations; the compiler, clang-tidy,
+warnings-as-errors, and sanitizer gates retain per-instantiation coverage. The
+preset enables `warning` and `portability` checks; cppcheck `style` and
+`performance` checks are intentionally deferred because early runs mostly
+report low-signal advice for small value types and static member functions in
+this template-heavy API. It narrowly suppresses cppcheck `internalError` for
+`include/tess/core/shape.h`, where cppcheck fails while analyzing `ShapeTraits`
+non-type template parameter constants. The queued-operation planner uses an
+inline `returnDanglingLifetime` suppression where cppcheck reports a false
+positive for a pointer to an element inside a caller-provided span.
 
 ## Clang Sanitizers
 
