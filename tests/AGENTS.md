@@ -236,12 +236,24 @@
   seam, an out-of-range stair field value reads as `None` (including wide
   fields whose values would wrap when narrowed), and `WalkableCostField`
   labels a graph without the span fast path (zero-cost tiles unlabeled).
+- `tess_transition_model_test`: verifies the resolved regular-transition
+  contract, including compile-time forward/reverse conformance, canonical
+  orthogonal/diagonal/axial order, fixed-point multipliers, both diagonal
+  clearance rules, reverse destination-cost direction, and sparse
+  `MissingTopology` probes without allocation.
+- `tess_path_product_test`: additionally verifies resolved-model parity for
+  diagonal and axial-hex products, including fixed-point cost scale and
+  rejection when a product is read through another model, plus normalized
+  raw-tag/class cache identity.
 - `tess_path_movement_class_test`: verifies movement classes threaded through
   the A* leaves and weighted cores (S5.2): the `WalkableField` identity class
   matches the raw-tag unit search node-for-node on a serpentine maze,
   `LegacyWeighted<PassableTag, CostTag>` matches the tag-pair weighted search
   and weighted distance field exactly (statuses, costs, expansion counts,
   paths), a Walker routes around a construction wall the Builder cuts through
+  while resolved diagonal and axial-hex models return exact scaled costs,
+  result aggregate initialization retains a default scale, and an
+  unrepresentable exact cost reports `CostOverflow`,
   (fixed build price via `SelectCost`), unit A* accepts classes for
   passability only, class-driven weighted searches keep the sparse
   missing-chunk contract (blocked by default, `Indeterminate` on request),
@@ -261,7 +273,8 @@
   binds itself per call; rebinds counted in `class_rebinds`).
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
-  reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.
+  reachability, axial-hex local and diagonal-chunk connectivity, and top-down
+  2D, vertical 2D, and 3D degenerate-axis behavior.
   Reachability coverage includes same-region, multi-hop, disconnected, enclosed,
   blocked-seam, invalid endpoint, and vertical 2D cases. It also verifies
   region bounds for known 2D and 3D layouts, Z-face portal pairing across

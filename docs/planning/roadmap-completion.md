@@ -27,6 +27,14 @@ for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 | v0.11 | Optional WebGPU backend | Planned |
 | v0.12 | Consolidation, compatibility, performance, backlog closure | Planned |
 
+### v0.5 Progress
+
+The resolved regular-transition slice is complete: orthogonal, diagonal, and
+axial-hex models now drive exact paths, reverse fields, multi-goal products,
+topology, cache identity, and movement validation. Remaining v0.5 work is
+provider-aware exact search/fields/commit, static cost-range assessment, and
+orthogonal performance calibration.
+
 ## Cross-Cutting Acceptance
 
 - Serial and parallel authoritative outputs match at synchronization points.

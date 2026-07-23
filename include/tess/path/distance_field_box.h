@@ -24,6 +24,7 @@ auto build_weighted_distance_field_in_box(
                 "<World, PassableTag, CostTag> overload.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
+  using Model = ResolvedTransitionModel<World, Class>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
 
   TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
@@ -63,6 +64,7 @@ auto build_weighted_distance_field_in_box(
   const auto goal_offset = space.offset(goal_index);
   scratch.goal_ = goal;
   scratch.has_goal_ = true;
+  scratch.template stamp_model<Model>();
   scratch.stamp_residency(world);
   scratch.distance_[goal_offset] = 0;
   scratch.touch_node(goal_offset, goal_index);
@@ -74,6 +76,8 @@ auto build_weighted_distance_field_in_box(
 
   std::size_t expanded_nodes = 0;
   [[maybe_unused]] bool crossed_missing = false;
+  auto cost_overflow = false;
+  const auto model = Model{};
   while (!scratch.weighted_frontier_.empty()) {
     TESS_DIAG_EVENT(path_heap_pop);
     std::pop_heap(scratch.weighted_frontier_.begin(),
@@ -90,19 +94,22 @@ auto build_weighted_distance_field_in_box(
     }
     ++expanded_nodes;
 
-    const auto current_entry_cost =
-        detail::tile_entry_cost_index<World, Class>(world, current.index);
-    if (current_entry_cost == 0) {
-      continue;
-    }
     const auto current_coord = detail::tile_coord<Shape>(current.index);
-    detail::for_each_indexed_axis_neighbor<Shape>(
-        current_coord, current.index,
-        [&](Coord3 neighbor_coord, std::uint64_t neighbor_index) {
-          if (!contains(domain, neighbor_coord)) {
+    model.for_each_reverse(
+        world, current_coord, current.index, [&](auto probe) {
+          if (!contains(domain, probe.to)) {
             return;
           }
           TESS_DIAG_EVENT(path_neighbor_candidate);
+          if (probe.availability == TransitionAvailability::MissingTopology) {
+            crossed_missing = true;
+            return;
+          }
+          if (probe.cost_overflow) {
+            cost_overflow = true;
+            return;
+          }
+          const auto neighbor_index = probe.to_index;
           if constexpr (!Space::is_dense) {
             if (!space.is_resident_index(neighbor_index)) {
               crossed_missing = true;
@@ -112,25 +119,15 @@ auto build_weighted_distance_field_in_box(
           const auto neighbor_offset = space.offset(neighbor_index);
           TESS_DIAG_EVENT(path_relax_attempt);
           if (!scratch.is_current(neighbor_offset)) {
-            TESS_DIAG_EVENT(path_passability_check);
-            if (!detail::is_passable_index<World, Class>(world,
-                                                         neighbor_index)) {
-              TESS_DIAG_EVENT(path_neighbor_blocked);
-              return;
-            }
-            if (detail::tile_entry_cost_index<World, Class>(
-                    world, neighbor_index) == 0) {
-              TESS_DIAG_EVENT(path_neighbor_blocked);
-              return;
-            }
             scratch.distance_[neighbor_offset] = infinite_distance;
             scratch.touch_node(neighbor_offset, neighbor_index);
             TESS_DIAG_EVENT(path_touch_node);
           }
 
           const auto next_distance =
-              detail::saturating_add(current_distance, current_entry_cost);
+              detail::saturating_add(current_distance, probe.cost);
           if (next_distance == infinite_distance) {
+            cost_overflow = true;
             return;
           }
           if (next_distance <
@@ -156,8 +153,9 @@ auto build_weighted_distance_field_in_box(
                                  scratch.touched_.size()};
     }
   }
-  return DistanceFieldResult{PathStatus::Found, expanded_nodes,
-                             scratch.touched_.size()};
+  return DistanceFieldResult{
+      cost_overflow ? PathStatus::CostOverflow : PathStatus::Found,
+      expanded_nodes, scratch.touched_.size()};
 }
 
 // Legacy <PassableTag, CostTag> forwarder: one movement class replaces the

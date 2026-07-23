@@ -155,7 +155,7 @@ stateDiagram-v2
 
 ## Behavior
 
-Local topology uses six axis-adjacent movement inside one chunk:
+Orthogonal local topology uses six axis-adjacent movement inside one chunk:
 
 ```text
 +x, -x, +y, -y, +z, -z
@@ -165,6 +165,12 @@ Degenerate axes naturally have no local neighbor candidates. Boundary exits
 are emitted only when the passable boundary tile has a neighboring chunk inside
 the compile-time shape, so single-chunk and degenerate-axis worlds do not
 create synthetic exits.
+
+Axial-hex topology instead uses its six regular axial directions, including
+the two cross-axis chunk seams. Diagonal policies retain orthogonal local
+components because every legal diagonal has a clear face-connected route;
+this projection preserves reachability while exact path costs still use the
+diagonal model.
 
 The builder treats the passability field as boolean-like. Blocked tiles keep
 `invalid_local_region`. Region IDs are assigned deterministically in increasing
@@ -223,7 +229,10 @@ marker used by compile-time validation and normalization.
   `DefaultSteps` for legacy custom classes without a member, while
   `StepPolicyFor<Policy, Shape>` rejects diagonals unless the shape is an
   orthogonal lattice with exactly two effective axes. Policy types expose
-  stable `StepPolicyIdentity` and positive fixed-point cost scales.
+  stable `StepPolicyIdentity` and positive fixed-point cost scales;
+  `ValidCornerRule` closes the diagonal rules, while
+  `step_policy_identity`, `step_policy_identity_of`, and `step_policy_of`
+  expose their normalized identities.
 - Boolean terms: `Field<Tag>` (truthy), `NotZero<Tag>` (non-zero integral),
   `Not<Term>`, `AllOf<Terms...>`, `AnyOf<Terms...>`.
 - Cost expressions (0 == impassable, u32-saturated): `UnitCost`,
@@ -245,6 +254,25 @@ labeling builders take a class or tag, and `RegionGraphT` records the
 normalized class identity it was built for. Precheck agreement (S5.4), commit
 validation (S5.5), and the class-aware agent tick plus runtime class binding
 (S5.6) thread the same vocabulary through the path layer.
+
+## Resolved Regular Transitions
+
+`ResolvedTransitionModel<World, ClassOrTag>` is the shared, allocation-free
+regular-edge authority used by exact search, reverse fields, field products,
+topology, and movement validation. `ForwardTransitionModelFor` and
+`ReverseTransitionModelFor` check its hot callback contracts. Each
+`TransitionProbe` reports the target, compact cost, `TransitionKind`, and
+three-valued `TransitionAvailability` (`Legal`, `Blocked`, or
+`MissingTopology`).
+
+Orthogonal default steps retain `+x, -x, +y, -y, +z, -z` order and scale one.
+Diagonal policies emit face steps first and then four planar diagonals, use
+128/181 fixed-point cardinal/diagonal costs, and test the movement class on
+both clearance tiles according to the selected corner rule. Axial-hex default
+steps emit `(+1,0), (-1,0), (0,+1), (0,-1), (+1,-1), (-1,+1)` at scale one.
+Model identity includes normalized class, lattice identity/version, step
+policy, and cost scale; fields, products, graphs, and caches reject a
+mismatched stamp.
 
 ## Transition Providers
 

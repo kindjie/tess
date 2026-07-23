@@ -1073,3 +1073,31 @@ TEST(TessTopology, RegionGraphFreshnessTracksTopologyVersion) {
   tess::RegionGraph empty;
   EXPECT_FALSE(tess::is_region_graph_fresh(world, empty));
 }
+
+TEST(TessTopology, AxialHexConnectivityCrossesDiagonalChunkCorner) {
+  using Shape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1},
+                            tess::lattice::HexAxial>;
+  World<Shape> world;
+  fill_passable(world, 0);
+  constexpr auto from = tess::Coord3{3, 4, 0};
+  constexpr auto to = tess::Coord3{4, 3, 0};
+  world.field<PassableTag>(from) = 1;
+  world.field<PassableTag>(to) = 1;
+
+  tess::LocalTopologyScratch local_scratch;
+  tess::RegionGraph graph;
+  const auto built = tess::build_region_graph<decltype(world), PassableTag>(
+      world, local_scratch, graph);
+
+  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+  using OrthogonalShape =
+      tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
+  World<OrthogonalShape> orthogonal_world;
+  EXPECT_TRUE(tess::is_region_graph_fresh(world, graph));
+  EXPECT_FALSE(tess::is_region_graph_fresh(orthogonal_world, graph));
+  EXPECT_EQ(built.region_count, 2u);
+  EXPECT_EQ(graph.portals().size(), 2u);
+  tess::RegionGraphScratch region_scratch;
+  const auto result = tess::reachable<Shape>(graph, from, to, region_scratch);
+  EXPECT_EQ(result.status, tess::ReachabilityStatus::Reachable);
+}

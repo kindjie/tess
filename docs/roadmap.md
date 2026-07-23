@@ -22,9 +22,11 @@ The foundations named below may exist, but the extensions themselves are not
 shipped. Do not build consumer code that assumes these APIs exist until the
 item moves to **Shipped**.
 
-- **Resolved transitions, diagonal movement, and axial-hex worlds**
-  ([TDD][tdd-lattice]) — current paths, topology, fields, and movement use
-  orthogonal face adjacency, while special providers affect topology only.
+- **Provider-composed resolved transitions** ([TDD][tdd-lattice]) — resolved
+  regular transitions, clearance-preserving diagonal movement, and axial-hex
+  worlds now agree across paths, fields, products, topology, caches, and
+  movement. Special providers still affect topology only; provider-aware
+  exact search, fields, and commit overloads remain in the active v0.5 slice.
 - **General queued intents and resumable work** ([queued TDD][tdd-queued]) —
   queued field updates, synchronous typed results, phase planning, and the
   production pool shipped. Typed path, field-product, topology, movement,

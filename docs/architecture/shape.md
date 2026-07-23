@@ -39,7 +39,9 @@ headers) and is exported by
   two-argument declarations. `lattice::HexAxial` selects an axial hex shape
   and requires both world and chunk z extents to equal one. Lattice types
   carry explicit stable `Identity` and version constants for persistent
-  metadata and derived-product stamps.
+  metadata and derived-product stamps. The `LatticeType` concept checks that
+  public lattice contract; built-ins are `lattice::Orthogonal` and
+  `lattice::HexAxial`.
 - A shape rejects invalid geometry with `static_assert`: all extents must be
   nonzero, chunk
   dimensions must be powers of two, and world size must be a multiple of

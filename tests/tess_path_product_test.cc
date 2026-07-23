@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -12,6 +13,14 @@ struct CostTag {};
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
 using TopDown2D = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
+
+namespace mv = tess::movement;
+
+using DefaultClass =
+    mv::MovementClass<mv::Field<PassableTag>, mv::FieldCost<CostTag>>;
+using DiagonalClass =
+    mv::MovementClass<mv::Field<PassableTag>, mv::FieldCost<CostTag>,
+                      mv::DiagonalSteps<mv::CornerRule::RequireBothClear>>;
 
 template <typename World>
 void fill_passable(World& world, bool value) {
@@ -332,6 +341,97 @@ TEST(TessPathProduct, DistanceFieldProductInvalidatesAfterUnreachedChunkEdit) {
                  world, tess::Coord3{4, 0, 0}, product, scratch))
                 .status,
             tess::PathStatus::Found);
+}
+
+TEST(TessPathProduct, DiagonalProductMatchesResolvedUnitSearch) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 7);
+  tess::DistanceFieldScratch scratch;
+  tess::GoalSet goals;
+  goals.add(tess::Coord3{3, 3, 0});
+  tess::DistanceFieldProduct product;
+
+  ASSERT_EQ((tess::build_distance_field_product<decltype(world), DiagonalClass>(
+                 world, goals, scratch, product))
+                .status,
+            tess::PathStatus::Found);
+  const auto result =
+      tess::distance_field_product_path<decltype(world), DiagonalClass>(
+          world, tess::Coord3{0, 0, 0}, product, scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 3u * 181u);
+  EXPECT_EQ(result.cost_scale, 128u);
+  ASSERT_EQ(result.path.size(), 4u);
+  EXPECT_EQ(result.path[1], (tess::Coord3{1, 1, 0}));
+}
+
+TEST(TessPathProduct, AxialHexProductUsesSixRegularNeighbors) {
+  using HexShape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1},
+                               tess::lattice::HexAxial>;
+  using HexWorld = tess::AlwaysResidentWorld<HexShape, Schema>;
+  HexWorld world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  tess::DistanceFieldScratch scratch;
+  tess::GoalSet goals;
+  goals.add(tess::Coord3{3, 0, 0});
+  tess::DistanceFieldProduct product;
+
+  ASSERT_EQ((tess::build_distance_field_product<HexWorld, DefaultClass>(
+                 world, goals, scratch, product))
+                .status,
+            tess::PathStatus::Found);
+  const auto result = tess::distance_field_product_path<HexWorld, DefaultClass>(
+      world, tess::Coord3{1, 2, 0}, product, scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 2u);
+  EXPECT_EQ(result.cost_scale, 1u);
+  ASSERT_EQ(result.path.size(), 3u);
+  EXPECT_EQ(result.path[1], (tess::Coord3{2, 1, 0}));
+}
+
+TEST(TessPathProduct, ProductRejectsAnotherResolvedModel) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  tess::DistanceFieldScratch scratch;
+  tess::GoalSet goals;
+  goals.add(tess::Coord3{3, 3, 0});
+  tess::DistanceFieldProduct product;
+
+  ASSERT_EQ((tess::build_distance_field_product<decltype(world), DefaultClass>(
+                 world, goals, scratch, product))
+                .status,
+            tess::PathStatus::Found);
+  const auto result =
+      tess::distance_field_product_path<decltype(world), DiagonalClass>(
+          world, tess::Coord3{0, 0, 0}, product, scratch);
+
+  EXPECT_EQ(result.status, tess::PathStatus::NoPath);
+}
+
+TEST(TessPathProduct, CacheNormalizesRawTagAndIdentityClass) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  tess::DistanceFieldScratch scratch;
+  tess::GoalSet goals;
+  goals.add(tess::Coord3{3, 3, 0});
+  tess::DistanceFieldProduct product;
+  tess::FieldProductCache cache;
+
+  ASSERT_EQ((tess::build_distance_field_product<decltype(world), PassableTag>(
+                 world, goals, scratch, product))
+                .status,
+            tess::PathStatus::Found);
+  ASSERT_TRUE((cache.store<decltype(world), PassableTag>(std::move(product))));
+
+  EXPECT_NE((cache.lookup<decltype(world), mv::WalkableField<PassableTag>>(
+                world, goals)),
+            nullptr);
 }
 
 }  // namespace

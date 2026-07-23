@@ -247,4 +247,28 @@ using movement_class_of =
     std::conditional_t<std::derived_from<T, movement_class_tag>, T,
                        WalkableField<T>>;
 
+namespace detail {
+
+// Adapts any normalized class to unit entry costs while retaining its
+// passability predicate and regular-step policy. Used by minimum-step APIs.
+template <typename ClassOrTag>
+struct UnitMovementClass : movement_class_tag {
+  using source_class = movement_class_of<ClassOrTag>;
+  using step_policy = step_policy_of<source_class>;
+
+  template <typename Page>
+  [[nodiscard]] static constexpr bool passable(const Page& page,
+                                               LocalTileId id) noexcept {
+    return source_class::passable(page, id);
+  }
+
+  template <typename Page>
+  [[nodiscard]] static constexpr std::uint32_t entry_cost(
+      const Page&, LocalTileId) noexcept {
+    return 1;
+  }
+};
+
+}  // namespace detail
+
 }  // namespace tess::movement

@@ -2,6 +2,19 @@
 
 Records meaningful design changes from the original TDDs.
 
+## 2026-07-22 - Resolve regular movement through one model
+
+- Changed: routed exact unit and weighted search, reverse and bounded fields,
+  multi-goal products, topology, cache stamps, and movement validation through
+  one resolved regular-transition model; added diagonal fixed-point costs,
+  axial-hex adjacency, explicit compact-cost overflow, and model mismatch
+  rejection.
+- Reason: independent neighbor implementations could disagree about legal
+  movement, field reconstruction, reachability, invalidation, and commit.
+- Affected docs: shape, topology, path, roadmap, and completion plan.
+- Affected code: transition model, path and field implementations, topology,
+  movement validation, runtime statistics, and tests.
+
 ## Template
 
 ```md

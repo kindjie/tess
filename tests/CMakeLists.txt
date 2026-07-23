@@ -134,6 +134,13 @@ tess_apply_project_options(tess_movement_class_test)
 
 tess_discover_tests(tess_movement_class_test)
 
+add_executable(tess_transition_model_test tess_transition_model_test.cc)
+target_link_libraries(
+  tess_transition_model_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_transition_model_test)
+
+tess_discover_tests(tess_transition_model_test)
+
 add_executable(tess_path_movement_class_test tess_path_movement_class_test.cc)
 target_link_libraries(
   tess_path_movement_class_test PRIVATE tess::tess GTest::gtest_main)

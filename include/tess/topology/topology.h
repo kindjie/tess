@@ -6,6 +6,7 @@
 #include <tess/storage/residency.h>
 #include <tess/storage/world.h>
 #include <tess/topology/movement_class.h>
+#include <tess/topology/transition_model.h>
 #include <tess/topology/transition_provider.h>
 
 #include <algorithm>
@@ -54,6 +55,8 @@ enum class BoundaryFace : std::uint8_t {
   PositiveY,
   NegativeZ,
   PositiveZ,
+  PositiveXNegativeY,
+  NegativeXPositiveY,
 };
 
 /// Outcome of building topology for one requested chunk.
@@ -316,7 +319,11 @@ class RegionGraphT {
     adjacency_targets_.clear();
     built_chunk_grid_ = Extent3{0, 0, 0};
     built_chunk_extent_ = Extent3{0, 0, 0};
+    built_lattice_identity_ = 0;
+    built_lattice_version_ = 0;
     built_class_ = 0;
+    built_step_policy_identity_ = 0;
+    built_cost_scale_ = 0;
     built_provider_ = 0;
     built_provider_revision_ = 0;
     if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
@@ -416,8 +423,12 @@ class RegionGraphT {
   // reports it as not fresh. False until the first build.
   template <typename ClassOrTag>
   [[nodiscard]] auto matches_class() const noexcept -> bool {
-    return built_class_ ==
-           detail::tag_identity<movement::movement_class_of<ClassOrTag>>();
+    using Class = movement::movement_class_of<ClassOrTag>;
+    using Policy = movement::step_policy_of<Class>;
+    return built_class_ == detail::tag_identity<Class>() &&
+           built_step_policy_identity_ ==
+               static_cast<std::uint32_t>(Policy::identity) &&
+           built_cost_scale_ == Policy::cost_scale;
   }
 
   // True iff this graph was built with transition provider `Provider`
@@ -528,7 +539,10 @@ class RegionGraphT {
     return built_chunk_grid_ == Extent3{Traits::chunk_count_x,
                                         Traits::chunk_count_y,
                                         Traits::chunk_count_z} &&
-           built_chunk_extent_ == Traits::chunk;
+           built_chunk_extent_ == Traits::chunk &&
+           built_lattice_identity_ ==
+               static_cast<std::uint32_t>(Traits::lattice_identity) &&
+           built_lattice_version_ == Traits::lattice_version;
   }
 
   template <typename Shape>
@@ -537,14 +551,20 @@ class RegionGraphT {
     built_chunk_grid_ = Extent3{Traits::chunk_count_x, Traits::chunk_count_y,
                                 Traits::chunk_count_z};
     built_chunk_extent_ = Traits::chunk;
+    built_lattice_identity_ =
+        static_cast<std::uint32_t>(Traits::lattice_identity);
+    built_lattice_version_ = Traits::lattice_version;
   }
 
   // Movement-class and provider bindings captured at build time, mirroring
   // the shape stamp (see the public matches_class / matches_provider).
   template <typename ClassOrTag>
   void bind_class() noexcept {
-    built_class_ =
-        detail::tag_identity<movement::movement_class_of<ClassOrTag>>();
+    using Class = movement::movement_class_of<ClassOrTag>;
+    using Policy = movement::step_policy_of<Class>;
+    built_class_ = detail::tag_identity<Class>();
+    built_step_policy_identity_ = static_cast<std::uint32_t>(Policy::identity);
+    built_cost_scale_ = Policy::cost_scale;
   }
 
   template <typename Provider>
@@ -612,7 +632,11 @@ class RegionGraphT {
   // movement class, or transition provider.
   Extent3 built_chunk_grid_{0, 0, 0};
   Extent3 built_chunk_extent_{0, 0, 0};
+  std::uint32_t built_lattice_identity_ = 0;
+  std::uint32_t built_lattice_version_ = 0;
   std::uintptr_t built_class_ = 0;
+  std::uint32_t built_step_policy_identity_ = 0;
+  std::uint32_t built_cost_scale_ = 0;
   std::uintptr_t built_provider_ = 0;
   std::uint64_t built_provider_revision_ = 0;
   [[no_unique_address]] detail::RegionGraphSparseData<Residency> sparse_;
@@ -660,6 +684,34 @@ constexpr void add_boundary_exits(std::vector<LocalBoundaryExit>& exits,
                                   LocalTileId local_tile, LocalCoord3 local,
                                   Coord3 coord) {
   const auto chunk = ShapeTraits<Shape>::chunk;
+
+  if constexpr (std::is_same_v<typename ShapeTraits<Shape>::lattice_type,
+                               lattice::HexAxial>) {
+    detail::for_each_regular_candidate<Shape, movement::DefaultSteps>(
+        coord, [&](detail::RegularTransitionCandidate candidate) {
+          const auto target = tess::chunk_coord<Shape>(candidate.to);
+          if (target == chunk_coord) {
+            return;
+          }
+          auto face = BoundaryFace::NegativeX;
+          if (candidate.to.x > coord.x && candidate.to.y < coord.y) {
+            face = BoundaryFace::PositiveXNegativeY;
+          } else if (candidate.to.x < coord.x && candidate.to.y > coord.y) {
+            face = BoundaryFace::NegativeXPositiveY;
+          } else if (candidate.to.x > coord.x) {
+            face = BoundaryFace::PositiveX;
+          } else if (candidate.to.x < coord.x) {
+            face = BoundaryFace::NegativeX;
+          } else if (candidate.to.y > coord.y) {
+            face = BoundaryFace::PositiveY;
+          } else {
+            face = BoundaryFace::NegativeY;
+          }
+          add_boundary_exit<Shape>(exits, region, local_tile, coord, face,
+                                   target);
+        });
+    return;
+  }
 
   if (local.x == 0 && chunk_coord.x > 0) {
     auto target = chunk_coord;
@@ -716,6 +768,16 @@ constexpr void for_each_local_axis_neighbor(LocalCoord3 coord, Fn&& fn) {
   }
   if (coord.y > 0) {
     fn(LocalCoord3{coord.x, coord.y - 1, coord.z});
+  }
+  if constexpr (std::is_same_v<typename ShapeTraits<Shape>::lattice_type,
+                               lattice::HexAxial>) {
+    if (coord.x + 1 < chunk.x && coord.y > 0) {
+      fn(LocalCoord3{coord.x + 1, coord.y - 1, 0});
+    }
+    if (coord.x > 0 && coord.y + 1 < chunk.y) {
+      fn(LocalCoord3{coord.x - 1, coord.y + 1, 0});
+    }
+    return;
   }
   if (coord.z + 1 < chunk.z) {
     fn(LocalCoord3{coord.x, coord.y, coord.z + 1});
@@ -786,6 +848,10 @@ constexpr void include_coord_in_bounds(LocalRegion& region,
       return Coord3{coord.x, coord.y, coord.z - 1};
     case BoundaryFace::PositiveZ:
       return Coord3{coord.x, coord.y, coord.z + 1};
+    case BoundaryFace::PositiveXNegativeY:
+      return Coord3{coord.x + 1, coord.y - 1, coord.z};
+    case BoundaryFace::NegativeXPositiveY:
+      return Coord3{coord.x - 1, coord.y + 1, coord.z};
   }
   return coord;
 }
@@ -822,6 +888,21 @@ constexpr void for_each_face_neighbor_chunk(ChunkCoord3 coord, Fn&& fn) {
     auto target = coord;
     ++target.z;
     fn(target);
+  }
+  if constexpr (std::is_same_v<typename Traits::lattice_type,
+                               lattice::HexAxial>) {
+    if (coord.x + 1 < Traits::chunk_count_x && coord.y > 0) {
+      auto target = coord;
+      ++target.x;
+      --target.y;
+      fn(target);
+    }
+    if (coord.x > 0 && coord.y + 1 < Traits::chunk_count_y) {
+      auto target = coord;
+      --target.x;
+      ++target.y;
+      fn(target);
+    }
   }
 }
 

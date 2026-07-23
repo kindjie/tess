@@ -18,8 +18,16 @@ auto build_bounded_weighted_distance_field_core(
   static_assert(MaxCost > 0);
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
+  using Model = ResolvedTransitionModel<World, Class>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
   constexpr auto bucket_count = static_cast<std::size_t>(MaxCost) + 1u;
+
+  if constexpr (Model::cost_scale != 1 ||
+                !std::is_same_v<typename ShapeTraits<Shape>::lattice_type,
+                                lattice::Orthogonal>) {
+    return build_weighted_distance_field<World, Class>(world, goal, scratch,
+                                                       policy);
+  }
 
   TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
   scratch.clear_build();
@@ -63,6 +71,7 @@ auto build_bounded_weighted_distance_field_core(
   const auto goal_offset = space.offset(goal_index);
   scratch.goal_ = goal;
   scratch.has_goal_ = true;
+  scratch.template stamp_model<Model>();
   scratch.stamp_residency(world);
   scratch.distance_[goal_offset] = 0;
   scratch.touch_node(goal_offset, goal_index);
@@ -242,83 +251,90 @@ auto weighted_distance_field_path_core(const World& world, Coord3 start,
                 "<World, PassableTag, CostTag> overload.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
+  using Model = ResolvedTransitionModel<World, Class>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
+  const auto make_result = [](PathStatus status, std::uint32_t cost,
+                              std::size_t expanded, std::size_t reached,
+                              PathView path) {
+    return PathResult{status, cost, expanded, reached, path, Model::cost_scale};
+  };
 
   scratch.clear_path();
   if (!contains<Shape>(start)) {
-    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+    return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
   }
   if constexpr (!Space::is_dense) {
     // Pure reader: a non-resident start is not in the field (its slot would be
     // out of bounds). The field's own truncation status came from the build.
     const Space residency{world};
     if (!residency.is_resident_index(detail::tile_index<Shape>(start))) {
-      return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+      return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
     }
   }
   TESS_DIAG_EVENT(path_start_passability_check);
   if (!detail::is_passable<World, Class>(world, start)) {
-    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+    return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
   }
   if (!contains<Shape>(goal)) {
-    return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
+    return make_result(PathStatus::InvalidGoal, 0, 0, 0, scratch.path_);
   }
   if (!scratch.has_goal_ || scratch.goal_ != goal ||
+      !scratch.template model_matches<Model>() ||
       (verify_residency && !scratch.residency_matches(world))) {
-    return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
+    return make_result(PathStatus::NoPath, 0, 0, 0, scratch.path_);
   }
 
   const Space space{world};
   const auto start_index = detail::tile_index<Shape>(start);
   if (detail::tile_entry_cost_index<World, Class>(world, start_index) == 0) {
-    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+    return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
   }
 
   auto current = start_index;
   auto current_distance =
       scratch.distance_at(space.offset(current), infinite_distance);
   if (current_distance == infinite_distance) {
-    return PathResult{PathStatus::NoPath, 0, 0, scratch.touched_.size(),
-                      scratch.path_};
+    return make_result(PathStatus::NoPath, 0, 0, scratch.touched_.size(),
+                       scratch.path_);
   }
 
   const auto total_cost = current_distance;
+  const auto model = Model{};
   scratch.path_.push_back(start);
   TESS_DIAG_EVENT(path_reconstruct_node);
   while (current_distance > 0) {
     const auto current_coord = detail::tile_coord<Shape>(current);
     auto next = current;
     auto next_distance = current_distance;
-    detail::for_each_indexed_axis_neighbor<Shape>(
-        current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
-          const auto neighbor_offset = space.resident_offset(neighbor_index);
-          if constexpr (!Space::is_dense) {
-            if (neighbor_offset == Space::npos_offset) {
-              return;
-            }
-          }
-          const auto neighbor_distance =
-              scratch.distance_at(neighbor_offset, infinite_distance);
-          if (neighbor_distance == infinite_distance ||
-              neighbor_distance >= next_distance) {
-            return;
-          }
-          const auto entry_cost = detail::tile_entry_cost_index<World, Class>(
-              world, neighbor_index);
-          if (entry_cost == 0) {
-            return;
-          }
-          if (detail::saturating_add(neighbor_distance, entry_cost) ==
-              current_distance) {
-            next = neighbor_index;
-            next_distance = neighbor_distance;
-          }
-        });
+    model.for_each_forward(world, current_coord, current, [&](auto probe) {
+      if (probe.availability != TransitionAvailability::Legal ||
+          probe.cost_overflow) {
+        return;
+      }
+      const auto neighbor_index = probe.to_index;
+      const auto neighbor_offset = space.resident_offset(neighbor_index);
+      if constexpr (!Space::is_dense) {
+        if (neighbor_offset == Space::npos_offset) {
+          return;
+        }
+      }
+      const auto neighbor_distance =
+          scratch.distance_at(neighbor_offset, infinite_distance);
+      if (neighbor_distance == infinite_distance ||
+          neighbor_distance >= next_distance) {
+        return;
+      }
+      if (detail::saturating_add(neighbor_distance, probe.cost) ==
+          current_distance) {
+        next = neighbor_index;
+        next_distance = neighbor_distance;
+      }
+    });
 
     if (next == current) {
       scratch.path_.clear();
-      return PathResult{PathStatus::NoPath, 0, 0, scratch.touched_.size(),
-                        scratch.path_};
+      return make_result(PathStatus::NoPath, 0, 0, scratch.touched_.size(),
+                         scratch.path_);
     }
 
     current = next;
@@ -327,8 +343,8 @@ auto weighted_distance_field_path_core(const World& world, Coord3 start,
     TESS_DIAG_EVENT(path_reconstruct_node);
   }
 
-  return PathResult{PathStatus::Found, total_cost, scratch.path_.size(),
-                    scratch.touched_.size(), scratch.path_};
+  return make_result(PathStatus::Found, total_cost, scratch.path_.size(),
+                     scratch.touched_.size(), scratch.path_);
 }
 
 }  // namespace detail

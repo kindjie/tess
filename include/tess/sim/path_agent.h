@@ -52,6 +52,7 @@ struct PathAgentFrameStats {
   // ruling out a route through a non-resident chunk
   // (PathStatus::Indeterminate).
   std::size_t indeterminate = 0;
+  std::size_t cost_overflow = 0;
   // Agents whose goal an optional topology precheck proved unreachable before
   // A* (a subset of no_path). See PathRuntimeStats::precheck_ruled_out.
   std::size_t precheck_ruled_out = 0;
@@ -165,6 +166,9 @@ inline void record_path_agent_status(PathAgentFrameStats& stats,
       return;
     case PathStatus::Indeterminate:
       ++stats.indeterminate;
+      return;
+    case PathStatus::CostOverflow:
+      ++stats.cost_overflow;
       return;
   }
 }
@@ -504,6 +508,7 @@ inline void add_path_agent_stats(PathAgentFrameStats& lhs,
   lhs.invalid_goal += rhs.invalid_goal;
   lhs.no_path += rhs.no_path;
   lhs.indeterminate += rhs.indeterminate;
+  lhs.cost_overflow += rhs.cost_overflow;
   lhs.precheck_ruled_out += rhs.precheck_ruled_out;
   lhs.advanced += rhs.advanced;
   lhs.arrived += rhs.arrived;

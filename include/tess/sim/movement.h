@@ -4,6 +4,7 @@
 #include <tess/storage/chunk_meta.h>
 #include <tess/storage/residency.h>
 #include <tess/topology/movement_class.h>
+#include <tess/topology/transition_model.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -203,6 +204,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 [[nodiscard]] auto validate_movement_intent_resolved(
     const World& world, MovementIntent intent) noexcept {
   using Class = movement::movement_class_of<ClassOrTag>;
+  using Model = ResolvedTransitionModel<World, Class>;
   using Resolved = ResolvedTile<typename World::shape_type>;
   struct Validated {
     MovementResult result;
@@ -239,7 +241,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
       return fail(MovementStatus::StaleVersion);
     }
   }
-  if (manhattan_distance(intent.from, intent.to) != 1) {
+  if (!Model::is_regular_candidate(intent.from, intent.to)) {
     return fail(MovementStatus::NotAdjacent);
   }
   const auto& from_page = world.chunk(resolved_from->chunk_key);
@@ -248,6 +250,14 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
     return fail(MovementStatus::BlockedFrom);
   }
   if (!Class::passable(to_page, resolved_to->local_tile_id)) {
+    return fail(MovementStatus::BlockedTo);
+  }
+  const auto transition_availability =
+      Model::regular_availability(world, intent.from, intent.to);
+  if (transition_availability == TransitionAvailability::MissingTopology) {
+    return fail(MovementStatus::StaleVersion);
+  }
+  if (transition_availability != TransitionAvailability::Legal) {
     return fail(MovementStatus::BlockedTo);
   }
   if (static_cast<bool>(

@@ -40,5 +40,6 @@
 #include <tess/topology/movement_class.h>
 #include <tess/topology/step_policy.h>
 #include <tess/topology/topology.h>
+#include <tess/topology/transition_model.h>
 #include <tess/topology/transition_provider.h>
 #include <tess/version.h>

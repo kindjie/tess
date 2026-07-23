@@ -61,12 +61,15 @@ flowchart TB
 ## Public Surface
 
 - `PathRequest` contains a start and goal `Coord3`.
-- `PathStatus` reports `Found`, `InvalidStart`, `InvalidGoal`, `NoPath`, or
-  `Indeterminate`. `Indeterminate` occurs only on sparse worlds: the search
+- `PathStatus` reports `Found`, `InvalidStart`, `InvalidGoal`, `NoPath`,
+  `Indeterminate`, or `CostOverflow`. `Indeterminate` occurs only on sparse
+  worlds: the search
   reached the edge of the resident set and could not rule out a route through a
   non-resident chunk, so it is deliberately distinct from `NoPath` (which
   asserts no route exists). A caller that receives `Indeterminate` can
   materialize the missing chunks and retry.
+  `CostOverflow` means every remaining realized route required a cost at or
+  above the reserved `uint32_t` infinity sentinel; it carries no usable path.
 - `MissingChunkPolicy` selects how a search treats a step into a non-resident
   chunk of a sparse world: `TreatAsBlocked` treats it as impassable (the search
   stays within the resident set and may report `NoPath`), while `Indeterminate`
@@ -132,8 +135,11 @@ flowchart TB
   repeated-goal pass, guarded out for sparse worlds), and the route/portal route
   products. Those are persistent, cross-frame cached artifacts indexed by raw tile
   id and land with a later sparse-cache slice.
-- `PathResult` returns the status, unit movement cost, expanded-node count,
-  reached-node count, and a `PathView` over the path coordinates.
+- `PathResult` returns status, movement cost ticks, expanded-node count,
+  reached-node count, a `PathView`, and `cost_scale`. Default orthogonal and
+  axial-hex models use scale one. Diagonal models use scale 128: cardinal
+  steps cost 128 ticks and diagonal steps cost 181 ticks per destination
+  entry-cost unit. `NearestTargetResult` carries the same scale.
 - `PathView` (in `tess/path/path_view.h`) is the non-owning view of a path that
   `PathResult` and the runtime's ticket accessors hand out. It carries the same
   lifetime contract as the underlying span -- valid only until the storage it
@@ -160,7 +166,10 @@ flowchart TB
 - `GoalSet`, `DistanceFieldProduct`, and `FieldProductCache` provide reusable
   unit-cost distance-field products in `tess/path/field_product_cache.h`.
   Products copy stable dense field data out of scratch, track reached
-  chunk-version dependencies, and can be stored in a byte-budgeted LRU cache.
+  transition and clearance chunk-version dependencies, stamp the resolved
+  lattice/class/step model, and can be stored in a byte-budgeted LRU cache.
+  Diagonal products use reverse Dijkstra for their non-unit geometric ticks;
+  axial products use the six-neighbor reverse flood.
 - `RouteCacheScratch` (in `tess/path/route_cache.h`) owns reusable
   route-cache entries and cached path nodes for exact route and same-goal
   suffix reuse. Exact `(start, goal)` lookups and suffix lookups are served

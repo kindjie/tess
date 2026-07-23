@@ -45,6 +45,7 @@ struct NearestTargetResult {
   std::size_t expanded_nodes = 0;
   std::size_t reached_nodes = 0;
   std::span<const Coord3> path;
+  std::uint32_t cost_scale = 1;
 };
 
 /// Owns a reusable dense-world multi-goal distance field and dependencies.
@@ -69,6 +70,11 @@ class DistanceFieldProduct {
     tile_count_ = 0;
     chunk_count_ = 0;
     local_tile_count_ = 0;
+    model_class_identity_ = 0;
+    model_lattice_identity_ = 0;
+    model_lattice_version_ = 0;
+    model_step_identity_ = 0;
+    model_cost_scale_ = 0;
     goals_.clear();
     distance_.clear();
     dependencies_.clear();
@@ -144,6 +150,11 @@ class DistanceFieldProduct {
   std::uint64_t local_tile_count_ = 0;
   Extent3 shape_size_{};
   Extent3 chunk_extent_{};
+  std::uintptr_t model_class_identity_ = 0;
+  std::uint32_t model_lattice_identity_ = 0;
+  std::uint32_t model_lattice_version_ = 0;
+  std::uint32_t model_step_identity_ = 0;
+  std::uint32_t model_cost_scale_ = 0;
   std::vector<Coord3> goals_;
   std::vector<std::uint32_t> distance_;
   ChunkVersionDependencies dependencies_;
@@ -266,12 +277,16 @@ class FieldProductCache {
 
  private:
   struct Key {
-    std::uintptr_t passability_field = 0;
+    std::uintptr_t movement_class = 0;
     std::size_t tile_count = 0;
     std::uint64_t chunk_count = 0;
     std::uint64_t local_tile_count = 0;
     Extent3 shape_size{};
     Extent3 chunk_extent{};
+    std::uint32_t lattice_identity = 0;
+    std::uint32_t lattice_version = 0;
+    std::uint32_t step_identity = 0;
+    std::uint32_t cost_scale = 0;
     std::vector<Coord3> goals;
   };
 
@@ -287,37 +302,58 @@ class FieldProductCache {
 
   template <typename World, typename Tag>
   [[nodiscard]] static auto make_key(std::span<const Coord3> goals) -> Key {
+    using Class = movement::movement_class_of<Tag>;
+    using UnitClass = movement::detail::UnitMovementClass<Class>;
+    using Model = ResolvedTransitionModel<World, UnitClass>;
     return Key{
-        detail::tag_identity<Tag>(),
+        detail::tag_identity<typename Model::class_type>(),
         detail::tile_count<World>(),
         World::chunk_count,
         World::local_tile_count,
         ShapeTraits<typename World::shape_type>::size,
         ShapeTraits<typename World::shape_type>::chunk,
+        static_cast<std::uint32_t>(Model::lattice_identity),
+        Model::lattice_version,
+        static_cast<std::uint32_t>(Model::step_policy_identity),
+        Model::cost_scale,
         std::vector<Coord3>{goals.begin(), goals.end()},
     };
   }
 
   [[nodiscard]] static auto keys_equal(const Key& lhs, const Key& rhs) noexcept
       -> bool {
-    return lhs.passability_field == rhs.passability_field &&
+    return lhs.movement_class == rhs.movement_class &&
            lhs.tile_count == rhs.tile_count &&
            lhs.chunk_count == rhs.chunk_count &&
            lhs.local_tile_count == rhs.local_tile_count &&
            lhs.shape_size == rhs.shape_size &&
-           lhs.chunk_extent == rhs.chunk_extent && lhs.goals == rhs.goals;
+           lhs.chunk_extent == rhs.chunk_extent &&
+           lhs.lattice_identity == rhs.lattice_identity &&
+           lhs.lattice_version == rhs.lattice_version &&
+           lhs.step_identity == rhs.step_identity &&
+           lhs.cost_scale == rhs.cost_scale && lhs.goals == rhs.goals;
   }
 
   template <typename World, typename Tag>
   [[nodiscard]] static auto key_matches(const Key& key,
                                         std::span<const Coord3> goals) noexcept
       -> bool {
-    return key.passability_field == detail::tag_identity<Tag>() &&
+    using Class = movement::movement_class_of<Tag>;
+    using UnitClass = movement::detail::UnitMovementClass<Class>;
+    using Model = ResolvedTransitionModel<World, UnitClass>;
+    return key.movement_class ==
+               detail::tag_identity<typename Model::class_type>() &&
            key.tile_count == detail::tile_count<World>() &&
            key.chunk_count == World::chunk_count &&
            key.local_tile_count == World::local_tile_count &&
            key.shape_size == ShapeTraits<typename World::shape_type>::size &&
            key.chunk_extent == ShapeTraits<typename World::shape_type>::chunk &&
+           key.lattice_identity ==
+               static_cast<std::uint32_t>(Model::lattice_identity) &&
+           key.lattice_version == Model::lattice_version &&
+           key.step_identity ==
+               static_cast<std::uint32_t>(Model::step_policy_identity) &&
+           key.cost_scale == Model::cost_scale &&
            key.goals.size() == goals.size() &&
            std::equal(key.goals.begin(), key.goals.end(), goals.begin());
   }
@@ -367,6 +403,9 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
                                   DistanceFieldProduct& product)
     -> DistanceFieldResult {
   using Shape = typename World::shape_type;
+  using Class = movement::movement_class_of<Tag>;
+  using UnitClass = movement::detail::UnitMovementClass<Class>;
+  using Model = ResolvedTransitionModel<World, UnitClass>;
   // Sizes its distance arrays by the global tile count and treats missing
   // chunks as blocked with no MissingChunkPolicy, so on a sparse world it would
   // allocate for the whole (possibly astronomical) shape. Dense-only until the
@@ -388,6 +427,14 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
   product.local_tile_count_ = World::local_tile_count;
   product.shape_size_ = ShapeTraits<Shape>::size;
   product.chunk_extent_ = ShapeTraits<Shape>::chunk;
+  product.model_class_identity_ =
+      detail::tag_identity<typename Model::class_type>();
+  product.model_lattice_identity_ =
+      static_cast<std::uint32_t>(Model::lattice_identity);
+  product.model_lattice_version_ = Model::lattice_version;
+  product.model_step_identity_ =
+      static_cast<std::uint32_t>(Model::step_policy_identity);
+  product.model_cost_scale_ = Model::cost_scale;
 
   if (goals.empty()) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
@@ -418,42 +465,104 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
     scratch.distance_[goal_offset] = 0;
     scratch.touch_node(goal_index);
     TESS_DIAG_EVENT(path_touch_node);
-    scratch.frontier_.push_back(goal_index);
-    TESS_DIAG_EVENT(path_heap_push);
+    if constexpr (Model::cost_scale == 1) {
+      scratch.frontier_.push_back(goal_index);
+      TESS_DIAG_EVENT(path_heap_push);
+    } else {
+      scratch.weighted_frontier_.push_back(
+          PathScratch::OpenNode{goal_index, 0, 0});
+      std::push_heap(scratch.weighted_frontier_.begin(),
+                     scratch.weighted_frontier_.end(), detail::open_node_less);
+      TESS_DIAG_EVENT(path_heap_push);
+    }
   }
 
   std::size_t expanded_nodes = 0;
-  std::size_t head = 0;
-  while (head < scratch.frontier_.size()) {
-    const auto current = scratch.frontier_[head];
-    ++head;
-    TESS_DIAG_EVENT(path_heap_pop);
-    ++expanded_nodes;
+  auto cost_overflow = false;
+  const auto model = Model{};
+  if constexpr (Model::cost_scale == 1) {
+    std::size_t head = 0;
+    while (head < scratch.frontier_.size()) {
+      const auto current = scratch.frontier_[head];
+      ++head;
+      TESS_DIAG_EVENT(path_heap_pop);
+      ++expanded_nodes;
 
-    const auto current_offset = static_cast<std::size_t>(current);
-    const auto current_distance =
-        scratch.distance_at(current_offset, infinite_distance);
-    const auto current_coord = detail::tile_coord<Shape>(current);
-    detail::for_each_indexed_axis_neighbor<Shape>(
-        current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
-          TESS_DIAG_EVENT(path_neighbor_candidate);
-          const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
-          if (scratch.is_current(neighbor_offset)) {
-            TESS_DIAG_EVENT(path_neighbor_closed);
-            return;
-          }
-          TESS_DIAG_EVENT(path_passability_check);
-          if (!detail::is_passable_index<World, Tag>(world, neighbor_index)) {
-            TESS_DIAG_EVENT(path_neighbor_blocked);
-            return;
-          }
+      const auto current_offset = static_cast<std::size_t>(current);
+      const auto current_distance =
+          scratch.distance_at(current_offset, infinite_distance);
+      const auto current_coord = detail::tile_coord<Shape>(current);
+      model.for_each_reverse(world, current_coord, current, [&](auto probe) {
+        TESS_DIAG_EVENT(path_neighbor_candidate);
+        if (probe.availability != TransitionAvailability::Legal) {
+          return;
+        }
+        const auto neighbor_index = probe.to_index;
+        const auto neighbor_offset = static_cast<std::size_t>(neighbor_index);
+        if (scratch.is_current(neighbor_offset)) {
+          TESS_DIAG_EVENT(path_neighbor_closed);
+          return;
+        }
 
-          scratch.distance_[neighbor_offset] = current_distance + 1;
-          scratch.touch_node(neighbor_index);
-          TESS_DIAG_EVENT(path_touch_node);
-          scratch.frontier_.push_back(neighbor_index);
-          TESS_DIAG_EVENT(path_heap_push);
-        });
+        scratch.distance_[neighbor_offset] = current_distance + 1;
+        scratch.touch_node(neighbor_index);
+        TESS_DIAG_EVENT(path_touch_node);
+        scratch.frontier_.push_back(neighbor_index);
+        TESS_DIAG_EVENT(path_heap_push);
+      });
+    }
+  } else {
+    while (!scratch.weighted_frontier_.empty()) {
+      TESS_DIAG_EVENT(path_heap_pop);
+      std::pop_heap(scratch.weighted_frontier_.begin(),
+                    scratch.weighted_frontier_.end(), detail::open_node_less);
+      const auto current = scratch.weighted_frontier_.back();
+      scratch.weighted_frontier_.pop_back();
+      const auto current_offset = static_cast<std::size_t>(current.index);
+      const auto current_distance =
+          scratch.distance_at(current_offset, infinite_distance);
+      if (current.g != current_distance) {
+        TESS_DIAG_EVENT_VALUE(path_skip_pop, false);
+        continue;
+      }
+      ++expanded_nodes;
+      const auto current_coord = detail::tile_coord<Shape>(current.index);
+      model.for_each_reverse(
+          world, current_coord, current.index, [&](auto probe) {
+            TESS_DIAG_EVENT(path_neighbor_candidate);
+            if (probe.availability != TransitionAvailability::Legal) {
+              return;
+            }
+            if (probe.cost_overflow) {
+              cost_overflow = true;
+              return;
+            }
+            const auto neighbor_offset =
+                static_cast<std::size_t>(probe.to_index);
+            TESS_DIAG_EVENT(path_relax_attempt);
+            if (!scratch.is_current(neighbor_offset)) {
+              scratch.distance_[neighbor_offset] = infinite_distance;
+              scratch.touch_node(probe.to_index);
+              TESS_DIAG_EVENT(path_touch_node);
+            }
+            const auto next_distance =
+                detail::saturating_add(current_distance, probe.cost);
+            if (next_distance == infinite_distance) {
+              cost_overflow = true;
+              return;
+            }
+            if (next_distance < scratch.distance_[neighbor_offset]) {
+              TESS_DIAG_EVENT(path_relax_success);
+              scratch.distance_[neighbor_offset] = next_distance;
+              scratch.weighted_frontier_.push_back(PathScratch::OpenNode{
+                  probe.to_index, next_distance, next_distance});
+              std::push_heap(scratch.weighted_frontier_.begin(),
+                             scratch.weighted_frontier_.end(),
+                             detail::open_node_less);
+              TESS_DIAG_EVENT(path_heap_push);
+            }
+          });
+    }
   }
 
   product.distance_.assign(node_count, infinite_distance);
@@ -465,53 +574,30 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
   }
   // The flood never touches a node inside a fully-blocked chunk, but an edit
   // that opens one changes reachability, so it must invalidate the product.
-  // Axis moves cross at most one chunk face: every blocked tile adjacent to
-  // the reached region lies in a touched chunk or one of its face
-  // neighbors, so depending on those neighbors covers the whole blocked
-  // frontier. The scratch seen-set keeps this pass linear (add_chunk's
+  // Every candidate transition and its clearance tiles are dependencies, so
+  // opening a blocked frontier or diagonal corner invalidates the product.
+  // The scratch seen-set keeps this pass linear (add_chunk's
   // duplicate scan would make it quadratic in chunk count), and indexing
   // re-reads chunks() each pass because appends may grow the vector.
   {
-    using Traits = ShapeTraits<Shape>;
     auto& seen = scratch.chunk_seen_;
     seen.assign(static_cast<std::size_t>(World::chunk_count), 0);
-    const auto touched_chunks = product.dependencies_.size();
-    for (std::size_t i = 0; i < touched_chunks; ++i) {
-      seen[static_cast<std::size_t>(
-          product.dependencies_.chunks()[i].key.value)] = 1;
+    for (const auto dependency : product.dependencies_.chunks()) {
+      seen[static_cast<std::size_t>(dependency.key.value)] = 1;
     }
-    for (std::size_t i = 0; i < touched_chunks; ++i) {
-      const auto center =
-          chunk_coord<Shape>(product.dependencies_.chunks()[i].key);
-      const auto add = [&](ChunkCoord3 neighbor) {
-        const auto key = chunk_key<Shape>(neighbor);
-        auto& mark = seen[static_cast<std::size_t>(key.value)];
-        if (mark == 0) {
-          mark = 1;
-          product.dependencies_.add_chunk_unique(world, key);
-        }
-      };
-      if (center.x > 0) {
-        add(ChunkCoord3{center.x - 1, center.y, center.z});
-      }
-      if (center.x + 1 < Traits::chunk_count_x) {
-        add(ChunkCoord3{center.x + 1, center.y, center.z});
-      }
-      if (center.y > 0) {
-        add(ChunkCoord3{center.x, center.y - 1, center.z});
-      }
-      if (center.y + 1 < Traits::chunk_count_y) {
-        add(ChunkCoord3{center.x, center.y + 1, center.z});
-      }
-      if (center.z > 0) {
-        add(ChunkCoord3{center.x, center.y, center.z - 1});
-      }
-      if (center.z + 1 < Traits::chunk_count_z) {
-        add(ChunkCoord3{center.x, center.y, center.z + 1});
-      }
+    for (const auto index : scratch.touched_) {
+      model.for_each_dependency_chunk(
+          world, detail::tile_coord<Shape>(index), [&](ChunkKey key) {
+            auto& mark = seen[static_cast<std::size_t>(key.value)];
+            if (mark == 0) {
+              mark = 1;
+              product.dependencies_.add_chunk_unique(world, key);
+            }
+          });
     }
   }
-  product.status_ = PathStatus::Found;
+  product.status_ =
+      cost_overflow ? PathStatus::CostOverflow : PathStatus::Found;
   product.expanded_nodes_ = expanded_nodes;
   product.reached_nodes_ = scratch.touched_.size();
 
@@ -527,6 +613,9 @@ auto distance_field_product_path(const World& world, Coord3 start,
                                  const DistanceFieldProduct& product,
                                  DistanceFieldScratch& scratch) -> PathResult {
   using Shape = typename World::shape_type;
+  using Class = movement::movement_class_of<Tag>;
+  using UnitClass = movement::detail::UnitMovementClass<Class>;
+  using Model = ResolvedTransitionModel<World, UnitClass>;
   // Indexes product.distance_ by raw tile id, so it is dense-only until the
   // distance-field product family is ported to NodeIndexSpace. The single-goal
   // build_distance_field / distance_field_path pair is already sparse-capable.
@@ -549,7 +638,15 @@ auto distance_field_product_path(const World& world, Coord3 start,
       product.chunk_count_ != World::chunk_count ||
       product.local_tile_count_ != World::local_tile_count ||
       product.shape_size_ != ShapeTraits<Shape>::size ||
-      product.chunk_extent_ != ShapeTraits<Shape>::chunk) {
+      product.chunk_extent_ != ShapeTraits<Shape>::chunk ||
+      product.model_class_identity_ !=
+          detail::tag_identity<typename Model::class_type>() ||
+      product.model_lattice_identity_ !=
+          static_cast<std::uint32_t>(Model::lattice_identity) ||
+      product.model_lattice_version_ != Model::lattice_version ||
+      product.model_step_identity_ !=
+          static_cast<std::uint32_t>(Model::step_policy_identity) ||
+      product.model_cost_scale_ != Model::cost_scale) {
     return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
   }
 
@@ -563,21 +660,31 @@ auto distance_field_product_path(const World& world, Coord3 start,
 
   scratch.path_.push_back(start);
   TESS_DIAG_EVENT(path_reconstruct_node);
+  const auto model = Model{};
   while (current_distance > 0) {
     const auto current_coord = detail::tile_coord<Shape>(current);
     auto next = current;
     auto next_distance = current_distance;
-    detail::for_each_indexed_axis_neighbor<Shape>(
-        current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
-          const auto neighbor_distance =
-              product.distance_[static_cast<std::size_t>(neighbor_index)];
-          if (neighbor_distance < next_distance) {
-            next = neighbor_index;
-            next_distance = neighbor_distance;
-          }
-        });
+    auto next_cost = std::uint32_t{0};
+    model.for_each_forward(world, current_coord, current, [&](auto probe) {
+      if (probe.availability != TransitionAvailability::Legal ||
+          probe.cost_overflow) {
+        return;
+      }
+      const auto neighbor_index = probe.to_index;
+      const auto neighbor_distance =
+          product.distance_[static_cast<std::size_t>(neighbor_index)];
+      if (neighbor_distance < next_distance &&
+          detail::saturating_add(neighbor_distance, probe.cost) ==
+              current_distance) {
+        next = neighbor_index;
+        next_distance = neighbor_distance;
+        next_cost = probe.cost;
+      }
+    });
 
-    if (next == current || next_distance + 1 != current_distance) {
+    if (next == current ||
+        detail::saturating_add(next_distance, next_cost) != current_distance) {
       scratch.path_.clear();
       return PathResult{PathStatus::NoPath, 0, 0, product.reached_nodes_,
                         scratch.path_};
@@ -591,8 +698,10 @@ auto distance_field_product_path(const World& world, Coord3 start,
 
   return PathResult{PathStatus::Found,
                     product.distance_[static_cast<std::size_t>(start_index)],
-                    scratch.path_.size(), product.reached_nodes_,
-                    scratch.path_};
+                    scratch.path_.size(),
+                    product.reached_nodes_,
+                    scratch.path_,
+                    Model::cost_scale};
 }
 
 /// Finds the closest reachable goal represented by a valid dense product.
@@ -615,8 +724,8 @@ auto nearest_target(const World& world, Coord3 start,
     target = path.path.back();
   }
   return NearestTargetResult{
-      path.status,         path.cost,          target,
-      path.expanded_nodes, path.reached_nodes, path.path,
+      path.status,        path.cost, target,          path.expanded_nodes,
+      path.reached_nodes, path.path, path.cost_scale,
   };
 }
 

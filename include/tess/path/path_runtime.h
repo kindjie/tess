@@ -55,6 +55,7 @@ struct PathRuntimeStats {
   // non-resident chunk (PathStatus::Indeterminate). Kept distinct from
   // no_path so a stale/partial residency set is never counted as "no route".
   std::size_t indeterminate = 0;
+  std::size_t cost_overflow = 0;
   // Requests an optional topology precheck proved unreachable before A*, so no
   // grid was expanded for them. A SUBSET of no_path (each ruled-out request is
   // also counted there): the result is the same NoPath A* would have returned,
@@ -628,7 +629,7 @@ class PathRequestRuntime {
     paths_.insert(paths_.end(), result.path.begin(), result.path.end());
     results_[index] = PathResult{
         result.status,        result.cost, result.expanded_nodes,
-        result.reached_nodes, {},
+        result.reached_nodes, {},          result.cost_scale,
     };
   }
 
@@ -659,6 +660,9 @@ class PathRequestRuntime {
         return;
       case PathStatus::Indeterminate:
         ++stats_.indeterminate;
+        return;
+      case PathStatus::CostOverflow:
+        ++stats_.cost_overflow;
         return;
     }
   }

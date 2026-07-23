@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <utility>
 
@@ -38,6 +39,11 @@ using Builder = mv::MovementClass<
     mv::AnyOf<mv::Field<PassableTag>, mv::Field<ConstructionTag>>,
     mv::SelectCost<ConstructionTag, mv::ConstantCost<3>,
                    mv::FieldCost<CostTag>>>;
+using DefaultClass =
+    mv::MovementClass<mv::Field<PassableTag>, mv::FieldCost<CostTag>>;
+using Diagonal =
+    mv::MovementClass<mv::Field<PassableTag>, mv::FieldCost<CostTag>,
+                      mv::DiagonalSteps<mv::CornerRule::RequireBothClear>>;
 
 void fill_open(World& world, std::uint32_t cost) {
   for (auto& page : world.chunks()) {
@@ -90,6 +96,128 @@ TEST(TessPathMovementClass, IdentityClassMatchesRawTagUnitSearch) {
 
   ASSERT_EQ(by_tag.status, tess::PathStatus::Found);
   expect_same_result(by_tag, by_class);
+}
+
+TEST(TessPathMovementClass, ResultAggregateDefaultsToUnitCostScale) {
+  const auto result = tess::PathResult{tess::PathStatus::Found, 4, 5, 6, {}};
+  EXPECT_EQ(result.cost_scale, 1u);
+}
+
+TEST(TessPathMovementClass, DiagonalSearchReturnsFixedPointCostScale) {
+  World world;
+  fill_open(world, 1);
+  tess::PathScratch scratch;
+
+  const auto result = tess::weighted_astar_path<World, Diagonal>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 3, 0}},
+      scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 3u * 181u);
+  EXPECT_EQ(result.cost_scale, 128u);
+  EXPECT_EQ(result.path.size(), 4u);
+}
+
+TEST(TessPathMovementClass, UnitDiagonalSearchIgnoresEntryCostExpression) {
+  World world;
+  fill_open(world, 99);
+  tess::PathScratch scratch;
+
+  const auto result = tess::astar_path<World, Diagonal>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 3, 0}},
+      scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 3u * 181u);
+  EXPECT_EQ(result.cost_scale, 128u);
+}
+
+TEST(TessPathMovementClass, DiagonalReverseFieldMatchesExactSearch) {
+  World world;
+  fill_open(world, 1);
+  tess::PathScratch path_scratch;
+  tess::DistanceFieldScratch field_scratch;
+  constexpr auto start = tess::Coord3{0, 0, 0};
+  constexpr auto goal = tess::Coord3{3, 3, 0};
+  const auto exact = tess::weighted_astar_path<World, Diagonal>(
+      world, tess::PathRequest{start, goal}, path_scratch);
+
+  const auto built = tess::build_weighted_distance_field<World, Diagonal>(
+      world, goal, field_scratch);
+  ASSERT_EQ(built.status, tess::PathStatus::Found);
+  const auto from_field = tess::weighted_distance_field_path<World, Diagonal>(
+      world, start, goal, field_scratch);
+
+  ASSERT_EQ(from_field.status, tess::PathStatus::Found);
+  EXPECT_EQ(from_field.cost, exact.cost);
+  EXPECT_EQ(from_field.cost_scale, 128u);
+  ASSERT_EQ(from_field.path.size(), exact.path.size());
+  for (std::size_t i = 0; i < exact.path.size(); ++i) {
+    EXPECT_EQ(from_field.path[i], exact.path[i]);
+  }
+}
+
+TEST(TessPathMovementClass, DistanceFieldRejectsAnotherResolvedModel) {
+  World world;
+  fill_open(world, 1);
+  tess::DistanceFieldScratch scratch;
+  constexpr auto goal = tess::Coord3{3, 3, 0};
+
+  ASSERT_EQ((tess::build_weighted_distance_field<World, DefaultClass>(
+                 world, goal, scratch)
+                 .status),
+            tess::PathStatus::Found);
+  const auto mismatched = tess::weighted_distance_field_path<World, Diagonal>(
+      world, goal, goal, scratch);
+
+  EXPECT_EQ(mismatched.status, tess::PathStatus::NoPath);
+}
+
+TEST(TessPathMovementClass, AxialHexSearchUsesSixRegularNeighbors) {
+  using HexShape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1},
+                               tess::lattice::HexAxial>;
+  using HexWorld = tess::AlwaysResidentWorld<HexShape, Schema>;
+  HexWorld world;
+  for (auto& page : world.chunks()) {
+    std::fill(page.field_span<PassableTag>().begin(),
+              page.field_span<PassableTag>().end(), true);
+    std::fill(page.field_span<CostTag>().begin(),
+              page.field_span<CostTag>().end(), 1u);
+  }
+  tess::PathScratch scratch;
+
+  const auto result = tess::weighted_astar_path<HexWorld, DefaultClass>(
+      world, tess::PathRequest{tess::Coord3{1, 2, 0}, tess::Coord3{3, 0, 0}},
+      scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 2u);
+  EXPECT_EQ(result.cost_scale, 1u);
+  ASSERT_EQ(result.path.size(), 3u);
+  EXPECT_EQ(result.path[1], (tess::Coord3{2, 1, 0}));
+
+  tess::PathScratch unit_scratch;
+  const auto unit = tess::astar_path<HexWorld, PassableTag>(
+      world, tess::PathRequest{tess::Coord3{1, 2, 0}, tess::Coord3{3, 0, 0}},
+      unit_scratch);
+  ASSERT_EQ(unit.status, tess::PathStatus::Found);
+  EXPECT_EQ(unit.cost, 2u);
+  EXPECT_EQ(unit.path.size(), 3u);
+}
+
+TEST(TessPathMovementClass, ReportsUnrepresentableExactCost) {
+  World world;
+  fill_open(world, 1);
+  world.field<CostTag>(tess::Coord3{1, 0, 0}) =
+      std::numeric_limits<std::uint32_t>::max();
+  tess::PathScratch scratch;
+
+  const auto result = tess::weighted_astar_path<World, DefaultClass>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}},
+      scratch);
+
+  EXPECT_EQ(result.status, tess::PathStatus::CostOverflow);
+  EXPECT_EQ(result.cost_scale, 1u);
 }
 
 TEST(TessPathMovementClass, LegacyWeightedMatchesTagPairWeightedSearch) {
@@ -298,6 +426,29 @@ TEST(TessPathMovementClass, CommitValidationAgreesWithThePlannedClass) {
       tess::validate_movement_intent<World, Builder, OccupancyTag,
                                      ReservationTag>(world, out_of_site);
   EXPECT_EQ(builder_out.status, tess::MovementStatus::Moved);
+}
+
+TEST(TessPathMovementClass, DiagonalCommitUsesResolvedClearance) {
+  World world;
+  fill_open(world, 1);
+  constexpr auto from = tess::Coord3{2, 2, 0};
+  constexpr auto to = tess::Coord3{3, 3, 0};
+  world.field<OccupancyTag>(from) = true;
+  world.field<PassableTag>(tess::Coord3{3, 2, 0}) = false;
+
+  const auto blocked =
+      tess::validate_movement_intent<World, Diagonal, OccupancyTag,
+                                     ReservationTag>(
+          world, tess::MovementIntent{.from = from, .to = to});
+  EXPECT_EQ(blocked.status, tess::MovementStatus::BlockedTo);
+
+  world.field<PassableTag>(tess::Coord3{3, 2, 0}) = true;
+  const auto moved = tess::commit_movement_intent<World, Diagonal, OccupancyTag,
+                                                  ReservationTag>(
+      world, tess::MovementIntent{.from = from, .to = to});
+  EXPECT_EQ(moved.status, tess::MovementStatus::Moved);
+  EXPECT_FALSE(world.field<OccupancyTag>(from));
+  EXPECT_TRUE(world.field<OccupancyTag>(to));
 }
 
 // S5.6: the unit route cache keys on (start, goal) only, so a runtime reused
