@@ -104,6 +104,21 @@
   char/`std::uint64_t`/max-aligned allocations staying aligned and
   disjoint, and growth keeping `used_bytes()` while serving new
   allocations from fresh storage.
+- `tess_query_span_test`: verifies exact allocation-free x-run emitters for
+  clipped world boxes, Euclidean radii, and chunk-local boxes across top-down,
+  vertical, and 3D shapes; deterministic z/y/x ordering; edge clipping; empty
+  queries; reference tile-set equivalence; and splitting runs wider than the
+  public 32-bit span count without losing tiles.
+- `tess_block_pipeline_test`: verifies block-preserving lazy tile sources,
+  filter/map/flat-map composition, for-each and reduce terminals, explicit
+  bounded frontier/sequence materialization with overflow reporting, the
+  deliberately named allocating terminal, fused/materialized equivalence,
+  policy-qualified mutation, diagnostics, deterministic ordering, and a
+  zero-allocation fused warm path.
+- `tess_maintenance_test`: verifies the experimental immediate, FIFO, and
+  coalescing maintenance backends, including duplicate scheduling, budgeted
+  continuation, concurrent scheduling, deterministic flush, partial dirty
+  clearing, shutdown, capacity failure, and steady-state allocation behavior.
 - `tess_queued_planning_test`: pins the audit-2026-07-11 M4 planner-reuse
   contract -- the `plan_operations` overload that plans into a caller-owned
   `ExecutionReport` recycles report rows, planned operations, and pooled

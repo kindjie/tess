@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/block/block.h>
+#include <tess/block/pipeline.h>
 #include <tess/core/shape.h>
 #include <tess/diagnostics/diagnostics.h>
 #include <tess/diagnostics/export.h>
@@ -8,6 +9,7 @@
 #include <tess/diagnostics/warning_sink.h>
 #include <tess/ecs/adapter.h>
 #include <tess/ecs/entity_handle.h>
+#include <tess/experimental/maintenance.h>
 #include <tess/gpu/backend.h>
 #include <tess/gpu/descriptors.h>
 #include <tess/ops/async_work.h>
@@ -24,6 +26,7 @@
 #include <tess/path/portal_segment_cache.h>
 #include <tess/path/precheck.h>
 #include <tess/path/route_cache.h>
+#include <tess/query/span.h>
 #include <tess/sim/async_work_task.h>
 #include <tess/sim/auto_exec.h>
 #include <tess/sim/delta_frame.h>

@@ -20,6 +20,11 @@ agents, and movement commit across orthogonal, clearance-preserving diagonal,
 and axial-hex worlds. `FrameOps` also carries typed intent batches and their
 version/invalidation policy; cooperative tickets resume budgeted work across
 ticks; and exact event streams drive coalesced OnEvent schedule cadences.
+Block-resolved lazy pipelines fuse adapters into explicit terminals, while
+exact box, Euclidean-radius, and chunk-local span queries emit allocation-free
+x-runs. Experimental maintenance backends are available for evaluation but
+are not integrated into storage because the coalescing prototype failed its
+sparse-overhead promotion gate.
 
 ## Planned extensions
 
@@ -30,11 +35,14 @@ item moves to **Shipped**.
 - **Persistent maintenance**
   ([scheduler TDD][tdd-scheduler], [maintenance addendum][tdd-work]) — fixed
   cadences, dirty/manual/event triggers, exact event streams, and deterministic
-  background continuation shipped. Coalescing maintenance handles did not.
-- **Block pipelines and spatial query acceleration**
-  ([block TDD][tdd-block], [layout addendum][tdd-layout]) — resolved chunk
-  views and serial block iteration shipped. Block-lazy pipelines, box/radius
-  spans, predicate bitsets, summaries, halos, and layout experiments did not.
+  background continuation shipped. Experimental immediate, FIFO, and
+  coalescing backends also shipped for evaluation, but coalescing maintenance
+  handles are not integrated into storage.
+- **Further spatial query acceleration**
+  ([block TDD][tdd-block], [layout addendum][tdd-layout]) — resolved block-lazy
+  pipelines and exact box/radius/chunk spans shipped. Predicate bitsets,
+  summaries, halos, and alternate layout experiments did not meet or have not
+  yet been evaluated against their separate promotion gates.
 - **Hierarchical topology and path policy** ([path TDD][tdd-path]) — local
   regions, portals, exact caches, weighted batches, and topology prechecks
   shipped. Coarse hierarchy, corridor selection, weighted field products, and

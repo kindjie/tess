@@ -472,6 +472,10 @@ work that must remain caller-visible across phase calls:
   ticket while preserving reserved capacity.
 - `AsyncResultState` covers `Immediate`, `Pending`, `Ready`, `Failed`,
   `Cancelled`, `Superseded`, and `Stale` in addition to `Unbound`.
+- `AsyncStepState` and `AsyncWorkStep` are the continuation's state and
+  progress report; `AsyncAdvanceStats` aggregates one queue advance.
+- `AsyncWorkBudget` bounds deterministic items, and `AsyncVersion` identifies
+  required and produced generations.
 - `ResumableWorkQueue<T>` invokes non-owning continuations in submission order
   under one deterministic `AsyncWorkBudget`. Results carry required and
   produced `AsyncVersion` stamps. No hidden thread or wait is introduced;
@@ -481,6 +485,14 @@ work that must remain caller-visible across phase calls:
 
 The synchronous `ResultChannel<T>` remains the lower-overhead choice for work
 that completes behind one planner/executor barrier.
+
+Typed intents use `IntentMetadata`, `IntentVersions`, `IntentInvalidations`,
+`BackendEligibility`, and `ExactnessRequirement` as shared planner policy.
+`IntentPayloadView` keeps their caller-owned batches non-owning. Path requests
+use `PathBatchDesc` / `PathBatchHandle`; nearest-target requests use
+`NearestBatchDesc` / `NearestBatchHandle`; the remaining payload envelopes are
+`FieldProductDesc`, `MoveBatchDesc`, `TopologyRebuildDesc`, `ResidencyDesc`,
+`MarkDirtyDesc`, and `RenderDeltaDesc`.
 
 ## Deliberate Limits
 

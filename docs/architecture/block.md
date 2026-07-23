@@ -103,6 +103,19 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
 - `ChunkView<World>::for_each_tile(fn)` invokes
   `fn(LocalTileId, LocalCoord3)` for every local tile in ascending
   `LocalTileId` order.
+- `block_tiles(ctx)` and `block_chunks(ctx)` begin block-preserving lazy
+  pipelines. `filter`, `map`, and `flat_map` compose at compile time; no
+  intermediate collection is created. `block_tiles` emits `BlockTile` values
+  with the resolved chunk view, local id and coordinate, and world coordinate.
+- `pipeline_from(span)` applies the same lazy adapters to caller-owned
+  sequences and frontiers.
+- `Pipeline::for_each` and `Pipeline::reduce` are fused terminals.
+  `collect_into` and `to_frontier` use caller-owned bounded storage and report
+  both written and required counts through `PipelineCollectResult`.
+  `to_sequence_allocating` is the deliberately explicit allocating terminal.
+- `PipelineDiagnostics` records blocks and items read, items filtered and
+  emitted, explicit materializations, and bounded-capacity failures. It is
+  optional and caller-owned.
 
 Iteration is deterministic when domains are produced by the provided builders.
 The hot executor path does not allocate when passed a prebuilt `ChunkDomain`.
@@ -142,5 +155,7 @@ layer built above it:
 - Field access stays on `ChunkPage` spans instead of introducing kernel
   parameter binding or generated accessors.
 
-Block-lazy pipelines, fused adapters, sparse block domains, and tile subranges
-remain planned extensions.
+Sparse block domains and tile subranges remain planned extensions. The shipped
+pipeline is deliberately an inlined serial composition layer over resolved
+block sources; worker ownership and phase scheduling remain in queued
+operations.

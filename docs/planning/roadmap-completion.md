@@ -20,8 +20,8 @@ for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 | --- | --- | --- |
 | v0.5 | Resolved transitions, diagonals, axial hex, special edges | Complete |
 | v0.6 | Queued intents, async work, event scheduling | Complete |
-| v0.7 | Maintenance, block pipelines, query acceleration | Active |
-| v0.8 | Hierarchical topology and spatial products | Planned |
+| v0.7 | Maintenance, block pipelines, query acceleration | Complete |
+| v0.8 | Hierarchical topology and spatial products | Active |
 | v0.9 | Areas, tactical assignment, crowd coordination | Planned |
 | v0.10 | Persistence, Flecs adapter, optional ImGui editor tools | Planned |
 | v0.11 | Optional WebGPU backend | Planned |
@@ -48,6 +48,19 @@ item budgets. The schedule adds coalesced OnEvent cadences backed by exact,
 bounded tick-stamped event streams, plus a direct Background adapter for
 resumable queues. Warm event and continuation paths allocate nothing after
 reserve, and scheduler benchmarks cover both additions.
+
+### v0.7 Completion
+
+Block-resolved sources now compose lazy filter, map, flat-map, for-each,
+reduce, bounded collection, and explicitly allocating terminals with optional
+caller-owned diagnostics. Exact allocation-free box, Euclidean-radius, and
+chunk-local span emitters clip and order consistently across top-down,
+vertical, 3D, and very wide shapes; 100,000 seeded equivalence cases and local
+benchmarks satisfy the historical promotion gate. Immediate, FIFO, and
+coalescing derived-maintenance backends pass the correctness experiment in an
+optional namespace, but coalescing fails the mandatory sparse-overhead gate
+and is therefore not integrated into storage. Predicate bitsets and summaries
+remain evidence-backed deferrals rather than speculative schema additions.
 
 ## Cross-Cutting Acceptance
 

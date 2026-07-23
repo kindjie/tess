@@ -68,6 +68,7 @@ configure_file(
 set(
   TESS_PUBLIC_HEADERS
   include/tess/block/block.h
+  include/tess/block/pipeline.h
   include/tess/core/assert.h
   include/tess/core/lattice.h
   include/tess/core/shape.h
@@ -76,6 +77,7 @@ set(
   include/tess/diagnostics/export.h
   include/tess/diagnostics/trace.h
   include/tess/diagnostics/warning_sink.h
+  include/tess/experimental/maintenance.h
   include/tess/ecs/adapter.h
   include/tess/ecs/entity_handle.h
   include/tess/ecs/entt/entt_adapter.h
@@ -96,6 +98,7 @@ set(
   include/tess/path/precheck.h
   include/tess/path/route_cache.h
   include/tess/pathfinding.h
+  include/tess/query/span.h
   include/tess/sim/auto_exec.h
   include/tess/sim/async_work_task.h
   include/tess/sim/delta_frame.h

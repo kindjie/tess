@@ -343,9 +343,10 @@ flowchart TB
   immediately: later-phase OnDirty tasks fire in the SAME tick,
   earlier-phase tasks the next tick.
 - `EventStream<T>` is caller-owned bounded storage for exact payloads with
-  monotonic sequence and simulation-tick stamps. Overflow is rejected rather
-  than overwritten. The scheduler mask is only a coalesced wakeup; an OnEvent
-  task drains the separate stream according to application policy.
+  monotonic sequence and simulation-tick stamps in `TickStampedEvent<T>`.
+  Overflow is rejected rather than overwritten. The scheduler mask is only a
+  coalesced wakeup; an OnEvent task drains the separate stream according to
+  application policy.
 - `ResumableWorkTask<T>` maps `ScheduleTaskContext::budget_items` to a
   `ResumableWorkQueue<T>` and maps remaining pending tickets back to
   `more_work`, retaining deterministic cooperative jobs across ticks.

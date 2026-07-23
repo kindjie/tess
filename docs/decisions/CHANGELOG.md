@@ -2,6 +2,20 @@
 
 Records meaningful design changes from the original TDDs.
 
+## 2026-07-22 - Complete block pipelines and span-query acceleration
+
+- Changed: added allocation-free block-lazy filter, map, flat-map, reduce, and
+  bounded frontier composition; exact clipped box, radius, and chunk span
+  emitters; and three opt-in experimental maintenance scheduler baselines.
+- Reason: the raw resolved-chunk layer lacked composable fused kernels and
+  spatial runs. Query spans exceeded their historical performance gate. The
+  maintenance prototype failed its sparse-overhead gate, so it remains
+  isolated from authoritative storage rather than becoming a world hook.
+- Affected docs: block, query, experimental maintenance, roadmap, completion
+  plan, optimization log, and changelog.
+- Affected code: block pipeline and span headers, experimental schedulers,
+  correctness tests, and benchmarks.
+
 ## 2026-07-22 - Complete queued intents and event-driven resumable work
 
 - Changed: added typed non-owning intent batches with planner-preserved

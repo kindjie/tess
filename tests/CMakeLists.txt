@@ -63,6 +63,29 @@ tess_apply_project_options(tess_block_test)
 tess_discover_tests(tess_block_test)
 
 add_executable(
+  tess_query_span_test allocation_counter.cc tess_query_span_test.cc)
+target_link_libraries(tess_query_span_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_query_span_test)
+
+tess_discover_tests(tess_query_span_test)
+
+add_executable(
+  tess_block_pipeline_test allocation_counter.cc tess_block_pipeline_test.cc)
+target_link_libraries(
+  tess_block_pipeline_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_block_pipeline_test)
+
+tess_discover_tests(tess_block_pipeline_test)
+
+add_executable(
+  tess_maintenance_test allocation_counter.cc tess_maintenance_test.cc)
+target_link_libraries(
+  tess_maintenance_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_maintenance_test)
+
+tess_discover_tests(tess_maintenance_test)
+
+add_executable(
   tess_queued_planning_test
   allocation_counter.cc
   tess_queued_planning_test.cc

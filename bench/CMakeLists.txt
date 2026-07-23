@@ -9,6 +9,7 @@ add_executable(
   tess_bench.cc
   tess_fields_bench.cc
   tess_parallel_bench.cc
+  tess_pipeline_query_bench.cc
   tess_path_agent_bench.cc
   tess_path_product_bench.cc
   tess_path_scan_bench.cc
@@ -16,6 +17,7 @@ add_executable(
   tess_render_delta_bench.cc
   tess_residency_bench.cc
   tess_scheduler_bench.cc
+  tess_maintenance_bench.cc
   tess_topology_bench.cc
   tess_transition_bench.cc
 )
@@ -27,12 +29,14 @@ add_executable(
   tess_bench.cc
   tess_fields_bench.cc
   tess_parallel_bench.cc
+  tess_pipeline_query_bench.cc
   tess_path_agent_bench.cc
   tess_path_product_bench.cc
   tess_path_scan_bench.cc
   tess_path_weighted_bench.cc
   tess_render_delta_bench.cc
   tess_scheduler_bench.cc
+  tess_maintenance_bench.cc
   tess_transition_bench.cc
   tess_diagnostics_bench.cc
   tess_diagnostics_alloc_hooks.cc

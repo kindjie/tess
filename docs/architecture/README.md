@@ -24,12 +24,14 @@ flowchart TB
   Core["Core: shapes, coordinates, keys"]
   Storage["Storage: schema, pages, worlds, residency"]
   Block["Block: domains, views, write policies"]
+  Query["Query: exact allocation-free spans"]
   Ops["Operations: queue, planner, executors, results"]
   Topology["Topology: movement classes and region graph"]
   Path["Path: searches, products, and caches"]
   Sim["Simulation: schedule, agents, movement, deltas"]
   Core --> Storage
   Storage --> Block
+  Core --> Query
   Storage --> Topology
   Block --> Ops
   Topology --> Path
@@ -101,6 +103,8 @@ Maintained notes for implemented areas:
 - [Shape, coordinate, and key foundation](shape.md)
 - [Storage foundation](storage.md)
 - [Block foundation](block.md)
+- [Span queries](query.md)
+- [Experimental maintenance scheduling](maintenance.md)
 - [Queued operations foundation](queued-operations.md)
 - [Topology foundation](topology.md)
 - [Path foundation](path.md)

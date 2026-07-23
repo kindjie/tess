@@ -14,6 +14,29 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-22 - Span Queries Promoted; Maintenance Hook Rejected
+
+- Area: rectangular/radius query callbacks, fused block pipelines, and
+  coalesced derived-state maintenance.
+- Evidence: 100,000 seeded queries match reference tile sets across top-down,
+  vertical, and 3D shapes. Five-repetition local medians measured rectangular
+  spans at 678 ns versus 213,076 ns per tile, radius spans at 1,789 ns versus
+  157,203 ns per tile, and a fused pipeline at 417 ns versus 1,840 ns through
+  an allocating intermediate. The coalescing backend reduced 512 dense
+  schedules to one execution and measured 2,499 ns versus FIFO's 5,139 ns,
+  but 256 distinct sparse tasks measured 21,069 ns versus immediate's 517 ns.
+- Decision: accept public span emitters and fused pipelines. Keep the
+  maintenance interface and immediate/FIFO/coalescing prototypes in
+  `tess::experimental::maintenance`; do not integrate a scheduler hook into
+  world storage because the prototype misses the mandatory sparse gate by a
+  wide margin. Predicate bitsets and chunk summaries remain deferred because
+  no authoritative predicate contract or mutation-cost evidence exists yet.
+- Retry conditions: revisit maintenance promotion with O(1) intrusive or
+  indexed deduplication and measured p95 latency on at least two realistic
+  dirty-chunk scenarios. Revisit predicate acceleration when a consumer has a
+  stable derived predicate whose full-map, sparse-query, mutation, and memory
+  costs can be measured against the historical 4x/2x/10% gates.
+
 ## 2026-07-21 - Documentation-Only CI Fast Path
 
 - Area: pull requests and main pushes that change only maintained
