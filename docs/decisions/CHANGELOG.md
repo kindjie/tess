@@ -13,6 +13,21 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-22 - Reconcile the post-v0.4 roadmap with shipped concurrency
+
+- Changed: moved the production worker pool into the shipped inventory;
+  replaced stale milestone-era prototype claims in maintained architecture;
+  closed the S1-S7 concurrency plan; annotated the concurrency addendum's
+  shipped and unshipped lanes; and added one maintained completion sequence
+  covering the lattice TDD and previously untracked historical commitments.
+- Reason: the public roadmap and several maintained pages contradicted the
+  implemented, tested scheduler/pool integration and omitted the newly merged
+  lattice design plus other unshipped TDD goals.
+- Affected docs: roadmap, planning index and completion/concurrency plans,
+  concurrency addendum, and queued, block, simulation, and diagnostics
+  architecture pages.
+- Affected code: none.
+
 ## 2026-07-18 - Make adoption paths executable and publishable
 
 - Changed: added pathfinding and simulation facade headers without removing

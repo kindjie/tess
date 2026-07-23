@@ -61,9 +61,9 @@ scope limitation: a counter scope installed on one thread observes only
 events raised by that thread, so counters do not aggregate across worker
 threads. `ScopedThreadPhaseExecutor` in the queued layer, for example,
 records its dispatch counts on the caller thread before launching workers,
-and worker callbacks do not mutate the caller's queued-phase counters. A
-future worker-pool backend needs per-worker sinks plus explicit reduction
-before cross-thread totals can be trusted.
+and worker callbacks do not mutate the caller's queued-phase counters. Trusted
+cross-thread totals need per-worker sinks plus explicit reduction; the current
+production pool deliberately reports only caller-thread dispatch metadata.
 
 Because the counter types only exist when `TESS_ENABLE_DIAGNOSTICS` is
 defined, code that declares counter objects or scopes must itself be

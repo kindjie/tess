@@ -331,9 +331,9 @@ records dispatch counts and worker counts before launching threads; the scoped
 queued-phase diagnostics are intentionally owned by the caller thread and are
 not mutated from worker callbacks.
 
-`WorkerPoolPhaseExecutor` is the persistent-pool prototype the concurrent
-tile-world addendum calls for: workers are created once at construction and
-reused across phases, so phase dispatch never creates threads. Each
+`WorkerPoolPhaseExecutor` is the production persistent pool. Workers are
+created once at construction and reused across phases, so phase dispatch never
+creates threads. Each
 `for_each_operation` call publishes one type-erased job under the pool
 mutex, wakes the workers, and blocks until every claimed operation has
 finished and every adopted worker has left the claim loop, so all callback
@@ -500,24 +500,21 @@ backends must adapt to the contiguous operation-index range API and preserve
 the documented completion, visibility, dirty-partition, and result-reduction
 rules before they are wired into queued operations.
 
-## TDD Divergences
+## Remaining TDD Differences
 
-The historical queued-operations TDD describes a much larger public planning
-and execution system. This M4 slice keeps only the stable foundation needed by
-later work:
+The historical queued-operations TDD describes a larger public planning and
+execution system. The shipped implementation deliberately remains narrower:
 
 - `FrameOps::update_field(...)` records intent and optional untyped field
   access masks without a kernel type.
-- `DomainDesc` only supports chunk-domain descriptors that can be resolved by
-  current always-resident storage.
-- `ExecutionPlan` is only an ordered list of expanded chunk keys per operation,
-  not a phase graph.
+- `DomainDesc` supports explicit, dirty, active, and resident chunk domains.
+- `ExecutionPlan` stores ordered expanded chunk keys and planner-issued
+  parallel phases, not the TDD's general dependency/barrier graph.
 - `ExecutionReport` reports validation status, chunk count, and source
-  location plus limited diagnostics, not backend choice, solved/reordered
-  hazards, versions, or result channels.
-- The plan-to-block adapter only exposes successful planned chunk domains to
-  the existing serial block API. It does not execute queued intent by itself.
+  location plus access metadata. Typed result channels are separate; backend
+  choice, versions, cost estimates, and general reordered hazards are absent.
+- `AutoExecTask` owns one typed callback and selects serial or worker-pool
+  phase execution. Queued storage does not yet own arbitrary typed kernels.
 
-Those omissions are intentional so future scheduler, topology, pathing, and
-diagnostics slices can be added against a deterministic queue and domain
-foundation.
+General queued intents, async continuations, richer domains, and the dependency
+graph are tracked by the maintained roadmap completion plan.

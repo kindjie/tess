@@ -362,9 +362,9 @@ dirty apply, and ack drain -- over a caller-owned `FrameOps` queue. Both the
 queue and the task's result channel are cleared together at the end of every
 successful run (the paired-clear discipline), and the run's `dirty_mask` union
 feeds the schedule so OnDirty tasks in later phases fire the same tick. The
-parallel execution paths remain documented prototypes (see the
-[queued-operations note](queued-operations.md)); every published benchmark
-median is single-threaded. A
+worker pool is the production parallel backend (see the
+[queued-operations note](queued-operations.md)); the scoped-thread executor
+remains a comparison prototype. A
 planning or kernel exception preserves the caller-owned queue for inspection
 or replacement while the exception path clears transient result slots, so old
 completions cannot leak into a later run. Earlier writes may already have
@@ -517,11 +517,11 @@ or leave the shape emit deltas only for tiles the chunk owns.
 
 ## Deliberate Limits
 
-This slice is still a synchronous MVP. It does not implement async execution,
-worker scheduling, persistent queued kernels, result channels, ECS storage
-adapters, local avoidance, multi-agent collision resolution, permission
-layers, doors, vertical transition policies, topology-aware route planning, or
-region-selective path cache invalidation.
+The public schedule remains synchronous at its caller boundary even when an
+auto-exec phase uses the worker pool. It does not implement async tickets,
+persistent queued kernels, event-stream cadences, local avoidance,
+multi-agent collision resolution, permission layers, general doors,
+provider-aware exact route planning, or region-selective cache invalidation.
 
 Movement validation currently uses a boolean-like passability field plus
 boolean-like occupancy and reservation fields. Weighted terrain remains part of
