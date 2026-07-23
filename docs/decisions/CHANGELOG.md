@@ -13,16 +13,19 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
-## 2026-07-22 - Make dependency population checkout-free
+## 2026-07-22 - Retry exact-revision dependency population
 
-- Changed: GoogleTest, Google Benchmark, and EnTT now populate from
-  commit-pinned HTTPS archives with SHA-256 verification instead of Git clones.
+- Changed: GoogleTest, Google Benchmark, and EnTT now use a shared population
+  helper that shallow-fetches the exact commit, verifies it, checks it out,
+  verifies the worktree revision, and retries the full sequence up to three
+  times.
 - Reason: a cold worktree exposed an intermittent checkout failure in CMake's
   generated FetchContent clone script. The clone was retried, but its checkout
-  was not; archives eliminate that stage and reduce transferred data while
-  retaining exact source verification.
+  was not. Retrying the complete operation closes that gap without relying on
+  GitHub-generated archives whose compressed bytes are not stable artifacts.
 - Affected docs: `docs/dependencies.md` and `tests/AGENTS.md`.
-- Affected code: FetchContent declarations and their regression tests.
+- Affected code: the FetchContent Git helper, population script, dependency
+  declarations, and their regression tests.
 
 ## 2026-07-18 - Make adoption paths executable and publishable
 

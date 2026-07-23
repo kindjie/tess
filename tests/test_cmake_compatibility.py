@@ -3,22 +3,13 @@
 from __future__ import annotations
 
 import json
-import re
+import os
 import subprocess
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMPATIBILITY_MODULE = REPO_ROOT / "cmake" / "TessCMakeCompatibility.cmake"
-
-
-def fetchcontent_declarations(path: Path) -> list[str]:
-    text = path.read_text(encoding="utf-8")
-    return re.findall(
-        r"FetchContent_Declare\(\s*\w+(.*?)\n\s*\)",
-        text,
-        flags=re.DOTALL,
-    )
 
 
 def run_compatibility_probe(tmp_path: Path, version: str) -> str:
@@ -121,25 +112,84 @@ def test_fetchcontent_smoke_uses_the_tracked_consumer_fixture():
     assert "cat >" not in script
 
 
-def test_fetched_dependencies_use_verified_archives_without_git_checkout():
-    modules = [
-        REPO_ROOT / "cmake" / "TessGoogleDeps.cmake",
-        REPO_ROOT / "cmake" / "TessEnttDeps.cmake",
-    ]
-    declarations = [
-        declaration
-        for module in modules
-        for declaration in fetchcontent_declarations(module)
-    ]
+def test_fetched_dependencies_use_retrying_exact_revision_populator():
+    google = (REPO_ROOT / "cmake" / "TessGoogleDeps.cmake").read_text(
+        encoding="utf-8"
+    )
+    entt = (REPO_ROOT / "cmake" / "TessEnttDeps.cmake").read_text(
+        encoding="utf-8"
+    )
+    helper = (REPO_ROOT / "cmake" / "TessGitDependency.cmake").read_text(
+        encoding="utf-8"
+    )
 
-    assert len(declarations) == 3
-    for declaration in declarations:
-        assert "GIT_REPOSITORY" not in declaration
-        assert "GIT_TAG" not in declaration
-        assert re.search(r"\bURL\s+", declaration)
-        assert re.search(r"\bURL_HASH\s+SHA256=[0-9a-f]{64}", declaration)
-        assert "DOWNLOAD_EXTRACT_TIMESTAMP FALSE" in declaration
-        assert "TLS_VERIFY TRUE" in declaration
+    assert google.count("tess_declare_git_dependency(") == 2
+    assert entt.count("tess_declare_git_dependency(") == 1
+    assert "FetchContent_Declare(" in helper
+    assert "DOWNLOAD_COMMAND" in helper
+    assert "TessGitPopulate.cmake" in helper
+    assert "\n    GIT_REPOSITORY" not in google + entt + helper
+    assert "\n    GIT_TAG" not in google + entt + helper
 
-    for module in modules:
-        assert "http://" not in module.read_text(encoding="utf-8")
+
+def test_git_population_retries_checkout(tmp_path):
+    revision = "0123456789abcdef0123456789abcdef01234567"
+    state = tmp_path / "checkout-attempts"
+    log = tmp_path / "git.log"
+    fake_git = tmp_path / "git"
+    fake_git.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os\n"
+        "import pathlib\n"
+        "import sys\n"
+        "args = sys.argv[1:]\n"
+        "log = pathlib.Path(os.environ['TESS_TEST_GIT_LOG'])\n"
+        "with log.open('a', encoding='utf-8') as stream:\n"
+        "    stream.write(' '.join(args) + '\\n')\n"
+        "if args[0] == 'init':\n"
+        "    pathlib.Path(args[-1]).mkdir(parents=True, exist_ok=True)\n"
+        "elif 'rev-parse' in args:\n"
+        "    print(os.environ['TESS_TEST_GIT_REVISION'])\n"
+        "elif 'checkout' in args:\n"
+        "    state = pathlib.Path(os.environ['TESS_TEST_GIT_STATE'])\n"
+        "    attempt = int(state.read_text() if state.exists() else '0') + 1\n"
+        "    state.write_text(str(attempt), encoding='utf-8')\n"
+        "    if attempt < 3:\n"
+        "        sys.exit(1)\n"
+        "    source = pathlib.Path(args[args.index('-C') + 1])\n"
+        "    (source / 'checkout-complete').touch()\n",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    source = tmp_path / "example-src"
+    env = os.environ.copy()
+    env.update(
+        TESS_TEST_GIT_LOG=str(log),
+        TESS_TEST_GIT_REVISION=revision,
+        TESS_TEST_GIT_STATE=str(state),
+    )
+
+    result = subprocess.run(
+        [
+            "cmake",
+            f"-DTESS_GIT_EXECUTABLE={fake_git}",
+            "-DTESS_GIT_DEPENDENCY=example",
+            "-DTESS_GIT_REPOSITORY=https://example.invalid/repo.git",
+            f"-DTESS_GIT_REVISION={revision}",
+            f"-DTESS_GIT_SOURCE_DIR={source}",
+            "-P",
+            str(REPO_ROOT / "cmake" / "TessGitPopulate.cmake"),
+        ],
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (source / "checkout-complete").is_file()
+    checkout_lines = [
+        line
+        for line in log.read_text(encoding="utf-8").splitlines()
+        if " checkout " in f" {line} "
+    ]
+    assert len(checkout_lines) == 3

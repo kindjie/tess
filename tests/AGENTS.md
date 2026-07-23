@@ -667,9 +667,10 @@
   3.25 omits module scanning and `FetchContent(EXCLUDE_FROM_ALL)` while newer
   CMake retains both build-hygiene options, and pins the root project and
   preset minimum versions together (including the `3.25...3.28` policy
-  range). It requires checksum-verified HTTPS archives for all fetched
-  dependencies and rejects Git checkout-based declarations. It also pins the
-  `consumer` preset consumer-shaped: dev
+  range). It requires all Git-fetched dependencies to use the shared,
+  exact-revision shallow population helper, and behaviorally pins a retry of
+  the complete fetch/checkout sequence after checkout failure. It also pins
+  the `consumer` preset consumer-shaped: dev
   facilities and EnTT off, no warnings-as-errors, no inheritance from a
   dev preset. The network-free `examples` preset and tracked installed-package
   and `FetchContent` consumer fixtures are covered as adopter-facing build
