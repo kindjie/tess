@@ -138,6 +138,15 @@ struct UploadDesc {
   const void* data = nullptr;
 };
 
+/** Generation-bearing identity of one registered derived GPU product. */
+struct GpuProductHandle {
+  std::uint64_t key = 0;
+  std::uint64_t generation = 0;
+
+  friend constexpr auto operator==(GpuProductHandle, GpuProductHandle) noexcept
+      -> bool = default;
+};
+
 /**
  * Builds an upload view for field `Tag` in one resident chunk.
  *
@@ -160,6 +169,7 @@ template <typename Tag, typename World>
 /** Backend-neutral request to dispatch work over a mirrored product. */
 struct DispatchDesc {
   std::uint64_t product_key = 0;
+  std::uint64_t product_generation = 0;
   std::uint32_t input_field_index = 0;
   std::uint64_t chunk_count = 0;
   std::uint32_t workgroups_per_chunk = 1;
@@ -178,6 +188,7 @@ enum class ReadbackPolicy : std::uint8_t {
 /** Backend-neutral readback request for a mirrored product. */
 struct ReadbackDesc {
   std::uint64_t product_key = 0;
+  std::uint64_t product_generation = 0;
   ReadbackPolicy policy = ReadbackPolicy::None;
   std::uint64_t byte_size = 0;
 };

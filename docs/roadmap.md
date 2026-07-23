@@ -14,7 +14,8 @@ kernel layer, topology and the reachability precheck, A* with movement
 classes, weighted batches, distance-field products and caches, the
 schedule loop, the EnTT, Flecs, and custom-ECS adapters, DeltaFrame render
 bridging, the production worker-pool phase executor, the GPU descriptor
-interface, and compile-gated diagnostics. Resolved regular and
+interface and optional WebGPU transport, and compile-gated diagnostics.
+Resolved regular and
 provider-composed transitions drive exact paths, fields, topology, caches,
 agents, and movement commit across orthogonal, clearance-preserving diagonal,
 and axial-hex worlds. `FrameOps` also carries typed intent batches and their
@@ -62,8 +63,9 @@ item moves to **Shipped**.
   coarse chunk corridors shipped. Today's fallback
   for congestion-aware routing: write congestion from your simulation
   into a cost field and route through a weighted movement class.
-- **Real GPU backend** ([TDD][tdd-gpu]) — the descriptor/concept layer
-  shipped; no device backend exists, and the CPU stays authoritative.
+- **Additional GPU algorithms** ([TDD][tdd-gpu]) — the descriptor/concept
+  layer and optional stable-C-API WebGPU transport shipped. Consumers still
+  provide algorithm pipelines and bindings, and the CPU stays authoritative.
 - **Continuous crowd steering** ([project design][tdd-project]) — local
   reservation and congestion arbitration shipped, but tess does not perform
   velocity-obstacle steering, formation control, or globally optimal

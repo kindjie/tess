@@ -128,11 +128,31 @@ or desktop font license.
 - Official container digest:
   `emscripten/emsdk:6.0.3@sha256:bb0910e6a18bb9bd7cb31ae4ed40f9073148b78cb2cdb8ea8676454e0d85425c`
 
-Emscripten builds only the interactive documentation example; it is not a
+Emscripten builds only the interactive documentation examples; it is not a
 library dependency. CI pulls the upstream project's multi-platform image by
 immutable manifest digest rather than executing a third-party setup action.
-The demo is single-threaded, uses no filesystem, and compiles the same
+The demos are single-threaded, use no filesystem, and compile the same
 pathfinding headers as the native self-checking model.
+
+## Emdawnwebgpu
+
+- Emdawnwebgpu port version: `v20260423.175430`
+- Dawn revision: `01940842b667a7812d0e4ca0ef4367fbec294241`
+- Port SHA-512:
+  `42784f70b67197c614322f9fabb0f1dc64228a0de10e88f99941fa9d29bee9ad6683f4651d4eefd5a7a9fbd1f976eb522b190b683219ed1793e9b531c602ffa6`
+- Emscripten WebGPU documentation:
+  https://emscripten.org/docs/porting/multimedia_and_graphics/WebGPU-support.html
+- Emdawnwebgpu package documentation:
+  https://dawn.googlesource.com/dawn/+/refs/heads/main/src/emdawnwebgpu/pkg/README.md
+- WebGPU specification: https://gpuweb.github.io/gpuweb/
+- Stable C header project: https://github.com/webgpu-native/webgpu-headers
+
+The optional browser compute example uses Emscripten's exact
+`--use-port=emdawnwebgpu` package and `--closure=1`. Its version, Dawn commit,
+and archive digest above are the metadata shipped by Emscripten 6.0.3. The
+public backend consumes only the stable WebGPU C API and is compiled only when
+`TESS_ENABLE_WEBGPU` is defined. Consumers supply their own header and device;
+normal CPU-only builds neither fetch nor link Emdawnwebgpu.
 
 ## Dear ImGui
 

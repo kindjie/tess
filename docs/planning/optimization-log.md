@@ -14,6 +14,22 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-22 - Optional WebGPU Transport Baseline
+
+- Area: stable-C-API WebGPU field upload, compute dispatch, and asynchronous
+  summary readback.
+- Evidence: the backend compiles against the exact Dawn C header shipped by
+  Emdawnwebgpu `v20260423.175430`; its fake-device tests cover ownership,
+  generation invalidation, loss, and asynchronous lifetime. Emscripten 6.0.3
+  builds the browser example with the exact SHA-pinned port. Local headless
+  Chrome exposed no adapter and therefore exercised the explicit unsupported
+  result rather than a device execution path.
+- Decision: accept the bounded transport as the v0.11 optional backend. Do not
+  establish a timing threshold from an environment without a GPU adapter.
+- Retry conditions: measure upload, dispatch, and readback independently on a
+  representative browser/GPU matrix before adding performance gates or
+  promoting tess-owned shader algorithms.
+
 ## 2026-07-22 - Flecs Adapter Baseline
 
 - Area: deterministic Flecs path-agent collection and write-back.

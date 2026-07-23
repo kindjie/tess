@@ -631,6 +631,12 @@
   upload -> dispatch -> readback sequence in order while refusing
   operations beyond its configured capabilities (no compute, oversized
   buffers/dispatches, explicit None readbacks) without recording them.
+- `tess_webgpu_backend_test` (`TESS_ENABLE_WEBGPU` on): compiles the optional
+  backend against an API-matching stable WebGPU C stub. It verifies device and
+  queue ownership, mirror registration and real chunk-byte uploads, compute
+  command submission, generation-stale product rejection, asynchronous summary
+  readback that safely completes after backend destruction, invalid requests,
+  explicit device-loss fallback, and the `GpuBackend` concept.
 - `tess_render_delta_frame_test`: verifies the M11 DeltaFrame bridge
   core: version semantics (empty publishes never bump; state-carrying
   publishes bump by one; the applicability truth table including the

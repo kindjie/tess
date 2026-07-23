@@ -24,8 +24,8 @@ for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 | v0.8 | Hierarchical topology and spatial products | Complete |
 | v0.9 | Areas, tactical assignment, crowd coordination | Complete |
 | v0.10 | Persistence, Flecs adapter, optional ImGui editor tools | Complete |
-| v0.11 | Optional WebGPU backend | Active |
-| v0.12 | Consolidation, compatibility, performance, backlog closure | Planned |
+| v0.11 | Optional WebGPU backend | Complete |
+| v0.12 | Consolidation, compatibility, performance, backlog closure | Active |
 
 ### Observed v0.12 Release Blocker
 
@@ -99,7 +99,7 @@ It is allocation-free after reserve and resolves a representative 1,000-agent,
 4,000-option workload in about 0.36 ms locally. Globally optimal multi-agent
 pathfinding and continuous steering remain out of scope.
 
-### v0.10 Progress
+### v0.10 Completion
 
 Versioned world archives now encode caller-selected authoritative scalar
 fields in canonical little-endian chunk order with whole-body checksums.
@@ -116,6 +116,18 @@ inspection, and caller-applied boolean field edit intents. The helpers accept
 const worlds and never load residency or directly mutate state. Picking,
 undo/redo, generalized reflection, and game-specific editor behavior remain
 application-owned, preserving the historical no-editor-framework boundary.
+
+### v0.11 Completion
+
+The dependency-free descriptor concept now has an independently gated
+`WebGpuBackend` built on the stable WebGPU C API. Explicit field mirrors and
+generation-bearing products bind consumer-owned compute pipelines without
+inventing a shader ABI. Dispatches validate resources before submission;
+bounded per-request staging buffers deliver asynchronous summaries safely
+even if the backend object is destroyed. Disabled configuration and device
+loss refuse work for CPU fallback. The exact pinned Emdawnwebgpu browser build
+executes an upload/compute/readback smoke path where WebGPU is available and
+reports unsupported environments distinctly from execution failures.
 
 ### Cross-cutting benchmark harness
 

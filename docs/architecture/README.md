@@ -8,8 +8,8 @@ queued operations with result channels, the schedule with cadences and the
 selectable parallel phase executor, movement classes with per-class topology
 and transition providers, A* with the region-graph precheck, distance-field
 products and caches, the ECS adapter (EnTT-gated), the versioned DeltaFrame
-render bridge, compile-gated diagnostics, and the GPU backend interface
-(interface only in the current release).
+render bridge, compile-gated diagnostics, the GPU backend interface, and an
+optional stable-C-API WebGPU backend.
 
 ## Layer Map
 

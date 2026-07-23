@@ -6,6 +6,19 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-22 - Add the optional stable-C-API WebGPU backend
+
+- Changed: added independently gated field mirrors, generation-bearing
+  consumer products, compute dispatch, and bounded asynchronous readback on
+  the stable WebGPU C API, plus an exact-port browser smoke example.
+- Reason: v0.11 intentionally advances beyond the historical interface-only
+  TDD without weakening its dependency-free CPU core or CPU-authority rules.
+  Explicit provider resources avoid standardizing a premature shader ABI.
+- Affected docs: GPU architecture, dependency inventory, roadmap, completion
+  plan, optimization log, public surface, historical TDD note, and changelog.
+- Affected code: descriptors, optional backend, stable-C test double,
+  correctness tests, browser example, build tooling, and Pages smoke test.
+
 ## 2026-07-22 - Bound optional ImGui world tooling to edit intents
 
 - Changed: added independently gated dense/sparse world overview and chunk

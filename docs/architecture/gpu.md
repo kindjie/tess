@@ -1,70 +1,81 @@
-# GPU Backend Interface
+# GPU Backends
 
-The M13 layer: interface only, in `include/tess/gpu/`. GPU execution is
-optional and unimplemented in the current pre-1.0 release -- CPU stays
-authoritative for every
-gameplay-exact result, GPU products are derived/cached/versioned by a
-future backend, and the acceptance bar is that a real backend can be
-added later without redesigning core. Nothing here touches a GPU API or
-adds a dependency; descriptors are byte-level facts about storage tess
-already owns, and the backend seam is compile-time polymorphic (a
-concept, never virtual dispatch). Everything lives in `tess::gpu`.
+The GPU layer in `include/tess/gpu/` keeps tess's deterministic CPU results
+authoritative while allowing derived work to be submitted to an optional
+accelerator. Descriptors and the `GpuBackend` concept remain dependency-free.
+`WebGpuBackend` is an independently gated implementation using the stable
+WebGPU C API; CPU-only consumers do not include or link a GPU dependency.
+Everything lives in `tess::gpu`.
 
 ## Public Surface
 
 - `GpuFieldFormat` is the storage format of one field's per-tile value,
-  derived from the schema's value type (unsigned/signed 8-64 bit and
-  F32; bool maps to U8, its storage size).
+  derived from the schema value type (unsigned/signed 8-64 bit and F32; bool
+  maps to U8, its storage size).
 - `FieldMirrorDesc` describes one field mirrored to the GPU:
   `field_index`, `format`, `value_bytes`, `tiles_per_chunk`,
-  `bytes_per_chunk`, `chunk_count`, and `total_bytes()`. tess pages are
-  SoA per chunk, so a chunk's field values are one contiguous run and a
-  mirror buffer is `chunk_count` chunk-key-major slices.
-- `field_mirror_desc<World, Tag>()` computes the mirror description
-  entirely from compile-time layout facts (constexpr). Value types are
-  integral or float32 (a `double` field fails to compile rather than
-  receive a lying format), and the dense mirror's byte counts are
-  compile-time proven to fit `std::uint64_t` -- shapes whose dense
-  mirror cannot be described fail to compile instead of wrapping.
-  The description is the MAXIMAL dense mirror for dense/bounded worlds
-  (the current consumer's case); selective sparse mirrors -- the TDD's
-  GpuMirror tracking chosen chunk copies -- are future work that reuses
-  these structs with differently-computed offsets.
-- `UploadDesc` stages one chunk's worth of one field: the live page span
-  (`data`/`byte_size`, valid until the world mutates or evicts the
-  chunk) and the destination `buffer_offset` in the chunk-key-major
-  mirror. `upload_desc<Tag>(world, chunk_key)` derives it; sparse worlds
-  pass resident keys only, the standing accessor contract.
-- `DispatchDesc` is one kernel dispatch over a mirrored product
-  (`product_key`, `input_field_index`, `chunk_count`,
-  `workgroups_per_chunk`) -- deliberately abstraction-free; a real
-  backend maps it onto its own pipeline and binding model.
-- `ReadbackPolicy` / `ReadbackDesc` make readback explicit: `None`,
-  `Summary` (the steady-state shape), `SelectedTiles`, `SelectedPath`,
-  and `FullField` (debug/explicit only). No full readback by default.
-- `GpuCapabilities` is what the device can do (`compute`,
-  `async_dispatch`, `async_readback`, `max_buffer_bytes`,
-  `max_dispatch_chunks`, `buffer_alignment`); a planner checks these
-  before ever selecting GPU. All-false/zero means never-choose-GPU.
-- `GpuBackend` is the backend concept: noexcept `capabilities()`, plus
-  `upload`/`dispatch`/`readback` returning `bool` -- `false` is a
-  refusal (missing capability, exhausted budget, lost device) and the
-  caller falls back to the authoritative CPU path.
-- `NoGpuBackend` is the default backend: reports no capabilities and
-  refuses every operation, so CPU-only builds compile untouched and
-  carry zero GPU obligations.
+  `bytes_per_chunk`, `chunk_count`, and `total_bytes()`. A dense mirror stores
+  chunk-key-major field slices.
+- `field_mirror_desc<World, Tag>()` computes that description from
+  compile-time layout facts. Unsupported value types and overflowing dense
+  shapes fail at compile time. Selective sparse mirrors can reuse the same
+  descriptors with caller-selected offsets.
+- `UploadDesc` identifies one live chunk field span and its mirror-buffer
+  destination. `upload_desc<Tag>(world, chunk_key)` derives it; the span stays
+  valid only until the world mutates or evicts that chunk.
+- `GpuProductHandle` combines a caller product key with a backend generation.
+  Dispatch and readback descriptors carry both values, so stale handles fail
+  after unregister and slot reuse.
+- `DispatchDesc` identifies a product, input field, chunk count, and workgroup
+  count. `ReadbackPolicy` and `ReadbackDesc` make result transfer explicit:
+  `None`, `Summary`, `SelectedTiles`, `SelectedPath`, or explicit/debug-only
+  `FullField`.
+- `GpuCapabilities` reports compute, asynchronous dispatch/readback, buffer
+  and dispatch limits, and alignment. All-false/zero means never choose GPU.
+- `GpuBackend` is the compile-time backend concept. Its `upload`, `dispatch`,
+  and `readback` methods return whether work was accepted and submitted, not
+  whether asynchronous device work has completed. Refusal always leaves the
+  caller free to execute the authoritative CPU path.
+- `NoGpuBackend` is the default dependency-free implementation and refuses
+  all operations.
 
-The current concept is deliberately synchronous-bool only: the fence and
-completion-collection surface named by the TDD arrives with the first
-real backend, as a non-breaking refinement of this concept (the
-`async_dispatch`/`async_readback` capability flags reserve the space).
+## Optional WebGPU Backend
+
+Define `TESS_ENABLE_WEBGPU`, include the consumer's stable
+`<webgpu/webgpu.h>` C header first, and then include
+`<tess/gpu/webgpu_backend.h>`. `WebGpuBackend` retains a supplied device and
+queue. `WebGpuBackendConfig` sets its budgets, `WebGpuProductDesc` registers
+provider resources, and `WebGpuReadbackStatus` reports callback completion.
+The backend exposes these bounded setup and execution operations:
+
+- Field registration creates a storage/copy-destination buffer. Uploads use
+  `wgpuQueueWriteBuffer` and enforce the WebGPU four-byte offset and size
+  alignment rules.
+- Product registration accepts consumer-created pipelines, bind groups, and
+  a bounded source range for readback. Registration returns a generation
+  handle; unregister/reuse invalidates old descriptors.
+- Dispatch validates the product generation and field before encoding a real
+  compute pass and submitting it to the queue.
+- Readback allocates one map-read staging buffer per accepted request, encodes
+  a source copy, submits, and reports completion through
+  `WebGpuReadbackCallback`. In-flight request count and total bytes are
+  bounded. Each accepted operation owns its staging resource until the map
+  callback, including if the backend object is destroyed first.
+- Device loss and explicit notification disable further GPU submissions.
+  Full-field readback is disabled unless the configuration opts in.
+
+Pipelines, shader meaning, and bind-group layouts remain algorithm/provider
+responsibilities. This keeps tess from inventing a universal shader ABI and
+keeps GPU products derived: simulation code must validate or recompute any
+gameplay-exact answer on the CPU.
 
 ## Testing
 
-`tests/gpu_mock_backend.h` provides the test-only `MockGpuBackend`: it
-satisfies the concept, enforces its configured capabilities, and records
-the call sequence so tests assert upload -> dispatch -> readback
-ordering and payloads. Benchmarks are deliberately absent while no real
-backend exists (the
-benchmark plan's mock-backend note): there is no execution to measure,
-and gating descriptor construction would gate arithmetic.
+`tests/gpu_mock_backend.h` exercises descriptor ordering without a device.
+`tess_webgpu_backend_test` uses an API-matching fake stable C device to test
+resource ownership, generation invalidation, bounded asynchronous readback,
+disabled configuration, and device loss. The documentation build also
+compiles and runs a browser smoke example with Emdawnwebgpu's exact pinned
+port. A browser without an adapter is an explicit unsupported result; a
+device or backend failure is not. There is no timing gate until measurements
+can be calibrated across a representative browser/GPU matrix.

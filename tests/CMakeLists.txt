@@ -473,6 +473,24 @@ tess_apply_project_options(tess_gpu_interface_test)
 
 tess_discover_tests(tess_gpu_interface_test)
 
+# Compiles the optional WebGPU backend against an API-matching stable C stub.
+add_executable(tess_webgpu_backend_test tess_webgpu_backend_test.cc)
+target_link_libraries(
+  tess_webgpu_backend_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+target_include_directories(
+  tess_webgpu_backend_test
+  PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/webgpu_stub"
+)
+target_compile_definitions(
+  tess_webgpu_backend_test
+  PRIVATE TESS_ENABLE_WEBGPU
+)
+tess_apply_project_options(tess_webgpu_backend_test)
+
+tess_discover_tests(tess_webgpu_backend_test)
+
 add_executable(
   tess_render_delta_frame_test
   allocation_counter.cc

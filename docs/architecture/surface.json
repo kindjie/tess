@@ -565,10 +565,16 @@
     "GpuBackend",
     "GpuCapabilities",
     "GpuFieldFormat",
+    "GpuProductHandle",
     "NoGpuBackend",
     "ReadbackDesc",
     "ReadbackPolicy",
     "UploadDesc",
+    "WebGpuBackend",
+    "WebGpuBackendConfig",
+    "WebGpuProductDesc",
+    "WebGpuReadbackCallback",
+    "WebGpuReadbackStatus",
     "field_mirror_desc",
     "upload_desc"
   ]

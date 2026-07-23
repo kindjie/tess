@@ -3,7 +3,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output="${1:-$root/build/web-demo}"
-config="$root/build/web-demo-config"
+config="${TESS_WEB_DEMO_CONFIG:-$root/build/web-demo-config}"
 
 mkdir -p "$output"
 cp "$root/examples/web_pathfinder/site/index.html" "$output/"
@@ -74,3 +74,31 @@ em++ \
   -sEXPORTED_FUNCTIONS="$colony_exports" \
   -sEXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","HEAP16"]' \
   -o "$colony/tess-colony.js"
+
+# WebGPU compute smoke: Emdawnwebgpu's stable C API, a real WGSL dispatch,
+# and explicit summary readback. Adapter absence is a supported runtime state.
+webgpu="$output/webgpu"
+mkdir -p "$webgpu"
+cp "$root/examples/webgpu_compute/site/index.html" "$webgpu/"
+cp "$root/examples/webgpu_compute/site/app.js" "$webgpu/"
+cp "$root/examples/web_pathfinder/site/style.css" "$webgpu/"
+cp "$root/examples/web_pathfinder/site/favicon.svg" "$webgpu/"
+cp "$root/docs/assets/tess-logo-dark.svg" "$webgpu/logo.svg"
+
+em++ \
+  -std=c++20 \
+  -O3 \
+  -DNDEBUG \
+  -I"$root/include" \
+  -I"$config/generated/include" \
+  --use-port=emdawnwebgpu \
+  --closure=1 \
+  "$root/examples/webgpu_compute/webgpu_compute.cc" \
+  -sALLOW_MEMORY_GROWTH=1 \
+  -sENVIRONMENT=web \
+  -sFILESYSTEM=0 \
+  -sMODULARIZE=1 \
+  -sEXPORT_NAME=createTessWebGpu \
+  -sEXPORTED_FUNCTIONS='["_main","_tess_webgpu_status"]' \
+  -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
+  -o "$webgpu/tess-webgpu.js"
