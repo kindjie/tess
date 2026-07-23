@@ -1,13 +1,13 @@
 include_guard(DIRECTORY)
 
-include(FetchContent)
-include("${CMAKE_CURRENT_LIST_DIR}/TessCMakeCompatibility.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/TessGitDependency.cmake")
 
 # Commit SHAs pinned so upstream tag moves cannot alter builds.
-set(TESS_GOOGLETEST_VERSION
+set(TESS_GOOGLETEST_REVISION
     "52eb8108c5bdec04579160ae17225d66034bd723") # tag v1.17.0
 set(TESS_GOOGLETEST_MIN_VERSION "1.17.0")
-set(TESS_GOOGLE_BENCHMARK_VERSION
+
+set(TESS_GOOGLE_BENCHMARK_REVISION
     "192ef10025eb2c4cdd392bc502f0c852196baa48") # tag v1.9.5
 set(TESS_GOOGLE_BENCHMARK_MIN_VERSION "1.9.5")
 
@@ -32,12 +32,10 @@ function(tess_require_googletest)
   set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
   set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 
-  FetchContent_Declare(
+  tess_declare_git_dependency(
     googletest
-    GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG "${TESS_GOOGLETEST_VERSION}"
-    SYSTEM
-    ${TESS_FETCHCONTENT_EXCLUDE_FROM_ALL}
+    https://github.com/google/googletest.git
+    "${TESS_GOOGLETEST_REVISION}"
   )
   FetchContent_MakeAvailable(googletest)
 endfunction()
@@ -67,12 +65,10 @@ function(tess_require_google_benchmark)
   set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
   set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 
-  FetchContent_Declare(
+  tess_declare_git_dependency(
     googlebenchmark
-    GIT_REPOSITORY https://github.com/google/benchmark.git
-    GIT_TAG "${TESS_GOOGLE_BENCHMARK_VERSION}"
-    SYSTEM
-    ${TESS_FETCHCONTENT_EXCLUDE_FROM_ALL}
+    https://github.com/google/benchmark.git
+    "${TESS_GOOGLE_BENCHMARK_REVISION}"
   )
   FetchContent_MakeAvailable(googlebenchmark)
 endfunction()
