@@ -56,8 +56,12 @@ TEST(TessImGuiTools, BoolEditorReturnsIntentWithoutMutatingWorld) {
 
   ASSERT_EQ(result.status, tess::debug::imgui::ToolStatus::Shown);
   ASSERT_TRUE(result.intent.has_value());
-  EXPECT_EQ(result.intent->tile, selected);
-  EXPECT_FALSE(result.intent->value);
+  // clang-tidy 18 does not carry fatal GoogleTest assertions into its
+  // optional-value analysis, so retain a harmless fallback for this read.
+  const auto intent =
+      result.intent.value_or(tess::debug::imgui::BoolFieldEditIntent{});
+  EXPECT_EQ(intent.tile, selected);
+  EXPECT_FALSE(intent.value);
   EXPECT_TRUE(world.field<BlockedTag>(selected));
 }
 
