@@ -276,9 +276,9 @@ TEST(TessEcsEntt, ContendedTileKeepsIndexInjectiveAndBlocksLoser) {
   EXPECT_EQ(sim.registry.get<tess::PathState>(winner).agent.position,
             (tess::Coord3{2, 0, 0}));
   EXPECT_FALSE(sim.registry.get<tess::PathState>(winner).agent.has_goal);
-  // The loser never stole the tile: it waits Blocked beside it,
-  // re-planning Found routes whose only step stays occupied (by design
-  // this never exhausts the retry budget -- Found results reset it).
+  // The loser never stole the tile: it waits Blocked beside it and retries
+  // the retained next step without an occupancy-blind re-plan. This fixture
+  // stops before the default bounded wait budget is exhausted.
   EXPECT_EQ(sim.registry.get<tess::PathState>(loser).agent.position,
             (tess::Coord3{3, 0, 0}));
   EXPECT_EQ(sim.registry.get<tess::PathState>(loser).agent.phase,

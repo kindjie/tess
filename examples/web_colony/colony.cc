@@ -288,6 +288,16 @@ struct Demo {
     return count;
   }
 
+  auto unreachable() const -> int {
+    int count = 0;
+    for (const auto& agent : agents) {
+      if (agent.phase == tess::PathAgentPhase::Unreachable) {
+        ++count;
+      }
+    }
+    return count;
+  }
+
   // Flips every agent's goal to the opposite side once the whole colony has
   // arrived. On the return trip the convoy leader (highest batch) is
   // processed last within each row, so the first few ticks are a harmless
@@ -362,6 +372,10 @@ TESS_DEMO_EXPORT int tess_colony_agent_count() {
 
 TESS_DEMO_EXPORT int tess_colony_arrived() {
   return demo ? demo->arrived() : 0;
+}
+
+TESS_DEMO_EXPORT int tess_colony_unreachable() {
+  return demo ? demo->unreachable() : 0;
 }
 
 }  // extern "C"

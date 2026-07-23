@@ -27,16 +27,16 @@ for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 | v0.11 | Optional WebGPU backend | Complete |
 | v0.12 | Consolidation, compatibility, performance, backlog closure | Active |
 
-### Observed v0.12 Release Blocker
+### Resolved v0.12 Release Blocker
 
-The web colony demo can enter a stable partial-arrival state after a narrow
-bottleneck is painted, while tick cost rises into tens of milliseconds for
-roughly 900 agents. The current lifecycle replans every blocked agent, A*
-intentionally ignores occupancy, and a `Found` replan resets retry accounting
-before the same occupied next step can fail again. v0.12 must add a seeded
-bottleneck regression that proves bounded planning cost and eventual progress
-or an explicit terminal outcome; a visually stationary infinite
-`Found -> Occupied -> replan` loop is not releasable behavior.
+The web colony demo's stable partial-arrival/cost spiral behind a painted
+bottleneck is fixed. Occupied and reserved destinations now retry retained
+steps without occupancy-blind A*, share the existing bounded blocked budget,
+and end as explicit `Unreachable` outcomes if no move succeeds. A seeded
+24-agent doorway regression fell from 8,600 submissions over 503 planning
+ticks to 24 submissions in one initial planning tick, with every agent ending
+arrived or terminal. The web demo reports terminal agents separately instead
+of silently presenting a stationary colony as running normally.
 
 ### v0.5 Completion
 

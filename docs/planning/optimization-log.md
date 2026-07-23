@@ -74,13 +74,17 @@ deferred for scope reasons. Keep entries short and concrete:
   next tick replans that agent; occupancy-blind A* returns `Found`; applying
   that result resets `blocked_retries`; and the same occupied step can fail
   again indefinitely. Arrived agents can make the obstruction permanent.
-- Decision: treat this as a v0.12 correctness and performance release blocker.
-  Add a seeded high-contention demo/model test and measure searches per tick,
-  progress, and terminal outcomes before choosing the repair. Local
-  coordination is available for deterministic claims, but arbitration alone
-  does not make an occupancy-blind retained route progress.
-- Retry conditions: none; this must be resolved or explicitly bounded before
-  the compatibility release gate closes.
+- Evidence after repair: the seeded 24-agent doorway regression previously
+  submitted 8,600 searches across 503 planning ticks. Retrying retained steps
+  reduced that to the 24 initial searches in one planning tick; within the
+  bounded run every agent arrived or became explicitly `Unreachable`.
+- Decision: accepted. Occupied/reserved destinations retry their retained
+  step without path processing, while route-invalidating transient failures
+  still re-path. All blocked modes consume one consecutive retry budget,
+  successful movement resets it, and the web demo exposes terminal counts.
+- Retry conditions: add richer local alternatives or occupancy-aware caller
+  policies if a representative workload requires more arrivals through a
+  merge; do not restore occupancy-blind per-tick re-planning.
 
 ## 2026-07-22 - Canonical Persistence Baseline
 

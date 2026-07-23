@@ -558,9 +558,13 @@
   allocation-free warm clean ticks (pinning that path processing is skipped
   while every agent still advances), two-argument goal assignment processed
   without a manual dirty mark, transiently blocked agents resuming and
-  arriving, mid-route wall insertion triggering bounded re-paths, and boxed-in
-  goals exhausting the retry budget into terminal Unreachable that stops
-  consuming processing.
+  arriving without occupancy-blind re-plans, permanent occupancy exhausting a
+  bounded wait budget without repeated searches (including while another
+  agent requests a scoped planning pass), a seeded multi-agent
+  bottleneck reaching only arrived or explicit terminal outcomes after one
+  initial planning pass, mid-route wall
+  insertion triggering bounded re-paths, and boxed-in goals exhausting the
+  retry budget into terminal Unreachable that stops consuming processing.
 - `tess_assert_test`: verifies the `TESS_ASSERT`/`TESS_ASSERT_MSG` debug
   precondition policy — death tests for out-of-shape coordinates and
   out-of-range keys/tickets on unchecked accessors (`World::resolve`,
@@ -743,6 +747,9 @@
   every result file in a baseline artifact and errors on unmatched
   `--benchmark` selectors; and that `tools/benchmark_artifact_metadata.py`
   writes the expected metadata fields.
+- `tests/test_branding_assets.py`: static asset and browser-demo contract
+  coverage, including the colony's explicit terminal bottleneck metric so an
+  exhausted path-agent lifecycle cannot look like a silently running colony.
 - `tests/test_check_public_surface.py`: pytest coverage for the
   public-surface manifest gate (`tools/check_public_surface.py`, a required
   CI check since 2026-07-07, run in

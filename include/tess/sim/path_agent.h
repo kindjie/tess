@@ -15,8 +15,9 @@ namespace tess {
 // - Idle: no goal (or arrived); the agent does not consume processing.
 // - NeedsPath: a goal was assigned and no route has been computed yet.
 // - Following: a Found route is being walked tile by tile.
-// - Blocked: the last step or path attempt hit a transient failure; the
-//   agent re-paths on the next tick until its retry budget runs out.
+// - Blocked: the last step or path attempt hit a transient failure; the agent
+//   retries a retained occupancy-blocked step or re-paths an invalid route
+//   until its shared retry budget runs out.
 // - Unreachable: the retry budget was exhausted or a structural movement
 //   failure occurred; terminal until a new goal is assigned.
 /// Describes the lifecycle phase of an independently routed agent.
@@ -66,9 +67,10 @@ struct PathAgentFrameStats {
 // optimization-log 2026-07-11/12):
 // - All: every agent with a goal replans -- required after a WORLD change,
 //   which can invalidate any existing route.
-// - NeedsOnly: only agents that cannot advance without a plan (NeedsPath,
-//   Blocked); Following agents keep walking their retained routes. One
-//   agent arming a goal no longer replans the whole batch.
+// - NeedsOnly: only agents that cannot advance without a plan (NeedsPath or a
+//   route-invalidated Blocked state); Following and occupancy-waiting agents
+//   keep their retained routes. One agent arming a goal no longer replans the
+//   whole batch.
 /// Selects whether a processing pass replans all or only waiting agents.
 enum class PathSubmitScope : std::uint8_t {
   All,
@@ -95,6 +97,40 @@ struct PathAgentRoutes {
     }
   }
 };
+
+namespace detail {
+
+// Occupancy and reservations are deliberately absent from path passability.
+// A new search would return the same route, so these failures should retry the
+// retained next step. Other transient commit failures invalidate the route and
+// need path processing before movement can resume.
+[[nodiscard]] inline bool movement_block_can_retry_route(
+    MovementStatus status) noexcept {
+  return status == MovementStatus::Occupied ||
+         status == MovementStatus::Reserved;
+}
+
+inline void block_path_agent(PathAgentState& agent,
+                             MovementStatus status) noexcept {
+  agent.phase = PathAgentPhase::Blocked;
+  if (!movement_block_can_retry_route(status)) {
+    agent.status = PathStatus::NoPath;
+  }
+}
+
+inline void resume_path_agent(PathAgentState& agent) noexcept {
+  agent.phase = PathAgentPhase::Following;
+  agent.blocked_retries = 0;
+}
+
+[[nodiscard]] inline bool can_skip_scoped_path_submission(
+    const PathAgentState& agent) noexcept {
+  return agent.phase == PathAgentPhase::Following ||
+         (agent.phase == PathAgentPhase::Blocked &&
+          agent.status == PathStatus::Found);
+}
+
+}  // namespace detail
 
 /// Arms `agent` to plan a route toward `goal` on the next processing pass.
 inline void set_path_agent_goal(PathAgentState& agent, Coord3 goal) noexcept {
@@ -127,7 +163,7 @@ inline auto submit_path_agents(std::span<PathAgentState> agents,
 
   for (auto& agent : agents) {
     if (scope == PathSubmitScope::NeedsOnly &&
-        agent.phase == PathAgentPhase::Following) {
+        detail::can_skip_scoped_path_submission(agent)) {
       // Keeps its retained route and path_index; the runtime rebuild below
       // makes its old ticket stale, which nothing reads in the scoped flow.
       continue;
@@ -190,7 +226,7 @@ inline auto apply_path_agent_results(std::span<PathAgentState> agents,
   for (std::size_t i = 0; i < agents.size(); ++i) {
     auto& agent = agents[i];
     if (scope == PathSubmitScope::NeedsOnly &&
-        agent.phase == PathAgentPhase::Following) {
+        detail::can_skip_scoped_path_submission(agent)) {
       // Not resubmitted by the matching scoped submit; its runtime ticket
       // is stale and its retained route stays as-is.
       continue;
@@ -200,12 +236,19 @@ inline auto apply_path_agent_results(std::span<PathAgentState> agents,
       continue;
     }
 
+    const auto was_blocked = agent.phase == PathAgentPhase::Blocked;
     const auto result = runtime.result(agent.ticket);
     agent.status = result.status;
     agent.path_index = 0;
     if (result.status == PathStatus::Found) {
       agent.phase = PathAgentPhase::Following;
-      agent.blocked_retries = 0;
+      // A Found search is not progress for an occupancy-blocked agent: the
+      // planner intentionally ignores occupancy and may return the identical
+      // next step. Preserve its consecutive-block budget until movement
+      // actually succeeds.
+      if (!was_blocked) {
+        agent.blocked_retries = 0;
+      }
       if (routes != nullptr) {
         routes->routes[i].assign(result.path.begin(), result.path.end());
       }
@@ -319,15 +362,12 @@ inline auto advance_path_agents_with_movement(World& world,
       if (movement.status != MovementStatus::Moved) {
         record_movement_failure(stats.movement_failures, movement.status);
         if (is_transient_movement_failure(movement.status)) {
-          // The route is still notionally valid; wait in place and let the
-          // tick driver schedule a re-path. Found status is retained so a
-          // freed tile can be walked without a fresh plan. The blocked
-          // step itself does not consume re-path budget: only the tick
-          // driver's prepare_path_agent_processing counts attempts, so a
-          // budget of N grants N re-paths even when the cycle started
-          // with a movement block (see PathAgentTickOptions::
-          // max_blocked_retries for the full budget semantics).
-          agent.phase = PathAgentPhase::Blocked;
+          // Wait in place. Occupancy/reservation failures retain Found so the
+          // same step can be retried without a pointless occupancy-blind
+          // search. Other transient failures set NoPath and request a fresh
+          // route. The following tick starts consuming the shared bounded
+          // retry budget (see PathAgentTickOptions::max_blocked_retries).
+          detail::block_path_agent(agent, movement.status);
           ++stats.blocked_waits;
         } else {
           // Invalid endpoints or a non-adjacent step indicate a caller
@@ -340,6 +380,7 @@ inline auto advance_path_agents_with_movement(World& world,
 
       ++agent.path_index;
       agent.position = to;
+      detail::resume_path_agent(agent);
       on_commit(agent_index, from, to);
       ++stats.advanced;
       if (agent.position == agent.goal) {
@@ -401,7 +442,7 @@ inline auto advance_path_agents_with_movement(World& world,
       if (movement.status != MovementStatus::Moved) {
         record_movement_failure(stats.movement_failures, movement.status);
         if (is_transient_movement_failure(movement.status)) {
-          agent.phase = PathAgentPhase::Blocked;
+          detail::block_path_agent(agent, movement.status);
           ++stats.blocked_waits;
         } else {
           agent.status = PathStatus::NoPath;
@@ -411,6 +452,7 @@ inline auto advance_path_agents_with_movement(World& world,
       }
       ++agent.path_index;
       agent.position = to;
+      detail::resume_path_agent(agent);
       ++stats.advanced;
       if (agent.position == agent.goal) {
         clear_path_agent_goal(agent);
@@ -516,7 +558,7 @@ inline auto advance_path_agents_with_movement(World& world,
         if (is_transient_movement_failure(movement.status)) {
           // Same Blocked/Unreachable split as the runtime-reading overload;
           // see its comment for the retry-budget semantics.
-          agent.phase = PathAgentPhase::Blocked;
+          detail::block_path_agent(agent, movement.status);
           ++stats.blocked_waits;
         } else {
           agent.status = PathStatus::NoPath;
@@ -527,6 +569,7 @@ inline auto advance_path_agents_with_movement(World& world,
 
       ++agent.path_index;
       agent.position = to;
+      detail::resume_path_agent(agent);
       on_commit(agent_index, from, to);
       ++stats.advanced;
       if (agent.position == agent.goal) {

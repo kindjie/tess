@@ -6,6 +6,19 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-22 - Bound occupancy-blocked path agents without re-planning
+
+- Changed: occupied/reserved retained steps now wait without a new search;
+  all transient blocks share a bounded consecutive retry budget, successful
+  movement resets it, and exhaustion becomes explicit `Unreachable`.
+- Reason: occupancy is intentionally absent from planning passability, so a
+  per-tick A* returned the same route, reset accounting, and caused the colony
+  demo's unbounded cost/stall loop at a bottleneck.
+- Affected docs: path/simulation architecture, completion plan, optimization
+  log, and changelog.
+- Affected code: path-agent result/movement lifecycle, tick preparation,
+  seeded bottleneck and selective-submit tests, and terminal demo telemetry.
+
 ## 2026-07-22 - Add the optional stable-C-API WebGPU backend
 
 - Changed: added independently gated field mirrors, generation-bearing

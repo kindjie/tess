@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 #include "allocation_counter.h"
 
@@ -403,8 +404,8 @@ TEST(TessPathAgentTick, TransientlyBlockedAgentResumesAndArrives) {
   EXPECT_EQ(agents[1].position, (tess::Coord3{1, 1, 0}));
 
   const auto second = tick_movement(tick_state, world, agents, runtime);
-  EXPECT_TRUE(second.processed_paths);
-  EXPECT_EQ(second.repaths_requested, 1u);
+  EXPECT_FALSE(second.processed_paths);
+  EXPECT_EQ(second.repaths_requested, 0u);
   EXPECT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
 
   for (int tick = 0; tick < 8 && agents[0].has_goal; ++tick) {
@@ -417,13 +418,13 @@ TEST(TessPathAgentTick, TransientlyBlockedAgentResumesAndArrives) {
   EXPECT_EQ(agents[1].position, (tess::Coord3{1, 2, 0}));
 }
 
-TEST(TessPathAgentTick, MovementBlockGetsFullRepathBudget) {
+TEST(TessPathAgentTick, PermanentOccupancyWaitIsBoundedWithoutReplanning) {
   MovementWorld world;
   fill_movement_world(world);
 
   // A permanently parked blocker occupies the mover's next tile.
-  // Occupancy is not planning passability, so every re-path keeps
-  // planning Found through the occupied tile.
+  // Occupancy is not planning passability, so planning again cannot improve
+  // this route. The retained step should be retried without another search.
   std::array<tess::PathAgentState, 1> agents{{
       {.position = tess::Coord3{0, 0, 0}},
   }};
@@ -439,26 +440,106 @@ TEST(TessPathAgentTick, MovementBlockGetsFullRepathBudget) {
   auto stats = tick_movement(tick_state, world, agents, runtime, options);
   EXPECT_EQ(stats.movement.blocked_waits, 1u);
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
-  // A blocked movement tick must not consume re-path budget itself...
+  // The initial blocked movement records the condition; retry accounting
+  // starts on the following tick.
   EXPECT_EQ(agents[0].blocked_retries, 0u);
 
-  // ...so the next processed tick still gets the single budgeted
-  // re-path attempt instead of going terminally Unreachable unheard.
+  // The one budgeted wait retries the retained step without path processing.
   stats = tick_movement(tick_state, world, agents, runtime, options);
-  EXPECT_TRUE(stats.processed_paths);
-  EXPECT_EQ(stats.repaths_requested, 1u);
+  EXPECT_FALSE(stats.processed_paths);
+  EXPECT_EQ(stats.repaths_requested, 0u);
   EXPECT_EQ(stats.repath_exhausted, 0u);
   EXPECT_NE(agents[0].phase, tess::PathAgentPhase::Unreachable);
 
-  // Every Found re-path resets the budget, so a permanent blocker keeps
-  // the agent re-pathing indefinitely by design; it never exhausts.
-  for (int tick = 0; tick < 8; ++tick) {
-    stats = tick_movement(tick_state, world, agents, runtime, options);
-    EXPECT_EQ(stats.repaths_requested, 1u);
-    EXPECT_EQ(stats.repath_exhausted, 0u);
-  }
-  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+  // The next tick exhausts the consecutive-block budget and becomes an
+  // explicit terminal outcome instead of an infinite plan/block cycle.
+  stats = tick_movement(tick_state, world, agents, runtime, options);
+  EXPECT_FALSE(stats.processed_paths);
+  EXPECT_EQ(stats.repath_exhausted, 1u);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Unreachable);
   EXPECT_EQ(agents[0].position, (tess::Coord3{0, 0, 0}));
+}
+
+TEST(TessPathAgentTick, ScopedPassSkipsOccupancyWaitingAgents) {
+  MovementWorld world;
+  fill_movement_world(world);
+  std::array<tess::PathAgentState, 2> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+      {.position = tess::Coord3{0, 4, 0}},
+  }};
+  world.template field<OccupancyTag>(agents[0].position) = true;
+  world.template field<OccupancyTag>(agents[1].position) = true;
+  world.template field<OccupancyTag>(tess::Coord3{1, 0, 0}) = true;
+  tess::set_path_agent_goal(agents[0], tess::Coord3{2, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  auto stats = tick_movement(tick_state, world, agents, runtime);
+  ASSERT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+
+  tess::set_path_agent_goal(agents[1], tess::Coord3{2, 4, 0});
+  stats = tick_movement(tick_state, world, agents, runtime);
+  EXPECT_TRUE(stats.processed_paths);
+  EXPECT_EQ(stats.pathing.submitted, 1u);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+  EXPECT_EQ(agents[0].blocked_retries, 1u);
+  EXPECT_EQ(agents[1].position, (tess::Coord3{1, 4, 0}));
+}
+
+TEST(TessPathAgentTick, BottleneckHasBoundedPlanningAndTerminalOutcomes) {
+  MovementWorld world;
+  fill_movement_world(world);
+  for (std::uint64_t y = 0; y < Runtime2D::size.y; ++y) {
+    if (y != 16) {
+      mark_movement_passable(
+          world, tess::Coord3{16, static_cast<std::int64_t>(y), 0}, false);
+    }
+  }
+
+  constexpr std::size_t agent_count = 24;
+  std::vector<tess::PathAgentState> agents(agent_count);
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    const auto lane = static_cast<std::int64_t>(i % 6);
+    const auto rank = static_cast<std::int64_t>(i / 6);
+    agents[i].position = tess::Coord3{1 + rank, 2 + lane * 4, 0};
+    world.template field<OccupancyTag>(agents[i].position) = true;
+    tess::set_path_agent_goal(agents[i],
+                              tess::Coord3{30 - rank, 2 + lane * 4, 0});
+  }
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  const auto options = tess::PathAgentTickOptions{.max_blocked_retries = 64};
+
+  std::size_t submitted = 0;
+  std::size_t processed_ticks = 0;
+  for (int tick = 0; tick < 512; ++tick) {
+    const auto stats =
+        tick_movement(tick_state, world, agents, runtime, options);
+    submitted += stats.pathing.submitted;
+    processed_ticks += stats.processed_paths ? 1u : 0u;
+    auto active = false;
+    for (const auto& agent : agents) {
+      active = active || agent.has_goal;
+    }
+    if (!active) {
+      break;
+    }
+  }
+
+  EXPECT_EQ(submitted, agent_count);
+  EXPECT_EQ(processed_ticks, 1u);
+  std::size_t arrived = 0;
+  std::size_t unreachable = 0;
+  for (const auto& agent : agents) {
+    arrived += agent.phase == tess::PathAgentPhase::Idle ? 1u : 0u;
+    unreachable += agent.phase == tess::PathAgentPhase::Unreachable ? 1u : 0u;
+    EXPECT_NE(agent.phase, tess::PathAgentPhase::Blocked);
+  }
+  EXPECT_GT(arrived, 0u);
+  EXPECT_EQ(arrived + unreachable, agent_count);
 }
 
 TEST(TessPathAgentTick, WallInsertedMidRouteRepathsAroundAndArrives) {

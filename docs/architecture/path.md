@@ -292,7 +292,8 @@ flowchart TB
   world, agents, runtime, options)` (plus the legacy `<World, PassableTag,
   CostTag, MaxCost>` overloads and the `_with_movement` variants) advance the
   clock, process paths when `state.pathing_dirty` is set or when any agent is
-  in `NeedsPath` or `Blocked` (with retry budget remaining), then move agents
+  in `NeedsPath` or has a route-invalidated `Blocked` state (with retry budget
+  remaining), then move agents
   up to `options.max_steps` path nodes. Processing is SCOPED (per-agent
   pathing dirt): `state.pathing_dirty` is world-scoped and replans every
   agent, while agent-scoped needs (a newly armed goal, a Blocked retry)
@@ -303,11 +304,14 @@ flowchart TB
   movement class drives pathing, the precheck, and (for the
   `_with_movement` variants) commit validation, so plan and commit provably
   agree per class. Goals assigned through either `set_path_agent_goal`
-  overload are picked up on the next tick; `Blocked` agents consume one
-  re-path attempt per processed tick until `options.max_blocked_retries`
-  runs out and they turn terminally `Unreachable`, no longer requesting
-  processing. `mark_pathing_dirty(state)` remains the hook -- and the only
-  correct one -- for replans after world edits.
+  overload are picked up on the next tick. `Blocked` agents consume one retry
+  per following tick until `options.max_blocked_retries` runs out and they
+  turn terminally `Unreachable`. Occupied/reserved destinations retry the
+  retained step without processing because occupancy is intentionally absent
+  from planning passability; other transient failures request a re-path.
+  Successful movement resets the consecutive-block count.
+  `mark_pathing_dirty(state)` remains the hook -- and the only correct one --
+  for replans after world edits.
 - `astar_path<World, PassableTag>(world, request, scratch, policy)` runs
   optimized unit-cost deterministic pathfinding. The passability field is
   treated as boolean-like. It runs natively on sparse worlds, honoring

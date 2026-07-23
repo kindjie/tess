@@ -57,6 +57,7 @@ colony_exports+=',"_tess_colony_reset","_tess_colony_set_wall"'
 colony_exports+=',"_tess_colony_set_strategy","_tess_colony_tick"'
 colony_exports+=',"_tess_colony_tiles","_tess_colony_agents"'
 colony_exports+=',"_tess_colony_agent_count","_tess_colony_arrived"'
+colony_exports+=',"_tess_colony_unreachable"'
 colony_exports+=',"_tess_colony_relaunch"]'
 
 em++ \

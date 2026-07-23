@@ -147,6 +147,17 @@ def test_web_demo_uses_brand_logo_and_compact_favicon():
   assert "Raised destination tile" in favicon
 
 
+def test_colony_demo_reports_terminal_bottleneck_outcomes():
+  model = read("examples/web_colony/colony.cc")
+  app = read("examples/web_colony/site/app.js")
+  build_script = read("tools/build_web_demo.sh")
+
+  assert "tess_colony_unreachable" in model
+  assert "_tess_colony_unreachable" in build_script
+  assert "api.unreachable()" in app
+  assert "terminal" in app
+
+
 def test_doxygen_uses_the_compact_symbol():
   cmake = read("CMakeLists.txt")
   assert "DOXYGEN_PROJECT_LOGO" in cmake

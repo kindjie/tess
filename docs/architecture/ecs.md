@@ -206,11 +206,11 @@ Following agent's ticket -- asserted in debug builds, silently stalled
 movement in release. One runtime per (world, movement class, agent
 system), extending the standing one-runtime-per-(world, class) contract.
 
-## Known Cost
+## Planning Cost
 
-Any processing tick re-paths every active agent: `submit_path_agents`
-resubmits all agents with goals into a fresh generation. This is the
-standing lifecycle behavior, not an adapter property, but ECS-scale agent
-counts make it the relevant cost cliff -- one goal change among 100k
-Following agents re-paths all of them on that tick. The ecs benchmark
-family tracks collect/apply/tick costs at 1k-100k agents.
+World-scoped invalidation re-paths every active agent. Agent-scoped work uses
+`PathSubmitScope::NeedsOnly`: newly armed and route-invalidated agents submit,
+while Following agents and occupancy/reservation waiters retain their routes.
+This avoids both the historical one-goal-change cliff at ECS scale and
+occupancy-blind searches at bottlenecks. The ECS benchmark family tracks
+collect/apply/tick costs at 1k-100k agents.

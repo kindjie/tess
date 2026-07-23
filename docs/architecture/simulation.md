@@ -250,13 +250,16 @@ stateDiagram-v2
   `PathRuntimeCachePolicy`, and `max_blocked_retries` (default 8).
 - `PathAgentTickStats` reports the tick value, whether paths were processed,
   separate pathing and movement `PathAgentFrameStats`, and the
-  `repaths_requested` / `repath_exhausted` counts.
+  `repaths_requested` count for actual searches plus `repath_exhausted` for
+  every exhausted blocked lifecycle (the historical field name also covers
+  retained-step waits).
 - `prepare_path_agent_processing(agents, options, stats)` scans agents ahead
-  of path processing: `NeedsPath` agents (goals assigned through either
-  `set_path_agent_goal` overload) request processing with no manual dirty
-  mark, and `Blocked` agents consume one re-path attempt per processed tick
-  until the retry budget runs out, at which point they turn terminally
-  `Unreachable` with `PathStatus::NoPath`.
+  of path processing: `NeedsPath` agents request processing with no manual
+  dirty mark. `Blocked` agents consume one retry on each following tick.
+  Occupied/reserved destinations retain `PathStatus::Found` and retry the
+  retained step without a search; route-invalidating transient failures use
+  `PathStatus::NoPath` and request processing. Exhaustion turns either case
+  terminally `Unreachable`.
 - `tick_unit_path_agents<World, ClassOrTag>(...)`,
   `tick_weighted_path_agents<World, Class, MaxCost>(...)`,
   `tick_unit_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
@@ -489,9 +492,10 @@ The intended per-frame order for current consumers is:
 The `PathAgentPhase` lifecycle ties the layers together. Assigning a goal
 arms `NeedsPath`, which requests path processing on the next tick even
 without a world edit. Planner failures and transient movement failures both
-land in `Blocked`; each processed tick consumes one of
-`max_blocked_retries` until the agent either finds a route (`Following`,
-retries reset) or exhausts the budget and turns terminally `Unreachable`.
+land in `Blocked`; each following tick consumes one of
+`max_blocked_retries`. Occupancy and reservations retry the retained step,
+while route-invalidating failures re-path. Successful movement resets the
+consecutive-block count; exhaustion becomes terminal `Unreachable`.
 Structural movement failures (invalid endpoints, non-adjacent steps) skip
 the retry budget entirely. Only a new goal re-arms an `Unreachable` agent.
 Clearing a goal returns any active lifecycle state to `Idle`; those equivalent
@@ -509,7 +513,7 @@ stateDiagram-v2
   Following --> Idle: arrive
   Following --> Blocked: transient move failure
   Following --> Unreachable: structural move failure
-  Blocked --> Following: retry finds path
+  Blocked --> Following: route found or retained step moves
   Blocked --> Unreachable: retry budget exhausted
   Unreachable --> NeedsPath: assign new goal
 ```
