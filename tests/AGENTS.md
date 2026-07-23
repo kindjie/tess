@@ -669,7 +669,9 @@
   preset minimum versions together (including the `3.25...3.28` policy
   range). It requires all Git-fetched dependencies to use the shared,
   exact-revision shallow population helper, and behaviorally pins a retry of
-  the complete fetch/checkout sequence after checkout failure. It also pins
+  the complete fetch/checkout sequence after checkout failure, that the
+  populator scrubs inherited `GIT_DIR`-family hook environment before
+  running Git, and that population failures report every attempt's error. It also pins
   the `consumer` preset consumer-shaped: dev
   facilities and EnTT off, no warnings-as-errors, no inheritance from a
   dev preset. The network-free `examples` preset and tracked installed-package
