@@ -26,6 +26,7 @@
 #include <tess/path/portal_segment_cache.h>
 #include <tess/path/precheck.h>
 #include <tess/path/route_cache.h>
+#include <tess/persistence/archive.h>
 #include <tess/query/span.h>
 #include <tess/sim/async_work_task.h>
 #include <tess/sim/auto_exec.h>

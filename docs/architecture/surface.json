@@ -55,6 +55,17 @@
     "World",
     "is_valid_field_schema_v"
   ],
+  "docs/architecture/persistence.md": [
+    "PersistedField",
+    "PersistenceSchema",
+    "WorldArchiveInfo",
+    "WorldArchiveResidency",
+    "WorldArchiveResult",
+    "WorldArchiveStatus",
+    "inspect_world_archive",
+    "load_world_archive",
+    "save_world_archive"
+  ],
   "docs/architecture/block.md": [
     "BlockCtx",
     "BlockDiagnostics",

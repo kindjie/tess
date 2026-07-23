@@ -32,6 +32,40 @@ deferred for scope reasons. Keep entries short and concrete:
   trace. Consider a different claimed-coordinate structure only if option
   counts grow enough for insertion costs to dominate.
 
+## 2026-07-22 - Colony Bottleneck Replan Loop Observed
+
+- Area: retained path-agent movement under dense dynamic occupancy.
+- Evidence: the interactive colony demo was observed at roughly 900 agents
+  slowing to 18-36 ms per simulation tick and then remaining at a stable
+  partial-arrival count behind a painted bottleneck. Code inspection identifies
+  a closed lifecycle: each occupied next step makes the agent `Blocked`; the
+  next tick replans that agent; occupancy-blind A* returns `Found`; applying
+  that result resets `blocked_retries`; and the same occupied step can fail
+  again indefinitely. Arrived agents can make the obstruction permanent.
+- Decision: treat this as a v0.12 correctness and performance release blocker.
+  Add a seeded high-contention demo/model test and measure searches per tick,
+  progress, and terminal outcomes before choosing the repair. Local
+  coordination is available for deterministic claims, but arbitration alone
+  does not make an occupancy-blind retained route progress.
+- Retry conditions: none; this must be resolved or explicitly bounded before
+  the compatibility release gate closes.
+
+## 2026-07-22 - Canonical Persistence Baseline
+
+- Area: canonical authoritative-field world archives.
+- Evidence: a local Release build saved a 512x512 dense world with one byte
+  field and one 32-bit field (about 1.25 MiB) in a five-run median of 10.2 ms
+  at 122.6 MiB/s, and preflighted plus loaded it in 9.7 ms at 128.7 MiB/s.
+  Removing a redundant self-parse from the successful save path reduced its
+  median from 19.0 ms while inspection remains separately testable.
+- Decision: accept the scalar-at-a-time canonical codec as a cold-path
+  baseline. It is endian-stable, checksummed, schema-versioned, and keeps file
+  I/O outside the library. No CI timing gate is warranted until a consumer
+  establishes save-size and latency requirements.
+- Retry conditions: add contiguous bulk codecs for common scalar columns if
+  persistence enters a latency-sensitive path or measured throughput becomes
+  material for representative save sizes.
+
 ## 2026-07-22 - Area Index Baseline
 
 - Area: graph-derived caller-keyed area grouping.

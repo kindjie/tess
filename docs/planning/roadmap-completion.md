@@ -27,6 +27,17 @@ for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 | v0.11 | Optional WebGPU backend | Planned |
 | v0.12 | Consolidation, compatibility, performance, backlog closure | Planned |
 
+### Observed v0.12 Release Blocker
+
+The web colony demo can enter a stable partial-arrival state after a narrow
+bottleneck is painted, while tick cost rises into tens of milliseconds for
+roughly 900 agents. The current lifecycle replans every blocked agent, A*
+intentionally ignores occupancy, and a `Found` replan resets retry accounting
+before the same occupied next step can fail again. v0.12 must add a seeded
+bottleneck regression that proves bounded planning cost and eventual progress
+or an explicit terminal outcome; a visually stationary infinite
+`Found -> Occupied -> replan` loop is not releasable behavior.
+
 ### v0.5 Completion
 
 Orthogonal, diagonal, axial-hex, and provider-composed models now drive exact
@@ -87,6 +98,17 @@ returns reservations that remain subject to normal movement-intent validation.
 It is allocation-free after reserve and resolves a representative 1,000-agent,
 4,000-option workload in about 0.36 ms locally. Globally optimal multi-agent
 pathfinding and continuous steering remain out of scope.
+
+### v0.10 Progress
+
+Versioned world archives now encode caller-selected authoritative scalar
+fields in canonical little-endian chunk order with whole-body checksums.
+Inspection and loading classify shape, lattice, key-layout, residency, schema,
+field, capacity, corruption, and explicit migration boundaries before target
+mutation. Loaded chunks invalidate derived state instead of restoring caches.
+Sparse archives cover the resident working set because sparse worlds do not
+yet own a non-resident backing store. The optional Flecs adapter and bounded
+ImGui editor helpers remain active work.
 
 ### Cross-cutting benchmark harness
 

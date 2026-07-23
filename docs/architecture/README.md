@@ -23,6 +23,7 @@ flowchart TB
 
   Core["Core: shapes, coordinates, keys"]
   Storage["Storage: schema, pages, worlds, residency"]
+  Persistence["Persistence: versioned authoritative archives"]
   Block["Block: domains, views, write policies"]
   Query["Query: exact allocation-free spans"]
   Ops["Operations: queue, planner, executors, results"]
@@ -31,6 +32,7 @@ flowchart TB
   Path["Path: searches, products, and caches"]
   Sim["Simulation: schedule, agents, movement, deltas"]
   Core --> Storage
+  Storage --> Persistence
   Storage --> Block
   Core --> Query
   Storage --> Topology
@@ -104,6 +106,7 @@ Maintained notes for implemented areas:
 
 - [Shape, coordinate, and key foundation](shape.md)
 - [Storage foundation](storage.md)
+- [Persistence and compatibility](persistence.md)
 - [Block foundation](block.md)
 - [Span queries](query.md)
 - [Experimental maintenance scheduling](maintenance.md)

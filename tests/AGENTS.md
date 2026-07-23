@@ -141,6 +141,11 @@
   rejection, input-order invariance, invalid option ranges and duplicate IDs,
   per-tile demand/reservation congestion summaries, explicit wait decisions,
   and allocation-free warm resolution after reserve.
+- `tess_persistence_test`: verifies the canonical little-endian world archive
+  envelope, dense and sparse authoritative-field round trips, canonical sparse
+  chunk order, shape/lattice/key/schema compatibility classification, explicit
+  migration-required outcomes, corruption/truncation rejection without target
+  mutation, sparse-capacity preflight, and derived-state invalidation on load.
 - `tess_grid_benchmark_harness_test`: verifies strict Moving AI map/scenario
   parsing from inline fixtures, terrain and coordinate orientation, malformed
   input rejection, compile-time-shape loading with blocked padding, independent

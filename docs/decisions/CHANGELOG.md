@@ -6,6 +6,20 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-22 - Add versioned authoritative world archives
+
+- Changed: added canonical little-endian dense and resident-set sparse world
+  archives with explicit schema/field identities, CRC-32 validation,
+  compatibility classification, migration-required outcomes, capacity
+  preflight, and derived-state invalidation on load.
+- Reason: the maintained v0.10 roadmap advances persistence beyond the
+  historical TDD deferral, while preserving the original rule that shape,
+  key, lattice, and schema changes require explicit migration or rejection.
+- Affected docs: persistence architecture, architecture map, roadmap,
+  completion plan, optimization log, public surface, and changelog.
+- Affected code: archive schema and codec, umbrella/install surface,
+  correctness tests, and save/load benchmarks.
+
 ## 2026-07-22 - Complete deterministic local move coordination
 
 - Changed: added priority- and stable-ID-ordered local destination

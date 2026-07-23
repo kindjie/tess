@@ -32,6 +32,11 @@ Caller-keyed area indexes derive stable area summaries and adjacency from
 region graphs. Deterministic tactical assignment and local move coordination
 provide capacity-aware claims, caller-ranked destination reservations, and
 coordinate congestion summaries without owning game semantics or steering.
+Versioned world archives persist caller-selected authoritative scalar fields,
+stable chunk metadata, and compatibility identities in canonical
+little-endian form. Exact loads preflight corruption and compatibility,
+surface schema changes as explicit migration requirements, and invalidate
+derived products.
 
 ## Planned extensions
 
@@ -63,9 +68,11 @@ item moves to **Shipped**.
   reservation and congestion arbitration shipped, but tess does not perform
   velocity-obstacle steering, formation control, or globally optimal
   multi-agent pathfinding.
-- **Save/load and migration, and editor integration**
-  ([project design][tdd-project]) — these later phases provide substrate and
-  optional tooling only; game-specific meaning remains application-owned.
+- **Sparse backing-store persistence and editor integration**
+  ([project design][tdd-project]) — dense and resident-set world archives
+  shipped. Durable non-resident chunk storage remains application-owned, and
+  later editor work provides optional substrate tooling only; game-specific
+  meaning remains application-owned.
 - **External grid benchmark data and the scenario oracle**
   ([TDD][tdd-benchdata]) — a harness-only design for community grid maps
   and scenario optima as opt-in fixtures and calibrated benchmarks. Strict

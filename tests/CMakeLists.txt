@@ -382,6 +382,15 @@ tess_apply_project_options(tess_local_coordination_test)
 tess_discover_tests(tess_local_coordination_test)
 
 add_executable(
+  tess_persistence_test
+  tess_persistence_test.cc
+)
+target_link_libraries(tess_persistence_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_persistence_test)
+
+tess_discover_tests(tess_persistence_test)
+
+add_executable(
   tess_path_runtime_test
   allocation_counter.cc
   tess_path_runtime_test.cc

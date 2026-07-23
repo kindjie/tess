@@ -123,6 +123,7 @@ set(
   include/tess/path/precheck.h
   include/tess/path/route_cache.h
   include/tess/pathfinding.h
+  include/tess/persistence/archive.h
   include/tess/query/span.h
   include/tess/sim/auto_exec.h
   include/tess/sim/async_work_task.h
