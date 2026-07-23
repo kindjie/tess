@@ -6,6 +6,18 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-23 - Close final roadmap-completion audit gaps
+
+- Changed: external-grid dimensions must fit both storage and coordinate
+  widths; WebGPU dispatch requires its input mirror to be registered; the
+  ImGui inspector uses the checked metadata accessor; and temporary MSVC and
+  cppcheck coverage workarounds now have explicit retry conditions.
+- Reason: final independent audits found two portable validation gaps and
+  three low-severity maintenance ambiguities after all hosted gates passed.
+- Affected docs: dependency notes, design changelog, and test inventory.
+- Affected code: grid fixture parsing, WebGPU dispatch, ImGui tools, and
+  project analysis options.
+
 ## 2026-07-23 - Keep the external-grid bootstrap portable
 
 - Changed: scenario optimum parsing now uses strict classic-locale extraction,

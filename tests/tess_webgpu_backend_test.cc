@@ -92,7 +92,7 @@ TEST(TessWebGpuBackend, RegistersMirrorsAndUploadsChunkBytes) {
   EXPECT_EQ(backend.field_buffer(0)->bytes[key.value * 64], std::byte{42});
 }
 
-TEST(TessWebGpuBackend, DispatchRequiresCurrentGenerationHandle) {
+TEST(TessWebGpuBackend, DispatchRequiresRegisteredFieldAndCurrentGeneration) {
   tess_webgpu_stub::reset();
   DeviceOwner device{tess_webgpu_stub::make_device()};
   auto backend = make_backend(device.get());
@@ -108,6 +108,15 @@ TEST(TessWebGpuBackend, DispatchRequiresCurrentGenerationHandle) {
   });
   ASSERT_TRUE(first.has_value());
   const auto first_handle = first.value_or(tess::gpu::GpuProductHandle{});
+  EXPECT_FALSE(backend.dispatch(tess::gpu::DispatchDesc{
+      .product_key = first_handle.key,
+      .product_generation = first_handle.generation,
+      .input_field_index = 0,
+      .chunk_count = 3,
+      .workgroups_per_chunk = 2,
+  }));
+  ASSERT_TRUE(
+      backend.register_field(tess::gpu::field_mirror_desc<World, CostTag>()));
   EXPECT_TRUE(backend.dispatch(tess::gpu::DispatchDesc{
       .product_key = first_handle.key,
       .product_generation = first_handle.generation,

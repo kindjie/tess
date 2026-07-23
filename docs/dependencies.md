@@ -391,7 +391,11 @@ umbrella includes cover the public product headers without analyzing
 third-party targets. Cppcheck 2.21.0 crashes in its template simplifier on
 several valid, template-heavy test instantiations; the compiler, clang-tidy,
 warnings-as-errors, and sanitizer gates retain per-instantiation coverage. The
-preset enables `warning` and `portability` checks; cppcheck `style` and
+preset must be retried without the `tess_smoke` target restriction whenever
+the supported cppcheck version changes. Retain whole-target analysis when the
+template-heavy test and benchmark translation units complete without an
+internal error. The preset enables `warning` and `portability` checks;
+cppcheck `style` and
 `performance` checks are intentionally deferred because early runs mostly
 report low-signal advice for small value types and static member functions in
 this template-heavy API. It narrowly suppresses cppcheck `internalError` for

@@ -118,7 +118,7 @@ template <typename World>
     return ToolStatus::Missing;
   }
 
-  const auto* meta = world.try_meta(resolved->chunk_key);
+  const auto& meta = world.meta(resolved->chunk_key);
   const auto chunk = chunk_coord<Shape>(resolved->chunk_key);
   const auto local = local_coord<Shape>(selected);
   ImGui::TextUnformatted("Chunk inspector");
@@ -134,10 +134,10 @@ template <typename World>
               detail::tool_to_ull(local.x), detail::tool_to_ull(local.y),
               detail::tool_to_ull(local.z));
   ImGui::Text("state: %s; version: %u; topology: %u",
-              detail::tool_chunk_state_name(meta->state), meta->version,
-              meta->topology_version);
-  ImGui::Text("active / entities: %u / %u", meta->active_count,
-              meta->entity_count);
+              detail::tool_chunk_state_name(meta.state), meta.version,
+              meta.topology_version);
+  ImGui::Text("active / entities: %u / %u", meta.active_count,
+              meta.entity_count);
   ImGui::Text("dirty / active flags: 0x%08x / 0x%08x",
               world.dirty_flags(resolved->chunk_key),
               world.active_flags(resolved->chunk_key));

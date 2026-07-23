@@ -83,8 +83,11 @@ inline auto parse_size_header(std::string_view line, std::string_view key,
   auto parsed_key = std::string{};
   auto parsed = std::uint64_t{};
   auto extra = std::string{};
+  // Dimensions index both size_t-backed storage and signed Coord3 values.
   if (!(stream >> parsed_key >> parsed) || parsed_key != key ||
       (stream >> extra) || parsed == 0 ||
+      parsed >
+          static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max()) ||
       parsed > static_cast<std::uint64_t>(
                    std::numeric_limits<std::int64_t>::max())) {
     return false;

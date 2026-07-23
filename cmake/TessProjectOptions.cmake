@@ -26,6 +26,7 @@ function(tess_target_warning_options target)
     # MSVC 19.51 reports C4702 throughout valid constexpr/template branches,
     # including third-party SYSTEM headers. Clang, GCC, and static-analysis
     # gates retain unreachable-code coverage without this false positive.
+    # Retry without /wd4702 whenever the gating MSVC toolset changes.
     list(APPEND warning_options /W4 /wd4702 /permissive- /EHsc)
   endif()
 
@@ -66,7 +67,8 @@ function(tess_target_cppcheck_options target)
   endif()
   # Cppcheck 2.21 crashes in its template simplifier on several valid,
   # template-heavy test instantiations. Analyze the umbrella-header smoke TU;
-  # compiler and clang-tidy gates retain per-instantiation coverage.
+  # compiler and clang-tidy gates retain per-instantiation coverage. Retry all
+  # local targets whenever the supported cppcheck version changes.
   if(NOT target STREQUAL "tess_smoke")
     return()
   endif()

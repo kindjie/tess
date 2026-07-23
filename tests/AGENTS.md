@@ -156,7 +156,8 @@
   invalidation across in-place loads with warm products.
 - `tess_grid_benchmark_harness_test`: verifies strict Moving AI map/scenario
   parsing from inline fixtures with portable classic-locale decimal handling,
-  terrain and coordinate orientation, malformed input rejection,
+  terrain and coordinate orientation, size/coordinate dimension bounds,
+  malformed input rejection,
   compile-time-shape loading with blocked padding, independent
   orthogonal/diagonal reference costs, corner clearance, and the asymmetric
   fixed-point external-oracle interval, including exact agreement between the
@@ -646,11 +647,12 @@
 - `tess_webgpu_backend_test` (`TESS_ENABLE_WEBGPU` on): compiles the optional
   backend against an API-matching stable WebGPU C stub. It verifies device and
   queue ownership, mirror registration and real chunk-byte uploads, compute
-  command submission, generation-stale product rejection, asynchronous summary
-  readback that safely completes after backend destruction, invalid requests,
-  explicit device-loss fallback, and the `GpuBackend` concept. Stub handles use
-  scoped C-API release owners so fatal assertions cannot leak caller
-  references, and stub enum widths intentionally match the stable C ABI.
+  command submission only for registered input mirrors, generation-stale
+  product rejection, asynchronous summary readback that safely completes after
+  backend destruction, invalid requests, explicit device-loss fallback, and
+  the `GpuBackend` concept. Stub handles use scoped C-API release owners so
+  fatal assertions cannot leak caller references, and stub enum widths
+  intentionally match the stable C ABI.
 - `tess_render_delta_frame_test`: verifies the M11 DeltaFrame bridge
   core: version semantics (empty publishes never bump; state-carrying
   publishes bump by one; the applicability truth table including the

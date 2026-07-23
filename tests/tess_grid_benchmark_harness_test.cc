@@ -2,6 +2,8 @@
 #include <tess/tess.h>
 
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <string_view>
 
@@ -38,6 +40,22 @@ TEST(TessGridBenchmarkHarness, ParsesTerrainAndTopLeftCoordinates) {
   EXPECT_FALSE(parsed.value.passable({1, 0, 0}));
   EXPECT_FALSE(parsed.value.passable({2, 1, 0}));
   EXPECT_TRUE(parsed.value.passable({3, 2, 0}));
+}
+
+TEST(TessGridBenchmarkHarness, HeaderDimensionsFitSizeTypeAndCoordinates) {
+  constexpr auto size_max =
+      static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max());
+  constexpr auto coordinate_max =
+      static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+  constexpr auto largest =
+      size_max < coordinate_max ? size_max : coordinate_max;
+  auto parsed = std::size_t{};
+
+  EXPECT_TRUE(grid::detail::parse_size_header(
+      "width " + std::to_string(largest), "width", parsed));
+  EXPECT_EQ(parsed, static_cast<std::size_t>(largest));
+  EXPECT_FALSE(grid::detail::parse_size_header(
+      "width " + std::to_string(largest + 1), "width", parsed));
 }
 
 TEST(TessGridBenchmarkHarness, RejectsUnsupportedTerrainAndHeaders) {

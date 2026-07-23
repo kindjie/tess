@@ -309,6 +309,7 @@ class WebGpuBackend {
   [[nodiscard]] bool dispatch(const DispatchDesc& dispatch) {
     const auto* product = find_product(dispatch.product_key);
     if (!available() || product == nullptr ||
+        find_field(dispatch.input_field_index) == nullptr ||
         product->generation != dispatch.product_generation ||
         product->desc.input_field_index != dispatch.input_field_index ||
         dispatch.chunk_count == 0 || dispatch.workgroups_per_chunk == 0 ||
