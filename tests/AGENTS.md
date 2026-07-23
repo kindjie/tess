@@ -119,6 +119,15 @@
   coalescing maintenance backends, including duplicate scheduling, budgeted
   continuation, concurrent scheduling, deterministic flush, partial dirty
   clearing, shutdown, capacity failure, and steady-state allocation behavior.
+- `tess_topology_coarse_path_test`: verifies deterministic shortest region
+  paths and chunk corridors, same-region and disconnected results, non-monotone
+  chunk detours, portal continuity, clipped corridor bounds, and warm
+  allocation-free reconstruction, plus reachable and indeterminate sparse
+  resident-set corridors.
+- `tess_weighted_field_product_test`: verifies reusable multi-goal weighted
+  distance products, exact path and nearest-target replay, movement-class
+  cache identity, provider-composed reverse transitions, version invalidation,
+  degenerate vertical layout support, and warm allocation-free rebuilds.
 - `tess_queued_planning_test`: pins the audit-2026-07-11 M4 planner-reuse
   contract -- the `plan_operations` overload that plans into a caller-owned
   `ExecutionReport` recycles report rows, planned operations, and pooled
@@ -443,7 +452,9 @@
   reuse and invalidation across world edits, opt-in unit field-product cache
   reuse for repeated goals, start-chunk policy skip/use counters, stale product
   rejection, runtime cache clearing cadence, many-agent weighted batch
-  processing through shared-goal fields, caller-configured cache clearing
+  processing through shared-goal fields, opt-in byte-budgeted weighted
+  field-product reuse across processing calls with allocation-free warm
+  replay, caller-configured cache clearing
   after repeated world edits, field-product-cache lookup-pointer stability
   across stores of other keys, and portal segment-cache runtime stats and
   `clear_caches()` for entries stored through the runtime accessor (the

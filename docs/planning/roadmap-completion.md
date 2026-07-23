@@ -21,8 +21,8 @@ for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 | v0.5 | Resolved transitions, diagonals, axial hex, special edges | Complete |
 | v0.6 | Queued intents, async work, event scheduling | Complete |
 | v0.7 | Maintenance, block pipelines, query acceleration | Complete |
-| v0.8 | Hierarchical topology and spatial products | Active |
-| v0.9 | Areas, tactical assignment, crowd coordination | Planned |
+| v0.8 | Hierarchical topology and spatial products | Complete |
+| v0.9 | Areas, tactical assignment, crowd coordination | Active |
 | v0.10 | Persistence, Flecs adapter, optional ImGui editor tools | Planned |
 | v0.11 | Optional WebGPU backend | Planned |
 | v0.12 | Consolidation, compatibility, performance, backlog closure | Planned |
@@ -61,6 +61,19 @@ coalescing derived-maintenance backends pass the correctness experiment in an
 optional namespace, but coalescing fails the mandatory sparse-overhead gate
 and is therefore not integrated into storage. Predicate bitsets and summaries
 remain evidence-backed deferrals rather than speculative schema additions.
+
+### v0.8 Completion
+
+Region graphs now reconstruct deterministic shortest region/portal routes,
+ordered unique chunk corridors, and clipped conservative bounds across dense
+and sparse resident worlds. Weighted multi-goal distance products run through
+the complete resolved transition model, replay exact paths and nearest-target
+answers, validate chunk and provider revisions, and share the byte-budgeted
+LRU cache. The path runtime can opt into persistent unit or weighted products
+for repeated, spatially distributed goals while retaining route-cache and
+bounded-field/A* fallbacks. Warm builders and coarse reconstruction allocate
+nothing after reserve; benchmarks cover coarse routes, product builds, and
+replay.
 
 ## Cross-Cutting Acceptance
 

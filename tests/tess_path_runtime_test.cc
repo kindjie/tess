@@ -440,6 +440,87 @@ TEST(TessPathRuntime, WeightedBatchHandlesManyAgentsAndCacheClearCadence) {
   EXPECT_EQ(stats.cache_clears, 1u);
 }
 
+TEST(TessPathRuntime, WeightedFieldProductsReuseAcrossProcessingCalls) {
+  World world;
+  fill_world(world);
+  for (std::int64_t x = 1; x < 32; ++x) {
+    mark_cost(world, tess::Coord3{x, 0, 0}, 8);
+  }
+
+  tess::PathRequestRuntime runtime;
+  runtime.reserve_requests(3);
+  runtime.reserve_search_nodes(RuntimeTileCount);
+  runtime.reserve_path_nodes(512);
+  runtime.reserve_weighted_field_products(1);
+  runtime.reserve_weighted_field_product_dependencies(World::chunk_count);
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{31, 31, 0}});
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{8, 0, 0}, tess::Coord3{31, 31, 0}});
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 8, 0}, tess::Coord3{31, 31, 0}});
+
+  const auto policy = tess::PathRuntimeCachePolicy{
+      .use_weighted_field_product_cache = true,
+  };
+  auto results = runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(
+      world, policy);
+  ASSERT_EQ(results.size(), 3u);
+  for (const auto result : results) {
+    EXPECT_EQ(result.status, tess::PathStatus::Found);
+  }
+
+  auto stats = runtime.stats();
+  EXPECT_EQ(stats.field_product_cache.entries, 1u);
+  EXPECT_EQ(stats.field_product_cache.misses, 1u);
+  EXPECT_GE(stats.field_product_cache.hits, 1u);
+  EXPECT_EQ(stats.field_product_candidate_groups, 1u);
+  EXPECT_EQ(stats.field_product_used_groups, 1u);
+  EXPECT_EQ(stats.weighted_batch.requests, 0u);
+
+  results = runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(
+      world, policy);
+  ASSERT_EQ(results.size(), 3u);
+  stats = runtime.stats();
+  EXPECT_GE(stats.field_product_cache.hits, 2u);
+  EXPECT_EQ(stats.field_product_used_groups, 1u);
+  EXPECT_EQ(stats.weighted_batch.requests, 0u);
+}
+
+TEST(TessPathRuntime, WeightedFieldProductWarmReplayDoesNotAllocate) {
+  World world;
+  fill_world(world);
+  tess::PathRequestRuntime runtime;
+  runtime.reserve_requests(3);
+  runtime.reserve_search_nodes(RuntimeTileCount);
+  runtime.reserve_path_nodes(512);
+  runtime.reserve_weighted_field_products(1);
+  runtime.reserve_weighted_field_product_dependencies(World::chunk_count);
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{31, 31, 0}});
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{8, 0, 0}, tess::Coord3{31, 31, 0}});
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 8, 0}, tess::Coord3{31, 31, 0}});
+  const auto policy = tess::PathRuntimeCachePolicy{
+      .use_weighted_field_product_cache = true,
+  };
+  (void)runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(world,
+                                                                       policy);
+
+  {
+    tess_test::ScopedAllocationCounter counter;
+    for (int i = 0; i < 10; ++i) {
+      const auto results =
+          runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(
+              world, policy);
+      EXPECT_EQ(results.size(), 3u);
+      EXPECT_EQ(runtime.stats().field_product_used_groups, 1u);
+    }
+    EXPECT_EQ(counter.count(), 0u);
+  }
+}
+
 // The runtime's processing passes never populate the portal segment cache:
 // portal route products are caller-driven through
 // build_weighted_portal_route_product with the runtime-owned cache accessor.

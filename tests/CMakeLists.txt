@@ -185,6 +185,17 @@ tess_apply_project_options(tess_topology_test)
 
 tess_discover_tests(tess_topology_test)
 
+add_executable(
+  tess_topology_coarse_path_test
+  allocation_counter.cc
+  tess_topology_coarse_path_test.cc
+)
+target_link_libraries(
+  tess_topology_coarse_path_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_topology_coarse_path_test)
+
+tess_discover_tests(tess_topology_coarse_path_test)
+
 add_executable(tess_topology_sparse_test tess_topology_sparse_test.cc)
 target_link_libraries(
   tess_topology_sparse_test PRIVATE tess::tess GTest::gtest_main)
@@ -259,6 +270,17 @@ target_link_libraries(
 tess_apply_project_options(tess_path_product_test)
 
 tess_discover_tests(tess_path_product_test)
+
+add_executable(
+  tess_weighted_field_product_test
+  allocation_counter.cc
+  tess_weighted_field_product_test.cc
+)
+target_link_libraries(
+  tess_weighted_field_product_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_weighted_field_product_test)
+
+tess_discover_tests(tess_weighted_field_product_test)
 
 add_executable(
   tess_path_runtime_test

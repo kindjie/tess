@@ -861,6 +861,17 @@ class DistanceFieldScratch {
                              DistanceFieldScratch& scratch,
                              const Provider& provider) -> NearestTargetResult;
 
+  template <typename World, typename Class, typename Provider>
+  friend auto build_weighted_distance_field_product(
+      const World& world, const GoalSet& goals, DistanceFieldScratch& scratch,
+      DistanceFieldProduct& product, const Provider& provider)
+      -> DistanceFieldResult;
+
+  template <typename World, typename Class, typename Provider>
+  friend auto weighted_distance_field_product_path(
+      const World& world, Coord3 start, const DistanceFieldProduct& product,
+      DistanceFieldScratch& scratch, const Provider& provider) -> PathResult;
+
   void clear_build() noexcept {
     advance_epoch();
     frontier_.clear();

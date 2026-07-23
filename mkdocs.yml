@@ -78,6 +78,8 @@ nav:
       - Shapes: architecture/shape.md
       - Storage: architecture/storage.md
       - Block kernels: architecture/block.md
+      - Spatial queries: architecture/query.md
+      - Maintenance experiments: architecture/maintenance.md
       - Pathfinding: architecture/path.md
       - Topology: architecture/topology.md
       - Queued operations: architecture/queued-operations.md

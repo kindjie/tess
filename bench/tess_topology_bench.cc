@@ -167,6 +167,33 @@ void BM_topology_reachable_far_512x512(benchmark::State& state) {
               "far reachability query was not Reachable");
 }
 
+void BM_topology_coarse_path_far_512x512(benchmark::State& state) {
+  TopoWorld world;
+  fill_passable(world, 1);
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  const auto built =
+      tess::build_region_graph<TopoWorld, PassableTag>(world, scratch, graph);
+  bench_check(built.status == tess::TopologyStatus::Built,
+              "region graph build did not report Built");
+
+  tess::RegionGraphScratch path_scratch;
+  (void)tess::coarse_path<TopoShape>(graph, kFarStart, kFarGoal, path_scratch);
+  tess::CoarsePathResult result{};
+  for (auto _ : state) {
+    result =
+        tess::coarse_path<TopoShape>(graph, kFarStart, kFarGoal, path_scratch);
+    benchmark::DoNotOptimize(result.chunks.data());
+  }
+  bench_check(result.status == tess::ReachabilityStatus::Reachable,
+              "far coarse path was not Reachable");
+  bench_check(!result.chunks.empty(), "far coarse path had no corridor");
+  state.counters["corridor.chunks"] = static_cast<double>(result.chunks.size());
+  state.counters["corridor.portals"] =
+      static_cast<double>(result.portals.size());
+}
+
 void BM_topology_precheck_reachable_512x512(benchmark::State& state) {
   TopoWorld world;
   fill_passable(world, 1);
@@ -224,6 +251,8 @@ BENCHMARK(BM_topology_region_graph_update_single_chunk_512x512)
     ->Name("topology/region_graph_update_single_chunk_512x512");
 BENCHMARK(BM_topology_reachable_far_512x512)
     ->Name("topology/reachable_far_512x512");
+BENCHMARK(BM_topology_coarse_path_far_512x512)
+    ->Name("topology/coarse_path_far_512x512");
 BENCHMARK(BM_topology_precheck_reachable_512x512)
     ->Name("topology/precheck_reachable_512x512");
 BENCHMARK(BM_topology_precheck_unreachable_512x512)

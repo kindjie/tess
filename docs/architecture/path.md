@@ -173,12 +173,20 @@ flowchart TB
   bucket storage for allocation-free bounded weighted field rebuilds after
   warmup.
 - `GoalSet`, `DistanceFieldProduct`, and `FieldProductCache` provide reusable
-  unit-cost distance-field products in `tess/path/field_product_cache.h`.
+  unit-cost and weighted distance-field products in
+  `tess/path/field_product_cache.h`.
   Products copy stable dense field data out of scratch, track reached
   transition and clearance chunk-version dependencies, stamp the resolved
   lattice/class/step model, and can be stored in a byte-budgeted LRU cache.
   Diagonal products use reverse Dijkstra for their non-unit geometric ticks;
   axial products use the six-neighbor reverse flood.
+- `build_weighted_distance_field_product<World, Class>` runs reverse Dijkstra
+  from an ordered goal set through the resolved movement model, including
+  provider-composed edges. `weighted_distance_field_product_path` reconstructs
+  an exact path and `weighted_nearest_target` reports the selected lowest-cost
+  goal. These persistent products are explicitly dense-only, stamp every
+  model identity and provider revision, and use the same byte-budgeted cache
+  through `lookup_weighted` / `store_weighted`.
 - `RouteCacheScratch` (in `tess/path/route_cache.h`) owns reusable
   route-cache entries and cached path nodes for exact route and same-goal
   suffix reuse. Exact `(start, goal)` lookups and suffix lookups are served
@@ -251,8 +259,8 @@ flowchart TB
   `result(ticket)` returns the latest result for that submitted request.
   Tickets remain valid until `clear_requests()` starts a new request set.
   `clear_requests()` starts a new request set without dropping long-lived
-  caches; `clear_caches()` drops the owned unit route cache, unit
-  field-product cache, and weighted portal segment cache.
+  caches; `clear_caches()` drops the owned unit route cache, shared
+  unit/weighted field-product cache, and weighted portal segment cache.
   `PathRuntimeCachePolicy::clear_every_world_change` lets long-lived callers
   reclaim caller-managed cache storage after repeated world edits, and the
   policy also carries the route-cache caps (`max_route_entries`,
@@ -377,8 +385,12 @@ flowchart TB
   runtime across classes is therefore safe but clears both unit and portal
   entries; one runtime per `(world, class)` avoids those conservative drops.
 - `PathRequestRuntime::process_weighted_batch<World, Class, MaxCost>(world,
-  policy)` processes the current request set through `weighted_path_batch`,
-  while using the same world-change cadence to clear owned long-lived caches.
+  policy)` processes the current request set through `weighted_path_batch`.
+  When `use_weighted_field_product_cache` is enabled on a dense world,
+  repeated goals spanning the configured number of start chunks first use a
+  persistent weighted product; remaining requests retain the bounded-field or
+  A* batch fallback. The product cache survives processing calls and uses the
+  same world-change cadence for invalidation.
   One movement class drives both the search and the precheck. The legacy
   `<World, PassableTag, CostTag, MaxCost>` overload searches through
   `movement::LegacyWeighted` and prechecks on PASSABILITY only (the raw tag's
@@ -578,9 +590,10 @@ one explicit domain box. It is useful for local products, such as finding many
 starts inside one room to the same portal, while starts outside the box remain
 unreached.
 
-`DistanceFieldProduct` is the reusable unit-cost product form. It builds from
-one or more goals, stores an ordered goal list, copies the dense distance array
-out of scratch, and captures chunk versions for chunks reached by the field.
+`DistanceFieldProduct` is the reusable unit-cost or weighted product form. It
+builds from one or more goals, stores an ordered goal list, copies the dense
+distance array out of scratch, and captures chunk versions for chunks reached
+by the field.
 Replay and nearest-target queries reject stale products before returning a
 path. `FieldProductCache` is caller-owned and exact-match only: lookup keys
 include the passability tag identity, shape-compatible tile/chunk metadata,
@@ -595,13 +608,13 @@ deliberately clears the entire cache and returns false, and a zero byte
 budget therefore caches nothing. The cache evicts least-recently-used entries
 (by lookup/store recency, not insertion order) to a byte budget and reports
 entries, bytes, hits, misses, evictions, and stale rejections as
-`FieldProductCacheStats`. `PathRequestRuntime` owns one such cache and uses
-it only when
-`PathRuntimeCachePolicy::use_unit_field_product_cache` is set. Runtime use is
-conservative: only repeated single-goal groups at or above
-`unit_field_product_min_goal_reuse` are product candidates, singleton requests
-still use the route/suffix cache, and stale products are rejected through their
-chunk-version dependencies before replay.
+`FieldProductCacheStats`. `PathRequestRuntime` owns one such cache and uses it
+only when the matching `PathRuntimeCachePolicy` unit or weighted product flag
+is set. Runtime use is conservative: only repeated single-goal groups at or
+above the configured reuse threshold are candidates, starts must span the
+configured number of chunks, and stale products are rejected through their
+chunk-version dependencies before replay. Unit leftovers use route/suffix
+caching; weighted leftovers use the established bounded-field/A* batch.
 
 When weighted entry costs are known to be small bounded positive integers,
 `build_bounded_weighted_distance_field` avoids binary heap traffic with a
@@ -641,25 +654,25 @@ reusable dense per-tile scratch arrays, a two-bucket monotone open set for the
 current unit-cost Manhattan A* fallback, exact route/suffix caches, dense
 reverse distance fields for shared-goal batches, weighted shared-goal fields
 with optional bounded-cost bucket construction, weighted batch grouping, exact
-unit-cost distance-field products with explicit LRU caching, weighted route
-products, supplied-waypoint and chunk-boundary portal route products, and
-weighted A* for positive integral entry costs; it is still an MVP path core,
-not the final topology-aware path system.
+unit-cost and weighted distance-field products with explicit LRU caching,
+coarse region paths and chunk corridors, weighted route products,
+supplied-waypoint and chunk-boundary portal route products, and weighted A*
+for positive integral entry costs; it is still a pre-1.0 path core.
 
 The unit-cost A* API is suitable for individual point-to-point queries and
 regression coverage. Weighted A* is suitable for correctness-first weighted
 terrain queries, and weighted distance fields are suitable for weighted
 batches with substantial goal reuse. Shared-goal distance fields are suitable
-for batches with substantial goal reuse. Unit-cost distance-field products are
-suitable when a stable map can reuse a multi-goal field across frames or query
-batches. Runtime field-product reuse is opt-in because route suffix caching can
-be faster when many starts lie on already-cached paths; the runtime therefore
-skips opt-in product use for repeated-goal groups whose starts do not span
-enough distinct chunks. Route caches are suitable for stable maps with repeated
-exact routes or starts that lie on cached same-goal paths. The pre-1.0 roadmap
-still
-needs weighted field products, richer runtime policy, and hierarchy to cover
-broad many-agent workloads.
+for batches with substantial goal reuse. Unit-cost and weighted distance-field
+products are suitable when a stable map can reuse a multi-goal field across
+frames or query batches. Runtime field-product reuse is opt-in because route
+suffix caching can be faster when many starts lie on already-cached paths; the
+runtime therefore skips opt-in product use for repeated-goal groups whose
+starts do not span enough distinct chunks. Route caches are suitable for stable
+maps with repeated exact routes or starts that lie on cached same-goal paths.
+The pre-1.0 roadmap still needs local crowd coordination and tactical spatial
+products; hierarchical corridor selection and persistent shared-goal fields
+now cover the broad many-agent routing substrate.
 
 ## Current Profiling Notes
 

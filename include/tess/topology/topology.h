@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <span>
 #include <type_traits>
@@ -141,6 +142,16 @@ struct ReachabilityResult {
   std::size_t visited_regions = 0;
 };
 
+/// Scratch-borrowing shortest region path and its chunk corridor.
+struct CoarsePathResult {
+  ReachabilityStatus status = ReachabilityStatus::Unreachable;
+  std::size_t visited_regions = 0;
+  std::span<const RegionRef> regions;
+  std::span<const RegionPortal> portals;
+  std::span<const ChunkKey> chunks;
+  Box3 bounds{};
+};
+
 /// Reusable flood-fill storage for local topology construction.
 class LocalTopologyScratch {
  public:
@@ -166,6 +177,11 @@ class RegionGraphScratch {
   void reserve_regions(std::size_t count) {
     frontier_.reserve(count);
     visited_epoch_.reserve(count);
+    parent_.reserve(count);
+    parent_portal_.reserve(count);
+    path_regions_.reserve(count);
+    path_portals_.reserve(count);
+    corridor_chunks_.reserve(count);
   }
 
   [[nodiscard]] auto capacity() const noexcept -> std::size_t {
@@ -178,11 +194,19 @@ class RegionGraphScratch {
                         Coord3 goal, RegionGraphScratch& scratch)
       -> ReachabilityResult;
 
+  template <typename Shape, typename Residency>
+  friend auto coarse_path(const RegionGraphT<Residency>& graph, Coord3 start,
+                          Coord3 goal, RegionGraphScratch& scratch)
+      -> CoarsePathResult;
+
   // Epoch-stamped visited marks: a region index is visited when its
   // generation stamp matches the current epoch, so traversals reset in
   // O(1) instead of clearing the whole vector.
   void begin_traversal(std::size_t region_count) {
     frontier_.clear();
+    path_regions_.clear();
+    path_portals_.clear();
+    corridor_chunks_.clear();
     if (visited_epoch_.size() < region_count) {
       visited_epoch_.resize(region_count, 0);
     }
@@ -204,6 +228,11 @@ class RegionGraphScratch {
 
   std::vector<std::uint32_t> frontier_;
   std::vector<std::uint32_t> visited_epoch_;
+  std::vector<std::uint32_t> parent_;
+  std::vector<std::uint32_t> parent_portal_;
+  std::vector<RegionRef> path_regions_;
+  std::vector<RegionPortal> path_portals_;
+  std::vector<ChunkKey> corridor_chunks_;
   std::uint32_t epoch_ = 0;
 };
 
@@ -317,6 +346,7 @@ class RegionGraphT {
     region_offsets_.clear();
     adjacency_starts_.clear();
     adjacency_targets_.clear();
+    adjacency_portals_.clear();
     built_chunk_grid_ = Extent3{0, 0, 0};
     built_chunk_extent_ = Extent3{0, 0, 0};
     built_lattice_identity_ = 0;
@@ -471,6 +501,11 @@ class RegionGraphT {
                         Coord3 goal, RegionGraphScratch& scratch)
       -> ReachabilityResult;
 
+  template <typename Shape, typename OtherResidency>
+  friend auto coarse_path(const RegionGraphT<OtherResidency>& graph,
+                          Coord3 start, Coord3 goal,
+                          RegionGraphScratch& scratch) -> CoarsePathResult;
+
   template <typename OtherWorld>
   friend auto is_region_graph_fresh(
       const OtherWorld& world,
@@ -498,11 +533,15 @@ class RegionGraphT {
     }
 
     adjacency_targets_.resize(portals_.size());
+    adjacency_portals_.resize(portals_.size());
     auto cursor = adjacency_starts_;
-    for (const auto& portal : portals_) {
+    for (std::size_t portal_index = 0; portal_index < portals_.size();
+         ++portal_index) {
+      const auto& portal = portals_[portal_index];
       const auto from = static_cast<std::size_t>(region_index(portal.from));
-      adjacency_targets_[static_cast<std::size_t>(cursor[from]++)] =
-          region_index(portal.to);
+      const auto edge = static_cast<std::size_t>(cursor[from]++);
+      adjacency_targets_[edge] = region_index(portal.to);
+      adjacency_portals_[edge] = static_cast<std::uint32_t>(portal_index);
     }
 
     if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
@@ -623,11 +662,33 @@ class RegionGraphT {
     return local_index(chunk) != npos;
   }
 
+  [[nodiscard]] auto region_ref(std::uint32_t index) const noexcept
+      -> RegionRef {
+    if (index >= region_count()) {
+      return RegionRef{ChunkKey{std::numeric_limits<std::uint64_t>::max()},
+                       invalid_local_region};
+    }
+    const auto upper =
+        std::upper_bound(region_offsets_.begin(), region_offsets_.end(), index);
+    const auto local = static_cast<std::size_t>(
+        std::distance(region_offsets_.begin(), upper) - 1);
+    const auto chunk = [&] {
+      if constexpr (std::is_same_v<Residency, AlwaysResident>) {
+        return ChunkKey{static_cast<std::uint64_t>(local)};
+      } else {
+        return sparse_.topology_keys_[local];
+      }
+    }();
+    return RegionRef{chunk, LocalRegionId{index - region_offsets_[local] +
+                                          std::uint32_t{1}}};
+  }
+
   std::vector<LocalChunkTopology> local_topologies_;
   std::vector<RegionPortal> portals_;
   std::vector<std::uint32_t> region_offsets_;
   std::vector<std::uint32_t> adjacency_starts_;
   std::vector<std::uint32_t> adjacency_targets_;
+  std::vector<std::uint32_t> adjacency_portals_;
   // Zero until the first build, so an unbuilt graph never matches any shape,
   // movement class, or transition provider.
   Extent3 built_chunk_grid_{0, 0, 0};
@@ -1461,6 +1522,167 @@ auto reachable(const RegionGraphT<Residency>& graph, Coord3 start, Coord3 goal,
     }
   }
   return ReachabilityResult{ReachabilityStatus::Unreachable, visited_count};
+}
+
+/// Finds a deterministic shortest path through regions and chunk portals.
+///
+/// Returned spans borrow `scratch` and expire on its next traversal. The
+/// corridor bounds cover the complete chunks on the selected region path.
+template <typename Shape, typename Residency>
+auto coarse_path(const RegionGraphT<Residency>& graph, Coord3 start,
+                 Coord3 goal, RegionGraphScratch& scratch) -> CoarsePathResult {
+  const auto region_count = static_cast<std::size_t>(graph.region_count());
+  scratch.begin_traversal(region_count);
+  const auto result = [&](ReachabilityStatus status,
+                          std::size_t visited) -> CoarsePathResult {
+    return CoarsePathResult{
+        status,
+        visited,
+        std::span<const RegionRef>{scratch.path_regions_},
+        std::span<const RegionPortal>{scratch.path_portals_},
+        std::span<const ChunkKey>{scratch.corridor_chunks_},
+        {},
+    };
+  };
+  if (!contains<Shape>(start)) {
+    return result(ReachabilityStatus::InvalidStart, 0);
+  }
+  if (!contains<Shape>(goal)) {
+    return result(ReachabilityStatus::InvalidGoal, 0);
+  }
+
+  const auto start_region = graph.template region_of<Shape>(start);
+  if (start_region.region == invalid_local_region) {
+    if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
+      if (!graph.has_chunk(chunk_key<Shape>(chunk_coord<Shape>(start)))) {
+        return result(ReachabilityStatus::Indeterminate, 0);
+      }
+    }
+    return result(ReachabilityStatus::InvalidStart, 0);
+  }
+  const auto goal_region = graph.template region_of<Shape>(goal);
+  if (goal_region.region == invalid_local_region) {
+    if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
+      if (!graph.has_chunk(chunk_key<Shape>(chunk_coord<Shape>(goal)))) {
+        return result(ReachabilityStatus::Indeterminate, 0);
+      }
+    }
+    return result(ReachabilityStatus::InvalidGoal, 0);
+  }
+
+  const auto start_index = graph.region_index(start_region);
+  const auto goal_index = graph.region_index(goal_region);
+  if (start_index == invalid_region_index) {
+    return result(ReachabilityStatus::InvalidStart, 0);
+  }
+  if (goal_index == invalid_region_index) {
+    return result(ReachabilityStatus::InvalidGoal, 0);
+  }
+
+  scratch.parent_.resize(region_count, invalid_region_index);
+  scratch.parent_portal_.resize(region_count, invalid_region_index);
+  scratch.visit(start_index);
+  scratch.parent_[start_index] = start_index;
+  scratch.frontier_.push_back(start_index);
+  auto visited_count = std::size_t{1};
+  auto found = start_index == goal_index;
+  [[maybe_unused]] auto touched_missing = false;
+  if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
+    touched_missing = graph.sparse_.region_reaches_missing_[start_index] != 0;
+  }
+
+  for (std::size_t head = 0; head < scratch.frontier_.size() && !found;
+       ++head) {
+    const auto current = scratch.frontier_[head];
+    const auto begin = static_cast<std::size_t>(
+        graph.adjacency_starts_[static_cast<std::size_t>(current)]);
+    const auto end = static_cast<std::size_t>(
+        graph.adjacency_starts_[static_cast<std::size_t>(current) + 1]);
+    for (auto edge = begin; edge < end; ++edge) {
+      const auto target = graph.adjacency_targets_[edge];
+      if (scratch.is_visited(target)) {
+        continue;
+      }
+      scratch.visit(target);
+      scratch.parent_[target] = current;
+      scratch.parent_portal_[target] = graph.adjacency_portals_[edge];
+      scratch.frontier_.push_back(target);
+      ++visited_count;
+      if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
+        touched_missing = touched_missing ||
+                          graph.sparse_.region_reaches_missing_[target] != 0;
+      }
+      if (target == goal_index) {
+        found = true;
+        break;
+      }
+    }
+  }
+
+  if (!found) {
+    if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
+      if (touched_missing) {
+        return result(ReachabilityStatus::Indeterminate, visited_count);
+      }
+    }
+    return result(ReachabilityStatus::Unreachable, visited_count);
+  }
+
+  auto current = goal_index;
+  scratch.path_regions_.push_back(graph.region_ref(current));
+  while (current != start_index) {
+    const auto portal_index = scratch.parent_portal_[current];
+    TESS_ASSERT(portal_index < graph.portals_.size());
+    scratch.path_portals_.push_back(graph.portals_[portal_index]);
+    current = scratch.parent_[current];
+    scratch.path_regions_.push_back(graph.region_ref(current));
+  }
+  std::reverse(scratch.path_regions_.begin(), scratch.path_regions_.end());
+  std::reverse(scratch.path_portals_.begin(), scratch.path_portals_.end());
+  for (const auto region : scratch.path_regions_) {
+    if (std::find(scratch.corridor_chunks_.begin(),
+                  scratch.corridor_chunks_.end(),
+                  region.chunk) == scratch.corridor_chunks_.end()) {
+      scratch.corridor_chunks_.push_back(region.chunk);
+    }
+  }
+
+  using Traits = ShapeTraits<Shape>;
+  auto minimum = Coord3{std::numeric_limits<std::int64_t>::max(),
+                        std::numeric_limits<std::int64_t>::max(),
+                        std::numeric_limits<std::int64_t>::max()};
+  auto maximum = Coord3{};
+  for (const auto chunk_key_value : scratch.corridor_chunks_) {
+    const auto chunk = chunk_coord<Shape>(chunk_key_value);
+    const auto begin = Coord3{
+        static_cast<std::int64_t>(chunk.x * Traits::chunk.x),
+        static_cast<std::int64_t>(chunk.y * Traits::chunk.y),
+        static_cast<std::int64_t>(chunk.z * Traits::chunk.z),
+    };
+    const auto end = Coord3{
+        static_cast<std::int64_t>(
+            std::min((chunk.x + 1) * Traits::chunk.x, Traits::size.x)),
+        static_cast<std::int64_t>(
+            std::min((chunk.y + 1) * Traits::chunk.y, Traits::size.y)),
+        static_cast<std::int64_t>(
+            std::min((chunk.z + 1) * Traits::chunk.z, Traits::size.z)),
+    };
+    minimum.x = std::min(minimum.x, begin.x);
+    minimum.y = std::min(minimum.y, begin.y);
+    minimum.z = std::min(minimum.z, begin.z);
+    maximum.x = std::max(maximum.x, end.x);
+    maximum.y = std::max(maximum.y, end.y);
+    maximum.z = std::max(maximum.z, end.z);
+  }
+
+  auto output = result(ReachabilityStatus::Reachable, visited_count);
+  output.bounds = Box3{
+      minimum,
+      Extent3{static_cast<std::uint64_t>(maximum.x - minimum.x),
+              static_cast<std::uint64_t>(maximum.y - minimum.y),
+              static_cast<std::uint64_t>(maximum.z - minimum.z)},
+  };
+  return output;
 }
 
 // Reports whether `graph` still matches `world` -- i.e. whether a reachability

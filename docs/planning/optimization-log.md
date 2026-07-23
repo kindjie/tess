@@ -14,6 +14,25 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-22 - Coarse Corridor and Weighted Product Baselines
+
+- Area: shortest region-route reconstruction and persistent weighted
+  multi-goal products.
+- Evidence: local Release measurements on an open 512x512 world measured a
+  31-chunk/30-portal coarse route at about 20.1 us, an eight-goal weighted
+  product build over 262,144 reached nodes at about 24.5 ms, and exact
+  corner-to-corner product replay at about 5.2 us for a 1,023-node path.
+  Correctness tests cover non-monotone corridors, sparse missing topology,
+  provider-composed reverse edges, cache invalidation, and allocation-free
+  warm rebuild/reconstruction.
+- Decision: accept coarse corridor reconstruction, weighted product caching,
+  and the opt-in runtime selector. Keep the runtime default off: a full dense
+  product build is a substantial up-front cost and only amortizes when reuse
+  spans enough requests or processing calls.
+- Retry conditions: calibrate CI thresholds from main-branch benchmark
+  artifacts before making these new measurements regression gates. Revisit
+  automatic selection only with representative stable-map reuse traces.
+
 ## 2026-07-22 - Span Queries Promoted; Maintenance Hook Rejected
 
 - Area: rectangular/radius query callbacks, fused block pipelines, and

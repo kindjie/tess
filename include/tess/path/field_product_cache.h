@@ -4,6 +4,7 @@
 #include <tess/path/path.h>
 
 #include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -158,6 +159,17 @@ class DistanceFieldProduct {
                              DistanceFieldScratch& scratch,
                              const Provider& provider) -> NearestTargetResult;
 
+  template <typename World, typename Class, typename Provider>
+  friend auto build_weighted_distance_field_product(
+      const World& world, const GoalSet& goals, DistanceFieldScratch& scratch,
+      DistanceFieldProduct& product, const Provider& provider)
+      -> DistanceFieldResult;
+
+  template <typename World, typename Class, typename Provider>
+  friend auto weighted_distance_field_product_path(
+      const World& world, Coord3 start, const DistanceFieldProduct& product,
+      DistanceFieldScratch& scratch, const Provider& provider) -> PathResult;
+
   [[nodiscard]] auto is_goal(Coord3 coord) const noexcept -> bool {
     for (const auto goal : goals_) {
       if (goal == coord) {
@@ -206,6 +218,22 @@ struct FieldProductCacheStats {
 /// identity; use one cache per world. Lookup pointers remain cache-owned and
 /// are invalidated when their entry is replaced, evicted, or cleared.
 class FieldProductCache {
+  struct Key {
+    std::uintptr_t movement_class = 0;
+    std::size_t tile_count = 0;
+    std::uint64_t chunk_count = 0;
+    std::uint64_t local_tile_count = 0;
+    Extent3 shape_size{};
+    Extent3 chunk_extent{};
+    std::uint32_t lattice_identity = 0;
+    std::uint32_t lattice_version = 0;
+    std::uint32_t step_identity = 0;
+    std::uint32_t cost_scale = 0;
+    std::uintptr_t provider_identity = 0;
+    std::uint64_t provider_revision = 0;
+    std::vector<Coord3> goals;
+  };
+
  public:
   explicit FieldProductCache(
       std::size_t byte_budget =
@@ -273,6 +301,39 @@ class FieldProductCache {
     return nullptr;
   }
 
+  /// Looks up a weighted product for the exact movement class and provider.
+  template <typename World, typename Class, typename Provider>
+  [[nodiscard]] auto lookup_weighted(const World& world, const GoalSet& goals,
+                                     const Provider& provider)
+      -> const DistanceFieldProduct* {
+    static_assert(std::derived_from<Class, movement::movement_class_tag>);
+    for (std::size_t i = 0; i < entries_.size(); ++i) {
+      auto& entry = entries_[i];
+      if (!key_matches_class<World, Class, Provider>(entry.key, goals.goals(),
+                                                     provider)) {
+        continue;
+      }
+      if (!entry.product->is_valid(world)) {
+        ++stale_rejections_;
+        erase_entry(i);
+        return nullptr;
+      }
+      ++hits_;
+      entry.last_used = ++clock_;
+      return entry.product.get();
+    }
+    ++misses_;
+    return nullptr;
+  }
+
+  /// Looks up a weighted product using regular adjacent transitions.
+  template <typename World, typename Class>
+  [[nodiscard]] auto lookup_weighted(const World& world, const GoalSet& goals)
+      -> const DistanceFieldProduct* {
+    return lookup_weighted<World, Class, AdjacentTransitions>(
+        world, goals, AdjacentTransitions{});
+  }
+
   // Takes ownership of `product` by move; world-sized field data is never
   // copied. The argument is left moved-from (empty but reusable). A product
   // whose entry exceeds the byte budget cannot be cached at all; that store
@@ -303,6 +364,43 @@ class FieldProductCache {
         product.model_provider_revision_ != key.provider_revision) {
       return false;
     }
+    return store_with_key(std::move(product), std::move(key));
+  }
+
+  /// Stores a weighted product under its movement class and provider.
+  template <typename World, typename Class, typename Provider>
+  auto store_weighted(DistanceFieldProduct&& product, const Provider& provider)
+      -> bool {
+    static_assert(std::derived_from<Class, movement::movement_class_tag>);
+    if (product.status() != PathStatus::Found) {
+      return false;
+    }
+    auto key =
+        make_key_for_class<World, Class, Provider>(product.goals(), provider);
+    if (product.model_class_identity_ != key.movement_class ||
+        product.tile_count_ != key.tile_count ||
+        product.chunk_count_ != key.chunk_count ||
+        product.local_tile_count_ != key.local_tile_count ||
+        product.model_lattice_identity_ != key.lattice_identity ||
+        product.model_lattice_version_ != key.lattice_version ||
+        product.model_step_identity_ != key.step_identity ||
+        product.model_cost_scale_ != key.cost_scale ||
+        product.model_provider_identity_ != key.provider_identity ||
+        product.model_provider_revision_ != key.provider_revision) {
+      return false;
+    }
+    return store_with_key(std::move(product), std::move(key));
+  }
+
+  /// Stores a weighted product using regular adjacent transitions.
+  template <typename World, typename Class>
+  auto store_weighted(DistanceFieldProduct&& product) -> bool {
+    return store_weighted<World, Class, AdjacentTransitions>(
+        std::move(product), AdjacentTransitions{});
+  }
+
+ private:
+  auto store_with_key(DistanceFieldProduct&& product, Key key) -> bool {
     const auto bytes = entry_byte_size(key, product);
     if (bytes > byte_budget_) {
       clear();
@@ -330,24 +428,6 @@ class FieldProductCache {
     evict_to_budget();
     return true;
   }
-
- private:
-  struct Key {
-    std::uintptr_t movement_class = 0;
-    std::size_t tile_count = 0;
-    std::uint64_t chunk_count = 0;
-    std::uint64_t local_tile_count = 0;
-    Extent3 shape_size{};
-    Extent3 chunk_extent{};
-    std::uint32_t lattice_identity = 0;
-    std::uint32_t lattice_version = 0;
-    std::uint32_t step_identity = 0;
-    std::uint32_t cost_scale = 0;
-    std::uintptr_t provider_identity = 0;
-    std::uint64_t provider_revision = 0;
-    std::vector<Coord3> goals;
-  };
-
   // Each product lives behind a `unique_ptr` so `entries_` growth and
   // eviction of other entries never relocate a product that a caller still
   // borrows through `lookup()`.
@@ -363,7 +443,14 @@ class FieldProductCache {
                                      const Provider& provider) -> Key {
     using Class = movement::movement_class_of<Tag>;
     using UnitClass = movement::detail::UnitMovementClass<Class>;
-    using Model = ResolvedTransitionModel<World, UnitClass, Provider>;
+    return make_key_for_class<World, UnitClass, Provider>(goals, provider);
+  }
+
+  template <typename World, typename Class, typename Provider>
+  [[nodiscard]] static auto make_key_for_class(std::span<const Coord3> goals,
+                                               const Provider& provider)
+      -> Key {
+    using Model = ResolvedTransitionModel<World, Class, Provider>;
     const auto model = Model{provider};
     return Key{
         detail::tag_identity<typename Model::class_type>(),
@@ -406,7 +493,15 @@ class FieldProductCache {
       -> bool {
     using Class = movement::movement_class_of<Tag>;
     using UnitClass = movement::detail::UnitMovementClass<Class>;
-    using Model = ResolvedTransitionModel<World, UnitClass, Provider>;
+    return key_matches_class<World, UnitClass, Provider>(key, goals, provider);
+  }
+
+  template <typename World, typename Class, typename Provider>
+  [[nodiscard]] static auto key_matches_class(const Key& key,
+                                              std::span<const Coord3> goals,
+                                              const Provider& provider) noexcept
+      -> bool {
+    using Model = ResolvedTransitionModel<World, Class, Provider>;
     const auto model = Model{provider};
     return key.movement_class ==
                detail::tag_identity<typename Model::class_type>() &&
@@ -692,6 +787,163 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
       world, goals, scratch, product, AdjacentTransitions{});
 }
 
+/// Builds a dense multi-goal weighted field into a reusable product.
+template <typename World, typename Class, typename Provider>
+auto build_weighted_distance_field_product(const World& world,
+                                           const GoalSet& goals,
+                                           DistanceFieldScratch& scratch,
+                                           DistanceFieldProduct& product,
+                                           const Provider& provider)
+    -> DistanceFieldResult {
+  static_assert(std::derived_from<Class, movement::movement_class_tag>);
+  static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
+                "weighted distance-field products are dense-only");
+  using Shape = typename World::shape_type;
+  using Model = ResolvedTransitionModel<World, Class, Provider>;
+  constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
+
+  scratch.clear_build();
+  product.clear();
+  const auto model = Model{provider};
+  product.goals_.assign(goals.goals().begin(), goals.goals().end());
+  product.tile_count_ = detail::tile_count<World>();
+  product.chunk_count_ = World::chunk_count;
+  product.local_tile_count_ = World::local_tile_count;
+  product.shape_size_ = ShapeTraits<Shape>::size;
+  product.chunk_extent_ = ShapeTraits<Shape>::chunk;
+  product.model_class_identity_ = detail::tag_identity<Class>();
+  product.model_lattice_identity_ =
+      static_cast<std::uint32_t>(Model::lattice_identity);
+  product.model_lattice_version_ = Model::lattice_version;
+  product.model_step_identity_ =
+      static_cast<std::uint32_t>(Model::step_policy_identity);
+  product.model_cost_scale_ = Model::cost_scale;
+  product.model_provider_identity_ = detail::tag_identity<Provider>();
+  product.model_provider_revision_ = model.revision();
+
+  if (goals.empty()) {
+    return {PathStatus::InvalidGoal, 0, 0};
+  }
+  for (const auto goal : goals.goals()) {
+    if (!contains<Shape>(goal) ||
+        !detail::is_passable<World, Class>(world, goal)) {
+      return {PathStatus::InvalidGoal, 0, 0};
+    }
+    const auto index = detail::tile_index<Shape>(goal);
+    if (detail::tile_entry_cost_index<World, Class>(world, index) == 0) {
+      return {PathStatus::InvalidGoal, 0, 0};
+    }
+  }
+
+  const auto node_count = detail::tile_count<World>();
+  if (scratch.distance_.size() != node_count) {
+    scratch.generation_.assign(node_count, 0);
+    scratch.distance_.assign(node_count, infinite_distance);
+  }
+  for (const auto goal : goals.goals()) {
+    const auto index = detail::tile_index<Shape>(goal);
+    const auto offset = static_cast<std::size_t>(index);
+    if (scratch.is_current(offset)) {
+      continue;
+    }
+    scratch.distance_[offset] = 0;
+    scratch.touch_node(index);
+    scratch.weighted_frontier_.push_back(PathScratch::OpenNode{index, 0, 0});
+    std::push_heap(scratch.weighted_frontier_.begin(),
+                   scratch.weighted_frontier_.end(), detail::open_node_less);
+  }
+
+  auto expanded_nodes = std::size_t{0};
+  auto cost_overflow = false;
+  while (!scratch.weighted_frontier_.empty()) {
+    std::pop_heap(scratch.weighted_frontier_.begin(),
+                  scratch.weighted_frontier_.end(), detail::open_node_less);
+    const auto current = scratch.weighted_frontier_.back();
+    scratch.weighted_frontier_.pop_back();
+    const auto current_offset = static_cast<std::size_t>(current.index);
+    const auto current_distance =
+        scratch.distance_at(current_offset, infinite_distance);
+    if (current.g != current_distance) {
+      continue;
+    }
+    ++expanded_nodes;
+    model.for_each_reverse(
+        world, detail::tile_coord<Shape>(current.index), current.index,
+        [&](auto probe) {
+          if (probe.availability != TransitionAvailability::Legal) {
+            return;
+          }
+          if (probe.cost_overflow) {
+            cost_overflow = true;
+            return;
+          }
+          const auto offset = static_cast<std::size_t>(probe.to_index);
+          if (!scratch.is_current(offset)) {
+            scratch.distance_[offset] = infinite_distance;
+            scratch.touch_node(probe.to_index);
+          }
+          const auto next =
+              detail::saturating_add(current_distance, probe.cost);
+          if (next == infinite_distance) {
+            cost_overflow = true;
+            return;
+          }
+          if (next < scratch.distance_[offset]) {
+            scratch.distance_[offset] = next;
+            scratch.weighted_frontier_.push_back(
+                PathScratch::OpenNode{probe.to_index, next, next});
+            std::push_heap(scratch.weighted_frontier_.begin(),
+                           scratch.weighted_frontier_.end(),
+                           detail::open_node_less);
+          }
+        });
+  }
+
+  product.distance_.assign(node_count, infinite_distance);
+  for (const auto index : scratch.touched_) {
+    const auto offset = static_cast<std::size_t>(index);
+    product.distance_[offset] = scratch.distance_[offset];
+    product.dependencies_.add_chunk(
+        world,
+        chunk_key<Shape>(tile_key<Shape>(detail::tile_coord<Shape>(index))));
+  }
+  auto& seen = scratch.chunk_seen_;
+  seen.assign(static_cast<std::size_t>(World::chunk_count), 0);
+  for (const auto dependency : product.dependencies_.chunks()) {
+    seen[static_cast<std::size_t>(dependency.key.value)] = 1;
+  }
+  for (const auto index : scratch.touched_) {
+    model.for_each_dependency_chunk(
+        world, detail::tile_coord<Shape>(index), [&](ChunkKey key) {
+          auto& mark = seen[static_cast<std::size_t>(key.value)];
+          if (mark == 0) {
+            mark = 1;
+            product.dependencies_.add_chunk_unique(world, key);
+          }
+        });
+  }
+  if constexpr (Model::has_special_transitions) {
+    product.dependencies_.capture_all(world);
+  }
+  product.status_ =
+      cost_overflow ? PathStatus::CostOverflow : PathStatus::Found;
+  product.expanded_nodes_ = expanded_nodes;
+  product.reached_nodes_ = scratch.touched_.size();
+  return {product.status_, product.expanded_nodes_, product.reached_nodes_};
+}
+
+/// Builds a weighted product using regular adjacent transitions.
+template <typename World, typename Class>
+auto build_weighted_distance_field_product(const World& world,
+                                           const GoalSet& goals,
+                                           DistanceFieldScratch& scratch,
+                                           DistanceFieldProduct& product)
+    -> DistanceFieldResult {
+  return build_weighted_distance_field_product<World, Class,
+                                               AdjacentTransitions>(
+      world, goals, scratch, product, AdjacentTransitions{});
+}
+
 /// Reconstructs a path from `start` through a valid dense-world product.
 ///
 /// The returned path borrows `scratch` storage until its next mutation.
@@ -802,6 +1054,96 @@ auto distance_field_product_path(const World& world, Coord3 start,
       world, start, product, scratch, AdjacentTransitions{});
 }
 
+/// Reconstructs an exact weighted path through a valid reusable product.
+template <typename World, typename Class, typename Provider>
+auto weighted_distance_field_product_path(const World& world, Coord3 start,
+                                          const DistanceFieldProduct& product,
+                                          DistanceFieldScratch& scratch,
+                                          const Provider& provider)
+    -> PathResult {
+  static_assert(std::derived_from<Class, movement::movement_class_tag>);
+  static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
+                "weighted distance-field products are dense-only");
+  using Shape = typename World::shape_type;
+  using Model = ResolvedTransitionModel<World, Class, Provider>;
+  constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
+  const auto model = Model{provider};
+
+  scratch.clear_path();
+  if (!contains<Shape>(start) ||
+      !detail::is_passable<World, Class>(world, start)) {
+    return {PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+  }
+  if (product.status_ != PathStatus::Found || !product.is_valid(world) ||
+      product.tile_count_ != detail::tile_count<World>() ||
+      product.chunk_count_ != World::chunk_count ||
+      product.local_tile_count_ != World::local_tile_count ||
+      product.shape_size_ != ShapeTraits<Shape>::size ||
+      product.chunk_extent_ != ShapeTraits<Shape>::chunk ||
+      product.model_class_identity_ != detail::tag_identity<Class>() ||
+      product.model_lattice_identity_ !=
+          static_cast<std::uint32_t>(Model::lattice_identity) ||
+      product.model_lattice_version_ != Model::lattice_version ||
+      product.model_step_identity_ !=
+          static_cast<std::uint32_t>(Model::step_policy_identity) ||
+      product.model_cost_scale_ != Model::cost_scale ||
+      product.model_provider_identity_ != detail::tag_identity<Provider>() ||
+      product.model_provider_revision_ != model.revision()) {
+    return {PathStatus::NoPath, 0, 0, 0, scratch.path_};
+  }
+
+  const auto start_index = detail::tile_index<Shape>(start);
+  auto current = start_index;
+  auto current_distance = product.distance_[start_index];
+  if (current_distance == infinite_distance) {
+    return {PathStatus::NoPath, 0, 0, product.reached_nodes_, scratch.path_};
+  }
+  scratch.path_.push_back(start);
+  while (current_distance > 0) {
+    auto next = current;
+    auto next_distance = current_distance;
+    auto next_cost = std::uint32_t{0};
+    model.for_each_forward(
+        world, detail::tile_coord<Shape>(current), current, [&](auto probe) {
+          if (probe.availability != TransitionAvailability::Legal ||
+              probe.cost_overflow) {
+            return;
+          }
+          const auto candidate = product.distance_[probe.to_index];
+          if (candidate < next_distance &&
+              detail::saturating_add(candidate, probe.cost) ==
+                  current_distance) {
+            next = probe.to_index;
+            next_distance = candidate;
+            next_cost = probe.cost;
+          }
+        });
+    if (next == current ||
+        detail::saturating_add(next_distance, next_cost) != current_distance) {
+      scratch.path_.clear();
+      return {PathStatus::NoPath, 0, 0, product.reached_nodes_, scratch.path_};
+    }
+    current = next;
+    current_distance = product.distance_[current];
+    scratch.path_.push_back(detail::tile_coord<Shape>(current));
+  }
+
+  return {PathStatus::Found,    product.distance_[start_index],
+          scratch.path_.size(), product.reached_nodes_,
+          scratch.path_,        Model::cost_scale};
+}
+
+/// Reconstructs a weighted product path using regular adjacent transitions.
+template <typename World, typename Class>
+auto weighted_distance_field_product_path(const World& world, Coord3 start,
+                                          const DistanceFieldProduct& product,
+                                          DistanceFieldScratch& scratch)
+    -> PathResult {
+  return weighted_distance_field_product_path<World, Class,
+                                              AdjacentTransitions>(
+      world, start, product, scratch, AdjacentTransitions{});
+}
+
 /// Finds the closest reachable goal represented by a valid dense product.
 ///
 /// The returned path borrows `scratch` storage until its next mutation.
@@ -833,6 +1175,31 @@ auto nearest_target(const World& world, Coord3 start,
                     const DistanceFieldProduct& product,
                     DistanceFieldScratch& scratch) -> NearestTargetResult {
   return nearest_target<World, Tag, AdjacentTransitions>(
+      world, start, product, scratch, AdjacentTransitions{});
+}
+
+/// Finds the lowest-cost goal represented by a weighted product.
+template <typename World, typename Class, typename Provider>
+auto weighted_nearest_target(const World& world, Coord3 start,
+                             const DistanceFieldProduct& product,
+                             DistanceFieldScratch& scratch,
+                             const Provider& provider) -> NearestTargetResult {
+  const auto path = weighted_distance_field_product_path<World, Class>(
+      world, start, product, scratch, provider);
+  const auto target = path.status == PathStatus::Found && !path.path.empty()
+                          ? path.path.back()
+                          : Coord3{};
+  return {path.status,        path.cost, target,         path.expanded_nodes,
+          path.reached_nodes, path.path, path.cost_scale};
+}
+
+/// Finds the lowest-cost weighted goal using regular adjacent transitions.
+template <typename World, typename Class>
+auto weighted_nearest_target(const World& world, Coord3 start,
+                             const DistanceFieldProduct& product,
+                             DistanceFieldScratch& scratch)
+    -> NearestTargetResult {
+  return weighted_nearest_target<World, Class, AdjacentTransitions>(
       world, start, product, scratch, AdjacentTransitions{});
 }
 

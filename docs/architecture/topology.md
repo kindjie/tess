@@ -37,6 +37,16 @@ flowchart TB
   Sources --> Portals --> Index --> Graph --> Query
 ```
 
+Long-distance queries can reconstruct a coarse region route and its chunk
+corridor without touching tile-scale search.
+
+```mermaid
+flowchart LR
+  Graph["Fresh RegionGraph"] --> Route["coarse_path BFS"]
+  Route --> Regions["Ordered regions and portals"]
+  Route --> Corridor["Unique corridor chunks and clipped bounds"]
+```
+
 ### Incremental Updates
 
 ```mermaid
@@ -71,6 +81,10 @@ stateDiagram-v2
 - `RegionRef` identifies a local region in a specific chunk.
 - `RegionPortal` records one directed passable transition between neighboring
   chunk-local regions.
+- `CoarsePathResult` returns a deterministic shortest ordered region path,
+  its connecting portals, the unique chunk corridor in route order, clipped
+  corridor bounds, and the number of visited regions. All spans borrow the
+  supplied `RegionGraphScratch` until its next traversal.
 - `RegionGraphT<Residency>` owns all local chunk topologies, paired directed
   portals, and a global region index with a CSR portal adjacency.
   `region_count()` reports the index size and `region_index(RegionRef)` maps a
@@ -138,6 +152,11 @@ stateDiagram-v2
   than a wrong `Unreachable`. A route found within the resident set still wins
   (`Reachable`), and a component fully enclosed by resident walls is a definite
   `Unreachable`.
+- `coarse_path<Shape>(graph, start, goal, scratch)` uses the same stamped
+  region graph but retains BFS parents to reconstruct a shortest coarse route.
+  Dense and sparse graphs share the API. A sparse route found entirely in the
+  resident set is returned normally; an exhausted component touching missing
+  topology is `Indeterminate` and returns no partial corridor.
 - `is_region_graph_fresh(world, graph)` reports, without mutating anything,
   whether a built graph still matches the world: every chunk's stored topology
   version is current (dense and sparse) and, on a sparse world, the frozen
@@ -193,6 +212,12 @@ using dense region indices and epoch-stamped visited marks, which makes one
 query O(regions + portals) instead of rescanning the portal array per
 frontier pop. Visited-region counts are unchanged from the portal-scan
 implementation because the CSR buckets preserve portal order.
+
+Coarse path traversal preserves that CSR order, so ties resolve
+deterministically. Its corridor is the first-occurrence order of chunks on the
+region route; bounds cover those complete chunks and clip partial edge chunks
+to the compile-time shape. Callers may use the exact chunk list for corridor
+selection or its conservative bounding box to bound an existing field query.
 
 `update_region_graph` patches a built graph in place. It re-runs
 `build_local_chunk_topology` for each dirty chunk, drops every portal

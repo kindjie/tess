@@ -25,6 +25,9 @@ exact box, Euclidean-radius, and chunk-local span queries emit allocation-free
 x-runs. Experimental maintenance backends are available for evaluation but
 are not integrated into storage because the coalescing prototype failed its
 sparse-overhead promotion gate.
+Region graphs also reconstruct shortest coarse region/portal routes and chunk
+corridors. Dense weighted multi-goal products are versioned, byte-budgeted,
+provider-aware, and reusable across runtime calls through an opt-in policy.
 
 ## Planned extensions
 
@@ -43,13 +46,9 @@ item moves to **Shipped**.
   pipelines and exact box/radius/chunk spans shipped. Predicate bitsets,
   summaries, halos, and alternate layout experiments did not meet or have not
   yet been evaluated against their separate promotion gates.
-- **Hierarchical topology and path policy** ([path TDD][tdd-path]) — local
-  regions, portals, exact caches, weighted batches, and topology prechecks
-  shipped. Coarse hierarchy, corridor selection, weighted field products, and
-  richer runtime strategy remain planned.
-
 - **Flow, congestion, and influence fields** ([TDD][tdd-flow]) — only
-  distance fields and nearest-target queries shipped. Today's fallback
+  distance fields, weighted persistent products, nearest-target queries, and
+  coarse chunk corridors shipped. Today's fallback
   for congestion-aware routing: write congestion from your simulation
   into a cost field and route through a weighted movement class.
 - **Real GPU backend** ([TDD][tdd-gpu]) — the descriptor/concept layer

@@ -2,6 +2,21 @@
 
 Records meaningful design changes from the original TDDs.
 
+## 2026-07-22 - Complete hierarchical paths and weighted products
+
+- Changed: added deterministic shortest region paths with ordered portals,
+  chunk corridors, and sparse-residency uncertainty; persistent weighted
+  multi-goal products with exact replay and nearest-target queries; and opt-in
+  cross-call weighted-product selection in the path runtime.
+- Reason: reachability alone could not select a coarse corridor, while weighted
+  shared-goal work was rebuilt per batch and could not use the existing
+  versioned byte-budgeted product cache. Persistent products remain explicit
+  and dense-only so full-volume allocation is never hidden on sparse worlds.
+- Affected docs: topology, path, roadmap, completion plan, optimization log,
+  and changelog.
+- Affected code: region graph traversal, weighted field products and cache,
+  path runtime strategy, correctness tests, and benchmarks.
+
 ## 2026-07-22 - Complete block pipelines and span-query acceleration
 
 - Changed: added allocation-free block-lazy filter, map, flat-map, reduce, and
