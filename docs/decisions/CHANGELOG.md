@@ -2,6 +2,21 @@
 
 Records meaningful design changes from the original TDDs.
 
+## 2026-07-22 - Complete queued intents and event-driven resumable work
+
+- Changed: added typed non-owning intent batches with planner-preserved
+  version/invalidation/backend policy; cooperative generation-stamped result
+  tickets and deterministic FIFO continuations; exact bounded tick-stamped
+  event streams; OnEvent cadences; and direct scheduler adapters for event
+  publication and background continuation.
+- Reason: the synchronous field-only queue and dirty-only scheduler could not
+  express the historical TDD's common request families or retain budgeted work
+  and exact events across ticks.
+- Affected docs: queued operations, simulation, roadmap, completion plan, and
+  changelog.
+- Affected code: queued intent descriptors, resumable results, event streams,
+  scheduler cadence/diagnostics, benchmarks, and tests.
+
 ## 2026-07-22 - Complete provider-composed resolved transitions
 
 - Changed: extended special providers with per-origin forward and per-target

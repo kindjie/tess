@@ -18,6 +18,8 @@ namespace {
 
 constexpr std::uint32_t DirtyTerrain = 1u << 0u;
 constexpr std::uint32_t DirtyConstruction = 1u << 1u;
+constexpr std::uint32_t EventArrived = 1u << 0u;
+constexpr std::uint32_t EventBlocked = 1u << 1u;
 
 // Records its runs into a shared log; returns a fixed result.
 struct LogTask {
@@ -26,6 +28,7 @@ struct LogTask {
   tess::ScheduleTaskResult result{};
   std::uint32_t last_pending = 0;
   std::uint32_t last_budget = 0;
+  std::uint32_t last_events = 0;
 
   auto operator()(const tess::ScheduleTaskContext& context)
       -> tess::ScheduleTaskResult {
@@ -34,6 +37,7 @@ struct LogTask {
     }
     last_pending = context.pending_dirty;
     last_budget = context.budget_items;
+    last_events = context.pending_events;
     return result;
   }
 };
@@ -161,6 +165,164 @@ TEST(TessSchedule, ProducedDirtyReachesLaterPhasesSameTickEarlierNext) {
   (void)schedule.run_tick(clock);
   ASSERT_EQ(log.size(), 1u);
   EXPECT_EQ(log[0], "early");  // next tick, earlier phase
+}
+
+TEST(TessSchedule, OnEventCoalescesAndConsumesOnlySubscribedBits) {
+  LogTask arrived{"arrived"};
+  LogTask blocked{"blocked"};
+  tess::Schedule schedule;
+  (void)schedule.add_task(
+      {"arrived", tess::SimPhase::AI, tess::Cadence::on_event(EventArrived)},
+      arrived);
+  (void)schedule.add_task(
+      {"blocked", tess::SimPhase::AI, tess::Cadence::on_event(EventBlocked)},
+      blocked);
+  schedule.seal();
+
+  tess::SimClock clock;
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);
+
+  schedule.notify_events(EventArrived);
+  schedule.notify_events(EventArrived | EventBlocked);
+  const auto stats = schedule.run_tick(clock);
+  EXPECT_EQ(stats.tasks_run, 2u);
+  EXPECT_EQ(arrived.last_events, EventArrived);
+  EXPECT_EQ(blocked.last_events, EventBlocked);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);
+
+  schedule.notify_events(1u << 7u);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);
+}
+
+TEST(TessSchedule, ProducedEventsReachLaterPhasesSameTickEarlierNext) {
+  std::vector<std::string> log;
+  LogTask producer{"producer", &log};
+  producer.result.event_mask = EventBlocked;
+  LogTask late{"late", &log};
+  LogTask early{"early", &log};
+  tess::Schedule schedule;
+  const auto producer_id = schedule.add_task(
+      {"producer", tess::SimPhase::Movement, tess::Cadence::manual()},
+      producer);
+  (void)schedule.add_task({"early", tess::SimPhase::PreUpdate,
+                           tess::Cadence::on_event(EventBlocked)},
+                          early);
+  (void)schedule.add_task(
+      {"late", tess::SimPhase::Topology, tess::Cadence::on_event(EventBlocked)},
+      late);
+  schedule.seal();
+
+  tess::SimClock clock;
+  schedule.request_run(producer_id);
+  const auto stats = schedule.run_tick(clock);
+  EXPECT_EQ(stats.event_mask_produced, EventBlocked);
+  ASSERT_EQ(log.size(), 2u);
+  EXPECT_EQ(log[0], "producer");
+  EXPECT_EQ(log[1], "late");
+
+  log.clear();
+  (void)schedule.run_tick(clock);
+  ASSERT_EQ(log.size(), 1u);
+  EXPECT_EQ(log[0], "early");
+}
+
+TEST(TessSchedule, EventStreamKeepsExactTickStampedOrderAndRejectsOverflow) {
+  struct Arrival {
+    std::uint32_t entity = 0;
+  };
+  tess::EventStream<Arrival> stream;
+  stream.reserve_events(3);
+
+  EXPECT_TRUE(stream.publish(4, Arrival{11}));
+  EXPECT_TRUE(stream.publish(4, Arrival{12}));
+  EXPECT_TRUE(stream.publish(7, Arrival{13}));
+  EXPECT_FALSE(stream.publish(8, Arrival{14}));
+
+  const auto events = stream.events();
+  ASSERT_EQ(events.size(), 3u);
+  EXPECT_EQ(events[0].tick, 4u);
+  EXPECT_EQ(events[0].sequence, 0u);
+  EXPECT_EQ(events[0].value.entity, 11u);
+  EXPECT_EQ(events[1].tick, 4u);
+  EXPECT_EQ(events[1].sequence, 1u);
+  EXPECT_EQ(events[2].tick, 7u);
+  EXPECT_EQ(events[2].sequence, 2u);
+  EXPECT_EQ(stream.rejected_events(), 1u);
+
+  stream.clear();
+  EXPECT_TRUE(stream.empty());
+  EXPECT_TRUE(stream.publish(9, Arrival{15}));
+  ASSERT_EQ(stream.events().size(), 1u);
+  EXPECT_EQ(stream.events()[0].sequence, 3u);
+}
+
+TEST(TessSchedule, WarmEventPublicationAndDispatchAreAllocationFree) {
+  struct Event {
+    std::uint32_t value = 0;
+  };
+  tess::EventStream<Event> stream;
+  stream.reserve_events(1);
+  LogTask task{"event"};
+  tess::Schedule schedule;
+  schedule.reserve_tasks(1);
+  (void)schedule.add_task(
+      {"event", tess::SimPhase::AI, tess::Cadence::on_event(EventArrived)},
+      task);
+  schedule.seal();
+  tess::SimClock clock;
+
+  {
+    tess_test::ScopedAllocationCounter counter;
+    for (std::uint32_t i = 0; i < 32; ++i) {
+      stream.clear();
+      EXPECT_TRUE(schedule.publish_event(EventArrived, stream, clock.tick + 1,
+                                         Event{i}));
+      (void)schedule.run_tick(clock);
+    }
+    EXPECT_EQ(counter.count(), 0u);
+  }
+}
+
+TEST(TessSchedule, ResumableWorkTaskRetainsBackgroundWorkAcrossTicks) {
+  struct Work {
+    std::uint32_t remaining = 5;
+    auto operator()(tess::AsyncWorkBudget budget, std::uint32_t& result)
+        -> tess::AsyncWorkStep {
+      const auto count = std::min(budget.max_items, remaining);
+      remaining -= count;
+      result += count;
+      return {
+          remaining == 0 ? tess::AsyncStepState::Ready
+                         : tess::AsyncStepState::Pending,
+          count,
+          tess::AsyncVersion{9},
+      };
+    }
+  };
+
+  Work work;
+  tess::ResumableWorkQueue<std::uint32_t> queue;
+  queue.reserve_tickets(1);
+  const auto ticket = queue.submit(work);
+  tess::ResumableWorkTask<std::uint32_t> task{queue};
+  tess::Schedule schedule;
+  const auto task_id =
+      schedule.add_task({"async", tess::SimPhase::Background,
+                         tess::Cadence::background(tess::BackgroundBudget{2})},
+                        task);
+  schedule.seal();
+
+  tess::SimClock clock;
+  schedule.request_run(task_id);
+  EXPECT_EQ(schedule.run_tick(clock).background_items, 2u);
+  EXPECT_EQ(queue.state(ticket), tess::AsyncResultState::Pending);
+  EXPECT_EQ(schedule.run_tick(clock).background_items, 2u);
+  EXPECT_EQ(queue.state(ticket), tess::AsyncResultState::Pending);
+  EXPECT_EQ(schedule.run_tick(clock).background_items, 1u);
+  EXPECT_EQ(queue.state(ticket), tess::AsyncResultState::Ready);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);
+  ASSERT_NE(queue.result(ticket), nullptr);
+  EXPECT_EQ(*queue.result(ticket), 5u);
 }
 
 // Background: armed once, then continues on its own while more_work holds,

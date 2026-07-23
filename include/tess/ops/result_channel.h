@@ -18,13 +18,11 @@
 // owner's thread after the execute call returns, so the S1 executor join
 // barrier supplies visibility and the channel holds no atomics.
 //
-// The current synchronous scope is deliberately drain-only: results use
-// drain_results(visitor) in handle (== enqueue) order. There is no future
-// type -- the pipeline has no asynchronous execution path yet, so a future
-// could never be pending across a caller-visible boundary; one returns with
-// budget-deferred execution. This is a recorded divergence from the TDD's
-// full handle vocabulary, exactly like the deferred cancelled/superseded
-// states.
+// This synchronous channel is deliberately drain-only: results use
+// drain_results(visitor) in handle (== enqueue) order. Cooperative work that
+// remains pending across caller-visible boundaries uses the separate
+// ResumableWorkQueue<T>; keeping the two lifecycles separate avoids atomics and
+// generation checks on the synchronous planner/executor hot path.
 namespace tess {
 
 /// Dense per-operation completion and payload channel.

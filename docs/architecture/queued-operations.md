@@ -1,8 +1,8 @@
 # Queued Operations Foundation
 
-The current queued-operations layer is the first M4 scaffold over the existing
-storage and block APIs. It lives in `include/tess/ops/queued.h` and is exported
-by `tess/tess.h`.
+The queued-operations layer combines deterministic chunk planning with typed,
+non-owning intent envelopes over the existing storage and block APIs. It lives
+in `include/tess/ops/queued.h` and is exported by `tess/tess.h`.
 
 The guarded scheduler and `AutoExecTask` execution boundary keeps planning and
 metadata reduction on the frame owner. Concurrent callbacks receive only
@@ -38,6 +38,7 @@ flowchart TB
 ## Public Surface
 
 - `FrameOps` owns the operations submitted for one planning frame.
+  `reserve_operations(count)` establishes a warm allocation-free capacity.
   `FrameOps::clear()` resets the frame for reuse: it drops all queued
   operations while keeping the enqueue vector's capacity, so warm frame
   loops re-enqueue without allocating. Clearing invalidates previously
@@ -64,11 +65,17 @@ flowchart TB
   `resident_chunks()`.
 - `FieldAccessDesc` records untyped field access masks for an operation:
   `read_mask`, `write_mask`, and `dirty_mask`. These are planner metadata only
-  in this slice; they do not mutate world dirty flags and are not field-tag
-  reflection.
-- `QueuedOperation` stores the submitted `OperationKind` (currently only
-  `UpdateField`), handle, id, domain, field access, `WritePolicy`,
-  priority, budget policy, and `std::source_location`.
+  in the planner; they do not themselves mutate world dirty flags and are not
+  field-tag reflection.
+- `FrameOps` accepts field updates plus typed path, nearest-target,
+  field-product, movement, topology, residency, dirty-mark, and render-delta
+  intents. Batch descriptors retain a type-checked `IntentPayloadView` over
+  caller-owned storage. The payload must outlive queue planning and execution;
+  the queue never copies game-specific request objects.
+- `IntentMetadata` carries domain/access policy, required world/topology/field/
+  product versions, invalidated product families, backend eligibility, and
+  exactness. `QueuedOperation` and `PlannedOperation` preserve that metadata
+  unchanged for dispatch and diagnostics.
 - `OperationAccess` records the diagnostic access metadata known to the
   planner: write policy, `DomainKind` (`ExplicitChunks`, `DirtyChunks`,
   `ActiveChunks`, or `ResidentChunks`), and domain mask. It is diagnostic
@@ -119,9 +126,10 @@ flowchart TB
   `PlannedDirtyCollectResult` / `PlannedDirtyCollectStatus`; incompatible
   partitions are rejected without mutating the destination or partitions.
 
-The first submitted operation category is `FrameOps::update_field(...)`. It
-records field/block-style work intent only; it does not accept callbacks or
-invoke kernels.
+Typed intent envelopes describe and group work; they do not own arbitrary
+callbacks. Chunk execution remains explicit through the planner-issued block
+adapters, while specialized path, movement, residency, and presentation
+consumers read the type-checked payload after inspecting `OperationKind`.
 
 ## Planning Behavior
 
@@ -457,27 +465,35 @@ deliberately drain-only, synchronous design:
   earlier writes and report their chunks); the aborted tail reads
   `Pending`.
 
-There is intentionally no future/handle type in the current synchronous API:
-the pipeline has no asynchronous execution path, so a future could never be
-observed pending
-across a caller-visible boundary. One returns when budget-deferred execution
-gives it a real consumer; this is a recorded TDD divergence alongside the
-deferred cancelled/superseded states.
+`include/tess/ops/async_work.h` supplies the separate cooperative lifecycle for
+work that must remain caller-visible across phase calls:
+
+- `AsyncTicket` is generation stamped; `clear()` invalidates every older
+  ticket while preserving reserved capacity.
+- `AsyncResultState` covers `Immediate`, `Pending`, `Ready`, `Failed`,
+  `Cancelled`, `Superseded`, and `Stale` in addition to `Unbound`.
+- `ResumableWorkQueue<T>` invokes non-owning continuations in submission order
+  under one deterministic `AsyncWorkBudget`. Results carry required and
+  produced `AsyncVersion` stamps. No hidden thread or wait is introduced;
+  applications may run the queue on their chosen execution context.
+- `ResumableWorkTask<T>` adapts the queue directly to a scheduler Background
+  cadence. Its `more_work` result retains pending tickets for the next tick.
+
+The synchronous `ResultChannel<T>` remains the lower-overhead choice for work
+that completes behind one planner/executor barrier.
 
 ## Deliberate Limits
 
 This slice intentionally does not implement:
 
 - queued kernel storage or callback ownership
-- async handles/futures (results are synchronous and drain-only; see Result
-  Channels above)
-- asynchronous scheduling or work that remains pending across phase calls;
-  the persistent pool is synchronous at the caller-visible boundary
+- internally owned threads, blocking futures, or nondeterministic
+  gameplay-affecting completion
 - general type-erased queued-kernel ownership; `AutoExecTask` binds one typed
   chunk callback and executes its queue synchronously through the schedule
 - thread-local dirty accumulator policy beyond caller-owned per-operation
   phase partitions
-- topology, pathfinding, movement, residency transitions, or GPU selection
+- built-in dispatch implementations for every typed intent family
 - work-contract or maintenance-scheduler semantics
 - field tag reflection or typed read/write sets beyond explicit mask
   descriptors
@@ -505,16 +521,16 @@ rules before they are wired into queued operations.
 The historical queued-operations TDD describes a larger public planning and
 execution system. The shipped implementation deliberately remains narrower:
 
-- `FrameOps::update_field(...)` records intent and optional untyped field
-  access masks without a kernel type.
+- Typed envelopes are non-owning and dispatch-neutral; they do not store
+  arbitrary kernels or game-specific request objects.
 - `DomainDesc` supports explicit, dirty, active, and resident chunk domains.
 - `ExecutionPlan` stores ordered expanded chunk keys and planner-issued
   parallel phases, not the TDD's general dependency/barrier graph.
-- `ExecutionReport` reports validation status, chunk count, and source
-  location plus access metadata. Typed result channels are separate; backend
-  choice, versions, cost estimates, and general reordered hazards are absent.
+- `ExecutionReport` reports validation status, chunk count, source location,
+  and preserved intent metadata. Cost estimates and general reordered hazards
+  are absent.
 - `AutoExecTask` owns one typed callback and selects serial or worker-pool
   phase execution. Queued storage does not yet own arbitrary typed kernels.
 
-General queued intents, async continuations, richer domains, and the dependency
-graph are tracked by the maintained roadmap completion plan.
+Richer domains and the general dependency graph are tracked by the maintained
+roadmap completion plan.

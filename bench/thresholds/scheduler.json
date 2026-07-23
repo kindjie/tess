@@ -13,6 +13,14 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 500
     },
+    "scheduler/event_trigger": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 700
+    },
+    "scheduler/resumable_work_step": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 900
+    },
     "scheduler/auto_exec_tick": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 6000

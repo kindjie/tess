@@ -141,7 +141,10 @@
   message instead of hanging until the ctest timeout.
 - `tess_queued_contract_test`: verifies queued-operation lifecycle and boundary
   contracts, including source-location capture, allocation-free inspection of
-  already-built queue/report/plan spans, allocation-free planned block
+  already-built queue/report/plan spans, typed path/nearest/field-product/
+  movement/topology/residency/dirty/render intent envelopes with type-checked
+  non-owning batch payloads and planner-preserved version, invalidation,
+  backend, and exactness metadata, allocation-free planned block
   iteration, a tagged custom serial executor end to end,
   `FrameOps::clear()` id restart and allocation-free warm re-enqueue,
   zero-value default-constructed `OpId`/`OpHandle`, write-then-read hazard
@@ -197,7 +200,11 @@
   drain plus clear is allocation-free. A throwing drain visitor leaves that
   slot undrained so a later call can retry it exactly once, including after
   reentrant capacity growth; a reentrant clear retires the old slot without a
-  stale recovery write.
+  stale recovery write. Cooperative async coverage verifies generation-stamped
+  `AsyncTicket`s, immediate results, deterministic FIFO advancement under a
+  shared item budget, pending continuations across calls, required/result
+  versions, terminal failed/cancelled/superseded/stale states, stale-ticket
+  rejection after clear, and allocation-free warm submit/advance/reset reuse.
 - `tess_movement_class_test`: verifies the compile-time movement vocabulary
   (`tess::movement`): the `MovementClassFor` concept and `movement_class_of`
   tag/class normalization, source-compatible default step policies, stable
@@ -506,10 +513,15 @@
   counted as skipped), OnDirty firing iff the task's own mask bits are
   pending with own-bit-only consumption (foreign bits sit inert), produced
   dirty reaching later phases the same tick and earlier phases the next
-  tick, deterministic background item budgets with `more_work`
+  tick, OnEvent mask coalescing with own-bit-only consumption, produced events
+  reaching later phases the same tick and earlier phases the next tick, exact
+  ordered `EventStream` entries carrying tick and sequence stamps with bounded
+  overflow, deterministic background item budgets with `more_work`
   continuation, manual single-shot runs, persistent triggers surviving
   disablement, allocation-free dispatch (`run_tick`/`notify_dirty`/
-  `request_run`) after `seal()`, and the frame driver keeping EveryN exact
+  `notify_events`/`request_run`) after `seal()`, allocation-free warm event
+  publication, direct `ResumableWorkTask` background integration, and the
+  frame driver keeping EveryN exact
   across SimSpeed changes, backlogged multi-tick frames, and paused frames
   (cadences count fixed ticks, never frames).
 - `tess_ecs_adapter_test`: verifies the dependency-free ECS layer (M10):

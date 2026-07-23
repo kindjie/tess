@@ -17,7 +17,9 @@ bridging, the production worker-pool phase executor, the GPU descriptor
 interface, and compile-gated diagnostics. Resolved regular and
 provider-composed transitions drive exact paths, fields, topology, caches,
 agents, and movement commit across orthogonal, clearance-preserving diagonal,
-and axial-hex worlds.
+and axial-hex worlds. `FrameOps` also carries typed intent batches and their
+version/invalidation policy; cooperative tickets resume budgeted work across
+ticks; and exact event streams drive coalesced OnEvent schedule cadences.
 
 ## Planned extensions
 
@@ -25,14 +27,10 @@ The foundations named below may exist, but the extensions themselves are not
 shipped. Do not build consumer code that assumes these APIs exist until the
 item moves to **Shipped**.
 
-- **General queued intents and resumable work** ([queued TDD][tdd-queued]) —
-  queued field updates, synchronous typed results, phase planning, and the
-  production pool shipped. Typed path, field-product, topology, movement,
-  residency, and render intents plus async/budgeted tickets did not.
-- **Event scheduling and persistent maintenance**
+- **Persistent maintenance**
   ([scheduler TDD][tdd-scheduler], [maintenance addendum][tdd-work]) — fixed
-  cadences, dirty/manual triggers, and deterministic background continuation
-  shipped. Event streams and coalescing maintenance handles did not.
+  cadences, dirty/manual/event triggers, exact event streams, and deterministic
+  background continuation shipped. Coalescing maintenance handles did not.
 - **Block pipelines and spatial query acceleration**
   ([block TDD][tdd-block], [layout addendum][tdd-layout]) — resolved chunk
   views and serial block iteration shipped. Block-lazy pipelines, box/radius

@@ -81,8 +81,79 @@ struct OpHandle {
 /** Identifies the work family carried by a queued operation. */
 enum class OperationKind : std::uint8_t {
   UpdateField,
+  QueryPaths,
+  QueryNearest,
+  BuildFieldProduct,
+  MoveEntities,
+  RebuildTopology,
+  EnsureResident,
+  MarkDirty,
+  PublishRenderDeltas,
 };
 static_assert(sizeof(OperationKind) == sizeof(std::uint8_t));
+
+/** Selects which execution families may consume an intent. */
+enum class BackendEligibility : std::uint8_t {
+  CpuOnly,
+  CpuOrGpu,
+};
+
+/** States whether an approximate consumer may satisfy an intent. */
+enum class ExactnessRequirement : std::uint8_t {
+  Exact,
+  ApproximateAllowed,
+};
+
+/** Carries optimistic world/product requirements into planning. */
+struct IntentVersions {
+  std::uint64_t world = 0;
+  std::uint64_t topology = 0;
+  std::uint64_t fields = 0;
+  std::uint64_t product = 0;
+
+  friend constexpr bool operator==(IntentVersions lhs,
+                                   IntentVersions rhs) noexcept = default;
+};
+
+/** Declares product families invalidated when an intent commits. */
+struct IntentInvalidations {
+  std::uint32_t field_mask = 0;
+  bool topology = false;
+  bool paths = false;
+  bool render = false;
+
+  friend constexpr bool operator==(IntentInvalidations lhs,
+                                   IntentInvalidations rhs) noexcept = default;
+};
+
+/** Type-checked, non-owning view of one homogeneous intent batch. */
+struct IntentPayloadView {
+  template <typename T, std::size_t Extent>
+  [[nodiscard]] static auto from(std::span<T, Extent> values) noexcept
+      -> IntentPayloadView {
+    using Item = std::remove_cv_t<T>;
+    static_assert(std::is_object_v<Item>);
+    static_assert(!std::is_volatile_v<T>);
+    return IntentPayloadView{values.data(), values.size(), sizeof(Item),
+                             detail::tag_identity<Item>()};
+  }
+
+  template <typename T>
+  [[nodiscard]] auto as() const noexcept -> std::span<const T> {
+    using Item = std::remove_cv_t<T>;
+    static_assert(std::is_object_v<Item>);
+    if (item_size != sizeof(Item) ||
+        type_identity != detail::tag_identity<Item>()) {
+      return {};
+    }
+    return {static_cast<const T*>(data), count};
+  }
+
+  const void* data = nullptr;
+  std::size_t count = 0;
+  std::size_t item_size = 0;
+  std::uintptr_t type_identity = 0;
+};
 
 /** Expresses scheduler urgency independently of operation order. */
 enum class Priority : std::uint8_t {
@@ -210,6 +281,124 @@ struct FieldAccessDesc {
                                    FieldAccessDesc rhs) noexcept = default;
 };
 
+/** Planner-visible metadata shared by every typed intent envelope. */
+struct IntentMetadata {
+  DomainDesc domain = DomainDesc::resident_chunks();
+  FieldAccessDesc field_access{};
+  WritePolicy write_policy = WritePolicy::ReadOnly;
+  Priority priority = Priority::GameplayCritical;
+  BudgetPolicy budget_policy = BudgetPolicy::MustRun;
+  IntentVersions versions{};
+  IntentInvalidations invalidations{};
+  BackendEligibility backend = BackendEligibility::CpuOnly;
+  ExactnessRequirement exactness = ExactnessRequirement::Exact;
+};
+
+/** Non-owning typed batch of path requests. */
+struct PathBatchDesc {
+  template <typename Request, std::size_t Extent>
+  [[nodiscard]] static auto from(std::span<Request, Extent> requests,
+                                 IntentMetadata operation = {})
+      -> PathBatchDesc {
+    return PathBatchDesc{IntentPayloadView::from(requests),
+                         std::move(operation)};
+  }
+
+  IntentPayloadView requests{};
+  IntentMetadata operation{};
+};
+
+/** Non-owning typed batch of nearest-target requests. */
+struct NearestBatchDesc {
+  template <typename Request, std::size_t Extent>
+  [[nodiscard]] static auto from(std::span<Request, Extent> requests,
+                                 IntentMetadata operation = {})
+      -> NearestBatchDesc {
+    return NearestBatchDesc{IntentPayloadView::from(requests),
+                            std::move(operation)};
+  }
+
+  IntentPayloadView requests{};
+  IntentMetadata operation{};
+};
+
+/** Non-owning typed batch describing one derived field product build. */
+struct FieldProductDesc {
+  template <typename Request, std::size_t Extent>
+  [[nodiscard]] static auto from(std::span<Request, Extent> requests,
+                                 IntentMetadata operation = {})
+      -> FieldProductDesc {
+    return FieldProductDesc{IntentPayloadView::from(requests),
+                            std::move(operation)};
+  }
+
+  IntentPayloadView requests{};
+  IntentMetadata operation{};
+};
+
+/** Non-owning typed batch of movement requests. */
+struct MoveBatchDesc {
+  template <typename Request, std::size_t Extent>
+  [[nodiscard]] static auto from(std::span<Request, Extent> requests,
+                                 IntentMetadata operation = {})
+      -> MoveBatchDesc {
+    return MoveBatchDesc{IntentPayloadView::from(requests),
+                         std::move(operation)};
+  }
+
+  IntentPayloadView requests{};
+  IntentMetadata operation{};
+};
+
+/** Describes a topology rebuild over the selected operation domain. */
+struct TopologyRebuildDesc {
+  IntentMetadata operation{};
+};
+
+/** Non-owning typed batch of chunks or coordinates to make resident. */
+struct ResidencyDesc {
+  template <typename Request, std::size_t Extent>
+  [[nodiscard]] static auto from(std::span<Request, Extent> requests,
+                                 IntentMetadata operation = {})
+      -> ResidencyDesc {
+    return ResidencyDesc{IntentPayloadView::from(requests),
+                         std::move(operation)};
+  }
+
+  IntentPayloadView requests{};
+  IntentMetadata operation{};
+};
+
+/** Describes a direct dirty mark over a chunk domain. */
+struct MarkDirtyDesc {
+  DomainDesc domain = DomainDesc::resident_chunks();
+  std::uint32_t dirty_mask = 0;
+};
+
+/** Non-owning typed batch consumed by a render-delta publisher. */
+struct RenderDeltaDesc {
+  template <typename Request, std::size_t Extent>
+  [[nodiscard]] static auto from(std::span<Request, Extent> requests,
+                                 IntentMetadata operation = {})
+      -> RenderDeltaDesc {
+    return RenderDeltaDesc{IntentPayloadView::from(requests),
+                           std::move(operation)};
+  }
+
+  IntentPayloadView requests{};
+  IntentMetadata operation{};
+};
+
+/** Typed handle for a queued path batch. */
+struct PathBatchHandle {
+  OpHandle operation{};
+};
+
+/** Typed handle for a queued nearest-target batch. */
+struct NearestBatchHandle {
+  OpHandle operation{};
+};
+
 /** Captures one operation request before domain expansion and validation. */
 struct QueuedOperation {
   OperationKind kind = OperationKind::UpdateField;
@@ -221,6 +410,11 @@ struct QueuedOperation {
   Priority priority = Priority::GameplayCritical;
   BudgetPolicy budget_policy = BudgetPolicy::MustRun;
   std::source_location source = std::source_location::current();
+  IntentPayloadView payload{};
+  IntentVersions versions{};
+  IntentInvalidations invalidations{};
+  BackendEligibility backend = BackendEligibility::CpuOnly;
+  ExactnessRequirement exactness = ExactnessRequirement::Exact;
 };
 
 /** Diagnostic snapshot of an operation's write policy and domain selector. */
@@ -252,6 +446,11 @@ class PlannedOperation {
   WritePolicy write_policy = WritePolicy::ReadOnly;
   Priority priority = Priority::GameplayCritical;
   BudgetPolicy budget_policy = BudgetPolicy::MustRun;
+  IntentPayloadView payload{};
+  IntentVersions versions{};
+  IntentInvalidations invalidations{};
+  BackendEligibility backend = BackendEligibility::CpuOnly;
+  ExactnessRequirement exactness = ExactnessRequirement::Exact;
   // Enqueue-site capture carried through planning so run-time completions
   // (result channels) can report where the operation came from.
   std::source_location source = std::source_location::current();
@@ -301,6 +500,11 @@ class PlannedOperation {
         write_policy(operation.write_policy),
         priority(operation.priority),
         budget_policy(operation.budget_policy),
+        payload(operation.payload),
+        versions(operation.versions),
+        invalidations(operation.invalidations),
+        backend(operation.backend),
+        exactness(operation.exactness),
         source(operation.source),
         chunks_(std::move(chunks)),
         world_stamp_(world_stamp) {}
@@ -594,6 +798,10 @@ struct OperationReport {
   OperationFailure failure = OperationFailure::None;
   OperationAccess access{};
   FieldAccessDesc field_access{};
+  IntentVersions versions{};
+  IntentInvalidations invalidations{};
+  BackendEligibility backend = BackendEligibility::CpuOnly;
+  ExactnessRequirement exactness = ExactnessRequirement::Exact;
   ChunkKey detail_chunk{};
   OpHandle conflict_handle{};
   OpId conflict_id{};
@@ -1156,26 +1364,21 @@ class ExecutionReport {
 /** Collects one frame's operations while assigning stable handles and IDs. */
 class FrameOps {
  public:
+  void reserve_operations(std::size_t count) { operations_.reserve(count); }
+
   [[nodiscard]] auto update_field(
       DomainDesc domain, FieldAccessDesc field_access, WritePolicy write_policy,
       Priority priority = Priority::GameplayCritical,
       BudgetPolicy budget_policy = BudgetPolicy::MustRun,
       std::source_location source = std::source_location::current())
       -> OpHandle {
-    const auto id = OpId{static_cast<std::uint64_t>(operations_.size())};
-    const auto handle = OpHandle{id.value};
-    operations_.push_back(QueuedOperation{
-        OperationKind::UpdateField,
-        handle,
-        id,
-        std::move(domain),
-        field_access,
-        write_policy,
-        priority,
-        budget_policy,
-        source,
-    });
-    return handle;
+    auto metadata = IntentMetadata{};
+    metadata.domain = std::move(domain);
+    metadata.field_access = field_access;
+    metadata.write_policy = write_policy;
+    metadata.priority = priority;
+    metadata.budget_policy = budget_policy;
+    return enqueue(OperationKind::UpdateField, std::move(metadata), {}, source);
   }
 
   [[nodiscard]] auto update_field(
@@ -1186,6 +1389,75 @@ class FrameOps {
       -> OpHandle {
     return update_field(std::move(domain), FieldAccessDesc{}, write_policy,
                         priority, budget_policy, source);
+  }
+
+  [[nodiscard]] auto query_paths(
+      PathBatchDesc desc,
+      std::source_location source = std::source_location::current())
+      -> PathBatchHandle {
+    return PathBatchHandle{enqueue(OperationKind::QueryPaths,
+                                   std::move(desc.operation), desc.requests,
+                                   source)};
+  }
+
+  [[nodiscard]] auto query_nearest(
+      NearestBatchDesc desc,
+      std::source_location source = std::source_location::current())
+      -> NearestBatchHandle {
+    return NearestBatchHandle{enqueue(OperationKind::QueryNearest,
+                                      std::move(desc.operation), desc.requests,
+                                      source)};
+  }
+
+  [[nodiscard]] auto build_field_product(
+      FieldProductDesc desc,
+      std::source_location source = std::source_location::current())
+      -> OpHandle {
+    return enqueue(OperationKind::BuildFieldProduct, std::move(desc.operation),
+                   desc.requests, source);
+  }
+
+  [[nodiscard]] auto move_entities(
+      MoveBatchDesc desc,
+      std::source_location source = std::source_location::current())
+      -> OpHandle {
+    return enqueue(OperationKind::MoveEntities, std::move(desc.operation),
+                   desc.requests, source);
+  }
+
+  [[nodiscard]] auto rebuild_topology(
+      TopologyRebuildDesc desc,
+      std::source_location source = std::source_location::current())
+      -> OpHandle {
+    return enqueue(OperationKind::RebuildTopology, std::move(desc.operation),
+                   {}, source);
+  }
+
+  [[nodiscard]] auto ensure_resident(
+      ResidencyDesc desc,
+      std::source_location source = std::source_location::current())
+      -> OpHandle {
+    return enqueue(OperationKind::EnsureResident, std::move(desc.operation),
+                   desc.requests, source);
+  }
+
+  [[nodiscard]] auto mark_dirty(
+      MarkDirtyDesc desc,
+      std::source_location source = std::source_location::current())
+      -> OpHandle {
+    auto metadata = IntentMetadata{};
+    metadata.domain = std::move(desc.domain);
+    metadata.field_access.dirty_mask = desc.dirty_mask;
+    metadata.invalidations.field_mask = desc.dirty_mask;
+    return enqueue(OperationKind::MarkDirty, std::move(metadata), {}, source);
+  }
+
+  [[nodiscard]] auto publish_render_deltas(
+      RenderDeltaDesc desc,
+      std::source_location source = std::source_location::current())
+      -> OpHandle {
+    return enqueue(OperationKind::PublishRenderDeltas,
+                   std::move(desc.operation), desc.requests, source);
   }
 
   [[nodiscard]] constexpr auto operations() const noexcept
@@ -1216,6 +1488,30 @@ class FrameOps {
   void clear() noexcept { operations_.clear(); }
 
  private:
+  [[nodiscard]] auto enqueue(OperationKind kind, IntentMetadata metadata,
+                             IntentPayloadView payload,
+                             std::source_location source) -> OpHandle {
+    const auto id = OpId{static_cast<std::uint64_t>(operations_.size())};
+    const auto handle = OpHandle{id.value};
+    auto operation = QueuedOperation{};
+    operation.kind = kind;
+    operation.handle = handle;
+    operation.id = id;
+    operation.domain = std::move(metadata.domain);
+    operation.field_access = metadata.field_access;
+    operation.write_policy = metadata.write_policy;
+    operation.priority = metadata.priority;
+    operation.budget_policy = metadata.budget_policy;
+    operation.source = source;
+    operation.payload = payload;
+    operation.versions = metadata.versions;
+    operation.invalidations = metadata.invalidations;
+    operation.backend = metadata.backend;
+    operation.exactness = metadata.exactness;
+    operations_.push_back(std::move(operation));
+    return handle;
+  }
+
   std::vector<QueuedOperation> operations_;
 };
 
@@ -1436,6 +1732,10 @@ auto plan_operations(const World& world,
         OperationFailure::None,
         detail::operation_access(op),
         op.field_access,
+        op.versions,
+        op.invalidations,
+        op.backend,
+        op.exactness,
         {},
         {},
         {},

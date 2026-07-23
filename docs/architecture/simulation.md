@@ -276,9 +276,9 @@ stateDiagram-v2
 
 `include/tess/sim/schedule.h` is the M5 schedule: ordered phases of
 type-erased tasks driven by cadences that are pure functions of the fixed
-`SimClock` tick counter and per-task pending dirty masks. The schedule never
-touches a world -- dirty bits are FED to it by task results and
-`notify_dirty` -- so the no-hidden-full-world-scans rule holds by
+`SimClock` tick counter and per-task pending dirty/event masks. The schedule
+never touches a world -- trigger bits are fed to it explicitly -- so the
+no-hidden-full-world-scans rule holds by
 construction. Type erasure is a function pointer plus a context pointer;
 world-typed work lives in task objects the caller owns and registers by
 reference. `ScheduleTaskFn` is the raw erased function-pointer form for callers
@@ -296,7 +296,7 @@ flowchart TB
   Early --> Agent --> Derived --> Output
 ```
 
-Dirty results are merged immediately into every matching `OnDirty` task.
+Dirty and event results are merged immediately into every matching subscriber.
 
 ```mermaid
 flowchart TB
@@ -317,12 +317,13 @@ flowchart TB
   re-enabling never shifts the lockstep phase; a due-while-disabled tick is
   counted as skipped), `on_dirty(mask)` (fires iff bits of the task's OWN
   mask are pending; firing consumes only those bits, so producers'
-  same-tick marks re-arm it for the next tick), `background(budget)`, and
-  `manual()`.
-- `CadenceKind` is the stored discriminator for those five cadence forms.
+  same-tick marks re-arm it for the next tick), `on_event(mask)` with the same
+  phase-aware coalescing rules, `background(budget)`, and `manual()`.
+- `CadenceKind` is the stored discriminator for those six cadence forms.
   `ScheduleTaskDesc` combines a phase and cadence; `ScheduleTaskContext`
-  supplies the current clock and background budget to `ScheduleTaskFn`;
-  `ScheduleTaskResult` returns dirty bits, completed items, and backlog state;
+  supplies the current clock, consumed dirty/event masks, and background
+  budget to `ScheduleTaskFn`; `ScheduleTaskResult` returns produced dirty/event
+  masks, completed items, and backlog state;
   and `ScheduleTaskStats` exposes cumulative run, skip, and item counts.
 - `BackgroundBudget` is deliberately items-only: a due background task is
   offered `max_items` units per run and reports `items_done` plus
@@ -334,14 +335,24 @@ flowchart TB
   the Background initial trigger); `notify_dirty(mask)` merges external
   dirty bits (frame-owner thread only; never from an op callback --
   worker-side dirty flows exclusively through the task-result mask);
+  `notify_events(mask)` coalesces event wakeups; and `publish_event` stores an
+  exact payload before notifying its mask;
   `run_tick(clock)` advances the clock and dispatches, returning
   `ScheduleTickStats`; `task_stats(id)` reports per-task counters.
 - A task result's `dirty_mask` merges into every task's pending mask
   immediately: later-phase OnDirty tasks fire in the SAME tick,
   earlier-phase tasks the next tick.
+- `EventStream<T>` is caller-owned bounded storage for exact payloads with
+  monotonic sequence and simulation-tick stamps. Overflow is rejected rather
+  than overwritten. The scheduler mask is only a coalesced wakeup; an OnEvent
+  task drains the separate stream according to application policy.
+- `ResumableWorkTask<T>` maps `ScheduleTaskContext::budget_items` to a
+  `ResumableWorkQueue<T>` and maps remaining pending tickets back to
+  `more_work`, retaining deterministic cooperative jobs across ticks.
 - Allocation contract: `reserve_tasks` + registration happen at setup;
-  `run_tick`, `notify_dirty`, and `request_run` never allocate after
-  `seal()` (pinned by test).
+  `run_tick`, trigger notification, and `request_run` never allocate after
+  `seal()`. Reserved event streams and resumable queues also allocate nothing
+  on their warm paths (pinned by tests).
 - `run_schedule_frame(schedule, clock, accumulator, real_delta_seconds,
   control)` is the frame-to-ticks bridge: it consumes real frame time
   through the `FixedStepAccumulator` (honoring `SimSpeed` and the per-frame
@@ -457,8 +468,10 @@ it to decide how many scheduler ticks to run in one rendered frame.
 
 ## Behavior
 
-The scheduler is deterministic and synchronous. It does not own worker
-threads, async handles, or an event loop. Callers still own entity storage,
+The scheduler is deterministic and synchronous at its caller boundary. It
+does not own worker threads or an event loop. Cooperative async tickets,
+continuations, and exact event payload streams remain caller-owned; the
+schedule only advances and wakes them. Callers also own entity storage,
 game-specific job logic, AI decisions, UI state, and content rules.
 
 The intended per-frame order for current consumers is:
@@ -518,10 +531,10 @@ or leave the shape emit deltas only for tiles the chunk owns.
 ## Deliberate Limits
 
 The public schedule remains synchronous at its caller boundary even when an
-auto-exec phase uses the worker pool. It does not implement async tickets,
-persistent queued kernels, event-stream cadences, local avoidance,
-multi-agent collision resolution, permission layers, general doors,
-provider-aware exact route planning, or region-selective cache invalidation.
+auto-exec phase uses the worker pool. It does not own arbitrary queued
+kernels, nondeterministic completion threads, local avoidance, multi-agent
+collision resolution, permission layers, general doors, or region-selective
+cache invalidation.
 
 Movement validation currently uses a boolean-like passability field plus
 boolean-like occupancy and reservation fields. Weighted terrain remains part of

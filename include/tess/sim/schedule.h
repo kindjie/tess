@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/sim/event_stream.h>
 #include <tess/sim/time.h>
 
 #include <cstddef>
@@ -10,20 +11,19 @@
 
 // The M5 schedule: ordered phases of type-erased tasks driven by cadences
 // that are pure functions of the fixed-tick counter and per-task pending
-// dirty masks. The schedule itself never touches a world -- dirty bits are
-// FED to it (by task results and notify_dirty) -- so "no hidden full-world
-// scans" holds by construction. World-typed work lives in task objects the
-// caller owns and registers by reference; type erasure is a function
-// pointer plus a context pointer (no std::function, no allocation on
-// dispatch).
+// dirty/event masks. The schedule itself never touches a world -- trigger
+// bits are fed to it explicitly -- so "no hidden full-world scans" holds by
+// construction. World-typed work lives in task objects the caller owns and
+// registers by reference; type erasure is a function pointer plus a context
+// pointer (no std::function, no allocation on dispatch).
 //
 // Threading: a Schedule is externally synchronized like every tess scratch.
-// notify_dirty and request_run are frame-owner-thread calls and must never
-// be made from queued-operation callbacks (those may run on pool workers);
-// worker-produced dirty flows exclusively through the task-result mask.
+// notify_dirty, notify_events, and request_run are frame-owner-thread calls and
+// must never be made from queued-operation callbacks (those may run on pool
+// workers); worker-produced triggers flow through task-result masks.
 //
-// Reentrancy: task bodies may call notify_dirty, request_run, and
-// set_enabled (field writes on stable storage, with the documented
+// Reentrancy: task bodies may call notify_dirty, notify_events, request_run,
+// and set_enabled (field writes on stable storage, with the documented
 // immediate-merge semantics). They must NOT call add_task or run_tick --
 // registration after seal() would reallocate the task array mid-iteration
 // and a nested tick would double-advance every cadence; both are asserted.
@@ -34,6 +34,7 @@ enum class CadenceKind : std::uint8_t {
   EveryTick,
   EveryN,
   OnDirty,
+  OnEvent,
   Background,
   Manual,
 };
@@ -56,6 +57,7 @@ struct Cadence {
   std::uint32_t every_n = 1;
   std::uint32_t dirty_mask = 0;
   BackgroundBudget budget{};
+  std::uint32_t event_mask = 0;
 
   [[nodiscard]] static constexpr auto every_tick() noexcept -> Cadence {
     return Cadence{};
@@ -63,23 +65,28 @@ struct Cadence {
 
   [[nodiscard]] static constexpr auto every_ticks(std::uint32_t n) noexcept
       -> Cadence {
-    return Cadence{CadenceKind::EveryN, n == 0 ? 1u : n, 0, {}};
+    return Cadence{CadenceKind::EveryN, n == 0 ? 1u : n, 0, {}, 0};
   }
 
   [[nodiscard]] static constexpr auto on_dirty(std::uint32_t mask) noexcept
       -> Cadence {
-    return Cadence{CadenceKind::OnDirty, 1, mask, {}};
+    return Cadence{CadenceKind::OnDirty, 1, mask, {}, 0};
+  }
+
+  [[nodiscard]] static constexpr auto on_event(std::uint32_t mask) noexcept
+      -> Cadence {
+    return Cadence{CadenceKind::OnEvent, 1, 0, {}, mask};
   }
 
   [[nodiscard]] static constexpr auto background(
       BackgroundBudget budget) noexcept -> Cadence {
     return Cadence{
         CadenceKind::Background, 1, 0,
-        BackgroundBudget{budget.max_items == 0 ? 1u : budget.max_items}};
+        BackgroundBudget{budget.max_items == 0 ? 1u : budget.max_items}, 0};
   }
 
   [[nodiscard]] static constexpr auto manual() noexcept -> Cadence {
-    return Cadence{CadenceKind::Manual, 1, 0, {}};
+    return Cadence{CadenceKind::Manual, 1, 0, {}, 0};
   }
 };
 
@@ -112,6 +119,9 @@ struct ScheduleTaskContext {
   std::uint32_t pending_dirty = 0;
   // Background: the item budget for this run.
   std::uint32_t budget_items = 0;
+  // OnEvent: the subscribed bits that made the task due. Multiple
+  // notifications coalesce until this invocation consumes them.
+  std::uint32_t pending_events = 0;
 };
 
 /// Returns produced dirty bits and bounded background progress to the schedule.
@@ -124,6 +134,9 @@ struct ScheduleTaskResult {
   std::uint32_t items_done = 0;
   // Background: true keeps the task due next tick without a new trigger.
   bool more_work = false;
+  // Event bits produced by this run. Later phases observe them in the same
+  // tick; earlier phases observe them on the next tick.
+  std::uint32_t event_mask = 0;
 };
 
 /// Type-erased, non-owning callback signature used by `Schedule`.
@@ -156,6 +169,8 @@ struct ScheduleTickStats {
   std::uint32_t background_items = 0;
   // Union of every task result's dirty mask this tick.
   std::uint32_t dirty_mask_produced = 0;
+  // Union of every task result's event mask this tick.
+  std::uint32_t event_mask_produced = 0;
 };
 
 /// Executes non-owning task callbacks in deterministic phase order.
@@ -173,6 +188,7 @@ class Schedule {
     tasks_.reserve(count);
     phase_order_.reserve(count);
     dirty_task_ids_.reserve(count);
+    event_task_ids_.reserve(count);
   }
 
   auto add_task(const ScheduleTaskDesc& desc, void* ctx, ScheduleTaskFn fn)
@@ -218,9 +234,9 @@ class Schedule {
   // Freezes registration and builds the dispatch indexes: phase_order_
   // (phase-major, registration-stable -- the order run_tick always had,
   // now one pass instead of SimPhase::Count passes over every task) and
-  // dirty_task_ids_ (only OnDirty cadences consume pending_mask, so dirty
-  // merges stop writing tasks that never read the value; audit 2026-07-11
-  // M6). Storage is never reordered, so TaskIds stay stable. A contract-
+  // dirty/event subscription indexes. Trigger merges stop writing tasks that
+  // never read the corresponding value. Storage is never reordered, so
+  // TaskIds stay stable. A contract-
   // violating add_task after seal() asserts in debug builds; under NDEBUG
   // the late task registers but never dispatches (it is absent from the
   // frozen indexes).
@@ -234,6 +250,7 @@ class Schedule {
     }
     phase_order_.clear();
     dirty_task_ids_.clear();
+    event_task_ids_.clear();
     for (std::uint8_t phase = 0;
          phase < static_cast<std::uint8_t>(SimPhase::Count); ++phase) {
       for (std::size_t i = 0; i < tasks_.size(); ++i) {
@@ -245,6 +262,9 @@ class Schedule {
     for (std::size_t i = 0; i < tasks_.size(); ++i) {
       if (tasks_[i].desc.cadence.kind == CadenceKind::OnDirty) {
         dirty_task_ids_.push_back(static_cast<TaskId>(i));
+      }
+      if (tasks_[i].desc.cadence.kind == CadenceKind::OnEvent) {
+        event_task_ids_.push_back(static_cast<TaskId>(i));
       }
     }
     sealed_ = true;
@@ -286,6 +306,33 @@ class Schedule {
     }
   }
 
+  // Coalesces external event wakeups into subscribed tasks. The event mask
+  // is only a deterministic scheduler trigger; applications retain exact
+  // payloads and tick ordering in EventStream<T>.
+  void notify_events(std::uint32_t mask) noexcept {
+    if (sealed_) {
+      for (const auto id : event_task_ids_) {
+        tasks_[id].pending_events |= mask;
+      }
+      return;
+    }
+    for (auto& task : tasks_) {
+      task.pending_events |= mask;
+    }
+  }
+
+  // Publishes an exact payload before arming its coalesced scheduler mask.
+  // A full stream rejects the payload and deliberately does not wake tasks.
+  template <typename T>
+  [[nodiscard]] bool publish_event(std::uint32_t mask, EventStream<T>& stream,
+                                   std::uint64_t tick, const T& value) {
+    if (!stream.publish(tick, value)) {
+      return false;
+    }
+    notify_events(mask);
+    return true;
+  }
+
   auto run_tick(SimClock& clock) -> ScheduleTickStats {
     TESS_ASSERT(sealed_);
     TESS_ASSERT(!in_run_);
@@ -325,6 +372,7 @@ class Schedule {
     void* ctx = nullptr;
     ScheduleTaskFn fn = nullptr;
     std::uint32_t pending_mask = 0;
+    std::uint32_t pending_events = 0;
     std::uint32_t ticks_until_due = 0;
     bool run_requested = false;
     bool in_progress = false;
@@ -340,6 +388,7 @@ class Schedule {
     // fire on the first enabled tick.
     auto due = false;
     auto fired_dirty = std::uint32_t{0};
+    auto fired_events = std::uint32_t{0};
     auto budget = std::uint32_t{0};
     switch (task.desc.cadence.kind) {
       case CadenceKind::EveryTick:
@@ -359,6 +408,10 @@ class Schedule {
       case CadenceKind::OnDirty:
         fired_dirty = task.pending_mask & task.desc.cadence.dirty_mask;
         due = fired_dirty != 0 || task.run_requested;
+        break;
+      case CadenceKind::OnEvent:
+        fired_events = task.pending_events & task.desc.cadence.event_mask;
+        due = fired_events != 0 || task.run_requested;
         break;
       case CadenceKind::Background:
         due = task.in_progress || task.run_requested;
@@ -383,12 +436,14 @@ class Schedule {
     // Consume triggers BEFORE invoking, so anything raised during the run
     // re-arms the task for the next tick instead of being lost.
     task.pending_mask &= ~fired_dirty;
+    task.pending_events &= ~fired_events;
     task.run_requested = false;
 
     auto context = ScheduleTaskContext{};
     context.clock = clock;
     context.pending_dirty = fired_dirty;
     context.budget_items = budget;
+    context.pending_events = fired_events;
     const auto result = task.fn(task.ctx, context);
     TESS_ASSERT(task.desc.cadence.kind != CadenceKind::Background ||
                 result.items_done <= budget);
@@ -404,6 +459,12 @@ class Schedule {
       }
       stats.dirty_mask_produced |= result.dirty_mask;
     }
+    if (result.event_mask != 0) {
+      for (const auto id : event_task_ids_) {
+        tasks_[id].pending_events |= result.event_mask;
+      }
+      stats.event_mask_produced |= result.event_mask;
+    }
 
     ++stats.tasks_run;
     stats.background_items += result.items_done;
@@ -413,10 +474,10 @@ class Schedule {
   }
 
   std::vector<TaskRecord> tasks_;
-  // Built at seal(): phase-major dispatch order and the OnDirty consumers
-  // of dirty-mask merges.
+  // Built at seal(): phase-major dispatch order and trigger subscribers.
   std::vector<TaskId> phase_order_;
   std::vector<TaskId> dirty_task_ids_;
+  std::vector<TaskId> event_task_ids_;
   bool sealed_ = false;
   bool in_run_ = false;
 };
