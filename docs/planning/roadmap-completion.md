@@ -23,8 +23,8 @@ for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 | v0.7 | Maintenance, block pipelines, query acceleration | Complete |
 | v0.8 | Hierarchical topology and spatial products | Complete |
 | v0.9 | Areas, tactical assignment, crowd coordination | Complete |
-| v0.10 | Persistence, Flecs adapter, optional ImGui editor tools | Active |
-| v0.11 | Optional WebGPU backend | Planned |
+| v0.10 | Persistence, Flecs adapter, optional ImGui editor tools | Complete |
+| v0.11 | Optional WebGPU backend | Active |
 | v0.12 | Consolidation, compatibility, performance, backlog closure | Planned |
 
 ### Observed v0.12 Release Blocker
@@ -111,7 +111,11 @@ yet own a non-resident backing store. The optional Flecs 4.1 adapter now
 provides the same deterministic two-phase path-agent and lifecycle contract as
 EnTT while retaining full generation-bearing entity IDs. Its query is
 persistent, warm ticks allocate nothing, and the core remains dependency-free.
-Bounded ImGui editor helpers remain active work.
+Optional ImGui helpers now expose dense/sparse world overview, selected-chunk
+inspection, and caller-applied boolean field edit intents. The helpers accept
+const worlds and never load residency or directly mutate state. Picking,
+undo/redo, generalized reflection, and game-specific editor behavior remain
+application-owned, preserving the historical no-editor-framework boundary.
 
 ### Cross-cutting benchmark harness
 

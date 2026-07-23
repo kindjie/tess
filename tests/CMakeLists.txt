@@ -630,3 +630,25 @@ target_compile_definitions(
 tess_apply_project_options(tess_diagnostics_panels_test)
 
 tess_discover_tests(tess_diagnostics_panels_test)
+
+# Compile-checks the opt-in world tools with the imgui gate on and diagnostics
+# deliberately off, proving that tooling does not depend on diagnostics state.
+add_executable(
+  tess_imgui_tools_test
+  tess_imgui_tools_test.cc
+)
+target_link_libraries(
+  tess_imgui_tools_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+target_include_directories(
+  tess_imgui_tools_test
+  PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/imgui_stub"
+)
+target_compile_definitions(
+  tess_imgui_tools_test
+  PRIVATE TESS_ENABLE_IMGUI
+)
+tess_apply_project_options(tess_imgui_tools_test)
+
+tess_discover_tests(tess_imgui_tools_test)

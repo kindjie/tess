@@ -101,6 +101,7 @@ set(
   include/tess/core/lattice.h
   include/tess/core/shape.h
   include/tess/debug/imgui/panels.h
+  include/tess/debug/imgui/tools.h
   include/tess/diagnostics/diagnostics.h
   include/tess/diagnostics/export.h
   include/tess/diagnostics/trace.h

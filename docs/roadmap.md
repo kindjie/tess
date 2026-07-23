@@ -36,7 +36,9 @@ Versioned world archives persist caller-selected authoritative scalar fields,
 stable chunk metadata, and compatibility identities in canonical
 little-endian form. Exact loads preflight corruption and compatibility,
 surface schema changes as explicit migration requirements, and invalidate
-derived products.
+derived products. Optional Dear ImGui helpers inspect dense and sparse world
+state and return caller-applied boolean field intents without introducing a
+core UI dependency or direct editor mutation.
 
 ## Planned extensions
 
@@ -66,11 +68,11 @@ item moves to **Shipped**.
   reservation and congestion arbitration shipped, but tess does not perform
   velocity-obstacle steering, formation control, or globally optimal
   multi-agent pathfinding.
-- **Sparse backing-store persistence and editor integration**
+- **Sparse backing-store persistence and full editor integration**
   ([project design][tdd-project]) — dense and resident-set world archives
-  shipped. Durable non-resident chunk storage remains application-owned, and
-  later editor work provides optional substrate tooling only; game-specific
-  meaning remains application-owned.
+  and bounded optional ImGui substrate tools shipped. Durable non-resident
+  chunk storage, picking, undo, general reflection, and game-specific meaning
+  remain application-owned.
 - **External grid benchmark data and the scenario oracle**
   ([TDD][tdd-benchdata]) — a harness-only design for community grid maps
   and scenario optima as opt-in fixtures and calibrated benchmarks. Strict

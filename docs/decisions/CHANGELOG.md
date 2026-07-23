@@ -6,6 +6,19 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-22 - Bound optional ImGui world tooling to edit intents
+
+- Changed: added independently gated dense/sparse world overview and chunk
+  inspection helpers plus a boolean field widget that returns a caller-applied
+  edit intent from a const world.
+- Reason: v0.10 calls for optional substrate tooling, while the historical TDD
+  rejects a renderer/editor implementation and keeps meaning application-owned.
+  Const inspection and explicit intents make that boundary enforceable.
+- Affected docs: diagnostics architecture and guide, dependency inventory,
+  roadmap, completion plan, public surface, and changelog.
+- Affected code: optional ImGui tools header, API-matching stub, independent
+  gate tests, and install surface.
+
 ## 2026-07-22 - Add the optional Flecs adapter
 
 - Changed: added a Flecs 4.1.5 adapter with generation-preserving handles,

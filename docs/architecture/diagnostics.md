@@ -184,9 +184,33 @@ tess validates the header in CI against a minimal ImGui stub
 (`tests/imgui_stub/imgui.h`, `tess_diagnostics_panels_test`); the real Dear
 ImGui build is exercised by a downstream consumer.
 
+## ImGui World Tools (opt-in)
+
+`include/tess/debug/imgui/tools.h` is independently gated by
+`TESS_ENABLE_IMGUI`; diagnostics may remain disabled. It supplies bounded,
+substrate-only helpers rather than an editor framework:
+
+- `draw_world_overview` shows compile-time shape, chunk, residency, and page
+  storage facts for dense or sparse worlds.
+- `draw_chunk_inspector` resolves a caller-selected tile and shows its chunk,
+  local coordinate, metadata, and dirty/active flags. It distinguishes an
+  out-of-bounds selection from an in-bounds non-resident sparse chunk.
+- `draw_bool_field_editor<Tag>` reads a selected boolean field through a const
+  world. Its `BoolFieldEditResult` carries a `ToolStatus` and, for a changed
+  checkbox, a `BoolFieldEditIntent`; it never loads a chunk or mutates storage,
+  versions, dirty flags, or game meaning. The caller validates and applies the
+  intent in its own authorized simulation phase.
+
+Picking, windows, undo/redo, persistence workflow, generalized reflected field
+editing, and rendering overlays remain application-owned. Other subsystem
+panels described by the historical tooling TDD are composed by consumers from
+their structured public statistics; tess does not duplicate a general editor.
+The API-matching stub test runs the world tools with diagnostics deliberately
+off, pinning the independent gate and non-mutating intent boundary.
+
 ## Deliberate Limits
 
-Beyond the counters, warning sink, trace/timing, planner trace, snapshot
-export, and the opt-in ImGui panels above, this layer does not yet implement a
-sampling profiler, cross-thread aggregation, or any runtime toggle; enabling or
-disabling diagnostics is a recompile.
+Beyond the counters, warning sink, trace/timing, planner trace, snapshot export,
+and the opt-in ImGui panels and bounded tools above, this layer does not
+implement a sampling profiler, cross-thread aggregation, or any runtime toggle;
+enabling or disabling diagnostics is a recompile.

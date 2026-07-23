@@ -714,12 +714,16 @@
   phase-assignment plan produce the expected `Planner` records. Snapshot export
   -- `capture_diagnostics`/`capture_timing` copy every category and counter.
 - `tess_diagnostics_panels_test` (diagnostics-enabled, `TESS_ENABLE_IMGUI` on):
-  compile-and-run check for the opt-in `debug/imgui/panels.h` against a minimal
+  compile-and-run check for the opt-in diagnostics panels against a minimal
   ImGui stub (`tests/imgui_stub/imgui.h`) so a panel bug surfaces here rather
-  than only in a real-ImGui consumer. The stub's `Text` carries real ImGui's
-  printf-format attribute (`IM_FMTARGS` mirror) so `-Wformat` checks panel
-  format strings. Exercises every draw function over a
-  populated snapshot and pins `category_name` for every trace category.
+  than only in a real-ImGui consumer. Exercises every diagnostics draw function
+  and pins `category_name` for every trace category; includes both optional
+  headers together to reject detail-helper collisions.
+- `tess_imgui_tools_test` (`TESS_ENABLE_IMGUI` on, diagnostics off): verifies
+  the optional tools have no diagnostics dependency. Its controllable
+  `Checkbox` covers dense and sparse world and chunk inspection,
+  missing/out-of-bounds selection, and boolean field edits that return
+  caller-applied intents without mutating world storage.
 - `tests/test_benchmark_tools.py`: pytest coverage for the benchmark gating
   tools (run with the pinned `requirements-dev.txt` environment, and in the CI
   hooks-backstop job alongside `tests/test_git_hooks.py`). Verifies

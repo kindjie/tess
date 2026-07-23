@@ -1,10 +1,10 @@
 #pragma once
 
 // Minimal Dear ImGui stub used only to compile-check
-// tess/debug/imgui/panels.h without pulling in the real Dear ImGui dependency.
-// The signatures mirror the real ImGui API for the three text primitives the
-// reference panels use, so a panel that compiles against this stub also
-// compiles against the real header. The bodies are no-ops.
+// tess/debug/imgui headers without pulling in the real Dear ImGui dependency.
+// The signatures mirror the real ImGui API used by the reference panels and
+// editor tools, so code that compiles against this stub also compiles against
+// the real header. Text bodies are no-ops; Checkbox has explicit test control.
 
 #define IMGUI_VERSION "tess-stub"
 
@@ -19,6 +19,26 @@
 #define TESS_STUB_IM_FMTARGS(fmt)
 #endif
 
+namespace tess_imgui_stub {
+
+inline bool checkbox_pending = false;
+inline bool checkbox_changed = false;
+inline bool checkbox_value = false;
+
+inline void reset() noexcept {
+  checkbox_pending = false;
+  checkbox_changed = false;
+  checkbox_value = false;
+}
+
+inline void set_next_checkbox(bool changed, bool value) noexcept {
+  checkbox_pending = true;
+  checkbox_changed = changed;
+  checkbox_value = value;
+}
+
+}  // namespace tess_imgui_stub
+
 namespace ImGui {
 
 // Attribute lives on a preceding declaration (as in real ImGui); the inline
@@ -27,5 +47,15 @@ inline void Text(const char* fmt, ...) TESS_STUB_IM_FMTARGS(1);
 inline void Text(const char*, ...) {}
 inline void TextUnformatted(const char*, const char* = nullptr) {}
 inline void Separator() {}
+inline bool Checkbox(const char*, bool* value) {
+  if (!tess_imgui_stub::checkbox_pending) {
+    return false;
+  }
+  tess_imgui_stub::checkbox_pending = false;
+  if (tess_imgui_stub::checkbox_changed) {
+    *value = tess_imgui_stub::checkbox_value;
+  }
+  return tess_imgui_stub::checkbox_changed;
+}
 
 }  // namespace ImGui
