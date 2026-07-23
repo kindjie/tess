@@ -506,8 +506,16 @@ auto cached_astar_path(const World& world, PathRequest request,
   }
 
   ++cache.misses_;
-  const auto result = astar_path<World, Tag, Provider>(
-      world, request, scratch, MissingChunkPolicy::TreatAsBlocked, provider);
+  const auto result = [&] {
+    if constexpr (std::is_same_v<Provider, AdjacentTransitions>) {
+      return astar_path<World, Tag>(world, request, scratch,
+                                    MissingChunkPolicy::TreatAsBlocked);
+    } else {
+      return astar_path<World, Tag, Provider>(
+          world, request, scratch, MissingChunkPolicy::TreatAsBlocked,
+          provider);
+    }
+  }();
   cache.store(request, result);
   return result;
 }

@@ -1473,12 +1473,18 @@ deferred for scope reasons. Keep entries short and concrete:
 - Evidence: After specialization, three-sample local medians were about
   2.77 ms for the shared room field, 3.50 ms for the shared sparse field,
   18.3 ms for the eight-goal room field, 0.83 ms for 100 nearest-target
-  replays, and 9.8 us for cached field replay. All are below their existing
-  gates, and 231 focused path/query tests pass under warnings-as-errors.
+  replays, and 9.8 us for cached field replay. The first hosted retry exposed
+  four remaining generalized-path regressions: cached unit A* at 111 ms,
+  nearest-target replay at 2.25 ms, cached field replay at 28.6 us, and the
+  near-goal weighted batch at 120 us. Restoring direct default cache misses
+  and reconstruction reduced three-sample local medians to 14.7 ms, 0.76 ms,
+  10.4 us, and 50.6 us respectively. All are below their existing gates, and
+  79 focused path tests pass under warnings-as-errors.
 - Accepted: Use direct indexed axis-neighbor iteration only when
   `ResolvedTransitionModel` proves default orthogonal connectivity. Continue
   using resolved forward/reverse enumeration for hex, diagonal, and
-  provider-composed transitions.
+  provider-composed transitions. Default adjacent route-cache misses also use
+  the unit A* core instead of the generalized weighted core.
 - Rejected: Raising the five thresholds. The correlated 1.3x-1.9x regression
   was attributable to avoidable per-edge abstraction overhead rather than
   hosted-runner noise.

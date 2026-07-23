@@ -1024,40 +1024,47 @@ auto distance_field_product_path(const World& world, Coord3 start,
     const auto current_coord = detail::tile_coord<Shape>(current);
     auto next = current;
     auto next_distance = current_distance;
-    auto next_cost = std::uint32_t{0};
-    const auto consider_neighbor = [&](std::uint64_t neighbor_index,
-                                       std::uint32_t neighbor_cost) {
-      const auto neighbor_distance =
-          product.distance_[static_cast<std::size_t>(neighbor_index)];
-      if (neighbor_distance < next_distance &&
-          detail::saturating_add(neighbor_distance, neighbor_cost) ==
-              current_distance) {
-        next = neighbor_index;
-        next_distance = neighbor_distance;
-        next_cost = neighbor_cost;
-      }
-    };
     if constexpr (Model::preserves_default_connectivity &&
                   std::is_same_v<typename Model::step_policy,
                                  movement::DefaultSteps>) {
       detail::for_each_indexed_axis_neighbor<Shape>(
           current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
-            consider_neighbor(neighbor_index, 1);
+            const auto neighbor_distance =
+                product.distance_[static_cast<std::size_t>(neighbor_index)];
+            if (neighbor_distance < next_distance) {
+              next = neighbor_index;
+              next_distance = neighbor_distance;
+            }
           });
+      if (next == current || next_distance + 1 != current_distance) {
+        scratch.path_.clear();
+        return PathResult{PathStatus::NoPath, 0, 0, product.reached_nodes_,
+                          scratch.path_};
+      }
     } else {
+      auto next_cost = std::uint32_t{0};
       model.for_each_forward(world, current_coord, current, [&](auto probe) {
-        if (probe.availability == TransitionAvailability::Legal &&
-            !probe.cost_overflow) {
-          consider_neighbor(probe.to_index, probe.cost);
+        if (probe.availability != TransitionAvailability::Legal ||
+            probe.cost_overflow) {
+          return;
+        }
+        const auto neighbor_distance =
+            product.distance_[static_cast<std::size_t>(probe.to_index)];
+        if (neighbor_distance < next_distance &&
+            detail::saturating_add(neighbor_distance, probe.cost) ==
+                current_distance) {
+          next = probe.to_index;
+          next_distance = neighbor_distance;
+          next_cost = probe.cost;
         }
       });
-    }
 
-    if (next == current ||
-        detail::saturating_add(next_distance, next_cost) != current_distance) {
-      scratch.path_.clear();
-      return PathResult{PathStatus::NoPath, 0, 0, product.reached_nodes_,
-                        scratch.path_};
+      if (next == current || detail::saturating_add(next_distance, next_cost) !=
+                                 current_distance) {
+        scratch.path_.clear();
+        return PathResult{PathStatus::NoPath, 0, 0, product.reached_nodes_,
+                          scratch.path_};
+      }
     }
 
     current = next;

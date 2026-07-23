@@ -60,9 +60,9 @@ and their rationale are recorded separately in
 - Every literal benchmark in a threshold-gated family is covered by a
   calibrated ceiling; newly covered resolved-transition, weighted-product,
   coarse-topology, area-index, and Flecs workloads close the prior gate gaps.
-- Default orthogonal unit fields and products retain direct axis-neighbor
-  iteration while other lattices, step policies, and providers use the
-  resolved transition model.
+- Default orthogonal unit routes, fields, and product replays retain their
+  direct specialized paths while other lattices, step policies, and providers
+  use the resolved transition model.
 
 ## [0.4.0] - 2026-07-20
 

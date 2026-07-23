@@ -320,30 +320,55 @@ auto weighted_distance_field_path_core(const World& world, Coord3 start,
     const auto current_coord = detail::tile_coord<Shape>(current);
     auto next = current;
     auto next_distance = current_distance;
-    model.for_each_forward(world, current_coord, current, [&](auto probe) {
-      if (probe.availability != TransitionAvailability::Legal ||
-          probe.cost_overflow) {
-        return;
-      }
-      const auto neighbor_index = probe.to_index;
-      const auto neighbor_offset = space.resident_offset(neighbor_index);
-      if constexpr (!Space::is_dense) {
-        if (neighbor_offset == Space::npos_offset) {
+    if constexpr (Model::preserves_default_connectivity &&
+                  std::is_same_v<typename Model::step_policy,
+                                 movement::DefaultSteps>) {
+      detail::for_each_indexed_axis_neighbor<Shape>(
+          current_coord, current, [&](Coord3, std::uint64_t neighbor_index) {
+            const auto neighbor_offset = space.resident_offset(neighbor_index);
+            if constexpr (!Space::is_dense) {
+              if (neighbor_offset == Space::npos_offset) {
+                return;
+              }
+            }
+            const auto neighbor_distance =
+                scratch.distance_at(neighbor_offset, infinite_distance);
+            if (neighbor_distance == infinite_distance ||
+                neighbor_distance >= next_distance) {
+              return;
+            }
+            const auto entry_cost = detail::tile_entry_cost_index<World, Class>(
+                world, neighbor_index);
+            if (entry_cost != 0 &&
+                detail::saturating_add(neighbor_distance, entry_cost) ==
+                    current_distance) {
+              next = neighbor_index;
+              next_distance = neighbor_distance;
+            }
+          });
+    } else {
+      model.for_each_forward(world, current_coord, current, [&](auto probe) {
+        if (probe.availability != TransitionAvailability::Legal ||
+            probe.cost_overflow) {
           return;
         }
-      }
-      const auto neighbor_distance =
-          scratch.distance_at(neighbor_offset, infinite_distance);
-      if (neighbor_distance == infinite_distance ||
-          neighbor_distance >= next_distance) {
-        return;
-      }
-      if (detail::saturating_add(neighbor_distance, probe.cost) ==
-          current_distance) {
-        next = neighbor_index;
-        next_distance = neighbor_distance;
-      }
-    });
+        const auto neighbor_offset = space.resident_offset(probe.to_index);
+        if constexpr (!Space::is_dense) {
+          if (neighbor_offset == Space::npos_offset) {
+            return;
+          }
+        }
+        const auto neighbor_distance =
+            scratch.distance_at(neighbor_offset, infinite_distance);
+        if (neighbor_distance != infinite_distance &&
+            neighbor_distance < next_distance &&
+            detail::saturating_add(neighbor_distance, probe.cost) ==
+                current_distance) {
+          next = probe.to_index;
+          next_distance = neighbor_distance;
+        }
+      });
+    }
 
     if (next == current) {
       scratch.path_.clear();
