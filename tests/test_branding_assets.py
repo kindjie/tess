@@ -124,6 +124,12 @@ def test_mkdocs_uses_compact_symbol_for_navigation_and_favicon():
   assert "favicon: assets/tess-symbol.svg" in config
 
 
+def test_mkdocs_navigation_includes_persistence_architecture():
+  config = read("mkdocs.yml")
+
+  assert "Persistence: architecture/persistence.md" in config
+
+
 def test_branding_controls_meet_non_text_contrast_minimum():
   css = read("examples/web_pathfinder/site/style.css")
   assert "border: 1px solid #75658f" in css

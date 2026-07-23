@@ -6,6 +6,17 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-22 - Close the post-v0.4 roadmap as v0.12 development
+
+- Declare the integrated v0.5-v0.12 surface as the unreleased `0.12.0`
+  development API while retaining `v0.4.0` as the latest supported release
+  tag and FetchContent example.
+- Close v0.12 only after the optimized correctness suite and every calibrated
+  benchmark family pass; require literal gated benchmark names to have
+  threshold entries so new families cannot silently escape CI ceilings.
+- Keep planned extensions, evidence-backed deferrals, explicit non-goals, and
+  the external-data rights gate out of the v0.12 completion claim.
+
 ## 2026-07-22 - Bound occupancy-blocked path agents without re-planning
 
 - Changed: occupied/reserved retained steps now wait without a new search;

@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -262,6 +263,51 @@ def test_repo_threshold_files_use_only_allowed_keys():
     for name, entry_limits in data.get("benchmarks", {}).items():
       unknown = set(entry_limits) - benchmark_thresholds.ALLOWED_LIMIT_KEYS
       assert not unknown, f"{path.name}: {name}: {sorted(unknown)}"
+
+
+def test_literal_gated_benchmarks_have_threshold_entries():
+  root = Path(__file__).resolve().parents[1]
+  benchmark_names = set()
+  for path in sorted((root / "bench").glob("*.cc")):
+    source = path.read_text(encoding="utf-8")
+    benchmark_names.update(
+      name
+      for name in re.findall(r'->Name\("([^"]+)"\)', source)
+    )
+  threshold_files = {
+    "key": "key-conversions.json",
+    "storage": "storage.json",
+    "block": "block.json",
+    "queued": "queued.json",
+    "path": "path.json",
+    "topology": "topology.json",
+    "scheduler": "scheduler.json",
+    "residency": "residency.json",
+    "parallel": "parallel.json",
+    "ecs": "ecs.json",
+    "render_delta": "render-delta.json",
+    "fields": "fields.json",
+    "diagnostics": "diagnostics.json",
+  }
+  thresholds = {}
+  for prefix, file_name in threshold_files.items():
+    data = json.loads(
+      (root / "bench" / "thresholds" / file_name).read_text(
+        encoding="utf-8"
+      )
+    )
+    thresholds[prefix] = data["benchmarks"]
+  uncovered = {
+    name
+    for name in benchmark_names
+    if (prefix := name.partition("/")[0]) in thresholds
+    and name not in thresholds[prefix]
+    and not any(
+      key.startswith(f"{name}/") for key in thresholds[prefix]
+    )
+  }
+
+  assert not uncovered, sorted(uncovered)
 
 
 def test_malformed_results_file_reports_clear_error(tmp_path, capsys):

@@ -26,7 +26,7 @@ models. It is not a renderer, physics engine, navigation-mesh generator, or
 drop-in ECS.
 
 The latest release is `v0.4.0`; this checkout documents the
-`v0.4.0` release. tess is pre-1.0 — see
+unreleased `v0.12.0` development API. tess is pre-1.0 — see
 [support and compatibility](https://tess.owx.dev/support/) for the stability
 policy. Release notes live in [`CHANGELOG.md`](CHANGELOG.md).
 

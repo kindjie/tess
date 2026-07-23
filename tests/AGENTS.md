@@ -742,6 +742,7 @@
   repetition aggregates (median default, `--aggregate` override), converts
   all four Google Benchmark time units, fails on missing benchmarks, skips
   null limits, and reports missing/malformed input files as clear errors;
+  every literal benchmark name in a threshold-gated family also has an entry;
   that `tools/benchmark_baseline_summary.py` filters aggregates by
   `run_type` and quotes CSV fields; that `tools/benchmark_trends.py` reads
   every result file in a baseline artifact and errors on unmatched
@@ -749,7 +750,10 @@
   writes the expected metadata fields.
 - `tests/test_branding_assets.py`: static asset and browser-demo contract
   coverage, including the colony's explicit terminal bottleneck metric so an
-  exhausted path-agent lifecycle cannot look like a silently running colony.
+  exhausted path-agent lifecycle cannot look like a silently running colony,
+  plus maintained architecture navigation coverage for persistence.
+- `tests/test_doc_versions.py`: synthetic development/release version-policy
+  cases plus the repository's v0.12 development-version consistency gate.
 - `tests/test_check_public_surface.py`: pytest coverage for the
   public-surface manifest gate (`tools/check_public_surface.py`, a required
   CI check since 2026-07-07, run in

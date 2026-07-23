@@ -1,6 +1,6 @@
 # Roadmap Completion Plan
 
-Status: active. This is the maintained sequencing and completion record for
+Status: complete. This is the maintained sequencing and completion record for
 the post-v0.4 roadmap. Architecture documents and code remain authoritative
 for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 
@@ -25,7 +25,7 @@ for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 | v0.9 | Areas, tactical assignment, crowd coordination | Complete |
 | v0.10 | Persistence, Flecs adapter, optional ImGui editor tools | Complete |
 | v0.11 | Optional WebGPU backend | Complete |
-| v0.12 | Consolidation, compatibility, performance, backlog closure | Active |
+| v0.12 | Consolidation, compatibility, performance, backlog closure | Complete |
 
 ### Resolved v0.12 Release Blocker
 
@@ -37,6 +37,19 @@ and end as explicit `Unreachable` outcomes if no move succeeds. A seeded
 ticks to 24 submissions in one initial planning tick, with every agent ending
 arrived or terminal. The web demo reports terminal agents separately instead
 of silently presenting a stationary colony as running normally.
+
+### v0.12 Completion
+
+The consolidated development surface is versioned as `0.12.0` while the
+latest supported release tag remains `v0.4.0`. Installed-package and
+`FetchContent` consumers, an actual CMake 3.25.2 consumer configure/build,
+dependency-free examples, optional adapters, strict maintained documentation,
+and generated API documentation are release gates. Every literal benchmark in
+a gated family now has a calibrated threshold entry; the optimized correctness
+suite and all thirteen threshold families pass. Remaining roadmap items are
+either explicit non-goals, documented future extensions, evidence-backed
+deferrals, or the rights-gated external-data phase rather than incomplete
+v0.12 work.
 
 ### v0.5 Completion
 

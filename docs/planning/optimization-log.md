@@ -14,6 +14,30 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-22 - v0.12 Benchmark Gate Closure
+
+- Area: benchmark families added after the last threshold calibration.
+- Evidence: the full Release gates found eleven literal benchmark names
+  without threshold entries: five resolved-transition/weighted-product cases,
+  two coarse-topology/area cases, and four Flecs collection cases. Three-run
+  local arm64 medians were 11.6 us for diagonal search, 13.0 us for axial-hex
+  search, 1.54 ms for the stair-provider search, 24.74 ms for an eight-goal
+  512x512 weighted product build, 5.06 us for product replay, 21.35 us for a
+  far coarse path, and 2.72 ms for a 256-area index build. Flecs medians were
+  26 us, 0.35 ms, and 4.87 ms for collecting 1,000, 10,000, and 100,000
+  agents, and 0.78 ms for collecting and applying 10,000 agents. The stair
+  case deliberately expands 32,761 nodes because a single provider transition
+  connects two 128x128 planes; the product and area cases are whole-world
+  builds, not single point queries.
+- Decision: add provisional six-times-median CPU ceilings and a source-level
+  test requiring every literal benchmark in a threshold-gated family to have
+  an entry. Structurally large cases remain above the 1 ms investigation line
+  with work counters and rationale recorded instead of being misrepresented
+  as microbenchmarks.
+- Retry conditions: replace bootstrap ceilings with two-times hosted-runner
+  maxima after ten same-runner baseline samples. Revisit the stair heuristic
+  if provider-heavy searches become representative rather than synthetic.
+
 ## 2026-07-22 - Optional WebGPU Transport Baseline
 
 - Area: stable-C-API WebGPU field upload, compute dispatch, and asynchronous

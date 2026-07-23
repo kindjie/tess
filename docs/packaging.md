@@ -49,7 +49,7 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH="$HOME/.local"
 Then consume the exported target:
 
 ```cmake
-find_package(tess 0.4 CONFIG REQUIRED)
+find_package(tess 0.12 CONFIG REQUIRED)
 target_link_libraries(my_target PRIVATE tess::tess)
 ```
 

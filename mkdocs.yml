@@ -77,6 +77,7 @@ nav:
       - Overview: architecture/README.md
       - Shapes: architecture/shape.md
       - Storage: architecture/storage.md
+      - Persistence: architecture/persistence.md
       - Block kernels: architecture/block.md
       - Spatial queries: architecture/query.md
       - Maintenance experiments: architecture/maintenance.md

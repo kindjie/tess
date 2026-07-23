@@ -17,6 +17,16 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 4389
     },
+    "topology/coarse_path_far_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 129000,
+      "note": "2026-07-22 local arm64 median: 21,352 ns; bootstrap 6x ceiling"
+    },
+    "topology/area_index_build_256_areas_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 16400000,
+      "note": "2026-07-22 local arm64 median: 2,721,019 ns; bootstrap 6x ceiling"
+    },
     "topology/precheck_reachable_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 5200
