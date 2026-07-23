@@ -1455,8 +1455,19 @@ void for_each_axis_neighbor(Coord3 coord, Fn&& fn) {
 }
 
 template <typename Shape, typename Fn>
-void for_each_indexed_axis_neighbor(Coord3 coord, std::uint64_t index,
-                                    Fn&& fn) {
+// Keep this forced inline. Provider-aware readers made some Clang versions
+// outline the helper even though every call is in a per-node reconstruction
+// loop. That codegen cliff made the gated field-product replay and
+// nearest-target workloads about 2.4x slower; inlining restores the original
+// loop shape. MSVC needs its spelling while Clang/GCC share the GNU attribute.
+#if defined(_MSC_VER)
+__forceinline void
+#elif defined(__GNUC__) || defined(__clang__)
+__attribute__((always_inline)) inline void
+#else
+inline void
+#endif
+for_each_indexed_axis_neighbor(Coord3 coord, std::uint64_t index, Fn&& fn) {
   using Traits = ShapeTraits<Shape>;
   constexpr auto size = Traits::size;
   constexpr auto chunk = Traits::chunk;

@@ -63,6 +63,9 @@ and their rationale are recorded separately in
 - Default orthogonal unit routes, fields, and product replays retain their
   direct specialized paths while other lattices, step policies, and providers
   use the resolved transition model.
+- Indexed axis-neighbor iteration remains inline in hot reconstruction loops,
+  and bounded weighted floods hoist per-node bucket work out of their
+  per-neighbor loop.
 
 ## [0.4.0] - 2026-07-20
 

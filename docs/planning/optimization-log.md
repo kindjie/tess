@@ -1480,11 +1480,25 @@ deferred for scope reasons. Keep entries short and concrete:
   and reconstruction reduced three-sample local medians to 14.7 ms, 0.76 ms,
   10.4 us, and 50.6 us respectively. All are below their existing gates, and
   79 focused path tests pass under warnings-as-errors.
+- Follow-up evidence: The second hosted retry passed cached unit A* but still
+  measured nearest-target replay at 2.12 ms, cached field replay at 26.4 us,
+  and the near-goal weighted batch at 101.25 us. A same-machine comparison
+  isolated a real compiler regression: the pre-transition reader measured
+  0.31 ms and 4.0 us for nearest-target and cached replay, while the
+  generalized reader measured 0.76 ms and 9.7 us. Sampling placed the hot
+  samples in an outlined `for_each_indexed_axis_neighbor`; forcing that small
+  per-node helper inline restored 0.31 ms and 4.0 us medians. A second profile
+  placed most near-goal time in the bounded field-builder neighbor loop.
+  Hoisting its invariant saturated distance and bucket selection reduced the
+  20-run median from about 50-52 us to 46.8 us.
 - Accepted: Use direct indexed axis-neighbor iteration only when
   `ResolvedTransitionModel` proves default orthogonal connectivity. Continue
   using resolved forward/reverse enumeration for hex, diagonal, and
   provider-composed transitions. Default adjacent route-cache misses also use
-  the unit A* core instead of the generalized weighted core.
+  the unit A* core instead of the generalized weighted core. Keep the indexed
+  axis-neighbor helper forced inline across supported compilers, with the
+  reason documented at its definition, and compute bounded-flood
+  per-node invariants once outside the neighbor loop.
 - Rejected: Raising the five thresholds. The correlated 1.3x-1.9x regression
   was attributable to avoidable per-edge abstraction overhead rather than
   hosted-runner noise.

@@ -159,6 +159,12 @@ auto build_bounded_weighted_distance_field_core(
       return build_weighted_distance_field<World, Class>(world, goal, scratch,
                                                          policy);
     }
+    const auto next_distance =
+        detail::saturating_add(current_distance, current_entry_cost);
+    if (next_distance == infinite_distance) {
+      continue;
+    }
+    auto& next_bucket = scratch.weighted_buckets_[next_distance % bucket_count];
 
     const auto current_coord = detail::tile_coord<Shape>(current);
     detail::for_each_indexed_axis_neighbor<Shape>(
@@ -189,17 +195,11 @@ auto build_bounded_weighted_distance_field_core(
             TESS_DIAG_EVENT(path_touch_node);
           }
 
-          const auto next_distance =
-              detail::saturating_add(current_distance, current_entry_cost);
-          if (next_distance == infinite_distance) {
-            return;
-          }
           if (next_distance <
               scratch.distance_at(neighbor_offset, infinite_distance)) {
             TESS_DIAG_EVENT(path_relax_success);
             scratch.distance_[neighbor_offset] = next_distance;
-            scratch.weighted_buckets_[next_distance % bucket_count].push_back(
-                neighbor_index);
+            next_bucket.push_back(neighbor_index);
             ++active_nodes;
             TESS_DIAG_EVENT(path_heap_push);
           }
