@@ -22,6 +22,22 @@ option(TESS_BUILD_TESTING "Build tess tests" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_EXAMPLES "Build tess examples" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
 option(TESS_BUILD_DOCS "Build the tess API reference with Doxygen" OFF)
+option(
+  TESS_ENABLE_GRID_BENCHMARK_DATA
+  "Build opt-in tests backed by external grid benchmark data"
+  OFF
+)
+option(
+  TESS_REQUIRE_GRID_BENCHMARK_DATA
+  "Fail instead of skip when opt-in grid benchmark data is unavailable"
+  OFF
+)
+set(
+  TESS_GRID_BENCHMARK_DATA_DIR
+  ""
+  CACHE PATH
+  "External grid benchmark cache; empty selects the platform cache default"
+)
 option(TESS_ENABLE_ENTT
        "Build EnTT-gated tess tests, examples, and benchmarks (requires EnTT)"
        OFF)
@@ -42,6 +58,15 @@ set(
   CACHE STRING
   "Comma-separated -fsanitize= list used when TESS_ENABLE_SANITIZERS=ON"
 )
+
+if(TESS_REQUIRE_GRID_BENCHMARK_DATA AND
+   NOT TESS_ENABLE_GRID_BENCHMARK_DATA)
+  message(
+    FATAL_ERROR
+      "TESS_REQUIRE_GRID_BENCHMARK_DATA requires "
+      "TESS_ENABLE_GRID_BENCHMARK_DATA=ON"
+  )
+endif()
 
 include(TessProjectOptions)
 

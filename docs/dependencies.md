@@ -38,6 +38,26 @@ On macOS, benchmark configure or execution may warn that pthread affinity or CPU
 frequency metadata is unavailable. Those warnings do not prevent benchmark
 measurements from running.
 
+## Proposed external grid benchmark data (not adopted)
+
+- Repository: https://bitbucket.org/shortestpathlab/benchmarks
+- Proposed revision: `fe6351b0700a0f4e75d0bd79ce3bf5478bc60c94`
+- Format and source documentation:
+  https://www.movingai.com/benchmarks/formats.html and
+  https://www.movingai.com/benchmarks/grids.html
+- Database license: Open Data Commons Attribution License 1.0
+  (https://opendatacommons.org/licenses/by/1-0/)
+- Design: `docs/tdd/grid-benchmark-data-and-scenario-oracle.md`
+
+The revision was verified through Bitbucket's commit API on 2026-07-22. This
+is a proposed opt-in test-data source, not a library or build dependency. No
+external files are in the repository, no downloader is enabled, and no CI job
+requires the data. ODC-By covers the database but excludes copyright in
+individual contents; acquisition remains blocked until the initial synthetic
+maps and scenarios have a documented content-rights basis. When that gate
+clears, the required Sturtevant 2012 citation and ODC-By produced-work notice
+must accompany published results.
+
 ## Doxygen
 
 - Documentation: https://www.doxygen.nl/manual/

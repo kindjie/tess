@@ -85,6 +85,16 @@ nothing after explicit scratch reservation. Local reservation and congestion
 coordination remain active work; globally optimal multi-agent pathfinding and
 continuous steering remain out of scope.
 
+### Cross-cutting benchmark harness
+
+The external grid benchmark design now has a network-free first phase: a
+strict map/scenario parser, compile-time-shape loader, independent orthogonal
+and `RequireBothClear` reference search, derived 128/181 oracle intervals, a
+schema-pinned empty manifest, and an opt-in driver that skips locally but
+fails in required-data mode. Its cache-verifier readiness gate is deliberately
+false. External manifest entries, fetching, cache verification, and
+data-backed CI remain gated until individual-content rights are documented.
+
 ## Cross-Cutting Acceptance
 
 - Serial and parallel authoritative outputs match at synchronization points.

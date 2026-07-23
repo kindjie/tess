@@ -64,9 +64,10 @@ item moves to **Shipped**.
   application-owned.
 - **External grid benchmark data and the scenario oracle**
   ([TDD][tdd-benchdata]) — a harness-only design for community grid maps
-  and scenario optima as opt-in fixtures and calibrated benchmarks. The
-  default presets remain network-free, and external acquisition remains
-  gated on documented content rights.
+  and scenario optima as opt-in fixtures and calibrated benchmarks. Strict
+  parsers, inline fixtures, independent reference search, oracle bounds, and
+  opt-in skip/strict behavior shipped network-free. External acquisition
+  remains gated on documented content rights.
 
 ## Out of scope
 

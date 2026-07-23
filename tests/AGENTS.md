@@ -136,6 +136,18 @@
   greedy assignment with caller scores, candidate capacities, infeasible
   pairs, stable ID-based tie breaks, invalid duplicate-ID rejection, result
   alignment to request order, and warm allocation-free execution.
+- `tess_grid_benchmark_harness_test`: verifies strict Moving AI map/scenario
+  parsing from inline fixtures, terrain and coordinate orientation, malformed
+  input rejection, compile-time-shape loading with blocked padding, independent
+  orthogonal/diagonal reference costs, corner clearance, and the asymmetric
+  fixed-point external-oracle interval, including exact agreement between the
+  independent reference and tess A* under both movement modes.
+- `tess_grid_benchmark_data_test` (opt-in): always registers when external
+  benchmark data is enabled, skips missing/rights-blocked data locally, and
+  fails instead in strict required-data mode.
+- `test_grid_benchmark_manifest.py`: pins the external-data manifest schema,
+  exact upstream revision, SHA-256 entry validation, and the rule that no
+  entries may be downloadable before individual-content rights are cleared.
 - `tess_queued_planning_test`: pins the audit-2026-07-11 M4 planner-reuse
   contract -- the `plan_operations` overload that plans into a caller-owned
   `ExecutionReport` recycles report rows, planned operations, and pooled

@@ -68,8 +68,31 @@ def test_consumer_preset_stays_consumer_shaped():
     assert cache["TESS_BUILD_EXAMPLES"] == "OFF"
     assert cache["TESS_BUILD_BENCHMARKS"] == "OFF"
     assert cache["TESS_ENABLE_ENTT"] == "OFF"
+    assert cache.get("TESS_ENABLE_GRID_BENCHMARK_DATA", "OFF") == "OFF"
+    assert cache.get("TESS_REQUIRE_GRID_BENCHMARK_DATA", "OFF") == "OFF"
     assert "TESS_WARNINGS_AS_ERRORS" not in cache
     assert "inherits" not in consumer
+
+
+def test_required_grid_data_needs_explicit_opt_in(tmp_path):
+    result = subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(REPO_ROOT),
+            "-B",
+            str(tmp_path / "build"),
+            "-DTESS_BUILD_TESTING=OFF",
+            "-DTESS_BUILD_EXAMPLES=OFF",
+            "-DTESS_REQUIRE_GRID_BENCHMARK_DATA=ON",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    output = " ".join((result.stdout + result.stderr).split())
+    assert "requires TESS_ENABLE_GRID_BENCHMARK_DATA=ON" in output
 
 
 def test_examples_preset_is_network_free_and_example_only():

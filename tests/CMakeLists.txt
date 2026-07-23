@@ -44,6 +44,75 @@ tess_apply_project_options(tess_shape_test)
 
 tess_discover_tests(tess_shape_test)
 
+add_executable(
+  tess_grid_benchmark_harness_test
+  tess_grid_benchmark_harness_test.cc
+)
+target_link_libraries(
+  tess_grid_benchmark_harness_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_grid_benchmark_harness_test)
+
+tess_discover_tests(tess_grid_benchmark_harness_test)
+
+if(TESS_ENABLE_GRID_BENCHMARK_DATA)
+  set(_tess_grid_manifest
+      "${PROJECT_SOURCE_DIR}/tools/grid_benchmark_manifest.json")
+  file(READ "${_tess_grid_manifest}" _tess_grid_manifest_json)
+  string(
+    JSON _tess_grid_entry_count
+    LENGTH "${_tess_grid_manifest_json}" entries
+  )
+  string(
+    JSON _tess_grid_rights_status
+    GET "${_tess_grid_manifest_json}" content_rights status
+  )
+  if(_tess_grid_entry_count GREATER 0 AND
+     NOT _tess_grid_rights_status STREQUAL "cleared")
+    message(
+      FATAL_ERROR
+        "Grid benchmark entries require content_rights.status=cleared"
+    )
+  endif()
+  if(TESS_GRID_BENCHMARK_DATA_DIR STREQUAL "")
+    if(DEFINED ENV{XDG_CACHE_HOME} AND NOT "$ENV{XDG_CACHE_HOME}" STREQUAL "")
+      set(_tess_grid_cache_root "$ENV{XDG_CACHE_HOME}")
+    elseif(DEFINED ENV{HOME} AND NOT "$ENV{HOME}" STREQUAL "")
+      set(_tess_grid_cache_root "$ENV{HOME}/.cache")
+    else()
+      set(_tess_grid_cache_root "${CMAKE_CURRENT_BINARY_DIR}/cache")
+    endif()
+    string(
+      JSON _tess_grid_revision
+      GET "${_tess_grid_manifest_json}" upstream revision
+    )
+    set(
+      _tess_grid_data_dir
+      "${_tess_grid_cache_root}/tess/benchmark-data/${_tess_grid_revision}"
+    )
+  else()
+    set(_tess_grid_data_dir "${TESS_GRID_BENCHMARK_DATA_DIR}")
+  endif()
+  file(TO_CMAKE_PATH "${_tess_grid_data_dir}" _tess_grid_data_dir)
+
+  add_executable(
+    tess_grid_benchmark_data_test
+    tess_grid_benchmark_data_test.cc
+  )
+  target_link_libraries(
+    tess_grid_benchmark_data_test PRIVATE GTest::gtest_main)
+  target_compile_definitions(
+    tess_grid_benchmark_data_test
+    PRIVATE
+      TESS_GRID_BENCHMARK_ENTRY_COUNT=${_tess_grid_entry_count}
+      TESS_GRID_BENCHMARK_DATA_REQUIRED=$<BOOL:${TESS_REQUIRE_GRID_BENCHMARK_DATA}>
+      TESS_GRID_BENCHMARK_CACHE_VERIFIER_READY=0
+      "TESS_GRID_BENCHMARK_DATA_DIR=\"${_tess_grid_data_dir}\""
+  )
+  tess_apply_project_options(tess_grid_benchmark_data_test)
+
+  tess_discover_tests(tess_grid_benchmark_data_test)
+endif()
+
 add_executable(tess_storage_test allocation_counter.cc tess_storage_test.cc)
 target_link_libraries(tess_storage_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_storage_test)
