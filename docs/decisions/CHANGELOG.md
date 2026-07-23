@@ -13,6 +13,21 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-22 - Scrub Git hook environment in dependency population
+
+- Changed: the exact-revision population script now unsets inherited
+  `GIT_DIR`-family environment variables before running its Git commands,
+  and its failure message reports every attempt's error instead of only
+  the last one.
+- Reason: builds triggered by Git hooks (the pre-push checks) inherit
+  Git's hook environment; an inherited `GIT_DIR` redirected the
+  population's `git init` and `git remote add` at the parent repository,
+  so every fresh-build-tree push failed with "remote origin already
+  exists" — which the retry loop then reported in place of the first
+  attempt's real error.
+- Affected docs: `tests/AGENTS.md`.
+- Affected code: the population script and its regression tests.
+
 ## 2026-07-22 - Retry exact-revision dependency population
 
 - Changed: GoogleTest, Google Benchmark, and EnTT now use a shared population

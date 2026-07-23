@@ -41,8 +41,38 @@ if(source_parent STREQUAL "" OR source_parent STREQUAL "/")
   message(FATAL_ERROR "Refusing dependency source directory at filesystem root")
 endif()
 
+# When this script runs under a Git hook (pre-push builds), Git exports its
+# hook environment; an inherited GIT_DIR redirects every command below at
+# the parent project's repository instead of the dependency source
+# directory. The list is `git rev-parse --local-env-vars`: every variable
+# that scopes Git to a particular repository or injects its configuration.
+foreach(
+  hook_variable
+  IN ITEMS
+    GIT_ALTERNATE_OBJECT_DIRECTORIES
+    GIT_CONFIG
+    GIT_CONFIG_PARAMETERS
+    GIT_CONFIG_COUNT
+    GIT_OBJECT_DIRECTORY
+    GIT_DIR
+    GIT_WORK_TREE
+    GIT_IMPLICIT_WORK_TREE
+    GIT_GRAFT_FILE
+    GIT_INDEX_FILE
+    GIT_NO_REPLACE_OBJECTS
+    GIT_REPLACE_REF_BASE
+    GIT_PREFIX
+    GIT_SHALLOW_FILE
+    GIT_COMMON_DIR
+)
+  unset(ENV{${hook_variable}})
+endforeach()
+
 set(populate_attempts 3)
-set(last_error "population did not run")
+set(attempt_errors "")
+macro(tess_populate_attempt_failed message)
+  string(APPEND attempt_errors "\n  attempt ${attempt}: ${message}")
+endmacro()
 foreach(attempt RANGE 1 ${populate_attempts})
   file(REMOVE_RECURSE "${TESS_GIT_SOURCE_DIR}")
   file(MAKE_DIRECTORY "${TESS_GIT_SOURCE_DIR}")
@@ -54,7 +84,7 @@ foreach(attempt RANGE 1 ${populate_attempts})
     ERROR_VARIABLE error
   )
   if(NOT result EQUAL 0)
-    set(last_error "git init failed: ${error}")
+    tess_populate_attempt_failed("git init failed: ${error}")
     continue()
   endif()
 
@@ -66,7 +96,7 @@ foreach(attempt RANGE 1 ${populate_attempts})
     ERROR_VARIABLE error
   )
   if(NOT result EQUAL 0)
-    set(last_error "git remote add failed: ${error}")
+    tess_populate_attempt_failed("git remote add failed: ${error}")
     continue()
   endif()
 
@@ -79,7 +109,7 @@ foreach(attempt RANGE 1 ${populate_attempts})
     ERROR_VARIABLE error
   )
   if(NOT result EQUAL 0)
-    set(last_error "git fetch failed: ${error}")
+    tess_populate_attempt_failed("git fetch failed: ${error}")
     continue()
   endif()
 
@@ -93,7 +123,9 @@ foreach(attempt RANGE 1 ${populate_attempts})
     OUTPUT_STRIP_TRAILING_WHITESPACE
   )
   if(NOT result EQUAL 0 OR NOT fetched_revision STREQUAL TESS_GIT_REVISION)
-    set(last_error "git fetch returned an unexpected revision: ${error}")
+    tess_populate_attempt_failed(
+      "git fetch returned an unexpected revision: ${error}"
+    )
     continue()
   endif()
 
@@ -105,7 +137,7 @@ foreach(attempt RANGE 1 ${populate_attempts})
     ERROR_VARIABLE error
   )
   if(NOT result EQUAL 0)
-    set(last_error "git checkout failed: ${error}")
+    tess_populate_attempt_failed("git checkout failed: ${error}")
     continue()
   endif()
 
@@ -126,11 +158,11 @@ foreach(attempt RANGE 1 ${populate_attempts})
     )
     return()
   endif()
-  set(last_error "git checkout verification failed: ${error}")
+  tess_populate_attempt_failed("git checkout verification failed: ${error}")
 endforeach()
 
 message(
   FATAL_ERROR
   "Failed to populate ${TESS_GIT_DEPENDENCY} after "
-  "${populate_attempts} attempts: ${last_error}"
+  "${populate_attempts} attempts:${attempt_errors}"
 )
