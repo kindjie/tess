@@ -27,6 +27,7 @@ flowchart TB
   Query["Query: exact allocation-free spans"]
   Ops["Operations: queue, planner, executors, results"]
   Topology["Topology: movement classes and region graph"]
+  Spatial["Spatial coordination: areas and assignment"]
   Path["Path: searches, products, and caches"]
   Sim["Simulation: schedule, agents, movement, deltas"]
   Core --> Storage
@@ -35,6 +36,7 @@ flowchart TB
   Storage --> Topology
   Block --> Ops
   Topology --> Path
+  Topology --> Spatial
   Storage --> Path
   Ops --> Sim
   Path --> Sim
@@ -108,6 +110,7 @@ Maintained notes for implemented areas:
 - [Queued operations foundation](queued-operations.md)
 - [Topology foundation](topology.md)
 - [Path foundation](path.md)
+- [Spatial coordination](spatial-coordination.md)
 - [Simulation integration MVP](simulation.md)
 - [Diagnostics foundation](diagnostics.md)
 - [ECS integration](ecs.md)

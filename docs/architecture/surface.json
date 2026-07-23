@@ -251,6 +251,17 @@
     "ValidCornerRule",
     "update_region_graph"
   ],
+  "docs/architecture/spatial-coordination.md": [
+    "AreaBuildResult",
+    "AreaBuildStatus",
+    "AreaConnection",
+    "AreaId",
+    "AreaIndex",
+    "AreaIndexScratch",
+    "AreaSummary",
+    "build_area_index",
+    "invalid_area_id"
+  ],
   "docs/architecture/path.md": [
     "ChunkVersionDependencies",
     "CostRangeAssessment",

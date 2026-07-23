@@ -2,6 +2,20 @@
 
 Records meaningful design changes from the original TDDs.
 
+## 2026-07-22 - Add caller-defined area indexes
+
+- Changed: added a graph-derived area index that groups regions by caller
+  semantic key, summarizes bounds and tile counts, derives canonical portal
+  adjacency, supports dense and sparse graphs, and rejects changed graphs.
+- Reason: the maintained v0.9 roadmap schedules an area substrate, while the
+  historical project TDD correctly rejects substrate-owned room meaning. A
+  caller-keyed derived index supplies reusable mechanics without taking over
+  room ownership, statistics, or gameplay lifecycle.
+- Affected docs: spatial coordination, architecture map, surface manifest,
+  and changelog.
+- Affected code: area index header, umbrella/install surface, tests, and
+  topology benchmarks.
+
 ## 2026-07-22 - Complete hierarchical paths and weighted products
 
 - Changed: added deterministic shortest region paths with ordered portals,

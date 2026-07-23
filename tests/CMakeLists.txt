@@ -283,6 +283,14 @@ tess_apply_project_options(tess_weighted_field_product_test)
 tess_discover_tests(tess_weighted_field_product_test)
 
 add_executable(
+  tess_area_index_test allocation_counter.cc tess_area_index_test.cc)
+target_link_libraries(
+  tess_area_index_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_area_index_test)
+
+tess_discover_tests(tess_area_index_test)
+
+add_executable(
   tess_path_runtime_test
   allocation_counter.cc
   tess_path_runtime_test.cc

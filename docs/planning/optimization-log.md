@@ -14,6 +14,18 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-22 - Area Index Baseline
+
+- Area: graph-derived caller-keyed area grouping.
+- Evidence: a local Release build grouped 256 open-chunk regions and reduced
+  their directed boundary portals to 480 canonical area connections in about
+  2.65 ms on a 512x512 world. Reserved warm rebuilds allocate nothing.
+- Decision: accept the straightforward sort-and-reduce implementation. Area
+  rebuild is derived maintenance, not a per-query hot path, and it avoids a
+  second tile flood by consuming the region graph.
+- Retry conditions: add incremental patching only if measured area maintenance
+  becomes material in a workload with frequent topology edits.
+
 ## 2026-07-22 - Coarse Corridor and Weighted Product Baselines
 
 - Area: shortest region-route reconstruction and persistent weighted

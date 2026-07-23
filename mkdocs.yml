@@ -82,6 +82,7 @@ nav:
       - Maintenance experiments: architecture/maintenance.md
       - Pathfinding: architecture/path.md
       - Topology: architecture/topology.md
+      - Spatial coordination: architecture/spatial-coordination.md
       - Queued operations: architecture/queued-operations.md
       - Simulation and scheduling: architecture/simulation.md
       - ECS integration: architecture/ecs.md
