@@ -132,6 +132,10 @@
   regions into area summaries, deterministic area identities and adjacency,
   coordinate lookup, graph-change invalidation, dense and sparse graphs, and
   warm allocation-free rebuilds.
+- `tess_tactical_assignment_test`: verifies deterministic priority-ordered
+  greedy assignment with caller scores, candidate capacities, infeasible
+  pairs, stable ID-based tie breaks, invalid duplicate-ID rejection, result
+  alignment to request order, and warm allocation-free execution.
 - `tess_queued_planning_test`: pins the audit-2026-07-11 M4 planner-reuse
   contract -- the `plan_operations` overload that plans into a caller-owned
   `ExecutionReport` recycles report rows, planned operations, and pooled

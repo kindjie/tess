@@ -2,6 +2,17 @@
 
 Records meaningful design changes from the original TDDs.
 
+## 2026-07-22 - Add deterministic tactical assignment
+
+- Changed: added a caller-scored greedy assignment primitive with stable
+  priority ordering, deterministic candidate tie breaks, bounded capacities,
+  explicit partial and invalid outcomes, and reusable warm scratch storage.
+- Reason: the maintained v0.9 roadmap needs assignment mechanics without
+  embedding game semantics or claiming globally optimal multi-agent planning.
+- Affected docs: spatial coordination, public surface, and changelog.
+- Affected code: tactical assignment header, umbrella/install surface, and
+  correctness and allocation tests.
+
 ## 2026-07-22 - Add caller-defined area indexes
 
 - Changed: added a graph-derived area index that groups regions by caller

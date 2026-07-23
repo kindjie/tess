@@ -111,6 +111,7 @@ set(
   include/tess/sim/scheduler.h
   include/tess/sim/time.h
   include/tess/spatial/area.h
+  include/tess/spatial/tactical_assignment.h
   include/tess/storage/chunk_meta.h
   include/tess/storage/chunk_page.h
   include/tess/storage/residency.h

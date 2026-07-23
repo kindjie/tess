@@ -75,6 +75,16 @@ bounded-field/A* fallbacks. Warm builders and coarse reconstruction allocate
 nothing after reserve; benchmarks cover coarse routes, product builds, and
 replay.
 
+### v0.9 Progress
+
+Caller-defined area indexes now derive stable summaries and adjacency from
+region graphs without owning room meaning. Deterministic greedy tactical
+assignment accepts caller feasibility and score policies, respects candidate
+capacities, orders scarce claims by priority and stable ID, and allocates
+nothing after explicit scratch reservation. Local reservation and congestion
+coordination remain active work; globally optimal multi-agent pathfinding and
+continuous steering remain out of scope.
+
 ## Cross-Cutting Acceptance
 
 - Serial and parallel authoritative outputs match at synchronization points.
