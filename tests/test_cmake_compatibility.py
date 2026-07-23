@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMPATIBILITY_MODULE = REPO_ROOT / "cmake" / "TessCMakeCompatibility.cmake"
+
+
+def fetchcontent_declarations(path: Path) -> list[str]:
+    text = path.read_text(encoding="utf-8")
+    return re.findall(
+        r"FetchContent_Declare\(\s*\w+(.*?)\n\s*\)",
+        text,
+        flags=re.DOTALL,
+    )
 
 
 def run_compatibility_probe(tmp_path: Path, version: str) -> str:
@@ -109,3 +119,27 @@ def test_fetchcontent_smoke_uses_the_tracked_consumer_fixture():
     assert (fixture / "main.cc").is_file()
     assert 'cmake -S "$root/tests/fetchcontent_consumer"' in script
     assert "cat >" not in script
+
+
+def test_fetched_dependencies_use_verified_archives_without_git_checkout():
+    modules = [
+        REPO_ROOT / "cmake" / "TessGoogleDeps.cmake",
+        REPO_ROOT / "cmake" / "TessEnttDeps.cmake",
+    ]
+    declarations = [
+        declaration
+        for module in modules
+        for declaration in fetchcontent_declarations(module)
+    ]
+
+    assert len(declarations) == 3
+    for declaration in declarations:
+        assert "GIT_REPOSITORY" not in declaration
+        assert "GIT_TAG" not in declaration
+        assert re.search(r"\bURL\s+", declaration)
+        assert re.search(r"\bURL_HASH\s+SHA256=[0-9a-f]{64}", declaration)
+        assert "DOWNLOAD_EXTRACT_TIMESTAMP FALSE" in declaration
+        assert "TLS_VERIFY TRUE" in declaration
+
+    for module in modules:
+        assert "http://" not in module.read_text(encoding="utf-8")
