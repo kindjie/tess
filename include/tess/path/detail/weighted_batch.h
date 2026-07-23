@@ -232,6 +232,19 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
       world, goal, scratch, policy, {});
 }
 
+/// Builds a provider-aware field, conservatively using the unbounded queue.
+template <typename World, typename Class, std::uint32_t MaxCost,
+          typename Provider>
+auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
+                                           DistanceFieldScratch& scratch,
+                                           MissingChunkPolicy policy,
+                                           const Provider& provider)
+    -> DistanceFieldResult {
+  (void)MaxCost;
+  return build_weighted_distance_field<World, Class, Provider>(
+      world, goal, scratch, policy, provider);
+}
+
 namespace detail {
 
 // Core of weighted_distance_field_path. verify_residency guards the
@@ -240,18 +253,19 @@ namespace detail {
 // reads each field against the same const world it just built it from, so
 // it verifies once per group and skips the per-member recompute
 // (audit 2026-07-11 M2).
-template <typename World, typename Class>
+template <typename World, typename Class, typename Provider>
 auto weighted_distance_field_path_core(const World& world, Coord3 start,
                                        Coord3 goal,
                                        DistanceFieldScratch& scratch,
-                                       bool verify_residency) -> PathResult {
+                                       bool verify_residency,
+                                       const Provider& provider) -> PathResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_distance_field_path<World, Class> requires a "
                 "MovementClass; legacy tag pairs go through the "
                 "<World, PassableTag, CostTag> overload.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
-  using Model = ResolvedTransitionModel<World, Class>;
+  using Model = ResolvedTransitionModel<World, Class, Provider>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
   const auto make_result = [](PathStatus status, std::uint32_t cost,
                               std::size_t expanded, std::size_t reached,
@@ -278,8 +292,9 @@ auto weighted_distance_field_path_core(const World& world, Coord3 start,
   if (!contains<Shape>(goal)) {
     return make_result(PathStatus::InvalidGoal, 0, 0, 0, scratch.path_);
   }
+  const auto model = Model{provider};
   if (!scratch.has_goal_ || scratch.goal_ != goal ||
-      !scratch.template model_matches<Model>() ||
+      !scratch.template model_matches<Model>(model) ||
       (verify_residency && !scratch.residency_matches(world))) {
     return make_result(PathStatus::NoPath, 0, 0, 0, scratch.path_);
   }
@@ -299,7 +314,6 @@ auto weighted_distance_field_path_core(const World& world, Coord3 start,
   }
 
   const auto total_cost = current_distance;
-  const auto model = Model{};
   scratch.path_.push_back(start);
   TESS_DIAG_EVENT(path_reconstruct_node);
   while (current_distance > 0) {
@@ -347,6 +361,15 @@ auto weighted_distance_field_path_core(const World& world, Coord3 start,
                      scratch.touched_.size(), scratch.path_);
 }
 
+template <typename World, typename Class>
+auto weighted_distance_field_path_core(const World& world, Coord3 start,
+                                       Coord3 goal,
+                                       DistanceFieldScratch& scratch,
+                                       bool verify_residency) -> PathResult {
+  return weighted_distance_field_path_core<World, Class, AdjacentTransitions>(
+      world, start, goal, scratch, verify_residency, AdjacentTransitions{});
+}
+
 }  // namespace detail
 
 /// Reconstructs a minimum-cost path through the last matching weighted field.
@@ -360,6 +383,15 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
       world, start, goal, scratch, /*verify_residency=*/true);
 }
 
+/// Reconstructs a weighted field path using the matching special provider.
+template <typename World, typename Class, typename Provider>
+auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
+                                  DistanceFieldScratch& scratch,
+                                  const Provider& provider) -> PathResult {
+  return detail::weighted_distance_field_path_core<World, Class, Provider>(
+      world, start, goal, scratch, /*verify_residency=*/true, provider);
+}
+
 namespace detail {
 
 // Mirrors weighted_astar_path's endpoint validation for a member of a
@@ -367,24 +399,25 @@ namespace detail {
 // passability) is checked before any goal status, and a zero-entry-cost
 // start outranks only a zero-entry-cost goal, matching the single-request
 // check order exactly.
-template <typename World, typename Class>
+template <typename World, typename Class, typename Provider>
 [[nodiscard]] auto weighted_group_member_failure(const World& world,
                                                  PathRequest request,
                                                  DistanceFieldResult field)
     -> PathResult {
   using Shape = typename World::shape_type;
+  using Model = ResolvedTransitionModel<World, Class, Provider>;
   if (!contains<Shape>(request.start) ||
       !is_passable<World, Class>(world, request.start)) {
-    return PathResult{PathStatus::InvalidStart, 0, 0, 0, {}};
+    return PathResult{PathStatus::InvalidStart, 0, 0, 0, {}, Model::cost_scale};
   }
   if (contains<Shape>(request.goal) &&
       is_passable<World, Class>(world, request.goal) &&
       tile_entry_cost_index<World, Class>(
           world, tile_index<Shape>(request.start)) == 0) {
-    return PathResult{PathStatus::InvalidStart, 0, 0, 0, {}};
+    return PathResult{PathStatus::InvalidStart, 0, 0, 0, {}, Model::cost_scale};
   }
-  return PathResult{
-      field.status, 0, field.expanded_nodes, field.reached_nodes, {}};
+  return PathResult{field.status,        0,  field.expanded_nodes,
+                    field.reached_nodes, {}, Model::cost_scale};
 }
 
 }  // namespace detail
@@ -393,10 +426,12 @@ template <typename World, typename Class>
 ///
 /// Result and path spans borrow `scratch` until mutation. Reserve request,
 /// search, and path storage to avoid allocation once warm.
-template <typename World, typename Class, std::uint32_t MaxCost>
+template <typename World, typename Class, std::uint32_t MaxCost,
+          typename Provider>
 auto weighted_path_batch(const World& world,
                          std::span<const PathRequest> requests,
-                         WeightedPathBatchScratch& scratch)
+                         WeightedPathBatchScratch& scratch,
+                         const Provider& provider)
     -> std::span<const PathResult> {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_path_batch<World, Class, MaxCost> requires a "
@@ -484,17 +519,16 @@ auto weighted_path_batch(const World& world,
 
     if (goal_count == 1) {
       ++scratch.stats_.astar_fallbacks;
-      const auto result = weighted_astar_path<World, Class>(
-          world, requests[i], scratch.astar_scratch_);
+      const auto result = weighted_astar_path<World, Class, Provider>(
+          world, requests[i], scratch.astar_scratch_,
+          MissingChunkPolicy::TreatAsBlocked, provider);
       scratch.offsets_[i] = scratch.paths_.size();
       scratch.sizes_[i] = result.path.size();
       scratch.paths_.insert(scratch.paths_.end(), result.path.begin(),
                             result.path.end());
-      scratch.results_[i] = PathResult{result.status,
-                                       result.cost,
-                                       result.expanded_nodes,
-                                       result.reached_nodes,
-                                       {}};
+      scratch.results_[i] =
+          PathResult{result.status,        result.cost, result.expanded_nodes,
+                     result.reached_nodes, {},          result.cost_scale};
       scratch.processed_[i] = 1;
       continue;
     }
@@ -530,11 +564,18 @@ auto weighted_path_batch(const World& world,
       scratch.settle_targets_.push_back(start_index);
     }
 
-    const auto field =
-        detail::build_bounded_weighted_distance_field_core<World, Class,
-                                                           MaxCost>(
+    const auto field = [&] {
+      if constexpr (std::is_same_v<Provider, AdjacentTransitions>) {
+        return detail::build_bounded_weighted_distance_field_core<World, Class,
+                                                                  MaxCost>(
             world, requests[i].goal, scratch.field_scratch_,
             MissingChunkPolicy::TreatAsBlocked, scratch.settle_targets_);
+      } else {
+        return build_weighted_distance_field<World, Class, Provider>(
+            world, requests[i].goal, scratch.field_scratch_,
+            MissingChunkPolicy::TreatAsBlocked, provider);
+      }
+    }();
     // The field was just built from this same const world, so the stamp
     // matches by construction; verify once per group (debug) instead of
     // recomputing the O(resident_count) fingerprint per member.
@@ -544,20 +585,20 @@ auto weighted_path_batch(const World& world,
       const auto j = static_cast<std::size_t>(scratch.group_members_[member]);
       const auto result =
           field.status == PathStatus::Found
-              ? detail::weighted_distance_field_path_core<World, Class>(
+              ? detail::weighted_distance_field_path_core<World, Class,
+                                                          Provider>(
                     world, requests[j].start, requests[j].goal,
-                    scratch.field_scratch_, /*verify_residency=*/false)
-              : detail::weighted_group_member_failure<World, Class>(
+                    scratch.field_scratch_, /*verify_residency=*/false,
+                    provider)
+              : detail::weighted_group_member_failure<World, Class, Provider>(
                     world, requests[j], field);
       scratch.offsets_[j] = scratch.paths_.size();
       scratch.sizes_[j] = result.path.size();
       scratch.paths_.insert(scratch.paths_.end(), result.path.begin(),
                             result.path.end());
-      scratch.results_[j] = PathResult{result.status,
-                                       result.cost,
-                                       result.expanded_nodes,
-                                       result.reached_nodes,
-                                       {}};
+      scratch.results_[j] =
+          PathResult{result.status,        result.cost, result.expanded_nodes,
+                     result.reached_nodes, {},          result.cost_scale};
       scratch.processed_[j] = 1;
     }
   }
@@ -572,6 +613,16 @@ auto weighted_path_batch(const World& world,
   }
   scratch.stats_.path_nodes = scratch.paths_.size();
   return scratch.results_;
+}
+
+template <typename World, typename Class, std::uint32_t MaxCost>
+/// Solves a bounded weighted batch without special transitions.
+auto weighted_path_batch(const World& world,
+                         std::span<const PathRequest> requests,
+                         WeightedPathBatchScratch& scratch)
+    -> std::span<const PathResult> {
+  return weighted_path_batch<World, Class, MaxCost, AdjacentTransitions>(
+      world, requests, scratch, AdjacentTransitions{});
 }
 
 // --- legacy <PassableTag, CostTag> forwarders

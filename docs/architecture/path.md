@@ -140,6 +140,15 @@ flowchart TB
   axial-hex models use scale one. Diagonal models use scale 128: cardinal
   steps cost 128 ticks and diagonal steps cost 181 ticks per destination
   entry-cost unit. `NearestTargetResult` carries the same scale.
+- `CostRangeAssessment` and
+  `path_cost_range_assessment<World, MovementClass, Provider>` expose a
+  conservative compile-time classification of the compact `std::uint32_t`
+  cost domain. `ProvenSafe` means every simple path fits below the reserved
+  infinity sentinel, `PotentialOverflow` means the known conservative bound
+  does not, and `Unknown` means a cost expression or provider lacks a usable
+  maximum. `require_proven_path_cost_range` is the opt-in compile-time gate;
+  queries themselves remain available for every assessment and report a
+  realized overflow as `PathStatus::CostOverflow`.
 - `PathView` (in `tess/path/path_view.h`) is the non-owning view of a path that
   `PathResult` and the runtime's ticket accessors hand out. It carries the same
   lifetime contract as the underlying span -- valid only until the storage it
@@ -191,6 +200,10 @@ flowchart TB
   `clear()` drops routes and resets counters. `capture_world_versions(world)`
   and `invalidate_if_world_changed(world)` provide coarse whole-cache
   invalidation from chunk version fingerprints.
+  The cache also binds the resolved lattice, step, cost scale, provider type,
+  and provider revision. A provider rebind invalidates entries and increments
+  `provider_rebinds`. Non-unit models retain exact hits but conservatively skip
+  suffix reuse whose historical step-count arithmetic cannot recover cost.
 - `ChunkVersionDependencies` records explicit chunk/version pairs and can
   validate whether those chunks are unchanged. It is supporting infrastructure
   for future route products; current route-cache hits still use conservative
@@ -262,6 +275,8 @@ flowchart TB
   pathing loop (the weighted form also keeps its legacy `<World, PassableTag,
   CostTag, MaxCost>` overload). They resubmit active agents each processing
   pass, so stale `PathTicket` values do not survive runtime request clears.
+  Provider-aware trailing overloads bind runtime planning and retained-route
+  movement commits to the same provider instance and revision.
 - `SimClock`, `PathAgentTickState`, `PathAgentTickOptions`, and
   `PathAgentTickStats` provide the first minimal path-agent tick wrapper.
   `tick_unit_path_agents<World, ClassOrTag>(state, world, agents, runtime,
@@ -293,6 +308,9 @@ flowchart TB
   normalizes to the byte-identical `WalkableField` identity class, and a
   composed class contributes its passability predicate (unit search ignores
   entry cost).
+  A trailing provider overload composes allocation-free special edges and
+  disables regular direct-route shortcuts that could miss a cheaper special
+  route.
 - `weighted_astar_path<World, Class>(world, request, scratch, policy)` runs
   deterministic weighted A* over ONE movement class fusing the passability
   predicate and the u32-saturated entry-cost expression (0 = impassable). It
@@ -310,6 +328,12 @@ flowchart TB
   pairing. The class-typed cores reject raw tags at compile time — a raw tag
   would normalize to the unit-cost identity class and silently discard the
   cost field.
+  The class-typed path, field, product, batch, cache, and runtime families
+  accept matching trailing provider overloads. Reverse operations require the
+  provider's reverse-enumeration contract. Persistent products capture model
+  identity plus provider revision; until a generic provider dependency index
+  exists, provider-composed dense products conservatively depend on every
+  world chunk.
 - `build_weighted_route_product<World, PassableTag, CostTag>(world, request,
   scratch, product)` builds and stores a weighted route product.
 - `weighted_route_product_path(world, product)` replays a stored weighted

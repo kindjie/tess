@@ -17,6 +17,7 @@ add_executable(
   tess_residency_bench.cc
   tess_scheduler_bench.cc
   tess_topology_bench.cc
+  tess_transition_bench.cc
 )
 target_link_libraries(tess_bench PRIVATE tess::tess benchmark::benchmark_main)
 tess_apply_project_options(tess_bench)
@@ -32,6 +33,7 @@ add_executable(
   tess_path_weighted_bench.cc
   tess_render_delta_bench.cc
   tess_scheduler_bench.cc
+  tess_transition_bench.cc
   tess_diagnostics_bench.cc
   tess_diagnostics_alloc_hooks.cc
 )

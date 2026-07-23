@@ -14,17 +14,18 @@ namespace tess {
 ///
 /// Returns `InvalidGoal` when the goal is outside the world, domain, or
 /// movement class. The caller owns `scratch`; reuse it to avoid allocations.
-template <typename World, typename Class>
+template <typename World, typename Class, typename Provider>
 auto build_weighted_distance_field_in_box(
     const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
-    [[maybe_unused]] MissingChunkPolicy policy) -> DistanceFieldResult {
+    [[maybe_unused]] MissingChunkPolicy policy, const Provider& provider)
+    -> DistanceFieldResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "build_weighted_distance_field_in_box<World, Class> requires "
                 "a MovementClass; legacy tag pairs go through the "
                 "<World, PassableTag, CostTag> overload.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
-  using Model = ResolvedTransitionModel<World, Class>;
+  using Model = ResolvedTransitionModel<World, Class, Provider>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
 
   TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
@@ -62,9 +63,10 @@ auto build_weighted_distance_field_in_box(
   }
 
   const auto goal_offset = space.offset(goal_index);
+  const auto model = Model{provider};
   scratch.goal_ = goal;
   scratch.has_goal_ = true;
-  scratch.template stamp_model<Model>();
+  scratch.template stamp_model<Model>(model);
   scratch.stamp_residency(world);
   scratch.distance_[goal_offset] = 0;
   scratch.touch_node(goal_offset, goal_index);
@@ -77,7 +79,6 @@ auto build_weighted_distance_field_in_box(
   std::size_t expanded_nodes = 0;
   [[maybe_unused]] bool crossed_missing = false;
   auto cost_overflow = false;
-  const auto model = Model{};
   while (!scratch.weighted_frontier_.empty()) {
     TESS_DIAG_EVENT(path_heap_pop);
     std::pop_heap(scratch.weighted_frontier_.begin(),
@@ -156,6 +157,17 @@ auto build_weighted_distance_field_in_box(
   return DistanceFieldResult{
       cost_overflow ? PathStatus::CostOverflow : PathStatus::Found,
       expanded_nodes, scratch.touched_.size()};
+}
+
+template <typename World, typename Class>
+auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
+                                          Box3 domain,
+                                          DistanceFieldScratch& scratch,
+                                          MissingChunkPolicy policy)
+    -> DistanceFieldResult {
+  return build_weighted_distance_field_in_box<World, Class,
+                                              AdjacentTransitions>(
+      world, goal, domain, scratch, policy, AdjacentTransitions{});
 }
 
 // Legacy <PassableTag, CostTag> forwarder: one movement class replaces the

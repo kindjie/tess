@@ -116,6 +116,13 @@ auto weighted_distance_field_path_core(const World& world, Coord3 start,
                                        DistanceFieldScratch& scratch,
                                        bool verify_residency) -> PathResult;
 
+template <typename World, typename Class, typename Provider>
+auto weighted_distance_field_path_core(const World& world, Coord3 start,
+                                       Coord3 goal,
+                                       DistanceFieldScratch& scratch,
+                                       bool verify_residency,
+                                       const Provider& provider) -> PathResult;
+
 // Core behind build_bounded_weighted_distance_field. settle_targets are
 // validated tile indices whose distances the caller will read; once every
 // target is settled the flood stops instead of exhausting the reachable
@@ -139,6 +146,12 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                 MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> PathResult;
 
+/// Finds a minimum-step path composed with a special-transition provider.
+template <typename World, typename Tag, typename Provider>
+auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
+                MissingChunkPolicy policy, const Provider& provider)
+    -> PathResult;
+
 // The weighted searches come in two forms: the core takes one MovementClass
 // fusing passability and entry cost; the legacy <PassableTag, CostTag> pair
 // forwards through movement::LegacyWeighted (identical semantics, including
@@ -151,6 +164,12 @@ auto weighted_astar_path(
     const World& world, PathRequest request, PathScratch& scratch,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> PathResult;
+
+/// Finds a weighted path composed with a special-transition provider.
+template <typename World, typename Class, typename Provider>
+auto weighted_astar_path(const World& world, PathRequest request,
+                         PathScratch& scratch, MissingChunkPolicy policy,
+                         const Provider& provider) -> PathResult;
 
 template <typename World, typename PassableTag, typename CostTag>
 /// Finds a weighted path using separate legacy passability and cost tags.
@@ -166,11 +185,26 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
                                   DistanceFieldProduct& product)
     -> DistanceFieldResult;
 
+/// Builds a dense multi-goal field composed with a special provider.
+template <typename World, typename Tag, typename Provider>
+auto build_distance_field_product(const World& world, const GoalSet& goals,
+                                  DistanceFieldScratch& scratch,
+                                  DistanceFieldProduct& product,
+                                  const Provider& provider)
+    -> DistanceFieldResult;
+
 /// Reconstructs a borrowed path from a valid multi-goal product.
 template <typename World, typename Tag>
 auto distance_field_product_path(const World& world, Coord3 start,
                                  const DistanceFieldProduct& product,
                                  DistanceFieldScratch& scratch) -> PathResult;
+
+/// Reads a multi-goal product through its matching special provider.
+template <typename World, typename Tag, typename Provider>
+auto distance_field_product_path(const World& world, Coord3 start,
+                                 const DistanceFieldProduct& product,
+                                 DistanceFieldScratch& scratch,
+                                 const Provider& provider) -> PathResult;
 
 /// Finds the nearest reachable goal represented by a valid product.
 template <typename World, typename Tag>
@@ -188,6 +222,13 @@ auto build_distance_field(
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> DistanceFieldResult;
 
+/// Builds an unweighted reverse field composed with a special provider.
+template <typename WorldType, typename Tag, typename Provider>
+auto build_distance_field(const WorldType& world, Coord3 goal,
+                          DistanceFieldScratch& scratch,
+                          MissingChunkPolicy policy, const Provider& provider)
+    -> DistanceFieldResult;
+
 /// Builds a movement-class weighted field rooted at `goal`.
 ///
 /// The build may allocate unless scratch was reserved. Sparse boundaries
@@ -196,6 +237,14 @@ template <typename WorldType, typename Class>
 auto build_weighted_distance_field(
     const WorldType& world, Coord3 goal, DistanceFieldScratch& scratch,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> DistanceFieldResult;
+
+/// Builds a weighted reverse field composed with a special provider.
+template <typename WorldType, typename Class, typename Provider>
+auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
+                                   DistanceFieldScratch& scratch,
+                                   MissingChunkPolicy policy,
+                                   const Provider& provider)
     -> DistanceFieldResult;
 
 template <typename World, typename PassableTag, typename CostTag>
@@ -212,6 +261,15 @@ auto build_weighted_distance_field_in_box(
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> DistanceFieldResult;
 
+/// Builds a boxed weighted field composed with a special provider.
+template <typename World, typename Class, typename Provider>
+auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
+                                          Box3 domain,
+                                          DistanceFieldScratch& scratch,
+                                          MissingChunkPolicy policy,
+                                          const Provider& provider)
+    -> DistanceFieldResult;
+
 template <typename World, typename PassableTag, typename CostTag>
 /// Builds a boxed weighted field using legacy passability and cost tags.
 auto build_weighted_distance_field_in_box(
@@ -224,6 +282,15 @@ template <typename World, typename Class, std::uint32_t MaxCost>
 auto build_bounded_weighted_distance_field(
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> DistanceFieldResult;
+
+/// Builds a bounded-cost field composed with a special provider.
+template <typename World, typename Class, std::uint32_t MaxCost,
+          typename Provider>
+auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
+                                           DistanceFieldScratch& scratch,
+                                           MissingChunkPolicy policy,
+                                           const Provider& provider)
     -> DistanceFieldResult;
 
 template <typename World, typename PassableTag, typename CostTag,
@@ -574,10 +641,21 @@ class PathScratch {
                          PathScratch& scratch, MissingChunkPolicy policy)
       -> PathResult;
 
+  template <typename World, typename Tag, typename Provider>
+  friend auto astar_path(const World& world, PathRequest request,
+                         PathScratch& scratch, MissingChunkPolicy policy,
+                         const Provider& provider) -> PathResult;
+
   template <typename World, typename Class>
   friend auto weighted_astar_path(const World& world, PathRequest request,
                                   PathScratch& scratch,
                                   MissingChunkPolicy policy) -> PathResult;
+
+  template <typename World, typename Class, typename Provider>
+  friend auto weighted_astar_path(const World& world, PathRequest request,
+                                  PathScratch& scratch,
+                                  MissingChunkPolicy policy,
+                                  const Provider& provider) -> PathResult;
 
   template <typename World, typename PassableTag, typename CostTag>
   friend auto weighted_astar_path(const World& world, PathRequest request,
@@ -588,6 +666,11 @@ class PathScratch {
   friend auto cached_astar_path(const World& world, PathRequest request,
                                 PathScratch& scratch, RouteCacheScratch& cache)
       -> PathResult;
+
+  template <typename World, typename Tag, typename Provider>
+  friend auto cached_astar_path(const World& world, PathRequest request,
+                                PathScratch& scratch, RouteCacheScratch& cache,
+                                const Provider& provider) -> PathResult;
 
   void advance_epoch() noexcept {
     ++epoch_;
@@ -672,6 +755,12 @@ class DistanceFieldScratch {
                                    MissingChunkPolicy policy)
       -> DistanceFieldResult;
 
+  template <typename World, typename Class, typename Provider>
+  friend auto build_weighted_distance_field_in_box(
+      const World& world, Coord3 goal, Box3 domain,
+      DistanceFieldScratch& scratch, MissingChunkPolicy policy,
+      const Provider& provider) -> DistanceFieldResult;
+
   template <typename World, typename Tag>
   friend auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
                                   DistanceFieldScratch& scratch) -> PathResult;
@@ -682,6 +771,13 @@ class DistanceFieldScratch {
   friend auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
                                             DistanceFieldScratch& scratch,
                                             MissingChunkPolicy policy)
+      -> DistanceFieldResult;
+
+  template <typename WorldType, typename Class, typename Provider>
+  friend auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
+                                            DistanceFieldScratch& scratch,
+                                            MissingChunkPolicy policy,
+                                            const Provider& provider)
       -> DistanceFieldResult;
 
   template <typename World, typename Class>
@@ -703,12 +799,26 @@ class DistanceFieldScratch {
       const World& world, Coord3 start, Coord3 goal,
       DistanceFieldScratch& scratch, bool verify_residency) -> PathResult;
 
+  template <typename World, typename Class, typename Provider>
+  friend auto detail::weighted_distance_field_path_core(
+      const World& world, Coord3 start, Coord3 goal,
+      DistanceFieldScratch& scratch, bool verify_residency,
+      const Provider& provider) -> PathResult;
+
   // The batch skips the core's per-member residency verification and
   // instead asserts the stamp once per group build.
   template <typename World, typename Class, std::uint32_t MaxCost>
   friend auto weighted_path_batch(const World& world,
                                   std::span<const PathRequest> requests,
                                   WeightedPathBatchScratch& scratch)
+      -> std::span<const PathResult>;
+
+  template <typename World, typename Class, std::uint32_t MaxCost,
+            typename Provider>
+  friend auto weighted_path_batch(const World& world,
+                                  std::span<const PathRequest> requests,
+                                  WeightedPathBatchScratch& scratch,
+                                  const Provider& provider)
       -> std::span<const PathResult>;
 
   template <typename World, typename Tag>
@@ -718,10 +828,25 @@ class DistanceFieldScratch {
                                            DistanceFieldProduct& product)
       -> DistanceFieldResult;
 
+  template <typename World, typename Tag, typename Provider>
+  friend auto build_distance_field_product(const World& world,
+                                           const GoalSet& goals,
+                                           DistanceFieldScratch& scratch,
+                                           DistanceFieldProduct& product,
+                                           const Provider& provider)
+      -> DistanceFieldResult;
+
   template <typename World, typename Tag>
   friend auto distance_field_product_path(const World& world, Coord3 start,
                                           const DistanceFieldProduct& product,
                                           DistanceFieldScratch& scratch)
+      -> PathResult;
+
+  template <typename World, typename Tag, typename Provider>
+  friend auto distance_field_product_path(const World& world, Coord3 start,
+                                          const DistanceFieldProduct& product,
+                                          DistanceFieldScratch& scratch,
+                                          const Provider& provider)
       -> PathResult;
 
   template <typename World, typename Tag>
@@ -729,6 +854,12 @@ class DistanceFieldScratch {
                              const DistanceFieldProduct& product,
                              DistanceFieldScratch& scratch)
       -> NearestTargetResult;
+
+  template <typename World, typename Tag, typename Provider>
+  friend auto nearest_target(const World& world, Coord3 start,
+                             const DistanceFieldProduct& product,
+                             DistanceFieldScratch& scratch,
+                             const Provider& provider) -> NearestTargetResult;
 
   void clear_build() noexcept {
     advance_epoch();
@@ -741,6 +872,8 @@ class DistanceFieldScratch {
     path_.clear();
     has_goal_ = false;
     model_class_identity_ = 0;
+    model_provider_identity_ = 0;
+    model_provider_revision_ = 0;
   }
 
   void clear_path() noexcept { path_.clear(); }
@@ -835,7 +968,7 @@ class DistanceFieldScratch {
   }
 
   template <typename Model>
-  void stamp_model() noexcept {
+  void stamp_model(const Model& model = Model{}) noexcept {
     model_class_identity_ = detail::tag_identity<typename Model::class_type>();
     model_lattice_identity_ =
         static_cast<std::uint32_t>(Model::lattice_identity);
@@ -843,10 +976,14 @@ class DistanceFieldScratch {
     model_step_identity_ =
         static_cast<std::uint32_t>(Model::step_policy_identity);
     model_cost_scale_ = Model::cost_scale;
+    model_provider_identity_ =
+        detail::tag_identity<typename Model::provider_type>();
+    model_provider_revision_ = model.revision();
   }
 
   template <typename Model>
-  [[nodiscard]] auto model_matches() const noexcept -> bool {
+  [[nodiscard]] auto model_matches(const Model& model = Model{}) const noexcept
+      -> bool {
     return model_class_identity_ ==
                detail::tag_identity<typename Model::class_type>() &&
            model_lattice_identity_ ==
@@ -854,7 +991,10 @@ class DistanceFieldScratch {
            model_lattice_version_ == Model::lattice_version &&
            model_step_identity_ ==
                static_cast<std::uint32_t>(Model::step_policy_identity) &&
-           model_cost_scale_ == Model::cost_scale;
+           model_cost_scale_ == Model::cost_scale &&
+           model_provider_identity_ ==
+               detail::tag_identity<typename Model::provider_type>() &&
+           model_provider_revision_ == model.revision();
   }
 
   std::uintptr_t model_class_identity_ = 0;
@@ -862,6 +1002,8 @@ class DistanceFieldScratch {
   std::uint32_t model_lattice_version_ = 0;
   std::uint32_t model_step_identity_ = 0;
   std::uint32_t model_cost_scale_ = 0;
+  std::uintptr_t model_provider_identity_ = 0;
+  std::uint64_t model_provider_revision_ = 0;
 };
 
 /// Owns all temporary and returned storage for weighted batch pathfinding.
@@ -907,6 +1049,14 @@ class WeightedPathBatchScratch {
   friend auto weighted_path_batch(const World& world,
                                   std::span<const PathRequest> requests,
                                   WeightedPathBatchScratch& scratch)
+      -> std::span<const PathResult>;
+
+  template <typename World, typename Class, std::uint32_t MaxCost,
+            typename Provider>
+  friend auto weighted_path_batch(const World& world,
+                                  std::span<const PathRequest> requests,
+                                  WeightedPathBatchScratch& scratch,
+                                  const Provider& provider)
       -> std::span<const PathResult>;
 
   DistanceFieldScratch field_scratch_;
@@ -1733,11 +1883,35 @@ auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
       scratch.path_.size(), scratch.touched_.size(), scratch.path_};
 }
 
+/// Builds a provider-aware unweighted field through reverse Dijkstra.
+template <typename WorldType, typename Tag, typename Provider>
+auto build_distance_field(const WorldType& world, Coord3 goal,
+                          DistanceFieldScratch& scratch,
+                          MissingChunkPolicy policy, const Provider& provider)
+    -> DistanceFieldResult {
+  using Class = movement::movement_class_of<Tag>;
+  using UnitClass = movement::detail::UnitMovementClass<Class>;
+  return build_weighted_distance_field<WorldType, UnitClass, Provider>(
+      world, goal, scratch, policy, provider);
+}
+
+/// Reads a provider-aware unweighted field built with the same provider.
+template <typename World, typename Tag, typename Provider>
+auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
+                         DistanceFieldScratch& scratch,
+                         const Provider& provider) -> PathResult {
+  using Class = movement::movement_class_of<Tag>;
+  using UnitClass = movement::detail::UnitMovementClass<Class>;
+  return detail::weighted_distance_field_path_core<World, UnitClass, Provider>(
+      world, start, goal, scratch, /*verify_residency=*/true, provider);
+}
+
 /// Builds a movement-class weighted field into reusable caller scratch.
-template <typename WorldType, typename Class>
+template <typename WorldType, typename Class, typename Provider>
 auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
                                    DistanceFieldScratch& scratch,
-                                   [[maybe_unused]] MissingChunkPolicy policy)
+                                   [[maybe_unused]] MissingChunkPolicy policy,
+                                   const Provider& provider)
     -> DistanceFieldResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "build_weighted_distance_field<World, Class> requires a "
@@ -1745,7 +1919,7 @@ auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
                 "<World, PassableTag, CostTag> overload.");
   using Shape = typename WorldType::shape_type;
   using Space = detail::NodeIndexSpace<WorldType>;
-  using Model = ResolvedTransitionModel<WorldType, Class>;
+  using Model = ResolvedTransitionModel<WorldType, Class, Provider>;
   constexpr auto infinite_distance = std::numeric_limits<std::uint32_t>::max();
 
   TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
@@ -1784,9 +1958,10 @@ auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
   }
 
   const auto goal_offset = space.offset(goal_index);
+  const auto model = Model{provider};
   scratch.goal_ = goal;
   scratch.has_goal_ = true;
-  scratch.template stamp_model<Model>();
+  scratch.template stamp_model<Model>(model);
   scratch.stamp_residency(world);
   scratch.distance_[goal_offset] = 0;
   scratch.touch_node(goal_offset, goal_index);
@@ -1799,7 +1974,6 @@ auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
   std::size_t expanded_nodes = 0;
   [[maybe_unused]] bool crossed_missing = false;
   auto cost_overflow = false;
-  const auto model = Model{};
   while (!scratch.weighted_frontier_.empty()) {
     TESS_DIAG_EVENT(path_heap_pop);
     std::pop_heap(scratch.weighted_frontier_.begin(),
@@ -1875,6 +2049,15 @@ auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
   return DistanceFieldResult{
       cost_overflow ? PathStatus::CostOverflow : PathStatus::Found,
       expanded_nodes, scratch.touched_.size()};
+}
+
+template <typename WorldType, typename Class>
+auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
+                                   DistanceFieldScratch& scratch,
+                                   MissingChunkPolicy policy)
+    -> DistanceFieldResult {
+  return build_weighted_distance_field<WorldType, Class, AdjacentTransitions>(
+      world, goal, scratch, policy, AdjacentTransitions{});
 }
 
 template <typename World, typename PassableTag, typename CostTag>

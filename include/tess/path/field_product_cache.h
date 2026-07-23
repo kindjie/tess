@@ -75,6 +75,8 @@ class DistanceFieldProduct {
     model_lattice_version_ = 0;
     model_step_identity_ = 0;
     model_cost_scale_ = 0;
+    model_provider_identity_ = 0;
+    model_provider_revision_ = 0;
     goals_.clear();
     distance_.clear();
     dependencies_.clear();
@@ -114,11 +116,21 @@ class DistanceFieldProduct {
   }
 
  private:
+  friend class FieldProductCache;
+
   template <typename World, typename Tag>
   friend auto build_distance_field_product(const World& world,
                                            const GoalSet& goals,
                                            DistanceFieldScratch& scratch,
                                            DistanceFieldProduct& product)
+      -> DistanceFieldResult;
+
+  template <typename World, typename Tag, typename Provider>
+  friend auto build_distance_field_product(const World& world,
+                                           const GoalSet& goals,
+                                           DistanceFieldScratch& scratch,
+                                           DistanceFieldProduct& product,
+                                           const Provider& provider)
       -> DistanceFieldResult;
 
   template <typename World, typename Tag>
@@ -127,11 +139,24 @@ class DistanceFieldProduct {
                                           DistanceFieldScratch& scratch)
       -> PathResult;
 
+  template <typename World, typename Tag, typename Provider>
+  friend auto distance_field_product_path(const World& world, Coord3 start,
+                                          const DistanceFieldProduct& product,
+                                          DistanceFieldScratch& scratch,
+                                          const Provider& provider)
+      -> PathResult;
+
   template <typename World, typename Tag>
   friend auto nearest_target(const World& world, Coord3 start,
                              const DistanceFieldProduct& product,
                              DistanceFieldScratch& scratch)
       -> NearestTargetResult;
+
+  template <typename World, typename Tag, typename Provider>
+  friend auto nearest_target(const World& world, Coord3 start,
+                             const DistanceFieldProduct& product,
+                             DistanceFieldScratch& scratch,
+                             const Provider& provider) -> NearestTargetResult;
 
   [[nodiscard]] auto is_goal(Coord3 coord) const noexcept -> bool {
     for (const auto goal : goals_) {
@@ -155,6 +180,8 @@ class DistanceFieldProduct {
   std::uint32_t model_lattice_version_ = 0;
   std::uint32_t model_step_identity_ = 0;
   std::uint32_t model_cost_scale_ = 0;
+  std::uintptr_t model_provider_identity_ = 0;
+  std::uint64_t model_provider_revision_ = 0;
   std::vector<Coord3> goals_;
   std::vector<std::uint32_t> distance_;
   ChunkVersionDependencies dependencies_;
@@ -217,9 +244,19 @@ class FieldProductCache {
   template <typename World, typename Tag>
   [[nodiscard]] auto lookup(const World& world, const GoalSet& goals)
       -> const DistanceFieldProduct* {
+    return lookup<World, Tag, AdjacentTransitions>(world, goals,
+                                                   AdjacentTransitions{});
+  }
+
+  /// Looks up a product for the exact provider type and revision.
+  template <typename World, typename Tag, typename Provider>
+  [[nodiscard]] auto lookup(const World& world, const GoalSet& goals,
+                            const Provider& provider)
+      -> const DistanceFieldProduct* {
     for (std::size_t i = 0; i < entries_.size(); ++i) {
       auto& entry = entries_[i];
-      if (!key_matches<World, Tag>(entry.key, goals.goals())) {
+      if (!key_matches<World, Tag, Provider>(entry.key, goals.goals(),
+                                             provider)) {
         continue;
       }
       if (!entry.product->is_valid(world)) {
@@ -242,11 +279,30 @@ class FieldProductCache {
   // clears the entire cache and returns false.
   template <typename World, typename Tag>
   auto store(DistanceFieldProduct&& product) -> bool {
+    return store<World, Tag, AdjacentTransitions>(std::move(product),
+                                                  AdjacentTransitions{});
+  }
+
+  /// Stores a product under the exact provider type and revision.
+  template <typename World, typename Tag, typename Provider>
+  auto store(DistanceFieldProduct&& product, const Provider& provider) -> bool {
     if (product.status() != PathStatus::Found) {
       return false;
     }
 
-    auto key = make_key<World, Tag>(product.goals());
+    auto key = make_key<World, Tag, Provider>(product.goals(), provider);
+    if (product.model_class_identity_ != key.movement_class ||
+        product.tile_count_ != key.tile_count ||
+        product.chunk_count_ != key.chunk_count ||
+        product.local_tile_count_ != key.local_tile_count ||
+        product.model_lattice_identity_ != key.lattice_identity ||
+        product.model_lattice_version_ != key.lattice_version ||
+        product.model_step_identity_ != key.step_identity ||
+        product.model_cost_scale_ != key.cost_scale ||
+        product.model_provider_identity_ != key.provider_identity ||
+        product.model_provider_revision_ != key.provider_revision) {
+      return false;
+    }
     const auto bytes = entry_byte_size(key, product);
     if (bytes > byte_budget_) {
       clear();
@@ -287,6 +343,8 @@ class FieldProductCache {
     std::uint32_t lattice_version = 0;
     std::uint32_t step_identity = 0;
     std::uint32_t cost_scale = 0;
+    std::uintptr_t provider_identity = 0;
+    std::uint64_t provider_revision = 0;
     std::vector<Coord3> goals;
   };
 
@@ -300,11 +358,13 @@ class FieldProductCache {
     std::size_t bytes = 0;
   };
 
-  template <typename World, typename Tag>
-  [[nodiscard]] static auto make_key(std::span<const Coord3> goals) -> Key {
+  template <typename World, typename Tag, typename Provider>
+  [[nodiscard]] static auto make_key(std::span<const Coord3> goals,
+                                     const Provider& provider) -> Key {
     using Class = movement::movement_class_of<Tag>;
     using UnitClass = movement::detail::UnitMovementClass<Class>;
-    using Model = ResolvedTransitionModel<World, UnitClass>;
+    using Model = ResolvedTransitionModel<World, UnitClass, Provider>;
+    const auto model = Model{provider};
     return Key{
         detail::tag_identity<typename Model::class_type>(),
         detail::tile_count<World>(),
@@ -316,6 +376,8 @@ class FieldProductCache {
         Model::lattice_version,
         static_cast<std::uint32_t>(Model::step_policy_identity),
         Model::cost_scale,
+        detail::tag_identity<Provider>(),
+        model.revision(),
         std::vector<Coord3>{goals.begin(), goals.end()},
     };
   }
@@ -331,16 +393,21 @@ class FieldProductCache {
            lhs.lattice_identity == rhs.lattice_identity &&
            lhs.lattice_version == rhs.lattice_version &&
            lhs.step_identity == rhs.step_identity &&
-           lhs.cost_scale == rhs.cost_scale && lhs.goals == rhs.goals;
+           lhs.cost_scale == rhs.cost_scale &&
+           lhs.provider_identity == rhs.provider_identity &&
+           lhs.provider_revision == rhs.provider_revision &&
+           lhs.goals == rhs.goals;
   }
 
-  template <typename World, typename Tag>
+  template <typename World, typename Tag, typename Provider>
   [[nodiscard]] static auto key_matches(const Key& key,
-                                        std::span<const Coord3> goals) noexcept
+                                        std::span<const Coord3> goals,
+                                        const Provider& provider) noexcept
       -> bool {
     using Class = movement::movement_class_of<Tag>;
     using UnitClass = movement::detail::UnitMovementClass<Class>;
-    using Model = ResolvedTransitionModel<World, UnitClass>;
+    using Model = ResolvedTransitionModel<World, UnitClass, Provider>;
+    const auto model = Model{provider};
     return key.movement_class ==
                detail::tag_identity<typename Model::class_type>() &&
            key.tile_count == detail::tile_count<World>() &&
@@ -354,6 +421,8 @@ class FieldProductCache {
            key.step_identity ==
                static_cast<std::uint32_t>(Model::step_policy_identity) &&
            key.cost_scale == Model::cost_scale &&
+           key.provider_identity == detail::tag_identity<Provider>() &&
+           key.provider_revision == model.revision() &&
            key.goals.size() == goals.size() &&
            std::equal(key.goals.begin(), key.goals.end(), goals.begin());
   }
@@ -397,15 +466,16 @@ class FieldProductCache {
 ///
 /// Invalid goals return `InvalidGoal`. Reusing reserved product and scratch
 /// capacity avoids steady-state allocation.
-template <typename World, typename Tag>
+template <typename World, typename Tag, typename Provider>
 auto build_distance_field_product(const World& world, const GoalSet& goals,
                                   DistanceFieldScratch& scratch,
-                                  DistanceFieldProduct& product)
+                                  DistanceFieldProduct& product,
+                                  const Provider& provider)
     -> DistanceFieldResult {
   using Shape = typename World::shape_type;
   using Class = movement::movement_class_of<Tag>;
   using UnitClass = movement::detail::UnitMovementClass<Class>;
-  using Model = ResolvedTransitionModel<World, UnitClass>;
+  using Model = ResolvedTransitionModel<World, UnitClass, Provider>;
   // Sizes its distance arrays by the global tile count and treats missing
   // chunks as blocked with no MissingChunkPolicy, so on a sparse world it would
   // allocate for the whole (possibly astronomical) shape. Dense-only until the
@@ -421,6 +491,7 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
   TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_.size());
   scratch.clear_build();
   product.clear();
+  const auto model = Model{provider};
   product.goals_.assign(goals.goals().begin(), goals.goals().end());
   product.tile_count_ = detail::tile_count<World>();
   product.chunk_count_ = World::chunk_count;
@@ -435,6 +506,8 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
   product.model_step_identity_ =
       static_cast<std::uint32_t>(Model::step_policy_identity);
   product.model_cost_scale_ = Model::cost_scale;
+  product.model_provider_identity_ = detail::tag_identity<Provider>();
+  product.model_provider_revision_ = model.revision();
 
   if (goals.empty()) {
     return DistanceFieldResult{PathStatus::InvalidGoal, 0, 0};
@@ -479,7 +552,6 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
 
   std::size_t expanded_nodes = 0;
   auto cost_overflow = false;
-  const auto model = Model{};
   if constexpr (Model::cost_scale == 1) {
     std::size_t head = 0;
     while (head < scratch.frontier_.size()) {
@@ -596,6 +668,12 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
           });
     }
   }
+  if constexpr (Model::has_special_transitions) {
+    // A provider may derive an edge from state outside the regular stencil.
+    // Without a generic provider index, whole-world capture is the only
+    // sound invalidation rule for persistent dense products.
+    product.dependencies_.capture_all(world);
+  }
   product.status_ =
       cost_overflow ? PathStatus::CostOverflow : PathStatus::Found;
   product.expanded_nodes_ = expanded_nodes;
@@ -605,17 +683,28 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
                              product.reached_nodes_};
 }
 
+template <typename World, typename Tag>
+auto build_distance_field_product(const World& world, const GoalSet& goals,
+                                  DistanceFieldScratch& scratch,
+                                  DistanceFieldProduct& product)
+    -> DistanceFieldResult {
+  return build_distance_field_product<World, Tag, AdjacentTransitions>(
+      world, goals, scratch, product, AdjacentTransitions{});
+}
+
 /// Reconstructs a path from `start` through a valid dense-world product.
 ///
 /// The returned path borrows `scratch` storage until its next mutation.
-template <typename World, typename Tag>
+template <typename World, typename Tag, typename Provider>
 auto distance_field_product_path(const World& world, Coord3 start,
                                  const DistanceFieldProduct& product,
-                                 DistanceFieldScratch& scratch) -> PathResult {
+                                 DistanceFieldScratch& scratch,
+                                 const Provider& provider) -> PathResult {
   using Shape = typename World::shape_type;
   using Class = movement::movement_class_of<Tag>;
   using UnitClass = movement::detail::UnitMovementClass<Class>;
-  using Model = ResolvedTransitionModel<World, UnitClass>;
+  using Model = ResolvedTransitionModel<World, UnitClass, Provider>;
+  const auto model = Model{provider};
   // Indexes product.distance_ by raw tile id, so it is dense-only until the
   // distance-field product family is ported to NodeIndexSpace. The single-goal
   // build_distance_field / distance_field_path pair is already sparse-capable.
@@ -646,7 +735,9 @@ auto distance_field_product_path(const World& world, Coord3 start,
       product.model_lattice_version_ != Model::lattice_version ||
       product.model_step_identity_ !=
           static_cast<std::uint32_t>(Model::step_policy_identity) ||
-      product.model_cost_scale_ != Model::cost_scale) {
+      product.model_cost_scale_ != Model::cost_scale ||
+      product.model_provider_identity_ != detail::tag_identity<Provider>() ||
+      product.model_provider_revision_ != model.revision()) {
     return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
   }
 
@@ -660,7 +751,6 @@ auto distance_field_product_path(const World& world, Coord3 start,
 
   scratch.path_.push_back(start);
   TESS_DIAG_EVENT(path_reconstruct_node);
-  const auto model = Model{};
   while (current_distance > 0) {
     const auto current_coord = detail::tile_coord<Shape>(current);
     auto next = current;
@@ -704,21 +794,30 @@ auto distance_field_product_path(const World& world, Coord3 start,
                     Model::cost_scale};
 }
 
+template <typename World, typename Tag>
+auto distance_field_product_path(const World& world, Coord3 start,
+                                 const DistanceFieldProduct& product,
+                                 DistanceFieldScratch& scratch) -> PathResult {
+  return distance_field_product_path<World, Tag, AdjacentTransitions>(
+      world, start, product, scratch, AdjacentTransitions{});
+}
+
 /// Finds the closest reachable goal represented by a valid dense product.
 ///
 /// The returned path borrows `scratch` storage until its next mutation.
-template <typename World, typename Tag>
+template <typename World, typename Tag, typename Provider>
 auto nearest_target(const World& world, Coord3 start,
                     const DistanceFieldProduct& product,
-                    DistanceFieldScratch& scratch) -> NearestTargetResult {
+                    DistanceFieldScratch& scratch, const Provider& provider)
+    -> NearestTargetResult {
   // Consumes a dense-only distance-field product; guarded directly rather than
   // only transitively through distance_field_product_path below.
   static_assert(
       std::is_same_v<typename World::residency_type, AlwaysResident>,
       "nearest_target is dense-only; the sparse distance-field product slice "
       "lands later.");
-  const auto path =
-      distance_field_product_path<World, Tag>(world, start, product, scratch);
+  const auto path = distance_field_product_path<World, Tag, Provider>(
+      world, start, product, scratch, provider);
   auto target = Coord3{};
   if (path.status == PathStatus::Found && !path.path.empty()) {
     target = path.path.back();
@@ -727,6 +826,14 @@ auto nearest_target(const World& world, Coord3 start,
       path.status,        path.cost, target,          path.expanded_nodes,
       path.reached_nodes, path.path, path.cost_scale,
   };
+}
+
+template <typename World, typename Tag>
+auto nearest_target(const World& world, Coord3 start,
+                    const DistanceFieldProduct& product,
+                    DistanceFieldScratch& scratch) -> NearestTargetResult {
+  return nearest_target<World, Tag, AdjacentTransitions>(
+      world, start, product, scratch, AdjacentTransitions{});
 }
 
 }  // namespace tess

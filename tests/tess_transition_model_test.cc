@@ -12,6 +12,7 @@ namespace mv = tess::movement;
 
 struct PassableTag {};
 struct CostTag {};
+struct StairTag {};
 
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
@@ -22,6 +23,32 @@ using SparseShape = tess::Shape<tess::Extent3{8, 4, 1}, tess::Extent3{4, 4, 1}>;
 using SquareWorld = tess::AlwaysResidentWorld<Square, Schema>;
 using HexWorld = tess::AlwaysResidentWorld<Hex, Schema>;
 using SparseWorld = tess::SparseResidentWorld<SparseShape, Schema>;
+using StairSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
+                                      tess::Field<CostTag, std::uint32_t>,
+                                      tess::Field<StairTag, std::uint8_t>>;
+using StairShape = tess::Shape<tess::Extent3{4, 4, 2}, tess::Extent3{4, 4, 2}>;
+using StairWorld = tess::AlwaysResidentWorld<StairShape, StairSchema>;
+
+struct CostlyBridgeProvider {
+  [[maybe_unused]] static constexpr std::uint32_t maximum_transition_cost = 3;
+
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3 from,
+                        Sink&& sink) const {
+    if (from == tess::Coord3{1, 1, 0}) {
+      sink(tess::SpecialTransitionCandidate{.to = tess::Coord3{2, 1, 1},
+                                            .cost = 3});
+    }
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_reverse(const WorldType&, tess::Coord3 to, Sink&& sink) const {
+    if (to == tess::Coord3{2, 1, 1}) {
+      sink(tess::SpecialTransitionCandidate{.to = tess::Coord3{1, 1, 0},
+                                            .cost = 3});
+    }
+  }
+};
 
 using DefaultClass =
     mv::MovementClass<mv::Field<PassableTag>, mv::FieldCost<CostTag>>;
@@ -31,6 +58,19 @@ using DiagonalBoth =
 using DiagonalEither =
     mv::MovementClass<mv::Field<PassableTag>, mv::FieldCost<CostTag>,
                       mv::DiagonalSteps<mv::CornerRule::RequireOneClear>>;
+
+struct UnknownCostClass : mv::movement_class_tag {
+  template <typename Page>
+  static auto passable(const Page&, tess::LocalTileId) noexcept -> bool {
+    return true;
+  }
+
+  template <typename Page>
+  static auto entry_cost(const Page&, tess::LocalTileId) noexcept
+      -> std::uint32_t {
+    return 1;
+  }
+};
 
 template <typename World>
 void fill_open(World& world, std::uint32_t cost = 1) {
@@ -72,6 +112,28 @@ TEST(TessTransitionModel, ModelsSatisfyForwardAndReverseContracts) {
   static_assert(Orthogonal::cost_scale == 1);
   static_assert(Diagonal::cost_scale == 128);
   static_assert(Axial::cost_scale == 1);
+  SUCCEED();
+}
+
+TEST(TessTransitionModel, AssessesCompactCostRangeConservatively) {
+  using Unit = mv::WalkableField<PassableTag>;
+  using UnitDiagonal = mv::MovementClass<mv::Field<PassableTag>, mv::UnitCost,
+                                         mv::DiagonalSteps<>>;
+
+  static_assert(tess::path_cost_range_assessment<SquareWorld, Unit> ==
+                tess::CostRangeAssessment::ProvenSafe);
+  static_assert(tess::path_cost_range_assessment<SquareWorld, UnitDiagonal> ==
+                tess::CostRangeAssessment::ProvenSafe);
+  static_assert(tess::path_cost_range_assessment<SquareWorld, DefaultClass> ==
+                tess::CostRangeAssessment::PotentialOverflow);
+  static_assert(
+      tess::path_cost_range_assessment<SquareWorld, UnknownCostClass> ==
+      tess::CostRangeAssessment::Unknown);
+  constexpr auto proof_compiles = [] {
+    tess::require_proven_path_cost_range<SquareWorld, Unit>();
+    return true;
+  }();
+  static_assert(proof_compiles);
   SUCCEED();
 }
 
@@ -180,6 +242,63 @@ TEST(TessTransitionModel, ReportsMissingSparseTargets) {
   EXPECT_EQ(probes.probes[0].to, (tess::Coord3{4, 2, 0}));
   EXPECT_EQ(probes.probes[0].availability,
             tess::TransitionAvailability::MissingTopology);
+}
+
+TEST(TessTransitionModel, ComposesStairsAfterRegularEdgesInBothDirections) {
+  StairWorld world;
+  fill_open(world, 2);
+  constexpr auto foot = tess::Coord3{1, 1, 0};
+  constexpr auto landing = tess::Coord3{2, 1, 1};
+  world.field<StairTag>(foot) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  world.field<CostTag>(landing) = 7;
+  const auto provider = tess::StairTransitions<StairTag>{};
+  using Model = tess::ResolvedTransitionModel<StairWorld, DefaultClass,
+                                              tess::StairTransitions<StairTag>>;
+  static_assert(
+      tess::ForwardTransitionProviderFor<decltype(provider), StairWorld>);
+  static_assert(
+      tess::ReverseTransitionProviderFor<decltype(provider), StairWorld>);
+
+  ProbeBuffer<8> forward;
+  Model{provider}.for_each_forward(world, foot, tile_index<StairShape>(foot),
+                                   [&](auto probe) { forward.push(probe); });
+  ASSERT_EQ(forward.size, 6u);
+  EXPECT_EQ(forward.probes[5].to, landing);
+  EXPECT_EQ(forward.probes[5].kind, tess::TransitionKind::Special);
+  EXPECT_EQ(forward.probes[5].availability,
+            tess::TransitionAvailability::Legal);
+  EXPECT_EQ(forward.probes[5].cost, 1u);
+
+  ProbeBuffer<8> reverse;
+  Model{provider}.for_each_reverse(world, landing,
+                                   tile_index<StairShape>(landing),
+                                   [&](auto probe) { reverse.push(probe); });
+  ASSERT_EQ(reverse.size, 6u);
+  EXPECT_EQ(reverse.probes[5].to, foot);
+  EXPECT_EQ(reverse.probes[5].kind, tess::TransitionKind::Special);
+  EXPECT_EQ(reverse.probes[5].cost, 1u);
+  EXPECT_EQ(Model{provider}.revision(), 0u);
+  EXPECT_EQ(Model{provider}.heuristic(world, foot, landing), 0u);
+}
+
+TEST(TessTransitionModel, ScalesProviderOwnedCostWithoutTerrainLookup) {
+  StairWorld world;
+  fill_open(world, 2);
+  constexpr auto foot = tess::Coord3{1, 1, 0};
+  constexpr auto landing = tess::Coord3{2, 1, 1};
+  world.field<CostTag>(landing) = 99;
+  using Model = tess::ResolvedTransitionModel<StairWorld, DefaultClass,
+                                              CostlyBridgeProvider>;
+  ProbeBuffer<8> forward;
+
+  Model{CostlyBridgeProvider{}}.for_each_forward(
+      world, foot, tile_index<StairShape>(foot),
+      [&](auto probe) { forward.push(probe); });
+
+  ASSERT_EQ(forward.size, 6u);
+  EXPECT_EQ(forward.probes[5].to, landing);
+  EXPECT_EQ(forward.probes[5].cost, 3u);
 }
 
 }  // namespace

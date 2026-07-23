@@ -9,6 +9,13 @@
 
 namespace tess {
 
+/** Provider-side special edge before model-scale resolution. */
+struct SpecialTransitionCandidate {
+  Coord3 to{};
+  std::uint32_t cost = 1;
+  bool missing_topology = false;
+};
+
 // A transition provider contributes EXTRA directed tile-to-tile transitions
 // to the region graph, beyond the built-in six-axis face adjacency (stairs,
 // ladders, and similar special movement for a class). The graph builders
@@ -50,6 +57,28 @@ concept TransitionProviderFor = requires(const P& provider, const World& world,
                                   } noexcept -> std::same_as<std::uint64_t>;
                                 });
 
+/** Checks allocation-free per-origin special-edge enumeration. */
+template <typename P, typename World>
+concept ForwardTransitionProviderFor =
+    requires(const P& provider, const World& world, Coord3 from,
+             void (*sink)(SpecialTransitionCandidate)) {
+      provider.for_each_forward(world, from, sink);
+    } &&
+    (std::is_empty_v<P> || requires(const P& provider) {
+      {
+        provider.transition_revision()
+      } noexcept -> std::same_as<std::uint64_t>;
+    });
+
+/** Checks allocation-free per-target reverse special-edge enumeration. */
+template <typename P, typename World>
+concept ReverseTransitionProviderFor =
+    ForwardTransitionProviderFor<P, World> &&
+    requires(const P& provider, const World& world, Coord3 to,
+             void (*sink)(SpecialTransitionCandidate)) {
+      provider.for_each_reverse(world, to, sink);
+    };
+
 namespace detail {
 
 // Revision helper shared by graph construction and incremental updates.
@@ -73,9 +102,17 @@ template <typename P>
 // providerless build.
 /// Supplies no special transitions beyond ordinary face adjacency.
 struct AdjacentTransitions {
+  static constexpr std::uint32_t maximum_transition_cost = 0;
+
   template <typename World, typename Sink>
   void for_each_transition(const World& /*world*/, ChunkKey /*chunk*/,
                            Sink&& /*sink*/) const noexcept {}
+
+  template <typename World, typename Sink>
+  void for_each_forward(const World&, Coord3, Sink&&) const noexcept {}
+
+  template <typename World, typename Sink>
+  void for_each_reverse(const World&, Coord3, Sink&&) const noexcept {}
 };
 
 // Direction a stair's landing lies in, stored as the integral value of the
@@ -112,6 +149,8 @@ enum class StairDirection : std::uint8_t {
 /// Emits bidirectional stair transitions encoded by an integral world field.
 template <typename StairTag>
 struct StairTransitions {
+  static constexpr std::uint32_t maximum_transition_cost = 1;
+
   template <typename World, typename Sink>
   void for_each_transition(const World& world, ChunkKey chunk,
                            Sink&& sink) const {
@@ -166,7 +205,113 @@ struct StairTransitions {
     }
   }
 
+  /** Enumerates stair edges whose origin is exactly `from`. */
+  template <typename World, typename Sink>
+  void for_each_forward(const World& world, Coord3 from, Sink&& sink) const {
+    for_each_from(world, from, sink);
+  }
+
+  /** Enumerates stair predecessors of exactly `to`. */
+  template <typename World, typename Sink>
+  void for_each_reverse(const World& world, Coord3 to, Sink&& sink) const {
+    // Built-in stairs are bidirectional, so their reverse adjacency is the
+    // same deterministic per-coordinate enumeration as forward adjacency.
+    for_each_from(world, to, sink);
+  }
+
  private:
+  template <typename World>
+  [[nodiscard]] static auto try_landing(const World& world, Coord3 foot,
+                                        Coord3& landing) -> bool {
+    using Shape = typename World::shape_type;
+    if (!contains<Shape>(foot)) {
+      return false;
+    }
+    const auto resolved = world.resolve(foot);
+    const auto* page = world.try_chunk(resolved.chunk_key);
+    if (page == nullptr) {
+      return false;
+    }
+    const auto value = page->template field<StairTag>(resolved.local_tile_id);
+    static_assert(std::is_integral_v<std::remove_cvref_t<decltype(value)>>,
+                  "StairTransitions requires an integral stair field.");
+    if constexpr (std::is_signed_v<std::remove_cvref_t<decltype(value)>>) {
+      if (value <= 0) {
+        return false;
+      }
+    } else if (value == 0) {
+      return false;
+    }
+    if (static_cast<std::uint64_t>(value) >
+        static_cast<std::uint64_t>(StairDirection::NegativeY)) {
+      return false;
+    }
+
+    landing = foot;
+    ++landing.z;
+    switch (static_cast<StairDirection>(static_cast<std::uint8_t>(value))) {
+      case StairDirection::PositiveX:
+        ++landing.x;
+        break;
+      case StairDirection::NegativeX:
+        --landing.x;
+        break;
+      case StairDirection::PositiveY:
+        ++landing.y;
+        break;
+      case StairDirection::NegativeY:
+        --landing.y;
+        break;
+      case StairDirection::None:
+        return false;
+    }
+    if (!contains<Shape>(landing)) {
+      return false;
+    }
+    const auto foot_chunk = chunk_coord<Shape>(foot);
+    const auto landing_chunk = chunk_coord<Shape>(landing);
+    const auto crossings = (foot_chunk.x != landing_chunk.x ? 1 : 0) +
+                           (foot_chunk.y != landing_chunk.y ? 1 : 0) +
+                           (foot_chunk.z != landing_chunk.z ? 1 : 0);
+    return crossings <= 1;
+  }
+
+  template <typename World, typename Sink>
+  static void for_each_from(const World& world, Coord3 from, Sink&& sink) {
+    using Shape = typename World::shape_type;
+    if (!contains<Shape>(from)) {
+      return;
+    }
+
+    auto landing = Coord3{};
+    if (try_landing(world, from, landing)) {
+      sink(SpecialTransitionCandidate{.to = landing});
+    }
+
+    if (from.z == 0) {
+      return;
+    }
+    const auto probe_foot = [&](Coord3 foot) {
+      if (!contains<Shape>(foot)) {
+        return;
+      }
+      const auto resolved = world.resolve(foot);
+      if (world.try_chunk(resolved.chunk_key) == nullptr) {
+        sink(SpecialTransitionCandidate{.to = foot, .missing_topology = true});
+        return;
+      }
+      auto candidate_landing = Coord3{};
+      if (try_landing(world, foot, candidate_landing) &&
+          candidate_landing == from) {
+        sink(SpecialTransitionCandidate{.to = foot});
+      }
+    };
+    probe_foot(Coord3{from.x - 1, from.y, from.z - 1});
+    probe_foot(Coord3{from.x + 1, from.y, from.z - 1});
+    probe_foot(Coord3{from.x, from.y - 1, from.z - 1});
+    probe_foot(Coord3{from.x, from.y + 1, from.z - 1});
+  }
+
   // Emits the transitions of every stair FOOT in `foot_chunk` whose origin
   // tile lies in `origin_chunk`: the up transition when the foot is the
   // origin, the down transition when the landing is.

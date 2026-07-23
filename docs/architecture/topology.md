@@ -255,12 +255,13 @@ normalized class identity it was built for. Precheck agreement (S5.4), commit
 validation (S5.5), and the class-aware agent tick plus runtime class binding
 (S5.6) thread the same vocabulary through the path layer.
 
-## Resolved Regular Transitions
+## Resolved Transitions
 
-`ResolvedTransitionModel<World, ClassOrTag>` is the shared, allocation-free
-regular-edge authority used by exact search, reverse fields, field products,
-topology, and movement validation. `ForwardTransitionModelFor` and
-`ReverseTransitionModelFor` check its hot callback contracts. Each
+`ResolvedTransitionModel<World, ClassOrTag, Provider>` is the shared,
+allocation-free edge authority used by exact search, reverse fields, field
+products, topology, caches, path agents, and movement validation.
+`ForwardTransitionModelFor` and `ReverseTransitionModelFor` check its hot
+callback contracts. Each
 `TransitionProbe` reports the target, compact cost, `TransitionKind`, and
 three-valued `TransitionAvailability` (`Legal`, `Blocked`, or
 `MissingTopology`).
@@ -271,8 +272,9 @@ Diagonal policies emit face steps first and then four planar diagonals, use
 both clearance tiles according to the selected corner rule. Axial-hex default
 steps emit `(+1,0), (-1,0), (0,+1), (0,-1), (+1,-1), (-1,+1)` at scale one.
 Model identity includes normalized class, lattice identity/version, step
-policy, and cost scale; fields, products, graphs, and caches reject a
-mismatched stamp.
+policy, cost scale, and provider type/revision; fields, products, graphs, and
+caches reject a mismatched stamp. Regular transitions are enumerated before
+special transitions.
 
 ## Transition Providers
 
@@ -304,6 +306,19 @@ transitions after each build or incremental update (index flags are
 reassigned wholesale), so a provider's enumeration cost bounds sparse
 update cost regardless of the dirty-set size.
 
+Exact forward search additionally requires
+`ForwardTransitionProviderFor<P, World>` and allocation-free
+`for_each_forward(world, origin, sink)` enumeration. Reverse fields require
+`ReverseTransitionProviderFor<P, World>` and
+`for_each_reverse(world, target, sink)`. Each sink receives a
+`SpecialTransitionCandidate` containing the other endpoint, a positive cost
+in unscaled movement-class entry-cost units, and an optional
+`missing_topology` marker. The resolved model applies its cardinal scale; a
+provider must not pre-scale the value. A zero cost contributes no legal edge.
+Providers may publish `maximum_transition_cost` as a sound compile-time bound.
+The empty and stair providers implement both exact contracts; topology-only
+custom providers remain valid for graph construction.
+
 ## Stairs
 
 `StairTransitions<StairTag>` is the concrete vertical provider: an integral
@@ -320,6 +335,8 @@ per-class through the label filter. Limit: a landing that would cross two
 chunk boundaries at once (sideways off the chunk's x/y edge AND up off its
 top z layer) violates the face-neighbor contract and contributes nothing;
 place the foot so the landing stays within face-neighbor range.
+Each stair edge has provider cost one, so it costs one cardinal step under any
+resolved step policy and does not inherit the landing tile's terrain cost.
 
 ## Deliberate Limits
 

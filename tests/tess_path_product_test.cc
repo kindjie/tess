@@ -9,6 +9,7 @@ namespace {
 
 struct PassableTag {};
 struct CostTag {};
+struct StairTag {};
 
 using Schema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                  tess::Field<CostTag, std::uint32_t>>;
@@ -21,6 +22,20 @@ using DefaultClass =
 using DiagonalClass =
     mv::MovementClass<mv::Field<PassableTag>, mv::FieldCost<CostTag>,
                       mv::DiagonalSteps<mv::CornerRule::RequireBothClear>>;
+
+struct RevisionProvider {
+  std::uint64_t revision = 0;
+
+  [[nodiscard]] auto transition_revision() const noexcept -> std::uint64_t {
+    return revision;
+  }
+
+  template <typename World, typename Sink>
+  void for_each_forward(const World&, tess::Coord3, Sink&&) const noexcept {}
+
+  template <typename World, typename Sink>
+  void for_each_reverse(const World&, tess::Coord3, Sink&&) const noexcept {}
+};
 
 template <typename World>
 void fill_passable(World& world, bool value) {
@@ -432,6 +447,78 @@ TEST(TessPathProduct, CacheNormalizesRawTagAndIdentityClass) {
   EXPECT_NE((cache.lookup<decltype(world), mv::WalkableField<PassableTag>>(
                 world, goals)),
             nullptr);
+}
+
+TEST(TessPathProduct, ProviderProductAndCacheStampStairModel) {
+  using StairSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
+                                        tess::Field<CostTag, std::uint32_t>,
+                                        tess::Field<StairTag, std::uint8_t>>;
+  using StairShape =
+      tess::Shape<tess::Extent3{4, 4, 2}, tess::Extent3{4, 4, 2}>;
+  using StairWorld = tess::AlwaysResidentWorld<StairShape, StairSchema>;
+  StairWorld world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  constexpr auto foot = tess::Coord3{1, 1, 0};
+  constexpr auto landing = tess::Coord3{2, 1, 1};
+  world.field<StairTag>(foot) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  const auto provider = tess::StairTransitions<StairTag>{};
+  tess::DistanceFieldScratch scratch;
+  tess::GoalSet goals;
+  goals.add(landing);
+  tess::DistanceFieldProduct product;
+
+  ASSERT_EQ((tess::build_distance_field_product<StairWorld, DefaultClass>(
+                 world, goals, scratch, product, provider))
+                .status,
+            tess::PathStatus::Found);
+  const auto result =
+      tess::distance_field_product_path<StairWorld, DefaultClass>(
+          world, foot, product, scratch, provider);
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 1u);
+  EXPECT_EQ(result.path.size(), 2u);
+  EXPECT_EQ((tess::distance_field_product_path<StairWorld, DefaultClass>(
+                 world, foot, product, scratch))
+                .status,
+            tess::PathStatus::NoPath);
+
+  tess::FieldProductCache cache;
+  EXPECT_FALSE((cache.store<StairWorld, DefaultClass>(std::move(product))));
+  ASSERT_EQ((tess::build_distance_field_product<StairWorld, DefaultClass>(
+                 world, goals, scratch, product, provider))
+                .status,
+            tess::PathStatus::Found);
+  ASSERT_TRUE(
+      (cache.store<StairWorld, DefaultClass>(std::move(product), provider)));
+  EXPECT_NE((cache.lookup<StairWorld, DefaultClass>(world, goals, provider)),
+            nullptr);
+  EXPECT_EQ((cache.lookup<StairWorld, DefaultClass>(world, goals)), nullptr);
+}
+
+TEST(TessPathProduct, ProductRejectsChangedProviderRevision) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  tess::DistanceFieldScratch scratch;
+  tess::GoalSet goals;
+  goals.add(tess::Coord3{3, 3, 0});
+  tess::DistanceFieldProduct product;
+  auto provider = RevisionProvider{7};
+
+  ASSERT_EQ((tess::build_distance_field_product<decltype(world), DefaultClass>(
+                 world, goals, scratch, product, provider))
+                .status,
+            tess::PathStatus::Found);
+  tess::FieldProductCache cache;
+  ASSERT_TRUE((cache.store<decltype(world), DefaultClass>(std::move(product),
+                                                          provider)));
+
+  ++provider.revision;
+  EXPECT_EQ(
+      (cache.lookup<decltype(world), DefaultClass>(world, goals, provider)),
+      nullptr);
 }
 
 }  // namespace

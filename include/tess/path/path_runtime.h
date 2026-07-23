@@ -308,6 +308,41 @@ class PathRequestRuntime {
     return results_;
   }
 
+  /** Processes unit requests composed with a special transition provider. */
+  template <typename World, typename ClassOrTag, typename Provider>
+  [[nodiscard]] auto process_unit_cached(
+      const World& world, PathRuntimeCachePolicy policy,
+      const RegionGraphT<typename World::residency_type>* graph,
+      const Provider& provider) -> std::span<const PathResult> {
+    clear_results();
+    results_.resize(requests_.size());
+    offsets_.assign(requests_.size(), 0);
+    sizes_.assign(requests_.size(), 0);
+    processed_.assign(requests_.size(), 0);
+    stats_ = {};
+    prepare_process(world, policy);
+    bind_unit_class(
+        detail::tag_identity<movement::movement_class_of<ClassOrTag>>());
+    if (graph != nullptr && graph->matches_provider(provider)) {
+      precheck_prepass<ClassOrTag>(world, *graph);
+    }
+
+    // Provider-aware products are public, but the runtime deliberately uses
+    // its exact route cache here until provider revision is threaded through
+    // the repeated-goal selection policy and its counters.
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (processed_[i] != 0) {
+        continue;
+      }
+      const auto result = cached_astar_path<World, ClassOrTag, Provider>(
+          world, requests_[i], unit_scratch_, unit_route_cache_, provider);
+      copy_result(i, result);
+      record_status(result.status);
+    }
+    refresh_result_spans();
+    return results_;
+  }
+
   /**
    * Processes the batch with one movement class for weighted search and
    * precheck. A mismatched graph disables pruning. Result lifetime and
@@ -323,7 +358,19 @@ class PathRequestRuntime {
                   "MovementClass; legacy tag pairs go through the "
                   "<World, PassableTag, CostTag, MaxCost> overload.");
     return process_weighted_batch_impl<World, Class, MaxCost, Class>(
-        world, policy, graph);
+        world, policy, graph, AdjacentTransitions{});
+  }
+
+  /** Processes a weighted batch composed with a special provider. */
+  template <typename World, typename Class, std::uint32_t MaxCost,
+            typename Provider>
+  [[nodiscard]] auto process_weighted_batch(
+      const World& world, PathRuntimeCachePolicy policy,
+      const RegionGraphT<typename World::residency_type>* graph,
+      const Provider& provider) -> std::span<const PathResult> {
+    static_assert(std::derived_from<Class, movement::movement_class_tag>);
+    return process_weighted_batch_impl<World, Class, MaxCost, Class>(
+        world, policy, graph, provider);
   }
 
   /**
@@ -340,16 +387,16 @@ class PathRequestRuntime {
       -> std::span<const PathResult> {
     return process_weighted_batch_impl<
         World, movement::LegacyWeighted<PassableTag, CostTag>, MaxCost,
-        PassableTag>(world, policy, graph);
+        PassableTag>(world, policy, graph, AdjacentTransitions{});
   }
 
  private:
   template <typename World, typename BatchClass, std::uint32_t MaxCost,
-            typename PrecheckClassOrTag>
+            typename PrecheckClassOrTag, typename Provider>
   [[nodiscard]] auto process_weighted_batch_impl(
       const World& world, PathRuntimeCachePolicy policy,
-      const RegionGraphT<typename World::residency_type>* graph)
-      -> std::span<const PathResult> {
+      const RegionGraphT<typename World::residency_type>* graph,
+      const Provider& provider) -> std::span<const PathResult> {
     clear_results();
     results_.resize(requests_.size());
     offsets_.assign(requests_.size(), 0);
@@ -358,9 +405,13 @@ class PathRequestRuntime {
     stats_ = {};
     prepare_process(world, policy);
 
+    if (graph != nullptr && !graph->matches_provider(provider)) {
+      graph = nullptr;
+    }
     if (graph == nullptr) {
-      const auto batch = weighted_path_batch<World, BatchClass, MaxCost>(
-          world, requests_, weighted_batch_);
+      const auto batch =
+          weighted_path_batch<World, BatchClass, MaxCost, Provider>(
+              world, requests_, weighted_batch_, provider);
       for (std::size_t i = 0; i < batch.size(); ++i) {
         copy_result(i, batch[i]);
         record_status(batch[i].status);
@@ -381,8 +432,9 @@ class PathRequestRuntime {
         precheck_survivors_.push_back(requests_[i]);
       }
     }
-    const auto batch = weighted_path_batch<World, BatchClass, MaxCost>(
-        world, precheck_survivors_, weighted_batch_);
+    const auto batch =
+        weighted_path_batch<World, BatchClass, MaxCost, Provider>(
+            world, precheck_survivors_, weighted_batch_, provider);
     for (std::size_t s = 0; s < batch.size(); ++s) {
       const auto i = survivor_original_[s];
       copy_result(i, batch[s]);

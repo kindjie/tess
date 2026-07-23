@@ -736,22 +736,33 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                     scratch.touched_count_, scratch.path_};
 }
 
+/// Finds a provider-aware minimum-step path through a passability class/tag.
+template <typename World, typename Tag, typename Provider>
+auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
+                MissingChunkPolicy policy, const Provider& provider)
+    -> PathResult {
+  using Class = movement::movement_class_of<Tag>;
+  using UnitClass = movement::detail::UnitMovementClass<Class>;
+  return weighted_astar_path<World, UnitClass, Provider>(
+      world, request, scratch, policy, provider);
+}
+
 /// Finds a minimum-cost path using one compile-time movement class.
 ///
 /// Zero entry cost is impassable. The returned path borrows `scratch` until
 /// mutation, and sparse-world resident boundaries follow `policy`.
-template <typename World, typename Class>
+template <typename World, typename Class, typename Provider>
 auto weighted_astar_path(const World& world, PathRequest request,
                          PathScratch& scratch,
-                         [[maybe_unused]] MissingChunkPolicy policy)
-    -> PathResult {
+                         [[maybe_unused]] MissingChunkPolicy policy,
+                         const Provider& provider) -> PathResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_astar_path<World, Class> requires a MovementClass; "
                 "legacy tag pairs go through the <World, PassableTag, CostTag> "
                 "overload.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
-  using Model = ResolvedTransitionModel<World, Class>;
+  using Model = ResolvedTransitionModel<World, Class, Provider>;
   constexpr auto unseen = std::uint8_t{0};
   constexpr auto open = std::uint8_t{1};
   constexpr auto closed = std::uint8_t{2};
@@ -825,7 +836,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
   // risk a false NoPath; it runs for dense worlds only. Sparse searches fall
   // straight through to the full A* below, which honors MissingChunkPolicy.
   // Dense codegen is unchanged (the guard is compiled away).
-  if constexpr (Space::is_dense &&
+  if constexpr (Space::is_dense && !Model::has_special_transitions &&
                 std::is_same_v<typename Model::step_policy,
                                movement::DefaultSteps> &&
                 std::is_same_v<typename ShapeTraits<Shape>::lattice_type,
@@ -991,7 +1002,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
   scratch.touch_node(start_offset);
   TESS_DIAG_EVENT(path_touch_node);
   TESS_DIAG_EVENT(path_heuristic);
-  const auto model = Model{};
+  const auto model = Model{provider};
   scratch.open_.push_back(PathScratch::OpenNode{
       start,
       0,
@@ -1109,6 +1120,14 @@ auto weighted_astar_path(const World& world, PathRequest request,
   return make_result(
       cost_overflow ? PathStatus::CostOverflow : PathStatus::NoPath, 0,
       expanded_nodes, scratch.touched_count_, scratch.path_);
+}
+
+template <typename World, typename Class>
+auto weighted_astar_path(const World& world, PathRequest request,
+                         PathScratch& scratch, MissingChunkPolicy policy)
+    -> PathResult {
+  return weighted_astar_path<World, Class, AdjacentTransitions>(
+      world, request, scratch, policy, AdjacentTransitions{});
 }
 
 // Legacy <PassableTag, CostTag> forwarder: one movement class replaces the

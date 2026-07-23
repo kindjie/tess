@@ -254,6 +254,7 @@ namespace detail {
 template <typename ClassOrTag>
 struct UnitMovementClass : movement_class_tag {
   using source_class = movement_class_of<ClassOrTag>;
+  using cost_expr = UnitCost;
   using step_policy = step_policy_of<source_class>;
 
   template <typename Page>

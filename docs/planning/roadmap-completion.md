@@ -18,8 +18,8 @@ for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 
 | Release | Capability | Status |
 | --- | --- | --- |
-| v0.5 | Resolved transitions, diagonals, axial hex, special edges | Active |
-| v0.6 | Queued intents, async work, event scheduling | Planned |
+| v0.5 | Resolved transitions, diagonals, axial hex, special edges | Complete |
+| v0.6 | Queued intents, async work, event scheduling | Active |
 | v0.7 | Maintenance, block pipelines, query acceleration | Planned |
 | v0.8 | Hierarchical topology and spatial products | Planned |
 | v0.9 | Areas, tactical assignment, crowd coordination | Planned |
@@ -27,13 +27,14 @@ for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 | v0.11 | Optional WebGPU backend | Planned |
 | v0.12 | Consolidation, compatibility, performance, backlog closure | Planned |
 
-### v0.5 Progress
+### v0.5 Completion
 
-The resolved regular-transition slice is complete: orthogonal, diagonal, and
-axial-hex models now drive exact paths, reverse fields, multi-goal products,
-topology, cache identity, and movement validation. Remaining v0.5 work is
-provider-aware exact search/fields/commit, static cost-range assessment, and
-orthogonal performance calibration.
+Orthogonal, diagonal, axial-hex, and provider-composed models now drive exact
+paths, reverse fields, multi-goal products, topology, cache identity, runtime
+batches, retained agent routes, and movement validation. Provider costs and
+revisions are model inputs, compact-cost risk has a compile-time assessment
+and explicit runtime overflow status, and the historical orthogonal benchmark
+gate remains within its calibrated thresholds.
 
 ## Cross-Cutting Acceptance
 

@@ -2,6 +2,20 @@
 
 Records meaningful design changes from the original TDDs.
 
+## 2026-07-22 - Complete provider-composed resolved transitions
+
+- Changed: extended special providers with per-origin forward and per-target
+  reverse enumeration plus provider-owned unscaled edge costs; threaded the
+  resolved model through exact paths, fields, products, caches, batches,
+  runtimes, retained agent routes, and movement commit; and added static
+  compact-cost assessment with explicit realized-overflow results.
+- Reason: topology-only provider edges made reachability disagree with exact
+  planning and commit, while implicit destination costs contradicted the
+  accepted special-edge contract.
+- Affected docs: topology, path, roadmap, completion plan, and changelog.
+- Affected code: transition providers and model, path and field algorithms,
+  caches, runtime, movement, agents, and tests.
+
 ## 2026-07-22 - Resolve regular movement through one model
 
 - Changed: routed exact unit and weighted search, reverse and bounded fields,

@@ -367,6 +367,62 @@ inline auto advance_path_agents_with_movement(
       [](std::size_t, Coord3, Coord3) {});
 }
 
+template <typename World, typename ClassOrTag, typename OccupancyTag,
+          typename ReservationTag, typename Provider>
+/// Advances retained routes through provider-aware movement commits.
+inline auto advance_path_agents_with_movement(World& world,
+                                              std::span<PathAgentState> agents,
+                                              const PathAgentRoutes& routes,
+                                              std::size_t max_steps,
+                                              std::uint32_t movement_dirty_mask,
+                                              const Provider& provider)
+    -> PathAgentFrameStats {
+  TESS_ASSERT(routes.routes.size() >= agents.size());
+  PathAgentFrameStats stats;
+  if (max_steps == 0) {
+    return stats;
+  }
+  for (std::size_t agent_index = 0; agent_index < agents.size();
+       ++agent_index) {
+    auto& agent = agents[agent_index];
+    if (!agent.has_goal || agent.status != PathStatus::Found) {
+      continue;
+    }
+    const auto& route = routes.routes[agent_index];
+    for (std::size_t step = 0;
+         step < max_steps && agent.path_index + 1 < route.size(); ++step) {
+      const auto from = agent.position;
+      const auto to = route[agent.path_index + 1];
+      const auto movement =
+          commit_movement_intent<World, ClassOrTag, OccupancyTag,
+                                 ReservationTag>(world,
+                                                 MovementIntent{from, to, {}},
+                                                 movement_dirty_mask, provider);
+      if (movement.status != MovementStatus::Moved) {
+        record_movement_failure(stats.movement_failures, movement.status);
+        if (is_transient_movement_failure(movement.status)) {
+          agent.phase = PathAgentPhase::Blocked;
+          ++stats.blocked_waits;
+        } else {
+          agent.status = PathStatus::NoPath;
+          agent.phase = PathAgentPhase::Unreachable;
+        }
+        break;
+      }
+      ++agent.path_index;
+      agent.position = to;
+      ++stats.advanced;
+      if (agent.position == agent.goal) {
+        clear_path_agent_goal(agent);
+        agent.status = PathStatus::Found;
+        ++stats.arrived;
+        break;
+      }
+    }
+  }
+  return stats;
+}
+
 // Route-pool advance: identical stepping semantics to the runtime-reading
 // overloads above, but the route comes from the retained pool, so it
 // survives processing passes that did not resubmit this agent
@@ -538,6 +594,23 @@ template <typename World, typename ClassOrTag>
   return stats;
 }
 
+template <typename World, typename ClassOrTag, typename Provider>
+/// Solves unit-cost agent routes composed with a special provider.
+[[nodiscard]] auto process_unit_path_agents(
+    const World& world, std::span<PathAgentState> agents,
+    PathRequestRuntime& runtime, PathRuntimeCachePolicy policy,
+    const RegionGraphT<typename World::residency_type>* graph,
+    PathSubmitScope scope, PathAgentRoutes* routes, const Provider& provider)
+    -> PathAgentFrameStats {
+  auto stats = submit_path_agents(agents, runtime, scope);
+  (void)runtime.template process_unit_cached<World, ClassOrTag>(
+      world, policy, graph, provider);
+  add_path_agent_stats(
+      stats, apply_path_agent_results(agents, runtime, scope, routes));
+  stats.precheck_ruled_out = runtime.stats().precheck_ruled_out;
+  return stats;
+}
+
 template <typename World, typename Class, std::uint32_t MaxCost>
 /// Submits, solves, and applies bounded weighted paths for a batch of agents.
 [[nodiscard]] auto process_weighted_path_agents(
@@ -549,6 +622,24 @@ template <typename World, typename Class, std::uint32_t MaxCost>
   auto stats = submit_path_agents(agents, runtime, scope);
   (void)runtime.template process_weighted_batch<World, Class, MaxCost>(
       world, policy, graph);
+  add_path_agent_stats(
+      stats, apply_path_agent_results(agents, runtime, scope, routes));
+  stats.precheck_ruled_out = runtime.stats().precheck_ruled_out;
+  return stats;
+}
+
+template <typename World, typename Class, std::uint32_t MaxCost,
+          typename Provider>
+/// Solves weighted agent routes composed with a special provider.
+[[nodiscard]] auto process_weighted_path_agents(
+    const World& world, std::span<PathAgentState> agents,
+    PathRequestRuntime& runtime, PathRuntimeCachePolicy policy,
+    const RegionGraphT<typename World::residency_type>* graph,
+    PathSubmitScope scope, PathAgentRoutes* routes, const Provider& provider)
+    -> PathAgentFrameStats {
+  auto stats = submit_path_agents(agents, runtime, scope);
+  (void)runtime.template process_weighted_batch<World, Class, MaxCost>(
+      world, policy, graph, provider);
   add_path_agent_stats(
       stats, apply_path_agent_results(agents, runtime, scope, routes));
   stats.precheck_ruled_out = runtime.stats().precheck_ruled_out;

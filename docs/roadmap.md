@@ -14,7 +14,10 @@ kernel layer, topology and the reachability precheck, A* with movement
 classes, weighted batches, distance-field products and caches, the
 schedule loop, the EnTT and custom-ECS adapters, DeltaFrame render
 bridging, the production worker-pool phase executor, the GPU descriptor
-interface, and compile-gated diagnostics.
+interface, and compile-gated diagnostics. Resolved regular and
+provider-composed transitions drive exact paths, fields, topology, caches,
+agents, and movement commit across orthogonal, clearance-preserving diagonal,
+and axial-hex worlds.
 
 ## Planned extensions
 
@@ -22,11 +25,6 @@ The foundations named below may exist, but the extensions themselves are not
 shipped. Do not build consumer code that assumes these APIs exist until the
 item moves to **Shipped**.
 
-- **Provider-composed resolved transitions** ([TDD][tdd-lattice]) — resolved
-  regular transitions, clearance-preserving diagonal movement, and axial-hex
-  worlds now agree across paths, fields, products, topology, caches, and
-  movement. Special providers still affect topology only; provider-aware
-  exact search, fields, and commit overloads remain in the active v0.5 slice.
 - **General queued intents and resumable work** ([queued TDD][tdd-queued]) —
   queued field updates, synchronous typed results, phase planning, and the
   production pool shipped. Typed path, field-product, topology, movement,
@@ -68,7 +66,6 @@ substrate; the application owns meaning, entities, and presentation.
 
 [tdd-index]: https://github.com/kindjie/tess/blob/main/docs/tdd/README.md
 [completion-plan]: https://github.com/kindjie/tess/blob/main/docs/planning/roadmap-completion.md
-[tdd-lattice]: https://github.com/kindjie/tess/blob/main/docs/tdd/lattice-and-transition-model.md
 [tdd-queued]: https://github.com/kindjie/tess/blob/main/docs/tdd/queued-operations-and-planner.md
 [tdd-scheduler]: https://github.com/kindjie/tess/blob/main/docs/tdd/simulation-scheduler.md
 [tdd-block]: https://github.com/kindjie/tess/blob/main/docs/tdd/block-kernel-pipeline.md

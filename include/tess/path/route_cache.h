@@ -23,6 +23,7 @@ struct RouteCacheStats {
   // than the cache was bound to (see cached_astar_path). Keep one cache per
   // (world, class) to stay at zero.
   std::size_t class_rebinds = 0;
+  std::size_t provider_rebinds = 0;
 };
 
 // Exact (start, goal) lookups and same-goal suffix lookups are served by two
@@ -71,11 +72,15 @@ class RouteCacheScratch {
   void clear() noexcept {
     invalidate();
     bound_class_ = 0;
+    bound_provider_ = 0;
+    bound_provider_revision_ = 0;
     hits_ = 0;
     suffix_hits_ = 0;
     misses_ = 0;
     cap_invalidations_ = 0;
     oversized_skips_ = 0;
+    class_rebinds_ = 0;
+    provider_rebinds_ = 0;
   }
 
   // Entries are keyed on (start, goal) plus the world fingerprint and
@@ -92,6 +97,18 @@ class RouteCacheScratch {
       ++class_rebinds_;
     }
     bound_class_ = identity;
+  }
+
+  void bind_provider(std::uintptr_t identity, std::uint64_t revision) noexcept {
+    if (bound_provider_ == identity && bound_provider_revision_ == revision) {
+      return;
+    }
+    if (bound_provider_ != 0) {
+      invalidate();
+      ++provider_rebinds_;
+    }
+    bound_provider_ = identity;
+    bound_provider_revision_ = revision;
   }
 
   void invalidate() noexcept {
@@ -143,7 +160,7 @@ class RouteCacheScratch {
     return RouteCacheStats{
         entries_.size(),  hits_,          suffix_hits_,
         misses_,          paths_.size(),  cap_invalidations_,
-        oversized_skips_, class_rebinds_,
+        oversized_skips_, class_rebinds_, provider_rebinds_,
     };
   }
 
@@ -153,6 +170,7 @@ class RouteCacheScratch {
     Coord3 goal{};
     PathStatus status = PathStatus::NoPath;
     std::uint32_t cost = 0;
+    std::uint32_t cost_scale = 1;
     std::size_t expanded_nodes = 0;
     std::size_t reached_nodes = 0;
     std::size_t path_offset = 0;
@@ -168,6 +186,11 @@ class RouteCacheScratch {
   friend auto cached_astar_path(const World& world, PathRequest request,
                                 PathScratch& scratch, RouteCacheScratch& cache)
       -> PathResult;
+
+  template <typename World, typename Tag, typename Provider>
+  friend auto cached_astar_path(const World& world, PathRequest request,
+                                PathScratch& scratch, RouteCacheScratch& cache,
+                                const Provider& provider) -> PathResult;
 
   // FNV-style lane combine with one final avalanche: cheap per stored path
   // node, well distributed for power-of-two linear probing.
@@ -249,6 +272,7 @@ class RouteCacheScratch {
         request.goal,
         result.status,
         result.cost,
+        result.cost_scale,
         result.expanded_nodes,
         result.reached_nodes,
         path_offset,
@@ -362,9 +386,12 @@ class RouteCacheScratch {
   std::size_t cap_invalidations_ = 0;
   std::size_t oversized_skips_ = 0;
   std::size_t class_rebinds_ = 0;
+  std::size_t provider_rebinds_ = 0;
   // Movement-class identity the entries are bound to (0 = unbound); see
   // bind_class.
   std::uintptr_t bound_class_ = 0;
+  std::uintptr_t bound_provider_ = 0;
+  std::uint64_t bound_provider_revision_ = 0;
   std::uint64_t world_fingerprint_ = 0;
   bool has_world_fingerprint_ = false;
 
@@ -428,15 +455,20 @@ class RouteCacheScratch {
 // does this once per batch in prepare_process; direct callers own the same
 // obligation.
 /// Runs unit A* with exact and same-goal suffix reuse from caller-owned cache.
-template <typename World, typename Tag>
+template <typename World, typename Tag, typename Provider>
 auto cached_astar_path(const World& world, PathRequest request,
-                       PathScratch& scratch, RouteCacheScratch& cache)
-    -> PathResult {
+                       PathScratch& scratch, RouteCacheScratch& cache,
+                       const Provider& provider) -> PathResult {
+  using Class = movement::movement_class_of<Tag>;
+  using UnitClass = movement::detail::UnitMovementClass<Class>;
+  using Model = ResolvedTransitionModel<World, UnitClass, Provider>;
+  const auto model = Model{provider};
   // Bind the cache to this call's movement class (normalized, so a raw tag
   // and its WalkableField identity share entries): entries key on
   // (start, goal) only, so a direct caller alternating classes must never be
   // served the other class's route -- the rebind drops the cache instead.
   cache.bind_class(detail::tag_identity<movement::movement_class_of<Tag>>());
+  cache.bind_provider(detail::tag_identity<Provider>(), model.revision());
   // The cache stores absolute Coord3 keys and routes only (no residency-slot
   // state). Correctness on sparse rests entirely on the residency-aware
   // world_version_fingerprint plus prepare_process invalidating the whole cache
@@ -453,27 +485,40 @@ auto cached_astar_path(const World& world, PathRequest request,
         0,
         0,
         std::span<const Coord3>{scratch.path_},
+        entry->cost_scale,
     };
   }
-  auto suffix_offset = std::size_t{0};
-  if (const auto* entry = cache.find_suffix(request, suffix_offset);
-      entry != nullptr) {
-    ++cache.suffix_hits_;
-    const auto suffix = cache.path_span(*entry, suffix_offset);
-    scratch.path_.assign(suffix.begin(), suffix.end());
-    return PathResult{
-        PathStatus::Found,
-        static_cast<std::uint32_t>(scratch.path_.size() - 1u),
-        0,
-        0,
-        std::span<const Coord3>{scratch.path_},
-    };
+  if constexpr (Model::cost_scale == 1 && !Model::has_special_transitions) {
+    auto suffix_offset = std::size_t{0};
+    if (const auto* entry = cache.find_suffix(request, suffix_offset);
+        entry != nullptr) {
+      ++cache.suffix_hits_;
+      const auto suffix = cache.path_span(*entry, suffix_offset);
+      scratch.path_.assign(suffix.begin(), suffix.end());
+      return PathResult{
+          PathStatus::Found,
+          static_cast<std::uint32_t>(scratch.path_.size() - 1u),
+          0,
+          0,
+          std::span<const Coord3>{scratch.path_},
+      };
+    }
   }
 
   ++cache.misses_;
-  const auto result = astar_path<World, Tag>(world, request, scratch);
+  const auto result = astar_path<World, Tag, Provider>(
+      world, request, scratch, MissingChunkPolicy::TreatAsBlocked, provider);
   cache.store(request, result);
   return result;
+}
+
+template <typename World, typename Tag>
+/// Finds a cached empty-provider route or computes and stores one.
+auto cached_astar_path(const World& world, PathRequest request,
+                       PathScratch& scratch, RouteCacheScratch& cache)
+    -> PathResult {
+  return cached_astar_path<World, Tag, AdjacentTransitions>(
+      world, request, scratch, cache, AdjacentTransitions{});
 }
 
 }  // namespace tess

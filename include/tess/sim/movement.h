@@ -200,11 +200,12 @@ namespace detail {
 // (audit 2026-07-11 M7). Resolved tiles are meaningful only when
 // result.status == Moved.
 template <typename World, typename ClassOrTag, typename OccupancyTag,
-          typename ReservationTag>
+          typename ReservationTag, typename Provider>
 [[nodiscard]] auto validate_movement_intent_resolved(
-    const World& world, MovementIntent intent) noexcept {
+    const World& world, MovementIntent intent,
+    const Provider& provider) noexcept {
   using Class = movement::movement_class_of<ClassOrTag>;
-  using Model = ResolvedTransitionModel<World, Class>;
+  using Model = ResolvedTransitionModel<World, Class, Provider>;
   using Resolved = ResolvedTile<typename World::shape_type>;
   struct Validated {
     MovementResult result;
@@ -241,9 +242,6 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
       return fail(MovementStatus::StaleVersion);
     }
   }
-  if (!Model::is_regular_candidate(intent.from, intent.to)) {
-    return fail(MovementStatus::NotAdjacent);
-  }
   const auto& from_page = world.chunk(resolved_from->chunk_key);
   const auto& to_page = world.chunk(resolved_to->chunk_key);
   if (!Class::passable(from_page, resolved_from->local_tile_id)) {
@@ -252,8 +250,26 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   if (!Class::passable(to_page, resolved_to->local_tile_id)) {
     return fail(MovementStatus::BlockedTo);
   }
-  const auto transition_availability =
-      Model::regular_availability(world, intent.from, intent.to);
+  auto transition_availability = TransitionAvailability::Blocked;
+  auto is_candidate = Model::is_regular_candidate(intent.from, intent.to);
+  if (is_candidate) {
+    transition_availability =
+        Model::regular_availability(world, intent.from, intent.to);
+  } else {
+    const auto model = Model{provider};
+    model.for_each_forward(
+        world, intent.from,
+        detail::transition_index<typename World::shape_type>(intent.from),
+        [&](auto probe) {
+          if (probe.to == intent.to) {
+            is_candidate = true;
+            transition_availability = probe.availability;
+          }
+        });
+  }
+  if (!is_candidate) {
+    return fail(MovementStatus::NotAdjacent);
+  }
   if (transition_availability == TransitionAvailability::MissingTopology) {
     return fail(MovementStatus::StaleVersion);
   }
@@ -295,8 +311,23 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 [[nodiscard]] auto validate_movement_intent(const World& world,
                                             MovementIntent intent) noexcept
     -> MovementResult {
+  return detail::validate_movement_intent_resolved<World, ClassOrTag,
+                                                   OccupancyTag, ReservationTag,
+                                                   AdjacentTransitions>(
+             world, intent, AdjacentTransitions{})
+      .result;
+}
+
+template <typename World, typename ClassOrTag, typename OccupancyTag,
+          typename ReservationTag, typename Provider>
+/// Validates a movement intent against regular and provider-supplied edges.
+[[nodiscard]] auto validate_movement_intent(const World& world,
+                                            MovementIntent intent,
+                                            const Provider& provider) noexcept
+    -> MovementResult {
   return detail::validate_movement_intent_resolved<
-             World, ClassOrTag, OccupancyTag, ReservationTag>(world, intent)
+             World, ClassOrTag, OccupancyTag, ReservationTag, Provider>(
+             world, intent, provider)
       .result;
 }
 
@@ -309,9 +340,38 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 auto commit_movement_intent(World& world, MovementIntent intent,
                             std::uint32_t dirty_mask = 0) noexcept
     -> MovementResult {
+  const auto validated = detail::validate_movement_intent_resolved<
+      World, ClassOrTag, OccupancyTag, ReservationTag, AdjacentTransitions>(
+      world, intent, AdjacentTransitions{});
+  if (validated.result.status != MovementStatus::Moved) {
+    return validated.result;
+  }
+
+  auto& from_page = world.chunk(validated.from.chunk_key);
+  auto& to_page = world.chunk(validated.to.chunk_key);
+  from_page.template field<OccupancyTag>(validated.from.local_tile_id) = false;
+  to_page.template field<OccupancyTag>(validated.to.local_tile_id) = true;
+  to_page.template field<ReservationTag>(validated.to.local_tile_id) = false;
+  if (dirty_mask != 0) {
+    world.mark_dirty(validated.from.chunk_key, dirty_mask,
+                     Box3{intent.from, Extent3{1, 1, 1}});
+    world.mark_dirty(validated.to.chunk_key, dirty_mask,
+                     Box3{intent.to, Extent3{1, 1, 1}});
+  }
+  return validated.result;
+}
+
+template <typename World, typename ClassOrTag, typename OccupancyTag,
+          typename ReservationTag, typename Provider>
+/// Validates and commits movement through a provider-supplied edge.
+auto commit_movement_intent(World& world, MovementIntent intent,
+                            std::uint32_t dirty_mask,
+                            const Provider& provider) noexcept
+    -> MovementResult {
   const auto validated =
       detail::validate_movement_intent_resolved<World, ClassOrTag, OccupancyTag,
-                                                ReservationTag>(world, intent);
+                                                ReservationTag, Provider>(
+          world, intent, provider);
   if (validated.result.status != MovementStatus::Moved) {
     return validated.result;
   }

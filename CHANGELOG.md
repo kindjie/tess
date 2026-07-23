@@ -9,6 +9,20 @@ and their rationale are recorded separately in
 
 ## [Unreleased]
 
+### Added
+
+- A resolved transition model shared by exact paths, reverse fields,
+  multi-goal products, topology, caches, path agents, and movement commit,
+  including clearance-preserving diagonal steps, axial-hex adjacency, and
+  provider-composed special edges.
+- Compile-time compact-cost range assessment and explicit runtime
+  `CostOverflow` results.
+
+### Changed
+
+- Path results now report their fixed-point cost scale; provider type and
+  revision participate in persistent path-product and cache identity.
+
 ## [0.4.0] - 2026-07-20
 
 ### Added

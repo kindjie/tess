@@ -240,11 +240,16 @@
   contract, including compile-time forward/reverse conformance, canonical
   orthogonal/diagonal/axial order, fixed-point multipliers, both diagonal
   clearance rules, reverse destination-cost direction, and sparse
-  `MissingTopology` probes without allocation.
+  `MissingTopology` probes without allocation. Provider composition cases pin
+  stair forward/reverse agreement, regular-before-special ordering,
+  provider-owned cost scaling, provider revision propagation, and proven,
+  potential-overflow, and unknown static cost-range classifications.
 - `tess_path_product_test`: additionally verifies resolved-model parity for
   diagonal and axial-hex products, including fixed-point cost scale and
   rejection when a product is read through another model, plus normalized
-  raw-tag/class cache identity.
+  raw-tag/class cache identity. Provider products follow stair edges and both
+  product readers, cache stores, and cache lookups reject a providerless model
+  or changed stateful-provider revision.
 - `tess_path_movement_class_test`: verifies movement classes threaded through
   the A* leaves and weighted cores (S5.2): the `WalkableField` identity class
   matches the raw-tag unit search node-for-node on a serpentine maze,
@@ -252,6 +257,17 @@
   and weighted distance field exactly (statuses, costs, expansion counts,
   paths), a Walker routes around a construction wall the Builder cuts through
   while resolved diagonal and axial-hex models return exact scaled costs,
+  provider-aware unit and weighted A* use stair edges that undercut the
+  regular lattice route, provider-aware reverse fields reconstruct the same
+  edge across unbounded, boxed, and bounded entry points and reject
+  providerless reads; reverse stair probing conservatively reports a missing
+  potential foot under sparse `Indeterminate`; and the same stair is rejected
+  without the provider but accepted by provider-aware movement commit.
+  Route-cache
+  model binding preserves diagonal scales, bypasses invalid non-unit suffix
+  arithmetic, and invalidates when a provider binding changes,
+  while unit and weighted runtime, retained-route agent, and tick entry points
+  retain provider semantics from planning through commit,
   result aggregate initialization retains a default scale, and an
   unrepresentable exact cost reports `CostOverflow`,
   (fixed build price via `SelectCost`), unit A* accepts classes for
@@ -712,3 +728,6 @@
   helper (endpoints, legal unit steps onto passable tiles, expected costs,
   agent/frame stats, cache outcomes). `tess_bench_diagnostics` additionally
   asserts the warm `path/astar_open_2d` iteration performs zero allocations.
+  The resolved-transition baseline family additionally times open diagonal,
+  axial-hex, and stair-provider exact searches and validates every returned
+  edge through the same resolved model outside the timed loop.
