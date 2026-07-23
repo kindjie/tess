@@ -10,7 +10,8 @@ let api;
 let width = 32;
 let height = 24;
 let tool = "wall";
-let dragging = false;
+let activePointer = null;
+let lastCell = null;
 let paintValue = true;
 let start = {x: 2, y: 12};
 let goal = {x: 29, y: 12};
@@ -95,9 +96,7 @@ function cellAt(event) {
   };
 }
 
-function applyTool(event) {
-  if (!api) return;
-  const cell = cellAt(event);
+function applyToolAt(cell) {
   const cellKey = key(cell.x, cell.y);
   if (tool === "start") {
     if (!walls.has(cellKey) && cellKey !== key(goal.x, goal.y)) start = cell;
@@ -109,20 +108,51 @@ function applyTool(event) {
     if (paintValue) walls.add(cellKey);
     else walls.delete(cellKey);
   }
-  update();
+}
+
+// Bresenham between consecutive pointer samples so fast drags paint a
+// solid wall instead of a dotted one.
+function applyToolAlong(from, to) {
+  let x = from.x;
+  let y = from.y;
+  const dx = Math.abs(to.x - x);
+  const dy = -Math.abs(to.y - y);
+  const sx = x < to.x ? 1 : -1;
+  const sy = y < to.y ? 1 : -1;
+  let err = dx + dy;
+  for (;;) {
+    applyToolAt({x, y});
+    if (x === to.x && y === to.y) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x += sx; }
+    if (e2 <= dx) { err += dx; y += sy; }
+  }
 }
 
 canvas.addEventListener("pointerdown", (event) => {
-  dragging = true;
+  if (!api || activePointer !== null) return;
+  activePointer = event.pointerId;
   canvas.setPointerCapture(event.pointerId);
   const cell = cellAt(event);
   paintValue = !walls.has(key(cell.x, cell.y));
-  applyTool(event);
+  applyToolAt(cell);
+  lastCell = cell;
+  update();
 });
 canvas.addEventListener("pointermove", (event) => {
-  if (dragging && tool === "wall") applyTool(event);
+  if (!api || event.pointerId !== activePointer || tool !== "wall") return;
+  const cell = cellAt(event);
+  applyToolAlong(lastCell, cell);
+  lastCell = cell;
+  update();
 });
-canvas.addEventListener("pointerup", () => { dragging = false; });
+const stopDragging = (event) => {
+  if (event.pointerId !== activePointer) return;
+  activePointer = null;
+  lastCell = null;
+};
+canvas.addEventListener("pointerup", stopDragging);
+canvas.addEventListener("pointercancel", stopDragging);
 
 buttons.forEach((button) => button.addEventListener("click", () => {
   tool = button.dataset.tool;
