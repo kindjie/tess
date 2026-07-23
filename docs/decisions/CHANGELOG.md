@@ -13,6 +13,18 @@ Records meaningful design changes from the original TDDs.
 - Affected code:
 ```
 
+## 2026-07-22 - Introduce lattice and regular-step identities
+
+- Changed: extended `Shape` with a defaulted lattice type; added stable,
+  versioned orthogonal and axial-hex identities plus axial coordinate helpers;
+  extended `MovementClass` with a defaulted step policy; and added stable
+  default/diagonal policy identities and shape-policy validation.
+- Reason: the resolved transition design requires geometry and regular steps
+  to be explicit, stampable inputs while preserving existing two-argument
+  declarations and legacy custom movement classes.
+- Affected docs: shape and topology architecture.
+- Affected code: lattice, shape, step-policy, and movement-class headers.
+
 ## 2026-07-22 - Reconcile the post-v0.4 roadmap with shipped concurrency
 
 - Changed: moved the production worker pool into the shipped inventory;

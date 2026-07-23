@@ -52,6 +52,8 @@
   and that the generated version macros and `library_version` match the CMake
   project version derived from the repository's single version source.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
+  default and explicit lattice typing with stable lattice identifiers,
+  axial hex coordinate conversion and overflow-safe saturated distance,
   degenerate-axis handling, containment helpers, key width inference,
   coordinate/chunk/local/tile key conversion helpers, the portable
   `tess::detail::UInt128` operations (carrying multiply, borrow subtract,
@@ -198,7 +200,9 @@
   stale recovery write.
 - `tess_movement_class_test`: verifies the compile-time movement vocabulary
   (`tess::movement`): the `MovementClassFor` concept and `movement_class_of`
-  tag/class normalization, byte-exact `normalize_cost` (zero and negative are
+  tag/class normalization, source-compatible default step policies, stable
+  step-policy identifiers, shape/policy compatibility validation, byte-exact
+  `normalize_cost` (zero and negative are
   impassable, overflow saturates through a u64 compare), composed passability
   truth tables for a Walker (`AllOf<Field, Not<Field>>`) versus a Builder
   (`AnyOf`) over construction tiles, per-class entry-cost expressions

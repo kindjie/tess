@@ -69,6 +69,7 @@ set(
   TESS_PUBLIC_HEADERS
   include/tess/block/block.h
   include/tess/core/assert.h
+  include/tess/core/lattice.h
   include/tess/core/shape.h
   include/tess/debug/imgui/panels.h
   include/tess/diagnostics/diagnostics.h
@@ -111,6 +112,7 @@ set(
   include/tess/simulation.h
   include/tess/tess.h
   include/tess/topology/movement_class.h
+  include/tess/topology/step_policy.h
   include/tess/topology/topology.h
   include/tess/topology/transition_provider.h
 )

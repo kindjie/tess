@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/storage/chunk_page.h>
+#include <tess/topology/step_policy.h>
 
 #include <concepts>
 #include <cstdint>
@@ -160,10 +161,12 @@ struct SelectCost {
 // --- the class ---------------------------------------------------------------
 
 /// Combines compile-time passability and entry-cost expressions.
-template <typename PassExpr, typename CostExpr>
+template <typename PassExpr, typename CostExpr,
+          typename StepPolicyT = DefaultSteps>
 struct MovementClass : movement_class_tag {
   using pass_expr = PassExpr;
   using cost_expr = CostExpr;
+  using step_policy = StepPolicyT;
 
   template <typename Page>
   [[nodiscard]] static constexpr bool passable(const Page& page,

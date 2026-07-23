@@ -205,8 +205,10 @@ rejected with `InvalidChunk` before any mutation.
 `include/tess/topology/movement_class.h` (namespace `tess::movement`) defines a
 compile-time DSL for describing how a class of agent moves, so labeling,
 pathfinding, and commit validation can share ONE vocabulary. A
-`MovementClass<PassExpr, CostExpr>` fuses a passability predicate and an
-entry-cost expression, each composed from typed-field leaves that read the
+`MovementClass<PassExpr, CostExpr, StepPolicy>` fuses a passability predicate,
+an entry-cost expression, and a regular-step policy. `StepPolicy` defaults to
+`DefaultSteps`, so existing two-argument declarations retain their type and
+behavior. Each expression is composed from typed-field leaves that read the
 constexpr `ChunkPage::field<Tag>(LocalTileId)` at the `(page, tile)` seam
 (world-scope accessors are not constexpr). The whole predicate inlines to the
 same `&&`/`||`/`!` a hand-written cast emits, so threading a class through the
@@ -215,6 +217,13 @@ hot paths keeps single-field codegen.
 Every movement class derives from `movement_class_tag`; the tag is the public
 marker used by compile-time validation and normalization.
 
+- Step policies: `DefaultSteps` selects the lattice default;
+  `DiagonalSteps<CornerRule>` selects clearance-preserving diagonals with
+  `RequireBothClear` or `RequireOneClear`. `step_policy_of<Class>` supplies
+  `DefaultSteps` for legacy custom classes without a member, while
+  `StepPolicyFor<Policy, Shape>` rejects diagonals unless the shape is an
+  orthogonal lattice with exactly two effective axes. Policy types expose
+  stable `StepPolicyIdentity` and positive fixed-point cost scales.
 - Boolean terms: `Field<Tag>` (truthy), `NotZero<Tag>` (non-zero integral),
   `Not<Term>`, `AllOf<Terms...>`, `AnyOf<Terms...>`.
 - Cost expressions (0 == impassable, u32-saturated): `UnitCost`,
