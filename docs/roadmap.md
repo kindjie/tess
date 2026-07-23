@@ -40,6 +40,10 @@ Do not build agent code that assumes these APIs exist.
 - **Layout and span-query experiments** ([addendum][tdd-layout]) —
   row-major-in-chunk storage is the shipped baseline; the proposed
   span/bitset/summary APIs are gated on benchmark evidence.
+- **External grid benchmark data and the scenario oracle**
+  ([TDD][tdd-benchdata]) — a harness-only design for community grid maps
+  and scenario optima as opt-in fixtures and calibrated benchmarks;
+  nothing is implemented, and the default presets remain network-free.
 - **Save/load and migration, room/area systems, editor tooling**
   ([project design][tdd-project]) — out of the current cycle entirely.
 
@@ -50,6 +54,7 @@ drop-in ECS, and does not intend to become one. It supplies the spatial
 substrate; the application owns meaning, entities, and presentation.
 
 [tdd-index]: https://github.com/kindjie/tess/blob/main/docs/tdd/README.md
+[tdd-benchdata]: https://github.com/kindjie/tess/blob/main/docs/tdd/grid-benchmark-data-and-scenario-oracle.md
 [tdd-flow]: https://github.com/kindjie/tess/blob/main/docs/tdd/flow-distance-fields.md
 [tdd-concurrent]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_concurrent_tile_world.md
 [tdd-work]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_work_contracts.md
