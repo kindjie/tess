@@ -31,12 +31,15 @@ When implementation diverges from a TDD:
 - [Diagnostics and tooling](diagnostics-and-tooling.md)
 - [Modern C++ / compile-time safety](modern-cpp-compile-time-safety.md)
 - [Lattices and the resolved transition model](lattice-and-transition-model.md)
+- [External grid benchmark data and the scenario oracle][benchmark-data]
+  (proposed)
 - [Concurrent tile-world execution and maintenance][concurrent-tile-world]
 - [Work Contracts evaluation and integration][work-contracts] (proposed
   addendum)
 - [Tile layout benchmark findings and library integration][tile-layout]
   (proposed addendum)
 
+[benchmark-data]: grid-benchmark-data-and-scenario-oracle.md
 [concurrent-tile-world]: tdd_addendum_concurrent_tile_world.md
 [work-contracts]: tdd_addendum_work_contracts.md
 [tile-layout]: tdd_addendum_tile_layout_bench_takeaways.md

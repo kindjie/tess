@@ -1,10 +1,9 @@
 include_guard(DIRECTORY)
 
-include(FetchContent)
-include("${CMAKE_CURRENT_LIST_DIR}/TessCMakeCompatibility.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/TessGitDependency.cmake")
 
 # Commit SHA pinned so upstream tag moves cannot alter builds.
-set(TESS_ENTT_VERSION
+set(TESS_ENTT_REVISION
     "b4e58bdd364ad72246c123a0c28538eab3252672") # tag v3.16.0
 set(TESS_ENTT_MIN_VERSION "3.16.0")
 
@@ -26,12 +25,10 @@ function(tess_require_entt)
     return()
   endif()
 
-  FetchContent_Declare(
+  tess_declare_git_dependency(
     entt
-    GIT_REPOSITORY https://github.com/skypjack/entt.git
-    GIT_TAG "${TESS_ENTT_VERSION}"
-    SYSTEM
-    ${TESS_FETCHCONTENT_EXCLUDE_FROM_ALL}
+    https://github.com/skypjack/entt.git
+    "${TESS_ENTT_REVISION}"
   )
   FetchContent_MakeAvailable(entt)
 

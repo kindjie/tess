@@ -62,6 +62,11 @@ item moves to **Shipped**.
   editor integration** ([project design][tdd-project]) — these later phases
   provide substrate and optional tooling only; game-specific meaning remains
   application-owned.
+- **External grid benchmark data and the scenario oracle**
+  ([TDD][tdd-benchdata]) — a harness-only design for community grid maps
+  and scenario optima as opt-in fixtures and calibrated benchmarks. The
+  default presets remain network-free, and external acquisition remains
+  gated on documented content rights.
 
 ## Out of scope
 
@@ -75,6 +80,7 @@ substrate; the application owns meaning, entities, and presentation.
 [tdd-scheduler]: https://github.com/kindjie/tess/blob/main/docs/tdd/simulation-scheduler.md
 [tdd-block]: https://github.com/kindjie/tess/blob/main/docs/tdd/block-kernel-pipeline.md
 [tdd-path]: https://github.com/kindjie/tess/blob/main/docs/tdd/pathfinding-core.md
+[tdd-benchdata]: https://github.com/kindjie/tess/blob/main/docs/tdd/grid-benchmark-data-and-scenario-oracle.md
 [tdd-flow]: https://github.com/kindjie/tess/blob/main/docs/tdd/flow-distance-fields.md
 [tdd-work]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_work_contracts.md
 [tdd-gpu]: https://github.com/kindjie/tess/blob/main/docs/tdd/gpu-backend-interface.md

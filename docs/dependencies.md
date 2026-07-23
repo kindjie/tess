@@ -10,7 +10,9 @@
 
 Used for C++ unit tests.
 
-Developer builds fetch the SHA-pinned source by default. Setting
+Developer builds shallow-fetch the SHA-pinned source by default. The complete
+fetch and checkout sequence is retried up to three times, and the fetched and
+checked-out revisions are verified before use. Setting
 `TESS_USE_SYSTEM_DEPENDENCIES=ON` instead requires a CMake package at version
 1.17.0 or newer and fails configuration if the expected imported target is
 missing. As required for composable `add_subdirectory` use, a canonical
@@ -26,7 +28,8 @@ directory-scoped version variables, so the parent owns its compatibility.
 
 Used for opt-in C++ benchmarks.
 
-Benchmark builds fetch the SHA-pinned source by default. With
+Benchmark builds use the same retrying, exact-revision shallow fetch by
+default. With
 `TESS_USE_SYSTEM_DEPENDENCIES=ON`, configuration requires Google Benchmark
 1.9.5 or newer. A parent-provided `benchmark::benchmark_main` target follows
 the same explicit trust rule and bypasses tess's package-version validation.
@@ -150,9 +153,10 @@ requires EnTT; two independent gates exist and both matter:
   never globally.
 - `TESS_ENABLE_ENTT` as a **CMake option** (default `OFF`, `ON` in the
   `dev`, `release`, `bench`, and `windows-msvc` presets) gates only tess's
-  own EnTT-dependent test, example, and benchmark targets, which acquire
-  real EnTT through `tess_require_entt()`. The default dependency mode uses
-  `FetchContent` at the pinned SHA (`SYSTEM`/`EXCLUDE_FROM_ALL`);
+  own EnTT-dependent test, example, and benchmark targets, which acquire real
+  EnTT through `tess_require_entt()`. The default dependency mode uses the
+  retrying, exact-revision shallow `FetchContent` path at the pinned SHA
+  (`SYSTEM`/`EXCLUDE_FROM_ALL`);
   `TESS_USE_SYSTEM_DEPENDENCIES=ON` instead requires EnTT 3.16.0 or newer.
   The feature default stays `OFF` so ordinary consumer builds never fetch.
   A parent-provided `EnTT::EnTT` target takes precedence as a documented trust

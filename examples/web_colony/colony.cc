@@ -32,6 +32,10 @@ struct ReservationTag {};
 constexpr int kWidth = 128;
 constexpr int kHeight = 128;
 constexpr int kMaxAgents = 1024;
+// Wall painting is rejected outside this band so the spawn columns on the
+// left and the turnaround columns on the right always stay standable.
+constexpr int kWallMinX = 10;
+constexpr int kWallMaxX = kWidth - 11;
 
 using Shape =
     tess::Shape<tess::Extent3{kWidth, kHeight, 1}, tess::Extent3{16, 16, 1}>;
@@ -53,6 +57,21 @@ struct BuildAck {
   std::size_t tiles = 0;
 };
 
+// Convoy layout: batch k = i / kHeight walks row y = i % kHeight between
+// column 9 - k (home) and kWidth - 3 - k (away). Every agent owns a distinct
+// goal tile — occupancy admits exactly one occupant, so shared goals would
+// leave all but one agent blocked forever — and every trip has equal length,
+// with the outbound leader (k = 0) starting ahead of its followers so nobody
+// parks in front of a teammate still travelling.
+constexpr auto home_tile(std::size_t i) -> tess::Coord3 {
+  return {9 - static_cast<std::int64_t>(i / kHeight),
+          static_cast<std::int64_t>(i % kHeight), 0};
+}
+constexpr auto away_tile(std::size_t i) -> tess::Coord3 {
+  return {kWidth - 3 - static_cast<std::int64_t>(i / kHeight),
+          static_cast<std::int64_t>(i % kHeight), 0};
+}
+
 struct Demo {
   World world;
   std::vector<tess::PathAgentState> agents;
@@ -70,6 +89,13 @@ struct Demo {
   std::size_t built_tiles = 0;
   bool replan_each_tick = false;
   double last_tick_us = 0.0;
+  // Persistent schedule clock and accumulator: the carry between frames is
+  // what turns measured real deltas into a wall-clock 20 Hz simulation.
+  // (tick_state owns the separate agent-tick clock; leave it alone.)
+  tess::SimClock sim_clock;
+  tess::FixedStepAccumulator accumulator{20, 8};
+  bool outbound = true;
+  int trips = 1;
 
   struct BuildTaskFn {
     Demo* demo;
@@ -114,12 +140,9 @@ struct Demo {
     agents.resize(static_cast<std::size_t>(agent_count));
     agent_xy.resize(agents.size() * 2);
     for (std::size_t i = 0; i < agents.size(); ++i) {
-      const auto y = static_cast<std::int64_t>(i % kHeight);
-      const auto x = 2 + static_cast<std::int64_t>(i / kHeight);
-      agents[i].position = tess::Coord3{x, y, 0};
+      agents[i].position = home_tile(i);
       world.field<OccupancyTag>(agents[i].position) = true;
-      tess::set_path_agent_goal(tick_state, agents[i],
-                                tess::Coord3{kWidth - 3, y, 0});
+      tess::set_path_agent_goal(tick_state, agents[i], away_tile(i));
     }
 
     shadow.assign(static_cast<std::size_t>(kWidth) * kHeight, 0);
@@ -172,6 +195,11 @@ struct Demo {
     Demo* demo = nullptr;
     auto operator()(const tess::ScheduleTaskContext&)
         -> tess::ScheduleTaskResult {
+      // Marked here, not in tick(): a frame may grant several fixed ticks,
+      // and the toggle promises a replan on every one of them.
+      if (demo->replan_each_tick) {
+        tess::mark_pathing_dirty(demo->tick_state);
+      }
       (void)tess::tick_weighted_path_agents_with_movement<
           World, Walker, kMaxCost, OccupancyTag, ReservationTag>(
           demo->tick_state, demo->world, demo->agents, demo->runtime, {}, 0,
@@ -227,15 +255,14 @@ struct Demo {
     version = frame.header.to_version;
   }
 
-  auto tick() -> double {
+  // Advances the simulation by the measured real elapsed seconds. Returns
+  // the average cost of one fixed tick in microseconds, or -1 when the
+  // accumulator granted no tick this frame.
+  auto tick(double dt_seconds) -> double {
     const auto begin = std::chrono::steady_clock::now();
-    if (replan_each_tick) {
-      tess::mark_pathing_dirty(tick_state);
-    }
-    tess::SimClock clock;
-    tess::FixedStepAccumulator accumulator(20, 8);
-    tess::run_schedule_frame(schedule, clock, accumulator, 1.0 / 20.0,
-                             tess::SimTimeControl{tess::SimSpeed::Speed1x});
+    const auto summary =
+        tess::run_schedule_frame(schedule, sim_clock, accumulator, dt_seconds,
+                                 tess::SimTimeControl{tess::SimSpeed::Speed1x});
     tess::collect_tile_deltas(deltas, world, kTerrainDirty);
     consume_frame(deltas.publish());
     for (std::size_t i = 0; i < agents.size(); ++i) {
@@ -243,8 +270,11 @@ struct Demo {
       agent_xy[i * 2 + 1] = static_cast<std::int16_t>(agents[i].position.y);
     }
     const auto end = std::chrono::steady_clock::now();
-    last_tick_us =
+    const auto elapsed_us =
         std::chrono::duration<double, std::micro>(end - begin).count();
+    last_tick_us = summary.ticks > 0
+                       ? elapsed_us / static_cast<double>(summary.ticks)
+                       : -1.0;
     return last_tick_us;
   }
 
@@ -256,6 +286,23 @@ struct Demo {
       }
     }
     return count;
+  }
+
+  // Flips every agent's goal to the opposite side once the whole colony has
+  // arrived. On the return trip the convoy leader (highest batch) is
+  // processed last within each row, so the first few ticks are a harmless
+  // accordion of transient Occupied results — expected, not a bug.
+  auto relaunch() -> int {
+    if (arrived() != static_cast<int>(agents.size())) {
+      return trips;
+    }
+    outbound = !outbound;
+    for (std::size_t i = 0; i < agents.size(); ++i) {
+      tess::set_path_agent_goal(tick_state, agents[i],
+                                outbound ? away_tile(i) : home_tile(i));
+    }
+    ++trips;
+    return trips;
   }
 };
 
@@ -280,7 +327,7 @@ TESS_DEMO_EXPORT int tess_colony_reset(int agent_count) {
 }
 
 TESS_DEMO_EXPORT int tess_colony_set_wall(int x, int y) {
-  if (!demo || x < 1 || x >= kWidth - 1 || y < 0 || y >= kHeight) {
+  if (!demo || x < kWallMinX || x > kWallMaxX || y < 0 || y >= kHeight) {
     return 0;
   }
   demo->queue_wall(tess::Coord3{x, y, 0});
@@ -293,7 +340,13 @@ TESS_DEMO_EXPORT void tess_colony_set_strategy(int replan_each_tick) {
   }
 }
 
-TESS_DEMO_EXPORT double tess_colony_tick() { return demo ? demo->tick() : 0.0; }
+TESS_DEMO_EXPORT double tess_colony_tick(double dt_seconds) {
+  return demo ? demo->tick(dt_seconds) : -1.0;
+}
+
+TESS_DEMO_EXPORT int tess_colony_relaunch() {
+  return demo ? demo->relaunch() : 0;
+}
 
 TESS_DEMO_EXPORT const std::uint8_t* tess_colony_tiles() {
   return demo ? demo->shadow.data() : nullptr;
@@ -322,7 +375,7 @@ int main() {
         tess_colony_set_wall(64, y);
       }
     }
-    (void)tess_colony_tick();
+    (void)tess_colony_tick(0.05);
   }
   if (tess_colony_arrived() != 8) {
     std::cerr << "web colony model: agents did not arrive\n";
