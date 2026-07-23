@@ -48,6 +48,8 @@ and their rationale are recorded separately in
   blocked-retry budgets.
 - Archive loads invalidate pre-load cache identities, area-index validation is
   constant time, and reentrant queued-work mutation is rejected safely.
+- The external-grid harness now parses scenario lengths on Apple libc++ and
+  rejects incompatible required-data options before probing the toolchain.
 
 ### Performance
 

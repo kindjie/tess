@@ -6,6 +6,17 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-23 - Keep the external-grid bootstrap portable
+
+- Changed: scenario optimum parsing now uses strict classic-locale extraction,
+  and the incompatible required-data option pair is rejected before CMake
+  probes the compiler.
+- Reason: Xcode 16.4's libc++ lacks floating-point `from_chars`, while an
+  inherited but unavailable CI compiler launcher could mask the intended
+  required-data diagnostic during configuration tests.
+- Affected docs: changelog and test inventory.
+- Affected code: root CMake configuration and the external-grid test harness.
+
 ## 2026-07-23 - Harden roadmap completion after independent audits
 
 - Changed: provider-composed unit products now honor special-edge costs;

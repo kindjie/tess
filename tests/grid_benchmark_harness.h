@@ -3,12 +3,12 @@
 #include <tess/core/shape.h>
 
 #include <array>
-#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <locale>
 #include <optional>
 #include <queue>
 #include <sstream>
@@ -111,10 +111,10 @@ inline auto fractional_digits(std::string_view value)
 
 inline auto parse_double(std::string_view token) -> std::optional<double> {
   auto value = double{};
-  const auto [end, error] =
-      std::from_chars(token.data(), token.data() + token.size(), value,
-                      std::chars_format::general);
-  if (error != std::errc{} || end != token.data() + token.size() ||
+  auto stream = std::istringstream{std::string{token}};
+  stream.imbue(std::locale::classic());
+  stream >> std::noskipws >> value;
+  if (!stream || stream.peek() != std::char_traits<char>::eof() ||
       !std::isfinite(value) || value < 0.0) {
     return std::nullopt;
   }

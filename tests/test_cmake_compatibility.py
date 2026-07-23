@@ -76,6 +76,10 @@ def test_consumer_preset_stays_consumer_shaped():
 
 
 def test_required_grid_data_needs_explicit_opt_in(tmp_path):
+    env = os.environ.copy()
+    env["CMAKE_CXX_COMPILER_LAUNCHER"] = (
+        "tess-definitely-missing-compiler-launcher"
+    )
     result = subprocess.run(
         [
             "cmake",
@@ -88,6 +92,7 @@ def test_required_grid_data_needs_explicit_opt_in(tmp_path):
             "-DTESS_REQUIRE_GRID_BENCHMARK_DATA=ON",
         ],
         capture_output=True,
+        env=env,
         text=True,
     )
 

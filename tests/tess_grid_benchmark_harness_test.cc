@@ -2,6 +2,7 @@
 #include <tess/tess.h>
 
 #include <cmath>
+#include <string>
 #include <string_view>
 
 #include "grid_benchmark_harness.h"
@@ -71,6 +72,17 @@ TEST(TessGridBenchmarkHarness, ParsesAndValidatesScenarioRows) {
                 "version 1.0\n0 fixture.map 5 3 1 0 4 2 4.82843\n", map)
                 .error,
             grid::ParseError::BlockedEndpoint);
+}
+
+TEST(TessGridBenchmarkHarness, RejectsInvalidScenarioLengths) {
+  const auto map = grid::parse_map("fixture.map", kMap).value;
+
+  for (const auto length : {"nan.0", "inf.0", "4.82843x"}) {
+    const auto scenario =
+        "version 1.0\n0 fixture.map 5 3 0 0 4 2 " + std::string{length} + "\n";
+    EXPECT_EQ(grid::parse_scenarios(scenario, map).error,
+              grid::ParseError::InvalidScenario);
+  }
 }
 
 TEST(TessGridBenchmarkHarness, LoadsIntoDeclaredShapeAndBlocksPadding) {

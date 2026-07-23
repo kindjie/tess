@@ -155,8 +155,9 @@
   mutation, sparse-capacity preflight, and monotonic derived-state
   invalidation across in-place loads with warm products.
 - `tess_grid_benchmark_harness_test`: verifies strict Moving AI map/scenario
-  parsing from inline fixtures, terrain and coordinate orientation, malformed
-  input rejection, compile-time-shape loading with blocked padding, independent
+  parsing from inline fixtures with portable classic-locale decimal handling,
+  terrain and coordinate orientation, malformed input rejection,
+  compile-time-shape loading with blocked padding, independent
   orthogonal/diagonal reference costs, corner clearance, and the asymmetric
   fixed-point external-oracle interval, including exact agreement between the
   independent reference and tess A* under both movement modes.
@@ -805,12 +806,13 @@
   exact-revision shallow population helper, and behaviorally pins a retry of
   the complete fetch/checkout sequence after checkout failure, that the
   populator scrubs inherited `GIT_DIR`-family hook environment before
-  running Git, and that population failures report every attempt's error. It also pins
-  the `consumer` preset consumer-shaped: dev
-  facilities and EnTT off, no warnings-as-errors, no inheritance from a
-  dev preset. The network-free `examples` preset and tracked installed-package
-  and `FetchContent` consumer fixtures are covered as adopter-facing build
-  contracts.
+  running Git, and that population failures report every attempt's error. It
+  also proves incompatible external-data options fail before an inherited
+  compiler launcher is needed, and pins the `consumer` preset
+  consumer-shaped: dev facilities and EnTT off, no warnings-as-errors, no
+  inheritance from a dev preset. The network-free `examples` preset and
+  tracked installed-package and `FetchContent` consumer fixtures are covered
+  as adopter-facing build contracts.
 - `tests/test_header_compile_cost.py`: pytest coverage for the repeatable
   syntax-only public-header compile-cost tool. It pins the source and generated
   include paths, compiler command, elapsed-sample collection, compiler-error
