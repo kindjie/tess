@@ -161,9 +161,10 @@ TEST(TessGridBenchmarkHarness, ExternalIntervalIsAsymmetricAndDecimalBounded) {
   const auto interval = grid::external_cost_interval(100.0, 5);
 
   ASSERT_TRUE(interval);
-  EXPECT_LT(interval->lower, 100.0);
-  EXPECT_NEAR(interval->upper, 100.00001, 1.0e-12);
-  EXPECT_NEAR(interval->lower,
+  const auto checked = interval.value_or(grid::CostInterval{});
+  EXPECT_LT(checked.lower, 100.0);
+  EXPECT_NEAR(checked.upper, 100.00001, 1.0e-12);
+  EXPECT_NEAR(checked.lower,
               100.0 * (181.0 / (128.0 * std::sqrt(2.0))) - 0.00001, 1.0e-12);
   EXPECT_FALSE(grid::external_cost_interval(100.0, 3));
 }

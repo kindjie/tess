@@ -15,6 +15,7 @@
 #include <span>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace tess {
@@ -207,8 +208,10 @@ class ArchiveCursor {
     }
     value = 0;
     for (std::size_t i = 0; i < sizeof(UInt); ++i) {
-      value |= static_cast<UInt>(std::to_integer<unsigned int>(bytes_[at_ + i]))
-               << (i * 8U);
+      value = static_cast<UInt>(
+          value |
+          (static_cast<UInt>(std::to_integer<unsigned int>(bytes_[at_ + i]))
+           << (i * 8U)));
     }
     at_ += sizeof(UInt);
     return true;
@@ -272,10 +275,11 @@ bool read_scalar(ArchiveCursor& cursor, T& value) {
   return true;
 }
 
-inline auto crc32(std::span<const std::byte> bytes) noexcept -> std::uint32_t {
+inline auto crc32(const std::byte* bytes, std::size_t size) noexcept
+    -> std::uint32_t {
   auto crc = std::uint32_t{0xffffffffU};
-  for (const auto byte : bytes) {
-    crc ^= std::to_integer<std::uint8_t>(byte);
+  for (std::size_t i = 0; i < size; ++i) {
+    crc ^= std::to_integer<std::uint8_t>(bytes[i]);
     for (int bit = 0; bit < 8; ++bit) {
       const auto mask =
           static_cast<std::uint32_t>(-static_cast<std::int32_t>(crc & 1U));
@@ -382,7 +386,7 @@ inline auto parse_world_archive(std::span<const std::byte> bytes)
     return fail(WorldArchiveStatus::Corrupt);
   }
   parsed.body = bytes.subspan(world_archive_header_size);
-  if (crc32(parsed.body) != checksum) {
+  if (crc32(parsed.body.data(), parsed.body.size()) != checksum) {
     return fail(WorldArchiveStatus::Corrupt);
   }
   if (info.field_count > world_archive_max_fields || info.size.x == 0 ||
@@ -515,7 +519,7 @@ consteval bool archive_fields_supported() {
 
 template <typename Archive, typename World>
 auto expected_field_descs() {
-  std::array<ArchiveFieldDesc, Archive::field_count> fields{};
+  std::array<ArchiveFieldDesc, Archive::field_count> fields;
   auto index = std::size_t{};
   std::apply(
       [&]<typename... Fields>(Fields...) {
@@ -573,27 +577,33 @@ bool read_chunk_fields(World& world, ChunkKey key, ArchiveCursor& cursor) {
   return ok;
 }
 
-template <typename Archive, typename World>
+template <typename Field, typename WorldType>
+bool validate_chunk_field(ArchiveCursor& cursor) {
+  using Value = typename WorldType::schema_type::template value_type<
+      typename Field::tag_type>;
+  for (std::uint64_t i = 0; i < WorldType::local_tile_count; ++i) {
+    auto value = Value{};
+    if (!read_scalar(cursor, value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+template <typename Archive, typename WorldType, std::size_t... Indices>
+bool validate_chunk_fields_impl(ArchiveCursor& cursor,
+                                std::index_sequence<Indices...>) {
+  return (
+      validate_chunk_field<
+          std::tuple_element_t<Indices, typename Archive::fields>, WorldType>(
+          cursor) &&
+      ...);
+}
+
+template <typename Archive, typename WorldType>
 bool validate_chunk_fields(ArchiveCursor& cursor) {
-  auto ok = true;
-  std::apply(
-      [&]<typename... Fields>(Fields...) {
-        (
-            [&] {
-              using Value = typename World::schema_type::template value_type<
-                  typename Fields::tag_type>;
-              for (std::uint64_t i = 0; i < World::local_tile_count; ++i) {
-                auto value = Value{};
-                if (!read_scalar(cursor, value)) {
-                  ok = false;
-                  return;
-                }
-              }
-            }(),
-            ...);
-      },
-      typename Archive::fields{});
-  return ok;
+  return validate_chunk_fields_impl<Archive, WorldType>(
+      cursor, std::make_index_sequence<Archive::field_count>{});
 }
 
 template <typename Archive, typename World>
@@ -721,7 +731,8 @@ auto save_world_archive(const World& world, std::vector<std::byte>& out)
              detail::world_archive_magic.end());
   detail::append_unsigned_le(out, detail::world_archive_format_version);
   detail::append_unsigned_le(out, static_cast<std::uint64_t>(body.size()));
-  detail::append_unsigned_le(out, detail::crc32(body));
+  const auto checksum = detail::crc32(body.data(), body.size());
+  detail::append_unsigned_le(out, checksum);
   detail::append_unsigned_le(out, World::shape_type::size.x);
   detail::append_unsigned_le(out, World::shape_type::size.y);
   detail::append_unsigned_le(out, World::shape_type::size.z);

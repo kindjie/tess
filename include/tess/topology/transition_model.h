@@ -477,7 +477,8 @@ class ResolvedTransitionModel {
   }
 
   [[nodiscard]] static constexpr auto clearance_availability(
-      const World& world, detail::RegularTransitionCandidate candidate) noexcept
+      const World& world_value,
+      detail::RegularTransitionCandidate candidate) noexcept
       -> TransitionAvailability {
     if constexpr (std::is_same_v<step_policy, movement::DefaultSteps>) {
       return TransitionAvailability::Legal;
@@ -485,8 +486,8 @@ class ResolvedTransitionModel {
       if (candidate.clearance_count == 0) {
         return TransitionAvailability::Legal;
       }
-      const auto a = clearance_at(world, candidate.clearance_a);
-      const auto b = clearance_at(world, candidate.clearance_b);
+      const auto a = clearance_at(world_value, candidate.clearance_a);
+      const auto b = clearance_at(world_value, candidate.clearance_b);
       if constexpr (step_policy::corner_rule ==
                     movement::CornerRule::RequireBothClear) {
         if (a == Clearance::Blocked || b == Clearance::Blocked) {

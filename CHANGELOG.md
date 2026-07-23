@@ -50,6 +50,8 @@ and their rationale are recorded separately in
   constant time, and reentrant queued-work mutation is rejected safely.
 - The external-grid harness now parses scenario lengths on Apple libc++ and
   rejects incompatible required-data options before probing the toolchain.
+- Persistence decoding, checksum handling, and field validation now compile
+  cleanly across the supported GCC, Clang, MSVC, and cppcheck gates.
 
 ### Performance
 
