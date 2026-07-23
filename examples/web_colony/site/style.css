@@ -87,6 +87,16 @@ button {
 button:hover, button:focus-visible { border-color: #8a72b5; }
 button.active { border-color: #60dfbe; background: #173a34; }
 
+.toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+input[type="range"] { accent-color: #60dfbe; }
+
+#agent-count { font-variant-numeric: tabular-nums; }
+
 canvas {
   display: block;
   width: 100%;
