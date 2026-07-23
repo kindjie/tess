@@ -32,6 +32,20 @@ from them, update maintained docs under `docs/architecture/`, add an entry to
 Do not try to keep TDDs as API reference; add Doxygen comments to public
 headers as the API stabilizes, then introduce generated docs when useful.
 
+## Worktrees and Merging
+
+Coding agents work in linked worktrees (`git worktree add`), not the primary
+checkout, so concurrent sessions do not disturb each other's state.
+
+Do not run `gh pr merge --delete-branch` from a linked worktree. When the
+base branch is checked out in the primary worktree, gh's post-merge local
+cleanup fails partway (cli/cli#13380) and has been observed to leave the
+repository corrupted: `core.bare` flipped to true on the primary and the
+base branch checked out into the linked worktree. Instead, merge from the
+primary checkout, or omit `--delete-branch` and clean up explicitly:
+`git push origin --delete <branch>`, then `git worktree remove <path>` and
+`git branch -d <branch>`.
+
 Before committing, inspect the exact staged diff for:
 
 - names, personal profiles, email addresses, phone numbers, and private URLs
