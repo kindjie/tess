@@ -25,9 +25,9 @@ namespace tess::gpu {
 
 /** Fixed budgets and registry capacities for one WebGPU backend instance. */
 struct WebGpuBackendConfig {
-  std::uint64_t max_buffer_bytes = 256u * 1024u * 1024u;
+  std::uint64_t max_buffer_bytes = std::uint64_t{256} * 1024u * 1024u;
   std::uint64_t max_dispatch_chunks = 65535;
-  std::uint64_t max_inflight_readback_bytes = 4u * 1024u * 1024u;
+  std::uint64_t max_inflight_readback_bytes = std::uint64_t{4} * 1024u * 1024u;
   std::size_t field_capacity = 16;
   std::size_t product_capacity = 64;
   bool allow_full_field_readback = false;

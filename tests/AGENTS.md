@@ -648,7 +648,9 @@
   queue ownership, mirror registration and real chunk-byte uploads, compute
   command submission, generation-stale product rejection, asynchronous summary
   readback that safely completes after backend destruction, invalid requests,
-  explicit device-loss fallback, and the `GpuBackend` concept.
+  explicit device-loss fallback, and the `GpuBackend` concept. Stub handles use
+  scoped C-API release owners so fatal assertions cannot leak caller
+  references, and stub enum widths intentionally match the stable C ABI.
 - `tess_render_delta_frame_test`: verifies the M11 DeltaFrame bridge
   core: version semantics (empty publishes never bump; state-carrying
   publishes bump by one; the applicability truth table including the

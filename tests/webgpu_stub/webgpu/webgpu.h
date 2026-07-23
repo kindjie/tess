@@ -34,10 +34,15 @@ inline constexpr WGPUBufferUsage WGPUBufferUsage_CopyDst = 1u << 3u;
 inline constexpr WGPUBufferUsage WGPUBufferUsage_Storage = 1u << 7u;
 inline constexpr WGPUMapMode WGPUMapMode_Read = 1u << 0u;
 
+// These widths intentionally mirror the stable WebGPU C ABI used by the
+// production header; shrinking the test double would stop checking ABI-shaped
+// integration. NOLINTNEXTLINE(performance-enum-size)
 enum WGPUCallbackMode : std::uint32_t {
   WGPUCallbackMode_AllowSpontaneous = 3,
 };
 
+// Keep the stable WebGPU C ABI width; see WGPUCallbackMode above.
+// NOLINTNEXTLINE(performance-enum-size)
 enum WGPUMapAsyncStatus : std::uint32_t {
   WGPUMapAsyncStatus_Success = 1,
   WGPUMapAsyncStatus_Error = 2,
