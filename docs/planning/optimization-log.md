@@ -14,6 +14,24 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-22 - Local Coordination Baseline
+
+- Area: deterministic local destination reservations and congestion summaries.
+- Evidence: a local Release build resolved 1,000 requests with four feasible
+  options each, including contention on 64 first-choice coordinates, in a
+  five-run median of about 0.36 ms. The measured coefficient of variation was
+  3.14%. Correctness tests cover priority, stable IDs, alternatives, caller
+  filtering, invalid ownership ranges, congestion, waits, and warm
+  allocation-free reuse.
+- Decision: accept the deterministic greedy resolver as the v0.9 local crowd
+  substrate. It spreads contention without introducing continuous steering or
+  a global matching claim, and the caller retains movement legality and
+  commit-time validation.
+- Retry conditions: profile and add a calibrated CI threshold if local
+  coordination becomes a frame-time contributor in a representative consumer
+  trace. Consider a different claimed-coordinate structure only if option
+  counts grow enough for insertion costs to dominate.
+
 ## 2026-07-22 - Area Index Baseline
 
 - Area: graph-derived caller-keyed area grouping.

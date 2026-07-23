@@ -136,6 +136,11 @@
   greedy assignment with caller scores, candidate capacities, infeasible
   pairs, stable ID-based tie breaks, invalid duplicate-ID rejection, result
   alignment to request order, and warm allocation-free execution.
+- `tess_local_coordination_test`: verifies deterministic priority/agent-ID
+  destination claims, ranked alternatives, caller occupancy/passability
+  rejection, input-order invariance, invalid option ranges and duplicate IDs,
+  per-tile demand/reservation congestion summaries, explicit wait decisions,
+  and allocation-free warm resolution after reserve.
 - `tess_grid_benchmark_harness_test`: verifies strict Moving AI map/scenario
   parsing from inline fixtures, terrain and coordinate orientation, malformed
   input rejection, compile-time-shape loading with blocked padding, independent

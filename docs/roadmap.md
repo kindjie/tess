@@ -28,6 +28,10 @@ sparse-overhead promotion gate.
 Region graphs also reconstruct shortest coarse region/portal routes and chunk
 corridors. Dense weighted multi-goal products are versioned, byte-budgeted,
 provider-aware, and reusable across runtime calls through an opt-in policy.
+Caller-keyed area indexes derive stable area summaries and adjacency from
+region graphs. Deterministic tactical assignment and local move coordination
+provide capacity-aware claims, caller-ranked destination reservations, and
+coordinate congestion summaries without owning game semantics or steering.
 
 ## Planned extensions
 
@@ -55,13 +59,13 @@ item moves to **Shipped**.
   shipped; no device backend exists, and the CPU stays authoritative.
 - **Flecs adapter** ([TDD][tdd-ecs]) — EnTT and the custom-adapter
   concepts shipped; Flecs did not.
-- **Crowd movement and local steering** ([project design][tdd-project])
-  — pathing returns per-agent optimal routes; it does not spread or
-  queue crowds.
-- **Tactical assignment, room/area systems, save/load and migration, and
-  editor integration** ([project design][tdd-project]) — these later phases
-  provide substrate and optional tooling only; game-specific meaning remains
-  application-owned.
+- **Continuous crowd steering** ([project design][tdd-project]) — local
+  reservation and congestion arbitration shipped, but tess does not perform
+  velocity-obstacle steering, formation control, or globally optimal
+  multi-agent pathfinding.
+- **Save/load and migration, and editor integration**
+  ([project design][tdd-project]) — these later phases provide substrate and
+  optional tooling only; game-specific meaning remains application-owned.
 - **External grid benchmark data and the scenario oracle**
   ([TDD][tdd-benchdata]) — a harness-only design for community grid maps
   and scenario optima as opt-in fixtures and calibrated benchmarks. Strict

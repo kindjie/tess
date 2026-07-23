@@ -371,6 +371,17 @@ tess_apply_project_options(tess_tactical_assignment_test)
 tess_discover_tests(tess_tactical_assignment_test)
 
 add_executable(
+  tess_local_coordination_test
+  allocation_counter.cc
+  tess_local_coordination_test.cc
+)
+target_link_libraries(
+  tess_local_coordination_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_local_coordination_test)
+
+tess_discover_tests(tess_local_coordination_test)
+
+add_executable(
   tess_path_runtime_test
   allocation_counter.cc
   tess_path_runtime_test.cc

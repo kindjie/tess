@@ -22,8 +22,8 @@ for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 | v0.6 | Queued intents, async work, event scheduling | Complete |
 | v0.7 | Maintenance, block pipelines, query acceleration | Complete |
 | v0.8 | Hierarchical topology and spatial products | Complete |
-| v0.9 | Areas, tactical assignment, crowd coordination | Active |
-| v0.10 | Persistence, Flecs adapter, optional ImGui editor tools | Planned |
+| v0.9 | Areas, tactical assignment, crowd coordination | Complete |
+| v0.10 | Persistence, Flecs adapter, optional ImGui editor tools | Active |
 | v0.11 | Optional WebGPU backend | Planned |
 | v0.12 | Consolidation, compatibility, performance, backlog closure | Planned |
 
@@ -75,15 +75,18 @@ bounded-field/A* fallbacks. Warm builders and coarse reconstruction allocate
 nothing after reserve; benchmarks cover coarse routes, product builds, and
 replay.
 
-### v0.9 Progress
+### v0.9 Completion
 
 Caller-defined area indexes now derive stable summaries and adjacency from
 region graphs without owning room meaning. Deterministic greedy tactical
 assignment accepts caller feasibility and score policies, respects candidate
 capacities, orders scarce claims by priority and stable ID, and allocates
-nothing after explicit scratch reservation. Local reservation and congestion
-coordination remain active work; globally optimal multi-agent pathfinding and
-continuous steering remain out of scope.
+nothing after explicit scratch reservation. Deterministic local move
+coordination arbitrates caller-generated options, exposes congestion, and
+returns reservations that remain subject to normal movement-intent validation.
+It is allocation-free after reserve and resolves a representative 1,000-agent,
+4,000-option workload in about 0.36 ms locally. Globally optimal multi-agent
+pathfinding and continuous steering remain out of scope.
 
 ### Cross-cutting benchmark harness
 

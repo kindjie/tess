@@ -259,6 +259,14 @@
     "AreaIndex",
     "AreaIndexScratch",
     "AreaSummary",
+    "LocalCongestion",
+    "LocalCoordinationResult",
+    "LocalCoordinationScratch",
+    "LocalCoordinationStatus",
+    "LocalMoveDecision",
+    "LocalMoveDecisionStatus",
+    "LocalMoveOption",
+    "LocalMoveRequest",
     "TacticalAssignment",
     "TacticalAssignmentResult",
     "TacticalAssignmentScratch",
@@ -268,6 +276,7 @@
     "TacticalScore",
     "assign_tactical_candidates_greedy",
     "build_area_index",
+    "resolve_local_moves",
     "invalid_area_id"
   ],
   "docs/architecture/path.md": [

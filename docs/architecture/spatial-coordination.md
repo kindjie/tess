@@ -67,3 +67,38 @@ matching. It is suitable for cover slots, work positions, rally points, or
 other scarce candidates where applications want a predictable fast baseline.
 Applications needing a global optimum can use the same request, candidate, and
 score vocabulary with their own matching solver.
+
+## Local Move Coordination
+
+`include/tess/spatial/local_coordination.h` resolves a caller-generated set of
+nearby destination options without owning steering or path planning. Each
+`LocalMoveRequest` identifies an agent, current coordinate, priority, and a
+non-overlapping range in a flat `LocalMoveOption` array. The caller's predicate
+decides whether each option is currently legal, so world bounds, movement
+class, occupancy, reservation, clearance, and application rules stay outside
+the generic resolver. The predicate must be deterministic and side-effect
+free; the resolver evaluates it exactly once per referenced option.
+
+Higher priority moves claim first, with stable agent ID as the final request
+tie break. Each request chooses the lowest preference among unclaimed feasible
+destinations and breaks equal preferences lexicographically by coordinate.
+`LocalMoveDecision` rows remain aligned with input requests and explicitly
+report `LocalMoveDecisionStatus::Reserved` or
+`LocalMoveDecisionStatus::Wait`. `resolve_local_moves` returns a
+`LocalCoordinationResult` whose `LocalCoordinationStatus` distinguishes
+complete, partial, and invalid inputs. A reserved decision is permission for
+the caller to form and validate its normal `MovementIntent`; it does not
+mutate a world or bypass commit-time validation.
+
+The same pass emits coordinate-sorted `LocalCongestion` summaries. `demand`
+counts distinct requests with a feasible option for that coordinate and
+`reserved` counts accepted claims. Callers may publish those counts into a
+bounded congestion field or diagnostics without a hidden full-world product.
+Returned spans borrow `LocalCoordinationScratch`; reserve makes the warm pass
+allocation-free.
+
+This is deterministic local arbitration, not continuous steering, collision
+prediction, formation control, or globally optimal multi-agent pathfinding.
+The conservative caller predicate can reject currently occupied destinations,
+which also rejects swaps and move-through cycles under the existing movement
+commit contract.

@@ -6,6 +6,19 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-22 - Complete deterministic local move coordination
+
+- Changed: added priority- and stable-ID-ordered local destination
+  reservations with caller legality filtering, explicit waits, congestion
+  summaries, and reusable allocation-free warm scratch storage.
+- Reason: v0.9 needed a deterministic crowd-contention substrate while the
+  project boundary keeps continuous steering, global multi-agent optimization,
+  and movement legality application-owned.
+- Affected docs: spatial coordination, architecture map, roadmap, completion
+  plan, optimization log, public surface, and changelog.
+- Affected code: local coordination header, umbrella/install surface,
+  correctness and allocation tests, and representative benchmark.
+
 ## 2026-07-22 - Gate and bootstrap external grid benchmark data
 
 - Changed: corrected the external-data TDD's rights, compile-time shape,

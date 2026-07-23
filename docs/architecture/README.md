@@ -27,7 +27,7 @@ flowchart TB
   Query["Query: exact allocation-free spans"]
   Ops["Operations: queue, planner, executors, results"]
   Topology["Topology: movement classes and region graph"]
-  Spatial["Spatial coordination: areas and assignment"]
+  Spatial["Spatial coordination: areas, assignment, local reservations"]
   Path["Path: searches, products, and caches"]
   Sim["Simulation: schedule, agents, movement, deltas"]
   Core --> Storage
