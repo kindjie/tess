@@ -20,7 +20,7 @@ let width = 0;
 let height = 0;
 let cell = 0;
 let emaUs = 0;
-let painting = false;
+let activePointer = null;
 let lastCell = null;
 let lastTimestamp = 0;
 let trips = 1;
@@ -193,22 +193,28 @@ createTessColony()
       });
 
       canvas.addEventListener('pointerdown', (event) => {
-        painting = true;
+        if (activePointer !== null) {
+          return;
+        }
+        activePointer = event.pointerId;
         canvas.setPointerCapture(event.pointerId);
         const at = cellAt(event);
         paintWall(at.x, at.y);
         lastCell = at;
       });
       canvas.addEventListener('pointermove', (event) => {
-        if (!painting) {
+        if (event.pointerId !== activePointer) {
           return;
         }
         const at = cellAt(event);
         paintLine(lastCell, at);
         lastCell = at;
       });
-      const stopPainting = () => {
-        painting = false;
+      const stopPainting = (event) => {
+        if (event.pointerId !== activePointer) {
+          return;
+        }
+        activePointer = null;
         lastCell = null;
       };
       canvas.addEventListener('pointerup', stopPainting);

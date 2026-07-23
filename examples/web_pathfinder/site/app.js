@@ -10,7 +10,7 @@ let api;
 let width = 32;
 let height = 24;
 let tool = "wall";
-let dragging = false;
+let activePointer = null;
 let lastCell = null;
 let paintValue = true;
 let start = {x: 2, y: 12};
@@ -130,8 +130,8 @@ function applyToolAlong(from, to) {
 }
 
 canvas.addEventListener("pointerdown", (event) => {
-  if (!api) return;
-  dragging = true;
+  if (!api || activePointer !== null) return;
+  activePointer = event.pointerId;
   canvas.setPointerCapture(event.pointerId);
   const cell = cellAt(event);
   paintValue = !walls.has(key(cell.x, cell.y));
@@ -140,14 +140,15 @@ canvas.addEventListener("pointerdown", (event) => {
   update();
 });
 canvas.addEventListener("pointermove", (event) => {
-  if (!api || !dragging || tool !== "wall") return;
+  if (!api || event.pointerId !== activePointer || tool !== "wall") return;
   const cell = cellAt(event);
   applyToolAlong(lastCell, cell);
   lastCell = cell;
   update();
 });
-const stopDragging = () => {
-  dragging = false;
+const stopDragging = (event) => {
+  if (event.pointerId !== activePointer) return;
+  activePointer = null;
   lastCell = null;
 };
 canvas.addEventListener("pointerup", stopDragging);
