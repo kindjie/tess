@@ -6,6 +6,21 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-23 - Harden roadmap completion after independent audits
+
+- Changed: provider-composed unit products now honor special-edge costs;
+  archive loads keep version counters monotonic; resumable queues reject
+  callback-time mutation; transition enumeration propagates exceptions; area
+  indexes use graph revisions; and blocked/provider retry edge cases are
+  explicit and bounded.
+- Reason: two independent reviews found silent stale-cache and wrong-path
+  outcomes, one vector lifetime hazard, and hot-path or lifecycle contracts
+  that were either unsafe or underspecified.
+- Affected docs: path, simulation, persistence, queued operations, spatial
+  coordination, ECS, maintenance, optimization log, and test inventory.
+- Affected code: transition/path products, archives, resumable work, region and
+  area indexes, movement/path ticks, experimental maintenance, and colony demo.
+
 ## 2026-07-22 - Close the post-v0.4 roadmap as v0.12 development
 
 - Declare the integrated v0.5-v0.12 surface as the unreleased `0.12.0`

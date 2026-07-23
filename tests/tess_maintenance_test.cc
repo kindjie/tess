@@ -69,6 +69,16 @@ struct OverlapTask final : maintenance::MaintenanceTask {
   }
 };
 
+struct ZeroProgressTask final : maintenance::MaintenanceTask {
+  maintenance::MaintenanceScheduler* scheduler = nullptr;
+  std::uint32_t executions = 0;
+
+  void run(maintenance::MaintenanceBudget&) override {
+    ++executions;
+    static_cast<void>(scheduler->schedule(*this));
+  }
+};
+
 TEST(TessMaintenance, CoalescingCollapsesDuplicateSchedules) {
   maintenance::CoalescingScheduler scheduler(4);
   CountingTask task;
@@ -111,6 +121,18 @@ TEST(TessMaintenance, BudgetedTaskSelfSchedulesUntilComplete) {
   EXPECT_EQ(task.executions, 4u);
   EXPECT_EQ(task.processed, 10u);
   EXPECT_TRUE(scheduler.flush());
+}
+
+TEST(TessMaintenance, ZeroProgressRescheduleStopsDrain) {
+  maintenance::CoalescingScheduler scheduler(2);
+  ZeroProgressTask task;
+  task.scheduler = &scheduler;
+  EXPECT_TRUE(scheduler.schedule(task));
+
+  EXPECT_FALSE(scheduler.run_some(maintenance::MaintenanceBudget{3}));
+  EXPECT_EQ(task.executions, 1u);
+  EXPECT_FALSE(scheduler.flush());
+  EXPECT_EQ(task.executions, 2u);
 }
 
 TEST(TessMaintenance, PartialClearPreservesUnrelatedDirtyFlags) {

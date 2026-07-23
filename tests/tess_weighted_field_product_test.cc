@@ -141,6 +141,27 @@ TEST(TessWeightedFieldProduct, ProviderReverseEdgeBuildsReplayableShortcut) {
   EXPECT_EQ(path.path.back(), (tess::Coord3{7, 7, 0}));
 }
 
+TEST(TessWeightedFieldProduct, UnitProductHonorsSpecialTransitionCost) {
+  World world;
+  fill_open(world);
+  tess::GoalSet goals;
+  goals.add({7, 7, 0});
+  tess::DistanceFieldScratch scratch;
+  tess::DistanceFieldProduct product;
+  const auto provider = ShortcutProvider{};
+
+  const auto built = tess::build_distance_field_product<World, PassableTag>(
+      world, goals, scratch, product, provider);
+  ASSERT_EQ(built.status, tess::PathStatus::Found);
+  const auto path = tess::distance_field_product_path<World, PassableTag>(
+      world, {0, 0, 0}, product, scratch, provider);
+
+  ASSERT_EQ(path.status, tess::PathStatus::Found);
+  EXPECT_EQ(path.cost, 3u);
+  ASSERT_EQ(path.path.size(), 2u);
+  EXPECT_EQ(path.path.back(), (tess::Coord3{7, 7, 0}));
+}
+
 TEST(TessWeightedFieldProduct, SupportsVerticalDegenerateLayout) {
   using VerticalShape =
       tess::Shape<tess::Extent3{1, 4, 4}, tess::Extent3{1, 2, 2}>;

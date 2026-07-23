@@ -102,6 +102,42 @@ TEST(TessPersistence, DenseArchiveRoundTripsAuthoritativeFieldsAndMetadata) {
   EXPECT_EQ(restored.meta(tess::ChunkKey{2}).topology_version, 1U);
 }
 
+TEST(TessPersistence, DenseLoadInvalidatesWarmDerivedProducts) {
+  DenseWorld target;
+  for (std::uint64_t key = 0; key < DenseWorld::chunk_count; ++key) {
+    auto terrain = target.template field_span<TerrainTag>(tess::ChunkKey{key});
+    std::fill(terrain.begin(), terrain.end(), 1);
+    target.mark_dirty(
+        tess::ChunkKey{key}, 1U,
+        {tess::coord<Shape>(tess::chunk_coord<Shape>(tess::ChunkKey{key}),
+                            tess::LocalTileId{}),
+         Shape::chunk});
+  }
+  tess::GoalSet goals;
+  goals.add({7, 3, 0});
+  tess::DistanceFieldScratch scratch;
+  tess::DistanceFieldProduct product;
+  ASSERT_EQ((tess::build_distance_field_product<DenseWorld, TerrainTag>(
+                 target, goals, scratch, product))
+                .status,
+            tess::PathStatus::Found);
+  ASSERT_TRUE(product.is_valid(target));
+
+  DenseWorld source;
+  for (std::uint64_t key = 0; key < DenseWorld::chunk_count; ++key) {
+    auto terrain = source.template field_span<TerrainTag>(tess::ChunkKey{key});
+    std::fill(terrain.begin(), terrain.end(),
+              static_cast<std::uint16_t>(key + 2));
+  }
+  std::vector<std::byte> bytes;
+  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
+            tess::WorldArchiveStatus::Ok);
+  ASSERT_EQ(tess::load_world_archive<Archive>(target, bytes, kLoadDirty).status,
+            tess::WorldArchiveStatus::Ok);
+
+  EXPECT_FALSE(product.is_valid(target));
+}
+
 TEST(TessPersistence, CanonicalBytesDoNotDependOnMutationOrder) {
   DenseWorld first;
   DenseWorld second;

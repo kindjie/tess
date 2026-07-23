@@ -268,6 +268,9 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
         });
   }
   if (!is_candidate) {
+    if constexpr (Model::has_special_transitions) {
+      return fail(MovementStatus::StaleTopology);
+    }
     return fail(MovementStatus::NotAdjacent);
   }
   if (transition_availability == TransitionAvailability::MissingTopology) {

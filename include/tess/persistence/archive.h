@@ -652,7 +652,11 @@ void restore_chunk_metadata(World& world, ChunkKey key, ChunkState state,
   world.clear_dirty(key, std::numeric_limits<std::uint32_t>::max());
   world.clear_active(key, std::numeric_limits<std::uint32_t>::max());
   auto& meta = world.meta(key);
+  const auto old_version = meta.version;
+  const auto old_topology_version = meta.topology_version;
   meta = ChunkMeta{};
+  meta.version = old_version;
+  meta.topology_version = old_topology_version;
   meta.entity_count = entity_count;
   world.mark_active(key, active_flags);
   world.set_chunk_state(key, state);
@@ -663,6 +667,7 @@ void restore_chunk_metadata(World& world, ChunkKey key, ChunkState state,
   if (invalidation_flags != 0) {
     world.mark_topology_dirty(key, invalidation_flags, bounds);
   } else {
+    ++meta.version;
     world.mark_topology_rebuilt(key);
   }
 }

@@ -187,6 +187,10 @@ flowchart TB
   goal. These persistent products are explicitly dense-only, stamp every
   model identity and provider revision, and use the same byte-budgeted cache
   through `lookup_weighted` / `store_weighted`.
+- Unit products retain the BFS fast path only for regular unit-cost models.
+  Provider-composed products use reverse Dijkstra even when the regular step
+  scale is one, because a provider may attach a larger exact cost to a special
+  edge.
 - `RouteCacheScratch` (in `tess/path/route_cache.h`) owns reusable
   route-cache entries and cached path nodes for exact route and same-goal
   suffix reuse. Exact `(start, goal)` lookups and suffix lookups are served
@@ -305,11 +309,13 @@ flowchart TB
   `_with_movement` variants) commit validation, so plan and commit provably
   agree per class. Goals assigned through either `set_path_agent_goal`
   overload are picked up on the next tick. `Blocked` agents consume one retry
-  per following tick until `options.max_blocked_retries` runs out and they
-  turn terminally `Unreachable`. Occupied/reserved destinations retry the
-  retained step without processing because occupancy is intentionally absent
-  from planning passability; other transient failures request a re-path.
-  Successful movement resets the consecutive-block count.
+  per following movement-enabled tick until `options.max_blocked_retries` runs
+  out and they turn terminally `Unreachable`. Occupied/reserved destinations
+  retry the retained step without processing because occupancy is
+  intentionally absent from planning passability; other transient failures
+  request a re-path. Ticks with `max_steps == 0` pause the retry budget without
+  attempting movement. Successful movement resets the consecutive-block
+  count.
   `mark_pathing_dirty(state)` remains the hook -- and the only correct one --
   for replans after world edits.
 - `astar_path<World, PassableTag>(world, request, scratch, policy)` runs
@@ -642,7 +648,10 @@ It does not observe world mutations on its own. Any edit to passability,
 movement costs, or topology-relevant movement rules must call
 `mark_pathing_dirty(state)` before the next tick that should replan (goal
 assignments need no mark: an armed goal is agent-scoped and replans just
-that agent).
+that agent). If a stateful transition provider stops emitting a retained
+special edge before that mark, commit validation reports `StaleTopology`
+rather than terminal `NotAdjacent`, so the bounded retry lifecycle can recover
+by re-planning.
 
 ## Deliberate Limits
 

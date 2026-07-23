@@ -14,6 +14,21 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-23 - Constant-Time Area Index Validation
+
+- Area: per-agent checked coordinate lookup through `AreaIndex`.
+- Evidence: audit found that every checked lookup recomputed a fingerprint
+  across all local topologies and portals, making A agent queries cost
+  O(A * graph size). A dedicated 256-area, 512x512 lookup benchmark now
+  isolates the query path; its five-run local arm64 median is 5.17 ns after
+  the revision change.
+- Decision: replace the fingerprint with a monotonic `RegionGraphT` revision
+  updated by clear, rebuild, and non-empty incremental changes. Index validity
+  is now O(1); coordinate lookup retains only region resolution and ordered
+  area lookup.
+- Retry conditions: consider a direct dense region-to-area table only if the
+  new lookup benchmark shows the remaining ordered lookup is material.
+
 ## 2026-07-22 - v0.12 Benchmark Gate Closure
 
 - Area: benchmark families added after the last threshold calibration.

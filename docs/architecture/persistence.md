@@ -48,9 +48,12 @@ schema rather than guessing a conversion.
 Successful loads restore selected fields, active flags, stable chunk state,
 and entity counts. Dirty history, content/topology version counters, residency
 generations, region graphs, paths, products, and caches are intentionally not
-serialized. Every loaded chunk receives a full-chunk topology invalidation;
-the caller supplies the dirty mask. Derived state must be rebuilt against the
-loaded authoritative fields.
+serialized. Loading preserves each target chunk's existing version counters
+and advances both monotonically, so derived products warmed before an in-place
+load cannot become valid again through a reset-to-zero alias. Every loaded
+chunk receives a full-chunk topology invalidation; the caller supplies the
+dirty mask. Derived state must be rebuilt against the loaded authoritative
+fields.
 
 Dense archives contain every shaped chunk. Sparse archives contain the
 current resident working set in canonical key order and reject a target whose

@@ -90,6 +90,11 @@ auto validate_move(const MovementWorld& world, tess::Coord3 from,
       world, tess::MovementIntent{from, to, versions});
 }
 
+struct ClosingDoorProvider {
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3, Sink&&) const {}
+};
+
 TEST(TessMovement, ValidateRejectsInvalidEndpointsAndNonAdjacentMoves) {
   MovementWorld world;
   fill_movement_world(world);
@@ -109,6 +114,20 @@ TEST(TessMovement, ValidateRejectsInvalidEndpointsAndNonAdjacentMoves) {
 
   result = validate_move(world, tess::Coord3{0, 0, 0}, tess::Coord3{0, 0, 0});
   EXPECT_EQ(result.status, tess::MovementStatus::NotAdjacent);
+}
+
+TEST(TessMovement, MissingProviderEdgeReportsStaleTopology) {
+  MovementWorld world;
+  fill_movement_world(world);
+
+  const auto result = tess::validate_movement_intent<
+      MovementWorld, PassableTag, OccupancyTag, ReservationTag>(
+      world,
+      tess::MovementIntent{tess::Coord3{0, 0, 0}, tess::Coord3{2, 0, 0}, {}},
+      ClosingDoorProvider{});
+
+  EXPECT_EQ(result.status, tess::MovementStatus::StaleTopology);
+  EXPECT_TRUE(tess::is_transient_movement_failure(result.status));
 }
 
 TEST(TessMovement, ValidateRejectsBlockedFromAndCommitLeavesWorldUntouched) {

@@ -123,7 +123,8 @@
 - `tess_maintenance_test`: verifies the experimental immediate, FIFO, and
   coalescing maintenance backends, including duplicate scheduling, budgeted
   continuation, concurrent scheduling, deterministic flush, partial dirty
-  clearing, shutdown, capacity failure, and steady-state allocation behavior.
+  clearing, zero-progress self-reschedule detection, shutdown, capacity
+  failure, and steady-state allocation behavior.
 - `tess_topology_coarse_path_test`: verifies deterministic shortest region
   paths and chunk corridors, same-region and disconnected results, non-monotone
   chunk detours, portal continuity, clipped corridor bounds, and warm
@@ -131,12 +132,13 @@
   resident-set corridors.
 - `tess_weighted_field_product_test`: verifies reusable multi-goal weighted
   distance products, exact path and nearest-target replay, movement-class
-  cache identity, provider-composed reverse transitions, version invalidation,
-  degenerate vertical layout support, and warm allocation-free rebuilds.
+  cache identity, provider-composed reverse transitions and their exact costs
+  in weighted and unit products, version invalidation, degenerate vertical
+  layout support, and warm allocation-free rebuilds.
 - `tess_area_index_test`: verifies caller-keyed grouping of region-graph
   regions into area summaries, deterministic area identities and adjacency,
-  coordinate lookup, graph-change invalidation, dense and sparse graphs, and
-  warm allocation-free rebuilds.
+  coordinate lookup, monotonic graph-revision invalidation, no-op update
+  stability, dense and sparse graphs, and warm allocation-free rebuilds.
 - `tess_tactical_assignment_test`: verifies deterministic priority-ordered
   greedy assignment with caller scores, candidate capacities, infeasible
   pairs, stable ID-based tie breaks, invalid duplicate-ID rejection, result
@@ -150,7 +152,8 @@
   envelope, dense and sparse authoritative-field round trips, canonical sparse
   chunk order, shape/lattice/key/schema compatibility classification, explicit
   migration-required outcomes, corruption/truncation rejection without target
-  mutation, sparse-capacity preflight, and derived-state invalidation on load.
+  mutation, sparse-capacity preflight, and monotonic derived-state
+  invalidation across in-place loads with warm products.
 - `tess_grid_benchmark_harness_test`: verifies strict Moving AI map/scenario
   parsing from inline fixtures, terrain and coordinate orientation, malformed
   input rejection, compile-time-shape loading with blocked padding, independent
@@ -263,7 +266,8 @@
   `AsyncTicket`s, immediate results, deterministic FIFO advancement under a
   shared item budget, pending continuations across calls, required/result
   versions, terminal failed/cancelled/superseded/stale states, stale-ticket
-  rejection after clear, and allocation-free warm submit/advance/reset reuse.
+  rejection after clear, rejection of callback-time queue mutation, and
+  allocation-free warm submit/advance/reset reuse.
 - `tess_movement_class_test`: verifies the compile-time movement vocabulary
   (`tess::movement`): the `MovementClassFor` concept and `movement_class_of`
   tag/class normalization, source-compatible default step policies, stable
@@ -309,7 +313,8 @@
   `MissingTopology` probes without allocation. Provider composition cases pin
   stair forward/reverse agreement, regular-before-special ordering,
   provider-owned cost scaling, provider revision propagation, and proven,
-  potential-overflow, and unknown static cost-range classifications.
+  potential-overflow, and unknown static cost-range classifications. Throwing
+  enumeration sinks propagate rather than terminating.
 - `tess_path_product_test`: additionally verifies resolved-model parity for
   diagonal and axial-hex products, including fixed-point cost scale and
   rejection when a product is read through another model, plus normalized
@@ -548,8 +553,9 @@
   including stale topology/version branches, `record_movement_failure`
   bucketing every `MovementStatus` into its dedicated counter, the
   transient-versus-terminal `is_transient_movement_failure` classification
-  of every status, and overflow-safe `manhattan_distance` at `int64`
-  extremes. The warm no-alloc batches also pin submitted/found stats so a
+  of every status, disappearing special-provider edges classified as stale
+  topology, and overflow-safe `manhattan_distance` at `int64` extremes. The
+  warm no-alloc batches also pin submitted/found stats so a
   skipped frame cannot pass as allocation-free.
 - `tess_path_agent_tick_test`: verifies the minimal path-agent tick wrapper,
   including tick advancement, dirty-gated path processing, movement ordering,
@@ -559,8 +565,9 @@
   while every agent still advances), two-argument goal assignment processed
   without a manual dirty mark, transiently blocked agents resuming and
   arriving without occupancy-blind re-plans, permanent occupancy exhausting a
-  bounded wait budget without repeated searches (including while another
-  agent requests a scoped planning pass), a seeded multi-agent
+  bounded wait budget without repeated searches while zero-step ticks preserve
+  that budget (including while another agent requests a scoped planning pass),
+  a seeded multi-agent
   bottleneck reaching only arrived or explicit terminal outcomes after one
   initial planning pass, mid-route wall
   insertion triggering bounded re-paths, and boxed-in goals exhausting the

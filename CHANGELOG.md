@@ -43,6 +43,11 @@ and their rationale are recorded separately in
 - Occupancy-blocked path agents retry retained steps without repeated
   occupancy-blind searches, stop after a bounded retry budget, and surface an
   explicit terminal outcome. The colony demo reports those outcomes.
+- Special-transition field products preserve provider costs, transition
+  enumeration propagates callback failures, and zero-step agent ticks preserve
+  blocked-retry budgets.
+- Archive loads invalidate pre-load cache identities, area-index validation is
+  constant time, and reentrant queued-work mutation is rejected safely.
 
 ### Performance
 

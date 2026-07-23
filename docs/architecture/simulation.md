@@ -493,11 +493,15 @@ The `PathAgentPhase` lifecycle ties the layers together. Assigning a goal
 arms `NeedsPath`, which requests path processing on the next tick even
 without a world edit. Planner failures and transient movement failures both
 land in `Blocked`; each following tick consumes one of
-`max_blocked_retries`. Occupancy and reservations retry the retained step,
-while route-invalidating failures re-path. Successful movement resets the
+`max_blocked_retries` when movement is enabled; `max_steps == 0` pauses the
+budget. Occupancy and reservations retry the retained step, while
+route-invalidating failures re-path. Successful movement resets the
 consecutive-block count; exhaustion becomes terminal `Unreachable`.
-Structural movement failures (invalid endpoints, non-adjacent steps) skip
-the retry budget entirely. Only a new goal re-arms an `Unreachable` agent.
+Structural movement failures (invalid endpoints, non-adjacent steps) skip the
+retry budget entirely. A missing edge under a special-transition provider is
+`StaleTopology`, because a provider revision can legitimately remove it, and
+therefore requests a bounded re-path. Only a new goal re-arms an
+`Unreachable` agent.
 Clearing a goal returns any active lifecycle state to `Idle`; those equivalent
 edges are omitted from the diagram to keep the failure paths legible.
 

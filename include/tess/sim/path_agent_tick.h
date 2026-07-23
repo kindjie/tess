@@ -89,6 +89,9 @@ inline auto prepare_path_agent_processing(std::span<PathAgentState> agents,
     if (agent.phase != PathAgentPhase::Blocked) {
       continue;
     }
+    if (options.max_steps == 0) {
+      continue;
+    }
     if (agent.blocked_retries < options.max_blocked_retries) {
       ++agent.blocked_retries;
       if (agent.status != PathStatus::Found) {

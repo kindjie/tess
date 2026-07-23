@@ -633,7 +633,7 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
     scratch.distance_[goal_offset] = 0;
     scratch.touch_node(goal_index);
     TESS_DIAG_EVENT(path_touch_node);
-    if constexpr (Model::cost_scale == 1) {
+    if constexpr (Model::cost_scale == 1 && !Model::has_special_transitions) {
       scratch.frontier_.push_back(goal_index);
       TESS_DIAG_EVENT(path_heap_push);
     } else {
@@ -647,7 +647,7 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
 
   std::size_t expanded_nodes = 0;
   auto cost_overflow = false;
-  if constexpr (Model::cost_scale == 1) {
+  if constexpr (Model::cost_scale == 1 && !Model::has_special_transitions) {
     std::size_t head = 0;
     while (head < scratch.frontier_.size()) {
       const auto current = scratch.frontier_[head];

@@ -350,8 +350,7 @@ class ResolvedTransitionModel {
 
   template <typename Sink>
   constexpr void for_each_forward(const World& world, Coord3 from,
-                                  std::uint64_t from_index,
-                                  Sink&& sink) const noexcept {
+                                  std::uint64_t from_index, Sink&& sink) const {
     (void)from_index;
     detail::for_each_regular_candidate<shape_type, step_policy>(
         from, [&](detail::RegularTransitionCandidate candidate) {
@@ -365,8 +364,7 @@ class ResolvedTransitionModel {
 
   template <typename Sink>
   constexpr void for_each_reverse(const World& world, Coord3 to,
-                                  std::uint64_t to_index,
-                                  Sink&& sink) const noexcept {
+                                  std::uint64_t to_index, Sink&& sink) const {
     static_assert(ReverseTransitionProviderFor<Provider, World>,
                   "Reverse fields require per-target provider enumeration.");
     (void)to_index;
@@ -382,7 +380,7 @@ class ResolvedTransitionModel {
 
   template <typename Sink>
   constexpr void for_each_dependency_chunk(const World& world, Coord3 from,
-                                           Sink&& sink) const noexcept {
+                                           Sink&& sink) const {
     sink(chunk_key<shape_type>(chunk_coord<shape_type>(from)));
     detail::for_each_regular_candidate<shape_type, step_policy>(
         from, [&](detail::RegularTransitionCandidate candidate) {
@@ -511,7 +509,7 @@ class ResolvedTransitionModel {
   template <typename Sink>
   static constexpr void emit_candidate(
       const World& world, detail::RegularTransitionCandidate candidate,
-      Coord3 cost_coord, Sink&& sink) noexcept {
+      Coord3 cost_coord, Sink&& sink) {
     const auto resolved = world.resolve(candidate.to);
     const auto* page = world.try_chunk(resolved.chunk_key);
     if (page == nullptr) {
@@ -558,8 +556,7 @@ class ResolvedTransitionModel {
 
   template <typename Sink>
   static constexpr void emit_special_candidate(
-      const World& world, SpecialTransitionCandidate candidate,
-      Sink&& sink) noexcept {
+      const World& world, SpecialTransitionCandidate candidate, Sink&& sink) {
     if (!contains<shape_type>(candidate.to)) {
       return;
     }

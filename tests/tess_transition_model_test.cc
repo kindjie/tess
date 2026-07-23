@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 
 namespace {
 
@@ -299,6 +300,18 @@ TEST(TessTransitionModel, ScalesProviderOwnedCostWithoutTerrainLookup) {
   ASSERT_EQ(forward.size, 6u);
   EXPECT_EQ(forward.probes[5].to, landing);
   EXPECT_EQ(forward.probes[5].cost, 3u);
+}
+
+TEST(TessTransitionModel, EnumerationPropagatesSinkExceptions) {
+  SquareWorld world;
+  fill_open(world);
+  constexpr auto from = tess::Coord3{3, 3, 0};
+
+  EXPECT_THROW((tess::ResolvedTransitionModel<SquareWorld, DefaultClass>{}
+                    .for_each_forward(
+                        world, from, tile_index<Square>(from),
+                        [](auto) { throw std::runtime_error{"sink failed"}; })),
+               std::runtime_error);
 }
 
 }  // namespace

@@ -208,9 +208,11 @@ system), extending the standing one-runtime-per-(world, class) contract.
 
 ## Planning Cost
 
-World-scoped invalidation re-paths every active agent. Agent-scoped work uses
-`PathSubmitScope::NeedsOnly`: newly armed and route-invalidated agents submit,
-while Following agents and occupancy/reservation waiters retain their routes.
-This avoids both the historical one-goal-change cliff at ECS scale and
-occupancy-blind searches at bottlenecks. The ECS benchmark family tracks
-collect/apply/tick costs at 1k-100k agents.
+World-scoped invalidation re-paths every active agent. The raw-span tick
+drivers retain routes and use `PathSubmitScope::NeedsOnly`, but the current ECS
+drivers intentionally use runtime-owned paths and an all-agent processing pass
+whenever collection reports a changed goal. They therefore do not yet inherit
+the retained-step optimization for mixed goal churn and occupancy waiters.
+Their work remains retry-bounded and correct, and the ECS benchmark family
+tracks collect/apply/tick costs at 1k-100k agents. Route retention inside
+`PathAgentBatch` is a future optimization, not a current contract.

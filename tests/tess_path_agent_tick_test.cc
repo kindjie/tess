@@ -460,6 +460,38 @@ TEST(TessPathAgentTick, PermanentOccupancyWaitIsBoundedWithoutReplanning) {
   EXPECT_EQ(agents[0].position, (tess::Coord3{0, 0, 0}));
 }
 
+TEST(TessPathAgentTick, ZeroStepTicksPreserveBlockedRetryBudget) {
+  MovementWorld world;
+  fill_movement_world(world);
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  world.template field<OccupancyTag>(agents[0].position) = true;
+  world.template field<OccupancyTag>(tess::Coord3{1, 0, 0}) = true;
+  tess::set_path_agent_goal(agents[0], tess::Coord3{2, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  auto options = tess::PathAgentTickOptions{.max_blocked_retries = 1};
+  auto stats = tick_movement(tick_state, world, agents, runtime, options);
+  ASSERT_EQ(stats.movement.blocked_waits, 1u);
+
+  options.max_steps = 0;
+  for (int tick = 0; tick < 4; ++tick) {
+    stats = tick_movement(tick_state, world, agents, runtime, options);
+    EXPECT_EQ(stats.repath_exhausted, 0u);
+    EXPECT_EQ(agents[0].blocked_retries, 0u);
+    EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+  }
+
+  world.template field<OccupancyTag>(tess::Coord3{1, 0, 0}) = false;
+  options.max_steps = 1;
+  stats = tick_movement(tick_state, world, agents, runtime, options);
+  EXPECT_EQ(stats.movement.advanced, 1u);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
+}
+
 TEST(TessPathAgentTick, ScopedPassSkipsOccupancyWaitingAgents) {
   MovementWorld world;
   fill_movement_world(world);

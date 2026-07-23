@@ -74,40 +74,6 @@ class AreaIndexScratch {
 
 namespace detail {
 
-inline void area_hash_mix(std::uint64_t& hash, std::uint64_t value) noexcept {
-  constexpr auto prime = std::uint64_t{1099511628211};
-  for (unsigned byte = 0; byte < 8; ++byte) {
-    hash ^= (value >> (byte * 8U)) & 0xffU;
-    hash *= prime;
-  }
-}
-
-template <typename Residency>
-[[nodiscard]] auto area_graph_fingerprint(
-    const RegionGraphT<Residency>& graph) noexcept -> std::uint64_t {
-  auto hash = std::uint64_t{1469598103934665603};
-  area_hash_mix(hash, graph.region_count());
-  area_hash_mix(hash, graph.portals().size());
-  for (const auto& topology : graph.local_topologies()) {
-    area_hash_mix(hash, topology.chunk().value);
-    area_hash_mix(hash, topology.version());
-    area_hash_mix(hash, topology.regions().size());
-  }
-  for (const auto& portal : graph.portals()) {
-    area_hash_mix(hash, portal.from.chunk.value);
-    area_hash_mix(hash, portal.from.region.value);
-    area_hash_mix(hash, portal.to.chunk.value);
-    area_hash_mix(hash, portal.to.region.value);
-    area_hash_mix(hash, static_cast<std::uint64_t>(portal.from_coord.x));
-    area_hash_mix(hash, static_cast<std::uint64_t>(portal.from_coord.y));
-    area_hash_mix(hash, static_cast<std::uint64_t>(portal.from_coord.z));
-    area_hash_mix(hash, static_cast<std::uint64_t>(portal.to_coord.x));
-    area_hash_mix(hash, static_cast<std::uint64_t>(portal.to_coord.y));
-    area_hash_mix(hash, static_cast<std::uint64_t>(portal.to_coord.z));
-  }
-  return hash;
-}
-
 inline void extend_area_bounds(Box3& current, Box3 addition,
                                bool first) noexcept {
   if (first) {
@@ -160,7 +126,7 @@ class AreaIndex {
     areas_.clear();
     connections_.clear();
     graph_identity_ = nullptr;
-    graph_fingerprint_ = 0;
+    graph_revision_ = 0;
   }
 
   [[nodiscard]] auto areas() const noexcept -> std::span<const AreaSummary> {
@@ -199,7 +165,7 @@ class AreaIndex {
   [[nodiscard]] auto is_valid(
       const RegionGraphT<Residency>& graph) const noexcept -> bool {
     return graph_identity_ == static_cast<const void*>(&graph) &&
-           graph_fingerprint_ == detail::area_graph_fingerprint(graph);
+           graph_revision_ == graph.revision();
   }
 
  private:
@@ -213,7 +179,7 @@ class AreaIndex {
   std::vector<AreaSummary> areas_;
   std::vector<AreaConnection> connections_;
   const void* graph_identity_ = nullptr;
-  std::uint64_t graph_fingerprint_ = 0;
+  std::uint64_t graph_revision_ = 0;
 };
 
 /// Groups graph regions by a caller-supplied nonzero 64-bit semantic key.
@@ -307,7 +273,7 @@ auto build_area_index(const RegionGraphT<Residency>& graph, Grouper&& grouper,
   }
 
   index.graph_identity_ = static_cast<const void*>(&graph);
-  index.graph_fingerprint_ = detail::area_graph_fingerprint(graph);
+  index.graph_revision_ = graph.revision();
   return {AreaBuildStatus::Built, index.areas_.size(),
           index.connections_.size()};
 }

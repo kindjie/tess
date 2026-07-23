@@ -361,6 +361,7 @@ class RegionGraphT {
       sparse_.region_reaches_missing_.clear();
       sparse_.frozen_generations_.clear();
     }
+    bump_revision();
   }
 
   [[nodiscard]] auto local_topologies() const noexcept
@@ -370,6 +371,11 @@ class RegionGraphT {
 
   [[nodiscard]] auto portals() const noexcept -> std::span<const RegionPortal> {
     return {portals_.data(), portals_.size()};
+  }
+
+  /// Monotonic identity for the graph's current derived contents.
+  [[nodiscard]] auto revision() const noexcept -> std::uint64_t {
+    return revision_;
   }
 
   [[nodiscard]] auto local_topology(ChunkKey chunk) const noexcept
@@ -612,6 +618,13 @@ class RegionGraphT {
     built_provider_revision_ = detail::transition_provider_revision(provider);
   }
 
+  void bump_revision() noexcept {
+    ++revision_;
+    if (revision_ == 0) {
+      ++revision_;
+    }
+  }
+
   // Sparse only: flags every region owning a provider transition that lands
   // in a NON-RESIDENT chunk, so reachability answers Indeterminate rather
   // than a wrong Unreachable across an unloaded special transition. Must run
@@ -700,6 +713,7 @@ class RegionGraphT {
   std::uint32_t built_cost_scale_ = 0;
   std::uintptr_t built_provider_ = 0;
   std::uint64_t built_provider_revision_ = 0;
+  std::uint64_t revision_ = 0;
   [[no_unique_address]] detail::RegionGraphSparseData<Residency> sparse_;
 };
 
@@ -1325,6 +1339,7 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
                          return lhs.from.chunk.value < rhs.from.chunk.value;
                        });
       graph.rebuild_region_index();
+      graph.bump_revision();
     }
   } else {
     // Sparse: any residency change since build forces a full rebuild (the graph
@@ -1411,6 +1426,7 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
                        });
       graph.rebuild_region_index();
       graph.template mark_provider_missing_reaches<Shape>(world, provider);
+      graph.bump_revision();
     }
   }
 

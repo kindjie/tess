@@ -479,7 +479,10 @@ work that must remain caller-visible across phase calls:
 - `ResumableWorkQueue<T>` invokes non-owning continuations in submission order
   under one deterministic `AsyncWorkBudget`. Results carry required and
   produced `AsyncVersion` stamps. No hidden thread or wait is introduced;
-  applications may run the queue on their chosen execution context.
+  applications may run the queue on their chosen execution context. A
+  continuation may inspect results, but it must not mutate or recursively
+  advance its queue; every mutating entry point rejects callback-time
+  reentrancy so vector-backed result references cannot be invalidated.
 - `ResumableWorkTask<T>` adapts the queue directly to a scheduler Background
   cadence. Its `more_work` result retains pending tickets for the next tick.
 

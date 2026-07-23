@@ -590,4 +590,26 @@ TEST(TessQueuedResults, ClearInvalidatesTicketsAndWarmReuseAllocatesNothing) {
   }
 }
 
+#if TESS_ENABLE_ASSERTS
+TEST(TessQueuedResults, ResumableWorkRejectsReentrantQueueMutation) {
+  struct ReentrantWork {
+    tess::ResumableWorkQueue<Ack>* queue = nullptr;
+
+    auto operator()(tess::AsyncWorkBudget, Ack&) -> tess::AsyncWorkStep {
+      queue->clear();
+      return {tess::AsyncStepState::Ready, 1, {}};
+    }
+  };
+
+  EXPECT_DEATH(
+      {
+        tess::ResumableWorkQueue<Ack> queue;
+        ReentrantWork work{&queue};
+        static_cast<void>(queue.submit(work));
+        static_cast<void>(queue.advance(tess::AsyncWorkBudget{1}));
+      },
+      "queue mutation during advance");
+}
+#endif
+
 }  // namespace

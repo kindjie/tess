@@ -81,7 +81,9 @@ struct AsyncAdvanceStats {
 /// together more than the supplied deterministic item budget. A callback and
 /// its context are non-owning and must outlive the ticket. Tickets remain
 /// observable across calls until `clear`, which invalidates them by generation.
-/// Instances are externally synchronized.
+/// Callbacks may inspect the queue but must not mutate it or call `advance`;
+/// those reentrant operations are rejected. Instances are externally
+/// synchronized.
 template <typename T>
 class ResumableWorkQueue {
   static_assert(std::is_default_constructible_v<T>);
@@ -89,7 +91,12 @@ class ResumableWorkQueue {
  public:
   using WorkFn = AsyncWorkStep (*)(void*, AsyncWorkBudget, T&);
 
-  void reserve_tickets(std::size_t count) { slots_.reserve(count); }
+  void reserve_tickets(std::size_t count) {
+    if (reject_reentrant_mutation()) {
+      return;
+    }
+    slots_.reserve(count);
+  }
 
   template <typename Work>
   [[nodiscard]] auto submit(
@@ -110,6 +117,9 @@ class ResumableWorkQueue {
       void* context, WorkFn work, AsyncVersion required_version = {},
       std::source_location source = std::source_location::current())
       -> AsyncTicket {
+    if (reject_reentrant_mutation()) {
+      return {};
+    }
     TESS_ASSERT(work != nullptr);
     TESS_ASSERT(slots_.size() <= std::numeric_limits<std::uint32_t>::max());
     const auto index = static_cast<std::uint32_t>(slots_.size());
@@ -127,6 +137,9 @@ class ResumableWorkQueue {
       T value, AsyncVersion result_version = {},
       std::source_location source = std::source_location::current())
       -> AsyncTicket {
+    if (reject_reentrant_mutation()) {
+      return {};
+    }
     TESS_ASSERT(slots_.size() <= std::numeric_limits<std::uint32_t>::max());
     const auto index = static_cast<std::uint32_t>(slots_.size());
     slots_.push_back(Slot{});
@@ -139,6 +152,16 @@ class ResumableWorkQueue {
   }
 
   [[nodiscard]] auto advance(AsyncWorkBudget budget) -> AsyncAdvanceStats {
+    if (in_advance_) {
+      TESS_ASSERT_MSG(!in_advance_, "reentrant queue advance");
+      return {};
+    }
+    struct AdvanceGuard {
+      bool& active;
+      ~AdvanceGuard() { active = false; }
+    };
+    in_advance_ = true;
+    const auto guard = AdvanceGuard{in_advance_};
     auto stats = AsyncAdvanceStats{};
     auto remaining = budget.max_items;
     for (auto& slot : slots_) {
@@ -229,6 +252,9 @@ class ResumableWorkQueue {
 
   [[nodiscard]] bool mark_stale_if_version(AsyncTicket ticket,
                                            AsyncVersion current) noexcept {
+    if (reject_reentrant_mutation()) {
+      return false;
+    }
     auto* slot = find(ticket);
     if (slot == nullptr ||
         (slot->state != AsyncResultState::Immediate &&
@@ -249,6 +275,9 @@ class ResumableWorkQueue {
   }
 
   void clear() noexcept {
+    if (reject_reentrant_mutation()) {
+      return;
+    }
     slots_.clear();
     ++generation_;
     if (generation_ == 0) {
@@ -267,6 +296,14 @@ class ResumableWorkQueue {
     AsyncResultState state = AsyncResultState::Unbound;
   };
 
+  [[nodiscard]] auto reject_reentrant_mutation() const noexcept -> bool {
+    if (!in_advance_) {
+      return false;
+    }
+    TESS_ASSERT_MSG(!in_advance_, "queue mutation during advance");
+    return true;
+  }
+
   [[nodiscard]] auto find(AsyncTicket ticket) noexcept -> Slot* {
     if (ticket.generation != generation_ || ticket.index >= slots_.size()) {
       return nullptr;
@@ -283,6 +320,9 @@ class ResumableWorkQueue {
 
   [[nodiscard]] bool set_terminal(AsyncTicket ticket,
                                   AsyncResultState state) noexcept {
+    if (reject_reentrant_mutation()) {
+      return false;
+    }
     auto* slot = find(ticket);
     if (slot == nullptr || slot->state != AsyncResultState::Pending) {
       return false;
@@ -317,6 +357,7 @@ class ResumableWorkQueue {
 
   std::vector<Slot> slots_;
   std::uint64_t generation_ = 1;
+  bool in_advance_ = false;
 };
 
 }  // namespace tess

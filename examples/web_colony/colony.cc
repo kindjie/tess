@@ -32,6 +32,8 @@ struct ReservationTag {};
 constexpr int kWidth = 128;
 constexpr int kHeight = 128;
 constexpr int kMaxAgents = 1024;
+constexpr std::uint32_t kMaxBlockedRetries =
+    2U * ((kMaxAgents + kHeight - 1) / kHeight) + 8U;
 // Wall painting is rejected outside this band so the spawn columns on the
 // left and the turnaround columns on the right always stay standable.
 constexpr int kWallMinX = 10;
@@ -200,10 +202,14 @@ struct Demo {
       if (demo->replan_each_tick) {
         tess::mark_pathing_dirty(demo->tick_state);
       }
+      auto options = tess::PathAgentTickOptions{};
+      // The convoy accordion can block rear agents for roughly one tick per
+      // rank even on an unobstructed map; keep margin above that healthy wait.
+      options.max_blocked_retries = kMaxBlockedRetries;
       (void)tess::tick_weighted_path_agents_with_movement<
           World, Walker, kMaxCost, OccupancyTag, ReservationTag>(
-          demo->tick_state, demo->world, demo->agents, demo->runtime, {}, 0,
-          &demo->graph);
+          demo->tick_state, demo->world, demo->agents, demo->runtime, options,
+          0, &demo->graph);
       return {};
     }
   };

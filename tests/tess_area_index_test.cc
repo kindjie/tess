@@ -111,6 +111,27 @@ TEST(TessAreaIndex, GraphEditInvalidatesPriorIndex) {
   EXPECT_FALSE(index.is_valid(graph));
 }
 
+TEST(TessAreaIndex, GraphRevisionChangesOnlyWhenGraphChanges) {
+  World world;
+  fill_open(world);
+  auto graph = graph_for(world);
+  const auto built_revision = graph.revision();
+  ASSERT_NE(built_revision, 0u);
+
+  tess::LocalTopologyScratch scratch;
+  const std::array<tess::ChunkKey, 0> no_dirty{};
+  (void)tess::update_region_graph<World, PassableTag>(world, scratch, graph,
+                                                      no_dirty);
+  EXPECT_EQ(graph.revision(), built_revision);
+
+  world.template field<PassableTag>({0, 0, 0}) = 0;
+  world.mark_dirty(tess::ChunkKey{0}, 1u, tess::Box3{{0, 0, 0}, {1, 1, 1}});
+  const auto dirty = std::array{tess::ChunkKey{0}};
+  (void)tess::update_region_graph<World, PassableTag>(world, scratch, graph,
+                                                      dirty);
+  EXPECT_NE(graph.revision(), built_revision);
+}
+
 TEST(TessAreaIndex, SupportsSparseResidentRegionGraphs) {
   using Sparse = tess::SparseResidentWorld<Shape, Schema>;
   Sparse world{tess::ResidencyConfig{2 * Sparse::page_byte_size}};

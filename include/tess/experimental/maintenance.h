@@ -156,6 +156,9 @@ class QueuedScheduler : public MaintenanceScheduler {
   [[nodiscard]] auto schedule(MaintenanceTask& task) -> bool override {
     metrics_.record_schedule();
     const auto lock = std::scoped_lock{queue_mutex_};
+    if (&task == running_task_) {
+      running_task_rescheduled_ = true;
+    }
     if constexpr (Coalescing) {
       if (queue_.contains(task)) {
         metrics_.record_coalesced();
@@ -180,8 +183,9 @@ class QueuedScheduler : public MaintenanceScheduler {
       if (task == nullptr) {
         return true;
       }
-      metrics_.record_execution();
-      task->run(budget);
+      if (!run_task(*task, budget)) {
+        return false;
+      }
     }
     return true;
   }
@@ -198,8 +202,9 @@ class QueuedScheduler : public MaintenanceScheduler {
       if (task == nullptr) {
         return true;
       }
-      metrics_.record_execution();
-      task->run(budget);
+      if (!run_task(*task, budget)) {
+        return false;
+      }
     }
   }
 
@@ -208,10 +213,39 @@ class QueuedScheduler : public MaintenanceScheduler {
   }
 
  private:
+  [[nodiscard]] auto run_task(MaintenanceTask& task, MaintenanceBudget& budget)
+      -> bool {
+    metrics_.record_execution();
+    const auto before = budget.remaining();
+    {
+      const auto lock = std::scoped_lock{queue_mutex_};
+      running_task_ = &task;
+      running_task_rescheduled_ = false;
+    }
+    try {
+      task.run(budget);
+    } catch (...) {
+      const auto lock = std::scoped_lock{queue_mutex_};
+      running_task_ = nullptr;
+      running_task_rescheduled_ = false;
+      throw;
+    }
+    auto rescheduled = false;
+    {
+      const auto lock = std::scoped_lock{queue_mutex_};
+      rescheduled = running_task_rescheduled_;
+      running_task_ = nullptr;
+      running_task_rescheduled_ = false;
+    }
+    return budget.remaining() != before || !rescheduled;
+  }
+
   mutable std::mutex queue_mutex_;
   std::mutex run_mutex_;
   BoundedTaskQueue queue_;
   MetricsStore metrics_;
+  MaintenanceTask* running_task_ = nullptr;
+  bool running_task_rescheduled_ = false;
 };
 
 }  // namespace detail
