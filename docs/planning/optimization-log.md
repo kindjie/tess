@@ -14,6 +14,22 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-22 - Flecs Adapter Baseline
+
+- Area: deterministic Flecs path-agent collection and write-back.
+- Evidence: a local Release build with deliberately shuffled `AgentId` values
+  collected and sorted 1,000, 10,000, and 100,000 agents in three-run medians
+  of 26 us, 0.35 ms, and 4.87 ms. Collecting and applying 10,000 agents took
+  0.78 ms. The context owns one persistent query; correctness tests prove warm
+  ticks allocate nothing and native table/entity churn does not change output.
+- Decision: accept stable-ID sorting and component-notifying write-back as the
+  v0.10 baseline. Sorting is required for deterministic output; Flecs query
+  creation remains setup-only because upstream documents repeated creation as
+  expensive.
+- Retry conditions: calibrate cross-platform thresholds before gating these
+  baselines. Profile radix or table-local merge alternatives only if adapter
+  collection becomes material in a representative 100,000-agent frame.
+
 ## 2026-07-22 - Local Coordination Baseline
 
 - Area: deterministic local destination reservations and congestion summaries.

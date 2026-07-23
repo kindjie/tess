@@ -68,6 +68,7 @@ def test_consumer_preset_stays_consumer_shaped():
     assert cache["TESS_BUILD_EXAMPLES"] == "OFF"
     assert cache["TESS_BUILD_BENCHMARKS"] == "OFF"
     assert cache["TESS_ENABLE_ENTT"] == "OFF"
+    assert cache["TESS_ENABLE_FLECS"] == "OFF"
     assert cache.get("TESS_ENABLE_GRID_BENCHMARK_DATA", "OFF") == "OFF"
     assert cache.get("TESS_REQUIRE_GRID_BENCHMARK_DATA", "OFF") == "OFF"
     assert "TESS_WARNINGS_AS_ERRORS" not in cache
@@ -108,6 +109,7 @@ def test_examples_preset_is_network_free_and_example_only():
     assert cache["TESS_BUILD_BENCHMARKS"] == "OFF"
     assert cache["TESS_BUILD_DOCS"] == "OFF"
     assert cache["TESS_ENABLE_ENTT"] == "OFF"
+    assert cache["TESS_ENABLE_FLECS"] == "OFF"
     assert "inherits" not in examples
 
 

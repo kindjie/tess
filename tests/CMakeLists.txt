@@ -507,6 +507,26 @@ if(TESS_ENABLE_ENTT)
   tess_discover_tests(tess_ecs_entt_test)
 endif()
 
+if(TESS_ENABLE_FLECS)
+  include(TessFlecsDeps)
+  tess_require_flecs()
+
+  add_executable(
+    tess_ecs_flecs_test
+    allocation_counter.cc
+    tess_ecs_flecs_test.cc
+  )
+  target_link_libraries(
+    tess_ecs_flecs_test
+    PRIVATE tess::tess flecs::flecs_static GTest::gtest_main
+  )
+  # The header gate is target-local: only Flecs-linked targets compile it.
+  target_compile_definitions(tess_ecs_flecs_test PRIVATE TESS_ENABLE_FLECS)
+  tess_apply_project_options(tess_ecs_flecs_test)
+
+  tess_discover_tests(tess_ecs_flecs_test)
+endif()
+
 add_executable(tess_sim_auto_exec_test tess_sim_auto_exec_test.cc)
 target_link_libraries(
   tess_sim_auto_exec_test PRIVATE tess::tess GTest::gtest_main)

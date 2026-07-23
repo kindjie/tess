@@ -70,6 +70,19 @@ if(TESS_ENABLE_ENTT)
   target_compile_definitions(tess_bench_diagnostics PRIVATE TESS_ENABLE_ENTT)
 endif()
 
+if(TESS_ENABLE_FLECS)
+  include(TessFlecsDeps)
+  tess_require_flecs()
+
+  target_sources(tess_bench PRIVATE tess_flecs_ecs_bench.cc)
+  target_link_libraries(tess_bench PRIVATE flecs::flecs_static)
+  target_compile_definitions(tess_bench PRIVATE TESS_ENABLE_FLECS)
+
+  target_sources(tess_bench_diagnostics PRIVATE tess_flecs_ecs_bench.cc)
+  target_link_libraries(tess_bench_diagnostics PRIVATE flecs::flecs_static)
+  target_compile_definitions(tess_bench_diagnostics PRIVATE TESS_ENABLE_FLECS)
+endif()
+
 set(
   TESS_KEY_BENCHMARK_THRESHOLDS
   "${PROJECT_SOURCE_DIR}/bench/thresholds/key-conversions.json"

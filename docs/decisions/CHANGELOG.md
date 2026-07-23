@@ -6,6 +6,20 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-22 - Add the optional Flecs adapter
+
+- Changed: added a Flecs 4.1.5 adapter with generation-preserving handles,
+  persistent deterministic collection, generic path-agent write-back, and
+  synchronized lifecycle and render-delta intents behind independent header
+  and build gates.
+- Reason: the maintained v0.10 roadmap advances beyond the historical TDD's
+  explicit Flecs deferral. Reusing the generic pipeline preserves the TDD's
+  ECS-agnostic core and safe-phase structural-mutation constraints.
+- Affected docs: ECS architecture, entity guide, dependency inventory,
+  roadmap, completion plan, public surface, and changelog.
+- Affected code: Flecs adapter, pinned opt-in dependency acquisition, presets,
+  tests, and example.
+
 ## 2026-07-22 - Add versioned authoritative world archives
 
 - Changed: added canonical little-endian dense and resident-set sparse world

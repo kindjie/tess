@@ -12,7 +12,7 @@ shipped, tested machinery: compile-time shapes and field schemas, dense
 and sparse residency, queued operations with result channels, the block
 kernel layer, topology and the reachability precheck, A* with movement
 classes, weighted batches, distance-field products and caches, the
-schedule loop, the EnTT and custom-ECS adapters, DeltaFrame render
+schedule loop, the EnTT, Flecs, and custom-ECS adapters, DeltaFrame render
 bridging, the production worker-pool phase executor, the GPU descriptor
 interface, and compile-gated diagnostics. Resolved regular and
 provider-composed transitions drive exact paths, fields, topology, caches,
@@ -62,8 +62,6 @@ item moves to **Shipped**.
   into a cost field and route through a weighted movement class.
 - **Real GPU backend** ([TDD][tdd-gpu]) — the descriptor/concept layer
   shipped; no device backend exists, and the CPU stays authoritative.
-- **Flecs adapter** ([TDD][tdd-ecs]) — EnTT and the custom-adapter
-  concepts shipped; Flecs did not.
 - **Continuous crowd steering** ([project design][tdd-project]) — local
   reservation and congestion arbitration shipped, but tess does not perform
   velocity-obstacle steering, formation control, or globally optimal

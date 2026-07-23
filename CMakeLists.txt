@@ -41,6 +41,9 @@ set(
 option(TESS_ENABLE_ENTT
        "Build EnTT-gated tess tests, examples, and benchmarks (requires EnTT)"
        OFF)
+option(TESS_ENABLE_FLECS
+       "Build Flecs-gated tests, examples, and benchmarks (requires Flecs)"
+       OFF)
 option(TESS_ENABLE_WARNINGS "Enable tess warning flags on local targets" ON)
 option(TESS_WARNINGS_AS_ERRORS "Treat tess local target warnings as errors" OFF)
 option(TESS_ENABLE_CLANG_TIDY "Enable clang-tidy on tess local targets" OFF)
@@ -106,6 +109,7 @@ set(
   include/tess/ecs/adapter.h
   include/tess/ecs/entity_handle.h
   include/tess/ecs/entt/entt_adapter.h
+  include/tess/ecs/flecs/flecs_adapter.h
   include/tess/gpu/backend.h
   include/tess/gpu/descriptors.h
   include/tess/ops/async_work.h
@@ -274,11 +278,13 @@ if(TESS_BUILD_DOCS)
       "${CMAKE_CURRENT_SOURCE_DIR}/docs/api-main.md")
   set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)
   set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)
-  # Documentation-only feature gates: include the EnTT adapter, diagnostics,
-  # and ImGui panel APIs in the reference without their third-party headers.
+  # Documentation-only feature gates: include optional adapter, diagnostics,
+  # and panel APIs in the reference without their third-party headers.
   set(DOXYGEN_PREDEFINED
       "TESS_ENABLE_ENTT"
       "ENTT_VERSION=1"
+      "TESS_ENABLE_FLECS"
+      "FLECS_H"
       "TESS_ENABLE_IMGUI"
       "IMGUI_VERSION=1"
       "TESS_ENABLE_DIAGNOSTICS"

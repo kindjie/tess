@@ -107,8 +107,11 @@ Inspection and loading classify shape, lattice, key-layout, residency, schema,
 field, capacity, corruption, and explicit migration boundaries before target
 mutation. Loaded chunks invalidate derived state instead of restoring caches.
 Sparse archives cover the resident working set because sparse worlds do not
-yet own a non-resident backing store. The optional Flecs adapter and bounded
-ImGui editor helpers remain active work.
+yet own a non-resident backing store. The optional Flecs 4.1 adapter now
+provides the same deterministic two-phase path-agent and lifecycle contract as
+EnTT while retaining full generation-bearing entity IDs. Its query is
+persistent, warm ticks allocate nothing, and the core remains dependency-free.
+Bounded ImGui editor helpers remain active work.
 
 ### Cross-cutting benchmark harness
 

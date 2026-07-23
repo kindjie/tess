@@ -19,7 +19,8 @@ cmake \
   -DTESS_BUILD_EXAMPLES=OFF \
   -DTESS_BUILD_BENCHMARKS=OFF \
   -DTESS_BUILD_DOCS=OFF \
-  -DTESS_ENABLE_ENTT=OFF
+  -DTESS_ENABLE_ENTT=OFF \
+  -DTESS_ENABLE_FLECS=OFF
 
 exported_functions='["_main","_tess_demo_width","_tess_demo_height"'
 exported_functions+=',"_tess_demo_reset","_tess_demo_set_blocked"'

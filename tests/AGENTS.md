@@ -51,6 +51,11 @@
   that the pathfinding, simulation, and compatibility umbrella headers compile,
   and that the generated version macros and `library_version` match the CMake
   project version derived from the repository's single version source.
+- `tess_ecs_flecs_test`: verifies the optional Flecs adapter against the
+  pinned real Flecs release: 64-bit generation-preserving handle conversion,
+  deterministic collection under table churn, goal reconciliation, safe
+  two-phase write-back, synchronized spawn/move/park/place/despawn lifecycle
+  operations, render deltas, and allocation-free warm ticks.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
   default and explicit lattice typing with stable lattice identifiers,
   axial hex coordinate conversion and overflow-safe saturated distance,

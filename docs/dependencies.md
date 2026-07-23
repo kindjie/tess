@@ -187,6 +187,40 @@ exercised by the repository's required platform matrix. The dependency-free
 concepts layer
 (`include/tess/ecs/adapter.h`) is always built and tested without EnTT.
 
+## Flecs
+
+- Version: `v4.1.5` (SHA-pinned in `cmake/TessFlecsDeps.cmake` to
+  `d7d0c4f7afb4518a6bae749efdc52c7cb5cffee6`; latest upstream release as
+  of 2026-07-22)
+- Documentation: https://www.flecs.dev/flecs/
+- Building and CMake target documentation:
+  https://www.flecs.dev/flecs/md_docs_2BuildingFlecs.html
+- Repository and releases: https://github.com/SanderMertens/flecs
+
+Optional integration dependency for
+`include/tess/ecs/flecs/flecs_adapter.h`. The policy mirrors EnTT: tess core
+never fetches or links Flecs, the consumer defines `TESS_ENABLE_FLECS` on an
+individual target and includes `<flecs.h>` first, and the header is otherwise
+inert. The header requires Flecs 4.1.5 or newer through its public
+`FLECS_VERSION_*` macros.
+
+`TESS_ENABLE_FLECS` is also an independent CMake option, default `OFF`, that
+enables only tess's Flecs test, example, and benchmark targets. Developer,
+release, benchmark, and Windows presets turn it on and acquire the exact
+commit through the retrying shallow-fetch helper. Consumer and dependency-free
+example presets leave it off. `TESS_USE_SYSTEM_DEPENDENCIES=ON` uses the
+installed `flecs::flecs_static` target. Upstream's installed
+`flecs-config.cmake` has no ConfigVersion companion, so the adapter's
+compile-time version check is the system-package compatibility gate. A
+parent-provided target remains an explicit trust boundary.
+
+Flecs entity IDs are 64-bit values whose high bits include generation data;
+the adapter preserves all bits in `EntityHandle`. Zero is Flecs' invalid ID.
+The C++ API requires C++17; tess uses C++20. Its persistent query is created
+once in `FlecsPathAgentContext`, because Flecs documents repeated query
+creation as expensive. Adapter collection never performs structural mutation;
+goal removal and other structural changes occur only after iteration.
+
 ## GitHub Actions
 
 - Checkout action version: `actions/checkout@v7.0.1` (pinned to
