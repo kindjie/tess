@@ -58,11 +58,12 @@ target_link_libraries(my_target PRIVATE tess::tess)
 The public CMake target is `tess::tess`. For a focused include surface, use
 `<tess/pathfinding.h>` for worlds and routing, `<tess/simulation.h>` for the
 full simulation stack, or `<tess/tess.h>` for the all-in-one compatibility
-umbrella. All three are dependency-free. The EnTT adapter and Dear ImGui
-panels are opt-in headers that consumers include after their corresponding
-third-party header; see [ECS integration](architecture/ecs.md) and
-[Diagnostics](architecture/diagnostics.md). In compile-sensitive code,
-prefer the narrowest public header that owns the API.
+umbrella. All three are dependency-free. The independently gated EnTT and
+Flecs adapters and the Dear ImGui panels are opt-in headers that consumers
+include after their corresponding third-party header; see
+[ECS integration](architecture/ecs.md) and
+[Diagnostics](architecture/diagnostics.md). In compile-sensitive code, prefer
+the narrowest public header that owns the API.
 
 ## Package-manager status
 

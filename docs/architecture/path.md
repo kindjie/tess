@@ -278,9 +278,11 @@ flowchart TB
   lifecycle (`Idle`, `NeedsPath`, `Following`, `Blocked`, `Unreachable`)
   with a `blocked_retries` budget. The helpers submit active agents into a
   `PathRequestRuntime`, apply ticketed results, and advance agents along
-  returned paths. Transient movement failures keep the `Found` route and
-  enter `Blocked`; structural failures (invalid endpoints, non-adjacent
-  steps) are terminal `Unreachable` until a new goal is assigned.
+  returned paths. Occupied or reserved destinations keep the `Found` route
+  and enter `Blocked` so the retained step can be retried; other transient
+  failures invalidate the route and enter `Blocked` for replanning.
+  Structural failures (invalid endpoints, non-adjacent steps) are terminal
+  `Unreachable` until a new goal is assigned.
 - `process_unit_path_agents<World, ClassOrTag>(world, agents, runtime,
   policy)` and `process_weighted_path_agents<World, Class, MaxCost>(world,
   agents, runtime, policy)` run the current conservative synchronous agent

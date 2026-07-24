@@ -6,6 +6,18 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-23 - Align parallel provider edges from plan through commit
+
+- Changed: provider-aware movement validation now considers special edges
+  when a geometrically regular edge to the same destination is blocked or
+  missing topology. Any legal matching edge permits the commit.
+- Reason: exact searches enumerate regular and provider transitions as a
+  union. Commit must accept that same union, including deliberate bridges
+  across blocked diagonal clearance.
+- Affected docs: simulation and path architecture, ECS integration summaries,
+  design changelog, and test inventory.
+- Affected code: movement validation and movement-class regression coverage.
+
 ## 2026-07-23 - Align provider-aware movement exception handling
 
 - Changed: provider-aware movement validation and commit now propagate

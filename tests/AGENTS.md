@@ -335,7 +335,9 @@
   edge across unbounded, boxed, and bounded entry points and reject
   providerless reads; reverse stair probing conservatively reports a missing
   potential foot under sparse `Indeterminate`; and the same stair is rejected
-  without the provider but accepted by provider-aware movement commit.
+  without the provider but accepted by provider-aware movement commit. A
+  provider edge parallel to a blocked regular diagonal remains legal from
+  planning through commit.
   Route-cache
   model binding preserves diagonal scales, bypasses invalid non-unit suffix
   arithmetic, and invalidates when a provider binding changes,

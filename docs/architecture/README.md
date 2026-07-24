@@ -53,7 +53,7 @@ flowchart TB
   accTitle: Optional integration boundaries
   accDescr: Consumers opt into ECS adapters, the GPU interface, diagnostics, and ImGui panels without changing the dependency-free core.
 
-  Sim["Simulation"] --> ECS["Consumer-provided ECS or EnTT adapter"]
+  Sim["Simulation"] --> ECS["Custom ECS, EnTT, or Flecs adapter"]
   Storage["Storage"] --> GPU["Consumer-provided GPU backend"]
   Diagnostics["Compile-gated diagnostics"] --> Panels["Consumer-provided ImGui panels"]
 ```

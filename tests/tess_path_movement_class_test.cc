@@ -47,6 +47,31 @@ using Diagonal =
     mv::MovementClass<mv::Field<PassableTag>, mv::FieldCost<CostTag>,
                       mv::DiagonalSteps<mv::CornerRule::RequireBothClear>>;
 
+// Deliberately overlaps a regular diagonal destination. The special edge is a
+// bridge, so it remains legal when ordinary corner clearance is blocked.
+struct DiagonalBridgeProvider {
+  [[maybe_unused]] static constexpr std::uint32_t maximum_transition_cost = 1;
+
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3 from,
+                        Sink&& sink) const {
+    if (from == tess::Coord3{2, 2, 0}) {
+      sink(tess::SpecialTransitionCandidate{
+          .to = tess::Coord3{3, 3, 0},
+      });
+    }
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_reverse(const WorldType&, tess::Coord3 to, Sink&& sink) const {
+    if (to == tess::Coord3{3, 3, 0}) {
+      sink(tess::SpecialTransitionCandidate{
+          .to = tess::Coord3{2, 2, 0},
+      });
+    }
+  }
+};
+
 void fill_open(World& world, std::uint32_t cost) {
   for (auto& page : world.chunks()) {
     auto passable = page.template field_span<PassableTag>();
@@ -797,6 +822,31 @@ TEST(TessPathMovementClass, DiagonalCommitUsesResolvedClearance) {
   const auto moved = tess::commit_movement_intent<World, Diagonal, OccupancyTag,
                                                   ReservationTag>(
       world, tess::MovementIntent{.from = from, .to = to});
+  EXPECT_EQ(moved.status, tess::MovementStatus::Moved);
+  EXPECT_FALSE(world.field<OccupancyTag>(from));
+  EXPECT_TRUE(world.field<OccupancyTag>(to));
+}
+
+TEST(TessPathMovementClass, CommitAcceptsParallelProviderTransition) {
+  World world;
+  fill_open(world, 1);
+  constexpr auto from = tess::Coord3{2, 2, 0};
+  constexpr auto to = tess::Coord3{3, 3, 0};
+  world.field<OccupancyTag>(from) = true;
+  world.field<PassableTag>(tess::Coord3{3, 2, 0}) = false;
+  const auto provider = DiagonalBridgeProvider{};
+
+  tess::PathScratch scratch;
+  const auto path = tess::weighted_astar_path<World, Diagonal>(
+      world, tess::PathRequest{from, to}, scratch,
+      tess::MissingChunkPolicy::TreatAsBlocked, provider);
+  ASSERT_EQ(path.status, tess::PathStatus::Found);
+  ASSERT_EQ(path.path.size(), 2u);
+  EXPECT_EQ(path.path.back(), to);
+
+  const auto moved = tess::commit_movement_intent<World, Diagonal, OccupancyTag,
+                                                  ReservationTag>(
+      world, tess::MovementIntent{.from = from, .to = to}, 0, provider);
   EXPECT_EQ(moved.status, tess::MovementStatus::Moved);
   EXPECT_FALSE(world.field<OccupancyTag>(from));
   EXPECT_TRUE(world.field<OccupancyTag>(to));

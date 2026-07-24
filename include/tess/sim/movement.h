@@ -257,17 +257,35 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   if (is_candidate) {
     transition_availability =
         Model::regular_availability(world, intent.from, intent.to);
-  } else {
-    const auto model = Model{provider};
-    model.for_each_forward(
-        world, intent.from,
-        detail::transition_index<typename World::shape_type>(intent.from),
-        [&](auto probe) {
-          if (probe.to == intent.to) {
+  }
+  if constexpr (Model::has_special_transitions) {
+    // A provider may deliberately add an edge parallel to a geometric
+    // regular edge (a bridge across blocked diagonal clearance, for example).
+    // A legal regular edge is the overwhelmingly common hot path and needs no
+    // provider call. Otherwise enumerate both sources and accept the strongest
+    // matching result: Legal beats MissingTopology, which beats Blocked.
+    // This keeps commit aligned with the transition enumeration used by A*
+    // without imposing provider overhead on ordinary legal movement.
+    if (transition_availability != TransitionAvailability::Legal) {
+      const auto model = Model{provider};
+      model.for_each_forward(
+          world, intent.from,
+          detail::transition_index<typename World::shape_type>(intent.from),
+          [&](auto probe) {
+            if (probe.to != intent.to) {
+              return;
+            }
             is_candidate = true;
-            transition_availability = probe.availability;
-          }
-        });
+            if (probe.availability == TransitionAvailability::Legal) {
+              transition_availability = TransitionAvailability::Legal;
+            } else if (probe.availability ==
+                           TransitionAvailability::MissingTopology &&
+                       transition_availability !=
+                           TransitionAvailability::Legal) {
+              transition_availability = TransitionAvailability::MissingTopology;
+            }
+          });
+    }
   }
   if (!is_candidate) {
     if constexpr (Model::has_special_transitions) {

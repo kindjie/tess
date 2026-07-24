@@ -54,10 +54,13 @@ deltas.
   world, intent, dirty_mask)` validates the same intent, clears source
   occupancy, sets destination occupancy, clears destination reservation, and
   marks source and destination tiles dirty when `dirty_mask` is nonzero.
-- Provider-aware validation and commit overloads enumerate the supplied
-  transition provider before mutation. Provider exceptions propagate to the
-  caller; the provider contract does not require enumeration to be
-  `noexcept`.
+- Provider-aware validation and commit overloads use a legal regular
+  transition as their fast path. When the regular transition is absent,
+  blocked, or missing topology, they enumerate the supplied provider before
+  mutation. A legal provider edge may deliberately parallel and override a
+  blocked regular edge, keeping planning and commit transition sets aligned.
+  Provider exceptions propagate whenever enumeration is required; the
+  provider contract does not require enumeration to be `noexcept`.
 
 ### Render Deltas
 
@@ -196,7 +199,8 @@ stateDiagram-v2
 - `PathAgentPhase` is the agent lifecycle, decoupled from the last
   `PathStatus`: `Idle` (no goal or arrived), `NeedsPath` (goal assigned, no
   route yet), `Following` (walking a `Found` route), `Blocked` (transient
-  failure; re-paths until the retry budget runs out), and `Unreachable`
+  failure; retained-step contention waits, while route-invalidating failures
+  re-path, until the shared retry budget runs out), and `Unreachable`
   (terminal until a new goal is assigned).
 - `set_path_agent_goal(agent, goal)` arms the lifecycle (`NeedsPath`, retry
   count reset); `clear_path_agent_goal(agent)` returns the agent to `Idle`.
