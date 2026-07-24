@@ -86,5 +86,6 @@ resource ownership, generation invalidation, bounded asynchronous readback,
 disabled configuration, and device loss. The documentation build also
 compiles and runs a browser smoke example with Emdawnwebgpu's exact pinned
 port. A browser without an adapter is an explicit unsupported result; a
-device or backend failure is not. There is no timing gate until measurements
-can be calibrated across a representative browser/GPU matrix.
+device or backend failure, including an initialization or readback timeout, is
+not. There is no timing gate until measurements can be calibrated across a
+representative browser/GPU matrix.

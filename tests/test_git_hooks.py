@@ -589,6 +589,30 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
   assert "API reference: https://tess.owx.dev/api/" in mkdocs
 
 
+def test_webgpu_pages_smoke_distinguishes_timeout_from_unsupported():
+  root = Path(__file__).resolve().parents[1]
+  app = (
+    root / "examples" / "webgpu_compute" / "site" / "app.js"
+  ).read_text()
+  workflow = (root / ".github" / "workflows" / "pages.yml").read_text()
+
+  unsupported = app.split("result === -1", 1)[1].split(
+    "result < -1", 1
+  )[0]
+  timeout = app.split(
+    "performance.now() - started > 10000", 1
+  )[1].split("} else {", 1)[0]
+  assert re.search(
+    r"""dataset\.tessWebgpu = ["']unsupported["']""", unsupported
+  )
+  assert re.search(r"""dataset\.tessWebgpu = ["']failed["']""", timeout)
+  assert not re.search(
+    r"""dataset\.tessWebgpu = ["']unsupported["']""", timeout
+  )
+  assert 'data-tess-webgpu="(ready|unsupported)"' in workflow
+  assert '! grep -q \'data-tess-webgpu="failed"\'' in workflow
+
+
 def test_workflows_use_only_github_owned_sha_pinned_actions():
   root = Path(__file__).resolve().parents[1]
   action_re = re.compile(r"^\s*uses:\s+([^\s@]+)@([^\s#]+)", re.MULTILINE)

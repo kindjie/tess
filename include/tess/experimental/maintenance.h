@@ -256,6 +256,10 @@ class ImmediateScheduler final : public MaintenanceScheduler {
   explicit ImmediateScheduler(std::size_t = 0) {}
 
   [[nodiscard]] auto schedule(MaintenanceTask& task) -> bool override {
+    // A task may call schedule() while it runs, so this must be recursive.
+    // The same lock also preserves synchronous return semantics for concurrent
+    // callers and prevents active_run_ from borrowing another thread's frame.
+    const auto run_lock = std::scoped_lock{run_mutex_};
     metrics_.record_schedule();
     for (auto* active = active_run_; active != nullptr;
          active = active->parent) {
@@ -313,6 +317,7 @@ class ImmediateScheduler final : public MaintenanceScheduler {
   };
 
   detail::MetricsStore metrics_;
+  std::recursive_mutex run_mutex_;
   ActiveRun* active_run_ = nullptr;
 };
 

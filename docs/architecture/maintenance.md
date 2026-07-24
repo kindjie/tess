@@ -14,7 +14,9 @@ storage, exact event handling, or simulation command execution.
   A-to-B-to-A requests use an allocation-free iterative trampoline, preserving
   one execution per request without recursive task entry. A self-schedule that
   consumes no budget returns `false` to report that the synchronous backend
-  cannot make progress.
+  cannot make progress. A recursive scheduler lock serializes concurrent
+  callers while permitting a running task to schedule itself or another task;
+  each external `schedule()` returns only after its own request executes.
 - `FifoScheduler` is a bounded, non-deduplicating amplification baseline.
 - `CoalescingScheduler` retains at most one pending entry per task.
 - `MaintenanceMetrics` reports schedules, collapsed schedules, executions, and
@@ -28,8 +30,8 @@ set so the caller can retry. Tasks inspect versions or dirty flags, clear only
 the state they actually rebuilt, and may schedule themselves when budgeted
 work remains. A queued task that reschedules itself without consuming any
 budget stops that drain with `false` instead of spinning forever; it remains
-queued for caller intervention. Concurrent drain calls are serialized, so a
-task never executes against itself.
+queued for caller intervention. Concurrent drain calls and immediate schedule
+calls are serialized, so a task never executes against itself.
 
 Coalescing is not exact-event delivery. Authoritative gameplay events remain
 on exact queues and simulation phases. Explicit flush points define when a

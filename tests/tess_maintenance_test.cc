@@ -118,6 +118,23 @@ struct DuplicateImmediateSelfScheduleTask final : maintenance::MaintenanceTask {
   }
 };
 
+struct BlockingImmediateTask final : maintenance::MaintenanceTask {
+  std::atomic<bool> first_entered = false;
+  std::atomic<bool> release_first = false;
+  std::atomic<std::uint32_t> executions = 0;
+
+  void run(maintenance::MaintenanceBudget&) override {
+    const auto execution = executions.fetch_add(1, std::memory_order_acq_rel);
+    if (execution != 0) {
+      return;
+    }
+    first_entered.store(true, std::memory_order_release);
+    while (!release_first.load(std::memory_order_acquire)) {
+      std::this_thread::yield();
+    }
+  }
+};
+
 TEST(TessMaintenance, ImmediateSelfScheduleUsesConstantStackDepth) {
   maintenance::ImmediateScheduler scheduler;
   ImmediateSelfSchedulingTask task;
@@ -160,6 +177,44 @@ TEST(TessMaintenance, ImmediateSelfScheduleTrampolineDoesNotAllocate) {
     EXPECT_EQ(counter.count(), 0u);
   }
   EXPECT_EQ(task.executions, 300u);
+}
+
+TEST(TessMaintenance, ConcurrentImmediateScheduleReturnsAfterItsExecution) {
+  maintenance::ImmediateScheduler scheduler;
+  BlockingImmediateTask task;
+  std::atomic<bool> first_result = false;
+  std::atomic<bool> second_started = false;
+  std::atomic<bool> second_returned = false;
+  std::atomic<bool> second_result = false;
+
+  std::thread first([&] {
+    first_result.store(scheduler.schedule(task), std::memory_order_release);
+  });
+  while (!task.first_entered.load(std::memory_order_acquire)) {
+    std::this_thread::yield();
+  }
+  std::thread second([&] {
+    second_started.store(true, std::memory_order_release);
+    second_result.store(scheduler.schedule(task), std::memory_order_release);
+    second_returned.store(true, std::memory_order_release);
+  });
+  while (!second_started.load(std::memory_order_acquire)) {
+    std::this_thread::yield();
+  }
+  for (int attempt = 0; attempt < 10'000; ++attempt) {
+    if (second_returned.load(std::memory_order_acquire)) {
+      break;
+    }
+    std::this_thread::yield();
+  }
+  EXPECT_FALSE(second_returned.load(std::memory_order_acquire));
+
+  task.release_first.store(true, std::memory_order_release);
+  first.join();
+  second.join();
+  EXPECT_TRUE(first_result.load(std::memory_order_acquire));
+  EXPECT_TRUE(second_result.load(std::memory_order_acquire));
+  EXPECT_EQ(task.executions.load(std::memory_order_acquire), 2u);
 }
 
 TEST(TessMaintenance, CoalescingCollapsesDuplicateSchedules) {

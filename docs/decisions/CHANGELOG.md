@@ -11,12 +11,15 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 - Changed: weighted product replay now matches uncached zero-cost-start
   validation; field-cache insertion has a strong allocation guarantee; grouped
   overflow falls back to exact per-request search; schedule exceptions restore
-  consumed triggers; immediate maintenance self-scheduling is iterative; and
-  WebGPU mirrors and dispatches reject unrepresentable device work.
+  consumed triggers; immediate maintenance self-scheduling is iterative;
+  concurrent immediate calls are serialized; WebGPU mirrors and dispatches
+  reject unrepresentable device work; and the browser smoke distinguishes
+  explicit adapter absence from an operation timeout.
 - Reason: final independent audits found policy-dependent path results, a
   null cache entry after allocation failure, globally over-broad overflow
   status, lost one-shot scheduler work, recursive maintenance execution, and
-  optional-backend limits that were weaker than the public contracts.
+  optional-backend limits and smoke statuses that were weaker than the public
+  contracts.
 - Affected docs: path, simulation, maintenance, persistence, queued
   operations, block pipelines, spatial coordination, packaging, topology, ECS,
   WebGPU API comments, design changelog, and test inventory.

@@ -17,8 +17,8 @@ createTessWebGpu().then((module) => {
       document.documentElement.dataset.tessWebgpu = "failed";
       message.textContent = `WebGPU compute verification failed (${result})`;
     } else if (performance.now() - started > 10000) {
-      document.documentElement.dataset.tessWebgpu = "unsupported";
-      message.textContent = "No WebGPU adapter became available";
+      document.documentElement.dataset.tessWebgpu = 'failed';
+      message.textContent = 'WebGPU compute verification timed out';
     } else {
       setTimeout(poll, 25);
     }
