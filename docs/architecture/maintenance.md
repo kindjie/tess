@@ -34,7 +34,10 @@ with `false` instead of allowing direct or cross-task rescheduling to spin
 forever. The follow-up remains queued for caller intervention. A schedule call
 from another thread is an independent producer and is not attributed to the
 running task. Concurrent drain calls and immediate schedule calls are
-serialized, so a task never executes against itself.
+serialized, so a task never executes against itself. A task may call only
+`schedule()` on a scheduler while it runs; calling `run_some()` or `flush()`
+reentrantly is outside the contract because queued drains hold their
+non-recursive serialization lock.
 
 Coalescing is not exact-event delivery. Authoritative gameplay events remain
 on exact queues and simulation phases. Explicit flush points define when a

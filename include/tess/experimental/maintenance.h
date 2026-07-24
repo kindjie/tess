@@ -64,10 +64,16 @@ class MaintenanceScheduler {
    */
   [[nodiscard]] virtual auto schedule(MaintenanceTask& task) -> bool = 0;
 
-  /// Runs reachable work until the queue or supplied budget is exhausted.
+  /**
+   * Runs reachable work until the queue or supplied budget is exhausted.
+   *
+   * Do not call this or `flush()` from `MaintenanceTask::run()`: queued
+   * backends serialize drains with a non-recursive lock. `schedule()` is the
+   * only reentrant scheduler operation supported from a running task.
+   */
   [[nodiscard]] virtual auto run_some(MaintenanceBudget budget) -> bool = 0;
 
-  /// Completes all reachable work using an unbounded unit budget.
+  /// Completes all reachable work; see the non-reentrant drain contract above.
   [[nodiscard]] virtual auto flush() -> bool = 0;
 
   [[nodiscard]] virtual auto metrics() const noexcept -> MaintenanceMetrics = 0;

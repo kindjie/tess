@@ -601,6 +601,9 @@ def test_webgpu_smoke_only_adapter_unavailable_is_unsupported():
   run_compute = source.split(
     "[[nodiscard]] bool run_compute(", 1
   )[1].split("\n}\n\nvoid device_ready(", 1)[0]
+  finish_readback = source.split("void finish_readback(", 1)[1].split(
+    "\n}\n\nvoid device_lost(", 1
+  )[0]
   device_ready = source.split("void device_ready(", 1)[1].split(
     "\n}\n\nvoid adapter_ready(", 1
   )[0]
@@ -633,17 +636,26 @@ def test_webgpu_smoke_only_adapter_unavailable_is_unsupported():
   assert "g_status = kDeviceRequestCancelled;" in device_ready
   assert "g_status = kDeviceRequestFailed;" in device_ready
   assert "g_status = kNullDevice;" in device_ready
+  assert device_ready.index("release_instance();") < (
+    device_ready.index("status != WGPURequestDeviceStatus_Success")
+  )
+  assert "g_status == kDeviceLost" in device_ready
   assert "g_status == kRunningCompute" in device_ready
   assert (
     "g_status == kPending || g_status >= kRequestingDevice"
     in device_lost
   )
   assert "kAwaitingReadback" not in device_ready
+  assert "g_status != kAwaitingReadback" in finish_readback
+  assert finish_readback.index("g_status != kAwaitingReadback") < (
+    finish_readback.index("g_status = kReadbackVerificationFailed;")
+  )
   assert run_compute.index("g_status = kAwaitingReadback;") < (
     run_compute.index("g_backend->readback(")
   )
   assert "g_status = kInstanceCreationFailed;" in main
   assert "adapter_future.id == 0 && g_status == kPending" in main
+  assert "Keep our last reference until device_ready" in adapter_ready
 
 
 def test_webgpu_pages_smoke_requires_swiftshader_compute_completion():
@@ -657,7 +669,7 @@ def test_webgpu_pages_smoke_requires_swiftshader_compute_completion():
     "result < -1", 1
   )[0]
   timeout = app.split(
-    "performance.now() - started > 10000", 1
+    "performance.now() - started > verificationTimeoutMs", 1
   )[1].split("} else {", 1)[0]
   assert re.search(
     r"""dataset\.tessWebgpu = ["']unsupported["']""", unsupported
@@ -686,6 +698,8 @@ def test_webgpu_pages_smoke_requires_swiftshader_compute_completion():
   assert "python3 tools/wait_for_browser_state.py" in webgpu_smoke
   assert "--dataset tessWebgpu" in webgpu_smoke
   assert "--expected ready" in webgpu_smoke
+  assert "--timeout 30" in webgpu_smoke
+  assert "const verificationTimeoutMs = 20000;" in app
   assert 'data-tess-webgpu="(ready|unsupported)"' not in workflow
 
 
@@ -703,6 +717,23 @@ def test_browser_state_websocket_client_frames_are_masked():
   ) == payload
 
 
+def test_browser_state_rejects_oversized_fragmented_message(monkeypatch):
+  class FragmentedMessage:
+    def __init__(self):
+      self.data = bytearray(b"\x01\x03abc\x80\x03def")
+
+    def recv(self, size):
+      result = bytes(self.data[:size])
+      del self.data[:size]
+      return result
+
+  monkeypatch.setattr(wait_for_browser_state, "MAX_WEBSOCKET_FRAME_BYTES", 5)
+  connection = wait_for_browser_state.DevToolsConnection(FragmentedMessage())
+
+  with pytest.raises(RuntimeError, match="oversized.*message"):
+    connection._read_text()
+
+
 def test_browser_state_dataset_expression_rejects_code_injection():
   assert wait_for_browser_state.dataset_expression("tessWebgpu") == (
     "document.documentElement?.dataset.tessWebgpu || ''"
@@ -710,6 +741,13 @@ def test_browser_state_dataset_expression_rejects_code_injection():
 
   with pytest.raises(ValueError):
     wait_for_browser_state.dataset_expression("x;alert(1)")
+
+  assert wait_for_browser_state.page_url_key(
+    "HTTP://LOCALHOST:80/demo?mode=ci"
+  ) == wait_for_browser_state.page_url_key(
+    "http://localhost/demo?mode=ci"
+  )
+  assert wait_for_browser_state.MAX_WEBSOCKET_FRAME_BYTES == 16 * 1024 * 1024
 
 
 def test_workflows_use_only_github_owned_sha_pinned_actions():

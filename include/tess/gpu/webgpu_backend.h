@@ -154,6 +154,9 @@ inline void webgpu_readback_complete(WGPUMapAsyncStatus status, WGPUStringView,
  * submits compute asynchronously; a successful boolean means submitted, not
  * completed. CPU state remains authoritative. Call `notify_device_lost()` from
  * the application's device-lost callback so all later work refuses cleanly.
+ * Except for `notify_device_lost()`, public operations are not thread-safe and
+ * must be externally serialized; callback completion performs only its
+ * separately synchronized operation cleanup.
  */
 class WebGpuBackend {
  public:
@@ -438,8 +441,15 @@ class WebGpuBackend {
     callback.mode = WGPUCallbackMode_AllowSpontaneous;
     callback.callback = detail::webgpu_readback_complete;
     callback.userdata1 = operation;
-    static_cast<void>(
-        wgpuBufferMapAsync(staging, WGPUMapMode_Read, 0, size, callback));
+    const auto future =
+        wgpuBufferMapAsync(staging, WGPUMapMode_Read, 0, size, callback);
+    // A null future never delivers its callback, so this call still owns the
+    // operation. A non-null future may already have completed inline and
+    // deleted it; do not inspect operation after this branch.
+    if (future.id == 0) {
+      abandon_readback(operation);
+      return false;
+    }
     return true;
   }
 

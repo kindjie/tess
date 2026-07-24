@@ -145,7 +145,7 @@ jobs:
             --url http://127.0.0.1:8000/demo/webgpu/ \
             --dataset tessWebgpu \
             --expected ready \
-            --timeout 20 \
+            --timeout 30 \
             -- \
             --no-sandbox \
             --enable-unsafe-webgpu \

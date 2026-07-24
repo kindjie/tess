@@ -146,12 +146,14 @@ inline std::vector<Event> events;
 inline std::uint32_t dispatched_x = 0;
 inline WGPUBuffer pending_buffer = nullptr;
 inline WGPUBufferMapCallbackInfo pending_callback{};
+inline std::uint64_t map_future_id = 1;
 
 inline void reset() {
   events.clear();
   dispatched_x = 0;
   pending_buffer = nullptr;
   pending_callback = {};
+  map_future_id = 1;
 }
 
 inline auto make_device() -> WGPUDevice { return new WGPUDeviceImpl{}; }
@@ -277,9 +279,12 @@ inline WGPUFuture wgpuBufferMapAsync(WGPUBuffer buffer, WGPUMapMode,
                                      std::size_t, std::size_t,
                                      WGPUBufferMapCallbackInfo callback) {
   tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::MapAsync);
+  if (tess_webgpu_stub::map_future_id == 0) {
+    return WGPUFuture{};
+  }
   tess_webgpu_stub::pending_buffer = buffer;
   tess_webgpu_stub::pending_callback = callback;
-  return WGPUFuture{1};
+  return WGPUFuture{tess_webgpu_stub::map_future_id};
 }
 inline const void* wgpuBufferGetConstMappedRange(WGPUBuffer buffer,
                                                  std::size_t offset,

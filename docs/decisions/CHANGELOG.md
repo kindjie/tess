@@ -20,19 +20,26 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   Pages selects Chromium's SwiftShader WebGPU adapter and requires the
   compute/readback smoke to complete through a wall-time DevTools poll. The
   example sets the mandatory mode on its device-lost callback and rejects null
-  request futures immediately. Persistence now accepts only scoped enums,
-  decodes all scalars before mutation, and explicitly leaves application enum-
-  domain validation to the caller.
+  request futures immediately. It also keeps the instance alive through device
+  acquisition, preserves device loss across readback races, and rejects null
+  map futures without leaking the readback budget. The wall-time harness
+  normalizes equivalent target URLs, bounds fragmented protocol messages, and
+  leaves a wider outer deadline around the page's own verification deadline.
+  Persistence now accepts only scoped enums, decodes all scalars before
+  mutation, and explicitly leaves application enum-domain validation to the
+  caller.
 - Reason: final independent audits found policy-dependent path results, a
   null cache entry after allocation failure, globally over-broad overflow
   status, lost one-shot scheduler work, recursive maintenance execution, and
   optional-backend limits, smoke statuses, and hosted coverage that were weaker
   than the public contracts. Cross-task zero-progress handoffs could make a
-  queued drain spin forever. A zero callback mode silently produced a null
-  device future, while virtual-time polling could outrun asynchronous GPU
-  work. The same review found that hostile bytes could invoke an unsafe
-  conversion for non-fixed enums and that cache pointer invalidation wording
-  omitted stores that evict or clear an otherwise unrelated entry.
+  queued drain spin forever, while reentrant drains could deadlock on their
+  non-recursive serialization lock. A zero callback mode silently produced a
+  null device future, a null map future stranded callback-owned resources, and
+  virtual-time polling could outrun asynchronous GPU work. The same review
+  found that hostile bytes could invoke an unsafe conversion for non-fixed
+  enums and that cache pointer invalidation wording omitted stores that evict
+  or clear an otherwise unrelated entry.
 - Affected docs: path, simulation, maintenance, persistence, queued
   operations, block pipelines, spatial coordination, packaging, topology, ECS,
   WebGPU API comments, design changelog, and test inventory.

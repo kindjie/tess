@@ -61,17 +61,23 @@ The backend exposes these bounded setup and execution operations:
 - Readback allocates one map-read staging buffer per accepted request, encodes
   a source copy, submits, and reports completion through
   `WebGpuReadbackCallback`. In-flight request count and total bytes are
-  bounded. Each accepted operation owns its staging resource until the map
-  callback, including if the backend object is destroyed first. Stable-C
-  spontaneous delivery may invoke the application callback inline or on an
-  arbitrary thread. Its mapped data is callback-scoped, userdata must be
-  synchronized, and it must not re-enter this backend or call WebGPU functions
-  that are not explicitly documented as spontaneous-callback-safe. Because an
-  accepted callback may outlive product unregistration or the backend, the
-  consumer must revalidate its generation and authoritative world version
-  before applying derived bytes.
+  bounded. A null map future is rejected and releases its staging resource and
+  byte reservation immediately. Each accepted operation owns its staging
+  resource until the map callback, including if the backend object is destroyed
+  first. Stable-C spontaneous delivery may invoke the application callback
+  inline or on an arbitrary thread. Its mapped data is callback-scoped,
+  userdata must be synchronized, and it must not re-enter this backend or call
+  WebGPU functions that are not explicitly documented as
+  spontaneous-callback-safe. Because an accepted callback may outlive product
+  unregistration or the backend, the consumer must revalidate its generation
+  and authoritative world version before applying derived bytes.
 - Device loss and explicit notification disable further GPU submissions.
   Full-field readback is disabled unless the configuration opts in.
+
+Except for device-loss notification, calls into one backend must be externally
+serialized. The backend synchronizes callback-owned cleanup separately; it
+does not make registration, upload, dispatch, or readback generally
+thread-safe.
 
 Pipelines, shader meaning, and bind-group layouts remain algorithm/provider
 responsibilities. This keeps tess from inventing a universal shader ABI and
@@ -91,6 +97,10 @@ failure, backend failure, and timeout are failures. Pages follows Chromium's
 `webgpu-swiftshader` test configuration to select its software adapter and
 requires the compute dispatch and summary readback to reach `ready`; it does
 not accept unsupported. A standard-library DevTools harness polls that state
-in wall time because Chrome virtual time can advance JavaScript timers ahead of
-asynchronous GPU-process work. There is no timing performance gate until
-measurements can be calibrated across a representative browser/GPU matrix.
+in wall time because Chrome virtual time can advance JavaScript timers ahead
+of asynchronous GPU-process work. The example keeps its instance alive until
+the device request callback, and device loss remains terminal if it races a
+readback callback. The harness normalizes equivalent target URLs and bounds
+both WebSocket frames and fragmented messages. There is no timing performance
+gate until measurements can be calibrated across a representative browser/GPU
+matrix.

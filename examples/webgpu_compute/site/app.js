@@ -1,6 +1,9 @@
 "use strict";
 
 const message = document.querySelector("#message");
+// Leave room for software-adapter startup on a loaded CI host. The outer
+// browser harness has a longer wall-time deadline for launch and diagnostics.
+const verificationTimeoutMs = 20000;
 
 createTessWebGpu().then((module) => {
   const status = module.cwrap("tess_webgpu_status", "number", []);
@@ -16,7 +19,7 @@ createTessWebGpu().then((module) => {
     } else if (result < -1) {
       document.documentElement.dataset.tessWebgpu = "failed";
       message.textContent = `WebGPU compute verification failed (${result})`;
-    } else if (performance.now() - started > 10000) {
+    } else if (performance.now() - started > verificationTimeoutMs) {
       document.documentElement.dataset.tessWebgpu = 'failed';
       message.textContent =
         `WebGPU compute verification timed out (stage ${result})`;

@@ -9,7 +9,8 @@
   assets, narrowly scoped Doxygen 1.17.0 quick-index exceptions, WebGPU
   native request-status classification, timeout-versus-unsupported reporting,
   Chromium SwiftShader flags, the standard-library DevTools wall-time harness,
-  required compute completion, and rejection of missing local targets.
+  required compute completion, equivalent target-URL spelling, bounded
+  fragmented WebSocket messages, and rejection of missing local targets.
 - `test_doc_outputs.py`: verifies documented example-output fences stay
   synchronized with the stdout of their compiled binaries, including drift,
   missing/unused `source=binary` mappings, and failing binaries.
@@ -671,10 +672,11 @@
   real chunk-byte uploads, compute submission only for registered mirrors and
   within the configured workgroup-X limit, generation-stale product rejection,
   asynchronous summary readback that safely completes after backend
-  destruction, invalid requests, explicit device-loss fallback, and the
-  `GpuBackend` concept. Stub handles use scoped C-API release owners so
-  fatal assertions cannot leak caller references, and stub enum widths
-  intentionally match the stable C ABI.
+  destruction, null map-future cleanup and budget restoration, invalid
+  requests, explicit device-loss fallback, and the `GpuBackend` concept. Stub
+  handles use scoped C-API release owners so fatal assertions cannot leak
+  caller references, and stub enum widths intentionally match the stable C
+  ABI.
 - `tess_render_delta_frame_test`: verifies the M11 DeltaFrame bridge
   core: version semantics (empty publishes never bump; state-carrying
   publishes bump by one; the applicability truth table including the
@@ -809,8 +811,9 @@
   under-24000-token limit, push-range benchmark gating, fresh benchmark
   configure/build ordering, and the requirements lock contract, including its
   pinned-uv, index-cutoff canonical regeneration wrapper, universal Windows
-  and Python 3.10 dependency markers, and synchronization between documented
-  dependency versions and their workflow or direct-input pins.
+  and Python 3.10 dependency markers, WebGPU smoke callback lifetimes and
+  terminal-state precedence, and synchronization between documented dependency
+  versions and their workflow or direct-input pins.
 - `tests/test_ci_changes.py`: pytest coverage for the required CI workflow's
   fail-closed documentation-only classifier. It pins the narrow path
   allowlist, empty and mixed change behavior, full nonzero revision validation,

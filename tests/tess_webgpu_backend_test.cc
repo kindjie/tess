@@ -253,6 +253,54 @@ TEST(TessWebGpuBackend, ReadbackCompletesAsynchronouslyAfterDestruction) {
   EXPECT_EQ(capture.values, (std::array<std::uint32_t, 4>{2, 4, 6, 8}));
 }
 
+TEST(TessWebGpuBackend, NullMapFutureRejectsAndReleasesReadbackBudget) {
+  tess_webgpu_stub::reset();
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  ReadbackCapture capture;
+  tess::gpu::WebGpuBackend backend{
+      device.get(), tess::gpu::WebGpuBackendConfig{
+                        .max_buffer_bytes = 1u << 20u,
+                        .max_dispatch_chunks = 1024,
+                        .max_inflight_readback_bytes = sizeof(capture.values),
+                        .field_capacity = 2,
+                        .product_capacity = 2,
+                    }};
+  device.reset();
+  World world;
+  ASSERT_TRUE(
+      backend.register_field(tess::gpu::field_mirror_desc<World, CostTag>()));
+  PipelineOwner pipeline{tess_webgpu_stub::make_pipeline()};
+  BindGroupOwner bind_group{tess_webgpu_stub::make_bind_group()};
+  const auto registered = backend.register_product(tess::gpu::WebGpuProductDesc{
+      .product_key = 99,
+      .input_field_index = 0,
+      .pipeline = pipeline.get(),
+      .bind_group = bind_group.get(),
+      .readback_source = backend.field_buffer(0),
+      .readback_byte_size = sizeof(capture.values),
+      .readback_callback = capture_readback,
+      .readback_userdata = &capture,
+  });
+  ASSERT_TRUE(registered.has_value());
+  const auto handle = registered.value_or(tess::gpu::GpuProductHandle{});
+  const auto request = tess::gpu::ReadbackDesc{
+      .product_key = handle.key,
+      .product_generation = handle.generation,
+      .policy = tess::gpu::ReadbackPolicy::Summary,
+      .byte_size = sizeof(capture.values),
+  };
+
+  tess_webgpu_stub::map_future_id = 0;
+  EXPECT_FALSE(backend.readback(request));
+  EXPECT_EQ(capture.calls, 0u);
+  EXPECT_EQ(tess_webgpu_stub::pending_buffer, nullptr);
+
+  tess_webgpu_stub::map_future_id = 1;
+  EXPECT_TRUE(backend.readback(request));
+  tess_webgpu_stub::complete_map(true);
+  EXPECT_EQ(capture.calls, 1u);
+}
+
 TEST(TessWebGpuBackend, RefusesInvalidWorkAndDeviceLoss) {
   tess_webgpu_stub::reset();
   DeviceOwner device{tess_webgpu_stub::make_device()};

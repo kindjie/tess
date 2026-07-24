@@ -66,6 +66,11 @@ void release_instance() noexcept {
 void finish_readback(tess::gpu::GpuProductHandle,
                      tess::gpu::WebGpuReadbackStatus status, const void* data,
                      std::size_t size, void*) noexcept {
+  // Device loss can race ahead of the map callback. Preserve that earlier
+  // terminal failure instead of relabeling it as a readback result.
+  if (g_status != kAwaitingReadback) {
+    return;
+  }
   constexpr std::array<std::uint32_t, 4> expected{2, 4, 6, 8};
   if (status != tess::gpu::WebGpuReadbackStatus::Complete ||
       size != sizeof(expected) || data == nullptr) {
@@ -227,6 +232,13 @@ void device_lost(const WGPUDevice*, WGPUDeviceLostReason, WGPUStringView, void*,
 
 void device_ready(WGPURequestDeviceStatus status, WGPUDevice device,
                   WGPUStringView, void*, void*) {
+  release_instance();
+  if (g_status == kDeviceLost) {
+    if (device != nullptr) {
+      wgpuDeviceRelease(device);
+    }
+    return;
+  }
   if (status != WGPURequestDeviceStatus_Success) {
     if (status == WGPURequestDeviceStatus_CallbackCancelled) {
       g_status = kDeviceRequestCancelled;
@@ -283,13 +295,16 @@ void adapter_ready(WGPURequestAdapterStatus status, WGPUAdapter adapter,
   auto callback = WGPU_REQUEST_DEVICE_CALLBACK_INFO_INIT;
   callback.mode = WGPUCallbackMode_AllowSpontaneous;
   callback.callback = device_ready;
+  // Backends may keep asynchronous request machinery on the instance even
+  // with spontaneous callbacks. Keep our last reference until device_ready so
+  // native and browser implementations see an unambiguous lifetime.
   const auto device_future =
       wgpuAdapterRequestDevice(adapter, &device_desc, callback);
   if (device_future.id == 0 && g_status == kRequestingDevice) {
     g_status = kDeviceRequestFailed;
+    release_instance();
   }
   wgpuAdapterRelease(adapter);
-  release_instance();
 }
 
 }  // namespace

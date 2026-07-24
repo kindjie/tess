@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 
 DATASET_NAME = re.compile(r"[A-Za-z][A-Za-z0-9]*\Z")
 WEBSOCKET_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+MAX_WEBSOCKET_FRAME_BYTES = 16 * 1024 * 1024
 
 
 def dataset_expression(name: str) -> str:
@@ -29,6 +30,17 @@ def dataset_expression(name: str) -> str:
   if DATASET_NAME.fullmatch(name) is None:
     raise ValueError(f"invalid dataset property: {name!r}")
   return f"document.documentElement?.dataset.{name} || ''"
+
+
+def page_url_key(value: str) -> tuple[str, str, int | None, str, str]:
+  """Normalize browser URL spelling that does not change page identity."""
+  parsed = urlsplit(value)
+  scheme = parsed.scheme.lower()
+  hostname = (parsed.hostname or "").lower()
+  port = parsed.port
+  if (scheme, port) in (("http", 80), ("https", 443)):
+    port = None
+  return scheme, hostname, port, parsed.path or "/", parsed.query
 
 
 def _frame_header(opcode: int, size: int) -> bytes:
@@ -126,6 +138,13 @@ class DevToolsConnection:
         size = struct.unpack("!H", _recv_exact(self.stream, 2))[0]
       elif size == 127:
         size = struct.unpack("!Q", _recv_exact(self.stream, 8))[0]
+      if size > MAX_WEBSOCKET_FRAME_BYTES:
+        raise RuntimeError("oversized DevTools WebSocket frame")
+      # A peer can split one logical message across many individually valid
+      # continuation frames, so enforce the same bound before allocating the
+      # aggregate payload.
+      if len(message) + size > MAX_WEBSOCKET_FRAME_BYTES:
+        raise RuntimeError("oversized DevTools WebSocket message")
       if masked:
         raise RuntimeError("DevTools sent an invalid masked server frame")
       payload = _recv_exact(self.stream, size)
@@ -179,12 +198,18 @@ def _wait_for_debug_port(
 
 def _wait_for_page(port: int, url: str, deadline: float) -> str:
   endpoint = f"http://127.0.0.1:{port}/json/list"
+  expected_url = page_url_key(url)
   while time.monotonic() < deadline:
     try:
       with urllib.request.urlopen(endpoint, timeout=1) as response:
         targets = json.load(response)
       for target in targets:
-        if target.get("type") == "page" and target.get("url") == url:
+        target_url = target.get("url")
+        if (
+          target.get("type") == "page"
+          and isinstance(target_url, str)
+          and page_url_key(target_url) == expected_url
+        ):
           websocket = target.get("webSocketDebuggerUrl")
           if isinstance(websocket, str):
             return websocket
