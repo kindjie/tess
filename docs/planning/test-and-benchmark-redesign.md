@@ -89,6 +89,17 @@ maintainer whose measurement methodology this document imports.
     stay recorded in the [optimization log](optimization-log.md); raw
     artifact retention extends well beyond the current 30 days.
 
+**Coverage**
+
+18. Advisory code-coverage reporting (llvm-cov) on the scheduled tier for
+    the test suite, and a smoke-mode variant over the benchmark binaries as
+    a subsystem gap-finder — artifacts and gap lists, never a percentage
+    gate.
+19. Benchmark coverage tracked as a declarative workload matrix (a
+    CI-drift-checked catalog of measured cells and known-unmeasured ones)
+    plus a sentinel-mapping completeness check for the paired-run set — not
+    as a line-coverage number.
+
 ## 2. Evidence
 
 The redesign is grounded in the repository's own CI history (all 28 failed
@@ -247,7 +258,21 @@ repeated inclusion; the `TESS_ENABLE_*` macro-config matrix across TUs; and
 a documented minimum-compiler matrix rather than "C++20 plus whatever CI
 runs".
 
-### 3.6 Scope notes
+### 3.6 Advisory code-coverage reporting
+
+No code coverage is currently collected anywhere in the project; the only
+measured coverage is Doxygen documentation coverage, and the only test
+coverage map is the curated `tests/AGENTS.md` catalog. Add a coverage
+configuration (clang `-fprofile-instr-generate -fcoverage-mapping`) and a
+scheduled-tier job that publishes an llvm-cov report as an artifact,
+optionally surfaced in the generated documentation. Explicitly non-gating:
+a coverage-percentage gate repeats the calibrated-ceiling mistake — a
+number that rarely fires truthfully, demands maintenance, and incentivizes
+assertion-free tests. The value is diagnostic: showing where the existing
+suites are thin before the scenario and property layers land, and
+quantifying what those layers add once they do.
+
+### 3.7 Scope notes
 
 Scheduled-only: coverage-guided fuzzing of the map/scenario parser and the
 property harness's operation decoder. Not doing: mutation testing
@@ -324,13 +349,44 @@ the physical-core knee, cold-cache latency versus warm throughput,
 world-size sweeps, and PMU attribution. Campaign results are versioned
 artifacts with full machine and configuration metadata.
 
+### 4.5 Benchmark coverage: a matrix and a mapping, not a percentage
+
+"Coverage" for benchmarks is not line coverage — benchmarks are supposed to
+be unrepresentative of code breadth — but three specific guarantees:
+
+- **Subsystem gap-finding.** A scheduled coverage-instrumented run of the
+  bench binaries in smoke mode (timing distortion is irrelevant to a
+  coverage-only run) reporting which public headers and subsystems no
+  benchmark executes at all. Precedent: the 2026-07-11 performance audit
+  manually discovered that sparse storage had zero benchmark coverage
+  ([audit](audit-2026-07-11.md)); this report finds that class of gap
+  mechanically, which matters every time a new subsystem lands without
+  benchmarks. Line-level detail is not meaningful here (instrumentation
+  cannot distinguish timed regions from untimed setup); subsystem and
+  entry-point granularity is.
+- **A declarative workload matrix.** The meaningful coverage axis is the
+  workload space: which cells of (family x world size x chunk configuration
+  x density x dense/sparse x executor) are measured and which are known to
+  be unmeasured. Record it the way `tests/AGENTS.md` records test
+  guarantees — a curated catalog with a CI drift check — so gaps are
+  reviewable statements instead of audit-time discoveries, and silent caps
+  are visible. The scenario parameter matrix of section 3.1 is effectively
+  this coverage specification.
+- **Sentinel-mapping completeness.** The selective paired run (section 4.1)
+  only fires usefully if every perf-sensitive source area maps to at least
+  one sentinel benchmark. Declare the mapping (classifier path pattern to
+  sentinel entries) and check it: a perf-sensitive directory with no
+  sentinel representative fails the check. The 2026-07-23 catch worked
+  because the right cache/batch benchmarks happened to exist; this makes
+  that structural.
+
 ## 5. CI topology
 
 | Tier | Trigger | Contents | Wall clock |
 | --- | --- | --- | --- |
 | PR (blocking) | `pull_request`, code-gated by the existing classifier | dev build+tests (+ counter goldens, scenario smoke: S1 procedural coarse stride, S2 N=100 serial+pool at two worker counts), ASan, Windows MSVC, GCC compile, hook backstop, bench compile+smoke, selective paired run when triggered; diff-scoped clang-tidy as advisory comment | ~6 min |
 | Main (push) | push to `main` | PR set + full matrix (TSan, macOS, release, werror, full clang-tidy, cppcheck) + bench artifact run + change-point alerting + S1 strict data job (once unblocked) + S3 config + S2 N=1k artifacts | ~15 min, non-blocking beyond the PR set |
-| Weekly | cron + dispatch | Full oracle corpus/stride, S2 N=10k both executors, worker-count invariance sweep, world-size pair, soak, budget sweep, ASan full + TSan-capped scenarios, long property seeds, parser fuzzing | <= 45 min; auto-files an issue on failure |
+| Weekly | cron + dispatch | Full oracle corpus/stride, S2 N=10k both executors, worker-count invariance sweep, world-size pair, soak, budget sweep, ASan full + TSan-capped scenarios, long property seeds, parser fuzzing, advisory llvm-cov reports (test suite + bench smoke gap-finder) | <= 45 min; auto-files an issue on failure |
 | Campaign | manual / release | Controlled-hardware full suite: scaling knees, cold-cache latency, PMU attribution, handheld target; comparative-repo refresh on release; performance-page data refresh | hours, off-CI |
 
 Windows portability catches were real, so Windows stays a PR gate. macOS has
@@ -440,7 +496,9 @@ that introduces this document.
 1. CI restructure: re-tier jobs per section 5, retire threshold gating,
    keep artifact collection, add the weekly auto-issue. Workflow-only.
 2. Counter-golden and change-point tooling; paired A/B workflow
-   (dispatch-triggered).
+   (dispatch-triggered) with the sentinel-mapping completeness check;
+   advisory coverage reporting (test suite and bench-smoke gap-finder) and
+   the benchmark workload-matrix catalog with its drift check.
 3. Scenario layer: procedural generators, then the S2 macro-harness (with
    PR-tier smoke), then S3; S1 external-data activation via manifest
    unblocking, fetch tool, and the strict data job (grid-benchmark TDD
