@@ -118,6 +118,9 @@ template <typename World>
     return ToolStatus::Missing;
   }
 
+  // meta() is the precondition-based accessor. The same key's successful
+  // try_chunk() above establishes residency, so this avoids another nullable
+  // lookup without relying on an unchecked pointer dereference.
   const auto& meta = world.meta(resolved->chunk_key);
   const auto chunk = chunk_coord<Shape>(resolved->chunk_key);
   const auto local = local_coord<Shape>(selected);

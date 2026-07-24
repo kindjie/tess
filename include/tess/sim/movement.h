@@ -197,13 +197,15 @@ namespace detail {
 // Validation core: returns the resolved endpoints alongside the result so
 // commit_movement_intent reuses them for its field writes and dirty marks
 // instead of re-resolving the same coordinates 4-7x per committed step
-// (audit 2026-07-11 M7). Resolved tiles are meaningful only when
-// result.status == Moved.
+// (audit 2026-07-11 M7). This core is intentionally not noexcept: consumer
+// providers are allowed to throw during enumeration, and validation must
+// propagate that failure instead of terminating. Resolved tiles are meaningful
+// only when result.status == Moved.
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag, typename Provider>
-[[nodiscard]] auto validate_movement_intent_resolved(
-    const World& world, MovementIntent intent,
-    const Provider& provider) noexcept {
+[[nodiscard]] auto validate_movement_intent_resolved(const World& world,
+                                                     MovementIntent intent,
+                                                     const Provider& provider) {
   using Class = movement::movement_class_of<ClassOrTag>;
   using Model = ResolvedTransitionModel<World, Class, Provider>;
   using Resolved = ResolvedTile<typename World::shape_type>;
@@ -324,9 +326,11 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag, typename Provider>
 /// Validates a movement intent against regular and provider-supplied edges.
+///
+/// Exceptions from `provider` propagate to the caller.
 [[nodiscard]] auto validate_movement_intent(const World& world,
                                             MovementIntent intent,
-                                            const Provider& provider) noexcept
+                                            const Provider& provider)
     -> MovementResult {
   return detail::validate_movement_intent_resolved<
              World, ClassOrTag, OccupancyTag, ReservationTag, Provider>(
@@ -367,9 +371,10 @@ auto commit_movement_intent(World& world, MovementIntent intent,
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag, typename Provider>
 /// Validates and commits movement through a provider-supplied edge.
+///
+/// Exceptions from `provider` propagate before any occupancy is mutated.
 auto commit_movement_intent(World& world, MovementIntent intent,
-                            std::uint32_t dirty_mask,
-                            const Provider& provider) noexcept
+                            std::uint32_t dirty_mask, const Provider& provider)
     -> MovementResult {
   const auto validated =
       detail::validate_movement_intent_resolved<World, ClassOrTag, OccupancyTag,

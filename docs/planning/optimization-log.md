@@ -14,6 +14,53 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-23 - Preserve the Default Unit-Field Fast Path
+
+- Area: Default orthogonal unit-cost distance fields, multi-goal products,
+  nearest-target replay, and field-product cache replay.
+- Observation: Routing every default axis neighbor through the resolved
+  transition model regressed five existing hosted-runner path gates. The
+  largest regressions were the eight-goal room field at about 139 ms against
+  75 ms and the shared room field at about 18.5 ms against 10.7 ms.
+- Hypothesis: Compile-time specialization can retain the pre-model direct
+  axis-neighbor loop when the resolved model proves default orthogonal steps
+  and the adjacent provider, without changing generalized model semantics.
+- Evidence: After specialization, three-sample local medians were about
+  2.77 ms for the shared room field, 3.50 ms for the shared sparse field,
+  18.3 ms for the eight-goal room field, 0.83 ms for 100 nearest-target
+  replays, and 9.8 us for cached field replay. The first hosted retry exposed
+  four remaining generalized-path regressions: cached unit A* at 111 ms,
+  nearest-target replay at 2.25 ms, cached field replay at 28.6 us, and the
+  near-goal weighted batch at 120 us. Restoring direct default cache misses
+  and reconstruction reduced three-sample local medians to 14.7 ms, 0.76 ms,
+  10.4 us, and 50.6 us respectively. All are below their existing gates, and
+  79 focused path tests pass under warnings-as-errors.
+- Follow-up evidence: The second hosted retry passed cached unit A* but still
+  measured nearest-target replay at 2.12 ms, cached field replay at 26.4 us,
+  and the near-goal weighted batch at 101.25 us. A same-machine comparison
+  isolated a real compiler regression: the pre-transition reader measured
+  0.31 ms and 4.0 us for nearest-target and cached replay, while the
+  generalized reader measured 0.76 ms and 9.7 us. Sampling placed the hot
+  samples in an outlined `for_each_indexed_axis_neighbor`; forcing that small
+  per-node helper inline restored 0.31 ms and 4.0 us medians. A second profile
+  placed most near-goal time in the bounded field-builder neighbor loop.
+  Hoisting its invariant saturated distance and bucket selection reduced the
+  20-run median from about 50-52 us to 46.8 us.
+- Accepted: Use direct indexed axis-neighbor iteration only when
+  `ResolvedTransitionModel` proves default orthogonal connectivity. Continue
+  using resolved forward/reverse enumeration for hex, diagonal, and
+  provider-composed transitions. Default adjacent route-cache misses also use
+  the unit A* core instead of the generalized weighted core. Keep the indexed
+  axis-neighbor helper forced inline across supported compilers, with the
+  reason documented at its definition, and compute bounded-flood
+  per-node invariants once outside the neighbor loop.
+- Rejected: Raising the five thresholds. The correlated 1.3x-1.9x regression
+  was attributable to avoidable per-edge abstraction overhead rather than
+  hosted-runner noise.
+- Retry conditions: Re-profile if the default fast path and resolved model
+  stop producing identical paths, costs, or dependency stamps, or if a future
+  provider can prove equivalent default connectivity.
+
 ## 2026-07-23 - Constant-Time Area Index Validation
 
 - Area: per-agent checked coordinate lookup through `AreaIndex`.
@@ -1458,50 +1505,3 @@ deferred for scope reasons. Keep entries short and concrete:
 - Retry conditions: revisit when a consumer needs dozens-plus of
   weighted agents on maze-like maps with frequent goal churn, or if the
   `agent_runtime` weighted family regresses.
-
-## 2026-07-23 - Preserve the Default Unit-Field Fast Path
-
-- Area: Default orthogonal unit-cost distance fields, multi-goal products,
-  nearest-target replay, and field-product cache replay.
-- Observation: Routing every default axis neighbor through the resolved
-  transition model regressed five existing hosted-runner path gates. The
-  largest regressions were the eight-goal room field at about 139 ms against
-  75 ms and the shared room field at about 18.5 ms against 10.7 ms.
-- Hypothesis: Compile-time specialization can retain the pre-model direct
-  axis-neighbor loop when the resolved model proves default orthogonal steps
-  and the adjacent provider, without changing generalized model semantics.
-- Evidence: After specialization, three-sample local medians were about
-  2.77 ms for the shared room field, 3.50 ms for the shared sparse field,
-  18.3 ms for the eight-goal room field, 0.83 ms for 100 nearest-target
-  replays, and 9.8 us for cached field replay. The first hosted retry exposed
-  four remaining generalized-path regressions: cached unit A* at 111 ms,
-  nearest-target replay at 2.25 ms, cached field replay at 28.6 us, and the
-  near-goal weighted batch at 120 us. Restoring direct default cache misses
-  and reconstruction reduced three-sample local medians to 14.7 ms, 0.76 ms,
-  10.4 us, and 50.6 us respectively. All are below their existing gates, and
-  79 focused path tests pass under warnings-as-errors.
-- Follow-up evidence: The second hosted retry passed cached unit A* but still
-  measured nearest-target replay at 2.12 ms, cached field replay at 26.4 us,
-  and the near-goal weighted batch at 101.25 us. A same-machine comparison
-  isolated a real compiler regression: the pre-transition reader measured
-  0.31 ms and 4.0 us for nearest-target and cached replay, while the
-  generalized reader measured 0.76 ms and 9.7 us. Sampling placed the hot
-  samples in an outlined `for_each_indexed_axis_neighbor`; forcing that small
-  per-node helper inline restored 0.31 ms and 4.0 us medians. A second profile
-  placed most near-goal time in the bounded field-builder neighbor loop.
-  Hoisting its invariant saturated distance and bucket selection reduced the
-  20-run median from about 50-52 us to 46.8 us.
-- Accepted: Use direct indexed axis-neighbor iteration only when
-  `ResolvedTransitionModel` proves default orthogonal connectivity. Continue
-  using resolved forward/reverse enumeration for hex, diagonal, and
-  provider-composed transitions. Default adjacent route-cache misses also use
-  the unit A* core instead of the generalized weighted core. Keep the indexed
-  axis-neighbor helper forced inline across supported compilers, with the
-  reason documented at its definition, and compute bounded-flood
-  per-node invariants once outside the neighbor loop.
-- Rejected: Raising the five thresholds. The correlated 1.3x-1.9x regression
-  was attributable to avoidable per-edge abstraction overhead rather than
-  hosted-runner noise.
-- Retry conditions: Re-profile if the default fast path and resolved model
-  stop producing identical paths, costs, or dependency stamps, or if a future
-  provider can prove equivalent default connectivity.

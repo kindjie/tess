@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 
 #include "allocation_counter.h"
@@ -95,6 +96,13 @@ struct ClosingDoorProvider {
   void for_each_forward(const WorldType&, tess::Coord3, Sink&&) const {}
 };
 
+struct ThrowingMovementProvider {
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3, Sink&&) const {
+    throw std::runtime_error{"provider failure"};
+  }
+};
+
 TEST(TessMovement, ValidateRejectsInvalidEndpointsAndNonAdjacentMoves) {
   MovementWorld world;
   fill_movement_world(world);
@@ -128,6 +136,25 @@ TEST(TessMovement, MissingProviderEdgeReportsStaleTopology) {
 
   EXPECT_EQ(result.status, tess::MovementStatus::StaleTopology);
   EXPECT_TRUE(tess::is_transient_movement_failure(result.status));
+}
+
+TEST(TessMovement, ProviderExceptionsPropagateThroughValidateAndCommit) {
+  MovementWorld world;
+  fill_movement_world(world);
+  const auto intent =
+      tess::MovementIntent{tess::Coord3{0, 0, 0}, tess::Coord3{2, 0, 0}, {}};
+  const auto provider = ThrowingMovementProvider{};
+
+  EXPECT_THROW((static_cast<void>(
+                   tess::validate_movement_intent<MovementWorld, PassableTag,
+                                                  OccupancyTag, ReservationTag>(
+                       world, intent, provider))),
+               std::runtime_error);
+  EXPECT_THROW((static_cast<void>(
+                   tess::commit_movement_intent<MovementWorld, PassableTag,
+                                                OccupancyTag, ReservationTag>(
+                       world, intent, 0, provider))),
+               std::runtime_error);
 }
 
 TEST(TessMovement, ValidateRejectsBlockedFromAndCommitLeavesWorldUntouched) {

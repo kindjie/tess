@@ -556,9 +556,10 @@
   bucketing every `MovementStatus` into its dedicated counter, the
   transient-versus-terminal `is_transient_movement_failure` classification
   of every status, disappearing special-provider edges classified as stale
-  topology, and overflow-safe `manhattan_distance` at `int64` extremes. The
-  warm no-alloc batches also pin submitted/found stats so a
-  skipped frame cannot pass as allocation-free.
+  topology, provider exceptions propagating through validation and commit, and
+  overflow-safe `manhattan_distance` at `int64` extremes. The warm no-alloc
+  batches also pin submitted/found stats so a skipped frame cannot pass as
+  allocation-free.
 - `tess_path_agent_tick_test`: verifies the minimal path-agent tick wrapper,
   including tick advancement, dirty-gated path processing, movement ordering,
   explicit dirty-mark requirements after world edits, dirty reprocessing after

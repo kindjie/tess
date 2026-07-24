@@ -52,6 +52,10 @@ deltas.
   world, intent, dirty_mask)` validates the same intent, clears source
   occupancy, sets destination occupancy, clears destination reservation, and
   marks source and destination tiles dirty when `dirty_mask` is nonzero.
+- Provider-aware validation and commit overloads enumerate the supplied
+  transition provider before mutation. Provider exceptions propagate to the
+  caller; the provider contract does not require enumeration to be
+  `noexcept`.
 
 ### Render Deltas
 

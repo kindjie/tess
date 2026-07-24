@@ -6,12 +6,24 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-23 - Align provider-aware movement exception handling
+
+- Changed: provider-aware movement validation and commit now propagate
+  transition-enumeration exceptions instead of terminating through a
+  `noexcept` boundary.
+- Reason: transition providers are not required to enumerate without throwing;
+  movement must match the exception contract already used by path and field
+  construction.
+- Affected docs: simulation architecture, design changelog, and test inventory.
+- Affected code: movement validation and provider-aware movement commit.
+
 ## 2026-07-23 - Close final roadmap-completion audit gaps
 
 - Changed: external-grid dimensions must fit both storage and coordinate
   widths; WebGPU dispatch requires its input mirror to be registered; the
-  ImGui inspector uses the checked metadata accessor; and temporary MSVC and
-  cppcheck coverage workarounds now have explicit retry conditions.
+  ImGui inspector establishes residency before its precondition-based metadata
+  access; and temporary MSVC and cppcheck coverage workarounds now have
+  explicit retry conditions.
 - Reason: final independent audits found two portable validation gaps and
   three low-severity maintenance ambiguities after all hosted gates passed.
 - Affected docs: dependency notes, design changelog, and test inventory.
