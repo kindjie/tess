@@ -33,21 +33,23 @@ deltas.
   when every set guard matches. It resolves both endpoints unchecked, so
   callers must validate coordinates first.
 - `validate_movement_intent<World, ClassOrTag, OccupancyTag,
-  ReservationTag>(world, intent)` checks shape bounds, six-axis adjacency
-  (`manhattan_distance == 1`), passability of both endpoints, destination
+  ReservationTag>(world, intent)` checks shape bounds and sparse residency,
+  passability of both endpoints, resolved transition legality, destination
   occupancy, destination reservation, and the optional version guards, in
-  that order, without mutating the world. The second template argument is a
-  movement class OR a raw passable tag, normalized exactly as in
-  `astar_path`, so plan and commit share one vocabulary: every step A*
-  accepted for a class validates for that same class. Validation checks the
-  class's PASSABILITY predicate only -- entry cost is a search concern, and
-  commit staying more permissive than the weighted search is the deliberate
-  legacy asymmetry (a cost field dropping to zero after planning blocks
-  re-planning, not an already-planned adjacent step). Classes wanting cost
-  folded into commit passability too should use `WalkableCostField`, whose
-  predicate already includes `NotZero<CostTag>`. The from- and to-tiles
-  may live on different pages; each endpoint's predicate is evaluated on its
-  own resolved page.
+  that order, without mutating the world. Regular transitions come from the
+  world's lattice and the movement class's step policy, so diagonal and
+  axial-hex classes are not restricted to six-axis Manhattan adjacency. The
+  second template argument is a movement class OR a raw passable tag,
+  normalized exactly as in `astar_path`, so plan and commit share one
+  vocabulary: every step A* accepted for a class validates for that same
+  class. Validation checks the class's PASSABILITY predicate only -- entry
+  cost is a search concern, and commit staying more permissive than the
+  weighted search is the deliberate legacy asymmetry (a cost field dropping
+  to zero after planning blocks re-planning, not an already-planned step).
+  Classes wanting cost folded into commit passability too should use
+  `WalkableCostField`, whose predicate already includes `NotZero<CostTag>`.
+  The from- and to-tiles may live on different pages; each endpoint's
+  predicate is evaluated on its own resolved page.
 - `commit_movement_intent<World, ClassOrTag, OccupancyTag, ReservationTag>(
   world, intent, dirty_mask)` validates the same intent, clears source
   occupancy, sets destination occupancy, clears destination reservation, and
@@ -219,14 +221,18 @@ stateDiagram-v2
   ReservationTag>(world, agents, runtime, max_steps, movement_dirty_mask)`
   commits each step through `commit_movement_intent` (no version guards),
   validating with the same movement class the plan used.
-  A transient failure leaves the `Found` route intact, moves the agent to
-  `Blocked`, consumes one retry, and counts a blocked wait; a structural
-  failure is terminal `Unreachable`. Arrival clears the goal and counts an
-  arrival. An observer overload appends `on_commit(agent_index, from, to)`,
-  invoked once per successful commit (after position/occupancy update,
-  before arrival handling) and never on a failed validation, so external
-  tile-to-entity mirrors updated inside the callback stay synchronized with
-  the occupancy field by construction (the M10 ECS adapter's hook point).
+  An occupied or reserved destination leaves the `Found` route intact so the
+  retained step can be retried; other transient failures invalidate the route
+  and request a re-plan. Either kind moves the agent to `Blocked` and counts a
+  blocked wait. The failed movement does not itself consume a retry: each
+  following movement-enabled tick consumes one bounded retry, while
+  `max_steps == 0` pauses the budget. A structural failure is terminal
+  `Unreachable`. Arrival clears the goal and counts an arrival. An observer
+  overload appends `on_commit(agent_index, from, to)`, invoked once per
+  successful commit (after position/occupancy update, before arrival handling)
+  and never on a failed validation, so external tile-to-entity mirrors updated
+  inside the callback stay synchronized with the occupancy field by
+  construction (the M10 ECS adapter's hook point).
 - `process_unit_path_agents<World, ClassOrTag>(...)` and
   `process_weighted_path_agents<World, Class, MaxCost>(...)` (plus the legacy
   `<World, PassableTag, CostTag, MaxCost>` overload)

@@ -556,7 +556,8 @@
   bucketing every `MovementStatus` into its dedicated counter, the
   transient-versus-terminal `is_transient_movement_failure` classification
   of every status, disappearing special-provider edges classified as stale
-  topology, provider exceptions propagating through validation and commit, and
+  topology, provider exceptions propagating through validation and commit
+  without changing occupancy, reservations, or dirty metadata, and
   overflow-safe `manhattan_distance` at `int64` extremes. The warm no-alloc
   batches also pin submitted/found stats so a skipped frame cannot pass as
   allocation-free.

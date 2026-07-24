@@ -7,9 +7,10 @@ The current surface includes sparse residency,
 queued operations with result channels, the schedule with cadences and the
 selectable parallel phase executor, movement classes with per-class topology
 and transition providers, A* with the region-graph precheck, distance-field
-products and caches, the ECS adapter (EnTT-gated), the versioned DeltaFrame
-render bridge, compile-gated diagnostics, the GPU backend interface, and an
-optional stable-C-API WebGPU backend.
+products and caches, independently gated EnTT and Flecs adapters, the
+custom-ECS seam, the versioned DeltaFrame render bridge, compile-gated
+diagnostics, the GPU backend interface, and an optional stable-C-API WebGPU
+backend.
 
 ## Layer Map
 
