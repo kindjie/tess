@@ -359,6 +359,11 @@ flowchart TB
 - A task result's `dirty_mask` merges into every task's pending mask
   immediately: later-phase OnDirty tasks fire in the SAME tick,
   earlier-phase tasks the next tick.
+- If a task callback throws, `run_tick` propagates the exception after restoring
+  the dirty bits, event bits, and explicit run request consumed for that
+  invocation. Triggers raised during the failed callback are merged with the
+  restored values. The simulation clock and cadence countdown still advance;
+  task and world mutations are not rolled back.
 - `EventStream<T>` is caller-owned bounded storage for exact payloads with
   monotonic sequence and simulation-tick stamps in `TickStampedEvent<T>`.
   Overflow is rejected rather than overwritten. The scheduler mask is only a
@@ -366,7 +371,9 @@ flowchart TB
   application policy.
 - `ResumableWorkTask<T>` maps `ScheduleTaskContext::budget_items` to a
   `ResumableWorkQueue<T>` and maps remaining pending tickets back to
-  `more_work`, retaining deterministic cooperative jobs across ticks.
+  `more_work`, retaining deterministic cooperative jobs across ticks. When
+  the queue becomes empty the Background task disarms; a later queue
+  submission must be paired with `request_run(id)` to re-arm it.
 - Allocation contract: `reserve_tasks` + registration happen at setup;
   `run_tick`, trigger notification, and `request_run` never allocate after
   `seal()`. Reserved event streams and resumable queues also allocate nothing

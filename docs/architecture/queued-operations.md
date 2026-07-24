@@ -482,9 +482,14 @@ work that must remain caller-visible across phase calls:
   applications may run the queue on their chosen execution context. A
   continuation may inspect results, but it must not mutate or recursively
   advance its queue; every mutating entry point rejects callback-time
-  reentrancy so vector-backed result references cannot be invalidated.
+  reentrancy so vector-backed result references cannot be invalidated. If a
+  continuation throws, the exception propagates, its ticket remains `Pending`,
+  and any value mutations already made by that attempt remain visible to the
+  next retry. Earlier completed tickets retain their states.
 - `ResumableWorkTask<T>` adapts the queue directly to a scheduler Background
   cadence. Its `more_work` result retains pending tickets for the next tick.
+  Once the queue quiesces, submitting new work does not re-arm the scheduler;
+  the caller must invoke `Schedule::request_run(task_id)`.
 
 The synchronous `ResultChannel<T>` remains the lower-overhead choice for work
 that completes behind one planner/executor barrier.

@@ -214,9 +214,12 @@ struct FieldProductCacheStats {
 // aliasing mechanism).
 /// Owns LRU-cached distance-field products within a configurable byte budget.
 ///
-/// Entries are keyed by field type, shape, and goals, but not by world
-/// identity; use one cache per world. Lookup pointers remain cache-owned and
-/// are invalidated when their entry is replaced, evicted, or cleared.
+/// Entries are keyed by field type, shape, goals, and exact provider revision,
+/// but not by world identity; use one cache per world. Historical provider
+/// revisions remain distinct entries until normal LRU eviction, so configure a
+/// finite byte budget when provider state changes without bound. Lookup
+/// pointers remain cache-owned and are invalidated when their entry is
+/// replaced, evicted, or cleared.
 class FieldProductCache {
   struct Key {
     std::uintptr_t movement_class = 0;
@@ -419,11 +422,15 @@ class FieldProductCache {
       }
     }
 
-    auto& entry = entries_.emplace_back();
-    entry.key = std::move(key);
-    entry.product = std::make_unique<DistanceFieldProduct>(std::move(product));
-    entry.last_used = ++clock_;
-    entry.bytes = bytes;
+    auto owned_product =
+        std::make_unique<DistanceFieldProduct>(std::move(product));
+    auto candidate =
+        Entry{std::move(key), std::move(owned_product), clock_ + 1u, bytes};
+    // Construct every throwing component before this insertion commit. If
+    // allocating either the product or vector storage fails, no null/partial
+    // entry becomes visible to lookup and all cache statistics stay unchanged.
+    entries_.push_back(std::move(candidate));
+    ++clock_;
     bytes_ += bytes;
     evict_to_budget();
     return true;
@@ -1109,6 +1116,13 @@ auto weighted_distance_field_product_path(const World& world, Coord3 start,
       !detail::is_passable<World, Class>(world, start)) {
     return {PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
+  const auto start_index = detail::tile_index<Shape>(start);
+  // LegacyWeighted intentionally keeps boolean passability independent from
+  // its cost field, but a normalized zero entry cost is still impassable to
+  // every weighted query. Check both before a cached distance can be replayed.
+  if (detail::tile_entry_cost_index<World, Class>(world, start_index) == 0) {
+    return {PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+  }
   if (product.status_ != PathStatus::Found || !product.is_valid(world) ||
       product.tile_count_ != detail::tile_count<World>() ||
       product.chunk_count_ != World::chunk_count ||
@@ -1127,7 +1141,6 @@ auto weighted_distance_field_product_path(const World& world, Coord3 start,
     return {PathStatus::NoPath, 0, 0, 0, scratch.path_};
   }
 
-  const auto start_index = detail::tile_index<Shape>(start);
   auto current = start_index;
   auto current_distance = product.distance_[start_index];
   if (current_distance == infinite_distance) {

@@ -24,9 +24,8 @@ function(tess_target_warning_options target)
     endif()
   elseif(MSVC)
     # MSVC 19.51 reports C4702 throughout valid constexpr/template branches,
-    # including third-party SYSTEM headers. Clang, GCC, and static-analysis
-    # gates retain unreachable-code coverage without this false positive.
-    # Retry without /wd4702 whenever the gating MSVC toolset changes.
+    # including third-party SYSTEM headers. This suppresses that diagnostic
+    # only on MSVC; retry without /wd4702 when the gating toolset changes.
     list(APPEND warning_options /W4 /wd4702 /permissive- /EHsc)
   endif()
 

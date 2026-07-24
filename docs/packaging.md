@@ -2,8 +2,8 @@
 
 The library is header-only. A consumer needs a C++20 compiler and CMake 3.25
 or newer; tess itself adds no runtime or link dependency. Installing it needs
-no network access and builds no code. GoogleTest, Google Benchmark, and EnTT
-are development or optional integration dependencies fetched only by
+no network access and builds no code. GoogleTest, Google Benchmark, EnTT, and
+Flecs are development or optional integration dependencies fetched only by
 developer presets; ordinary consumers do not link them through `tess::tess`.
 
 ## FetchContent

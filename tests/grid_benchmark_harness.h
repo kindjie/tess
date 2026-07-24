@@ -172,7 +172,15 @@ inline auto parse_map(std::string_view name, std::string_view text)
     return result;
   }
 
-  result.value.passability.reserve(result.value.width * result.value.height);
+  const auto tile_count = result.value.width * result.value.height;
+  // Every declared tile requires at least one source byte. This lower bound
+  // rejects a tiny hostile header before reserve() can amplify it into a huge
+  // allocation; row parsing below remains the exact format validation.
+  if (tile_count > text.size()) {
+    result.error = ParseError::InvalidDimensions;
+    return result;
+  }
+  result.value.passability.reserve(tile_count);
   for (std::size_t y = 0; y < result.value.height; ++y) {
     if (!std::getline(input, line)) {
       result.error = ParseError::InvalidDimensions;

@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <limits>
 #include <mutex>
-#include <utility>
 #include <vector>
 
 namespace tess::experimental::maintenance {
@@ -58,8 +57,9 @@ class MaintenanceScheduler {
    * Schedules derived-state work.
    *
    * The task must outlive this scheduler or an explicit `flush()`. A false
-   * result reports bounded queue exhaustion; authoritative state must retain
-   * its dirty signal so a caller can retry.
+   * result reports bounded queue exhaustion or a backend that cannot make
+   * progress; authoritative state must retain its dirty signal so a caller can
+   * retry.
    */
   [[nodiscard]] virtual auto schedule(MaintenanceTask& task) -> bool = 0;
 
@@ -257,9 +257,40 @@ class ImmediateScheduler final : public MaintenanceScheduler {
 
   [[nodiscard]] auto schedule(MaintenanceTask& task) -> bool override {
     metrics_.record_schedule();
-    metrics_.record_execution();
+    for (auto* active = active_run_; active != nullptr;
+         active = active->parent) {
+      if (active->task != &task) {
+        continue;
+      }
+      if (active->pending == std::numeric_limits<std::uint64_t>::max()) {
+        metrics_.record_capacity_failure();
+        return false;
+      }
+      ++active->pending;
+      return true;
+    }
+
+    // An intrusive stack of call-local frames makes A -> B -> A and direct
+    // self-scheduling iterative without allocating. A count, rather than a
+    // bool, preserves ImmediateScheduler's one-execution-per-request baseline.
+    auto active = ActiveRun{&task, 1, active_run_};
+    struct ActiveRunGuard {
+      ActiveRun*& current;
+      ActiveRun* previous;
+      ~ActiveRunGuard() { current = previous; }
+    };
+    active_run_ = &active;
+    const auto guard = ActiveRunGuard{active_run_, active.parent};
     auto budget = MaintenanceBudget{};
-    task.run(budget);
+    while (active.pending != 0) {
+      --active.pending;
+      const auto before = budget.remaining();
+      metrics_.record_execution();
+      task.run(budget);
+      if (active.pending != 0 && budget.remaining() == before) {
+        return false;
+      }
+    }
     return true;
   }
 
@@ -272,7 +303,14 @@ class ImmediateScheduler final : public MaintenanceScheduler {
   }
 
  private:
+  struct ActiveRun {
+    MaintenanceTask* task = nullptr;
+    std::uint64_t pending = 0;
+    ActiveRun* parent = nullptr;
+  };
+
   detail::MetricsStore metrics_;
+  ActiveRun* active_run_ = nullptr;
 };
 
 /// Bounded non-deduplicating queue used as the amplification baseline.

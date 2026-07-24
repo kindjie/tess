@@ -90,14 +90,11 @@ substrate; the application owns meaning, entities, and presentation.
 
 [tdd-index]: https://github.com/kindjie/tess/blob/main/docs/tdd/README.md
 [completion-plan]: https://github.com/kindjie/tess/blob/main/docs/planning/roadmap-completion.md
-[tdd-queued]: https://github.com/kindjie/tess/blob/main/docs/tdd/queued-operations-and-planner.md
 [tdd-scheduler]: https://github.com/kindjie/tess/blob/main/docs/tdd/simulation-scheduler.md
 [tdd-block]: https://github.com/kindjie/tess/blob/main/docs/tdd/block-kernel-pipeline.md
-[tdd-path]: https://github.com/kindjie/tess/blob/main/docs/tdd/pathfinding-core.md
 [tdd-benchdata]: https://github.com/kindjie/tess/blob/main/docs/tdd/grid-benchmark-data-and-scenario-oracle.md
 [tdd-flow]: https://github.com/kindjie/tess/blob/main/docs/tdd/flow-distance-fields.md
 [tdd-work]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_work_contracts.md
 [tdd-gpu]: https://github.com/kindjie/tess/blob/main/docs/tdd/gpu-backend-interface.md
-[tdd-ecs]: https://github.com/kindjie/tess/blob/main/docs/tdd/ecs-integration.md
 [tdd-project]: https://github.com/kindjie/tess/blob/main/docs/tdd/project-design.md
 [tdd-layout]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_tile_layout_bench_takeaways.md

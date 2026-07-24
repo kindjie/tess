@@ -18,6 +18,19 @@ import benchmark_thresholds  # noqa: E402
 import benchmark_trends  # noqa: E402
 
 
+def literal_benchmark_names(source: str) -> set[str]:
+  """Extract adjacent string literals passed directly to Benchmark::Name."""
+  calls = re.findall(
+      r'->Name\(\s*((?:"[^"]*"\s*)+)\)',
+      source,
+      flags=re.DOTALL,
+  )
+  return {
+      "".join(re.findall(r'"([^"]*)"', literal_sequence))
+      for literal_sequence in calls
+  }
+
+
 def entry(
     name: str,
     cpu_time: float,
@@ -270,10 +283,7 @@ def test_literal_gated_benchmarks_have_threshold_entries():
   benchmark_names = set()
   for path in sorted((root / "bench").glob("*.cc")):
     source = path.read_text(encoding="utf-8")
-    benchmark_names.update(
-      name
-      for name in re.findall(r'->Name\("([^"]+)"\)', source)
-    )
+    benchmark_names.update(literal_benchmark_names(source))
   threshold_files = {
     "key": "key-conversions.json",
     "storage": "storage.json",
@@ -308,6 +318,18 @@ def test_literal_gated_benchmarks_have_threshold_entries():
   }
 
   assert not uncovered, sorted(uncovered)
+
+
+def test_literal_benchmark_names_accept_multiline_adjacent_literals():
+  source = '''
+BENCHMARK(sample)->Name(
+    "path/weighted_"
+    "portal_segments");
+'''
+
+  assert literal_benchmark_names(source) == {
+      "path/weighted_portal_segments"
+  }
 
 
 def test_malformed_results_file_reports_clear_error(tmp_path, capsys):

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <stdexcept>
 #include <utility>
 
 // S5.2: movement classes threaded through the A* leaves and weighted cores.
@@ -69,6 +70,41 @@ struct DiagonalBridgeProvider {
           .to = tess::Coord3{2, 2, 0},
       });
     }
+  }
+};
+
+struct MissingDiagonalProvider {
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3 from,
+                        Sink&& sink) const {
+    if (from == tess::Coord3{2, 2, 0}) {
+      sink(tess::SpecialTransitionCandidate{
+          .to = tess::Coord3{3, 3, 0},
+          .missing_topology = true,
+      });
+    }
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_reverse(const WorldType&, tess::Coord3 to, Sink&& sink) const {
+    if (to == tess::Coord3{3, 3, 0}) {
+      sink(tess::SpecialTransitionCandidate{
+          .to = tess::Coord3{2, 2, 0},
+          .missing_topology = true,
+      });
+    }
+  }
+};
+
+struct ThrowingDiagonalProvider {
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3, Sink&&) const {
+    throw std::runtime_error("provider hot path was entered");
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_reverse(const WorldType&, tess::Coord3, Sink&&) const {
+    throw std::runtime_error("provider hot path was entered");
   }
 };
 
@@ -848,6 +884,46 @@ TEST(TessPathMovementClass, CommitAcceptsParallelProviderTransition) {
                                                   ReservationTag>(
       world, tess::MovementIntent{.from = from, .to = to}, 0, provider);
   EXPECT_EQ(moved.status, tess::MovementStatus::Moved);
+  EXPECT_FALSE(world.field<OccupancyTag>(from));
+  EXPECT_TRUE(world.field<OccupancyTag>(to));
+}
+
+TEST(TessPathMovementClass, MissingProviderTopologyOutranksBlockedRegularEdge) {
+  World world;
+  fill_open(world, 1);
+  constexpr auto from = tess::Coord3{2, 2, 0};
+  constexpr auto to = tess::Coord3{3, 3, 0};
+  world.field<OccupancyTag>(from) = true;
+  world.field<PassableTag>(tess::Coord3{3, 2, 0}) = false;
+
+  const auto result =
+      tess::validate_movement_intent<World, Diagonal, OccupancyTag,
+                                     ReservationTag>(
+          world, tess::MovementIntent{.from = from, .to = to},
+          MissingDiagonalProvider{});
+
+  EXPECT_EQ(result.status, tess::MovementStatus::StaleVersion);
+}
+
+TEST(TessPathMovementClass, LegalRegularEdgeSkipsProviderHotPath) {
+  World world;
+  fill_open(world, 1);
+  constexpr auto from = tess::Coord3{2, 2, 0};
+  constexpr auto to = tess::Coord3{3, 3, 0};
+  world.field<OccupancyTag>(from) = true;
+
+  // A legal regular edge is already the strongest possible answer. Provider
+  // enumeration is intentionally skipped here, both to preserve the common
+  // movement hot path and because no provider result can outrank Legal.
+  const auto commit = [&] {
+    return tess::commit_movement_intent<World, Diagonal, OccupancyTag,
+                                        ReservationTag>(
+        world, tess::MovementIntent{.from = from, .to = to}, 0,
+        ThrowingDiagonalProvider{});
+  };
+  auto result = tess::MovementResult{};
+  EXPECT_NO_THROW(result = commit());
+  EXPECT_EQ(result.status, tess::MovementStatus::Moved);
   EXPECT_FALSE(world.field<OccupancyTag>(from));
   EXPECT_TRUE(world.field<OccupancyTag>(to));
 }

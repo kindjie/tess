@@ -881,6 +881,9 @@ class DistanceFieldScratch {
     }
     touched_.clear();
     path_.clear();
+    // These fields are the public-result validity sentinels. Per-node
+    // distances and predecessors intentionally retain old bytes: the epoch
+    // stamps invalidate them without an O(world-size) clearing pass.
     has_goal_ = false;
     model_class_identity_ = 0;
     model_provider_identity_ = 0;

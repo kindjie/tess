@@ -6,9 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <limits>
 #include <span>
-#include <utility>
 #include <vector>
 
 namespace tess {
@@ -110,7 +108,13 @@ inline void extend_area_bounds(Box3& current, Box3 addition,
 
 }  // namespace detail
 
-/// Caller-defined, graph-derived grouping of topology regions.
+/**
+ * Caller-defined, graph-derived grouping of topology regions.
+ *
+ * Graph-aware validation borrows the exact `RegionGraphT` object used to build
+ * the index. That object must outlive those calls; clear or rebuild the index
+ * before destroying the graph or reusing its storage for another graph.
+ */
 class AreaIndex {
  public:
   void reserve(std::size_t region_count, std::size_t portal_count) {
@@ -164,6 +168,9 @@ class AreaIndex {
   template <typename Residency>
   [[nodiscard]] auto is_valid(
       const RegionGraphT<Residency>& graph) const noexcept -> bool {
+    // The address is an object-lifetime identity, not a content hash. The
+    // class contract excludes comparing against a new graph constructed later
+    // in the same storage, where address and revision could both repeat.
     return graph_identity_ == static_cast<const void*>(&graph) &&
            graph_revision_ == graph.revision();
   }
@@ -228,6 +235,12 @@ auto build_area_index(const RegionGraphT<Residency>& graph, Grouper&& grouper,
     for (const auto& region : topology.regions()) {
       const auto ref = RegionRef{topology.chunk(), region.id};
       const auto offset = graph.region_index(ref);
+      // Both passes traverse the same immutable graph. Keep the defensive
+      // sentinel guard in each pass so a violated graph invariant cannot turn
+      // into an out-of-bounds index in release builds.
+      if (offset == invalid_region_index) {
+        continue;
+      }
       const auto key = scratch.region_keys_[offset];
       if (key == 0) {
         continue;

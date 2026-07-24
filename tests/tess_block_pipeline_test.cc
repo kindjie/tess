@@ -97,6 +97,18 @@ TEST(TessBlockPipeline, FlatMapBuildsBoundedFrontierInStableOrder) {
   EXPECT_EQ(output, (std::array<std::uint32_t, 5>{0, 2, 4, 6, 8}));
 }
 
+TEST(TessBlockPipeline, FlatMapPreservesMapperReturnedRangeReferences) {
+  const std::array<std::uint32_t, 1> input{0};
+  auto values = std::vector<std::uint32_t>{1, 2, 3};
+
+  tess::pipeline_from(std::span{input})
+      .flat_map(
+          [&](std::uint32_t) -> std::vector<std::uint32_t>& { return values; })
+      .for_each([](std::uint32_t& value) { value *= 2; });
+
+  EXPECT_EQ(values, (std::vector<std::uint32_t>{2, 4, 6}));
+}
+
 TEST(TessBlockPipeline, BoundedCollectionReportsRequiredCapacity) {
   const std::array<std::uint32_t, 3> input{1, 4, 7};
   std::array<std::uint32_t, 3> output{};

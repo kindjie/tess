@@ -71,6 +71,19 @@ TEST(TessGridBenchmarkHarness, RejectsUnsupportedTerrainAndHeaders) {
   EXPECT_EQ(short_row.error, grid::ParseError::InvalidDimensions);
 }
 
+TEST(TessGridBenchmarkHarness, HugeDimensionsCannotAmplifyTinyInput) {
+  constexpr auto tiny_huge_map =
+      "type octile\n"
+      "height 1\n"
+      "width 9223372036854775807\n"
+      "map\n"
+      ".\n";
+
+  grid::ParseResult<grid::BenchmarkMap> parsed;
+  EXPECT_NO_THROW(parsed = grid::parse_map("hostile.map", tiny_huge_map));
+  EXPECT_EQ(parsed.error, grid::ParseError::InvalidDimensions);
+}
+
 TEST(TessGridBenchmarkHarness, ParsesAndValidatesScenarioRows) {
   const auto map = grid::parse_map("fixture.map", kMap).value;
   const auto parsed = grid::parse_scenarios(
@@ -173,6 +186,29 @@ TEST(TessGridBenchmarkHarness, TessSearchMatchesIndependentReference) {
             grid::reference_cost(map, start, goal,
                                  grid::ReferenceMovement::DiagonalBothClear));
   EXPECT_EQ(diagonal.cost_scale, 128u);
+}
+
+TEST(TessGridBenchmarkHarness, TessSearchMatchesCornerRefusalReference) {
+  const auto map =
+      grid::parse_map("corner.map",
+                      "type octile\nheight 2\nwidth 2\nmap\n.@\n..\n")
+          .value;
+  tess::AlwaysResidentWorld<Padded, Schema> world;
+  ASSERT_EQ(grid::load_map<PassableTag>(map, world), grid::LoadStatus::Loaded);
+  constexpr auto start = tess::Coord3{0, 0, 0};
+  constexpr auto goal = tess::Coord3{1, 1, 0};
+  tess::PathScratch scratch;
+
+  const auto result = tess::astar_path<decltype(world), Diagonal>(
+      world, {start, goal}, scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost,
+            grid::reference_cost(map, start, goal,
+                                 grid::ReferenceMovement::DiagonalBothClear));
+  EXPECT_EQ(result.cost, 256u);
+  ASSERT_EQ(result.path.size(), 3u);
+  EXPECT_NE(result.path[1], goal);
 }
 
 TEST(TessGridBenchmarkHarness, ExternalIntervalIsAsymmetricAndDecimalBounded) {

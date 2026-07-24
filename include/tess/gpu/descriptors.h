@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <type_traits>
 
 // M13 GPU descriptors: the plain data a compile-time-polymorphic backend
@@ -86,8 +87,23 @@ struct FieldMirrorDesc {
   std::uint64_t bytes_per_chunk = 0;
   std::uint64_t chunk_count = 0;
 
+  /** Returns whether the dense mirror byte count is representable. */
+  [[nodiscard]] constexpr auto total_bytes_fits() const noexcept -> bool {
+    return chunk_count == 0 ||
+           bytes_per_chunk <=
+               std::numeric_limits<std::uint64_t>::max() / chunk_count;
+  }
+
+  /**
+   * Returns the dense byte count, saturating when a manual descriptor wraps.
+   *
+   * Generated descriptors are compile-time checked and never saturate. The
+   * saturation keeps malformed consumer-created descriptors from appearing
+   * to request a small, valid buffer after unsigned multiplication wraps.
+   */
   [[nodiscard]] constexpr auto total_bytes() const noexcept -> std::uint64_t {
-    return bytes_per_chunk * chunk_count;
+    return total_bytes_fits() ? bytes_per_chunk * chunk_count
+                              : std::numeric_limits<std::uint64_t>::max();
   }
 
   friend constexpr auto operator==(const FieldMirrorDesc&,

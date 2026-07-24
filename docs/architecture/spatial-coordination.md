@@ -39,7 +39,11 @@ Lookups accept either a `RegionRef` or a graph plus world coordinate. An index
 is bound to the exact graph object and its monotonic `revision()`.
 `is_valid(graph)` is O(1), and coordinate lookup adds only region lookup plus
 the area's ordered-region lookup; neither rescans portals. Both reject an
-index after the graph changes, so rebuild it after topology maintenance.
+index after the graph changes, so rebuild it after topology maintenance. The
+graph-aware calls borrow that exact object: it must remain alive, and callers
+must clear or rebuild the index before destroying the graph or constructing a
+different graph in the same storage. Summaries and `RegionRef` lookup remain
+index-owned.
 
 This is an area substrate, not a room model. The application decides whether a
 key means a room, district, biome, work zone, tactical sector, or nothing at

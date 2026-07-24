@@ -6,6 +6,10 @@
 namespace tess {
 
 /// Adapts a cooperative result queue to a scheduler Background task.
+///
+/// A Background task disarms after the queue reports no pending work.
+/// Submitting a later ticket does not notify the scheduler; the caller must
+/// call `Schedule::request_run(task_id)` to re-arm that registered task.
 template <typename T>
 class ResumableWorkTask {
  public:

@@ -50,17 +50,26 @@ The backend exposes these bounded setup and execution operations:
 
 - Field registration creates a storage/copy-destination buffer. Uploads use
   `wgpuQueueWriteBuffer` and enforce the WebGPU four-byte offset and size
-  alignment rules.
+  alignment rules. Wrapped mirror totals and byte counts that cannot narrow to
+  the host API's `size_t` are rejected.
 - Product registration accepts consumer-created pipelines, bind groups, and
   a bounded source range for readback. Registration returns a generation
   handle; unregister/reuse invalidates old descriptors.
-- Dispatch validates the product generation and field before encoding a real
-  compute pass and submitting it to the queue.
+- Dispatch validates the product generation, field, chunk budget, and total
+  workgroup-X count before encoding a real compute pass and submitting it to
+  the queue. The configured X limit defaults to WebGPU's guaranteed 65,535.
 - Readback allocates one map-read staging buffer per accepted request, encodes
   a source copy, submits, and reports completion through
   `WebGpuReadbackCallback`. In-flight request count and total bytes are
   bounded. Each accepted operation owns its staging resource until the map
-  callback, including if the backend object is destroyed first.
+  callback, including if the backend object is destroyed first. Stable-C
+  spontaneous delivery may invoke the application callback inline or on an
+  arbitrary thread. Its mapped data is callback-scoped, userdata must be
+  synchronized, and it must not re-enter this backend or call WebGPU functions
+  that are not explicitly documented as spontaneous-callback-safe. Because an
+  accepted callback may outlive product unregistration or the backend, the
+  consumer must revalidate its generation and authoritative world version
+  before applying derived bytes.
 - Device loss and explicit notification disable further GPU submissions.
   Full-field readback is disabled unless the configuration opts in.
 

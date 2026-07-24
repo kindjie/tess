@@ -19,6 +19,7 @@
 #include <memory>
 #include <new>
 #include <optional>
+#include <type_traits>
 #include <vector>
 
 namespace tess::gpu {
@@ -27,6 +28,9 @@ namespace tess::gpu {
 struct WebGpuBackendConfig {
   std::uint64_t max_buffer_bytes = std::uint64_t{256} * 1024u * 1024u;
   std::uint64_t max_dispatch_chunks = 65535;
+  // WebGPU guarantees at least 65,535 workgroups in one dispatch dimension.
+  // Supply a lower adapter/device limit here when one is imposed externally.
+  std::uint32_t max_dispatch_workgroups_x = 65535;
   std::uint64_t max_inflight_readback_bytes = std::uint64_t{4} * 1024u * 1024u;
   std::size_t field_capacity = 16;
   std::size_t product_capacity = 64;
@@ -39,7 +43,15 @@ enum class WebGpuReadbackStatus : std::uint8_t {
   Failed,
 };
 
-/** Non-throwing application callback for one explicit readback request. */
+/**
+ * Non-throwing application callback for one explicit readback request.
+ *
+ * The callback may run inline before `readback()` returns or on an arbitrary
+ * thread. Its userdata must therefore be externally synchronized. The mapped
+ * `data` is valid only for the callback's duration. Do not call this backend,
+ * or WebGPU functions other than ones explicitly documented as safe in a
+ * spontaneous callback, from the callback.
+ */
 using WebGpuReadbackCallback = void (*)(GpuProductHandle, WebGpuReadbackStatus,
                                         const void*, std::size_t,
                                         void*) noexcept;
@@ -80,6 +92,18 @@ struct WebGpuReadbackOperation {
   void* userdata = nullptr;
   std::shared_ptr<WebGpuSharedState> shared;
 };
+
+template <typename Size>
+[[nodiscard]] constexpr bool fits_size(std::uint64_t value) noexcept {
+  static_assert(std::is_integral_v<Size> && std::is_unsigned_v<Size>);
+  if constexpr (std::numeric_limits<Size>::digits >=
+                std::numeric_limits<std::uint64_t>::digits) {
+    return true;
+  } else {
+    return value <=
+           static_cast<std::uint64_t>(std::numeric_limits<Size>::max());
+  }
+}
 
 inline void webgpu_readback_complete(WGPUMapAsyncStatus status, WGPUStringView,
                                      void* userdata1, void*) noexcept {
@@ -142,7 +166,8 @@ class WebGpuBackend {
     fields_.reserve(config_.field_capacity);
     products_.reserve(config_.product_capacity);
     if (device_ == nullptr || config_.max_buffer_bytes == 0 ||
-        config_.max_dispatch_chunks == 0) {
+        config_.max_dispatch_chunks == 0 ||
+        config_.max_dispatch_workgroups_x == 0) {
       shared_->available.store(false, std::memory_order_relaxed);
       // No reference was retained on this disabled construction path.
       device_ = nullptr;
@@ -196,7 +221,7 @@ class WebGpuBackend {
 
   /** Creates a chunk-major storage/copy-destination buffer for one field. */
   [[nodiscard]] bool register_field(FieldMirrorDesc desc) {
-    if (!available() || desc.total_bytes() == 0 ||
+    if (!available() || !desc.total_bytes_fits() || desc.total_bytes() == 0 ||
         desc.total_bytes() > config_.max_buffer_bytes ||
         fields_.size() >= config_.field_capacity ||
         find_field(desc.field_index) != nullptr) {
@@ -295,6 +320,7 @@ class WebGpuBackend {
     if (!available() || field == nullptr || upload.data == nullptr ||
         upload.byte_size == 0 || (upload.buffer_offset & 3u) != 0 ||
         (upload.byte_size & 3u) != 0 ||
+        !detail::fits_size<std::size_t>(upload.byte_size) ||
         upload.buffer_offset > field->allocated_bytes ||
         upload.byte_size > field->allocated_bytes - upload.buffer_offset) {
       return false;
@@ -314,8 +340,8 @@ class WebGpuBackend {
         product->desc.input_field_index != dispatch.input_field_index ||
         dispatch.chunk_count == 0 || dispatch.workgroups_per_chunk == 0 ||
         dispatch.chunk_count > config_.max_dispatch_chunks ||
-        dispatch.chunk_count > std::numeric_limits<std::uint32_t>::max() /
-                                   dispatch.workgroups_per_chunk) {
+        dispatch.chunk_count >
+            config_.max_dispatch_workgroups_x / dispatch.workgroups_per_chunk) {
       return false;
     }
     auto encoder_desc = WGPU_COMMAND_ENCODER_DESCRIPTOR_INIT;
@@ -344,7 +370,12 @@ class WebGpuBackend {
     return submitted;
   }
 
-  /** Queues an explicit bounded copy/map readback and returns immediately. */
+  /**
+   * Queues an explicit bounded copy/map readback.
+   *
+   * The application callback may run inline before this function returns or
+   * later on an arbitrary thread; see `WebGpuReadbackCallback`.
+   */
   [[nodiscard]] bool readback(const ReadbackDesc& readback) {
     const auto* product = find_product(readback.product_key);
     if (!available() || product == nullptr ||
@@ -356,7 +387,7 @@ class WebGpuBackend {
         product->desc.readback_source == nullptr ||
         product->desc.readback_callback == nullptr ||
         readback.byte_size > product->desc.readback_byte_size ||
-        readback.byte_size > std::numeric_limits<std::size_t>::max() ||
+        !detail::fits_size<std::size_t>(readback.byte_size) ||
         !detail::reserve_readback_bytes(shared_, readback.byte_size)) {
       return false;
     }
@@ -399,6 +430,11 @@ class WebGpuBackend {
       return false;
     }
     auto callback = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
+    // Spontaneous delivery avoids making this transport own or pump the
+    // application's WGPUInstance. It can run inline or on another thread.
+    // Backend cleanup below uses only buffer operations that the stable
+    // WebGPU API explicitly permits in spontaneous callbacks; application
+    // callbacks inherit the stricter public contract documented above.
     callback.mode = WGPUCallbackMode_AllowSpontaneous;
     callback.callback = detail::webgpu_readback_complete;
     callback.userdata1 = operation;

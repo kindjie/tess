@@ -186,7 +186,10 @@ flowchart TB
   an exact path and `weighted_nearest_target` reports the selected lowest-cost
   goal. These persistent products are explicitly dense-only, stamp every
   model identity and provider revision, and use the same byte-budgeted cache
-  through `lookup_weighted` / `store_weighted`.
+  through `lookup_weighted` / `store_weighted`. Provider revisions are exact
+  cache-key components: historical revisions remain reusable entries until
+  ordinary LRU eviction, so callers with continually changing provider state
+  should configure a finite byte budget.
 - Unit products retain the BFS fast path only for regular unit-cost models.
   Provider-composed products use reverse Dijkstra even when the regular step
   scale is one, because a provider may attach a larger exact cost to a special
@@ -373,7 +376,9 @@ flowchart TB
 - `weighted_path_batch<World, PassableTag, CostTag, MaxCost>(world, requests,
   scratch)` groups weighted requests by goal, builds bounded weighted fields
   for repeated goals, uses weighted A* for singleton goals, and returns stable
-  result spans owned by `WeightedPathBatchScratch`.
+  result spans owned by `WeightedPathBatchScratch`. A shared reverse field's
+  `CostOverflow` is global rather than start-specific, so every member in that
+  group retries through weighted A* to preserve exact per-request statuses.
 - `PathRequestRuntime::process_unit_cached<World, ClassOrTag>(world, policy)`
   processes the current request set through `cached_astar_path`, optionally
   reuses unit distance-field products for repeated goals when
@@ -402,7 +407,10 @@ flowchart TB
   repeated goals spanning the configured number of start chunks first use a
   persistent weighted product; remaining requests retain the bounded-field or
   A* batch fallback. The product cache survives processing calls and uses the
-  same world-change cadence for invalidation.
+  same world-change cadence for invalidation. Unit and weighted products share
+  that one runtime-owned cache. Whichever processing pass runs most recently
+  applies its corresponding policy byte budget to the combined footprint and
+  may therefore evict products retained by the other pass.
   One movement class drives both the search and the precheck. The legacy
   `<World, PassableTag, CostTag, MaxCost>` overload searches through
   `movement::LegacyWeighted` and prechecks on PASSABILITY only (the raw tag's
@@ -632,7 +640,9 @@ When weighted entry costs are known to be small bounded positive integers,
 `build_bounded_weighted_distance_field` avoids binary heap traffic with a
 Dial-style bucket queue. The result is still exact, because nodes are expanded
 in nondecreasing distance order. The bounded builder is an optimization of
-weighted field construction, not a different path model.
+weighted field construction, not a different path model. An entry cost above
+the declared bound or a realized accumulated-cost saturation rebuilds through
+the unbounded heap implementation so neither condition is silently discarded.
 
 `weighted_path_batch` makes the current weighted reuse policy explicit for
 callers. Repeated goals use one bounded weighted field per unique goal;
@@ -685,9 +695,9 @@ suffix caching can be faster when many starts lie on already-cached paths; the
 runtime therefore skips opt-in product use for repeated-goal groups whose
 starts do not span enough distinct chunks. Route caches are suitable for stable
 maps with repeated exact routes or starts that lie on cached same-goal paths.
-The pre-1.0 roadmap still needs local crowd coordination and tactical spatial
-products; hierarchical corridor selection and persistent shared-goal fields
-now cover the broad many-agent routing substrate.
+Local crowd coordination, tactical target assignment, hierarchical corridor
+selection, and persistent shared-goal fields now cover the broad many-agent
+routing substrate. The path core remains pre-1.0 while those layers mature.
 
 ## Current Profiling Notes
 

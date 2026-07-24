@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 
 namespace {
@@ -92,6 +93,33 @@ TEST(TessWebGpuBackend, RegistersMirrorsAndUploadsChunkBytes) {
   EXPECT_EQ(backend.field_buffer(0)->bytes[key.value * 64], std::byte{42});
 }
 
+TEST(TessWebGpuBackend, RefusesOverflowingMirrorDescriptions) {
+  tess_webgpu_stub::reset();
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  auto backend = make_backend(device.get());
+  device.reset();
+
+  const auto desc = tess::gpu::FieldMirrorDesc{
+      .field_index = 3,
+      .value_bytes = 4,
+      .tiles_per_chunk = 1,
+      .bytes_per_chunk = std::numeric_limits<std::uint64_t>::max(),
+      .chunk_count = 2,
+  };
+  EXPECT_FALSE(desc.total_bytes_fits());
+  EXPECT_EQ(desc.total_bytes(), std::numeric_limits<std::uint64_t>::max());
+  EXPECT_FALSE(backend.register_field(desc));
+}
+
+TEST(TessWebGpuBackend, SizeConversionRejectsNarrowing) {
+  constexpr auto uint32_max = std::numeric_limits<std::uint32_t>::max();
+  static_assert(tess::gpu::detail::fits_size<std::uint32_t>(uint32_max));
+  static_assert(!tess::gpu::detail::fits_size<std::uint32_t>(
+      static_cast<std::uint64_t>(uint32_max) + 1));
+  static_assert(tess::gpu::detail::fits_size<std::size_t>(
+      std::numeric_limits<std::size_t>::max()));
+}
+
 TEST(TessWebGpuBackend, DispatchRequiresRegisteredFieldAndCurrentGeneration) {
   tess_webgpu_stub::reset();
   DeviceOwner device{tess_webgpu_stub::make_device()};
@@ -143,6 +171,35 @@ TEST(TessWebGpuBackend, DispatchRequiresRegisteredFieldAndCurrentGeneration) {
       .input_field_index = 0,
       .chunk_count = 1,
   }));
+}
+
+TEST(TessWebGpuBackend, RefusesDispatchBeyondWorkgroupXLimit) {
+  tess_webgpu_stub::reset();
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  auto backend = make_backend(device.get());
+  device.reset();
+  World world;
+  ASSERT_TRUE(
+      backend.register_field(tess::gpu::field_mirror_desc<World, CostTag>()));
+  PipelineOwner pipeline{tess_webgpu_stub::make_pipeline()};
+  BindGroupOwner bind_group{tess_webgpu_stub::make_bind_group()};
+  const auto registered = backend.register_product(tess::gpu::WebGpuProductDesc{
+      .product_key = 17,
+      .input_field_index = 0,
+      .pipeline = pipeline.get(),
+      .bind_group = bind_group.get(),
+  });
+  ASSERT_TRUE(registered.has_value());
+  const auto handle = registered.value_or(tess::gpu::GpuProductHandle{});
+
+  EXPECT_FALSE(backend.dispatch(tess::gpu::DispatchDesc{
+      .product_key = handle.key,
+      .product_generation = handle.generation,
+      .input_field_index = 0,
+      .chunk_count = 513,
+      .workgroups_per_chunk = 128,
+  }));
+  EXPECT_EQ(tess_webgpu_stub::dispatched_x, 0u);
 }
 
 TEST(TessWebGpuBackend, ReadbackCompletesAsynchronouslyAfterDestruction) {

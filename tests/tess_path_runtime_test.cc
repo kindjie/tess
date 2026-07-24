@@ -686,6 +686,32 @@ TEST(TessPathRuntime, UnitFieldCacheRejectsInvalidEndpointsBeforeGrouping) {
   EXPECT_EQ(runtime.stats().found, 1u);
 }
 
+TEST(TessPathRuntime, WeightedFieldCacheRejectsZeroCostStart) {
+  World world;
+  fill_world(world);
+  const auto zero_cost_start = tess::Coord3{0, 0, 0};
+  const auto goal = tess::Coord3{31, 31, 0};
+  world.template field<CostTag>(zero_cost_start) = 0;
+
+  tess::PathRequestRuntime runtime;
+  (void)runtime.submit(tess::PathRequest{zero_cost_start, goal});
+  (void)runtime.submit(tess::PathRequest{tess::Coord3{8, 0, 0}, goal});
+  const auto policy = tess::PathRuntimeCachePolicy{
+      .use_weighted_field_product_cache = true,
+      .weighted_field_product_min_start_chunks = 1,
+  };
+
+  const auto results =
+      runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(world,
+                                                                     policy);
+
+  ASSERT_EQ(results.size(), 2u);
+  EXPECT_EQ(results[0].status, tess::PathStatus::InvalidStart);
+  EXPECT_EQ(results[1].status, tess::PathStatus::Found);
+  EXPECT_EQ(runtime.stats().invalid_start, 1u);
+  EXPECT_EQ(runtime.stats().found, 1u);
+}
+
 // The runtime policy byte budget must drive real eviction inside
 // process_unit_cached: two world-sized products cannot coexist under a
 // budget sized for one, so alternating goal groups evict each other.

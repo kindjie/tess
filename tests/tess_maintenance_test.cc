@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -78,6 +79,88 @@ struct ZeroProgressTask final : maintenance::MaintenanceTask {
     static_cast<void>(scheduler->schedule(*this));
   }
 };
+
+struct ImmediateSelfSchedulingTask final : maintenance::MaintenanceTask {
+  maintenance::MaintenanceScheduler* scheduler = nullptr;
+  std::uint32_t remaining = 3;
+  std::uint32_t executions = 0;
+  std::uint32_t active_depth = 0;
+  std::uint32_t maximum_active_depth = 0;
+
+  void run(maintenance::MaintenanceBudget& budget) override {
+    if (!budget.consume()) {
+      return;
+    }
+    ++executions;
+    ++active_depth;
+    maximum_active_depth = std::max(maximum_active_depth, active_depth);
+    --remaining;
+    if (remaining != 0) {
+      (void)scheduler->schedule(*this);
+    }
+    --active_depth;
+  }
+};
+
+struct DuplicateImmediateSelfScheduleTask final : maintenance::MaintenanceTask {
+  maintenance::MaintenanceScheduler* scheduler = nullptr;
+  std::uint32_t executions = 0;
+
+  void run(maintenance::MaintenanceBudget& budget) override {
+    if (!budget.consume()) {
+      return;
+    }
+    ++executions;
+    if (executions == 1) {
+      (void)scheduler->schedule(*this);
+      (void)scheduler->schedule(*this);
+    }
+  }
+};
+
+TEST(TessMaintenance, ImmediateSelfScheduleUsesConstantStackDepth) {
+  maintenance::ImmediateScheduler scheduler;
+  ImmediateSelfSchedulingTask task;
+  task.scheduler = &scheduler;
+
+  EXPECT_TRUE(scheduler.schedule(task));
+  EXPECT_EQ(task.executions, 3u);
+  EXPECT_EQ(task.maximum_active_depth, 1u);
+}
+
+TEST(TessMaintenance, ImmediatePreservesDuplicateSelfScheduleRequests) {
+  maintenance::ImmediateScheduler scheduler;
+  DuplicateImmediateSelfScheduleTask task;
+  task.scheduler = &scheduler;
+
+  EXPECT_TRUE(scheduler.schedule(task));
+  EXPECT_EQ(task.executions, 3u);
+}
+
+TEST(TessMaintenance, ImmediateStopsZeroProgressSelfSchedule) {
+  maintenance::ImmediateScheduler scheduler;
+  ZeroProgressTask task;
+  task.scheduler = &scheduler;
+
+  EXPECT_FALSE(scheduler.schedule(task));
+  EXPECT_EQ(task.executions, 1u);
+}
+
+TEST(TessMaintenance, ImmediateSelfScheduleTrampolineDoesNotAllocate) {
+  maintenance::ImmediateScheduler scheduler;
+  ImmediateSelfSchedulingTask task;
+  task.scheduler = &scheduler;
+
+  {
+    tess_test::ScopedAllocationCounter counter;
+    for (int run = 0; run < 100; ++run) {
+      task.remaining = 3;
+      EXPECT_TRUE(scheduler.schedule(task));
+    }
+    EXPECT_EQ(counter.count(), 0u);
+  }
+  EXPECT_EQ(task.executions, 300u);
+}
 
 TEST(TessMaintenance, CoalescingCollapsesDuplicateSchedules) {
   maintenance::CoalescingScheduler scheduler(4);

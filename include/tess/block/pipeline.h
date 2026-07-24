@@ -195,7 +195,9 @@ struct FlatMapSource {
   void for_each(Sink&& sink) {
     auto&& output = sink;
     source.for_each([&](auto&& value) {
-      auto range = std::invoke(mapper, std::forward<decltype(value)>(value));
+      // Preserve lvalue range identity (including mutable references) while
+      // still extending a mapper-returned temporary through this iteration.
+      auto&& range = std::invoke(mapper, std::forward<decltype(value)>(value));
       for (auto&& item : range) {
         std::invoke(output, std::forward<decltype(item)>(item));
       }

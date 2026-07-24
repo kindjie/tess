@@ -35,11 +35,16 @@ struct PathRuntimeCachePolicy {
   bool use_unit_field_product_cache = false;
   std::size_t unit_field_product_min_goal_reuse = 2;
   std::size_t unit_field_product_min_start_chunks = 2;
+  // Unit and weighted products share one runtime cache. The latest processing
+  // pass applies its corresponding budget to the combined retained footprint,
+  // so lowering this value may evict weighted products too.
   std::size_t unit_field_product_cache_byte_budget =
       std::numeric_limits<std::size_t>::max();
   bool use_weighted_field_product_cache = false;
   std::size_t weighted_field_product_min_goal_reuse = 2;
   std::size_t weighted_field_product_min_start_chunks = 2;
+  // See unit_field_product_cache_byte_budget: this pass likewise budgets the
+  // shared cache and may evict retained unit products.
   std::size_t weighted_field_product_cache_byte_budget =
       std::numeric_limits<std::size_t>::max();
   std::size_t max_route_entries = RouteCacheScratch::default_max_entries;
@@ -136,7 +141,7 @@ class PathRequestRuntime {
     unit_route_cache_.reserve_routes(count);
   }
 
-  /** Reserves unit distance-field product cache entries. */
+  /** Reserves entries in the shared unit/weighted field-product cache. */
   void reserve_unit_field_products(std::size_t count) {
     unit_field_product_cache_.reserve_entries(count);
   }
@@ -151,7 +156,11 @@ class PathRequestRuntime {
     unit_field_product_.reserve_dependencies(count);
   }
 
-  /** Reserves weighted distance-field product cache entries. */
+  /**
+   * Reserves the same shared product cache as reserve_unit_field_products().
+   *
+   * The two names describe the intended processing pass, not separate storage.
+   */
   void reserve_weighted_field_products(std::size_t count) {
     unit_field_product_cache_.reserve_entries(count);
   }
@@ -896,6 +905,8 @@ class PathRequestRuntime {
   DistanceFieldScratch unit_field_scratch_;
   GoalSet unit_field_goals_;
   DistanceFieldProduct unit_field_product_;
+  // The historical unit_ name predates weighted product reuse. Both processing
+  // paths intentionally share this cache, its capacity, and its active budget.
   FieldProductCache unit_field_product_cache_;
   WeightedPathBatchScratch weighted_batch_;
   WeightedPortalSegmentCache portal_segment_cache_;

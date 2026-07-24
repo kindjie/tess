@@ -24,9 +24,9 @@ https://tess.owx.dev/for-agents/
 - [Concepts](https://tess.owx.dev/architecture/): normative design notes
   per subsystem
 - [Performance](https://tess.owx.dev/performance/): measured medians and
-  CI-enforced ceilings (single-threaded)
-- [Roadmap](https://tess.owx.dev/roadmap/): shipped vs
-  designed-but-deferred vs out-of-scope
+  CI-enforced serial and worker-pool ceilings
+- [Roadmap](https://tess.owx.dev/roadmap/): shipped vs planned extensions vs
+  out-of-scope
 - [Support](https://tess.owx.dev/support/): stability policy and channels
 - [API reference](https://tess.owx.dev/api/): generated reference for the
   supported surface

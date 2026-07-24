@@ -162,7 +162,12 @@ auto build_bounded_weighted_distance_field_core(
     const auto next_distance =
         detail::saturating_add(current_distance, current_entry_cost);
     if (next_distance == infinite_distance) {
-      continue;
+      // The bucket ring cannot encode the reserved infinity sentinel. Rebuild
+      // with heap Dijkstra so this realized overflow is reported instead of
+      // silently becoming NoPath; like the >MaxCost escape above, this rare
+      // handoff intentionally drops target truncation and floods to exhaustion.
+      return build_weighted_distance_field<World, Class>(world, goal, scratch,
+                                                         policy);
     }
     auto& next_bucket = scratch.weighted_buckets_[next_distance % bucket_count];
 
@@ -608,15 +613,26 @@ auto weighted_path_batch(const World& world,
                 scratch.field_scratch_.residency_matches(world));
     for (auto member = members_begin; member < members_end; ++member) {
       const auto j = static_cast<std::size_t>(scratch.group_members_[member]);
-      const auto result =
-          field.status == PathStatus::Found
-              ? detail::weighted_distance_field_path_core<World, Class,
-                                                          Provider>(
-                    world, requests[j].start, requests[j].goal,
-                    scratch.field_scratch_, /*verify_residency=*/false,
-                    provider)
-              : detail::weighted_group_member_failure<World, Class, Provider>(
-                    world, requests[j], field);
+      const auto result = [&] {
+        if (field.status == PathStatus::Found) {
+          return detail::weighted_distance_field_path_core<World, Class,
+                                                           Provider>(
+              world, requests[j].start, requests[j].goal,
+              scratch.field_scratch_, /*verify_residency=*/false, provider);
+        }
+        if (field.status == PathStatus::CostOverflow) {
+          // Overflow is global to the reverse field: one irrelevant saturated
+          // edge makes the partial field unsuitable for classifying every
+          // member. Retry each start independently so finite routes remain
+          // Found and only requests that realize overflow report it.
+          ++scratch.stats_.astar_fallbacks;
+          return weighted_astar_path<World, Class, Provider>(
+              world, requests[j], scratch.astar_scratch_,
+              MissingChunkPolicy::TreatAsBlocked, provider);
+        }
+        return detail::weighted_group_member_failure<World, Class, Provider>(
+            world, requests[j], field);
+      }();
       scratch.offsets_[j] = scratch.paths_.size();
       scratch.sizes_[j] = result.path.size();
       scratch.paths_.insert(scratch.paths_.end(), result.path.begin(),

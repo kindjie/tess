@@ -536,6 +536,33 @@ TEST(TessQueuedResults, ResumableWorkAdvancesInDeterministicFifoOrder) {
   EXPECT_EQ(queue.state(second_ticket), tess::AsyncResultState::Ready);
 }
 
+TEST(TessQueuedResults, ThrowingContinuationRemainsPendingAndRetryable) {
+  struct ThrowOnce {
+    bool first = true;
+
+    auto operator()(tess::AsyncWorkBudget, Ack& ack) -> tess::AsyncWorkStep {
+      ++ack.tiles;
+      if (first) {
+        first = false;
+        throw std::runtime_error{"retry"};
+      }
+      return {tess::AsyncStepState::Ready, 1, tess::AsyncVersion{7}};
+    }
+  };
+
+  ThrowOnce work;
+  tess::ResumableWorkQueue<Ack> queue;
+  const auto ticket = queue.submit(work);
+
+  EXPECT_THROW(static_cast<void>(queue.advance(tess::AsyncWorkBudget{1})),
+               std::runtime_error);
+  EXPECT_EQ(queue.state(ticket), tess::AsyncResultState::Pending);
+  const auto stats = queue.advance(tess::AsyncWorkBudget{1});
+  EXPECT_EQ(stats.ready, 1u);
+  ASSERT_NE(queue.result(ticket), nullptr);
+  EXPECT_EQ(queue.result(ticket)->tiles, 2u);
+}
+
 TEST(TessQueuedResults, AsyncTicketsExposeEveryTerminalStateAndVersionGate) {
   CountingWork cancelled_work{1, 0};
   CountingWork superseded_work{1, 0};
@@ -589,6 +616,24 @@ TEST(TessQueuedResults, ClearInvalidatesTicketsAndWarmReuseAllocatesNothing) {
     EXPECT_EQ(counter.count(), 0u);
   }
 }
+
+#if !TESS_ENABLE_ASSERTS
+TEST(TessQueuedResults, InvalidBudgetReportStillCountsCallbackInvocation) {
+  struct OverReportingWork {
+    auto operator()(tess::AsyncWorkBudget budget, Ack&) -> tess::AsyncWorkStep {
+      return {tess::AsyncStepState::Pending, budget.max_items + 1, {}};
+    }
+  };
+
+  tess::ResumableWorkQueue<Ack> queue;
+  OverReportingWork work;
+  const auto ticket = queue.submit(work);
+  const auto stats = queue.advance(tess::AsyncWorkBudget{1});
+
+  EXPECT_EQ(stats.invoked, 1u);
+  EXPECT_EQ(queue.state(ticket), tess::AsyncResultState::Failed);
+}
+#endif
 
 #if TESS_ENABLE_ASSERTS
 TEST(TessQueuedResults, ResumableWorkRejectsReentrantQueueMutation) {

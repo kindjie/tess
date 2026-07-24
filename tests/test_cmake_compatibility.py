@@ -56,6 +56,23 @@ def test_project_and_presets_declare_the_supported_floor():
     assert '"minor": 25' in presets
 
 
+def test_doxygen_enables_every_optional_public_header():
+    cmake_lists = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    predefined = cmake_lists.split("set(DOXYGEN_PREDEFINED", 1)[1].split(
+        ")", 1
+    )[0]
+
+    for gate in (
+        "TESS_ENABLE_ENTT",
+        "TESS_ENABLE_FLECS",
+        "TESS_ENABLE_IMGUI",
+        "TESS_ENABLE_DIAGNOSTICS",
+        "TESS_ENABLE_WEBGPU",
+        "WEBGPU_H_",
+    ):
+        assert f'"{gate}"' in predefined
+
+
 def test_consumer_preset_stays_consumer_shaped():
     presets = json.loads(
         (REPO_ROOT / "CMakePresets.json").read_text(encoding="utf-8")

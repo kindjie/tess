@@ -15,7 +15,6 @@
 #include <span>
 #include <tuple>
 #include <type_traits>
-#include <utility>
 #include <vector>
 
 namespace tess {
@@ -409,7 +408,10 @@ inline auto parse_world_archive(std::span<const std::byte> bytes)
         !body_cursor.read_unsigned_le(field.version) ||
         !body_cursor.read_byte(kind) ||
         !body_cursor.read_unsigned_le(field.width)) {
-      return fail(WorldArchiveStatus::Truncated);
+      // The outer envelope size and checksum already passed. Exhausting that
+      // complete body inside its declared descriptor table is structural
+      // corruption, not transport truncation.
+      return fail(WorldArchiveStatus::Corrupt);
     }
     field.kind = static_cast<ArchiveScalarKind>(kind);
     const auto valid_width = field.width == 1 || field.width == 2 ||
@@ -643,6 +645,9 @@ void prepare_world_for_load(World& world,
                             std::span<const ChunkKey> archive_keys) {
   if constexpr (std::is_same_v<typename World::residency_type,
                                SparseResident>) {
+    // Re-materialize even keys present in both sets. Besides making the
+    // archive's resident set exact, this advances sparse residency generations
+    // so generation-stamped derived state cannot survive a world replacement.
     const auto current_span = world.resident_chunk_keys();
     const std::vector current(current_span.begin(), current_span.end());
     for (const auto key : current) {

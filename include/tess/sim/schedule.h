@@ -437,6 +437,7 @@ class Schedule {
     // re-arms the task for the next tick instead of being lost.
     task.pending_mask &= ~fired_dirty;
     task.pending_events &= ~fired_events;
+    const auto consumed_request = task.run_requested;
     task.run_requested = false;
 
     auto context = ScheduleTaskContext{};
@@ -444,7 +445,18 @@ class Schedule {
     context.pending_dirty = fired_dirty;
     context.budget_items = budget;
     context.pending_events = fired_events;
-    const auto result = task.fn(task.ctx, context);
+    auto result = ScheduleTaskResult{};
+    try {
+      result = task.fn(task.ctx, context);
+    } catch (...) {
+      // A failed callback did not complete the work represented by its
+      // coalesced triggers. Merge rather than assign: the callback may have
+      // raised the same or additional triggers before it threw.
+      task.pending_mask |= fired_dirty;
+      task.pending_events |= fired_events;
+      task.run_requested = task.run_requested || consumed_request;
+      throw;
+    }
     TESS_ASSERT(task.desc.cadence.kind != CadenceKind::Background ||
                 result.items_done <= budget);
 

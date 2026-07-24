@@ -10,7 +10,11 @@ storage, exact event handling, or simulation command execution.
 - `MaintenanceBudget` is a shared unit budget for a drain.
 - `MaintenanceScheduler` is the backend-neutral schedule, run, and explicit
   flush interface.
-- `ImmediateScheduler` executes each request synchronously.
+- `ImmediateScheduler` executes each request synchronously. Self-schedules and
+  A-to-B-to-A requests use an allocation-free iterative trampoline, preserving
+  one execution per request without recursive task entry. A self-schedule that
+  consumes no budget returns `false` to report that the synchronous backend
+  cannot make progress.
 - `FifoScheduler` is a bounded, non-deduplicating amplification baseline.
 - `CoalescingScheduler` retains at most one pending entry per task.
 - `MaintenanceMetrics` reports schedules, collapsed schedules, executions, and

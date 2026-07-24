@@ -114,6 +114,9 @@ auto for_each_box_span(Box3 box, Fn&& fn) -> SpanQueryStats {
   const auto y = detail::clip_axis(box.origin.y, box.extent.y, size.y);
   const auto z = detail::clip_axis(box.origin.z, box.extent.z, size.z);
   auto stats = SpanQueryStats{};
+  if (x.count == 0 || y.count == 0 || z.count == 0) {
+    return stats;
+  }
   auto&& callback = fn;
   for (std::uint64_t z_offset = 0; z_offset < z.count; ++z_offset) {
     for (std::uint64_t y_offset = 0; y_offset < y.count; ++y_offset) {
@@ -152,9 +155,6 @@ auto for_each_radius_span(Coord3 center, std::uint32_t radius, Fn&& fn)
       continue;
     }
     const auto dz_squared = dz * dz;
-    if (dz_squared > radius_squared) {
-      continue;
-    }
     for (std::uint64_t y_offset = 0; y_offset < y.count; ++y_offset) {
       const auto world_y = y.origin + static_cast<std::int64_t>(y_offset);
       const auto dy = tess::detail::abs_delta(center.y, world_y);
@@ -198,6 +198,9 @@ auto for_each_chunk_span(ChunkKey key, Box3 local_box, Fn&& fn)
   const auto z = detail::clip_axis(local_box.origin.z, local_box.extent.z,
                                    Traits::chunk.z);
   auto stats = SpanQueryStats{};
+  if (x.count == 0 || y.count == 0 || z.count == 0) {
+    return stats;
+  }
   auto&& callback = fn;
   for (std::uint64_t z_offset = 0; z_offset < z.count; ++z_offset) {
     for (std::uint64_t y_offset = 0; y_offset < y.count; ++y_offset) {

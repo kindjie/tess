@@ -109,6 +109,10 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
   with the resolved chunk view, local id and coordinate, and world coordinate.
 - `pipeline_from(span)` applies the same lazy adapters to caller-owned
   sequences and frontiers.
+- `flat_map` preserves whether its mapper returned a range by reference and
+  extends a returned temporary through the nested iteration. Mutating a
+  referenced range through the terminal therefore affects the caller-owned
+  range rather than an implicit copy.
 - `Pipeline::for_each` and `Pipeline::reduce` are fused terminals.
   `collect_into` and `to_frontier` use caller-owned bounded storage and report
   both written and required counts through `PipelineCollectResult`.

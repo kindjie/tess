@@ -270,8 +270,8 @@ marker used by compile-time validation and normalization.
   passability), and `LegacyWeighted<PassableTag, CostTag>` (the legacy
   cost-agnostic asymmetry). `movement_class_of<T>` normalizes a raw tag OR a
   class so every legacy `<World, PassableTag>` call site compiles unchanged.
-- `MovementClassFor<Class, World>` checks the full predicate/cost contract;
-  `HasPassableSpan<Class, Page>` identifies the single-field fast path used by
+- `MovementClassFor<Class, Page>` checks the full predicate/cost contract;
+  `HasPassableSpan<Class>` identifies the single-field fast path used by
   compatible topology and path builders.
 
 Per-class region labeling and the graph class stamp are wired (S5.3): the

@@ -325,6 +325,39 @@ TEST(TessSchedule, ResumableWorkTaskRetainsBackgroundWorkAcrossTicks) {
   EXPECT_EQ(*queue.result(ticket), 5u);
 }
 
+TEST(TessSchedule, QuiescedResumableWorkTaskMustBeRearmed) {
+  struct Work {
+    auto operator()(tess::AsyncWorkBudget, std::uint32_t& result)
+        -> tess::AsyncWorkStep {
+      ++result;
+      return {tess::AsyncStepState::Ready, 1, {}};
+    }
+  };
+
+  Work first;
+  Work second;
+  tess::ResumableWorkQueue<std::uint32_t> queue;
+  const auto first_ticket = queue.submit(first);
+  tess::ResumableWorkTask<std::uint32_t> task{queue};
+  tess::Schedule schedule;
+  const auto task_id =
+      schedule.add_task({"async", tess::SimPhase::Background,
+                         tess::Cadence::background(tess::BackgroundBudget{1})},
+                        task);
+  schedule.seal();
+  tess::SimClock clock;
+
+  schedule.request_run(task_id);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 1u);
+  EXPECT_EQ(queue.state(first_ticket), tess::AsyncResultState::Ready);
+  const auto second_ticket = queue.submit(second);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);
+  EXPECT_EQ(queue.state(second_ticket), tess::AsyncResultState::Pending);
+  schedule.request_run(task_id);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 1u);
+  EXPECT_EQ(queue.state(second_ticket), tess::AsyncResultState::Ready);
+}
+
 // Background: armed once, then continues on its own while more_work holds,
 // consuming a deterministic item budget per tick.
 struct DrainTask {
@@ -522,6 +555,69 @@ TEST(TessSchedule, ThrowingTaskDoesNotLatchInRun) {
   EXPECT_THROW(schedule.run_tick(clock), std::runtime_error);
   const auto stats = schedule.run_tick(clock);
   EXPECT_EQ(stats.tasks_run, 1u);
+}
+
+struct ThrowOnceTriggeredTask {
+  bool should_throw = true;
+  std::uint32_t pending_dirty = 0;
+  std::uint32_t pending_events = 0;
+
+  auto operator()(const tess::ScheduleTaskContext& context)
+      -> tess::ScheduleTaskResult {
+    pending_dirty = context.pending_dirty;
+    pending_events = context.pending_events;
+    if (should_throw) {
+      should_throw = false;
+      throw std::runtime_error{"task failure"};
+    }
+    return {};
+  }
+};
+
+TEST(TessSchedule, ThrowingOnDirtyTaskRetainsConsumedTrigger) {
+  ThrowOnceTriggeredTask task;
+  tess::Schedule schedule;
+  (void)schedule.add_task({"throws", tess::SimPhase::Topology,
+                           tess::Cadence::on_dirty(DirtyTerrain)},
+                          task);
+  schedule.seal();
+  tess::SimClock clock;
+
+  schedule.notify_dirty(DirtyTerrain);
+  EXPECT_THROW((void)schedule.run_tick(clock), std::runtime_error);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 1u);
+  EXPECT_EQ(task.pending_dirty, DirtyTerrain);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);
+}
+
+TEST(TessSchedule, ThrowingOnEventTaskRetainsConsumedTrigger) {
+  ThrowOnceTriggeredTask task;
+  tess::Schedule schedule;
+  (void)schedule.add_task(
+      {"throws", tess::SimPhase::AI, tess::Cadence::on_event(EventArrived)},
+      task);
+  schedule.seal();
+  tess::SimClock clock;
+
+  schedule.notify_events(EventArrived);
+  EXPECT_THROW((void)schedule.run_tick(clock), std::runtime_error);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 1u);
+  EXPECT_EQ(task.pending_events, EventArrived);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);
+}
+
+TEST(TessSchedule, ThrowingManualTaskRetainsConsumedRequest) {
+  ThrowOnceTriggeredTask task;
+  tess::Schedule schedule;
+  const auto id = schedule.add_task(
+      {"throws", tess::SimPhase::PreUpdate, tess::Cadence::manual()}, task);
+  schedule.seal();
+  tess::SimClock clock;
+
+  schedule.request_run(id);
+  EXPECT_THROW((void)schedule.run_tick(clock), std::runtime_error);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 1u);
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 0u);
 }
 
 // Codex review (audit3 W3): a redundant seal() -- even from inside a task

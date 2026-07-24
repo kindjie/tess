@@ -64,7 +64,12 @@ struct AsyncWorkStep {
   AsyncVersion result_version{};
 };
 
-/// Summarizes one deterministic FIFO pass over resumable work.
+/**
+ * Summarizes one deterministic FIFO pass over resumable work.
+ *
+ * `invoked` and `items_done` describe work performed by this `advance()` call.
+ * The state counts describe the whole queue after that pass.
+ */
 struct AsyncAdvanceStats {
   std::uint32_t invoked = 0;
   std::uint32_t items_done = 0;
@@ -83,7 +88,10 @@ struct AsyncAdvanceStats {
 /// observable across calls until `clear`, which invalidates them by generation.
 /// Callbacks may inspect the queue but must not mutate it or call `advance`;
 /// those reentrant operations are rejected. Instances are externally
-/// synchronized.
+/// synchronized. If a callback throws, the exception propagates and its slot
+/// remains `Pending`; any mutations it already made to the result value remain,
+/// and a later `advance` retries that callback. Earlier completed slots retain
+/// their terminal states.
 template <typename T>
 class ResumableWorkQueue {
   static_assert(std::is_default_constructible_v<T>);
@@ -158,6 +166,9 @@ class ResumableWorkQueue {
     }
     struct AdvanceGuard {
       bool& active;
+      // Exception propagation is intentional. This guard restores the
+      // reentrancy sentinel while leaving the throwing slot Pending so the
+      // caller may inspect state and choose whether to retry or fail it.
       ~AdvanceGuard() { active = false; }
     };
     in_advance_ = true;
@@ -174,6 +185,7 @@ class ResumableWorkQueue {
       TESS_ASSERT(slot.work != nullptr);
       const auto step =
           slot.work(slot.context, AsyncWorkBudget{remaining}, slot.value);
+      ++stats.invoked;
       TESS_ASSERT(step.items_done <= remaining);
       if (step.items_done > remaining) {
         slot.state = AsyncResultState::Failed;
@@ -194,7 +206,6 @@ class ResumableWorkQueue {
           slot.state = AsyncResultState::Stale;
           break;
       }
-      ++stats.invoked;
       stats.items_done += step.items_done;
     }
     summarize_states(stats);

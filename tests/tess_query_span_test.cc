@@ -111,6 +111,39 @@ void check_random_query(Random& random, bool radius_query) {
   EXPECT_EQ(actual.hash, expected.hash);
 }
 
+template <typename Shape>
+void check_random_chunk_query(Random& random) {
+  using Traits = tess::ShapeTraits<Shape>;
+  const auto key = tess::ChunkKey{static_cast<std::uint64_t>(random.next()) %
+                                  Traits::chunk_count};
+  const auto chunk = tess::chunk_coord<Shape>(key);
+  const auto base = tess::Coord3{
+      static_cast<std::int64_t>(chunk.x * Traits::chunk.x),
+      static_cast<std::int64_t>(chunk.y * Traits::chunk.y),
+      static_cast<std::int64_t>(chunk.z * Traits::chunk.z),
+  };
+  const auto local_box = tess::Box3{
+      {random.signed_between(-3, 10), random.signed_between(-3, 10),
+       random.signed_between(-3, 7)},
+      {random.next() % 12u, random.next() % 12u, random.next() % 8u},
+  };
+
+  QueryDigest actual;
+  (void)tess::for_each_chunk_span<Shape>(
+      key, local_box, [&](tess::TileSpan span) { digest(span, actual); });
+  const auto expected = reference_digest<Shape>([&](tess::Coord3 coord) {
+    const auto local = tess::Coord3{
+        coord.x - base.x,
+        coord.y - base.y,
+        coord.z - base.z,
+    };
+    return tess::chunk_key<Shape>(tess::chunk_coord<Shape>(coord)) == key &&
+           tess::contains(local_box, local);
+  });
+  EXPECT_EQ(actual.count, expected.count);
+  EXPECT_EQ(actual.hash, expected.hash);
+}
+
 TEST(TessQuerySpan, BoxClipsToShapeAndEmitsDeterministicRows) {
   std::vector<tess::TileSpan> spans;
   const auto stats = tess::for_each_box_span<TopDown2D>(
@@ -236,16 +269,28 @@ TEST(TessQuerySpan, WarmEmissionDoesNotAllocate) {
 TEST(TessQuerySpan, RandomizedQueriesMatchReferenceAcrossAllMvpLayouts) {
   Random random;
   for (std::uint32_t i = 0; i < 100000; ++i) {
-    const auto radius_query = (i & 1u) != 0;
-    switch (i % 3u) {
+    const auto query_kind = i % 3u;
+    switch ((i / 3u) % 3u) {
       case 0:
-        check_random_query<TopDown2D>(random, radius_query);
+        if (query_kind == 2u) {
+          check_random_chunk_query<TopDown2D>(random);
+        } else {
+          check_random_query<TopDown2D>(random, query_kind == 1u);
+        }
         break;
       case 1:
-        check_random_query<Vertical2D>(random, radius_query);
+        if (query_kind == 2u) {
+          check_random_chunk_query<Vertical2D>(random);
+        } else {
+          check_random_query<Vertical2D>(random, query_kind == 1u);
+        }
         break;
       case 2:
-        check_random_query<Chunked3D>(random, radius_query);
+        if (query_kind == 2u) {
+          check_random_chunk_query<Chunked3D>(random);
+        } else {
+          check_random_query<Chunked3D>(random, query_kind == 1u);
+        }
         break;
       default:
         FAIL() << "remainder outside [0, 2]";

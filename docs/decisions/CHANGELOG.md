@@ -6,6 +6,24 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-23 - Harden cache, callback, and archive edge contracts
+
+- Changed: weighted product replay now matches uncached zero-cost-start
+  validation; field-cache insertion has a strong allocation guarantee; grouped
+  overflow falls back to exact per-request search; schedule exceptions restore
+  consumed triggers; immediate maintenance self-scheduling is iterative; and
+  WebGPU mirrors and dispatches reject unrepresentable device work.
+- Reason: final independent audits found policy-dependent path results, a
+  null cache entry after allocation failure, globally over-broad overflow
+  status, lost one-shot scheduler work, recursive maintenance execution, and
+  optional-backend limits that were weaker than the public contracts.
+- Affected docs: path, simulation, maintenance, persistence, queued
+  operations, block pipelines, spatial coordination, packaging, topology, ECS,
+  WebGPU API comments, design changelog, and test inventory.
+- Affected code: weighted products and batches, schedule and resumable work,
+  experimental maintenance, block pipelines, archive parsing, query spans,
+  benchmark fixture parsing, and the optional WebGPU backend.
+
 ## 2026-07-23 - Align parallel provider edges from plan through commit
 
 - Changed: provider-aware movement validation now considers special edges

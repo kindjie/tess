@@ -83,8 +83,9 @@ package — see [Installation](packaging.md).
   concepts.
 - `<tess/tess.h>` remains the compatibility umbrella.
 
-All three are dependency-free. Optional EnTT and Dear ImGui adapters remain
-behind explicit integration headers and compile definitions.
+All three are dependency-free. Optional EnTT and Flecs adapters, plus the
+separate Dear ImGui panels, remain behind explicit integration headers and
+compile definitions.
 
 ## Who is tess for?
 

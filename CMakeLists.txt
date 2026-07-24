@@ -282,7 +282,7 @@ if(TESS_BUILD_DOCS)
   set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)
   set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)
   # Documentation-only feature gates: include optional adapter, diagnostics,
-  # and panel APIs in the reference without their third-party headers.
+  # panel, and WebGPU APIs in the reference without third-party headers.
   set(DOXYGEN_PREDEFINED
       "TESS_ENABLE_ENTT"
       "ENTT_VERSION=1"
@@ -290,6 +290,8 @@ if(TESS_BUILD_DOCS)
       "FLECS_H"
       "TESS_ENABLE_IMGUI"
       "IMGUI_VERSION=1"
+      "TESS_ENABLE_WEBGPU"
+      "WEBGPU_H_"
       "TESS_ENABLE_DIAGNOSTICS"
       "TESS_DIAGNOSTICS_ENABLED=1")
   doxygen_add_docs(

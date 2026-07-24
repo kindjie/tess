@@ -112,19 +112,21 @@
 - `tess_query_span_test`: verifies exact allocation-free x-run emitters for
   clipped world boxes, Euclidean radii, and chunk-local boxes across top-down,
   vertical, and 3D shapes; deterministic z/y/x ordering; edge clipping; empty
-  queries; reference tile-set equivalence; and splitting runs wider than the
-  public 32-bit span count without losing tiles.
+  queries; randomized reference tile-set equivalence for every query kind and
+  layout; and splitting runs wider than the public 32-bit span count without
+  losing tiles.
 - `tess_block_pipeline_test`: verifies block-preserving lazy tile sources,
   filter/map/flat-map composition, for-each and reduce terminals, explicit
   bounded frontier/sequence materialization with overflow reporting, the
   deliberately named allocating terminal, fused/materialized equivalence,
-  policy-qualified mutation, diagnostics, deterministic ordering, and a
-  zero-allocation fused warm path.
+  policy-qualified mutation, reference-preserving `flat_map`, diagnostics,
+  deterministic ordering, and a zero-allocation fused warm path.
 - `tess_maintenance_test`: verifies the experimental immediate, FIFO, and
   coalescing maintenance backends, including duplicate scheduling, budgeted
   continuation, concurrent scheduling, deterministic flush, partial dirty
-  clearing, zero-progress self-reschedule detection, shutdown, capacity
-  failure, and steady-state allocation behavior.
+  clearing, allocation-free constant-stack immediate self-scheduling,
+  duplicate self-request preservation, zero-progress detection, shutdown,
+  capacity failure, and steady-state allocation behavior.
 - `tess_topology_coarse_path_test`: verifies deterministic shortest region
   paths and chunk corridors, same-region and disconnected results, non-monotone
   chunk detours, portal continuity, clipped corridor bounds, and warm
@@ -149,15 +151,15 @@
   per-tile demand/reservation congestion summaries, explicit wait decisions,
   and allocation-free warm resolution after reserve.
 - `tess_persistence_test`: verifies the canonical little-endian world archive
-  envelope, dense and sparse authoritative-field round trips, canonical sparse
-  chunk order, shape/lattice/key/schema compatibility classification, explicit
-  migration-required outcomes, corruption/truncation rejection without target
-  mutation, sparse-capacity preflight, and monotonic derived-state
-  invalidation across in-place loads with warm products.
+  envelope against a full golden byte fixture, dense and sparse authoritative-
+  field round trips, canonical sparse chunk order, every envelope/key/
+  residency/chunk compatibility status, explicit migration-required outcomes,
+  corruption/truncation rejection without target mutation, sparse-capacity
+  preflight, and dense-version or sparse-generation invalidation on load.
 - `tess_grid_benchmark_harness_test`: verifies strict Moving AI map/scenario
   parsing from inline fixtures with portable classic-locale decimal handling,
   terrain and coordinate orientation, size/coordinate dimension bounds,
-  malformed input rejection,
+  hostile-header allocation bounds and malformed input rejection,
   compile-time-shape loading with blocked padding, independent
   orthogonal/diagonal reference costs, corner clearance, and the asymmetric
   fixed-point external-oracle interval, including exact agreement between the
@@ -268,7 +270,8 @@
   `AsyncTicket`s, immediate results, deterministic FIFO advancement under a
   shared item budget, pending continuations across calls, required/result
   versions, terminal failed/cancelled/superseded/stale states, stale-ticket
-  rejection after clear, rejection of callback-time queue mutation, and
+  rejection after clear, rejection of callback-time queue mutation,
+  throw-and-retry value/state semantics, invalid budget-report accounting, and
   allocation-free warm submit/advance/reset reuse.
 - `tess_movement_class_test`: verifies the compile-time movement vocabulary
   (`tess::movement`): the `MovementClassFor` concept and `movement_class_of`
@@ -337,7 +340,8 @@
   potential foot under sparse `Indeterminate`; and the same stair is rejected
   without the provider but accepted by provider-aware movement commit. A
   provider edge parallel to a blocked regular diagonal remains legal from
-  planning through commit.
+  planning through commit; missing provider topology outranks a blocked
+  regular edge, while a legal regular edge skips provider enumeration.
   Route-cache
   model binding preserves diagonal scales, bypasses invalid non-unit suffix
   arithmetic, and invalidates when a provider binding changes,
@@ -435,16 +439,18 @@
   distance-field products, nearest-target reconstruction, product
   stale-version rejection, byte-budgeted field-product cache
   hit/miss/eviction/stale stats, move-only field-product store without
-  world-sized copies, oversized-store whole-cache clearing, zero byte
-  budget, same-key replacement byte accounting, least-recently-used (not
-  insertion-order) eviction, distance-field error-status families
+  world-sized copies, strong allocation-failure insertion guarantees,
+  oversized-store whole-cache clearing, zero byte budget, same-key replacement
+  byte accounting, least-recently-used (not insertion-order) eviction,
+  distance-field error-status families
   (InvalidGoal/InvalidStart/empty `GoalSet` across plain, weighted, and
   product builds and reconstruction, with no garbage field or path left
   behind), local-domain weighted field bounds, mismatched-field rejection,
   weighted entry-cost routing, weighted direct and detour fast paths,
   weighted shared-goal fields, bounded weighted field builds and fallback,
-  weighted batch grouping, endpoint validation, and allocation-free repeated
-  queries with pre-reserved path scratch.
+  weighted batch grouping, per-request fallback from a global field overflow,
+  endpoint validation, and allocation-free repeated queries with pre-reserved
+  path scratch.
 - `tess_path_view_test`: verifies the non-owning `PathView` handed out by
   `PathResult`: a default view is empty, a view mirrors its underlying nodes
   (size, front/back, indexing, iteration, `data()` identity) without copying,
@@ -506,8 +512,9 @@
   covers runtime lifecycle: `clear_requests()` starting a fresh frame with
   regenerated tickets, empty request lists processing to empty results,
   failure stat tallies (invalid start/goal, no path) over mixed unit and
-  weighted batches, and the policy byte budget driving real field-product
-  eviction through `process_unit_cached`. Seeded (`std::mt19937`, fixed
+  weighted batches, zero-cost weighted-start rejection under product reuse,
+  and the shared policy byte budget driving real field-product eviction
+  through `process_unit_cached`. Seeded (`std::mt19937`, fixed
   seeds) randomized equivalence pins repeated-goal grouping against a
   per-request A* oracle — statuses, costs, and the candidate/used/skipped
   group counters versus a reference computation — across both start-chunk
@@ -599,7 +606,9 @@
   disablement, allocation-free dispatch (`run_tick`/`notify_dirty`/
   `notify_events`/`request_run`) after `seal()`, allocation-free warm event
   publication, direct `ResumableWorkTask` background integration, and the
-  frame driver keeping EveryN exact
+  explicit re-arm required after that task quiesces. Throwing callbacks restore
+  consumed dirty, event, and manual triggers while preserving clock/cadence
+  advancement. The frame driver keeps EveryN exact
   across SimSpeed changes, backlogged multi-tick frames, and paused frames
   (cadences count fixed ticks, never frames).
 - `tess_ecs_adapter_test`: verifies the dependency-free ECS layer (M10):
@@ -650,11 +659,12 @@
   buffers/dispatches, explicit None readbacks) without recording them.
 - `tess_webgpu_backend_test` (`TESS_ENABLE_WEBGPU` on): compiles the optional
   backend against an API-matching stable WebGPU C stub. It verifies device and
-  queue ownership, mirror registration and real chunk-byte uploads, compute
-  command submission only for registered input mirrors, generation-stale
-  product rejection, asynchronous summary readback that safely completes after
-  backend destruction, invalid requests, explicit device-loss fallback, and
-  the `GpuBackend` concept. Stub handles use scoped C-API release owners so
+  queue ownership, overflow-safe mirror registration, representable uploads,
+  real chunk-byte uploads, compute submission only for registered mirrors and
+  within the configured workgroup-X limit, generation-stale product rejection,
+  asynchronous summary readback that safely completes after backend
+  destruction, invalid requests, explicit device-loss fallback, and the
+  `GpuBackend` concept. Stub handles use scoped C-API release owners so
   fatal assertions cannot leak caller references, and stub enum widths
   intentionally match the stable C ABI.
 - `tess_render_delta_frame_test`: verifies the M11 DeltaFrame bridge
@@ -763,7 +773,8 @@
   `run_type` and quotes CSV fields; that `tools/benchmark_trends.py` reads
   every result file in a baseline artifact and errors on unmatched
   `--benchmark` selectors; and that `tools/benchmark_artifact_metadata.py`
-  writes the expected metadata fields.
+  writes the expected metadata fields. Literal-name extraction covers
+  multiline adjacent C++ string literals.
 - `tests/test_branding_assets.py`: static asset and browser-demo contract
   coverage, including the colony's explicit terminal bottleneck metric so an
   exhausted path-agent lifecycle cannot look like a silently running colony,

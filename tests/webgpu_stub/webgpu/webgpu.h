@@ -45,7 +45,10 @@ enum WGPUCallbackMode : std::uint32_t {
 // NOLINTNEXTLINE(performance-enum-size)
 enum WGPUMapAsyncStatus : std::uint32_t {
   WGPUMapAsyncStatus_Success = 1,
-  WGPUMapAsyncStatus_Error = 2,
+  WGPUMapAsyncStatus_CallbackCancelled = 2,
+  WGPUMapAsyncStatus_Error = 3,
+  WGPUMapAsyncStatus_Aborted = 4,
+  WGPUMapAsyncStatus_Force32 = 0x7FFFFFFF,
 };
 
 struct WGPUStringView {
