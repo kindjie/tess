@@ -3,6 +3,26 @@ cmake_minimum_required(VERSION 3.25...3.28)
 include(cmake/tess-version.cmake)
 include(cmake/TessCMakeCompatibility.cmake)
 
+option(
+  TESS_ENABLE_GRID_BENCHMARK_DATA
+  "Build opt-in tests backed by external grid benchmark data"
+  OFF
+)
+option(
+  TESS_REQUIRE_GRID_BENCHMARK_DATA
+  "Fail instead of skip when opt-in grid benchmark data is unavailable"
+  OFF
+)
+
+if(TESS_REQUIRE_GRID_BENCHMARK_DATA AND
+   NOT TESS_ENABLE_GRID_BENCHMARK_DATA)
+  message(
+    FATAL_ERROR
+      "TESS_REQUIRE_GRID_BENCHMARK_DATA requires "
+      "TESS_ENABLE_GRID_BENCHMARK_DATA=ON"
+  )
+endif()
+
 project(
   tess
   VERSION "${TESS_VERSION}"
@@ -22,8 +42,17 @@ option(TESS_BUILD_TESTING "Build tess tests" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_EXAMPLES "Build tess examples" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
 option(TESS_BUILD_DOCS "Build the tess API reference with Doxygen" OFF)
+set(
+  TESS_GRID_BENCHMARK_DATA_DIR
+  ""
+  CACHE PATH
+  "External grid benchmark cache; empty selects the platform cache default"
+)
 option(TESS_ENABLE_ENTT
        "Build EnTT-gated tess tests, examples, and benchmarks (requires EnTT)"
+       OFF)
+option(TESS_ENABLE_FLECS
+       "Build Flecs-gated tests, examples, and benchmarks (requires Flecs)"
        OFF)
 option(TESS_ENABLE_WARNINGS "Enable tess warning flags on local targets" ON)
 option(TESS_WARNINGS_AS_ERRORS "Treat tess local target warnings as errors" OFF)
@@ -68,18 +97,25 @@ configure_file(
 set(
   TESS_PUBLIC_HEADERS
   include/tess/block/block.h
+  include/tess/block/pipeline.h
   include/tess/core/assert.h
+  include/tess/core/lattice.h
   include/tess/core/shape.h
   include/tess/debug/imgui/panels.h
+  include/tess/debug/imgui/tools.h
   include/tess/diagnostics/diagnostics.h
   include/tess/diagnostics/export.h
   include/tess/diagnostics/trace.h
   include/tess/diagnostics/warning_sink.h
+  include/tess/experimental/maintenance.h
   include/tess/ecs/adapter.h
   include/tess/ecs/entity_handle.h
   include/tess/ecs/entt/entt_adapter.h
+  include/tess/ecs/flecs/flecs_adapter.h
   include/tess/gpu/backend.h
   include/tess/gpu/descriptors.h
+  include/tess/gpu/webgpu_backend.h
+  include/tess/ops/async_work.h
   include/tess/ops/phase_executor.h
   include/tess/ops/queued.h
   include/tess/ops/result_channel.h
@@ -94,8 +130,12 @@ set(
   include/tess/path/precheck.h
   include/tess/path/route_cache.h
   include/tess/pathfinding.h
+  include/tess/persistence/archive.h
+  include/tess/query/span.h
   include/tess/sim/auto_exec.h
+  include/tess/sim/async_work_task.h
   include/tess/sim/delta_frame.h
+  include/tess/sim/event_stream.h
   include/tess/sim/movement.h
   include/tess/sim/path_agent.h
   include/tess/sim/path_agent_tick.h
@@ -103,6 +143,9 @@ set(
   include/tess/sim/schedule.h
   include/tess/sim/scheduler.h
   include/tess/sim/time.h
+  include/tess/spatial/area.h
+  include/tess/spatial/local_coordination.h
+  include/tess/spatial/tactical_assignment.h
   include/tess/storage/chunk_meta.h
   include/tess/storage/chunk_page.h
   include/tess/storage/residency.h
@@ -111,7 +154,9 @@ set(
   include/tess/simulation.h
   include/tess/tess.h
   include/tess/topology/movement_class.h
+  include/tess/topology/step_policy.h
   include/tess/topology/topology.h
+  include/tess/topology/transition_model.h
   include/tess/topology/transition_provider.h
 )
 
@@ -236,13 +281,17 @@ if(TESS_BUILD_DOCS)
       "${CMAKE_CURRENT_SOURCE_DIR}/docs/api-main.md")
   set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)
   set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)
-  # Documentation-only feature gates: include the EnTT adapter, diagnostics,
-  # and ImGui panel APIs in the reference without their third-party headers.
+  # Documentation-only feature gates: include optional adapter, diagnostics,
+  # panel, and WebGPU APIs in the reference without third-party headers.
   set(DOXYGEN_PREDEFINED
       "TESS_ENABLE_ENTT"
       "ENTT_VERSION=1"
+      "TESS_ENABLE_FLECS"
+      "FLECS_H"
       "TESS_ENABLE_IMGUI"
       "IMGUI_VERSION=1"
+      "TESS_ENABLE_WEBGPU"
+      "WEBGPU_H_"
       "TESS_ENABLE_DIAGNOSTICS"
       "TESS_DIAGNOSTICS_ENABLED=1")
   doxygen_add_docs(

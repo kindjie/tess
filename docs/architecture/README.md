@@ -7,9 +7,10 @@ The current surface includes sparse residency,
 queued operations with result channels, the schedule with cadences and the
 selectable parallel phase executor, movement classes with per-class topology
 and transition providers, A* with the region-graph precheck, distance-field
-products and caches, the ECS adapter (EnTT-gated), the versioned DeltaFrame
-render bridge, compile-gated diagnostics, and the GPU backend interface
-(interface only in the current release).
+products and caches, independently gated EnTT and Flecs adapters, the
+custom-ECS seam, the versioned DeltaFrame render bridge, compile-gated
+diagnostics, the GPU backend interface, and an optional stable-C-API WebGPU
+backend.
 
 ## Layer Map
 
@@ -23,16 +24,22 @@ flowchart TB
 
   Core["Core: shapes, coordinates, keys"]
   Storage["Storage: schema, pages, worlds, residency"]
+  Persistence["Persistence: versioned authoritative archives"]
   Block["Block: domains, views, write policies"]
+  Query["Query: exact allocation-free spans"]
   Ops["Operations: queue, planner, executors, results"]
   Topology["Topology: movement classes and region graph"]
+  Spatial["Spatial coordination: areas, assignment, local reservations"]
   Path["Path: searches, products, and caches"]
   Sim["Simulation: schedule, agents, movement, deltas"]
   Core --> Storage
+  Storage --> Persistence
   Storage --> Block
+  Core --> Query
   Storage --> Topology
   Block --> Ops
   Topology --> Path
+  Topology --> Spatial
   Storage --> Path
   Ops --> Sim
   Path --> Sim
@@ -46,7 +53,7 @@ flowchart TB
   accTitle: Optional integration boundaries
   accDescr: Consumers opt into ECS adapters, the GPU interface, diagnostics, and ImGui panels without changing the dependency-free core.
 
-  Sim["Simulation"] --> ECS["Consumer-provided ECS or EnTT adapter"]
+  Sim["Simulation"] --> ECS["Custom ECS, EnTT, or Flecs adapter"]
   Storage["Storage"] --> GPU["Consumer-provided GPU backend"]
   Diagnostics["Compile-gated diagnostics"] --> Panels["Consumer-provided ImGui panels"]
 ```
@@ -100,10 +107,14 @@ Maintained notes for implemented areas:
 
 - [Shape, coordinate, and key foundation](shape.md)
 - [Storage foundation](storage.md)
+- [Persistence and compatibility](persistence.md)
 - [Block foundation](block.md)
+- [Span queries](query.md)
+- [Experimental maintenance scheduling](maintenance.md)
 - [Queued operations foundation](queued-operations.md)
 - [Topology foundation](topology.md)
 - [Path foundation](path.md)
+- [Spatial coordination](spatial-coordination.md)
 - [Simulation integration MVP](simulation.md)
 - [Diagnostics foundation](diagnostics.md)
 - [ECS integration](ecs.md)
@@ -112,9 +123,9 @@ Maintained notes for implemented areas:
 The umbrella header `tess/tess.h` exports the dependency-free core surface plus
 the configured `TESS_VERSION_MAJOR`, `TESS_VERSION_MINOR`, and
 `TESS_VERSION_PATCH` macros and their typed `tess::version` /
-`tess::library_version` representation. Optional integrations
-that require consumer-provided EnTT or Dear ImGui declarations are
-deliberately not included; consumers include those adapter headers explicitly.
+`tess::library_version` representation. Optional integrations that require
+consumer-provided EnTT, Flecs, or Dear ImGui declarations are deliberately not
+included; consumers include those adapter headers explicitly.
 
 ## Historical design intent (TDD archive)
 

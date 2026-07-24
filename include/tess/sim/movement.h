@@ -4,6 +4,7 @@
 #include <tess/storage/chunk_meta.h>
 #include <tess/storage/residency.h>
 #include <tess/topology/movement_class.h>
+#include <tess/topology/transition_model.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -196,13 +197,17 @@ namespace detail {
 // Validation core: returns the resolved endpoints alongside the result so
 // commit_movement_intent reuses them for its field writes and dirty marks
 // instead of re-resolving the same coordinates 4-7x per committed step
-// (audit 2026-07-11 M7). Resolved tiles are meaningful only when
-// result.status == Moved.
+// (audit 2026-07-11 M7). This core is intentionally not noexcept: consumer
+// providers are allowed to throw during enumeration, and validation must
+// propagate that failure instead of terminating. Resolved tiles are meaningful
+// only when result.status == Moved.
 template <typename World, typename ClassOrTag, typename OccupancyTag,
-          typename ReservationTag>
-[[nodiscard]] auto validate_movement_intent_resolved(
-    const World& world, MovementIntent intent) noexcept {
+          typename ReservationTag, typename Provider>
+[[nodiscard]] auto validate_movement_intent_resolved(const World& world,
+                                                     MovementIntent intent,
+                                                     const Provider& provider) {
   using Class = movement::movement_class_of<ClassOrTag>;
+  using Model = ResolvedTransitionModel<World, Class, Provider>;
   using Resolved = ResolvedTile<typename World::shape_type>;
   struct Validated {
     MovementResult result;
@@ -239,15 +244,59 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
       return fail(MovementStatus::StaleVersion);
     }
   }
-  if (manhattan_distance(intent.from, intent.to) != 1) {
-    return fail(MovementStatus::NotAdjacent);
-  }
   const auto& from_page = world.chunk(resolved_from->chunk_key);
   const auto& to_page = world.chunk(resolved_to->chunk_key);
   if (!Class::passable(from_page, resolved_from->local_tile_id)) {
     return fail(MovementStatus::BlockedFrom);
   }
   if (!Class::passable(to_page, resolved_to->local_tile_id)) {
+    return fail(MovementStatus::BlockedTo);
+  }
+  auto transition_availability = TransitionAvailability::Blocked;
+  auto is_candidate = Model::is_regular_candidate(intent.from, intent.to);
+  if (is_candidate) {
+    transition_availability =
+        Model::regular_availability(world, intent.from, intent.to);
+  }
+  if constexpr (Model::has_special_transitions) {
+    // A provider may deliberately add an edge parallel to a geometric
+    // regular edge (a bridge across blocked diagonal clearance, for example).
+    // A legal regular edge is the overwhelmingly common hot path and needs no
+    // provider call. Otherwise enumerate both sources and accept the strongest
+    // matching result: Legal beats MissingTopology, which beats Blocked.
+    // This keeps commit aligned with the transition enumeration used by A*
+    // without imposing provider overhead on ordinary legal movement.
+    if (transition_availability != TransitionAvailability::Legal) {
+      const auto model = Model{provider};
+      model.for_each_forward(
+          world, intent.from,
+          detail::transition_index<typename World::shape_type>(intent.from),
+          [&](auto probe) {
+            if (probe.to != intent.to) {
+              return;
+            }
+            is_candidate = true;
+            if (probe.availability == TransitionAvailability::Legal) {
+              transition_availability = TransitionAvailability::Legal;
+            } else if (probe.availability ==
+                           TransitionAvailability::MissingTopology &&
+                       transition_availability !=
+                           TransitionAvailability::Legal) {
+              transition_availability = TransitionAvailability::MissingTopology;
+            }
+          });
+    }
+  }
+  if (!is_candidate) {
+    if constexpr (Model::has_special_transitions) {
+      return fail(MovementStatus::StaleTopology);
+    }
+    return fail(MovementStatus::NotAdjacent);
+  }
+  if (transition_availability == TransitionAvailability::MissingTopology) {
+    return fail(MovementStatus::StaleVersion);
+  }
+  if (transition_availability != TransitionAvailability::Legal) {
     return fail(MovementStatus::BlockedTo);
   }
   if (static_cast<bool>(
@@ -285,8 +334,25 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 [[nodiscard]] auto validate_movement_intent(const World& world,
                                             MovementIntent intent) noexcept
     -> MovementResult {
+  return detail::validate_movement_intent_resolved<World, ClassOrTag,
+                                                   OccupancyTag, ReservationTag,
+                                                   AdjacentTransitions>(
+             world, intent, AdjacentTransitions{})
+      .result;
+}
+
+template <typename World, typename ClassOrTag, typename OccupancyTag,
+          typename ReservationTag, typename Provider>
+/// Validates a movement intent against regular and provider-supplied edges.
+///
+/// Exceptions from `provider` propagate to the caller.
+[[nodiscard]] auto validate_movement_intent(const World& world,
+                                            MovementIntent intent,
+                                            const Provider& provider)
+    -> MovementResult {
   return detail::validate_movement_intent_resolved<
-             World, ClassOrTag, OccupancyTag, ReservationTag>(world, intent)
+             World, ClassOrTag, OccupancyTag, ReservationTag, Provider>(
+             world, intent, provider)
       .result;
 }
 
@@ -299,9 +365,39 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 auto commit_movement_intent(World& world, MovementIntent intent,
                             std::uint32_t dirty_mask = 0) noexcept
     -> MovementResult {
+  const auto validated = detail::validate_movement_intent_resolved<
+      World, ClassOrTag, OccupancyTag, ReservationTag, AdjacentTransitions>(
+      world, intent, AdjacentTransitions{});
+  if (validated.result.status != MovementStatus::Moved) {
+    return validated.result;
+  }
+
+  auto& from_page = world.chunk(validated.from.chunk_key);
+  auto& to_page = world.chunk(validated.to.chunk_key);
+  from_page.template field<OccupancyTag>(validated.from.local_tile_id) = false;
+  to_page.template field<OccupancyTag>(validated.to.local_tile_id) = true;
+  to_page.template field<ReservationTag>(validated.to.local_tile_id) = false;
+  if (dirty_mask != 0) {
+    world.mark_dirty(validated.from.chunk_key, dirty_mask,
+                     Box3{intent.from, Extent3{1, 1, 1}});
+    world.mark_dirty(validated.to.chunk_key, dirty_mask,
+                     Box3{intent.to, Extent3{1, 1, 1}});
+  }
+  return validated.result;
+}
+
+template <typename World, typename ClassOrTag, typename OccupancyTag,
+          typename ReservationTag, typename Provider>
+/// Validates and commits movement through a provider-supplied edge.
+///
+/// Exceptions from `provider` propagate before any occupancy is mutated.
+auto commit_movement_intent(World& world, MovementIntent intent,
+                            std::uint32_t dirty_mask, const Provider& provider)
+    -> MovementResult {
   const auto validated =
       detail::validate_movement_intent_resolved<World, ClassOrTag, OccupancyTag,
-                                                ReservationTag>(world, intent);
+                                                ReservationTag, Provider>(
+          world, intent, provider);
   if (validated.result.status != MovementStatus::Moved) {
     return validated.result;
   }

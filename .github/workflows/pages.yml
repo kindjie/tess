@@ -99,10 +99,13 @@ jobs:
 
       - name: Check generated documentation links
         run: |
-          # Doxygen 1.17.0 emits these two quick-index links without anchors.
+          # Doxygen 1.17.0 emits these quick-index links without anchors. Keep
+          # each exception target-specific so every other missing anchor fails.
           python3 tools/check_docs_links.py build/site \
             --ignore-missing-anchor api/functions_vars.html#index_b \
-            --ignore-missing-anchor api/functions_vars.html#index_n
+            --ignore-missing-anchor api/functions_vars.html#index_n \
+            --ignore-missing-anchor api/functions_func.html#index_~ \
+            --ignore-missing-anchor api/functions_~.html#index_~
 
       - name: Smoke-test WebAssembly in Chrome
         run: |
@@ -133,6 +136,25 @@ jobs:
             http://127.0.0.1:8000/demo/colony/ >build/web-colony-dom.html
           grep -q 'data-tess-colony="ready"' build/web-colony-dom.html
           grep -q '>Colony running<' build/web-colony-dom.html
+          # Chromium's webgpu-swiftshader test configuration forces a software
+          # adapter and opts test-only WebGPU paths into this trusted smoke.
+          # Poll DevTools in wall time: virtual time can race past asynchronous
+          # GPU-process work and trigger the page's timeout before it completes.
+          python3 tools/wait_for_browser_state.py \
+            --browser google-chrome \
+            --url http://127.0.0.1:8000/demo/webgpu/ \
+            --dataset tessWebgpu \
+            --expected ready \
+            --timeout 20 \
+            -- \
+            --no-sandbox \
+            --enable-unsafe-webgpu \
+            --use-webgpu-adapter=swiftshader \
+            --enable-dawn-features=allow_unsafe_apis \
+            --disable-dawn-features=use_dxc \
+            --enable-webgpu-developer-features \
+            --use-gpu-in-tests \
+            --enable-accelerated-2d-canvas
 
       - name: Configure Pages
         if: github.ref == 'refs/heads/main'

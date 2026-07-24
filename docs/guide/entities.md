@@ -11,6 +11,7 @@ this choice can change later.
 | --- | --- | --- |
 | No ECS — plain structs | small agent counts, no existing ECS; the adapter layer would be pure overhead | `examples/path_agents.cc` |
 | EnTT adapter (`TESS_ENABLE_ENTT`) | you are already on EnTT, or want a maintained registry integration | `examples/entt_pawns.cc` |
+| Flecs adapter (`TESS_ENABLE_FLECS`) | you use Flecs and need the same lifecycle and occupancy contract | `examples/flecs_pawns.cc` |
 | Custom adapter | you have an in-house ECS or engine-side store | `examples/custom_ecs_min.cc` |
 
 ## The seam
@@ -27,9 +28,6 @@ substrate, and iteration order must be deterministic.
 - Specify: [ECS note](../architecture/ecs.md) — adapter concepts,
   ordering requirements, occupancy synchronization.
 
-## Horizon
-
-!!! note "Planned"
-    A Flecs adapter is designed but not shipped (see the
-    [roadmap](../roadmap.md)); the custom-adapter concepts are the
-    supported path for any non-EnTT store today.
+Both maintained ECS adapters use the same generic pipeline. Their native
+iteration order is deliberately ignored: each collects and sorts by the
+monotonic `AgentId` component before submitting work.

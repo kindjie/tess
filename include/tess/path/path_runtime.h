@@ -35,7 +35,17 @@ struct PathRuntimeCachePolicy {
   bool use_unit_field_product_cache = false;
   std::size_t unit_field_product_min_goal_reuse = 2;
   std::size_t unit_field_product_min_start_chunks = 2;
+  // Unit and weighted products share one runtime cache. The latest processing
+  // pass applies its corresponding budget to the combined retained footprint,
+  // so lowering this value may evict weighted products too.
   std::size_t unit_field_product_cache_byte_budget =
+      std::numeric_limits<std::size_t>::max();
+  bool use_weighted_field_product_cache = false;
+  std::size_t weighted_field_product_min_goal_reuse = 2;
+  std::size_t weighted_field_product_min_start_chunks = 2;
+  // See unit_field_product_cache_byte_budget: this pass likewise budgets the
+  // shared cache and may evict retained unit products.
+  std::size_t weighted_field_product_cache_byte_budget =
       std::numeric_limits<std::size_t>::max();
   std::size_t max_route_entries = RouteCacheScratch::default_max_entries;
   std::size_t max_route_path_nodes = RouteCacheScratch::default_max_path_nodes;
@@ -55,6 +65,7 @@ struct PathRuntimeStats {
   // non-resident chunk (PathStatus::Indeterminate). Kept distinct from
   // no_path so a stale/partial residency set is never counted as "no route".
   std::size_t indeterminate = 0;
+  std::size_t cost_overflow = 0;
   // Requests an optional topology precheck proved unreachable before A*, so no
   // grid was expanded for them. A SUBSET of no_path (each ruled-out request is
   // also counted there): the result is the same NoPath A* would have returned,
@@ -130,7 +141,7 @@ class PathRequestRuntime {
     unit_route_cache_.reserve_routes(count);
   }
 
-  /** Reserves unit distance-field product cache entries. */
+  /** Reserves entries in the shared unit/weighted field-product cache. */
   void reserve_unit_field_products(std::size_t count) {
     unit_field_product_cache_.reserve_entries(count);
   }
@@ -142,6 +153,20 @@ class PathRequestRuntime {
    * products can equal, that count.
    */
   void reserve_unit_field_product_dependencies(std::size_t count) {
+    unit_field_product_.reserve_dependencies(count);
+  }
+
+  /**
+   * Reserves the same shared product cache as reserve_unit_field_products().
+   *
+   * The two names describe the intended processing pass, not separate storage.
+   */
+  void reserve_weighted_field_products(std::size_t count) {
+    unit_field_product_cache_.reserve_entries(count);
+  }
+
+  /** Reserves dependency-key storage for weighted field products. */
+  void reserve_weighted_field_product_dependencies(std::size_t count) {
     unit_field_product_.reserve_dependencies(count);
   }
 
@@ -307,6 +332,41 @@ class PathRequestRuntime {
     return results_;
   }
 
+  /** Processes unit requests composed with a special transition provider. */
+  template <typename World, typename ClassOrTag, typename Provider>
+  [[nodiscard]] auto process_unit_cached(
+      const World& world, PathRuntimeCachePolicy policy,
+      const RegionGraphT<typename World::residency_type>* graph,
+      const Provider& provider) -> std::span<const PathResult> {
+    clear_results();
+    results_.resize(requests_.size());
+    offsets_.assign(requests_.size(), 0);
+    sizes_.assign(requests_.size(), 0);
+    processed_.assign(requests_.size(), 0);
+    stats_ = {};
+    prepare_process(world, policy);
+    bind_unit_class(
+        detail::tag_identity<movement::movement_class_of<ClassOrTag>>());
+    if (graph != nullptr && graph->matches_provider(provider)) {
+      precheck_prepass<ClassOrTag>(world, *graph);
+    }
+
+    // Provider-aware products are public, but the runtime deliberately uses
+    // its exact route cache here until provider revision is threaded through
+    // the repeated-goal selection policy and its counters.
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (processed_[i] != 0) {
+        continue;
+      }
+      const auto result = cached_astar_path<World, ClassOrTag, Provider>(
+          world, requests_[i], unit_scratch_, unit_route_cache_, provider);
+      copy_result(i, result);
+      record_status(result.status);
+    }
+    refresh_result_spans();
+    return results_;
+  }
+
   /**
    * Processes the batch with one movement class for weighted search and
    * precheck. A mismatched graph disables pruning. Result lifetime and
@@ -322,7 +382,19 @@ class PathRequestRuntime {
                   "MovementClass; legacy tag pairs go through the "
                   "<World, PassableTag, CostTag, MaxCost> overload.");
     return process_weighted_batch_impl<World, Class, MaxCost, Class>(
-        world, policy, graph);
+        world, policy, graph, AdjacentTransitions{});
+  }
+
+  /** Processes a weighted batch composed with a special provider. */
+  template <typename World, typename Class, std::uint32_t MaxCost,
+            typename Provider>
+  [[nodiscard]] auto process_weighted_batch(
+      const World& world, PathRuntimeCachePolicy policy,
+      const RegionGraphT<typename World::residency_type>* graph,
+      const Provider& provider) -> std::span<const PathResult> {
+    static_assert(std::derived_from<Class, movement::movement_class_tag>);
+    return process_weighted_batch_impl<World, Class, MaxCost, Class>(
+        world, policy, graph, provider);
   }
 
   /**
@@ -339,16 +411,16 @@ class PathRequestRuntime {
       -> std::span<const PathResult> {
     return process_weighted_batch_impl<
         World, movement::LegacyWeighted<PassableTag, CostTag>, MaxCost,
-        PassableTag>(world, policy, graph);
+        PassableTag>(world, policy, graph, AdjacentTransitions{});
   }
 
  private:
   template <typename World, typename BatchClass, std::uint32_t MaxCost,
-            typename PrecheckClassOrTag>
+            typename PrecheckClassOrTag, typename Provider>
   [[nodiscard]] auto process_weighted_batch_impl(
       const World& world, PathRuntimeCachePolicy policy,
-      const RegionGraphT<typename World::residency_type>* graph)
-      -> std::span<const PathResult> {
+      const RegionGraphT<typename World::residency_type>* graph,
+      const Provider& provider) -> std::span<const PathResult> {
     clear_results();
     results_.resize(requests_.size());
     offsets_.assign(requests_.size(), 0);
@@ -357,21 +429,22 @@ class PathRequestRuntime {
     stats_ = {};
     prepare_process(world, policy);
 
-    if (graph == nullptr) {
-      const auto batch = weighted_path_batch<World, BatchClass, MaxCost>(
-          world, requests_, weighted_batch_);
-      for (std::size_t i = 0; i < batch.size(); ++i) {
-        copy_result(i, batch[i]);
-        record_status(batch[i].status);
+    if (graph != nullptr && !graph->matches_provider(provider)) {
+      graph = nullptr;
+    }
+    if (graph != nullptr) {
+      precheck_prepass<PrecheckClassOrTag>(world, *graph);
+    }
+    if constexpr (std::is_same_v<typename World::residency_type,
+                                 AlwaysResident>) {
+      if (policy.use_weighted_field_product_cache) {
+        process_repeated_goal_weighted_fields<World, BatchClass>(world, policy,
+                                                                 provider);
       }
-      refresh_result_spans();
-      return results_;
     }
 
-    // Precheck partitions the batch: requests proven unreachable resolve to
-    // NoPath now, and only the survivors run through weighted A*. The batch is
-    // positional, so survivor results scatter back to their original slots.
-    precheck_prepass<PrecheckClassOrTag>(world, *graph);
+    // Precheck and product reuse partition the batch. Only survivors run
+    // through the existing weighted batch, then scatter to original slots.
     precheck_survivors_.clear();
     survivor_original_.clear();
     for (std::size_t i = 0; i < requests_.size(); ++i) {
@@ -380,8 +453,9 @@ class PathRequestRuntime {
         precheck_survivors_.push_back(requests_[i]);
       }
     }
-    const auto batch = weighted_path_batch<World, BatchClass, MaxCost>(
-        world, precheck_survivors_, weighted_batch_);
+    const auto batch =
+        weighted_path_batch<World, BatchClass, MaxCost, Provider>(
+            world, precheck_survivors_, weighted_batch_, provider);
     for (std::size_t s = 0; s < batch.size(); ++s) {
       const auto i = survivor_original_[s];
       copy_result(i, batch[s]);
@@ -389,6 +463,144 @@ class PathRequestRuntime {
     }
     refresh_result_spans();
     return results_;
+  }
+
+  template <typename World, typename Class, typename Provider>
+  void process_repeated_goal_weighted_fields(const World& world,
+                                             PathRuntimeCachePolicy policy,
+                                             const Provider& provider) {
+    using Shape = typename World::shape_type;
+    if (policy.weighted_field_product_min_goal_reuse < 2) {
+      policy.weighted_field_product_min_goal_reuse = 2;
+    }
+    if (policy.weighted_field_product_min_start_chunks == 0) {
+      policy.weighted_field_product_min_start_chunks = 1;
+    }
+    unit_field_product_cache_.set_byte_budget(
+        policy.weighted_field_product_cache_byte_budget);
+
+    constexpr auto no_group = std::numeric_limits<std::uint32_t>::max();
+    group_goals_.clear();
+    group_counts_.clear();
+    request_group_.assign(requests_.size(), no_group);
+    auto slot_capacity = goal_group_slots_.size() < 16u
+                             ? std::size_t{16}
+                             : goal_group_slots_.size();
+    while (slot_capacity < (requests_.size() + 1u) * 2u) {
+      slot_capacity *= 2u;
+    }
+    goal_group_slots_.assign(slot_capacity, 0u);
+    const auto slot_mask = slot_capacity - 1u;
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (processed_[i] != 0) {
+        continue;
+      }
+      if (!contains<Shape>(requests_[i].start)) {
+        auto invalid = PathResult{};
+        invalid.status = PathStatus::InvalidStart;
+        copy_result(i, invalid);
+        record_status(invalid.status);
+        processed_[i] = 1;
+        continue;
+      }
+      const auto goal = requests_[i].goal;
+      auto slot =
+          static_cast<std::size_t>(detail::coord_hash(goal)) & slot_mask;
+      auto group = no_group;
+      while (goal_group_slots_[slot] != 0u) {
+        const auto candidate = goal_group_slots_[slot] - 1u;
+        if (group_goals_[candidate] == goal) {
+          group = candidate;
+          break;
+        }
+        slot = (slot + 1u) & slot_mask;
+      }
+      if (group == no_group) {
+        group = static_cast<std::uint32_t>(group_goals_.size());
+        goal_group_slots_[slot] = group + 1u;
+        group_goals_.push_back(goal);
+        group_counts_.push_back(0u);
+      }
+      request_group_[i] = group;
+      ++group_counts_[group];
+    }
+
+    group_offsets_.assign(group_goals_.size() + 1u, 0u);
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (request_group_[i] != no_group) {
+        ++group_offsets_[request_group_[i] + 1u];
+      }
+    }
+    for (std::size_t group = 1; group < group_offsets_.size(); ++group) {
+      group_offsets_[group] += group_offsets_[group - 1u];
+    }
+    group_cursors_.assign(group_offsets_.begin(), group_offsets_.end());
+    group_members_.assign(group_offsets_.back(), 0u);
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (request_group_[i] != no_group) {
+        group_members_[group_cursors_[request_group_[i]]++] =
+            static_cast<std::uint32_t>(i);
+      }
+    }
+
+    for (std::uint32_t group = 0; group < group_goals_.size(); ++group) {
+      if (group_counts_[group] < policy.weighted_field_product_min_goal_reuse) {
+        continue;
+      }
+      const auto members_begin = group_offsets_[group];
+      const auto members_end = group_offsets_[group + 1u];
+      group_start_chunks_.clear();
+      for (auto member = members_begin; member < members_end; ++member) {
+        const auto& request = requests_[group_members_[member]];
+        group_start_chunks_.push_back(
+            chunk_key<Shape>(tile_key<Shape>(request.start)).value);
+      }
+      std::sort(group_start_chunks_.begin(), group_start_chunks_.end());
+      const auto start_chunk_count = static_cast<std::size_t>(
+          std::unique(group_start_chunks_.begin(), group_start_chunks_.end()) -
+          group_start_chunks_.begin());
+      ++stats_.field_product_candidate_groups;
+      if (start_chunk_count < policy.weighted_field_product_min_start_chunks) {
+        ++stats_.field_product_skipped_groups;
+        continue;
+      }
+
+      unit_field_goals_.clear();
+      unit_field_goals_.add(group_goals_[group]);
+      auto* product = unit_field_product_cache_
+                          .template lookup_weighted<World, Class, Provider>(
+                              world, unit_field_goals_, provider);
+      if (product == nullptr) {
+        const auto field =
+            build_weighted_distance_field_product<World, Class, Provider>(
+                world, unit_field_goals_, unit_field_scratch_,
+                unit_field_product_, provider);
+        if (field.status == PathStatus::Found) {
+          (void)unit_field_product_cache_
+              .template store_weighted<World, Class, Provider>(
+                  std::move(unit_field_product_), provider);
+          product = unit_field_product_cache_
+                        .template lookup_weighted<World, Class, Provider>(
+                            world, unit_field_goals_, provider);
+        }
+      }
+      if (product == nullptr) {
+        ++stats_.field_product_skipped_groups;
+        continue;
+      }
+
+      ++stats_.field_product_used_groups;
+      for (auto member = members_begin; member < members_end; ++member) {
+        const auto index = static_cast<std::size_t>(group_members_[member]);
+        const auto result =
+            weighted_distance_field_product_path<World, Class, Provider>(
+                world, requests_[index].start, *product, unit_field_scratch_,
+                provider);
+        copy_result(index, result);
+        record_status(result.status);
+        processed_[index] = 1;
+      }
+    }
   }
 
   // The unit route cache keys entries on (start, goal) plus a world-version
@@ -628,7 +840,7 @@ class PathRequestRuntime {
     paths_.insert(paths_.end(), result.path.begin(), result.path.end());
     results_[index] = PathResult{
         result.status,        result.cost, result.expanded_nodes,
-        result.reached_nodes, {},
+        result.reached_nodes, {},          result.cost_scale,
     };
   }
 
@@ -660,6 +872,9 @@ class PathRequestRuntime {
       case PathStatus::Indeterminate:
         ++stats_.indeterminate;
         return;
+      case PathStatus::CostOverflow:
+        ++stats_.cost_overflow;
+        return;
     }
   }
 
@@ -690,6 +905,8 @@ class PathRequestRuntime {
   DistanceFieldScratch unit_field_scratch_;
   GoalSet unit_field_goals_;
   DistanceFieldProduct unit_field_product_;
+  // The historical unit_ name predates weighted product reuse. Both processing
+  // paths intentionally share this cache, its capacity, and its active budget.
   FieldProductCache unit_field_product_cache_;
   WeightedPathBatchScratch weighted_batch_;
   WeightedPortalSegmentCache portal_segment_cache_;

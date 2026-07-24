@@ -189,6 +189,7 @@ jobs:
           tests/test_doc_snippets.py
           tests/test_doc_versions.py
           tests/test_header_compile_cost.py
+          tests/test_grid_benchmark_manifest.py
           tests/test_steamdeck_tools.py
 
       # Failing gate (promoted 2026-07-07 after a clean shake-out):

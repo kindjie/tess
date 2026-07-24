@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/storage/chunk_page.h>
+#include <tess/topology/step_policy.h>
 
 #include <concepts>
 #include <cstdint>
@@ -160,10 +161,12 @@ struct SelectCost {
 // --- the class ---------------------------------------------------------------
 
 /// Combines compile-time passability and entry-cost expressions.
-template <typename PassExpr, typename CostExpr>
+template <typename PassExpr, typename CostExpr,
+          typename StepPolicyT = DefaultSteps>
 struct MovementClass : movement_class_tag {
   using pass_expr = PassExpr;
   using cost_expr = CostExpr;
+  using step_policy = StepPolicyT;
 
   template <typename Page>
   [[nodiscard]] static constexpr bool passable(const Page& page,
@@ -243,5 +246,30 @@ template <typename T>
 using movement_class_of =
     std::conditional_t<std::derived_from<T, movement_class_tag>, T,
                        WalkableField<T>>;
+
+namespace detail {
+
+// Adapts any normalized class to unit entry costs while retaining its
+// passability predicate and regular-step policy. Used by minimum-step APIs.
+template <typename ClassOrTag>
+struct UnitMovementClass : movement_class_tag {
+  using source_class = movement_class_of<ClassOrTag>;
+  using cost_expr = UnitCost;
+  using step_policy = step_policy_of<source_class>;
+
+  template <typename Page>
+  [[nodiscard]] static constexpr bool passable(const Page& page,
+                                               LocalTileId id) noexcept {
+    return source_class::passable(page, id);
+  }
+
+  template <typename Page>
+  [[nodiscard]] static constexpr std::uint32_t entry_cost(
+      const Page&, LocalTileId) noexcept {
+    return 1;
+  }
+};
+
+}  // namespace detail
 
 }  // namespace tess::movement

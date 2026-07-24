@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -21,6 +22,36 @@ using Small2D = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
 using Mid2D = tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{8, 8, 1}>;
 using SmallWorld = tess::AlwaysResidentWorld<Small2D, Schema>;
 using MidWorld = tess::AlwaysResidentWorld<Mid2D, Schema>;
+using WeightedClass = tess::movement::LegacyWeighted<PassableTag, CostTag>;
+
+// Deliberately contributes an unrepresentable route that no request needs.
+// A reverse field sees the global overflow, while each request's regular
+// one-step route remains finite; this distinguishes group-build status from
+// the exact per-member answer.
+struct OverflowingDetourProvider {
+  [[maybe_unused]] static constexpr auto maximum_transition_cost =
+      std::numeric_limits<std::uint32_t>::max();
+
+  template <typename World, typename Sink>
+  void for_each_forward(const World&, tess::Coord3 from, Sink&& sink) const {
+    if (from == tess::Coord3{0, 0, 0}) {
+      sink(tess::SpecialTransitionCandidate{
+          .to = tess::Coord3{7, 7, 0},
+          .cost = std::numeric_limits<std::uint32_t>::max(),
+      });
+    }
+  }
+
+  template <typename World, typename Sink>
+  void for_each_reverse(const World&, tess::Coord3 to, Sink&& sink) const {
+    if (to == tess::Coord3{7, 7, 0}) {
+      sink(tess::SpecialTransitionCandidate{
+          .to = tess::Coord3{0, 0, 0},
+          .cost = std::numeric_limits<std::uint32_t>::max(),
+      });
+    }
+  }
+};
 
 template <typename World>
 void fill_world(World& world, bool passable, std::uint32_t cost) {
@@ -110,6 +141,29 @@ TEST(TessPathWeightedBatch, DuplicateIdenticalRequestsShareOneFieldBuild) {
   EXPECT_EQ(stats.unique_goals, 1u);
   EXPECT_EQ(stats.field_builds, 1u);
   EXPECT_EQ(stats.astar_fallbacks, 0u);
+}
+
+TEST(TessPathWeightedBatch, GlobalFieldOverflowFallsBackPerMember) {
+  SmallWorld world;
+  fill_world(world, true, 1);
+  const auto goal = tess::Coord3{7, 7, 0};
+  const auto requests = std::array{
+      tess::PathRequest{tess::Coord3{6, 7, 0}, goal},
+      tess::PathRequest{tess::Coord3{7, 6, 0}, goal},
+  };
+  tess::WeightedPathBatchScratch scratch;
+
+  const auto results = tess::weighted_path_batch<SmallWorld, WeightedClass, 8>(
+      world, requests, scratch, OverflowingDetourProvider{});
+
+  ASSERT_EQ(results.size(), 2u);
+  for (const auto& result : results) {
+    EXPECT_EQ(result.status, tess::PathStatus::Found);
+    EXPECT_EQ(result.cost, 1u);
+    EXPECT_EQ(result.path.size(), 2u);
+  }
+  EXPECT_EQ(scratch.stats().field_builds, 1u);
+  EXPECT_EQ(scratch.stats().astar_fallbacks, 2u);
 }
 
 // Members of a failed shared-goal group must report the status the

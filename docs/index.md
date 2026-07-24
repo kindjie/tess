@@ -10,7 +10,8 @@ topology-aware pathfinding, and deterministic simulation updates. It supplies
 the spatial substrate while leaving rendering, physics, and entity ownership
 to your application.
 
-This site documents the `v0.4.0` release. tess is pre-1.0 — see
+This site documents the unreleased `v0.12.0` development API. tess is pre-1.0
+— see
 [support and compatibility](support.md) for the stability policy.
 { .tess-version }
 
@@ -82,8 +83,9 @@ package — see [Installation](packaging.md).
   concepts.
 - `<tess/tess.h>` remains the compatibility umbrella.
 
-All three are dependency-free. Optional EnTT and Dear ImGui adapters remain
-behind explicit integration headers and compile definitions.
+All three are dependency-free. Optional EnTT and Flecs adapters, plus the
+separate Dear ImGui panels, remain behind explicit integration headers and
+compile definitions.
 
 ## Who is tess for?
 

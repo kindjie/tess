@@ -2,8 +2,8 @@
 
 The library is header-only. A consumer needs a C++20 compiler and CMake 3.25
 or newer; tess itself adds no runtime or link dependency. Installing it needs
-no network access and builds no code. GoogleTest, Google Benchmark, and EnTT
-are development or optional integration dependencies fetched only by
+no network access and builds no code. GoogleTest, Google Benchmark, EnTT, and
+Flecs are development or optional integration dependencies fetched only by
 developer presets; ordinary consumers do not link them through `tess::tess`.
 
 ## FetchContent
@@ -49,7 +49,7 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH="$HOME/.local"
 Then consume the exported target:
 
 ```cmake
-find_package(tess 0.4 CONFIG REQUIRED)
+find_package(tess 0.12 CONFIG REQUIRED)
 target_link_libraries(my_target PRIVATE tess::tess)
 ```
 
@@ -58,11 +58,12 @@ target_link_libraries(my_target PRIVATE tess::tess)
 The public CMake target is `tess::tess`. For a focused include surface, use
 `<tess/pathfinding.h>` for worlds and routing, `<tess/simulation.h>` for the
 full simulation stack, or `<tess/tess.h>` for the all-in-one compatibility
-umbrella. All three are dependency-free. The EnTT adapter and Dear ImGui
-panels are opt-in headers that consumers include after their corresponding
-third-party header; see [ECS integration](architecture/ecs.md) and
-[Diagnostics](architecture/diagnostics.md). In compile-sensitive code,
-prefer the narrowest public header that owns the API.
+umbrella. All three are dependency-free. The independently gated EnTT and
+Flecs adapters and the Dear ImGui panels are opt-in headers that consumers
+include after their corresponding third-party header; see
+[ECS integration](architecture/ecs.md) and
+[Diagnostics](architecture/diagnostics.md). In compile-sensitive code, prefer
+the narrowest public header that owns the API.
 
 ## Package-manager status
 

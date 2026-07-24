@@ -13,11 +13,12 @@
 #include <vector>
 
 // The ECS-agnostic integration layer (M10). Everything here is free of
-// third-party dependencies: concrete ECS adapters (the EnTT adapter in
-// <tess/ecs/entt/entt_adapter.h>, or a game's own) implement the concepts
-// below and reuse the shared components, batch scratch, occupancy index,
-// and tick pipeline. The seam is deliberately "agents in deterministic
-// order in, state write-back out" -- request submission, tickets, retry
+// third-party dependencies: concrete ECS adapters (the EnTT and Flecs
+// adapters in their respective subdirectories, or an application's own)
+// implement the concepts below and reuse the shared components, batch
+// scratch, occupancy index, and tick pipeline. The seam is deliberately
+// "agents in deterministic order in, state write-back out" -- request
+// submission, tickets, retry
 // budgets, and exactly-once result application all stay inside the
 // PathAgentState lifecycle (sim/path_agent.h), so adapters can never
 // duplicate or violate it.

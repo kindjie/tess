@@ -14,6 +14,234 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-23 - Preserve the Default Unit-Field Fast Path
+
+- Area: Default orthogonal unit-cost distance fields, multi-goal products,
+  nearest-target replay, and field-product cache replay.
+- Observation: Routing every default axis neighbor through the resolved
+  transition model regressed five existing hosted-runner path gates. The
+  largest regressions were the eight-goal room field at about 139 ms against
+  75 ms and the shared room field at about 18.5 ms against 10.7 ms.
+- Hypothesis: Compile-time specialization can retain the pre-model direct
+  axis-neighbor loop when the resolved model proves default orthogonal steps
+  and the adjacent provider, without changing generalized model semantics.
+- Evidence: After specialization, three-sample local medians were about
+  2.77 ms for the shared room field, 3.50 ms for the shared sparse field,
+  18.3 ms for the eight-goal room field, 0.83 ms for 100 nearest-target
+  replays, and 9.8 us for cached field replay. The first hosted retry exposed
+  four remaining generalized-path regressions: cached unit A* at 111 ms,
+  nearest-target replay at 2.25 ms, cached field replay at 28.6 us, and the
+  near-goal weighted batch at 120 us. Restoring direct default cache misses
+  and reconstruction reduced three-sample local medians to 14.7 ms, 0.76 ms,
+  10.4 us, and 50.6 us respectively. All are below their existing gates, and
+  79 focused path tests pass under warnings-as-errors.
+- Follow-up evidence: The second hosted retry passed cached unit A* but still
+  measured nearest-target replay at 2.12 ms, cached field replay at 26.4 us,
+  and the near-goal weighted batch at 101.25 us. A same-machine comparison
+  isolated a real compiler regression: the pre-transition reader measured
+  0.31 ms and 4.0 us for nearest-target and cached replay, while the
+  generalized reader measured 0.76 ms and 9.7 us. Sampling placed the hot
+  samples in an outlined `for_each_indexed_axis_neighbor`; forcing that small
+  per-node helper inline restored 0.31 ms and 4.0 us medians. A second profile
+  placed most near-goal time in the bounded field-builder neighbor loop.
+  Hoisting its invariant saturated distance and bucket selection reduced the
+  20-run median from about 50-52 us to 46.8 us.
+- Accepted: Use direct indexed axis-neighbor iteration only when
+  `ResolvedTransitionModel` proves default orthogonal connectivity. Continue
+  using resolved forward/reverse enumeration for hex, diagonal, and
+  provider-composed transitions. Default adjacent route-cache misses also use
+  the unit A* core instead of the generalized weighted core. Keep the indexed
+  axis-neighbor helper forced inline across supported compilers, with the
+  reason documented at its definition, and compute bounded-flood
+  per-node invariants once outside the neighbor loop.
+- Rejected: Raising the five thresholds. The correlated 1.3x-1.9x regression
+  was attributable to avoidable per-edge abstraction overhead rather than
+  hosted-runner noise.
+- Retry conditions: Re-profile if the default fast path and resolved model
+  stop producing identical paths, costs, or dependency stamps, or if a future
+  provider can prove equivalent default connectivity.
+
+## 2026-07-23 - Constant-Time Area Index Validation
+
+- Area: per-agent checked coordinate lookup through `AreaIndex`.
+- Evidence: audit found that every checked lookup recomputed a fingerprint
+  across all local topologies and portals, making A agent queries cost
+  O(A * graph size). A dedicated 256-area, 512x512 lookup benchmark now
+  isolates the query path; its five-run local arm64 median is 5.17 ns after
+  the revision change.
+- Decision: replace the fingerprint with a monotonic `RegionGraphT` revision
+  updated by clear, rebuild, and non-empty incremental changes. Index validity
+  is now O(1); coordinate lookup retains only region resolution and ordered
+  area lookup.
+- Retry conditions: consider a direct dense region-to-area table only if the
+  new lookup benchmark shows the remaining ordered lookup is material.
+
+## 2026-07-22 - v0.12 Benchmark Gate Closure
+
+- Area: benchmark families added after the last threshold calibration.
+- Evidence: the full Release gates found eleven literal benchmark names
+  without threshold entries: five resolved-transition/weighted-product cases,
+  two coarse-topology/area cases, and four Flecs collection cases. Three-run
+  local arm64 medians were 11.6 us for diagonal search, 13.0 us for axial-hex
+  search, 1.54 ms for the stair-provider search, 24.74 ms for an eight-goal
+  512x512 weighted product build, 5.06 us for product replay, 21.35 us for a
+  far coarse path, and 2.72 ms for a 256-area index build. Flecs medians were
+  26 us, 0.35 ms, and 4.87 ms for collecting 1,000, 10,000, and 100,000
+  agents, and 0.78 ms for collecting and applying 10,000 agents. The stair
+  case deliberately expands 32,761 nodes because a single provider transition
+  connects two 128x128 planes; the product and area cases are whole-world
+  builds, not single point queries.
+- Decision: add provisional six-times-median CPU ceilings and a source-level
+  test requiring every literal benchmark in a threshold-gated family to have
+  an entry. Structurally large cases remain above the 1 ms investigation line
+  with work counters and rationale recorded instead of being misrepresented
+  as microbenchmarks.
+- Retry conditions: replace bootstrap ceilings with two-times hosted-runner
+  maxima after ten same-runner baseline samples. Revisit the stair heuristic
+  if provider-heavy searches become representative rather than synthetic.
+
+## 2026-07-22 - Optional WebGPU Transport Baseline
+
+- Area: stable-C-API WebGPU field upload, compute dispatch, and asynchronous
+  summary readback.
+- Evidence: the backend compiles against the exact Dawn C header shipped by
+  Emdawnwebgpu `v20260423.175430`; its fake-device tests cover ownership,
+  generation invalidation, loss, and asynchronous lifetime. Emscripten 6.0.3
+  builds the browser example with the exact SHA-pinned port. Local headless
+  Chrome exposed no adapter and therefore exercised the explicit unsupported
+  result rather than a device execution path.
+- Decision: accept the bounded transport as the v0.11 optional backend. Do not
+  establish a timing threshold from an environment without a GPU adapter.
+- Retry conditions: measure upload, dispatch, and readback independently on a
+  representative browser/GPU matrix before adding performance gates or
+  promoting tess-owned shader algorithms.
+
+## 2026-07-22 - Flecs Adapter Baseline
+
+- Area: deterministic Flecs path-agent collection and write-back.
+- Evidence: a local Release build with deliberately shuffled `AgentId` values
+  collected and sorted 1,000, 10,000, and 100,000 agents in three-run medians
+  of 26 us, 0.35 ms, and 4.87 ms. Collecting and applying 10,000 agents took
+  0.78 ms. The context owns one persistent query; correctness tests prove warm
+  ticks allocate nothing and native table/entity churn does not change output.
+- Decision: accept stable-ID sorting and component-notifying write-back as the
+  v0.10 baseline. Sorting is required for deterministic output; Flecs query
+  creation remains setup-only because upstream documents repeated creation as
+  expensive.
+- Retry conditions: calibrate cross-platform thresholds before gating these
+  baselines. Profile radix or table-local merge alternatives only if adapter
+  collection becomes material in a representative 100,000-agent frame.
+
+## 2026-07-22 - Local Coordination Baseline
+
+- Area: deterministic local destination reservations and congestion summaries.
+- Evidence: a local Release build resolved 1,000 requests with four feasible
+  options each, including contention on 64 first-choice coordinates, in a
+  five-run median of about 0.36 ms. The measured coefficient of variation was
+  3.14%. Correctness tests cover priority, stable IDs, alternatives, caller
+  filtering, invalid ownership ranges, congestion, waits, and warm
+  allocation-free reuse.
+- Decision: accept the deterministic greedy resolver as the v0.9 local crowd
+  substrate. It spreads contention without introducing continuous steering or
+  a global matching claim, and the caller retains movement legality and
+  commit-time validation.
+- Retry conditions: profile and add a calibrated CI threshold if local
+  coordination becomes a frame-time contributor in a representative consumer
+  trace. Consider a different claimed-coordinate structure only if option
+  counts grow enough for insertion costs to dominate.
+
+## 2026-07-22 - Colony Bottleneck Replan Loop Observed
+
+- Area: retained path-agent movement under dense dynamic occupancy.
+- Evidence: the interactive colony demo was observed at roughly 900 agents
+  slowing to 18-36 ms per simulation tick and then remaining at a stable
+  partial-arrival count behind a painted bottleneck. Code inspection identifies
+  a closed lifecycle: each occupied next step makes the agent `Blocked`; the
+  next tick replans that agent; occupancy-blind A* returns `Found`; applying
+  that result resets `blocked_retries`; and the same occupied step can fail
+  again indefinitely. Arrived agents can make the obstruction permanent.
+- Evidence after repair: the seeded 24-agent doorway regression previously
+  submitted 8,600 searches across 503 planning ticks. Retrying retained steps
+  reduced that to the 24 initial searches in one planning tick; within the
+  bounded run every agent arrived or became explicitly `Unreachable`.
+- Decision: accepted. Occupied/reserved destinations retry their retained
+  step without path processing, while route-invalidating transient failures
+  still re-path. All blocked modes consume one consecutive retry budget,
+  successful movement resets it, and the web demo exposes terminal counts.
+- Retry conditions: add richer local alternatives or occupancy-aware caller
+  policies if a representative workload requires more arrivals through a
+  merge; do not restore occupancy-blind per-tick re-planning.
+
+## 2026-07-22 - Canonical Persistence Baseline
+
+- Area: canonical authoritative-field world archives.
+- Evidence: a local Release build saved a 512x512 dense world with one byte
+  field and one 32-bit field (about 1.25 MiB) in a five-run median of 10.2 ms
+  at 122.6 MiB/s, and preflighted plus loaded it in 9.7 ms at 128.7 MiB/s.
+  Removing a redundant self-parse from the successful save path reduced its
+  median from 19.0 ms while inspection remains separately testable.
+- Decision: accept the scalar-at-a-time canonical codec as a cold-path
+  baseline. It is endian-stable, checksummed, schema-versioned, and keeps file
+  I/O outside the library. No CI timing gate is warranted until a consumer
+  establishes save-size and latency requirements.
+- Retry conditions: add contiguous bulk codecs for common scalar columns if
+  persistence enters a latency-sensitive path or measured throughput becomes
+  material for representative save sizes.
+
+## 2026-07-22 - Area Index Baseline
+
+- Area: graph-derived caller-keyed area grouping.
+- Evidence: a local Release build grouped 256 open-chunk regions and reduced
+  their directed boundary portals to 480 canonical area connections in about
+  2.65 ms on a 512x512 world. Reserved warm rebuilds allocate nothing.
+- Decision: accept the straightforward sort-and-reduce implementation. Area
+  rebuild is derived maintenance, not a per-query hot path, and it avoids a
+  second tile flood by consuming the region graph.
+- Retry conditions: add incremental patching only if measured area maintenance
+  becomes material in a workload with frequent topology edits.
+
+## 2026-07-22 - Coarse Corridor and Weighted Product Baselines
+
+- Area: shortest region-route reconstruction and persistent weighted
+  multi-goal products.
+- Evidence: local Release measurements on an open 512x512 world measured a
+  31-chunk/30-portal coarse route at about 20.1 us, an eight-goal weighted
+  product build over 262,144 reached nodes at about 24.5 ms, and exact
+  corner-to-corner product replay at about 5.2 us for a 1,023-node path.
+  Correctness tests cover non-monotone corridors, sparse missing topology,
+  provider-composed reverse edges, cache invalidation, and allocation-free
+  warm rebuild/reconstruction.
+- Decision: accept coarse corridor reconstruction, weighted product caching,
+  and the opt-in runtime selector. Keep the runtime default off: a full dense
+  product build is a substantial up-front cost and only amortizes when reuse
+  spans enough requests or processing calls.
+- Retry conditions: calibrate CI thresholds from main-branch benchmark
+  artifacts before making these new measurements regression gates. Revisit
+  automatic selection only with representative stable-map reuse traces.
+
+## 2026-07-22 - Span Queries Promoted; Maintenance Hook Rejected
+
+- Area: rectangular/radius query callbacks, fused block pipelines, and
+  coalesced derived-state maintenance.
+- Evidence: 100,000 seeded queries match reference tile sets across top-down,
+  vertical, and 3D shapes. Five-repetition local medians measured rectangular
+  spans at 678 ns versus 213,076 ns per tile, radius spans at 1,789 ns versus
+  157,203 ns per tile, and a fused pipeline at 417 ns versus 1,840 ns through
+  an allocating intermediate. The coalescing backend reduced 512 dense
+  schedules to one execution and measured 2,499 ns versus FIFO's 5,139 ns,
+  but 256 distinct sparse tasks measured 21,069 ns versus immediate's 517 ns.
+- Decision: accept public span emitters and fused pipelines. Keep the
+  maintenance interface and immediate/FIFO/coalescing prototypes in
+  `tess::experimental::maintenance`; do not integrate a scheduler hook into
+  world storage because the prototype misses the mandatory sparse gate by a
+  wide margin. Predicate bitsets and chunk summaries remain deferred because
+  no authoritative predicate contract or mutation-cost evidence exists yet.
+- Retry conditions: revisit maintenance promotion with O(1) intrusive or
+  indexed deduplication and measured p95 latency on at least two realistic
+  dirty-chunk scenarios. Revisit predicate acceleration when a consumer has a
+  stable derived predicate whose full-map, sparse-query, mutation, and memory
+  costs can be measured against the historical 4x/2x/10% gates.
+
 ## 2026-07-21 - Documentation-Only CI Fast Path
 
 - Area: pull requests and main pushes that change only maintained

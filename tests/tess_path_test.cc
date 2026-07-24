@@ -1288,6 +1288,66 @@ TEST(TessPath, FieldProductCacheStoreMovesWarmProductWithoutFieldCopy) {
   EXPECT_LT(counter.bytes(), field_bytes / 2u);
 }
 
+TEST(TessPath, FieldProductCacheStoreHasStrongAllocationGuarantee) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocation failure injection is unavailable with this "
+                    "allocator/runtime configuration";
+  }
+
+  auto saw_failure = false;
+  auto reached_success = false;
+  for (std::size_t failure_index = 0; failure_index < 8; ++failure_index) {
+    tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+    fill_passable(world, true);
+    tess::DistanceFieldScratch scratch;
+    tess::GoalSet live_goals;
+    live_goals.add(tess::Coord3{7, 7, 0});
+    tess::GoalSet candidate_goals;
+    candidate_goals.add(tess::Coord3{7, 0, 0});
+    tess::DistanceFieldProduct live;
+    tess::DistanceFieldProduct candidate;
+    ASSERT_EQ((tess::build_distance_field_product<decltype(world), PassableTag>(
+                   world, live_goals, scratch, live))
+                  .status,
+              tess::PathStatus::Found);
+    ASSERT_EQ((tess::build_distance_field_product<decltype(world), PassableTag>(
+                   world, candidate_goals, scratch, candidate))
+                  .status,
+              tess::PathStatus::Found);
+
+    tess::FieldProductCache cache;
+    cache.reserve_entries(2);
+    ASSERT_TRUE((cache.store<decltype(world), PassableTag>(std::move(live))));
+    const auto before = cache.stats();
+
+    auto threw = false;
+    {
+      tess_test::ScopedAllocationFailure failure{failure_index};
+      try {
+        (void)cache.store<decltype(world), PassableTag>(std::move(candidate));
+      } catch (const std::bad_alloc&) {
+        threw = true;
+      }
+    }
+
+    if (!threw) {
+      reached_success = true;
+      EXPECT_EQ(cache.stats().entries, 2u);
+      break;
+    }
+
+    saw_failure = true;
+    EXPECT_EQ(cache.stats().entries, before.entries);
+    EXPECT_EQ(cache.stats().bytes, before.bytes);
+    EXPECT_EQ(cache.stats().evictions, before.evictions);
+    EXPECT_NE((cache.lookup<decltype(world), PassableTag>(world, live_goals)),
+              nullptr);
+  }
+
+  EXPECT_TRUE(saw_failure);
+  EXPECT_TRUE(reached_success);
+}
+
 TEST(TessPath, BuildsSharedGoalDistanceFieldForMultipleStarts) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
   fill_passable(world, true);

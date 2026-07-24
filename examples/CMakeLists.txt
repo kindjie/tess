@@ -56,3 +56,14 @@ if(TESS_ENABLE_ENTT)
   target_compile_definitions(tess_entt_pawns PRIVATE TESS_ENABLE_ENTT)
   tess_apply_project_options(tess_entt_pawns)
 endif()
+
+if(TESS_ENABLE_FLECS)
+  include(TessFlecsDeps)
+  tess_require_flecs()
+
+  add_executable(tess_flecs_pawns flecs_pawns.cc)
+  target_link_libraries(tess_flecs_pawns PRIVATE tess::tess
+                                                  flecs::flecs_static)
+  target_compile_definitions(tess_flecs_pawns PRIVATE TESS_ENABLE_FLECS)
+  tess_apply_project_options(tess_flecs_pawns)
+endif()

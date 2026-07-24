@@ -283,10 +283,11 @@ Frame versions let a consumer detect gaps and request resynchronization.
 - The [decision guide](guide/README.md) — once the concepts are
   familiar and you need to choose between residency policies, write
   paths, and path strategies for a real workload.
-- ECS integration by concepts, with the EnTT adapter and a deliberately
-  non-EnTT micro-ECS example:
+- ECS integration by concepts, with independently gated EnTT and Flecs
+  adapters and a deliberately custom micro-ECS example:
   [`architecture/ecs.md`](architecture/ecs.md),
-  `examples/custom_ecs_min.cc`, `examples/entt_pawns.cc`.
+  `examples/custom_ecs_min.cc`, `examples/entt_pawns.cc`,
+  `examples/flecs_pawns.cc`.
 - Compile-gated diagnostics, tracing, and the ImGui panels:
   [`architecture/diagnostics.md`](architecture/diagnostics.md).
 - Benchmarks, thresholds, and the trend snapshot:

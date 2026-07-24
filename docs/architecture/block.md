@@ -103,6 +103,23 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
 - `ChunkView<World>::for_each_tile(fn)` invokes
   `fn(LocalTileId, LocalCoord3)` for every local tile in ascending
   `LocalTileId` order.
+- `block_tiles(ctx)` and `block_chunks(ctx)` begin block-preserving lazy
+  pipelines. `filter`, `map`, and `flat_map` compose at compile time; no
+  intermediate collection is created. `block_tiles` emits `BlockTile` values
+  with the resolved chunk view, local id and coordinate, and world coordinate.
+- `pipeline_from(span)` applies the same lazy adapters to caller-owned
+  sequences and frontiers.
+- `flat_map` preserves whether its mapper returned a range by reference and
+  extends a returned temporary through the nested iteration. Mutating a
+  referenced range through the terminal therefore affects the caller-owned
+  range rather than an implicit copy.
+- `Pipeline::for_each` and `Pipeline::reduce` are fused terminals.
+  `collect_into` and `to_frontier` use caller-owned bounded storage and report
+  both written and required counts through `PipelineCollectResult`.
+  `to_sequence_allocating` is the deliberately explicit allocating terminal.
+- `PipelineDiagnostics` records blocks and items read, items filtered and
+  emitted, explicit materializations, and bounded-capacity failures. It is
+  optional and caller-owned.
 
 Iteration is deterministic when domains are produced by the provided builders.
 The hot executor path does not allocate when passed a prebuilt `ChunkDomain`.
@@ -119,28 +136,30 @@ transition providers, or cross-chunk field access. Future topology and path
 systems can use signed local candidates plus `contains_local` to decide whether
 a candidate remains inside the chunk or needs an explicit transition.
 
-## TDD Divergences
+## Remaining TDD Differences
 
 The historical block-kernel pipeline TDD describes a richer staged executor.
-This first M3 slice intentionally diverges:
+The raw block layer intentionally remains smaller than the queued execution
+layer built above it:
 
-- No planner, phase graph, barrier model, rich diagnostics reporting,
-  planner-owned scratch arenas, worker pools, or external scheduler backend is
-  implemented yet.
-- `BlockCtx` is only the current serial context. It does not yet provide
-  scheduling, phase graphs, or planner state. Its scratch and diagnostics
-  pointers are caller-owned and optional.
+- `BlockCtx` is a serial resolved-chunk context. Planning, phase grouping, and
+  worker-pool dispatch live in queued operations and simulation rather than in
+  the raw view.
+- Scratch and diagnostic pointers are caller-owned and optional; planner-owned
+  arenas and cross-thread diagnostic reduction remain future work.
 - Only `ReadOnly` is enforced today, and only through policy-typed block
   contexts and `for_each_chunk<Policy>`. `UniquePerTile`, `UniquePerChunk`,
   and `Unsafe` still record intended write discipline without ownership checks
   in raw block iteration. Queued-operation phase planning adds the first
   conservative parallel ownership check for planned `UniquePerChunk` work.
-- Execution remains serial only for both chunk and tile iteration; parallel
-  chunk scheduling is deferred.
+- Direct block iteration remains serial. Planned `UniquePerChunk` operations
+  can run through the production worker-pool phase executor.
 - Domains are chunk-key spans over always-resident storage only; sparse
   residency, tile subranges, and dynamic residency transitions are not covered.
 - Field access stays on `ChunkPage` spans instead of introducing kernel
   parameter binding or generated accessors.
 
-These divergences keep the implemented API small while preserving a route to
-the larger TDD pipeline once domain semantics and benchmark baselines settle.
+Sparse block domains and tile subranges remain planned extensions. The shipped
+pipeline is deliberately an inlined serial composition layer over resolved
+block sources; worker ownership and phase scheduling remain in queued
+operations.

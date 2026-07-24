@@ -44,6 +44,26 @@
     "ecs/tick_entt_alloc_gate": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 300000
+    },
+    "ecs/flecs_collect_1k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 156000,
+      "note": "2026-07-22 local arm64 median: 26 us; bootstrap 6x ceiling"
+    },
+    "ecs/flecs_collect_10k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 2100000,
+      "note": "2026-07-22 local arm64 median: 0.35 ms; bootstrap 6x ceiling"
+    },
+    "ecs/flecs_collect_100k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 29300000,
+      "note": "2026-07-22 local arm64 median: 4.87 ms; bootstrap 6x ceiling"
+    },
+    "ecs/flecs_collect_apply_10k": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 4700000,
+      "note": "2026-07-22 local arm64 median: 0.78 ms; bootstrap 6x ceiling"
     }
   }
 }

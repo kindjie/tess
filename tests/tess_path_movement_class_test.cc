@@ -2,9 +2,12 @@
 #include <tess/tess.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
+#include <stdexcept>
 #include <utility>
 
 // S5.2: movement classes threaded through the A* leaves and weighted cores.
@@ -21,6 +24,7 @@ struct ConstructionTag {};
 struct CostTag {};
 struct OccupancyTag {};
 struct ReservationTag {};
+struct StairTag {};
 
 using Schema = tess::FieldSchema<
     tess::Field<PassableTag, bool>, tess::Field<ConstructionTag, std::uint8_t>,
@@ -38,6 +42,71 @@ using Builder = mv::MovementClass<
     mv::AnyOf<mv::Field<PassableTag>, mv::Field<ConstructionTag>>,
     mv::SelectCost<ConstructionTag, mv::ConstantCost<3>,
                    mv::FieldCost<CostTag>>>;
+using DefaultClass =
+    mv::MovementClass<mv::Field<PassableTag>, mv::FieldCost<CostTag>>;
+using Diagonal =
+    mv::MovementClass<mv::Field<PassableTag>, mv::FieldCost<CostTag>,
+                      mv::DiagonalSteps<mv::CornerRule::RequireBothClear>>;
+
+// Deliberately overlaps a regular diagonal destination. The special edge is a
+// bridge, so it remains legal when ordinary corner clearance is blocked.
+struct DiagonalBridgeProvider {
+  [[maybe_unused]] static constexpr std::uint32_t maximum_transition_cost = 1;
+
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3 from,
+                        Sink&& sink) const {
+    if (from == tess::Coord3{2, 2, 0}) {
+      sink(tess::SpecialTransitionCandidate{
+          .to = tess::Coord3{3, 3, 0},
+      });
+    }
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_reverse(const WorldType&, tess::Coord3 to, Sink&& sink) const {
+    if (to == tess::Coord3{3, 3, 0}) {
+      sink(tess::SpecialTransitionCandidate{
+          .to = tess::Coord3{2, 2, 0},
+      });
+    }
+  }
+};
+
+struct MissingDiagonalProvider {
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3 from,
+                        Sink&& sink) const {
+    if (from == tess::Coord3{2, 2, 0}) {
+      sink(tess::SpecialTransitionCandidate{
+          .to = tess::Coord3{3, 3, 0},
+          .missing_topology = true,
+      });
+    }
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_reverse(const WorldType&, tess::Coord3 to, Sink&& sink) const {
+    if (to == tess::Coord3{3, 3, 0}) {
+      sink(tess::SpecialTransitionCandidate{
+          .to = tess::Coord3{2, 2, 0},
+          .missing_topology = true,
+      });
+    }
+  }
+};
+
+struct ThrowingDiagonalProvider {
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3, Sink&&) const {
+    throw std::runtime_error("provider hot path was entered");
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_reverse(const WorldType&, tess::Coord3, Sink&&) const {
+    throw std::runtime_error("provider hot path was entered");
+  }
+};
 
 void fill_open(World& world, std::uint32_t cost) {
   for (auto& page : world.chunks()) {
@@ -90,6 +159,477 @@ TEST(TessPathMovementClass, IdentityClassMatchesRawTagUnitSearch) {
 
   ASSERT_EQ(by_tag.status, tess::PathStatus::Found);
   expect_same_result(by_tag, by_class);
+}
+
+TEST(TessPathMovementClass, ResultAggregateDefaultsToUnitCostScale) {
+  const auto result = tess::PathResult{tess::PathStatus::Found, 4, 5, 6, {}};
+  EXPECT_EQ(result.cost_scale, 1u);
+}
+
+TEST(TessPathMovementClass, DiagonalSearchReturnsFixedPointCostScale) {
+  World world;
+  fill_open(world, 1);
+  tess::PathScratch scratch;
+
+  const auto result = tess::weighted_astar_path<World, Diagonal>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 3, 0}},
+      scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 3u * 181u);
+  EXPECT_EQ(result.cost_scale, 128u);
+  EXPECT_EQ(result.path.size(), 4u);
+}
+
+TEST(TessPathMovementClass, UnitDiagonalSearchIgnoresEntryCostExpression) {
+  World world;
+  fill_open(world, 99);
+  tess::PathScratch scratch;
+
+  const auto result = tess::astar_path<World, Diagonal>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 3, 0}},
+      scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 3u * 181u);
+  EXPECT_EQ(result.cost_scale, 128u);
+}
+
+TEST(TessPathMovementClass, DiagonalReverseFieldMatchesExactSearch) {
+  World world;
+  fill_open(world, 1);
+  tess::PathScratch path_scratch;
+  tess::DistanceFieldScratch field_scratch;
+  constexpr auto start = tess::Coord3{0, 0, 0};
+  constexpr auto goal = tess::Coord3{3, 3, 0};
+  const auto exact = tess::weighted_astar_path<World, Diagonal>(
+      world, tess::PathRequest{start, goal}, path_scratch);
+
+  const auto built = tess::build_weighted_distance_field<World, Diagonal>(
+      world, goal, field_scratch);
+  ASSERT_EQ(built.status, tess::PathStatus::Found);
+  const auto from_field = tess::weighted_distance_field_path<World, Diagonal>(
+      world, start, goal, field_scratch);
+
+  ASSERT_EQ(from_field.status, tess::PathStatus::Found);
+  EXPECT_EQ(from_field.cost, exact.cost);
+  EXPECT_EQ(from_field.cost_scale, 128u);
+  ASSERT_EQ(from_field.path.size(), exact.path.size());
+  for (std::size_t i = 0; i < exact.path.size(); ++i) {
+    EXPECT_EQ(from_field.path[i], exact.path[i]);
+  }
+}
+
+TEST(TessPathMovementClass, DistanceFieldRejectsAnotherResolvedModel) {
+  World world;
+  fill_open(world, 1);
+  tess::DistanceFieldScratch scratch;
+  constexpr auto goal = tess::Coord3{3, 3, 0};
+
+  ASSERT_EQ((tess::build_weighted_distance_field<World, DefaultClass>(
+                 world, goal, scratch)
+                 .status),
+            tess::PathStatus::Found);
+  const auto mismatched = tess::weighted_distance_field_path<World, Diagonal>(
+      world, goal, goal, scratch);
+
+  EXPECT_EQ(mismatched.status, tess::PathStatus::NoPath);
+}
+
+TEST(TessPathMovementClass, AxialHexSearchUsesSixRegularNeighbors) {
+  using HexShape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1},
+                               tess::lattice::HexAxial>;
+  using HexWorld = tess::AlwaysResidentWorld<HexShape, Schema>;
+  HexWorld world;
+  for (auto& page : world.chunks()) {
+    std::fill(page.field_span<PassableTag>().begin(),
+              page.field_span<PassableTag>().end(), true);
+    std::fill(page.field_span<CostTag>().begin(),
+              page.field_span<CostTag>().end(), 1u);
+  }
+  tess::PathScratch scratch;
+
+  const auto result = tess::weighted_astar_path<HexWorld, DefaultClass>(
+      world, tess::PathRequest{tess::Coord3{1, 2, 0}, tess::Coord3{3, 0, 0}},
+      scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 2u);
+  EXPECT_EQ(result.cost_scale, 1u);
+  ASSERT_EQ(result.path.size(), 3u);
+  EXPECT_EQ(result.path[1], (tess::Coord3{2, 1, 0}));
+
+  tess::PathScratch unit_scratch;
+  const auto unit = tess::astar_path<HexWorld, PassableTag>(
+      world, tess::PathRequest{tess::Coord3{1, 2, 0}, tess::Coord3{3, 0, 0}},
+      unit_scratch);
+  ASSERT_EQ(unit.status, tess::PathStatus::Found);
+  EXPECT_EQ(unit.cost, 2u);
+  EXPECT_EQ(unit.path.size(), 3u);
+}
+
+TEST(TessPathMovementClass, ReportsUnrepresentableExactCost) {
+  World world;
+  fill_open(world, 1);
+  world.field<CostTag>(tess::Coord3{1, 0, 0}) =
+      std::numeric_limits<std::uint32_t>::max();
+  tess::PathScratch scratch;
+
+  const auto result = tess::weighted_astar_path<World, DefaultClass>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0}},
+      scratch);
+
+  EXPECT_EQ(result.status, tess::PathStatus::CostOverflow);
+  EXPECT_EQ(result.cost_scale, 1u);
+}
+
+TEST(TessPathMovementClass, ProviderAwareSearchUsesCheaperStairEdge) {
+  using StairSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
+                                        tess::Field<CostTag, std::uint32_t>,
+                                        tess::Field<StairTag, std::uint8_t>>;
+  using StairShape =
+      tess::Shape<tess::Extent3{4, 4, 2}, tess::Extent3{4, 4, 2}>;
+  using StairWorld = tess::AlwaysResidentWorld<StairShape, StairSchema>;
+  StairWorld world;
+  for (auto& page : world.chunks()) {
+    std::fill(page.field_span<PassableTag>().begin(),
+              page.field_span<PassableTag>().end(), true);
+    std::fill(page.field_span<CostTag>().begin(),
+              page.field_span<CostTag>().end(), 1u);
+  }
+  constexpr auto foot = tess::Coord3{1, 1, 0};
+  constexpr auto landing = tess::Coord3{2, 1, 1};
+  world.field<StairTag>(foot) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  const auto provider = tess::StairTransitions<StairTag>{};
+  const auto request = tess::PathRequest{foot, landing};
+  tess::PathScratch regular_scratch;
+  tess::PathScratch weighted_scratch;
+  tess::PathScratch unit_scratch;
+
+  const auto regular = tess::weighted_astar_path<StairWorld, DefaultClass>(
+      world, request, regular_scratch);
+  const auto weighted = tess::weighted_astar_path<StairWorld, DefaultClass>(
+      world, request, weighted_scratch,
+      tess::MissingChunkPolicy::TreatAsBlocked, provider);
+  const auto unit = tess::astar_path<StairWorld, PassableTag>(
+      world, request, unit_scratch, tess::MissingChunkPolicy::TreatAsBlocked,
+      provider);
+
+  ASSERT_EQ(regular.status, tess::PathStatus::Found);
+  EXPECT_EQ(regular.cost, 2u);
+  ASSERT_EQ(weighted.status, tess::PathStatus::Found);
+  EXPECT_EQ(weighted.cost, 1u);
+  ASSERT_EQ(weighted.path.size(), 2u);
+  EXPECT_EQ(weighted.path.back(), landing);
+  ASSERT_EQ(unit.status, tess::PathStatus::Found);
+  EXPECT_EQ(unit.cost, 1u);
+  EXPECT_EQ(unit.path.size(), 2u);
+}
+
+TEST(TessPathMovementClass, ProviderAwareFieldUsesAndStampsStairEdge) {
+  using StairSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
+                                        tess::Field<CostTag, std::uint32_t>,
+                                        tess::Field<StairTag, std::uint8_t>>;
+  using StairShape =
+      tess::Shape<tess::Extent3{4, 4, 2}, tess::Extent3{4, 4, 2}>;
+  using StairWorld = tess::AlwaysResidentWorld<StairShape, StairSchema>;
+  StairWorld world;
+  for (auto& page : world.chunks()) {
+    std::fill(page.field_span<PassableTag>().begin(),
+              page.field_span<PassableTag>().end(), true);
+    std::fill(page.field_span<CostTag>().begin(),
+              page.field_span<CostTag>().end(), 1u);
+  }
+  constexpr auto foot = tess::Coord3{1, 1, 0};
+  constexpr auto landing = tess::Coord3{2, 1, 1};
+  world.field<StairTag>(foot) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  const auto provider = tess::StairTransitions<StairTag>{};
+  tess::DistanceFieldScratch scratch;
+
+  const auto built =
+      tess::build_weighted_distance_field<StairWorld, DefaultClass>(
+          world, landing, scratch, tess::MissingChunkPolicy::TreatAsBlocked,
+          provider);
+  ASSERT_EQ(built.status, tess::PathStatus::Found);
+  const auto result =
+      tess::weighted_distance_field_path<StairWorld, DefaultClass>(
+          world, foot, landing, scratch, provider);
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, 1u);
+  EXPECT_EQ(result.path.size(), 2u);
+
+  const auto mismatched =
+      tess::weighted_distance_field_path<StairWorld, DefaultClass>(
+          world, foot, landing, scratch);
+  EXPECT_EQ(mismatched.status, tess::PathStatus::NoPath);
+
+  const auto boxed =
+      tess::build_weighted_distance_field_in_box<StairWorld, DefaultClass>(
+          world, landing,
+          tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{4, 4, 2}}, scratch,
+          tess::MissingChunkPolicy::TreatAsBlocked, provider);
+  ASSERT_EQ(boxed.status, tess::PathStatus::Found);
+  EXPECT_EQ((tess::weighted_distance_field_path<StairWorld, DefaultClass>(
+                 world, foot, landing, scratch, provider))
+                .cost,
+            1u);
+
+  const auto bounded =
+      tess::build_bounded_weighted_distance_field<StairWorld, DefaultClass, 4>(
+          world, landing, scratch, tess::MissingChunkPolicy::TreatAsBlocked,
+          provider);
+  ASSERT_EQ(bounded.status, tess::PathStatus::Found);
+  EXPECT_EQ((tess::weighted_distance_field_path<StairWorld, DefaultClass>(
+                 world, foot, landing, scratch, provider))
+                .cost,
+            1u);
+}
+
+TEST(TessPathMovementClass, SparseProviderFieldReportsMissingFootTopology) {
+  using StairSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
+                                        tess::Field<CostTag, std::uint32_t>,
+                                        tess::Field<StairTag, std::uint8_t>>;
+  using StairShape =
+      tess::Shape<tess::Extent3{4, 4, 4}, tess::Extent3{4, 4, 2}>;
+  using StairWorld = tess::SparseResidentWorld<StairShape, StairSchema>;
+  StairWorld world{tess::ResidencyConfig{StairWorld::page_byte_size}};
+  world.ensure_resident(tess::ChunkKey{1});
+  auto& page = world.chunk(tess::ChunkKey{1});
+  std::fill(page.field_span<PassableTag>().begin(),
+            page.field_span<PassableTag>().end(), true);
+  std::fill(page.field_span<CostTag>().begin(),
+            page.field_span<CostTag>().end(), 1u);
+  const auto provider = tess::StairTransitions<StairTag>{};
+  tess::DistanceFieldScratch scratch;
+
+  const auto result =
+      tess::build_weighted_distance_field<StairWorld, DefaultClass>(
+          world, tess::Coord3{2, 1, 2}, scratch,
+          tess::MissingChunkPolicy::Indeterminate, provider);
+
+  EXPECT_EQ(result.status, tess::PathStatus::Indeterminate);
+}
+
+TEST(TessPathMovementClass, ProviderAwareCommitAcceptsPlannedStairEdge) {
+  using StairSchema = tess::FieldSchema<
+      tess::Field<PassableTag, bool>, tess::Field<CostTag, std::uint32_t>,
+      tess::Field<OccupancyTag, bool>, tess::Field<ReservationTag, bool>,
+      tess::Field<StairTag, std::uint8_t>>;
+  using StairShape =
+      tess::Shape<tess::Extent3{4, 4, 2}, tess::Extent3{4, 4, 2}>;
+  using StairWorld = tess::AlwaysResidentWorld<StairShape, StairSchema>;
+  StairWorld world;
+  for (auto& page : world.chunks()) {
+    std::fill(page.field_span<PassableTag>().begin(),
+              page.field_span<PassableTag>().end(), true);
+    std::fill(page.field_span<CostTag>().begin(),
+              page.field_span<CostTag>().end(), 1u);
+  }
+  constexpr auto foot = tess::Coord3{1, 1, 0};
+  constexpr auto landing = tess::Coord3{2, 1, 1};
+  world.field<StairTag>(foot) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  world.field<OccupancyTag>(foot) = true;
+  const auto intent = tess::MovementIntent{.from = foot, .to = landing};
+  const auto provider = tess::StairTransitions<StairTag>{};
+
+  const auto without =
+      tess::validate_movement_intent<StairWorld, DefaultClass, OccupancyTag,
+                                     ReservationTag>(world, intent);
+  EXPECT_EQ(without.status, tess::MovementStatus::NotAdjacent);
+
+  const auto moved =
+      tess::commit_movement_intent<StairWorld, DefaultClass, OccupancyTag,
+                                   ReservationTag>(world, intent, 0, provider);
+  EXPECT_EQ(moved.status, tess::MovementStatus::Moved);
+  EXPECT_FALSE(world.field<OccupancyTag>(foot));
+  EXPECT_TRUE(world.field<OccupancyTag>(landing));
+}
+
+TEST(TessPathMovementClass, DiagonalRouteCachePreservesScaleAndExactCost) {
+  World world;
+  fill_open(world, 1);
+  tess::RouteCacheScratch cache;
+  tess::PathScratch scratch;
+  constexpr auto goal = tess::Coord3{3, 3, 0};
+
+  const auto first = tess::cached_astar_path<World, Diagonal>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, goal}, scratch, cache);
+  const auto hit = tess::cached_astar_path<World, Diagonal>(
+      world, tess::PathRequest{tess::Coord3{0, 0, 0}, goal}, scratch, cache);
+  const auto suffix = tess::cached_astar_path<World, Diagonal>(
+      world, tess::PathRequest{tess::Coord3{1, 1, 0}, goal}, scratch, cache);
+
+  EXPECT_EQ(first.cost, 3u * 181u);
+  EXPECT_EQ(first.cost_scale, 128u);
+  EXPECT_EQ(hit.cost, first.cost);
+  EXPECT_EQ(hit.cost_scale, 128u);
+  EXPECT_EQ(suffix.cost, 2u * 181u);
+  EXPECT_EQ(suffix.cost_scale, 128u);
+  EXPECT_EQ(cache.stats().hits, 1u);
+  EXPECT_EQ(cache.stats().suffix_hits, 0u);
+}
+
+TEST(TessPathMovementClass, RouteCacheInvalidatesWhenProviderChanges) {
+  using StairSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
+                                        tess::Field<CostTag, std::uint32_t>,
+                                        tess::Field<StairTag, std::uint8_t>>;
+  using StairShape =
+      tess::Shape<tess::Extent3{4, 4, 2}, tess::Extent3{4, 4, 2}>;
+  using StairWorld = tess::AlwaysResidentWorld<StairShape, StairSchema>;
+  StairWorld world;
+  for (auto& page : world.chunks()) {
+    std::fill(page.field_span<PassableTag>().begin(),
+              page.field_span<PassableTag>().end(), true);
+    std::fill(page.field_span<CostTag>().begin(),
+              page.field_span<CostTag>().end(), 1u);
+  }
+  constexpr auto foot = tess::Coord3{1, 1, 0};
+  constexpr auto landing = tess::Coord3{2, 1, 1};
+  world.field<StairTag>(foot) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  const auto provider = tess::StairTransitions<StairTag>{};
+  const auto request = tess::PathRequest{foot, landing};
+  tess::RouteCacheScratch cache;
+  tess::PathScratch scratch;
+
+  const auto special = tess::cached_astar_path<StairWorld, PassableTag>(
+      world, request, scratch, cache, provider);
+  const auto special_hit = tess::cached_astar_path<StairWorld, PassableTag>(
+      world, request, scratch, cache, provider);
+  const auto regular = tess::cached_astar_path<StairWorld, PassableTag>(
+      world, request, scratch, cache);
+
+  EXPECT_EQ(special.cost, 1u);
+  EXPECT_EQ(special_hit.cost, 1u);
+  EXPECT_EQ(regular.cost, 2u);
+  EXPECT_EQ(cache.stats().provider_rebinds, 1u);
+}
+
+TEST(TessPathMovementClass, BatchPreservesDiagonalAndProviderModels) {
+  World diagonal_world;
+  fill_open(diagonal_world, 1);
+  const auto diagonal_requests = std::array{
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 3, 0}},
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{3, 3, 0}},
+  };
+  tess::WeightedPathBatchScratch diagonal_scratch;
+  const auto diagonal = tess::weighted_path_batch<World, Diagonal, 4>(
+      diagonal_world, diagonal_requests, diagonal_scratch);
+  ASSERT_EQ(diagonal.size(), 2u);
+  EXPECT_EQ(diagonal[0].cost, 3u * 181u);
+  EXPECT_EQ(diagonal[0].cost_scale, 128u);
+  EXPECT_EQ(diagonal[1].cost, 2u * 181u);
+  EXPECT_EQ(diagonal[1].cost_scale, 128u);
+
+  using StairSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
+                                        tess::Field<CostTag, std::uint32_t>,
+                                        tess::Field<StairTag, std::uint8_t>>;
+  using StairShape =
+      tess::Shape<tess::Extent3{4, 4, 2}, tess::Extent3{4, 4, 2}>;
+  using StairWorld = tess::AlwaysResidentWorld<StairShape, StairSchema>;
+  StairWorld stair_world;
+  for (auto& page : stair_world.chunks()) {
+    std::fill(page.field_span<PassableTag>().begin(),
+              page.field_span<PassableTag>().end(), true);
+    std::fill(page.field_span<CostTag>().begin(),
+              page.field_span<CostTag>().end(), 1u);
+  }
+  constexpr auto foot = tess::Coord3{1, 1, 0};
+  constexpr auto landing = tess::Coord3{2, 1, 1};
+  stair_world.field<StairTag>(foot) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  const auto stair_requests = std::array{
+      tess::PathRequest{foot, landing},
+      tess::PathRequest{tess::Coord3{0, 1, 0}, landing},
+  };
+  const auto provider = tess::StairTransitions<StairTag>{};
+  tess::WeightedPathBatchScratch stair_scratch;
+  const auto stair = tess::weighted_path_batch<StairWorld, DefaultClass, 4>(
+      stair_world, stair_requests, stair_scratch, provider);
+  ASSERT_EQ(stair.size(), 2u);
+  EXPECT_EQ(stair[0].cost, 1u);
+  EXPECT_EQ(stair[0].path.size(), 2u);
+  EXPECT_EQ(stair[1].cost, 2u);
+}
+
+TEST(TessPathMovementClass, RuntimeProcessesProviderAwareUnitAndWeightedPaths) {
+  using StairSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
+                                        tess::Field<CostTag, std::uint32_t>,
+                                        tess::Field<StairTag, std::uint8_t>>;
+  using StairShape =
+      tess::Shape<tess::Extent3{4, 4, 2}, tess::Extent3{4, 4, 2}>;
+  using StairWorld = tess::AlwaysResidentWorld<StairShape, StairSchema>;
+  StairWorld world;
+  for (auto& page : world.chunks()) {
+    std::fill(page.field_span<PassableTag>().begin(),
+              page.field_span<PassableTag>().end(), true);
+    std::fill(page.field_span<CostTag>().begin(),
+              page.field_span<CostTag>().end(), 1u);
+  }
+  constexpr auto foot = tess::Coord3{1, 1, 0};
+  constexpr auto landing = tess::Coord3{2, 1, 1};
+  world.field<StairTag>(foot) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  const auto provider = tess::StairTransitions<StairTag>{};
+  tess::PathRequestRuntime runtime;
+  [[maybe_unused]] const auto ticket =
+      runtime.submit(tess::PathRequest{foot, landing});
+
+  const auto unit = runtime.process_unit_cached<StairWorld, PassableTag>(
+      world, tess::PathRuntimeCachePolicy{}, nullptr, provider);
+  ASSERT_EQ(unit.size(), 1u);
+  EXPECT_EQ(unit[0].cost, 1u);
+
+  const auto weighted =
+      runtime.process_weighted_batch<StairWorld, DefaultClass, 4>(
+          world, tess::PathRuntimeCachePolicy{}, nullptr, provider);
+  ASSERT_EQ(weighted.size(), 1u);
+  EXPECT_EQ(weighted[0].cost, 1u);
+}
+
+TEST(TessPathMovementClass, ProviderAwareAgentPlansAndCommitsSameStair) {
+  using StairSchema = tess::FieldSchema<
+      tess::Field<PassableTag, bool>, tess::Field<CostTag, std::uint32_t>,
+      tess::Field<OccupancyTag, bool>, tess::Field<ReservationTag, bool>,
+      tess::Field<StairTag, std::uint8_t>>;
+  using StairShape =
+      tess::Shape<tess::Extent3{4, 4, 2}, tess::Extent3{4, 4, 2}>;
+  using StairWorld = tess::AlwaysResidentWorld<StairShape, StairSchema>;
+  StairWorld world;
+  for (auto& page : world.chunks()) {
+    std::fill(page.field_span<PassableTag>().begin(),
+              page.field_span<PassableTag>().end(), true);
+    std::fill(page.field_span<CostTag>().begin(),
+              page.field_span<CostTag>().end(), 1u);
+  }
+  constexpr auto foot = tess::Coord3{1, 1, 0};
+  constexpr auto landing = tess::Coord3{2, 1, 1};
+  world.field<StairTag>(foot) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  world.field<OccupancyTag>(foot) = true;
+  const auto provider = tess::StairTransitions<StairTag>{};
+  tess::PathAgentState agent;
+  agent.position = foot;
+  tess::set_path_agent_goal(agent, landing);
+  auto agents = std::span<tess::PathAgentState>{&agent, 1};
+  tess::PathAgentTickState state;
+  tess::PathRequestRuntime runtime;
+
+  const auto tick =
+      tess::tick_unit_path_agents_with_movement<StairWorld, DefaultClass,
+                                                OccupancyTag, ReservationTag>(
+          state, world, agents, runtime, tess::PathAgentTickOptions{}, 0,
+          nullptr, provider);
+  EXPECT_TRUE(tick.processed_paths);
+  EXPECT_EQ(tick.pathing.found, 1u);
+  EXPECT_EQ(tick.movement.advanced, 1u);
+  EXPECT_EQ(tick.movement.arrived, 1u);
+  EXPECT_EQ(agent.position, landing);
+  EXPECT_FALSE(world.field<OccupancyTag>(foot));
+  EXPECT_TRUE(world.field<OccupancyTag>(landing));
 }
 
 TEST(TessPathMovementClass, LegacyWeightedMatchesTagPairWeightedSearch) {
@@ -298,6 +838,94 @@ TEST(TessPathMovementClass, CommitValidationAgreesWithThePlannedClass) {
       tess::validate_movement_intent<World, Builder, OccupancyTag,
                                      ReservationTag>(world, out_of_site);
   EXPECT_EQ(builder_out.status, tess::MovementStatus::Moved);
+}
+
+TEST(TessPathMovementClass, DiagonalCommitUsesResolvedClearance) {
+  World world;
+  fill_open(world, 1);
+  constexpr auto from = tess::Coord3{2, 2, 0};
+  constexpr auto to = tess::Coord3{3, 3, 0};
+  world.field<OccupancyTag>(from) = true;
+  world.field<PassableTag>(tess::Coord3{3, 2, 0}) = false;
+
+  const auto blocked =
+      tess::validate_movement_intent<World, Diagonal, OccupancyTag,
+                                     ReservationTag>(
+          world, tess::MovementIntent{.from = from, .to = to});
+  EXPECT_EQ(blocked.status, tess::MovementStatus::BlockedTo);
+
+  world.field<PassableTag>(tess::Coord3{3, 2, 0}) = true;
+  const auto moved = tess::commit_movement_intent<World, Diagonal, OccupancyTag,
+                                                  ReservationTag>(
+      world, tess::MovementIntent{.from = from, .to = to});
+  EXPECT_EQ(moved.status, tess::MovementStatus::Moved);
+  EXPECT_FALSE(world.field<OccupancyTag>(from));
+  EXPECT_TRUE(world.field<OccupancyTag>(to));
+}
+
+TEST(TessPathMovementClass, CommitAcceptsParallelProviderTransition) {
+  World world;
+  fill_open(world, 1);
+  constexpr auto from = tess::Coord3{2, 2, 0};
+  constexpr auto to = tess::Coord3{3, 3, 0};
+  world.field<OccupancyTag>(from) = true;
+  world.field<PassableTag>(tess::Coord3{3, 2, 0}) = false;
+  const auto provider = DiagonalBridgeProvider{};
+
+  tess::PathScratch scratch;
+  const auto path = tess::weighted_astar_path<World, Diagonal>(
+      world, tess::PathRequest{from, to}, scratch,
+      tess::MissingChunkPolicy::TreatAsBlocked, provider);
+  ASSERT_EQ(path.status, tess::PathStatus::Found);
+  ASSERT_EQ(path.path.size(), 2u);
+  EXPECT_EQ(path.path.back(), to);
+
+  const auto moved = tess::commit_movement_intent<World, Diagonal, OccupancyTag,
+                                                  ReservationTag>(
+      world, tess::MovementIntent{.from = from, .to = to}, 0, provider);
+  EXPECT_EQ(moved.status, tess::MovementStatus::Moved);
+  EXPECT_FALSE(world.field<OccupancyTag>(from));
+  EXPECT_TRUE(world.field<OccupancyTag>(to));
+}
+
+TEST(TessPathMovementClass, MissingProviderTopologyOutranksBlockedRegularEdge) {
+  World world;
+  fill_open(world, 1);
+  constexpr auto from = tess::Coord3{2, 2, 0};
+  constexpr auto to = tess::Coord3{3, 3, 0};
+  world.field<OccupancyTag>(from) = true;
+  world.field<PassableTag>(tess::Coord3{3, 2, 0}) = false;
+
+  const auto result =
+      tess::validate_movement_intent<World, Diagonal, OccupancyTag,
+                                     ReservationTag>(
+          world, tess::MovementIntent{.from = from, .to = to},
+          MissingDiagonalProvider{});
+
+  EXPECT_EQ(result.status, tess::MovementStatus::StaleVersion);
+}
+
+TEST(TessPathMovementClass, LegalRegularEdgeSkipsProviderHotPath) {
+  World world;
+  fill_open(world, 1);
+  constexpr auto from = tess::Coord3{2, 2, 0};
+  constexpr auto to = tess::Coord3{3, 3, 0};
+  world.field<OccupancyTag>(from) = true;
+
+  // A legal regular edge is already the strongest possible answer. Provider
+  // enumeration is intentionally skipped here, both to preserve the common
+  // movement hot path and because no provider result can outrank Legal.
+  const auto commit = [&] {
+    return tess::commit_movement_intent<World, Diagonal, OccupancyTag,
+                                        ReservationTag>(
+        world, tess::MovementIntent{.from = from, .to = to}, 0,
+        ThrowingDiagonalProvider{});
+  };
+  auto result = tess::MovementResult{};
+  EXPECT_NO_THROW(result = commit());
+  EXPECT_EQ(result.status, tess::MovementStatus::Moved);
+  EXPECT_FALSE(world.field<OccupancyTag>(from));
+  EXPECT_TRUE(world.field<OccupancyTag>(to));
 }
 
 // S5.6: the unit route cache keys on (start, goal) only, so a runtime reused

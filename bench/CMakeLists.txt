@@ -9,6 +9,8 @@ add_executable(
   tess_bench.cc
   tess_fields_bench.cc
   tess_parallel_bench.cc
+  tess_persistence_bench.cc
+  tess_pipeline_query_bench.cc
   tess_path_agent_bench.cc
   tess_path_product_bench.cc
   tess_path_scan_bench.cc
@@ -16,7 +18,10 @@ add_executable(
   tess_render_delta_bench.cc
   tess_residency_bench.cc
   tess_scheduler_bench.cc
+  tess_spatial_bench.cc
+  tess_maintenance_bench.cc
   tess_topology_bench.cc
+  tess_transition_bench.cc
 )
 target_link_libraries(tess_bench PRIVATE tess::tess benchmark::benchmark_main)
 tess_apply_project_options(tess_bench)
@@ -26,12 +31,17 @@ add_executable(
   tess_bench.cc
   tess_fields_bench.cc
   tess_parallel_bench.cc
+  tess_pipeline_query_bench.cc
   tess_path_agent_bench.cc
   tess_path_product_bench.cc
   tess_path_scan_bench.cc
   tess_path_weighted_bench.cc
+  tess_persistence_bench.cc
   tess_render_delta_bench.cc
   tess_scheduler_bench.cc
+  tess_spatial_bench.cc
+  tess_maintenance_bench.cc
+  tess_transition_bench.cc
   tess_diagnostics_bench.cc
   tess_diagnostics_alloc_hooks.cc
 )
@@ -58,6 +68,19 @@ if(TESS_ENABLE_ENTT)
   target_sources(tess_bench_diagnostics PRIVATE tess_ecs_bench.cc)
   target_link_libraries(tess_bench_diagnostics PRIVATE EnTT::EnTT)
   target_compile_definitions(tess_bench_diagnostics PRIVATE TESS_ENABLE_ENTT)
+endif()
+
+if(TESS_ENABLE_FLECS)
+  include(TessFlecsDeps)
+  tess_require_flecs()
+
+  target_sources(tess_bench PRIVATE tess_flecs_ecs_bench.cc)
+  target_link_libraries(tess_bench PRIVATE flecs::flecs_static)
+  target_compile_definitions(tess_bench PRIVATE TESS_ENABLE_FLECS)
+
+  target_sources(tess_bench_diagnostics PRIVATE tess_flecs_ecs_bench.cc)
+  target_link_libraries(tess_bench_diagnostics PRIVATE flecs::flecs_static)
+  target_compile_definitions(tess_bench_diagnostics PRIVATE TESS_ENABLE_FLECS)
 endif()
 
 set(

@@ -33,25 +33,34 @@ deltas.
   when every set guard matches. It resolves both endpoints unchecked, so
   callers must validate coordinates first.
 - `validate_movement_intent<World, ClassOrTag, OccupancyTag,
-  ReservationTag>(world, intent)` checks shape bounds, six-axis adjacency
-  (`manhattan_distance == 1`), passability of both endpoints, destination
+  ReservationTag>(world, intent)` checks shape bounds and sparse residency,
+  passability of both endpoints, resolved transition legality, destination
   occupancy, destination reservation, and the optional version guards, in
-  that order, without mutating the world. The second template argument is a
-  movement class OR a raw passable tag, normalized exactly as in
-  `astar_path`, so plan and commit share one vocabulary: every step A*
-  accepted for a class validates for that same class. Validation checks the
-  class's PASSABILITY predicate only -- entry cost is a search concern, and
-  commit staying more permissive than the weighted search is the deliberate
-  legacy asymmetry (a cost field dropping to zero after planning blocks
-  re-planning, not an already-planned adjacent step). Classes wanting cost
-  folded into commit passability too should use `WalkableCostField`, whose
-  predicate already includes `NotZero<CostTag>`. The from- and to-tiles
-  may live on different pages; each endpoint's predicate is evaluated on its
-  own resolved page.
+  that order, without mutating the world. Regular transitions come from the
+  world's lattice and the movement class's step policy, so diagonal and
+  axial-hex classes are not restricted to six-axis Manhattan adjacency. The
+  second template argument is a movement class OR a raw passable tag,
+  normalized exactly as in `astar_path`, so plan and commit share one
+  vocabulary: every step A* accepted for a class validates for that same
+  class. Validation checks the class's PASSABILITY predicate only -- entry
+  cost is a search concern, and commit staying more permissive than the
+  weighted search is the deliberate legacy asymmetry (a cost field dropping
+  to zero after planning blocks re-planning, not an already-planned step).
+  Classes wanting cost folded into commit passability too should use
+  `WalkableCostField`, whose predicate already includes `NotZero<CostTag>`.
+  The from- and to-tiles may live on different pages; each endpoint's
+  predicate is evaluated on its own resolved page.
 - `commit_movement_intent<World, ClassOrTag, OccupancyTag, ReservationTag>(
   world, intent, dirty_mask)` validates the same intent, clears source
   occupancy, sets destination occupancy, clears destination reservation, and
   marks source and destination tiles dirty when `dirty_mask` is nonzero.
+- Provider-aware validation and commit overloads use a legal regular
+  transition as their fast path. When the regular transition is absent,
+  blocked, or missing topology, they enumerate the supplied provider before
+  mutation. A legal provider edge may deliberately parallel and override a
+  blocked regular edge, keeping planning and commit transition sets aligned.
+  Provider exceptions propagate whenever enumeration is required; the
+  provider contract does not require enumeration to be `noexcept`.
 
 ### Render Deltas
 
@@ -190,7 +199,8 @@ stateDiagram-v2
 - `PathAgentPhase` is the agent lifecycle, decoupled from the last
   `PathStatus`: `Idle` (no goal or arrived), `NeedsPath` (goal assigned, no
   route yet), `Following` (walking a `Found` route), `Blocked` (transient
-  failure; re-paths until the retry budget runs out), and `Unreachable`
+  failure; retained-step contention waits, while route-invalidating failures
+  re-path, until the shared retry budget runs out), and `Unreachable`
   (terminal until a new goal is assigned).
 - `set_path_agent_goal(agent, goal)` arms the lifecycle (`NeedsPath`, retry
   count reset); `clear_path_agent_goal(agent)` returns the agent to `Idle`.
@@ -215,14 +225,18 @@ stateDiagram-v2
   ReservationTag>(world, agents, runtime, max_steps, movement_dirty_mask)`
   commits each step through `commit_movement_intent` (no version guards),
   validating with the same movement class the plan used.
-  A transient failure leaves the `Found` route intact, moves the agent to
-  `Blocked`, consumes one retry, and counts a blocked wait; a structural
-  failure is terminal `Unreachable`. Arrival clears the goal and counts an
-  arrival. An observer overload appends `on_commit(agent_index, from, to)`,
-  invoked once per successful commit (after position/occupancy update,
-  before arrival handling) and never on a failed validation, so external
-  tile-to-entity mirrors updated inside the callback stay synchronized with
-  the occupancy field by construction (the M10 ECS adapter's hook point).
+  An occupied or reserved destination leaves the `Found` route intact so the
+  retained step can be retried; other transient failures invalidate the route
+  and request a re-plan. Either kind moves the agent to `Blocked` and counts a
+  blocked wait. The failed movement does not itself consume a retry: each
+  following movement-enabled tick consumes one bounded retry, while
+  `max_steps == 0` pauses the budget. A structural failure is terminal
+  `Unreachable`. Arrival clears the goal and counts an arrival. An observer
+  overload appends `on_commit(agent_index, from, to)`, invoked once per
+  successful commit (after position/occupancy update, before arrival handling)
+  and never on a failed validation, so external tile-to-entity mirrors updated
+  inside the callback stay synchronized with the occupancy field by
+  construction (the M10 ECS adapter's hook point).
 - `process_unit_path_agents<World, ClassOrTag>(...)` and
   `process_weighted_path_agents<World, Class, MaxCost>(...)` (plus the legacy
   `<World, PassableTag, CostTag, MaxCost>` overload)
@@ -250,13 +264,16 @@ stateDiagram-v2
   `PathRuntimeCachePolicy`, and `max_blocked_retries` (default 8).
 - `PathAgentTickStats` reports the tick value, whether paths were processed,
   separate pathing and movement `PathAgentFrameStats`, and the
-  `repaths_requested` / `repath_exhausted` counts.
+  `repaths_requested` count for actual searches plus `repath_exhausted` for
+  every exhausted blocked lifecycle (the historical field name also covers
+  retained-step waits).
 - `prepare_path_agent_processing(agents, options, stats)` scans agents ahead
-  of path processing: `NeedsPath` agents (goals assigned through either
-  `set_path_agent_goal` overload) request processing with no manual dirty
-  mark, and `Blocked` agents consume one re-path attempt per processed tick
-  until the retry budget runs out, at which point they turn terminally
-  `Unreachable` with `PathStatus::NoPath`.
+  of path processing: `NeedsPath` agents request processing with no manual
+  dirty mark. `Blocked` agents consume one retry on each following tick.
+  Occupied/reserved destinations retain `PathStatus::Found` and retry the
+  retained step without a search; route-invalidating transient failures use
+  `PathStatus::NoPath` and request processing. Exhaustion turns either case
+  terminally `Unreachable`.
 - `tick_unit_path_agents<World, ClassOrTag>(...)`,
   `tick_weighted_path_agents<World, Class, MaxCost>(...)`,
   `tick_unit_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
@@ -276,9 +293,9 @@ stateDiagram-v2
 
 `include/tess/sim/schedule.h` is the M5 schedule: ordered phases of
 type-erased tasks driven by cadences that are pure functions of the fixed
-`SimClock` tick counter and per-task pending dirty masks. The schedule never
-touches a world -- dirty bits are FED to it by task results and
-`notify_dirty` -- so the no-hidden-full-world-scans rule holds by
+`SimClock` tick counter and per-task pending dirty/event masks. The schedule
+never touches a world -- trigger bits are fed to it explicitly -- so the
+no-hidden-full-world-scans rule holds by
 construction. Type erasure is a function pointer plus a context pointer;
 world-typed work lives in task objects the caller owns and registers by
 reference. `ScheduleTaskFn` is the raw erased function-pointer form for callers
@@ -296,7 +313,7 @@ flowchart TB
   Early --> Agent --> Derived --> Output
 ```
 
-Dirty results are merged immediately into every matching `OnDirty` task.
+Dirty and event results are merged immediately into every matching subscriber.
 
 ```mermaid
 flowchart TB
@@ -317,12 +334,13 @@ flowchart TB
   re-enabling never shifts the lockstep phase; a due-while-disabled tick is
   counted as skipped), `on_dirty(mask)` (fires iff bits of the task's OWN
   mask are pending; firing consumes only those bits, so producers'
-  same-tick marks re-arm it for the next tick), `background(budget)`, and
-  `manual()`.
-- `CadenceKind` is the stored discriminator for those five cadence forms.
+  same-tick marks re-arm it for the next tick), `on_event(mask)` with the same
+  phase-aware coalescing rules, `background(budget)`, and `manual()`.
+- `CadenceKind` is the stored discriminator for those six cadence forms.
   `ScheduleTaskDesc` combines a phase and cadence; `ScheduleTaskContext`
-  supplies the current clock and background budget to `ScheduleTaskFn`;
-  `ScheduleTaskResult` returns dirty bits, completed items, and backlog state;
+  supplies the current clock, consumed dirty/event masks, and background
+  budget to `ScheduleTaskFn`; `ScheduleTaskResult` returns produced dirty/event
+  masks, completed items, and backlog state;
   and `ScheduleTaskStats` exposes cumulative run, skip, and item counts.
 - `BackgroundBudget` is deliberately items-only: a due background task is
   offered `max_items` units per run and reports `items_done` plus
@@ -334,14 +352,32 @@ flowchart TB
   the Background initial trigger); `notify_dirty(mask)` merges external
   dirty bits (frame-owner thread only; never from an op callback --
   worker-side dirty flows exclusively through the task-result mask);
+  `notify_events(mask)` coalesces event wakeups; and `publish_event` stores an
+  exact payload before notifying its mask;
   `run_tick(clock)` advances the clock and dispatches, returning
   `ScheduleTickStats`; `task_stats(id)` reports per-task counters.
 - A task result's `dirty_mask` merges into every task's pending mask
   immediately: later-phase OnDirty tasks fire in the SAME tick,
   earlier-phase tasks the next tick.
+- If a task callback throws, `run_tick` propagates the exception after restoring
+  the dirty bits, event bits, and explicit run request consumed for that
+  invocation. Triggers raised during the failed callback are merged with the
+  restored values. The simulation clock and cadence countdown still advance;
+  task and world mutations are not rolled back.
+- `EventStream<T>` is caller-owned bounded storage for exact payloads with
+  monotonic sequence and simulation-tick stamps in `TickStampedEvent<T>`.
+  Overflow is rejected rather than overwritten. The scheduler mask is only a
+  coalesced wakeup; an OnEvent task drains the separate stream according to
+  application policy.
+- `ResumableWorkTask<T>` maps `ScheduleTaskContext::budget_items` to a
+  `ResumableWorkQueue<T>` and maps remaining pending tickets back to
+  `more_work`, retaining deterministic cooperative jobs across ticks. When
+  the queue becomes empty the Background task disarms; a later queue
+  submission must be paired with `request_run(id)` to re-arm it.
 - Allocation contract: `reserve_tasks` + registration happen at setup;
-  `run_tick`, `notify_dirty`, and `request_run` never allocate after
-  `seal()` (pinned by test).
+  `run_tick`, trigger notification, and `request_run` never allocate after
+  `seal()`. Reserved event streams and resumable queues also allocate nothing
+  on their warm paths (pinned by tests).
 - `run_schedule_frame(schedule, clock, accumulator, real_delta_seconds,
   control)` is the frame-to-ticks bridge: it consumes real frame time
   through the `FixedStepAccumulator` (honoring `SimSpeed` and the per-frame
@@ -362,9 +398,9 @@ dirty apply, and ack drain -- over a caller-owned `FrameOps` queue. Both the
 queue and the task's result channel are cleared together at the end of every
 successful run (the paired-clear discipline), and the run's `dirty_mask` union
 feeds the schedule so OnDirty tasks in later phases fire the same tick. The
-parallel execution paths remain documented prototypes (see the
-[queued-operations note](queued-operations.md)); every published benchmark
-median is single-threaded. A
+worker pool is the production parallel backend (see the
+[queued-operations note](queued-operations.md)); the scoped-thread executor
+remains a comparison prototype. A
 planning or kernel exception preserves the caller-owned queue for inspection
 or replacement while the exception path clears transient result slots, so old
 completions cannot leak into a later run. Earlier writes may already have
@@ -457,8 +493,10 @@ it to decide how many scheduler ticks to run in one rendered frame.
 
 ## Behavior
 
-The scheduler is deterministic and synchronous. It does not own worker
-threads, async handles, or an event loop. Callers still own entity storage,
+The scheduler is deterministic and synchronous at its caller boundary. It
+does not own worker threads or an event loop. Cooperative async tickets,
+continuations, and exact event payload streams remain caller-owned; the
+schedule only advances and wakes them. Callers also own entity storage,
 game-specific job logic, AI decisions, UI state, and content rules.
 
 The intended per-frame order for current consumers is:
@@ -475,11 +513,16 @@ The intended per-frame order for current consumers is:
 The `PathAgentPhase` lifecycle ties the layers together. Assigning a goal
 arms `NeedsPath`, which requests path processing on the next tick even
 without a world edit. Planner failures and transient movement failures both
-land in `Blocked`; each processed tick consumes one of
-`max_blocked_retries` until the agent either finds a route (`Following`,
-retries reset) or exhausts the budget and turns terminally `Unreachable`.
-Structural movement failures (invalid endpoints, non-adjacent steps) skip
-the retry budget entirely. Only a new goal re-arms an `Unreachable` agent.
+land in `Blocked`; each following tick consumes one of
+`max_blocked_retries` when movement is enabled; `max_steps == 0` pauses the
+budget. Occupancy and reservations retry the retained step, while
+route-invalidating failures re-path. Successful movement resets the
+consecutive-block count; exhaustion becomes terminal `Unreachable`.
+Structural movement failures (invalid endpoints, non-adjacent steps) skip the
+retry budget entirely. A missing edge under a special-transition provider is
+`StaleTopology`, because a provider revision can legitimately remove it, and
+therefore requests a bounded re-path. Only a new goal re-arms an
+`Unreachable` agent.
 Clearing a goal returns any active lifecycle state to `Idle`; those equivalent
 edges are omitted from the diagram to keep the failure paths legible.
 
@@ -495,7 +538,7 @@ stateDiagram-v2
   Following --> Idle: arrive
   Following --> Blocked: transient move failure
   Following --> Unreachable: structural move failure
-  Blocked --> Following: retry finds path
+  Blocked --> Following: route found or retained step moves
   Blocked --> Unreachable: retry budget exhausted
   Unreachable --> NeedsPath: assign new goal
 ```
@@ -517,11 +560,11 @@ or leave the shape emit deltas only for tiles the chunk owns.
 
 ## Deliberate Limits
 
-This slice is still a synchronous MVP. It does not implement async execution,
-worker scheduling, persistent queued kernels, result channels, ECS storage
-adapters, local avoidance, multi-agent collision resolution, permission
-layers, doors, vertical transition policies, topology-aware route planning, or
-region-selective path cache invalidation.
+The public schedule remains synchronous at its caller boundary even when an
+auto-exec phase uses the worker pool. It does not own arbitrary queued
+kernels, nondeterministic completion threads, local avoidance, multi-agent
+collision resolution, permission layers, general doors, or region-selective
+cache invalidation.
 
 Movement validation currently uses a boolean-like passability field plus
 boolean-like occupancy and reservation fields. Weighted terrain remains part of

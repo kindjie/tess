@@ -1,8 +1,9 @@
 # Concurrency Plan
 
-Status: active. This document records the concurrency stream's decisions and
-remaining rollout for the initial-milestone completion plan. Design intent
-lives in the
+Status: complete (2026-07-11). This document records the concurrency stream's
+decisions and completed rollout for the initial milestone. Later coalescing
+maintenance work is tracked by `roadmap-completion.md`. Design intent lives in
+the
 [concurrent tile-world addendum](../tdd/tdd_addendum_concurrent_tile_world.md)
 and the [work contracts addendum](../tdd/tdd_addendum_work_contracts.md);
 this plan tracks what has landed and what is deliberately deferred.
@@ -16,7 +17,7 @@ this plan tracks what has landed and what is deliberately deferred.
   serialized-callback promise, and the documented thread contract
   (non-atomic world metadata, planner-proven disjoint mutable ownership,
   caller-owned dirty partitions reduced in plan order).
-- **Persistent pool prototype.** `WorkerPoolPhaseExecutor` reuses workers
+- **Persistent worker pool.** `WorkerPoolPhaseExecutor` reuses workers
   across phases with type-erased job publication and allocation-free warm
   dispatch after `reserve_operations`. Serial equivalence is pinned by the
   queued replay stress harness; lifecycle, failure-order, and allocation
@@ -39,7 +40,7 @@ supersede these):
 
 - Pool phase dispatch costs ~20 us versus ~40 us for per-phase thread
   creation (scoped-thread) and ~1 us serial. Persistent workers halve
-  prototype dispatch cost; per-phase thread creation is confirmed
+  persistent-pool dispatch cost; per-phase thread creation is confirmed
   non-viable.
 - Memory-bound whole-chunk fills (~19 us serial for 256 chunks) do NOT
   benefit from parallel dispatch: the whole phase costs about one dispatch.
@@ -69,30 +70,27 @@ scheduler stage should route only such work to the pool by default.
   Policy-typed views enforce `ReadOnly` at compile time, and
   `UniquePerChunk` views are structurally per-chunk. Runtime claim-table
   ownership checking (catching hand-built illegal `ExecutionPhase` values
-  under asserts) is deferred to S7 alongside the production backend, where
-  its scratch reservation can be designed with the scheduler's phase
-  storage instead of bolted onto `PlannedPhaseExecutionScratch`.
+  under asserts) remains deferred until general queued intents provide a real
+  consumer. Planner-issued capability, world, generation, and policy checks
+  already reject invalid phases before dispatch.
 - **Internal backends before external ones.** Per the addenda,
-  `work_contract`/`signal_tree` are evaluated only behind Tess-owned
-  interfaces after the internal pool has CI baselines. Re-evaluate at S7
-  (scheduler stage) against the addendum's maintenance-scheduler criteria;
-  the `PhaseExecutor` surface is identical either way.
-- **Parallel benchmark cases stay ungated.** Shared-runner scheduling makes
-  parallel wall time too noisy to gate, and Google Benchmark's CPU column
-  measures only the caller thread for pool backends. Serial cases are the
-  gate candidates once CI baselines accumulate, following the existing
-  threshold calibration process.
+  `work_contract`/`signal_tree` remain unadopted. The maintenance release will
+  evaluate them only behind Tess-owned interfaces against the addendum's
+  scheduler criteria; the `PhaseExecutor` surface is identical either way.
+- **Parallel benchmark cases are gated by real time.** Ten CI artifacts met
+  the calibration precondition on 2026-07-11. Google Benchmark's CPU column
+  still measures only the caller thread for pool backends, so pool thresholds
+  use real time and retain shared-runner headroom.
 - **`ChunkMeta` stays non-atomic** (addendum invariant). Workers write
   per-operation dirty partitions; merges happen on the caller thread. The
   observe/clear generation protocol is the only sanctioned way for
   maintenance to clear dirty state it observed before rebuilding.
 
-## Remaining rollout
+## Completed rollout and deferred follow-up
 
-1. **S6 (result channels):** result delivery must be executor-agnostic —
-   per-operation result slots follow the partitioned-dirty pattern; the
-   conformance suite in `tess_queued_test`/`tess_phase_executor_test`
-   extends to result-bearing phases under serial and pool executors.
+1. **S6 (result channels) — COMPLETE:** result delivery is
+   executor-agnostic. Per-operation result slots follow the partitioned-dirty
+   pattern, and conformance tests cover result-bearing serial and pool phases.
 2. **S7 (scheduler stage, concurrency landing) — OUTCOME (2026-07-10):**
    `WorkerPoolPhaseExecutor` is promoted to the production backend
    (work_contract stays an unadopted experiment; nothing in the S1-S7
@@ -107,6 +105,11 @@ scheduler stage should route only such work to the pool by default.
    initial-milestone consumer (the only maintenance-shaped consumer keeps its
    edits synchronous), and both belong with the deferred-edit flow that would
    exercise them.
-3. **Threshold follow-up:** after ~5 CI baseline artifacts include the
-   parallel family, gate the serial cases and record pool-vs-serial trends
-   in `docs/performance.md`.
+3. **Threshold follow-up — COMPLETE (2026-07-11):** ten CI baseline artifacts
+   established the parallel-family real-time thresholds and performance
+   trends.
+
+The remaining concurrency work is not unfinished S1-S7 rollout: runtime
+ownership claims, cross-thread diagnostic aggregation, and coalescing
+maintenance belong to the later queued-execution and maintenance releases in
+`roadmap-completion.md`.

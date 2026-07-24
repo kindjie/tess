@@ -6,6 +6,13 @@ This TDD covers the test and benchmark harness only; implementation
 status is tracked in the roadmap, not here. It adds no public API, no
 headers under `include/tess/`, and no new library semantics.
 
+Post-merge review found three constraints that the original proposal did not
+resolve. External acquisition is gated until rights in the individual map and
+scenario contents are documented, non-512 maps require an explicit
+compile-time shape dispatch, and missing data skips only in non-strict local
+runs. The parser, inline fixtures, reference oracle, and opt-in harness may
+ship before the acquisition gate clears.
+
 It depends on, and deliberately does not duplicate,
 [Lattices and the resolved transition model](lattice-and-transition-model.md):
 
@@ -44,9 +51,10 @@ The same maps also serve as structure-rich fixtures for the chunked and
 sparse machinery: chunk-size equivalence sweeps, topology and precheck
 fixtures, and sparse stream-and-retry convergence (Section 11).
 
-The data is fetched on demand, checksum-verified, cached outside the
-repository, and never vendored. Everything degrades to a skip, never a
-failure, when the data is absent.
+Once the rights gate is cleared, data is fetched on demand,
+checksum-verified, cached outside the repository, and never vendored. Missing
+data skips in ordinary opt-in local runs, while the dedicated required-data CI
+mode fails; default presets never register or execute this work.
 
 ## 3. Motivation
 
@@ -92,8 +100,9 @@ published tess numbers legible to anyone who has read a pathfinding paper.
   by the lattice TDD; this document only consumes them.
 - **No MAPF participation.** The Shortest Path Lab MAPF tracker
   (tracker.pathfinding.ai) benchmarks coordinated multi-agent planning,
-  which the roadmap defers entirely; single-agent scenario data is the
-  correct scope for tess.
+  which tess does not implement. Local deterministic reservation or tactical
+  assignment does not make tess a MAPF solver; single-agent scenario data is
+  the correct scope for this harness.
 - **No solver-comparison benchmarks in the repository.** Maintained
   head-to-head benches against research solvers (HOG2, Warthog) are
   rejected in Section 16.5; a one-off offline calibration is permitted and
@@ -138,13 +147,19 @@ As stated on movingai.com/benchmarks/grids.html at the time of writing:
 - Permission has **not** been acquired for the other commercial game sets
   (StarCraft, Warcraft III), which are hosted on a remove-upon-request
   basis.
-- The synthetic sets (mazes, rooms, random) are generated data with no
-  third-party content, encumbered only by the ODC-By attribution terms.
+- The synthetic sets (mazes, rooms, random) identify Nathan Sturtevant / HOG2
+  as their source and avoid commercial-game content. The cited ODC-By license
+  governs the database, however, and explicitly does not license copyright in
+  individual contents. No separate content license has yet been located.
 
 ### 6.3 Decisions
 
-- **Synthetic sets first.** The initial manifest draws exclusively from
-  the synthetic sets, whose provenance is unencumbered. The
+- **Synthetic sets first, after content-rights review.** The initial manifest
+  may draw exclusively from the synthetic sets after a documented
+  determination establishes the right to copy and use their individual map
+  and scenario contents. Provenance alone is not a license. Until then the
+  committed manifest has no downloadable entries and CI cannot require
+  external data. The
   BioWare-permitted game sets are a desirable later addition, but their
   research-purposes distribution grant and uncleared content copyright
   need a documented licensing determination before CI infrastructure
@@ -194,7 +209,8 @@ A committed manifest file (under `tools/`) records:
 
 - the upstream repository and pinned revision;
 - for each file: its upstream relative path and SHA-256 checksum;
-- the license identifier, attribution text, and citation.
+- the database-license identifier, attribution text, citation, and the
+  documented basis for using each entry's individual contents.
 
 The manifest is the single source of truth. Changing the pin or the file
 list is an ordinary reviewed change with a visible diff.
@@ -277,11 +293,13 @@ constraint costs nothing today and guards future additions.
   `{width, height, 1}`.
 - The 512x512 sets load onto a compile-time shape with a benchmark-chosen
   chunk size; the existing suites' 512x512 shapes are the natural fit.
-- Maps whose dimensions do not satisfy the shape constraints (later `dao`/
-  `da2` additions) are padded: the world extent rounds each dimension up
-  to the next valid size, padding tiles are blocked, and coordinates are
-  preserved (no offset). Blocked padding cannot alter any shortest path or
-  any scenario optimum.
+- A runtime loader cannot instantiate a new tess shape: world extents are
+  compile-time values. Non-512 additions therefore require a reviewed finite
+  dispatch table of predeclared shapes. Each selected map is assigned to the
+  smallest declared shape that contains it; padding tiles are blocked and
+  coordinates are preserved (no offset). An unsupported extent is a hard
+  harness error, never an implicit runtime round-up. Blocked padding cannot
+  alter any shortest path or scenario optimum.
 - One world is loaded per map and shared across that map's scenarios.
 
 ## 10. Scenario oracle
@@ -310,8 +328,11 @@ asserts against the scenario's published optimum:
 - tess reports fixed-point ticks at scale 128. With `L` the published
   optimum and `alpha = 181 / (128 * sqrt(2))`, approximately `0.9998932`,
   the oracle asserts that `ticks / 128` lies in `[alpha * L - eps,
-  L + eps]`, where `eps` is a small absolute allowance for the scenario
-  file's decimal rounding. Below the interval indicates an illegal edge
+  L + eps]`, where `eps` is one unit in the last decimal place represented by
+  that scenario row. The loader preserves the fractional digit count and the
+  external oracle rejects values with fewer than four fractional digits, so
+  the allowance remains far below one fixed-point tick. Below the interval
+  indicates an illegal edge
   or corner-cutting bug; above it, suboptimality or an inadmissible
   heuristic.
 - Bound rationale: a diagonal costs `181/128 = 1.4140625` against
@@ -380,6 +401,11 @@ resident — real maps are natural sparse workloads. Adaptations:
 - Load a map into a sparse world under a bounded residency budget and
   drive the existing stream-and-retry pattern (as in the `sparse_stream`
   example): search, materialize the chunks reported missing, retry.
+- Residency must grow monotonically for one scenario until it completes. The
+  configured budget must hold the discovered working set; exceeding it is a
+  distinct budget-exhausted harness result, not an oracle mismatch. Evicting a
+  previously discovered required chunk during the same retry loop would make
+  convergence impossible and is forbidden.
 - **Convergence oracle:** for every sampled scenario, the loop must
   terminate with status and cost equal to the dense-world result. While
   required chunks are non-resident, the result must be indeterminate — a
@@ -389,15 +415,19 @@ resident — real maps are natural sparse workloads. Adaptations:
 
 ## 12. Benchmark integration
 
+- One opt-in data-backed test/benchmark driver always registers when its CMake
+  option is enabled. It decides at runtime whether ordinary mode skips for
+  missing data or strict mode fails. This makes a zero-case strict CI job
+  observable instead of silently registering nothing.
 - New benchmark entries run A* (and, with the lattice work, octile A*) on
   representative fetched maps: at minimum one narrow-corridor maze, one
   room map, and one random map — plus a game map once adopted — with
   fixed start/goal pairs drawn from the scenario data (long,
   structure-crossing instances).
-- Entries register only when the data is present, live in the dedicated
-  data-backed suite, and are gated by the same per-benchmark calibrated
-  ceiling methodology as the existing suites, calibrated from the
-  dedicated CI job's baseline artifacts.
+- Individual map measurements execute only when the data is present. They
+  live in the dedicated data-backed suite and are gated by the same
+  per-benchmark calibrated ceiling methodology as the existing suites,
+  calibrated from the dedicated CI job's baseline artifacts.
 - Existing synthetic suites are untouched and remain the default-path
   regression net.
 
@@ -498,11 +528,18 @@ derivation would either mask bugs or flake.
 
 ## 17. Implementation sequence
 
-### Phase 1: acquisition and loader (independent of lattice work)
+### Phase 0: network-free harness and rights gate
 
-Manifest, fetch tool with checksum verification and attribution output,
-cache layout, loader with the Section 9 contract, loader and tooling tests,
-dependency documentation.
+Manifest schema, inline map/scenario parser fixtures, reference searches,
+fixed-point tolerance helpers, and explicit local-skip/strict-fail behavior.
+Record the proposed source in `docs/dependencies.md`, but do not add external
+manifest entries until individual-content rights are documented.
+
+### Phase 1: acquisition integration (after the rights gate)
+
+External manifest entries, fetch tool with checksum verification and
+attribution output, cache layout, data-backed loader integration, tooling
+tests, and final dependency documentation.
 
 ### Phase 2: degraded oracle, equivalence fixtures, and benchmarks
 
@@ -511,7 +548,7 @@ equivalence sweep, topology precheck agreement, sparse stream-and-retry
 convergence, structured-map benchmark entries, and the dedicated CI job
 with cache and calibrated ceilings.
 
-### Phase 3: octile oracle (once lattice Phase B is available)
+### Phase 3: octile oracle (lattice Phase B is available)
 
 Published-optimum assertions under `DiagonalSteps<RequireBothClear>` with
 the Section 10.2 tolerance; extend benchmark entries with octile variants.
@@ -526,7 +563,8 @@ non-512 extents and the padding rule.
 
 - The default presets build, test, and benchmark with no network access
   and no behavior change when the cache is empty.
-- A single documented command fetches the curated subset, verifies every
+- After the content-rights gate clears, a single documented command fetches
+  the curated subset, verifies every
   checksum, prints attribution, and populates the cache atomically; a
   corrupted or rewritten upstream file fails the fetch, and a corrupted
   cache entry is detected before consumption.
@@ -544,13 +582,17 @@ non-512 extents and the padding rule.
   CI job whose data comes from the manifest-keyed cache, and that job
   fails rather than skips when the data or the registered cases are
   missing.
-- `docs/dependencies.md` records the mirror, pin, license, and citation;
+- `docs/dependencies.md` records the mirror, pin, database license, content
+  rights basis, and citation;
   published numbers on this data carry the citation.
 
 ## 19. Open questions
 
 - The exact initial file list within the Section 7 criteria, fixed when
   the manifest lands.
+- The individual-content license or other documented rights basis for the
+  synthetic maps and scenarios. This blocks external manifest entries, fetch,
+  and required-data CI, but not the network-free harness.
 - The sampling stride and CI time budget for the oracle suites.
 - Whether the structured-map benchmark entries eventually feed the public
   performance page's trend snapshot, which would make the dedicated job's

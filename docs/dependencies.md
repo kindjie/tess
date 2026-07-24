@@ -38,6 +38,26 @@ On macOS, benchmark configure or execution may warn that pthread affinity or CPU
 frequency metadata is unavailable. Those warnings do not prevent benchmark
 measurements from running.
 
+## Proposed external grid benchmark data (not adopted)
+
+- Repository: https://bitbucket.org/shortestpathlab/benchmarks
+- Proposed revision: `fe6351b0700a0f4e75d0bd79ce3bf5478bc60c94`
+- Format and source documentation:
+  https://www.movingai.com/benchmarks/formats.html and
+  https://www.movingai.com/benchmarks/grids.html
+- Database license: Open Data Commons Attribution License 1.0
+  (https://opendatacommons.org/licenses/by/1-0/)
+- Design: `docs/tdd/grid-benchmark-data-and-scenario-oracle.md`
+
+The revision was verified through Bitbucket's commit API on 2026-07-22. This
+is a proposed opt-in test-data source, not a library or build dependency. No
+external files are in the repository, no downloader is enabled, and no CI job
+requires the data. ODC-By covers the database but excludes copyright in
+individual contents; acquisition remains blocked until the initial synthetic
+maps and scenarios have a documented content-rights basis. When that gate
+clears, the required Sturtevant 2012 citation and ODC-By produced-work notice
+must accompany published results.
+
 ## Doxygen
 
 - Documentation: https://www.doxygen.nl/manual/
@@ -108,28 +128,50 @@ or desktop font license.
 - Official container digest:
   `emscripten/emsdk:6.0.3@sha256:bb0910e6a18bb9bd7cb31ae4ed40f9073148b78cb2cdb8ea8676454e0d85425c`
 
-Emscripten builds only the interactive documentation example; it is not a
+Emscripten builds only the interactive documentation examples; it is not a
 library dependency. CI pulls the upstream project's multi-platform image by
 immutable manifest digest rather than executing a third-party setup action.
-The demo is single-threaded, uses no filesystem, and compiles the same
+The demos are single-threaded, use no filesystem, and compile the same
 pathfinding headers as the native self-checking model.
+
+## Emdawnwebgpu
+
+- Emdawnwebgpu port version: `v20260423.175430`
+- Dawn revision: `01940842b667a7812d0e4ca0ef4367fbec294241`
+- Port SHA-512:
+  `42784f70b67197c614322f9fabb0f1dc64228a0de10e88f99941fa9d29bee9ad6683f4651d4eefd5a7a9fbd1f976eb522b190b683219ed1793e9b531c602ffa6`
+- Emscripten WebGPU documentation:
+  https://emscripten.org/docs/porting/multimedia_and_graphics/WebGPU-support.html
+- Emdawnwebgpu package documentation:
+  https://dawn.googlesource.com/dawn/+/refs/heads/main/src/emdawnwebgpu/pkg/README.md
+- WebGPU specification: https://gpuweb.github.io/gpuweb/
+- Stable C header project: https://github.com/webgpu-native/webgpu-headers
+
+The optional browser compute example uses Emscripten's exact
+`--use-port=emdawnwebgpu` package and `--closure=1`. Its version, Dawn commit,
+and archive digest above are the metadata shipped by Emscripten 6.0.3. The
+public backend consumes only the stable WebGPU C API and is compiled only when
+`TESS_ENABLE_WEBGPU` is defined. Consumers supply their own header and device;
+normal CPU-only builds neither fetch nor link Emdawnwebgpu.
 
 ## Dear ImGui
 
+- Current verified release: `v1.92.8` (`8936b58fe26e8c3da834b8f60b06511d537b4c63`,
+  published 2026-05-12)
 - Documentation: https://github.com/ocornut/imgui (README, `docs/`, wiki)
 - Repository and releases: https://github.com/ocornut/imgui
 
 Optional, consumer-provided integration dependency for the header-only reference
-panels in `include/tess/debug/imgui/panels.h`. tess core never fetches, links,
-or requires ImGui: the panels header compiles only when the consumer defines
+panels and world tools in `include/tess/debug/imgui/`. tess core never fetches,
+links, or requires ImGui: the headers compile only when the consumer defines
 `TESS_ENABLE_IMGUI`, and the consumer supplies its own Dear ImGui and includes
-`<imgui.h>` before the header (a `#error` enforces the order). Only the stable
-core API is used -- `ImGui::Text`, `ImGui::TextUnformatted`, `ImGui::Separator`,
-and the `IMGUI_VERSION` macro -- so no specific version is pinned; any recent
-Dear ImGui works. Known-compatible with ocornut/imgui `8936b58`. tess CI
-validates the header against a minimal stub (`tests/imgui_stub/imgui.h`,
-`tess_diagnostics_panels_test`) rather than the real library, so tess builds add
-no ImGui dependency.
+`<imgui.h>` first (a `#error` enforces the order). Only the stable core
+`Text`, `TextUnformatted`, `Separator`, and `Checkbox` functions and the
+`IMGUI_VERSION` macro are used. No minimum version is imposed; the release
+above is the current known-compatible reference. tess CI validates the headers
+against a minimal API-matching stub (`tests/imgui_stub/imgui.h`,
+`tess_diagnostics_panels_test`, `tess_imgui_tools_test`) rather than the real
+library, so tess builds add no ImGui dependency.
 
 ## EnTT
 
@@ -166,6 +208,40 @@ EnTT requires C++17; tess builds it under `cxx_std_20`. The pinned SHA is
 exercised by the repository's required platform matrix. The dependency-free
 concepts layer
 (`include/tess/ecs/adapter.h`) is always built and tested without EnTT.
+
+## Flecs
+
+- Version: `v4.1.5` (SHA-pinned in `cmake/TessFlecsDeps.cmake` to
+  `d7d0c4f7afb4518a6bae749efdc52c7cb5cffee6`; latest upstream release as
+  of 2026-07-22)
+- Documentation: https://www.flecs.dev/flecs/
+- Building and CMake target documentation:
+  https://www.flecs.dev/flecs/md_docs_2BuildingFlecs.html
+- Repository and releases: https://github.com/SanderMertens/flecs
+
+Optional integration dependency for
+`include/tess/ecs/flecs/flecs_adapter.h`. The policy mirrors EnTT: tess core
+never fetches or links Flecs, the consumer defines `TESS_ENABLE_FLECS` on an
+individual target and includes `<flecs.h>` first, and the header is otherwise
+inert. The header requires Flecs 4.1.5 or newer through its public
+`FLECS_VERSION_*` macros.
+
+`TESS_ENABLE_FLECS` is also an independent CMake option, default `OFF`, that
+enables only tess's Flecs test, example, and benchmark targets. Developer,
+release, benchmark, and Windows presets turn it on and acquire the exact
+commit through the retrying shallow-fetch helper. Consumer and dependency-free
+example presets leave it off. `TESS_USE_SYSTEM_DEPENDENCIES=ON` uses the
+installed `flecs::flecs_static` target. Upstream's installed
+`flecs-config.cmake` has no ConfigVersion companion, so the adapter's
+compile-time version check is the system-package compatibility gate. A
+parent-provided target remains an explicit trust boundary.
+
+Flecs entity IDs are 64-bit values whose high bits include generation data;
+the adapter preserves all bits in `EntityHandle`. Zero is Flecs' invalid ID.
+The C++ API requires C++17; tess uses C++20. Its persistent query is created
+once in `FlecsPathAgentContext`, because Flecs documents repeated query
+creation as expensive. Adapter collection never performs structural mutation;
+goal removal and other structural changes occur only after iteration.
 
 ## GitHub Actions
 
@@ -310,19 +386,23 @@ checks only after those findings are either fixed or intentionally suppressed.
   https://cmake.org/cmake/help/latest/prop_tgt/LANG_CPPCHECK.html
 
 Used by the opt-in `dev-cppcheck` preset through the `CXX_CPPCHECK` target
-property. Tess sets the property only on local test and benchmark targets so
-third-party targets are not analyzed by project policy. The preset enables
-`warning` and `portability` checks; cppcheck `style` and `performance` checks
-are intentionally deferred because early runs mostly report low-signal advice
-for small value types and static member functions in this template-heavy API.
-The preset narrowly suppresses cppcheck `internalError` for
-`include/tess/core/shape.h`, where cppcheck 2.21.0 fails while analyzing
-`ShapeTraits` non-type template parameter constants. The queued-operation
-planner uses an inline `returnDanglingLifetime` suppression where cppcheck
-reports a false positive for a pointer to an element inside a caller-provided
-span. The preset also suppresses `syntaxError` for the diagnostics macro test
-translation units because cppcheck misparses GoogleTest `TEST` macros there;
-those files remain covered by normal, warnings-as-errors, and sanitizer builds.
+property. Tess sets the property only on the local `tess_smoke` target, whose
+umbrella includes cover the public product headers without analyzing
+third-party targets. Cppcheck 2.21.0 crashes in its template simplifier on
+several valid, template-heavy test instantiations; the compiler, clang-tidy,
+warnings-as-errors, and sanitizer gates retain per-instantiation coverage. The
+preset must be retried without the `tess_smoke` target restriction whenever
+the supported cppcheck version changes. Retain whole-target analysis when the
+template-heavy test and benchmark translation units complete without an
+internal error. The preset enables `warning` and `portability` checks;
+cppcheck `style` and
+`performance` checks are intentionally deferred because early runs mostly
+report low-signal advice for small value types and static member functions in
+this template-heavy API. It narrowly suppresses cppcheck `internalError` for
+`include/tess/core/shape.h`, where cppcheck fails while analyzing `ShapeTraits`
+non-type template parameter constants. The queued-operation planner uses an
+inline `returnDanglingLifetime` suppression where cppcheck reports a false
+positive for a pointer to an element inside a caller-provided span.
 
 ## Clang Sanitizers
 

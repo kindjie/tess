@@ -9,6 +9,64 @@ and their rationale are recorded separately in
 
 ## [Unreleased]
 
+### Added
+
+- A resolved transition model shared by exact paths, reverse fields,
+  multi-goal products, topology, caches, path agents, and movement commit,
+  including clearance-preserving diagonal steps, axial-hex adjacency, and
+  provider-composed special edges.
+- Compile-time compact-cost range assessment and explicit runtime
+  `CostOverflow` results.
+- Typed queued intents, cooperative generation-stamped async tickets, bounded
+  exact event streams, and event/background scheduling adapters.
+- Lazy block pipelines and exact allocation-free box, radius, and chunk-span
+  queries.
+- Deterministic coarse region/portal routes, persistent weighted field
+  products, caller-keyed area indexes, tactical assignment, and local move
+  coordination.
+- Versioned authoritative world archives, an optional Flecs adapter, and
+  bounded optional Dear ImGui world inspection/edit-intent helpers.
+- An optional stable-C-API WebGPU transport with generation-bearing resources
+  and bounded asynchronous readback.
+- A network-free external-grid parser and independent oracle harness; external
+  corpus acquisition remains gated on documented content rights.
+
+### Changed
+
+- Path results now report their fixed-point cost scale; provider type and
+  revision participate in persistent path-product and cache identity.
+- The source version is now the unreleased `v0.12.0` development API; the
+  latest supported release tag remains `v0.4.0`.
+
+### Fixed
+
+- Occupancy-blocked path agents retry retained steps without repeated
+  occupancy-blind searches, stop after a bounded retry budget, and surface an
+  explicit terminal outcome. The colony demo reports those outcomes.
+- Special-transition field products preserve provider costs, transition
+  enumeration propagates callback failures, and zero-step agent ticks preserve
+  blocked-retry budgets.
+- Archive loads invalidate pre-load cache identities, area-index validation is
+  constant time, and reentrant queued-work mutation is rejected safely.
+- The external-grid harness now parses scenario lengths on Apple libc++ and
+  rejects incompatible required-data options before probing the toolchain.
+- Persistence decoding, checksum handling, and field validation now compile
+  cleanly across the supported GCC, Clang, MSVC, and cppcheck gates.
+- The cppcheck gate now bypasses cppcheck 2.21 template-simplifier crashes
+  while retaining product-header analysis and compiler test coverage.
+
+### Performance
+
+- Every literal benchmark in a threshold-gated family is covered by a
+  calibrated ceiling; newly covered resolved-transition, weighted-product,
+  coarse-topology, area-index, and Flecs workloads close the prior gate gaps.
+- Default orthogonal unit routes, fields, and product replays retain their
+  direct specialized paths while other lattices, step policies, and providers
+  use the resolved transition model.
+- Indexed axis-neighbor iteration remains inline in hot reconstruction loops,
+  and bounded weighted floods hoist per-node bucket work out of their
+  per-neighbor loop.
+
 ## [0.4.0] - 2026-07-20
 
 ### Added

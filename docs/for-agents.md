@@ -31,8 +31,8 @@ expanded nodes: 15
 Every other example binary (`tess_<name>`) exits `0` on success and
 nonzero with a diagnostic on failure, so a build-and-run sweep of
 `build/examples/examples/` is a quick smoke test of the toolchain and
-library together. (The EnTT adapter example needs the `dev` preset, and
-installed-package consumption is verified separately — see
+library together. (The EnTT and Flecs adapter examples need the `dev` preset,
+and installed-package consumption is verified separately — see
 [installation](packaging.md).)
 
 ## Trust model for generated code

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/block/block.h>
+#include <tess/block/pipeline.h>
 #include <tess/core/shape.h>
 #include <tess/diagnostics/diagnostics.h>
 #include <tess/diagnostics/export.h>
@@ -8,8 +9,10 @@
 #include <tess/diagnostics/warning_sink.h>
 #include <tess/ecs/adapter.h>
 #include <tess/ecs/entity_handle.h>
+#include <tess/experimental/maintenance.h>
 #include <tess/gpu/backend.h>
 #include <tess/gpu/descriptors.h>
+#include <tess/ops/async_work.h>
 #include <tess/ops/phase_executor.h>
 #include <tess/ops/queued.h>
 #include <tess/ops/result_channel.h>
@@ -23,8 +26,12 @@
 #include <tess/path/portal_segment_cache.h>
 #include <tess/path/precheck.h>
 #include <tess/path/route_cache.h>
+#include <tess/persistence/archive.h>
+#include <tess/query/span.h>
+#include <tess/sim/async_work_task.h>
 #include <tess/sim/auto_exec.h>
 #include <tess/sim/delta_frame.h>
+#include <tess/sim/event_stream.h>
 #include <tess/sim/movement.h>
 #include <tess/sim/path_agent.h>
 #include <tess/sim/path_agent_tick.h>
@@ -32,12 +39,17 @@
 #include <tess/sim/schedule.h>
 #include <tess/sim/scheduler.h>
 #include <tess/sim/time.h>
+#include <tess/spatial/area.h>
+#include <tess/spatial/local_coordination.h>
+#include <tess/spatial/tactical_assignment.h>
 #include <tess/storage/chunk_meta.h>
 #include <tess/storage/chunk_page.h>
 #include <tess/storage/residency.h>
 #include <tess/storage/sparse_world.h>
 #include <tess/storage/world.h>
 #include <tess/topology/movement_class.h>
+#include <tess/topology/step_policy.h>
 #include <tess/topology/topology.h>
+#include <tess/topology/transition_model.h>
 #include <tess/topology/transition_provider.h>
 #include <tess/version.h>

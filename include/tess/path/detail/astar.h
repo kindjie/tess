@@ -17,11 +17,19 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                 [[maybe_unused]] MissingChunkPolicy policy) -> PathResult {
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
+  using Class = movement::movement_class_of<Tag>;
+  using UnitClass = movement::detail::UnitMovementClass<Class>;
+  using Model = ResolvedTransitionModel<World, UnitClass>;
   constexpr auto unseen = std::uint8_t{0};
   constexpr auto open = std::uint8_t{1};
   constexpr auto closed = std::uint8_t{2};
   constexpr auto no_parent = std::numeric_limits<std::uint64_t>::max();
   constexpr auto infinite_cost = std::numeric_limits<std::uint32_t>::max();
+
+  if constexpr (Model::cost_scale != 1) {
+    return weighted_astar_path<World, UnitClass>(world, request, scratch,
+                                                 policy);
+  }
 
   TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_count_);
   scratch.clear();
@@ -68,7 +76,9 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
   // risk a false NoPath; it runs for dense worlds only. Sparse searches fall
   // straight through to the full A* below, which honors MissingChunkPolicy.
   // Dense codegen is unchanged (the guard is compiled away).
-  if constexpr (Space::is_dense) {
+  if constexpr (Space::is_dense &&
+                std::is_same_v<typename ShapeTraits<Shape>::lattice_type,
+                               lattice::Orthogonal>) {
     auto direct_current = request.start;
     auto direct_blocked_by_barrier = false;
     auto direct_blocked_coord = request.start;
@@ -608,7 +618,8 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
   scratch.touch_node(start_offset);
   TESS_DIAG_EVENT(path_touch_node);
   TESS_DIAG_EVENT(path_heuristic);
-  auto current_f = detail::manhattan(request.start, request.goal);
+  const auto model = Model{};
+  auto current_f = model.heuristic(world, request.start, request.goal);
   scratch.open_.push_back(PathScratch::OpenNode{
       start,
       0,
@@ -662,10 +673,15 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
     }
 
     const auto current_coord = detail::tile_coord<Shape>(current.index);
-    detail::for_each_indexed_axis_neighbor<Shape>(
-        current_coord, current.index,
-        [&](Coord3 neighbor, std::uint64_t neighbor_index) {
+    model.for_each_forward(
+        world, current_coord, current.index, [&](auto probe) {
           TESS_DIAG_EVENT(path_neighbor_candidate);
+          if (probe.availability == TransitionAvailability::MissingTopology) {
+            crossed_missing = true;
+            return;
+          }
+          const auto neighbor = probe.to;
+          const auto neighbor_index = probe.to_index;
           // Combined residency+offset probe: a non-resident neighbor has no
           // node-array slot. Remember the boundary and skip it; whether that
           // means "blocked" or "unknown" is decided at exhaustion.
@@ -683,13 +699,6 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
           }
           const auto tentative_g = current.g + 1;
           TESS_DIAG_EVENT(path_relax_attempt);
-          if (neighbor_state == unseen) {
-            TESS_DIAG_EVENT(path_passability_check);
-            if (!detail::is_passable_index<World, Tag>(world, neighbor_index)) {
-              TESS_DIAG_EVENT(path_neighbor_blocked);
-              return;
-            }
-          }
           if (tentative_g < scratch.g_at(neighbor_offset, infinite_cost)) {
             TESS_DIAG_EVENT(path_relax_success);
             if (neighbor_state == unseen) {
@@ -704,7 +713,8 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                 neighbor_index,
                 tentative_g,
                 detail::saturating_add(
-                    tentative_g, detail::manhattan(neighbor, request.goal)),
+                    tentative_g,
+                    model.heuristic(world, neighbor, request.goal)),
             };
             if (updated_node.f <= current_f) {
               scratch.open_.push_back(updated_node);
@@ -726,31 +736,48 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                     scratch.touched_count_, scratch.path_};
 }
 
+/// Finds a provider-aware minimum-step path through a passability class/tag.
+template <typename World, typename Tag, typename Provider>
+auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
+                MissingChunkPolicy policy, const Provider& provider)
+    -> PathResult {
+  using Class = movement::movement_class_of<Tag>;
+  using UnitClass = movement::detail::UnitMovementClass<Class>;
+  return weighted_astar_path<World, UnitClass, Provider>(
+      world, request, scratch, policy, provider);
+}
+
 /// Finds a minimum-cost path using one compile-time movement class.
 ///
 /// Zero entry cost is impassable. The returned path borrows `scratch` until
 /// mutation, and sparse-world resident boundaries follow `policy`.
-template <typename World, typename Class>
+template <typename World, typename Class, typename Provider>
 auto weighted_astar_path(const World& world, PathRequest request,
                          PathScratch& scratch,
-                         [[maybe_unused]] MissingChunkPolicy policy)
-    -> PathResult {
+                         [[maybe_unused]] MissingChunkPolicy policy,
+                         const Provider& provider) -> PathResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_astar_path<World, Class> requires a MovementClass; "
                 "legacy tag pairs go through the <World, PassableTag, CostTag> "
                 "overload.");
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
+  using Model = ResolvedTransitionModel<World, Class, Provider>;
   constexpr auto unseen = std::uint8_t{0};
   constexpr auto open = std::uint8_t{1};
   constexpr auto closed = std::uint8_t{2};
   constexpr auto no_parent = std::numeric_limits<std::uint64_t>::max();
   constexpr auto infinite_cost = std::numeric_limits<std::uint32_t>::max();
+  const auto make_result = [](PathStatus status, std::uint32_t cost,
+                              std::size_t expanded, std::size_t reached,
+                              PathView path) {
+    return PathResult{status, cost, expanded, reached, path, Model::cost_scale};
+  };
 
   TESS_DIAG_EVENT_VALUE(path_clear, scratch.touched_count_);
   scratch.clear();
   if (!contains<Shape>(request.start)) {
-    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+    return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
   }
   if constexpr (!Space::is_dense) {
     // A non-resident start is not a definite failure: under Indeterminate the
@@ -762,15 +789,19 @@ auto weighted_astar_path(const World& world, PathRequest request,
       return PathResult{policy == MissingChunkPolicy::Indeterminate
                             ? PathStatus::Indeterminate
                             : PathStatus::InvalidStart,
-                        0, 0, 0, scratch.path_};
+                        0,
+                        0,
+                        0,
+                        scratch.path_,
+                        Model::cost_scale};
     }
   }
   TESS_DIAG_EVENT(path_start_passability_check);
   if (!detail::is_passable<World, Class>(world, request.start)) {
-    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+    return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
   }
   if (!contains<Shape>(request.goal)) {
-    return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
+    return make_result(PathStatus::InvalidGoal, 0, 0, 0, scratch.path_);
   }
   if constexpr (!Space::is_dense) {
     const Space residency{world};
@@ -778,21 +809,25 @@ auto weighted_astar_path(const World& world, PathRequest request,
       return PathResult{policy == MissingChunkPolicy::Indeterminate
                             ? PathStatus::Indeterminate
                             : PathStatus::InvalidGoal,
-                        0, 0, 0, scratch.path_};
+                        0,
+                        0,
+                        0,
+                        scratch.path_,
+                        Model::cost_scale};
     }
   }
   TESS_DIAG_EVENT(path_goal_passability_check);
   if (!detail::is_passable<World, Class>(world, request.goal)) {
-    return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
+    return make_result(PathStatus::InvalidGoal, 0, 0, 0, scratch.path_);
   }
 
   const auto start = detail::tile_index<Shape>(request.start);
   const auto goal = detail::tile_index<Shape>(request.goal);
   if (detail::tile_entry_cost_index<World, Class>(world, start) == 0) {
-    return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
+    return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
   }
   if (detail::tile_entry_cost_index<World, Class>(world, goal) == 0) {
-    return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
+    return make_result(PathStatus::InvalidGoal, 0, 0, 0, scratch.path_);
   }
 
   // The pre-A* fast-path scan reasons from definite passability along straight
@@ -801,7 +836,11 @@ auto weighted_astar_path(const World& world, PathRequest request,
   // risk a false NoPath; it runs for dense worlds only. Sparse searches fall
   // straight through to the full A* below, which honors MissingChunkPolicy.
   // Dense codegen is unchanged (the guard is compiled away).
-  if constexpr (Space::is_dense) {
+  if constexpr (Space::is_dense && !Model::has_special_transitions &&
+                std::is_same_v<typename Model::step_policy,
+                               movement::DefaultSteps> &&
+                std::is_same_v<typename ShapeTraits<Shape>::lattice_type,
+                               lattice::Orthogonal>) {
     auto direct_current = request.start;
     auto direct_axis_blocked = false;
     const auto append_unit_axis = [&](auto Coord3::* member) {
@@ -865,8 +904,8 @@ auto weighted_astar_path(const World& world, PathRequest request,
     }
     if (direct_path_found) {
       const auto cost = detail::manhattan(request.start, request.goal);
-      return PathResult{PathStatus::Found, cost, scratch.path_.size(),
-                        scratch.path_.size(), scratch.path_};
+      return make_result(PathStatus::Found, cost, scratch.path_.size(),
+                         scratch.path_.size(), scratch.path_);
     }
 
     const auto append_unit_detour_axis = [&](auto Coord3::* primary,
@@ -924,8 +963,8 @@ auto weighted_astar_path(const World& world, PathRequest request,
          append_unit_detour_axis(&Coord3::x, &Coord3::y, -1) ||
          append_unit_detour_axis(&Coord3::x, &Coord3::z, 1) ||
          append_unit_detour_axis(&Coord3::x, &Coord3::z, -1))) {
-      return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
-                        scratch.path_.size(), scratch.path_};
+      return make_result(PathStatus::Found, detour_cost, scratch.path_.size(),
+                         scratch.path_.size(), scratch.path_);
     }
     if (request.start.x == request.goal.x &&
         request.start.z == request.goal.z &&
@@ -933,8 +972,8 @@ auto weighted_astar_path(const World& world, PathRequest request,
          append_unit_detour_axis(&Coord3::y, &Coord3::x, -1) ||
          append_unit_detour_axis(&Coord3::y, &Coord3::z, 1) ||
          append_unit_detour_axis(&Coord3::y, &Coord3::z, -1))) {
-      return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
-                        scratch.path_.size(), scratch.path_};
+      return make_result(PathStatus::Found, detour_cost, scratch.path_.size(),
+                         scratch.path_.size(), scratch.path_);
     }
     if (request.start.x == request.goal.x &&
         request.start.y == request.goal.y &&
@@ -942,8 +981,8 @@ auto weighted_astar_path(const World& world, PathRequest request,
          append_unit_detour_axis(&Coord3::z, &Coord3::x, -1) ||
          append_unit_detour_axis(&Coord3::z, &Coord3::y, 1) ||
          append_unit_detour_axis(&Coord3::z, &Coord3::y, -1))) {
-      return PathResult{PathStatus::Found, detour_cost, scratch.path_.size(),
-                        scratch.path_.size(), scratch.path_};
+      return make_result(PathStatus::Found, detour_cost, scratch.path_.size(),
+                         scratch.path_.size(), scratch.path_);
     }
   }  // if constexpr (Space::is_dense)
 
@@ -963,10 +1002,11 @@ auto weighted_astar_path(const World& world, PathRequest request,
   scratch.touch_node(start_offset);
   TESS_DIAG_EVENT(path_touch_node);
   TESS_DIAG_EVENT(path_heuristic);
+  const auto model = Model{provider};
   scratch.open_.push_back(PathScratch::OpenNode{
       start,
       0,
-      detail::manhattan(request.start, request.goal),
+      model.heuristic(world, request.start, request.goal),
   });
   std::push_heap(scratch.open_.begin(), scratch.open_.end(),
                  detail::open_node_less);
@@ -978,6 +1018,7 @@ auto weighted_astar_path(const World& world, PathRequest request,
   // a NoPath it cannot justify. Never written for dense worlds (the guard that
   // sets it is compiled away), so dense still reports NoPath on exhaustion.
   [[maybe_unused]] bool crossed_missing = false;
+  auto cost_overflow = false;
   while (!scratch.open_.empty()) {
     TESS_DIAG_EVENT(path_heap_pop);
     std::pop_heap(scratch.open_.begin(), scratch.open_.end(),
@@ -1006,15 +1047,24 @@ auto weighted_astar_path(const World& world, PathRequest request,
         step = scratch.parent_[space.offset(step)];
       }
       std::reverse(scratch.path_.begin(), scratch.path_.end());
-      return PathResult{PathStatus::Found, current.g, expanded_nodes,
-                        scratch.touched_count_, scratch.path_};
+      return make_result(PathStatus::Found, current.g, expanded_nodes,
+                         scratch.touched_count_, scratch.path_);
     }
 
     const auto current_coord = detail::tile_coord<Shape>(current.index);
-    detail::for_each_indexed_axis_neighbor<Shape>(
-        current_coord, current.index,
-        [&](Coord3 neighbor, std::uint64_t neighbor_index) {
+    model.for_each_forward(
+        world, current_coord, current.index, [&](auto probe) {
           TESS_DIAG_EVENT(path_neighbor_candidate);
+          if (probe.availability == TransitionAvailability::MissingTopology) {
+            crossed_missing = true;
+            return;
+          }
+          if (probe.cost_overflow) {
+            cost_overflow = true;
+            return;
+          }
+          const auto neighbor = probe.to;
+          const auto neighbor_index = probe.to_index;
           // Combined residency+offset probe: a non-resident neighbor has no
           // node-array slot. Remember the boundary and skip it; whether that
           // means "blocked" or "unknown" is decided at exhaustion.
@@ -1031,24 +1081,10 @@ auto weighted_astar_path(const World& world, PathRequest request,
             return;
           }
           TESS_DIAG_EVENT(path_relax_attempt);
-          if (neighbor_state == unseen) {
-            TESS_DIAG_EVENT(path_passability_check);
-            if (!detail::is_passable_index<World, Class>(world,
-                                                         neighbor_index)) {
-              TESS_DIAG_EVENT(path_neighbor_blocked);
-              return;
-            }
-          }
-
-          const auto entry_cost = detail::tile_entry_cost_index<World, Class>(
-              world, neighbor_index);
-          if (entry_cost == 0) {
-            TESS_DIAG_EVENT(path_neighbor_blocked);
-            return;
-          }
           const auto tentative_g =
-              detail::saturating_add(current.g, entry_cost);
+              detail::saturating_add(current.g, probe.cost);
           if (tentative_g == infinite_cost) {
+            cost_overflow = true;
             return;
           }
           if (tentative_g < scratch.g_at(neighbor_offset, infinite_cost)) {
@@ -1065,7 +1101,8 @@ auto weighted_astar_path(const World& world, PathRequest request,
                 neighbor_index,
                 tentative_g,
                 detail::saturating_add(
-                    tentative_g, detail::manhattan(neighbor, request.goal)),
+                    tentative_g,
+                    model.heuristic(world, neighbor, request.goal)),
             });
             std::push_heap(scratch.open_.begin(), scratch.open_.end(),
                            detail::open_node_less);
@@ -1076,12 +1113,21 @@ auto weighted_astar_path(const World& world, PathRequest request,
 
   if constexpr (!Space::is_dense) {
     if (crossed_missing && policy == MissingChunkPolicy::Indeterminate) {
-      return PathResult{PathStatus::Indeterminate, 0, expanded_nodes,
-                        scratch.touched_count_, scratch.path_};
+      return make_result(PathStatus::Indeterminate, 0, expanded_nodes,
+                         scratch.touched_count_, scratch.path_);
     }
   }
-  return PathResult{PathStatus::NoPath, 0, expanded_nodes,
-                    scratch.touched_count_, scratch.path_};
+  return make_result(
+      cost_overflow ? PathStatus::CostOverflow : PathStatus::NoPath, 0,
+      expanded_nodes, scratch.touched_count_, scratch.path_);
+}
+
+template <typename World, typename Class>
+auto weighted_astar_path(const World& world, PathRequest request,
+                         PathScratch& scratch, MissingChunkPolicy policy)
+    -> PathResult {
+  return weighted_astar_path<World, Class, AdjacentTransitions>(
+      world, request, scratch, policy, AdjacentTransitions{});
 }
 
 // Legacy <PassableTag, CostTag> forwarder: one movement class replaces the

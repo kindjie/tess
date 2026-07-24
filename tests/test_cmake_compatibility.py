@@ -56,6 +56,23 @@ def test_project_and_presets_declare_the_supported_floor():
     assert '"minor": 25' in presets
 
 
+def test_doxygen_enables_every_optional_public_header():
+    cmake_lists = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    predefined = cmake_lists.split("set(DOXYGEN_PREDEFINED", 1)[1].split(
+        ")", 1
+    )[0]
+
+    for gate in (
+        "TESS_ENABLE_ENTT",
+        "TESS_ENABLE_FLECS",
+        "TESS_ENABLE_IMGUI",
+        "TESS_ENABLE_DIAGNOSTICS",
+        "TESS_ENABLE_WEBGPU",
+        "WEBGPU_H_",
+    ):
+        assert f'"{gate}"' in predefined
+
+
 def test_consumer_preset_stays_consumer_shaped():
     presets = json.loads(
         (REPO_ROOT / "CMakePresets.json").read_text(encoding="utf-8")
@@ -68,8 +85,37 @@ def test_consumer_preset_stays_consumer_shaped():
     assert cache["TESS_BUILD_EXAMPLES"] == "OFF"
     assert cache["TESS_BUILD_BENCHMARKS"] == "OFF"
     assert cache["TESS_ENABLE_ENTT"] == "OFF"
+    assert cache["TESS_ENABLE_FLECS"] == "OFF"
+    assert cache.get("TESS_ENABLE_GRID_BENCHMARK_DATA", "OFF") == "OFF"
+    assert cache.get("TESS_REQUIRE_GRID_BENCHMARK_DATA", "OFF") == "OFF"
     assert "TESS_WARNINGS_AS_ERRORS" not in cache
     assert "inherits" not in consumer
+
+
+def test_required_grid_data_needs_explicit_opt_in(tmp_path):
+    env = os.environ.copy()
+    env["CMAKE_CXX_COMPILER_LAUNCHER"] = (
+        "tess-definitely-missing-compiler-launcher"
+    )
+    result = subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(REPO_ROOT),
+            "-B",
+            str(tmp_path / "build"),
+            "-DTESS_BUILD_TESTING=OFF",
+            "-DTESS_BUILD_EXAMPLES=OFF",
+            "-DTESS_REQUIRE_GRID_BENCHMARK_DATA=ON",
+        ],
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    output = " ".join((result.stdout + result.stderr).split())
+    assert "requires TESS_ENABLE_GRID_BENCHMARK_DATA=ON" in output
 
 
 def test_examples_preset_is_network_free_and_example_only():
@@ -85,6 +131,7 @@ def test_examples_preset_is_network_free_and_example_only():
     assert cache["TESS_BUILD_BENCHMARKS"] == "OFF"
     assert cache["TESS_BUILD_DOCS"] == "OFF"
     assert cache["TESS_ENABLE_ENTT"] == "OFF"
+    assert cache["TESS_ENABLE_FLECS"] == "OFF"
     assert "inherits" not in examples
 
 

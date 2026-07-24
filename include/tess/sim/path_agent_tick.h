@@ -29,16 +29,11 @@ struct PathAgentTickState {
 struct PathAgentTickOptions {
   std::size_t max_steps = 1;
   PathRuntimeCachePolicy cache_policy{};
-  // Budget of consecutive failed re-path attempts for a Blocked agent.
-  // Exactly one attempt is consumed per processed tick spent Blocked, by
-  // prepare_path_agent_processing; blocked movement steps do not consume
-  // budget themselves. A Found re-path result resets the count to zero
-  // (apply_path_agent_results), so only consecutive non-Found results
-  // exhaust the budget and turn the agent terminally Unreachable. An
-  // agent whose re-paths keep planning Found but whose next step stays
-  // blocked -- e.g. a permanently parked agent on the route, since
-  // occupancy is not planning passability -- therefore re-paths every
-  // tick indefinitely by design and never becomes Unreachable.
+  // Budget of consecutive ticks spent retrying a Blocked agent. Occupied and
+  // reserved destinations retry the retained step without an occupancy-blind
+  // search; route-invalidating failures re-path. The first movement failure
+  // records the block, and each following tick consumes one attempt until a
+  // successful move resets the count or exhaustion becomes Unreachable.
   std::uint32_t max_blocked_retries = 8;
 };
 
@@ -48,7 +43,10 @@ struct PathAgentTickStats {
   bool processed_paths = false;
   PathAgentFrameStats pathing{};
   PathAgentFrameStats movement{};
+  // Actual route-invalidating retries that requested path processing.
   std::size_t repaths_requested = 0;
+  // Historical name retained for source compatibility: counts every agent
+  // whose shared blocked budget exhausted, including retained-step waits.
   std::size_t repath_exhausted = 0;
 };
 
@@ -69,11 +67,11 @@ inline void set_path_agent_goal(PathAgentTickState& state,
   set_path_agent_goal(agent, goal);
 }
 
-// Scans agents ahead of a tick's path processing. NeedsPath agents (goals
-// assigned through the two-argument set_path_agent_goal) request processing
-// with no manual dirty mark. Blocked agents consume one re-path attempt per
-// processed tick until the retry budget runs out, at which point they turn
-// terminally Unreachable and stop requesting processing.
+// Scans agents ahead of a tick's path processing. NeedsPath agents request
+// processing with no manual dirty mark. Blocked agents consume one retry per
+// following tick. A retained Found route waits without path processing for
+// occupancy/reservations; invalid routes request a re-path. Exhausted agents
+// become terminally Unreachable and stop both processing and movement.
 /// Advances retry accounting and reports whether any agent needs planning.
 inline auto prepare_path_agent_processing(std::span<PathAgentState> agents,
                                           PathAgentTickOptions options,
@@ -91,10 +89,15 @@ inline auto prepare_path_agent_processing(std::span<PathAgentState> agents,
     if (agent.phase != PathAgentPhase::Blocked) {
       continue;
     }
+    if (options.max_steps == 0) {
+      continue;
+    }
     if (agent.blocked_retries < options.max_blocked_retries) {
       ++agent.blocked_retries;
-      ++stats.repaths_requested;
-      needs_processing = true;
+      if (agent.status != PathStatus::Found) {
+        ++stats.repaths_requested;
+        needs_processing = true;
+      }
     } else {
       agent.phase = PathAgentPhase::Unreachable;
       agent.status = PathStatus::NoPath;
@@ -124,6 +127,34 @@ template <typename World, typename ClassOrTag>
     stats.pathing = process_unit_path_agents<World, ClassOrTag>(
         world, agents, runtime, options.cache_policy, graph, scope,
         &state.routes);
+    stats.processed_paths = true;
+    state.pathing_dirty = false;
+  }
+
+  stats.movement = advance_path_agents(agents, state.routes, options.max_steps);
+  return stats;
+}
+
+/// Advances a provider-composed unit-cost tick without movement validation.
+template <typename World, typename ClassOrTag, typename Provider>
+[[nodiscard]] auto tick_unit_path_agents(
+    PathAgentTickState& state, const World& world,
+    std::span<PathAgentState> agents, PathRequestRuntime& runtime,
+    PathAgentTickOptions options,
+    const RegionGraphT<typename World::residency_type>* graph,
+    const Provider& provider) -> PathAgentTickStats {
+  PathAgentTickStats stats;
+  stats.tick = advance_sim_tick(state.clock);
+
+  const bool repath_needed =
+      prepare_path_agent_processing(agents, options, stats);
+  state.routes.ensure_size(agents.size());
+  if (state.pathing_dirty || repath_needed) {
+    const auto scope =
+        state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
+    stats.pathing = process_unit_path_agents<World, ClassOrTag>(
+        world, agents, runtime, options.cache_policy, graph, scope,
+        &state.routes, provider);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -164,6 +195,39 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   return stats;
 }
 
+/// Advances a provider-composed unit tick through validated movement commits.
+template <typename World, typename ClassOrTag, typename OccupancyTag,
+          typename ReservationTag, typename Provider>
+[[nodiscard]] auto tick_unit_path_agents_with_movement(
+    PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
+    PathRequestRuntime& runtime, PathAgentTickOptions options,
+    std::uint32_t movement_dirty_mask,
+    const RegionGraphT<typename World::residency_type>* graph,
+    const Provider& provider) -> PathAgentTickStats {
+  PathAgentTickStats stats;
+  stats.tick = advance_sim_tick(state.clock);
+
+  const bool repath_needed =
+      prepare_path_agent_processing(agents, options, stats);
+  state.routes.ensure_size(agents.size());
+  if (state.pathing_dirty || repath_needed) {
+    const auto scope =
+        state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
+    stats.pathing = process_unit_path_agents<World, ClassOrTag>(
+        world, agents, runtime, options.cache_policy, graph, scope,
+        &state.routes, provider);
+    stats.processed_paths = true;
+    state.pathing_dirty = false;
+  }
+
+  stats.movement =
+      advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
+                                        ReservationTag>(
+          world, agents, state.routes, options.max_steps, movement_dirty_mask,
+          provider);
+  return stats;
+}
+
 // Class forms: one movement class drives pathing, precheck, and (for the
 // movement variant) commit validation, so plan and commit provably agree.
 /// Advances one bounded weighted path-agent tick without movement commits.
@@ -186,6 +250,35 @@ template <typename World, typename Class, std::uint32_t MaxCost>
     stats.pathing = process_weighted_path_agents<World, Class, MaxCost>(
         world, agents, runtime, options.cache_policy, graph, scope,
         &state.routes);
+    stats.processed_paths = true;
+    state.pathing_dirty = false;
+  }
+
+  stats.movement = advance_path_agents(agents, state.routes, options.max_steps);
+  return stats;
+}
+
+/// Advances a provider-composed bounded weighted tick without commits.
+template <typename World, typename Class, std::uint32_t MaxCost,
+          typename Provider>
+[[nodiscard]] auto tick_weighted_path_agents(
+    PathAgentTickState& state, const World& world,
+    std::span<PathAgentState> agents, PathRequestRuntime& runtime,
+    PathAgentTickOptions options,
+    const RegionGraphT<typename World::residency_type>* graph,
+    const Provider& provider) -> PathAgentTickStats {
+  PathAgentTickStats stats;
+  stats.tick = advance_sim_tick(state.clock);
+
+  const bool repath_needed =
+      prepare_path_agent_processing(agents, options, stats);
+  state.routes.ensure_size(agents.size());
+  if (state.pathing_dirty || repath_needed) {
+    const auto scope =
+        state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
+    stats.pathing = process_weighted_path_agents<World, Class, MaxCost>(
+        world, agents, runtime, options.cache_policy, graph, scope,
+        &state.routes, provider);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -222,6 +315,38 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   stats.movement = advance_path_agents_with_movement<World, Class, OccupancyTag,
                                                      ReservationTag>(
       world, agents, state.routes, options.max_steps, movement_dirty_mask);
+  return stats;
+}
+
+/// Advances a provider-composed weighted tick through movement commits.
+template <typename World, typename Class, std::uint32_t MaxCost,
+          typename OccupancyTag, typename ReservationTag, typename Provider>
+[[nodiscard]] auto tick_weighted_path_agents_with_movement(
+    PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
+    PathRequestRuntime& runtime, PathAgentTickOptions options,
+    std::uint32_t movement_dirty_mask,
+    const RegionGraphT<typename World::residency_type>* graph,
+    const Provider& provider) -> PathAgentTickStats {
+  PathAgentTickStats stats;
+  stats.tick = advance_sim_tick(state.clock);
+
+  const bool repath_needed =
+      prepare_path_agent_processing(agents, options, stats);
+  state.routes.ensure_size(agents.size());
+  if (state.pathing_dirty || repath_needed) {
+    const auto scope =
+        state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
+    stats.pathing = process_weighted_path_agents<World, Class, MaxCost>(
+        world, agents, runtime, options.cache_policy, graph, scope,
+        &state.routes, provider);
+    stats.processed_paths = true;
+    state.pathing_dirty = false;
+  }
+
+  stats.movement = advance_path_agents_with_movement<World, Class, OccupancyTag,
+                                                     ReservationTag>(
+      world, agents, state.routes, options.max_steps, movement_dirty_mask,
+      provider);
   return stats;
 }
 

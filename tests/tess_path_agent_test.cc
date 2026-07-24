@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 
 #include "allocation_counter.h"
@@ -90,6 +91,18 @@ auto validate_move(const MovementWorld& world, tess::Coord3 from,
       world, tess::MovementIntent{from, to, versions});
 }
 
+struct ClosingDoorProvider {
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3, Sink&&) const {}
+};
+
+struct ThrowingMovementProvider {
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3, Sink&&) const {
+    throw std::runtime_error{"provider failure"};
+  }
+};
+
 TEST(TessMovement, ValidateRejectsInvalidEndpointsAndNonAdjacentMoves) {
   MovementWorld world;
   fill_movement_world(world);
@@ -109,6 +122,70 @@ TEST(TessMovement, ValidateRejectsInvalidEndpointsAndNonAdjacentMoves) {
 
   result = validate_move(world, tess::Coord3{0, 0, 0}, tess::Coord3{0, 0, 0});
   EXPECT_EQ(result.status, tess::MovementStatus::NotAdjacent);
+}
+
+TEST(TessMovement, MissingProviderEdgeReportsStaleTopology) {
+  MovementWorld world;
+  fill_movement_world(world);
+
+  const auto result = tess::validate_movement_intent<
+      MovementWorld, PassableTag, OccupancyTag, ReservationTag>(
+      world,
+      tess::MovementIntent{tess::Coord3{0, 0, 0}, tess::Coord3{2, 0, 0}, {}},
+      ClosingDoorProvider{});
+
+  EXPECT_EQ(result.status, tess::MovementStatus::StaleTopology);
+  EXPECT_TRUE(tess::is_transient_movement_failure(result.status));
+}
+
+TEST(TessMovement, ProviderExceptionsPropagateThroughValidateAndCommit) {
+  MovementWorld world;
+  fill_movement_world(world);
+  constexpr auto from = tess::Coord3{7, 0, 0};
+  constexpr auto to = tess::Coord3{9, 0, 0};
+  const auto intent = tess::MovementIntent{from, to, {}};
+  const auto provider = ThrowingMovementProvider{};
+  world.template field<OccupancyTag>(from) = true;
+  world.template field<ReservationTag>(to) = true;
+
+  // Use different chunks and a nonzero dirty mask so a future reorder that
+  // writes before provider enumeration changes either fields or metadata.
+  const auto from_key = world.resolve(from).chunk_key;
+  const auto to_key = world.resolve(to).chunk_key;
+  ASSERT_NE(from_key, to_key);
+  const auto from_meta = world.meta(from_key);
+  const auto to_meta = world.meta(to_key);
+  const auto from_flags = world.dirty_flags(from_key);
+  const auto to_flags = world.dirty_flags(to_key);
+  const auto from_bounds = world.dirty_bounds(from_key);
+  const auto to_bounds = world.dirty_bounds(to_key);
+  const auto expect_unchanged = [&] {
+    EXPECT_TRUE(world.template field<OccupancyTag>(from));
+    EXPECT_FALSE(world.template field<OccupancyTag>(to));
+    EXPECT_TRUE(world.template field<ReservationTag>(to));
+    EXPECT_EQ(world.dirty_flags(from_key), from_flags);
+    EXPECT_EQ(world.dirty_flags(to_key), to_flags);
+    EXPECT_EQ(world.dirty_bounds(from_key), from_bounds);
+    EXPECT_EQ(world.dirty_bounds(to_key), to_bounds);
+    EXPECT_EQ(world.meta(from_key).version, from_meta.version);
+    EXPECT_EQ(world.meta(to_key).version, to_meta.version);
+    EXPECT_EQ(world.meta(from_key).topology_version,
+              from_meta.topology_version);
+    EXPECT_EQ(world.meta(to_key).topology_version, to_meta.topology_version);
+  };
+
+  EXPECT_THROW((static_cast<void>(
+                   tess::validate_movement_intent<MovementWorld, PassableTag,
+                                                  OccupancyTag, ReservationTag>(
+                       world, intent, provider))),
+               std::runtime_error);
+  expect_unchanged();
+  EXPECT_THROW((static_cast<void>(
+                   tess::commit_movement_intent<MovementWorld, PassableTag,
+                                                OccupancyTag, ReservationTag>(
+                       world, intent, 0x40u, provider))),
+               std::runtime_error);
+  expect_unchanged();
 }
 
 TEST(TessMovement, ValidateRejectsBlockedFromAndCommitLeavesWorldUntouched) {
