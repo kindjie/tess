@@ -577,6 +577,12 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
   assert (
     "--ignore-missing-anchor api/functions_vars.html#index_n" in workflow
   )
+  assert (
+    "--ignore-missing-anchor api/functions_func.html#index_~" in workflow
+  )
+  assert (
+    "--ignore-missing-anchor api/functions_~.html#index_~" in workflow
+  )
   assert "set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)" in cmake
   assert "set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)" in cmake
   assert '"tess::detail::*"' in cmake

@@ -4,8 +4,10 @@
 - `test_doc_snippets.py`: verifies named source-region parsing, Markdown drift
   detection, automatic refresh, and repository-wide synchronization between
   adopter-facing excerpts and compiled sources.
-- `test_check_docs_links.py`: verifies generated-site link and anchor checks,
-  including root-relative assets and rejection of missing local targets.
+- `test_check_docs_links.py` and the Pages assertions in `test_git_hooks.py`:
+  verify generated-site link and anchor checks, including root-relative
+  assets, narrowly scoped Doxygen 1.17.0 quick-index exceptions, and rejection
+  of missing local targets.
 - `test_doc_outputs.py`: verifies documented example-output fences stay
   synchronized with the stdout of their compiled binaries, including drift,
   missing/unused `source=binary` mappings, and failing binaries.

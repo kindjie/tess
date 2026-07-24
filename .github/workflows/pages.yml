@@ -99,10 +99,13 @@ jobs:
 
       - name: Check generated documentation links
         run: |
-          # Doxygen 1.17.0 emits these two quick-index links without anchors.
+          # Doxygen 1.17.0 emits these quick-index links without anchors. Keep
+          # each exception target-specific so every other missing anchor fails.
           python3 tools/check_docs_links.py build/site \
             --ignore-missing-anchor api/functions_vars.html#index_b \
-            --ignore-missing-anchor api/functions_vars.html#index_n
+            --ignore-missing-anchor api/functions_vars.html#index_n \
+            --ignore-missing-anchor api/functions_func.html#index_~ \
+            --ignore-missing-anchor api/functions_~.html#index_~
 
       - name: Smoke-test WebAssembly in Chrome
         run: |
