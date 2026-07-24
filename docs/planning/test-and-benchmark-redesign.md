@@ -100,6 +100,15 @@ maintainer whose measurement methodology this document imports.
     plus a sentinel-mapping completeness check for the paired-run set — not
     as a line-coverage number.
 
+**Profiling**
+
+20. An optional, signal-triggered profiling protocol for changes with
+    likely performance implications: counters-first triage, local paired
+    reproduction, profile-and-diff with the existing `bench-profile`
+    tooling, outcome recorded in the optimization log — linked directly
+    from the PR check summary whenever the paired run flags a change, and
+    never a gate.
+
 ## 2. Evidence
 
 The redesign is grounded in the repository's own CI history (all 28 failed
@@ -380,6 +389,45 @@ be unrepresentative of code breadth — but three specific guarantees:
   because the right cache/batch benchmarks happened to exist; this makes
   that structural.
 
+### 4.6 Profiling protocol for flagged changes (optional, signal-triggered)
+
+The profiling tooling exists (the `bench-profile` preset and capture/summary
+tools, documented in the [benchmark plan](benchmark-plan.md) profiling
+workflow) but nothing connects it to the moments a contributor needs it.
+Since contributors here are largely automated agents, an explicit protocol
+attached to the signal is what makes the tooling get used. It is optional
+guidance, never a gate — hosted runners have no reliable PMU access, so
+profiling is inherently a local or campaign activity.
+
+Triggers: the change classifier flags perf-sensitive paths on a PR; the
+selective paired run returns `advisory` or `regression`; a change-point
+issue opens on main; a campaign shows an anomaly.
+
+Protocol, in escalation order:
+
+1. **Counters first.** Read the counter deltas in the PR check summary. If
+   work changed (`expanded_nodes`, `dirty_chunks_merged`, retries, ...),
+   the diagnosis is algorithmic — the golden diff already names the
+   behavior change, and profiling is usually unnecessary. Decide whether
+   the new work is intended; update goldens in the same PR if so.
+2. **Reproduce paired.** If counters are flat but time moved
+   (constant-factor), reproduce locally with a paired base-vs-head run of
+   the flagged benchmarks using the exact command from the check summary.
+   No reproduction, no investigation — hosted-runner noise is not a
+   finding.
+3. **Profile and diff.** Build both revisions under the `bench-profile`
+   preset, capture with the profiling tool at matched filters and
+   durations, and diff the symbol summaries. Attribute the delta to a
+   symbol or call path before concluding anything.
+4. **Record.** Accepted, rejected, and inconclusive outcomes all go to the
+   [optimization log](optimization-log.md), per the repository's existing
+   performance-work convention — inconclusive entries prevent the next
+   agent from repeating the same dead end.
+
+The PR check summary links this protocol whenever it emits a paired-run
+verdict, and CONTRIBUTING.md gains a pointer when the protocol is wired up
+(phase 2).
+
 ## 5. CI topology
 
 | Tier | Trigger | Contents | Wall clock |
@@ -444,7 +492,8 @@ to pre-verify). The hook-backstop CI job is unchanged.
 - **Contributors (largely automated agents).** A ~6-minute blocking PR
   loop; deterministic failures (counters and equalities, not noisy
   ceilings); one compact PR check summary — counter deltas, failed property
-  seed plus replay command, paired-timing verdict, exact local repro
+  seed plus replay command, paired-timing verdict with a link to the
+  profiling protocol (section 4.6) when it flags, exact local repro
   commands — instead of thirteen threshold JSON files to decode. The
   `tests/AGENTS.md` catalog and hook flow are unchanged.
 
@@ -498,7 +547,9 @@ that introduces this document.
 2. Counter-golden and change-point tooling; paired A/B workflow
    (dispatch-triggered) with the sentinel-mapping completeness check;
    advisory coverage reporting (test suite and bench-smoke gap-finder) and
-   the benchmark workload-matrix catalog with its drift check.
+   the benchmark workload-matrix catalog with its drift check; the
+   profiling protocol wired into the PR check summary and pointed to from
+   CONTRIBUTING.md.
 3. Scenario layer: procedural generators, then the S2 macro-harness (with
    PR-tier smoke), then S3; S1 external-data activation via manifest
    unblocking, fetch tool, and the strict data job (grid-benchmark TDD
