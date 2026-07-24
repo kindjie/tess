@@ -579,6 +579,9 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
     "--ignore-missing-anchor api/functions_vars.html#index_b" in workflow
   )
   assert (
+    "--ignore-missing-anchor api/functions_vars.html#index_m" in workflow
+  )
+  assert (
     "--ignore-missing-anchor api/functions_vars.html#index_n" in workflow
   )
   assert (
