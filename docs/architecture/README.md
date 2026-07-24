@@ -123,9 +123,9 @@ Maintained notes for implemented areas:
 The umbrella header `tess/tess.h` exports the dependency-free core surface plus
 the configured `TESS_VERSION_MAJOR`, `TESS_VERSION_MINOR`, and
 `TESS_VERSION_PATCH` macros and their typed `tess::version` /
-`tess::library_version` representation. Optional integrations
-that require consumer-provided EnTT or Dear ImGui declarations are
-deliberately not included; consumers include those adapter headers explicitly.
+`tess::library_version` representation. Optional integrations that require
+consumer-provided EnTT, Flecs, or Dear ImGui declarations are deliberately not
+included; consumers include those adapter headers explicitly.
 
 ## Historical design intent (TDD archive)
 
