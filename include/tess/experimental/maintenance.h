@@ -280,6 +280,9 @@ class ImmediateScheduler final : public MaintenanceScheduler {
       ~ActiveRunGuard() { current = previous; }
     };
     active_run_ = &active;
+    // active_run_ borrows this frame only until guard restores its parent
+    // during the same schedule() call; task.run() cannot retain the frame.
+    // cppcheck-suppress danglingLifetime
     const auto guard = ActiveRunGuard{active_run_, active.parent};
     auto budget = MaintenanceBudget{};
     while (active.pending != 0) {
