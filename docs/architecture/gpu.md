@@ -85,7 +85,12 @@ gameplay-exact answer on the CPU.
 resource ownership, generation invalidation, bounded asynchronous readback,
 disabled configuration, and device loss. The documentation build also
 compiles and runs a browser smoke example with Emdawnwebgpu's exact pinned
-port. A browser without an adapter is an explicit unsupported result; a
-device or backend failure, including an initialization or readback timeout, is
-not. There is no timing gate until measurements can be calibrated across a
-representative browser/GPU matrix.
+port. Only `WGPURequestAdapterStatus_Unavailable` is an unsupported result.
+Instance creation, request cancellation or error, null success handles, device
+failure, backend failure, and timeout are failures. Pages follows Chromium's
+`webgpu-swiftshader` test configuration to select its software adapter and
+requires the compute dispatch and summary readback to reach `ready`; it does
+not accept unsupported. A standard-library DevTools harness polls that state
+in wall time because Chrome virtual time can advance JavaScript timers ahead of
+asynchronous GPU-process work. There is no timing performance gate until
+measurements can be calibrated across a representative browser/GPU matrix.

@@ -145,8 +145,21 @@ struct ArchiveScalarBase<T, true> {
 template <typename T>
 using ArchiveScalarBaseT = typename ArchiveScalarBase<T>::type;
 
+// C++20 has no standard fixed-underlying-enum trait. Scoped enums are always
+// fixed and, unlike unscoped enums, do not convert implicitly to their
+// underlying type; conservatively use that distinction to reject every
+// unscoped enum before hostile bytes can reach an out-of-range conversion.
+template <typename T, bool IsEnum = std::is_enum_v<T>>
+struct ArchiveEnumSupported : std::true_type {};
+
+template <typename T>
+struct ArchiveEnumSupported<T, true>
+    : std::bool_constant<!std::is_convertible_v<T, std::underlying_type_t<T>>> {
+};
+
 template <typename T>
 inline constexpr bool archive_scalar_supported_v =
+    ArchiveEnumSupported<T>::value &&
     (std::is_integral_v<ArchiveScalarBaseT<T>> ||
      std::is_floating_point_v<ArchiveScalarBaseT<T>>) &&
     (sizeof(ArchiveScalarBaseT<T>) == 1 || sizeof(ArchiveScalarBaseT<T>) == 2 ||
@@ -156,8 +169,8 @@ template <typename T>
 consteval auto archive_scalar_kind() -> ArchiveScalarKind {
   using Base = ArchiveScalarBaseT<T>;
   static_assert(archive_scalar_supported_v<T>,
-                "Persisted field values must be bool, integral, enum, float, "
-                "or double scalar types of 1, 2, 4, or 8 bytes.");
+                "Persisted field values must be bool, integral, scoped enum, "
+                "float, or double scalar types of 1, 2, 4, or 8 bytes.");
   if constexpr (std::is_same_v<Base, bool>) {
     return ArchiveScalarKind::Boolean;
   } else if constexpr (std::is_floating_point_v<Base>) {
@@ -584,8 +597,11 @@ bool validate_chunk_field(ArchiveCursor& cursor) {
   using Value = typename WorldType::schema_type::template value_type<
       typename Field::tag_type>;
   for (std::uint64_t i = 0; i < WorldType::local_tile_count; ++i) {
-    auto value = Value{};
-    if (!read_scalar(cursor, value)) {
+    // Preflight needs only the encoding check. Decode an enum through its
+    // underlying scalar so valid scoped enums need not declare a zero
+    // enumerator merely to provide temporary storage.
+    auto scalar = ArchiveScalarBaseT<Value>{};
+    if (!read_scalar(cursor, scalar)) {
       return false;
     }
   }
@@ -860,6 +876,10 @@ auto load_world_archive(World& world, std::span<const std::byte> bytes,
     keys.push_back(ChunkKey{key});
     static_cast<void>(
         key_cursor.skip(sizeof(std::uint8_t) + sizeof(std::uint32_t) * 2));
+    // Decode every scalar before preparing sparse residency or writing any
+    // field. This second pass is deliberate: scalar-level damage (including
+    // an invalid bool following a valid enum) must retain the load operation's
+    // strong no-mutation-on-preflight-failure guarantee.
     if (!detail::validate_chunk_fields<Archive, World>(key_cursor)) {
       return fail(WorldArchiveStatus::Corrupt);
     }

@@ -6,26 +6,41 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
-## 2026-07-23 - Harden cache, callback, and archive edge contracts
+## 2026-07-23 - Harden cache, scheduler, callback, and archive contracts
 
 - Changed: weighted product replay now matches uncached zero-cost-start
   validation; field-cache insertion has a strong allocation guarantee; grouped
   overflow falls back to exact per-request search; schedule exceptions restore
   consumed triggers; immediate maintenance self-scheduling is iterative;
-  concurrent immediate calls are serialized; WebGPU mirrors and dispatches
-  reject unrepresentable device work; and the browser smoke distinguishes
-  explicit adapter absence from an operation timeout.
+  concurrent immediate calls are serialized; queued drains stop on any
+  zero-budget follow-up, including cross-task cycles; WebGPU mirrors and
+  dispatches reject unrepresentable device work; and the browser smoke
+  distinguishes explicit adapter absence from request, device, backend, and
+  timeout failures.
+  Pages selects Chromium's SwiftShader WebGPU adapter and requires the
+  compute/readback smoke to complete through a wall-time DevTools poll. The
+  example sets the mandatory mode on its device-lost callback and rejects null
+  request futures immediately. Persistence now accepts only scoped enums,
+  decodes all scalars before mutation, and explicitly leaves application enum-
+  domain validation to the caller.
 - Reason: final independent audits found policy-dependent path results, a
   null cache entry after allocation failure, globally over-broad overflow
   status, lost one-shot scheduler work, recursive maintenance execution, and
-  optional-backend limits and smoke statuses that were weaker than the public
-  contracts.
+  optional-backend limits, smoke statuses, and hosted coverage that were weaker
+  than the public contracts. Cross-task zero-progress handoffs could make a
+  queued drain spin forever. A zero callback mode silently produced a null
+  device future, while virtual-time polling could outrun asynchronous GPU
+  work. The same review found that hostile bytes could invoke an unsafe
+  conversion for non-fixed enums and that cache pointer invalidation wording
+  omitted stores that evict or clear an otherwise unrelated entry.
 - Affected docs: path, simulation, maintenance, persistence, queued
   operations, block pipelines, spatial coordination, packaging, topology, ECS,
   WebGPU API comments, design changelog, and test inventory.
 - Affected code: weighted products and batches, schedule and resumable work,
   experimental maintenance, block pipelines, archive parsing, query spans,
-  benchmark fixture parsing, and the optional WebGPU backend.
+  benchmark fixture parsing, field-cache API comments, and the optional WebGPU
+  backend, its browser example, the wall-time browser harness, and the Pages
+  workflow.
 
 ## 2026-07-23 - Align parallel provider edges from plan through commit
 

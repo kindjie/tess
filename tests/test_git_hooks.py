@@ -13,6 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 import git_hooks  # noqa: E402
+import wait_for_browser_state  # noqa: E402
 
 
 def reader_for(files: dict[str, bytes]):
@@ -589,7 +590,63 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
   assert "API reference: https://tess.owx.dev/api/" in mkdocs
 
 
-def test_webgpu_pages_smoke_distinguishes_timeout_from_unsupported():
+def test_webgpu_smoke_only_adapter_unavailable_is_unsupported():
+  root = Path(__file__).resolve().parents[1]
+  source = (
+    root / "examples" / "webgpu_compute" / "webgpu_compute.cc"
+  ).read_text()
+  adapter_ready = source.split("void adapter_ready(", 1)[1].split(
+    "\n}\n\n}  // namespace", 1
+  )[0]
+  run_compute = source.split(
+    "[[nodiscard]] bool run_compute(", 1
+  )[1].split("\n}\n\nvoid device_ready(", 1)[0]
+  device_ready = source.split("void device_ready(", 1)[1].split(
+    "\n}\n\nvoid adapter_ready(", 1
+  )[0]
+  device_lost = source.split("void device_lost(", 1)[1].split(
+    "\n}\n\n[[nodiscard]] bool run_compute(", 1
+  )[0]
+  main = source.split("int main() {", 1)[1]
+
+  assert "constexpr int kAdapterUnavailable = -1;" in source
+  assert (
+    "status == WGPURequestAdapterStatus_Unavailable" in adapter_ready
+  )
+  assert "g_status = kAdapterUnavailable;" in adapter_ready
+  assert (
+    "status == WGPURequestAdapterStatus_CallbackCancelled" in adapter_ready
+  )
+  assert "g_status = kAdapterRequestCancelled;" in adapter_ready
+  assert "g_status = kAdapterRequestFailed;" in adapter_ready
+  assert "g_status = kNullAdapter;" in adapter_ready
+  assert "device_desc.deviceLostCallbackInfo.mode" in adapter_ready
+  assert "WGPUCallbackMode_AllowSpontaneous" in adapter_ready
+  assert (
+    "device_future.id == 0 && g_status == kRequestingDevice"
+    in adapter_ready
+  )
+  assert "kAdapterUnavailable" not in device_ready
+  assert (
+    "status == WGPURequestDeviceStatus_CallbackCancelled" in device_ready
+  )
+  assert "g_status = kDeviceRequestCancelled;" in device_ready
+  assert "g_status = kDeviceRequestFailed;" in device_ready
+  assert "g_status = kNullDevice;" in device_ready
+  assert "g_status == kRunningCompute" in device_ready
+  assert (
+    "g_status == kPending || g_status >= kRequestingDevice"
+    in device_lost
+  )
+  assert "kAwaitingReadback" not in device_ready
+  assert run_compute.index("g_status = kAwaitingReadback;") < (
+    run_compute.index("g_backend->readback(")
+  )
+  assert "g_status = kInstanceCreationFailed;" in main
+  assert "adapter_future.id == 0 && g_status == kPending" in main
+
+
+def test_webgpu_pages_smoke_requires_swiftshader_compute_completion():
   root = Path(__file__).resolve().parents[1]
   app = (
     root / "examples" / "webgpu_compute" / "site" / "app.js"
@@ -609,8 +666,50 @@ def test_webgpu_pages_smoke_distinguishes_timeout_from_unsupported():
   assert not re.search(
     r"""dataset\.tessWebgpu = ["']unsupported["']""", timeout
   )
-  assert 'data-tess-webgpu="(ready|unsupported)"' in workflow
-  assert '! grep -q \'data-tess-webgpu="failed"\'' in workflow
+  assert "stage ${result}" in timeout
+  webgpu_smoke = workflow.split(
+    "grep -q '>Colony running<'", 1
+  )[1].split("- name: Configure Pages", 1)[0]
+  assert "--disable-gpu" not in webgpu_smoke
+  assert "--virtual-time-budget" not in webgpu_smoke
+  assert "Chromium's webgpu-swiftshader test configuration" in webgpu_smoke
+  for flag in (
+    "--enable-unsafe-webgpu",
+    "--use-webgpu-adapter=swiftshader",
+    "--enable-dawn-features=allow_unsafe_apis",
+    "--disable-dawn-features=use_dxc",
+    "--enable-webgpu-developer-features",
+    "--use-gpu-in-tests",
+    "--enable-accelerated-2d-canvas",
+  ):
+    assert flag in webgpu_smoke
+  assert "python3 tools/wait_for_browser_state.py" in webgpu_smoke
+  assert "--dataset tessWebgpu" in webgpu_smoke
+  assert "--expected ready" in webgpu_smoke
+  assert 'data-tess-webgpu="(ready|unsupported)"' not in workflow
+
+
+def test_browser_state_websocket_client_frames_are_masked():
+  payload = b'{"id":1}'
+  mask = b"\x11\x22\x33\x44"
+
+  frame = wait_for_browser_state.encode_client_text_frame(payload, mask)
+
+  assert frame[:2] == b"\x81\x88"
+  assert frame[2:6] == mask
+  assert bytes(
+    byte ^ mask[index % len(mask)]
+    for index, byte in enumerate(frame[6:])
+  ) == payload
+
+
+def test_browser_state_dataset_expression_rejects_code_injection():
+  assert wait_for_browser_state.dataset_expression("tessWebgpu") == (
+    "document.documentElement?.dataset.tessWebgpu || ''"
+  )
+
+  with pytest.raises(ValueError):
+    wait_for_browser_state.dataset_expression("x;alert(1)")
 
 
 def test_workflows_use_only_github_owned_sha_pinned_actions():

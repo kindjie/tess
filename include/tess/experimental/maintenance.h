@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <limits>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 namespace tess::experimental::maintenance {
@@ -156,11 +157,14 @@ class QueuedScheduler : public MaintenanceScheduler {
   [[nodiscard]] auto schedule(MaintenanceTask& task) -> bool override {
     metrics_.record_schedule();
     const auto lock = std::scoped_lock{queue_mutex_};
-    if (&task == running_task_) {
-      running_task_rescheduled_ = true;
-    }
+    // Only synchronous calls from task.run() establish a follow-up. A
+    // concurrent producer must not make a completed task look stalled.
+    const auto called_from_task = running_thread_ == std::this_thread::get_id();
     if constexpr (Coalescing) {
       if (queue_.contains(task)) {
+        if (called_from_task) {
+          running_task_scheduled_ = true;
+        }
         metrics_.record_coalesced();
         return true;
       }
@@ -168,6 +172,9 @@ class QueuedScheduler : public MaintenanceScheduler {
     if (!queue_.push(task)) {
       metrics_.record_capacity_failure();
       return false;
+    }
+    if (called_from_task) {
+      running_task_scheduled_ = true;
     }
     return true;
   }
@@ -219,33 +226,37 @@ class QueuedScheduler : public MaintenanceScheduler {
     const auto before = budget.remaining();
     {
       const auto lock = std::scoped_lock{queue_mutex_};
-      running_task_ = &task;
-      running_task_rescheduled_ = false;
+      running_thread_ = std::this_thread::get_id();
+      running_task_scheduled_ = false;
     }
     try {
       task.run(budget);
     } catch (...) {
       const auto lock = std::scoped_lock{queue_mutex_};
-      running_task_ = nullptr;
-      running_task_rescheduled_ = false;
+      running_thread_ = {};
+      running_task_scheduled_ = false;
       throw;
     }
-    auto rescheduled = false;
+    auto scheduled_follow_up = false;
     {
       const auto lock = std::scoped_lock{queue_mutex_};
-      rescheduled = running_task_rescheduled_;
-      running_task_ = nullptr;
-      running_task_rescheduled_ = false;
+      scheduled_follow_up = running_task_scheduled_;
+      running_thread_ = {};
+      running_task_scheduled_ = false;
     }
-    return budget.remaining() != before || !rescheduled;
+    // A no-op task may finish without consuming budget. A task that queues
+    // follow-up work has not finished, however, so continuing could spin
+    // through A -> B -> A forever. Stop this drain and leave the follow-up
+    // queued for explicit caller intervention.
+    return budget.remaining() != before || !scheduled_follow_up;
   }
 
   mutable std::mutex queue_mutex_;
   std::mutex run_mutex_;
   BoundedTaskQueue queue_;
   MetricsStore metrics_;
-  MaintenanceTask* running_task_ = nullptr;
-  bool running_task_rescheduled_ = false;
+  std::thread::id running_thread_;
+  bool running_task_scheduled_ = false;
 };
 
 }  // namespace detail

@@ -80,6 +80,23 @@ struct ZeroProgressTask final : maintenance::MaintenanceTask {
   }
 };
 
+struct ZeroProgressHandoffTask final : maintenance::MaintenanceTask {
+  maintenance::MaintenanceScheduler* scheduler = nullptr;
+  ZeroProgressHandoffTask* next = nullptr;
+  std::uint32_t* handoffs_remaining = nullptr;
+  std::uint32_t executions = 0;
+
+  void run(maintenance::MaintenanceBudget& budget) override {
+    ++executions;
+    if (*handoffs_remaining != 0) {
+      --*handoffs_remaining;
+      static_cast<void>(scheduler->schedule(*next));
+      return;
+    }
+    static_cast<void>(budget.consume());
+  }
+};
+
 struct ImmediateSelfSchedulingTask final : maintenance::MaintenanceTask {
   maintenance::MaintenanceScheduler* scheduler = nullptr;
   std::uint32_t remaining = 3;
@@ -217,6 +234,30 @@ TEST(TessMaintenance, ConcurrentImmediateScheduleReturnsAfterItsExecution) {
   EXPECT_EQ(task.executions.load(std::memory_order_acquire), 2u);
 }
 
+TEST(TessMaintenance, ConcurrentProducerDoesNotLookLikeTaskFollowUp) {
+  maintenance::CoalescingScheduler scheduler(2);
+  BlockingImmediateTask blocking;
+  DirtyTask follow_up;
+  follow_up.dirty = 1;
+  follow_up.clear_mask = 1;
+  ASSERT_TRUE(scheduler.schedule(blocking));
+  std::atomic<bool> drain_result = false;
+
+  std::thread drain([&] {
+    drain_result.store(scheduler.run_some(maintenance::MaintenanceBudget{1}),
+                       std::memory_order_release);
+  });
+  while (!blocking.first_entered.load(std::memory_order_acquire)) {
+    std::this_thread::yield();
+  }
+  EXPECT_TRUE(scheduler.schedule(follow_up));
+  blocking.release_first.store(true, std::memory_order_release);
+  drain.join();
+
+  EXPECT_TRUE(drain_result.load(std::memory_order_acquire));
+  EXPECT_EQ(follow_up.handled, 1u);
+}
+
 TEST(TessMaintenance, CoalescingCollapsesDuplicateSchedules) {
   maintenance::CoalescingScheduler scheduler(4);
   CountingTask task;
@@ -271,6 +312,39 @@ TEST(TessMaintenance, ZeroProgressRescheduleStopsDrain) {
   EXPECT_EQ(task.executions, 1u);
   EXPECT_FALSE(scheduler.flush());
   EXPECT_EQ(task.executions, 2u);
+}
+
+template <typename Scheduler>
+void check_cross_task_zero_progress_handoff() {
+  Scheduler scheduler(2);
+  auto handoffs_remaining = std::uint32_t{4};
+  ZeroProgressHandoffTask first;
+  ZeroProgressHandoffTask second;
+  first.scheduler = &scheduler;
+  first.next = &second;
+  first.handoffs_remaining = &handoffs_remaining;
+  second.scheduler = &scheduler;
+  second.next = &first;
+  second.handoffs_remaining = &handoffs_remaining;
+  ASSERT_TRUE(scheduler.schedule(first));
+
+  EXPECT_FALSE(scheduler.run_some(maintenance::MaintenanceBudget{1}));
+  EXPECT_EQ(first.executions, 1u);
+  EXPECT_EQ(second.executions, 0u);
+  EXPECT_FALSE(scheduler.flush());
+  EXPECT_FALSE(scheduler.flush());
+  EXPECT_FALSE(scheduler.flush());
+  EXPECT_TRUE(scheduler.flush());
+  EXPECT_EQ(first.executions, 3u);
+  EXPECT_EQ(second.executions, 2u);
+}
+
+TEST(TessMaintenance, CoalescingCrossTaskZeroProgressStopsEachDrain) {
+  check_cross_task_zero_progress_handoff<maintenance::CoalescingScheduler>();
+}
+
+TEST(TessMaintenance, FifoCrossTaskZeroProgressStopsEachDrain) {
+  check_cross_task_zero_progress_handoff<maintenance::FifoScheduler>();
 }
 
 TEST(TessMaintenance, PartialClearPreservesUnrelatedDirtyFlags) {

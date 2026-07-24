@@ -621,11 +621,13 @@ and ordered goals. Products are world-sized, so the cache stores each one
 behind stable per-entry heap storage and takes ownership on
 `store(DistanceFieldProduct&&)` by move; the moved-from argument is left
 empty but reusable, and no world-sized copy happens. A `lookup()` pointer
-stays valid while other entries are stored or evicted; it is invalidated only
-by a store or eviction touching that exact key, or by `clear()`. A product
-whose entry exceeds the byte budget on its own cannot be cached: that store
-deliberately clears the entire cache and returns false, and a zero byte
-budget therefore caches nothing. The cache evicts least-recently-used entries
+stays valid only while its entry remains cached. Any store that replaces or
+evicts that entry invalidates the pointer, including a store for another key
+that causes least-recently-used eviction. `clear()` also invalidates every
+borrowed pointer. A product whose entry exceeds the byte budget on its own
+cannot be cached: that store deliberately clears the entire cache, invalidates
+every borrowed pointer, and returns false; a zero byte budget therefore caches
+nothing. The cache evicts least-recently-used entries
 (by lookup/store recency, not insertion order) to a byte budget and reports
 entries, bytes, hits, misses, evictions, and stale rejections as
 `FieldProductCacheStats`. `PathRequestRuntime` owns one such cache and uses it

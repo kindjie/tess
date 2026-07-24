@@ -13,6 +13,19 @@ namespace {
 struct TerrainTag {};
 struct CostTag {};
 struct TinyTag {};
+struct ModeTag {};
+struct EnabledTag {};
+
+enum class ScopedMode : std::uint8_t {
+  Known = 1,
+};
+
+enum LegacyMode : std::uint8_t {
+  LegacyKnown = 1,
+};
+
+static_assert(tess::detail::archive_scalar_supported_v<ScopedMode>);
+static_assert(!tess::detail::archive_scalar_supported_v<LegacyMode>);
 
 using Shape = tess::Shape<tess::Extent3{8, 4, 1}, tess::Extent3{4, 2, 1}>;
 using OtherShape = tess::Shape<tess::Extent3{16, 4, 1}, tess::Extent3{4, 2, 1}>;
@@ -45,6 +58,13 @@ using TinyArchive = tess::PersistenceSchema<
     0x0102030405060708ULL, 9,
     tess::PersistedField<TinyTag, 0x1112131415161718ULL, 3>>;
 using TinyWorld = tess::AlwaysResidentWorld<TinyShape, TinyFields>;
+using EnumFields = tess::FieldSchema<tess::Field<ModeTag, ScopedMode>,
+                                     tess::Field<EnabledTag, bool>>;
+using EnumArchive = tess::PersistenceSchema<
+    0x2122232425262728ULL, 1,
+    tess::PersistedField<ModeTag, 0x3132333435363738ULL>,
+    tess::PersistedField<EnabledTag, 0x4142434445464748ULL>>;
+using EnumWorld = tess::AlwaysResidentWorld<TinyShape, EnumFields>;
 
 constexpr std::uint32_t kLoadDirty = 1U << 6U;
 constexpr std::size_t kBodySizeOffset = 12;
@@ -188,6 +208,38 @@ TEST(TessPersistence, DenseArchiveRoundTripsAuthoritativeFieldsAndMetadata) {
   EXPECT_EQ(restored.active_flags(tess::ChunkKey{2}), 0x5U);
   EXPECT_EQ(restored.meta(tess::ChunkKey{2}).entity_count, 7U);
   EXPECT_EQ(restored.meta(tess::ChunkKey{2}).topology_version, 1U);
+}
+
+TEST(TessPersistence,
+     ScopedEnumUnknownValuesLoadOnlyAfterCompleteScalarPreflight) {
+  EnumWorld source;
+  source.field<ModeTag>({0, 0, 0}) = ScopedMode::Known;
+  source.field<EnabledTag>({0, 0, 0}) = true;
+  std::vector<std::byte> bytes;
+  ASSERT_EQ(tess::save_world_archive<EnumArchive>(source, bytes).status,
+            tess::WorldArchiveStatus::Ok);
+
+  constexpr auto kFirstFieldOffset =
+      kHeaderSize + EnumArchive::field_count * kFieldDescriptorSize +
+      sizeof(std::uint64_t) + sizeof(std::uint8_t) + sizeof(std::uint32_t) * 2;
+  bytes[kFirstFieldOffset] = std::byte{0xfe};
+  bytes[kFirstFieldOffset + 1] = std::byte{2};
+  refresh_body_checksum(bytes);
+
+  EnumWorld target;
+  target.field<ModeTag>({0, 0, 0}) = ScopedMode::Known;
+  target.field<EnabledTag>({0, 0, 0}) = false;
+  EXPECT_EQ(tess::load_world_archive<EnumArchive>(target, bytes).status,
+            tess::WorldArchiveStatus::Corrupt);
+  EXPECT_EQ(target.field<ModeTag>({0, 0, 0}), ScopedMode::Known);
+  EXPECT_FALSE(target.field<EnabledTag>({0, 0, 0}));
+
+  bytes[kFirstFieldOffset + 1] = std::byte{1};
+  refresh_body_checksum(bytes);
+  ASSERT_EQ(tess::load_world_archive<EnumArchive>(target, bytes).status,
+            tess::WorldArchiveStatus::Ok);
+  EXPECT_EQ(static_cast<std::uint8_t>(target.field<ModeTag>({0, 0, 0})), 0xfe);
+  EXPECT_TRUE(target.field<EnabledTag>({0, 0, 0}));
 }
 
 TEST(TessPersistence, DenseLoadInvalidatesWarmDerivedProducts) {

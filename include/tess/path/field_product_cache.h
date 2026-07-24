@@ -268,10 +268,11 @@ class FieldProductCache {
     };
   }
 
-  // The returned pointer targets heap storage that never moves when other
-  // entries are stored or evicted. It stays valid until a `store()` or
-  // eviction touches this exact key, or until `clear()`. Stale products are
-  // erased on lookup and reported as stale rejections.
+  // The returned pointer targets heap storage that never moves while its
+  // entry remains cached. Any operation that replaces, evicts, or clears that
+  // entry invalidates the pointer: a store for another key can evict it, and
+  // an over-budget store clears every entry even though that store returns
+  // false. Stale products are erased on lookup and reported as rejections.
   template <typename World, typename Tag>
   [[nodiscard]] auto lookup(const World& world, const GoalSet& goals)
       -> const DistanceFieldProduct* {

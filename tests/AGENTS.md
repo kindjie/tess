@@ -7,8 +7,9 @@
 - `test_check_docs_links.py` and the Pages assertions in `test_git_hooks.py`:
   verify generated-site link and anchor checks, including root-relative
   assets, narrowly scoped Doxygen 1.17.0 quick-index exceptions, WebGPU
-  timeout-versus-unsupported reporting, and rejection of missing local
-  targets.
+  native request-status classification, timeout-versus-unsupported reporting,
+  Chromium SwiftShader flags, the standard-library DevTools wall-time harness,
+  required compute completion, and rejection of missing local targets.
 - `test_doc_outputs.py`: verifies documented example-output fences stay
   synchronized with the stdout of their compiled binaries, including drift,
   missing/unused `source=binary` mappings, and failing binaries.
@@ -129,8 +130,9 @@
   continuation, concurrent scheduling, deterministic flush, partial dirty
   clearing, allocation-free constant-stack immediate self-scheduling,
   synchronous concurrent immediate calls, duplicate self-request preservation,
-  zero-progress detection, shutdown, capacity failure, and steady-state
-  allocation behavior.
+  direct and cross-task zero-progress detection, concurrent producer
+  distinction, shutdown, capacity failure, and steady-state allocation
+  behavior.
 - `tess_topology_coarse_path_test`: verifies deterministic shortest region
   paths and chunk corridors, same-region and disconnected results, non-monotone
   chunk detours, portal continuity, clipped corridor bounds, and warm
@@ -158,8 +160,10 @@
   envelope against a full golden byte fixture, dense and sparse authoritative-
   field round trips, canonical sparse chunk order, every envelope/key/
   residency/chunk compatibility status, explicit migration-required outcomes,
-  corruption/truncation rejection without target mutation, sparse-capacity
-  preflight, and dense-version or sparse-generation invalidation on load.
+  scoped-enum support with representable unknown values, compile-time rejection
+  of unscoped enums, complete scalar preflight and corruption/truncation
+  rejection without target mutation, sparse-capacity preflight, and dense-
+  version or sparse-generation invalidation on load.
 - `tess_grid_benchmark_harness_test`: verifies strict Moving AI map/scenario
   parsing from inline fixtures with portable classic-locale decimal handling,
   terrain and coordinate orientation, size/coordinate dimension bounds,

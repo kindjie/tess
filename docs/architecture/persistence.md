@@ -12,11 +12,20 @@ field declaration assigns a stable 64-bit field ID and field version to a tag
 already present in the world's `FieldSchema`. IDs are deliberately explicit:
 C++ type names, RTTI values, and addresses are not stable persistence keys.
 
-The initial format supports `bool`, integral, enum, `float`, and `double`
-columns whose scalar width is 1, 2, 4, or 8 bytes. Values use canonical
-little-endian encoding; floating-point values preserve their IEEE bit pattern.
-Unsupported field value types fail at compile time and require an
-application-owned scalar field or a later codec extension.
+The initial format supports `bool`, integral, scoped-enum, `float`, and
+`double` columns whose scalar width is 1, 2, 4, or 8 bytes. Values use
+canonical little-endian encoding; floating-point values preserve their IEEE
+bit pattern. In C++20 a scoped enum is guaranteed to have a fixed underlying
+type. The archive conservatively rejects all unscoped enums at compile time
+because the language does not provide a trait that distinguishes their fixed
+and non-fixed forms. Applications can persist an unscoped enum through an
+explicit scalar field or a later codec extension.
+
+The archive accepts every scoped-enum value representable by its underlying
+type, including values that do not name a declared enumerator. This keeps
+conversion from hostile bytes defined without assuming that tess knows the
+application's enum domain. Applications must validate those values after load,
+or migrate them while moving to a new field/schema version.
 
 ## Envelope and Compatibility
 
@@ -32,6 +41,9 @@ covers the complete variable body.
 field encodings, canonical unique chunk keys, and complete body before a world
 is involved. `load_world_archive` then classifies shape, lattice, key layout,
 residency, schema, field, and sparse-capacity compatibility before mutation.
+It also decodes every scalar in a complete preflight pass before preparing
+sparse residency or writing a field, so scalar corruption leaves the target
+unchanged.
 Its `WorldArchiveResult` and `WorldArchiveInfo` retain the source metadata;
 `WorldArchiveStatus` distinguishes damage from compatibility decisions.
 

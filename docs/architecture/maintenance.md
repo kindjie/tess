@@ -27,11 +27,14 @@ must outlive its scheduler or a completed `flush()`. Destroying a scheduler
 with pending tasks drops the non-owning pointers without executing them.
 Capacity exhaustion returns false; the authoritative dirty signal must remain
 set so the caller can retry. Tasks inspect versions or dirty flags, clear only
-the state they actually rebuilt, and may schedule themselves when budgeted
-work remains. A queued task that reschedules itself without consuming any
-budget stops that drain with `false` instead of spinning forever; it remains
-queued for caller intervention. Concurrent drain calls and immediate schedule
-calls are serialized, so a task never executes against itself.
+the state they actually rebuilt, and may schedule follow-up work when budgeted
+work remains. A queued task that successfully schedules any synchronous
+follow-up on its executing thread without consuming budget stops that drain
+with `false` instead of allowing direct or cross-task rescheduling to spin
+forever. The follow-up remains queued for caller intervention. A schedule call
+from another thread is an independent producer and is not attributed to the
+running task. Concurrent drain calls and immediate schedule calls are
+serialized, so a task never executes against itself.
 
 Coalescing is not exact-event delivery. Authoritative gameplay events remain
 on exact queues and simulation phases. Explicit flush points define when a
