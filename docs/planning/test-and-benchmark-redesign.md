@@ -13,7 +13,10 @@ existing gate against what it has actually caught, and cross-checking the
 conclusions against two independent reviews (an external automated
 architecture critique and an external benchmark-landscape review, both
 2026-07-23) and a prior standalone memory-layout benchmark study by the same
-maintainer whose measurement methodology this document imports.
+maintainer whose measurement methodology this document imports. The external
+reviews and the prior study are design input held outside this repository;
+claims sourced from them are not independently auditable here, unlike the
+CI-history evidence in section 2.
 
 ## 1. Intended end state
 
@@ -57,10 +60,13 @@ maintainer whose measurement methodology this document imports.
 
 **CI structure**
 
-12. The required PR gate shrinks to the jobs that have actually caught bugs:
-    dev build+tests, ASan, Windows MSVC, GCC compile, hook backstop, plus the
-    new counter/scenario smoke — critical path roughly 19 minutes to roughly
-    6 minutes.
+12. The required PR gate shrinks to the jobs that have actually caught bugs
+    (dev build+tests, ASan, Windows MSVC, hook backstop) plus GCC compile as
+    a cheap prospective portability guard and the new counter/scenario
+    smoke — critical path from roughly 19 minutes to a target of ~6-7
+    minutes, bounded below by the retained Windows job (~6.2 m median) and
+    validated with measured job budgets in phase 1 before anything relies
+    on it.
 13. clang-tidy leaves the PR critical path (diff-scoped or advisory); TSan,
     macOS, release, and werror move to main-only (none has ever failed
     independently on a PR; TSan returns to PR when concurrency-sensitive
@@ -79,9 +85,11 @@ maintainer whose measurement methodology this document imports.
 **Communication**
 
 15. `docs/performance.md` becomes generated at documentation deploy from the
-    latest main artifacts — no manual snapshot commits, never stale; the
-    headline becomes scenario evidence in frame-budget terms, with
-    microbenchmarks demoted to a maintainer appendix.
+    latest main artifacts — no manual snapshot commits, with a testable
+    freshness contract (deployment ordered after artifact production, and
+    the page states exactly which commit's data it shows); the headline
+    becomes scenario evidence in frame-budget terms, with microbenchmarks
+    demoted to a maintainer appendix.
 16. PRs get one compact check summary: counter deltas, failed property seed
     plus replay command, paired-timing verdict, and exact local repro
     commands.
@@ -111,9 +119,13 @@ maintainer whose measurement methodology this document imports.
 
 ## 2. Evidence
 
-The redesign is grounded in the repository's own CI history (all 28 failed
-runs to date, 15 on PR branches, classified individually) rather than in
-principle alone.
+The redesign is grounded in the repository's own CI history rather than in
+principle alone. Numbers below come from a point-in-time snapshot taken
+2026-07-23 (28 failed workflow runs at classification time, 15 on PR
+branches, each classified individually); the totals drift as CI keeps
+running — the 30041607406 firing discussed below postdates the snapshot —
+so phase 1 re-derives the classification from the Actions API before acting
+on it.
 
 ### 2.1 Where wall time goes
 
@@ -136,7 +148,7 @@ public-surface catch; plus 3 universal build breaks from a single PR that
 redundantly failed a dozen jobs at once. The jobs that have *never* failed
 independently on a PR: dev-tsan, dev-werror, release, and both macOS jobs.
 
-At ~0.4 minutes for 2 real catches, the hook backstop has the best
+At ~0.4 minutes for a real catch, the hook backstop has the best
 signal-per-minute in the pipeline. At ~18.5 minutes for 3 real catches,
 clang-tidy has real value but should not set PR latency. The benchmark gate
 is examined separately below.
@@ -165,8 +177,10 @@ Against that record: 49 commits touching `bench/thresholds/`, a dedicated
 calibration-history document, and roughly 14 runner-hours per week. The
 structural critique is sharper than "it never fires": a
 2x-of-maximum-observed ceiling *cannot* fire on anything smaller than a
-large regression (a clean 50% slowdown passes), while absolute ns-scale
-ceilings on shared heterogeneous runners misfire on sub-1% noise. The one
+large regression (a clean 50% slowdown passes), while absolute ceilings on
+shared heterogeneous runners produce false positives at the margin (the
+dependency-bump case exceeded its ceiling by 0.66% and passed on rerun —
+a false positive, whatever the underlying noise amplitude). The one
 truthful firing happened in exactly the regime — large, clustered,
 localized — that a paired base-vs-head comparison detects with better
 attribution, no ceiling maintenance, and no self-recalibration loophole
@@ -213,9 +227,10 @@ Three parameterized harnesses cover the axes real adopters exercise:
   Dijkstra oracle; and the external synthetic scenario sets — the only
   oracle this project did not write — via the TDD's fetch/cache/strict-data
   job design. The TDD's own licensing analysis (its sections 6.2-6.3)
-  cleared the synthetic sets as unencumbered generated data; the currently
-  proposed manifest blocks all content on grounds that apply to the
-  game-derived sets, a discrepancy to resolve in review. Octile mode
+  determined the synthetic sets contain no third-party game content and
+  carry only ODC-By attribution obligations; the manifest introduced by
+  in-flight PR #59 blocks all content on grounds that apply to the
+  game-derived sets, a discrepancy to resolve in that PR's review. Octile mode
   activates once lattice semantics are validated.
 - **S2 — colony macro-harness.** N agents (100 / 1k / 10k) with goals driven
   through the production stack (schedule loop, path agents, queued ops,
@@ -245,7 +260,12 @@ invariance; sparse equals dense.
 Committed expected-values JSON for deterministic work counters
 (diagnostics `PathCounters`/`QueuedPhaseCounters` families plus
 scenario-level repath/retry/stream counts), asserted on serial runs only
-(counters are thread-local; pool totals are partition-dependent). Updated in
+(counters are recorded through thread-local sink pointers installed
+per-thread by scoped installers; pool workers do not currently install or
+aggregate into the caller's sink, so a pool run under-counts rather than
+merely varying — serial-only goldens avoid this, and pool-worker
+aggregation is a separate prerequisite if pool totals are ever wanted).
+Updated in
 the same PR when behavior intentionally changes, making behavioral drift a
 reviewable diff instead of a silent change.
 
@@ -261,10 +281,17 @@ infrastructure.
 ### 3.5 Consumer-contract tests
 
 Per-public-header standalone compilation via CMake
-`VERIFY_INTERFACE_HEADER_SETS` (the project already declares header file
-sets); a multi-TU link test for ODR violations; hostile include order and
-repeated inclusion; the `TESS_ENABLE_*` macro-config matrix across TUs; and
-a documented minimum-compiler matrix rather than "C++20 plus whatever CI
+`VERIFY_INTERFACE_HEADER_SETS`, with a prerequisite restructure: the current
+default header file set mixes public and implementation headers, and CMake
+verifies every public set by default, so the supported public headers must
+first move to their own named set that the verification selects explicitly.
+Multi-TU consumer tests, stated precisely: duplicate-symbol link checks and
+macro-configuration checks (a successful link does not prove the absence of
+inline/template ODR violations); the header-affecting `TESS_ENABLE_*`
+macros are enumerated and applied uniformly across all TUs of a
+configuration, and cross-TU macro mismatch is documented as unsupported
+rather than tested. Hostile include order and repeated inclusion; and a
+documented minimum-compiler matrix rather than "C++20 plus whatever CI
 runs".
 
 ### 3.6 Advisory code-coverage reporting
@@ -288,7 +315,8 @@ property harness's operation decoder. Not doing: mutation testing
 (cost/benefit poor at this suite size); multi-agent collision-free planning
 semantics (out of scope until the library has them). Suite hygiene
 (table-driving duplicative tests, CTest labels by risk/cost tier) proceeds
-opportunistically.
+opportunistically — except the CTest label mapping, which section 6
+promotes to a prerequisite for pre-push slimming.
 
 ## 4. Performance redesign
 
@@ -308,7 +336,11 @@ hardware is trustworthy.
   counters cannot see a missing `-O2`.
 - A standing **selective paired run** whenever the change classifier sees
   perf-sensitive paths: a small sentinel benchmark set, base and head
-  binaries built and interleaved in one job. The 2026-07-23 catch is exactly
+  binaries built and interleaved in one job — a path-filtered
+  `pull_request` job, not a manually dispatched one. Building two revisions
+  affordably needs a benchmark-only build preset (the current `bench`
+  preset also builds the full test suite and both bench binaries). The
+  2026-07-23 catch is exactly
   this leg's job, at the same point (PR) with better evidence. Sentinel
   selection favors composite microsecond-to-millisecond workloads (cached
   batches, field products, weighted batches, agent ticks) where paired
@@ -328,7 +360,13 @@ currently attached to a bad gate). A change-point detector over the trailing
 ~30 artifacts opens an issue with the suspect commit range instead of
 failing the push; hosted-runner variance means it is tuned conservatively
 (sustained shifts across at least 3 consecutive artifacts and above the
-practical-effect floor). Suspected regressions are confirmed on demand by a
+practical-effect floor). Artifacts must carry a runner fingerprint — CPU
+model, runner-image version, compiler and flags; the current artifact
+metadata records little beyond runner OS — and the detector stratifies by
+fingerprint: a fleet or image migration is a series break, not a
+regression, and when fingerprints shift the detector dispatches a paired
+confirmation instead of opening an issue from unpaired data. Suspected
+regressions are confirmed on demand by a
 full paired A/B run under the same statistical criteria. Paired runs execute
 only on hosted runners or trusted post-merge commits — never untrusted code
 on personal or self-hosted hardware.
@@ -432,7 +470,7 @@ verdict, and CONTRIBUTING.md gains a pointer when the protocol is wired up
 
 | Tier | Trigger | Contents | Wall clock |
 | --- | --- | --- | --- |
-| PR (blocking) | `pull_request`, code-gated by the existing classifier | dev build+tests (+ counter goldens, scenario smoke: S1 procedural coarse stride, S2 N=100 serial+pool at two worker counts), ASan, Windows MSVC, GCC compile, hook backstop, bench compile+smoke, selective paired run when triggered; diff-scoped clang-tidy as advisory comment | ~6 min |
+| PR (blocking) | `pull_request`, code-gated by the existing classifier | dev build+tests (+ counter goldens, scenario smoke: S1 procedural coarse stride, S2 N=100 serial+pool at two worker counts), ASan, Windows MSVC, GCC compile, hook backstop, bench compile+smoke, path-filtered selective paired run, path-filtered TSan when concurrency-sensitive files change; diff-scoped clang-tidy advisory via annotations/step summary (fork `pull_request` tokens are read-only; any privileged reporter is a separate `workflow_run` job that never executes PR code) | ~6-7 min target (validated in phase 1; Windows ~6.2 m is the floor) |
 | Main (push) | push to `main` | PR set + full matrix (TSan, macOS, release, werror, full clang-tidy, cppcheck) + bench artifact run + change-point alerting + S1 strict data job (once unblocked) + S3 config + S2 N=1k artifacts | ~15 min, non-blocking beyond the PR set |
 | Weekly | cron + dispatch | Full oracle corpus/stride, S2 N=10k both executors, worker-count invariance sweep, world-size pair, soak, budget sweep, ASan full + TSan-capped scenarios, long property seeds, parser fuzzing, advisory llvm-cov reports (test suite + bench smoke gap-finder) | <= 45 min; auto-files an issue on failure |
 | Campaign | manual / release | Controlled-hardware full suite: scaling knees, cold-cache latency, PMU attribution, handheld target; comparative-repo refresh on release; performance-page data refresh | hours, off-CI |
@@ -449,9 +487,10 @@ docs-only fast path are kept.
 Current behavior (`docs/git-hooks.md`, `tools/git_hooks.py`): `pre-commit`
 runs index-blob hygiene checks — whitespace, conflict markers, public-safety
 patterns, formatting, staged-file token limits, noreply email; `commit-msg`
-checks the subject; `pre-push` runs a full dev configure+build+test cycle
-plus a benchmark configure+build when benchmark files, CMake files, or
-public headers changed in the pushed range. The CI hook-backstop job reruns
+checks the subject; `pre-push` runs a full dev configure+build+test cycle,
+the install and FetchContent consumer smokes, and a benchmark
+configure+build when benchmark files, CMake files, or public headers
+changed in the pushed range. The CI hook-backstop job reruns
 the same script authoritatively — hooks are bypassable, so the backstop is
 load-bearing, and its record (best signal-per-minute in the pipeline) says
 it earns its place.
@@ -466,19 +505,30 @@ themselves are a maintenance surface (see the hook-environment fixes in
 PRs #54 and #58).
 
 Redesign changes: `pre-commit` and `commit-msg` stay exactly as they are —
-seconds of cost, prevention-shaped value. `pre-push` slims down: with the PR
-tier at ~6 minutes, full local build+test duplication loses most of its
-justification, so the default becomes configure + build + the affected-test
-subset, with the full suite behind an opt-in environment variable, and the
-conditional benchmark build is dropped (bench compile rot is caught by the
-PR bench-smoke job, and with threshold gates retired there is no local gate
-to pre-verify). The hook-backstop CI job is unchanged.
+seconds of cost, prevention-shaped value. `pre-push` slims down *after* the
+PR-tier latency target is validated (phase 1) and a tested source-to-test
+mapping exists (the CTest labels of section 3.7 are its prerequisite, which
+promotes them from opportunistic to required for this step): the default
+becomes configure + build + the affected-test subset, with the full suite
+behind an opt-in environment variable; the consumer smokes move behind the
+same opt-in (CI's dev job runs them on every code PR); and the conditional
+benchmark build is dropped (bench compile rot is caught by the PR
+bench-smoke job, and with threshold gates retired there is no local gate to
+pre-verify). This hook change lands in phase 2 alongside the other tooling.
+The hook-backstop CI job is unchanged.
 
 ## 7. Communication by audience
 
 - **Adopters.** `docs/performance.md` is generated at documentation deploy
   from the latest main artifact plus the latest campaign results — hardware,
-  date, configuration, and reproduce command stated. The headline becomes
+  date, configuration, and reproduce command stated. Freshness is a
+  contract, not a hope: today the documentation and CI workflows start
+  independently on the same push, so deployment must be ordered after
+  artifact production (for example, a `workflow_run`-triggered deploy), the
+  page states exactly which commit's data it renders, the campaign-results
+  store (a data branch or published dataset) is defined in the same phase,
+  and the fallback when no artifact exists yet is rendering the previous
+  data with its commit stated. The headline becomes
   scenario evidence in frame-budget terms ("N agents with churn cost Y ms of
   a 16.7 ms frame on <machine>", tick p50/p95/p99, memory, allocations),
   with open-grid microbenchmark medians demoted to a maintainer appendix:
@@ -494,8 +544,10 @@ to pre-verify). The hook-backstop CI job is unchanged.
   ceilings); one compact PR check summary — counter deltas, failed property
   seed plus replay command, paired-timing verdict with a link to the
   profiling protocol (section 4.6) when it flags, exact local repro
-  commands — instead of thirteen threshold JSON files to decode. The
-  `tests/AGENTS.md` catalog and hook flow are unchanged.
+  commands — instead of thirteen threshold JSON files to decode, delivered
+  fork-safely through check output and the step summary rather than a
+  token-privileged comment. The `tests/AGENTS.md` catalog and the
+  pre-commit hygiene flow are unchanged (pre-push slims per section 6).
 
 ## 8. Ecosystem and packaging
 
@@ -542,14 +594,21 @@ time on named hardware — and links outward for tess versus the world.
 Each phase is its own PR (or small PR series); none is started by the PR
 that introduces this document.
 
-1. CI restructure: re-tier jobs per section 5, retire threshold gating,
-   keep artifact collection, add the weekly auto-issue. Workflow-only.
-2. Counter-golden and change-point tooling; paired A/B workflow
-   (dispatch-triggered) with the sentinel-mapping completeness check;
-   advisory coverage reporting (test suite and bench-smoke gap-finder) and
-   the benchmark workload-matrix catalog with its drift check; the
-   profiling protocol wired into the PR check summary and pointed to from
-   CONTRIBUTING.md.
+1. CI restructure: re-derive the failure classification from the Actions
+   API at implementation time (the section 2 snapshot has drifted); re-tier
+   jobs per section 5 including the path-filtered TSan PR job; retire
+   threshold gating; keep artifact collection; add the weekly auto-issue;
+   measure the resulting job budgets to validate the PR latency target.
+   Workflow-only.
+2. Counter-golden and change-point tooling (with runner fingerprinting in
+   artifacts); paired A/B timing as both a path-filtered `pull_request`
+   sentinel job and a `workflow_dispatch` full-confirmation mode, backed by
+   a benchmark-only build preset, with the sentinel-mapping completeness
+   check; advisory coverage reporting (test suite and bench-smoke
+   gap-finder) and the benchmark workload-matrix catalog with its drift
+   check; the profiling protocol wired into the PR check summary and
+   pointed to from CONTRIBUTING.md; the pre-push slimming of section 6
+   (prerequisite: the tested CTest-label source-to-test mapping).
 3. Scenario layer: procedural generators, then the S2 macro-harness (with
    PR-tier smoke), then S3; S1 external-data activation via manifest
    unblocking, fetch tool, and the strict data job (grid-benchmark TDD
