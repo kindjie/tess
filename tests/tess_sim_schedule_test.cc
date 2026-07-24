@@ -557,6 +557,50 @@ TEST(TessSchedule, ThrowingTaskDoesNotLatchInRun) {
   EXPECT_EQ(stats.tasks_run, 1u);
 }
 
+TEST(TessSchedule, ThrowingTaskDoesNotPhaseShiftLaterEveryNTasks) {
+  struct ThrowOnceTask {
+    bool armed = true;
+    auto operator()(const tess::ScheduleTaskContext&)
+        -> tess::ScheduleTaskResult {
+      if (armed) {
+        armed = false;
+        throw std::runtime_error{"task failure"};
+      }
+      return {};
+    }
+  };
+  struct CountTask {
+    int runs = 0;
+    auto operator()(const tess::ScheduleTaskContext&)
+        -> tess::ScheduleTaskResult {
+      ++runs;
+      return {};
+    }
+  };
+
+  CountTask before;
+  ThrowOnceTask throwing;
+  CountTask after;
+  tess::Schedule schedule;
+  schedule.add_task(
+      {"before", tess::SimPhase::PreUpdate, tess::Cadence::every_ticks(2)},
+      before);
+  schedule.add_task({"throws", tess::SimPhase::AI, tess::Cadence::every_tick()},
+                    throwing);
+  schedule.add_task(
+      {"after", tess::SimPhase::Pathing, tess::Cadence::every_ticks(2)}, after);
+  schedule.seal();
+
+  tess::SimClock clock;
+  EXPECT_THROW(schedule.run_tick(clock), std::runtime_error);
+  EXPECT_EQ(before.runs, 0);
+  EXPECT_EQ(after.runs, 0);
+
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 3u);
+  EXPECT_EQ(before.runs, 1);
+  EXPECT_EQ(after.runs, 1);
+}
+
 struct ThrowOnceTriggeredTask {
   bool should_throw = true;
   std::uint32_t pending_dirty = 0;

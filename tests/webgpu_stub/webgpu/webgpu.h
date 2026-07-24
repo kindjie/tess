@@ -144,15 +144,19 @@ enum class Event : std::uint8_t {
 inline WGPUQueueImpl queue;
 inline std::vector<Event> events;
 inline std::uint32_t dispatched_x = 0;
-inline WGPUBuffer pending_buffer = nullptr;
-inline WGPUBufferMapCallbackInfo pending_callback{};
+
+struct PendingMap {
+  WGPUBuffer buffer = nullptr;
+  WGPUBufferMapCallbackInfo callback{};
+};
+
+inline std::vector<PendingMap> pending_maps;
 inline std::uint64_t map_future_id = 1;
 
 inline void reset() {
   events.clear();
   dispatched_x = 0;
-  pending_buffer = nullptr;
-  pending_callback = {};
+  pending_maps.clear();
   map_future_id = 1;
 }
 
@@ -164,14 +168,18 @@ inline auto make_bind_group() -> WGPUBindGroup {
   return new WGPUBindGroupImpl{};
 }
 
-inline void complete_map(bool success) {
-  auto callback = pending_callback;
-  pending_callback = {};
-  pending_buffer = nullptr;
-  callback.callback(
+inline void complete_map(std::size_t index, bool success) {
+  auto pending = pending_maps.at(index);
+  // Remove the record first: the callback releases its staging buffer and may
+  // complete the operation's last owner, so retaining that pointer afterward
+  // would leave misleading test-double state.
+  pending_maps.erase(pending_maps.begin() + static_cast<std::ptrdiff_t>(index));
+  pending.callback.callback(
       success ? WGPUMapAsyncStatus_Success : WGPUMapAsyncStatus_Error, {},
-      callback.userdata1, callback.userdata2);
+      pending.callback.userdata1, pending.callback.userdata2);
 }
+
+inline void complete_map(bool success) { complete_map(0, success); }
 
 }  // namespace tess_webgpu_stub
 
@@ -282,8 +290,7 @@ inline WGPUFuture wgpuBufferMapAsync(WGPUBuffer buffer, WGPUMapMode,
   if (tess_webgpu_stub::map_future_id == 0) {
     return WGPUFuture{};
   }
-  tess_webgpu_stub::pending_buffer = buffer;
-  tess_webgpu_stub::pending_callback = callback;
+  tess_webgpu_stub::pending_maps.push_back({buffer, callback});
   return WGPUFuture{tess_webgpu_stub::map_future_id};
 }
 inline const void* wgpuBufferGetConstMappedRange(WGPUBuffer buffer,

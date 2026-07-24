@@ -329,6 +329,25 @@ if(Python3_Interpreter_FOUND)
     # the steady-state tick reports zero allocations) executes in CI; the
     # steady-state ticks it times touch no diagnostics events, so the
     # ceilings are representative of the plain binary too.
+    set(tess_ecs_optional_missing_args)
+    if(NOT TESS_ENABLE_FLECS)
+      # Keep the shared threshold manifest strict while explicitly excluding
+      # only benchmarks whose optional adapter is absent in this build.
+      foreach(
+        benchmark_name
+        ecs/flecs_collect_1k
+        ecs/flecs_collect_10k
+        ecs/flecs_collect_100k
+        ecs/flecs_collect_apply_10k
+      )
+        list(
+          APPEND
+          tess_ecs_optional_missing_args
+          --allow-missing-result
+          ${benchmark_name}
+        )
+      endforeach()
+    endif()
     add_custom_target(
       tess_bench_ecs_thresholds
       COMMAND
@@ -342,6 +361,7 @@ if(Python3_Interpreter_FOUND)
         "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
         --results ${CMAKE_CURRENT_BINARY_DIR}/ecs.json
         --thresholds ${TESS_ECS_BENCHMARK_THRESHOLDS}
+        ${tess_ecs_optional_missing_args}
       DEPENDS tess_bench_diagnostics
       COMMENT "Running ecs benchmark threshold checks"
       VERBATIM

@@ -14,6 +14,28 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-24 - Avoid Known-Unusable Weighted Field Work
+
+- Area: repeated-goal weighted batch and product-cache preprocessing.
+- Evidence: exact-SHA audit identified two compositional cliffs. A realized
+  `uint32_t` overflow rebuilt the reverse field with the heap before every
+  member retried exact A*, and a cache budget smaller than the product's
+  mandatory distance labels built and discarded a full product before the
+  ordinary batch built its own field.
+- Accepted: return `CostOverflow` immediately once the bounded builder proves
+  a saturated distance; exact per-member A* remains the correctness fallback.
+  Preflight the product's minimum distance-label bytes against the cache budget
+  before lookup/build. Dedicated tests prove the overflow avoids the second
+  full flood and the oversize product records no cache miss before the normal
+  one-field batch.
+- Deferred: cross-call memoization of overflow verdicts. World/provider
+  mutation identity is required to avoid stale negative reuse, while the
+  accepted changes remove the redundant full floods without introducing a new
+  cache contract.
+- Retry conditions: profile repeated near-`uint32_t` cost worlds if they are a
+  real workload; add memoization only with the same content/revision identity
+  guarantees as other path products.
+
 ## 2026-07-23 - Preserve the Default Unit-Field Fast Path
 
 - Area: Default orthogonal unit-cost distance fields, multi-goal products,

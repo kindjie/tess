@@ -293,12 +293,126 @@ TEST(TessWebGpuBackend, NullMapFutureRejectsAndReleasesReadbackBudget) {
   tess_webgpu_stub::map_future_id = 0;
   EXPECT_FALSE(backend.readback(request));
   EXPECT_EQ(capture.calls, 0u);
-  EXPECT_EQ(tess_webgpu_stub::pending_buffer, nullptr);
+  EXPECT_TRUE(tess_webgpu_stub::pending_maps.empty());
 
   tess_webgpu_stub::map_future_id = 1;
   EXPECT_TRUE(backend.readback(request));
   tess_webgpu_stub::complete_map(true);
   EXPECT_EQ(capture.calls, 1u);
+}
+
+TEST(TessWebGpuBackend, OverlappingReadbacksShareBudgetAndReleaseOnFailure) {
+  tess_webgpu_stub::reset();
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  ReadbackCapture capture;
+  tess::gpu::WebGpuBackend backend{
+      device.get(),
+      tess::gpu::WebGpuBackendConfig{
+          .max_buffer_bytes = 1u << 20u,
+          .max_dispatch_chunks = 1024,
+          .max_inflight_readback_bytes = 2 * sizeof(capture.values),
+          .field_capacity = 2,
+          .product_capacity = 2,
+      }};
+  device.reset();
+  World world;
+  ASSERT_TRUE(
+      backend.register_field(tess::gpu::field_mirror_desc<World, CostTag>()));
+  PipelineOwner pipeline{tess_webgpu_stub::make_pipeline()};
+  BindGroupOwner bind_group{tess_webgpu_stub::make_bind_group()};
+  const auto registered = backend.register_product(tess::gpu::WebGpuProductDesc{
+      .product_key = 99,
+      .input_field_index = 0,
+      .pipeline = pipeline.get(),
+      .bind_group = bind_group.get(),
+      .readback_source = backend.field_buffer(0),
+      .readback_byte_size = sizeof(capture.values),
+      .readback_callback = capture_readback,
+      .readback_userdata = &capture,
+  });
+  ASSERT_TRUE(registered.has_value());
+  const auto handle = registered.value_or(tess::gpu::GpuProductHandle{});
+  const auto request = tess::gpu::ReadbackDesc{
+      .product_key = handle.key,
+      .product_generation = handle.generation,
+      .policy = tess::gpu::ReadbackPolicy::Summary,
+      .byte_size = sizeof(capture.values),
+  };
+
+  EXPECT_TRUE(backend.readback(request));
+  EXPECT_TRUE(backend.readback(request));
+  EXPECT_FALSE(backend.readback(request));
+  ASSERT_EQ(tess_webgpu_stub::pending_maps.size(), 2u);
+
+  tess_webgpu_stub::complete_map(1, false);
+  EXPECT_EQ(capture.calls, 1u);
+  EXPECT_EQ(capture.status, tess::gpu::WebGpuReadbackStatus::Failed);
+
+  // The failed callback returned one reservation while the first map remains
+  // pending, so exactly one more request fits.
+  EXPECT_TRUE(backend.readback(request));
+  EXPECT_FALSE(backend.readback(request));
+  ASSERT_EQ(tess_webgpu_stub::pending_maps.size(), 2u);
+
+  tess_webgpu_stub::complete_map(0, true);
+  tess_webgpu_stub::complete_map(0, true);
+  EXPECT_EQ(capture.calls, 3u);
+  EXPECT_EQ(capture.status, tess::gpu::WebGpuReadbackStatus::Complete);
+}
+
+TEST(TessWebGpuBackend, ReportedDeviceErrorFailsPendingAndFutureWork) {
+  tess_webgpu_stub::reset();
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  auto backend = make_backend(device.get());
+  device.reset();
+  ReadbackCapture capture;
+  World world;
+  ASSERT_TRUE(
+      backend.register_field(tess::gpu::field_mirror_desc<World, CostTag>()));
+  PipelineOwner pipeline{tess_webgpu_stub::make_pipeline()};
+  BindGroupOwner bind_group{tess_webgpu_stub::make_bind_group()};
+  const auto registered = backend.register_product(tess::gpu::WebGpuProductDesc{
+      .product_key = 99,
+      .input_field_index = 0,
+      .pipeline = pipeline.get(),
+      .bind_group = bind_group.get(),
+      .readback_source = backend.field_buffer(0),
+      .readback_byte_size = sizeof(capture.values),
+      .readback_callback = capture_readback,
+      .readback_userdata = &capture,
+  });
+  ASSERT_TRUE(registered.has_value());
+  const auto handle = registered.value_or(tess::gpu::GpuProductHandle{});
+  const auto request = tess::gpu::ReadbackDesc{
+      .product_key = handle.key,
+      .product_generation = handle.generation,
+      .policy = tess::gpu::ReadbackPolicy::Summary,
+      .byte_size = sizeof(capture.values),
+  };
+  const auto upload = tess::gpu::UploadDesc{
+      .field_index = 0,
+      .buffer_offset = 0,
+      .byte_size = sizeof(capture.values),
+      .data = capture.values.data(),
+  };
+  const auto dispatch = tess::gpu::DispatchDesc{
+      .product_key = handle.key,
+      .product_generation = handle.generation,
+      .input_field_index = 0,
+      .chunk_count = 1,
+  };
+  ASSERT_TRUE(backend.upload(upload));
+  ASSERT_TRUE(backend.dispatch(dispatch));
+  ASSERT_TRUE(backend.readback(request));
+
+  backend.notify_device_error();
+  EXPECT_FALSE(backend.capabilities().compute);
+  EXPECT_FALSE(backend.upload(upload));
+  EXPECT_FALSE(backend.dispatch(dispatch));
+  EXPECT_FALSE(backend.readback(request));
+  tess_webgpu_stub::complete_map(0, true);
+  EXPECT_EQ(capture.calls, 1u);
+  EXPECT_EQ(capture.status, tess::gpu::WebGpuReadbackStatus::Failed);
 }
 
 TEST(TessWebGpuBackend, RefusesInvalidWorkAndDeviceLoss) {

@@ -6,6 +6,29 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-24 - Close exact-SHA roadmap audit findings
+
+- Changed: axial-hex unit A* uses the exact heap rather than the
+  Manhattan-only two-list frontier; movement commit rejects regular
+  zero-entry-cost destinations; realized bounded-field overflow returns
+  directly to exact per-request fallback; oversize weighted cache products
+  skip their duplicate full build; scheduler exceptions advance later EveryN
+  counters; zero-progress async work is invocation-bounded; and the colony
+  demo's retry allowance covers a painted full-convoy bottleneck.
+  Persistence checksum coverage now includes metadata, canonical-key and
+  scalar short-circuit paths have direct tests, WebGPU applications can report
+  asynchronous device errors into a fail-closed backend, overlapping readback
+  accounting is covered, the DevTools command loop shares the outer deadline,
+  and EnTT-only benchmark gates explicitly exclude only Flecs-owned results.
+- Reason: independent audits of the fully green PR found one suboptimal hex
+  route plus integrity, asynchronous error-reporting, retry, cadence, bounded
+  work, and optional-configuration gaps that broad platform CI did not expose.
+- Affected docs: path/simulation/persistence/GPU architecture, optimization
+  log, design changelog, API comments, and test inventory.
+- Affected code: path search and cache preflight, movement and schedule
+  validation, resumable work, archives, the WebGPU backend/stub, colony demo,
+  benchmark gating, and the browser harness.
+
 ## 2026-07-23 - Harden cache, scheduler, callback, and archive contracts
 
 - Changed: weighted product replay now matches uncached zero-cost-start

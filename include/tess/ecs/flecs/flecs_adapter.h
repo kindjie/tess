@@ -313,8 +313,9 @@ auto despawn_flecs_path_agent(flecs::world& ecs, World& world,
     static_cast<void>(erased);
     detail::flecs_mark_tile_dirty(world, position, dirty_mask);
     if (render_deltas != nullptr) {
-      // A parked despawn records nothing: parking already released the
-      // tile and recorded it.
+      // This branch is on-board, so despawn must emit the release now.
+      // Parked entities skip the whole block because parking already emitted
+      // the release.
       render_deltas->record_despawn(FlecsHandleAdapter::to_handle(entity),
                                     position);
     }

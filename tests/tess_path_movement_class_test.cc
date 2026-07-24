@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <queue>
 #include <span>
 #include <stdexcept>
 #include <utility>
@@ -32,6 +33,9 @@ using Schema = tess::FieldSchema<
     tess::Field<ReservationTag, bool>>;
 using TopDown2D = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
 using World = tess::AlwaysResidentWorld<TopDown2D, Schema>;
+using HexShape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1},
+                             tess::lattice::HexAxial>;
+using HexWorld = tess::AlwaysResidentWorld<HexShape, Schema>;
 
 // Walker: passable terrain not under construction, plain terrain cost.
 using Walker = mv::MovementClass<
@@ -115,6 +119,61 @@ void fill_open(World& world, std::uint32_t cost) {
     auto costs = page.template field_span<CostTag>();
     std::fill(costs.begin(), costs.end(), cost);
   }
+}
+
+void fill_hex_open(HexWorld& world) {
+  for (auto& page : world.chunks()) {
+    std::fill(page.field_span<PassableTag>().begin(),
+              page.field_span<PassableTag>().end(), true);
+    std::fill(page.field_span<CostTag>().begin(),
+              page.field_span<CostTag>().end(), 1u);
+  }
+}
+
+[[nodiscard]] auto axial_hex_bfs_cost(const HexWorld& world, tess::Coord3 start,
+                                      tess::Coord3 goal) -> std::uint32_t {
+  // Keep this oracle independent of the resolved transition model: repeating
+  // the six axial directions and bounds lets the regression catch ordering or
+  // enumeration mistakes in the production search rather than sharing them.
+  constexpr auto unreachable = std::numeric_limits<std::uint32_t>::max();
+  constexpr auto directions = std::array{
+      tess::Coord3{1, 0, 0},  tess::Coord3{-1, 0, 0}, tess::Coord3{0, 1, 0},
+      tess::Coord3{0, -1, 0}, tess::Coord3{1, -1, 0}, tess::Coord3{-1, 1, 0},
+  };
+  const auto index = [](tess::Coord3 coord) {
+    return static_cast<std::size_t>(coord.y * 8 + coord.x);
+  };
+  const auto passable = [&](tess::Coord3 coord) {
+    if (coord.x < 0 || coord.x >= 8 || coord.y < 0 || coord.y >= 8) {
+      return false;
+    }
+    const auto* value = world.try_field<PassableTag>(coord);
+    return value != nullptr && *value;
+  };
+
+  std::array<std::uint32_t, 64> distances{};
+  distances.fill(unreachable);
+  std::queue<tess::Coord3> frontier;
+  distances[index(start)] = 0;
+  frontier.push(start);
+  while (!frontier.empty()) {
+    const auto current = frontier.front();
+    frontier.pop();
+    const auto current_cost = distances[index(current)];
+    if (current == goal) {
+      return current_cost;
+    }
+    for (const auto direction : directions) {
+      const auto next =
+          tess::Coord3{current.x + direction.x, current.y + direction.y, 0};
+      if (!passable(next) || distances[index(next)] != unreachable) {
+        continue;
+      }
+      distances[index(next)] = current_cost + 1;
+      frontier.push(next);
+    }
+  }
+  return unreachable;
 }
 
 void expect_same_result(const tess::PathResult& lhs,
@@ -237,16 +296,8 @@ TEST(TessPathMovementClass, DistanceFieldRejectsAnotherResolvedModel) {
 }
 
 TEST(TessPathMovementClass, AxialHexSearchUsesSixRegularNeighbors) {
-  using HexShape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1},
-                               tess::lattice::HexAxial>;
-  using HexWorld = tess::AlwaysResidentWorld<HexShape, Schema>;
   HexWorld world;
-  for (auto& page : world.chunks()) {
-    std::fill(page.field_span<PassableTag>().begin(),
-              page.field_span<PassableTag>().end(), true);
-    std::fill(page.field_span<CostTag>().begin(),
-              page.field_span<CostTag>().end(), 1u);
-  }
+  fill_hex_open(world);
   tess::PathScratch scratch;
 
   const auto result = tess::weighted_astar_path<HexWorld, DefaultClass>(
@@ -266,6 +317,32 @@ TEST(TessPathMovementClass, AxialHexSearchUsesSixRegularNeighbors) {
   ASSERT_EQ(unit.status, tess::PathStatus::Found);
   EXPECT_EQ(unit.cost, 2u);
   EXPECT_EQ(unit.path.size(), 3u);
+}
+
+TEST(TessPathMovementClass, ObstructedAxialHexUnitSearchMatchesBfsOracle) {
+  HexWorld world;
+  fill_hex_open(world);
+  // Hex neighbors can preserve distance to the goal. This obstacle layout
+  // exposes the resulting odd f-score band: the optimal route costs five,
+  // while the old orthogonal-only two-list ordering returned a six-step path.
+  for (const auto blocked : std::array{
+           tess::Coord3{0, 1, 0}, tess::Coord3{1, 1, 0}, tess::Coord3{0, 2, 0},
+           tess::Coord3{3, 3, 0}, tess::Coord3{1, 4, 0}}) {
+    world.field<PassableTag>(blocked) = false;
+  }
+
+  constexpr auto start = tess::Coord3{4, 3, 0};
+  constexpr auto goal = tess::Coord3{0, 3, 0};
+  const auto oracle_cost = axial_hex_bfs_cost(world, start, goal);
+  ASSERT_EQ(oracle_cost, 5u);
+
+  tess::PathScratch scratch;
+  const auto result = tess::astar_path<HexWorld, PassableTag>(
+      world, tess::PathRequest{start, goal}, scratch);
+
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.cost, oracle_cost);
+  EXPECT_EQ(result.path.size(), static_cast<std::size_t>(oracle_cost + 1));
 }
 
 TEST(TessPathMovementClass, ReportsUnrepresentableExactCost) {
@@ -838,6 +915,21 @@ TEST(TessPathMovementClass, CommitValidationAgreesWithThePlannedClass) {
       tess::validate_movement_intent<World, Builder, OccupancyTag,
                                      ReservationTag>(world, out_of_site);
   EXPECT_EQ(builder_out.status, tess::MovementStatus::Moved);
+}
+
+TEST(TessPathMovementClass, CommitRejectsRegularZeroCostDestination) {
+  World world;
+  fill_open(world, 1);
+  const auto from = tess::Coord3{0, 0, 0};
+  const auto to = tess::Coord3{1, 0, 0};
+  world.field<CostTag>(to) = 0;
+
+  const auto result =
+      tess::validate_movement_intent<World, Walker, OccupancyTag,
+                                     ReservationTag>(
+          world, tess::MovementIntent{from, to});
+
+  EXPECT_EQ(result.status, tess::MovementStatus::BlockedTo);
 }
 
 TEST(TessPathMovementClass, DiagonalCommitUsesResolvedClearance) {

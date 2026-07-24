@@ -376,8 +376,10 @@ flowchart TB
   submission must be paired with `request_run(id)` to re-arm it.
 - Allocation contract: `reserve_tasks` + registration happen at setup;
   `run_tick`, trigger notification, and `request_run` never allocate after
-  `seal()`. Reserved event streams and resumable queues also allocate nothing
-  on their warm paths (pinned by tests).
+  `seal()`. Reserved event streams and resumable queues also perform no
+  container allocation on their warm paths; the stored payload type's own
+  copy, move, and callback operations must be allocation-free for the complete
+  operation to share that guarantee (pinned with allocation-free payloads).
 - `run_schedule_frame(schedule, clock, accumulator, real_delta_seconds,
   control)` is the frame-to-ticks bridge: it consumes real frame time
   through the `FixedStepAccumulator` (honoring `SimSpeed` and the per-frame

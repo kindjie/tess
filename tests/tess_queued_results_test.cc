@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
@@ -634,6 +635,33 @@ TEST(TessQueuedResults, InvalidBudgetReportStillCountsCallbackInvocation) {
   EXPECT_EQ(queue.state(ticket), tess::AsyncResultState::Failed);
 }
 #endif
+
+TEST(TessQueuedResults, ZeroProgressCallbacksAreInvocationBounded) {
+  struct WaitingWork {
+    std::uint32_t invocations = 0;
+
+    auto operator()(tess::AsyncWorkBudget, Ack&) -> tess::AsyncWorkStep {
+      ++invocations;
+      return {tess::AsyncStepState::Pending, 0, {}};
+    }
+  };
+
+  tess::ResumableWorkQueue<Ack> queue;
+  std::array<WaitingWork, 4> work;
+  for (auto& item : work) {
+    static_cast<void>(queue.submit(item));
+  }
+
+  const auto stats = queue.advance(tess::AsyncWorkBudget{2});
+
+  EXPECT_EQ(stats.invoked, 2u);
+  EXPECT_EQ(stats.items_done, 0u);
+  EXPECT_EQ(stats.pending, 4u);
+  EXPECT_EQ(work[0].invocations, 1u);
+  EXPECT_EQ(work[1].invocations, 1u);
+  EXPECT_EQ(work[2].invocations, 0u);
+  EXPECT_EQ(work[3].invocations, 0u);
+}
 
 #if TESS_ENABLE_ASSERTS
 TEST(TessQueuedResults, ResumableWorkRejectsReentrantQueueMutation) {

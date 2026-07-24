@@ -250,6 +250,13 @@ class FieldProductCache {
 
   void reserve_entries(std::size_t count) { entries_.reserve(count); }
 
+  [[nodiscard]] auto can_fit_distance_storage(
+      std::size_t node_count) const noexcept -> bool {
+    // Every product owns at least one u32 label per node; keys, goals,
+    // dependencies, and object overhead only increase the final size.
+    return node_count <= byte_budget_ / sizeof(std::uint32_t);
+  }
+
   void clear() noexcept {
     entries_.clear();
     bytes_ = 0;

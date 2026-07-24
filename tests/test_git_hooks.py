@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -732,6 +733,33 @@ def test_browser_state_rejects_oversized_fragmented_message(monkeypatch):
 
   with pytest.raises(RuntimeError, match="oversized.*message"):
     connection._read_text()
+
+
+def test_browser_state_command_honors_shared_deadline(monkeypatch):
+  class EventStream:
+    def __init__(self):
+      self.data = bytearray(b"\x81\x02{}\x81\x02{}")
+      self.timeouts = []
+
+    def sendall(self, _payload):
+      pass
+
+    def settimeout(self, timeout):
+      self.timeouts.append(timeout)
+
+    def recv(self, size):
+      result = bytes(self.data[:size])
+      del self.data[:size]
+      return result
+
+  times = iter((10.0, 10.25, 11.0))
+  monkeypatch.setattr(time, "monotonic", lambda: next(times))
+  stream = EventStream()
+  connection = wait_for_browser_state.DevToolsConnection(stream)
+
+  with pytest.raises(RuntimeError, match="deadline"):
+    connection.command("Runtime.evaluate", {}, deadline=11.0)
+  assert stream.timeouts == [1.0, 0.75]
 
 
 def test_browser_state_dataset_expression_rejects_code_injection():

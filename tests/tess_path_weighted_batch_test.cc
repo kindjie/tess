@@ -166,6 +166,43 @@ TEST(TessPathWeightedBatch, GlobalFieldOverflowFallsBackPerMember) {
   EXPECT_EQ(scratch.stats().astar_fallbacks, 2u);
 }
 
+TEST(TessPathWeightedBatch, RealizedBucketOverflowAvoidsSecondFullFlood) {
+  SmallWorld world;
+  fill_world(world, true, 1);
+  const auto goal = tess::Coord3{7, 7, 0};
+  world.template field<CostTag>(tess::Coord3{6, 7, 0}) =
+      std::numeric_limits<std::uint32_t>::max();
+  const auto requests = std::array{
+      tess::PathRequest{tess::Coord3{7, 6, 0}, goal},
+      tess::PathRequest{tess::Coord3{6, 6, 0}, goal},
+  };
+  tess::WeightedPathBatchScratch batch_scratch;
+
+  const auto results =
+      tess::weighted_path_batch<SmallWorld, PassableTag, CostTag, 8>(
+          world, requests, batch_scratch);
+
+  ASSERT_EQ(results.size(), 2u);
+  EXPECT_EQ(results[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(results[0].cost, 1u);
+  EXPECT_EQ(results[1].status, tess::PathStatus::Found);
+  EXPECT_EQ(results[1].cost, 2u);
+  EXPECT_EQ(batch_scratch.stats().astar_fallbacks, 2u);
+
+  tess::DistanceFieldScratch bounded_scratch;
+  tess::DistanceFieldScratch unbounded_scratch;
+  const auto bounded =
+      tess::build_bounded_weighted_distance_field<SmallWorld, PassableTag,
+                                                  CostTag, 8>(world, goal,
+                                                              bounded_scratch);
+  const auto unbounded =
+      tess::build_weighted_distance_field<SmallWorld, PassableTag, CostTag>(
+          world, goal, unbounded_scratch);
+  EXPECT_EQ(bounded.status, tess::PathStatus::CostOverflow);
+  EXPECT_EQ(unbounded.status, tess::PathStatus::CostOverflow);
+  EXPECT_LT(bounded.expanded_nodes, unbounded.expanded_nodes);
+}
+
 // Members of a failed shared-goal group must report the status the
 // single-request weighted A* would give them, not blanket-copy the group
 // goal's failure status. weighted_astar_path validates the start (contains,

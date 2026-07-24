@@ -153,19 +153,19 @@ auto build_bounded_weighted_distance_field_core(
     if (current_entry_cost == 0) {
       continue;
     }
-    if (current_entry_cost > MaxCost) {
-      // Targets are dropped on this rare escape hatch: the unbounded
-      // builder floods to exhaustion (correct, just not truncated).
-      return build_weighted_distance_field<World, Class>(world, goal, scratch,
-                                                         policy);
-    }
     const auto next_distance =
         detail::saturating_add(current_distance, current_entry_cost);
     if (next_distance == infinite_distance) {
-      // The bucket ring cannot encode the reserved infinity sentinel. Rebuild
-      // with heap Dijkstra so this realized overflow is reported instead of
-      // silently becoming NoPath; like the >MaxCost escape above, this rare
-      // handoff intentionally drops target truncation and floods to exhaustion.
+      // This edge has already proved the reverse field globally unsuitable.
+      // Return immediately: weighted_path_batch retries each member with A*
+      // so an irrelevant saturated edge does not force a second full flood.
+      return DistanceFieldResult{PathStatus::CostOverflow, expanded_nodes,
+                                 scratch.touched_.size()};
+    }
+    if (current_entry_cost > MaxCost) {
+      // This finite distance cannot fit the bucket ring. Targets are dropped
+      // on the rare escape hatch because the heap builder must reconstruct
+      // the exact field for callers outside weighted_path_batch too.
       return build_weighted_distance_field<World, Class>(world, goal, scratch,
                                                          policy);
     }

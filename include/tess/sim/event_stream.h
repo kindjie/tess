@@ -20,8 +20,10 @@ struct TickStampedEvent {
 
 /// Caller-owned, bounded batch of exact tick-stamped events.
 ///
-/// Call `reserve_events` during setup. Publication then allocates nothing and
-/// rejects overflow instead of silently dropping or overwriting an event.
+/// Call `reserve_events` during setup. Publication then performs no container
+/// allocation and rejects overflow instead of silently dropping or
+/// overwriting an event; payload copy/move operations must themselves be
+/// allocation-free for the whole publication call to be allocation-free.
 /// `clear` starts a new batch without resetting sequence numbers, allowing
 /// consumers and diagnostics to detect gaps across ticks.
 template <typename T>

@@ -41,6 +41,15 @@ def main(argv: list[str] | None = None) -> int:
           "present (default: median)."
       ),
   )
+  parser.add_argument(
+      "--allow-missing-result",
+      action="append",
+      default=[],
+      help=(
+          "Threshold name expected to be absent because its optional "
+          "benchmark provider is disabled; repeat for multiple names."
+      ),
+  )
   args = parser.parse_args(argv)
 
   try:
@@ -62,9 +71,14 @@ def main(argv: list[str] | None = None) -> int:
   failures: list[str] = []
   result_names = set(result_by_name)
   threshold_names = set(threshold_by_name)
+  allowed_missing = set(args.allow_missing_result)
+  failures.extend(
+      f"{name}: unknown allowed-missing threshold"
+      for name in sorted(allowed_missing - threshold_names)
+  )
   failures.extend(
       f"{name}: missing benchmark result"
-      for name in sorted(threshold_names - result_names)
+      for name in sorted(threshold_names - result_names - allowed_missing)
   )
   failures.extend(
       f"{name}: missing threshold entry"

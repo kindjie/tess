@@ -487,6 +487,40 @@ TEST(TessPathRuntime, WeightedFieldProductsReuseAcrossProcessingCalls) {
   EXPECT_EQ(stats.weighted_batch.requests, 0u);
 }
 
+TEST(TessPathRuntime, OversizeWeightedProductSkipsDuplicateFieldBuild) {
+  World world;
+  fill_world(world);
+  tess::PathRequestRuntime runtime;
+  runtime.reserve_requests(3);
+  runtime.reserve_search_nodes(RuntimeTileCount);
+  runtime.reserve_path_nodes(512);
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{31, 31, 0}});
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{8, 0, 0}, tess::Coord3{31, 31, 0}});
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 8, 0}, tess::Coord3{31, 31, 0}});
+  const auto policy = tess::PathRuntimeCachePolicy{
+      .use_weighted_field_product_cache = true,
+      .weighted_field_product_cache_byte_budget = 1,
+  };
+
+  const auto results =
+      runtime.process_weighted_batch<World, PassableTag, CostTag, 8>(world,
+                                                                     policy);
+
+  ASSERT_EQ(results.size(), 3u);
+  for (const auto result : results) {
+    EXPECT_EQ(result.status, tess::PathStatus::Found);
+  }
+  const auto stats = runtime.stats();
+  EXPECT_EQ(stats.field_product_candidate_groups, 1u);
+  EXPECT_EQ(stats.field_product_used_groups, 0u);
+  EXPECT_EQ(stats.field_product_skipped_groups, 1u);
+  EXPECT_EQ(stats.field_product_cache.misses, 0u);
+  EXPECT_EQ(stats.weighted_batch.field_builds, 1u);
+}
+
 TEST(TessPathRuntime, WeightedFieldProductWarmReplayDoesNotAllocate) {
   World world;
   fill_world(world);

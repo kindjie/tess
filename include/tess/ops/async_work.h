@@ -82,9 +82,11 @@ struct AsyncAdvanceStats {
 /// Owns versioned result slots and advances caller-owned continuations.
 ///
 /// This queue is cooperative rather than internally threaded: `advance`
-/// invokes pending work in submission order and never gives all callbacks
-/// together more than the supplied deterministic item budget. A callback and
-/// its context are non-owning and must outlive the ticket. Tickets remain
+/// invokes pending work in submission order and bounds both reported items and
+/// callback invocations by the supplied deterministic item budget. Queue-state
+/// summaries still scan all retained tickets, so callers should `clear` old
+/// batches instead of treating the queue as an unbounded history. A callback
+/// and its context are non-owning and must outlive the ticket. Tickets remain
 /// observable across calls until `clear`, which invalidates them by generation.
 /// Callbacks may inspect the queue but must not mutate it or call `advance`;
 /// those reentrant operations are rejected. Instances are externally
@@ -175,8 +177,9 @@ class ResumableWorkQueue {
     const auto guard = AdvanceGuard{in_advance_};
     auto stats = AsyncAdvanceStats{};
     auto remaining = budget.max_items;
+    auto invocations_remaining = budget.max_items;
     for (auto& slot : slots_) {
-      if (remaining == 0) {
+      if (remaining == 0 || invocations_remaining == 0) {
         break;
       }
       if (slot.state != AsyncResultState::Pending) {
@@ -186,6 +189,7 @@ class ResumableWorkQueue {
       const auto step =
           slot.work(slot.context, AsyncWorkBudget{remaining}, slot.value);
       ++stats.invoked;
+      --invocations_remaining;
       TESS_ASSERT(step.items_done <= remaining);
       if (step.items_done > remaining) {
         slot.state = AsyncResultState::Failed;

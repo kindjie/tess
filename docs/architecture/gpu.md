@@ -71,13 +71,20 @@ The backend exposes these bounded setup and execution operations:
   spontaneous-callback-safe. Because an accepted callback may outlive product
   unregistration or the backend, the consumer must revalidate its generation
   and authoritative world version before applying derived bytes.
-- Device loss and explicit notification disable further GPU submissions.
+- Device loss and reported device errors disable further GPU submissions.
+  Stable-C validation, OOM, and internal errors arrive asynchronously through
+  error scopes or an uncaptured-error callback, so a submission method's
+  `true` result cannot observe them. The application owns those callbacks and
+  must call `notify_device_error()` while the backend is alive; the backend
+  does not replace a callback already associated with the supplied device.
+  When this fail-closed notification wins the readback callback's atomic
+  terminal-state race, that pending readback reports `Failed`.
   Full-field readback is disabled unless the configuration opts in.
 
-Except for device-loss notification, calls into one backend must be externally
-serialized. The backend synchronizes callback-owned cleanup separately; it
-does not make registration, upload, dispatch, or readback generally
-thread-safe.
+Except for device-loss and device-error notification, calls into one backend
+must be externally serialized. The backend synchronizes callback-owned cleanup
+separately; it does not make registration, upload, dispatch, or readback
+generally thread-safe.
 
 Pipelines, shader meaning, and bind-group layouts remain algorithm/provider
 responsibilities. This keeps tess from inventing a universal shader ABI and
@@ -89,9 +96,10 @@ gameplay-exact answer on the CPU.
 `tests/gpu_mock_backend.h` exercises descriptor ordering without a device.
 `tess_webgpu_backend_test` uses an API-matching fake stable C device to test
 resource ownership, generation invalidation, bounded asynchronous readback,
-disabled configuration, and device loss. The documentation build also
-compiles and runs a browser smoke example with Emdawnwebgpu's exact pinned
-port. Only `WGPURequestAdapterStatus_Unavailable` is an unsupported result.
+overlapping readback budget/failure paths, disabled configuration, and device
+loss/error notification. The documentation build also compiles and runs a
+browser smoke example with Emdawnwebgpu's exact pinned port. Only
+`WGPURequestAdapterStatus_Unavailable` is an unsupported result.
 Instance creation, request cancellation or error, null success handles, device
 failure, backend failure, and timeout are failures. Pages follows Chromium's
 `webgpu-swiftshader` test configuration to select its software adapter and

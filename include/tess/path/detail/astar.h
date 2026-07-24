@@ -26,7 +26,17 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
   constexpr auto no_parent = std::numeric_limits<std::uint64_t>::max();
   constexpr auto infinite_cost = std::numeric_limits<std::uint32_t>::max();
 
-  if constexpr (Model::cost_scale != 1) {
+  if constexpr (Model::cost_scale != 1 ||
+                !std::is_same_v<typename ShapeTraits<Shape>::lattice_type,
+                                lattice::Orthogonal> ||
+                !std::is_same_v<typename Model::step_policy,
+                                movement::DefaultSteps>) {
+    // The two-list frontier below is an orthogonal-only optimization. Its
+    // current/current+2 bands rely on every unit face step changing Manhattan
+    // distance by exactly one. Hex lattices contain triangles, so an edge can
+    // leave hex distance unchanged and produce current+1; putting that node in
+    // the next band can close a longer route first. The general heap keeps
+    // every model outside the proven face-adjacent case in exact f order.
     return weighted_astar_path<World, UnitClass>(world, request, scratch,
                                                  policy);
   }

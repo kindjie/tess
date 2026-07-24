@@ -16,6 +16,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <iostream>
 #include <memory>
 #include <span>
@@ -32,8 +33,11 @@ struct ReservationTag {};
 constexpr int kWidth = 128;
 constexpr int kHeight = 128;
 constexpr int kMaxAgents = 1024;
-constexpr std::uint32_t kMaxBlockedRetries =
-    2U * ((kMaxAgents + kHeight - 1) / kHeight) + 8U;
+constexpr std::uint32_t kMaxBlockedRetries = 2U * kMaxAgents + 8U;
+// A painted one-tile bottleneck can merge every row into one queue. Retained
+// route waits do not replan, so covering a full outbound-and-return convoy
+// prevents healthy queueing from becoming terminal without reintroducing the
+// planning crawl this retry bound was added to stop.
 // Wall painting is rejected outside this band so the spawn columns on the
 // left and the turnaround columns on the right always stay standable.
 constexpr int kWallMinX = 10;
@@ -387,7 +391,13 @@ TESS_DEMO_EXPORT int tess_colony_unreachable() {
 }  // extern "C"
 
 int main() {
-  tess_colony_reset(8);
+#ifndef __EMSCRIPTEN__
+  // The browser entry points retain their established exception behavior.
+  // The native executable is a self-check, so convert setup/allocation
+  // failures into a diagnostic instead of escaping main and terminating.
+  try {
+#endif
+    tess_colony_reset(8);
 #ifndef __EMSCRIPTEN__
   for (int frame = 0; frame < 5000 && tess_colony_arrived() < 8; ++frame) {
     if (frame == 4) {
@@ -411,6 +421,13 @@ int main() {
     return 1;
   }
   std::cout << "web colony model: ok\n";
+  } catch (const std::exception& error) {
+    std::cerr << "web colony model: " << error.what() << '\n';
+    return 1;
+  } catch (...) {
+    std::cerr << "web colony model: unknown failure\n";
+    return 1;
+  }
 #endif
   return 0;
 }

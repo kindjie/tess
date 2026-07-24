@@ -2,6 +2,7 @@
 #include <tess/tess.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -15,6 +16,7 @@ struct CostTag {};
 struct TinyTag {};
 struct ModeTag {};
 struct EnabledTag {};
+struct LaterByteTag {};
 
 enum class ScopedMode : std::uint8_t {
   Known = 1,
@@ -65,11 +67,21 @@ using EnumArchive = tess::PersistenceSchema<
     tess::PersistedField<ModeTag, 0x3132333435363738ULL>,
     tess::PersistedField<EnabledTag, 0x4142434445464748ULL>>;
 using EnumWorld = tess::AlwaysResidentWorld<TinyShape, EnumFields>;
+using ShortCircuitFields =
+    tess::FieldSchema<tess::Field<EnabledTag, bool>,
+                      tess::Field<LaterByteTag, std::uint8_t>>;
+using ShortCircuitArchive = tess::PersistenceSchema<
+    0x5152535455565758ULL, 1,
+    tess::PersistedField<EnabledTag, 0x6162636465666768ULL>,
+    tess::PersistedField<LaterByteTag, 0x7172737475767778ULL>>;
+using ShortCircuitWorld =
+    tess::AlwaysResidentWorld<TinyShape, ShortCircuitFields>;
 
 constexpr std::uint32_t kLoadDirty = 1U << 6U;
 constexpr std::size_t kBodySizeOffset = 12;
 constexpr std::size_t kChecksumOffset = 20;
 constexpr std::size_t kKeyLayoutOffset = 80;
+constexpr std::size_t kSchemaIdOffset = 84;
 constexpr std::size_t kResidencyOffset = 108;
 constexpr std::size_t kFieldCountOffset = 109;
 constexpr std::size_t kChunkCountOffset = 113;
@@ -85,8 +97,20 @@ void write_unsigned_le(std::vector<std::byte>& bytes, std::size_t offset,
   }
 }
 
-auto test_crc32(std::span<const std::byte> bytes) -> std::uint32_t {
-  auto crc = std::uint32_t{0xffffffffU};
+template <typename UInt>
+auto read_unsigned_le(std::span<const std::byte> bytes, std::size_t offset)
+    -> UInt {
+  auto value = UInt{};
+  for (std::size_t i = 0; i < sizeof(UInt); ++i) {
+    value = static_cast<UInt>(
+        value |
+        (static_cast<UInt>(std::to_integer<unsigned int>(bytes[offset + i]))
+         << (i * 8U)));
+  }
+  return value;
+}
+
+void update_test_crc32(std::uint32_t& crc, std::span<const std::byte> bytes) {
   for (const auto byte : bytes) {
     crc ^= std::to_integer<std::uint8_t>(byte);
     for (int bit = 0; bit < 8; ++bit) {
@@ -95,12 +119,18 @@ auto test_crc32(std::span<const std::byte> bytes) -> std::uint32_t {
       crc = (crc >> 1U) ^ (0xedb88320U & mask);
     }
   }
+}
+
+auto test_archive_crc32(std::span<const std::byte> bytes) -> std::uint32_t {
+  auto crc = std::uint32_t{0xffffffffU};
+  update_test_crc32(crc, bytes.first(kChecksumOffset));
+  update_test_crc32(crc,
+                    bytes.subspan(kChecksumOffset + sizeof(std::uint32_t)));
   return ~crc;
 }
 
-void refresh_body_checksum(std::vector<std::byte>& bytes) {
-  write_unsigned_le(bytes, kChecksumOffset,
-                    test_crc32(std::span{bytes}.subspan(kHeaderSize)));
+void refresh_archive_checksum(std::vector<std::byte>& bytes) {
+  write_unsigned_le(bytes, kChecksumOffset, test_archive_crc32(bytes));
 }
 
 auto decode_hex(std::string_view hex) -> std::vector<std::byte> {
@@ -151,7 +181,7 @@ TEST(TessPersistence, CanonicalFormatMatchesGoldenBytes) {
   // This literal is intentionally independent of the archive writer: it locks
   // the complete v1 envelope, metadata, scalar encoding, and CRC byte order.
   const auto golden = decode_hex(
-      "54455353574c440001000000230000000000000002f5e6d50100000000000000"
+      "54455353574c4400010000002300000000000000ce87ce2c0100000000000000"
       "0100000000000000010000000000000001000000000000000100000000000000"
       "01000000000000004854524f0100000001000000080706050403020109000000"
       "000000000c000000000000000101000000010000000000000018171615141312"
@@ -224,7 +254,11 @@ TEST(TessPersistence,
       sizeof(std::uint64_t) + sizeof(std::uint8_t) + sizeof(std::uint32_t) * 2;
   bytes[kFirstFieldOffset] = std::byte{0xfe};
   bytes[kFirstFieldOffset + 1] = std::byte{2};
-  refresh_body_checksum(bytes);
+  refresh_archive_checksum(bytes);
+  // Inspection is schema-independent and structural. The typed load preflight
+  // is the layer that knows this byte is an invalid bool representation.
+  EXPECT_EQ(tess::inspect_world_archive(bytes).status,
+            tess::WorldArchiveStatus::Ok);
 
   EnumWorld target;
   target.field<ModeTag>({0, 0, 0}) = ScopedMode::Known;
@@ -235,7 +269,7 @@ TEST(TessPersistence,
   EXPECT_FALSE(target.field<EnabledTag>({0, 0, 0}));
 
   bytes[kFirstFieldOffset + 1] = std::byte{1};
-  refresh_body_checksum(bytes);
+  refresh_archive_checksum(bytes);
   ASSERT_EQ(tess::load_world_archive<EnumArchive>(target, bytes).status,
             tess::WorldArchiveStatus::Ok);
   EXPECT_EQ(static_cast<std::uint8_t>(target.field<ModeTag>({0, 0, 0})), 0xfe);
@@ -299,6 +333,17 @@ TEST(TessPersistence, CanonicalBytesDoNotDependOnMutationOrder) {
   ASSERT_EQ(tess::save_world_archive<Archive>(second, second_bytes).status,
             tess::WorldArchiveStatus::Ok);
   EXPECT_EQ(first_bytes, second_bytes);
+
+  constexpr auto kChunkRecordSize =
+      sizeof(std::uint64_t) + sizeof(std::uint8_t) + sizeof(std::uint32_t) * 2 +
+      DenseWorld::local_tile_count * (sizeof(std::uint16_t) + sizeof(float));
+  constexpr auto kFirstChunkOffset =
+      kHeaderSize + Archive::field_count * kFieldDescriptorSize;
+  for (std::uint64_t key = 0; key < DenseWorld::chunk_count; ++key) {
+    EXPECT_EQ(read_unsigned_le<std::uint64_t>(
+                  first_bytes, kFirstChunkOffset + key * kChunkRecordSize),
+              key);
+  }
 }
 
 TEST(TessPersistence, RejectsDamageWithoutMutatingTarget) {
@@ -321,6 +366,35 @@ TEST(TessPersistence, RejectsDamageWithoutMutatingTarget) {
   EXPECT_EQ(tess::load_world_archive<Archive>(target, truncated).status,
             tess::WorldArchiveStatus::Truncated);
   EXPECT_EQ(target.field<TerrainTag>({0, 0, 0}), 777);
+}
+
+TEST(TessPersistence, RejectsMetadataDamageWithoutMutatingTarget) {
+  DenseWorld source;
+  fill_chunk(source, tess::ChunkKey{0}, 20);
+  std::vector<std::byte> bytes;
+  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
+            tess::WorldArchiveStatus::Ok);
+
+  DenseWorld target;
+  target.field<TerrainTag>({0, 0, 0}) = 777;
+  write_unsigned_le(bytes, kSchemaIdOffset, Archive::id ^ 1U);
+  EXPECT_EQ(tess::inspect_world_archive(bytes).status,
+            tess::WorldArchiveStatus::Corrupt);
+  EXPECT_EQ(tess::load_world_archive<Archive>(target, bytes).status,
+            tess::WorldArchiveStatus::Corrupt);
+  EXPECT_EQ(target.field<TerrainTag>({0, 0, 0}), 777);
+}
+
+TEST(TessPersistence, ChunkFieldDecodeStopsAtFirstInvalidScalar) {
+  ShortCircuitWorld target;
+  target.field<LaterByteTag>({0, 0, 0}) = 0x55;
+  const std::array bytes{std::byte{2}, std::byte{0xab}};
+  tess::detail::ArchiveCursor cursor(bytes);
+
+  EXPECT_FALSE((tess::detail::read_chunk_fields<ShortCircuitArchive>(
+      target, tess::ChunkKey{0}, cursor)));
+  EXPECT_EQ(cursor.position(), 1U);
+  EXPECT_EQ(target.field<LaterByteTag>({0, 0, 0}), 0x55);
 }
 
 TEST(TessPersistence, ClassifiesCompatibilityBeforeMutation) {
@@ -360,17 +434,20 @@ TEST(TessPersistence, ClassifiesEnvelopeAndChunkCompatibilityStatuses) {
 
   changed = bytes;
   write_unsigned_le(changed, 8, std::uint32_t{2});
+  refresh_archive_checksum(changed);
   EXPECT_EQ(tess::inspect_world_archive(changed).status,
             tess::WorldArchiveStatus::UnsupportedFormat);
 
   changed = bytes;
   write_unsigned_le(changed, kKeyLayoutOffset, std::uint32_t{2});
+  refresh_archive_checksum(changed);
   EXPECT_EQ(tess::load_world_archive<Archive>(target, changed).status,
             tess::WorldArchiveStatus::KeyLayoutMismatch);
 
   changed = bytes;
   changed[kResidencyOffset] =
       static_cast<std::byte>(tess::WorldArchiveResidency::SparseResident);
+  refresh_archive_checksum(changed);
   EXPECT_EQ(tess::load_world_archive<Archive>(target, changed).status,
             tess::WorldArchiveStatus::ResidencyMismatch);
 
@@ -379,7 +456,7 @@ TEST(TessPersistence, ClassifiesEnvelopeAndChunkCompatibilityStatuses) {
                                  Archive::field_count * kFieldDescriptorSize +
                                  sizeof(std::uint64_t);
   changed[first_chunk_state] = std::byte{2};
-  refresh_body_checksum(changed);
+  refresh_archive_checksum(changed);
   EXPECT_EQ(tess::inspect_world_archive(changed).status,
             tess::WorldArchiveStatus::InvalidChunk);
 }
@@ -396,7 +473,7 @@ TEST(TessPersistence, CompleteEnvelopeWithImpossibleFieldTableIsCorrupt) {
                     static_cast<std::uint64_t>(descriptor_bytes));
   write_unsigned_le(bytes, kFieldCountOffset, std::uint32_t{3});
   write_unsigned_le(bytes, kChunkCountOffset, std::uint64_t{0});
-  refresh_body_checksum(bytes);
+  refresh_archive_checksum(bytes);
   EXPECT_EQ(tess::inspect_world_archive(bytes).status,
             tess::WorldArchiveStatus::Corrupt);
 }
@@ -421,6 +498,29 @@ TEST(TessPersistence, SparseArchiveIsCanonicalAndCapacityChecked) {
   ASSERT_EQ(tess::save_world_archive<Archive>(second, second_bytes).status,
             tess::WorldArchiveStatus::Ok);
   EXPECT_EQ(first_bytes, second_bytes);
+
+  constexpr auto kChunkRecordSize =
+      sizeof(std::uint64_t) + sizeof(std::uint8_t) + sizeof(std::uint32_t) * 2 +
+      SparseWorld::local_tile_count * (sizeof(std::uint16_t) + sizeof(float));
+  constexpr auto kFirstChunkOffset =
+      kHeaderSize + Archive::field_count * kFieldDescriptorSize;
+  EXPECT_EQ(read_unsigned_le<std::uint64_t>(first_bytes, kFirstChunkOffset),
+            1U);
+  EXPECT_EQ(read_unsigned_le<std::uint64_t>(
+                first_bytes, kFirstChunkOffset + kChunkRecordSize),
+            3U);
+
+  auto noncanonical = first_bytes;
+  write_unsigned_le(noncanonical, kFirstChunkOffset + kChunkRecordSize,
+                    std::uint64_t{1});
+  refresh_archive_checksum(noncanonical);
+  EXPECT_EQ(tess::inspect_world_archive(noncanonical).status,
+            tess::WorldArchiveStatus::InvalidChunk);
+
+  write_unsigned_le(noncanonical, kFirstChunkOffset, std::uint64_t{3});
+  refresh_archive_checksum(noncanonical);
+  EXPECT_EQ(tess::inspect_world_archive(noncanonical).status,
+            tess::WorldArchiveStatus::InvalidChunk);
 
   SparseWorld too_small({SparseWorld::page_byte_size});
   too_small.ensure_resident(tess::ChunkKey{0});

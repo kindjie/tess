@@ -252,6 +252,12 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   if (!Class::passable(to_page, resolved_to->local_tile_id)) {
     return fail(MovementStatus::BlockedTo);
   }
+  // Exact search rejects a zero-entry-cost start or goal before enumerating
+  // either regular or provider transitions. Apply the same endpoint contract
+  // before classifying the requested edge.
+  if (Class::entry_cost(to_page, resolved_to->local_tile_id) == 0) {
+    return fail(MovementStatus::BlockedTo);
+  }
   auto transition_availability = TransitionAvailability::Blocked;
   auto is_candidate = Model::is_regular_candidate(intent.from, intent.to);
   if (is_candidate) {

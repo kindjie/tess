@@ -207,6 +207,38 @@ def test_missing_benchmark_fails(tmp_path, capsys):
   assert "missing benchmark result" in capsys.readouterr().err
 
 
+def test_explicit_feature_disabled_benchmark_may_be_missing(tmp_path):
+  benchmarks = [entry("ecs/tick_entt", 100.0)]
+  thresholds = {
+      "benchmarks": {
+          "ecs/tick_entt": limits(500.0),
+          "ecs/flecs_collect": limits(500.0),
+      }
+  }
+
+  assert run_thresholds(
+      tmp_path,
+      benchmarks,
+      thresholds,
+      extra_args=("--allow-missing-result", "ecs/flecs_collect"),
+  ) == 0
+
+
+def test_allow_missing_result_rejects_unknown_threshold(tmp_path, capsys):
+  benchmarks = [entry("ecs/tick_entt", 100.0)]
+  thresholds = {"benchmarks": {"ecs/tick_entt": limits(500.0)}}
+
+  code = run_thresholds(
+      tmp_path,
+      benchmarks,
+      thresholds,
+      extra_args=("--allow-missing-result", "ecs/not_declared"),
+  )
+
+  assert code == 1
+  assert "unknown allowed-missing threshold" in capsys.readouterr().err
+
+
 def test_unthresholded_benchmark_fails(tmp_path, capsys):
   benchmarks = [
       entry("key/covered", 100.0),

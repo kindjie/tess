@@ -121,6 +121,9 @@ inline constexpr std::array<std::byte, 8> world_archive_magic{
 inline constexpr std::uint32_t world_archive_format_version = 1;
 inline constexpr std::uint32_t world_archive_key_layout_version = 1;
 inline constexpr std::size_t world_archive_header_size = 121;
+inline constexpr std::size_t world_archive_checksum_offset = 20;
+inline constexpr std::size_t world_archive_checksum_size =
+    sizeof(std::uint32_t);
 inline constexpr std::size_t world_archive_field_desc_size = 17;
 inline constexpr std::size_t world_archive_chunk_prefix_size = 17;
 inline constexpr std::uint32_t world_archive_max_fields = 1024;
@@ -287,9 +290,8 @@ bool read_scalar(ArchiveCursor& cursor, T& value) {
   return true;
 }
 
-inline auto crc32(const std::byte* bytes, std::size_t size) noexcept
-    -> std::uint32_t {
-  auto crc = std::uint32_t{0xffffffffU};
+inline void update_crc32(std::uint32_t& crc, const std::byte* bytes,
+                         std::size_t size) noexcept {
   for (std::size_t i = 0; i < size; ++i) {
     crc ^= std::to_integer<std::uint8_t>(bytes[i]);
     for (int bit = 0; bit < 8; ++bit) {
@@ -298,6 +300,21 @@ inline auto crc32(const std::byte* bytes, std::size_t size) noexcept
       crc = (crc >> 1U) ^ (0xedb88320U & mask);
     }
   }
+}
+
+inline auto archive_crc32(std::span<const std::byte> bytes) noexcept
+    -> std::uint32_t {
+  constexpr auto kSuffixOffset =
+      world_archive_checksum_offset + world_archive_checksum_size;
+  if (bytes.size() < kSuffixOffset) {
+    return 0;
+  }
+  auto crc = std::uint32_t{0xffffffffU};
+  // The checksum covers the complete canonical archive except its own slot.
+  // Splitting the input avoids an allocation and avoids defining integrity in
+  // terms of a temporary zero value that is not part of the wire format.
+  update_crc32(crc, bytes.data(), world_archive_checksum_offset);
+  update_crc32(crc, bytes.data() + kSuffixOffset, bytes.size() - kSuffixOffset);
   return ~crc;
 }
 
@@ -380,9 +397,6 @@ inline auto parse_world_archive(std::span<const std::byte> bytes)
   info.lattice_identity = static_cast<lattice::Identity>(lattice_id);
   info.residency = static_cast<WorldArchiveResidency>(residency);
 
-  if (info.format_version != world_archive_format_version) {
-    return fail(WorldArchiveStatus::UnsupportedFormat);
-  }
   if (body_size > std::numeric_limits<std::size_t>::max()) {
     return fail(WorldArchiveStatus::Corrupt);
   }
@@ -398,8 +412,11 @@ inline auto parse_world_archive(std::span<const std::byte> bytes)
     return fail(WorldArchiveStatus::Corrupt);
   }
   parsed.body = bytes.subspan(world_archive_header_size);
-  if (crc32(parsed.body.data(), parsed.body.size()) != checksum) {
+  if (archive_crc32(bytes) != checksum) {
     return fail(WorldArchiveStatus::Corrupt);
+  }
+  if (info.format_version != world_archive_format_version) {
+    return fail(WorldArchiveStatus::UnsupportedFormat);
   }
   if (info.field_count > world_archive_max_fields || info.size.x == 0 ||
       info.size.y == 0 || info.size.z == 0 || info.chunk.x == 0 ||
@@ -572,24 +589,25 @@ void append_chunk_fields(const World& world, ChunkKey key,
 
 template <typename Archive, typename World>
 bool read_chunk_fields(World& world, ChunkKey key, ArchiveCursor& cursor) {
-  auto ok = true;
-  std::apply(
+  return std::apply(
       [&]<typename... Fields>(Fields...) {
-        (
-            [&] {
-              auto values =
-                  world.template field_span<typename Fields::tag_type>(key);
-              for (auto& value : values) {
-                if (!read_scalar(cursor, value)) {
-                  ok = false;
-                  return;
-                }
-              }
-            }(),
-            ...);
+        const auto read_field = [&]<typename Field>(Field) {
+          auto values =
+              world.template field_span<typename Field::tag_type>(key);
+          for (auto& value : values) {
+            if (!read_scalar(cursor, value)) {
+              return false;
+            }
+          }
+          return true;
+        };
+        // The && fold is intentional. Public loads preflight every scalar, but
+        // this decoder remains fail-closed on direct/internal use: after the
+        // first bad scalar it must neither consume later bytes nor partly
+        // overwrite later fields.
+        return (read_field(Fields{}) && ...);
       },
       typename Archive::fields{});
-  return ok;
 }
 
 template <typename Field, typename WorldType>
@@ -752,8 +770,7 @@ auto save_world_archive(const World& world, std::vector<std::byte>& out)
              detail::world_archive_magic.end());
   detail::append_unsigned_le(out, detail::world_archive_format_version);
   detail::append_unsigned_le(out, static_cast<std::uint64_t>(body.size()));
-  const auto checksum = detail::crc32(body.data(), body.size());
-  detail::append_unsigned_le(out, checksum);
+  detail::append_unsigned_le(out, std::uint32_t{0});
   detail::append_unsigned_le(out, World::shape_type::size.x);
   detail::append_unsigned_le(out, World::shape_type::size.y);
   detail::append_unsigned_le(out, World::shape_type::size.z);
@@ -780,6 +797,11 @@ auto save_world_archive(const World& world, std::vector<std::byte>& out)
                              static_cast<std::uint32_t>(Archive::field_count));
   detail::append_unsigned_le(out, static_cast<std::uint64_t>(keys.size()));
   out.insert(out.end(), body.begin(), body.end());
+  const auto checksum = detail::archive_crc32(out);
+  for (std::size_t i = 0; i < detail::world_archive_checksum_size; ++i) {
+    out[detail::world_archive_checksum_offset + i] =
+        static_cast<std::byte>((checksum >> (i * 8U)) & std::uint32_t{0xff});
+  }
   WorldArchiveResult result;
   result.info.format_version = detail::world_archive_format_version;
   result.info.size = World::shape_type::size;

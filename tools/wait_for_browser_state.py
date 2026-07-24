@@ -167,7 +167,12 @@ class DevToolsConnection:
       if final:
         return bytes(message)
 
-  def command(self, method: str, params: dict[str, object]) -> dict:
+  def command(
+    self,
+    method: str,
+    params: dict[str, object],
+    deadline: float,
+  ) -> dict:
     """Send one command and ignore events until its matching response."""
     command_id = self.next_id
     self.next_id += 1
@@ -177,6 +182,13 @@ class DevToolsConnection:
     ).encode("utf-8")
     self.stream.sendall(encode_client_text_frame(request))
     while True:
+      remaining = deadline - time.monotonic()
+      if remaining <= 0:
+        raise RuntimeError("DevTools command exceeded the shared deadline")
+      # Events can arrive continuously, so a fixed per-recv timeout alone
+      # does not bound the response loop. Tighten it to the outer harness
+      # deadline before reading each complete event or response.
+      self.stream.settimeout(min(2.0, remaining))
       response = json.loads(self._read_text())
       if response.get("id") == command_id:
         return response
@@ -219,10 +231,13 @@ def _wait_for_page(port: int, url: str, deadline: float) -> str:
   raise RuntimeError("browser page did not appear in DevTools")
 
 
-def _evaluate(connection: DevToolsConnection, expression: str) -> object:
+def _evaluate(
+  connection: DevToolsConnection, expression: str, deadline: float
+) -> object:
   response = connection.command(
     "Runtime.evaluate",
     {"expression": expression, "returnByValue": True},
+    deadline,
   )
   if "error" in response:
     raise RuntimeError(f"DevTools evaluation failed: {response['error']}")
@@ -262,11 +277,12 @@ def wait_for_state(
       websocket = _wait_for_page(port, url, deadline)
       connection = DevToolsConnection.connect(websocket)
       while time.monotonic() < deadline:
-        value = _evaluate(connection, expression)
+        value = _evaluate(connection, expression, deadline)
         if value:
           message = _evaluate(
             connection,
             "document.querySelector('#message')?.textContent || ''",
+            deadline,
           )
           print(f"{dataset}={value}: {message}")
           return value == expected

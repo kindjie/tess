@@ -348,8 +348,19 @@ class Schedule {
     auto stats = ScheduleTickStats{};
     stats.tick = advance_sim_tick(clock);
 
-    for (const auto id : phase_order_) {
-      run_task_if_due(tasks_[id], clock, stats);
+    for (std::size_t position = 0; position < phase_order_.size(); ++position) {
+      try {
+        run_task_if_due(tasks_[phase_order_[position]], clock, stats);
+      } catch (...) {
+        // The fixed tick happened even though its remaining callbacks did
+        // not. Advance their EveryN counters without consuming manual or
+        // event triggers so tasks on opposite sides of the thrower keep the
+        // same cadence phase on later ticks.
+        for (++position; position < phase_order_.size(); ++position) {
+          advance_aborted_tick_cadence(tasks_[phase_order_[position]]);
+        }
+        throw;
+      }
     }
     return stats;
   }
@@ -379,6 +390,15 @@ class Schedule {
     bool enabled = true;
     ScheduleTaskStats stats{};
   };
+
+  static void advance_aborted_tick_cadence(TaskRecord& task) noexcept {
+    if (task.desc.cadence.kind != CadenceKind::EveryN) {
+      return;
+    }
+    if (--task.ticks_until_due == 0) {
+      task.ticks_until_due = task.desc.cadence.every_n;
+    }
+  }
 
   void run_task_if_due(TaskRecord& task, SimClock clock,
                        ScheduleTickStats& stats) {

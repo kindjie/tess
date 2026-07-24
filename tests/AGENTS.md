@@ -10,7 +10,9 @@
   native request-status classification, timeout-versus-unsupported reporting,
   Chromium SwiftShader flags, the standard-library DevTools wall-time harness,
   required compute completion, equivalent target-URL spelling, bounded
-  fragmented WebSocket messages, and rejection of missing local targets.
+  fragmented WebSocket messages, a command loop bounded by the shared harness
+  deadline even under continuous events, and rejection of missing local
+  targets.
 - `test_doc_outputs.py`: verifies documented example-output fences stay
   synchronized with the stdout of their compiled binaries, including drift,
   missing/unused `source=binary` mappings, and failing binaries.
@@ -163,8 +165,10 @@
   residency/chunk compatibility status, explicit migration-required outcomes,
   scoped-enum support with representable unknown values, compile-time rejection
   of unscoped enums, complete scalar preflight and corruption/truncation
-  rejection without target mutation, sparse-capacity preflight, and dense-
-  version or sparse-generation invalidation on load.
+  rejection without target mutation, full-archive checksum coverage including
+  metadata, short-circuit field decoding after the first invalid scalar,
+  direct dense/sparse canonical-key ordering checks, sparse-capacity preflight,
+  and dense-version or sparse-generation invalidation on load.
 - `tess_grid_benchmark_harness_test`: verifies strict Moving AI map/scenario
   parsing from inline fixtures with portable classic-locale decimal handling,
   terrain and coordinate orientation, size/coordinate dimension bounds,
@@ -280,8 +284,9 @@
   shared item budget, pending continuations across calls, required/result
   versions, terminal failed/cancelled/superseded/stale states, stale-ticket
   rejection after clear, rejection of callback-time queue mutation,
-  throw-and-retry value/state semantics, invalid budget-report accounting, and
-  allocation-free warm submit/advance/reset reuse.
+  throw-and-retry value/state semantics, invalid budget-report accounting,
+  callback-invocation bounds for zero-progress work, and allocation-free warm
+  submit/advance/reset reuse.
 - `tess_movement_class_test`: verifies the compile-time movement vocabulary
   (`tess::movement`): the `MovementClassFor` concept and `movement_class_of`
   tag/class normalization, source-compatible default step policies, stable
@@ -357,7 +362,10 @@
   while unit and weighted runtime, retained-route agent, and tick entry points
   retain provider semantics from planning through commit,
   result aggregate initialization retains a default scale, and an
-  unrepresentable exact cost reports `CostOverflow`,
+  unrepresentable exact cost reports `CostOverflow`. An obstructed axial-hex
+  unit search is checked against an independent six-direction BFS oracle, and
+  movement commit rejects regular zero-entry-cost destinations omitted by
+  planning while retaining legal parallel provider edges on valid endpoints,
   (fixed build price via `SelectCost`), unit A* accepts classes for
   passability only, class-driven weighted searches keep the sparse
   missing-chunk contract (blocked by default, `Indeterminate` on request),
@@ -513,7 +521,9 @@
   rejection, runtime cache clearing cadence, many-agent weighted batch
   processing through shared-goal fields, opt-in byte-budgeted weighted
   field-product reuse across processing calls with allocation-free warm
-  replay, caller-configured cache clearing
+  replay, preflight rejection of products whose distance storage cannot fit
+  the cache budget (avoiding a duplicate build and over-budget store),
+  caller-configured cache clearing
   after repeated world edits, field-product-cache lookup-pointer stability
   across stores of other keys, and portal segment-cache runtime stats and
   `clear_caches()` for entries stored through the runtime accessor (the
@@ -550,7 +560,9 @@
   duplicate identical requests sharing one field build, per-member statuses
   for failed shared-goal groups matching `weighted_astar_path`'s endpoint
   validation precedence (invalid starts are not mislabeled with the goal's
-  failure status), >MaxCost corridor tiles engaging the unbounded fallback
+  failure status), realized bucket overflow returning directly to per-member
+  A* without a second full flood, >MaxCost corridor tiles engaging the
+  unbounded fallback
   (exact costs plus bounded-vs-unbounded build equality), seeded random-cost
   bounded/unbounded field equivalence, seeded batch-vs-oracle equivalence
   including the grouping stats counters, and allocation-free warm repeat
@@ -617,7 +629,8 @@
   publication, direct `ResumableWorkTask` background integration, and the
   explicit re-arm required after that task quiesces. Throwing callbacks restore
   consumed dirty, event, and manual triggers while preserving clock/cadence
-  advancement. The frame driver keeps EveryN exact
+  advancement, including EveryN phase alignment for tasks ordered after the
+  throwing callback. The frame driver keeps EveryN exact
   across SimSpeed changes, backlogged multi-tick frames, and paused frames
   (cadences count fixed ticks, never frames).
 - `tess_ecs_adapter_test`: verifies the dependency-free ECS layer (M10):
@@ -672,8 +685,10 @@
   real chunk-byte uploads, compute submission only for registered mirrors and
   within the configured workgroup-X limit, generation-stale product rejection,
   asynchronous summary readback that safely completes after backend
-  destruction, null map-future cleanup and budget restoration, invalid
-  requests, explicit device-loss fallback, and the `GpuBackend` concept. Stub
+  destruction, null map-future cleanup and budget restoration, overlapping
+  readback budget recovery with out-of-order map failure, fail-closed reported
+  device errors, invalid requests, explicit device-loss fallback, and the
+  `GpuBackend` concept. Stub
   handles use scoped C-API release owners so fatal assertions cannot leak
   caller references, and stub enum widths intentionally match the stable C
   ABI.
@@ -776,8 +791,9 @@
   `tools/benchmark_thresholds.py` rejects duplicate benchmark names,
   unthresholded results, empty result sets, and unknown limit keys; selects
   repetition aggregates (median default, `--aggregate` override), converts
-  all four Google Benchmark time units, fails on missing benchmarks, skips
-  null limits, and reports missing/malformed input files as clear errors;
+  all four Google Benchmark time units, fails on missing benchmarks, permits
+  only explicitly named feature-disabled results to be absent, skips null
+  limits, and reports missing/malformed input files as clear errors;
   every literal benchmark name in a threshold-gated family also has an entry;
   that `tools/benchmark_baseline_summary.py` filters aggregates by
   `run_type` and quotes CSV fields; that `tools/benchmark_trends.py` reads
@@ -787,8 +803,9 @@
   multiline adjacent C++ string literals.
 - `tests/test_branding_assets.py`: static asset and browser-demo contract
   coverage, including the colony's explicit terminal bottleneck metric so an
-  exhausted path-agent lifecycle cannot look like a silently running colony,
-  plus maintained architecture navigation coverage for persistence.
+  exhausted path-agent lifecycle cannot look like a silently running colony
+  and a retry allowance sized for one full outbound-and-return bottlenecked
+  convoy, plus maintained architecture navigation coverage for persistence.
 - `tests/test_doc_versions.py`: synthetic development/release version-policy
   cases plus the repository's v0.12 development-version consistency gate.
 - `tests/test_check_public_surface.py`: pytest coverage for the

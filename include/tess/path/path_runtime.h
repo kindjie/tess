@@ -478,6 +478,9 @@ class PathRequestRuntime {
     }
     unit_field_product_cache_.set_byte_budget(
         policy.weighted_field_product_cache_byte_budget);
+    const auto product_distance_fits =
+        unit_field_product_cache_.can_fit_distance_storage(
+            detail::NodeIndexSpace<World>{world}.capacity_hint());
 
     constexpr auto no_group = std::numeric_limits<std::uint32_t>::max();
     group_goals_.clear();
@@ -561,6 +564,13 @@ class PathRequestRuntime {
           group_start_chunks_.begin());
       ++stats_.field_product_candidate_groups;
       if (start_chunk_count < policy.weighted_field_product_min_start_chunks) {
+        ++stats_.field_product_skipped_groups;
+        continue;
+      }
+      if (!product_distance_fits) {
+        // The normal weighted batch still builds one shared truncated field.
+        // Do not first build a full cache product that cannot possibly fit:
+        // an over-budget store would discard it and clear unrelated entries.
         ++stats_.field_product_skipped_groups;
         continue;
       }

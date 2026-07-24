@@ -110,7 +110,12 @@ inline void webgpu_readback_complete(WGPUMapAsyncStatus status, WGPUStringView,
   auto* operation = static_cast<WebGpuReadbackOperation*>(userdata1);
   const void* data = nullptr;
   auto result = WebGpuReadbackStatus::Failed;
-  if (status == WGPUMapAsyncStatus_Success) {
+  // This acquire load is the linearization point against device notifications:
+  // whichever atomic operation wins decides whether this already-submitted
+  // result is still safe to expose to the application callback.
+  const auto device_available =
+      operation->shared->available.load(std::memory_order_acquire);
+  if (status == WGPUMapAsyncStatus_Success && device_available) {
     data = wgpuBufferGetConstMappedRange(operation->staging, 0,
                                          operation->byte_size);
     if (data != nullptr) {
@@ -152,11 +157,11 @@ inline void webgpu_readback_complete(WGPUMapAsyncStatus status, WGPUStringView,
  *
  * The backend owns field mirror buffers and retained algorithm handles. It
  * submits compute asynchronously; a successful boolean means submitted, not
- * completed. CPU state remains authoritative. Call `notify_device_lost()` from
- * the application's device-lost callback so all later work refuses cleanly.
- * Except for `notify_device_lost()`, public operations are not thread-safe and
- * must be externally serialized; callback completion performs only its
- * separately synchronized operation cleanup.
+ * completed. CPU state remains authoritative. Forward device-loss and
+ * uncaptured/error-scope failures through the notification methods so all
+ * later work refuses cleanly. Those notifications are thread-safe; other
+ * public operations must be externally serialized. Callback completion
+ * performs only its separately synchronized operation cleanup.
  */
 class WebGpuBackend {
  public:
@@ -456,7 +461,21 @@ class WebGpuBackend {
   /** Permanently disables new work after the application reports device loss.
    */
   void notify_device_lost() noexcept {
-    shared_->available.store(false, std::memory_order_relaxed);
+    shared_->available.store(false, std::memory_order_release);
+  }
+
+  /**
+   * Permanently disables GPU work after a validation, OOM, or internal error.
+   *
+   * Stable-C WebGPU reports device-side failures asynchronously through error
+   * scopes or the application's uncaptured-error callback. A submission
+   * method's `true` result therefore cannot observe them. While this backend
+   * is alive, forward either callback here to fail closed onto the CPU path.
+   * A pending readback reports `Failed` when this notification wins the
+   * callback's atomic terminal-state race, even if its map itself succeeds.
+   */
+  void notify_device_error() noexcept {
+    shared_->available.store(false, std::memory_order_release);
   }
 
  private:
@@ -474,7 +493,7 @@ class WebGpuBackend {
 
   [[nodiscard]] bool available() const noexcept {
     return device_ != nullptr && queue_ != nullptr &&
-           shared_->available.load(std::memory_order_relaxed);
+           shared_->available.load(std::memory_order_acquire);
   }
 
   [[nodiscard]] static auto aligned_size(std::uint64_t size) noexcept

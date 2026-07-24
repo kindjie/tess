@@ -35,15 +35,17 @@ tess library version, residency kind, field descriptors, and canonical
 chunk-key-ordered records. Each record contains the stable chunk lifecycle
 state, active flags, entity count, and selected authoritative field columns.
 `WorldArchiveResidency` distinguishes dense and sparse envelopes. A CRC-32
-covers the complete variable body.
+covers the complete canonical archive except the checksum's own four-byte
+slot, so accidental damage to compatibility metadata is detected before that
+metadata drives a compatibility decision.
 
 `inspect_world_archive` validates the magic, lengths, checksum, dimensions,
-field encodings, canonical unique chunk keys, and complete body before a world
-is involved. `load_world_archive` then classifies shape, lattice, key layout,
-residency, schema, field, and sparse-capacity compatibility before mutation.
-It also decodes every scalar in a complete preflight pass before preparing
-sparse residency or writing a field, so scalar corruption leaves the target
-unchanged.
+field-descriptor encodings, canonical unique chunk keys, and complete body
+before a world is involved. Inspection does not decode field scalar payloads.
+`load_world_archive` classifies shape, lattice, key layout, residency, schema,
+field, and sparse-capacity compatibility before mutation, then decodes every
+scalar in a complete preflight pass before preparing sparse residency or
+writing a field. Scalar corruption therefore leaves the target unchanged.
 Its `WorldArchiveResult` and `WorldArchiveInfo` retain the source metadata;
 `WorldArchiveStatus` distinguishes damage from compatibility decisions.
 

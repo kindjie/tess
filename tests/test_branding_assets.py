@@ -162,6 +162,8 @@ def test_colony_demo_reports_terminal_bottleneck_outcomes():
   assert "_tess_colony_unreachable" in build_script
   assert "api.unreachable()" in app
   assert "terminal" in app
+  assert "2U * kMaxAgents + 8U" in model
+  assert "full outbound-and-return convoy" in model
 
 
 def test_doxygen_uses_the_compact_symbol():
