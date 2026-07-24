@@ -238,13 +238,17 @@ Three parameterized harnesses cover the axes real adopters exercise:
   add/remove script; zero churn = pure throughput), executor and worker
   count, world size (512-2048), and field payload width. Run modes:
   throughput, thread-scaling, cold-cache latency, and a weekly soak
-  (~1M ticks asserting RSS plateau, counter stationarity, and zero
-  steady-state allocations). Churn x agents in one harness deliberately
+  (~1M ticks asserting RSS plateau, counter stationarity, zero steady-state
+  allocations, and the queue-flow accounting checks of section 3.3 —
+  bounded outstanding inventory and oldest age, no backlog growth). Churn
+  x agents in one harness deliberately
   tests the interaction — cache invalidation racing agent repaths mid-tick —
   that neither axis tests alone.
 - **S3 — sparse streaming under budget.** Tiled structured maps, residency
   budget fractions of 5% and 25%, stream-and-retry to convergence, asserting
-  the converged result equals the dense-world reference.
+  the converged result equals the dense-world reference, with the queue-flow
+  accounting of section 3.3 applied to residency admission and eviction
+  churn.
 
 ### 3.2 Differential and metamorphic gates
 
@@ -268,6 +272,28 @@ aggregation is a separate prerequisite if pool totals are ever wanted).
 Updated in
 the same PR when behavior intentionally changes, making behavioral drift a
 reviewable diff instead of a silent change.
+
+**Queue-flow accounting** extends the same discipline to the persistent
+bounded flows arriving with PR #59 (resumable work queues, exact event
+batches, experimental maintenance queues, bounded blocked-agent
+lifecycles). Each applicable flow records raw deterministic counts:
+admitted and terminal items, with terminal broken out by outcome
+(completed, coalesced, rejected, cancelled, superseded, stale, dropped);
+time-weighted outstanding inventory; accumulated submission-to-terminal
+ticks; current and high-water outstanding and oldest outstanding age; and
+offered versus consumed work units. Coalesced work counts an arrival at
+the clean-to-pending transition, not at every repeated schedule call, so
+arrival counts stay meaningful. Two kinds of assertion follow. Exact
+conservation identities (admitted equals terminal plus outstanding;
+terminal equals the sum of its outcome categories) are golden-gated like
+any other counter. Fixed-tick-window derived quantities — average
+inventory L, accepted rate lambda, mean residence time W — serve as a
+steady-state accounting check (L ~= lambda x W) in the S2 soak and S3
+churn scenarios, whose assertions are stationarity, bounded oldest age,
+and absence of backlog growth. Rolling averages and anything
+wall-clock-derived stay diagnostic, never gating. A UI-agnostic
+flow-health snapshot in the diagnostics layer exposes the same counters
+for future debug panels.
 
 ### 3.4 Property/state-machine harness
 
