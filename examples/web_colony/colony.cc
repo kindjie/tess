@@ -399,28 +399,29 @@ int main() {
 #endif
     tess_colony_reset(8);
 #ifndef __EMSCRIPTEN__
-  for (int frame = 0; frame < 5000 && tess_colony_arrived() < 8; ++frame) {
-    if (frame == 4) {
-      for (int y = 0; y < kHeight - 8; ++y) {
-        tess_colony_set_wall(64, y);
+    for (int frame = 0; frame < 5000 && tess_colony_arrived() < 8; ++frame) {
+      if (frame == 4) {
+        for (int y = 0; y < kHeight - 8; ++y) {
+          tess_colony_set_wall(64, y);
+        }
       }
+      (void)tess_colony_tick(0.05);
     }
-    (void)tess_colony_tick(0.05);
-  }
-  if (tess_colony_arrived() != 8) {
-    std::cerr << "web colony model: agents did not arrive\n";
-    return 1;
-  }
-  if (demo->built_tiles != static_cast<std::size_t>(kHeight - 8)) {
-    std::cerr << "web colony model: wall not built\n";
-    return 1;
-  }
-  const auto* tiles = tess_colony_tiles();
-  if (tiles[64 + 0 * kWidth] != 1 || tiles[64 + (kHeight - 1) * kWidth] != 0) {
-    std::cerr << "web colony model: shadow grid mismatch\n";
-    return 1;
-  }
-  std::cout << "web colony model: ok\n";
+    if (tess_colony_arrived() != 8) {
+      std::cerr << "web colony model: agents did not arrive\n";
+      return 1;
+    }
+    if (demo->built_tiles != static_cast<std::size_t>(kHeight - 8)) {
+      std::cerr << "web colony model: wall not built\n";
+      return 1;
+    }
+    const auto* tiles = tess_colony_tiles();
+    if (tiles[64 + 0 * kWidth] != 1 ||
+        tiles[64 + (kHeight - 1) * kWidth] != 0) {
+      std::cerr << "web colony model: shadow grid mismatch\n";
+      return 1;
+    }
+    std::cout << "web colony model: ok\n";
   } catch (const std::exception& error) {
     std::cerr << "web colony model: " << error.what() << '\n';
     return 1;
