@@ -92,6 +92,29 @@ TEST(TessAreaIndex, SharedCallerKeyMergesRegionsWithoutSelfAdjacency) {
   EXPECT_TRUE(index.connections().empty());
 }
 
+TEST(TessAreaIndex, ZeroKeyOmitsRegionAndItsPortals) {
+  World world;
+  fill_open(world);
+  const auto graph = graph_for(world);
+  tess::AreaIndexScratch scratch;
+  tess::AreaIndex index;
+
+  const auto result = tess::build_area_index(
+      graph,
+      [](tess::RegionRef ref, const tess::LocalRegion&) {
+        return ref.chunk.value == 0 ? 0u : 11u;
+      },
+      scratch, index);
+
+  EXPECT_EQ(result.status, tess::AreaBuildStatus::Built);
+  ASSERT_EQ(index.areas().size(), 1u);
+  EXPECT_EQ(index.areas()[0].key, 11u);
+  EXPECT_EQ(index.area_of(graph.region_of<Shape>({0, 0, 0})),
+            tess::invalid_area_id);
+  EXPECT_EQ(index.area_of(graph.region_of<Shape>({7, 0, 0})), tess::AreaId{1});
+  EXPECT_TRUE(index.connections().empty());
+}
+
 TEST(TessAreaIndex, GraphEditInvalidatesPriorIndex) {
   World world;
   fill_open(world);

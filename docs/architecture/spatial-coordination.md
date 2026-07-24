@@ -100,7 +100,10 @@ counts distinct requests with a feasible option for that coordinate and
 `reserved` counts accepted claims. Callers may publish those counts into a
 bounded congestion field or diagnostics without a hidden full-world product.
 Returned spans borrow `LocalCoordinationScratch`; reserve makes the warm pass
-allocation-free.
+allocation-free. The resolver targets bounded local cohorts: duplicate-option
+filtering is quadratic in the largest per-request option count, and ordered
+claim insertion is quadratic in the request count. Callers with unbounded
+crowds or option lists must partition them before resolution.
 
 This is deterministic local arbitration, not continuous steering, collision
 prediction, formation control, or globally optimal multi-agent pathfinding.

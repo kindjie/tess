@@ -184,4 +184,39 @@ TEST(TessBlockPipeline, FusedWarmPathDoesNotAllocate) {
   EXPECT_GT(checksum, 0u);
 }
 
+TEST(TessBlockPipeline, PipelineOwnsTemporaryBlockContext) {
+  World world;
+  fill(world);
+
+  const auto make_pipeline = [&] {
+    return tess::block_tiles(tess::block_ctx<tess::WritePolicy::ReadOnly>(
+                                 world, tess::chunk_domain(Keys)))
+        .filter([](const auto& tile) { return tile.world.y == 3; })
+        .map([](const auto& tile) {
+          return tile.chunk.template field_span<TerrainTag>()[tile.id.value];
+        });
+  };
+
+  // The BlockCtx temporary is gone before the terminal runs. The pipeline
+  // must own its cheap pointer/span context value rather than retain the
+  // address of that temporary.
+  auto pipeline = make_pipeline();
+  const auto sum = pipeline.reduce(
+      std::uint64_t{0},
+      [](std::uint64_t total, std::uint32_t value) { return total + value; });
+  EXPECT_EQ(sum, 952u);
+}
+
+TEST(TessBlockPipeline, ChunkPipelineOwnsTemporaryBlockContext) {
+  World world;
+  fill(world);
+
+  auto pipeline =
+      tess::block_chunks(tess::block_ctx<tess::WritePolicy::ReadOnly>(
+          world, tess::chunk_domain(Keys)));
+  const auto count = pipeline.reduce(
+      std::size_t{0}, [](std::size_t total, const auto&) { return total + 1; });
+  EXPECT_EQ(count, Keys.size());
+}
+
 }  // namespace

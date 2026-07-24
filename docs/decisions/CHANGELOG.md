@@ -20,14 +20,35 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   asynchronous device errors into a fail-closed backend, overlapping readback
   accounting is covered, the DevTools command loop shares the outer deadline,
   and EnTT-only benchmark gates explicitly exclude only Flecs-owned results.
+  Final hardening extends the deadline through socket setup and partial reads,
+  reports browser death, installs the example's uncaptured-error callback,
+  rejects incomplete dense archives during inspection, pins v1 checksum/status
+  precedence, and requires every benchmark threshold entry to opt into either
+  a real limit or explicit informational status. The implemented external-grid
+  CMake knobs and their historical TDD naming divergence are now recorded.
+  Block pipelines now own temporary context values; Flecs occupancy-index
+  growth is preflighted before semantic lifecycle mutation and lifecycle
+  intents reject deferred scopes; dense and sparse incremental topology
+  failures revision-invalidate and clear partially rebuilt state.
+  Stateful-provider path caches now bind the live provider object as well as
+  its type and revision; failed weighted floods withdraw their replay stamp;
+  reverse transition enumeration validates the forward destination; and
+  compact-cost assessment compares against a division-derived threshold
+  instead of forming a wrapping 128-bit product.
 - Reason: independent audits of the fully green PR found one suboptimal hex
   route plus integrity, asynchronous error-reporting, retry, cadence, bounded
   work, and optional-configuration gaps that broad platform CI did not expose.
-- Affected docs: path/simulation/persistence/GPU architecture, optimization
-  log, design changelog, API comments, and test inventory.
+  The final pass also found revision-reuse cache aliasing, replayable partial
+  fields, an externally observable reverse-enumeration asymmetry, and a
+  compile-time overflow in the overflow assessment itself.
+- Affected docs: path/simulation/persistence/GPU/ECS/block/topology
+  architecture, optimization log, design changelog, API comments, and test
+  inventory.
 - Affected code: path search and cache preflight, movement and schedule
   validation, resumable work, archives, the WebGPU backend/stub, colony demo,
-  benchmark gating, and the browser harness.
+  benchmark gating, the browser harness, block pipeline source ownership,
+  Flecs lifecycle boundaries, incremental region-graph publication, transition
+  resolution, and provider-aware route/field caches.
 
 ## 2026-07-23 - Harden cache, scheduler, callback, and archive contracts
 
@@ -334,17 +355,6 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 - Affected docs: shape, topology, path, roadmap, and completion plan.
 - Affected code: transition model, path and field implementations, topology,
   movement validation, runtime statistics, and tests.
-
-## Template
-
-```md
-## YYYY-MM-DD - Title
-
-- Changed:
-- Reason:
-- Affected docs:
-- Affected code:
-```
 
 ## 2026-07-22 - Introduce lattice and regular-step identities
 
@@ -1022,3 +1032,14 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   `tests/AGENTS.md`.
 - Affected code: new `ecs/entt/entt_adapter.h`, `CMakeLists.txt`; new
   `tests/tess_ecs_entt_test.cc`, `tests/CMakeLists.txt`.
+
+## Template
+
+```md
+## YYYY-MM-DD - Title
+
+- Changed:
+- Reason:
+- Affected docs:
+- Affected code:
+```

@@ -1308,38 +1308,48 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
             });
       }
 
-      for (std::size_t raw_chunk = 0; raw_chunk < chunk_count; ++raw_chunk) {
-        if (dirty[raw_chunk] == 0) {
-          continue;
+      try {
+        for (std::size_t raw_chunk = 0; raw_chunk < chunk_count; ++raw_chunk) {
+          if (dirty[raw_chunk] == 0) {
+            continue;
+          }
+          build_local_chunk_topology<World, Class>(
+              world, ChunkKey{raw_chunk}, scratch,
+              graph.local_topologies_[raw_chunk]);
         }
-        build_local_chunk_topology<World, Class>(
-            world, ChunkKey{raw_chunk}, scratch,
-            graph.local_topologies_[raw_chunk]);
-      }
 
-      // Every invalidated portal originates from an affected chunk, because
-      // portals only span face-adjacent chunks. Drop them in one filtered
-      // pass, re-derive all portals of affected chunks in exit order, then
-      // stable-sort by from-chunk to restore the canonical build order.
-      std::erase_if(graph.portals_, [&](const RegionPortal& portal) {
-        return affected[static_cast<std::size_t>(portal.from.chunk.value)] != 0;
-      });
-      for (std::size_t raw_chunk = 0; raw_chunk < chunk_count; ++raw_chunk) {
-        if (affected[raw_chunk] == 0) {
-          continue;
+        // Every invalidated portal originates from an affected chunk, because
+        // portals only span face-adjacent chunks. Drop them in one filtered
+        // pass, re-derive all portals of affected chunks in exit order, then
+        // stable-sort by from-chunk to restore the canonical build order.
+        std::erase_if(graph.portals_, [&](const RegionPortal& portal) {
+          return affected[static_cast<std::size_t>(portal.from.chunk.value)] !=
+                 0;
+        });
+        for (std::size_t raw_chunk = 0; raw_chunk < chunk_count; ++raw_chunk) {
+          if (affected[raw_chunk] == 0) {
+            continue;
+          }
+          detail::append_chunk_portals<Shape>(
+              graph, graph.local_topologies_[raw_chunk], graph.portals_);
+          detail::append_provider_portals<Shape>(
+              world, graph, graph.local_topologies_[raw_chunk], provider,
+              graph.portals_);
         }
-        detail::append_chunk_portals<Shape>(
-            graph, graph.local_topologies_[raw_chunk], graph.portals_);
-        detail::append_provider_portals<Shape>(
-            world, graph, graph.local_topologies_[raw_chunk], provider,
-            graph.portals_);
+        std::stable_sort(graph.portals_.begin(), graph.portals_.end(),
+                         [](const RegionPortal& lhs, const RegionPortal& rhs) {
+                           return lhs.from.chunk.value < rhs.from.chunk.value;
+                         });
+        graph.rebuild_region_index();
+        graph.bump_revision();
+      } catch (...) {
+        // Incremental locality matters on this performance-sensitive path, so
+        // do not copy every unchanged tile label merely for rollback. Clear is
+        // allocation-free and revision-invalidates all consumers, providing a
+        // safe basic guarantee: never expose mixed labels, portals, or CSR.
+        graph.clear();
+        throw;
       }
-      std::stable_sort(graph.portals_.begin(), graph.portals_.end(),
-                       [](const RegionPortal& lhs, const RegionPortal& rhs) {
-                         return lhs.from.chunk.value < rhs.from.chunk.value;
-                       });
-      graph.rebuild_region_index();
-      graph.bump_revision();
     }
   } else {
     // Sparse: any residency change since build forces a full rebuild (the graph
@@ -1398,35 +1408,43 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
             });
       }
 
-      for (std::size_t i = 0; i < count; ++i) {
-        if (dirty[i] == 0) {
-          continue;
+      try {
+        for (std::size_t i = 0; i < count; ++i) {
+          if (dirty[i] == 0) {
+            continue;
+          }
+          build_local_chunk_topology<World, Class>(
+              world, graph.sparse_.topology_keys_[i], scratch,
+              graph.local_topologies_[i]);
         }
-        build_local_chunk_topology<World, Class>(
-            world, graph.sparse_.topology_keys_[i], scratch,
-            graph.local_topologies_[i]);
-      }
 
-      std::erase_if(graph.portals_, [&](const RegionPortal& portal) {
-        const auto li = graph.local_index(portal.from.chunk);
-        return li != graph.npos && affected[li] != 0;
-      });
-      for (std::size_t i = 0; i < count; ++i) {
-        if (affected[i] == 0) {
-          continue;
+        std::erase_if(graph.portals_, [&](const RegionPortal& portal) {
+          const auto li = graph.local_index(portal.from.chunk);
+          return li != graph.npos && affected[li] != 0;
+        });
+        for (std::size_t i = 0; i < count; ++i) {
+          if (affected[i] == 0) {
+            continue;
+          }
+          detail::append_chunk_portals<Shape>(graph, graph.local_topologies_[i],
+                                              graph.portals_);
+          detail::append_provider_portals<Shape>(world, graph,
+                                                 graph.local_topologies_[i],
+                                                 provider, graph.portals_);
         }
-        detail::append_chunk_portals<Shape>(graph, graph.local_topologies_[i],
-                                            graph.portals_);
-        detail::append_provider_portals<Shape>(
-            world, graph, graph.local_topologies_[i], provider, graph.portals_);
+        std::stable_sort(graph.portals_.begin(), graph.portals_.end(),
+                         [](const RegionPortal& lhs, const RegionPortal& rhs) {
+                           return lhs.from.chunk.value < rhs.from.chunk.value;
+                         });
+        graph.rebuild_region_index();
+        graph.template mark_provider_missing_reaches<Shape>(world, provider);
+        graph.bump_revision();
+      } catch (...) {
+        // Clear also drops frozen residency and missing-region state, so a
+        // retry cannot mistake a partly rebuilt sparse snapshot for fresh.
+        graph.clear();
+        throw;
       }
-      std::stable_sort(graph.portals_.begin(), graph.portals_.end(),
-                       [](const RegionPortal& lhs, const RegionPortal& rhs) {
-                         return lhs.from.chunk.value < rhs.from.chunk.value;
-                       });
-      graph.rebuild_region_index();
-      graph.template mark_provider_missing_reaches<Shape>(world, provider);
-      graph.bump_revision();
     }
   }
 

@@ -107,6 +107,9 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
   pipelines. `filter`, `map`, and `flat_map` compose at compile time; no
   intermediate collection is created. `block_tiles` emits `BlockTile` values
   with the resolved chunk view, local id and coordinate, and world coordinate.
+  A pipeline owns its cheap `BlockCtx` value, so a temporary
+  `block_ctx(...)` is safe. The context still borrows the world, domain-key
+  storage, scratch, and diagnostics, which must outlive the terminal.
 - `pipeline_from(span)` applies the same lazy adapters to caller-owned
   sequences and frontiers.
 - `flat_map` preserves whether its mapper returned a range by reference and

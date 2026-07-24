@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -21,14 +22,27 @@ using Square = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
 using Hex = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1},
                         tess::lattice::HexAxial>;
 using SparseShape = tess::Shape<tess::Extent3{8, 4, 1}, tess::Extent3{4, 4, 1}>;
+using SparseCornerShape =
+    tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
 using SquareWorld = tess::AlwaysResidentWorld<Square, Schema>;
 using HexWorld = tess::AlwaysResidentWorld<Hex, Schema>;
 using SparseWorld = tess::SparseResidentWorld<SparseShape, Schema>;
+using SparseCornerWorld = tess::SparseResidentWorld<SparseCornerShape, Schema>;
 using StairSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                       tess::Field<CostTag, std::uint32_t>,
                                       tess::Field<StairTag, std::uint8_t>>;
 using StairShape = tess::Shape<tess::Extent3{4, 4, 2}, tess::Extent3{4, 4, 2}>;
 using StairWorld = tess::AlwaysResidentWorld<StairShape, StairSchema>;
+
+// Assessment needs only schema and count constants. This synthetic type makes
+// (tile_count - 1) * 2 exactly 2^128, which wrapped to zero in the old
+// multiply-then-compare implementation.
+struct WideAssessmentWorld {
+  using schema_type = Schema;
+  static constexpr auto chunk_count =
+      tess::detail::UInt128::from_parts(std::uint64_t{1} << 63u, 1);
+  static constexpr std::uint64_t local_tile_count = 1;
+};
 
 struct CostlyBridgeProvider {
   [[maybe_unused]] static constexpr std::uint32_t maximum_transition_cost = 3;
@@ -120,6 +134,8 @@ TEST(TessTransitionModel, AssessesCompactCostRangeConservatively) {
   using Unit = mv::WalkableField<PassableTag>;
   using UnitDiagonal = mv::MovementClass<mv::Field<PassableTag>, mv::UnitCost,
                                          mv::DiagonalSteps<>>;
+  using FixedTwo =
+      mv::MovementClass<mv::Field<PassableTag>, mv::ConstantCost<2>>;
 
   static_assert(tess::path_cost_range_assessment<SquareWorld, Unit> ==
                 tess::CostRangeAssessment::ProvenSafe);
@@ -130,11 +146,20 @@ TEST(TessTransitionModel, AssessesCompactCostRangeConservatively) {
   static_assert(
       tess::path_cost_range_assessment<SquareWorld, UnknownCostClass> ==
       tess::CostRangeAssessment::Unknown);
+  static_assert(
+      tess::path_cost_range_assessment<WideAssessmentWorld, FixedTwo> ==
+      tess::CostRangeAssessment::PotentialOverflow);
   constexpr auto proof_compiles = [] {
     tess::require_proven_path_cost_range<SquareWorld, Unit>();
     return true;
   }();
   static_assert(proof_compiles);
+  constexpr auto widest = tess::detail::UInt128::from_parts(
+      std::numeric_limits<std::uint64_t>::max(),
+      std::numeric_limits<std::uint64_t>::max());
+  static_assert(tess::detail::compact_cost_bound_overflows(widest, 2, 1));
+  static_assert(!tess::detail::compact_cost_bound_overflows(
+      tess::detail::UInt128{1}, 1, 1));
   SUCCEED();
 }
 
@@ -224,6 +249,25 @@ TEST(TessTransitionModel, ReverseTraversalChargesForwardDestination) {
   }
 }
 
+TEST(TessTransitionModel, ReverseTraversalRejectsImpassableForwardTarget) {
+  StairWorld world;
+  fill_open(world, 1);
+  constexpr auto foot = tess::Coord3{1, 1, 0};
+  constexpr auto landing = tess::Coord3{2, 1, 1};
+  world.field<StairTag>(foot) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  world.field<PassableTag>(landing) = false;
+  using Model = tess::ResolvedTransitionModel<StairWorld, DefaultClass,
+                                              tess::StairTransitions<StairTag>>;
+  ProbeBuffer<8> probes;
+
+  Model{tess::StairTransitions<StairTag>{}}.for_each_reverse(
+      world, landing, tile_index<StairShape>(landing),
+      [&](auto probe) { probes.push(probe); });
+
+  EXPECT_EQ(probes.size, 0u);
+}
+
 TEST(TessTransitionModel, ReportsMissingSparseTargets) {
   SparseWorld world{tess::ResidencyConfig{SparseWorld::page_byte_size}};
   world.ensure_resident(tess::ChunkKey{0});
@@ -243,6 +287,41 @@ TEST(TessTransitionModel, ReportsMissingSparseTargets) {
   EXPECT_EQ(probes.probes[0].to, (tess::Coord3{4, 2, 0}));
   EXPECT_EQ(probes.probes[0].availability,
             tess::TransitionAvailability::MissingTopology);
+}
+
+TEST(TessTransitionModel,
+     DiagonalClearanceUsesOnlyDecisionRelevantResidentTiles) {
+  SparseCornerWorld world{
+      tess::ResidencyConfig{3 * SparseCornerWorld::page_byte_size}};
+  // From SW to NE crosses a chunk corner. Keep SW, NW, and the NE target
+  // resident while the east clearance tile's SE chunk is absent.
+  for (const auto key :
+       {tess::ChunkKey{0}, tess::ChunkKey{2}, tess::ChunkKey{3}}) {
+    world.ensure_resident(key);
+    auto& page = world.chunk(key);
+    std::fill(page.field_span<PassableTag>().begin(),
+              page.field_span<PassableTag>().end(), true);
+    std::fill(page.field_span<CostTag>().begin(),
+              page.field_span<CostTag>().end(), 1u);
+  }
+  constexpr auto from = tess::Coord3{3, 3, 0};
+  constexpr auto target = tess::Coord3{4, 4, 0};
+  const auto target_status = [&](auto class_probe) {
+    using Class = decltype(class_probe);
+    auto status = tess::TransitionAvailability::Blocked;
+    tess::ResolvedTransitionModel<SparseCornerWorld, Class>{}.for_each_forward(
+        world, from, tile_index<SparseCornerShape>(from), [&](auto probe) {
+          if (probe.to == target) {
+            status = probe.availability;
+          }
+        });
+    return status;
+  };
+
+  EXPECT_EQ(target_status(DiagonalBoth{}),
+            tess::TransitionAvailability::MissingTopology);
+  EXPECT_EQ(target_status(DiagonalEither{}),
+            tess::TransitionAvailability::Legal);
 }
 
 TEST(TessTransitionModel, ComposesStairsAfterRegularEdgesInBothDirections) {

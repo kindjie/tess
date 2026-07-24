@@ -793,10 +793,8 @@ live log is [`CHANGELOG.md`](CHANGELOG.md).
   `tests/tess_diagnostics_panels_test.cc`, `CMakeLists.txt`,
   `tests/CMakeLists.txt`.
 
-## Earlier Entries
+## Archive boundary
 
-Older design-changelog entries are progressively archived in
-[`CHANGELOG-archive.md`](CHANGELOG-archive.md) to keep this file under the
-24k-token per-file limit; the split is by file size, not by a clean date
-boundary. New entries go at the top of this file; when it approaches the
-limit again, its oldest entries move to the archive.
+This file is a frozen historical segment. Add new decisions to
+[`CHANGELOG.md`](CHANGELOG.md); older entries move into dated archive files
+only when the maintained log approaches its size limit.

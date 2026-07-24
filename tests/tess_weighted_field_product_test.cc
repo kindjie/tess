@@ -42,6 +42,30 @@ struct ShortcutProvider {
   }
 };
 
+struct RevisionRestartProvider {
+  bool enabled = false;
+  std::uint64_t revision = 0;
+
+  [[nodiscard]] auto transition_revision() const noexcept -> std::uint64_t {
+    return revision;
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3 from,
+                        Sink&& sink) const {
+    if (enabled && from == tess::Coord3{0, 0, 0}) {
+      sink(tess::SpecialTransitionCandidate{.to = tess::Coord3{7, 7, 0}});
+    }
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_reverse(const WorldType&, tess::Coord3 to, Sink&& sink) const {
+    if (enabled && to == tess::Coord3{7, 7, 0}) {
+      sink(tess::SpecialTransitionCandidate{.to = tess::Coord3{0, 0, 0}});
+    }
+  }
+};
+
 template <typename WorldType>
 void fill_open(WorldType& world) {
   for (auto& chunk : world.chunks()) {
@@ -118,6 +142,30 @@ TEST(TessWeightedFieldProduct, CacheSeparatesWeightedAndUnitModels) {
   ASSERT_TRUE((cache.store_weighted<World, Walker>(std::move(product))));
   EXPECT_NE((cache.lookup_weighted<World, Walker>(world, goals)), nullptr);
   EXPECT_EQ((cache.lookup<World, PassableTag>(world, goals)), nullptr);
+}
+
+TEST(TessWeightedFieldProduct,
+     CacheSeparatesProviderInstancesWithEqualRevisions) {
+  World world;
+  fill_open(world);
+  tess::GoalSet goals;
+  goals.add({7, 7, 0});
+  const auto shortcut = RevisionRestartProvider{.enabled = true, .revision = 0};
+  const auto regular = RevisionRestartProvider{.enabled = false, .revision = 0};
+  tess::DistanceFieldScratch scratch;
+  tess::DistanceFieldProduct product;
+  ASSERT_EQ((tess::build_weighted_distance_field_product<World, Walker>(
+                 world, goals, scratch, product, shortcut))
+                .status,
+            tess::PathStatus::Found);
+  tess::FieldProductCache cache;
+  ASSERT_TRUE(
+      (cache.store_weighted<World, Walker>(std::move(product), shortcut)));
+
+  EXPECT_EQ((cache.lookup_weighted<World, Walker>(world, goals, regular)),
+            nullptr);
+  EXPECT_EQ(cache.stats().hits, 0u);
+  EXPECT_EQ(cache.stats().misses, 1u);
 }
 
 TEST(TessWeightedFieldProduct, ProviderReverseEdgeBuildsReplayableShortcut) {

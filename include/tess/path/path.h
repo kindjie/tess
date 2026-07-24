@@ -887,6 +887,19 @@ class DistanceFieldScratch {
     has_goal_ = false;
     model_class_identity_ = 0;
     model_provider_identity_ = 0;
+    model_provider_instance_identity_ = nullptr;
+    model_provider_revision_ = 0;
+  }
+
+  // Preserve node labels and diagnostics for the just-failed build while
+  // withdrawing the public two-call validity stamp. Without this distinction,
+  // a caller that inspects CostOverflow and later reuses the scratch could
+  // reconstruct a plausible path through only the finite prefix.
+  void discard_build_result() noexcept {
+    has_goal_ = false;
+    model_class_identity_ = 0;
+    model_provider_identity_ = 0;
+    model_provider_instance_identity_ = nullptr;
     model_provider_revision_ = 0;
   }
 
@@ -982,7 +995,8 @@ class DistanceFieldScratch {
   }
 
   template <typename Model>
-  void stamp_model(const Model& model = Model{}) noexcept {
+  void stamp_model(const Model& model = Model{},
+                   const void* provider_instance = nullptr) noexcept {
     model_class_identity_ = detail::tag_identity<typename Model::class_type>();
     model_lattice_identity_ =
         static_cast<std::uint32_t>(Model::lattice_identity);
@@ -992,12 +1006,14 @@ class DistanceFieldScratch {
     model_cost_scale_ = Model::cost_scale;
     model_provider_identity_ =
         detail::tag_identity<typename Model::provider_type>();
+    model_provider_instance_identity_ = provider_instance;
     model_provider_revision_ = model.revision();
   }
 
   template <typename Model>
-  [[nodiscard]] auto model_matches(const Model& model = Model{}) const noexcept
-      -> bool {
+  [[nodiscard]] auto model_matches(
+      const Model& model = Model{},
+      const void* provider_instance = nullptr) const noexcept -> bool {
     return model_class_identity_ ==
                detail::tag_identity<typename Model::class_type>() &&
            model_lattice_identity_ ==
@@ -1008,6 +1024,7 @@ class DistanceFieldScratch {
            model_cost_scale_ == Model::cost_scale &&
            model_provider_identity_ ==
                detail::tag_identity<typename Model::provider_type>() &&
+           model_provider_instance_identity_ == provider_instance &&
            model_provider_revision_ == model.revision();
   }
 
@@ -1017,6 +1034,7 @@ class DistanceFieldScratch {
   std::uint32_t model_step_identity_ = 0;
   std::uint32_t model_cost_scale_ = 0;
   std::uintptr_t model_provider_identity_ = 0;
+  const void* model_provider_instance_identity_ = nullptr;
   std::uint64_t model_provider_revision_ = 0;
 };
 
@@ -2020,7 +2038,8 @@ auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
   const auto model = Model{provider};
   scratch.goal_ = goal;
   scratch.has_goal_ = true;
-  scratch.template stamp_model<Model>(model);
+  scratch.template stamp_model<Model>(
+      model, detail::transition_provider_instance_identity(provider));
   scratch.stamp_residency(world);
   scratch.distance_[goal_offset] = 0;
   scratch.touch_node(goal_offset, goal_index);
@@ -2105,9 +2124,13 @@ auto build_weighted_distance_field(const WorldType& world, Coord3 goal,
                                  scratch.touched_.size()};
     }
   }
-  return DistanceFieldResult{
-      cost_overflow ? PathStatus::CostOverflow : PathStatus::Found,
-      expanded_nodes, scratch.touched_.size()};
+  if (cost_overflow) {
+    scratch.discard_build_result();
+    return DistanceFieldResult{PathStatus::CostOverflow, expanded_nodes,
+                               scratch.touched_.size()};
+  }
+  return DistanceFieldResult{PathStatus::Found, expanded_nodes,
+                             scratch.touched_.size()};
 }
 
 template <typename WorldType, typename Class>

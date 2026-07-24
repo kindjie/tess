@@ -100,6 +100,27 @@ TEST(TessLocalCoordination, CallerRejectsOccupiedOrIllegalOptions) {
   EXPECT_EQ(result.congestion[0].coord, (tess::Coord3{0, 1, 0}));
 }
 
+TEST(TessLocalCoordination, DuplicateOptionsCountOneDemandPerRequest) {
+  const std::array requests{
+      tess::LocalMoveRequest{
+          .agent = 7, .from = {0, 0, 0}, .option_offset = 0, .option_count = 2},
+  };
+  const std::array options{
+      tess::LocalMoveOption{.to = {1, 0, 0}, .preference = 2},
+      tess::LocalMoveOption{.to = {1, 0, 0}, .preference = 1},
+  };
+  tess::LocalCoordinationScratch scratch;
+
+  const auto result =
+      tess::resolve_local_moves(requests, options, always_enter, scratch);
+
+  ASSERT_EQ(result.congestion.size(), 1u);
+  EXPECT_EQ(result.congestion[0].coord, (tess::Coord3{1, 0, 0}));
+  EXPECT_EQ(result.congestion[0].demand, 1u);
+  EXPECT_EQ(result.congestion[0].reserved, 1u);
+  EXPECT_EQ(result.decisions[0].preference, 1);
+}
+
 TEST(TessLocalCoordination, StableIdsMakeChoicesInputOrderInvariant) {
   const std::array ordered_requests{
       tess::LocalMoveRequest{

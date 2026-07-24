@@ -36,6 +36,25 @@ deferred for scope reasons. Keep entries short and concrete:
   real workload; add memoization only with the same content/revision identity
   guarantees as other path products.
 
+## 2026-07-24 - Preserve Incremental Region-Graph Locality on Failure
+
+- Area: dense and sparse `update_region_graph` exception safety.
+- Rejected: copying the complete graph before every non-empty incremental
+  patch. Although it provided rollback, it also copied every unchanged
+  per-tile label and defeated the operation's dirty-chunk scaling.
+- Accepted: keep the existing local patch and global CSR rebuild, but catch
+  failures after mutation begins, clear every derived structure, and advance
+  revision so consumers must rebuild. Failures during dirty-mask preparation
+  still leave the graph untouched. This adds no normal-path allocation or
+  world-sized copy.
+- Evidence: allocation-failure injection covers successive ordinals in dense
+  and sparse updates and accepts only the prior complete graph or a cleared,
+  stale graph. The retained 512x512 single-chunk benchmark measured a
+  five-run local arm64 median of 713,980 ns against its 6,277,497 ns ceiling.
+- Retry conditions: consider a strong guarantee only if affected local
+  topology and derived CSR slices can be staged without copying unchanged
+  tile labels or slowing the existing benchmark materially.
+
 ## 2026-07-23 - Preserve the Default Unit-Field Fast Path
 
 - Area: Default orthogonal unit-cost distance fields, multi-goal products,

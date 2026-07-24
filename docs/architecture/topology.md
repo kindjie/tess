@@ -226,6 +226,11 @@ pass, re-derives those chunks' portals from their boundary exits, and
 stable-sorts portals by from-chunk to restore canonical build order before
 rebuilding the dense index and CSR adjacency. The result is identical to a
 fresh `build_region_graph` over the edited world, including portal order.
+Dense and sparse incremental patches retain locality rather than copying every
+unchanged tile label. If an exception occurs before local mutation, the graph
+is untouched. If it occurs after mutation begins, the graph is cleared and its
+revision advances, so consumers must rebuild and can never observe mixed
+labels, portals, CSR adjacency, or sparse missing-region flags.
 An empty dirty set is a no-op; a dirty set covering all chunks is
 equivalent to a full build. Passing a graph that was never built for the
 world shape falls back to a full build, and an out-of-range dirty chunk is
@@ -335,7 +340,11 @@ Exact forward search additionally requires
 `ForwardTransitionProviderFor<P, World>` and allocation-free
 `for_each_forward(world, origin, sink)` enumeration. Reverse fields require
 `ReverseTransitionProviderFor<P, World>` and
-`for_each_reverse(world, target, sink)`. Each sink receives a
+`for_each_reverse(world, target, sink)`. The resolved reverse model checks that
+the forward destination `target` is resident and passable before enumerating
+its predecessors, so direct external use has the same legality as forward
+enumeration instead of relying on a field builder's seed/frontier invariant.
+Each sink receives a
 `SpecialTransitionCandidate` containing the other endpoint, a positive cost
 in unscaled movement-class entry-cost units, and an optional
 `missing_topology` marker. The resolved model applies its cardinal scale; a

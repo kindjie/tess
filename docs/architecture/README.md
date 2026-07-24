@@ -147,6 +147,11 @@ the code are the source of truth for current behavior.
 - [GPU backend interface][gpu-tdd]
 - [Diagnostics and tooling][diagnostics-tdd]
 - [Modern C++ safety][safety-tdd]
+- [Lattice and transition model][transition-tdd]
+- [Concurrent tile world addendum][concurrency-tdd]
+- [Tile-layout benchmark takeaways][layout-tdd]
+- [Work contracts addendum][work-contracts-tdd]
+- [Grid benchmark data and scenario oracle][grid-benchmark-tdd]
 
 [project-design]: https://github.com/kindjie/tess/blob/main/docs/tdd/project-design.md
 [shape-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/core-shape-coordinate-key-system.md
@@ -162,3 +167,8 @@ the code are the source of truth for current behavior.
 [gpu-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/gpu-backend-interface.md
 [diagnostics-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/diagnostics-and-tooling.md
 [safety-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/modern-cpp-compile-time-safety.md
+[transition-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/lattice-and-transition-model.md
+[concurrency-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_concurrent_tile_world.md
+[layout-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_tile_layout_bench_takeaways.md
+[work-contracts-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_work_contracts.md
+[grid-benchmark-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/grid-benchmark-data-and-scenario-oracle.md

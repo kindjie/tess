@@ -159,6 +159,9 @@ auto build_bounded_weighted_distance_field_core(
       // This edge has already proved the reverse field globally unsuitable.
       // Return immediately: weighted_path_batch retries each member with A*
       // so an irrelevant saturated edge does not force a second full flood.
+      // Withdraw the build stamp first: standalone callers may retain scratch
+      // and must not reconstruct through the finite prefix of this field.
+      scratch.discard_build_result();
       return DistanceFieldResult{PathStatus::CostOverflow, expanded_nodes,
                                  scratch.touched_.size()};
     }
@@ -299,7 +302,8 @@ auto weighted_distance_field_path_core(const World& world, Coord3 start,
   }
   const auto model = Model{provider};
   if (!scratch.has_goal_ || scratch.goal_ != goal ||
-      !scratch.template model_matches<Model>(model) ||
+      !scratch.template model_matches<Model>(
+          model, detail::transition_provider_instance_identity(provider)) ||
       (verify_residency && !scratch.residency_matches(world))) {
     return make_result(PathStatus::NoPath, 0, 0, 0, scratch.path_);
   }

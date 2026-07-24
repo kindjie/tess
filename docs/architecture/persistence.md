@@ -39,15 +39,32 @@ covers the complete canonical archive except the checksum's own four-byte
 slot, so accidental damage to compatibility metadata is detected before that
 metadata drives a compatibility decision.
 
+Format v1 freezes an eight-byte magic followed by its 113-byte fixed header:
+the format version begins at byte 8, the declared body size at byte 12, the
+four-byte checksum slot at byte 20, and the descriptor/body region at byte
+121. The CRC input is the concatenation of bytes `[0, 20)` and `[24, end)`;
+the stored checksum bytes are neither zero-filled nor included. The full
+golden-byte test pins this prefix, scalar byte order, and checksum framing so a
+layout change must use a new format version rather than silently changing v1.
+
 `inspect_world_archive` validates the magic, lengths, checksum, dimensions,
-field-descriptor encodings, canonical unique chunk keys, and complete body
-before a world is involved. Inspection does not decode field scalar payloads.
+field-descriptor encodings, dense archives' complete logical chunk count,
+canonical unique chunk keys, and complete body before a world is involved.
+Inspection does not decode field scalar payloads.
 `load_world_archive` classifies shape, lattice, key layout, residency, schema,
 field, and sparse-capacity compatibility before mutation, then decodes every
 scalar in a complete preflight pass before preparing sparse residency or
 writing a field. Scalar corruption therefore leaves the target unchanged.
 Its `WorldArchiveResult` and `WorldArchiveInfo` retain the source metadata;
 `WorldArchiveStatus` distinguishes damage from compatibility decisions.
+
+Status precedence is intentional. Envelope and integrity failures win before
+typed compatibility, including a checksum failure in otherwise incompatible
+metadata. For a structurally valid archive, typed load checks shape, lattice,
+key layout, residency, schema identity, schema version, field descriptors,
+residency capacity/dense chunk completeness, and scalar encodings in that
+order. This gives callers one stable primary diagnosis without weakening the
+no-mutation preflight guarantee.
 
 A differing application schema version returns
 `WorldArchiveStatus::MigrationRequired`; it is never silently reinterpreted.

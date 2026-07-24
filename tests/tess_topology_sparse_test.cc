@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <limits>
 
+#include "allocation_counter.h"
+
 namespace {
 
 struct PassableTag {};
@@ -194,6 +196,72 @@ TEST(TessSparseTopology, IncrementalUpdateEqualsFreshBuild) {
   const auto rhs = tess::reachable<Small>(fresh, {0, 0, 0}, {40, 0, 0}, b);
   EXPECT_EQ(lhs.status, rhs.status);
   EXPECT_EQ(lhs.visited_regions, rhs.visited_regions);
+}
+
+TEST(TessSparseTopology, IncrementalAllocationFailureInvalidatesTornState) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocation failure injection is unavailable with this "
+                    "allocator/runtime configuration";
+  }
+
+  auto saw_failure = false;
+  auto saw_invalidation = false;
+  auto reached_success = false;
+  for (std::size_t failure_index = 0; failure_index < 64; ++failure_index) {
+    SparseSmall world{tess::ResidencyConfig{8 * SparseSmall::page_byte_size}};
+    make_chunk_passable(world, tess::ChunkKey{0});
+    make_chunk_passable(world, tess::ChunkKey{1});
+    make_chunk_passable(world, tess::ChunkKey{2});
+    tess::LocalTopologyScratch scratch;
+    tess::SparseRegionGraph graph;
+    ASSERT_EQ((tess::build_region_graph<SparseSmall, PassableTag>(
+                   world, scratch, graph))
+                  .status,
+              tess::TopologyStatus::Built);
+    const auto before = graph;
+    const auto before_revision = graph.revision();
+
+    for (std::int32_t y = 0; y < 32; ++y) {
+      world.field<PassableTag>(tess::Coord3{48, y, 0}) = 0;
+    }
+    const auto dirty = std::array{tess::ChunkKey{1}};
+    auto threw = false;
+    {
+      tess_test::ScopedAllocationFailure failure{failure_index};
+      try {
+        static_cast<void>(tess::update_region_graph<SparseSmall, PassableTag>(
+            world, scratch, graph, dirty));
+      } catch (const std::bad_alloc&) {
+        threw = true;
+      }
+    }
+
+    if (threw) {
+      saw_failure = true;
+      if (graph.revision() == before_revision) {
+        expect_graphs_equal(graph, before);
+      } else {
+        saw_invalidation = true;
+        EXPECT_TRUE(graph.local_topologies().empty());
+        EXPECT_TRUE(graph.portals().empty());
+        EXPECT_EQ(graph.region_count(), 0u);
+        EXPECT_FALSE(tess::is_region_graph_fresh(world, graph));
+      }
+      continue;
+    }
+
+    reached_success = true;
+    tess::SparseRegionGraph fresh;
+    ASSERT_EQ((tess::build_region_graph<SparseSmall, PassableTag>(
+                   world, scratch, fresh))
+                  .status,
+              tess::TopologyStatus::Built);
+    expect_graphs_equal(graph, fresh);
+    break;
+  }
+  EXPECT_TRUE(saw_failure);
+  EXPECT_TRUE(saw_invalidation);
+  EXPECT_TRUE(reached_success);
 }
 
 TEST(TessSparseTopology, StaleGraphAfterResidencyChangeFallsBackToFullBuild) {

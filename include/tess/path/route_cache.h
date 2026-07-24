@@ -39,6 +39,10 @@ struct RouteCacheStats {
 // which is skipped outright (stats().oversized_skips) so it cannot evict
 // resident entries and then violate the cap anyway. A cap of 0 disables
 // storage; it does not mean "unlimited".
+// Stateful-provider bindings include object address plus revision so two live
+// instances cannot alias. Copies/moves of the cache retain that external
+// binding; the provider itself must remain at a stable address, and callers
+// must clear bound caches before ending its lifetime.
 /// Bounded scratch cache for exact and same-goal suffix unit routes.
 class RouteCacheScratch {
  public:
@@ -72,7 +76,8 @@ class RouteCacheScratch {
   void clear() noexcept {
     invalidate();
     bound_class_ = 0;
-    bound_provider_ = 0;
+    bound_provider_type_ = 0;
+    bound_provider_instance_ = nullptr;
     bound_provider_revision_ = 0;
     hits_ = 0;
     suffix_hits_ = 0;
@@ -99,15 +104,20 @@ class RouteCacheScratch {
     bound_class_ = identity;
   }
 
-  void bind_provider(std::uintptr_t identity, std::uint64_t revision) noexcept {
-    if (bound_provider_ == identity && bound_provider_revision_ == revision) {
+  void bind_provider(std::uintptr_t type_identity,
+                     const void* instance_identity,
+                     std::uint64_t revision) noexcept {
+    if (bound_provider_type_ == type_identity &&
+        bound_provider_instance_ == instance_identity &&
+        bound_provider_revision_ == revision) {
       return;
     }
-    if (bound_provider_ != 0) {
+    if (bound_provider_type_ != 0) {
       invalidate();
       ++provider_rebinds_;
     }
-    bound_provider_ = identity;
+    bound_provider_type_ = type_identity;
+    bound_provider_instance_ = instance_identity;
     bound_provider_revision_ = revision;
   }
 
@@ -390,7 +400,8 @@ class RouteCacheScratch {
   // Movement-class identity the entries are bound to (0 = unbound); see
   // bind_class.
   std::uintptr_t bound_class_ = 0;
-  std::uintptr_t bound_provider_ = 0;
+  std::uintptr_t bound_provider_type_ = 0;
+  const void* bound_provider_instance_ = nullptr;
   std::uint64_t bound_provider_revision_ = 0;
   std::uint64_t world_fingerprint_ = 0;
   bool has_world_fingerprint_ = false;
@@ -468,7 +479,9 @@ auto cached_astar_path(const World& world, PathRequest request,
   // (start, goal) only, so a direct caller alternating classes must never be
   // served the other class's route -- the rebind drops the cache instead.
   cache.bind_class(detail::tag_identity<movement::movement_class_of<Tag>>());
-  cache.bind_provider(detail::tag_identity<Provider>(), model.revision());
+  cache.bind_provider(detail::tag_identity<Provider>(),
+                      detail::transition_provider_instance_identity(provider),
+                      model.revision());
   // The cache stores absolute Coord3 keys and routes only (no residency-slot
   // state). Correctness on sparse rests entirely on the residency-aware
   // world_version_fingerprint plus prepare_process invalidating the whole cache

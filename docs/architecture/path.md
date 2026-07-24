@@ -139,7 +139,8 @@ flowchart TB
   reached-node count, a `PathView`, and `cost_scale`. Default orthogonal and
   axial-hex models use scale one. Diagonal models use scale 128: cardinal
   steps cost 128 ticks and diagonal steps cost 181 ticks per destination
-  entry-cost unit. `NearestTargetResult` carries the same scale.
+  entry-cost unit; 181 is the nearest scale-128 integer approximation to
+  `sqrt(2)`. `NearestTargetResult` carries the same scale.
 - `CostRangeAssessment` and
   `path_cost_range_assessment<World, MovementClass, Provider>` expose a
   conservative compile-time classification of the compact `std::uint32_t`
@@ -185,11 +186,16 @@ flowchart TB
   provider-composed edges. `weighted_distance_field_product_path` reconstructs
   an exact path and `weighted_nearest_target` reports the selected lowest-cost
   goal. These persistent products are explicitly dense-only, stamp every
-  model identity and provider revision, and use the same byte-budgeted cache
-  through `lookup_weighted` / `store_weighted`. Provider revisions are exact
-  cache-key components: historical revisions remain reusable entries until
-  ordinary LRU eviction, so callers with continually changing provider state
-  should configure a finite byte budget.
+  model identity, stateful-provider object identity, and provider revision,
+  and use the same byte-budgeted cache through `lookup_weighted` /
+  `store_weighted`. Provider instances and revisions are exact cache-key
+  components: historical revisions remain reusable entries until ordinary LRU
+  eviction, so callers with continually changing provider state should
+  configure a finite byte budget. A stateful provider must stay at a stable
+  address while a product or cache can retain that identity, and callers must
+  clear those artifacts before destroying it. Moving a cache is safe because
+  the provider remains externally owned; moving the provider causes a
+  conservative miss/rebind at its new address.
 - Unit products retain the BFS fast path only for regular unit-cost models.
   Provider-composed products use reverse Dijkstra even when the regular step
   scale is one, because a provider may attach a larger exact cost to a special
@@ -216,9 +222,10 @@ flowchart TB
   and `invalidate_if_world_changed(world)` provide coarse whole-cache
   invalidation from chunk version fingerprints.
   The cache also binds the resolved lattice, step, cost scale, provider type,
-  and provider revision. A provider rebind invalidates entries and increments
-  `provider_rebinds`. Non-unit models retain exact hits but conservatively skip
-  suffix reuse whose historical step-count arithmetic cannot recover cost.
+  live stateful-provider object, and provider revision. A provider rebind
+  invalidates entries and increments `provider_rebinds`. Non-unit models retain
+  exact hits but conservatively skip suffix reuse whose historical step-count
+  arithmetic cannot recover cost.
 - `ChunkVersionDependencies` records explicit chunk/version pairs and can
   validate whether those chunks are unchanged. It is supporting infrastructure
   for future route products; current route-cache hits still use conservative
@@ -353,10 +360,12 @@ flowchart TB
   cost field.
   The class-typed path, field, product, batch, cache, and runtime families
   accept matching trailing provider overloads. Reverse operations require the
-  provider's reverse-enumeration contract. Persistent products capture model
-  identity plus provider revision; until a generic provider dependency index
-  exists, provider-composed dense products conservatively depend on every
-  world chunk.
+  provider's reverse-enumeration contract. Reverse enumeration independently
+  rejects a missing or impassable forward destination rather than relying on a
+  field builder to prevalidate its frontier. Persistent products capture model
+  identity plus provider instance and revision; until a generic provider
+  dependency index exists, provider-composed dense products conservatively
+  depend on every world chunk.
 - `build_weighted_route_product<World, PassableTag, CostTag>(world, request,
   scratch, product)` builds and stores a weighted route product.
 - `weighted_route_product_path(world, product)` replays a stored weighted

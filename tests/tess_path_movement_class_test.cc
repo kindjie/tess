@@ -112,6 +112,34 @@ struct ThrowingDiagonalProvider {
   }
 };
 
+struct RevisionRestartProvider {
+  bool enabled = false;
+  std::uint64_t revision = 0;
+
+  [[nodiscard]] auto transition_revision() const noexcept -> std::uint64_t {
+    return revision;
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3 from,
+                        Sink&& sink) const {
+    if (enabled && from == tess::Coord3{0, 0, 0}) {
+      sink(tess::SpecialTransitionCandidate{
+          .to = tess::Coord3{7, 0, 0},
+      });
+    }
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_reverse(const WorldType&, tess::Coord3 to, Sink&& sink) const {
+    if (enabled && to == tess::Coord3{7, 0, 0}) {
+      sink(tess::SpecialTransitionCandidate{
+          .to = tess::Coord3{0, 0, 0},
+      });
+    }
+  }
+};
+
 void fill_open(World& world, std::uint32_t cost) {
   for (auto& page : world.chunks()) {
     auto passable = page.template field_span<PassableTag>();
@@ -583,6 +611,51 @@ TEST(TessPathMovementClass, RouteCacheInvalidatesWhenProviderChanges) {
   EXPECT_EQ(special_hit.cost, 1u);
   EXPECT_EQ(regular.cost, 2u);
   EXPECT_EQ(cache.stats().provider_rebinds, 1u);
+}
+
+TEST(TessPathMovementClass,
+     RouteCacheSeparatesProviderInstancesWithEqualRevisions) {
+  World world;
+  fill_open(world, 1);
+  const auto shortcut = RevisionRestartProvider{.enabled = true, .revision = 0};
+  const auto regular = RevisionRestartProvider{.enabled = false, .revision = 0};
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};
+  tess::RouteCacheScratch cache;
+  tess::PathScratch scratch;
+
+  const auto first = tess::cached_astar_path<World, PassableTag>(
+      world, request, scratch, cache, shortcut);
+  const auto rebound = tess::cached_astar_path<World, PassableTag>(
+      world, request, scratch, cache, regular);
+
+  EXPECT_EQ(first.cost, 1u);
+  EXPECT_EQ(rebound.cost, 7u);
+  EXPECT_EQ(cache.stats().hits, 0u);
+  EXPECT_EQ(cache.stats().misses, 2u);
+  EXPECT_EQ(cache.stats().provider_rebinds, 1u);
+}
+
+TEST(TessPathMovementClass,
+     DistanceFieldSeparatesProviderInstancesWithEqualRevisions) {
+  World world;
+  fill_open(world, 1);
+  const auto shortcut = RevisionRestartProvider{.enabled = true, .revision = 0};
+  const auto regular = RevisionRestartProvider{.enabled = false, .revision = 0};
+  constexpr auto start = tess::Coord3{0, 0, 0};
+  constexpr auto goal = tess::Coord3{7, 0, 0};
+  tess::DistanceFieldScratch scratch;
+
+  ASSERT_EQ((tess::build_weighted_distance_field<World, DefaultClass>(
+                 world, goal, scratch, tess::MissingChunkPolicy::TreatAsBlocked,
+                 shortcut))
+                .status,
+            tess::PathStatus::Found);
+  const auto rebound = tess::weighted_distance_field_path<World, DefaultClass>(
+      world, start, goal, scratch, regular);
+
+  EXPECT_EQ(rebound.status, tess::PathStatus::NoPath);
+  EXPECT_EQ(rebound.reached_nodes, 0u);
 }
 
 TEST(TessPathMovementClass, BatchPreservesDiagonalAndProviderModels) {

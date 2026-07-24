@@ -104,11 +104,16 @@ Instance creation, request cancellation or error, null success handles, device
 failure, backend failure, and timeout are failures. Pages follows Chromium's
 `webgpu-swiftshader` test configuration to select its software adapter and
 requires the compute dispatch and summary readback to reach `ready`; it does
-not accept unsupported. A standard-library DevTools harness polls that state
+not accept unsupported. The example installs the application-owned
+uncaptured-error callback during device creation and forwards every reported
+validation, OOM, internal, or unknown device error to
+`notify_device_error()`. A standard-library DevTools harness polls that state
 in wall time because Chrome virtual time can advance JavaScript timers ahead
 of asynchronous GPU-process work. The example keeps its instance alive until
 the device request callback, and device loss remains terminal if it races a
 readback callback. The harness normalizes equivalent target URLs and bounds
-both WebSocket frames and fragmented messages. There is no timing performance
-gate until measurements can be calibrated across a representative browser/GPU
-matrix.
+both WebSocket frames and fragmented messages. Socket connect, upgrade,
+partial-frame reads, command/event loops, and page discovery share one
+absolute deadline, and an early Chrome exit reports its process status. There
+is no timing performance gate until measurements can be calibrated across a
+representative browser/GPU matrix.

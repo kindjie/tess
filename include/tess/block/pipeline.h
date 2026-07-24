@@ -81,13 +81,16 @@ struct BlockTileSource {
       std::declval<ChunkKey>()));
   using value_type = BlockTile<view_type>;
 
-  const Context* context = nullptr;
+  // BlockCtx is a cheap pointer/span value. Store that value, not its address:
+  // block_tiles(block_ctx(...)) must remain valid after the BlockCtx temporary
+  // dies. The world, domain keys, scratch, and diagnostics remain borrowed.
+  Context context;
   PipelineDiagnostics* diagnostics = nullptr;
 
   template <typename Sink>
   void for_each(Sink&& sink) {
     auto&& output = sink;
-    context->for_each_chunk([&](auto view) {
+    context.for_each_chunk([&](auto view) {
       if (diagnostics != nullptr) {
         diagnostics->record_block();
       }
@@ -107,13 +110,15 @@ struct BlockChunkSource {
   using value_type = decltype(std::declval<const Context&>().chunk_view(
       std::declval<ChunkKey>()));
 
-  const Context* context = nullptr;
+  // See BlockTileSource: the source owns the context value while preserving
+  // the context's explicit borrows of its underlying resources.
+  Context context;
   PipelineDiagnostics* diagnostics = nullptr;
 
   template <typename Sink>
   void for_each(Sink&& sink) {
     auto&& output = sink;
-    context->for_each_chunk([&](auto view) {
+    context.for_each_chunk([&](auto view) {
       if (diagnostics != nullptr) {
         diagnostics->record_block();
         diagnostics->record_item();
@@ -321,10 +326,10 @@ class Pipeline {
 
 template <typename Context>
 /** Begins a lazy pipeline over every resolved tile in a block context. */
-[[nodiscard]] auto block_tiles(const Context& context,
+[[nodiscard]] auto block_tiles(Context context,
                                PipelineDiagnostics* diagnostics = nullptr) {
   using Source = detail::BlockTileSource<Context>;
-  return Pipeline<Source>{Source{&context, diagnostics}, diagnostics};
+  return Pipeline<Source>{Source{std::move(context), diagnostics}, diagnostics};
 }
 
 template <typename Context>
@@ -336,10 +341,10 @@ template <typename Context>
 
 template <typename Context>
 /** Begins a lazy pipeline over resolved chunks in a block context. */
-[[nodiscard]] auto block_chunks(const Context& context,
+[[nodiscard]] auto block_chunks(Context context,
                                 PipelineDiagnostics* diagnostics = nullptr) {
   using Source = detail::BlockChunkSource<Context>;
-  return Pipeline<Source>{Source{&context, diagnostics}, diagnostics};
+  return Pipeline<Source>{Source{std::move(context), diagnostics}, diagnostics};
 }
 
 template <typename Context>

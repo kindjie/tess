@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "allocation_counter.h"
+
 namespace {
 
 struct PassableTag {};
@@ -814,6 +816,75 @@ TEST(TessTopology, UpdateRegionGraphRejectsInvalidDirtyChunk) {
   EXPECT_EQ(updated.status, tess::TopologyStatus::InvalidChunk);
   // The graph must stay untouched when the dirty set is rejected.
   expect_graphs_equal(graph, reference);
+}
+
+TEST(TessTopology, UpdateRegionGraphAllocationFailureInvalidatesTornState) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocation failure injection is unavailable with this "
+                    "allocator/runtime configuration";
+  }
+
+  using Shape = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
+  auto saw_failure = false;
+  auto saw_invalidation = false;
+  auto reached_success = false;
+  for (std::size_t failure_index = 0; failure_index < 64; ++failure_index) {
+    World<Shape> world;
+    fill_passable(world, 1);
+    tess::LocalTopologyScratch scratch;
+    tess::RegionGraph graph;
+    ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
+                   world, scratch, graph))
+                  .status,
+              tess::TopologyStatus::Built);
+    const auto before = graph;
+    const auto before_revision = graph.revision();
+
+    for (std::int64_t y = 0; y < 8; ++y) {
+      world.field<PassableTag>(tess::Coord3{12, y, 0}) = 0;
+    }
+    const auto dirty = std::array{tess::ChunkKey{1}};
+    auto threw = false;
+    {
+      tess_test::ScopedAllocationFailure failure{failure_index};
+      try {
+        static_cast<void>(
+            tess::update_region_graph<decltype(world), PassableTag>(
+                world, scratch, graph, dirty));
+      } catch (const std::bad_alloc&) {
+        threw = true;
+      }
+    }
+
+    if (threw) {
+      saw_failure = true;
+      if (graph.revision() == before_revision) {
+        // Failure while preparing dirty/affected masks precedes mutation.
+        expect_graphs_equal(graph, before);
+      } else {
+        saw_invalidation = true;
+        // Once local mutation begins, failure clears every derived structure
+        // and changes revision so no consumer can observe torn topology.
+        EXPECT_TRUE(graph.local_topologies().empty());
+        EXPECT_TRUE(graph.portals().empty());
+        EXPECT_EQ(graph.region_count(), 0u);
+        EXPECT_FALSE(tess::is_region_graph_fresh(world, graph));
+      }
+      continue;
+    }
+
+    reached_success = true;
+    tess::RegionGraph fresh;
+    ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
+                   world, scratch, fresh))
+                  .status,
+              tess::TopologyStatus::Built);
+    expect_graphs_equal(graph, fresh);
+    break;
+  }
+  EXPECT_TRUE(saw_failure);
+  EXPECT_TRUE(saw_invalidation);
+  EXPECT_TRUE(reached_success);
 }
 
 TEST(TessTopology, UpdateRegionGraphSingleChunkEditMatchesFullRebuild) {

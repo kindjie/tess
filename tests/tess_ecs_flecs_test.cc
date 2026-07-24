@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "allocation_counter.h"
@@ -98,6 +99,15 @@ struct Sim {
 TEST(TessEcsFlecs, HandleConversionPreservesFullGenerationAndNull) {
   EXPECT_EQ(tess::FlecsHandleAdapter::to_handle(0), tess::kNullEntityHandle);
   EXPECT_EQ(tess::FlecsHandleAdapter::to_entity(tess::kNullEntityHandle), 0u);
+  constexpr auto largest_representable =
+      std::numeric_limits<std::uint64_t>::max() - 1;
+  EXPECT_EQ(tess::FlecsHandleAdapter::to_handle(largest_representable).value,
+            largest_representable);
+#if TESS_ENABLE_ASSERTS
+  EXPECT_DEATH(static_cast<void>(tess::FlecsHandleAdapter::to_handle(
+                   std::numeric_limits<std::uint64_t>::max())),
+               "all-ones Flecs ID");
+#endif
 
   flecs::world world;
   const auto first = world.entity();
@@ -139,6 +149,88 @@ TEST(TessEcsFlecs, LifecycleKeepsWorldIndexAndComponentsSynchronized) {
   sim.ecs.entity(stale).destruct();
   EXPECT_FALSE((tess::despawn_flecs_path_agent<World, OccupancyTag>(
       sim.ecs, sim.world, sim.index, stale)));
+}
+
+TEST(TessEcsFlecs, LifecycleIntentsRejectDeferredScopes) {
+#if TESS_ENABLE_ASSERTS
+  Sim sim;
+  sim.ecs.defer_begin();
+  EXPECT_DEATH(static_cast<void>(sim.spawn(tess::Coord3{0, 0, 0})),
+               "immediate mode");
+  sim.ecs.defer_end();
+
+  sim.ecs.readonly_begin();
+  EXPECT_DEATH(static_cast<void>(sim.spawn(tess::Coord3{0, 0, 0})),
+               "immediate mode");
+  sim.ecs.readonly_end();
+#else
+  GTEST_SKIP() << "lifecycle preconditions are debug assertions";
+#endif
+}
+
+TEST(TessEcsFlecs, SpawnIndexGrowthFailureLeavesEveryStoreUnchanged) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocation failure injection is unavailable with this "
+                    "allocator/runtime configuration";
+  }
+
+  Sim sim(0);
+  for (std::int64_t x = 0; x < 4; ++x) {
+    ASSERT_NE(sim.spawn(tess::Coord3{x, 0, 0}), 0u);
+  }
+  ASSERT_EQ(sim.index.size(), 4u);
+  const auto next_id = sim.context.next_agent_id;
+
+  auto threw = false;
+  {
+    tess_test::ScopedAllocationFailure failure{0};
+    try {
+      static_cast<void>(sim.spawn(tess::Coord3{4, 0, 0}));
+    } catch (const std::bad_alloc&) {
+      threw = true;
+    }
+  }
+
+  EXPECT_TRUE(threw);
+  EXPECT_EQ(sim.context.next_agent_id, next_id);
+  EXPECT_EQ(sim.index.size(), 4u);
+  EXPECT_TRUE(sim.index.entity_at(tess::Coord3{4, 0, 0}).is_null());
+  EXPECT_FALSE(sim.world.template field<OccupancyTag>(tess::Coord3{4, 0, 0}));
+  EXPECT_EQ(sim.ecs.count<tess::PathState>(), 4u);
+  sim.expect_synced();
+}
+
+TEST(TessEcsFlecs, PlaceIndexGrowthFailureLeavesAgentParked) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocation failure injection is unavailable with this "
+                    "allocator/runtime configuration";
+  }
+
+  Sim sim(0);
+  for (std::int64_t x = 0; x < 4; ++x) {
+    ASSERT_NE(sim.spawn(tess::Coord3{x, 0, 0}), 0u);
+  }
+  const auto parked =
+      tess::spawn_flecs_path_agent_off_board(sim.ecs, sim.context);
+  ASSERT_NE(parked, 0u);
+
+  auto threw = false;
+  {
+    tess_test::ScopedAllocationFailure failure{0};
+    try {
+      static_cast<void>(tess::place_flecs_path_agent<World, OccupancyTag>(
+          sim.ecs, sim.world, sim.index, parked, tess::Coord3{4, 0, 0}));
+    } catch (const std::bad_alloc&) {
+      threw = true;
+    }
+  }
+
+  EXPECT_TRUE(threw);
+  EXPECT_TRUE(sim.ecs.entity(parked).has<tess::OffBoard>());
+  EXPECT_EQ(sim.index.size(), 4u);
+  EXPECT_TRUE(sim.index.entity_at(tess::Coord3{4, 0, 0}).is_null());
+  EXPECT_FALSE(sim.world.template field<OccupancyTag>(tess::Coord3{4, 0, 0}));
+  sim.expect_synced();
 }
 
 TEST(TessEcsFlecs, AgentsWalkAndArrivedGoalsAreConsumed) {

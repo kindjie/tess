@@ -66,7 +66,8 @@ auto build_weighted_distance_field_in_box(
   const auto model = Model{provider};
   scratch.goal_ = goal;
   scratch.has_goal_ = true;
-  scratch.template stamp_model<Model>(model);
+  scratch.template stamp_model<Model>(
+      model, detail::transition_provider_instance_identity(provider));
   scratch.stamp_residency(world);
   scratch.distance_[goal_offset] = 0;
   scratch.touch_node(goal_offset, goal_index);
@@ -154,9 +155,13 @@ auto build_weighted_distance_field_in_box(
                                  scratch.touched_.size()};
     }
   }
-  return DistanceFieldResult{
-      cost_overflow ? PathStatus::CostOverflow : PathStatus::Found,
-      expanded_nodes, scratch.touched_.size()};
+  if (cost_overflow) {
+    scratch.discard_build_result();
+    return DistanceFieldResult{PathStatus::CostOverflow, expanded_nodes,
+                               scratch.touched_.size()};
+  }
+  return DistanceFieldResult{PathStatus::Found, expanded_nodes,
+                             scratch.touched_.size()};
 }
 
 template <typename World, typename Class>

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ ALLOWED_LIMIT_KEYS = frozenset(
         "max_cpu_time_ns",
         "comment",
         "comment_ref",
+        "gating",
         "note",
     }
 )
@@ -85,14 +87,22 @@ def main(argv: list[str] | None = None) -> int:
       for name in sorted(result_names - threshold_names)
   )
 
-  for name in sorted(result_names & threshold_names):
+  valid_thresholds: set[str] = set()
+  for name in sorted(threshold_names):
     limits = threshold_by_name[name]
     if not isinstance(limits, dict):
       failures.append(f"{name}: threshold entry must be a JSON object")
       continue
-    unknown = check_limit_keys(name, limits)
-    if unknown:
-      failures.extend(unknown)
+    entry_failures = validate_limit_entry(name, limits)
+    failures.extend(entry_failures)
+    if not entry_failures:
+      valid_thresholds.add(name)
+
+  for name in sorted(result_names & threshold_names):
+    limits = threshold_by_name[name]
+    if name not in valid_thresholds:
+      continue
+    if limits.get("gating") is False:
       continue
     benchmark = result_by_name[name]
     failures.extend(check_limit(name, benchmark, limits, "real_time"))
@@ -171,6 +181,34 @@ def check_limit_keys(name: str, limits: dict[str, Any]) -> list[str]:
   ]
 
 
+def validate_limit_entry(
+  name: str, limits: dict[str, Any]
+) -> list[str]:
+  failures = check_limit_keys(name, limits)
+  if failures:
+    return failures
+  gating = limits.get("gating", True)
+  if not isinstance(gating, bool):
+    return [f"{name}: gating must be true or false"]
+  enabled_limits = [
+    key
+    for key in ("max_real_time_ns", "max_cpu_time_ns")
+    if limits.get(key) is not None
+  ]
+  if not gating:
+    if enabled_limits:
+      return [
+        f"{name}: gating=false conflicts with enabled time limits"
+      ]
+    return []
+  if not enabled_limits:
+    return [
+      f"{name}: no enabled time limit; set gating=false for an "
+      "intentional informational entry"
+    ]
+  return []
+
+
 def check_limit(
     name: str,
     benchmark: dict[str, Any],
@@ -186,8 +224,20 @@ def check_limit(
   if value is None or unit is None:
     return [f"{name}: missing {field} or time_unit"]
 
-  value_ns = to_nanoseconds(float(value), str(unit))
-  if value_ns <= float(limit):
+  try:
+    value_number = float(value)
+    limit_number = float(limit)
+  except (OverflowError, TypeError, ValueError):
+    return [f"{name}: {field} and max_{field}_ns must be numeric"]
+  if not math.isfinite(value_number) or value_number < 0:
+    return [f"{name}: {field} must be a finite non-negative number"]
+  if not math.isfinite(limit_number) or limit_number < 0:
+    return [f"{name}: max_{field}_ns must be a finite non-negative number"]
+  try:
+    value_ns = to_nanoseconds(value_number, str(unit))
+  except ValueError:
+    return [f"{name}: unsupported time_unit {unit!r}"]
+  if value_ns <= limit_number:
     return []
   return [f"{name}: {field} {value_ns:.3f} ns exceeds {limit} ns"]
 

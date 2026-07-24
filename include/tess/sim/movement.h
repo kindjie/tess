@@ -252,9 +252,10 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   if (!Class::passable(to_page, resolved_to->local_tile_id)) {
     return fail(MovementStatus::BlockedTo);
   }
-  // Exact search rejects a zero-entry-cost start or goal before enumerating
-  // either regular or provider transitions. Apply the same endpoint contract
-  // before classifying the requested edge.
+  // Exact search rejects a zero-entry-cost goal before enumerating either
+  // regular or provider transitions. The source was a valid search endpoint
+  // when the route was planned; commit checks its passability above while a
+  // zero-cost destination must invalidate this planned step.
   if (Class::entry_cost(to_page, resolved_to->local_tile_id) == 0) {
     return fail(MovementStatus::BlockedTo);
   }

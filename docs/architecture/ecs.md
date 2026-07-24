@@ -165,7 +165,10 @@ occupancy, result-application, and render-delta invariants.
 Flecs-specific constraints are explicit:
 
 - Native `flecs::entity_t` is a 64-bit identity with generation information;
-  conversion copies all bits and maps Flecs' zero invalid ID to tess null.
+  conversion copies every representable live ID and maps Flecs' zero invalid
+  ID to tess null. The all-ones value is tess's null sentinel and is excluded
+  from the adapter domain; debug builds assert if it is presented as a live
+  Flecs ID.
 - `FlecsPathAgentContext` owns the typed query. It must be constructed with
   the world and outlive every source/sink call, but be destroyed before the
   world. Query construction is setup work; repeated query creation is not a
@@ -178,6 +181,13 @@ Flecs-specific constraints are explicit:
 - The typed query also sees parked tables, then excludes `OffBoard` in its
   non-mutating callback. Entries are sorted by `AgentId`, never by table order
   or native entity ID, so archetype churn cannot affect authoritative output.
+- Lifecycle intents require Flecs immediate mode. They must not run inside a
+  deferred or readonly scope: Flecs would queue component changes while tess
+  applies world occupancy and index changes immediately. Debug builds assert
+  this precondition.
+- On-board spawn and place preflight occupancy-index growth before changing
+  the ECS, world occupancy, or `next_agent_id`. An allocation failure at that
+  boundary therefore leaves every authoritative store unchanged.
 
 ## Invariants
 

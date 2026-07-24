@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import re
+import socket
 import subprocess
 import sys
 import time
@@ -609,6 +611,9 @@ def test_webgpu_smoke_only_adapter_unavailable_is_unsupported():
     "\n}\n\nvoid adapter_ready(", 1
   )[0]
   device_lost = source.split("void device_lost(", 1)[1].split(
+    "\n}\n\nvoid device_error(", 1
+  )[0]
+  device_error = source.split("void device_error(", 1)[1].split(
     "\n}\n\n[[nodiscard]] bool run_compute(", 1
   )[0]
   main = source.split("int main() {", 1)[1]
@@ -641,11 +646,19 @@ def test_webgpu_smoke_only_adapter_unavailable_is_unsupported():
     device_ready.index("status != WGPURequestDeviceStatus_Success")
   )
   assert "g_status == kDeviceLost" in device_ready
+  assert "g_status == kDeviceError" in device_ready
   assert "g_status == kRunningCompute" in device_ready
   assert (
     "g_status == kPending || g_status >= kRequestingDevice"
     in device_lost
   )
+  assert "g_backend->notify_device_error();" in device_error
+  assert "type == WGPUErrorType_NoError" in device_error
+  assert "g_status = kDeviceError;" in device_error
+  assert "device_desc.uncapturedErrorCallbackInfo.callback" in adapter_ready
+  assert "device_error" in adapter_ready
+  assert "if (g_status == kDeviceError)" in run_compute
+  assert "g_backend->notify_device_error();" in run_compute
   assert "kAwaitingReadback" not in device_ready
   assert "g_status != kAwaitingReadback" in finish_readback
   assert finish_readback.index("g_status != kAwaitingReadback") < (
@@ -723,6 +736,9 @@ def test_browser_state_rejects_oversized_fragmented_message(monkeypatch):
     def __init__(self):
       self.data = bytearray(b"\x01\x03abc\x80\x03def")
 
+    def settimeout(self, _timeout):
+      pass
+
     def recv(self, size):
       result = bytes(self.data[:size])
       del self.data[:size]
@@ -732,7 +748,7 @@ def test_browser_state_rejects_oversized_fragmented_message(monkeypatch):
   connection = wait_for_browser_state.DevToolsConnection(FragmentedMessage())
 
   with pytest.raises(RuntimeError, match="oversized.*message"):
-    connection._read_text()
+    connection._read_text(deadline=time.monotonic() + 10.0)
 
 
 def test_browser_state_command_honors_shared_deadline(monkeypatch):
@@ -760,6 +776,88 @@ def test_browser_state_command_honors_shared_deadline(monkeypatch):
   with pytest.raises(RuntimeError, match="deadline"):
     connection.command("Runtime.evaluate", {}, deadline=11.0)
   assert stream.timeouts == [1.0, 0.75]
+
+
+def test_browser_state_partial_frame_reads_share_absolute_deadline(
+  monkeypatch,
+):
+  class DripStream:
+    def __init__(self):
+      self.timeouts = []
+
+    def settimeout(self, timeout):
+      self.timeouts.append(timeout)
+
+    def recv(self, _size):
+      now[0] += 0.5
+      return b"x"
+
+  now = [20.0]
+  monkeypatch.setattr(time, "monotonic", lambda: now[0])
+  stream = DripStream()
+
+  with pytest.raises(RuntimeError, match="deadline"):
+    wait_for_browser_state._recv_exact(stream, 3, deadline=21.0)
+  assert stream.timeouts == [1.0, 0.5]
+
+
+def test_browser_state_connect_shares_deadline_with_handshake(monkeypatch):
+  response = bytearray(b"HTTP/1.1 101 Switching Protocols\r\n\r\n")
+  observed = {}
+
+  class HandshakeStream:
+    def settimeout(self, timeout):
+      observed.setdefault("stream_timeouts", []).append(timeout)
+
+    def sendall(self, _payload):
+      pass
+
+  def create_connection(address, timeout):
+    observed["address"] = address
+    observed["timeout"] = timeout
+    return HandshakeStream()
+
+  def recv_exact(_stream, size, deadline):
+    observed.setdefault("deadlines", []).append(deadline)
+    result = bytes(response[:size])
+    del response[:size]
+    return result
+
+  monkeypatch.setattr(socket, "create_connection", create_connection)
+  monkeypatch.setattr(wait_for_browser_state, "_recv_exact", recv_exact)
+  monkeypatch.setattr(time, "monotonic", lambda: 30.0)
+  monkeypatch.setattr(
+    wait_for_browser_state.hashlib,
+    "sha1",
+    lambda *_args, **_kwargs: type(
+      "Digest", (), {"digest": lambda self: b"\0" * 20}
+    )(),
+  )
+  expected = base64.b64encode(b"\0" * 20).decode("ascii")
+  response[-2:-2] = f"Sec-WebSocket-Accept: {expected}\r\n".encode("ascii")
+
+  connection = wait_for_browser_state.DevToolsConnection.connect(
+    "ws://127.0.0.1:9222/devtools/page/1", deadline=31.25
+  )
+
+  assert observed["address"] == ("127.0.0.1", 9222)
+  assert observed["timeout"] == 1.25
+  assert observed["stream_timeouts"] == [1.25]
+  assert observed["deadlines"] and set(observed["deadlines"]) == {31.25}
+  assert isinstance(connection.stream, HandshakeStream)
+
+
+def test_browser_state_page_wait_reports_browser_exit():
+  class ExitedProcess:
+    returncode = 17
+
+    def poll(self):
+      return self.returncode
+
+  with pytest.raises(RuntimeError, match="browser exited with status 17"):
+    wait_for_browser_state._wait_for_page(
+      ExitedProcess(), 9222, "http://localhost/demo", time.monotonic() + 1.0
+    )
 
 
 def test_browser_state_dataset_expression_rejects_code_injection():

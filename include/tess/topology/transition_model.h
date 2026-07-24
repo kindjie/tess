@@ -64,7 +64,7 @@ constexpr void emit_diagonal_candidate(Coord3 to, Coord3 clearance_a,
         .to = to,
         .clearance_a = clearance_a,
         .clearance_b = clearance_b,
-        .multiplier = 181,
+        .multiplier = movement::DiagonalSteps<>::diagonal_step_multiplier,
         .clearance_count = 2,
     });
   }
@@ -100,7 +100,8 @@ constexpr void for_each_hex_candidate(Coord3 from, Sink&& sink) {
 
 template <typename Shape, typename Sink>
 constexpr void for_each_diagonal_candidate(Coord3 from, Sink&& sink) {
-  for_each_orthogonal_face_candidate<Shape>(from, 128, sink);
+  for_each_orthogonal_face_candidate<Shape>(
+      from, movement::DiagonalSteps<>::cost_scale, sink);
   if constexpr (!ShapeTraits<Shape>::degenerate_x &&
                 !ShapeTraits<Shape>::degenerate_y) {
     emit_diagonal_candidate<Shape>(Coord3{from.x + 1, from.y + 1, from.z},
@@ -262,6 +263,24 @@ template <typename Provider>
   }
 }
 
+// Tests whether the conservative bound reaches the reserved u32 infinity
+// sentinel without ever materializing the potentially >128-bit product.
+// Both factors are u32, so their product and the rounded-up threshold fit u64.
+[[nodiscard]] constexpr auto compact_cost_bound_overflows(
+    UInt128 edges, std::uint32_t maximum_cost,
+    std::uint32_t maximum_step_multiplier) noexcept -> bool {
+  if (edges == UInt128{0} || maximum_cost == 0 ||
+      maximum_step_multiplier == 0) {
+    return false;
+  }
+  const auto factor =
+      static_cast<std::uint64_t>(maximum_cost) * maximum_step_multiplier;
+  constexpr auto infinity = std::numeric_limits<std::uint32_t>::max();
+  const auto first_overflowing_edge_count =
+      (static_cast<std::uint64_t>(infinity) + factor - 1u) / factor;
+  return edges >= UInt128{first_overflowing_edge_count};
+}
+
 }  // namespace detail
 
 /** Static confidence in the compact path-cost domain for one model. */
@@ -291,12 +310,12 @@ inline constexpr CostRangeAssessment path_cost_range_assessment = [] {
     constexpr auto maximum_cost =
         Maximum::value > provider_max ? Maximum::value : provider_max;
     using Policy = movement::step_policy_of<Class>;
-    constexpr auto multiplier =
-        std::is_same_v<Policy, movement::DefaultSteps> ? 1u : 181u;
-    const auto bound =
-        edges * detail::UInt128{maximum_cost} * detail::UInt128{multiplier};
-    return bound.hi != 0 ||
-                   bound.lo >= std::numeric_limits<std::uint32_t>::max()
+    constexpr auto maximum_step_multiplier =
+        std::is_same_v<Policy, movement::DefaultSteps>
+            ? movement::DefaultSteps::maximum_step_multiplier
+            : movement::DiagonalSteps<>::maximum_step_multiplier;
+    return detail::compact_cost_bound_overflows(edges, maximum_cost,
+                                                maximum_step_multiplier)
                ? CostRangeAssessment::PotentialOverflow
                : CostRangeAssessment::ProvenSafe;
   }
@@ -368,6 +387,16 @@ class ResolvedTransitionModel {
     static_assert(ReverseTransitionProviderFor<Provider, World>,
                   "Reverse fields require per-target provider enumeration.");
     (void)to_index;
+    // Reverse enumeration describes forward edges whose destination is `to`.
+    // Rejecting a blocked/missing destination here makes the primitive
+    // symmetric with forward enumeration even for external callers that did
+    // not obtain `to` from a prevalidated field frontier.
+    const auto origin = world.resolve(to);
+    const auto* origin_page = world.try_chunk(origin.chunk_key);
+    if (origin_page == nullptr ||
+        !class_type::passable(*origin_page, origin.local_tile_id)) {
+      return;
+    }
     detail::for_each_regular_candidate<shape_type, step_policy>(
         to, [&](detail::RegularTransitionCandidate candidate) {
           emit_candidate(world, candidate, to, sink);
@@ -621,9 +650,12 @@ class ResolvedTransitionModel {
     }
     const auto minor = std::min(a, b);
     const auto major = std::max(a, b);
-    const auto ticks =
-        detail::add(detail::UInt128{minor} * detail::UInt128{181},
-                    detail::UInt128{major - minor} * detail::UInt128{128});
+    const auto ticks = detail::add(
+        detail::UInt128{minor} *
+            detail::UInt128{
+                movement::DiagonalSteps<>::diagonal_step_multiplier},
+        detail::UInt128{major - minor} *
+            detail::UInt128{movement::DiagonalSteps<>::cost_scale});
     return detail::saturating_u32(ticks);
   }
 

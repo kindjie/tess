@@ -53,6 +53,8 @@ struct NearestTargetResult {
 ///
 /// Building may allocate; reserve goals, nodes, and dependencies for a warm
 /// allocation-free rebuild. A product is invalid after relevant chunk edits.
+/// A stateful provider used to build it must retain its address until the
+/// product is cleared or rebuilt.
 class DistanceFieldProduct {
  public:
   void reserve_goals(std::size_t count) { goals_.reserve(count); }
@@ -77,6 +79,7 @@ class DistanceFieldProduct {
     model_step_identity_ = 0;
     model_cost_scale_ = 0;
     model_provider_identity_ = 0;
+    model_provider_instance_identity_ = nullptr;
     model_provider_revision_ = 0;
     goals_.clear();
     distance_.clear();
@@ -193,6 +196,7 @@ class DistanceFieldProduct {
   std::uint32_t model_step_identity_ = 0;
   std::uint32_t model_cost_scale_ = 0;
   std::uintptr_t model_provider_identity_ = 0;
+  const void* model_provider_instance_identity_ = nullptr;
   std::uint64_t model_provider_revision_ = 0;
   std::vector<Coord3> goals_;
   std::vector<std::uint32_t> distance_;
@@ -214,12 +218,15 @@ struct FieldProductCacheStats {
 // aliasing mechanism).
 /// Owns LRU-cached distance-field products within a configurable byte budget.
 ///
-/// Entries are keyed by field type, shape, goals, and exact provider revision,
-/// but not by world identity; use one cache per world. Historical provider
-/// revisions remain distinct entries until normal LRU eviction, so configure a
-/// finite byte budget when provider state changes without bound. Lookup
-/// pointers remain cache-owned and are invalidated when their entry is
-/// replaced, evicted, or cleared.
+/// Entries are keyed by field type, shape, goals, and exact provider instance
+/// plus revision, but not by world identity; use one cache per world.
+/// Historical provider revisions remain distinct entries until normal LRU
+/// eviction, so configure a finite byte budget when provider state changes
+/// without bound. A stateful provider must stay at a stable address while its
+/// products can be retained, and the cache must be cleared before that object
+/// is destroyed. Moving the cache is safe because it does not move the
+/// externally owned provider. Lookup pointers remain cache-owned and are
+/// invalidated when their entry is replaced, evicted, or cleared.
 class FieldProductCache {
   struct Key {
     std::uintptr_t movement_class = 0;
@@ -233,6 +240,7 @@ class FieldProductCache {
     std::uint32_t step_identity = 0;
     std::uint32_t cost_scale = 0;
     std::uintptr_t provider_identity = 0;
+    const void* provider_instance_identity = nullptr;
     std::uint64_t provider_revision = 0;
     std::vector<Coord3> goals;
   };
@@ -372,6 +380,8 @@ class FieldProductCache {
         product.model_step_identity_ != key.step_identity ||
         product.model_cost_scale_ != key.cost_scale ||
         product.model_provider_identity_ != key.provider_identity ||
+        product.model_provider_instance_identity_ !=
+            key.provider_instance_identity ||
         product.model_provider_revision_ != key.provider_revision) {
       return false;
     }
@@ -397,6 +407,8 @@ class FieldProductCache {
         product.model_step_identity_ != key.step_identity ||
         product.model_cost_scale_ != key.cost_scale ||
         product.model_provider_identity_ != key.provider_identity ||
+        product.model_provider_instance_identity_ !=
+            key.provider_instance_identity ||
         product.model_provider_revision_ != key.provider_revision) {
       return false;
     }
@@ -479,6 +491,7 @@ class FieldProductCache {
         static_cast<std::uint32_t>(Model::step_policy_identity),
         Model::cost_scale,
         detail::tag_identity<Provider>(),
+        detail::transition_provider_instance_identity(provider),
         model.revision(),
         std::vector<Coord3>{goals.begin(), goals.end()},
     };
@@ -497,6 +510,7 @@ class FieldProductCache {
            lhs.step_identity == rhs.step_identity &&
            lhs.cost_scale == rhs.cost_scale &&
            lhs.provider_identity == rhs.provider_identity &&
+           lhs.provider_instance_identity == rhs.provider_instance_identity &&
            lhs.provider_revision == rhs.provider_revision &&
            lhs.goals == rhs.goals;
   }
@@ -532,6 +546,8 @@ class FieldProductCache {
                static_cast<std::uint32_t>(Model::step_policy_identity) &&
            key.cost_scale == Model::cost_scale &&
            key.provider_identity == detail::tag_identity<Provider>() &&
+           key.provider_instance_identity ==
+               detail::transition_provider_instance_identity(provider) &&
            key.provider_revision == model.revision() &&
            key.goals.size() == goals.size() &&
            std::equal(key.goals.begin(), key.goals.end(), goals.begin());
@@ -617,6 +633,8 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
       static_cast<std::uint32_t>(Model::step_policy_identity);
   product.model_cost_scale_ = Model::cost_scale;
   product.model_provider_identity_ = detail::tag_identity<Provider>();
+  product.model_provider_instance_identity_ =
+      detail::transition_provider_instance_identity(provider);
   product.model_provider_revision_ = model.revision();
 
   if (goals.empty()) {
@@ -851,6 +869,8 @@ auto build_weighted_distance_field_product(const World& world,
       static_cast<std::uint32_t>(Model::step_policy_identity);
   product.model_cost_scale_ = Model::cost_scale;
   product.model_provider_identity_ = detail::tag_identity<Provider>();
+  product.model_provider_instance_identity_ =
+      detail::transition_provider_instance_identity(provider);
   product.model_provider_revision_ = model.revision();
 
   if (goals.empty()) {
@@ -1021,6 +1041,8 @@ auto distance_field_product_path(const World& world, Coord3 start,
           static_cast<std::uint32_t>(Model::step_policy_identity) ||
       product.model_cost_scale_ != Model::cost_scale ||
       product.model_provider_identity_ != detail::tag_identity<Provider>() ||
+      product.model_provider_instance_identity_ !=
+          detail::transition_provider_instance_identity(provider) ||
       product.model_provider_revision_ != model.revision()) {
     return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
   }
@@ -1145,6 +1167,8 @@ auto weighted_distance_field_product_path(const World& world, Coord3 start,
           static_cast<std::uint32_t>(Model::step_policy_identity) ||
       product.model_cost_scale_ != Model::cost_scale ||
       product.model_provider_identity_ != detail::tag_identity<Provider>() ||
+      product.model_provider_instance_identity_ !=
+          detail::transition_provider_instance_identity(provider) ||
       product.model_provider_revision_ != model.revision()) {
     return {PathStatus::NoPath, 0, 0, 0, scratch.path_};
   }

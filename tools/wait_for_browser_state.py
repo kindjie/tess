@@ -65,9 +65,23 @@ def encode_client_text_frame(
   return _frame_header(0x1, len(payload)) + mask + masked
 
 
-def _recv_exact(stream: socket.socket, size: int) -> bytes:
+def _socket_timeout(deadline: float, operation: str) -> float:
+  """Return a short socket timeout bounded by one shared wall deadline."""
+  remaining = deadline - time.monotonic()
+  if remaining <= 0:
+    raise RuntimeError(f"{operation} exceeded the shared deadline")
+  return min(2.0, remaining)
+
+
+def _recv_exact(
+  stream: socket.socket, size: int, deadline: float
+) -> bytes:
   result = bytearray()
   while len(result) < size:
+    # Socket timeouts restart after every successful recv. Recompute from the
+    # absolute harness deadline so a peer dribbling bytes cannot extend the
+    # smoke test indefinitely.
+    stream.settimeout(_socket_timeout(deadline, "DevTools WebSocket read"))
     chunk = stream.recv(size - len(result))
     if not chunk:
       raise RuntimeError("DevTools WebSocket closed unexpectedly")
@@ -84,13 +98,14 @@ class DevToolsConnection:
     self.next_id = 1
 
   @classmethod
-  def connect(cls, url: str) -> DevToolsConnection:
+  def connect(cls, url: str, deadline: float) -> DevToolsConnection:
     """Open and validate a DevTools WebSocket connection."""
     parsed = urlsplit(url)
     if parsed.scheme != "ws" or parsed.hostname is None:
       raise RuntimeError(f"invalid DevTools WebSocket URL: {url}")
     stream = socket.create_connection(
-      (parsed.hostname, parsed.port or 80), timeout=2
+      (parsed.hostname, parsed.port or 80),
+      timeout=_socket_timeout(deadline, "DevTools WebSocket connect"),
     )
     key = base64.b64encode(secrets.token_bytes(16))
     target = parsed.path or "/"
@@ -104,10 +119,13 @@ class DevToolsConnection:
       f"Sec-WebSocket-Key: {key.decode('ascii')}\r\n"
       "Sec-WebSocket-Version: 13\r\n\r\n"
     )
+    stream.settimeout(
+      _socket_timeout(deadline, "DevTools WebSocket handshake")
+    )
     stream.sendall(request.encode("ascii"))
     response = bytearray()
     while not response.endswith(b"\r\n\r\n"):
-      response.extend(_recv_exact(stream, 1))
+      response.extend(_recv_exact(stream, 1, deadline))
       if len(response) > 16 * 1024:
         raise RuntimeError("oversized DevTools WebSocket handshake")
     # RFC 6455 mandates SHA-1 for this handshake checksum. It does not protect
@@ -126,18 +144,22 @@ class DevToolsConnection:
     """Close the DevTools socket."""
     self.stream.close()
 
-  def _read_text(self) -> bytes:
+  def _read_text(self, deadline: float) -> bytes:
     message = bytearray()
     while True:
-      first, second = _recv_exact(self.stream, 2)
+      first, second = _recv_exact(self.stream, 2, deadline)
       final = (first & 0x80) != 0
       opcode = first & 0x0F
       masked = (second & 0x80) != 0
       size = second & 0x7F
       if size == 126:
-        size = struct.unpack("!H", _recv_exact(self.stream, 2))[0]
+        size = struct.unpack(
+          "!H", _recv_exact(self.stream, 2, deadline)
+        )[0]
       elif size == 127:
-        size = struct.unpack("!Q", _recv_exact(self.stream, 8))[0]
+        size = struct.unpack(
+          "!Q", _recv_exact(self.stream, 8, deadline)
+        )[0]
       if size > MAX_WEBSOCKET_FRAME_BYTES:
         raise RuntimeError("oversized DevTools WebSocket frame")
       # A peer can split one logical message across many individually valid
@@ -147,7 +169,7 @@ class DevToolsConnection:
         raise RuntimeError("oversized DevTools WebSocket message")
       if masked:
         raise RuntimeError("DevTools sent an invalid masked server frame")
-      payload = _recv_exact(self.stream, size)
+      payload = _recv_exact(self.stream, size, deadline)
       if opcode == 0x8:
         raise RuntimeError("DevTools closed the WebSocket")
       if opcode == 0x9:
@@ -180,16 +202,15 @@ class DevToolsConnection:
       {"id": command_id, "method": method, "params": params},
       separators=(",", ":"),
     ).encode("utf-8")
+    self.stream.settimeout(
+      _socket_timeout(deadline, "DevTools command write")
+    )
     self.stream.sendall(encode_client_text_frame(request))
     while True:
-      remaining = deadline - time.monotonic()
-      if remaining <= 0:
-        raise RuntimeError("DevTools command exceeded the shared deadline")
       # Events can arrive continuously, so a fixed per-recv timeout alone
-      # does not bound the response loop. Tighten it to the outer harness
-      # deadline before reading each complete event or response.
-      self.stream.settimeout(min(2.0, remaining))
-      response = json.loads(self._read_text())
+      # does not bound the response loop. Every partial frame read receives
+      # the same absolute outer deadline.
+      response = json.loads(self._read_text(deadline))
       if response.get("id") == command_id:
         return response
 
@@ -208,12 +229,22 @@ def _wait_for_debug_port(
   raise RuntimeError("browser did not open its DevTools port")
 
 
-def _wait_for_page(port: int, url: str, deadline: float) -> str:
+def _wait_for_page(
+  process: subprocess.Popen, port: int, url: str, deadline: float
+) -> str:
   endpoint = f"http://127.0.0.1:{port}/json/list"
   expected_url = page_url_key(url)
   while time.monotonic() < deadline:
+    if process.poll() is not None:
+      raise RuntimeError(f"browser exited with status {process.returncode}")
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+      break
     try:
-      with urllib.request.urlopen(endpoint, timeout=1) as response:
+      with urllib.request.urlopen(
+        endpoint,
+        timeout=min(1.0, remaining),
+      ) as response:
         targets = json.load(response)
       for target in targets:
         target_url = target.get("url")
@@ -273,21 +304,34 @@ def wait_for_state(
     process = subprocess.Popen(command, stdout=subprocess.DEVNULL)
     connection = None
     try:
-      port = _wait_for_debug_port(process, profile, deadline)
-      websocket = _wait_for_page(port, url, deadline)
-      connection = DevToolsConnection.connect(websocket)
-      while time.monotonic() < deadline:
-        value = _evaluate(connection, expression, deadline)
-        if value:
-          message = _evaluate(
-            connection,
-            "document.querySelector('#message')?.textContent || ''",
-            deadline,
-          )
-          print(f"{dataset}={value}: {message}")
-          return value == expected
-        time.sleep(0.05)
-      raise RuntimeError(f"timed out waiting for dataset {dataset}")
+      try:
+        port = _wait_for_debug_port(process, profile, deadline)
+        websocket = _wait_for_page(process, port, url, deadline)
+        connection = DevToolsConnection.connect(websocket, deadline)
+        while time.monotonic() < deadline:
+          if process.poll() is not None:
+            raise RuntimeError(
+              f"browser exited with status {process.returncode}"
+            )
+          value = _evaluate(connection, expression, deadline)
+          if value:
+            message = _evaluate(
+              connection,
+              "document.querySelector('#message')?.textContent || ''",
+              deadline,
+            )
+            print(f"{dataset}={value}: {message}")
+            return value == expected
+          time.sleep(0.05)
+        raise RuntimeError(f"timed out waiting for dataset {dataset}")
+      except (OSError, RuntimeError) as error:
+        # A socket close during connect/evaluation otherwise hides the much
+        # more actionable Chrome exit status behind a protocol-level error.
+        if process.poll() is not None:
+          raise RuntimeError(
+            f"browser exited with status {process.returncode}"
+          ) from error
+        raise
     finally:
       if connection is not None:
         connection.close()

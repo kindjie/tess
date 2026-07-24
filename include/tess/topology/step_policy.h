@@ -26,6 +26,7 @@ enum class StepPolicyIdentity : std::uint32_t {
 struct DefaultSteps {
   static constexpr StepPolicyIdentity identity = StepPolicyIdentity::Default;
   static constexpr std::uint32_t cost_scale = 1;
+  static constexpr std::uint32_t maximum_step_multiplier = 1;
 };
 
 /** Enables face steps and clearance-preserving two-axis diagonals. */
@@ -36,7 +37,13 @@ struct DiagonalSteps {
       Rule == CornerRule::RequireBothClear
           ? StepPolicyIdentity::DiagonalRequireBothClear
           : StepPolicyIdentity::DiagonalRequireOneClear;
+  // 181 / 128 is the nearest scale-128 integer approximation to sqrt(2).
+  // Naming both factors here keeps enumeration, heuristics, and static range
+  // assessment on one exact fixed-point contract.
   static constexpr std::uint32_t cost_scale = 128;
+  static constexpr std::uint32_t diagonal_step_multiplier = 181;
+  static constexpr std::uint32_t maximum_step_multiplier =
+      diagonal_step_multiplier;
 };
 
 /** Checks whether a value names one of the supported corner rules. */

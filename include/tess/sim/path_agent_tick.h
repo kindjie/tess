@@ -29,11 +29,15 @@ struct PathAgentTickState {
 struct PathAgentTickOptions {
   std::size_t max_steps = 1;
   PathRuntimeCachePolicy cache_policy{};
-  // Budget of consecutive ticks spent retrying a Blocked agent. Occupied and
-  // reserved destinations retry the retained step without an occupancy-blind
-  // search; route-invalidating failures re-path. The first movement failure
-  // records the block, and each following tick consumes one attempt until a
-  // successful move resets the count or exhaustion becomes Unreachable.
+  /// Budget of consecutive ticks spent retrying a Blocked agent.
+  ///
+  /// Occupied and reserved destinations retry the retained step without an
+  /// occupancy-blind search; route-invalidating failures re-path. The first
+  /// movement failure records the block, and each following tick consumes one
+  /// attempt until a successful move resets the count. Exhaustion enters the
+  /// terminal `Unreachable` phase even when geometry remains reachable; size
+  /// convoy-style workloads for the longest expected contention queue (about
+  /// twice the queue depth when agents make an outbound and return trip).
   std::uint32_t max_blocked_retries = 8;
 };
 

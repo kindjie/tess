@@ -249,6 +249,16 @@ TEST(TessQuerySpan, WiderThanUint32RunSplitsWithoutDroppingTiles) {
   EXPECT_EQ(stats.tiles, static_cast<std::uint64_t>(max) + 2);
 }
 
+TEST(TessQuerySpan, RadiusHelpersHandleIntegerExtremes) {
+  constexpr auto int64_min = std::numeric_limits<std::int64_t>::min();
+  constexpr auto uint32_max = std::numeric_limits<std::uint32_t>::max();
+  constexpr auto uint64_max = std::numeric_limits<std::uint64_t>::max();
+
+  EXPECT_EQ(tess::detail::lower_radius_bound(int64_min, uint32_max), int64_min);
+  EXPECT_EQ(tess::detail::integer_sqrt(uint64_max), uint32_max);
+  EXPECT_EQ(tess::detail::integer_sqrt(uint64_max - uint32_max), uint32_max);
+}
+
 TEST(TessQuerySpan, WarmEmissionDoesNotAllocate) {
   std::uint64_t checksum = 0;
   {

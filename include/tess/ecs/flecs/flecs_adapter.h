@@ -34,8 +34,9 @@ namespace tess {
 /**
  * Lossless conversion between Flecs' 64-bit entity ID and `EntityHandle`.
  *
- * The native null representation is mapped explicitly rather than through its
- * integral value.
+ * The native null representation is mapped explicitly. The all-ones value is
+ * reserved by `EntityHandle` for null and is therefore not a representable
+ * live Flecs ID; debug builds assert if a caller supplies it.
  */
 struct FlecsHandleAdapter {
   using entity_type = flecs::entity_t;
@@ -45,6 +46,8 @@ struct FlecsHandleAdapter {
     if (entity == 0u) {
       return kNullEntityHandle;
     }
+    TESS_ASSERT_MSG(entity != kNullEntityHandle.value,
+                    "the all-ones Flecs ID is reserved for tess null");
     return EntityHandle{entity};
   }
 
@@ -131,6 +134,14 @@ void flecs_mark_tile_dirty(World& world, Coord3 tile, std::uint32_t mask) {
     world.mark_dirty(world.resolve(tile).chunk_key, mask,
                      Box3{tile, Extent3{1, 1, 1}});
   }
+}
+
+inline void flecs_assert_immediate_lifecycle(
+    [[maybe_unused]] const flecs::world& world) noexcept {
+  // Flecs would queue structural commands inside a deferred scope while tess
+  // changes occupancy immediately. Refuse that split commit boundary.
+  TESS_ASSERT_MSG(!world.is_deferred() && !world.is_readonly(),
+                  "Flecs lifecycle intents require immediate mode");
 }
 
 }  // namespace detail
@@ -246,11 +257,16 @@ template <typename World, typename OccupancyTag>
     flecs::world& ecs, FlecsPathAgentContext& context, World& world,
     TileOccupancyIndex& index, Coord3 position, std::uint32_t dirty_mask = 0,
     DeltaCollector* render_deltas = nullptr) -> flecs::entity_t {
+  detail::flecs_assert_immediate_lifecycle(ecs);
   if (!detail::flecs_tile_resolves(world, position) ||
       static_cast<bool>(world.template field<OccupancyTag>(position)) ||
       !index.entity_at(position).is_null()) {
     return 0u;
   }
+  // Grow the only tess-owned allocating structure before creating an entity,
+  // advancing AgentId, or claiming the world tile. insert() cannot allocate
+  // after this preflight, so allocation failure is a semantic no-op.
+  index.reserve(index.size() + 1);
   auto state = PathAgentState{};
   state.position = position;
   const auto flecs_entity = ecs.entity()
@@ -278,6 +294,7 @@ template <typename World, typename OccupancyTag>
  */
 [[nodiscard]] inline auto spawn_flecs_path_agent_off_board(
     flecs::world& world, FlecsPathAgentContext& context) -> flecs::entity_t {
+  detail::flecs_assert_immediate_lifecycle(world);
   return world.entity()
       .set<AgentId>(AgentId{context.next_agent_id++})
       .set<TilePosition>(TilePosition{})
@@ -297,6 +314,7 @@ auto despawn_flecs_path_agent(flecs::world& ecs, World& world,
                               TileOccupancyIndex& index, flecs::entity_t entity,
                               std::uint32_t dirty_mask = 0,
                               DeltaCollector* render_deltas = nullptr) -> bool {
+  detail::flecs_assert_immediate_lifecycle(ecs);
   if (!ecs.is_alive(entity)) {
     return false;
   }
@@ -337,6 +355,7 @@ auto teleport_flecs_path_agent(flecs::world& ecs, World& world,
                                std::uint32_t dirty_mask = 0,
                                DeltaCollector* render_deltas = nullptr)
     -> bool {
+  detail::flecs_assert_immediate_lifecycle(ecs);
   if (!ecs.is_alive(entity)) {
     return false;
   }
@@ -378,6 +397,7 @@ auto park_flecs_path_agent(flecs::world& ecs, World& world,
                            TileOccupancyIndex& index, flecs::entity_t entity,
                            std::uint32_t dirty_mask = 0,
                            DeltaCollector* render_deltas = nullptr) -> bool {
+  detail::flecs_assert_immediate_lifecycle(ecs);
   if (!ecs.is_alive(entity)) {
     return false;
   }
@@ -412,6 +432,7 @@ auto place_flecs_path_agent(flecs::world& ecs, World& world,
                             TileOccupancyIndex& index, flecs::entity_t entity,
                             Coord3 position, std::uint32_t dirty_mask = 0,
                             DeltaCollector* render_deltas = nullptr) -> bool {
+  detail::flecs_assert_immediate_lifecycle(ecs);
   if (!ecs.is_alive(entity)) {
     return false;
   }
@@ -425,6 +446,9 @@ auto place_flecs_path_agent(flecs::world& ecs, World& world,
       !index.entity_at(position).is_null()) {
     return false;
   }
+  // Preflight index growth while the entity is still parked and the world
+  // tile is still free. The remaining index insertion is non-allocating.
+  index.reserve(index.size() + 1);
   world.template field<OccupancyTag>(position) = true;
   const auto inserted =
       index.insert(position, FlecsHandleAdapter::to_handle(entity));

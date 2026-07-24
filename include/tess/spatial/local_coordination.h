@@ -110,6 +110,11 @@ namespace detail {
 }  // namespace detail
 
 /// Resolves caller-filtered local destinations by priority and stable agent ID.
+///
+/// This resolver is intended for bounded local cohorts. Duplicate options are
+/// removed within each request, and ordered claims are inserted into a compact
+/// scratch vector; the worst case is quadratic in the largest per-request
+/// option count and in the request count.
 template <typename CanEnterFn>
 auto resolve_local_moves(std::span<const LocalMoveRequest> requests,
                          std::span<const LocalMoveOption> options,

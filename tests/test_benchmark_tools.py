@@ -261,11 +261,44 @@ def test_empty_benchmark_results_fail(tmp_path, capsys):
   assert "no benchmark results" in capsys.readouterr().err
 
 
-def test_null_thresholds_are_skipped(tmp_path):
+def test_threshold_entry_without_a_limit_fails(tmp_path, capsys):
   benchmarks = [entry("key/free", 1e12)]
   thresholds = {"benchmarks": {"key/free": limits(None)}}
 
+  assert run_thresholds(tmp_path, benchmarks, thresholds) == 1
+  assert "no enabled time limit" in capsys.readouterr().err
+
+
+def test_explicitly_ungated_threshold_entry_is_allowed(tmp_path):
+  benchmarks = [entry("key/free", 1e12)]
+  entry_limits = limits(None)
+  entry_limits["gating"] = False
+  thresholds = {"benchmarks": {"key/free": entry_limits}}
+
   assert run_thresholds(tmp_path, benchmarks, thresholds) == 0
+
+
+def test_ungated_entry_rejects_a_limit(tmp_path, capsys):
+  benchmarks = [entry("key/conflict", 100.0)]
+  entry_limits = limits(500.0)
+  entry_limits["gating"] = False
+
+  code = run_thresholds(
+      tmp_path, benchmarks, {"benchmarks": {"key/conflict": entry_limits}}
+  )
+
+  assert code == 1
+  assert "gating=false conflicts" in capsys.readouterr().err
+
+
+def test_bad_time_unit_is_a_normal_tool_error(tmp_path, capsys):
+  benchmarks = [entry("key/unit", 100.0, time_unit="ticks")]
+  thresholds = {"benchmarks": {"key/unit": limits(500.0)}}
+
+  code = run_thresholds(tmp_path, benchmarks, thresholds)
+
+  assert code == 1
+  assert "key/unit: unsupported time_unit 'ticks'" in capsys.readouterr().err
 
 
 def test_unknown_limit_key_is_rejected(tmp_path, capsys):

@@ -497,6 +497,14 @@ inline auto parse_world_archive(std::span<const std::byte> bytes)
     return fail(WorldArchiveStatus::Corrupt);
   }
   const auto logical_chunks = chunks_x * chunks_y * chunks_z;
+  // Sparse archives may encode any canonical subset. A dense archive is only
+  // meaningful when it contains every logical chunk; rejecting a shorter but
+  // otherwise self-consistent body here also keeps schema-free inspection
+  // from blessing bytes that every dense typed load must reject.
+  if (info.residency == WorldArchiveResidency::AlwaysResident &&
+      info.chunk_count != logical_chunks) {
+    return fail(WorldArchiveStatus::InvalidChunk);
+  }
   auto previous_key = std::uint64_t{};
   for (std::uint64_t i = 0; i < info.chunk_count; ++i) {
     auto key = std::uint64_t{};
@@ -839,6 +847,7 @@ auto load_world_archive(World& world, std::span<const std::byte> bytes,
   static_assert(detail::archive_fields_supported<Archive, World>(),
                 "Archive fields must exist in the world and use supported "
                 "scalar value types.");
+  static_assert(Archive::field_count <= detail::world_archive_max_fields);
   auto parsed = detail::parse_world_archive(bytes);
   if (parsed.result.status != WorldArchiveStatus::Ok) {
     return parsed.result;

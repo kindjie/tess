@@ -42,12 +42,11 @@ deltas.
   second template argument is a movement class OR a raw passable tag,
   normalized exactly as in `astar_path`, so plan and commit share one
   vocabulary: every step A* accepted for a class validates for that same
-  class. Validation checks the class's PASSABILITY predicate only -- entry
-  cost is a search concern, and commit staying more permissive than the
-  weighted search is the deliberate legacy asymmetry (a cost field dropping
-  to zero after planning blocks re-planning, not an already-planned step).
-  Classes wanting cost folded into commit passability too should use
-  `WalkableCostField`, whose predicate already includes `NotZero<CostTag>`.
+  class. Validation checks both endpoints' passability predicates and rejects
+  a zero-entry-cost destination before classifying either a regular or
+  provider edge. This mirrors exact search's endpoint precheck: a cost field
+  dropping to zero after planning blocks the already-planned step as
+  `BlockedTo`, so the agent can re-plan against the changed world.
   The from- and to-tiles may live on different pages; each endpoint's
   predicate is evaluated on its own resolved page.
 - `commit_movement_intent<World, ClassOrTag, OccupancyTag, ReservationTag>(
@@ -216,7 +215,10 @@ stateDiagram-v2
   agents and clearing agents that already stand on their goal (counted as
   arrived).
 - `apply_path_agent_results(agents, runtime)` copies ticketed results back:
-  `Found` enters `Following` and resets the retry count; planner failures
+  `Found` enters `Following`. It resets the retry count for a new route, but
+  preserves the count when re-planning an already `Blocked` agent because an
+  occupancy-blind planner may return the same contested step; movement
+  progress is what resets that consecutive-block budget. Planner failures
   enter `Blocked` so the tick driver's retry budget governs them.
 - `advance_path_agents(agents, runtime, max_steps)` walks agents with a
   `Found` result up to `max_steps` nodes along runtime-owned paths without

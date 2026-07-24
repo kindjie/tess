@@ -201,6 +201,10 @@ TEST(TessPathWeightedBatch, RealizedBucketOverflowAvoidsSecondFullFlood) {
   EXPECT_EQ(bounded.status, tess::PathStatus::CostOverflow);
   EXPECT_EQ(unbounded.status, tess::PathStatus::CostOverflow);
   EXPECT_LT(bounded.expanded_nodes, unbounded.expanded_nodes);
+  const auto replay =
+      tess::weighted_distance_field_path<SmallWorld, WeightedClass>(
+          world, tess::Coord3{7, 6, 0}, goal, bounded_scratch);
+  EXPECT_EQ(replay.status, tess::PathStatus::NoPath);
 }
 
 // Members of a failed shared-goal group must report the status the

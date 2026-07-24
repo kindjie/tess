@@ -240,6 +240,14 @@ Rationale: the cache is shared across linked worktrees and build trees,
 survives `build/` deletion, and cannot be committed. Revision-keyed paths
 make pin bumps side-effect free.
 
+> Historical implementation note (2026-07-24): the network-free first phase
+> shipped this override as the CMake cache variable
+> `TESS_GRID_BENCHMARK_DATA_DIR`, alongside
+> `TESS_ENABLE_GRID_BENCHMARK_DATA` and
+> `TESS_REQUIRE_GRID_BENCHMARK_DATA`. The environment-variable spelling above
+> is original design intent, not the maintained command-line contract; see
+> `docs/planning/benchmark-plan.md`.
+
 ### 8.4 Consumption and CI
 
 - Data-dependent tests and benchmarks are opt-in behind a dedicated CMake

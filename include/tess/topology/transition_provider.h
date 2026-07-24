@@ -5,6 +5,7 @@
 
 #include <concepts>
 #include <cstdint>
+#include <memory>
 #include <type_traits>
 
 namespace tess {
@@ -92,6 +93,23 @@ template <typename P>
     return 0;
   } else {
     return provider.transition_revision();
+  }
+}
+
+// A stateful provider's address distinguishes two live instances whose local
+// revision counters happen to match. Empty providers have no instance state,
+// so nullptr preserves cache reuse across their temporary values. Retained
+// products/caches require a stateful provider to stay at a stable address;
+// callers must clear them before ending that lifetime because placement-new
+// reuse could repeat both address and revision.
+template <typename P>
+[[nodiscard]] auto transition_provider_instance_identity(
+    const P& provider) noexcept -> const void* {
+  if constexpr (std::is_empty_v<P>) {
+    (void)provider;
+    return nullptr;
+  } else {
+    return static_cast<const void*>(std::addressof(provider));
   }
 }
 

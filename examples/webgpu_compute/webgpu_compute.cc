@@ -47,6 +47,7 @@ constexpr int kNullAdapter = -16;
 constexpr int kDeviceRequestCancelled = -17;
 constexpr int kDeviceRequestFailed = -18;
 constexpr int kNullDevice = -19;
+constexpr int kDeviceError = -20;
 
 int g_status = kPending;
 WGPUInstance g_instance = nullptr;
@@ -97,6 +98,22 @@ void device_lost(const WGPUDevice*, WGPUDeviceLostReason, WGPUStringView, void*,
   }
 }
 
+void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
+                  void*) {
+  // Submission methods cannot synchronously observe validation, OOM, or
+  // internal device errors. Forward the application-owned callback into the
+  // backend's fail-closed state before publishing the browser-smoke failure.
+  if (type == WGPUErrorType_NoError) {
+    return;
+  }
+  if (g_backend != nullptr) {
+    g_backend->notify_device_error();
+  }
+  if (g_status == kPending || g_status >= kRequestingDevice) {
+    g_status = kDeviceError;
+  }
+}
+
 [[nodiscard]] bool run_compute(WGPUDevice device) {
   g_backend = std::make_unique<tess::gpu::WebGpuBackend>(
       device, tess::gpu::WebGpuBackendConfig{
@@ -106,6 +123,14 @@ void device_lost(const WGPUDevice*, WGPUDeviceLostReason, WGPUStringView, void*,
                   .field_capacity = 1,
                   .product_capacity = 1,
               });
+  // The uncaptured-error callback belongs to the device descriptor and may
+  // run while this constructor is acquiring the borrowed device/queue. If it
+  // arrived before g_backend became visible, apply the deferred fail-closed
+  // notification now and preserve its terminal browser status.
+  if (g_status == kDeviceError) {
+    g_backend->notify_device_error();
+    return false;
+  }
   const auto field = tess::gpu::FieldMirrorDesc{
       .field_index = 0,
       .format = tess::gpu::GpuFieldFormat::U32,
@@ -233,7 +258,7 @@ void device_lost(const WGPUDevice*, WGPUDeviceLostReason, WGPUStringView, void*,
 void device_ready(WGPURequestDeviceStatus status, WGPUDevice device,
                   WGPUStringView, void*, void*) {
   release_instance();
-  if (g_status == kDeviceLost) {
+  if (g_status == kDeviceLost || g_status == kDeviceError) {
     if (device != nullptr) {
       wgpuDeviceRelease(device);
     }
@@ -292,6 +317,10 @@ void adapter_ready(WGPURequestAdapterStatus status, WGPUAdapter adapter,
   // explicit mode Emdawn rejects the descriptor and returns a null future.
   device_desc.deviceLostCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
   device_desc.deviceLostCallbackInfo.callback = device_lost;
+  // WebGpuBackend deliberately does not replace application callbacks on a
+  // borrowed device. This example therefore owns the callback and forwards
+  // every uncaptured device error while the process-lifetime backend is live.
+  device_desc.uncapturedErrorCallbackInfo.callback = device_error;
   auto callback = WGPU_REQUEST_DEVICE_CALLBACK_INFO_INIT;
   callback.mode = WGPUCallbackMode_AllowSpontaneous;
   callback.callback = device_ready;
