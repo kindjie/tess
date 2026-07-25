@@ -111,9 +111,13 @@ deferred for scope reasons. Keep entries short and concrete:
   local arm64 medians ranged from 422 ns for a fused pipeline to 10.2 ms for
   dense archive save. The largest maintenance result was 24.4 us for sparse
   coalescing, retaining the experiment's previously recorded disadvantage.
+  The first hosted query gate then measured box traversal at 2.95 ms per tile
+  and 6.66 us by spans, versus local medians of 218 us and 687 ns. Radius spans
+  likewise measured 10.2 us hosted versus 1.81 us locally.
 - Decision: add strict family manifests, threshold targets, hosted CI steps,
-  and baseline artifacts. Initial ceilings are six times the local median,
-  rounded upward and explicitly labeled bootstrap rather than calibrated.
+  and baseline artifacts. Bootstrap ceilings use the greater of six times the
+  local median or twice the first hosted median, rounded upward; they are
+  explicitly labeled bootstrap rather than calibrated.
 - Retry conditions: replace the bootstrap ceilings with two times the maximum
   after ten same-runner hosted baseline artifacts.
 

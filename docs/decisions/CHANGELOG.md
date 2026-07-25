@@ -49,7 +49,8 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   status across browser callback races. Hosted CI now runs branding
   regressions and gates the previously smoke-only block-pipeline, maintenance,
   persistence, query, and spatial benchmark families; ECS thresholds run with
-  either adapter, and cppcheck no longer hides syntax errors in its smoke TU.
+  either adapter, query bootstrap ceilings include first-hosted-runner
+  evidence, and cppcheck no longer hides syntax errors in its smoke TU.
   Native examples now report allocation/runtime failures at `main`, and the
   compiled documentation example constructs its dense world inside that error
   boundary instead of during static initialization.
