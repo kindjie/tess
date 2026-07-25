@@ -97,8 +97,12 @@ auto run() -> int {
 
   // The path runtime's precheck reads the same graph, so an agent asked
   // to climb gets a Reachable verdict instead of a doomed A* search.
+  // Provider identity is part of the graph snapshot contract: passing
+  // Stairs{} here proves that the precheck and graph use the same transition
+  // semantics. Omitting it intentionally means adjacent-only transitions and
+  // therefore returns GraphStale for this provider-built graph.
   const auto verdict = tess::precheck_path<PassableTag>(
-      stairs, world, courtyard, battlement, reach);
+      stairs, world, courtyard, battlement, reach, Stairs{});
   std::cout << "precheck verdict: "
             << (verdict == tess::PrecheckStatus::Reachable ? "reachable"
                                                            : "other")
