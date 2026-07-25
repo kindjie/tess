@@ -26,7 +26,7 @@ models. It is not a renderer, physics engine, navigation-mesh generator, or
 drop-in ECS.
 
 The latest release is `v0.4.0`; this checkout documents the
-`v0.4.0` release. tess is pre-1.0 — see
+unreleased `v0.12.0` development API. tess is pre-1.0 — see
 [support and compatibility](https://tess.owx.dev/support/) for the stability
 policy. Release notes live in [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -39,6 +39,7 @@ Declare a world shape and field schema, open some tiles, and run A*:
 #include <tess/tess.h>
 
 #include <cstdint>
+#include <exception>
 #include <iostream>
 
 struct PassableTag {};
@@ -48,24 +49,29 @@ using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
 int main() {
-  World world;  // Zero-initialized: every tile starts blocked.
-  for (int y = 0; y < 8; ++y) {
-    for (int x = 0; x < 8; ++x) {
-      world.field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
+  try {
+    World world;  // Zero-initialized: every tile starts blocked.
+    for (int y = 0; y < 8; ++y) {
+      for (int x = 0; x < 8; ++x) {
+        world.field<PassableTag>(tess::Coord3{x, y, 0}) = 1;
+      }
     }
-  }
 
-  tess::PathScratch scratch;
-  const auto result = tess::astar_path<World, PassableTag>(
-      world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}},
-      scratch);
-  if (result.status != tess::PathStatus::Found) {
-    std::cerr << "path not found\n";
+    tess::PathScratch scratch;
+    const auto result = tess::astar_path<World, PassableTag>(
+        world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}},
+        scratch);
+    if (result.status != tess::PathStatus::Found) {
+      std::cerr << "path not found\n";
+      return 1;
+    }
+
+    std::cout << "path cost: " << result.cost << "\n";
+    std::cout << "expanded nodes: " << result.expanded_nodes << "\n";
+  } catch (const std::exception& error) {
+    std::cerr << "quickstart failed: " << error.what() << "\n";
     return 1;
   }
-
-  std::cout << "path cost: " << result.cost << "\n";
-  std::cout << "expanded nodes: " << result.expanded_nodes << "\n";
   return 0;
 }
 ```

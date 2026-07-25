@@ -35,6 +35,29 @@ using Builder = mv::MovementClass<
                    mv::FieldCost<CostTag>>>;
 
 using Identity = mv::WalkableField<PassableTag>;
+using ExplicitDefault =
+    mv::MovementClass<mv::Field<PassableTag>, mv::UnitCost, mv::DefaultSteps>;
+using DiagonalBoth = mv::DiagonalSteps<mv::CornerRule::RequireBothClear>;
+using DiagonalEither = mv::DiagonalSteps<mv::CornerRule::RequireOneClear>;
+
+using ThreeDimensional =
+    tess::Shape<tess::Extent3{32, 32, 32}, tess::Extent3{16, 16, 16}>;
+using OneDimensional =
+    tess::Shape<tess::Extent3{32, 1, 1}, tess::Extent3{16, 1, 1}>;
+using Hexagonal =
+    tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{16, 16, 1},
+                tess::lattice::HexAxial>;
+
+struct LegacyCustomClass : mv::movement_class_tag {
+  static constexpr bool passable(const Page&, tess::LocalTileId) noexcept {
+    return true;
+  }
+
+  static constexpr std::uint32_t entry_cost(const Page&,
+                                            tess::LocalTileId) noexcept {
+    return 1;
+  }
+};
 
 Page make_page() { return Page{tess::ChunkKey{0}, tess::ChunkCoord3{0, 0, 0}}; }
 
@@ -52,6 +75,7 @@ TEST(TessMovementClass, ClassesSatisfyTheConcept) {
   static_assert(mv::MovementClassFor<Walker, Page>);
   static_assert(mv::MovementClassFor<Builder, Page>);
   static_assert(mv::MovementClassFor<Identity, Page>);
+  static_assert(mv::MovementClassFor<LegacyCustomClass, Page>);
   static_assert(!mv::MovementClassFor<int, Page>);
   SUCCEED();
 }
@@ -64,6 +88,39 @@ TEST(TessMovementClass, MovementClassOfNormalizesTagsAndClasses) {
   // Only the identity classes advertise the field_span fast path.
   static_assert(mv::HasPassableSpan<Identity>);
   static_assert(!mv::HasPassableSpan<Walker>);
+  SUCCEED();
+}
+
+TEST(TessMovementClass, DefaultsToStableOrthogonalStepPolicy) {
+  static_assert(std::is_same_v<typename Walker::step_policy, mv::DefaultSteps>);
+  static_assert(
+      std::is_same_v<typename ExplicitDefault::step_policy, mv::DefaultSteps>);
+  static_assert(std::is_same_v<mv::step_policy_of<Walker>, mv::DefaultSteps>);
+  static_assert(
+      std::is_same_v<mv::step_policy_of<LegacyCustomClass>, mv::DefaultSteps>);
+  static_assert(mv::step_policy_identity_of<Walker> ==
+                mv::StepPolicyIdentity::Default);
+  static_assert(mv::step_policy_identity<DiagonalBoth> ==
+                mv::StepPolicyIdentity::DiagonalRequireBothClear);
+  static_assert(mv::step_policy_identity<DiagonalEither> ==
+                mv::StepPolicyIdentity::DiagonalRequireOneClear);
+
+  SUCCEED();
+}
+
+TEST(TessMovementClass, ValidatesStepPoliciesAgainstShapeLattices) {
+  static_assert(mv::StepPolicyFor<mv::DefaultSteps, Shape>);
+  static_assert(mv::StepPolicyFor<mv::DefaultSteps, Hexagonal>);
+  static_assert(mv::StepPolicyFor<DiagonalBoth, Shape>);
+  static_assert(mv::StepPolicyFor<DiagonalEither, Shape>);
+  static_assert(!mv::StepPolicyFor<DiagonalBoth, OneDimensional>);
+  static_assert(!mv::StepPolicyFor<DiagonalBoth, ThreeDimensional>);
+  static_assert(!mv::StepPolicyFor<DiagonalBoth, Hexagonal>);
+  static_assert(!mv::StepPolicyFor<int, Shape>);
+  static_assert(mv::ValidCornerRule<mv::CornerRule::RequireBothClear>);
+  static_assert(mv::ValidCornerRule<mv::CornerRule::RequireOneClear>);
+  static_assert(!mv::ValidCornerRule<static_cast<mv::CornerRule>(255)>);
+
   SUCCEED();
 }
 

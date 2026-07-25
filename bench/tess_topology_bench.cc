@@ -167,6 +167,95 @@ void BM_topology_reachable_far_512x512(benchmark::State& state) {
               "far reachability query was not Reachable");
 }
 
+void BM_topology_coarse_path_far_512x512(benchmark::State& state) {
+  TopoWorld world;
+  fill_passable(world, 1);
+
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  const auto built =
+      tess::build_region_graph<TopoWorld, PassableTag>(world, scratch, graph);
+  bench_check(built.status == tess::TopologyStatus::Built,
+              "region graph build did not report Built");
+
+  tess::RegionGraphScratch path_scratch;
+  (void)tess::coarse_path<TopoShape>(graph, kFarStart, kFarGoal, path_scratch);
+  tess::CoarsePathResult result{};
+  for (auto _ : state) {
+    result =
+        tess::coarse_path<TopoShape>(graph, kFarStart, kFarGoal, path_scratch);
+    benchmark::DoNotOptimize(result.chunks.data());
+  }
+  bench_check(result.status == tess::ReachabilityStatus::Reachable,
+              "far coarse path was not Reachable");
+  bench_check(!result.chunks.empty(), "far coarse path had no corridor");
+  state.counters["corridor.chunks"] = static_cast<double>(result.chunks.size());
+  state.counters["corridor.portals"] =
+      static_cast<double>(result.portals.size());
+}
+
+void BM_topology_area_index_build_256_areas_512x512(benchmark::State& state) {
+  TopoWorld world;
+  fill_passable(world, 1);
+  tess::LocalTopologyScratch topology_scratch;
+  tess::RegionGraph graph;
+  const auto built = tess::build_region_graph<TopoWorld, PassableTag>(
+      world, topology_scratch, graph);
+  bench_check(built.status == tess::TopologyStatus::Built,
+              "region graph build did not report Built");
+  tess::AreaIndexScratch scratch;
+  scratch.reserve(graph.region_count(), graph.portals().size());
+  tess::AreaIndex index;
+  index.reserve(graph.region_count(), graph.portals().size());
+  tess::AreaBuildResult result;
+
+  for (auto _ : state) {
+    result = tess::build_area_index(
+        graph,
+        [](tess::RegionRef ref, const tess::LocalRegion&) {
+          return ref.chunk.value + 1u;
+        },
+        scratch, index);
+    benchmark::DoNotOptimize(index.connections().data());
+  }
+  bench_check(result.status == tess::AreaBuildStatus::Built,
+              "area index build failed");
+  bench_check(index.areas().size() == TopoWorld::chunk_count,
+              "area index did not create one area per chunk");
+  state.counters["areas"] = static_cast<double>(index.areas().size());
+  state.counters["connections"] =
+      static_cast<double>(index.connections().size());
+}
+
+void BM_topology_area_lookup_256_areas_512x512(benchmark::State& state) {
+  TopoWorld world;
+  fill_passable(world, 1);
+  tess::LocalTopologyScratch topology_scratch;
+  tess::RegionGraph graph;
+  const auto built = tess::build_region_graph<TopoWorld, PassableTag>(
+      world, topology_scratch, graph);
+  bench_check(built.status == tess::TopologyStatus::Built,
+              "region graph build did not report Built");
+  tess::AreaIndexScratch scratch;
+  tess::AreaIndex index;
+  const auto area_result = tess::build_area_index(
+      graph,
+      [](tess::RegionRef ref, const tess::LocalRegion&) {
+        return ref.chunk.value + 1u;
+      },
+      scratch, index);
+  bench_check(area_result.status == tess::AreaBuildStatus::Built,
+              "area index build failed");
+
+  auto area = tess::invalid_area_id;
+  for (auto _ : state) {
+    area = index.area_of<TopoShape>(graph, kFarGoal);
+    benchmark::DoNotOptimize(area);
+  }
+  bench_check(area == tess::AreaId{TopoWorld::chunk_count},
+              "area lookup returned the wrong area");
+}
+
 void BM_topology_precheck_reachable_512x512(benchmark::State& state) {
   TopoWorld world;
   fill_passable(world, 1);
@@ -224,6 +313,12 @@ BENCHMARK(BM_topology_region_graph_update_single_chunk_512x512)
     ->Name("topology/region_graph_update_single_chunk_512x512");
 BENCHMARK(BM_topology_reachable_far_512x512)
     ->Name("topology/reachable_far_512x512");
+BENCHMARK(BM_topology_coarse_path_far_512x512)
+    ->Name("topology/coarse_path_far_512x512");
+BENCHMARK(BM_topology_area_index_build_256_areas_512x512)
+    ->Name("topology/area_index_build_256_areas_512x512");
+BENCHMARK(BM_topology_area_lookup_256_areas_512x512)
+    ->Name("topology/area_lookup_256_areas_512x512");
 BENCHMARK(BM_topology_precheck_reachable_512x512)
     ->Name("topology/precheck_reachable_512x512");
 BENCHMARK(BM_topology_precheck_unreachable_512x512)

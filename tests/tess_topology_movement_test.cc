@@ -305,6 +305,18 @@ struct RevisionedBridgeTransitions {
                                               static_cast<Sink&&>(sink));
     }
   }
+
+  template <typename WorldT, typename Sink>
+  void for_each_forward(const WorldT&, tess::Coord3 from, Sink&& sink) const {
+    if (!enabled) {
+      return;
+    }
+    if (from == tess::Coord3{1, 4, 0}) {
+      sink(tess::SpecialTransitionCandidate{{3, 4, 0}, 1, false});
+    } else if (from == tess::Coord3{3, 4, 0}) {
+      sink(tess::SpecialTransitionCandidate{{1, 4, 0}, 1, false});
+    }
+  }
 };
 
 struct UnrevisionedStatefulTransitions {
@@ -468,6 +480,60 @@ TEST(TessTopologyMovement, ProviderRevisionChangeForcesFullRebuildOnUpdate) {
   tess::RegionGraph reference;
   tess::build_region_graph<World, Walker>(world, scratch, reference, provider);
   expect_graphs_equal(graph, reference);
+}
+
+TEST(TessTopologyMovement,
+     ProviderInstanceChangeForcesFullRebuildAtEqualRevision) {
+  World world;
+  fill_passable(world, 1);
+  carve_walls(world);
+  world.field<PassableTag>(tess::Coord3{2, 5, 0}) = 0;
+
+  const auto disabled = RevisionedBridgeTransitions{false, 7};
+  const auto enabled = RevisionedBridgeTransitions{true, 7};
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  tess::build_region_graph<World, Walker>(world, scratch, graph, disabled);
+  ASSERT_TRUE(graph.matches_provider(disabled));
+  ASSERT_FALSE(graph.matches_provider(enabled));
+
+  const auto updated = tess::update_region_graph<World, Walker>(
+      world, scratch, graph, {}, enabled);
+  ASSERT_EQ(updated.status, tess::TopologyStatus::Built);
+  EXPECT_FALSE(graph.matches_provider(disabled));
+  EXPECT_TRUE(graph.matches_provider(enabled));
+
+  tess::RegionGraphScratch reach;
+  EXPECT_EQ(
+      tess::reachable<TopDown2D>(graph, {1, 4, 0}, {3, 4, 0}, reach).status,
+      tess::ReachabilityStatus::Reachable);
+}
+
+TEST(TessTopologyMovement,
+     RuntimeIgnoresGraphFromDifferentProviderInstanceAtEqualRevision) {
+  World world;
+  fill_passable(world, 1);
+  carve_walls(world);
+  world.field<PassableTag>(tess::Coord3{2, 5, 0}) = 0;
+
+  const auto disabled = RevisionedBridgeTransitions{false, 11};
+  const auto enabled = RevisionedBridgeTransitions{true, 11};
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  tess::build_region_graph<World, Walker>(world, scratch, graph, disabled);
+
+  tess::PathRequestRuntime runtime;
+  runtime.reserve_requests(1);
+  runtime.reserve_search_nodes(TopDown2D::size.x * TopDown2D::size.y);
+  runtime.reserve_path_nodes(16);
+  runtime.reserve_unit_routes(1);
+  (void)runtime.submit({{1, 4, 0}, {3, 4, 0}});
+  const auto results =
+      runtime.process_unit_cached<World, Walker>(world, {}, &graph, enabled);
+
+  ASSERT_EQ(results.size(), 1u);
+  EXPECT_EQ(results[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(runtime.stats().precheck_ruled_out, 0u);
 }
 
 TEST(TessTopologyMovement, SparseProviderIntoMissingChunkIsIndeterminate) {

@@ -32,7 +32,7 @@ When implementation diverges from a TDD:
 - [Modern C++ / compile-time safety](modern-cpp-compile-time-safety.md)
 - [Lattices and the resolved transition model](lattice-and-transition-model.md)
 - [External grid benchmark data and the scenario oracle][benchmark-data]
-  (proposed)
+  (network-free harness shipped; external acquisition gated)
 - [Concurrent tile-world execution and maintenance][concurrent-tile-world]
 - [Work Contracts evaluation and integration][work-contracts] (proposed
   addendum)

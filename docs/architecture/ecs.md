@@ -3,8 +3,9 @@
 The ECS layer (M10) binds path agents to entity-component stores without
 tying the core to any ECS library. `include/tess/ecs/adapter.h` is the
 dependency-free, always-on layer exported by `tess/tess.h`; concrete
-adapters (the EnTT adapter under `include/tess/ecs/entt/`, or a game's
-own) implement its concepts and reuse its components, batch scratch,
+adapters (EnTT under `include/tess/ecs/entt/`, Flecs under
+`include/tess/ecs/flecs/`, or a game's own) implement its concepts and reuse
+its components, batch scratch,
 occupancy index, and tick pipeline.
 
 The seam is "agents in deterministic order in, state write-back out".
@@ -55,7 +56,8 @@ lifecycle.
 - `TileOccupancyIndex` is the injective tile-to-entity occupancy map, the
   ECS-side mirror of a bool occupancy field: `reserve` (load factor at
   most 0.5), `insert(tile, entity)` (refuses, without mutating, a tile
-  already mapped to a different entity -- uniqueness is structural),
+  already mapped to a different entity or a null entity -- uniqueness is
+  structural),
   `erase(tile)` (returns the erased handle; backward-shift deletion, no
   tombstones), `move(from, to, entity)` (the movement-commit hot path,
   debug-asserted, never rehashes), `entity_at(tile)`, `size`, and
@@ -143,6 +145,57 @@ two-gate build policy.
   tile). Entity-delta completeness holds exactly for this surface --
   the legacy span drivers bypass recording by construction.
 
+## Flecs Adapter
+
+`include/tess/ecs/flecs/flecs_adapter.h` is independently gated by
+`TESS_ENABLE_FLECS` and requires the consumer to include `<flecs.h>` first.
+It requires Flecs 4.1.5 or newer and compiles to nothing when disabled. Core
+and ordinary consumers never acquire Flecs.
+
+The public types mirror the EnTT surface: `FlecsHandleAdapter`,
+`FlecsTilePositionAdapter`, `FlecsAgentEntry`, `FlecsPathAgentContext`,
+`FlecsPathAgentSource`, and `FlecsPathAgentSink`. Lifecycle operations are
+`spawn_flecs_path_agent`, `spawn_flecs_path_agent_off_board`,
+`despawn_flecs_path_agent`, `teleport_flecs_path_agent`,
+`park_flecs_path_agent`, `place_flecs_path_agent`,
+`set_flecs_path_agent_goal`, and `clear_flecs_path_agent_goal`. Drivers are
+`tick_flecs_unit_path_agents` and the weighted `tick_flecs_path_agents`
+overloads. All pass through the same generic pipeline and uphold the same
+occupancy, result-application, and render-delta invariants.
+
+Flecs-specific constraints are explicit:
+
+- Native `flecs::entity_t` is a 64-bit identity with generation information;
+  conversion copies every representable live ID and maps Flecs' zero invalid
+  ID to tess null. The all-ones value is tess's null sentinel and is excluded
+  from the adapter domain; debug builds assert if it is presented as a live
+  Flecs ID.
+- `FlecsPathAgentContext` owns the typed query. It must be constructed with
+  the world and outlive every source/sink call, but be destroyed before the
+  world. Sources, sinks, lifecycle intents that allocate IDs, and tick drivers
+  assert that they receive that same world. Query construction is setup work;
+  repeated query creation is not a hot-path operation.
+- Query iteration only collects pointers and IDs. Sorting and goal reads occur
+  after iteration; state and component write-back and structural goal removal
+  occur in the later sink phase. Lifecycle structural changes are standalone
+  intents. This avoids Flecs' locked-table assertion and preserves the TDD's
+  safe-phase rule.
+- The typed query sees parked tables, then excludes `OffBoard` in its
+  non-mutating callback. A negated Flecs builder term would avoid that callback
+  check, but Flecs 4.1.5's fluent term builder triggers false
+  `StackAddressEscape` findings at downstream construction sites under the
+  required Clang analyzer gate. Entries are sorted by `AgentId`, never by
+  table order or native entity ID, so archetype churn cannot affect
+  authoritative output.
+- Lifecycle intents, source/sink operations, and tick drivers require Flecs
+  immediate mode. They must not run inside a deferred or readonly scope:
+  Flecs would queue component changes while tess applies world occupancy and
+  index changes immediately. Debug builds assert this precondition before the
+  shared pipeline mutates authoritative state.
+- On-board spawn and place preflight occupancy-index growth before changing
+  the ECS, world occupancy, or `next_agent_id`. An allocation failure at that
+  boundary therefore leaves every authoritative store unchanged.
+
 ## Invariants
 
 - Index/position sync: after any pipeline entry point returns,
@@ -170,11 +223,13 @@ Following agent's ticket -- asserted in debug builds, silently stalled
 movement in release. One runtime per (world, movement class, agent
 system), extending the standing one-runtime-per-(world, class) contract.
 
-## Known Cost
+## Planning Cost
 
-Any processing tick re-paths every active agent: `submit_path_agents`
-resubmits all agents with goals into a fresh generation. This is the
-standing lifecycle behavior, not an adapter property, but ECS-scale agent
-counts make it the relevant cost cliff -- one goal change among 100k
-Following agents re-paths all of them on that tick. The ecs benchmark
-family tracks collect/apply/tick costs at 1k-100k agents.
+World-scoped invalidation re-paths every active agent. The raw-span tick
+drivers retain routes and use `PathSubmitScope::NeedsOnly`, but the current ECS
+drivers intentionally use runtime-owned paths and an all-agent processing pass
+whenever collection reports a changed goal. They therefore do not yet inherit
+the retained-step optimization for mixed goal churn and occupancy waiters.
+Their work remains retry-bounded and correct, and the ECS benchmark family
+tracks collect/apply/tick costs at 1k-100k agents. Route retention inside
+`PathAgentBatch` is a future optimization, not a current contract.

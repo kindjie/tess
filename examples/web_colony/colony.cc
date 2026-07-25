@@ -16,6 +16,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <iostream>
 #include <memory>
 #include <span>
@@ -32,6 +33,10 @@ struct ReservationTag {};
 constexpr int kWidth = 128;
 constexpr int kHeight = 128;
 constexpr int kMaxAgents = 1024;
+// A painted one-tile bottleneck can merge every row into one queue. Retained
+// route waits do not replan, so covering a full outbound-and-return convoy
+// prevents healthy queueing from becoming terminal without reintroducing the
+// planning crawl this retry bound was added to stop.
 // Wall painting is rejected outside this band so the spawn columns on the
 // left and the turnaround columns on the right always stay standable.
 constexpr int kWallMinX = 10;
@@ -155,6 +160,12 @@ struct Demo {
           auto* self = static_cast<Demo*>(ctx);
           if (done.ok() && ack != nullptr) {
             self->built_tiles += ack->tiles;
+            // AutoExec runs every accepted chunk kernel before draining any
+            // hook. Duplicate UniquePerChunk operations are rejected only
+            // after the first operation for that same chunk is accepted, and
+            // that kernel applies every pending wall in the chunk. Clearing on
+            // the first successful completion therefore cannot hide work from
+            // a later kernel or discard a rejected sibling's distinct chunk.
             self->pending_walls.clear();
           }
         });
@@ -200,10 +211,17 @@ struct Demo {
       if (demo->replan_each_tick) {
         tess::mark_pathing_dirty(demo->tick_state);
       }
+      auto options = tess::PathAgentTickOptions{};
+      // The convoy accordion can block rear agents for roughly one tick per
+      // rank even on an unobstructed map. Scale the terminal bound to the
+      // active convoy, not the demo's 1,024-agent capacity, so small colonies
+      // do not wait minutes to report an actual seal.
+      options.max_blocked_retries =
+          2U * static_cast<std::uint32_t>(demo->agents.size()) + 8U;
       (void)tess::tick_weighted_path_agents_with_movement<
           World, Walker, kMaxCost, OccupancyTag, ReservationTag>(
-          demo->tick_state, demo->world, demo->agents, demo->runtime, {}, 0,
-          &demo->graph);
+          demo->tick_state, demo->world, demo->agents, demo->runtime, options,
+          0, &demo->graph);
       return {};
     }
   };
@@ -288,10 +306,23 @@ struct Demo {
     return count;
   }
 
+  auto unreachable() const -> int {
+    int count = 0;
+    for (const auto& agent : agents) {
+      if (agent.phase == tess::PathAgentPhase::Unreachable) {
+        ++count;
+      }
+    }
+    return count;
+  }
+
   // Flips every agent's goal to the opposite side once the whole colony has
   // arrived. On the return trip the convoy leader (highest batch) is
   // processed last within each row, so the first few ticks are a harmless
   // accordion of transient Occupied results — expected, not a bug.
+  // Terminal agents deliberately keep their failed goal and do not relaunch:
+  // the page reports that state and requires reset/clear-walls to change the
+  // environment rather than silently retrying a proven-unreachable trip.
   auto relaunch() -> int {
     if (arrived() != static_cast<int>(agents.size())) {
       return trips;
@@ -364,33 +395,51 @@ TESS_DEMO_EXPORT int tess_colony_arrived() {
   return demo ? demo->arrived() : 0;
 }
 
+TESS_DEMO_EXPORT int tess_colony_unreachable() {
+  return demo ? demo->unreachable() : 0;
+}
+
 }  // extern "C"
 
 int main() {
-  tess_colony_reset(8);
 #ifndef __EMSCRIPTEN__
-  for (int frame = 0; frame < 5000 && tess_colony_arrived() < 8; ++frame) {
-    if (frame == 4) {
-      for (int y = 0; y < kHeight - 8; ++y) {
-        tess_colony_set_wall(64, y);
+  // The browser entry points retain their established exception behavior.
+  // The native executable is a self-check, so convert setup/allocation
+  // failures into a diagnostic instead of escaping main and terminating.
+  try {
+#endif
+    tess_colony_reset(8);
+#ifndef __EMSCRIPTEN__
+    for (int frame = 0; frame < 5000 && tess_colony_arrived() < 8; ++frame) {
+      if (frame == 4) {
+        for (int y = 0; y < kHeight - 8; ++y) {
+          tess_colony_set_wall(64, y);
+        }
       }
+      (void)tess_colony_tick(0.05);
     }
-    (void)tess_colony_tick(0.05);
-  }
-  if (tess_colony_arrived() != 8) {
-    std::cerr << "web colony model: agents did not arrive\n";
+    if (tess_colony_arrived() != 8) {
+      std::cerr << "web colony model: agents did not arrive\n";
+      return 1;
+    }
+    if (demo->built_tiles != static_cast<std::size_t>(kHeight - 8)) {
+      std::cerr << "web colony model: wall not built\n";
+      return 1;
+    }
+    const auto* tiles = tess_colony_tiles();
+    if (tiles[64 + 0 * kWidth] != 1 ||
+        tiles[64 + (kHeight - 1) * kWidth] != 0) {
+      std::cerr << "web colony model: shadow grid mismatch\n";
+      return 1;
+    }
+    std::cout << "web colony model: ok\n";
+  } catch (const std::exception& error) {
+    std::cerr << "web colony model: " << error.what() << '\n';
+    return 1;
+  } catch (...) {
+    std::cerr << "web colony model: unknown failure\n";
     return 1;
   }
-  if (demo->built_tiles != static_cast<std::size_t>(kHeight - 8)) {
-    std::cerr << "web colony model: wall not built\n";
-    return 1;
-  }
-  const auto* tiles = tess_colony_tiles();
-  if (tiles[64 + 0 * kWidth] != 1 || tiles[64 + (kHeight - 1) * kWidth] != 0) {
-    std::cerr << "web colony model: shadow grid mismatch\n";
-    return 1;
-  }
-  std::cout << "web colony model: ok\n";
 #endif
   return 0;
 }

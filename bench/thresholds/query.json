@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "query/box/per_tile": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 6000000,
+      "note": "Local 218 us; hosted 2.95 ms; bootstrap ceiling"
+    },
+    "query/box/spans": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 14000,
+      "note": "Local 687 ns; hosted 6.66 us; bootstrap ceiling"
+    },
+    "query/radius/per_tile": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 960000,
+      "note": "Local 160 us; hosted 215 us; bootstrap ceiling"
+    },
+    "query/radius/spans": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 21000,
+      "note": "Local 1.81 us; hosted 10.2 us; bootstrap ceiling"
+    }
+  }
+}

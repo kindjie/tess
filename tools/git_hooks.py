@@ -64,18 +64,24 @@ PRIVATE_PATTERNS = (
 )
 
 
-def repository_git_path(name: str) -> Path:
-  """Resolve a per-repository path for normal and linked worktrees."""
-  raw = subprocess.check_output(
-    ["git", "rev-parse", "--git-path", name],
+def repository_common_git_path(
+  name: str,
+  *,
+  git_output: Callable[..., str] = subprocess.check_output,
+) -> Path:
+  """Resolve untracked repository policy shared by every linked worktree."""
+  raw = git_output(
+    ["git", "rev-parse", "--git-common-dir"],
     cwd=REPO_ROOT,
     text=True,
   ).strip()
-  path = Path(raw)
-  return path if path.is_absolute() else REPO_ROOT / path
+  common_dir = Path(raw)
+  if not common_dir.is_absolute():
+    common_dir = REPO_ROOT / common_dir
+  return common_dir / name
 
 
-LOCAL_PRIVATE_PATTERNS = repository_git_path("tess-private-patterns")
+LOCAL_PRIVATE_PATTERNS = repository_common_git_path("tess-private-patterns")
 TOKEN_LIMIT = 24_000
 ZERO_SHA_RE = re.compile(r"^0+$")
 PUSH_SHA_RE = re.compile(r"^[0-9a-f]{40,64}$")

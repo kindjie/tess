@@ -1,0 +1,340 @@
+#pragma once
+
+// C++ test double for the stable subset of Dawn's webgpu.h used by tess.
+#define WEBGPU_H_
+
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
+
+struct WGPUDeviceImpl;
+struct WGPUQueueImpl;
+struct WGPUBufferImpl;
+struct WGPUComputePipelineImpl;
+struct WGPUBindGroupImpl;
+struct WGPUCommandEncoderImpl;
+struct WGPUComputePassEncoderImpl;
+struct WGPUCommandBufferImpl;
+
+using WGPUDevice = WGPUDeviceImpl*;
+using WGPUQueue = WGPUQueueImpl*;
+using WGPUBuffer = WGPUBufferImpl*;
+using WGPUComputePipeline = WGPUComputePipelineImpl*;
+using WGPUBindGroup = WGPUBindGroupImpl*;
+using WGPUCommandEncoder = WGPUCommandEncoderImpl*;
+using WGPUComputePassEncoder = WGPUComputePassEncoderImpl*;
+using WGPUCommandBuffer = WGPUCommandBufferImpl*;
+using WGPUBufferUsage = std::uint64_t;
+using WGPUMapMode = std::uint64_t;
+
+inline constexpr WGPUBufferUsage WGPUBufferUsage_MapRead = 1u << 0u;
+inline constexpr WGPUBufferUsage WGPUBufferUsage_CopySrc = 1u << 2u;
+inline constexpr WGPUBufferUsage WGPUBufferUsage_CopyDst = 1u << 3u;
+inline constexpr WGPUBufferUsage WGPUBufferUsage_Storage = 1u << 7u;
+inline constexpr WGPUMapMode WGPUMapMode_Read = 1u << 0u;
+
+// These widths intentionally mirror the stable WebGPU C ABI used by the
+// production header; shrinking the test double would stop checking ABI-shaped
+// integration. NOLINTNEXTLINE(performance-enum-size)
+enum WGPUCallbackMode : std::uint32_t {
+  WGPUCallbackMode_AllowSpontaneous = 3,
+};
+
+// Keep the stable WebGPU C ABI width; see WGPUCallbackMode above.
+// NOLINTNEXTLINE(performance-enum-size)
+enum WGPUMapAsyncStatus : std::uint32_t {
+  WGPUMapAsyncStatus_Success = 1,
+  WGPUMapAsyncStatus_CallbackCancelled = 2,
+  WGPUMapAsyncStatus_Error = 3,
+  WGPUMapAsyncStatus_Aborted = 4,
+  WGPUMapAsyncStatus_Force32 = 0x7FFFFFFF,
+};
+
+struct WGPUStringView {
+  const char* data = nullptr;
+  std::size_t length = 0;
+};
+
+using WGPUBufferMapCallback = void (*)(WGPUMapAsyncStatus, WGPUStringView,
+                                       void*, void*);
+
+struct WGPUBufferMapCallbackInfo {
+  void* nextInChain = nullptr;
+  WGPUCallbackMode mode = WGPUCallbackMode_AllowSpontaneous;
+  WGPUBufferMapCallback callback = nullptr;
+  void* userdata1 = nullptr;
+  void* userdata2 = nullptr;
+};
+
+struct WGPUBufferDescriptor {
+  void* nextInChain = nullptr;
+  WGPUStringView label{};
+  WGPUBufferUsage usage = 0;
+  std::uint64_t size = 0;
+  bool mappedAtCreation = false;
+};
+
+struct WGPUCommandEncoderDescriptor {
+  void* nextInChain = nullptr;
+  WGPUStringView label{};
+};
+
+struct WGPUComputePassDescriptor {
+  void* nextInChain = nullptr;
+  WGPUStringView label{};
+  const void* timestampWrites = nullptr;
+};
+
+struct WGPUCommandBufferDescriptor {
+  void* nextInChain = nullptr;
+  WGPUStringView label{};
+};
+
+struct WGPUFuture {
+  std::uint64_t id = 0;
+};
+
+#define WGPU_BUFFER_DESCRIPTOR_INIT \
+  WGPUBufferDescriptor {}
+#define WGPU_COMMAND_ENCODER_DESCRIPTOR_INIT \
+  WGPUCommandEncoderDescriptor {}
+#define WGPU_COMPUTE_PASS_DESCRIPTOR_INIT \
+  WGPUComputePassDescriptor {}
+#define WGPU_COMMAND_BUFFER_DESCRIPTOR_INIT \
+  WGPUCommandBufferDescriptor {}
+#define WGPU_BUFFER_MAP_CALLBACK_INFO_INIT \
+  WGPUBufferMapCallbackInfo {}
+
+struct WGPUDeviceImpl {
+  std::size_t refs = 1;
+};
+struct WGPUQueueImpl {
+  std::size_t refs = 1;
+};
+struct WGPUBufferImpl {
+  std::size_t refs = 1;
+  WGPUBufferUsage usage = 0;
+  std::vector<std::byte> bytes;
+};
+struct WGPUComputePipelineImpl {
+  std::size_t refs = 1;
+};
+struct WGPUBindGroupImpl {
+  std::size_t refs = 1;
+};
+struct WGPUCommandEncoderImpl {};
+struct WGPUComputePassEncoderImpl {};
+struct WGPUCommandBufferImpl {};
+
+namespace tess_webgpu_stub {
+
+enum class Event : std::uint8_t {
+  CreateBuffer,
+  WriteBuffer,
+  BeginPass,
+  SetPipeline,
+  SetBindGroup,
+  Dispatch,
+  Submit,
+  CopyBuffer,
+  MapAsync,
+};
+
+inline WGPUQueueImpl queue;
+inline std::vector<Event> events;
+inline std::uint32_t dispatched_x = 0;
+
+struct PendingMap {
+  WGPUBuffer buffer = nullptr;
+  WGPUBufferMapCallbackInfo callback{};
+};
+
+inline std::vector<PendingMap> pending_maps;
+inline std::uint64_t map_future_id = 1;
+inline bool complete_map_inline = false;
+
+inline void reset() {
+  events.clear();
+  dispatched_x = 0;
+  pending_maps.clear();
+  map_future_id = 1;
+  complete_map_inline = false;
+}
+
+inline auto make_device() -> WGPUDevice { return new WGPUDeviceImpl{}; }
+inline auto make_pipeline() -> WGPUComputePipeline {
+  return new WGPUComputePipelineImpl{};
+}
+inline auto make_bind_group() -> WGPUBindGroup {
+  return new WGPUBindGroupImpl{};
+}
+
+inline void complete_map(std::size_t index, bool success) {
+  auto pending = pending_maps.at(index);
+  // Remove the record first: the callback releases its staging buffer and may
+  // complete the operation's last owner, so retaining that pointer afterward
+  // would leave misleading test-double state.
+  pending_maps.erase(pending_maps.begin() + static_cast<std::ptrdiff_t>(index));
+  pending.callback.callback(
+      success ? WGPUMapAsyncStatus_Success : WGPUMapAsyncStatus_Error, {},
+      pending.callback.userdata1, pending.callback.userdata2);
+}
+
+inline void complete_map(bool success) { complete_map(0, success); }
+
+[[nodiscard]] inline bool copy_range_fits(WGPUBuffer buffer,
+                                          std::uint64_t offset,
+                                          std::uint64_t size) noexcept {
+  return buffer != nullptr && offset <= buffer->bytes.size() &&
+         size <= static_cast<std::uint64_t>(buffer->bytes.size()) - offset;
+}
+
+}  // namespace tess_webgpu_stub
+
+inline void wgpuDeviceAddRef(WGPUDevice device) { ++device->refs; }
+inline void wgpuDeviceRelease(WGPUDevice device) {
+  if (--device->refs == 0) {
+    delete device;
+  }
+}
+inline WGPUQueue wgpuDeviceGetQueue(WGPUDevice) {
+  ++tess_webgpu_stub::queue.refs;
+  return &tess_webgpu_stub::queue;
+}
+inline void wgpuQueueRelease(WGPUQueue queue) { --queue->refs; }
+inline WGPUBuffer wgpuDeviceCreateBuffer(WGPUDevice,
+                                         const WGPUBufferDescriptor* desc) {
+  tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::CreateBuffer);
+  auto* buffer = new WGPUBufferImpl{};
+  buffer->usage = desc->usage;
+  buffer->bytes.resize(static_cast<std::size_t>(desc->size));
+  return buffer;
+}
+inline void wgpuBufferAddRef(WGPUBuffer buffer) { ++buffer->refs; }
+inline std::uint64_t wgpuBufferGetSize(WGPUBuffer buffer) {
+  return buffer->bytes.size();
+}
+inline WGPUBufferUsage wgpuBufferGetUsage(WGPUBuffer buffer) {
+  return buffer->usage;
+}
+inline void wgpuBufferRelease(WGPUBuffer buffer) {
+  if (--buffer->refs == 0) {
+    delete buffer;
+  }
+}
+inline void wgpuQueueWriteBuffer(WGPUQueue, WGPUBuffer buffer,
+                                 std::uint64_t offset, const void* data,
+                                 std::size_t size) {
+  tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::WriteBuffer);
+  // A test double must turn backend validation regressions into deterministic
+  // failures. Letting memcpy run out of bounds would hide the violated WebGPU
+  // contract behind heap corruption, especially outside sanitizer builds.
+  if (!tess_webgpu_stub::copy_range_fits(buffer, offset, size)) {
+    std::abort();
+  }
+  std::memcpy(buffer->bytes.data() + static_cast<std::size_t>(offset), data,
+              size);
+}
+inline void wgpuComputePipelineAddRef(WGPUComputePipeline pipeline) {
+  ++pipeline->refs;
+}
+inline void wgpuComputePipelineRelease(WGPUComputePipeline pipeline) {
+  if (--pipeline->refs == 0) {
+    delete pipeline;
+  }
+}
+inline void wgpuBindGroupAddRef(WGPUBindGroup group) { ++group->refs; }
+inline void wgpuBindGroupRelease(WGPUBindGroup group) {
+  if (--group->refs == 0) {
+    delete group;
+  }
+}
+inline WGPUCommandEncoder wgpuDeviceCreateCommandEncoder(
+    WGPUDevice, const WGPUCommandEncoderDescriptor*) {
+  return new WGPUCommandEncoderImpl{};
+}
+inline WGPUComputePassEncoder wgpuCommandEncoderBeginComputePass(
+    WGPUCommandEncoder, const WGPUComputePassDescriptor*) {
+  tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::BeginPass);
+  return new WGPUComputePassEncoderImpl{};
+}
+inline void wgpuComputePassEncoderSetPipeline(WGPUComputePassEncoder,
+                                              WGPUComputePipeline) {
+  tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::SetPipeline);
+}
+inline void wgpuComputePassEncoderSetBindGroup(WGPUComputePassEncoder,
+                                               std::uint32_t, WGPUBindGroup,
+                                               std::size_t,
+                                               const std::uint32_t*) {
+  tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::SetBindGroup);
+}
+inline void wgpuComputePassEncoderDispatchWorkgroups(WGPUComputePassEncoder,
+                                                     std::uint32_t x,
+                                                     std::uint32_t,
+                                                     std::uint32_t) {
+  tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::Dispatch);
+  tess_webgpu_stub::dispatched_x = x;
+}
+inline void wgpuComputePassEncoderEnd(WGPUComputePassEncoder) {}
+inline void wgpuComputePassEncoderRelease(WGPUComputePassEncoder pass) {
+  delete pass;
+}
+inline WGPUCommandBuffer wgpuCommandEncoderFinish(
+    WGPUCommandEncoder, const WGPUCommandBufferDescriptor*) {
+  return new WGPUCommandBufferImpl{};
+}
+inline void wgpuCommandEncoderRelease(WGPUCommandEncoder encoder) {
+  delete encoder;
+}
+inline void wgpuCommandBufferRelease(WGPUCommandBuffer buffer) {
+  delete buffer;
+}
+inline void wgpuQueueSubmit(WGPUQueue, std::size_t, const WGPUCommandBuffer*) {
+  tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::Submit);
+}
+inline void wgpuCommandEncoderCopyBufferToBuffer(
+    WGPUCommandEncoder, WGPUBuffer source, std::uint64_t source_offset,
+    WGPUBuffer destination, std::uint64_t destination_offset,
+    std::uint64_t size) {
+  tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::CopyBuffer);
+  // Match queue-write behavior so either side of an invalid readback copy
+  // fails at the stub boundary instead of corrupting the test process.
+  if (!tess_webgpu_stub::copy_range_fits(source, source_offset, size) ||
+      !tess_webgpu_stub::copy_range_fits(destination, destination_offset,
+                                         size)) {
+    std::abort();
+  }
+  std::memcpy(
+      destination->bytes.data() + static_cast<std::size_t>(destination_offset),
+      source->bytes.data() + static_cast<std::size_t>(source_offset),
+      static_cast<std::size_t>(size));
+}
+inline WGPUFuture wgpuBufferMapAsync(WGPUBuffer buffer, WGPUMapMode,
+                                     std::size_t, std::size_t,
+                                     WGPUBufferMapCallbackInfo callback) {
+  tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::MapAsync);
+  if (tess_webgpu_stub::map_future_id == 0) {
+    return WGPUFuture{};
+  }
+  if (tess_webgpu_stub::complete_map_inline) {
+    callback.callback(WGPUMapAsyncStatus_Success, {}, callback.userdata1,
+                      callback.userdata2);
+    return WGPUFuture{tess_webgpu_stub::map_future_id};
+  }
+  tess_webgpu_stub::pending_maps.push_back({buffer, callback});
+  return WGPUFuture{tess_webgpu_stub::map_future_id};
+}
+inline const void* wgpuBufferGetConstMappedRange(WGPUBuffer buffer,
+                                                 std::size_t offset,
+                                                 std::size_t size) {
+  // Keep mapped reads under the same deterministic boundary contract as
+  // writes and encoder copies. A backend range regression should terminate
+  // this death-test stub, not manufacture an out-of-bounds callback pointer.
+  if (!tess_webgpu_stub::copy_range_fits(buffer, offset, size)) {
+    std::abort();
+  }
+  return buffer->bytes.data() + offset;
+}
+inline void wgpuBufferUnmap(WGPUBuffer) {}

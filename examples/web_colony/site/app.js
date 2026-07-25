@@ -129,6 +129,7 @@ function frame(timestamp) {
     draw();
     const count = api.agentCount();
     const arrived = api.arrived();
+    const unreachable = api.unreachable();
     if (arrived === count) {
       if (arrivedSince === 0) {
         arrivedSince = timestamp;
@@ -139,8 +140,12 @@ function frame(timestamp) {
     } else {
       arrivedSince = 0;
     }
+    message.textContent = unreachable === 0 ?
+        'Colony running' :
+        `${unreachable} agents reached a terminal blocked state`;
     metrics.textContent = `${emaUs.toFixed(0)} µs/tick · ` +
-        `${arrived}/${count} arrived · trip ${trips}`;
+        `${arrived}/${count} arrived · ${unreachable} terminal · ` +
+        `trip ${trips}`;
   } catch (error) {
     message.textContent = `Tick failed: ${error}`;
     return;
@@ -172,6 +177,8 @@ createTessColony()
         agents: instance.cwrap('tess_colony_agents', 'number', []),
         agentCount: instance.cwrap('tess_colony_agent_count', 'number', []),
         arrived: instance.cwrap('tess_colony_arrived', 'number', []),
+        unreachable: instance.cwrap(
+            'tess_colony_unreachable', 'number', []),
       };
       width = api.width();
       height = api.height();

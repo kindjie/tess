@@ -15,7 +15,8 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "TESS_BUILD_TESTING": "ON",
         "TESS_ENABLE_WARNINGS": "ON",
-        "TESS_ENABLE_ENTT": "ON"
+        "TESS_ENABLE_ENTT": "ON",
+        "TESS_ENABLE_FLECS": "ON"
       }
     },
     {
@@ -85,7 +86,8 @@
         "TESS_BUILD_TESTING": "OFF",
         "TESS_BUILD_EXAMPLES": "OFF",
         "TESS_BUILD_BENCHMARKS": "OFF",
-        "TESS_ENABLE_ENTT": "OFF"
+        "TESS_ENABLE_ENTT": "OFF",
+        "TESS_ENABLE_FLECS": "OFF"
       }
     },
     {
@@ -99,7 +101,8 @@
         "TESS_BUILD_EXAMPLES": "ON",
         "TESS_BUILD_BENCHMARKS": "OFF",
         "TESS_BUILD_DOCS": "OFF",
-        "TESS_ENABLE_ENTT": "OFF"
+        "TESS_ENABLE_ENTT": "OFF",
+        "TESS_ENABLE_FLECS": "OFF"
       }
     },
     {
@@ -112,6 +115,7 @@
         "TESS_BUILD_TESTING": "ON",
         "TESS_ENABLE_WARNINGS": "ON",
         "TESS_ENABLE_ENTT": "ON",
+        "TESS_ENABLE_FLECS": "ON",
         "TESS_WARNINGS_AS_ERRORS": "ON"
       }
     },
@@ -126,6 +130,7 @@
         "TESS_BUILD_BENCHMARKS": "ON",
         "TESS_ENABLE_WARNINGS": "ON",
         "TESS_ENABLE_ENTT": "ON",
+        "TESS_ENABLE_FLECS": "ON",
         "TESS_WARNINGS_AS_ERRORS": "ON"
       }
     },
@@ -142,6 +147,7 @@
         "TESS_BUILD_BENCHMARKS": "ON",
         "TESS_ENABLE_WARNINGS": "ON",
         "TESS_ENABLE_ENTT": "ON",
+        "TESS_ENABLE_FLECS": "ON",
         "TESS_WARNINGS_AS_ERRORS": "ON"
       }
     },
@@ -185,6 +191,7 @@
         "TESS_BUILD_TESTING": "ON",
         "TESS_ENABLE_WARNINGS": "ON",
         "TESS_ENABLE_ENTT": "ON",
+        "TESS_ENABLE_FLECS": "ON",
         "TESS_WARNINGS_AS_ERRORS": "ON"
       }
     }

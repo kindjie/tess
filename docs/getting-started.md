@@ -90,7 +90,6 @@ A world binds a shape and schema to a residency policy:
 <!-- tess-snippet: getting-world source=examples/documentation.cc -->
 ```cpp
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
-World world;  // Allocates every chunk; all fields are zero-initialized.
 ```
 <!-- /tess-snippet -->
 
@@ -98,8 +97,10 @@ World world;  // Allocates every chunk; all fields are zero-initialized.
 and the right default for small or dense worlds. `SparseResidentWorld`
 (see `tess/storage/sparse_world.h`) materializes chunks on demand under
 a byte-budgeted residency manager for large or mostly-empty worlds.
-Zero-initialized fields mean a fresh world is fully blocked for the
-identity movement class below: open tiles before pathing.
+Construct the world inside the application lifecycle so allocation failures
+can be reported at its error boundary. Zero-initialized fields mean a fresh
+world is fully blocked for the identity movement class below: open tiles
+before pathing.
 
 - Architecture: [`architecture/storage.md`](architecture/storage.md)
 - Example: `examples/sparse_stream.cc` (budget-bounded residency and the
@@ -283,10 +284,11 @@ Frame versions let a consumer detect gaps and request resynchronization.
 - The [decision guide](guide/README.md) — once the concepts are
   familiar and you need to choose between residency policies, write
   paths, and path strategies for a real workload.
-- ECS integration by concepts, with the EnTT adapter and a deliberately
-  non-EnTT micro-ECS example:
+- ECS integration by concepts, with independently gated EnTT and Flecs
+  adapters and a deliberately custom micro-ECS example:
   [`architecture/ecs.md`](architecture/ecs.md),
-  `examples/custom_ecs_min.cc`, `examples/entt_pawns.cc`.
+  `examples/custom_ecs_min.cc`, `examples/entt_pawns.cc`,
+  `examples/flecs_pawns.cc`.
 - Compile-gated diagnostics, tracing, and the ImGui panels:
   [`architecture/diagnostics.md`](architecture/diagnostics.md).
 - Benchmarks, thresholds, and the trend snapshot:

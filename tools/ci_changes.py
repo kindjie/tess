@@ -12,6 +12,11 @@ from dataclasses import dataclass
 
 
 REVISION_RE = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})")
+EXECUTABLE_OUTPUT_DOCS = {
+  "README.md",
+  "docs/for-agents.md",
+  "docs/index.md",
+}
 
 
 @dataclass(frozen=True)
@@ -24,6 +29,11 @@ class Classification:
 
 def is_documentation_path(path: str) -> bool:
   """Return whether a path is covered by documentation-specific checks."""
+  # These pages embed tess-output fences checked against a compiled example.
+  # The documentation-only fast path cannot validate them, so changes must
+  # select the dev job that builds and runs the authoritative executable.
+  if path in EXECUTABLE_OUTPUT_DOCS:
+    return False
   return (
     path == "mkdocs.yml"
     or path.startswith("docs/")

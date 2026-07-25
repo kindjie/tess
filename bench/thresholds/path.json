@@ -1,6 +1,31 @@
 {
   "version": 1,
   "benchmarks": {
+    "path/resolved_diagonal_open_128x128": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 70000,
+      "note": "2026-07-22 local arm64 median: 11,598 ns; bootstrap 6x ceiling"
+    },
+    "path/resolved_hex_open_128x128": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 78000,
+      "note": "2026-07-22 local arm64 median: 12,990 ns; bootstrap 6x ceiling"
+    },
+    "path/resolved_stair_provider_open_128x128x2": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 9300000,
+      "note": "2026-07-22 local arm64 median: 1,539,881 ns; bootstrap 6x ceiling"
+    },
+    "path/weighted_field_product_build_8_goal_open_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 149000000,
+      "note": "2026-07-22 local arm64 median: 24,738,500 ns; bootstrap 6x ceiling"
+    },
+    "path/weighted_field_product_replay_open_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 31000,
+      "note": "2026-07-22 local arm64 median: 5,060 ns; bootstrap 6x ceiling"
+    },
     "path/astar_open_2d": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 537

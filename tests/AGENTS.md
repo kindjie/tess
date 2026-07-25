@@ -4,8 +4,15 @@
 - `test_doc_snippets.py`: verifies named source-region parsing, Markdown drift
   detection, automatic refresh, and repository-wide synchronization between
   adopter-facing excerpts and compiled sources.
-- `test_check_docs_links.py`: verifies generated-site link and anchor checks,
-  including root-relative assets and rejection of missing local targets.
+- `test_check_docs_links.py` and the Pages assertions in `test_git_hooks.py`:
+  verify generated-site link and anchor checks, including root-relative
+  assets, narrowly scoped Doxygen 1.17.0 quick-index exceptions, WebGPU
+  native request-status classification, timeout-versus-unsupported reporting,
+  Chromium SwiftShader flags, the standard-library DevTools wall-time harness,
+  required compute completion, equivalent target-URL spelling, bounded
+  fragmented WebSocket messages, one absolute deadline spanning connect,
+  upgrade, partial frame reads, and continuous command events, early browser
+  process-exit reporting, and rejection of missing local targets.
 - `test_doc_outputs.py`: verifies documented example-output fences stay
   synchronized with the stdout of their compiled binaries, including drift,
   missing/unused `source=binary` mappings, and failing binaries.
@@ -51,7 +58,18 @@
   that the pathfinding, simulation, and compatibility umbrella headers compile,
   and that the generated version macros and `library_version` match the CMake
   project version derived from the repository's single version source.
+- `tess_ecs_flecs_test`: verifies the optional Flecs adapter against the
+  pinned real Flecs release: 64-bit generation-preserving handle conversion,
+  exclusion of the all-ones tess null sentinel, immediate-mode lifecycle
+  enforcement across lifecycle intents, collection, write-back, and tick
+  drivers; context/world identity enforcement; transactional occupancy-index
+  growth for spawn/place,
+  deterministic collection under table churn, goal reconciliation, safe
+  two-phase write-back, synchronized spawn/move/park/place/despawn lifecycle
+  operations, render deltas, and allocation-free warm ticks.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
+  default and explicit lattice typing with stable lattice identifiers,
+  axial hex coordinate conversion and overflow-safe saturated distance,
   degenerate-axis handling, containment helpers, key width inference,
   coordinate/chunk/local/tile key conversion helpers, the portable
   `tess::detail::UInt128` operations (carrying multiply, borrow subtract,
@@ -85,7 +103,9 @@
   set; dirty/active queries visit only resident chunks (no full-world scan);
   residency survives directory backward-shift deletion under churn; and both
   the warm resident-set access path and evict/reload slot reuse allocate
-  nothing after warmup.
+  nothing after warmup. Sparse path coverage also pins bounded weighted-field
+  status precedence when one flood encounters both missing topology and cost
+  overflow.
 - `tess_block_test`: verifies chunk-domain builders, policy-typed `BlockCtx`
   construction and iteration, serial block iteration, owned domain lifetimes,
   const-correct chunk views and world access including compile-time and runtime
@@ -102,6 +122,85 @@
   char/`std::uint64_t`/max-aligned allocations staying aligned and
   disjoint, and growth keeping `used_bytes()` while serving new
   allocations from fresh storage.
+- `tess_query_span_test`: verifies exact allocation-free x-run emitters for
+  clipped world boxes, Euclidean radii, and chunk-local boxes across top-down,
+  vertical, and 3D shapes; deterministic z/y/x ordering; edge clipping; empty
+  queries; randomized reference tile-set equivalence for every query kind and
+  layout; integer-minimum radius clamping and maximum-radicand integer square
+  roots; and splitting runs wider than the public 32-bit span count without
+  losing tiles.
+- `tess_block_pipeline_test`: verifies block-preserving lazy tile sources,
+  filter/map/flat-map composition, for-each and reduce terminals, explicit
+  bounded frontier/sequence materialization with overflow reporting, the
+  deliberately named allocating terminal, fused/materialized equivalence,
+  policy-qualified mutation, reference-preserving `flat_map`, diagnostics,
+  deterministic ordering, temporary `BlockCtx` ownership, and a
+  zero-allocation fused warm path.
+- `tess_maintenance_test`: verifies the experimental immediate, FIFO, and
+  coalescing maintenance backends, including duplicate scheduling, budgeted
+  continuation, concurrent scheduling, deterministic flush, partial dirty
+  clearing, allocation-free constant-stack immediate self-scheduling,
+  synchronous concurrent immediate calls, duplicate self-request preservation,
+  direct and cross-task zero-progress detection, concurrent producer
+  distinction, exception consumption with caller-controlled explicit retry,
+  shutdown, capacity failure, and steady-state allocation behavior.
+- `tess_topology_coarse_path_test`: verifies deterministic shortest region
+  paths and chunk corridors, same-region and disconnected results, non-monotone
+  chunk detours, portal continuity, clipped corridor bounds, and warm
+  allocation-free reconstruction, plus reachable and indeterminate sparse
+  resident-set corridors.
+- `tess_weighted_field_product_test`: verifies reusable multi-goal weighted
+  distance products, exact path and nearest-target replay, movement-class
+  cache identity, live stateful-provider instances with equal revisions
+  remaining distinct cache keys, provider-composed reverse transitions and
+  their exact costs in weighted and unit products, version invalidation,
+  degenerate vertical layout support, and warm allocation-free rebuilds.
+- `tess_area_index_test`: verifies caller-keyed grouping of region-graph
+  regions into area summaries, deterministic area identities and adjacency,
+  coordinate lookup, zero-key region omission with incident portals skipped,
+  monotonic graph-revision invalidation, no-op update stability, dense and
+  sparse graphs including non-contiguous resident keys and sorted-offset
+  lookup, and warm allocation-free rebuilds.
+- `tess_tactical_assignment_test`: verifies deterministic priority-ordered
+  greedy assignment with caller scores, candidate capacities, infeasible
+  pairs, stable ID-based tie breaks, invalid duplicate-ID rejection, result
+  alignment to request order, and warm allocation-free execution.
+- `tess_local_coordination_test`: verifies deterministic priority/agent-ID
+  destination claims, ranked alternatives, caller occupancy/passability
+  rejection, input-order invariance, invalid option ranges and duplicate IDs,
+  per-tile demand/reservation congestion summaries with duplicate options from
+  one request counted once, explicit wait decisions, and allocation-free warm
+  resolution after reserve.
+- `tess_persistence_test`: verifies the canonical little-endian world archive
+  envelope against a full golden byte fixture, dense and sparse authoritative-
+  field round trips, canonical sparse chunk order, every envelope/key/
+  residency/chunk compatibility status, explicit migration-required outcomes,
+  scoped-enum support with representable unknown values, compile-time rejection
+  of unscoped enums, complete scalar preflight and corruption/truncation
+  rejection without target mutation, full-archive checksum coverage including
+  metadata, short invalid magic, future-version classification before v1
+  framing, duplicate field-id rejection during inspection, invalid descriptor
+  kind/width domains, excess field counts, out-of-range chunk keys, short
+  headers and inconsistent body lengths, exact NaN/negative-zero bit-pattern
+  preservation, dense logical chunk-count completeness,
+  short-circuit field decoding after the first invalid scalar, direct
+  dense/sparse canonical-key ordering checks, sparse-capacity preflight, and
+  dense-version or sparse-generation invalidation on load.
+- `tess_grid_benchmark_harness_test`: verifies strict Moving AI map/scenario
+  parsing from inline fixtures with portable classic-locale decimal handling,
+  integer and fractional scenario optima, terrain and coordinate orientation,
+  size/coordinate dimension bounds,
+  hostile-header allocation bounds and malformed input rejection,
+  compile-time-shape loading with blocked padding, independent
+  orthogonal/diagonal reference costs, corner clearance, and the asymmetric
+  fixed-point external-oracle interval, including exact agreement between the
+  independent reference and tess A* under both movement modes.
+- `tess_grid_benchmark_data_test` (opt-in): always registers when external
+  benchmark data is enabled, skips missing/rights-blocked data locally, and
+  fails instead in strict required-data mode.
+- `test_grid_benchmark_manifest.py`: pins the external-data manifest schema,
+  exact upstream revision, SHA-256 entry validation, and the rule that no
+  entries may be downloadable before individual-content rights are cleared.
 - `tess_queued_planning_test`: pins the audit-2026-07-11 M4 planner-reuse
   contract -- the `plan_operations` overload that plans into a caller-owned
   `ExecutionReport` recycles report rows, planned operations, and pooled
@@ -139,7 +238,10 @@
   message instead of hanging until the ctest timeout.
 - `tess_queued_contract_test`: verifies queued-operation lifecycle and boundary
   contracts, including source-location capture, allocation-free inspection of
-  already-built queue/report/plan spans, allocation-free planned block
+  already-built queue/report/plan spans, typed path/nearest/field-product/
+  movement/topology/residency/dirty/render intent envelopes with type-checked
+  non-owning batch payloads and planner-preserved version, invalidation,
+  backend, and exactness metadata, allocation-free planned block
   iteration, a tagged custom serial executor end to end,
   `FrameOps::clear()` id restart and allocation-free warm re-enqueue,
   zero-value default-constructed `OpId`/`OpHandle`, write-then-read hazard
@@ -195,10 +297,19 @@
   drain plus clear is allocation-free. A throwing drain visitor leaves that
   slot undrained so a later call can retry it exactly once, including after
   reentrant capacity growth; a reentrant clear retires the old slot without a
-  stale recovery write.
+  stale recovery write. Cooperative async coverage verifies generation-stamped
+  `AsyncTicket`s, immediate results, deterministic FIFO advancement under a
+  shared item budget, pending continuations across calls, required/result
+  versions, terminal failed/cancelled/superseded/stale states, stale-ticket
+  rejection after clear, rejection of callback-time queue mutation,
+  throw-and-retry value/state semantics, invalid budget-report accounting,
+  callback-invocation bounds for zero-progress work, and allocation-free warm
+  submit/advance/reset reuse.
 - `tess_movement_class_test`: verifies the compile-time movement vocabulary
   (`tess::movement`): the `MovementClassFor` concept and `movement_class_of`
-  tag/class normalization, byte-exact `normalize_cost` (zero and negative are
+  tag/class normalization, source-compatible default step policies, stable
+  step-policy identifiers, shape/policy compatibility validation, byte-exact
+  `normalize_cost` (zero and negative are
   impassable, overflow saturates through a u64 compare), composed passability
   truth tables for a Walker (`AllOf<Field, Not<Field>>`) versus a Builder
   (`AnyOf`) over construction tiles, per-class entry-cost expressions
@@ -218,10 +329,12 @@
   (S5.7): the default `AdjacentTransitions` build is identical to the
   providerless build, a bridge provider's directed portals connect walled
   regions (both directions), incremental update equals a full rebuild with
-  the same provider, a provider-type or provider-revision mismatch forces a
-  full rebuild, stateful providers without a revision are rejected, and a
-  sparse provider transition into a non-resident chunk degrades reachability
-  to `Indeterminate` instead of a wrong `Unreachable`; and the stair provider
+  the same provider, a provider-type, live-instance, or provider-revision
+  mismatch forces a full rebuild, runtime precheck ignores a graph stamped for
+  another equal-revision provider instance, stateful providers without a
+  revision are rejected, and a sparse provider transition into a non-resident
+  chunk degrades reachability to `Indeterminate` instead of a wrong
+  `Unreachable`; and the stair provider
   (S5.8): an offset stair links two z-levels with no vertical face adjacency
   in both directions (cross-chunk and same-chunk landings), stair edges are
   per-class (a construction-site landing is Builder-only), incremental
@@ -232,12 +345,54 @@
   seam, an out-of-range stair field value reads as `None` (including wide
   fields whose values would wrap when narrowed), and `WalkableCostField`
   labels a graph without the span fast path (zero-cost tiles unlabeled).
+- `tess_transition_model_test`: verifies the resolved regular-transition
+  contract, including compile-time forward/reverse conformance, canonical
+  orthogonal/diagonal/axial order, off-plane axial-origin rejection,
+  fixed-point multipliers, both diagonal
+  clearance rules (including one clear and one non-resident corner tile),
+  reverse destination-cost direction, rejection of an impassable reverse
+  origin, and sparse `MissingTopology` probes without allocation. Provider
+  composition cases pin stair forward/reverse agreement,
+  regular-before-special ordering, provider-owned cost scaling, provider
+  revision propagation, and proven, potential-overflow, and unknown static
+  cost-range classifications without overflowing the widened assessment.
+  Throwing enumeration sinks propagate rather than terminating, and unchecked
+  extreme origins/targets are rejected before signed neighbor arithmetic.
+- `tess_path_product_test`: additionally verifies resolved-model parity for
+  diagonal and axial-hex products, including fixed-point cost scale and
+  rejection when a product is read through another model, plus normalized
+  raw-tag/class cache identity. Provider products follow stair edges and both
+  product readers, cache stores, and cache lookups reject a providerless model
+  or changed stateful-provider revision.
 - `tess_path_movement_class_test`: verifies movement classes threaded through
   the A* leaves and weighted cores (S5.2): the `WalkableField` identity class
   matches the raw-tag unit search node-for-node on a serpentine maze,
   `LegacyWeighted<PassableTag, CostTag>` matches the tag-pair weighted search
   and weighted distance field exactly (statuses, costs, expansion counts,
   paths), a Walker routes around a construction wall the Builder cuts through
+  while resolved diagonal and axial-hex models return exact scaled costs,
+  provider-aware unit and weighted A* use stair edges that undercut the
+  regular lattice route, provider-aware reverse fields reconstruct the same
+  edge across unbounded, boxed, and bounded entry points and reject
+  providerless or equal-revision/different-instance reads; reverse stair
+  probing conservatively reports a missing potential foot under sparse
+  `Indeterminate`; and the same stair is rejected without the provider but
+  accepted by provider-aware movement commit. A
+  provider edge parallel to a blocked regular diagonal remains legal from
+  planning through commit; missing provider topology outranks a blocked
+  regular edge, while a legal regular edge skips provider enumeration.
+  Route-cache
+  model binding preserves diagonal scales, bypasses invalid non-unit suffix
+  arithmetic, and invalidates when a provider type, live instance, or revision
+  binding changes,
+  while unit and weighted runtime, retained-route agent, and tick entry points
+  retain provider semantics from planning through commit,
+  result aggregate initialization retains a default scale, and an
+  unrepresentable exact cost reports `CostOverflow`. An obstructed axial-hex
+  unit search is checked against an independent six-direction BFS oracle, and
+  movement commit rejects regular zero-entry-cost destinations omitted by
+  planning, provider edges cannot override that destination sentinel, and
+  legal parallel provider edges remain available on valid endpoints,
   (fixed build price via `SelectCost`), unit A* accepts classes for
   passability only, class-driven weighted searches keep the sparse
   missing-chunk contract (blocked by default, `Indeterminate` on request),
@@ -257,7 +412,8 @@
   binds itself per call; rebinds counted in `class_rebinds`).
 - `tess_topology_test`: verifies local chunk-region labeling, blocked-tile
   region rejection, boundary exits, invalid chunks, inter-chunk portal pairing,
-  reachability, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.
+  reachability, axial-hex local, diagonal-chunk, and provider-seam
+  connectivity, and top-down 2D, vertical 2D, and 3D degenerate-axis behavior.
   Reachability coverage includes same-region, multi-hop, disconnected, enclosed,
   blocked-seam, invalid endpoint, and vertical 2D cases. It also verifies
   region bounds for known 2D and 3D layouts, Z-face portal pairing across
@@ -267,6 +423,10 @@
   portal-scan reference BFS on a seeded multi-chunk maze including visited
   counts, and `update_region_graph` equivalence with full rebuilds: empty
   dirty-set no-op, invalid dirty-chunk rejection without mutation,
+  allocation-failure preservation before incremental mutation,
+  revision-invalidated clearing after incremental mutation begins, and
+  full-build allocation failure clearing every partial label/index and its
+  freshness stamp,
   single-chunk and two-chunk seam edits, all-chunks-dirty rebuilds, and 40
   seeded single-tile edits compared graph-for-graph (regions, portals,
   region contents, and reachability probes) after every edit.
@@ -276,7 +436,8 @@
   `Indeterminate` across a non-resident boundary and for a non-resident
   endpoint, `Unreachable` for a fully-resident enclosed component (single-chunk
   world), sparse `update_region_graph` equivalence with a fresh build after a
-  seam edit (graph-for-graph plus a reachability probe), and the
+  seam edit (graph-for-graph plus a reachability probe), safe allocation-
+  failure invalidation without torn derived state, and the
   residency-generation staleness guard forcing a full rebuild after a chunk
   loads post-build. A direct local build for an in-range non-resident chunk
   returns `MissingChunk` without accessing sparse storage.
@@ -293,7 +454,8 @@
   for a Builder class is `GraphStale` (never the walker's wrong
   `Unreachable` across a construction bridge), while a Builder-stamped graph
   answers `Reachable`/`Unreachable` per class and reads `GraphStale` for the
-  raw walker tag.
+  raw walker tag. Stateful provider instance/revision mismatches likewise
+  return `GraphStale`.
 - `tess_path_precheck_runtime_test`: verifies the optional precheck gate wired
   into `PathRequestRuntime` and the agent tick. A goal sealed off by an
   enclosing wall (not a full-axis barrier, so A*'s dense fast-path cannot rule
@@ -327,16 +489,19 @@
   distance-field products, nearest-target reconstruction, product
   stale-version rejection, byte-budgeted field-product cache
   hit/miss/eviction/stale stats, move-only field-product store without
-  world-sized copies, oversized-store whole-cache clearing, zero byte
-  budget, same-key replacement byte accounting, least-recently-used (not
-  insertion-order) eviction, distance-field error-status families
+  world-sized copies, strong allocation-failure insertion guarantees,
+  oversized-store rejection preserving existing entries, zero byte budget,
+  same-key replacement byte accounting, least-recently-used
+  (not insertion-order) eviction,
+  distance-field error-status families
   (InvalidGoal/InvalidStart/empty `GoalSet` across plain, weighted, and
   product builds and reconstruction, with no garbage field or path left
   behind), local-domain weighted field bounds, mismatched-field rejection,
   weighted entry-cost routing, weighted direct and detour fast paths,
   weighted shared-goal fields, bounded weighted field builds and fallback,
-  weighted batch grouping, endpoint validation, and allocation-free repeated
-  queries with pre-reserved path scratch.
+  weighted batch grouping, per-request fallback from a global field overflow,
+  endpoint validation, and allocation-free repeated queries with pre-reserved
+  path scratch.
 - `tess_path_view_test`: verifies the non-owning `PathView` handed out by
   `PathResult`: a default view is empty, a view mirrors its underlying nodes
   (size, front/back, indexing, iteration, `data()` identity) without copying,
@@ -388,7 +553,12 @@
   reuse and invalidation across world edits, opt-in unit field-product cache
   reuse for repeated goals, start-chunk policy skip/use counters, stale product
   rejection, runtime cache clearing cadence, many-agent weighted batch
-  processing through shared-goal fields, caller-configured cache clearing
+  processing through shared-goal fields, opt-in byte-budgeted weighted
+  field-product reuse across processing calls with allocation-free warm
+  replay, preflight rejection of unit and weighted products whose distance
+  storage cannot fit the cache budget (avoiding a duplicate build and
+  over-budget store),
+  caller-configured cache clearing
   after repeated world edits, field-product-cache lookup-pointer stability
   across stores of other keys, and portal segment-cache runtime stats and
   `clear_caches()` for entries stored through the runtime accessor (the
@@ -396,8 +566,9 @@
   covers runtime lifecycle: `clear_requests()` starting a fresh frame with
   regenerated tickets, empty request lists processing to empty results,
   failure stat tallies (invalid start/goal, no path) over mixed unit and
-  weighted batches, and the policy byte budget driving real field-product
-  eviction through `process_unit_cached`. Seeded (`std::mt19937`, fixed
+  weighted batches, zero-cost weighted-start rejection under product reuse,
+  and the shared policy byte budget driving real field-product eviction
+  through `process_unit_cached`. Seeded (`std::mt19937`, fixed
   seeds) randomized equivalence pins repeated-goal grouping against a
   per-request A* oracle — statuses, costs, and the candidate/used/skipped
   group counters versus a reference computation — across both start-chunk
@@ -424,7 +595,12 @@
   duplicate identical requests sharing one field build, per-member statuses
   for failed shared-goal groups matching `weighted_astar_path`'s endpoint
   validation precedence (invalid starts are not mislabeled with the goal's
-  failure status), >MaxCost corridor tiles engaging the unbounded fallback
+  failure status), cross-builder scratch reuse from provider heap fields to
+  plain bounded fields sizing settle-target epochs, realized bucket overflow
+  returning directly to per-member
+  A* without a second full flood and withdrawing the partial field's replay
+  stamp, >MaxCost corridor tiles engaging the
+  unbounded fallback
   (exact costs plus bounded-vs-unbounded build equality), seeded random-cost
   bounded/unbounded field equivalence, seeded batch-vs-oracle equivalence
   including the grouping stats counters, and allocation-free warm repeat
@@ -438,7 +614,8 @@
   crossing several chunk boundaries with a contiguous stitched path.
 - `tess_path_agent_test`: verifies the public path-agent wrapper, including
   goal assignment, runtime-backed request/result processing, tile-by-tile
-  advancement and arrival, conservative reprocessing after world edits,
+  advancement and arrival that resets a preserved blocked streak,
+  conservative reprocessing after world edits,
   invalid/unreachable goal handling, weighted shared-goal processing,
   allocation-free warm unit, unit field-product, and weighted agent batches,
   the phase lifecycle (goal set/clear transitions, transient movement
@@ -447,19 +624,28 @@
   including stale topology/version branches, `record_movement_failure`
   bucketing every `MovementStatus` into its dedicated counter, the
   transient-versus-terminal `is_transient_movement_failure` classification
-  of every status, and overflow-safe `manhattan_distance` at `int64`
-  extremes. The warm no-alloc batches also pin submitted/found stats so a
-  skipped frame cannot pass as allocation-free.
+  of every status, disappearing special-provider edges classified as stale
+  topology, provider exceptions propagating through validation and commit
+  without changing occupancy, reservations, or dirty metadata, and
+  overflow-safe `manhattan_distance` at `int64` extremes. The warm no-alloc
+  batches also pin submitted/found stats so a skipped frame cannot pass as
+  allocation-free.
 - `tess_path_agent_tick_test`: verifies the minimal path-agent tick wrapper,
   including tick advancement, dirty-gated path processing, movement ordering,
   explicit dirty-mark requirements after world edits, dirty reprocessing after
   world edits and goal changes, unreachable goals, weighted shared-goal ticks,
   allocation-free warm clean ticks (pinning that path processing is skipped
   while every agent still advances), two-argument goal assignment processed
-  without a manual dirty mark, transiently blocked agents resuming and
-  arriving, mid-route wall insertion triggering bounded re-paths, and boxed-in
-  goals exhausting the retry budget into terminal Unreachable that stops
-  consuming processing.
+  without a manual dirty mark, transiently blocked agents resuming and arriving
+  without occupancy-blind re-plans, successful plain-driver progress resetting
+  a preserved blocked streak, permanent occupancy or
+  reservation exhausting a bounded retained-step wait budget without repeated
+  searches while zero-step ticks preserve that budget (including while another
+  agent requests a scoped planning pass), a seeded multi-agent
+  bottleneck reaching only arrived or explicit terminal outcomes after one
+  initial planning pass, mid-route wall
+  insertion triggering bounded re-paths, and boxed-in goals exhausting the
+  retry budget into terminal Unreachable that stops consuming processing.
 - `tess_assert_test`: verifies the `TESS_ASSERT`/`TESS_ASSERT_MSG` debug
   precondition policy — death tests for out-of-shape coordinates and
   out-of-range keys/tickets on unchecked accessors (`World::resolve`,
@@ -473,15 +659,23 @@
   counted as skipped), OnDirty firing iff the task's own mask bits are
   pending with own-bit-only consumption (foreign bits sit inert), produced
   dirty reaching later phases the same tick and earlier phases the next
-  tick, deterministic background item budgets with `more_work`
+  tick, OnEvent mask coalescing with own-bit-only consumption, produced events
+  reaching later phases the same tick and earlier phases the next tick, exact
+  ordered `EventStream` entries carrying tick and sequence stamps with bounded
+  overflow, deterministic background item budgets with `more_work`
   continuation, manual single-shot runs, persistent triggers surviving
   disablement, allocation-free dispatch (`run_tick`/`notify_dirty`/
-  `request_run`) after `seal()`, and the frame driver keeping EveryN exact
+  `notify_events`/`request_run`) after `seal()`, allocation-free warm event
+  publication, direct `ResumableWorkTask` background integration, and the
+  explicit re-arm required after that task quiesces. Throwing callbacks restore
+  consumed dirty, event, and manual triggers while preserving clock/cadence
+  advancement, including EveryN phase alignment for tasks ordered after the
+  throwing callback. The frame driver keeps EveryN exact
   across SimSpeed changes, backlogged multi-tick frames, and paused frames
   (cadences count fixed ticks, never frames).
 - `tess_ecs_adapter_test`: verifies the dependency-free ECS layer (M10):
   `EntityHandle` null/equality semantics; `TileOccupancyIndex`
-  insert/erase/move basics, structural uniqueness refusal, backward-shift
+  insert/erase/move basics, null/structural uniqueness refusal, backward-shift
   erase keeping probe chains intact under a dense interleaved-erasure
   sweep, and allocation-free operation after `reserve`; concept
   `static_assert`s (`EntityHandleAdapter`, `PositionAdapter`,
@@ -497,7 +691,9 @@
   EnTT at the pinned SHA): verifies the EnTT adapter (M10): null-handle
   conversion special-cased both directions plus live-entity round-trips;
   spawn claiming field + index and refusing occupied/out-of-bounds tiles
-  with monotonic ids across refusals; agents walking to goals with the
+  with monotonic ids across refusals; allocation-failure preflight leaving
+  spawn/place ECS, world, index, and ID state unchanged; agents walking to
+  goals with the
   full section-8 sync sweep (per-entity position/index/field agreement
   AND the exhaustive all-tiles biconditional) after every tick; identical
   per-tick stats and positions across two registries whose pool packing
@@ -525,6 +721,27 @@
   upload -> dispatch -> readback sequence in order while refusing
   operations beyond its configured capabilities (no compute, oversized
   buffers/dispatches, explicit None readbacks) without recording them.
+- `tess_webgpu_backend_test` (`TESS_ENABLE_WEBGPU` on): compiles the optional
+  backend against an API-matching stable WebGPU C stub. It verifies device and
+  queue ownership, overflow-safe mirror registration, `CopySrc` validation
+  for readback products with realistically flagged source buffers,
+  rejection of readback size/offset/callback/userdata metadata without a
+  source,
+  representable uploads,
+  real chunk-byte uploads, compute submission only for registered mirrors and
+  within the configured workgroup-X limit, generation-stale product rejection,
+  source-less and `None` readback refusal, a successful `Summary` baseline,
+  matched-registry default refusal and explicit `FullField` opt-in,
+  asynchronous summary readback that safely completes after backend
+  destruction, inline map completion without post-callback use, null map-future
+  cleanup and budget restoration, overlapping readback budget recovery with
+  out-of-order map failure, fail-closed reported
+  device errors, invalid requests, explicit device-loss fallback, and the
+  `GpuBackend` concept. Stub
+  handles use scoped C-API release owners so fatal assertions cannot leak
+  caller references, stub copy and mapped-read entry points abort on
+  out-of-bounds ranges instead of corrupting the test process, and stub enum
+  widths intentionally match the stable C ABI.
 - `tess_render_delta_frame_test`: verifies the M11 DeltaFrame bridge
   core: version semantics (empty publishes never bump; state-carrying
   publishes bump by one; the applicability truth table including the
@@ -608,25 +825,44 @@
   phase-assignment plan produce the expected `Planner` records. Snapshot export
   -- `capture_diagnostics`/`capture_timing` copy every category and counter.
 - `tess_diagnostics_panels_test` (diagnostics-enabled, `TESS_ENABLE_IMGUI` on):
-  compile-and-run check for the opt-in `debug/imgui/panels.h` against a minimal
+  compile-and-run check for the opt-in diagnostics panels against a minimal
   ImGui stub (`tests/imgui_stub/imgui.h`) so a panel bug surfaces here rather
-  than only in a real-ImGui consumer. The stub's `Text` carries real ImGui's
-  printf-format attribute (`IM_FMTARGS` mirror) so `-Wformat` checks panel
-  format strings. Exercises every draw function over a
-  populated snapshot and pins `category_name` for every trace category.
+  than only in a real-ImGui consumer. Exercises every diagnostics draw function
+  and pins `category_name` for every trace category; includes both optional
+  headers together to reject detail-helper collisions.
+- `tess_imgui_tools_test` (`TESS_ENABLE_IMGUI` on, diagnostics off): verifies
+  the optional tools have no diagnostics dependency. Its controllable
+  `Checkbox` covers dense and sparse world and chunk inspection,
+  missing/out-of-bounds selection, and boolean field edits that return
+  caller-applied intents without mutating world storage.
 - `tests/test_benchmark_tools.py`: pytest coverage for the benchmark gating
   tools (run with the pinned `requirements-dev.txt` environment, and in the CI
   hooks-backstop job alongside `tests/test_git_hooks.py`). Verifies
   `tools/benchmark_thresholds.py` rejects duplicate benchmark names,
   unthresholded results, empty result sets, and unknown limit keys; selects
   repetition aggregates (median default, `--aggregate` override), converts
-  all four Google Benchmark time units, fails on missing benchmarks, skips
-  null limits, and reports missing/malformed input files as clear errors;
+  all four Google Benchmark time units, reports unsupported units without a
+  traceback, fails on missing benchmarks, permits only explicitly named
+  feature-disabled results to be absent, rejects entries with no enabled limit
+  unless they explicitly set `gating: false`, and reports missing/malformed
+  input files as clear errors;
+  every literal benchmark name in a threshold-gated family also has an entry,
+  including the block-pipeline, maintenance, persistence, query, and spatial
+  manifests and their CI/baseline wiring;
   that `tools/benchmark_baseline_summary.py` filters aggregates by
   `run_type` and quotes CSV fields; that `tools/benchmark_trends.py` reads
   every result file in a baseline artifact and errors on unmatched
   `--benchmark` selectors; and that `tools/benchmark_artifact_metadata.py`
-  writes the expected metadata fields.
+  writes the expected metadata fields. Literal-name extraction covers
+  multiline adjacent C++ string literals.
+- `tests/test_branding_assets.py`: static asset and browser-demo contract
+  coverage, including the colony's explicit terminal bottleneck metric so an
+  exhausted path-agent lifecycle cannot look like a silently running colony
+  and a retry allowance scaled to the active convoy rather than compile-time
+  capacity, plus maintained architecture navigation coverage for persistence;
+  hosted hook-backstop CI runs this file explicitly.
+- `tests/test_doc_versions.py`: synthetic development/release version-policy
+  cases plus the repository's v0.12 development-version consistency gate.
 - `tests/test_check_public_surface.py`: pytest coverage for the
   public-surface manifest gate (`tools/check_public_surface.py`, a required
   CI check since 2026-07-07, run in
@@ -647,8 +883,10 @@
   under-24000-token limit, push-range benchmark gating, fresh benchmark
   configure/build ordering, and the requirements lock contract, including its
   pinned-uv, index-cutoff canonical regeneration wrapper, universal Windows
-  and Python 3.10 dependency markers, and synchronization between documented
-  dependency versions and their workflow or direct-input pins.
+  and Python 3.10 dependency markers, WebGPU smoke callback lifetimes and
+  terminal-state precedence, uncaptured-device-error forwarding, and
+  synchronization between documented dependency versions and their workflow
+  or direct-input pins.
 - `tests/test_ci_changes.py`: pytest coverage for the required CI workflow's
   fail-closed documentation-only classifier. It pins the narrow path
   allowlist, empty and mixed change behavior, full nonzero revision validation,
@@ -671,12 +909,15 @@
   exact-revision shallow population helper, and behaviorally pins a retry of
   the complete fetch/checkout sequence after checkout failure, that the
   populator scrubs inherited `GIT_DIR`-family hook environment before
-  running Git, and that population failures report every attempt's error. It also pins
-  the `consumer` preset consumer-shaped: dev
-  facilities and EnTT off, no warnings-as-errors, no inheritance from a
-  dev preset. The network-free `examples` preset and tracked installed-package
-  and `FetchContent` consumer fixtures are covered as adopter-facing build
-  contracts.
+  running Git, and that population failures report every attempt's error. It
+  also proves incompatible external-data options fail before an inherited
+  compiler launcher is needed, and pins the `consumer` preset
+  consumer-shaped: dev facilities and EnTT off, no warnings-as-errors, no
+  inheritance from a dev preset. Flecs dependency defaults preserve explicit
+  parent cache choices and reject an incompatible static-target choice. The
+  network-free `examples` preset and
+  tracked installed-package and `FetchContent` consumer fixtures are covered
+  as adopter-facing build contracts.
 - `tests/test_header_compile_cost.py`: pytest coverage for the repeatable
   syntax-only public-header compile-cost tool. It pins the source and generated
   include paths, compiler command, elapsed-sample collection, compiler-error
@@ -700,3 +941,6 @@
   helper (endpoints, legal unit steps onto passable tiles, expected costs,
   agent/frame stats, cache outcomes). `tess_bench_diagnostics` additionally
   asserts the warm `path/astar_open_2d` iteration performs zero allocations.
+  The resolved-transition baseline family additionally times open diagonal,
+  axial-hex, and stair-provider exact searches and validates every returned
+  edge through the same resolved model outside the timed loop.

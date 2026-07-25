@@ -2,8 +2,9 @@
 
 The shape layer defines the compile-time world geometry plus the coordinate
 and key vocabulary every other layer builds on. It lives in
-`include/tess/core/shape.h` (with `include/tess/core/assert.h` and
-`include/tess/core/uint128.h` as support headers) and is exported by
+`include/tess/core/shape.h` (with `include/tess/core/assert.h`,
+`include/tess/core/lattice.h`, and `include/tess/core/uint128.h` as support
+headers) and is exported by
 `tess/tess.h`. It implements the early slices of the historical
 [shape/coordinate/key TDD][shape-tdd].
 
@@ -15,6 +16,10 @@ and key vocabulary every other layer builds on. It lives in
   brace-initialized 2D extent (`Extent3{64, 64}`) is already well-formed.
 - `Coord2` and `Coord3` are signed world coordinates. `to_coord3(coord)`
   lifts a `Coord2` to `Coord3` with `z = 0`.
+- `HexCoord` is a signed axial `(q, r)` coordinate. `to_coord3` maps it to
+  `(q, r, 0)`, `to_hex_coord` performs the inverse for the z-zero plane, and
+  `hex_distance` returns saturated, overflow-safe axial distance without
+  signed intermediate arithmetic.
 - `ChunkCoord3` and `LocalCoord3` are unsigned chunk-grid and chunk-local
   coordinates.
 - `LocalTileId` is the row-major tile index inside one chunk; `ChunkKey` is
@@ -29,11 +34,20 @@ and key vocabulary every other layer builds on. It lives in
   `detail::abs_delta` helper avoids `lhs - rhs` signed overflow at the
   int64 extremes) and the sum saturates at the `std::uint64_t` maximum
   instead of wrapping.
-- `Shape<Size, Chunk>` is the compile-time world description. It rejects
-  invalid geometry with `static_assert`: all extents must be nonzero, chunk
+- `Shape<Size, Chunk, Lattice>` is the compile-time world description;
+  `Lattice` defaults to `lattice::Orthogonal`, preserving existing
+  two-argument declarations. `lattice::HexAxial` selects an axial hex shape
+  and requires both world and chunk z extents to equal one. Lattice types
+  carry explicit stable `Identity` and version constants for persistent
+  metadata and derived-product stamps. The `LatticeType` concept checks that
+  public lattice contract; built-ins are `lattice::Orthogonal` and
+  `lattice::HexAxial`.
+- A shape rejects invalid geometry with `static_assert`: all extents must be
+  nonzero, chunk
   dimensions must be powers of two, and world size must be a multiple of
   the chunk size on every axis.
-- `ShapeTraits<Shape>` derives per-axis chunk counts, total `chunk_count`
+- `ShapeTraits<Shape>` exposes `lattice_type`, `lattice_identity`, and
+  `lattice_version`, then derives per-axis chunk counts, total `chunk_count`
   and `local_tile_count`, key bit widths (`local_bits`, `chunk_bits`,
   `tile_key_bits`), the `TileKeyStorage` type, and the `single_chunk` /
   `degenerate_x` / `degenerate_y` / `degenerate_z` flags.

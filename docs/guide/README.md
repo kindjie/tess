@@ -46,9 +46,11 @@ OnDirty rebuild"]
   NoPre --> Own
   Own -->|"Plain structs"| NoEcs["PathAgentState directly"]
   Own -->|"EnTT"| Entt["EnTT adapter"]
+  Own -->|"Flecs"| Flecs["Flecs adapter"]
   Own -->|"In-house ECS"| Custom["Custom adapter concepts"]
   NoEcs --> Show{"Observer on another cadence?"}
   Entt --> Show
+  Flecs --> Show
   Custom --> Show
   Show -->|"Yes"| Deltas["DeltaCollector ->
 versioned DeltaFrames"]

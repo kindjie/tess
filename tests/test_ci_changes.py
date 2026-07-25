@@ -20,7 +20,6 @@ SHA_B = "b" * 40
 @pytest.mark.parametrize(
   "path",
   (
-    "README.md",
     "tests/AGENTS.md",
     ".github/PULL_REQUEST_TEMPLATE.md",
     "docs/architecture/surface.json",
@@ -35,6 +34,9 @@ def test_documentation_paths_are_recognized(path):
 @pytest.mark.parametrize(
   "path",
   (
+    "README.md",
+    "docs/index.md",
+    "docs/for-agents.md",
     ".github/workflows/ci.yml",
     "CMakeLists.txt",
     "include/tess/tess.h",
@@ -55,7 +57,7 @@ def test_empty_change_set_requires_full_ci():
 
 def test_all_documentation_changes_use_fast_path():
   classification = ci_changes.classify_paths(
-    ("README.md", "docs/guide.md", "mkdocs.yml")
+    ("docs/guide.md", "docs/architecture/path.md", "mkdocs.yml")
   )
 
   assert not classification.code_required
@@ -69,6 +71,14 @@ def test_one_code_path_requires_full_ci():
 
   assert classification.code_required
   assert classification.reason == "code-affecting path: 'include/tess/tess.h'"
+
+
+def test_hook_backstop_runs_branding_asset_regressions():
+  workflow = (
+    Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci.yml"
+  ).read_text(encoding="utf-8")
+
+  assert "tests/test_branding_assets.py" in workflow
 
 
 def test_git_diff_is_nul_safe_and_disables_rename_detection():

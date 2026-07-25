@@ -16,6 +16,11 @@ using Vertical2D =
 using Chunked3D =
     tess::Shape<tess::Extent3{64, 64, 32}, tess::Extent3{16, 16, 8}>;
 using SingleChunk = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{8, 8, 1}>;
+using ExplicitOrthogonal =
+    tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{8, 8, 1},
+                tess::lattice::Orthogonal>;
+using Hexagonal = tess::Shape<tess::Extent3{64, 32, 1}, tess::Extent3{16, 8, 1},
+                              tess::lattice::HexAxial>;
 using HugeBounded = tess::Shape<tess::Extent3{1ull << 34, 1ull << 33, 256},
                                 tess::Extent3{32, 32, 4}>;
 // Largest legal single-chunk shape: chunk dims must be powers of two and the
@@ -30,6 +35,7 @@ TEST(TessShape, PublicValueTypesDefaultInitialize) {
   static_assert(tess::Extent3{} == tess::Extent3{0, 0, 1});
   static_assert(tess::Coord2{} == tess::Coord2{0, 0});
   static_assert(tess::Coord3{} == tess::Coord3{0, 0, 0});
+  static_assert(tess::HexCoord{} == tess::HexCoord{0, 0});
   static_assert(tess::ChunkCoord3{} == tess::ChunkCoord3{0, 0, 0});
   static_assert(tess::LocalCoord3{} == tess::LocalCoord3{0, 0, 0});
   static_assert(tess::LocalTileId{} == tess::LocalTileId{0});
@@ -65,6 +71,27 @@ TEST(TessShape, DerivesTopDown2DTraits) {
 
   EXPECT_EQ(Traits::chunk_count, 16);
   EXPECT_EQ(Traits::local_tile_count, 512);
+}
+
+TEST(TessShape, DefaultsToTheStableOrthogonalLatticeIdentity) {
+  using DefaultTraits = tess::ShapeTraits<SingleChunk>;
+  using ExplicitTraits = tess::ShapeTraits<ExplicitOrthogonal>;
+  using HexTraits = tess::ShapeTraits<Hexagonal>;
+
+  static_assert(std::is_same_v<SingleChunk, ExplicitOrthogonal>);
+  static_assert(
+      std::is_same_v<DefaultTraits::lattice_type, tess::lattice::Orthogonal>);
+  static_assert(
+      std::is_same_v<HexTraits::lattice_type, tess::lattice::HexAxial>);
+  static_assert(DefaultTraits::lattice_identity ==
+                tess::lattice::Identity::Orthogonal);
+  static_assert(ExplicitTraits::lattice_identity ==
+                tess::lattice::Identity::Orthogonal);
+  static_assert(HexTraits::lattice_identity ==
+                tess::lattice::Identity::HexAxial);
+  static_assert(DefaultTraits::lattice_identity != HexTraits::lattice_identity);
+
+  SUCCEED();
 }
 
 TEST(TessShape, DerivesVertical2DTraits) {
@@ -113,6 +140,36 @@ TEST(TessShape, LowersCoord2ToCoord3) {
   static_assert(tess::to_coord3(tess::Coord2{2, 3}) == tess::Coord3{2, 3, 0});
 
   EXPECT_EQ(tess::to_coord3(tess::Coord2{2, 3}), (tess::Coord3{2, 3, 0}));
+}
+
+TEST(TessShape, ConvertsAxialHexCoordinatesWithoutLoss) {
+  static_assert(tess::to_coord3(tess::HexCoord{2, -3}) ==
+                tess::Coord3{2, -3, 0});
+  static_assert(tess::to_hex_coord(tess::Coord3{-5, 8, 0}) ==
+                tess::HexCoord{-5, 8});
+
+  EXPECT_EQ(tess::to_hex_coord(tess::to_coord3(tess::HexCoord{-9, 4})),
+            (tess::HexCoord{-9, 4}));
+}
+
+TEST(TessShape, ComputesOverflowSafeAxialHexDistance) {
+  using Limits = std::numeric_limits<std::int64_t>;
+
+  static_assert(tess::hex_distance(tess::HexCoord{}, tess::HexCoord{}) == 0);
+  static_assert(tess::hex_distance(tess::HexCoord{}, tess::HexCoord{2, -1}) ==
+                2);
+  static_assert(
+      tess::hex_distance(tess::HexCoord{-2, 1}, tess::HexCoord{3, -4}) == 5);
+  static_assert(tess::hex_distance(tess::HexCoord{Limits::min(), 0},
+                                   tess::HexCoord{Limits::max(), 0}) ==
+                std::numeric_limits<std::uint64_t>::max());
+  static_assert(
+      tess::hex_distance(tess::HexCoord{Limits::min(), Limits::min()},
+                         tess::HexCoord{Limits::max(), Limits::max()}) ==
+      std::numeric_limits<std::uint64_t>::max());
+
+  EXPECT_EQ(tess::hex_distance(tess::HexCoord{4, 7}, tess::HexCoord{-3, 2}),
+            12u);
 }
 
 TEST(TessShape, ChecksBoxContainment) {

@@ -1,8 +1,8 @@
 # Examples
 
 Every example is a complete, self-checking program built as `tess_<name>`
-by the dependency-free `examples` preset (the EnTT adapter example
-additionally needs `TESS_ENABLE_ENTT`, which the `dev` preset turns on):
+by the dependency-free `examples` preset (the EnTT and Flecs adapter examples
+additionally need their ECS gates, which the `dev` preset turns on):
 
 ```sh
 cmake --preset examples
@@ -59,6 +59,8 @@ cmake --build --preset examples
   by a deliberately non-EnTT-shaped micro ECS.
 - [`entt_pawns.cc`][entt_pawns] — the EnTT adapter driving registry-owned
   pawns (built when `TESS_ENABLE_ENTT` is on).
+- [`flecs_pawns.cc`][flecs_pawns] — the Flecs adapter driving world-owned
+  pawns (built when `TESS_ENABLE_FLECS` is on).
 - [`render_delta_consumer.cc`][render_delta] — a standalone DeltaFrame
   consumer rebuilding a shadow grid from published frames.
 - [`web_pathfinder`][web_pathfinder] — the source of the live demo above:
@@ -74,5 +76,6 @@ cmake --build --preset examples
 [web_colony_src]: https://github.com/kindjie/tess/tree/main/examples/web_colony
 [custom_ecs]: https://github.com/kindjie/tess/blob/main/examples/custom_ecs_min.cc
 [entt_pawns]: https://github.com/kindjie/tess/blob/main/examples/entt_pawns.cc
+[flecs_pawns]: https://github.com/kindjie/tess/blob/main/examples/flecs_pawns.cc
 [render_delta]: https://github.com/kindjie/tess/blob/main/examples/render_delta_consumer.cc
 [web_pathfinder]: https://github.com/kindjie/tess/tree/main/examples/web_pathfinder

@@ -1,7 +1,8 @@
 #pragma once
 
 // Curated facade for queued edits, scheduling, path agents, and render deltas.
-// Optional EnTT and Dear ImGui integrations remain explicit opt-in headers.
+// Optional EnTT and Flecs adapters, and the separate Dear ImGui panels, remain
+// explicit opt-in headers.
 
 #include <tess/ecs/adapter.h>
 #include <tess/ecs/entity_handle.h>

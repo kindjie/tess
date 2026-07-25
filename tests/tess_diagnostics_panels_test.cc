@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 #include <tess/debug/imgui/panels.h>
+#include <tess/debug/imgui/tools.h>
 #include <tess/tess.h>
 
 #include <cstring>

@@ -130,6 +130,87 @@ TEST(TessQueuedContract, SourceLocationIsCapturedForDiagnostics) {
             std::string_view::npos);
 }
 
+TEST(TessQueuedContract, CommonTypedIntentsPreservePayloadAndPlanningMetadata) {
+  const std::vector<tess::PathRequest> paths{
+      {{1, 2, 0}, {8, 9, 0}},
+      {{3, 4, 0}, {10, 11, 0}},
+  };
+  const std::vector<tess::PathRequest> nearest{
+      {{7, 8, 0}, {12, 13, 0}},
+  };
+  const std::vector<tess::MovementIntent> moves{
+      {{1, 1, 0}, {2, 1, 0}, {}},
+  };
+  const std::vector<tess::ChunkKey> residency{{2}, {3}};
+  const std::vector<std::uint32_t> field_products{17, 23};
+  const std::vector<std::uint64_t> render_batches{41};
+
+  auto metadata = tess::IntentMetadata{};
+  metadata.versions = tess::IntentVersions{3, 5, 7, 11};
+  metadata.invalidations =
+      tess::IntentInvalidations{DirtyTerrain, true, true, false};
+  metadata.backend = tess::BackendEligibility::CpuOrGpu;
+  metadata.exactness = tess::ExactnessRequirement::Exact;
+
+  tess::FrameOps ops;
+  const auto path_handle =
+      ops.query_paths(tess::PathBatchDesc::from(std::span{paths}, metadata));
+  const auto nearest_handle =
+      ops.query_nearest(tess::NearestBatchDesc::from(std::span{nearest}));
+  const auto field_handle = ops.build_field_product(
+      tess::FieldProductDesc::from(std::span{field_products}));
+  const auto move_handle =
+      ops.move_entities(tess::MoveBatchDesc::from(std::span{moves}));
+  const auto topology_handle =
+      ops.rebuild_topology(tess::TopologyRebuildDesc{});
+  const auto residency_handle =
+      ops.ensure_resident(tess::ResidencyDesc::from(std::span{residency}));
+  const auto dirty_handle = ops.mark_dirty(
+      tess::MarkDirtyDesc{tess::DomainDesc::resident_chunks(), DirtyTerrain});
+  const auto render_handle = ops.publish_render_deltas(
+      tess::RenderDeltaDesc::from(std::span{render_batches}));
+
+  ASSERT_EQ(ops.size(), 8u);
+  const auto* path = ops.operation(path_handle.operation);
+  ASSERT_NE(path, nullptr);
+  EXPECT_EQ(path->kind, tess::OperationKind::QueryPaths);
+  EXPECT_EQ(path->payload.as<tess::PathRequest>().size(), 2u);
+  EXPECT_EQ(path->payload.as<tess::MovementIntent>().size(), 0u);
+  EXPECT_EQ(path->versions, metadata.versions);
+  EXPECT_EQ(path->invalidations, metadata.invalidations);
+  EXPECT_EQ(path->backend, tess::BackendEligibility::CpuOrGpu);
+  EXPECT_EQ(path->exactness, tess::ExactnessRequirement::Exact);
+
+  EXPECT_EQ(ops.operation(nearest_handle.operation)->kind,
+            tess::OperationKind::QueryNearest);
+  EXPECT_EQ(ops.operation(field_handle)->kind,
+            tess::OperationKind::BuildFieldProduct);
+  EXPECT_EQ(ops.operation(move_handle)->kind,
+            tess::OperationKind::MoveEntities);
+  EXPECT_EQ(ops.operation(topology_handle)->kind,
+            tess::OperationKind::RebuildTopology);
+  EXPECT_EQ(ops.operation(residency_handle)->kind,
+            tess::OperationKind::EnsureResident);
+  EXPECT_EQ(ops.operation(residency_handle)->payload.as<tess::ChunkKey>()[1],
+            tess::ChunkKey{3});
+  EXPECT_EQ(ops.operation(dirty_handle)->kind, tess::OperationKind::MarkDirty);
+  EXPECT_EQ(ops.operation(dirty_handle)->field_access.dirty_mask, DirtyTerrain);
+  EXPECT_EQ(ops.operation(render_handle)->kind,
+            tess::OperationKind::PublishRenderDeltas);
+
+  World world;
+  const auto report = tess::plan_operations(world, ops);
+  ASSERT_TRUE(report.ok());
+  EXPECT_EQ(report.operations()[0].versions, metadata.versions);
+  EXPECT_EQ(report.operations()[0].backend, tess::BackendEligibility::CpuOrGpu);
+  ASSERT_EQ(report.plan().operations().size(), 8u);
+  EXPECT_EQ(report.plan().operations()[0].versions, metadata.versions);
+  EXPECT_EQ(report.plan().operations()[0].invalidations,
+            metadata.invalidations);
+  EXPECT_EQ(
+      report.plan().operations()[0].payload.as<tess::PathRequest>().size(), 2u);
+}
+
 TEST(TessQueuedContract, InspectingQueuedAndPlannedOperationsDoesNotAllocate) {
   World world;
   tess::FrameOps ops;

@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,19 @@ import benchmark_artifact_metadata  # noqa: E402
 import benchmark_baseline_summary  # noqa: E402
 import benchmark_thresholds  # noqa: E402
 import benchmark_trends  # noqa: E402
+
+
+def literal_benchmark_names(source: str) -> set[str]:
+  """Extract adjacent string literals passed directly to Benchmark::Name."""
+  calls = re.findall(
+      r'->Name\(\s*((?:"[^"]*"\s*)+)\)',
+      source,
+      flags=re.DOTALL,
+  )
+  return {
+      "".join(re.findall(r'"([^"]*)"', literal_sequence))
+      for literal_sequence in calls
+  }
 
 
 def entry(
@@ -193,6 +207,38 @@ def test_missing_benchmark_fails(tmp_path, capsys):
   assert "missing benchmark result" in capsys.readouterr().err
 
 
+def test_explicit_feature_disabled_benchmark_may_be_missing(tmp_path):
+  benchmarks = [entry("ecs/tick_entt", 100.0)]
+  thresholds = {
+      "benchmarks": {
+          "ecs/tick_entt": limits(500.0),
+          "ecs/flecs_collect": limits(500.0),
+      }
+  }
+
+  assert run_thresholds(
+      tmp_path,
+      benchmarks,
+      thresholds,
+      extra_args=("--allow-missing-result", "ecs/flecs_collect"),
+  ) == 0
+
+
+def test_allow_missing_result_rejects_unknown_threshold(tmp_path, capsys):
+  benchmarks = [entry("ecs/tick_entt", 100.0)]
+  thresholds = {"benchmarks": {"ecs/tick_entt": limits(500.0)}}
+
+  code = run_thresholds(
+      tmp_path,
+      benchmarks,
+      thresholds,
+      extra_args=("--allow-missing-result", "ecs/not_declared"),
+  )
+
+  assert code == 1
+  assert "unknown allowed-missing threshold" in capsys.readouterr().err
+
+
 def test_unthresholded_benchmark_fails(tmp_path, capsys):
   benchmarks = [
       entry("key/covered", 100.0),
@@ -215,11 +261,44 @@ def test_empty_benchmark_results_fail(tmp_path, capsys):
   assert "no benchmark results" in capsys.readouterr().err
 
 
-def test_null_thresholds_are_skipped(tmp_path):
+def test_threshold_entry_without_a_limit_fails(tmp_path, capsys):
   benchmarks = [entry("key/free", 1e12)]
   thresholds = {"benchmarks": {"key/free": limits(None)}}
 
+  assert run_thresholds(tmp_path, benchmarks, thresholds) == 1
+  assert "no enabled time limit" in capsys.readouterr().err
+
+
+def test_explicitly_ungated_threshold_entry_is_allowed(tmp_path):
+  benchmarks = [entry("key/free", 1e12)]
+  entry_limits = limits(None)
+  entry_limits["gating"] = False
+  thresholds = {"benchmarks": {"key/free": entry_limits}}
+
   assert run_thresholds(tmp_path, benchmarks, thresholds) == 0
+
+
+def test_ungated_entry_rejects_a_limit(tmp_path, capsys):
+  benchmarks = [entry("key/conflict", 100.0)]
+  entry_limits = limits(500.0)
+  entry_limits["gating"] = False
+
+  code = run_thresholds(
+      tmp_path, benchmarks, {"benchmarks": {"key/conflict": entry_limits}}
+  )
+
+  assert code == 1
+  assert "gating=false conflicts" in capsys.readouterr().err
+
+
+def test_bad_time_unit_is_a_normal_tool_error(tmp_path, capsys):
+  benchmarks = [entry("key/unit", 100.0, time_unit="ticks")]
+  thresholds = {"benchmarks": {"key/unit": limits(500.0)}}
+
+  code = run_thresholds(tmp_path, benchmarks, thresholds)
+
+  assert code == 1
+  assert "key/unit: unsupported time_unit 'ticks'" in capsys.readouterr().err
 
 
 def test_unknown_limit_key_is_rejected(tmp_path, capsys):
@@ -262,6 +341,87 @@ def test_repo_threshold_files_use_only_allowed_keys():
     for name, entry_limits in data.get("benchmarks", {}).items():
       unknown = set(entry_limits) - benchmark_thresholds.ALLOWED_LIMIT_KEYS
       assert not unknown, f"{path.name}: {name}: {sorted(unknown)}"
+
+
+def test_literal_gated_benchmarks_have_threshold_entries():
+  root = Path(__file__).resolve().parents[1]
+  benchmark_names = set()
+  for path in sorted((root / "bench").glob("*.cc")):
+    source = path.read_text(encoding="utf-8")
+    benchmark_names.update(literal_benchmark_names(source))
+  threshold_files = {
+    "key": "key-conversions.json",
+    "storage": "storage.json",
+    "block": "block.json",
+    "block_pipeline": "block-pipeline.json",
+    "queued": "queued.json",
+    "path": "path.json",
+    "topology": "topology.json",
+    "scheduler": "scheduler.json",
+    "residency": "residency.json",
+    "maintenance": "maintenance.json",
+    "persistence": "persistence.json",
+    "query": "query.json",
+    "spatial": "spatial.json",
+    "parallel": "parallel.json",
+    "ecs": "ecs.json",
+    "render_delta": "render-delta.json",
+    "fields": "fields.json",
+    "diagnostics": "diagnostics.json",
+  }
+  thresholds = {}
+  for prefix, file_name in threshold_files.items():
+    data = json.loads(
+      (root / "bench" / "thresholds" / file_name).read_text(
+        encoding="utf-8"
+      )
+    )
+    thresholds[prefix] = data["benchmarks"]
+  uncovered = {
+    name
+    for name in benchmark_names
+    if (prefix := name.partition("/")[0]) in thresholds
+    and name not in thresholds[prefix]
+    and not any(
+      key.startswith(f"{name}/") for key in thresholds[prefix]
+    )
+  }
+
+  assert not uncovered, sorted(uncovered)
+
+
+def test_new_threshold_families_are_gated_and_collected_in_ci():
+  root = Path(__file__).resolve().parents[1]
+  cmake = (root / "bench" / "CMakeLists.txt").read_text(encoding="utf-8")
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text(
+    encoding="utf-8"
+  )
+  families = {
+    "block_pipeline": ("block-pipeline", "block_pipeline"),
+    "maintenance": ("maintenance", "maintenance"),
+    "persistence": ("persistence", "persistence"),
+    "query": ("query", "query"),
+    "spatial": ("spatial", "spatial"),
+  }
+
+  for target_suffix, (file_stem, benchmark_prefix) in families.items():
+    target = f"tess_bench_{target_suffix}_thresholds"
+    assert target in cmake
+    assert target in workflow
+    assert cmake.count(f"--benchmark_filter={benchmark_prefix}/.*") == 2
+    assert f"ci-baselines/{file_stem}.json" in cmake
+
+
+def test_literal_benchmark_names_accept_multiline_adjacent_literals():
+  source = '''
+BENCHMARK(sample)->Name(
+    "path/weighted_"
+    "portal_segments");
+'''
+
+  assert literal_benchmark_names(source) == {
+      "path/weighted_portal_segments"
+  }
 
 
 def test_malformed_results_file_reports_clear_error(tmp_path, capsys):
@@ -366,6 +526,7 @@ def test_summary_malformed_file_reports_clear_error(tmp_path):
 
 BASELINE_FILE_NAMES = (
     "block.json",
+    "block-pipeline.json",
     "storage.json",
     "key.json",
     "queued.json",
@@ -374,6 +535,10 @@ BASELINE_FILE_NAMES = (
     "parallel.json",
     "scheduler.json",
     "residency.json",
+    "maintenance.json",
+    "persistence.json",
+    "query.json",
+    "spatial.json",
     "diagnostics.json",
     "ecs.json",
     "render-delta.json",

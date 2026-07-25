@@ -3,7 +3,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output="${1:-$root/build/web-demo}"
-config="$root/build/web-demo-config"
+config="${TESS_WEB_DEMO_CONFIG:-$root/build/web-demo-config}"
 
 mkdir -p "$output"
 cp "$root/examples/web_pathfinder/site/index.html" "$output/"
@@ -19,7 +19,8 @@ cmake \
   -DTESS_BUILD_EXAMPLES=OFF \
   -DTESS_BUILD_BENCHMARKS=OFF \
   -DTESS_BUILD_DOCS=OFF \
-  -DTESS_ENABLE_ENTT=OFF
+  -DTESS_ENABLE_ENTT=OFF \
+  -DTESS_ENABLE_FLECS=OFF
 
 exported_functions='["_main","_tess_demo_width","_tess_demo_height"'
 exported_functions+=',"_tess_demo_reset","_tess_demo_set_blocked"'
@@ -56,6 +57,7 @@ colony_exports+=',"_tess_colony_reset","_tess_colony_set_wall"'
 colony_exports+=',"_tess_colony_set_strategy","_tess_colony_tick"'
 colony_exports+=',"_tess_colony_tiles","_tess_colony_agents"'
 colony_exports+=',"_tess_colony_agent_count","_tess_colony_arrived"'
+colony_exports+=',"_tess_colony_unreachable"'
 colony_exports+=',"_tess_colony_relaunch"]'
 
 em++ \
@@ -73,3 +75,31 @@ em++ \
   -sEXPORTED_FUNCTIONS="$colony_exports" \
   -sEXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","HEAP16"]' \
   -o "$colony/tess-colony.js"
+
+# WebGPU compute smoke: Emdawnwebgpu's stable C API, a real WGSL dispatch,
+# and explicit summary readback. Adapter absence is a supported runtime state.
+webgpu="$output/webgpu"
+mkdir -p "$webgpu"
+cp "$root/examples/webgpu_compute/site/index.html" "$webgpu/"
+cp "$root/examples/webgpu_compute/site/app.js" "$webgpu/"
+cp "$root/examples/web_pathfinder/site/style.css" "$webgpu/"
+cp "$root/examples/web_pathfinder/site/favicon.svg" "$webgpu/"
+cp "$root/docs/assets/tess-logo-dark.svg" "$webgpu/logo.svg"
+
+em++ \
+  -std=c++20 \
+  -O3 \
+  -DNDEBUG \
+  -I"$root/include" \
+  -I"$config/generated/include" \
+  --use-port=emdawnwebgpu \
+  --closure=1 \
+  "$root/examples/webgpu_compute/webgpu_compute.cc" \
+  -sALLOW_MEMORY_GROWTH=1 \
+  -sENVIRONMENT=web \
+  -sFILESYSTEM=0 \
+  -sMODULARIZE=1 \
+  -sEXPORT_NAME=createTessWebGpu \
+  -sEXPORTED_FUNCTIONS='["_main","_tess_webgpu_status"]' \
+  -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
+  -o "$webgpu/tess-webgpu.js"

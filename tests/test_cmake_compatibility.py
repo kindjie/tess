@@ -56,6 +56,46 @@ def test_project_and_presets_declare_the_supported_floor():
     assert '"minor": 25' in presets
 
 
+def test_doxygen_enables_every_optional_public_header():
+    cmake_lists = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    dependencies = (REPO_ROOT / "docs" / "dependencies.md").read_text(
+        encoding="utf-8"
+    )
+    predefined = cmake_lists.split("set(DOXYGEN_PREDEFINED", 1)[1].split(
+        ")", 1
+    )[0]
+
+    for gate in (
+        "TESS_ENABLE_ENTT",
+        "TESS_ENABLE_FLECS",
+        "TESS_ENABLE_IMGUI",
+        "TESS_ENABLE_DIAGNOSTICS",
+        "TESS_ENABLE_WEBGPU",
+        "WEBGPU_H_",
+    ):
+        assert f'"{gate}"' in predefined
+    for integration in ("EnTT and Flecs", "ImGui panels", "WebGPU APIs"):
+        assert integration in dependencies
+
+
+def test_cppcheck_smoke_does_not_suppress_syntax_errors():
+    options = (
+        REPO_ROOT / "cmake" / "TessProjectOptions.cmake"
+    ).read_text(encoding="utf-8")
+
+    assert "--suppress=syntaxError:" not in options
+
+
+def test_ecs_thresholds_are_gated_for_either_adapter():
+    benchmark_cmake = (
+        REPO_ROOT / "bench" / "CMakeLists.txt"
+    ).read_text(encoding="utf-8")
+
+    assert "if(TESS_ENABLE_ENTT OR TESS_ENABLE_FLECS)" in benchmark_cmake
+    assert "if(NOT TESS_ENABLE_ENTT)" in benchmark_cmake
+    assert "if(NOT TESS_ENABLE_FLECS)" in benchmark_cmake
+
+
 def test_consumer_preset_stays_consumer_shaped():
     presets = json.loads(
         (REPO_ROOT / "CMakePresets.json").read_text(encoding="utf-8")
@@ -68,8 +108,37 @@ def test_consumer_preset_stays_consumer_shaped():
     assert cache["TESS_BUILD_EXAMPLES"] == "OFF"
     assert cache["TESS_BUILD_BENCHMARKS"] == "OFF"
     assert cache["TESS_ENABLE_ENTT"] == "OFF"
+    assert cache["TESS_ENABLE_FLECS"] == "OFF"
+    assert cache.get("TESS_ENABLE_GRID_BENCHMARK_DATA", "OFF") == "OFF"
+    assert cache.get("TESS_REQUIRE_GRID_BENCHMARK_DATA", "OFF") == "OFF"
     assert "TESS_WARNINGS_AS_ERRORS" not in cache
     assert "inherits" not in consumer
+
+
+def test_required_grid_data_needs_explicit_opt_in(tmp_path):
+    env = os.environ.copy()
+    env["CMAKE_CXX_COMPILER_LAUNCHER"] = (
+        "tess-definitely-missing-compiler-launcher"
+    )
+    result = subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(REPO_ROOT),
+            "-B",
+            str(tmp_path / "build"),
+            "-DTESS_BUILD_TESTING=OFF",
+            "-DTESS_BUILD_EXAMPLES=OFF",
+            "-DTESS_REQUIRE_GRID_BENCHMARK_DATA=ON",
+        ],
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    output = " ".join((result.stdout + result.stderr).split())
+    assert "requires TESS_ENABLE_GRID_BENCHMARK_DATA=ON" in output
 
 
 def test_examples_preset_is_network_free_and_example_only():
@@ -85,6 +154,7 @@ def test_examples_preset_is_network_free_and_example_only():
     assert cache["TESS_BUILD_BENCHMARKS"] == "OFF"
     assert cache["TESS_BUILD_DOCS"] == "OFF"
     assert cache["TESS_ENABLE_ENTT"] == "OFF"
+    assert cache["TESS_ENABLE_FLECS"] == "OFF"
     assert "inherits" not in examples
 
 
@@ -130,6 +200,25 @@ def test_fetched_dependencies_use_retrying_exact_revision_populator():
     assert "TessGitPopulate.cmake" in helper
     assert "\n    GIT_REPOSITORY" not in google + entt + helper
     assert "\n    GIT_TAG" not in google + entt + helper
+
+
+def test_flecs_dependency_preserves_parent_cache_choices():
+    flecs = (REPO_ROOT / "cmake" / "TessFlecsDeps.cmake").read_text(
+        encoding="utf-8"
+    )
+
+    shared_default = (
+        'set(FLECS_SHARED OFF CACHE BOOL "Build the Flecs shared library")'
+    )
+    static_default = (
+        'set(FLECS_STATIC ON CACHE BOOL "Build the Flecs static library")'
+    )
+    assert shared_default in flecs
+    assert static_default in flecs
+    assert "FLECS_SHARED OFF CACHE BOOL" in flecs
+    assert "FLECS_STATIC ON CACHE BOOL" in flecs
+    assert "FORCE" not in flecs
+    assert "if(NOT FLECS_STATIC)" in flecs
 
 
 def test_git_population_scrubs_inherited_hook_environment(tmp_path):

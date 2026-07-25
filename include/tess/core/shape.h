@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/core/lattice.h>
 #include <tess/core/uint128.h>
 
 #include <cstdint>
@@ -24,6 +25,15 @@ struct Coord2 {
   std::int64_t y = 0;
 
   friend constexpr bool operator==(Coord2 lhs, Coord2 rhs) noexcept = default;
+};
+
+/** Signed axial coordinate for a two-dimensional hex lattice. */
+struct HexCoord {
+  std::int64_t q = 0;
+  std::int64_t r = 0;
+
+  friend constexpr bool operator==(HexCoord lhs,
+                                   HexCoord rhs) noexcept = default;
 };
 
 /** Canonical signed coordinate used by all world-space APIs. */
@@ -96,6 +106,17 @@ struct ResolvedTile {
 /** Lifts a two-dimensional coordinate into the canonical z-zero plane. */
 [[nodiscard]] constexpr Coord3 to_coord3(Coord2 coord) noexcept {
   return Coord3{coord.x, coord.y, 0};
+}
+
+/** Lifts an axial hex coordinate into the canonical z-zero plane. */
+[[nodiscard]] constexpr Coord3 to_coord3(HexCoord coord) noexcept {
+  return Coord3{coord.q, coord.r, 0};
+}
+
+/** Returns the axial components of a canonical z-zero coordinate. */
+[[nodiscard]] constexpr HexCoord to_hex_coord(Coord3 coord) noexcept {
+  TESS_ASSERT(coord.z == 0);
+  return HexCoord{coord.x, coord.y};
 }
 
 namespace detail {
@@ -200,6 +221,31 @@ using KeyStorage = std::conditional_t<Bits <= 64, std::uint64_t, UInt128>;
   return lhs > max - rhs ? max : lhs + rhs;
 }
 
+[[nodiscard]] constexpr UInt128 add(UInt128 lhs, UInt128 rhs) noexcept {
+  const auto low = lhs.lo + rhs.lo;
+  const auto carry = low < lhs.lo ? std::uint64_t{1} : std::uint64_t{0};
+  return UInt128::from_parts(lhs.hi + rhs.hi + carry, low);
+}
+
+struct SignedMagnitude {
+  bool negative = false;
+  std::uint64_t magnitude = 0;
+};
+
+[[nodiscard]] constexpr SignedMagnitude signed_delta(
+    std::int64_t lhs, std::int64_t rhs) noexcept {
+  return SignedMagnitude{lhs < rhs, abs_delta(lhs, rhs)};
+}
+
+[[nodiscard]] constexpr UInt128 signed_sum_magnitude(
+    SignedMagnitude lhs, SignedMagnitude rhs) noexcept {
+  if (lhs.negative == rhs.negative) {
+    return add(UInt128{lhs.magnitude}, UInt128{rhs.magnitude});
+  }
+  return lhs.magnitude < rhs.magnitude ? UInt128{rhs.magnitude - lhs.magnitude}
+                                       : UInt128{lhs.magnitude - rhs.magnitude};
+}
+
 }  // namespace detail
 
 /** Returns whether a coordinate lies in a half-open box without overflow. */
@@ -220,11 +266,28 @@ using KeyStorage = std::conditional_t<Bits <= 64, std::uint64_t, UInt128>;
                              detail::abs_delta(lhs.z, rhs.z)));
 }
 
-template <Extent3 Size, Extent3 Chunk>
+/** Returns overflow-safe axial hex distance, saturated at `uint64_t` max. */
+[[nodiscard]] constexpr auto hex_distance(HexCoord lhs, HexCoord rhs) noexcept
+    -> std::uint64_t {
+  const auto dq = detail::signed_delta(lhs.q, rhs.q);
+  const auto dr = detail::signed_delta(lhs.r, rhs.r);
+  auto twice_distance =
+      detail::add(detail::UInt128{dq.magnitude}, detail::UInt128{dr.magnitude});
+  twice_distance =
+      detail::add(twice_distance, detail::signed_sum_magnitude(dq, dr));
+  const auto distance = twice_distance >> 1U;
+  if (distance.hi != 0) {
+    return std::numeric_limits<std::uint64_t>::max();
+  }
+  return distance.lo;
+}
+
+template <Extent3 Size, Extent3 Chunk, typename Lattice = lattice::Orthogonal>
 /** Compile-time finite world shape and power-of-two chunk geometry. */
 struct Shape {
   static constexpr Extent3 size = Size;
   static constexpr Extent3 chunk = Chunk;
+  using lattice_type = Lattice;
 
   static_assert(detail::is_valid_extent(Size),
                 "Shape size dimensions must be greater than zero.");
@@ -237,6 +300,10 @@ struct Shape {
   static_assert(detail::is_divisible_by(Size, Chunk),
                 "Shape size dimensions must be multiples of chunk "
                 "dimensions.");
+  static_assert(lattice::LatticeType<Lattice>,
+                "Shape lattice must satisfy lattice::LatticeType.");
+  static_assert(Lattice::template valid_shape<Size, Chunk>,
+                "Shape dimensions are invalid for the selected lattice.");
 };
 
 template <typename Shape>
@@ -244,6 +311,9 @@ template <typename Shape>
 struct ShapeTraits {
   static constexpr Extent3 size = Shape::size;
   static constexpr Extent3 chunk = Shape::chunk;
+  using lattice_type = typename Shape::lattice_type;
+  static constexpr auto lattice_identity = lattice_type::identity;
+  static constexpr auto lattice_version = lattice_type::version;
 
   static constexpr std::uint64_t chunk_count_x = size.x / chunk.x;
   static constexpr std::uint64_t chunk_count_y = size.y / chunk.y;

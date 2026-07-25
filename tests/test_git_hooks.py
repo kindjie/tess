@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import re
+import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -13,6 +16,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 import git_hooks  # noqa: E402
+import wait_for_browser_state  # noqa: E402
 
 
 def reader_for(files: dict[str, bytes]):
@@ -90,6 +94,32 @@ def test_load_private_patterns_rejects_invalid_regex(tmp_path):
 
   with pytest.raises(ValueError, match=r"patterns:2: invalid byte regex"):
     git_hooks.load_private_patterns(path)
+
+
+def test_repository_private_patterns_use_common_git_dir(tmp_path):
+  def git_output(command, **kwargs):
+    assert command == ["git", "rev-parse", "--git-common-dir"]
+    assert kwargs["cwd"] == git_hooks.REPO_ROOT
+    return f"{tmp_path}\n"
+
+  path = git_hooks.repository_common_git_path(
+    "tess-private-patterns", git_output=git_output
+  )
+
+  assert path == tmp_path / "tess-private-patterns"
+
+
+def test_repository_private_patterns_resolve_relative_common_dir():
+  def git_output(command, **kwargs):
+    assert command == ["git", "rev-parse", "--git-common-dir"]
+    assert kwargs["cwd"] == git_hooks.REPO_ROOT
+    return ".git\n"
+
+  path = git_hooks.repository_common_git_path(
+    "tess-private-patterns", git_output=git_output
+  )
+
+  assert path == git_hooks.REPO_ROOT / ".git" / "tess-private-patterns"
 
 
 def test_ensure_identity_patterns_adds_escaped_full_name(tmp_path):
@@ -575,12 +605,321 @@ def test_pages_build_publishes_warning_clean_public_doxygen_api():
     "--ignore-missing-anchor api/functions_vars.html#index_b" in workflow
   )
   assert (
+    "--ignore-missing-anchor api/functions_vars.html#index_m" in workflow
+  )
+  assert (
     "--ignore-missing-anchor api/functions_vars.html#index_n" in workflow
+  )
+  assert (
+    "--ignore-missing-anchor api/functions_func.html#index_~" in workflow
+  )
+  assert (
+    "--ignore-missing-anchor api/functions_~.html#index_~" in workflow
   )
   assert "set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)" in cmake
   assert "set(DOXYGEN_WARN_IF_UNDOCUMENTED NO)" in cmake
   assert '"tess::detail::*"' in cmake
   assert "API reference: https://tess.owx.dev/api/" in mkdocs
+
+
+def test_webgpu_smoke_only_adapter_unavailable_is_unsupported():
+  root = Path(__file__).resolve().parents[1]
+  source = (
+    root / "examples" / "webgpu_compute" / "webgpu_compute.cc"
+  ).read_text()
+  adapter_ready = source.split("void adapter_ready(", 1)[1].split(
+    "\n}\n\n}  // namespace", 1
+  )[0]
+  run_compute = source.split(
+    "[[nodiscard]] bool run_compute(", 1
+  )[1].split("\n}\n\nvoid device_ready(", 1)[0]
+  finish_readback = source.split("void finish_readback(", 1)[1].split(
+    "\n}\n\nvoid device_lost(", 1
+  )[0]
+  device_ready = source.split("void device_ready(", 1)[1].split(
+    "\n}\n\nvoid adapter_ready(", 1
+  )[0]
+  device_lost = source.split("void device_lost(", 1)[1].split(
+    "\n}\n\nvoid device_error(", 1
+  )[0]
+  device_error = source.split("void device_error(", 1)[1].split(
+    "\n}\n\n[[nodiscard]] bool run_compute(", 1
+  )[0]
+  main = source.split("int main() {", 1)[1]
+
+  assert "constexpr int kAdapterUnavailable = -1;" in source
+  assert (
+    "status == WGPURequestAdapterStatus_Unavailable" in adapter_ready
+  )
+  assert "g_status = kAdapterUnavailable;" in adapter_ready
+  assert (
+    "status == WGPURequestAdapterStatus_CallbackCancelled" in adapter_ready
+  )
+  assert "g_status = kAdapterRequestCancelled;" in adapter_ready
+  assert "g_status = kAdapterRequestFailed;" in adapter_ready
+  assert "g_status = kNullAdapter;" in adapter_ready
+  assert "device_desc.deviceLostCallbackInfo.mode" in adapter_ready
+  assert "WGPUCallbackMode_AllowSpontaneous" in adapter_ready
+  assert "device_future.id == 0 &&" in adapter_ready
+  assert (
+    "transition_status(kRequestingDevice, kDeviceRequestFailed)"
+    in adapter_ready
+  )
+  assert "kAdapterUnavailable" not in device_ready
+  assert (
+    "status == WGPURequestDeviceStatus_CallbackCancelled" in device_ready
+  )
+  assert (
+    "transition_status(kRequestingDevice, kDeviceRequestCancelled)"
+    in device_ready
+  )
+  assert (
+    "transition_status(kRequestingDevice, kDeviceRequestFailed)"
+    in device_ready
+  )
+  assert "transition_status(kRequestingDevice, kNullDevice)" in device_ready
+  assert device_ready.index("release_instance();") < (
+    device_ready.index("status != WGPURequestDeviceStatus_Success")
+  )
+  assert "prior_status == kDeviceLost" in device_ready
+  assert "prior_status == kDeviceError" in device_ready
+  assert "compare_exchange_strong(requesting, kRunningCompute" in device_ready
+  assert (
+    "status == kPending || status >= kRequestingDevice"
+    in device_lost
+  )
+  assert "backend->notify_device_error();" in device_error
+  assert "type == WGPUErrorType_NoError" in device_error
+  assert "compare_exchange_weak(status, kDeviceError" in device_error
+  assert "device_desc.uncapturedErrorCallbackInfo.callback" in adapter_ready
+  assert "device_error" in adapter_ready
+  assert "initial_status == kDeviceLost" in run_compute
+  assert "initial_status == kDeviceError" in run_compute
+  assert "g_backend->notify_device_lost();" in run_compute
+  assert "g_backend->notify_device_error();" in run_compute
+  assert "kAwaitingReadback" not in device_ready
+  assert (
+    "g_status.load(std::memory_order_acquire) != kAwaitingReadback"
+    in finish_readback
+  )
+  assert finish_readback.index("!= kAwaitingReadback") < (
+    finish_readback.index("kReadbackVerificationFailed")
+  )
+  assert run_compute.index(
+    "compare_exchange_strong(running, kAwaitingReadback"
+  ) < (
+    run_compute.index("g_backend->readback(")
+  )
+  assert "transition_status(kPending, kInstanceCreationFailed)" in main
+  assert "adapter_future.id == 0 &&" in main
+  assert (
+    "transition_status(kPending, kAdapterRequestFailed)" in main
+  )
+  assert "Keep our last reference until device_ready" in adapter_ready
+
+
+def test_webgpu_pages_smoke_requires_swiftshader_compute_completion():
+  root = Path(__file__).resolve().parents[1]
+  app = (
+    root / "examples" / "webgpu_compute" / "site" / "app.js"
+  ).read_text()
+  workflow = (root / ".github" / "workflows" / "pages.yml").read_text()
+
+  unsupported = app.split("result === -1", 1)[1].split(
+    "result < -1", 1
+  )[0]
+  timeout = app.split(
+    "performance.now() - started > verificationTimeoutMs", 1
+  )[1].split("} else {", 1)[0]
+  assert re.search(
+    r"""dataset\.tessWebgpu = ["']unsupported["']""", unsupported
+  )
+  assert re.search(r"""dataset\.tessWebgpu = ["']failed["']""", timeout)
+  assert not re.search(
+    r"""dataset\.tessWebgpu = ["']unsupported["']""", timeout
+  )
+  assert "stage ${result}" in timeout
+  webgpu_smoke = workflow.split(
+    "grep -q '>Colony running<'", 1
+  )[1].split("- name: Configure Pages", 1)[0]
+  assert "--disable-gpu" not in webgpu_smoke
+  assert "--virtual-time-budget" not in webgpu_smoke
+  assert "Chromium's webgpu-swiftshader test configuration" in webgpu_smoke
+  for flag in (
+    "--enable-unsafe-webgpu",
+    "--use-webgpu-adapter=swiftshader",
+    "--enable-dawn-features=allow_unsafe_apis",
+    "--disable-dawn-features=use_dxc",
+    "--enable-webgpu-developer-features",
+    "--use-gpu-in-tests",
+    "--enable-accelerated-2d-canvas",
+  ):
+    assert flag in webgpu_smoke
+  assert "python3 tools/wait_for_browser_state.py" in webgpu_smoke
+  assert "--dataset tessWebgpu" in webgpu_smoke
+  assert "--expected ready" in webgpu_smoke
+  assert "--timeout 30" in webgpu_smoke
+  assert "const verificationTimeoutMs = 20000;" in app
+  assert 'data-tess-webgpu="(ready|unsupported)"' not in workflow
+
+
+def test_browser_state_websocket_client_frames_are_masked():
+  payload = b'{"id":1}'
+  mask = b"\x11\x22\x33\x44"
+
+  frame = wait_for_browser_state.encode_client_text_frame(payload, mask)
+
+  assert frame[:2] == b"\x81\x88"
+  assert frame[2:6] == mask
+  assert bytes(
+    byte ^ mask[index % len(mask)]
+    for index, byte in enumerate(frame[6:])
+  ) == payload
+
+
+def test_browser_state_rejects_oversized_fragmented_message(monkeypatch):
+  class FragmentedMessage:
+    def __init__(self):
+      self.data = bytearray(b"\x01\x03abc\x80\x03def")
+
+    def settimeout(self, _timeout):
+      pass
+
+    def recv(self, size):
+      result = bytes(self.data[:size])
+      del self.data[:size]
+      return result
+
+  monkeypatch.setattr(wait_for_browser_state, "MAX_WEBSOCKET_FRAME_BYTES", 5)
+  connection = wait_for_browser_state.DevToolsConnection(FragmentedMessage())
+
+  with pytest.raises(RuntimeError, match="oversized.*message"):
+    connection._read_text(deadline=time.monotonic() + 10.0)
+
+
+def test_browser_state_command_honors_shared_deadline(monkeypatch):
+  class EventStream:
+    def __init__(self):
+      self.data = bytearray(b"\x81\x02{}\x81\x02{}")
+      self.timeouts = []
+
+    def sendall(self, _payload):
+      pass
+
+    def settimeout(self, timeout):
+      self.timeouts.append(timeout)
+
+    def recv(self, size):
+      result = bytes(self.data[:size])
+      del self.data[:size]
+      return result
+
+  times = iter((10.0, 10.25, 11.0))
+  monkeypatch.setattr(time, "monotonic", lambda: next(times))
+  stream = EventStream()
+  connection = wait_for_browser_state.DevToolsConnection(stream)
+
+  with pytest.raises(RuntimeError, match="deadline"):
+    connection.command("Runtime.evaluate", {}, deadline=11.0)
+  assert stream.timeouts == [1.0, 0.75]
+
+
+def test_browser_state_partial_frame_reads_share_absolute_deadline(
+  monkeypatch,
+):
+  class DripStream:
+    def __init__(self):
+      self.timeouts = []
+
+    def settimeout(self, timeout):
+      self.timeouts.append(timeout)
+
+    def recv(self, _size):
+      now[0] += 0.5
+      return b"x"
+
+  now = [20.0]
+  monkeypatch.setattr(time, "monotonic", lambda: now[0])
+  stream = DripStream()
+
+  with pytest.raises(RuntimeError, match="deadline"):
+    wait_for_browser_state._recv_exact(stream, 3, deadline=21.0)
+  assert stream.timeouts == [1.0, 0.5]
+
+
+def test_browser_state_connect_shares_deadline_with_handshake(monkeypatch):
+  response = bytearray(b"HTTP/1.1 101 Switching Protocols\r\n\r\n")
+  observed = {}
+
+  class HandshakeStream:
+    def settimeout(self, timeout):
+      observed.setdefault("stream_timeouts", []).append(timeout)
+
+    def sendall(self, _payload):
+      pass
+
+  def create_connection(address, timeout):
+    observed["address"] = address
+    observed["timeout"] = timeout
+    return HandshakeStream()
+
+  def recv_exact(_stream, size, deadline):
+    observed.setdefault("deadlines", []).append(deadline)
+    result = bytes(response[:size])
+    del response[:size]
+    return result
+
+  monkeypatch.setattr(socket, "create_connection", create_connection)
+  monkeypatch.setattr(wait_for_browser_state, "_recv_exact", recv_exact)
+  monkeypatch.setattr(time, "monotonic", lambda: 30.0)
+  monkeypatch.setattr(
+    wait_for_browser_state.hashlib,
+    "sha1",
+    lambda *_args, **_kwargs: type(
+      "Digest", (), {"digest": lambda self: b"\0" * 20}
+    )(),
+  )
+  expected = base64.b64encode(b"\0" * 20).decode("ascii")
+  response[-2:-2] = f"Sec-WebSocket-Accept: {expected}\r\n".encode("ascii")
+
+  connection = wait_for_browser_state.DevToolsConnection.connect(
+    "ws://127.0.0.1:9222/devtools/page/1", deadline=31.25
+  )
+
+  assert observed["address"] == ("127.0.0.1", 9222)
+  assert observed["timeout"] == 1.25
+  assert observed["stream_timeouts"] == [1.25]
+  assert observed["deadlines"] and set(observed["deadlines"]) == {31.25}
+  assert isinstance(connection.stream, HandshakeStream)
+
+
+def test_browser_state_page_wait_reports_browser_exit():
+  class ExitedProcess:
+    returncode = 17
+
+    def poll(self):
+      return self.returncode
+
+  with pytest.raises(RuntimeError, match="browser exited with status 17"):
+    wait_for_browser_state._wait_for_page(
+      ExitedProcess(), 9222, "http://localhost/demo", time.monotonic() + 1.0
+    )
+
+
+def test_browser_state_dataset_expression_rejects_code_injection():
+  assert wait_for_browser_state.dataset_expression("tessWebgpu") == (
+    "document.documentElement?.dataset.tessWebgpu || ''"
+  )
+
+  with pytest.raises(ValueError):
+    wait_for_browser_state.dataset_expression("x;alert(1)")
+
+  assert wait_for_browser_state.page_url_key(
+    "HTTP://LOCALHOST:80/demo?mode=ci"
+  ) == wait_for_browser_state.page_url_key(
+    "http://localhost/demo?mode=ci"
+  )
+  assert wait_for_browser_state.MAX_WEBSOCKET_FRAME_BYTES == 16 * 1024 * 1024
 
 
 def test_workflows_use_only_github_owned_sha_pinned_actions():

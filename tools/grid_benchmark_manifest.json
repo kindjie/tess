@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "upstream": {
+    "repository": "https://bitbucket.org/shortestpathlab/benchmarks",
+    "revision": "fe6351b0700a0f4e75d0bd79ce3bf5478bc60c94"
+  },
+  "database_license": "ODC-By-1.0",
+  "citation": "Sturtevant, Benchmarks for Grid-Based Pathfinding, 2012",
+  "content_rights": {
+    "status": "blocked",
+    "reason": "No individual-content license is documented."
+  },
+  "entries": []
+}

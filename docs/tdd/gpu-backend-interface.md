@@ -1,5 +1,9 @@
 # TDD: GPU Backend Interface
 
+> Historical note: v0.11 later added an optional stable-C-API WebGPU
+> implementation as a compatible refinement of this interface-only design.
+> See `docs/architecture/gpu.md` for the maintained contract.
+
 ## 1. Summary
 
 This document defines the optional GPU backend interface.

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "maintenance/sparse/immediate/256": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 19000,
+      "note": "2026-07-24 local arm64 median: 3.01 us; bootstrap 6x ceiling"
+    },
+    "maintenance/sparse/fifo/256": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 34000,
+      "note": "2026-07-24 local arm64 median: 5.54 us; bootstrap 6x ceiling"
+    },
+    "maintenance/sparse/coalescing/256": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 150000,
+      "note": "2026-07-24 local arm64 median: 24.4 us; bootstrap 6x ceiling"
+    },
+    "maintenance/dense/immediate/512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 37000,
+      "note": "2026-07-24 local arm64 median: 6.02 us; bootstrap 6x ceiling"
+    },
+    "maintenance/dense/fifo/512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 66000,
+      "note": "2026-07-24 local arm64 median: 10.9 us; bootstrap 6x ceiling"
+    },
+    "maintenance/dense/coalescing/512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 20000,
+      "note": "2026-07-24 local arm64 median: 3.22 us; bootstrap 6x ceiling"
+    }
+  }
+}

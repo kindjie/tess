@@ -181,6 +181,7 @@ jobs:
           tests/test_git_hooks.py
           tests/test_ci_changes.py
           tests/test_benchmark_tools.py
+          tests/test_branding_assets.py
           tests/test_check_public_surface.py
           tests/test_check_public_docs.py
           tests/test_check_docs_links.py
@@ -189,6 +190,7 @@ jobs:
           tests/test_doc_snippets.py
           tests/test_doc_versions.py
           tests/test_header_compile_cost.py
+          tests/test_grid_benchmark_manifest.py
           tests/test_steamdeck_tools.py
 
       # Failing gate (promoted 2026-07-07 after a clean shake-out):
@@ -447,6 +449,11 @@ jobs:
       - name: Block benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_block_thresholds
 
+      - name: Block pipeline benchmark thresholds
+        run: >-
+          cmake --build --preset bench --target
+          tess_bench_block_pipeline_thresholds
+
       - name: Queued benchmark thresholds
         run: cmake --build --preset bench --target tess_bench_queued_thresholds
 
@@ -467,6 +474,24 @@ jobs:
         run: >-
           cmake --build --preset bench --target
           tess_bench_residency_thresholds
+
+      - name: Maintenance benchmark thresholds
+        run: >-
+          cmake --build --preset bench --target
+          tess_bench_maintenance_thresholds
+
+      - name: Persistence benchmark thresholds
+        run: >-
+          cmake --build --preset bench --target
+          tess_bench_persistence_thresholds
+
+      - name: Query benchmark thresholds
+        run: cmake --build --preset bench --target tess_bench_query_thresholds
+
+      - name: Spatial benchmark thresholds
+        run: >-
+          cmake --build --preset bench --target
+          tess_bench_spatial_thresholds
 
       - name: Parallel benchmark thresholds
         run: >-

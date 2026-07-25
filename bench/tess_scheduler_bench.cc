@@ -1,13 +1,14 @@
 #include <benchmark/benchmark.h>
 #include <tess/tess.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
 
-// M5 scheduler bench family: empty-tick overhead, many-task cadence
-// dispatch, the dirty-trigger path, and the auto-exec pipeline per tick.
+// Scheduler bench family: empty-tick overhead, many-task cadence dispatch,
+// dirty/event triggers, resumable work, and the auto-exec pipeline per tick.
 // Parallel speedups are deliberately trend-only (never gated); every gated
 // case here is serial CPU time.
 namespace {
@@ -107,6 +108,63 @@ void BM_scheduler_dirty_trigger(benchmark::State& state) {
       "dirty trigger did not fire once per tick");
 }
 
+// One exact payload publication plus one coalesced OnEvent fire per tick.
+void BM_scheduler_event_trigger(benchmark::State& state) {
+  DirtyConsumerTask consumer;
+  tess::EventStream<std::uint32_t> events;
+  events.reserve_events(1);
+  tess::Schedule schedule;
+  schedule.reserve_tasks(1);
+  (void)schedule.add_task(
+      {"consumer", tess::SimPhase::AI, tess::Cadence::on_event(1u)}, consumer);
+  schedule.seal();
+
+  tess::SimClock clock;
+  for (auto _ : state) {
+    events.clear();
+    auto published = schedule.publish_event(1u, events, clock.tick + 1, 7u);
+    auto tasks_run = schedule.run_tick(clock).tasks_run;
+    benchmark::DoNotOptimize(published);
+    benchmark::DoNotOptimize(tasks_run);
+  }
+  scheduler_bench_check(
+      consumer.fires == static_cast<std::uint64_t>(state.iterations()),
+      "event trigger did not fire once per tick");
+}
+
+struct SingleStepWork {
+  auto operator()(tess::AsyncWorkBudget budget, std::uint32_t& value)
+      -> tess::AsyncWorkStep {
+    const auto count = std::min(budget.max_items, 4u);
+    value += count;
+    return {tess::AsyncStepState::Ready, count, tess::AsyncVersion{1}};
+  }
+};
+
+// Submission, one deterministic background continuation, and ticket reset.
+void BM_scheduler_resumable_work_step(benchmark::State& state) {
+  tess::ResumableWorkQueue<std::uint32_t> queue;
+  queue.reserve_tickets(1);
+  tess::ResumableWorkTask<std::uint32_t> task{queue};
+  tess::Schedule schedule;
+  const auto task_id =
+      schedule.add_task({"async", tess::SimPhase::Background,
+                         tess::Cadence::background(tess::BackgroundBudget{4})},
+                        task);
+  schedule.seal();
+  tess::SimClock clock;
+  SingleStepWork work;
+
+  for (auto _ : state) {
+    auto ticket = queue.submit(work);
+    schedule.request_run(task_id);
+    auto background_items = schedule.run_tick(clock).background_items;
+    benchmark::DoNotOptimize(ticket);
+    benchmark::DoNotOptimize(background_items);
+    queue.clear();
+  }
+}
+
 // The auto-exec pipeline per tick over the standard resident-update
 // workload (one op covering every chunk), including plan, execute, dirty
 // merge, and ack drain.
@@ -160,6 +218,9 @@ BENCHMARK(BM_scheduler_empty_tick)->Name("scheduler/empty_tick");
 BENCHMARK(BM_scheduler_cadence_dispatch_100)
     ->Name("scheduler/cadence_dispatch_100");
 BENCHMARK(BM_scheduler_dirty_trigger)->Name("scheduler/dirty_trigger");
+BENCHMARK(BM_scheduler_event_trigger)->Name("scheduler/event_trigger");
+BENCHMARK(BM_scheduler_resumable_work_step)
+    ->Name("scheduler/resumable_work_step");
 BENCHMARK(BM_scheduler_auto_exec_tick)->Name("scheduler/auto_exec_tick");
 
 }  // namespace

@@ -311,7 +311,10 @@ carry the `/iterations:N/manual_time` suffixes and their gates moved to
 `max_real_time_ns` because cpu_time now includes the untimed cache refill.
 `tools/benchmark_thresholds.py` rejects duplicate benchmark entries, prefers
 repetition aggregates (median by default, `--aggregate` to override), and
-reports missing or malformed input files with clear errors;
+reports missing or malformed input files with clear errors. Every threshold
+entry must enable at least one of `max_cpu_time_ns` or `max_real_time_ns`.
+An intentionally informational entry instead declares `gating: false`; mixing
+that opt-out with an enabled limit is rejected.
 `tools/benchmark_baseline_summary.py` filters aggregates via `run_type` and
 emits proper CSV quoting. Both are covered by
 `tests/test_benchmark_tools.py`.
@@ -343,8 +346,21 @@ Run the current scaffolds with:
 cmake --build --preset bench --target tess_bench_key_thresholds
 cmake --build --preset bench --target tess_bench_storage_thresholds
 cmake --build --preset bench --target tess_bench_block_thresholds
+cmake --build --preset bench --target tess_bench_block_pipeline_thresholds
 cmake --build --preset bench --target tess_bench_queued_thresholds
 cmake --build --preset bench --target tess_bench_path_thresholds
+cmake --build --preset bench --target tess_bench_topology_thresholds
+cmake --build --preset bench --target tess_bench_scheduler_thresholds
+cmake --build --preset bench --target tess_bench_residency_thresholds
+cmake --build --preset bench --target tess_bench_maintenance_thresholds
+cmake --build --preset bench --target tess_bench_persistence_thresholds
+cmake --build --preset bench --target tess_bench_query_thresholds
+cmake --build --preset bench --target tess_bench_spatial_thresholds
+cmake --build --preset bench --target tess_bench_parallel_thresholds
+cmake --build --preset bench --target tess_bench_ecs_thresholds
+cmake --build --preset bench --target tess_bench_render_delta_thresholds
+cmake --build --preset bench --target tess_bench_fields_thresholds
+cmake --build --preset bench --target tess_bench_diagnostics_thresholds
 ```
 
 Benchmark CPU time over 1 ms is an investigation trigger for the current MVP
@@ -372,6 +388,16 @@ tools/benchmark_baseline_summary.py path/to/*.json
 Review coefficient of variation and outliers before copying suggested values
 into threshold JSON. The suggestions use maximum observed CPU time plus
 headroom; they are starting points, not automatic gates.
+
+External grid data remains a network-free, opt-in bootstrap. Configure it
+with `-DTESS_ENABLE_GRID_BENCHMARK_DATA=ON`; add
+`-DTESS_REQUIRE_GRID_BENCHMARK_DATA=ON` only for a strict job where a skip must
+fail. `-DTESS_GRID_BENCHMARK_DATA_DIR=/path/to/cache` overrides the default
+cache selected from `XDG_CACHE_HOME`, then the conventional user cache, then a
+build-local fallback. These are CMake cache variables, not environment
+variables, and configuration never downloads data. The manifest is currently
+empty and its cache-verifier readiness gate is false pending rights clearance,
+so strict mode is expected to fail until that follow-up lands.
 
 Generate the README-visible trend snapshot and detailed local HTML report with:
 

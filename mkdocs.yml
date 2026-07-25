@@ -77,9 +77,13 @@ nav:
       - Overview: architecture/README.md
       - Shapes: architecture/shape.md
       - Storage: architecture/storage.md
+      - Persistence: architecture/persistence.md
       - Block kernels: architecture/block.md
+      - Spatial queries: architecture/query.md
+      - Maintenance experiments: architecture/maintenance.md
       - Pathfinding: architecture/path.md
       - Topology: architecture/topology.md
+      - Spatial coordination: architecture/spatial-coordination.md
       - Queued operations: architecture/queued-operations.md
       - Simulation and scheduling: architecture/simulation.md
       - ECS integration: architecture/ecs.md

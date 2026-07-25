@@ -1,6 +1,7 @@
 #include <benchmark/benchmark.h>
 #include <tess/tess.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -24,9 +25,16 @@ using PathScaleShape =
     tess::Shape<tess::Extent3{512, 512, 1}, tess::Extent3{32, 32, 1}>;
 
 struct PassableTag {};
+struct CostTag {};
 
 using PathSchema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
 using PathScaleWorld = tess::AlwaysResidentWorld<PathScaleShape, PathSchema>;
+using WeightedSchema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
+                                         tess::Field<CostTag, std::uint32_t>>;
+using WeightedWorld = tess::AlwaysResidentWorld<PathScaleShape, WeightedSchema>;
+using WeightedWalker =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<CostTag>>;
 
 template <typename World>
 void fill_path_passable(World& world, std::uint8_t value) {
@@ -35,6 +43,14 @@ void fill_path_passable(World& world, std::uint8_t value) {
     for (auto& tile : passable) {
       tile = value;
     }
+  }
+}
+
+void fill_weighted_world(WeightedWorld& world) {
+  fill_path_passable(world, 1);
+  for (auto& chunk : world.chunks()) {
+    auto costs = chunk.template field_span<CostTag>();
+    std::fill(costs.begin(), costs.end(), 1u);
   }
 }
 
@@ -231,6 +247,61 @@ void BM_path_distance_field_product_build_8_goal_room_portals_512x512(
       static_cast<double>(field.reached_nodes);
   state.counters["product.bytes"] = static_cast<double>(product.byte_size());
   TESS_PATH_DIAG_RECORD(state);
+}
+
+void BM_path_weighted_field_product_build_8_goal_open_512x512(
+    benchmark::State& state) {
+  WeightedWorld world;
+  fill_weighted_world(world);
+  tess::GoalSet goals;
+  for (const auto goal : product_goals()) {
+    goals.add(goal);
+  }
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  tess::DistanceFieldProduct product;
+  product.reserve_goals(goals.size());
+  product.reserve_nodes(path_node_count<PathScaleShape>());
+  product.reserve_dependencies(WeightedWorld::chunk_count);
+  tess::DistanceFieldResult result;
+
+  for (auto _ : state) {
+    result = tess::build_weighted_distance_field_product<WeightedWorld,
+                                                         WeightedWalker>(
+        world, goals, scratch, product);
+    benchmark::DoNotOptimize(result.expanded_nodes);
+  }
+  bench_check(result.status == tess::PathStatus::Found,
+              "weighted field product build failed");
+  state.counters["field_expanded_nodes"] =
+      static_cast<double>(result.expanded_nodes);
+  state.counters["product.bytes"] = static_cast<double>(product.byte_size());
+}
+
+void BM_path_weighted_field_product_replay_open_512x512(
+    benchmark::State& state) {
+  WeightedWorld world;
+  fill_weighted_world(world);
+  tess::GoalSet goals;
+  goals.add(tess::Coord3{511, 511, 0});
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(path_node_count<PathScaleShape>());
+  tess::DistanceFieldProduct product;
+  product.reserve_nodes(path_node_count<PathScaleShape>());
+  product.reserve_dependencies(WeightedWorld::chunk_count);
+  (void)tess::build_weighted_distance_field_product<WeightedWorld,
+                                                    WeightedWalker>(
+      world, goals, scratch, product);
+  tess::PathResult result;
+  for (auto _ : state) {
+    result = tess::weighted_distance_field_product_path<WeightedWorld,
+                                                        WeightedWalker>(
+        world, {0, 0, 0}, product, scratch);
+    benchmark::DoNotOptimize(result.path.data());
+  }
+  bench_check(result.status == tess::PathStatus::Found,
+              "weighted field product replay failed");
+  record_path_counters(state, result);
 }
 
 void BM_path_nearest_target_product_100_starts_room_portals_512x512(
@@ -436,6 +507,10 @@ void BM_path_field_product_cache_lru_eviction_512x512(benchmark::State& state) {
 
 BENCHMARK(BM_path_distance_field_product_build_8_goal_room_portals_512x512)
     ->Name("path/distance_field_product_build_8_goal_room_portals_512x512");
+BENCHMARK(BM_path_weighted_field_product_build_8_goal_open_512x512)
+    ->Name("path/weighted_field_product_build_8_goal_open_512x512");
+BENCHMARK(BM_path_weighted_field_product_replay_open_512x512)
+    ->Name("path/weighted_field_product_replay_open_512x512");
 BENCHMARK(BM_path_nearest_target_product_100_starts_room_portals_512x512)
     ->Name("path/nearest_target_product_100_starts_room_portals_512x512");
 BENCHMARK(BM_path_field_product_cache_hit_replay_room_portals_512x512)

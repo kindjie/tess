@@ -13,11 +13,12 @@
 #include <vector>
 
 // The ECS-agnostic integration layer (M10). Everything here is free of
-// third-party dependencies: concrete ECS adapters (the EnTT adapter in
-// <tess/ecs/entt/entt_adapter.h>, or a game's own) implement the concepts
-// below and reuse the shared components, batch scratch, occupancy index,
-// and tick pipeline. The seam is deliberately "agents in deterministic
-// order in, state write-back out" -- request submission, tickets, retry
+// third-party dependencies: concrete ECS adapters (the EnTT and Flecs
+// adapters in their respective subdirectories, or an application's own)
+// implement the concepts below and reuse the shared components, batch
+// scratch, occupancy index, and tick pipeline. The seam is deliberately
+// "agents in deterministic order in, state write-back out" -- request
+// submission, tickets, retry
 // budgets, and exactly-once result application all stay inside the
 // PathAgentState lifecycle (sim/path_agent.h), so adapters can never
 // duplicate or violate it.
@@ -187,14 +188,16 @@ class TileOccupancyIndex {
     }
   }
 
-  // Maps `tile` to `entity`. Returns false (and mutates nothing) if the
-  // tile already maps to a DIFFERENT entity -- occupancy uniqueness is
-  // structural, not advisory. Re-inserting the same mapping succeeds.
+  // Maps `tile` to `entity`. Returns false (and mutates nothing) for a null
+  // entity or if the tile already maps to a DIFFERENT entity -- occupancy
+  // uniqueness is structural, not advisory. Re-inserting the same mapping
+  // succeeds.
   // A refusal is not allocation-free at the growth threshold: the table
   // rehashes before discovering the duplicate tile.
   [[nodiscard]] auto insert(Coord3 tile, EntityHandle entity) -> bool {
-    TESS_ASSERT_MSG(!entity.is_null(),
-                    "TileOccupancyIndex cannot map a null entity");
+    if (entity.is_null()) {
+      return false;
+    }
     // probe_start's fast lane combine relies on this domain; see its
     // comment.
     TESS_ASSERT_MSG(tile.x >= 0 && tile.y >= 0 && tile.z >= 0,

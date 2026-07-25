@@ -2,9 +2,11 @@
 
 ## Status
 
-Proposed addendum. This document is design intent for future work. It does
-not introduce an executor dependency, a production worker pool, or asynchronous
-maintenance behavior by itself.
+Historical proposed addendum. Lane 1, the persistent worker pool, partitioned
+dirty reduction, and the generation-aware dirty protocol shipped during the
+initial milestone; maintained architecture documents describe that behavior.
+Lane 2 coalescing maintenance remains planned. Statements below that describe
+the pool as future work preserve the document's original design-time tense.
 
 ## Context
 
