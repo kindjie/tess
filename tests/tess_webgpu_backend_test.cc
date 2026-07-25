@@ -155,6 +155,72 @@ TEST(TessWebGpuBackend, ReadbackSourceMustHaveCopySourceUsage) {
           .has_value());
 }
 
+TEST(TessWebGpuBackend, NoReadbackSourceRejectsOrphanedMetadata) {
+  tess_webgpu_stub::reset();
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  tess::gpu::WebGpuBackend backend{device.get(),
+                                   tess::gpu::WebGpuBackendConfig{
+                                       .max_buffer_bytes = 1u << 20u,
+                                       .max_dispatch_chunks = 1024,
+                                       .max_inflight_readback_bytes = 4096,
+                                       .field_capacity = 2,
+                                       .product_capacity = 4,
+                                   }};
+  device.reset();
+  PipelineOwner pipeline{tess_webgpu_stub::make_pipeline()};
+  BindGroupOwner bind_group{tess_webgpu_stub::make_bind_group()};
+  int userdata = 0;
+
+  EXPECT_FALSE(backend
+                   .register_product(tess::gpu::WebGpuProductDesc{
+                       .product_key = 91,
+                       .pipeline = pipeline.get(),
+                       .bind_group = bind_group.get(),
+                       .readback_source_offset = 4,
+                   })
+                   .has_value());
+  EXPECT_FALSE(backend
+                   .register_product(tess::gpu::WebGpuProductDesc{
+                       .product_key = 92,
+                       .pipeline = pipeline.get(),
+                       .bind_group = bind_group.get(),
+                       .readback_callback = capture_readback,
+                   })
+                   .has_value());
+  EXPECT_FALSE(backend
+                   .register_product(tess::gpu::WebGpuProductDesc{
+                       .product_key = 93,
+                       .pipeline = pipeline.get(),
+                       .bind_group = bind_group.get(),
+                       .readback_userdata = &userdata,
+                   })
+                   .has_value());
+}
+
+TEST(TessWebGpuStubDeathTest, QueueWriteRejectsOutOfBoundsCopy) {
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  auto desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+  desc.size = 4;
+  BufferOwner buffer{wgpuDeviceCreateBuffer(device.get(), &desc)};
+  const std::array<std::byte, 4> source{};
+
+  EXPECT_DEATH(wgpuQueueWriteBuffer(nullptr, buffer.get(), 2, source.data(),
+                                    source.size()),
+               "");
+}
+
+TEST(TessWebGpuStubDeathTest, EncoderRejectsOutOfBoundsCopy) {
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  auto desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+  desc.size = 4;
+  BufferOwner source{wgpuDeviceCreateBuffer(device.get(), &desc)};
+  BufferOwner destination{wgpuDeviceCreateBuffer(device.get(), &desc)};
+
+  EXPECT_DEATH(wgpuCommandEncoderCopyBufferToBuffer(nullptr, source.get(), 2,
+                                                    destination.get(), 0, 4),
+               "");
+}
+
 TEST(TessWebGpuBackend, SizeConversionRejectsNarrowing) {
   constexpr auto uint32_max = std::numeric_limits<std::uint32_t>::max();
   static_assert(tess::gpu::detail::fits_size<std::uint32_t>(uint32_max));

@@ -62,8 +62,9 @@ using WebGpuReadbackCallback = void (*)(GpuProductHandle, WebGpuReadbackStatus,
  * Registration retains the pipeline, bind group, and optional readback source.
  * The application may release its references immediately afterward. Shader,
  * layout, and binding construction stay with the algorithm provider. A
- * readback source must have `WGPUBufferUsage_CopySrc`. Readback callback
- * userdata must remain valid until that callback runs.
+ * readback source must have `WGPUBufferUsage_CopySrc`. Without one, the
+ * readback size, offset, callback, and userdata must all remain zero/null.
+ * Readback callback userdata must remain valid until that callback runs.
  */
 struct WebGpuProductDesc {
   std::uint64_t product_key = 0;
@@ -266,20 +267,27 @@ class WebGpuBackend {
         find_product(desc.product_key) != nullptr) {
       return std::nullopt;
     }
-    if ((desc.readback_source == nullptr) != (desc.readback_byte_size == 0)) {
-      return std::nullopt;
-    }
-    if (desc.readback_source != nullptr &&
-        (desc.readback_callback == nullptr ||
-         (wgpuBufferGetUsage(desc.readback_source) & WGPUBufferUsage_CopySrc) ==
-             0 ||
-         (desc.readback_source_offset & 3u) != 0 ||
-         (desc.readback_byte_size & 3u) != 0 ||
-         desc.readback_source_offset >
-             wgpuBufferGetSize(desc.readback_source) ||
-         desc.readback_byte_size > wgpuBufferGetSize(desc.readback_source) -
-                                       desc.readback_source_offset)) {
-      return std::nullopt;
+    if (desc.readback_source == nullptr) {
+      // Source-less products do not perform readback. Reject orphaned callback
+      // metadata instead of accepting a configuration whose callback can
+      // never fire.
+      if (desc.readback_byte_size != 0 || desc.readback_source_offset != 0 ||
+          desc.readback_callback != nullptr ||
+          desc.readback_userdata != nullptr) {
+        return std::nullopt;
+      }
+    } else {
+      if (desc.readback_byte_size == 0 || desc.readback_callback == nullptr ||
+          (wgpuBufferGetUsage(desc.readback_source) &
+           WGPUBufferUsage_CopySrc) == 0 ||
+          (desc.readback_source_offset & 3u) != 0 ||
+          (desc.readback_byte_size & 3u) != 0 ||
+          desc.readback_source_offset >
+              wgpuBufferGetSize(desc.readback_source) ||
+          desc.readback_byte_size > wgpuBufferGetSize(desc.readback_source) -
+                                        desc.readback_source_offset) {
+        return std::nullopt;
+      }
     }
     ProductSlot* slot = nullptr;
     for (auto& candidate : products_) {

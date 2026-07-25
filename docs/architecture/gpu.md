@@ -55,8 +55,10 @@ The backend exposes these bounded setup and execution operations:
 - Product registration accepts consumer-created pipelines, bind groups, and
   a bounded source range for readback. A readback source must have
   `WGPUBufferUsage_CopySrc`; registration rejects a buffer that cannot legally
-  be copied. Registration returns a generation handle; unregister/reuse
-  invalidates old descriptors.
+  be copied. Products without a readback source must also omit the associated
+  size, offset, callback, and userdata, so a callback that can never fire is
+  rejected rather than silently ignored. Registration returns a generation
+  handle; unregister/reuse invalidates old descriptors.
 - Dispatch validates the product generation, field, chunk budget, and total
   workgroup-X count before encoding a real compute pass and submitting it to
   the queue. The configured X limit defaults to WebGPU's guaranteed 65,535.
@@ -99,8 +101,11 @@ gameplay-exact answer on the CPU.
 `tess_webgpu_backend_test` uses an API-matching fake stable C device to test
 resource ownership, generation invalidation, bounded asynchronous readback,
 overlapping readback budget/failure paths, disabled configuration, and device
-loss/error notification. The documentation build also compiles and runs a
-browser smoke example with Emdawnwebgpu's exact pinned port. Only
+loss/error notification. Its copy entry points abort on invalid source or
+destination ranges, turning future backend-validation regressions into
+deterministic test failures instead of test-process heap corruption. The
+documentation build also compiles and runs a browser smoke example with
+Emdawnwebgpu's exact pinned port. Only
 `WGPURequestAdapterStatus_Unavailable` is an unsupported result.
 Instance creation, request cancellation or error, null success handles, device
 failure, backend failure, and timeout are failures. Pages follows Chromium's

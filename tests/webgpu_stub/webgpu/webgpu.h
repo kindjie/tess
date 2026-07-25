@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -183,6 +184,13 @@ inline void complete_map(std::size_t index, bool success) {
 
 inline void complete_map(bool success) { complete_map(0, success); }
 
+[[nodiscard]] inline bool copy_range_fits(WGPUBuffer buffer,
+                                          std::uint64_t offset,
+                                          std::uint64_t size) noexcept {
+  return buffer != nullptr && offset <= buffer->bytes.size() &&
+         size <= static_cast<std::uint64_t>(buffer->bytes.size()) - offset;
+}
+
 }  // namespace tess_webgpu_stub
 
 inline void wgpuDeviceAddRef(WGPUDevice device) { ++device->refs; }
@@ -220,7 +228,14 @@ inline void wgpuQueueWriteBuffer(WGPUQueue, WGPUBuffer buffer,
                                  std::uint64_t offset, const void* data,
                                  std::size_t size) {
   tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::WriteBuffer);
-  std::memcpy(buffer->bytes.data() + offset, data, size);
+  // A test double must turn backend validation regressions into deterministic
+  // failures. Letting memcpy run out of bounds would hide the violated WebGPU
+  // contract behind heap corruption, especially outside sanitizer builds.
+  if (!tess_webgpu_stub::copy_range_fits(buffer, offset, size)) {
+    std::abort();
+  }
+  std::memcpy(buffer->bytes.data() + static_cast<std::size_t>(offset), data,
+              size);
 }
 inline void wgpuComputePipelineAddRef(WGPUComputePipeline pipeline) {
   ++pipeline->refs;
@@ -284,9 +299,17 @@ inline void wgpuCommandEncoderCopyBufferToBuffer(
     WGPUBuffer destination, std::uint64_t destination_offset,
     std::uint64_t size) {
   tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::CopyBuffer);
-  std::memcpy(destination->bytes.data() + destination_offset,
-              source->bytes.data() + source_offset,
-              static_cast<std::size_t>(size));
+  // Match queue-write behavior so either side of an invalid readback copy
+  // fails at the stub boundary instead of corrupting the test process.
+  if (!tess_webgpu_stub::copy_range_fits(source, source_offset, size) ||
+      !tess_webgpu_stub::copy_range_fits(destination, destination_offset,
+                                         size)) {
+    std::abort();
+  }
+  std::memcpy(
+      destination->bytes.data() + static_cast<std::size_t>(destination_offset),
+      source->bytes.data() + static_cast<std::size_t>(source_offset),
+      static_cast<std::size_t>(size));
 }
 inline WGPUFuture wgpuBufferMapAsync(WGPUBuffer buffer, WGPUMapMode,
                                      std::size_t, std::size_t,

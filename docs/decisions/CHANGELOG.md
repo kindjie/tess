@@ -6,6 +6,18 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-25 - Harden optional WebGPU descriptor validation
+
+- Changed: `WebGpuBackend::register_product` rejects readback offsets,
+  callbacks, and userdata when no readback source exists. The stable-C test
+  double aborts before an out-of-bounds queue write or buffer copy instead of
+  allowing a backend-validation regression to corrupt the test process.
+- Reason: final exact-SHA auditing found two low-severity cases where invalid
+  consumer or future backend behavior could be silently ignored or diagnosed
+  only through undefined behavior in the test harness.
+- Affected docs: GPU architecture, public WebGPU descriptors, test inventory.
+- Affected code: WebGPU backend validation and stable-C stub regressions.
+
 ## 2026-07-24 - Resolve post-green exact-SHA audit findings
 
 - Changed: transition enumeration rejects unchecked origins and reverse
