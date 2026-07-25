@@ -8,15 +8,11 @@
 #include <limits>
 #include <type_traits>
 
-// M13 GPU descriptors: the plain data a compile-time-polymorphic backend
-// consumes, derived from the field schema and chunk layout. Interface
-// only in the current pre-1.0 surface -- no backend implementation ships,
-// CPU stays authoritative
-// for gameplay state, and GPU products are derived/cached/versioned by a
-// future backend without redesigning core (the acceptance bar of the
-// gpu-backend-interface TDD). Nothing here touches a GPU API or adds a
-// dependency; descriptors are byte-level facts about storage tess
-// already owns.
+// M13 GPU descriptors: dependency-free, byte-level storage facts derived from
+// the field schema and chunk layout for compile-time-polymorphic backends.
+// CPU results remain authoritative. No GPU API is included here; the optional
+// WebGPU implementation is separately gated in webgpu_backend.h, so CPU-only
+// consumers keep this descriptor surface without acquiring a GPU dependency.
 namespace tess::gpu {
 
 /**
