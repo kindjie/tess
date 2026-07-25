@@ -38,6 +38,9 @@ auto run() -> int {
   }
 
   flecs::world ecs;
+  // Flecs copies its temporary builder terms; the analyzer nevertheless
+  // attributes the upstream false escape to this chosen constructor call.
+  // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   tess::FlecsPathAgentContext context(ecs);
   tess::TileOccupancyIndex index;
   constexpr std::size_t kPawns = 8;
@@ -127,6 +130,9 @@ auto run() -> int {
 
 auto main() -> int {
   try {
+    // The analyzer propagates Flecs' temporary-term false positive through
+    // run(), so the external-boundary call needs the same narrow suppression.
+    // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
     return run();
   } catch (const std::exception& error) {
     std::cerr << "error: " << error.what() << "\n";

@@ -74,9 +74,10 @@ scheduler stage should route only such work to the pool by default.
   consumer. Planner-issued capability, world, generation, and policy checks
   already reject invalid phases before dispatch.
 - **Internal backends before external ones.** Per the addenda,
-  `work_contract`/`signal_tree` remain unadopted. The maintenance release will
-  evaluate them only behind Tess-owned interfaces against the addendum's
-  scheduler criteria; the `PhaseExecutor` surface is identical either way.
+  `work_contract`/`signal_tree` remain unadopted. Their completed evaluation
+  found no advantage for the shipped worker-pool and maintenance workloads;
+  the evidence and retry conditions are recorded in `optimization-log.md`.
+  The `PhaseExecutor` surface remains library-agnostic either way.
 - **Parallel benchmark cases are gated by real time.** Ten CI artifacts met
   the calibration precondition on 2026-07-11. Google Benchmark's CPU column
   still measures only the caller thread for pool backends, so pool thresholds
@@ -109,7 +110,8 @@ scheduler stage should route only such work to the pool by default.
    established the parallel-family real-time thresholds and performance
    trends.
 
-The remaining concurrency work is not unfinished S1-S7 rollout: runtime
-ownership claims, cross-thread diagnostic aggregation, and coalescing
-maintenance belong to the later queued-execution and maintenance releases in
+The remaining concurrency work is not unfinished S1-S7 rollout. Runtime
+ownership claims and cross-thread diagnostic aggregation remain explicit
+future extensions. The later queued-execution and maintenance releases,
+including the rejected coalescing experiment, are complete in
 `roadmap-completion.md`.

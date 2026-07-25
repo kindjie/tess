@@ -206,6 +206,9 @@ inline void wgpuBufferAddRef(WGPUBuffer buffer) { ++buffer->refs; }
 inline std::uint64_t wgpuBufferGetSize(WGPUBuffer buffer) {
   return buffer->bytes.size();
 }
+inline WGPUBufferUsage wgpuBufferGetUsage(WGPUBuffer buffer) {
+  return buffer->usage;
+}
 inline void wgpuBufferRelease(WGPUBuffer buffer) {
   if (--buffer->refs == 0) {
     delete buffer;

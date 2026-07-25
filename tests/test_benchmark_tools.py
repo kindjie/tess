@@ -353,11 +353,16 @@ def test_literal_gated_benchmarks_have_threshold_entries():
     "key": "key-conversions.json",
     "storage": "storage.json",
     "block": "block.json",
+    "block_pipeline": "block-pipeline.json",
     "queued": "queued.json",
     "path": "path.json",
     "topology": "topology.json",
     "scheduler": "scheduler.json",
     "residency": "residency.json",
+    "maintenance": "maintenance.json",
+    "persistence": "persistence.json",
+    "query": "query.json",
+    "spatial": "spatial.json",
     "parallel": "parallel.json",
     "ecs": "ecs.json",
     "render_delta": "render-delta.json",
@@ -383,6 +388,28 @@ def test_literal_gated_benchmarks_have_threshold_entries():
   }
 
   assert not uncovered, sorted(uncovered)
+
+
+def test_new_threshold_families_are_gated_and_collected_in_ci():
+  root = Path(__file__).resolve().parents[1]
+  cmake = (root / "bench" / "CMakeLists.txt").read_text(encoding="utf-8")
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text(
+    encoding="utf-8"
+  )
+  families = {
+    "block_pipeline": ("block-pipeline", "block_pipeline"),
+    "maintenance": ("maintenance", "maintenance"),
+    "persistence": ("persistence", "persistence"),
+    "query": ("query", "query"),
+    "spatial": ("spatial", "spatial"),
+  }
+
+  for target_suffix, (file_stem, benchmark_prefix) in families.items():
+    target = f"tess_bench_{target_suffix}_thresholds"
+    assert target in cmake
+    assert target in workflow
+    assert cmake.count(f"--benchmark_filter={benchmark_prefix}/.*") == 2
+    assert f"ci-baselines/{file_stem}.json" in cmake
 
 
 def test_literal_benchmark_names_accept_multiline_adjacent_literals():
@@ -499,6 +526,7 @@ def test_summary_malformed_file_reports_clear_error(tmp_path):
 
 BASELINE_FILE_NAMES = (
     "block.json",
+    "block-pipeline.json",
     "storage.json",
     "key.json",
     "queued.json",
@@ -507,6 +535,10 @@ BASELINE_FILE_NAMES = (
     "parallel.json",
     "scheduler.json",
     "residency.json",
+    "maintenance.json",
+    "persistence.json",
+    "query.json",
+    "spatial.json",
     "diagnostics.json",
     "ecs.json",
     "render-delta.json",

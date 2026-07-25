@@ -171,20 +171,26 @@ Flecs-specific constraints are explicit:
   Flecs ID.
 - `FlecsPathAgentContext` owns the typed query. It must be constructed with
   the world and outlive every source/sink call, but be destroyed before the
-  world. Query construction is setup work; repeated query creation is not a
-  hot-path operation.
+  world. Sources, sinks, lifecycle intents that allocate IDs, and tick drivers
+  assert that they receive that same world. Query construction is setup work;
+  repeated query creation is not a hot-path operation.
 - Query iteration only collects pointers and IDs. Sorting and goal reads occur
   after iteration; state and component write-back and structural goal removal
   occur in the later sink phase. Lifecycle structural changes are standalone
   intents. This avoids Flecs' locked-table assertion and preserves the TDD's
   safe-phase rule.
-- The typed query also sees parked tables, then excludes `OffBoard` in its
-  non-mutating callback. Entries are sorted by `AgentId`, never by table order
-  or native entity ID, so archetype churn cannot affect authoritative output.
-- Lifecycle intents require Flecs immediate mode. They must not run inside a
-  deferred or readonly scope: Flecs would queue component changes while tess
-  applies world occupancy and index changes immediately. Debug builds assert
-  this precondition.
+- The typed query sees parked tables, then excludes `OffBoard` in its
+  non-mutating callback. A negated Flecs builder term would avoid that callback
+  check, but Flecs 4.1.5's fluent term builder triggers false
+  `StackAddressEscape` findings at downstream construction sites under the
+  required Clang analyzer gate. Entries are sorted by `AgentId`, never by
+  table order or native entity ID, so archetype churn cannot affect
+  authoritative output.
+- Lifecycle intents, source/sink operations, and tick drivers require Flecs
+  immediate mode. They must not run inside a deferred or readonly scope:
+  Flecs would queue component changes while tess applies world occupancy and
+  index changes immediately. Debug builds assert this precondition before the
+  shared pipeline mutates authoritative state.
 - On-board spawn and place preflight occupancy-index growth before changing
   the ECS, world occupancy, or `next_agent_id`. An allocation failure at that
   boundary therefore leaves every authoritative store unchanged.

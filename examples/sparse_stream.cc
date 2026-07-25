@@ -5,6 +5,7 @@
 #include <tess/pathfinding.h>
 
 #include <cstdint>
+#include <exception>
 #include <iostream>
 
 namespace {
@@ -77,8 +78,13 @@ auto stream_the_bridge() -> bool {
 }  // namespace
 
 int main() {
-  if (!stay_within_budget() || !stream_the_bridge()) {
-    std::cerr << "sparse_stream example failed\n";
+  try {
+    if (!stay_within_budget() || !stream_the_bridge()) {
+      std::cerr << "sparse_stream example failed\n";
+      return 1;
+    }
+  } catch (const std::exception& error) {
+    std::cerr << "sparse_stream example failed: " << error.what() << "\n";
     return 1;
   }
   return 0;

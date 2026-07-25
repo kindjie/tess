@@ -58,6 +58,9 @@ def test_project_and_presets_declare_the_supported_floor():
 
 def test_doxygen_enables_every_optional_public_header():
     cmake_lists = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    dependencies = (REPO_ROOT / "docs" / "dependencies.md").read_text(
+        encoding="utf-8"
+    )
     predefined = cmake_lists.split("set(DOXYGEN_PREDEFINED", 1)[1].split(
         ")", 1
     )[0]
@@ -71,6 +74,26 @@ def test_doxygen_enables_every_optional_public_header():
         "WEBGPU_H_",
     ):
         assert f'"{gate}"' in predefined
+    for integration in ("EnTT and Flecs", "ImGui panels", "WebGPU APIs"):
+        assert integration in dependencies
+
+
+def test_cppcheck_smoke_does_not_suppress_syntax_errors():
+    options = (
+        REPO_ROOT / "cmake" / "TessProjectOptions.cmake"
+    ).read_text(encoding="utf-8")
+
+    assert "--suppress=syntaxError:" not in options
+
+
+def test_ecs_thresholds_are_gated_for_either_adapter():
+    benchmark_cmake = (
+        REPO_ROOT / "bench" / "CMakeLists.txt"
+    ).read_text(encoding="utf-8")
+
+    assert "if(TESS_ENABLE_ENTT OR TESS_ENABLE_FLECS)" in benchmark_cmake
+    assert "if(NOT TESS_ENABLE_ENTT)" in benchmark_cmake
+    assert "if(NOT TESS_ENABLE_FLECS)" in benchmark_cmake
 
 
 def test_consumer_preset_stays_consumer_shaped():

@@ -684,6 +684,9 @@ class PathRequestRuntime {
     }
     unit_field_product_cache_.set_byte_budget(
         policy.unit_field_product_cache_byte_budget);
+    const auto product_distance_fits =
+        unit_field_product_cache_.can_fit_distance_storage(
+            detail::NodeIndexSpace<World>{world}.capacity_hint());
 
     constexpr auto no_group = std::numeric_limits<std::uint32_t>::max();
     group_goals_.clear();
@@ -773,6 +776,13 @@ class PathRequestRuntime {
 
       ++stats_.field_product_candidate_groups;
       if (start_chunk_count < policy.unit_field_product_min_start_chunks) {
+        ++stats_.field_product_skipped_groups;
+        continue;
+      }
+      if (!product_distance_fits) {
+        // Ordinary A* remains the exact fallback. Avoid building a world-sized
+        // product that store() must reject (and whose rejection clears useful
+        // cache entries that already fit the configured budget).
         ++stats_.field_product_skipped_groups;
         continue;
       }

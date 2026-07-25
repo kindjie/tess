@@ -90,12 +90,20 @@ constexpr void for_each_orthogonal_face_candidate(Coord3 from,
 
 template <typename Shape, typename Sink>
 constexpr void for_each_hex_candidate(Coord3 from, Sink&& sink) {
-  emit_regular_candidate<Shape>(Coord3{from.x + 1, from.y, 0}, 1, sink);
-  emit_regular_candidate<Shape>(Coord3{from.x - 1, from.y, 0}, 1, sink);
-  emit_regular_candidate<Shape>(Coord3{from.x, from.y + 1, 0}, 1, sink);
-  emit_regular_candidate<Shape>(Coord3{from.x, from.y - 1, 0}, 1, sink);
-  emit_regular_candidate<Shape>(Coord3{from.x + 1, from.y - 1, 0}, 1, sink);
-  emit_regular_candidate<Shape>(Coord3{from.x - 1, from.y + 1, 0}, 1, sink);
+  // Axial coordinates occupy only z=0. Public geometric probes can receive an
+  // unchecked `from`; rejecting another plane prevents it from appearing to
+  // jump vertically into the hex plane merely because candidates use z=0.
+  if (from.z != 0) {
+    return;
+  }
+  emit_regular_candidate<Shape>(Coord3{from.x + 1, from.y, from.z}, 1, sink);
+  emit_regular_candidate<Shape>(Coord3{from.x - 1, from.y, from.z}, 1, sink);
+  emit_regular_candidate<Shape>(Coord3{from.x, from.y + 1, from.z}, 1, sink);
+  emit_regular_candidate<Shape>(Coord3{from.x, from.y - 1, from.z}, 1, sink);
+  emit_regular_candidate<Shape>(Coord3{from.x + 1, from.y - 1, from.z}, 1,
+                                sink);
+  emit_regular_candidate<Shape>(Coord3{from.x - 1, from.y + 1, from.z}, 1,
+                                sink);
 }
 
 template <typename Shape, typename Sink>

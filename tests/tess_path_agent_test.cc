@@ -528,9 +528,13 @@ TEST(TessPathAgent, UnitAgentsProcessAdvanceAndArrive) {
   EXPECT_EQ(stats.completed, 3u);
   EXPECT_EQ(stats.found, 3u);
 
+  // A runtime-backed caller may preserve this streak across an
+  // occupancy-blind successful replan. Actual progress ends the streak.
+  agents[0].blocked_retries = 3;
   auto advance = tess::advance_path_agents(agents, runtime);
   EXPECT_EQ(advance.advanced, 3u);
   EXPECT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
+  EXPECT_EQ(agents[0].blocked_retries, 0u);
   EXPECT_TRUE(agents[0].has_goal);
 
   advance = tess::advance_path_agents(agents, runtime, 8);

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "block_pipeline/fused": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 2600,
+      "note": "2026-07-24 local arm64 median: 422 ns; bootstrap 6x ceiling"
+    },
+    "block_pipeline/materialized": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 12000,
+      "note": "2026-07-24 local arm64 median: 1.87 us; bootstrap 6x ceiling"
+    }
+  }
+}

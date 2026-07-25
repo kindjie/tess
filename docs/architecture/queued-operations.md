@@ -527,9 +527,11 @@ The Work Contracts addendum remains an experiment proposal. Current queued ops
 use the existing dirty/active metadata scans as the baseline and do not add
 coalescing scheduler handles or long-lived maintenance tasks.
 
-The persistent worker pool is current production behavior. Additional pool
-backends and coalesced maintenance scheduling remain proposed TDD work; see
-`docs/tdd/tdd_addendum_concurrent_tile_world.md`.
+The persistent worker pool is current production behavior. Alternative
+external pool libraries were evaluated and not adopted; coalesced maintenance
+was implemented experimentally and rejected on sparse overhead. See
+`docs/planning/optimization-log.md` for evidence and retry conditions, and the
+historical `docs/tdd/tdd_addendum_concurrent_tile_world.md` for design intent.
 
 The phase executor contract is deliberately library-agnostic. External
 backends must adapt to the contiguous operation-index range API and preserve
@@ -552,5 +554,6 @@ execution system. The shipped implementation deliberately remains narrower:
 - `AutoExecTask` owns one typed callback and selects serial or worker-pool
   phase execution. Queued storage does not yet own arbitrary typed kernels.
 
-Richer domains and the general dependency graph are tracked by the maintained
-roadmap completion plan.
+Richer domains and the general dependency graph are explicit future
+extensions in the maintained roadmap completion plan, not incomplete release
+work.

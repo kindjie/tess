@@ -232,6 +232,15 @@ TEST(TessTransitionModel, EmitsCanonicalAxialOrder) {
   EXPECT_EQ(probes.probes[5].to, (tess::Coord3{2, 4, 0}));
 }
 
+TEST(TessTransitionModel, AxialCandidatesRejectCoordinatesOffZZeroPlane) {
+  using Model = tess::ResolvedTransitionModel<HexWorld, DefaultClass>;
+
+  EXPECT_FALSE(Model::is_regular_candidate(tess::Coord3{3, 3, 1},
+                                           tess::Coord3{4, 3, 0}));
+  EXPECT_FALSE(Model::is_regular_candidate(tess::Coord3{3, 3, -1},
+                                           tess::Coord3{4, 3, 0}));
+}
+
 TEST(TessTransitionModel, ReverseTraversalChargesForwardDestination) {
   SquareWorld world;
   fill_open(world, 2);

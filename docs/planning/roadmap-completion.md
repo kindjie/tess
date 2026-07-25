@@ -45,11 +45,12 @@ latest supported release tag remains `v0.4.0`. Installed-package and
 `FetchContent` consumers, an actual CMake 3.25.2 consumer configure/build,
 dependency-free examples, optional adapters, strict maintained documentation,
 and generated API documentation are release gates. Every literal benchmark in
-a gated family now has a calibrated threshold entry; the optimized correctness
-suite and all thirteen threshold families pass. Remaining roadmap items are
-either explicit non-goals, documented future extensions, evidence-backed
-deferrals, or the rights-gated external-data phase rather than incomplete
-v0.12 work.
+a gated family now has a threshold entry. Hosted-runner-calibrated ceilings
+and deliberately generous bootstrap ceilings are labeled distinctly; the
+optimized correctness suite and all threshold families pass. Remaining
+roadmap items fall into explicit non-goals, documented future extensions,
+evidence-backed deferrals, or the rights-gated external-data phase rather than
+incomplete v0.12 work.
 
 ### v0.5 Completion
 

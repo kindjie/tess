@@ -792,6 +792,33 @@ TEST(TessPathRuntime, UnitFieldProductByteBudgetEvictsThroughProcessing) {
   EXPECT_EQ(runtime.stats().field_product_used_groups, 1u);
 }
 
+TEST(TessPathRuntime, UndersizedUnitFieldBudgetSkipsProductBuild) {
+  World world;
+  fill_world(world);
+  tess::PathRequestRuntime runtime;
+  runtime.reserve_search_nodes(RuntimeTileCount);
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{31, 31, 0}});
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{8, 0, 0}, tess::Coord3{31, 31, 0}});
+  const auto policy = tess::PathRuntimeCachePolicy{
+      .use_unit_field_product_cache = true,
+      .unit_field_product_min_start_chunks = 1,
+      .unit_field_product_cache_byte_budget = 1024,
+  };
+
+  const auto results =
+      runtime.process_unit_cached<World, PassableTag>(world, policy);
+
+  ASSERT_EQ(results.size(), 2u);
+  EXPECT_EQ(results[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(results[1].status, tess::PathStatus::Found);
+  EXPECT_EQ(runtime.stats().field_product_candidate_groups, 1u);
+  EXPECT_EQ(runtime.stats().field_product_skipped_groups, 1u);
+  EXPECT_EQ(runtime.stats().field_product_used_groups, 0u);
+  EXPECT_EQ(runtime.stats().field_product_cache.misses, 0u);
+}
+
 // Seeded randomized equivalence: grouped field-product processing must
 // return the same statuses and costs as per-request A*, and the group
 // counters must match a straightforward reference computation. This pins

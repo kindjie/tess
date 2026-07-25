@@ -59,6 +59,11 @@ auto build_bounded_weighted_distance_field_core(
     TESS_DIAG_EVENT(path_initialize);
     scratch.generation_.assign(node_count, 0);
     scratch.distance_.assign(node_count, infinite_distance);
+  }
+  if (scratch.target_generation_.size() != node_count) {
+    // The provider-aware heap builder shares distance_ but never uses settle
+    // targets. A heap build followed by this bucket builder can therefore
+    // arrive with correctly sized distances and no target stamps.
     scratch.target_generation_.assign(node_count, 0);
   }
   if (scratch.weighted_buckets_.size() != bucket_count) {
@@ -79,9 +84,8 @@ auto build_bounded_weighted_distance_field_core(
   scratch.weighted_buckets_[0].push_back(goal_index);
   TESS_DIAG_EVENT(path_heap_push);
 
-  // target_generation_ is sized alongside distance_ above; settle targets
-  // against a scratch whose distance_ was sized by a different builder
-  // would index out of bounds.
+  // The independent size check above covers scratch first used by another
+  // field builder; this assertion pins the release-mode indexing precondition.
   TESS_ASSERT(settle_targets.empty() ||
               scratch.target_generation_.size() == node_count);
 

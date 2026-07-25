@@ -28,8 +28,9 @@ struct SpecialTransitionCandidate {
 //   per directed transition ORIGINATING in `chunk` (`from` must lie in that
 //   chunk). Bidirectional passages emit both directions, each from its own
 //   chunk's enumeration.
-// - `to` must lie in the same chunk or a face-neighbor chunk. Incremental
-//   updates re-derive portals only for dirty chunks and their face
+// - `to` must lie in the same chunk or a regular-step neighbor chunk (the six
+//   orthogonal faces, plus the two diagonal seams of an axial-hex lattice).
+//   Incremental updates re-derive portals only for dirty chunks and those
 //   neighbors, so a longer-range transition would survive, stale, past an
 //   edit to its landing chunk (asserted in debug builds).
 // - Enumeration must be deterministic for identical world content: the

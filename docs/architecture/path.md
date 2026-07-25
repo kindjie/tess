@@ -397,6 +397,10 @@ flowchart TB
   single-goal groups, requires at least
   `unit_field_product_min_start_chunks` distinct start chunks by default, and
   reports candidate, used, and skipped group counts in `PathRuntimeStats`.
+  Before building, the runtime verifies that the configured byte budget can
+  hold the product's mandatory world-sized distance labels. An undersized
+  budget skips directly to exact per-request search, avoiding a doomed build
+  and an over-budget store that would clear other cache entries.
   Invalid out-of-shape starts are resolved to `InvalidStart` during the
   existing grouping pass before any unchecked tile-key conversion. This adds
   no second validation pass and no duplicate passability read.
@@ -480,35 +484,43 @@ flowchart TB
 
 ## Behavior
 
-Movement uses six axis-adjacent candidates in fixed order:
+The legacy raw-tag/default-step APIs on an orthogonal shape use six
+axis-adjacent candidates in fixed order:
 
 ```text
 +x, -x, +y, -y, +z, -z
 ```
 
-Candidates outside the compile-time shape are rejected through the existing
-shape containment helpers. Degenerate axes naturally reject out-of-bounds
-neighbors, so the same implementation covers top-down 2D, vertical 2D, and
-small 3D worlds.
+Resolved movement-class APIs instead use their shared transition model.
+Diagonal policies add four clearance-checked planar diagonals after the face
+steps; axial-hex shapes use their six fixed axial directions; providers append
+their special transitions after regular steps. Candidates outside the
+compile-time shape are rejected through the existing shape containment
+helpers. Degenerate axes naturally reject out-of-bounds neighbors.
 
-The default `astar_path` costs are unit-weighted. The heuristic is Manhattan
-distance. Tie-breaking is deterministic by lower total score, then higher path
-cost for equal-score nodes, then tile-key order. Preferring higher path cost on
-equal-score nodes avoids open-grid wavefront expansion while preserving
+The default orthogonal `astar_path` costs are unit-weighted and use Manhattan
+distance. Resolved models use Manhattan distance for orthogonal default steps,
+fixed-point octile distance for diagonal steps, and axial distance for hex
+steps. A model with special provider transitions uses a zero heuristic because
+an extra edge may make geometric progress more cheaply than the regular
+lattice. Tie-breaking is deterministic by lower total score, then higher path
+cost for equal-score nodes, then tile-key order. Preferring higher path cost
+on equal-score nodes avoids open-grid wavefront expansion while preserving
 shortest paths.
 
 `weighted_astar_path` charges the destination tile's positive integral
 entry cost for each move. The start tile's cost is not charged, but start and
 goal costs must be positive. Zero-cost and negative signed-cost tiles are
 treated as blocked, and oversized integral costs saturate to the public
-32-bit path-cost range. Weighted A* uses a binary heap and Manhattan distance
-with a minimum edge cost of one, so it preserves optimal weighted paths while
-skipping the unit-cost-only bucket queue and route cache. It does include an
-exact direct Manhattan fast path when every entered tile on a probed route has
-cost 1; no positive-cost path can beat that Manhattan lower bound. For
-axis-aligned routes where the straight line is blocked, it can also return a
-one-tile parallel detour when every entered detour tile has cost 1; any
-positive-cost path around the blocked line needs at least Manhattan+2 moves.
+32-bit path-cost range. Weighted A* uses a binary heap and the resolved
+model's admissible heuristic in model ticks, so it preserves optimal weighted
+paths while skipping the unit-cost-only bucket queue and route cache. The
+default orthogonal model also includes an exact direct Manhattan fast path
+when every entered tile on a probed route has cost 1; no positive-cost path
+can beat that Manhattan lower bound. For axis-aligned routes where the
+straight line is blocked, it can also return a one-tile parallel detour when
+every entered detour tile has cost 1; any positive-cost path around the
+blocked line needs at least Manhattan+2 moves.
 
 Before entering open-set A*, the implementation probes direct Manhattan
 paths in the shape-relevant axis orders. If any route is fully passable, it

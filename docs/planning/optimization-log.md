@@ -102,6 +102,48 @@ deferred for scope reasons. Keep entries short and concrete:
   stop producing identical paths, costs, or dependency stamps, or if a future
   provider can prove equivalent default connectivity.
 
+## 2026-07-24 - Gate Previously Smoke-Only Benchmark Families
+
+- Area: block pipelines, maintenance strategies, persistence, exact spatial
+  queries, and local coordination.
+- Evidence: all five families were registered in the shared benchmark binary
+  but absent from threshold targets and hosted baseline collection. Three-run
+  local arm64 medians ranged from 422 ns for a fused pipeline to 10.2 ms for
+  dense archive save. The largest maintenance result was 24.4 us for sparse
+  coalescing, retaining the experiment's previously recorded disadvantage.
+- Decision: add strict family manifests, threshold targets, hosted CI steps,
+  and baseline artifacts. Initial ceilings are six times the local median,
+  rounded upward and explicitly labeled bootstrap rather than calibrated.
+- Retry conditions: replace the bootstrap ceilings with two times the maximum
+  after ten same-runner hosted baseline artifacts.
+
+## 2026-07-24 - Preflight Unit Repeated-Goal Product Storage
+
+- Area: unit repeated-goal selection in `PathRequestRuntime`.
+- Evidence: a 1,024-byte cache budget cannot hold the 4,096-byte mandatory
+  distance labels in the focused world. Building then rejecting that product
+  produced two cache misses and cleared smaller useful products; the shared
+  storage preflight skips the doomed product, preserves exact A* results, and
+  records zero cache misses.
+- Decision: mirror the weighted-product distance-storage preflight in the unit
+  path. This removes repeated world-sized work without changing selection when
+  a product can fit.
+- Retry conditions: revisit only if product storage becomes compressed or can
+  be admitted incrementally without clearing already-admitted entries.
+
+## 2026-07-24 - Retain Flecs Callback Off-Board Filter
+
+- Area: Flecs path-agent collection.
+- Evidence: a structural `without<OffBoard>()` query term avoids one callback
+  branch per parked entity, but Flecs 4.1.5's fluent builder reproducibly makes
+  the required Clang analyzer report downstream `StackAddressEscape` findings.
+  The callback filter is non-mutating and parked entities are not a measured
+  dominant workload.
+- Decision: reject the structural filter until the pinned upstream builder is
+  analyzer-clean; keep the reason at the callback and in maintained ECS docs.
+- Retry conditions: retest after a Flecs upgrade or if profiling shows parked
+  entities materially affect collection time.
+
 ## 2026-07-23 - Constant-Time Area Index Validation
 
 - Area: per-agent checked coordinate lookup through `AreaIndex`.

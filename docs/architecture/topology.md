@@ -71,8 +71,8 @@ stateDiagram-v2
   bounds, and boundary-exit count.
 - `LocalBoundaryExit` records one passable local boundary tile that has an
   adjacent resident chunk in the compile-time shape, including which
-  `BoundaryFace` it crosses (`NegativeX` through `PositiveZ`) and the
-  target `ChunkKey`.
+  `BoundaryFace` it crosses (six orthogonal faces plus the two axial-hex
+  diagonal seams) and the target `ChunkKey`.
 - `LocalChunkTopology` owns local region labels, region summaries, boundary
   exits, the chunk key, and the captured chunk topology version.
   `region(LocalRegionId)` is the checked accessor for the 1-based id
@@ -126,7 +126,10 @@ stateDiagram-v2
   yield per-class portals automatically. The graph type is deduced from
   the world's residency: a dense world rebuilds every chunk; a sparse world
   builds only its resident chunks (sorted ascending) and freezes their keys and
-  residency generations onto the graph.
+  residency generations onto the graph. Construction publishes directly into
+  caller storage; if an allocation or provider exception interrupts the full
+  build, it clears the partial graph and advances its revision so freshness
+  checks cannot accept torn labels, portals, or CSR adjacency.
 - `update_region_graph<World, ClassOrTag>(world, scratch, graph,
   dirty_chunks, provider = AdjacentTransitions{})` incrementally patches a
   built graph after passability edits
@@ -321,11 +324,12 @@ once per chunk (`for_each_transition(world, chunk, sink)`, `from` inside the
 chunk) and append one directed `RegionPortal` per transition whose endpoints
 both resolve to labeled regions — so provider edges are automatically
 per-class, and a bidirectional passage emits each direction from its own
-chunk. The landing tile must lie in the same chunk or a face-neighbor chunk
-(asserted in debug builds): incremental updates re-derive portals only for
-dirty chunks and their face neighbors, so a longer-range transition would
-survive, stale, past an edit to its landing chunk. The provider type, live
-stateful object identity, and revision are stamped on the graph like the
+chunk. The landing tile must lie in the same chunk or a regular-step neighbor
+chunk (asserted in debug builds): that means six face neighbors for orthogonal
+lattices and also the two diagonal chunk seams for axial hexes. Incremental
+updates re-derive portals over that same neighborhood, so a longer-range
+transition would survive, stale, past an edit to its landing chunk. The
+provider type, live stateful object identity, and revision are stamped like the
 movement class (`matches_provider`). Empty providers use a null instance and
 revision zero. A stateful provider must remain at a stable address while the
 graph can be reused, expose

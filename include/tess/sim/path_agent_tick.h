@@ -94,6 +94,8 @@ inline auto prepare_path_agent_processing(std::span<PathAgentState> agents,
       continue;
     }
     if (options.max_steps == 0) {
+      // A paused movement tick cannot prove whether the obstruction cleared.
+      // Do not spend the consecutive-block budget without attempting a step.
       continue;
     }
     if (agent.blocked_retries < options.max_blocked_retries) {

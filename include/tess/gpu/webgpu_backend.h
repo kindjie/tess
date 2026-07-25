@@ -61,8 +61,9 @@ using WebGpuReadbackCallback = void (*)(GpuProductHandle, WebGpuReadbackStatus,
  *
  * Registration retains the pipeline, bind group, and optional readback source.
  * The application may release its references immediately afterward. Shader,
- * layout, and binding construction stay with the algorithm provider. Readback
- * callback userdata must remain valid until that callback runs.
+ * layout, and binding construction stay with the algorithm provider. A
+ * readback source must have `WGPUBufferUsage_CopySrc`. Readback callback
+ * userdata must remain valid until that callback runs.
  */
 struct WebGpuProductDesc {
   std::uint64_t product_key = 0;
@@ -270,6 +271,8 @@ class WebGpuBackend {
     }
     if (desc.readback_source != nullptr &&
         (desc.readback_callback == nullptr ||
+         (wgpuBufferGetUsage(desc.readback_source) & WGPUBufferUsage_CopySrc) ==
+             0 ||
          (desc.readback_source_offset & 3u) != 0 ||
          (desc.readback_byte_size & 3u) != 0 ||
          desc.readback_source_offset >

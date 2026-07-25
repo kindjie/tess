@@ -168,6 +168,33 @@ TEST(TessEcsFlecs, LifecycleIntentsRejectDeferredScopes) {
 #endif
 }
 
+TEST(TessEcsFlecs, TickRejectsDeferredAndReadonlyScopes) {
+#if TESS_ENABLE_ASSERTS
+  Sim sim;
+  sim.ecs.defer_begin();
+  EXPECT_DEATH(static_cast<void>(sim.tick()), "immediate mode");
+  sim.ecs.defer_end();
+
+  sim.ecs.readonly_begin();
+  EXPECT_DEATH(static_cast<void>(sim.tick()), "immediate mode");
+  sim.ecs.readonly_end();
+#else
+  GTEST_SKIP() << "tick preconditions are debug assertions";
+#endif
+}
+
+TEST(TessEcsFlecs, ContextRejectsASecondWorld) {
+#if TESS_ENABLE_ASSERTS
+  Sim sim;
+  flecs::world other;
+  tess::FlecsPathAgentSource source(other, sim.context);
+  EXPECT_DEATH(static_cast<void>(source.collect(sim.context.batch)),
+               "same Flecs world");
+#else
+  GTEST_SKIP() << "context identity is a debug assertion";
+#endif
+}
+
 TEST(TessEcsFlecs, SpawnIndexGrowthFailureLeavesEveryStoreUnchanged) {
   if (!tess_test::allocation_failure_injection_supported()) {
     GTEST_SKIP() << "allocation failure injection is unavailable with this "
@@ -310,6 +337,9 @@ TEST(TessEcsFlecs, LifecycleAndTickEmitRenderDeltas) {
 }
 
 TEST(TessEcsFlecs, SteadyStateTickIsAllocationFree) {
+  // Flecs copies its temporary builder terms; the analyzer nevertheless
+  // attributes the upstream false escape to this chosen constructor call.
+  // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   Sim sim;
   const auto a = sim.spawn(tess::Coord3{0, 0, 0});
   const auto b = sim.spawn(tess::Coord3{0, 4, 0});

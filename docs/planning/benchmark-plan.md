@@ -346,8 +346,21 @@ Run the current scaffolds with:
 cmake --build --preset bench --target tess_bench_key_thresholds
 cmake --build --preset bench --target tess_bench_storage_thresholds
 cmake --build --preset bench --target tess_bench_block_thresholds
+cmake --build --preset bench --target tess_bench_block_pipeline_thresholds
 cmake --build --preset bench --target tess_bench_queued_thresholds
 cmake --build --preset bench --target tess_bench_path_thresholds
+cmake --build --preset bench --target tess_bench_topology_thresholds
+cmake --build --preset bench --target tess_bench_scheduler_thresholds
+cmake --build --preset bench --target tess_bench_residency_thresholds
+cmake --build --preset bench --target tess_bench_maintenance_thresholds
+cmake --build --preset bench --target tess_bench_persistence_thresholds
+cmake --build --preset bench --target tess_bench_query_thresholds
+cmake --build --preset bench --target tess_bench_spatial_thresholds
+cmake --build --preset bench --target tess_bench_parallel_thresholds
+cmake --build --preset bench --target tess_bench_ecs_thresholds
+cmake --build --preset bench --target tess_bench_render_delta_thresholds
+cmake --build --preset bench --target tess_bench_fields_thresholds
+cmake --build --preset bench --target tess_bench_diagnostics_thresholds
 ```
 
 Benchmark CPU time over 1 ms is an investigation trigger for the current MVP

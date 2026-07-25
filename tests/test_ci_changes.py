@@ -71,6 +71,14 @@ def test_one_code_path_requires_full_ci():
   assert classification.reason == "code-affecting path: 'include/tess/tess.h'"
 
 
+def test_hook_backstop_runs_branding_asset_regressions():
+  workflow = (
+    Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci.yml"
+  ).read_text(encoding="utf-8")
+
+  assert "tests/test_branding_assets.py" in workflow
+
+
 def test_git_diff_is_nul_safe_and_disables_rename_detection():
   captured = []
 

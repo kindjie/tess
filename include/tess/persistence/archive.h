@@ -354,11 +354,12 @@ inline bool checked_multiply(std::size_t lhs, std::size_t rhs,
 inline auto parse_world_archive(std::span<const std::byte> bytes)
     -> ParsedArchive {
   ParsedArchive parsed;
+  auto& info = parsed.result.info;
   auto fail = [&](WorldArchiveStatus status) {
     parsed.result.status = status;
     return parsed;
   };
-  if (bytes.size() < world_archive_header_size) {
+  if (bytes.size() < world_archive_magic.size()) {
     return fail(WorldArchiveStatus::Truncated);
   }
   if (!std::equal(world_archive_magic.begin(), world_archive_magic.end(),
@@ -367,13 +368,24 @@ inline auto parse_world_archive(std::span<const std::byte> bytes)
   }
 
   ArchiveCursor cursor(bytes.subspan(world_archive_magic.size()));
+  if (!cursor.read_unsigned_le(info.format_version)) {
+    return fail(WorldArchiveStatus::Truncated);
+  }
+  // The version is the only format-independent value after the magic. A
+  // future format may extend or reinterpret the v1 envelope, so classifying
+  // it must not depend on satisfying v1's length or checksum equations.
+  if (info.format_version != world_archive_format_version) {
+    return fail(WorldArchiveStatus::UnsupportedFormat);
+  }
+  if (bytes.size() < world_archive_header_size) {
+    return fail(WorldArchiveStatus::Truncated);
+  }
+
   auto body_size = std::uint64_t{};
   auto checksum = std::uint32_t{};
   auto lattice_id = std::uint32_t{};
   auto residency = std::uint8_t{};
-  auto& info = parsed.result.info;
-  if (!cursor.read_unsigned_le(info.format_version) ||
-      !cursor.read_unsigned_le(body_size) ||
+  if (!cursor.read_unsigned_le(body_size) ||
       !cursor.read_unsigned_le(checksum) ||
       !cursor.read_unsigned_le(info.size.x) ||
       !cursor.read_unsigned_le(info.size.y) ||
@@ -415,9 +427,6 @@ inline auto parse_world_archive(std::span<const std::byte> bytes)
   if (archive_crc32(bytes) != checksum) {
     return fail(WorldArchiveStatus::Corrupt);
   }
-  if (info.format_version != world_archive_format_version) {
-    return fail(WorldArchiveStatus::UnsupportedFormat);
-  }
   if (info.field_count > world_archive_max_fields || info.size.x == 0 ||
       info.size.y == 0 || info.size.z == 0 || info.chunk.x == 0 ||
       info.chunk.y == 0 || info.chunk.z == 0 ||
@@ -455,6 +464,14 @@ inline auto parse_world_archive(std::span<const std::byte> bytes)
         (field.kind == ArchiveScalarKind::Floating && field.width != 4 &&
          field.width != 8) ||
         !checked_add(bytes_per_tile, field.width, bytes_per_tile)) {
+      return fail(WorldArchiveStatus::Corrupt);
+    }
+    // IDs are the stable join key used by typed loading. Blessing duplicates
+    // during inspection would report Ok for an archive no schema can load.
+    if (std::any_of(parsed.fields.begin(), parsed.fields.end(),
+                    [&](const ArchiveFieldDesc& existing) {
+                      return existing.id == field.id;
+                    })) {
       return fail(WorldArchiveStatus::Corrupt);
     }
     parsed.fields.push_back(field);

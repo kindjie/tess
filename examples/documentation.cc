@@ -12,6 +12,7 @@
 
 #include <array>
 #include <cstdint>
+#include <exception>
 #include <iostream>
 
 namespace {
@@ -32,18 +33,17 @@ using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
 
 // [getting-world]
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
-World world;  // Allocates every chunk; all fields are zero-initialized.
 // [getting-world]
 
 constexpr std::uint32_t kTerrainDirty = 1u << 0u;
 
-void write_one_tile() {
+void write_one_tile(World& world) {
   // [getting-direct-write]
   world.field<PassableTag>(tess::Coord3{4, 2, 0}) = 1;
   // [getting-direct-write]
 }
 
-auto find_path() -> bool {
+auto find_path(World& world) -> bool {
   for (std::int64_t x = 0; x < static_cast<std::int64_t>(Shape::size.x); ++x) {
     world.field<PassableTag>(tess::Coord3{x, 0, 0}) = 1;
   }
@@ -67,7 +67,7 @@ using Walker = tess::movement::MovementClass<
     tess::movement::FieldCost<CostTag>>;
 // [getting-movement-class]
 
-auto check_topology() -> bool {
+auto check_topology(World& world) -> bool {
   const auto start = tess::Coord3{0, 0, 0};
   const auto goal = tess::Coord3{Shape::size.x - 1, 0, 0};
   tess::RegionGraphScratch precheck_scratch;
@@ -121,7 +121,7 @@ auto run_schedule() -> bool {
   return clock.tick == 1;
 }
 
-auto collect_deltas() -> bool {
+auto collect_deltas(World& world) -> bool {
   tess::DeltaCollector deltas;
   deltas.reserve(World::chunk_count, 1, 0);
   world.mark_dirty(tess::ChunkKey{0}, kTerrainDirty,
@@ -204,7 +204,7 @@ auto access_chunk_metadata() -> bool {
   return &meta == checked;
 }
 
-auto plan_weighted_batch() -> bool {
+auto plan_weighted_batch(World& world) -> bool {
   for (std::int64_t y = 0; y < static_cast<std::int64_t>(Shape::size.y); ++y) {
     for (std::int64_t x = 0; x < static_cast<std::int64_t>(Shape::size.x);
          ++x) {
@@ -237,7 +237,7 @@ auto plan_weighted_batch() -> bool {
   return stats.requests == requests.size() && stats.unique_goals == 1u;
 }
 
-auto reuse_cached_route() -> bool {
+auto reuse_cached_route(World& world) -> bool {
   // [route-cache]
   tess::PathScratch scratch;
   tess::RouteCacheScratch cache;
@@ -255,7 +255,7 @@ auto reuse_cached_route() -> bool {
          hit.expanded_nodes == 0u && cache.stats().hits == 1u;
 }
 
-auto share_field_product() -> bool {
+auto share_field_product(World& world) -> bool {
   // [field-product]
   tess::GoalSet goals;
   goals.add(tess::Coord3{31, 0, 0});
@@ -284,15 +284,22 @@ auto share_field_product() -> bool {
 }  // namespace
 
 int main() {
-  const auto ok = find_path() && check_topology() && run_schedule() &&
-                  collect_deltas() && access_chunk_page() &&
-                  access_dense_world() && access_sparse_world() &&
-                  access_chunk_metadata() && plan_weighted_batch() &&
-                  reuse_cached_route() && share_field_product();
-  if (!ok) {
-    std::cerr << "documentation example failed\n";
+  try {
+    World world;  // Allocates every chunk; all fields start zero-initialized.
+    const auto ok = find_path(world) && check_topology(world) &&
+                    run_schedule() && collect_deltas(world) &&
+                    access_chunk_page() && access_dense_world() &&
+                    access_sparse_world() && access_chunk_metadata() &&
+                    plan_weighted_batch(world) && reuse_cached_route(world) &&
+                    share_field_product(world);
+    if (!ok) {
+      std::cerr << "documentation example failed\n";
+      return 1;
+    }
+    write_one_tile(world);
+  } catch (const std::exception& error) {
+    std::cerr << "documentation example failed: " << error.what() << "\n";
     return 1;
   }
-  write_one_tile();
   return 0;
 }

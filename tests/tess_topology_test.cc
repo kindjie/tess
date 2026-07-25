@@ -21,6 +21,16 @@ using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
 template <typename Shape>
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
+struct HexSeamProvider {
+  template <typename WorldType, typename Sink>
+  void for_each_transition(const WorldType&, tess::ChunkKey chunk,
+                           Sink&& sink) const {
+    if (chunk == tess::ChunkKey{2}) {
+      sink(tess::Coord3{3, 4, 0}, tess::Coord3{4, 3, 0});
+    }
+  }
+};
+
 template <typename WorldType>
 void fill_passable(WorldType& world, std::uint8_t value) {
   for (auto& page : world.chunks()) {
@@ -887,6 +897,54 @@ TEST(TessTopology, UpdateRegionGraphAllocationFailureInvalidatesTornState) {
   EXPECT_TRUE(reached_success);
 }
 
+TEST(TessTopology, FullBuildAllocationFailureInvalidatesTornState) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocation failure injection is unavailable with this "
+                    "allocator/runtime configuration";
+  }
+
+  using Shape = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
+  auto saw_failure = false;
+  auto reached_success = false;
+  for (std::size_t failure_index = 0; failure_index < 64; ++failure_index) {
+    World<Shape> world;
+    fill_passable(world, 1);
+    tess::LocalTopologyScratch scratch;
+    tess::RegionGraph graph;
+    ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
+                   world, scratch, graph))
+                  .status,
+              tess::TopologyStatus::Built);
+    ASSERT_TRUE(tess::is_region_graph_fresh(world, graph));
+
+    auto threw = false;
+    {
+      tess_test::ScopedAllocationFailure failure{failure_index};
+      try {
+        static_cast<void>(
+            tess::build_region_graph<decltype(world), PassableTag>(
+                world, scratch, graph));
+      } catch (const std::bad_alloc&) {
+        threw = true;
+      }
+    }
+
+    if (threw) {
+      saw_failure = true;
+      EXPECT_TRUE(graph.local_topologies().empty());
+      EXPECT_TRUE(graph.portals().empty());
+      EXPECT_EQ(graph.region_count(), 0u);
+      EXPECT_FALSE(tess::is_region_graph_fresh(world, graph));
+      continue;
+    }
+    reached_success = true;
+    EXPECT_TRUE(tess::is_region_graph_fresh(world, graph));
+    break;
+  }
+  EXPECT_TRUE(saw_failure);
+  EXPECT_TRUE(reached_success);
+}
+
 TEST(TessTopology, UpdateRegionGraphSingleChunkEditMatchesFullRebuild) {
   using Shape = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
   World<Shape> world;
@@ -1171,4 +1229,34 @@ TEST(TessTopology, AxialHexConnectivityCrossesDiagonalChunkCorner) {
   tess::RegionGraphScratch region_scratch;
   const auto result = tess::reachable<Shape>(graph, from, to, region_scratch);
   EXPECT_EQ(result.status, tess::ReachabilityStatus::Reachable);
+}
+
+TEST(TessTopology, AxialHexProviderMayCrossDiagonalChunkSeam) {
+  using Shape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1},
+                            tess::lattice::HexAxial>;
+  World<Shape> world;
+  fill_passable(world, 1);
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  const auto provider = HexSeamProvider{};
+
+  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
+                 world, scratch, graph, provider))
+                .status,
+            tess::TopologyStatus::Built);
+
+  world.field<PassableTag>(tess::Coord3{4, 3, 0}) = 0;
+  world.mark_topology_rebuilt(tess::ChunkKey{1});
+  const auto dirty = std::array{tess::ChunkKey{1}};
+  ASSERT_EQ((tess::update_region_graph<decltype(world), PassableTag>(
+                 world, scratch, graph, dirty, provider))
+                .status,
+            tess::TopologyStatus::Built);
+
+  tess::RegionGraph fresh;
+  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
+                 world, scratch, fresh, provider))
+                .status,
+            tess::TopologyStatus::Built);
+  expect_graphs_equal(graph, fresh);
 }

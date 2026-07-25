@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "spatial/local_coordination_1000x4": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 2100000,
+      "note": "2026-07-24 local arm64 median: 347 us; bootstrap 6x ceiling"
+    }
+  }
+}

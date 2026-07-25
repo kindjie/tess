@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "benchmarks": {
+    "persistence/save_dense_512x512_2_fields": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 61000000,
+      "note": "2026-07-24 local arm64 median: 10.2 ms; bootstrap 6x ceiling"
+    },
+    "persistence/load_dense_512x512_2_fields": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 58000000,
+      "note": "2026-07-24 local arm64 median: 9.61 ms; bootstrap 6x ceiling"
+    }
+  }
+}

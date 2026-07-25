@@ -146,6 +146,73 @@ TEST(TessEcsEntt, SpawnClaimsTileAndRefusesConflicts) {
   EXPECT_EQ(sim.registry.get<tess::AgentId>(second).value, 1u);
 }
 
+TEST(TessEcsEntt, SpawnIndexGrowthFailureLeavesEveryStoreUnchanged) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocation failure injection is unavailable with this "
+                    "allocator/runtime configuration";
+  }
+
+  Sim sim(0);
+  for (std::int64_t x = 0; x < 4; ++x) {
+    ASSERT_NE(sim.spawn(tess::Coord3{x, 0, 0}),
+              static_cast<entt::entity>(entt::null));
+  }
+  ASSERT_EQ(sim.index.size(), 4u);
+  const auto next_id = sim.context.next_agent_id;
+
+  auto threw = false;
+  {
+    tess_test::ScopedAllocationFailure failure{0};
+    try {
+      static_cast<void>(sim.spawn(tess::Coord3{4, 0, 0}));
+    } catch (const std::bad_alloc&) {
+      threw = true;
+    }
+  }
+
+  EXPECT_TRUE(threw);
+  EXPECT_EQ(sim.context.next_agent_id, next_id);
+  EXPECT_EQ(sim.registry.view<tess::PathState>().size(), 4u);
+  EXPECT_EQ(sim.index.size(), 4u);
+  EXPECT_TRUE(sim.index.entity_at(tess::Coord3{4, 0, 0}).is_null());
+  EXPECT_FALSE(sim.world.template field<OccupancyTag>(tess::Coord3{4, 0, 0}));
+  sim.expect_synced();
+}
+
+TEST(TessEcsEntt, PlaceIndexGrowthFailureLeavesAgentParked) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocation failure injection is unavailable with this "
+                    "allocator/runtime configuration";
+  }
+
+  Sim sim(0);
+  for (std::int64_t x = 0; x < 4; ++x) {
+    ASSERT_NE(sim.spawn(tess::Coord3{x, 0, 0}),
+              static_cast<entt::entity>(entt::null));
+  }
+  const auto parked =
+      tess::spawn_entt_path_agent_off_board(sim.registry, sim.context);
+  ASSERT_NE(parked, static_cast<entt::entity>(entt::null));
+
+  auto threw = false;
+  {
+    tess_test::ScopedAllocationFailure failure{0};
+    try {
+      static_cast<void>(tess::place_entt_path_agent<World, OccupancyTag>(
+          sim.registry, sim.world, sim.index, parked, tess::Coord3{4, 0, 0}));
+    } catch (const std::bad_alloc&) {
+      threw = true;
+    }
+  }
+
+  EXPECT_TRUE(threw);
+  EXPECT_TRUE(sim.registry.all_of<tess::OffBoard>(parked));
+  EXPECT_EQ(sim.index.size(), 4u);
+  EXPECT_TRUE(sim.index.entity_at(tess::Coord3{4, 0, 0}).is_null());
+  EXPECT_FALSE(sim.world.template field<OccupancyTag>(tess::Coord3{4, 0, 0}));
+  sim.expect_synced();
+}
+
 TEST(TessEcsEntt, AgentsWalkToGoalsWithSyncedIndexEveryTick) {
   Sim sim;
   const auto a = sim.spawn(tess::Coord3{0, 0, 0});

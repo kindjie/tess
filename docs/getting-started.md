@@ -90,7 +90,6 @@ A world binds a shape and schema to a residency policy:
 <!-- tess-snippet: getting-world source=examples/documentation.cc -->
 ```cpp
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
-World world;  // Allocates every chunk; all fields are zero-initialized.
 ```
 <!-- /tess-snippet -->
 
@@ -98,8 +97,10 @@ World world;  // Allocates every chunk; all fields are zero-initialized.
 and the right default for small or dense worlds. `SparseResidentWorld`
 (see `tess/storage/sparse_world.h`) materializes chunks on demand under
 a byte-budgeted residency manager for large or mostly-empty worlds.
-Zero-initialized fields mean a fresh world is fully blocked for the
-identity movement class below: open tiles before pathing.
+Construct the world inside the application lifecycle so allocation failures
+can be reported at its error boundary. Zero-initialized fields mean a fresh
+world is fully blocked for the identity movement class below: open tiles
+before pathing.
 
 - Architecture: [`architecture/storage.md`](architecture/storage.md)
 - Example: `examples/sparse_stream.cc` (budget-bounded residency and the

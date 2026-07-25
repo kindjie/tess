@@ -634,44 +634,61 @@ def test_webgpu_smoke_only_adapter_unavailable_is_unsupported():
   assert "g_status = kNullAdapter;" in adapter_ready
   assert "device_desc.deviceLostCallbackInfo.mode" in adapter_ready
   assert "WGPUCallbackMode_AllowSpontaneous" in adapter_ready
+  assert "device_future.id == 0 &&" in adapter_ready
   assert (
-    "device_future.id == 0 && g_status == kRequestingDevice"
+    "transition_status(kRequestingDevice, kDeviceRequestFailed)"
     in adapter_ready
   )
   assert "kAdapterUnavailable" not in device_ready
   assert (
     "status == WGPURequestDeviceStatus_CallbackCancelled" in device_ready
   )
-  assert "g_status = kDeviceRequestCancelled;" in device_ready
-  assert "g_status = kDeviceRequestFailed;" in device_ready
-  assert "g_status = kNullDevice;" in device_ready
+  assert (
+    "transition_status(kRequestingDevice, kDeviceRequestCancelled)"
+    in device_ready
+  )
+  assert (
+    "transition_status(kRequestingDevice, kDeviceRequestFailed)"
+    in device_ready
+  )
+  assert "transition_status(kRequestingDevice, kNullDevice)" in device_ready
   assert device_ready.index("release_instance();") < (
     device_ready.index("status != WGPURequestDeviceStatus_Success")
   )
-  assert "g_status == kDeviceLost" in device_ready
-  assert "g_status == kDeviceError" in device_ready
-  assert "g_status == kRunningCompute" in device_ready
+  assert "prior_status == kDeviceLost" in device_ready
+  assert "prior_status == kDeviceError" in device_ready
+  assert "compare_exchange_strong(requesting, kRunningCompute" in device_ready
   assert (
-    "g_status == kPending || g_status >= kRequestingDevice"
+    "status == kPending || status >= kRequestingDevice"
     in device_lost
   )
-  assert "g_backend->notify_device_error();" in device_error
+  assert "backend->notify_device_error();" in device_error
   assert "type == WGPUErrorType_NoError" in device_error
-  assert "g_status = kDeviceError;" in device_error
+  assert "compare_exchange_weak(status, kDeviceError" in device_error
   assert "device_desc.uncapturedErrorCallbackInfo.callback" in adapter_ready
   assert "device_error" in adapter_ready
-  assert "if (g_status == kDeviceError)" in run_compute
+  assert "initial_status == kDeviceLost" in run_compute
+  assert "initial_status == kDeviceError" in run_compute
+  assert "g_backend->notify_device_lost();" in run_compute
   assert "g_backend->notify_device_error();" in run_compute
   assert "kAwaitingReadback" not in device_ready
-  assert "g_status != kAwaitingReadback" in finish_readback
-  assert finish_readback.index("g_status != kAwaitingReadback") < (
-    finish_readback.index("g_status = kReadbackVerificationFailed;")
+  assert (
+    "g_status.load(std::memory_order_acquire) != kAwaitingReadback"
+    in finish_readback
   )
-  assert run_compute.index("g_status = kAwaitingReadback;") < (
+  assert finish_readback.index("!= kAwaitingReadback") < (
+    finish_readback.index("kReadbackVerificationFailed")
+  )
+  assert run_compute.index(
+    "compare_exchange_strong(running, kAwaitingReadback"
+  ) < (
     run_compute.index("g_backend->readback(")
   )
-  assert "g_status = kInstanceCreationFailed;" in main
-  assert "adapter_future.id == 0 && g_status == kPending" in main
+  assert "transition_status(kPending, kInstanceCreationFailed)" in main
+  assert "adapter_future.id == 0 &&" in main
+  assert (
+    "transition_status(kPending, kAdapterRequestFailed)" in main
+  )
   assert "Keep our last reference until device_ready" in adapter_ready
 
 

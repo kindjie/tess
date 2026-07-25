@@ -5,6 +5,7 @@
 #include <tess/gpu/webgpu_backend.h>
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -49,9 +50,18 @@ constexpr int kDeviceRequestFailed = -18;
 constexpr int kNullDevice = -19;
 constexpr int kDeviceError = -20;
 
-int g_status = kPending;
+std::atomic<int> g_status{kPending};
 WGPUInstance g_instance = nullptr;
 std::unique_ptr<tess::gpu::WebGpuBackend> g_backend;
+// Device callbacks may arrive while run_compute is constructing the owner.
+// Publish a separate atomic observer pointer only after construction; an
+// earlier callback leaves a terminal status that run_compute forwards once
+// the backend becomes visible.
+std::atomic<tess::gpu::WebGpuBackend*> g_backend_visible{nullptr};
+
+bool transition_status(int from, int to) noexcept {
+  return g_status.compare_exchange_strong(from, to, std::memory_order_acq_rel);
+}
 
 [[nodiscard]] WGPUStringView string_view(const char* text) noexcept {
   return WGPUStringView{text, WGPU_STRLEN};
@@ -69,32 +79,43 @@ void finish_readback(tess::gpu::GpuProductHandle,
                      std::size_t size, void*) noexcept {
   // Device loss can race ahead of the map callback. Preserve that earlier
   // terminal failure instead of relabeling it as a readback result.
-  if (g_status != kAwaitingReadback) {
+  if (g_status.load(std::memory_order_acquire) != kAwaitingReadback) {
     return;
   }
   constexpr std::array<std::uint32_t, 4> expected{2, 4, 6, 8};
   if (status != tess::gpu::WebGpuReadbackStatus::Complete ||
       size != sizeof(expected) || data == nullptr) {
-    g_status = kReadbackVerificationFailed;
+    auto expected_status = kAwaitingReadback;
+    g_status.compare_exchange_strong(expected_status,
+                                     kReadbackVerificationFailed,
+                                     std::memory_order_acq_rel);
     return;
   }
   const auto* values = static_cast<const std::uint32_t*>(data);
   for (std::size_t index = 0; index < expected.size(); ++index) {
     if (values[index] != expected[index]) {
-      g_status = kReadbackVerificationFailed;
+      auto expected_status = kAwaitingReadback;
+      g_status.compare_exchange_strong(expected_status,
+                                       kReadbackVerificationFailed,
+                                       std::memory_order_acq_rel);
       return;
     }
   }
-  g_status = kReady;
+  auto expected_status = kAwaitingReadback;
+  g_status.compare_exchange_strong(expected_status, kReady,
+                                   std::memory_order_acq_rel);
 }
 
 void device_lost(const WGPUDevice*, WGPUDeviceLostReason, WGPUStringView, void*,
                  void*) {
-  if (g_backend != nullptr) {
-    g_backend->notify_device_lost();
+  if (auto* backend = g_backend_visible.load(std::memory_order_acquire);
+      backend != nullptr) {
+    backend->notify_device_lost();
   }
-  if (g_status == kPending || g_status >= kRequestingDevice) {
-    g_status = kDeviceLost;
+  auto status = g_status.load(std::memory_order_acquire);
+  while ((status == kPending || status >= kRequestingDevice) &&
+         !g_status.compare_exchange_weak(status, kDeviceLost,
+                                         std::memory_order_acq_rel)) {
   }
 }
 
@@ -106,11 +127,14 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
   if (type == WGPUErrorType_NoError) {
     return;
   }
-  if (g_backend != nullptr) {
-    g_backend->notify_device_error();
+  if (auto* backend = g_backend_visible.load(std::memory_order_acquire);
+      backend != nullptr) {
+    backend->notify_device_error();
   }
-  if (g_status == kPending || g_status >= kRequestingDevice) {
-    g_status = kDeviceError;
+  auto status = g_status.load(std::memory_order_acquire);
+  while ((status == kPending || status >= kRequestingDevice) &&
+         !g_status.compare_exchange_weak(status, kDeviceError,
+                                         std::memory_order_acq_rel)) {
   }
 }
 
@@ -123,12 +147,18 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
                   .field_capacity = 1,
                   .product_capacity = 1,
               });
+  g_backend_visible.store(g_backend.get(), std::memory_order_release);
   // The uncaptured-error callback belongs to the device descriptor and may
   // run while this constructor is acquiring the borrowed device/queue. If it
   // arrived before g_backend became visible, apply the deferred fail-closed
   // notification now and preserve its terminal browser status.
-  if (g_status == kDeviceError) {
-    g_backend->notify_device_error();
+  const auto initial_status = g_status.load(std::memory_order_acquire);
+  if (initial_status == kDeviceLost || initial_status == kDeviceError) {
+    if (initial_status == kDeviceLost) {
+      g_backend->notify_device_lost();
+    } else {
+      g_backend->notify_device_error();
+    }
     return false;
   }
   const auto field = tess::gpu::FieldMirrorDesc{
@@ -140,7 +170,7 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
       .chunk_count = 1,
   };
   if (!g_backend->register_field(field)) {
-    g_status = kFieldRegistrationFailed;
+    transition_status(kRunningCompute, kFieldRegistrationFailed);
     return false;
   }
 
@@ -150,7 +180,7 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
   shader_desc.nextInChain = &shader_source.chain;
   auto shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
   if (shader == nullptr) {
-    g_status = kShaderCreationFailed;
+    transition_status(kRunningCompute, kShaderCreationFailed);
     return false;
   }
   auto pipeline_desc = WGPU_COMPUTE_PIPELINE_DESCRIPTOR_INIT;
@@ -159,7 +189,7 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
   auto pipeline = wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
   wgpuShaderModuleRelease(shader);
   if (pipeline == nullptr) {
-    g_status = kPipelineCreationFailed;
+    transition_status(kRunningCompute, kPipelineCreationFailed);
     return false;
   }
 
@@ -169,7 +199,7 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
   auto output = wgpuDeviceCreateBuffer(device, &output_desc);
   auto layout = wgpuComputePipelineGetBindGroupLayout(pipeline, 0);
   if (output == nullptr || layout == nullptr) {
-    g_status = kOutputSetupFailed;
+    transition_status(kRunningCompute, kOutputSetupFailed);
     if (output != nullptr) {
       wgpuBufferRelease(output);
     }
@@ -197,7 +227,7 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
   auto bind_group = wgpuDeviceCreateBindGroup(device, &bind_desc);
   wgpuBindGroupLayoutRelease(layout);
   if (bind_group == nullptr) {
-    g_status = kBindGroupCreationFailed;
+    transition_status(kRunningCompute, kBindGroupCreationFailed);
     wgpuBufferRelease(output);
     wgpuComputePipelineRelease(pipeline);
     return false;
@@ -216,7 +246,7 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
   wgpuBufferRelease(output);
   wgpuComputePipelineRelease(pipeline);
   if (!product.has_value()) {
-    g_status = kProductRegistrationFailed;
+    transition_status(kRunningCompute, kProductRegistrationFailed);
     return false;
   }
 
@@ -226,7 +256,7 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
           .byte_size = sizeof(input),
           .data = input.data(),
       })) {
-    g_status = kUploadFailed;
+    transition_status(kRunningCompute, kUploadFailed);
     return false;
   }
   if (!g_backend->dispatch(tess::gpu::DispatchDesc{
@@ -235,21 +265,26 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
           .input_field_index = 0,
           .chunk_count = 1,
       })) {
-    g_status = kDispatchFailed;
+    transition_status(kRunningCompute, kDispatchFailed);
     return false;
   }
-  // AllowSpontaneous may complete inline, so publish this stage before the
-  // call and never overwrite a callback's terminal result afterward.
-  g_status = kAwaitingReadback;
+  // Device callbacks may run on another thread. Transition only from the
+  // phase we own, so a terminal device status that wins this race is never
+  // overwritten by the later readback label.
+  auto running = kRunningCompute;
+  if (!g_status.compare_exchange_strong(running, kAwaitingReadback,
+                                        std::memory_order_acq_rel)) {
+    return false;
+  }
   if (!g_backend->readback(tess::gpu::ReadbackDesc{
           .product_key = product->key,
           .product_generation = product->generation,
           .policy = tess::gpu::ReadbackPolicy::Summary,
           .byte_size = 16,
       })) {
-    if (g_status == kAwaitingReadback) {
-      g_status = kReadbackRequestFailed;
-    }
+    auto awaiting = kAwaitingReadback;
+    g_status.compare_exchange_strong(awaiting, kReadbackRequestFailed,
+                                     std::memory_order_acq_rel);
     return false;
   }
   return true;
@@ -258,7 +293,8 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
 void device_ready(WGPURequestDeviceStatus status, WGPUDevice device,
                   WGPUStringView, void*, void*) {
   release_instance();
-  if (g_status == kDeviceLost || g_status == kDeviceError) {
+  const auto prior_status = g_status.load(std::memory_order_acquire);
+  if (prior_status == kDeviceLost || prior_status == kDeviceError) {
     if (device != nullptr) {
       wgpuDeviceRelease(device);
     }
@@ -266,9 +302,9 @@ void device_ready(WGPURequestDeviceStatus status, WGPUDevice device,
   }
   if (status != WGPURequestDeviceStatus_Success) {
     if (status == WGPURequestDeviceStatus_CallbackCancelled) {
-      g_status = kDeviceRequestCancelled;
+      transition_status(kRequestingDevice, kDeviceRequestCancelled);
     } else {
-      g_status = kDeviceRequestFailed;
+      transition_status(kRequestingDevice, kDeviceRequestFailed);
     }
     if (device != nullptr) {
       wgpuDeviceRelease(device);
@@ -276,14 +312,19 @@ void device_ready(WGPURequestDeviceStatus status, WGPUDevice device,
     return;
   }
   if (device == nullptr) {
-    g_status = kNullDevice;
+    transition_status(kRequestingDevice, kNullDevice);
     return;
   }
-  g_status = kRunningCompute;
+  auto requesting = kRequestingDevice;
+  if (!g_status.compare_exchange_strong(requesting, kRunningCompute,
+                                        std::memory_order_acq_rel)) {
+    wgpuDeviceRelease(device);
+    return;
+  }
   if (!run_compute(device)) {
-    if (g_status == kRunningCompute) {
-      g_status = kFieldRegistrationFailed;
-    }
+    auto running_status = kRunningCompute;
+    g_status.compare_exchange_strong(running_status, kFieldRegistrationFailed,
+                                     std::memory_order_acq_rel);
   }
   wgpuDeviceRelease(device);
 }
@@ -329,8 +370,8 @@ void adapter_ready(WGPURequestAdapterStatus status, WGPUAdapter adapter,
   // native and browser implementations see an unambiguous lifetime.
   const auto device_future =
       wgpuAdapterRequestDevice(adapter, &device_desc, callback);
-  if (device_future.id == 0 && g_status == kRequestingDevice) {
-    g_status = kDeviceRequestFailed;
+  if (device_future.id == 0 &&
+      transition_status(kRequestingDevice, kDeviceRequestFailed)) {
     release_instance();
   }
   wgpuAdapterRelease(adapter);
@@ -338,12 +379,14 @@ void adapter_ready(WGPURequestAdapterStatus status, WGPUAdapter adapter,
 
 }  // namespace
 
-extern "C" EMSCRIPTEN_KEEPALIVE int tess_webgpu_status() { return g_status; }
+extern "C" EMSCRIPTEN_KEEPALIVE int tess_webgpu_status() {
+  return g_status.load(std::memory_order_acquire);
+}
 
 int main() {
   g_instance = wgpuCreateInstance(nullptr);
   if (g_instance == nullptr) {
-    g_status = kInstanceCreationFailed;
+    transition_status(kPending, kInstanceCreationFailed);
     return 0;
   }
   auto callback = WGPU_REQUEST_ADAPTER_CALLBACK_INFO_INIT;
@@ -351,8 +394,8 @@ int main() {
   callback.callback = adapter_ready;
   const auto adapter_future =
       wgpuInstanceRequestAdapter(g_instance, nullptr, callback);
-  if (adapter_future.id == 0 && g_status == kPending) {
-    g_status = kAdapterRequestFailed;
+  if (adapter_future.id == 0 &&
+      transition_status(kPending, kAdapterRequestFailed)) {
     release_instance();
   }
   return 0;

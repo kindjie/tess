@@ -70,12 +70,13 @@ or normal CI requires it; `find_package(Doxygen REQUIRED)` runs only when the
 option is enabled. Local builds accept the installed version and are developed
 against Doxygen 1.17.0. The Pages workflow pins the official 1.17.0 Linux
 binary and verifies its published SHA-256 digest before extraction.
-Documentation-only `DOXYGEN_PREDEFINED` gates make the EnTT adapter,
-diagnostics, and ImGui panel APIs visible in the reference without their
-third-party headers. The generated reference excludes `tess::detail`, omits
-per-member missing-comment warnings to match the repository's namespace-scope
-comment policy, and fails on remaining Doxygen warnings before its HTML is
-copied under `/api/` in the combined Pages artifact.
+Documentation-only `DOXYGEN_PREDEFINED` gates make the EnTT and Flecs
+adapters, diagnostics, ImGui panels, and WebGPU APIs visible in the reference
+without their third-party headers. The generated reference excludes
+`tess::detail`, omits per-member missing-comment warnings to match the
+repository's namespace-scope comment policy, and fails on remaining Doxygen
+warnings before its HTML is copied under `/api/` in the combined Pages
+artifact.
 
 ## Documentation site
 

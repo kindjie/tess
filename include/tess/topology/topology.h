@@ -48,7 +48,7 @@ inline constexpr LocalRegionId invalid_local_region{};
 inline constexpr std::uint32_t invalid_region_index =
     std::numeric_limits<std::uint32_t>::max();
 
-/// Identifies one of the six axis-aligned chunk boundary faces.
+/// Identifies an axis-aligned face or one of two axial-hex diagonal seams.
 enum class BoundaryFace : std::uint8_t {
   NegativeX,
   PositiveX,
@@ -1009,18 +1009,23 @@ constexpr void for_each_face_neighbor_chunk(ChunkCoord3 coord, Fn&& fn) {
   return dz < 0 ? BoundaryFace::NegativeZ : BoundaryFace::PositiveZ;
 }
 
-// True iff the two coordinates' chunks are identical or face-adjacent -- the
-// provider contract that keeps incremental invalidation sound (updates
-// re-derive portals only for dirty chunks and their face neighbors).
+// True iff the two coordinates' chunks are identical or regular-step
+// neighbors. For axial hexes that includes the two diagonal chunk seams.
+// Keeping this definition shared with invalidation prevents provider portals
+// from surviving an edit in their landing chunk.
 template <typename Shape>
 [[nodiscard]] auto same_or_face_neighbor_chunk(Coord3 from, Coord3 to) noexcept
     -> bool {
   const auto a = chunk_coord<Shape>(from);
   const auto b = chunk_coord<Shape>(to);
-  const auto dx = a.x < b.x ? b.x - a.x : a.x - b.x;
-  const auto dy = a.y < b.y ? b.y - a.y : a.y - b.y;
-  const auto dz = a.z < b.z ? b.z - a.z : a.z - b.z;
-  return dx + dy + dz <= 1;
+  if (a == b) {
+    return true;
+  }
+  auto is_neighbor = false;
+  for_each_face_neighbor_chunk<Shape>(a, [&](ChunkCoord3 neighbor) {
+    is_neighbor = is_neighbor || neighbor == b;
+  });
+  return is_neighbor;
 }
 
 // Appends one directed portal per provider transition originating in this
@@ -1195,67 +1200,76 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
   graph.bind_provider(provider);
   auto result = LocalTopologyResult{};
 
-  if constexpr (std::is_same_v<typename World::residency_type,
-                               AlwaysResident>) {
-    graph.local_topologies_.resize(
-        static_cast<std::size_t>(Traits::chunk_count));
-    for (std::uint64_t raw_chunk = 0; raw_chunk < Traits::chunk_count;
-         ++raw_chunk) {
-      auto& topology =
-          graph.local_topologies_[static_cast<std::size_t>(raw_chunk)];
-      const auto local_result = build_local_chunk_topology<World, Class>(
-          world, ChunkKey{raw_chunk}, scratch, topology);
-      if (local_result.status != TopologyStatus::Built) {
-        result.status = local_result.status;
-        graph.rebuild_region_index();
-        return result;
+  try {
+    if constexpr (std::is_same_v<typename World::residency_type,
+                                 AlwaysResident>) {
+      graph.local_topologies_.resize(
+          static_cast<std::size_t>(Traits::chunk_count));
+      for (std::uint64_t raw_chunk = 0; raw_chunk < Traits::chunk_count;
+           ++raw_chunk) {
+        auto& topology =
+            graph.local_topologies_[static_cast<std::size_t>(raw_chunk)];
+        const auto local_result = build_local_chunk_topology<World, Class>(
+            world, ChunkKey{raw_chunk}, scratch, topology);
+        if (local_result.status != TopologyStatus::Built) {
+          result.status = local_result.status;
+          graph.rebuild_region_index();
+          return result;
+        }
+        result.region_count += local_result.region_count;
+        result.passable_tile_count += local_result.passable_tile_count;
+        result.boundary_exit_count += local_result.boundary_exit_count;
+        result.version += local_result.version;
       }
-      result.region_count += local_result.region_count;
-      result.passable_tile_count += local_result.passable_tile_count;
-      result.boundary_exit_count += local_result.boundary_exit_count;
-      result.version += local_result.version;
-    }
-  } else {
-    // Sparse: build only over the resident set, sized by resident_count, never
-    // chunk_count. Freeze the resident keys sorted ascending so a local index
-    // equals chunk order; portals then append in chunk order exactly as the
-    // dense build does, keeping "incremental == fresh" trivially.
-    auto& keys = graph.sparse_.topology_keys_;
-    const auto resident = world.resident_chunk_keys();
-    keys.assign(resident.begin(), resident.end());
-    std::sort(keys.begin(), keys.end(),
-              [](ChunkKey lhs, ChunkKey rhs) { return lhs.value < rhs.value; });
-    const auto count = keys.size();
-    graph.local_topologies_.resize(count);
-    graph.sparse_.frozen_generations_.resize(count);
-    for (std::size_t i = 0; i < count; ++i) {
-      const auto local_result = build_local_chunk_topology<World, Class>(
-          world, keys[i], scratch, graph.local_topologies_[i]);
-      // Resident keys are always in-world, so InvalidChunk cannot arise; keep
-      // the status propagation for symmetry with the dense build.
-      if (local_result.status != TopologyStatus::Built) {
-        result.status = local_result.status;
-        graph.rebuild_region_index();
-        return result;
+    } else {
+      // Sparse: build only over the resident set, sized by resident_count,
+      // never chunk_count. Freeze the resident keys sorted ascending so a local
+      // index equals chunk order; portals then append in chunk order exactly as
+      // the dense build does, keeping "incremental == fresh" trivially.
+      auto& keys = graph.sparse_.topology_keys_;
+      const auto resident = world.resident_chunk_keys();
+      keys.assign(resident.begin(), resident.end());
+      std::sort(keys.begin(), keys.end(), [](ChunkKey lhs, ChunkKey rhs) {
+        return lhs.value < rhs.value;
+      });
+      const auto count = keys.size();
+      graph.local_topologies_.resize(count);
+      graph.sparse_.frozen_generations_.resize(count);
+      for (std::size_t i = 0; i < count; ++i) {
+        const auto local_result = build_local_chunk_topology<World, Class>(
+            world, keys[i], scratch, graph.local_topologies_[i]);
+        // Resident keys are always in-world, so InvalidChunk cannot arise; keep
+        // the status propagation for symmetry with the dense build.
+        if (local_result.status != TopologyStatus::Built) {
+          result.status = local_result.status;
+          graph.rebuild_region_index();
+          return result;
+        }
+        result.region_count += local_result.region_count;
+        result.passable_tile_count += local_result.passable_tile_count;
+        result.boundary_exit_count += local_result.boundary_exit_count;
+        result.version += local_result.version;
+        graph.sparse_.frozen_generations_[i] =
+            world.residency_generation(keys[i]);
       }
-      result.region_count += local_result.region_count;
-      result.passable_tile_count += local_result.passable_tile_count;
-      result.boundary_exit_count += local_result.boundary_exit_count;
-      result.version += local_result.version;
-      graph.sparse_.frozen_generations_[i] =
-          world.residency_generation(keys[i]);
     }
-  }
 
-  for (const auto& topology : graph.local_topologies_) {
-    detail::append_chunk_portals<Shape>(graph, topology, graph.portals_);
-    detail::append_provider_portals<Shape>(world, graph, topology, provider,
-                                           graph.portals_);
-  }
-  graph.rebuild_region_index();
-  graph.template mark_provider_missing_reaches<Shape>(world, provider);
+    for (const auto& topology : graph.local_topologies_) {
+      detail::append_chunk_portals<Shape>(graph, topology, graph.portals_);
+      detail::append_provider_portals<Shape>(world, graph, topology, provider,
+                                             graph.portals_);
+    }
+    graph.rebuild_region_index();
+    graph.template mark_provider_missing_reaches<Shape>(world, provider);
 
-  return result;
+    return result;
+  } catch (...) {
+    // Full builds publish directly into caller storage for locality. If any
+    // allocation fails after clear(), discard all partial labels and derived
+    // indices so freshness checks cannot bless a torn graph.
+    graph.clear();
+    throw;
+  }
 }
 
 // Incrementally patches an already-built region graph after passability

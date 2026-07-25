@@ -102,6 +102,12 @@ set(
 )
 
 set(
+  TESS_BLOCK_PIPELINE_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/block-pipeline.json"
+  CACHE FILEPATH "Thresholds for block-pipeline benchmark regressions"
+)
+
+set(
   TESS_QUEUED_BENCHMARK_THRESHOLDS
   "${PROJECT_SOURCE_DIR}/bench/thresholds/queued.json"
   CACHE FILEPATH "Thresholds for queued benchmark regressions"
@@ -129,6 +135,30 @@ set(
   TESS_RESIDENCY_BENCHMARK_THRESHOLDS
   "${PROJECT_SOURCE_DIR}/bench/thresholds/residency.json"
   CACHE FILEPATH "Thresholds for residency benchmark regressions"
+)
+
+set(
+  TESS_MAINTENANCE_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/maintenance.json"
+  CACHE FILEPATH "Thresholds for maintenance benchmark regressions"
+)
+
+set(
+  TESS_PERSISTENCE_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/persistence.json"
+  CACHE FILEPATH "Thresholds for persistence benchmark regressions"
+)
+
+set(
+  TESS_QUERY_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/query.json"
+  CACHE FILEPATH "Thresholds for query benchmark regressions"
+)
+
+set(
+  TESS_SPATIAL_BENCHMARK_THRESHOLDS
+  "${PROJECT_SOURCE_DIR}/bench/thresholds/spatial.json"
+  CACHE FILEPATH "Thresholds for spatial benchmark regressions"
 )
 
 set(
@@ -234,6 +264,24 @@ if(Python3_Interpreter_FOUND)
   )
 
   add_custom_target(
+    tess_bench_block_pipeline_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=block_pipeline/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/block-pipeline.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/block-pipeline.json
+      --thresholds ${TESS_BLOCK_PIPELINE_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running block-pipeline benchmark threshold checks"
+    VERBATIM
+  )
+
+  add_custom_target(
     tess_bench_queued_thresholds
     COMMAND
       tess_bench
@@ -323,13 +371,107 @@ if(Python3_Interpreter_FOUND)
     VERBATIM
   )
 
-  if(TESS_ENABLE_ENTT)
+  add_custom_target(
+    tess_bench_maintenance_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=maintenance/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/maintenance.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/maintenance.json
+      --thresholds ${TESS_MAINTENANCE_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running maintenance benchmark threshold checks"
+    VERBATIM
+  )
+
+  add_custom_target(
+    tess_bench_persistence_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=persistence/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/persistence.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/persistence.json
+      --thresholds ${TESS_PERSISTENCE_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running persistence benchmark threshold checks"
+    VERBATIM
+  )
+
+  add_custom_target(
+    tess_bench_query_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=query/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/query.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/query.json
+      --thresholds ${TESS_QUERY_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running query benchmark threshold checks"
+    VERBATIM
+  )
+
+  add_custom_target(
+    tess_bench_spatial_thresholds
+    COMMAND
+      tess_bench
+      --benchmark_filter=spatial/.*
+      --benchmark_repetitions=${TESS_BENCHMARK_GATE_REPETITIONS}
+      --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/spatial.json
+      --benchmark_out_format=json
+    COMMAND
+      "${Python3_EXECUTABLE}"
+      "${PROJECT_SOURCE_DIR}/tools/benchmark_thresholds.py"
+      --results ${CMAKE_CURRENT_BINARY_DIR}/spatial.json
+      --thresholds ${TESS_SPATIAL_BENCHMARK_THRESHOLDS}
+    DEPENDS tess_bench
+    COMMENT "Running spatial benchmark threshold checks"
+    VERBATIM
+  )
+
+  if(TESS_ENABLE_ENTT OR TESS_ENABLE_FLECS)
     # The ecs family runs through the diagnostics binary so the
-    # allocation-gate case (ecs/tick_entt_alloc_gate, which aborts unless
-    # the steady-state tick reports zero allocations) executes in CI; the
-    # steady-state ticks it times touch no diagnostics events, so the
-    # ceilings are representative of the plain binary too.
+    # EnTT allocation-gate case executes when that adapter is enabled. Keep
+    # one strict shared manifest, but explicitly excuse only the other
+    # adapter's absent results in single-adapter configurations.
     set(tess_ecs_optional_missing_args)
+    if(NOT TESS_ENABLE_ENTT)
+      foreach(
+        benchmark_name
+        ecs/collect_sort_1k
+        ecs/collect_sort_10k
+        ecs/collect_sort_100k
+        ecs/apply_1k
+        ecs/apply_10k
+        ecs/index_move
+        ecs/tick_entt_1k
+        ecs/tick_entt_10k
+        ecs/tick_raw_span_1k
+        ecs/tick_raw_span_10k
+        ecs/tick_entt_alloc_gate
+      )
+        list(
+          APPEND
+          tess_ecs_optional_missing_args
+          --allow-missing-result
+          ${benchmark_name}
+        )
+      endforeach()
+    endif()
     if(NOT TESS_ENABLE_FLECS)
       # Keep the shared threshold manifest strict while explicitly excluding
       # only benchmarks whose optional adapter is absent in this build.
@@ -444,7 +586,7 @@ if(Python3_Interpreter_FOUND)
 endif()
 
 set(TESS_ECS_BASELINE_COMMAND)
-if(TESS_ENABLE_ENTT)
+if(TESS_ENABLE_ENTT OR TESS_ENABLE_FLECS)
   list(
     APPEND
     TESS_ECS_BASELINE_COMMAND
@@ -479,6 +621,12 @@ add_custom_target(
     --benchmark_filter=block/.*
     --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
     --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/block.json
+    --benchmark_out_format=json
+  COMMAND
+    tess_bench
+    --benchmark_filter=block_pipeline/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/block-pipeline.json
     --benchmark_out_format=json
   COMMAND
     tess_bench
@@ -517,13 +665,38 @@ add_custom_target(
     --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/residency.json
     --benchmark_out_format=json
   COMMAND
+    tess_bench
+    --benchmark_filter=maintenance/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/maintenance.json
+    --benchmark_out_format=json
+  COMMAND
+    tess_bench
+    --benchmark_filter=persistence/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/persistence.json
+    --benchmark_out_format=json
+  COMMAND
+    tess_bench
+    --benchmark_filter=query/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/query.json
+    --benchmark_out_format=json
+  COMMAND
+    tess_bench
+    --benchmark_filter=spatial/.*
+    --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
+    --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/spatial.json
+    --benchmark_out_format=json
+  COMMAND
     tess_bench_diagnostics
     --benchmark_filter=diagnostics/.*
     --benchmark_repetitions=${TESS_BENCHMARK_BASELINE_REPETITIONS}
     --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/ci-baselines/diagnostics.json
     --benchmark_out_format=json
-  # ecs/ runs only when EnTT is enabled. It uses the diagnostics binary to
-  # match the threshold target and assert allocation-free steady state.
+  # ecs/ runs when either adapter is enabled. It uses the diagnostics binary
+  # to match the threshold target and, for EnTT, assert allocation-free steady
+  # state.
   ${TESS_ECS_BASELINE_COMMAND}
   # render_delta/ and fields/ use the diagnostics binary; fields carries the
   # warm-build allocation gate.

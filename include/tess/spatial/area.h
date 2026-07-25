@@ -261,8 +261,16 @@ auto build_area_index(const RegionGraphT<Residency>& graph, Grouper&& grouper,
 
   scratch.edge_keys_.clear();
   for (const auto& portal : graph.portals()) {
-    const auto from = index.region_areas_[graph.region_index(portal.from)];
-    const auto to = index.region_areas_[graph.region_index(portal.to)];
+    const auto from_index = graph.region_index(portal.from);
+    const auto to_index = graph.region_index(portal.to);
+    // A valid graph never carries a dangling portal. Keep malformed derived
+    // state from turning that invariant violation into release-mode OOB.
+    if (from_index == invalid_region_index ||
+        to_index == invalid_region_index) {
+      continue;
+    }
+    const auto from = index.region_areas_[from_index];
+    const auto to = index.region_areas_[to_index];
     if (from == invalid_area_id || to == invalid_area_id || from == to) {
       continue;
     }

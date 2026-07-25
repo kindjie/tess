@@ -301,6 +301,7 @@ inline auto advance_path_agents(std::span<PathAgentState> agents,
       }
       ++agent.path_index;
       agent.position = result.path[agent.path_index];
+      detail::resume_path_agent(agent);
       ++stats.advanced;
       if (agent.position == agent.goal) {
         clear_path_agent_goal(agent);
@@ -499,6 +500,7 @@ inline auto advance_path_agents(std::span<PathAgentState> agents,
       }
       ++agent.path_index;
       agent.position = route[agent.path_index];
+      detail::resume_path_agent(agent);
       ++stats.advanced;
       if (agent.position == agent.goal) {
         clear_path_agent_goal(agent);

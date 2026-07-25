@@ -243,6 +243,10 @@ template <typename World, typename OccupancyTag>
       !index.entity_at(position).is_null()) {
     return entt::null;
   }
+  // Preflight the Tess-owned index allocation before beginning lifecycle
+  // mutation. insert() cannot then fail from allocation after the ECS and
+  // world stores have changed; ECS pool exception semantics remain EnTT's.
+  index.reserve(index.size() + 1);
   const auto entity = registry.create();
   registry.emplace<AgentId>(entity, AgentId{context.next_agent_id++});
   registry.emplace<TilePosition>(entity, TilePosition{position});
@@ -395,6 +399,8 @@ auto place_entt_path_agent(entt::registry& registry, World& world,
       !index.entity_at(position).is_null()) {
     return false;
   }
+  // Keep an allocation failure on the parked side of the commit boundary.
+  index.reserve(index.size() + 1);
   world.template field<OccupancyTag>(position) = true;
   const auto inserted =
       index.insert(position, EnttHandleAdapter::to_handle(entity));

@@ -38,13 +38,30 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   reverse transition enumeration validates the forward destination; and
   compact-cost assessment compares against a division-derived threshold
   instead of forming a wrapping 128-bit product.
+  Final exact-SHA review also made cross-builder weighted scratch reuse safe,
+  made full region-graph construction clear partial state on exceptions, reset
+  blocked streaks on plain-driver movement, admitted axial-hex provider seams,
+  guarded malformed area portals, and preflighted unit field products.
+  Archives now classify magic and future versions before v1 framing and reject
+  duplicate field IDs during inspection. EnTT preflights index growth; Flecs
+  binds contexts to one world and enforces immediate mode at every pipeline
+  entry; WebGPU validates readback `CopySrc` usage and preserves device-loss
+  status across browser callback races. Hosted CI now runs branding
+  regressions and gates the previously smoke-only block-pipeline, maintenance,
+  persistence, query, and spatial benchmark families; ECS thresholds run with
+  either adapter, and cppcheck no longer hides syntax errors in its smoke TU.
+  Native examples now report allocation/runtime failures at `main`, and the
+  compiled documentation example constructs its dense world inside that error
+  boundary instead of during static initialization.
 - Reason: independent audits of the fully green PR found one suboptimal hex
   route plus integrity, asynchronous error-reporting, retry, cadence, bounded
   work, and optional-configuration gaps that broad platform CI did not expose.
   The final pass also found revision-reuse cache aliasing, replayable partial
   fields, an externally observable reverse-enumeration asymmetry, a compile-time
   overflow in the overflow assessment itself, region-graph provider-instance
-  aliasing, and bounded-field status-precedence drift.
+  aliasing, bounded-field status-precedence drift, two release-mode
+  out-of-bounds risks, failure-atomicity and retry-episode gaps, lifecycle and
+  archive-classification mismatches, and several claimed-but-unwired CI gates.
 - Affected docs: path/simulation/persistence/GPU/ECS/block/topology
   architecture, optimization log, design changelog, API comments, and test
   inventory.

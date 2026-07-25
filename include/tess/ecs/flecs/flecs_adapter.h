@@ -93,15 +93,24 @@ struct FlecsAgentEntry {
  * the world so collection order remains deterministic across save and load.
  */
 struct FlecsPathAgentContext {
+  // Flecs copies each temporary term into builder-owned storage, but the
+  // analyzer follows its address through the upstream fluent builder and
+  // reports an escape at downstream constructor call sites.
+  // NOLINTBEGIN(clang-analyzer-core.StackAddressEscape)
   explicit FlecsPathAgentContext(flecs::world& world)
-      : agent_query(
+      : world_identity(world.c_ptr()),
+        agent_query(
             world.query_builder<PathState, const TilePosition, const AgentId>()
                 .build()) {}
+  // NOLINTEND(clang-analyzer-core.StackAddressEscape)
 
   PathAgentTickState tick_state{};
   PathAgentBatch batch{};
   std::vector<FlecsAgentEntry> entries{};
   std::uint64_t next_agent_id = 0;
+  // The query is owned by this exact world; equal component registrations in
+  // another world do not make its entity IDs or table storage interchangeable.
+  flecs::world_t* world_identity = nullptr;
   flecs::query<PathState, const TilePosition, const AgentId> agent_query;
 
   void reserve(std::size_t agent_capacity) {
@@ -144,6 +153,13 @@ inline void flecs_assert_immediate_lifecycle(
                   "Flecs lifecycle intents require immediate mode");
 }
 
+inline void flecs_assert_context_world(
+    [[maybe_unused]] const flecs::world& world,
+    [[maybe_unused]] const FlecsPathAgentContext& context) noexcept {
+  TESS_ASSERT_MSG(context.world_identity == world.c_ptr(),
+                  "FlecsPathAgentContext must use the same Flecs world");
+}
+
 }  // namespace detail
 
 /**
@@ -160,6 +176,8 @@ class FlecsPathAgentSource {
       : world_(&world), context_(&context) {}
 
   auto collect(PathAgentBatch& batch) -> PathAgentCollectInfo {
+    detail::flecs_assert_immediate_lifecycle(*world_);
+    detail::flecs_assert_context_world(*world_, *context_);
     auto& entries = context_->entries;
     entries.clear();
     batch.clear();
@@ -167,6 +185,11 @@ class FlecsPathAgentSource {
     context_->agent_query.each([&](flecs::entity entity, PathState& state,
                                    const TilePosition&,
                                    const AgentId& agent_id) {
+      // A negated builder term would avoid this check, but Flecs 4.1.5's
+      // fluent `without<T>()` produces StackAddressEscape false positives at
+      // every downstream constructor call under the required Clang analyzer
+      // gate. Keep the non-mutating filter inside the safe query phase until
+      // that upstream builder is analyzer-clean.
       if (!entity.has<OffBoard>()) {
         entries.push_back(FlecsAgentEntry{agent_id.value, entity.id(), &state});
       }
@@ -223,6 +246,8 @@ class FlecsPathAgentSink {
       : FlecsPathAgentSink(world, context, Position(world)) {}
 
   void apply(const PathAgentBatch& batch) {
+    detail::flecs_assert_immediate_lifecycle(*world_);
+    detail::flecs_assert_context_world(*world_, *context_);
     const auto agents = batch.agents();
     const auto& entries = context_->entries;
     TESS_ASSERT(agents.size() == entries.size());
@@ -258,6 +283,7 @@ template <typename World, typename OccupancyTag>
     TileOccupancyIndex& index, Coord3 position, std::uint32_t dirty_mask = 0,
     DeltaCollector* render_deltas = nullptr) -> flecs::entity_t {
   detail::flecs_assert_immediate_lifecycle(ecs);
+  detail::flecs_assert_context_world(ecs, context);
   if (!detail::flecs_tile_resolves(world, position) ||
       static_cast<bool>(world.template field<OccupancyTag>(position)) ||
       !index.entity_at(position).is_null()) {
@@ -295,6 +321,7 @@ template <typename World, typename OccupancyTag>
 [[nodiscard]] inline auto spawn_flecs_path_agent_off_board(
     flecs::world& world, FlecsPathAgentContext& context) -> flecs::entity_t {
   detail::flecs_assert_immediate_lifecycle(world);
+  detail::flecs_assert_context_world(world, context);
   return world.entity()
       .set<AgentId>(AgentId{context.next_agent_id++})
       .set<TilePosition>(TilePosition{})
@@ -493,6 +520,8 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
     PathAgentTickOptions options = {}, std::uint32_t movement_dirty_mask = 0,
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
+  detail::flecs_assert_immediate_lifecycle(ecs);
+  detail::flecs_assert_context_world(ecs, context);
   FlecsPathAgentSource source(ecs, context);
   FlecsPathAgentSink<Position> sink(ecs, context);
   return tick_ecs_unit_path_agents<World, ClassOrTag, OccupancyTag,
@@ -511,6 +540,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     PathAgentTickOptions options = {}, std::uint32_t movement_dirty_mask = 0,
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
+  detail::flecs_assert_immediate_lifecycle(ecs);
+  detail::flecs_assert_context_world(ecs, context);
   FlecsPathAgentSource source(ecs, context);
   FlecsPathAgentSink<Position> sink(ecs, context);
   return tick_ecs_path_agents<World, Class, MaxCost, OccupancyTag,
@@ -530,6 +561,8 @@ template <typename World, typename PassableTag, typename CostTag,
     PathAgentTickOptions options = {}, std::uint32_t movement_dirty_mask = 0,
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
+  detail::flecs_assert_immediate_lifecycle(ecs);
+  detail::flecs_assert_context_world(ecs, context);
   FlecsPathAgentSource source(ecs, context);
   FlecsPathAgentSink<Position> sink(ecs, context);
   return tick_ecs_path_agents<World, PassableTag, CostTag, MaxCost,

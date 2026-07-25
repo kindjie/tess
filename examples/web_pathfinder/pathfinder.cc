@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <iostream>
 
 #ifdef __EMSCRIPTEN__
@@ -102,19 +103,24 @@ TESS_DEMO_EXPORT auto tess_demo_path_y(int index) -> int {
 }  // extern "C"
 
 int main() {
-  tess_demo_reset();
+  try {
+    tess_demo_reset();
 #ifndef __EMSCRIPTEN__
-  const auto open_length = tess_demo_find_path(0, 0, kWidth - 1, kHeight - 1);
-  if (open_length != kWidth + kHeight - 1) {
-    return 1;
-  }
-  for (int y = 0; y < kHeight; ++y) {
-    tess_demo_set_blocked(kWidth / 2, y, 1);
-  }
-  if (tess_demo_find_path(0, 0, kWidth - 1, kHeight - 1) != 0) {
-    return 1;
-  }
-  std::cout << "web pathfinder model: ok\n";
+    const auto open_length = tess_demo_find_path(0, 0, kWidth - 1, kHeight - 1);
+    if (open_length != kWidth + kHeight - 1) {
+      return 1;
+    }
+    for (int y = 0; y < kHeight; ++y) {
+      tess_demo_set_blocked(kWidth / 2, y, 1);
+    }
+    if (tess_demo_find_path(0, 0, kWidth - 1, kHeight - 1) != 0) {
+      return 1;
+    }
+    std::cout << "web pathfinder model: ok\n";
 #endif
+  } catch (const std::exception& error) {
+    std::cerr << "web pathfinder model failed: " << error.what() << "\n";
+    return 1;
+  }
   return 0;
 }

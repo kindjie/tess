@@ -156,9 +156,13 @@ TEST(TessAreaIndex, GraphRevisionChangesOnlyWhenGraphChanges) {
 }
 
 TEST(TessAreaIndex, SupportsSparseResidentRegionGraphs) {
-  using Sparse = tess::SparseResidentWorld<Shape, Schema>;
+  using SparseShape =
+      tess::Shape<tess::Extent3{12, 4, 1}, tess::Extent3{4, 4, 1}>;
+  using Sparse = tess::SparseResidentWorld<SparseShape, Schema>;
   Sparse world{tess::ResidencyConfig{2 * Sparse::page_byte_size}};
-  for (const auto key : {tess::ChunkKey{0}, tess::ChunkKey{1}}) {
+  // Leave the middle chunk absent so region refs use the sparse graph's
+  // sorted-offset lookup instead of accidentally exercising a dense prefix.
+  for (const auto key : {tess::ChunkKey{0}, tess::ChunkKey{2}}) {
     world.ensure_resident(key);
     auto values = world.chunk(key).template field_span<PassableTag>();
     std::fill(values.begin(), values.end(), 1);
@@ -176,7 +180,12 @@ TEST(TessAreaIndex, SupportsSparseResidentRegionGraphs) {
       tess::build_area_index(graph, ChunkGrouping{}, area_scratch, index);
 
   EXPECT_EQ(result.status, tess::AreaBuildStatus::Built);
-  EXPECT_EQ(index.areas().size(), 2u);
+  ASSERT_EQ(index.areas().size(), 2u);
+  EXPECT_EQ(index.area_of<SparseShape>(graph, {1, 1, 0}), tess::AreaId{1});
+  EXPECT_EQ(index.area_of<SparseShape>(graph, {9, 1, 0}), tess::AreaId{2});
+  EXPECT_EQ(index.area_of<SparseShape>(graph, {5, 1, 0}),
+            tess::invalid_area_id);
+  EXPECT_TRUE(index.connections().empty());
   EXPECT_TRUE(index.is_valid(graph));
 }
 

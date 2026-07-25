@@ -37,9 +37,28 @@ struct BindGroupRelease {
   }
 };
 
+struct BufferRelease {
+  void operator()(WGPUBuffer buffer) const noexcept {
+    wgpuBufferRelease(buffer);
+  }
+};
+
 using DeviceOwner = std::unique_ptr<WGPUDeviceImpl, DeviceRelease>;
 using PipelineOwner = std::unique_ptr<WGPUComputePipelineImpl, PipelineRelease>;
 using BindGroupOwner = std::unique_ptr<WGPUBindGroupImpl, BindGroupRelease>;
+using BufferOwner = std::unique_ptr<WGPUBufferImpl, BufferRelease>;
+
+[[nodiscard]] auto make_readback_source(WGPUDevice device, const void* data,
+                                        std::size_t size) -> BufferOwner {
+  auto desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+  desc.usage = WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst;
+  desc.size = size;
+  BufferOwner buffer{wgpuDeviceCreateBuffer(device, &desc)};
+  if (buffer != nullptr && data != nullptr) {
+    std::memcpy(buffer->bytes.data(), data, size);
+  }
+  return buffer;
+}
 
 struct CostTag {};
 using Shape = tess::Shape<tess::Extent3{16, 16, 1}, tess::Extent3{4, 4, 1}>;
@@ -109,6 +128,31 @@ TEST(TessWebGpuBackend, RefusesOverflowingMirrorDescriptions) {
   EXPECT_FALSE(desc.total_bytes_fits());
   EXPECT_EQ(desc.total_bytes(), std::numeric_limits<std::uint64_t>::max());
   EXPECT_FALSE(backend.register_field(desc));
+}
+
+TEST(TessWebGpuBackend, ReadbackSourceMustHaveCopySourceUsage) {
+  tess_webgpu_stub::reset();
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  auto backend = make_backend(device.get());
+  device.reset();
+  ASSERT_TRUE(
+      backend.register_field(tess::gpu::field_mirror_desc<World, CostTag>()));
+  PipelineOwner pipeline{tess_webgpu_stub::make_pipeline()};
+  BindGroupOwner bind_group{tess_webgpu_stub::make_bind_group()};
+
+  EXPECT_FALSE(
+      backend
+          .register_product(tess::gpu::WebGpuProductDesc{
+              .product_key = 99,
+              .input_field_index = 0,
+              .pipeline = pipeline.get(),
+              .bind_group = bind_group.get(),
+              // Field mirrors are copy destinations, not readback sources.
+              .readback_source = backend.field_buffer(0),
+              .readback_byte_size = 16,
+              .readback_callback = capture_readback,
+          })
+          .has_value());
 }
 
 TEST(TessWebGpuBackend, SizeConversionRejectsNarrowing) {
@@ -209,7 +253,6 @@ TEST(TessWebGpuBackend, ReadbackCompletesAsynchronouslyAfterDestruction) {
   tess::gpu::GpuProductHandle handle;
   {
     auto backend = make_backend(device.get());
-    device.reset();
     World world;
     ASSERT_TRUE(
         backend.register_field(tess::gpu::field_mirror_desc<World, CostTag>()));
@@ -221,6 +264,10 @@ TEST(TessWebGpuBackend, ReadbackCompletesAsynchronouslyAfterDestruction) {
         .data = expected.data(),
     };
     ASSERT_TRUE(backend.upload(upload));
+    auto source =
+        make_readback_source(device.get(), expected.data(), sizeof(expected));
+    ASSERT_NE(source, nullptr);
+    device.reset();
 
     PipelineOwner pipeline{tess_webgpu_stub::make_pipeline()};
     BindGroupOwner bind_group{tess_webgpu_stub::make_bind_group()};
@@ -230,7 +277,7 @@ TEST(TessWebGpuBackend, ReadbackCompletesAsynchronouslyAfterDestruction) {
             .input_field_index = 0,
             .pipeline = pipeline.get(),
             .bind_group = bind_group.get(),
-            .readback_source = backend.field_buffer(0),
+            .readback_source = source.get(),
             .readback_byte_size = sizeof(expected),
             .readback_callback = capture_readback,
             .readback_userdata = &capture,
@@ -265,6 +312,9 @@ TEST(TessWebGpuBackend, NullMapFutureRejectsAndReleasesReadbackBudget) {
                         .field_capacity = 2,
                         .product_capacity = 2,
                     }};
+  auto source =
+      make_readback_source(device.get(), nullptr, sizeof(capture.values));
+  ASSERT_NE(source, nullptr);
   device.reset();
   World world;
   ASSERT_TRUE(
@@ -276,7 +326,7 @@ TEST(TessWebGpuBackend, NullMapFutureRejectsAndReleasesReadbackBudget) {
       .input_field_index = 0,
       .pipeline = pipeline.get(),
       .bind_group = bind_group.get(),
-      .readback_source = backend.field_buffer(0),
+      .readback_source = source.get(),
       .readback_byte_size = sizeof(capture.values),
       .readback_callback = capture_readback,
       .readback_userdata = &capture,
@@ -314,6 +364,9 @@ TEST(TessWebGpuBackend, OverlappingReadbacksShareBudgetAndReleaseOnFailure) {
           .field_capacity = 2,
           .product_capacity = 2,
       }};
+  auto source =
+      make_readback_source(device.get(), nullptr, sizeof(capture.values));
+  ASSERT_NE(source, nullptr);
   device.reset();
   World world;
   ASSERT_TRUE(
@@ -325,7 +378,7 @@ TEST(TessWebGpuBackend, OverlappingReadbacksShareBudgetAndReleaseOnFailure) {
       .input_field_index = 0,
       .pipeline = pipeline.get(),
       .bind_group = bind_group.get(),
-      .readback_source = backend.field_buffer(0),
+      .readback_source = source.get(),
       .readback_byte_size = sizeof(capture.values),
       .readback_callback = capture_readback,
       .readback_userdata = &capture,
@@ -364,8 +417,11 @@ TEST(TessWebGpuBackend, ReportedDeviceErrorFailsPendingAndFutureWork) {
   tess_webgpu_stub::reset();
   DeviceOwner device{tess_webgpu_stub::make_device()};
   auto backend = make_backend(device.get());
-  device.reset();
   ReadbackCapture capture;
+  auto source =
+      make_readback_source(device.get(), nullptr, sizeof(capture.values));
+  ASSERT_NE(source, nullptr);
+  device.reset();
   World world;
   ASSERT_TRUE(
       backend.register_field(tess::gpu::field_mirror_desc<World, CostTag>()));
@@ -376,7 +432,7 @@ TEST(TessWebGpuBackend, ReportedDeviceErrorFailsPendingAndFutureWork) {
       .input_field_index = 0,
       .pipeline = pipeline.get(),
       .bind_group = bind_group.get(),
-      .readback_source = backend.field_buffer(0),
+      .readback_source = source.get(),
       .readback_byte_size = sizeof(capture.values),
       .readback_callback = capture_readback,
       .readback_userdata = &capture,

@@ -48,9 +48,9 @@ golden-byte test pins this prefix, scalar byte order, and checksum framing so a
 layout change must use a new format version rather than silently changing v1.
 
 `inspect_world_archive` validates the magic, lengths, checksum, dimensions,
-field-descriptor encodings, dense archives' complete logical chunk count,
-canonical unique chunk keys, and complete body before a world is involved.
-Inspection does not decode field scalar payloads.
+unique field IDs and field-descriptor encodings, dense archives' complete
+logical chunk count, canonical unique chunk keys, and complete body before a
+world is involved. Inspection does not decode field scalar payloads.
 `load_world_archive` classifies shape, lattice, key layout, residency, schema,
 field, and sparse-capacity compatibility before mutation, then decodes every
 scalar in a complete preflight pass before preparing sparse residency or
@@ -58,8 +58,11 @@ writing a field. Scalar corruption therefore leaves the target unchanged.
 Its `WorldArchiveResult` and `WorldArchiveInfo` retain the source metadata;
 `WorldArchiveStatus` distinguishes damage from compatibility decisions.
 
-Status precedence is intentional. Envelope and integrity failures win before
-typed compatibility, including a checksum failure in otherwise incompatible
+Status precedence is intentional. Once the complete magic and format-version
+word are available, an unknown version is `UnsupportedFormat` without applying
+v1's envelope equations; a future version may extend or reinterpret that
+framing. For v1, envelope and integrity failures win before typed
+compatibility, including a checksum failure in otherwise incompatible
 metadata. For a structurally valid archive, typed load checks shape, lattice,
 key layout, residency, schema identity, schema version, field descriptors,
 residency capacity/dense chunk completeness, and scalar encodings in that

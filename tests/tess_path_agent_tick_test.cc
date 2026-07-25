@@ -122,6 +122,31 @@ TEST(TessPathAgentTick, UnitTicksProcessOnceThenAdvanceUntilArrival) {
   EXPECT_FALSE(agents[0].has_goal);
 }
 
+TEST(TessPathAgentTick, PlainMovementProgressResetsBlockedRetryStreak) {
+  World world;
+  fill_world(world);
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{3, 0, 0});
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+
+  auto stats = tess::tick_unit_path_agents<World, PassableTag>(
+      tick_state, world, agents, runtime);
+  ASSERT_EQ(stats.movement.advanced, 1u);
+
+  // A successful replan after a transient movement block deliberately
+  // preserves the streak until actual movement proves forward progress.
+  agents[0].blocked_retries = 3;
+  stats = tess::tick_unit_path_agents<World, PassableTag>(tick_state, world,
+                                                          agents, runtime);
+
+  ASSERT_EQ(stats.movement.advanced, 1u);
+  EXPECT_EQ(agents[0].blocked_retries, 0u);
+}
+
 TEST(TessPathAgentTick, DirtyPathingReprocessesBeforeMovement) {
   World world;
   fill_world(world);

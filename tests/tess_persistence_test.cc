@@ -513,6 +513,36 @@ TEST(TessPersistence, ClassifiesEnvelopeAndChunkCompatibilityStatuses) {
             tess::WorldArchiveStatus::InvalidChunk);
 }
 
+TEST(TessPersistence, ClassifiesMagicBeforeVersionSpecificEnvelopeLength) {
+  auto short_non_archive =
+      std::vector<std::byte>(tess::detail::world_archive_magic.size());
+  EXPECT_EQ(tess::inspect_world_archive(short_non_archive).status,
+            tess::WorldArchiveStatus::InvalidMagic);
+
+  auto future =
+      std::vector<std::byte>(tess::detail::world_archive_magic.begin(),
+                             tess::detail::world_archive_magic.end());
+  future.resize(future.size() + sizeof(std::uint32_t));
+  write_unsigned_le(future, tess::detail::world_archive_magic.size(),
+                    std::uint32_t{2});
+  EXPECT_EQ(tess::inspect_world_archive(future).status,
+            tess::WorldArchiveStatus::UnsupportedFormat);
+}
+
+TEST(TessPersistence, DuplicateFieldIdsAreCorruptDuringInspection) {
+  DenseWorld source;
+  std::vector<std::byte> bytes;
+  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
+            tess::WorldArchiveStatus::Ok);
+  static_assert(Archive::field_count >= 2);
+
+  const auto first_id = read_unsigned_le<std::uint64_t>(bytes, kHeaderSize);
+  write_unsigned_le(bytes, kHeaderSize + kFieldDescriptorSize, first_id);
+  refresh_archive_checksum(bytes);
+  EXPECT_EQ(tess::inspect_world_archive(bytes).status,
+            tess::WorldArchiveStatus::Corrupt);
+}
+
 TEST(TessPersistence, CompleteEnvelopeWithImpossibleFieldTableIsCorrupt) {
   DenseWorld source;
   std::vector<std::byte> bytes;

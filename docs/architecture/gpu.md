@@ -53,8 +53,10 @@ The backend exposes these bounded setup and execution operations:
   alignment rules. Wrapped mirror totals and byte counts that cannot narrow to
   the host API's `size_t` are rejected.
 - Product registration accepts consumer-created pipelines, bind groups, and
-  a bounded source range for readback. Registration returns a generation
-  handle; unregister/reuse invalidates old descriptors.
+  a bounded source range for readback. A readback source must have
+  `WGPUBufferUsage_CopySrc`; registration rejects a buffer that cannot legally
+  be copied. Registration returns a generation handle; unregister/reuse
+  invalidates old descriptors.
 - Dispatch validates the product generation, field, chunk budget, and total
   workgroup-X count before encoding a real compute pass and submitting it to
   the queue. The configured X limit defaults to WebGPU's guaranteed 65,535.

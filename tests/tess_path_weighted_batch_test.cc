@@ -166,6 +166,33 @@ TEST(TessPathWeightedBatch, GlobalFieldOverflowFallsBackPerMember) {
   EXPECT_EQ(scratch.stats().astar_fallbacks, 2u);
 }
 
+TEST(TessPathWeightedBatch, PlainBatchAfterProviderBatchSizesTargetMarks) {
+  SmallWorld world;
+  fill_world(world, true, 1);
+  const auto goal = tess::Coord3{7, 7, 0};
+  const auto requests = std::array{
+      tess::PathRequest{tess::Coord3{6, 7, 0}, goal},
+      tess::PathRequest{tess::Coord3{7, 6, 0}, goal},
+  };
+  tess::WeightedPathBatchScratch scratch;
+
+  // Provider-aware fields use the heap builder, which sizes the distance
+  // arrays but does not need the bounded builder's settle-target marks.
+  const auto provider_results =
+      tess::weighted_path_batch<SmallWorld, WeightedClass, 8>(
+          world, requests, scratch, OverflowingDetourProvider{});
+  ASSERT_EQ(provider_results.size(), requests.size());
+
+  const auto plain_results =
+      tess::weighted_path_batch<SmallWorld, PassableTag, CostTag, 8>(
+          world, requests, scratch);
+  ASSERT_EQ(plain_results.size(), requests.size());
+  for (const auto& result : plain_results) {
+    EXPECT_EQ(result.status, tess::PathStatus::Found);
+    EXPECT_EQ(result.cost, 1u);
+  }
+}
+
 TEST(TessPathWeightedBatch, RealizedBucketOverflowAvoidsSecondFullFlood) {
   SmallWorld world;
   fill_world(world, true, 1);
