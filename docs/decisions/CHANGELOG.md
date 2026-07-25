@@ -31,7 +31,10 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   intents reject deferred scopes; dense and sparse incremental topology
   failures revision-invalidate and clear partially rebuilt state.
   Stateful-provider path caches now bind the live provider object as well as
-  its type and revision; failed weighted floods withdraw their replay stamp;
+  its type and revision; region graphs use the same live-instance stamp so
+  equal local revision counters cannot alias across providers; failed weighted
+  floods withdraw their replay stamp; bounded sparse overflow delegates to the
+  exact heap flood when needed to preserve missing-topology precedence;
   reverse transition enumeration validates the forward destination; and
   compact-cost assessment compares against a division-derived threshold
   instead of forming a wrapping 128-bit product.
@@ -39,8 +42,9 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   route plus integrity, asynchronous error-reporting, retry, cadence, bounded
   work, and optional-configuration gaps that broad platform CI did not expose.
   The final pass also found revision-reuse cache aliasing, replayable partial
-  fields, an externally observable reverse-enumeration asymmetry, and a
-  compile-time overflow in the overflow assessment itself.
+  fields, an externally observable reverse-enumeration asymmetry, a compile-time
+  overflow in the overflow assessment itself, region-graph provider-instance
+  aliasing, and bounded-field status-precedence drift.
 - Affected docs: path/simulation/persistence/GPU/ECS/block/topology
   architecture, optimization log, design changelog, API comments, and test
   inventory.

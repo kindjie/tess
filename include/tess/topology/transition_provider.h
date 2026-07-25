@@ -40,12 +40,13 @@ struct SpecialTransitionCandidate {
 //   region as reaching missing topology, so reachability degrades to
 //   Indeterminate rather than a wrong Unreachable.
 //
-// The provider type and revision are stamped on the graph at build time
-// (mirroring the movement-class stamp). Empty providers have revision zero.
-// A stateful provider must expose
+// The provider type, live object identity, and revision are stamped on the
+// graph at build time (mirroring the movement-class stamp). Empty providers
+// have a null object identity and revision zero. A stateful provider must stay
+// at a stable address while the graph may be reused and expose
 // `std::uint64_t transition_revision() const noexcept` and change that value
 // whenever its emitted transition set can change. update_region_graph falls
-// back to a full rebuild when either stamp differs.
+// back to a full rebuild when any stamp differs.
 /// Constrains deterministic special-transition providers for a world type.
 template <typename P, typename World>
 concept TransitionProviderFor = requires(const P& provider, const World& world,

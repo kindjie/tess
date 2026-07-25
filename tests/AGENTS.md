@@ -101,7 +101,9 @@
   set; dirty/active queries visit only resident chunks (no full-world scan);
   residency survives directory backward-shift deletion under churn; and both
   the warm resident-set access path and evict/reload slot reuse allocate
-  nothing after warmup.
+  nothing after warmup. Sparse path coverage also pins bounded weighted-field
+  status precedence when one flood encounters both missing topology and cost
+  overflow.
 - `tess_block_test`: verifies chunk-domain builders, policy-typed `BlockCtx`
   construction and iteration, serial block iteration, owned domain lifetimes,
   const-correct chunk views and world access including compile-time and runtime
@@ -320,10 +322,12 @@
   (S5.7): the default `AdjacentTransitions` build is identical to the
   providerless build, a bridge provider's directed portals connect walled
   regions (both directions), incremental update equals a full rebuild with
-  the same provider, a provider-type or provider-revision mismatch forces a
-  full rebuild, stateful providers without a revision are rejected, and a
-  sparse provider transition into a non-resident chunk degrades reachability
-  to `Indeterminate` instead of a wrong `Unreachable`; and the stair provider
+  the same provider, a provider-type, live-instance, or provider-revision
+  mismatch forces a full rebuild, runtime precheck ignores a graph stamped for
+  another equal-revision provider instance, stateful providers without a
+  revision are rejected, and a sparse provider transition into a non-resident
+  chunk degrades reachability to `Indeterminate` instead of a wrong
+  `Unreachable`; and the stair provider
   (S5.8): an offset stair links two z-levels with no vertical face adjacency
   in both directions (cross-chunk and same-chunk landings), stair edges are
   per-class (a construction-site landing is Builder-only), incremental

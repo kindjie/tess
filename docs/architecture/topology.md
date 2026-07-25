@@ -119,7 +119,8 @@ stateDiagram-v2
   neighbor tile is passable, appends the transition provider's extra directed
   portals (see Transition Providers below), and rebuilds the region index and
   CSR adjacency. It also stamps the graph with the normalized movement-class
-  identity (see `matches_class` below) and the provider type plus revision.
+  identity (see `matches_class` below) and the provider type, live stateful
+  instance, and revision.
   Portal
   pairing needs no class awareness: it queries labels, so per-class labels
   yield per-class portals automatically. The graph type is deduced from
@@ -135,7 +136,8 @@ stateDiagram-v2
   the build forces a full rebuild rather than trusting a stale graph. A
   movement-class mismatch (the graph was built for a different class) likewise
   forces a full rebuild with the requested class's labels, as does a
-  transition-provider type or revision mismatch (`matches_provider`).
+  transition-provider type, live instance, or revision mismatch
+  (`matches_provider`).
 - `RegionGraphT::matches_class<ClassOrTag>()` reports whether the graph was
   built for the given class (normalized, so a raw tag and its `WalkableField`
   identity agree). The stamp is a runtime class-identity token captured at
@@ -302,9 +304,9 @@ Diagonal policies emit face steps first and then four planar diagonals, use
 both clearance tiles according to the selected corner rule. Axial-hex default
 steps emit `(+1,0), (-1,0), (0,+1), (0,-1), (+1,-1), (-1,+1)` at scale one.
 Model identity includes normalized class, lattice identity/version, step
-policy, cost scale, and provider type/revision; fields, products, graphs, and
-caches reject a mismatched stamp. Regular transitions are enumerated before
-special transitions.
+policy, cost scale, provider type, live stateful-provider instance, and
+revision; fields, products, graphs, and caches reject a mismatched stamp.
+Regular transitions are enumerated before special transitions.
 
 ## Transition Providers
 
@@ -322,13 +324,17 @@ per-class, and a bidirectional passage emits each direction from its own
 chunk. The landing tile must lie in the same chunk or a face-neighbor chunk
 (asserted in debug builds): incremental updates re-derive portals only for
 dirty chunks and their face neighbors, so a longer-range transition would
-survive, stale, past an edit to its landing chunk. The provider type and
-revision are stamped on the graph like the movement class
-(`matches_provider`). Empty providers use revision zero. A stateful provider
-must expose `transition_revision() const noexcept -> std::uint64_t` and advance
-it whenever its emitted edge set can change; `update_region_graph` falls back
-to a full rebuild when either provider stamp changes. On a sparse world, a
-provider transition landing in a non-resident
+survive, stale, past an edit to its landing chunk. The provider type, live
+stateful object identity, and revision are stamped on the graph like the
+movement class (`matches_provider`). Empty providers use a null instance and
+revision zero. A stateful provider must remain at a stable address while the
+graph can be reused, expose
+`transition_revision() const noexcept -> std::uint64_t`, and advance it
+whenever its emitted edge set can change; `update_region_graph` falls back to
+a full rebuild when any provider stamp changes. Clear the graph before ending
+the provider's lifetime so placement-new address reuse cannot recreate the
+same instance/revision stamp. On a sparse world, a provider transition landing
+in a non-resident
 chunk marks its origin region as reaching missing topology, so reachability
 degrades to `Indeterminate` rather than a wrong `Unreachable`; that
 reaches-missing pass re-enumerates every resident chunk's provider

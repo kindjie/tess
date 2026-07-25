@@ -1252,6 +1252,25 @@ TEST(TessSparseBoundedWeightedField, MissingChunkTruncatesBucketFieldByPolicy) {
   EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
 }
 
+TEST(TessSparseBoundedWeightedField,
+     MissingTopologyTakesPrecedenceOverCostOverflow) {
+  SparseWeighted world{
+      tess::ResidencyConfig{2 * SparseWeighted::page_byte_size}};
+  make_chunk_weighted_passable(world, tess::ChunkKey{0});
+  ASSERT_FALSE(world.is_resident(tess::ChunkKey{1}));
+  const auto goal = tess::Coord3{31, 0, 0};
+  world.field<WeightCostTag>(goal) = std::numeric_limits<std::uint32_t>::max();
+  tess::DistanceFieldScratch scratch;
+
+  const auto blocked = sparse_build_bounded_weighted_field<8>(
+      world, goal, scratch, tess::MissingChunkPolicy::TreatAsBlocked);
+  EXPECT_EQ(blocked.status, tess::PathStatus::CostOverflow);
+
+  const auto indeterminate = sparse_build_bounded_weighted_field<8>(
+      world, goal, scratch, tess::MissingChunkPolicy::Indeterminate);
+  EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
+}
+
 TEST(TessSparseBoundedWeightedField, NonResidentGoalRespectsPolicy) {
   SparseWeighted world{
       tess::ResidencyConfig{2 * SparseWeighted::page_byte_size}};

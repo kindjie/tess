@@ -355,6 +355,7 @@ class RegionGraphT {
     built_step_policy_identity_ = 0;
     built_cost_scale_ = 0;
     built_provider_ = 0;
+    built_provider_instance_ = nullptr;
     built_provider_revision_ = 0;
     if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
       sparse_.topology_keys_.clear();
@@ -477,13 +478,17 @@ class RegionGraphT {
     return built_provider_ == detail::tag_identity<Provider>();
   }
 
-  // Instance-aware provider match used by incremental updates. Stateful
-  // providers must advance their revision whenever emitted edges can change;
-  // a mismatch forces a full rebuild even when the provider type is unchanged.
+  // Instance-aware provider match used by incremental updates. The address
+  // distinguishes two live stateful providers whose equal local revision
+  // counters say nothing about one another. The provider therefore has to
+  // remain at a stable address for the graph's lifetime; clear or rebuild the
+  // graph before ending that lifetime.
   template <typename Provider>
   [[nodiscard]] auto matches_provider(const Provider& provider) const noexcept
       -> bool {
     return matches_provider<Provider>() &&
+           built_provider_instance_ ==
+               detail::transition_provider_instance_identity(provider) &&
            built_provider_revision_ ==
                detail::transition_provider_revision(provider);
   }
@@ -615,6 +620,8 @@ class RegionGraphT {
   template <typename Provider>
   void bind_provider(const Provider& provider) noexcept {
     built_provider_ = detail::tag_identity<Provider>();
+    built_provider_instance_ =
+        detail::transition_provider_instance_identity(provider);
     built_provider_revision_ = detail::transition_provider_revision(provider);
   }
 
@@ -712,6 +719,7 @@ class RegionGraphT {
   std::uint32_t built_step_policy_identity_ = 0;
   std::uint32_t built_cost_scale_ = 0;
   std::uintptr_t built_provider_ = 0;
+  const void* built_provider_instance_ = nullptr;
   std::uint64_t built_provider_revision_ = 0;
   std::uint64_t revision_ = 0;
   [[no_unique_address]] detail::RegionGraphSparseData<Residency> sparse_;

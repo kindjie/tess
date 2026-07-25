@@ -156,6 +156,16 @@ auto build_bounded_weighted_distance_field_core(
     const auto next_distance =
         detail::saturating_add(current_distance, current_entry_cost);
     if (next_distance == infinite_distance) {
+      if constexpr (!Space::is_dense) {
+        if (policy == MissingChunkPolicy::Indeterminate) {
+          // Overflow is exceptional, so pay for the exact heap flood here.
+          // Unlike the bucket fast path, it can keep examining the finite
+          // frontier after one saturated relaxation and therefore preserve
+          // the required Indeterminate > CostOverflow status precedence.
+          return build_weighted_distance_field<World, Class>(world, goal,
+                                                             scratch, policy);
+        }
+      }
       // This edge has already proved the reverse field globally unsuitable.
       // Return immediately: weighted_path_batch retries each member with A*
       // so an irrelevant saturated edge does not force a second full flood.
