@@ -96,6 +96,32 @@ def test_load_private_patterns_rejects_invalid_regex(tmp_path):
     git_hooks.load_private_patterns(path)
 
 
+def test_repository_private_patterns_use_common_git_dir(tmp_path):
+  def git_output(command, **kwargs):
+    assert command == ["git", "rev-parse", "--git-common-dir"]
+    assert kwargs["cwd"] == git_hooks.REPO_ROOT
+    return f"{tmp_path}\n"
+
+  path = git_hooks.repository_common_git_path(
+    "tess-private-patterns", git_output=git_output
+  )
+
+  assert path == tmp_path / "tess-private-patterns"
+
+
+def test_repository_private_patterns_resolve_relative_common_dir():
+  def git_output(command, **kwargs):
+    assert command == ["git", "rev-parse", "--git-common-dir"]
+    assert kwargs["cwd"] == git_hooks.REPO_ROOT
+    return ".git\n"
+
+  path = git_hooks.repository_common_git_path(
+    "tess-private-patterns", git_output=git_output
+  )
+
+  assert path == git_hooks.REPO_ROOT / ".git" / "tess-private-patterns"
+
+
 def test_ensure_identity_patterns_adds_escaped_full_name(tmp_path):
   path = tmp_path / "patterns"
 

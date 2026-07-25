@@ -99,7 +99,15 @@ inline auto parse_size_header(std::string_view line, std::string_view key,
 inline auto fractional_digits(std::string_view value)
     -> std::optional<std::uint32_t> {
   const auto decimal = value.find('.');
-  if (decimal == std::string_view::npos || decimal + 1 == value.size()) {
+  if (decimal == std::string_view::npos) {
+    for (const auto digit : value) {
+      if (digit < '0' || digit > '9') {
+        return std::nullopt;
+      }
+    }
+    return 0;
+  }
+  if (decimal + 1 == value.size()) {
     return std::nullopt;
   }
   auto count = std::uint32_t{};

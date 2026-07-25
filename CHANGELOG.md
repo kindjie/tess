@@ -58,7 +58,8 @@ and their rationale are recorded separately in
 ### Performance
 
 - Every literal benchmark in a threshold-gated family is covered by a
-  calibrated ceiling; newly covered resolved-transition, weighted-product,
+  calibrated or explicitly labeled bootstrap ceiling; newly covered
+  resolved-transition, weighted-product,
   coarse-topology, area-index, and Flecs workloads close the prior gate gaps.
 - Default orthogonal unit routes, fields, and product replays retain their
   direct specialized paths while other lattices, step policies, and providers

@@ -71,7 +71,14 @@ struct PathAgentFrameStats {
 //   route-invalidated Blocked state); Following and occupancy-waiting agents
 //   keep their retained routes. One agent arming a goal no longer replans the
 //   whole batch.
-/// Selects whether a processing pass replans all or only waiting agents.
+/**
+ * Selects whether a processing pass replans all or only waiting agents.
+ *
+ * `NeedsOnly` invalidates skipped agents' runtime tickets when it rebuilds the
+ * request set. It is therefore valid only with `PathAgentRoutes` retention,
+ * normally through the tick drivers. Direct callers that later advance from
+ * `PathRequestRuntime` results must use `All`.
+ */
 enum class PathSubmitScope : std::uint8_t {
   All,
   NeedsOnly,
@@ -275,7 +282,13 @@ inline auto apply_path_agent_results(std::span<PathAgentState> agents,
                                   nullptr);
 }
 
-/// Advances agents along runtime-owned paths without validating world movement.
+/**
+ * Advances agents along runtime-owned paths without world validation.
+ *
+ * Tickets must come from the runtime's current `All` submission. A
+ * `NeedsOnly` pass deliberately makes skipped tickets stale; advance those
+ * agents through `PathAgentRoutes` instead.
+ */
 inline auto advance_path_agents(std::span<PathAgentState> agents,
                                 const PathRequestRuntime& runtime,
                                 std::size_t max_steps = 1)
@@ -324,7 +337,12 @@ inline auto advance_path_agents(std::span<PathAgentState> agents,
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag, typename OnCommit>
   requires std::invocable<OnCommit&, std::size_t, Coord3, Coord3>
-/// Advances runtime paths through validated world movement commits.
+/**
+ * Advances runtime paths through validated world movement commits.
+ *
+ * Tickets must come from the runtime's current `All` submission. Use the
+ * retained-route overload after a `NeedsOnly` pass.
+ */
 inline auto advance_path_agents_with_movement(World& world,
                                               std::span<PathAgentState> agents,
                                               const PathRequestRuntime& runtime,
@@ -398,7 +416,12 @@ inline auto advance_path_agents_with_movement(World& world,
 
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag>
-/// Advances runtime-routed agents with validated world movement.
+/**
+ * Advances runtime-routed agents with validated world movement.
+ *
+ * Do not combine this runtime-reading overload with `NeedsOnly`; use the
+ * retained-route overload used by the tick drivers.
+ */
 inline auto advance_path_agents_with_movement(
     World& world, std::span<PathAgentState> agents,
     const PathRequestRuntime& runtime, std::size_t max_steps = 1,

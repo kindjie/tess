@@ -560,6 +560,72 @@ TEST(TessPersistence, CompleteEnvelopeWithImpossibleFieldTableIsCorrupt) {
             tess::WorldArchiveStatus::Corrupt);
 }
 
+TEST(TessPersistence, InspectionRejectsInvalidDescriptorDomains) {
+  DenseWorld source;
+  std::vector<std::byte> canonical;
+  ASSERT_EQ(tess::save_world_archive<Archive>(source, canonical).status,
+            tess::WorldArchiveStatus::Ok);
+  constexpr auto kKindOffset = std::size_t{12};
+  constexpr auto kWidthOffset = std::size_t{13};
+
+  auto invalid_width = canonical;
+  write_unsigned_le(invalid_width, kHeaderSize + kWidthOffset,
+                    std::uint32_t{3});
+  refresh_archive_checksum(invalid_width);
+  EXPECT_EQ(tess::inspect_world_archive(invalid_width).status,
+            tess::WorldArchiveStatus::Corrupt);
+
+  auto invalid_kind = canonical;
+  invalid_kind[kHeaderSize + kKindOffset] = std::byte{0xff};
+  refresh_archive_checksum(invalid_kind);
+  EXPECT_EQ(tess::inspect_world_archive(invalid_kind).status,
+            tess::WorldArchiveStatus::Corrupt);
+
+  auto invalid_float = canonical;
+  write_unsigned_le(invalid_float,
+                    kHeaderSize + kFieldDescriptorSize + kWidthOffset,
+                    std::uint32_t{2});
+  refresh_archive_checksum(invalid_float);
+  EXPECT_EQ(tess::inspect_world_archive(invalid_float).status,
+            tess::WorldArchiveStatus::Corrupt);
+
+  EnumWorld enum_source;
+  std::vector<std::byte> enum_bytes;
+  ASSERT_EQ(
+      tess::save_world_archive<EnumArchive>(enum_source, enum_bytes).status,
+      tess::WorldArchiveStatus::Ok);
+  write_unsigned_le(enum_bytes,
+                    kHeaderSize + kFieldDescriptorSize + kWidthOffset,
+                    std::uint32_t{2});
+  refresh_archive_checksum(enum_bytes);
+  EXPECT_EQ(tess::inspect_world_archive(enum_bytes).status,
+            tess::WorldArchiveStatus::Corrupt);
+}
+
+TEST(TessPersistence, InspectionRejectsExcessFieldsAndOutOfRangeChunkKey) {
+  DenseWorld source;
+  std::vector<std::byte> canonical;
+  ASSERT_EQ(tess::save_world_archive<Archive>(source, canonical).status,
+            tess::WorldArchiveStatus::Ok);
+
+  auto excess_fields = canonical;
+  write_unsigned_le(
+      excess_fields, kFieldCountOffset,
+      static_cast<std::uint32_t>(tess::detail::world_archive_max_fields + 1));
+  refresh_archive_checksum(excess_fields);
+  EXPECT_EQ(tess::inspect_world_archive(excess_fields).status,
+            tess::WorldArchiveStatus::Corrupt);
+
+  auto out_of_range_key = canonical;
+  constexpr auto kFirstChunkOffset =
+      kHeaderSize + Archive::field_count * kFieldDescriptorSize;
+  write_unsigned_le(out_of_range_key, kFirstChunkOffset,
+                    DenseWorld::chunk_count);
+  refresh_archive_checksum(out_of_range_key);
+  EXPECT_EQ(tess::inspect_world_archive(out_of_range_key).status,
+            tess::WorldArchiveStatus::InvalidChunk);
+}
+
 TEST(TessPersistence, DenseInspectionRequiresEveryLogicalChunk) {
   DenseWorld source;
   std::vector<std::byte> bytes;

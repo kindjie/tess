@@ -60,19 +60,22 @@ enum class PrecheckStatus : std::uint8_t {
 // is_region_graph_fresh_for, so it degrades to running A* rather than letting
 // `Unreachable` prune a route the search's own class could walk. Cost
 // weighting remains irrelevant (weights only order passable tiles).
-/// Runs a conservative region-graph reachability check before grid search.
+/// Runs a provider-aware conservative reachability check before grid search.
 ///
 /// Only `Unreachable` proves failure. Every other result requires the caller
-/// to run authoritative pathfinding. The caller owns and synchronizes scratch.
-template <typename ClassOrTag, typename World>
+/// to run authoritative pathfinding. The graph must match the exact provider
+/// instance and revision; a mismatch returns `GraphStale`. The caller owns and
+/// synchronizes scratch.
+template <typename ClassOrTag, typename World, typename Provider>
 [[nodiscard]] auto precheck_path(
     const RegionGraphT<typename World::residency_type>& graph,
-    const World& world, Coord3 start, Coord3 goal, RegionGraphScratch& scratch)
-    -> PrecheckStatus {
+    const World& world, Coord3 start, Coord3 goal, RegionGraphScratch& scratch,
+    const Provider& provider) -> PrecheckStatus {
   if (graph.local_topologies().empty()) {
     return PrecheckStatus::NoGraph;
   }
-  if (!is_region_graph_fresh_for<ClassOrTag>(world, graph)) {
+  if (!is_region_graph_fresh_for<ClassOrTag>(world, graph) ||
+      !graph.matches_provider(provider)) {
     return PrecheckStatus::GraphStale;
   }
   const auto result =
@@ -90,6 +93,16 @@ template <typename ClassOrTag, typename World>
       return PrecheckStatus::InvalidGoal;
   }
   return PrecheckStatus::NoGraph;  // unreachable: all statuses handled above
+}
+
+/// Runs the conservative precheck for ordinary adjacent transitions.
+template <typename ClassOrTag, typename World>
+[[nodiscard]] auto precheck_path(
+    const RegionGraphT<typename World::residency_type>& graph,
+    const World& world, Coord3 start, Coord3 goal, RegionGraphScratch& scratch)
+    -> PrecheckStatus {
+  return precheck_path<ClassOrTag>(graph, world, start, goal, scratch,
+                                   AdjacentTransitions{});
 }
 
 }  // namespace tess

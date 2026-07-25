@@ -166,6 +166,37 @@ data-backed CI remain gated until individual-content rights are documented.
   process in `benchmark-plan.md`; rejected experiments are recorded in
   `optimization-log.md`.
 
+## Implementation Handoff Notes
+
+These cross-cutting lessons from the completion pull request are intended for
+future coding agents:
+
+- Treat the resolved transition model as one plan-through-commit contract.
+  Provider edge pricing cannot make an impassable destination legal, reverse
+  enumeration must validate the forward destination, and topology prechecks
+  must match the same provider instance and revision as exact search.
+- Reject unchecked public coordinates before constructing signed neighbor
+  offsets. Post-hoc containment checks are too late at integer extremes.
+- Assume callback-capable C APIs may complete inline even when their usual
+  implementation is asynchronous. Once a callback receives ownership, do not
+  inspect that operation after the registration call returns a live future.
+- Make capacity/admission failure non-destructive. An oversized cache entry
+  should not evict unrelated useful entries, and lifecycle preflight should
+  happen before ECS or world mutation.
+- Treat maintained documentation with executable output fences as code for CI
+  selection. Historical TDDs explain intent; architecture docs and public
+  comments define current behavior and must record deliberate divergence.
+- Linked worktrees share repository policy through the common Git directory.
+  Keep identity-specific privacy patterns local there; never expose private
+  patterns to pull-request-controlled workflow code.
+- Hosted runner timing can differ greatly from local timing. Label initial
+  values as bootstrap ceilings, collect comparable artifacts, then apply the
+  documented recalibration rule instead of weakening a green gate from one
+  noisy observation.
+- Instrument lifecycle outcomes, submissions, and terminal states before
+  attributing a visual slowdown to pathfinding. Use a profiler when those
+  counters or benchmark gates leave genuine uncertainty.
+
 ## Explicit Non-Goals
 
 Runtime-sized or unbounded worlds, rendering, physics, navigation-mesh

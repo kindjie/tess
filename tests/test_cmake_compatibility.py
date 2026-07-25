@@ -202,6 +202,25 @@ def test_fetched_dependencies_use_retrying_exact_revision_populator():
     assert "\n    GIT_TAG" not in google + entt + helper
 
 
+def test_flecs_dependency_preserves_parent_cache_choices():
+    flecs = (REPO_ROOT / "cmake" / "TessFlecsDeps.cmake").read_text(
+        encoding="utf-8"
+    )
+
+    shared_default = (
+        'set(FLECS_SHARED OFF CACHE BOOL "Build the Flecs shared library")'
+    )
+    static_default = (
+        'set(FLECS_STATIC ON CACHE BOOL "Build the Flecs static library")'
+    )
+    assert shared_default in flecs
+    assert static_default in flecs
+    assert "FLECS_SHARED OFF CACHE BOOL" in flecs
+    assert "FLECS_STATIC ON CACHE BOOL" in flecs
+    assert "FORCE" not in flecs
+    assert "if(NOT FLECS_STATIC)" in flecs
+
+
 def test_git_population_scrubs_inherited_hook_environment(tmp_path):
     revision = "0123456789abcdef0123456789abcdef01234567"
     log = tmp_path / "git.log"

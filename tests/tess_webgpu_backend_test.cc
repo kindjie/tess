@@ -351,6 +351,48 @@ TEST(TessWebGpuBackend, NullMapFutureRejectsAndReleasesReadbackBudget) {
   EXPECT_EQ(capture.calls, 1u);
 }
 
+TEST(TessWebGpuBackend, InlineMapCompletionDoesNotTouchFreedOperation) {
+  tess_webgpu_stub::reset();
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  auto backend = make_backend(device.get());
+  ReadbackCapture capture;
+  auto source =
+      make_readback_source(device.get(), nullptr, sizeof(capture.values));
+  ASSERT_NE(source, nullptr);
+  device.reset();
+  World world;
+  ASSERT_TRUE(
+      backend.register_field(tess::gpu::field_mirror_desc<World, CostTag>()));
+  PipelineOwner pipeline{tess_webgpu_stub::make_pipeline()};
+  BindGroupOwner bind_group{tess_webgpu_stub::make_bind_group()};
+  const auto registered = backend.register_product(tess::gpu::WebGpuProductDesc{
+      .product_key = 99,
+      .input_field_index = 0,
+      .pipeline = pipeline.get(),
+      .bind_group = bind_group.get(),
+      .readback_source = source.get(),
+      .readback_byte_size = sizeof(capture.values),
+      .readback_callback = capture_readback,
+      .readback_userdata = &capture,
+  });
+  ASSERT_TRUE(registered.has_value());
+  const auto handle = registered.value_or(tess::gpu::GpuProductHandle{});
+  const auto request = tess::gpu::ReadbackDesc{
+      .product_key = handle.key,
+      .product_generation = handle.generation,
+      .policy = tess::gpu::ReadbackPolicy::Summary,
+      .byte_size = sizeof(capture.values),
+  };
+
+  tess_webgpu_stub::complete_map_inline = true;
+  EXPECT_TRUE(backend.readback(request));
+  EXPECT_EQ(capture.calls, 1u);
+  EXPECT_EQ(capture.status, tess::gpu::WebGpuReadbackStatus::Complete);
+  EXPECT_TRUE(tess_webgpu_stub::pending_maps.empty());
+  EXPECT_TRUE(backend.readback(request));
+  EXPECT_EQ(capture.calls, 2u);
+}
+
 TEST(TessWebGpuBackend, OverlappingReadbacksShareBudgetAndReleaseOnFailure) {
   tess_webgpu_stub::reset();
   DeviceOwner device{tess_webgpu_stub::make_device()};

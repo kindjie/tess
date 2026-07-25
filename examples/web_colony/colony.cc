@@ -33,7 +33,6 @@ struct ReservationTag {};
 constexpr int kWidth = 128;
 constexpr int kHeight = 128;
 constexpr int kMaxAgents = 1024;
-constexpr std::uint32_t kMaxBlockedRetries = 2U * kMaxAgents + 8U;
 // A painted one-tile bottleneck can merge every row into one queue. Retained
 // route waits do not replan, so covering a full outbound-and-return convoy
 // prevents healthy queueing from becoming terminal without reintroducing the
@@ -161,6 +160,12 @@ struct Demo {
           auto* self = static_cast<Demo*>(ctx);
           if (done.ok() && ack != nullptr) {
             self->built_tiles += ack->tiles;
+            // AutoExec runs every accepted chunk kernel before draining any
+            // hook. Duplicate UniquePerChunk operations are rejected only
+            // after the first operation for that same chunk is accepted, and
+            // that kernel applies every pending wall in the chunk. Clearing on
+            // the first successful completion therefore cannot hide work from
+            // a later kernel or discard a rejected sibling's distinct chunk.
             self->pending_walls.clear();
           }
         });
@@ -208,8 +213,11 @@ struct Demo {
       }
       auto options = tess::PathAgentTickOptions{};
       // The convoy accordion can block rear agents for roughly one tick per
-      // rank even on an unobstructed map; keep margin above that healthy wait.
-      options.max_blocked_retries = kMaxBlockedRetries;
+      // rank even on an unobstructed map. Scale the terminal bound to the
+      // active convoy, not the demo's 1,024-agent capacity, so small colonies
+      // do not wait minutes to report an actual seal.
+      options.max_blocked_retries =
+          2U * static_cast<std::uint32_t>(demo->agents.size()) + 8U;
       (void)tess::tick_weighted_path_agents_with_movement<
           World, Walker, kMaxCost, OccupancyTag, ReservationTag>(
           demo->tick_state, demo->world, demo->agents, demo->runtime, options,
@@ -312,6 +320,9 @@ struct Demo {
   // arrived. On the return trip the convoy leader (highest batch) is
   // processed last within each row, so the first few ticks are a harmless
   // accordion of transient Occupied results — expected, not a bug.
+  // Terminal agents deliberately keep their failed goal and do not relaunch:
+  // the page reports that state and requires reset/clear-walls to change the
+  // environment rather than silently retrying a proven-unreachable trip.
   auto relaunch() -> int {
     if (arrived() != static_cast<int>(agents.size())) {
       return trips;

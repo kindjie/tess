@@ -56,7 +56,7 @@ constexpr void emit_regular_candidate(Coord3 to, std::uint32_t multiplier,
   }
 }
 
-template <typename Shape, typename Sink>
+template <typename Shape, typename Policy, typename Sink>
 constexpr void emit_diagonal_candidate(Coord3 to, Coord3 clearance_a,
                                        Coord3 clearance_b, Sink&& sink) {
   if (contains<Shape>(to)) {
@@ -64,7 +64,7 @@ constexpr void emit_diagonal_candidate(Coord3 to, Coord3 clearance_a,
         .to = to,
         .clearance_a = clearance_a,
         .clearance_b = clearance_b,
-        .multiplier = movement::DiagonalSteps<>::diagonal_step_multiplier,
+        .multiplier = Policy::diagonal_step_multiplier,
         .clearance_count = 2,
     });
   }
@@ -106,57 +106,75 @@ constexpr void for_each_hex_candidate(Coord3 from, Sink&& sink) {
                                 sink);
 }
 
-template <typename Shape, typename Sink>
+template <typename Shape, typename Policy, typename Sink>
 constexpr void for_each_diagonal_candidate(Coord3 from, Sink&& sink) {
-  for_each_orthogonal_face_candidate<Shape>(
-      from, movement::DiagonalSteps<>::cost_scale, sink);
+  for_each_orthogonal_face_candidate<Shape>(from, Policy::cost_scale, sink);
   if constexpr (!ShapeTraits<Shape>::degenerate_x &&
                 !ShapeTraits<Shape>::degenerate_y) {
-    emit_diagonal_candidate<Shape>(Coord3{from.x + 1, from.y + 1, from.z},
-                                   Coord3{from.x + 1, from.y, from.z},
-                                   Coord3{from.x, from.y + 1, from.z}, sink);
-    emit_diagonal_candidate<Shape>(Coord3{from.x + 1, from.y - 1, from.z},
-                                   Coord3{from.x + 1, from.y, from.z},
-                                   Coord3{from.x, from.y - 1, from.z}, sink);
-    emit_diagonal_candidate<Shape>(Coord3{from.x - 1, from.y + 1, from.z},
-                                   Coord3{from.x - 1, from.y, from.z},
-                                   Coord3{from.x, from.y + 1, from.z}, sink);
-    emit_diagonal_candidate<Shape>(Coord3{from.x - 1, from.y - 1, from.z},
-                                   Coord3{from.x - 1, from.y, from.z},
-                                   Coord3{from.x, from.y - 1, from.z}, sink);
+    emit_diagonal_candidate<Shape, Policy>(
+        Coord3{from.x + 1, from.y + 1, from.z},
+        Coord3{from.x + 1, from.y, from.z}, Coord3{from.x, from.y + 1, from.z},
+        sink);
+    emit_diagonal_candidate<Shape, Policy>(
+        Coord3{from.x + 1, from.y - 1, from.z},
+        Coord3{from.x + 1, from.y, from.z}, Coord3{from.x, from.y - 1, from.z},
+        sink);
+    emit_diagonal_candidate<Shape, Policy>(
+        Coord3{from.x - 1, from.y + 1, from.z},
+        Coord3{from.x - 1, from.y, from.z}, Coord3{from.x, from.y + 1, from.z},
+        sink);
+    emit_diagonal_candidate<Shape, Policy>(
+        Coord3{from.x - 1, from.y - 1, from.z},
+        Coord3{from.x - 1, from.y, from.z}, Coord3{from.x, from.y - 1, from.z},
+        sink);
   } else if constexpr (!ShapeTraits<Shape>::degenerate_x &&
                        !ShapeTraits<Shape>::degenerate_z) {
-    emit_diagonal_candidate<Shape>(Coord3{from.x + 1, from.y, from.z + 1},
-                                   Coord3{from.x + 1, from.y, from.z},
-                                   Coord3{from.x, from.y, from.z + 1}, sink);
-    emit_diagonal_candidate<Shape>(Coord3{from.x + 1, from.y, from.z - 1},
-                                   Coord3{from.x + 1, from.y, from.z},
-                                   Coord3{from.x, from.y, from.z - 1}, sink);
-    emit_diagonal_candidate<Shape>(Coord3{from.x - 1, from.y, from.z + 1},
-                                   Coord3{from.x - 1, from.y, from.z},
-                                   Coord3{from.x, from.y, from.z + 1}, sink);
-    emit_diagonal_candidate<Shape>(Coord3{from.x - 1, from.y, from.z - 1},
-                                   Coord3{from.x - 1, from.y, from.z},
-                                   Coord3{from.x, from.y, from.z - 1}, sink);
+    emit_diagonal_candidate<Shape, Policy>(
+        Coord3{from.x + 1, from.y, from.z + 1},
+        Coord3{from.x + 1, from.y, from.z}, Coord3{from.x, from.y, from.z + 1},
+        sink);
+    emit_diagonal_candidate<Shape, Policy>(
+        Coord3{from.x + 1, from.y, from.z - 1},
+        Coord3{from.x + 1, from.y, from.z}, Coord3{from.x, from.y, from.z - 1},
+        sink);
+    emit_diagonal_candidate<Shape, Policy>(
+        Coord3{from.x - 1, from.y, from.z + 1},
+        Coord3{from.x - 1, from.y, from.z}, Coord3{from.x, from.y, from.z + 1},
+        sink);
+    emit_diagonal_candidate<Shape, Policy>(
+        Coord3{from.x - 1, from.y, from.z - 1},
+        Coord3{from.x - 1, from.y, from.z}, Coord3{from.x, from.y, from.z - 1},
+        sink);
   } else {
-    emit_diagonal_candidate<Shape>(Coord3{from.x, from.y + 1, from.z + 1},
-                                   Coord3{from.x, from.y + 1, from.z},
-                                   Coord3{from.x, from.y, from.z + 1}, sink);
-    emit_diagonal_candidate<Shape>(Coord3{from.x, from.y + 1, from.z - 1},
-                                   Coord3{from.x, from.y + 1, from.z},
-                                   Coord3{from.x, from.y, from.z - 1}, sink);
-    emit_diagonal_candidate<Shape>(Coord3{from.x, from.y - 1, from.z + 1},
-                                   Coord3{from.x, from.y - 1, from.z},
-                                   Coord3{from.x, from.y, from.z + 1}, sink);
-    emit_diagonal_candidate<Shape>(Coord3{from.x, from.y - 1, from.z - 1},
-                                   Coord3{from.x, from.y - 1, from.z},
-                                   Coord3{from.x, from.y, from.z - 1}, sink);
+    emit_diagonal_candidate<Shape, Policy>(
+        Coord3{from.x, from.y + 1, from.z + 1},
+        Coord3{from.x, from.y + 1, from.z}, Coord3{from.x, from.y, from.z + 1},
+        sink);
+    emit_diagonal_candidate<Shape, Policy>(
+        Coord3{from.x, from.y + 1, from.z - 1},
+        Coord3{from.x, from.y + 1, from.z}, Coord3{from.x, from.y, from.z - 1},
+        sink);
+    emit_diagonal_candidate<Shape, Policy>(
+        Coord3{from.x, from.y - 1, from.z + 1},
+        Coord3{from.x, from.y - 1, from.z}, Coord3{from.x, from.y, from.z + 1},
+        sink);
+    emit_diagonal_candidate<Shape, Policy>(
+        Coord3{from.x, from.y - 1, from.z - 1},
+        Coord3{from.x, from.y - 1, from.z}, Coord3{from.x, from.y, from.z - 1},
+        sink);
   }
 }
 
 template <typename Shape, typename Policy, typename Sink>
 constexpr void for_each_regular_candidate(Coord3 from, Sink&& sink) {
   static_assert(movement::StepPolicyFor<Policy, Shape>);
+  // Public geometric probes accept unchecked coordinates. Reject them before
+  // constructing signed +/-1 offsets; every contained coordinate is at most
+  // Shape::size-1, and ShapeTraits requires each size axis to fit int64_t, so
+  // the candidate arithmetic below is overflow-safe after this guard.
+  if (!contains<Shape>(from)) {
+    return;
+  }
   if constexpr (std::is_same_v<Policy, movement::DefaultSteps>) {
     if constexpr (std::is_same_v<typename ShapeTraits<Shape>::lattice_type,
                                  lattice::Orthogonal>) {
@@ -165,7 +183,7 @@ constexpr void for_each_regular_candidate(Coord3 from, Sink&& sink) {
       for_each_hex_candidate<Shape>(from, sink);
     }
   } else {
-    for_each_diagonal_candidate<Shape>(from, sink);
+    for_each_diagonal_candidate<Shape, Policy>(from, sink);
   }
 }
 
@@ -321,7 +339,7 @@ inline constexpr CostRangeAssessment path_cost_range_assessment = [] {
     constexpr auto maximum_step_multiplier =
         std::is_same_v<Policy, movement::DefaultSteps>
             ? movement::DefaultSteps::maximum_step_multiplier
-            : movement::DiagonalSteps<>::maximum_step_multiplier;
+            : Policy::maximum_step_multiplier;
     return detail::compact_cost_bound_overflows(edges, maximum_cost,
                                                 maximum_step_multiplier)
                ? CostRangeAssessment::PotentialOverflow
@@ -383,10 +401,10 @@ class ResolvedTransitionModel {
         from, [&](detail::RegularTransitionCandidate candidate) {
           emit_candidate(world, candidate, candidate.to, sink);
         });
-    provider_.for_each_forward(world, from,
-                               [&](SpecialTransitionCandidate candidate) {
-                                 emit_special_candidate(world, candidate, sink);
-                               });
+    provider_.for_each_forward(
+        world, from, [&](SpecialTransitionCandidate candidate) {
+          emit_special_candidate(world, candidate, candidate.to, sink);
+        });
   }
 
   template <typename Sink>
@@ -399,6 +417,9 @@ class ResolvedTransitionModel {
     // Rejecting a blocked/missing destination here makes the primitive
     // symmetric with forward enumeration even for external callers that did
     // not obtain `to` from a prevalidated field frontier.
+    if (!contains<shape_type>(to)) {
+      return;
+    }
     const auto origin = world.resolve(to);
     const auto* origin_page = world.try_chunk(origin.chunk_key);
     if (origin_page == nullptr ||
@@ -409,10 +430,10 @@ class ResolvedTransitionModel {
         to, [&](detail::RegularTransitionCandidate candidate) {
           emit_candidate(world, candidate, to, sink);
         });
-    provider_.for_each_reverse(world, to,
-                               [&](SpecialTransitionCandidate candidate) {
-                                 emit_special_candidate(world, candidate, sink);
-                               });
+    provider_.for_each_reverse(
+        world, to, [&](SpecialTransitionCandidate candidate) {
+          emit_special_candidate(world, candidate, to, sink);
+        });
   }
 
   template <typename Sink>
@@ -594,7 +615,8 @@ class ResolvedTransitionModel {
 
   template <typename Sink>
   static constexpr void emit_special_candidate(
-      const World& world, SpecialTransitionCandidate candidate, Sink&& sink) {
+      const World& world, SpecialTransitionCandidate candidate,
+      Coord3 forward_destination, Sink&& sink) {
     if (!contains<shape_type>(candidate.to)) {
       return;
     }
@@ -621,6 +643,17 @@ class ResolvedTransitionModel {
       return;
     }
     if (!class_type::passable(*page, resolved.local_tile_id)) {
+      return;
+    }
+    // Cost zero is the movement-class impassable sentinel. A provider's cost
+    // prices its edge; it does not override destination entry legality. This
+    // keeps planning aligned with commit for legacy classes whose passability
+    // predicate intentionally ignores cost.
+    const auto destination = world.resolve(forward_destination);
+    const auto* destination_page = world.try_chunk(destination.chunk_key);
+    if (destination_page == nullptr ||
+        class_type::entry_cost(*destination_page, destination.local_tile_id) ==
+            0) {
       return;
     }
     if (candidate.cost == 0) {
@@ -658,12 +691,11 @@ class ResolvedTransitionModel {
     }
     const auto minor = std::min(a, b);
     const auto major = std::max(a, b);
-    const auto ticks = detail::add(
-        detail::UInt128{minor} *
-            detail::UInt128{
-                movement::DiagonalSteps<>::diagonal_step_multiplier},
-        detail::UInt128{major - minor} *
-            detail::UInt128{movement::DiagonalSteps<>::cost_scale});
+    const auto ticks =
+        detail::add(detail::UInt128{minor} *
+                        detail::UInt128{step_policy::diagonal_step_multiplier},
+                    detail::UInt128{major - minor} *
+                        detail::UInt128{step_policy::cost_scale});
     return detail::saturating_u32(ticks);
   }
 

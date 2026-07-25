@@ -321,11 +321,10 @@ void device_ready(WGPURequestDeviceStatus status, WGPUDevice device,
     wgpuDeviceRelease(device);
     return;
   }
-  if (!run_compute(device)) {
-    auto running_status = kRunningCompute;
-    g_status.compare_exchange_strong(running_status, kFieldRegistrationFailed,
-                                     std::memory_order_acq_rel);
-  }
+  // Every false return publishes its precise failure first, or preserves a
+  // terminal device callback that won the race. A generic fallback here would
+  // be both unreachable and misleading when diagnosing the browser smoke.
+  (void)run_compute(device);
   wgpuDeviceRelease(device);
 }
 

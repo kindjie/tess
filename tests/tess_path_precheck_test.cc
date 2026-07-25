@@ -28,6 +28,38 @@ using Split = tess::Shape<tess::Extent3{16, 8, 1}, tess::Extent3{8, 8, 1}>;
 using Wide = tess::Shape<tess::Extent3{128, 128, 1}, tess::Extent3{32, 32, 1}>;
 using SparseWide = tess::SparseResidentWorld<Wide, Schema>;
 
+struct RevisionProvider {
+  bool enabled = false;
+  std::uint64_t revision = 0;
+
+  [[nodiscard]] auto transition_revision() const noexcept -> std::uint64_t {
+    return revision;
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_transition(const WorldType&, tess::ChunkKey chunk,
+                           Sink&& sink) const {
+    if (enabled && chunk == tess::ChunkKey{0}) {
+      sink(tess::Coord3{6, 7, 0}, tess::Coord3{15, 7, 0});
+    }
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_forward(const WorldType&, tess::Coord3 from,
+                        Sink&& sink) const {
+    if (enabled && from == tess::Coord3{6, 7, 0}) {
+      sink(tess::SpecialTransitionCandidate{.to = {15, 7, 0}});
+    }
+  }
+
+  template <typename WorldType, typename Sink>
+  void for_each_reverse(const WorldType&, tess::Coord3 to, Sink&& sink) const {
+    if (enabled && to == tess::Coord3{15, 7, 0}) {
+      sink(tess::SpecialTransitionCandidate{.to = {6, 7, 0}});
+    }
+  }
+};
+
 template <typename WorldType>
 void fill_passable(WorldType& world, std::uint8_t value) {
   for (auto& page : world.chunks()) {
@@ -203,6 +235,31 @@ TEST(TessPrecheck, WrongClassGraphIsGraphStaleNotWrongUnreachable) {
             tess::PrecheckStatus::Unreachable);
   EXPECT_EQ(tess::precheck_path<Builder>(graph, world, {0, 0, 0}, {15, 7, 0},
                                          scratch),
+            tess::PrecheckStatus::GraphStale);
+}
+
+TEST(TessPrecheck, ProviderRevisionMismatchIsGraphStale) {
+  DenseWorld<Split> world;
+  fill_passable(world, 1);
+  for (std::int64_t y = 0; y < 8; ++y) {
+    world.field<PassableTag>({7, y, 0}) = 0;
+  }
+  auto provider = RevisionProvider{};
+  tess::LocalTopologyScratch local_scratch;
+  tess::RegionGraph graph;
+  ASSERT_EQ((tess::build_region_graph<DenseWorld<Split>, PassableTag>(
+                 world, local_scratch, graph, provider))
+                .status,
+            tess::TopologyStatus::Built);
+  tess::RegionGraphScratch scratch;
+  EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
+                                             {15, 7, 0}, scratch, provider),
+            tess::PrecheckStatus::Unreachable);
+
+  provider.enabled = true;
+  ++provider.revision;
+  EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
+                                             {15, 7, 0}, scratch, provider),
             tess::PrecheckStatus::GraphStale);
 }
 

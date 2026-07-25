@@ -473,7 +473,9 @@ work that must remain caller-visible across phase calls:
 - `AsyncResultState` covers `Immediate`, `Pending`, `Ready`, `Failed`,
   `Cancelled`, `Superseded`, and `Stale` in addition to `Unbound`.
 - `AsyncStepState` and `AsyncWorkStep` are the continuation's state and
-  progress report; `AsyncAdvanceStats` aggregates one queue advance.
+  progress report; `AsyncAdvanceStats` aggregates one queue advance. Its
+  `failed` field counts all terminal-negative tickets (`Failed`, `Cancelled`,
+  and `Superseded`); inspect a ticket's state when the distinction matters.
 - `AsyncWorkBudget` bounds deterministic items, and `AsyncVersion` identifies
   required and produced generations.
 - `ResumableWorkQueue<T>` invokes non-owning continuations in submission order
@@ -486,6 +488,12 @@ work that must remain caller-visible across phase calls:
   continuation throws, the exception propagates, its ticket remains `Pending`,
   and any value mutations already made by that attempt remain visible to the
   next retry. Earlier completed tickets retain their states.
+  Submission order is strict. With a one-invocation budget, a front
+  continuation that repeatedly reports zero progress can starve later work;
+  raise the budget or terminalize the stalled ticket when fairness is needed.
+  `result(ticket)` returns a pointer into vector-backed storage. A later
+  submission may grow that vector, and `clear()` always invalidates the
+  pointer, so copy or consume the value before mutating the queue.
 - `ResumableWorkTask<T>` adapts the queue directly to a scheduler Background
   cadence. Its `more_work` result retains pending tickets for the next tick.
   Once the queue quiesces, submitting new work does not re-arm the scheduler;

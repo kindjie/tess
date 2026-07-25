@@ -201,6 +201,14 @@ TEST(TessEcsAdapter, OccupancyIndexInsertEraseMoveBasics) {
   EXPECT_EQ(index.entity_at(tess::Coord3{4, 0, 0}), b);
 }
 
+TEST(TessEcsAdapter, OccupancyIndexRejectsNullWithoutMutation) {
+  tess::TileOccupancyIndex index;
+
+  EXPECT_FALSE(index.insert(tess::Coord3{1, 2, 3}, tess::kNullEntityHandle));
+  EXPECT_EQ(index.size(), 0u);
+  EXPECT_EQ(index.entity_at(tess::Coord3{1, 2, 3}), tess::kNullEntityHandle);
+}
+
 TEST(TessEcsAdapter, OccupancyIndexEraseKeepsProbeChainsIntact) {
   // Backward-shift deletion regression: pack the table densely enough
   // that probe chains are guaranteed (256 keys in a 512-slot table with

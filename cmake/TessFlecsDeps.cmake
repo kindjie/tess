@@ -28,8 +28,18 @@ function(tess_require_flecs)
     return()
   endif()
 
-  set(FLECS_SHARED OFF CACHE BOOL "Build the Flecs shared library" FORCE)
-  set(FLECS_STATIC ON CACHE BOOL "Build the Flecs static library" FORCE)
+  # Seed upstream defaults without overwriting a parent project's cache.
+  # tess requires the static target, but embedding consumers may deliberately
+  # request both variants or supply their own compatible configuration.
+  set(FLECS_SHARED OFF CACHE BOOL "Build the Flecs shared library")
+  set(FLECS_STATIC ON CACHE BOOL "Build the Flecs static library")
+  if(NOT FLECS_STATIC)
+    message(
+      FATAL_ERROR
+      "TESS_ENABLE_FLECS requires FLECS_STATIC=ON or a trusted "
+      "pre-existing flecs::flecs_static target"
+    )
+  endif()
   tess_declare_git_dependency(
     flecs
     https://github.com/SanderMertens/flecs.git

@@ -285,9 +285,9 @@ class FieldProductCache {
 
   // The returned pointer targets heap storage that never moves while its
   // entry remains cached. Any operation that replaces, evicts, or clears that
-  // entry invalidates the pointer: a store for another key can evict it, and
-  // an over-budget store clears every entry even though that store returns
-  // false. Stale products are erased on lookup and reported as rejections.
+  // entry invalidates the pointer; a store for another key can evict it.
+  // Rejected over-budget stores do not mutate existing entries. Stale products
+  // are erased on lookup and reported as rejections.
   template <typename World, typename Tag>
   [[nodiscard]] auto lookup(const World& world, const GoalSet& goals)
       -> const DistanceFieldProduct* {
@@ -356,7 +356,7 @@ class FieldProductCache {
   // Takes ownership of `product` by move; world-sized field data is never
   // copied. The argument is left moved-from (empty but reusable). A product
   // whose entry exceeds the byte budget cannot be cached at all; that store
-  // clears the entire cache and returns false.
+  // preserves existing entries and returns false.
   template <typename World, typename Tag>
   auto store(DistanceFieldProduct&& product) -> bool {
     return store<World, Tag, AdjacentTransitions>(std::move(product),
@@ -426,7 +426,6 @@ class FieldProductCache {
   auto store_with_key(DistanceFieldProduct&& product, Key key) -> bool {
     const auto bytes = entry_byte_size(key, product);
     if (bytes > byte_budget_) {
-      clear();
       return false;
     }
 

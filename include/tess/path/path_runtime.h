@@ -305,7 +305,7 @@ class PathRequestRuntime {
     bind_unit_class(
         detail::tag_identity<movement::movement_class_of<ClassOrTag>>());
     if (graph != nullptr) {
-      precheck_prepass<ClassOrTag>(world, *graph);
+      precheck_prepass<ClassOrTag>(world, *graph, AdjacentTransitions{});
     }
     if constexpr (std::is_same_v<typename World::residency_type,
                                  AlwaysResident>) {
@@ -348,7 +348,7 @@ class PathRequestRuntime {
     bind_unit_class(
         detail::tag_identity<movement::movement_class_of<ClassOrTag>>());
     if (graph != nullptr && graph->matches_provider(provider)) {
-      precheck_prepass<ClassOrTag>(world, *graph);
+      precheck_prepass<ClassOrTag>(world, *graph, provider);
     }
 
     // Provider-aware products are public, but the runtime deliberately uses
@@ -433,7 +433,7 @@ class PathRequestRuntime {
       graph = nullptr;
     }
     if (graph != nullptr) {
-      precheck_prepass<PrecheckClassOrTag>(world, *graph);
+      precheck_prepass<PrecheckClassOrTag>(world, *graph, provider);
     }
     if constexpr (std::is_same_v<typename World::residency_type,
                                  AlwaysResident>) {
@@ -831,17 +831,18 @@ class PathRequestRuntime {
   // precheck_path: a graph stamped for another movement class reads as
   // GraphStale there, so this pass rules nothing out and A* stays
   // authoritative.
-  template <typename ClassOrTag, typename World>
+  template <typename ClassOrTag, typename World, typename Provider>
   void precheck_prepass(
       const World& world,
-      const RegionGraphT<typename World::residency_type>& graph) {
+      const RegionGraphT<typename World::residency_type>& graph,
+      const Provider& provider) {
     for (std::size_t i = 0; i < requests_.size(); ++i) {
       if (processed_[i] != 0) {
         continue;
       }
-      const auto status =
-          precheck_path<ClassOrTag>(graph, world, requests_[i].start,
-                                    requests_[i].goal, precheck_scratch_);
+      const auto status = precheck_path<ClassOrTag>(
+          graph, world, requests_[i].start, requests_[i].goal,
+          precheck_scratch_, provider);
       if (!precheck_rules_out_path(status)) {
         continue;
       }

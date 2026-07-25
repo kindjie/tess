@@ -69,6 +69,9 @@ struct AsyncWorkStep {
  *
  * `invoked` and `items_done` describe work performed by this `advance()` call.
  * The state counts describe the whole queue after that pass.
+ * `failed` is the aggregate terminal-negative count: `Failed`, `Cancelled`,
+ * and `Superseded` tickets all contribute to it; inspect individual ticket
+ * state when that distinction matters.
  */
 struct AsyncAdvanceStats {
   std::uint32_t invoked = 0;
@@ -88,6 +91,10 @@ struct AsyncAdvanceStats {
 /// batches instead of treating the queue as an unbounded history. A callback
 /// and its context are non-owning and must outlive the ticket. Tickets remain
 /// observable across calls until `clear`, which invalidates them by generation.
+/// Submission order is strict: with a one-invocation budget, a front
+/// continuation that repeatedly reports zero progress can starve later work.
+/// Choose a larger invocation budget or terminalize the stalled ticket when
+/// fairness is required.
 /// Callbacks may inspect the queue but must not mutate it or call `advance`;
 /// those reentrant operations are rejected. Instances are externally
 /// synchronized. If a callback throws, the exception propagates and its slot
@@ -222,6 +229,13 @@ class ResumableWorkQueue {
     return slot == nullptr ? AsyncResultState::Unbound : slot->state;
   }
 
+  /**
+   * Borrows a completed value until queue storage may move.
+   *
+   * A later `submit` or `submit_immediate` can grow the slot vector and
+   * invalidate the pointer. `clear` also invalidates it. Copy or consume the
+   * value before mutating the queue.
+   */
   [[nodiscard]] auto result(AsyncTicket ticket) const noexcept -> const T* {
     const auto* slot = find(ticket);
     if (slot == nullptr || (slot->state != AsyncResultState::Immediate &&

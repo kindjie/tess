@@ -105,6 +105,18 @@ TEST(TessGridBenchmarkHarness, ParsesAndValidatesScenarioRows) {
             grid::ParseError::BlockedEndpoint);
 }
 
+TEST(TessGridBenchmarkHarness, LoaderAcceptsIntegerScenarioOptimum) {
+  const auto map = grid::parse_map("fixture.map", kMap).value;
+
+  const auto parsed =
+      grid::parse_scenarios("version 1\n0 fixture.map 5 3 0 0 4 2 6\n", map);
+
+  ASSERT_TRUE(parsed);
+  ASSERT_EQ(parsed.value.size(), 1u);
+  EXPECT_EQ(parsed.value[0].optimal_length, 6.0);
+  EXPECT_EQ(parsed.value[0].fractional_digits, 0u);
+}
+
 TEST(TessGridBenchmarkHarness, RejectsInvalidScenarioLengths) {
   const auto map = grid::parse_map("fixture.map", kMap).value;
 

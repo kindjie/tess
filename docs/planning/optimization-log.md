@@ -121,6 +121,27 @@ deferred for scope reasons. Keep entries short and concrete:
 - Retry conditions: replace the bootstrap ceilings with two times the maximum
   after ten same-runner hosted baseline artifacts.
 
+## 2026-07-24 - Post-Green Audit Performance Triage
+
+- Area: field-product cache admission, colony blocked retries, archive
+  checksums, and newly gated query thresholds.
+- Evidence: the exact-SHA hosted matrix passed every benchmark family. Query
+  ceilings already follow the documented first-hosted-sample bootstrap rule,
+  while the observed colony crawl was traced to repeated path-agent lifecycle
+  work at a bottleneck rather than an unresolved search-kernel regression.
+- Accepted: reject a single oversized field product without clearing useful
+  entries, and scale the colony's terminal retry allowance to its active agent
+  count. Keep the current query bootstrap ceilings until ten comparable hosted
+  artifacts exist.
+- Deferred: no CRC rewrite and no wider query ceilings. Neither has profiling
+  evidence that justifies complexity or weaker gates. A profiler was not run
+  because lifecycle counters and green threshold jobs resolved the performance
+  uncertainty without it.
+- Retry conditions: profile archive save/load if checksum work becomes a
+  material share of a representative workload. Recalibrate query ceilings to
+  twice the maximum after ten same-runner hosted artifacts, or profile first
+  if a gate fails before then.
+
 ## 2026-07-24 - Preflight Unit Repeated-Goal Product Storage
 
 - Area: unit repeated-goal selection in `PathRequestRuntime`.

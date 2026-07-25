@@ -6,6 +6,41 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-24 - Resolve post-green exact-SHA audit findings
+
+- Changed: transition enumeration rejects unchecked origins and reverse
+  targets before signed neighbor arithmetic; provider edges require a legal
+  forward destination entry cost; custom diagonal policies supply their own
+  scale constants; provider-aware prechecks validate the exact provider stamp;
+  and oversized field products leave unrelated cache entries intact.
+  `TileOccupancyIndex` rejects null handles without release-mode mutation.
+  Hostile archive metadata, integer external scenario optima, and spontaneous
+  inline WebGPU map completion have direct regressions. Colony retry allowance
+  scales with the active population, executable-output documentation selects
+  compiled CI, Pages binds its smoke server to loopback, and linked worktrees
+  share one untracked privacy-pattern file through the common Git directory.
+  Parent Flecs cache choices are preserved unless incompatible with the
+  required static target.
+- Clarified: the maintenance experiment remains reachable through the
+  compatibility umbrella but is not integrated; NeedsOnly invalidates skipped
+  runtime tickets; queued maintenance exceptions consume the popped request;
+  and cooperative async FIFO fairness, result-pointer lifetime, and aggregate
+  failure accounting are explicit. The historical transition-model TDD's
+  speculative capability catalog remains deferred until algorithms consume
+  those traits. Stair landings may cross one sideways chunk seam.
+- Reason: independent post-green audits found no critical or high-severity
+  issues, but exposed several boundary contracts that debug assertions,
+  ordinary coordinates, deferred callbacks, and single-provider tests did not
+  exercise. Non-destructive failure, exact identity stamps, inline completion,
+  and pre-arithmetic validation are safer public defaults.
+- Affected docs: path, topology, ECS, simulation, maintenance, queued
+  operations, Git hooks, roadmap completion, optimization log, and test
+  inventory.
+- Affected code: resolved transitions, precheck/runtime, field-product cache,
+  ECS occupancy, persistence fixtures, grid fixture parsing, WebGPU smoke and
+  stub, colony demo, CI classification, dependency configuration, Git hooks,
+  and benchmark annotations.
+
 ## 2026-07-24 - Close exact-SHA roadmap audit findings
 
 - Changed: axial-hex unit A* uses the exact heap rather than the

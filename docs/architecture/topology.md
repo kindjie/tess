@@ -358,7 +358,10 @@ Each sink receives a
 `SpecialTransitionCandidate` containing the other endpoint, a positive cost
 in unscaled movement-class entry-cost units, and an optional
 `missing_topology` marker. The resolved model applies its cardinal scale; a
-provider must not pre-scale the value. A zero cost contributes no legal edge.
+provider must not pre-scale the value. A zero edge cost contributes no legal
+edge. The forward destination must also have a positive movement-class entry
+cost; provider pricing does not override the cost expression's impassable
+sentinel, even when a legacy passability predicate ignores cost.
 Providers may publish `maximum_transition_cost` as a sound compile-time bound.
 The empty and stair providers implement both exact contracts; topology-only
 custom providers remain valid for graph construction.
@@ -379,10 +382,21 @@ per-class through the label filter. Limit: a landing that would cross two
 chunk boundaries at once (sideways off the chunk's x/y edge AND up off its
 top z layer) violates the face-neighbor contract and contributes nothing;
 place the foot so the landing stays within face-neighbor range.
+Crossing only a sideways x/y chunk boundary is supported when the landing
+stays below the foot chunk's top z layer; both directions are attributed to
+their respective origin chunks.
 Each stair edge has provider cost one, so it costs one cardinal step under any
 resolved step policy and does not inherit the landing tile's terrain cost.
 
 ## Deliberate Limits
+
+The historical transition-model TDD proposed a broad public capability-trait
+catalog. The maintained API currently exposes only capabilities required by
+implemented optimizations: step-policy constants, provider concepts and
+maximum cost, model stamps, and `path_cost_range_assessment`. Specialized open
+set, direct-probe, symmetry, and dependency-radius traits remain deferred
+until an algorithm consumes them; custom models therefore stay on conservative
+paths instead of depending on speculative traits.
 
 This slice does not implement a dirty rebuild queue. The portal graph stores directed
 portals only; incremental updates require the caller to supply the dirty

@@ -142,8 +142,8 @@
   clearing, allocation-free constant-stack immediate self-scheduling,
   synchronous concurrent immediate calls, duplicate self-request preservation,
   direct and cross-task zero-progress detection, concurrent producer
-  distinction, shutdown, capacity failure, and steady-state allocation
-  behavior.
+  distinction, exception consumption with caller-controlled explicit retry,
+  shutdown, capacity failure, and steady-state allocation behavior.
 - `tess_topology_coarse_path_test`: verifies deterministic shortest region
   paths and chunk corridors, same-region and disconnected results, non-monotone
   chunk detours, portal continuity, clipped corridor bounds, and warm
@@ -179,15 +179,17 @@
   of unscoped enums, complete scalar preflight and corruption/truncation
   rejection without target mutation, full-archive checksum coverage including
   metadata, short invalid magic, future-version classification before v1
-  framing, duplicate field-id rejection during inspection, short headers and
-  inconsistent body lengths, exact NaN/negative-zero bit-pattern preservation,
-  dense logical chunk-count completeness,
+  framing, duplicate field-id rejection during inspection, invalid descriptor
+  kind/width domains, excess field counts, out-of-range chunk keys, short
+  headers and inconsistent body lengths, exact NaN/negative-zero bit-pattern
+  preservation, dense logical chunk-count completeness,
   short-circuit field decoding after the first invalid scalar, direct
   dense/sparse canonical-key ordering checks, sparse-capacity preflight, and
   dense-version or sparse-generation invalidation on load.
 - `tess_grid_benchmark_harness_test`: verifies strict Moving AI map/scenario
   parsing from inline fixtures with portable classic-locale decimal handling,
-  terrain and coordinate orientation, size/coordinate dimension bounds,
+  integer and fractional scenario optima, terrain and coordinate orientation,
+  size/coordinate dimension bounds,
   hostile-header allocation bounds and malformed input rejection,
   compile-time-shape loading with blocked padding, independent
   orthogonal/diagonal reference costs, corner clearance, and the asymmetric
@@ -354,7 +356,8 @@
   regular-before-special ordering, provider-owned cost scaling, provider
   revision propagation, and proven, potential-overflow, and unknown static
   cost-range classifications without overflowing the widened assessment.
-  Throwing enumeration sinks propagate rather than terminating.
+  Throwing enumeration sinks propagate rather than terminating, and unchecked
+  extreme origins/targets are rejected before signed neighbor arithmetic.
 - `tess_path_product_test`: additionally verifies resolved-model parity for
   diagonal and axial-hex products, including fixed-point cost scale and
   rejection when a product is read through another model, plus normalized
@@ -388,7 +391,8 @@
   unrepresentable exact cost reports `CostOverflow`. An obstructed axial-hex
   unit search is checked against an independent six-direction BFS oracle, and
   movement commit rejects regular zero-entry-cost destinations omitted by
-  planning while retaining legal parallel provider edges on valid endpoints,
+  planning, provider edges cannot override that destination sentinel, and
+  legal parallel provider edges remain available on valid endpoints,
   (fixed build price via `SelectCost`), unit A* accepts classes for
   passability only, class-driven weighted searches keep the sparse
   missing-chunk contract (blocked by default, `Indeterminate` on request),
@@ -450,7 +454,8 @@
   for a Builder class is `GraphStale` (never the walker's wrong
   `Unreachable` across a construction bridge), while a Builder-stamped graph
   answers `Reachable`/`Unreachable` per class and reads `GraphStale` for the
-  raw walker tag.
+  raw walker tag. Stateful provider instance/revision mismatches likewise
+  return `GraphStale`.
 - `tess_path_precheck_runtime_test`: verifies the optional precheck gate wired
   into `PathRequestRuntime` and the agent tick. A goal sealed off by an
   enclosing wall (not a full-axis barrier, so A*'s dense fast-path cannot rule
@@ -485,8 +490,9 @@
   stale-version rejection, byte-budgeted field-product cache
   hit/miss/eviction/stale stats, move-only field-product store without
   world-sized copies, strong allocation-failure insertion guarantees,
-  oversized-store whole-cache clearing, zero byte budget, same-key replacement
-  byte accounting, least-recently-used (not insertion-order) eviction,
+  oversized-store rejection preserving existing entries, zero byte budget,
+  same-key replacement byte accounting, least-recently-used
+  (not insertion-order) eviction,
   distance-field error-status families
   (InvalidGoal/InvalidStart/empty `GoalSet` across plain, weighted, and
   product builds and reconstruction, with no garbage field or path left
@@ -669,7 +675,7 @@
   (cadences count fixed ticks, never frames).
 - `tess_ecs_adapter_test`: verifies the dependency-free ECS layer (M10):
   `EntityHandle` null/equality semantics; `TileOccupancyIndex`
-  insert/erase/move basics, structural uniqueness refusal, backward-shift
+  insert/erase/move basics, null/structural uniqueness refusal, backward-shift
   erase keeping probe chains intact under a dense interleaved-erasure
   sweep, and allocation-free operation after `reserve`; concept
   `static_assert`s (`EntityHandleAdapter`, `PositionAdapter`,
@@ -723,8 +729,9 @@
   real chunk-byte uploads, compute submission only for registered mirrors and
   within the configured workgroup-X limit, generation-stale product rejection,
   asynchronous summary readback that safely completes after backend
-  destruction, null map-future cleanup and budget restoration, overlapping
-  readback budget recovery with out-of-order map failure, fail-closed reported
+  destruction, inline map completion without post-callback use, null map-future
+  cleanup and budget restoration, overlapping readback budget recovery with
+  out-of-order map failure, fail-closed reported
   device errors, invalid requests, explicit device-loss fallback, and the
   `GpuBackend` concept. Stub
   handles use scoped C-API release owners so fatal assertions cannot leak
@@ -846,8 +853,8 @@
 - `tests/test_branding_assets.py`: static asset and browser-demo contract
   coverage, including the colony's explicit terminal bottleneck metric so an
   exhausted path-agent lifecycle cannot look like a silently running colony
-  and a retry allowance sized for one full outbound-and-return bottlenecked
-  convoy, plus maintained architecture navigation coverage for persistence;
+  and a retry allowance scaled to the active convoy rather than compile-time
+  capacity, plus maintained architecture navigation coverage for persistence;
   hosted hook-backstop CI runs this file explicitly.
 - `tests/test_doc_versions.py`: synthetic development/release version-policy
   cases plus the repository's v0.12 development-version consistency gate.
@@ -901,7 +908,9 @@
   also proves incompatible external-data options fail before an inherited
   compiler launcher is needed, and pins the `consumer` preset
   consumer-shaped: dev facilities and EnTT off, no warnings-as-errors, no
-  inheritance from a dev preset. The network-free `examples` preset and
+  inheritance from a dev preset. Flecs dependency defaults preserve explicit
+  parent cache choices and reject an incompatible static-target choice. The
+  network-free `examples` preset and
   tracked installed-package and `FetchContent` consumer fixtures are covered
   as adopter-facing build contracts.
 - `tests/test_header_compile_cost.py`: pytest coverage for the repeatable

@@ -110,7 +110,8 @@ jobs:
 
       - name: Smoke-test WebAssembly in Chrome
         run: |
-          python3 -m http.server 8000 --directory build/site &
+          python3 -m http.server 8000 --bind 127.0.0.1 \
+            --directory build/site &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
           for attempt in {1..20}; do

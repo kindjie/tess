@@ -15,11 +15,13 @@
     },
     "scheduler/event_trigger": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 700
+      "max_cpu_time_ns": 700,
+      "note": "Bootstrap ceiling; recalibrate after 10 hosted artifacts"
     },
     "scheduler/resumable_work_step": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 900
+      "max_cpu_time_ns": 900,
+      "note": "Bootstrap ceiling; recalibrate after 10 hosted artifacts"
     },
     "scheduler/auto_exec_tick": {
       "max_real_time_ns": null,

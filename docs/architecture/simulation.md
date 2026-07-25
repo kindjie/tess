@@ -261,7 +261,9 @@ stateDiagram-v2
   agent-scoped dirt -- only that agent replans (the drivers submit with
   `PathSubmitScope::NeedsOnly`), everyone else keeps their retained route
   (per-agent pathing dirt; pre-split, one re-arm replanned the whole batch
-  every tick).
+  every tick). A NeedsOnly processing pass invalidates runtime tickets for
+  agents it skips, so callers that need those agents' paths must use the
+  tick-driver retained routes rather than reading old runtime tickets.
 - `PathAgentTickOptions` carries `max_steps` per tick, the runtime
   `PathRuntimeCachePolicy`, and `max_blocked_retries` (default 8).
 - `PathAgentTickStats` reports the tick value, whether paths were processed,

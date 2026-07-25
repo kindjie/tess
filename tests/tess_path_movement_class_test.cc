@@ -1053,6 +1053,36 @@ TEST(TessPathMovementClass, CommitAcceptsParallelProviderTransition) {
   EXPECT_TRUE(world.field<OccupancyTag>(to));
 }
 
+TEST(TessPathMovementClass, SpecialEdgeRejectsZeroCostDestinationAtPlanTime) {
+  using Legacy = mv::LegacyWeighted<PassableTag, CostTag>;
+  World world;
+  fill_open(world, 1);
+  constexpr auto from = tess::Coord3{2, 2, 0};
+  constexpr auto to = tess::Coord3{3, 3, 0};
+  world.field<CostTag>(to) = 0;
+  const auto provider = DiagonalBridgeProvider{};
+
+  using Model =
+      tess::ResolvedTransitionModel<World, Legacy, DiagonalBridgeProvider>;
+  auto emitted_special = false;
+  Model{provider}.for_each_forward(
+      world, from,
+      static_cast<std::uint64_t>(tess::tile_key<TopDown2D>(from).value),
+      [&](tess::TransitionProbe<> probe) {
+        emitted_special |=
+            probe.kind == tess::TransitionKind::Special && probe.to == to &&
+            probe.availability == tess::TransitionAvailability::Legal;
+      });
+  EXPECT_FALSE(emitted_special);
+
+  tess::PathScratch scratch;
+  const auto path = tess::weighted_astar_path<World, Legacy>(
+      world, tess::PathRequest{from, to}, scratch,
+      tess::MissingChunkPolicy::TreatAsBlocked, provider);
+
+  EXPECT_EQ(path.status, tess::PathStatus::InvalidGoal);
+}
+
 TEST(TessPathMovementClass, MissingProviderTopologyOutranksBlockedRegularEdge) {
   World world;
   fill_open(world, 1);

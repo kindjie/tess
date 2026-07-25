@@ -56,7 +56,8 @@ lifecycle.
 - `TileOccupancyIndex` is the injective tile-to-entity occupancy map, the
   ECS-side mirror of a bool occupancy field: `reserve` (load factor at
   most 0.5), `insert(tile, entity)` (refuses, without mutating, a tile
-  already mapped to a different entity -- uniqueness is structural),
+  already mapped to a different entity or a null entity -- uniqueness is
+  structural),
   `erase(tile)` (returns the erased handle; backward-shift deletion, no
   tombstones), `move(from, to, entity)` (the movement-commit hot path,
   debug-asserted, never rehashes), `entity_at(tile)`, `size`, and

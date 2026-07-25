@@ -90,14 +90,17 @@ flowchart TB
   through unloaded space cannot be ruled out -- sparse worlds only),
   `InvalidStart` / `InvalidGoal` (A* is authoritative on tile validity),
   `GraphStale` (the graph no longer matches the world OR was labeled for a
-  different movement class), and `NoGraph` (no built graph supplied).
+  different movement class or provider instance/revision), and `NoGraph` (no
+  built graph supplied).
   Staleness is resolved conservatively and first: an empty graph is `NoGraph`
   and a graph that fails `is_region_graph_fresh_for<ClassOrTag>` -- topology
   versions, residency snapshot, or the movement-class stamp -- is
-  `GraphStale`, both decided before `reachable()` runs, so neither a stale
-  snapshot nor a wrong-class graph can yield a definitive but wrong
-  `Unreachable`. The query reuses a caller-owned `RegionGraphScratch`
-  (allocation-free once warm); the gate can only ever prune provably
+  `GraphStale`. The provider-aware overload also requires
+  `matches_provider(provider)`. These checks happen before `reachable()`, so
+  neither a stale snapshot, wrong-class graph, nor equal-revision graph from
+  another provider object can yield a definitive but wrong `Unreachable`.
+  The query reuses a caller-owned `RegionGraphScratch` (allocation-free once
+  warm); the gate can only ever prune provably
   unreachable goals, never turn a solvable query into a wrong failure.
 - Sparse residency covers the single-shot searches -- `astar_path`,
   `weighted_astar_path`, the unweighted `build_distance_field`, and the weighted
@@ -400,7 +403,7 @@ flowchart TB
   Before building, the runtime verifies that the configured byte budget can
   hold the product's mandatory world-sized distance labels. An undersized
   budget skips directly to exact per-request search, avoiding a doomed build
-  and an over-budget store that would clear other cache entries.
+  and an over-budget store.
   Invalid out-of-shape starts are resolved to `InvalidStart` during the
   existing grouping pass before any unchecked tile-key conversion. This adds
   no second validation pass and no duplicate passability read.
@@ -437,11 +440,12 @@ flowchart TB
   path skips ruled-out requests in its search loop; the weighted path runs the
   batch over only the survivors and scatters results back to their original
   slots. Passing `nullptr` (the default) is byte-identical to the un-gated path.
-  Class agreement is enforced through the graph's movement-class stamp
-  (`is_region_graph_fresh_for`): a graph labeled for a different class than
-  the call searches with degrades to `GraphStale` (nothing ruled out) rather
-  than pruning a route the search's own class could walk, so the gate can only
-  prune provably-unreachable goals, never turn a solvable query into a failure.
+  Class and provider agreement are enforced through the graph's stamps
+  (`is_region_graph_fresh_for` and `matches_provider`): a graph labeled for a
+  different class or provider than the call searches with degrades to
+  `GraphStale` (nothing ruled out) rather than pruning a route the exact search
+  can walk. The gate can only prune provably unreachable goals, never turn a
+  solvable query into a failure.
 - `cached_astar_path<World, PassableTag>(world, request, scratch, cache)`
   checks the route cache before falling back to `astar_path`. Hits copy the
   cached route into `scratch` and return a span with the same lifetime
@@ -646,9 +650,9 @@ stays valid only while its entry remains cached. Any store that replaces or
 evicts that entry invalidates the pointer, including a store for another key
 that causes least-recently-used eviction. `clear()` also invalidates every
 borrowed pointer. A product whose entry exceeds the byte budget on its own
-cannot be cached: that store deliberately clears the entire cache, invalidates
-every borrowed pointer, and returns false; a zero byte budget therefore caches
-nothing. The cache evicts least-recently-used entries
+cannot be cached: that store returns false without disturbing existing
+entries or borrowed pointers; a zero byte budget therefore caches nothing.
+The cache evicts least-recently-used entries
 (by lookup/store recency, not insertion order) to a byte budget and reports
 entries, bytes, hits, misses, evictions, and stale rejections as
 `FieldProductCacheStats`. `PathRequestRuntime` owns one such cache and uses it

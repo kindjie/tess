@@ -188,14 +188,16 @@ class TileOccupancyIndex {
     }
   }
 
-  // Maps `tile` to `entity`. Returns false (and mutates nothing) if the
-  // tile already maps to a DIFFERENT entity -- occupancy uniqueness is
-  // structural, not advisory. Re-inserting the same mapping succeeds.
+  // Maps `tile` to `entity`. Returns false (and mutates nothing) for a null
+  // entity or if the tile already maps to a DIFFERENT entity -- occupancy
+  // uniqueness is structural, not advisory. Re-inserting the same mapping
+  // succeeds.
   // A refusal is not allocation-free at the growth threshold: the table
   // rehashes before discovering the duplicate tile.
   [[nodiscard]] auto insert(Coord3 tile, EntityHandle entity) -> bool {
-    TESS_ASSERT_MSG(!entity.is_null(),
-                    "TileOccupancyIndex cannot map a null entity");
+    if (entity.is_null()) {
+      return false;
+    }
     // probe_start's fast lane combine relies on this domain; see its
     // comment.
     TESS_ASSERT_MSG(tile.x >= 0 && tile.y >= 0 && tile.z >= 0,

@@ -20,7 +20,7 @@ createTessWebGpu().then((module) => {
       document.documentElement.dataset.tessWebgpu = "failed";
       message.textContent = `WebGPU compute verification failed (${result})`;
     } else if (performance.now() - started > verificationTimeoutMs) {
-      document.documentElement.dataset.tessWebgpu = 'failed';
+      document.documentElement.dataset.tessWebgpu = "failed";
       message.textContent =
         `WebGPU compute verification timed out (stage ${result})`;
     } else {

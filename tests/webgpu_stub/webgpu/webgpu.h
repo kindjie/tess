@@ -152,12 +152,14 @@ struct PendingMap {
 
 inline std::vector<PendingMap> pending_maps;
 inline std::uint64_t map_future_id = 1;
+inline bool complete_map_inline = false;
 
 inline void reset() {
   events.clear();
   dispatched_x = 0;
   pending_maps.clear();
   map_future_id = 1;
+  complete_map_inline = false;
 }
 
 inline auto make_device() -> WGPUDevice { return new WGPUDeviceImpl{}; }
@@ -292,6 +294,11 @@ inline WGPUFuture wgpuBufferMapAsync(WGPUBuffer buffer, WGPUMapMode,
   tess_webgpu_stub::events.push_back(tess_webgpu_stub::Event::MapAsync);
   if (tess_webgpu_stub::map_future_id == 0) {
     return WGPUFuture{};
+  }
+  if (tess_webgpu_stub::complete_map_inline) {
+    callback.callback(WGPUMapAsyncStatus_Success, {}, callback.userdata1,
+                      callback.userdata2);
+    return WGPUFuture{tess_webgpu_stub::map_future_id};
   }
   tess_webgpu_stub::pending_maps.push_back({buffer, callback});
   return WGPUFuture{tess_webgpu_stub::map_future_id};

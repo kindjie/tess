@@ -144,11 +144,18 @@ the raw bytes of every indexed filename, including binary-file names, then the
 contents of every non-binary indexed blob regardless of filename or extension.
 The same NUL-byte heuristic used by Git keeps binary payloads out of content
 checks. Git path queries and push-range diffs are NUL-delimited, and diagnostic
-paths escape terminal control characters. `git rev-parse --git-path` locates
-the local pattern file correctly in both ordinary and linked worktrees.
+paths escape terminal control characters. The hook resolves the repository's
+common Git directory, so one untracked pattern file protects the main checkout
+and every linked worktree rather than silently creating per-worktree policy.
 `tools/git_hooks.py install` seeds one escaped full-name expression from the
 repository's local `user.name`; add other private project or infrastructure
 names manually.
+
+Pull-request CI intentionally runs only the tracked generic patterns. Do not
+pass private names or expressions into a workflow that executes code from an
+untrusted pull-request head: command output, failures, or modified workflow
+code could disclose them. The common-Git-dir local hook is the private-policy
+boundary; CI remains the public generic backstop.
 
 The token gate replaces malformed UTF-8 bytes with the Unicode replacement
 character before tokenization so malformed input cannot disappear from the

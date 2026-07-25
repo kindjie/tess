@@ -162,8 +162,9 @@ def test_colony_demo_reports_terminal_bottleneck_outcomes():
   assert "_tess_colony_unreachable" in build_script
   assert "api.unreachable()" in app
   assert "terminal" in app
-  assert "2U * kMaxAgents + 8U" in model
-  assert "full outbound-and-return convoy" in model
+  assert "2U * static_cast<std::uint32_t>(demo->agents.size()) + 8U" in model
+  assert "active convoy" in model
+  assert "kMaxBlockedRetries" not in model
 
 
 def test_doxygen_uses_the_compact_symbol():

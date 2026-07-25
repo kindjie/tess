@@ -2,7 +2,9 @@
 
 `include/tess/experimental/maintenance.h` contains an opt-in experiment for
 derived-state maintenance. It does not alter world construction, authoritative
-storage, exact event handling, or simulation command execution.
+storage, exact event handling, or simulation command execution. The header is
+reachable from the compatibility umbrella `tess/tess.h` so installed consumers
+can compile the experiment, but no world or scheduler adopts it implicitly.
 
 ## Experimental Surface
 
@@ -38,6 +40,11 @@ serialized, so a task never executes against itself. A task may call only
 `schedule()` on a scheduler while it runs; calling `run_some()` or `flush()`
 reentrantly is outside the contract because queued drains hold their
 non-recursive serialization lock.
+
+A queued backend removes an entry before invoking its task. If the task throws,
+the exception propagates and that queue entry is not restored. The task's
+authoritative dirty/version state must remain set; after inspecting partial
+effects, the caller decides whether explicitly scheduling a retry is safe.
 
 Coalescing is not exact-event delivery. Authoritative gameplay events remain
 on exact queues and simulation phases. Explicit flush points define when a

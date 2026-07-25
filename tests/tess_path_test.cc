@@ -1916,7 +1916,7 @@ TEST(TessPath, WarmBoundedWeightedDistanceFieldQueriesDoNotAllocate) {
   EXPECT_EQ(counter.count(), 0u);
 }
 
-TEST(TessPath, FieldProductCacheOversizedStoreClearsEntireCache) {
+TEST(TessPath, FieldProductCacheOversizedStorePreservesExistingEntries) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
   fill_passable(world, true);
 
@@ -1946,13 +1946,12 @@ TEST(TessPath, FieldProductCacheOversizedStoreClearsEntireCache) {
                 .status,
             tess::PathStatus::Found);
 
-  // An entry that exceeds the budget on its own cannot be cached. The
-  // documented destructive contract clears the whole cache instead of
-  // keeping the previous entries.
+  // Rejecting an entry that can never fit must not invalidate unrelated
+  // cache hits or turn one doomed admission into a shared-cache flush.
   EXPECT_FALSE((cache.store<decltype(world), PassableTag>(std::move(large))));
-  EXPECT_EQ(cache.stats().entries, 0u);
-  EXPECT_EQ(cache.stats().bytes, 0u);
-  EXPECT_EQ((cache.lookup<decltype(world), PassableTag>(world, small_goals)),
+  EXPECT_EQ(cache.stats().entries, 1u);
+  EXPECT_EQ(cache.stats().bytes, fitting_bytes);
+  EXPECT_NE((cache.lookup<decltype(world), PassableTag>(world, small_goals)),
             nullptr);
 }
 

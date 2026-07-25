@@ -241,6 +241,32 @@ TEST(TessTransitionModel, AxialCandidatesRejectCoordinatesOffZZeroPlane) {
                                            tess::Coord3{4, 3, 0}));
 }
 
+TEST(TessTransitionModel, ExtremeUncheckedOriginsEmitNoRegularCandidates) {
+  using Orthogonal = tess::ResolvedTransitionModel<SquareWorld, DefaultClass>;
+  using Diagonal = tess::ResolvedTransitionModel<SquareWorld, DiagonalBoth>;
+  using Axial = tess::ResolvedTransitionModel<HexWorld, DefaultClass>;
+  constexpr auto min = std::numeric_limits<std::int64_t>::min();
+  constexpr auto max = std::numeric_limits<std::int64_t>::max();
+
+  EXPECT_FALSE(Orthogonal::is_regular_candidate({max, 0, 0}, {0, 0, 0}));
+  EXPECT_FALSE(Orthogonal::is_regular_candidate({min, 0, 0}, {0, 0, 0}));
+  EXPECT_FALSE(Diagonal::is_regular_candidate({max, max, 0}, {0, 0, 0}));
+  EXPECT_FALSE(Diagonal::is_regular_candidate({min, min, 0}, {0, 0, 0}));
+  EXPECT_FALSE(Axial::is_regular_candidate({max, min, 0}, {0, 0, 0}));
+}
+
+TEST(TessTransitionModel, ReverseTraversalRejectsUncheckedExtremeTarget) {
+  using Model = tess::ResolvedTransitionModel<SquareWorld, DefaultClass>;
+  SquareWorld world;
+  fill_open(world);
+  constexpr auto max = std::numeric_limits<std::int64_t>::max();
+  auto emitted = std::size_t{0};
+
+  Model{}.for_each_reverse(world, {max, 0, 0}, 0, [&](auto) { ++emitted; });
+
+  EXPECT_EQ(emitted, 0u);
+}
+
 TEST(TessTransitionModel, ReverseTraversalChargesForwardDestination) {
   SquareWorld world;
   fill_open(world, 2);
