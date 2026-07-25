@@ -85,15 +85,18 @@ void capture_readback(tess::gpu::GpuProductHandle handle,
   }
 }
 
-[[nodiscard]] auto make_backend(WGPUDevice device) -> tess::gpu::WebGpuBackend {
-  return tess::gpu::WebGpuBackend{device,
-                                  tess::gpu::WebGpuBackendConfig{
-                                      .max_buffer_bytes = 1u << 20u,
-                                      .max_dispatch_chunks = 1024,
-                                      .max_inflight_readback_bytes = 4096,
-                                      .field_capacity = 2,
-                                      .product_capacity = 2,
-                                  }};
+[[nodiscard]] auto make_backend(WGPUDevice device,
+                                bool allow_full_field_readback = false)
+    -> tess::gpu::WebGpuBackend {
+  return tess::gpu::WebGpuBackend{
+      device, tess::gpu::WebGpuBackendConfig{
+                  .max_buffer_bytes = 1u << 20u,
+                  .max_dispatch_chunks = 1024,
+                  .max_inflight_readback_bytes = 4096,
+                  .field_capacity = 2,
+                  .product_capacity = 2,
+                  .allow_full_field_readback = allow_full_field_readback,
+              }};
 }
 
 TEST(TessWebGpuBackend, RegistersMirrorsAndUploadsChunkBytes) {
@@ -339,6 +342,76 @@ TEST(TessWebGpuBackend, RefusesDispatchBeyondWorkgroupXLimit) {
       .workgroups_per_chunk = 128,
   }));
   EXPECT_EQ(tess_webgpu_stub::dispatched_x, 0u);
+}
+
+TEST(TessWebGpuBackend, ReadbackPoliciesRequireSourceAndFullFieldOptIn) {
+  tess_webgpu_stub::reset();
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  ReadbackCapture capture;
+  auto source =
+      make_readback_source(device.get(), nullptr, sizeof(capture.values));
+  ASSERT_NE(source, nullptr);
+  auto default_backend = make_backend(device.get());
+  auto full_field_backend = make_backend(device.get(), true);
+  device.reset();
+  PipelineOwner pipeline{tess_webgpu_stub::make_pipeline()};
+  BindGroupOwner bind_group{tess_webgpu_stub::make_bind_group()};
+
+  const auto source_less =
+      default_backend.register_product(tess::gpu::WebGpuProductDesc{
+          .product_key = 98,
+          .pipeline = pipeline.get(),
+          .bind_group = bind_group.get(),
+      });
+  ASSERT_TRUE(source_less.has_value());
+  const auto source_less_handle =
+      source_less.value_or(tess::gpu::GpuProductHandle{});
+  EXPECT_FALSE(default_backend.readback(tess::gpu::ReadbackDesc{
+      .product_key = source_less_handle.key,
+      .product_generation = source_less_handle.generation,
+      .policy = tess::gpu::ReadbackPolicy::Summary,
+      .byte_size = sizeof(capture.values),
+  }));
+
+  const auto desc = tess::gpu::WebGpuProductDesc{
+      .product_key = 99,
+      .pipeline = pipeline.get(),
+      .bind_group = bind_group.get(),
+      .readback_source = source.get(),
+      .readback_byte_size = sizeof(capture.values),
+      .readback_callback = capture_readback,
+      .readback_userdata = &capture,
+  };
+  const auto default_product = default_backend.register_product(desc);
+  const auto full_field_product = full_field_backend.register_product(desc);
+  ASSERT_TRUE(default_product.has_value());
+  ASSERT_TRUE(full_field_product.has_value());
+  const auto default_handle =
+      default_product.value_or(tess::gpu::GpuProductHandle{});
+  const auto full_field_handle =
+      full_field_product.value_or(tess::gpu::GpuProductHandle{});
+
+  EXPECT_FALSE(default_backend.readback(tess::gpu::ReadbackDesc{
+      .product_key = default_handle.key,
+      .product_generation = default_handle.generation,
+      .policy = tess::gpu::ReadbackPolicy::None,
+      .byte_size = sizeof(capture.values),
+  }));
+  EXPECT_FALSE(default_backend.readback(tess::gpu::ReadbackDesc{
+      .product_key = default_handle.key,
+      .product_generation = default_handle.generation,
+      .policy = tess::gpu::ReadbackPolicy::FullField,
+      .byte_size = sizeof(capture.values),
+  }));
+  EXPECT_TRUE(full_field_backend.readback(tess::gpu::ReadbackDesc{
+      .product_key = full_field_handle.key,
+      .product_generation = full_field_handle.generation,
+      .policy = tess::gpu::ReadbackPolicy::FullField,
+      .byte_size = sizeof(capture.values),
+  }));
+  ASSERT_EQ(tess_webgpu_stub::pending_maps.size(), 1u);
+  tess_webgpu_stub::complete_map(true);
+  EXPECT_EQ(capture.calls, 1u);
 }
 
 TEST(TessWebGpuBackend, ReadbackCompletesAsynchronouslyAfterDestruction) {

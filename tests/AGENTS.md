@@ -730,6 +730,7 @@
   representable uploads,
   real chunk-byte uploads, compute submission only for registered mirrors and
   within the configured workgroup-X limit, generation-stale product rejection,
+  source-less and `None` readback refusal, explicit `FullField` opt-in,
   asynchronous summary readback that safely completes after backend
   destruction, inline map completion without post-callback use, null map-future
   cleanup and budget restoration, overlapping readback budget recovery with
