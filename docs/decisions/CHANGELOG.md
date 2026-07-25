@@ -8,10 +8,11 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 
 ## 2026-07-25 - Harden optional WebGPU descriptor validation
 
-- Changed: `WebGpuBackend::register_product` rejects readback offsets,
+- Changed: `WebGpuBackend::register_product` rejects readback sizes, offsets,
   callbacks, and userdata when no readback source exists. The stable-C test
-  double aborts before an out-of-bounds queue write or buffer copy instead of
-  allowing a backend-validation regression to corrupt the test process.
+  double aborts before an out-of-bounds queue write, buffer copy, or mapped
+  read instead of allowing a backend-validation regression to corrupt the
+  test process.
 - Reason: final exact-SHA auditing found two low-severity cases where invalid
   consumer or future backend behavior could be silently ignored or diagnosed
   only through undefined behavior in the test harness.

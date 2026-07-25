@@ -173,6 +173,14 @@ TEST(TessWebGpuBackend, NoReadbackSourceRejectsOrphanedMetadata) {
 
   EXPECT_FALSE(backend
                    .register_product(tess::gpu::WebGpuProductDesc{
+                       .product_key = 90,
+                       .pipeline = pipeline.get(),
+                       .bind_group = bind_group.get(),
+                       .readback_byte_size = 4,
+                   })
+                   .has_value());
+  EXPECT_FALSE(backend
+                   .register_product(tess::gpu::WebGpuProductDesc{
                        .product_key = 91,
                        .pipeline = pipeline.get(),
                        .bind_group = bind_group.get(),
@@ -209,7 +217,7 @@ TEST(TessWebGpuStubDeathTest, QueueWriteRejectsOutOfBoundsCopy) {
                "");
 }
 
-TEST(TessWebGpuStubDeathTest, EncoderRejectsOutOfBoundsCopy) {
+TEST(TessWebGpuStubDeathTest, EncoderRejectsOutOfBoundsSourceCopy) {
   DeviceOwner device{tess_webgpu_stub::make_device()};
   auto desc = WGPU_BUFFER_DESCRIPTOR_INIT;
   desc.size = 4;
@@ -219,6 +227,27 @@ TEST(TessWebGpuStubDeathTest, EncoderRejectsOutOfBoundsCopy) {
   EXPECT_DEATH(wgpuCommandEncoderCopyBufferToBuffer(nullptr, source.get(), 2,
                                                     destination.get(), 0, 4),
                "");
+}
+
+TEST(TessWebGpuStubDeathTest, EncoderRejectsOutOfBoundsDestinationCopy) {
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  auto desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+  desc.size = 4;
+  BufferOwner source{wgpuDeviceCreateBuffer(device.get(), &desc)};
+  BufferOwner destination{wgpuDeviceCreateBuffer(device.get(), &desc)};
+
+  EXPECT_DEATH(wgpuCommandEncoderCopyBufferToBuffer(nullptr, source.get(), 0,
+                                                    destination.get(), 2, 4),
+               "");
+}
+
+TEST(TessWebGpuStubDeathTest, MappedRangeRejectsOutOfBoundsRead) {
+  DeviceOwner device{tess_webgpu_stub::make_device()};
+  auto desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+  desc.size = 4;
+  BufferOwner buffer{wgpuDeviceCreateBuffer(device.get(), &desc)};
+
+  EXPECT_DEATH(wgpuBufferGetConstMappedRange(buffer.get(), 2, 4), "");
 }
 
 TEST(TessWebGpuBackend, SizeConversionRejectsNarrowing) {

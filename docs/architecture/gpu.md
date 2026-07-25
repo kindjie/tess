@@ -102,8 +102,9 @@ gameplay-exact answer on the CPU.
 resource ownership, generation invalidation, bounded asynchronous readback,
 overlapping readback budget/failure paths, disabled configuration, and device
 loss/error notification. Its copy entry points abort on invalid source or
-destination ranges, turning future backend-validation regressions into
-deterministic test failures instead of test-process heap corruption. The
+destination ranges, and mapped-range access aborts on invalid reads. These
+checks turn future backend-validation regressions into deterministic test
+failures instead of test-process heap corruption. The
 documentation build also compiles and runs a browser smoke example with
 Emdawnwebgpu's exact pinned port. Only
 `WGPURequestAdapterStatus_Unavailable` is an unsupported result.

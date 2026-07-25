@@ -725,7 +725,8 @@
   backend against an API-matching stable WebGPU C stub. It verifies device and
   queue ownership, overflow-safe mirror registration, `CopySrc` validation
   for readback products with realistically flagged source buffers,
-  rejection of readback callback/offset/userdata metadata without a source,
+  rejection of readback size/offset/callback/userdata metadata without a
+  source,
   representable uploads,
   real chunk-byte uploads, compute submission only for registered mirrors and
   within the configured workgroup-X limit, generation-stale product rejection,
@@ -736,9 +737,9 @@
   device errors, invalid requests, explicit device-loss fallback, and the
   `GpuBackend` concept. Stub
   handles use scoped C-API release owners so fatal assertions cannot leak
-  caller references, stub copy entry points abort on out-of-bounds ranges
-  instead of corrupting the test process, and stub enum widths intentionally
-  match the stable C ABI.
+  caller references, stub copy and mapped-read entry points abort on
+  out-of-bounds ranges instead of corrupting the test process, and stub enum
+  widths intentionally match the stable C ABI.
 - `tess_render_delta_frame_test`: verifies the M11 DeltaFrame bridge
   core: version semantics (empty publishes never bump; state-carrying
   publishes bump by one; the applicability truth table including the

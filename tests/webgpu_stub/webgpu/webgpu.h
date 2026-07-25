@@ -328,7 +328,13 @@ inline WGPUFuture wgpuBufferMapAsync(WGPUBuffer buffer, WGPUMapMode,
 }
 inline const void* wgpuBufferGetConstMappedRange(WGPUBuffer buffer,
                                                  std::size_t offset,
-                                                 std::size_t) {
+                                                 std::size_t size) {
+  // Keep mapped reads under the same deterministic boundary contract as
+  // writes and encoder copies. A backend range regression should terminate
+  // this death-test stub, not manufacture an out-of-bounds callback pointer.
+  if (!tess_webgpu_stub::copy_range_fits(buffer, offset, size)) {
+    std::abort();
+  }
   return buffer->bytes.data() + offset;
 }
 inline void wgpuBufferUnmap(WGPUBuffer) {}
