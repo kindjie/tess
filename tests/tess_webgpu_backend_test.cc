@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <limits>
 #include <memory>
 
@@ -71,6 +72,24 @@ struct ReadbackCapture {
   tess::gpu::GpuProductHandle handle{};
   std::array<std::uint32_t, 4> values{};
   std::size_t calls = 0;
+};
+
+struct PendingMapDrain {
+  ~PendingMapDrain() noexcept {
+    // Fatal assertions return from the test without unwinding the stub's
+    // callbacks. Complete every accepted operation while its backend and
+    // callback userdata are still alive so failure paths remain leak-safe.
+    try {
+      while (!tess_webgpu_stub::pending_maps.empty()) {
+        tess_webgpu_stub::complete_map(0, false);
+      }
+    } catch (...) {
+      // Index zero is valid after the nonempty check and this test callback is
+      // noexcept. Reaching here means the stub broke its cleanup invariant,
+      // and continuing destruction would retain dangling callback userdata.
+      std::terminate();
+    }
+  }
 };
 
 void capture_readback(tess::gpu::GpuProductHandle handle,
@@ -357,13 +376,16 @@ TEST(TessWebGpuBackend, ReadbackPoliciesRequireSourceAndFullFieldOptIn) {
   PipelineOwner pipeline{tess_webgpu_stub::make_pipeline()};
   BindGroupOwner bind_group{tess_webgpu_stub::make_bind_group()};
 
-  const auto source_less =
-      default_backend.register_product(tess::gpu::WebGpuProductDesc{
-          .product_key = 98,
-          .pipeline = pipeline.get(),
-          .bind_group = bind_group.get(),
-      });
+  const auto source_less_desc = tess::gpu::WebGpuProductDesc{
+      .product_key = 98,
+      .pipeline = pipeline.get(),
+      .bind_group = bind_group.get(),
+  };
+  const auto source_less = default_backend.register_product(source_less_desc);
+  const auto full_field_source_less =
+      full_field_backend.register_product(source_less_desc);
   ASSERT_TRUE(source_less.has_value());
+  ASSERT_TRUE(full_field_source_less.has_value());
   const auto source_less_handle =
       source_less.value_or(tess::gpu::GpuProductHandle{});
   EXPECT_FALSE(default_backend.readback(tess::gpu::ReadbackDesc{
@@ -390,6 +412,19 @@ TEST(TessWebGpuBackend, ReadbackPoliciesRequireSourceAndFullFieldOptIn) {
       default_product.value_or(tess::gpu::GpuProductHandle{});
   const auto full_field_handle =
       full_field_product.value_or(tess::gpu::GpuProductHandle{});
+  // This guard must be declared after the callback state and backends so its
+  // destructor can safely finish any maps left behind by a fatal assertion.
+  PendingMapDrain pending_map_drain;
+
+  ASSERT_TRUE(default_backend.readback(tess::gpu::ReadbackDesc{
+      .product_key = default_handle.key,
+      .product_generation = default_handle.generation,
+      .policy = tess::gpu::ReadbackPolicy::Summary,
+      .byte_size = sizeof(capture.values),
+  }));
+  ASSERT_EQ(tess_webgpu_stub::pending_maps.size(), 1u);
+  tess_webgpu_stub::complete_map(true);
+  EXPECT_EQ(capture.calls, 1u);
 
   EXPECT_FALSE(default_backend.readback(tess::gpu::ReadbackDesc{
       .product_key = default_handle.key,
@@ -411,7 +446,7 @@ TEST(TessWebGpuBackend, ReadbackPoliciesRequireSourceAndFullFieldOptIn) {
   }));
   ASSERT_EQ(tess_webgpu_stub::pending_maps.size(), 1u);
   tess_webgpu_stub::complete_map(true);
-  EXPECT_EQ(capture.calls, 1u);
+  EXPECT_EQ(capture.calls, 2u);
 }
 
 TEST(TessWebGpuBackend, ReadbackCompletesAsynchronouslyAfterDestruction) {
