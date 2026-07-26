@@ -1,7 +1,10 @@
 # Testing and benchmarking redesign
 
-Status: **Proposed** (2026-07-23). This document records intent only; nothing
-in it is implemented. Until the sequenced follow-up PRs land, the existing
+Status: **Proposed** (2026-07-23; revised 2026-07-25 against the merged
+roadmap-completion work, which confirmed the benchmark gate's one true
+positive, settled the external-data rights question, and shifted the CI
+timing baseline). This document records intent only; nothing in it is
+implemented. Until the sequenced follow-up PRs land, the existing
 [benchmark plan](benchmark-plan.md) and
 [calibration history](benchmark-calibration.md) remain authoritative for how
 CI actually behaves.
@@ -42,9 +45,11 @@ CI-history evidence in section 2.
 
 **Performance**
 
-7. Retire per-benchmark calibrated CPU-time ceilings as gates. One coarse
-   suite-level wall-clock sanity budget survives as a build-misconfiguration
-   tripwire.
+7. Retire per-benchmark calibrated CPU-time ceilings as gates — but only
+   after their replacement has run in shadow mode beside them and
+   demonstrated that it reproduces the gate's one confirmed catch
+   (section 2.3). One coarse suite-level wall-clock sanity budget survives
+   as a build-misconfiguration tripwire.
 8. The PR tier measures *work* first: counter goldens, allocation == 0,
    bench compile+smoke; plus a standing selective paired base-vs-head timing
    run on a small sentinel set whenever perf-sensitive paths change.
@@ -61,19 +66,21 @@ CI-history evidence in section 2.
 **CI structure**
 
 12. The required PR gate shrinks to the jobs that have actually caught bugs
-    (dev build+tests, ASan, Windows MSVC, hook backstop) plus GCC compile as
-    a cheap prospective portability guard and the new counter/scenario
-    smoke — critical path from roughly 19 minutes to a target of ~6-7
-    minutes, bounded below by the retained Windows job (~6.2 m median) and
-    validated with measured job budgets in phase 1 before anything relies
-    on it.
-13. clang-tidy leaves the PR critical path (diff-scoped or advisory); TSan,
-    macOS, release, and werror move to main-only (none has ever failed
-    independently on a PR; TSan returns to PR when concurrency-sensitive
-    files change); a weekly deep tier auto-files an issue on failure. Git
-    hooks: pre-commit hygiene (including the non-negotiable public-safety
-    scan) unchanged; pre-push slimmed once CI is fast; the hook-backstop CI
-    job unchanged.
+    (dev build+tests, ASan, Windows MSVC, cppcheck, hook backstop) plus GCC
+    compile as a cheap prospective portability guard and the new
+    counter/scenario smoke. The resulting critical path is *derived in
+    phase 1 from measured job budgets*, not asserted here: the retained
+    Windows job sets the floor, and its median has ranged from ~6.2 m to
+    ~8.4 m across sampling windows (section 2.1), so no downstream decision
+    may depend on a specific target until phase 1 measures it.
+13. The full-tree clang-tidy run moves to main; a diff-scoped clang-tidy job
+    stays **blocking** on PRs (three real catches, and it remains the
+    highest-yield static gate — see section 2.2). TSan, macOS, release, and
+    werror move to main-only (none has ever failed independently on a PR;
+    TSan returns to PR when concurrency-sensitive files change); a weekly
+    deep tier auto-files an issue on failure. Git hooks: pre-commit hygiene
+    (including the non-negotiable public-safety scan) unchanged; pre-push
+    slimmed once CI is fast; the hook-backstop CI job unchanged.
 
 **Ecosystem and packaging**
 
@@ -122,9 +129,12 @@ CI-history evidence in section 2.
 The redesign is grounded in the repository's own CI history rather than in
 principle alone. Numbers below come from a point-in-time snapshot taken
 2026-07-23 (28 failed workflow runs at classification time, 15 on PR
-branches, each classified individually); the totals drift as CI keeps
-running — the 30041607406 firing discussed below postdates the snapshot —
-so phase 1 re-derives the classification from the Actions API before acting
+branches, each classified individually). The totals drift as CI keeps
+running: a re-count on 2026-07-25 found 38 failed runs (33 CI, 5
+Documentation), 26 of them on `pull_request`. Individual classifications
+below were re-checked against that later window and the conclusions they
+support are unchanged except where this section says otherwise. Phase 1
+still re-derives the full classification from the Actions API before acting
 on it.
 
 ### 2.1 Where wall time goes
@@ -138,19 +148,43 @@ on it.
 - Docs-only changes already short-circuit to ~1 minute via the change
   classifier; that fast path is kept.
 
+These are 2026-07-23 figures and they move with the size of the changes in
+the sampling window. Medians over the 25 runs preceding 2026-07-25 — a
+window dominated by one 172-file change — were substantially higher:
+clang-tidy ~25.1 m, Benchmark Gates ~20.5 m, Windows MSVC ~8.4 m, dev
+build+tests ~7.0 m, cppcheck ~5.9 m, hook backstop unchanged at ~0.4 m. The
+ordering of jobs is stable across both windows; the absolute numbers are
+not. Every latency target in this document is therefore a quantity phase 1
+measures, not a number this document fixes.
+
 ### 2.2 What has actually caught bugs
 
 Classified PR-branch failures: ASan, 2 real catches (alloc/dealloc
 mismatch); clang-tidy, 3 real catches (for example
 `bugprone-unchecked-optional-access`); Windows MSVC, 4 real portability
-catches (allocation-behavior differences); hook backstop, 1 real
-public-surface catch; plus 3 universal build breaks from a single PR that
-redundantly failed a dozen jobs at once. The jobs that have *never* failed
-independently on a PR: dev-tsan, dev-werror, release, and both macOS jobs.
+catches (allocation-behavior differences); cppcheck, 1 real catch (run
+29124438281, sole failing job on a PR: `incorrectStringBooleanError` on a
+string-literal assertion in `include/tess/sim/auto_exec.h` that always
+evaluated true); hook backstop, 1 real public-surface catch; plus 3
+universal build breaks from a single PR that redundantly failed a dozen jobs
+at once. The jobs that have *never* failed independently on a PR: dev-tsan,
+dev-werror, release, and both macOS jobs — re-verified against the
+2026-07-25 window, where each appears only inside 5-, 10-, 12- and 13-job
+universal breaks.
+
+The cppcheck entry is a correction: the original 2026-07-23 classification
+credited cppcheck with no catches, and an earlier draft of this document
+demoted it to main on that basis. It has 10 failing appearances in history,
+only one of which has been individually classified. Phase 1 classifies the
+remaining nine before any demotion decision; until then cppcheck stays in
+the blocking PR set, which costs nothing on the critical path because it
+finishes well inside the retained Windows job.
 
 At ~0.4 minutes for a real catch, the hook backstop has the best
-signal-per-minute in the pipeline. At ~18.5 minutes for 3 real catches,
-clang-tidy has real value but should not set PR latency. The benchmark gate
+signal-per-minute in the pipeline. clang-tidy has the highest absolute yield
+of the static gates at 3 real catches, but the full-tree run should not set
+PR latency — hence the split in section 5, where a diff-scoped clang-tidy
+job stays blocking and the full-tree sweep moves to main. The benchmark gate
 is examined separately below.
 
 ### 2.3 The benchmark threshold gate
@@ -162,35 +196,67 @@ history:
 - Five firings were calibration churn or noise. One representative case: a
   dependency-bump PR with no code changes failed a path benchmark at 0.66%
   over its ceiling and passed on rerun.
-- One firing — 2026-07-23, CI run 30041607406 on PR #59 — is a probable
-  genuine catch: four related cache/batch path benchmarks exceeded ceilings
-  by 19-28% (`path/cached_astar_batch_100_mixed_repeated_room_portals_512x512`
-  +19%, `path/field_product_cache_hit_replay_room_portals_512x512` +28%,
+- One firing — 2026-07-23, CI run 30041607406 — is a **confirmed** genuine
+  catch, and it is the single strongest piece of evidence in this document.
+  Four related cache/batch path benchmarks exceeded ceilings by 19-28%
+  (`path/cached_astar_batch_100_mixed_repeated_room_portals_512x512` +19%,
+  `path/field_product_cache_hit_replay_room_portals_512x512` +28%,
   `path/nearest_target_product_100_starts_room_portals_512x512` +26%,
   `path/weighted_batch_planner_100_neargoal_open_512x512` +19%) while dozens
-  of neighboring benchmarks passed with run-to-run CVs of 0.01-1%. Clustered
-  large shifts confined to code the PR touches is the signature of a real
-  regression (or of an intended semantics change that requires a justified
-  recalibration — either way, real reviewable signal).
+  of neighboring benchmarks passed with run-to-run CVs of 0.01-1%.
 
-Against that record: 49 commits touching `bench/thresholds/`, a dedicated
-calibration-history document, and roughly 14 runner-hours per week. The
-structural critique is sharper than "it never fires": a
-2x-of-maximum-observed ceiling *cannot* fire on anything smaller than a
-large regression (a clean 50% slowdown passes), while absolute ceilings on
-shared heterogeneous runners produce false positives at the margin (the
-dependency-bump case exceeded its ceiling by 0.66% and passed on rerun —
-a false positive, whatever the underlying noise amplitude). The one
-truthful firing happened in exactly the regime — large, clustered,
-localized — that a paired base-vs-head comparison detects with better
-attribution, no ceiling maintenance, and no self-recalibration loophole
-(the same PR that tripped the gate also edits `bench/thresholds/path.json`;
-an author can recalibrate past an absolute ceiling in the PR itself, but
-cannot edit a JSON to pass a base-vs-head comparison). The ceiling verdict
-is also impoverished: "exceeds 93.4 ms" cannot distinguish *doing more
-work* (the benchmarks' own user counters — `batch.expanded_total`,
-`field_builds` — can) from *running slower per unit of work* (paired timing
-can).
+The confirmation is recorded in the [optimization log](optimization-log.md)
+under "Preserve the Default Unit-Field Fast Path". Routing every default
+axis neighbor through the resolved transition model produced a correlated
+**1.3x-1.9x** regression attributable to avoidable per-edge abstraction
+overhead. Raising the five thresholds was considered and **explicitly
+rejected**; the resolution was compile-time specialization of the default
+orthogonal fast path, a forced-inline per-node axis-neighbor helper (a real
+outlining regression that sampling located), and hoisting invariants out of
+the bounded field-builder neighbor loop. The gate fired on three successive
+hosted runs — 30041607406, 30043987864, 30048686486 — and each retry
+exposed regressions the previous fix had not covered. The iterative hosted
+feedback, not the first alarm alone, is what converged on a correct fix.
+
+Against that record: 50 commits touching `bench/thresholds/`, a dedicated
+calibration-history document, and roughly 14 runner-hours per week.
+
+The structural critique has to be stated more narrowly than an earlier draft
+of this document stated it. That draft argued a 2x-of-maximum-observed
+ceiling *cannot* fire on anything smaller than a large regression, so that a
+clean 50% slowdown would pass. The ceilings are not a uniform population and
+the argument does not survive them: `bench/thresholds/path.json` mixes
+2x-of-maximum-observed calibrated gates, provisional 2x-of-*median* gates,
+and 6x-local-median bootstrap gates for families whose baselines were never
+collected on the hosted runner. A 1.3x regression did fire. The gate is more
+sensitive than that argument allowed, at least on its tighter entries.
+
+What remains true is the case for a better instrument, not for an unguarded
+gap:
+
+- The verdict is impoverished. "exceeds 93.4 ms" cannot distinguish *doing
+  more work* (the benchmarks' own user counters — `batch.expanded_total`,
+  `field_builds` — can) from *running slower per unit of work* (paired
+  timing can). The 2026-07-23 investigation had to reconstruct exactly that
+  distinction by hand, across three CI round trips.
+- Absolute ceilings on shared heterogeneous runners produce false positives
+  at the margin: the dependency-bump case exceeded its ceiling by 0.66% and
+  passed on rerun.
+- The maintenance surface is self-referential. The same PR that trips the
+  gate can edit the JSON that gates it; an author can recalibrate past an
+  absolute ceiling in the PR itself, but cannot edit a JSON to pass a
+  base-vs-head comparison. In the 2026-07-23 case that loophole was
+  available and review rejected its use — a credit to the review process,
+  not evidence that the loophole is safe.
+- Calibration is a continuous cost: 50 commits and a standing history
+  document.
+
+None of this justifies removing the gate before something demonstrably
+better is running. The confirmed catch sets the acceptance bar for the
+replacement: a paired base-vs-head run over the sentinel set must reproduce
+the 2026-07-23 detection, from the same pair of commits, before the ceilings
+are retired. Section 10 sequences that as shadow-mode operation alongside
+the existing gate rather than as a swap.
 
 ### 2.4 Methodology imported from prior measurement work
 
@@ -226,12 +292,20 @@ Three parameterized harnesses cover the axes real adopters exercise:
   emitting the standard map format) that run on every PR with the in-harness
   Dijkstra oracle; and the external synthetic scenario sets — the only
   oracle this project did not write — via the TDD's fetch/cache/strict-data
-  job design. The TDD's own licensing analysis (its sections 6.2-6.3)
-  determined the synthetic sets contain no third-party game content and
-  carry only ODC-By attribution obligations; the manifest introduced by
-  in-flight PR #59 blocks all content on grounds that apply to the
-  game-derived sets, a discrepancy to resolve in that PR's review. Octile mode
-  activates once lattice semantics are validated.
+  job design. External acquisition is blocked, and this redesign keeps it
+  blocked. The TDD's licensing analysis (its sections 6.2-6.3) concludes
+  that ODC-By is a database-rights license which explicitly does not license
+  copyright in the individual map and scenario contents, and that no
+  separate content license has been located for the synthetic sets either;
+  provenance is not a license. `tools/grid_benchmark_manifest.json`
+  accordingly ships with `content_rights: blocked` and an empty entry list
+  by design, and the driver skips locally while failing in required-data
+  mode. Phase 3 preserves that gate and unblocks entries only after a
+  documented content-rights determination. The lattice prerequisite for
+  octile mode is in place — `DiagonalSteps<CornerRule::RequireBothClear>`
+  with fixed-point 128/181 costs, an independent reference search, and
+  derived oracle intervals — so the remaining dependency for the full octile
+  oracle is the rights-gated data, not unvalidated semantics.
 - **S2 — colony macro-harness.** N agents (100 / 1k / 10k) with goals driven
   through the production stack (schedule loop, path agents, queued ops,
   result channels, render deltas), parameterized by churn rate (seeded wall
@@ -274,19 +348,29 @@ the same PR when behavior intentionally changes, making behavioral drift a
 reviewable diff instead of a silent change.
 
 **Queue-flow accounting** extends the same discipline to the persistent
-bounded flows arriving with PR #59 (resumable work queues, exact event
-batches, experimental maintenance queues, bounded blocked-agent
-lifecycles). Each applicable flow records raw deterministic counts:
-admitted and terminal items, with terminal broken out by outcome
-(completed, coalesced, rejected, cancelled, superseded, stale, dropped);
-time-weighted outstanding inventory; accumulated submission-to-terminal
-ticks; current and high-water outstanding and oldest outstanding age; and
-offered versus consumed work units. Coalesced work counts an arrival at
-the clean-to-pending transition, not at every repeated schedule call, so
-arrival counts stay meaningful. Two kinds of assertion follow. Exact
-conservation identities (admitted equals terminal plus outstanding;
-terminal equals the sum of its outcome categories) are golden-gated like
-any other counter. Fixed-tick-window derived quantities — average
+bounded flows delivered by the roadmap-completion work (resumable work
+queues, exact event batches, experimental maintenance queues, bounded
+blocked-agent lifecycles). Each applicable flow records raw deterministic
+counts in two stages. At the admission boundary: offered items and their
+disposition as admitted, rejected, or coalesced into an already-pending
+item. After admission: terminal items broken out by outcome (completed,
+cancelled, superseded, stale, dropped-after-admission); time-weighted
+outstanding inventory; accumulated submission-to-terminal ticks; current
+and high-water outstanding and oldest outstanding age; and offered versus
+consumed work units. Coalescing is counted at the clean-to-pending
+transition, not at every repeated schedule call, so arrival counts stay
+meaningful.
+
+Two kinds of assertion follow. The exact conservation identities are
+golden-gated like any other counter, and there are two of them rather than
+one, because a rejected offer was never admitted and an offer absorbed by an
+already-pending item is not a second admitted item:
+
+- `offered == admitted + rejected + coalesced_into_pending`;
+- `admitted == terminal + outstanding`, with `terminal` equal to the sum of
+  its post-admission outcome categories.
+
+Fixed-tick-window derived quantities — average
 inventory L, accepted rate lambda, mean residence time W — serve as a
 steady-state accounting check (L ~= lambda x W) in the S2 soak and S3
 churn scenarios, whose assertions are stationarity, bounded oldest age,
@@ -366,8 +450,9 @@ hardware is trustworthy.
   `pull_request` job, not a manually dispatched one. Building two revisions
   affordably needs a benchmark-only build preset (the current `bench`
   preset also builds the full test suite and both bench binaries). The
-  2026-07-23 catch is exactly
-  this leg's job, at the same point (PR) with better evidence. Sentinel
+  2026-07-23 catch is exactly this leg's job, at the same point (PR) with
+  better evidence — and reproducing it is the acceptance criterion for
+  retiring the ceilings (section 4.3), not merely an illustration. Sentinel
   selection favors composite microsecond-to-millisecond workloads (cached
   batches, field products, weighted batches, agent ticks) where paired
   statistics are reliable — precisely the benchmarks that fired — over
@@ -397,13 +482,31 @@ full paired A/B run under the same statistical criteria. Paired runs execute
 only on hosted runners or trusted post-merge commits — never untrusted code
 on personal or self-hosted hardware.
 
-### 4.3 Retired
+### 4.3 Retired, and the condition for retiring it
 
 The `tess_bench_*_thresholds` gating targets, the per-benchmark ceilings in
-`bench/thresholds/*.json`, and the recalibration workflow. The
-[calibration history](benchmark-calibration.md) freezes as a historical
-record. Deliberately prioritizing future signal over historical trend
-continuity: no ceiling lineage is preserved.
+`bench/thresholds/*.json`, and the recalibration workflow are the end state,
+not the first move. The gate has one confirmed catch (section 2.3), so it is
+not removed on the strength of an argument; it is removed when its
+replacement has out-performed it on the record.
+
+The exit criteria, all of which must hold before the gating targets are
+switched off:
+
+1. The counter goldens and the selective paired run have operated in shadow
+   mode — running and reporting, not gating — alongside the ceilings for a
+   stated period covering at least one full release cycle.
+2. Replayed against the base/head pair that CI run 30041607406 measured, the
+   paired run reproduces the 2026-07-23 detection on the same four
+   benchmarks.
+3. The shadow period produced no unexplained divergence in which the
+   ceilings fired truthfully and the replacement stayed silent.
+4. The shadow period's false-positive rate for the replacement is at or
+   below the ceilings' own (five in six firings).
+
+Only then does the [calibration history](benchmark-calibration.md) freeze as
+a historical record. At that point the choice deliberately prioritizes future
+signal over historical trend continuity: no ceiling lineage is preserved.
 
 ### 4.4 Recurring series and campaigns (decided)
 
@@ -496,13 +599,16 @@ verdict, and CONTRIBUTING.md gains a pointer when the protocol is wired up
 
 | Tier | Trigger | Contents | Wall clock |
 | --- | --- | --- | --- |
-| PR (blocking) | `pull_request`, code-gated by the existing classifier | dev build+tests (+ counter goldens, scenario smoke: S1 procedural coarse stride, S2 N=100 serial+pool at two worker counts), ASan, Windows MSVC, GCC compile, hook backstop, bench compile+smoke, path-filtered selective paired run, path-filtered TSan when concurrency-sensitive files change; diff-scoped clang-tidy advisory via annotations/step summary (fork `pull_request` tokens are read-only; any privileged reporter is a separate `workflow_run` job that never executes PR code) | ~6-7 min target (validated in phase 1; Windows ~6.2 m is the floor) |
-| Main (push) | push to `main` | PR set + full matrix (TSan, macOS, release, werror, full clang-tidy, cppcheck) + bench artifact run + change-point alerting + S1 strict data job (once unblocked) + S3 config + S2 N=1k artifacts | ~15 min, non-blocking beyond the PR set |
+| PR (blocking) | `pull_request`, code-gated by the existing classifier | dev build+tests (+ counter goldens, scenario smoke: S1 procedural coarse stride, S2 N=100 serial+pool at two worker counts), ASan, Windows MSVC, cppcheck, GCC compile, hook backstop, bench compile+smoke, diff-scoped clang-tidy, path-filtered selective paired run, path-filtered TSan when concurrency-sensitive files change. Diff-scoped clang-tidy **blocks** — the job's exit status is the signal; only its rich annotation delivery is best-effort, since fork `pull_request` tokens are read-only and any privileged reporter is a separate `workflow_run` job that never executes PR code | derived in phase 1 from measured budgets; the retained Windows job is the floor (~6.2-8.4 m observed across windows) |
+| Main (push) | push to `main` | PR set + full matrix (TSan, macOS, release, werror, full-tree clang-tidy) + bench artifact run + threshold gating until its replacement clears shadow validation (section 10) + change-point alerting + S1 strict data job (only if the content-rights gate is ever cleared) + S3 config + S2 N=1k artifacts | ~15 min, non-blocking beyond the PR set |
 | Weekly | cron + dispatch | Full oracle corpus/stride, S2 N=10k both executors, worker-count invariance sweep, world-size pair, soak, budget sweep, ASan full + TSan-capped scenarios, long property seeds, parser fuzzing, advisory llvm-cov reports (test suite + bench smoke gap-finder) | <= 45 min; auto-files an issue on failure |
 | Campaign | manual / release | Controlled-hardware full suite: scaling knees, cold-cache latency, PMU attribution, handheld target; comparative-repo refresh on release; performance-page data refresh | hours, off-CI |
 
-Windows portability catches were real, so Windows stays a PR gate. macOS has
-never fired independently and moves to main. A regression that a demoted job
+Windows portability catches were real, so Windows stays a PR gate. cppcheck
+has one classified real catch and nine unclassified failures, so it stays a
+PR gate until phase 1 classifies the rest; it is well inside the Windows
+floor, so it costs no critical path. macOS has never fired independently and
+moves to main. A regression that a demoted job
 would have caught surfaces one merge later, at main — acceptable given the
 historical record, and the auto-issue keeps it owned. Roughly 15% of runs
 are cancelled superseded pushes; the existing concurrency cancellation and
@@ -565,8 +671,9 @@ The hook-backstop CI job is unchanged.
   counter and timing artifacts for bisection, retained well beyond 30 days
   (the JSON is small — a data branch or long-retention artifacts); the
   optimization log remains the experiment ledger.
-- **Contributors (largely automated agents).** A ~6-minute blocking PR
-  loop; deterministic failures (counters and equalities, not noisy
+- **Contributors (largely automated agents).** A materially shorter blocking
+  PR loop, whose figure phase 1 measures rather than this document asserts;
+  deterministic failures (counters and equalities, not noisy
   ceilings); one compact PR check summary — counter deltas, failed property
   seed plus replay command, paired-timing verdict with a link to the
   profiling protocol (section 4.6) when it flags, exact local repro
@@ -621,49 +728,69 @@ Each phase is its own PR (or small PR series); none is started by the PR
 that introduces this document.
 
 1. CI restructure: re-derive the failure classification from the Actions
-   API at implementation time (the section 2 snapshot has drifted); re-tier
-   jobs per section 5 including the path-filtered TSan PR job; retire
-   threshold gating; keep artifact collection; add the weekly auto-issue;
-   measure the resulting job budgets to validate the PR latency target.
-   Workflow-only.
+   API at implementation time (the section 2 snapshot has drifted), and
+   classify cppcheck's nine unclassified failures as part of it; re-tier
+   jobs per section 5 including the path-filtered TSan PR job and the
+   diff-scoped/full-tree clang-tidy split; **keep threshold gating and
+   artifact collection**; add the weekly auto-issue; measure the resulting
+   job budgets and publish the derived PR latency figure. Workflow-only.
 2. Counter-golden and change-point tooling (with runner fingerprinting in
    artifacts); paired A/B timing as both a path-filtered `pull_request`
    sentinel job and a `workflow_dispatch` full-confirmation mode, backed by
    a benchmark-only build preset, with the sentinel-mapping completeness
-   check; advisory coverage reporting (test suite and bench-smoke
-   gap-finder) and the benchmark workload-matrix catalog with its drift
-   check; the profiling protocol wired into the PR check summary and
-   pointed to from CONTRIBUTING.md; the pre-push slimming of section 6
-   (prerequisite: the tested CTest-label source-to-test mapping).
+   check. The counter goldens and the paired run enter service in **shadow
+   mode beside the existing ceilings**, per section 4.3. Also: advisory
+   coverage reporting (test suite and bench-smoke gap-finder) and the
+   benchmark workload-matrix catalog with its drift check; the profiling
+   protocol wired into the PR check summary and pointed to from
+   CONTRIBUTING.md; the pre-push slimming of section 6 (prerequisite: the
+   tested CTest-label source-to-test mapping).
 3. Scenario layer: procedural generators, then the S2 macro-harness (with
-   PR-tier smoke), then S3; S1 external-data activation via manifest
-   unblocking, fetch tool, and the strict data job (grid-benchmark TDD
-   phases 1-2), resolving the rights discrepancy noted in section 3.1.
-4. Consumer-contract and packaging: header-set verification, ODR tests,
+   PR-tier smoke), then S3. S1 stays on in-repo procedural data: the
+   external-data legs (manifest entries, fetch tool, cache verification, the
+   strict data job — grid-benchmark TDD phases 1-2) remain gated, and phase 3
+   preserves the rights gate rather than unblocking it. It opens only on a
+   documented content-rights determination, which is not a deliverable of
+   this sequence.
+4. Threshold-gate retirement, gated on the section 4.3 exit criteria being
+   met and written up: the shadow-mode comparison, the 2026-07-23 replay
+   result, and the divergence and false-positive records. If the criteria
+   are not met, this phase does not run and the ceilings stay; that outcome
+   is a legitimate result, not a blocked phase.
+5. Consumer-contract and packaging: header-set verification, ODR tests,
    macro-config matrix, Conan 2 recipe, vcpkg overlay, integration-policy
    document.
-5. Generated performance page; retire the manual snapshot policy
+6. Generated performance page; retire the manual snapshot policy
    (CONTRIBUTING.md update).
-6. Property/state-machine harness; weekly long seeds; parser fuzzing.
-7. First controlled-hardware campaign (development machine, handheld
+7. Property/state-machine harness; weekly long seeds; parser fuzzing.
+8. First controlled-hardware campaign (development machine, handheld
    target, cloud bare metal): scaling, latency, world-size; publish and
    record in the optimization log.
-8. Comparative repository bootstrap against a pinned release.
+9. Comparative repository bootstrap against a pinned release.
 
 ## 11. Risks
 
 1. **Losing the only PR timing tripwire.** A catastrophic regression in a
-   path the sentinel set misses reaches main before detection. Mitigation:
-   counters catch algorithmic blowups on PR; the suite-level sanity budget
-   catches build misconfiguration; main alerting catches the rest within one
-   merge; the selective paired run covers exactly the historically observed
+   path the sentinel set misses reaches main before detection. This is the
+   document's largest risk, and it is not hypothetical: the ceiling gate has
+   a confirmed catch (section 2.3) that took three hosted round trips to
+   resolve. Primary mitigation is sequencing — the ceilings are not switched
+   off until the replacement has reproduced that catch in shadow mode
+   (sections 4.3 and 10, phase 4). Secondary: counters catch algorithmic
+   blowups on PR; the suite-level sanity budget catches build
+   misconfiguration; main alerting catches the rest within one merge; the
+   selective paired run covers exactly the historically observed
    true-positive regime.
 2. **Change-point alert tuning.** Too chatty and it gets ignored like the
    ceilings were. Start conservative, tune in the open with tests on the
    detector itself.
-3. **Foundation churn.** The scenario layer stacks on the in-flight
-   grid-benchmark harness (PR #59); keep scenario code additive and review
-   the loader contract against the TDD's section 9 during that PR's review.
+3. **Foundation churn.** The scenario layer stacks on the grid-benchmark
+   harness, whose network-free first phase has landed (strict parser,
+   compile-time-shape loader, independent orthogonal and `RequireBothClear`
+   reference searches, schema-pinned empty manifest, opt-in driver). Keep
+   scenario code additive against that loader contract (the TDD's
+   section 9), and treat the rights-gated legs as immovable rather than as
+   pending work.
 4. **Golden-counter portability.** Counter goldens require fully
    deterministic expansion order across gcc/clang/MSVC. Integer-only
    arithmetic makes this achievable; verify on the Windows job before
