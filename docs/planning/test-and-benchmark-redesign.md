@@ -677,7 +677,8 @@ The hook-backstop CI job is unchanged.
   ceilings); one compact PR check summary — counter deltas, failed property
   seed plus replay command, paired-timing verdict with a link to the
   profiling protocol (section 4.6) when it flags, exact local repro
-  commands — instead of thirteen threshold JSON files to decode, delivered
+  commands — instead of eighteen threshold JSON files to decode, one per
+  `tess_bench_*_thresholds` gating target, delivered
   fork-safely through check output and the step summary rather than a
   token-privileged comment. The `tests/AGENTS.md` catalog and the
   pre-commit hygiene flow are unchanged (pre-push slims per section 6).
