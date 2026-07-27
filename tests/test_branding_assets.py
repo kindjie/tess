@@ -179,6 +179,14 @@ def test_colony_demo_reports_terminal_bottleneck_outcomes():
   assert "using Traveler" in model
   assert "World, Traveler, kMaxCost, OccupancyTag, ReservationTag" in model
 
+  # Traveler reads SettledTag, so settling a colonist changes passability and
+  # must move the chunk's content version -- the unit route cache invalidates
+  # on that version and a plain field write does not touch it. Without the
+  # bump a replan is served the cached route through the tile that just
+  # closed, and the agent retries it forever.
+  assert "kSettledDirty" in model
+  assert "world.mark_dirty(key, kSettledDirty" in model
+
 
 def test_doxygen_uses_the_compact_symbol():
   cmake = read("CMakeLists.txt")

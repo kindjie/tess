@@ -6,6 +6,24 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-27 - Announce settled colonists to the route cache
+
+- Changed: the web colony demo writes `SettledTag` only when the value actually
+  changes, and pairs the write with `mark_dirty`/`clear_dirty` on a dedicated
+  `kSettledDirty` bit so the chunk's content version moves without waking the
+  terrain consumers, which filter on `kTerrainDirty`.
+- Reason: `Traveler` reads `SettledTag`, so settling a colonist changes
+  passability — a world edit as far as the unit route cache is concerned. That
+  cache invalidates on chunk content versions (`route_cache.h`: "staleness is
+  the caller's job"), and a plain field write bumps none, so the replan that
+  correctly follows a `BlockedTo` failure could be handed the cached route
+  straight back through the tile that had just closed. The agent then retried
+  that step forever: kept alive by the retry refund, never unblocked. Marking
+  only on a change keeps the cache useful, since settling is rare.
+- Affected docs: design changelog.
+- Affected code: web colony example; a path-runtime regression covering the
+  contract and the correct idiom; the browser-demo contract test.
+
 ## 2026-07-26 - Treat settled colonists as obstacles in the colony demo
 
 - Changed: the web colony demo plans and moves with a `Traveler` movement

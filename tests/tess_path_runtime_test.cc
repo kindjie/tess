@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -1008,6 +1009,91 @@ TEST(TessPathRuntime, RepeatedGoalGroupingWarmFrameIsAllocationFree) {
   for (const auto result : results) {
     EXPECT_EQ(result.status, tess::PathStatus::Found);
   }
+}
+
+// A movement class may read any field, which makes writing that field a world
+// edit for anything keyed on passability -- including the unit route cache,
+// whose fingerprint folds chunk CONTENT VERSIONS (see route_cache.h: "staleness
+// is the caller's job"). A plain field write bumps no version, so a caller that
+// closes a tile this way and then replans can be handed the cached route
+// straight through it. `mark_dirty` is what moves the version; the paired
+// `clear_dirty` leaves no flag behind for unrelated dirty-mask consumers.
+//
+// This is the idiom examples/web_colony/colony.cc relies on when a colonist
+// settles. Without it the agent replans forever and is served the same blocked
+// route every time.
+struct ClosedTag {};
+
+using GateSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
+                                     tess::Field<CostTag, std::uint32_t>,
+                                     tess::Field<ClosedTag, bool>>;
+using GateWorld = tess::AlwaysResidentWorld<Runtime2D, GateSchema>;
+using GateClass = tess::movement::MovementClass<
+    tess::movement::AllOf<
+        tess::movement::Field<PassableTag>,
+        tess::movement::Not<tess::movement::Field<ClosedTag>>>,
+    tess::movement::FieldCost<CostTag>>;
+
+constexpr std::uint32_t kClosedDirty = 1U << 1U;
+
+auto plan_through_gate(GateWorld& world, tess::PathRequestRuntime& runtime)
+    -> std::vector<tess::Coord3> {
+  runtime.clear_requests();
+  const auto ticket = runtime.submit(
+      tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{4, 0, 0}});
+  (void)runtime.process_unit_cached<GateWorld, GateClass>(world, {});
+  const auto result = runtime.result(ticket);
+  return std::vector<tess::Coord3>(result.path.begin(), result.path.end());
+}
+
+auto route_uses(const std::vector<tess::Coord3>& route, tess::Coord3 coord)
+    -> bool {
+  return std::find(route.begin(), route.end(), coord) != route.end();
+}
+
+TEST(PathRuntimeRouteCache, ClosingATileNeedsAVersionBumpToBeSeen) {
+  GateWorld world;
+  for (auto& page : world.chunks()) {
+    auto passable = page.field_span<PassableTag>();
+    auto cost = page.field_span<CostTag>();
+    auto closed = page.field_span<ClosedTag>();
+    for (std::size_t i = 0; i < passable.size(); ++i) {
+      passable[i] = false;
+      cost[i] = 1u;
+      closed[i] = false;
+    }
+  }
+  // Two parallel rows joined at both ends, so closing (2,0) leaves a detour.
+  for (std::int64_t x = 0; x <= 4; ++x) {
+    world.field<PassableTag>(tess::Coord3{x, 0, 0}) = true;
+    world.field<PassableTag>(tess::Coord3{x, 1, 0}) = true;
+  }
+
+  tess::PathRequestRuntime runtime;
+  const auto direct = plan_through_gate(world, runtime);
+  ASSERT_FALSE(direct.empty());
+  EXPECT_TRUE(route_uses(direct, tess::Coord3{2, 0, 0}));
+
+  const auto gate = tess::Coord3{2, 0, 0};
+  const auto key =
+      tess::chunk_key<Runtime2D>(tess::chunk_coord<Runtime2D>(gate));
+
+  // Closed with no version bump: the cache cannot know, and still serves the
+  // route through the now-impassable tile. Documents the caller's obligation
+  // -- if the library ever makes this safe on its own, delete this assertion
+  // rather than working around it.
+  world.field<ClosedTag>(gate) = true;
+  EXPECT_TRUE(route_uses(plan_through_gate(world, runtime), gate));
+
+  // Same edit, now announced. The replan detours via row 1.
+  world.mark_dirty(key, kClosedDirty, tess::Box3{gate, tess::Extent3{1, 1, 1}});
+  world.clear_dirty(key, kClosedDirty);
+  const auto detour = plan_through_gate(world, runtime);
+  ASSERT_FALSE(detour.empty());
+  EXPECT_FALSE(route_uses(detour, gate));
+  EXPECT_TRUE(route_uses(detour, tess::Coord3{2, 1, 0}));
+  EXPECT_EQ(detour.front(), (tess::Coord3{0, 0, 0}));
+  EXPECT_EQ(detour.back(), (tess::Coord3{4, 0, 0}));
 }
 
 }  // namespace
