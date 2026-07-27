@@ -6,6 +6,29 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-26 - Treat settled colonists as obstacles in the colony demo
+
+- Changed: the web colony demo plans and moves with a `Traveler` movement
+  class that adds a `SettledTag` term to the terrain rules, and marks the tile
+  of every agent that has arrived or been declared terminal. Its terminal
+  verdict is now decided by a search rather than by the retry clock: a blocked
+  agent that still has a route has its retry budget refunded, so only an agent
+  with no route at all is reported terminal. The population-scaled retry
+  allowance introduced on 2026-07-24 is replaced by a fixed budget, which no
+  longer has to cover a whole convoy's queueing.
+- Reason: a painted bottleneck funnels every agent through one crossing row,
+  after which agents walk the goal column past teammates that arrived earlier
+  and never move again. Planning ignored occupancy, so a retained route led
+  straight into a permanently parked agent and waited forever; the retry
+  budget then reported half the colony as terminal while every one of them
+  still had a clear route. No retry budget can resolve that wait, because the
+  blocking agent is never going to move.
+- Affected docs: design changelog only; the demo page's reported states are
+  unchanged in wording.
+- Affected code: web colony example, plus its native self-check, which now
+  covers both a bottleneck that must not wedge and a full seal that must
+  still be reported as terminal.
+
 ## 2026-07-25 - Harden optional WebGPU descriptor validation
 
 - Changed: `WebGpuBackend::register_product` rejects readback sizes, offsets,
