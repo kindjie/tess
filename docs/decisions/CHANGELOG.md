@@ -11,9 +11,13 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 - Changed: the web colony demo plans and moves with a `Traveler` movement
   class that adds a `SettledTag` term to the terrain rules, and marks the tile
   of every agent that has arrived or been declared terminal. Its terminal
-  verdict is now decided by a search rather than by the retry clock: a blocked
-  agent that still has a route has its retry budget refunded, so only an agent
-  with no route at all is reported terminal. The population-scaled retry
+  verdict is now decided by search rather than by the retry clock, in two
+  stages: the terrain region graph rejects a sealed goal cheaply through an
+  explicit `precheck_path<Walker>`, and only when terrain allows a route does
+  a `Traveler` search decide whether the settled colonists leave one, refunding
+  the retry budget when they do. The region graph stays on terrain and is no
+  longer handed to the tick driver, which plans on the stricter class and
+  would only ever see it as `GraphStale`. The population-scaled retry
   allowance introduced on 2026-07-24 is replaced by a fixed budget, which no
   longer has to cover a whole convoy's queueing.
 - Reason: a painted bottleneck funnels every agent through one crossing row,
@@ -23,11 +27,13 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   budget then reported half the colony as terminal while every one of them
   still had a clear route. No retry budget can resolve that wait, because the
   blocking agent is never going to move.
-- Affected docs: design changelog only; the demo page's reported states are
-  unchanged in wording.
+- Affected docs: optimization log, which records the measured sealed-colony
+  cost and the rejected route-installation and graph-rebuild alternatives; the
+  demo page's reported states are unchanged in wording.
 - Affected code: web colony example, plus its native self-check, which now
   covers both a bottleneck that must not wedge and a full seal that must
-  still be reported as terminal.
+  still be reported as terminal, and the browser-demo contract test that
+  pinned the superseded retry allowance.
 
 ## 2026-07-25 - Harden optional WebGPU descriptor validation
 

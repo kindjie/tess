@@ -108,6 +108,7 @@ struct Demo {
   tess::PathAgentTickState tick_state;
   tess::LocalTopologyScratch topo_scratch;
   tess::PathScratch settle_scratch;
+  tess::RegionGraphScratch graph_scratch;
   tess::RegionGraph graph;
   tess::FrameOps ops;
   tess::DeltaCollector deltas;
@@ -238,12 +239,23 @@ struct Demo {
   //
   // Second, keep the terminal verdict honest. The library's retry budget is a
   // clock: it cannot tell a jammed queue from a sealed goal, and a bottleneck
-  // makes long jams ordinary. So before the budget expires, ask the question
-  // it cannot answer -- is there still a route under the same rules the agent
-  // plans with? If there is, the agent is queueing and gets its budget back;
-  // it will move as soon as the queue ahead does. Only an agent with no route
-  // at all keeps its retries and goes terminal, which makes the page's
-  // "terminal blocked state" mean exactly that.
+  // makes long jams ordinary. So decide the verdict by asking, in two stages
+  // ordered by cost.
+  //
+  // The terrain graph answers the cheap question. It is stamped for `Walker`,
+  // so `precheck_path<Walker>` is valid against it, and `Traveler` only ever
+  // subtracts tiles from `Walker` -- terrain that seals a goal seals it for
+  // the agent too. Settling that here, on the first blocked tick, is what
+  // keeps a sealed colony affordable: an agent left in `Blocked`/`NoPath` is
+  // resubmitted every tick, and 1,024 of them re-searching the whole region
+  // every tick is a multi-second freeze on the page.
+  //
+  // Only when terrain says a route exists is the expensive question worth
+  // asking: is there still one with the settled colonists in the way? If yes
+  // the agent is queueing, and its budget is refunded -- it will move as soon
+  // as the queue ahead does. If no, it keeps its retries and goes terminal on
+  // the clock, which is the one case where the clock is the right answer:
+  // being boxed in by teammates is real, but it can clear when they relaunch.
   void refresh_settled_agents() {
     for (auto& agent : agents) {
       const auto settled =
@@ -251,8 +263,17 @@ struct Demo {
       world.field<SettledTag>(agent.position) = settled;
     }
     for (auto& agent : agents) {
-      if (agent.phase != tess::PathAgentPhase::Blocked ||
-          agent.blocked_retries < kMaxBlockedRetries / 2 || !agent.has_goal) {
+      if (agent.phase != tess::PathAgentPhase::Blocked || !agent.has_goal) {
+        continue;
+      }
+      if (tess::precheck_path<Walker>(graph, world, agent.position, agent.goal,
+                                      graph_scratch) ==
+          tess::PrecheckStatus::Unreachable) {
+        agent.phase = tess::PathAgentPhase::Unreachable;
+        agent.status = tess::PathStatus::NoPath;
+        continue;
+      }
+      if (agent.blocked_retries < kMaxBlockedRetries / 2) {
         continue;
       }
       // The agent stands on its own tile and a search rejects an impassable
@@ -282,15 +303,17 @@ struct Demo {
       }
       auto options = tess::PathAgentTickOptions{};
       options.max_blocked_retries = kMaxBlockedRetries;
-      // Planning uses Traveler (terrain plus settled colonists); the region
-      // graph stays on Walker, which models terrain alone. That pairing is
-      // deliberate and sound: only an Unreachable precheck skips the search,
-      // and a graph built on the more permissive class never claims
-      // unreachable for something Traveler could walk.
+      // No graph here, deliberately. The graph models terrain and is stamped
+      // for `Walker`; `precheck_path` rejects a stamp mismatch outright
+      // (GraphStale), so handing it to a `Traveler` search would never prune
+      // anything and would only read as though it did. Keeping the graph on
+      // terrain is still right -- rebuilding it as colonists settle would
+      // churn topology over something that is not terrain -- so the precheck
+      // it can soundly answer is made explicitly, in refresh_settled_agents.
       (void)tess::tick_weighted_path_agents_with_movement<
           World, Traveler, kMaxCost, OccupancyTag, ReservationTag>(
           demo->tick_state, demo->world, demo->agents, demo->runtime, options,
-          0, &demo->graph);
+          0, nullptr);
       return {};
     }
   };

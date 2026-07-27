@@ -14,6 +14,51 @@ deferred for scope reasons. Keep entries short and concrete:
 - decision
 - follow-up conditions, if any
 
+## 2026-07-26 - Keep A Sealed Colony Cheap While Planning Around Settled Agents
+
+- Area: web colony demo planning, blocked-agent recovery, and the terminal
+  verdict.
+- Hypothesis: agents can be routed around teammates who have arrived and will
+  never move again without giving up the region graph's cheap rejection of
+  goals that terrain has sealed off.
+- Evidence: measured on the 1,024-agent setting with a wall spanning every
+  row, 60 ticks against a 50 ms fixed-step budget. Baseline (planning on
+  terrain alone) worst 311.5 ms, mean 6.2 ms, but zero agents reported
+  terminal within the window because the retry allowance was 2N+8. Planning on
+  the settled-aware class with the graph still passed to the tick driver:
+  worst 612.7 ms, mean 254.1 ms — a multi-second page freeze, because
+  `precheck_path` returns `GraphStale` on a movement-class stamp mismatch, so
+  the graph pruned nothing and every blocked agent re-searched the whole
+  region every tick. Adding an explicit `precheck_path<Walker>` against the
+  terrain graph on the first blocked tick: worst 312.5 ms, mean 5.2 ms, all
+  1,024 correctly terminal. The remaining worst tick is the initial plan for
+  1,024 agents and is present in the baseline too.
+- Accepted: plan and move with a settled-aware class; keep the region graph on
+  terrain; ask the terrain precheck first and the settled-aware search only
+  when terrain says a route exists. Ordinary and bottleneck ticks stay in the
+  1-3 microsecond range with a ~60 microsecond p95 while a jam clears.
+- Rejected: installing detour routes into the retained-route store when an
+  agent stalls. The demo's replan-every-tick strategy marks pathing dirty,
+  which resubmits every agent and overwrites retained routes, so the fix would
+  have silently done nothing whenever that toggle was on.
+- Rejected: rebuilding the region graph for the settled-aware class. It churns
+  topology over something that is not terrain, and is unsound in the
+  un-settling direction — a graph built while a tile was settled would prune
+  routes that reopen the moment its owner relaunches.
+- Deferred: a flow-field formulation with a shared goal set and free-slot
+  assignment. It removes this deadlock class outright rather than routing
+  around it, but 128 distinct goal tiles means 128 fields, so it only pays off
+  together with a goal-model change. Recorded as a candidate for the colony
+  macro-harness's strategy axis.
+- Retry conditions: revisit if the demo gains bidirectional traffic, which
+  neither this fix nor a flow field resolves without a yield or swap protocol;
+  and re-measure the sealed case if the tick driver ever gains a precheck that
+  tolerates a more permissive graph stamp.
+- Measurement caveat: per-tick medians on an unobstructed map vary 1.1-2.9
+  microseconds run to run for an identical binary, so no conclusion here rests
+  on a single sample pair; the sealed-colony numbers above are the ones with a
+  signal larger than that noise.
+
 ## 2026-07-24 - Avoid Known-Unusable Weighted Field Work
 
 - Area: repeated-goal weighted batch and product-cache preprocessing.

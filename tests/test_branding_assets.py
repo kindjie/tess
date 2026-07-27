@@ -162,9 +162,22 @@ def test_colony_demo_reports_terminal_bottleneck_outcomes():
   assert "_tess_colony_unreachable" in build_script
   assert "api.unreachable()" in app
   assert "terminal" in app
-  assert "2U * static_cast<std::uint32_t>(demo->agents.size()) + 8U" in model
-  assert "active convoy" in model
-  assert "kMaxBlockedRetries" not in model
+
+  # The terminal verdict is decided by a search, not by a retry clock, so the
+  # page cannot report a merely congested convoy as permanently stuck. Two
+  # searches back it: the terrain graph rejects a sealed goal cheaply, and
+  # only then does a Traveler search decide whether settled colonists leave a
+  # route. A retry allowance sized to the convoy replaced neither.
+  assert "refresh_settled_agents" in model
+  assert "precheck_path<Walker>" in model
+  assert "kMaxBlockedRetries" in model
+  assert "2U * static_cast<std::uint32_t>(demo->agents.size()) + 8U" not in model
+
+  # Agents that will never move again are obstacles to everyone else, or a
+  # bottleneck deadlocks the convoy behind the first colonist to arrive.
+  assert "SettledTag" in model
+  assert "using Traveler" in model
+  assert "World, Traveler, kMaxCost, OccupancyTag, ReservationTag" in model
 
 
 def test_doxygen_uses_the_compact_symbol():
