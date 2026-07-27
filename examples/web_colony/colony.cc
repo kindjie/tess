@@ -29,31 +29,49 @@ struct ConstructionTag {};
 struct CostTag {};
 struct OccupancyTag {};
 struct ReservationTag {};
+// Set on the tile of every agent that will not move again -- one that has
+// arrived, or one the library has declared terminal. Distinct from occupancy,
+// which a travelling agent also sets and vacates a tick later.
+struct SettledTag {};
 
 constexpr int kWidth = 128;
 constexpr int kHeight = 128;
 constexpr int kMaxAgents = 1024;
-// A painted one-tile bottleneck can merge every row into one queue. Retained
-// route waits do not replan, so covering a full outbound-and-return convoy
-// prevents healthy queueing from becoming terminal without reintroducing the
-// planning crawl this retry bound was added to stop.
 // Wall painting is rejected outside this band so the spawn columns on the
 // left and the turnaround columns on the right always stay standable.
 constexpr int kWallMinX = 10;
 constexpr int kWallMaxX = kWidth - 11;
+// Consecutive blocked ticks an agent may spend before the demo re-examines it.
+// Terminal is then decided by an actual search rather than by the clock (see
+// Demo::refresh_settled_agents), so this only has to be long enough that
+// ordinary convoy shuffling never pays for that search.
+constexpr std::uint32_t kMaxBlockedRetries = 32;
 
 using Shape =
     tess::Shape<tess::Extent3{kWidth, kHeight, 1}, tess::Extent3{16, 16, 1}>;
 using Schema = tess::FieldSchema<
     tess::Field<PassableTag, bool>, tess::Field<ConstructionTag, bool>,
     tess::Field<CostTag, std::uint32_t>, tess::Field<OccupancyTag, bool>,
-    tess::Field<ReservationTag, bool>>;
+    tess::Field<ReservationTag, bool>, tess::Field<SettledTag, bool>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
 using Walker = tess::movement::MovementClass<
     tess::movement::AllOf<
         tess::movement::Field<PassableTag>,
         tess::movement::Not<tess::movement::Field<ConstructionTag>>>,
+    tess::movement::FieldCost<CostTag>>;
+// What the agents themselves plan and move with: the terrain rules plus "no
+// settled colonist is standing there". Occupancy at large stays out of
+// planning on purpose -- travelling peers move on, so routing around them
+// would thrash routes for nothing -- but a settled agent never moves again,
+// which makes its tile as solid as a wall to everyone else. Leaving it out of
+// planning deadlocks any agent whose goal lies beyond one (a bottleneck makes
+// that routine: see the regression scenario in main).
+using Traveler = tess::movement::MovementClass<
+    tess::movement::AllOf<
+        tess::movement::Field<PassableTag>,
+        tess::movement::Not<tess::movement::Field<ConstructionTag>>,
+        tess::movement::Not<tess::movement::Field<SettledTag>>>,
     tess::movement::FieldCost<CostTag>>;
 constexpr std::uint32_t kMaxCost = 4;
 constexpr std::uint32_t kTerrainDirty = 1U << 0U;
@@ -68,6 +86,12 @@ struct BuildAck {
 // leave all but one agent blocked forever — and every trip has equal length,
 // with the outbound leader (k = 0) starting ahead of its followers so nobody
 // parks in front of a teammate still travelling.
+//
+// That last clause holds only while each agent keeps to its own row. A painted
+// bottleneck breaks it: every agent funnels through the one crossing row, then
+// walks the goal column to find its own tile, straight through teammates who
+// arrived earlier and will never move again. `SettledTag` is what keeps the
+// layout honest once that happens — see `Traveler` above.
 constexpr auto home_tile(std::size_t i) -> tess::Coord3 {
   return {9 - static_cast<std::int64_t>(i / kHeight),
           static_cast<std::int64_t>(i % kHeight), 0};
@@ -83,6 +107,8 @@ struct Demo {
   tess::PathRequestRuntime runtime;
   tess::PathAgentTickState tick_state;
   tess::LocalTopologyScratch topo_scratch;
+  tess::PathScratch settle_scratch;
+  tess::RegionGraphScratch graph_scratch;
   tess::RegionGraph graph;
   tess::FrameOps ops;
   tess::DeltaCollector deltas;
@@ -131,9 +157,11 @@ struct Demo {
     for (auto& page : world.chunks()) {
       auto passable = page.field_span<PassableTag>();
       auto cost = page.field_span<CostTag>();
+      auto settled = page.field_span<SettledTag>();
       for (std::size_t i = 0; i < passable.size(); ++i) {
         passable[i] = true;
         cost[i] = 1;
+        settled[i] = false;
       }
     }
     runtime.reserve_requests(2048);
@@ -202,26 +230,90 @@ struct Demo {
     }
   };
 
+  // Runs before planning, so routes are always built against current facts.
+  //
+  // Two jobs. First, republish which tiles are settled: an agent that has
+  // arrived, or that the library gave up on, is a permanent obstacle, and
+  // `Traveler` routes around it. Nothing else marks these -- occupancy cannot,
+  // since travelling agents set it too.
+  //
+  // Second, keep the terminal verdict honest. The library's retry budget is a
+  // clock: it cannot tell a jammed queue from a sealed goal, and a bottleneck
+  // makes long jams ordinary. So decide the verdict by asking, in two stages
+  // ordered by cost.
+  //
+  // The terrain graph answers the cheap question. It is stamped for `Walker`,
+  // so `precheck_path<Walker>` is valid against it, and `Traveler` only ever
+  // subtracts tiles from `Walker` -- terrain that seals a goal seals it for
+  // the agent too. Settling that here, on the first blocked tick, is what
+  // keeps a sealed colony affordable: an agent left in `Blocked`/`NoPath` is
+  // resubmitted every tick, and 1,024 of them re-searching the whole region
+  // every tick is a multi-second freeze on the page.
+  //
+  // Only when terrain says a route exists is the expensive question worth
+  // asking: is there still one with the settled colonists in the way? If yes
+  // the agent is queueing, and its budget is refunded -- it will move as soon
+  // as the queue ahead does. If no, it keeps its retries and goes terminal on
+  // the clock, which is the one case where the clock is the right answer:
+  // being boxed in by teammates is real, but it can clear when they relaunch.
+  void refresh_settled_agents() {
+    for (auto& agent : agents) {
+      const auto settled =
+          !agent.has_goal || agent.phase == tess::PathAgentPhase::Unreachable;
+      world.field<SettledTag>(agent.position) = settled;
+    }
+    for (auto& agent : agents) {
+      if (agent.phase != tess::PathAgentPhase::Blocked || !agent.has_goal) {
+        continue;
+      }
+      if (tess::precheck_path<Walker>(graph, world, agent.position, agent.goal,
+                                      graph_scratch) ==
+          tess::PrecheckStatus::Unreachable) {
+        agent.phase = tess::PathAgentPhase::Unreachable;
+        agent.status = tess::PathStatus::NoPath;
+        continue;
+      }
+      if (agent.blocked_retries < kMaxBlockedRetries / 2) {
+        continue;
+      }
+      // The agent stands on its own tile and a search rejects an impassable
+      // start, so lift its own marker for the probe. Only a settled agent
+      // marks itself, and a Blocked agent is not settled -- but a terminal
+      // agent re-probed after a wall change would be, so clear it either way.
+      const auto marked = world.field<SettledTag>(agent.position);
+      world.field<SettledTag>(agent.position) = false;
+      const auto route = tess::weighted_astar_path<World, Traveler>(
+          world, tess::PathRequest{agent.position, agent.goal}, settle_scratch);
+      world.field<SettledTag>(agent.position) = marked;
+      if (route.status == tess::PathStatus::Found) {
+        agent.blocked_retries = 0;
+      }
+    }
+  }
+
   struct AgentTaskFn {
     Demo* demo = nullptr;
     auto operator()(const tess::ScheduleTaskContext&)
         -> tess::ScheduleTaskResult {
+      demo->refresh_settled_agents();
       // Marked here, not in tick(): a frame may grant several fixed ticks,
       // and the toggle promises a replan on every one of them.
       if (demo->replan_each_tick) {
         tess::mark_pathing_dirty(demo->tick_state);
       }
       auto options = tess::PathAgentTickOptions{};
-      // The convoy accordion can block rear agents for roughly one tick per
-      // rank even on an unobstructed map. Scale the terminal bound to the
-      // active convoy, not the demo's 1,024-agent capacity, so small colonies
-      // do not wait minutes to report an actual seal.
-      options.max_blocked_retries =
-          2U * static_cast<std::uint32_t>(demo->agents.size()) + 8U;
+      options.max_blocked_retries = kMaxBlockedRetries;
+      // No graph here, deliberately. The graph models terrain and is stamped
+      // for `Walker`; `precheck_path` rejects a stamp mismatch outright
+      // (GraphStale), so handing it to a `Traveler` search would never prune
+      // anything and would only read as though it did. Keeping the graph on
+      // terrain is still right -- rebuilding it as colonists settle would
+      // churn topology over something that is not terrain -- so the precheck
+      // it can soundly answer is made explicitly, in refresh_settled_agents.
       (void)tess::tick_weighted_path_agents_with_movement<
-          World, Walker, kMaxCost, OccupancyTag, ReservationTag>(
+          World, Traveler, kMaxCost, OccupancyTag, ReservationTag>(
           demo->tick_state, demo->world, demo->agents, demo->runtime, options,
-          0, &demo->graph);
+          0, nullptr);
       return {};
     }
   };
@@ -322,13 +414,19 @@ struct Demo {
   // accordion of transient Occupied results — expected, not a bug.
   // Terminal agents deliberately keep their failed goal and do not relaunch:
   // the page reports that state and requires reset/clear-walls to change the
-  // environment rather than silently retrying a proven-unreachable trip.
+  // environment rather than silently retrying a proven-unreachable trip. That
+  // is only a defensible policy because `refresh_settled_agents` reserves the
+  // terminal verdict for agents with no route at all — a jammed queue gets its
+  // retry budget back instead of being written off.
   auto relaunch() -> int {
     if (arrived() != static_cast<int>(agents.size())) {
       return trips;
     }
     outbound = !outbound;
     for (std::size_t i = 0; i < agents.size(); ++i) {
+      // Leaving home clears the settled marker: the tile is a through route
+      // again, not an obstacle, from the moment its owner is travelling.
+      world.field<SettledTag>(agents[i].position) = false;
       tess::set_path_agent_goal(tick_state, agents[i],
                                 outbound ? away_tile(i) : home_tile(i));
     }
@@ -430,6 +528,63 @@ int main() {
     if (tiles[64 + 0 * kWidth] != 1 ||
         tiles[64 + (kHeight - 1) * kWidth] != 0) {
       std::cerr << "web colony model: shadow grid mismatch\n";
+      return 1;
+    }
+
+    // Regression: a bottleneck must not wedge the colony. Two wall segments
+    // that overlap in y but stand apart in x leave one open channel, so every
+    // agent has to funnel through a single crossing row and then walk the goal
+    // column past teammates who arrived before it. Planning that ignored those
+    // settled teammates deadlocked the whole convoy behind the first one, and
+    // the retry budget then reported a full half of the colony as terminal
+    // even though each still had a clear route to its goal.
+    constexpr int kBottleneckAgents = 128;
+    tess_colony_reset(kBottleneckAgents);
+    for (int frame = 0; frame < 400; ++frame) {
+      (void)tess_colony_tick(0.05);
+      if (tess_colony_arrived() == kBottleneckAgents) {
+        (void)tess_colony_relaunch();
+      }
+    }
+    for (int y = 0; y <= 74; ++y) {
+      tess_colony_set_wall(60, y);
+    }
+    for (int y = 63; y < kHeight; ++y) {
+      tess_colony_set_wall(48, y);
+    }
+    int completed_trips = 0;
+    for (int frame = 0; frame < 4000 && completed_trips < 2; ++frame) {
+      (void)tess_colony_tick(0.05);
+      if (tess_colony_arrived() == kBottleneckAgents) {
+        (void)tess_colony_relaunch();
+        ++completed_trips;
+      }
+    }
+    if (tess_colony_unreachable() != 0) {
+      std::cerr << "web colony model: " << tess_colony_unreachable()
+                << " agents wedged behind the bottleneck\n";
+      return 1;
+    }
+    if (completed_trips < 2) {
+      std::cerr << "web colony model: convoy stalled at the bottleneck ("
+                << tess_colony_arrived() << "/" << kBottleneckAgents
+                << " arrived)\n";
+      return 1;
+    }
+
+    // The other half of that contract: refusing to cry wolf must not cost the
+    // demo its ability to report a real seal. A wall spanning every row leaves
+    // no route at all, and the page is expected to say so.
+    tess_colony_reset(8);
+    for (int y = 0; y < kHeight; ++y) {
+      tess_colony_set_wall(64, y);
+    }
+    for (int frame = 0; frame < 300; ++frame) {
+      (void)tess_colony_tick(0.05);
+    }
+    if (tess_colony_unreachable() != 8) {
+      std::cerr << "web colony model: sealed goals not reported as terminal ("
+                << tess_colony_unreachable() << "/8)\n";
       return 1;
     }
     std::cout << "web colony model: ok\n";
