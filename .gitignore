@@ -61,3 +61,6 @@ vcpkg_installed/
 conanbuildinfo.*
 conaninfo.txt
 graph_info.json
+
+# Playwright MCP writes page snapshots here during live verification.
+.playwright-mcp/

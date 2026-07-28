@@ -280,6 +280,14 @@ struct Demo {
       // Mark then clear: the version bump is the part the cache fingerprint
       // reads, and clearing leaves no dirty flag for the terrain consumers.
       // Only on an actual change, or every tick would invalidate the cache.
+      //
+      // Currently inert here: this demo plans through the weighted batch, and
+      // the route cache is consulted only by the unit path. It is done anyway
+      // because the obligation attaches to editing a field the movement class
+      // reads, not to today's choice of planner -- switching this demo to unit
+      // planning, or enabling the field-product caches, would otherwise
+      // reintroduce the bug silently. tests/tess_path_runtime_test.cc pins the
+      // behaviour on the path where it does bite.
       const auto key =
           tess::chunk_key<Shape>(tess::chunk_coord<Shape>(agent.position));
       world.mark_dirty(key, kSettledDirty,
@@ -450,7 +458,17 @@ struct Demo {
     for (std::size_t i = 0; i < agents.size(); ++i) {
       // Leaving home clears the settled marker: the tile is a through route
       // again, not an obstacle, from the moment its owner is travelling.
-      world.field<SettledTag>(agents[i].position) = false;
+      // Opening a tile is as much a passability change as closing one, so it
+      // is announced the same way -- see refresh_settled_agents.
+      if (world.field<SettledTag>(agents[i].position) != 0) {
+        world.field<SettledTag>(agents[i].position) = false;
+        const auto key = tess::chunk_key<Shape>(
+            tess::chunk_coord<Shape>(agents[i].position));
+        world.mark_dirty(
+            key, kSettledDirty,
+            tess::Box3{agents[i].position, tess::Extent3{1, 1, 1}});
+        world.clear_dirty(key, kSettledDirty);
+      }
       tess::set_path_agent_goal(tick_state, agents[i],
                                 outbound ? away_tile(i) : home_tile(i));
     }

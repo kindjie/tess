@@ -20,6 +20,13 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   straight back through the tile that had just closed. The agent then retried
   that step forever: kept alive by the retry refund, never unblocked. Marking
   only on a change keeps the cache useful, since settling is rare.
+- Scope: the unit route cache is consulted only by the unit planner, and this
+  demo plans through the weighted batch, so the demo-side change is inert
+  today. It is made anyway because the obligation attaches to editing a field
+  the movement class reads, not to the current choice of planner: switching the
+  demo to unit planning, or enabling the field-product caches, would otherwise
+  reintroduce the fault silently. The behaviour is pinned on the path where it
+  does bite.
 - Affected docs: design changelog.
 - Affected code: web colony example; a path-runtime regression covering the
   contract and the correct idiom; the browser-demo contract test.

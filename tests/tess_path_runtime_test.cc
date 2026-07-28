@@ -1019,9 +1019,11 @@ TEST(TessPathRuntime, RepeatedGoalGroupingWarmFrameIsAllocationFree) {
 // straight through it. `mark_dirty` is what moves the version; the paired
 // `clear_dirty` leaves no flag behind for unrelated dirty-mask consumers.
 //
-// This is the idiom examples/web_colony/colony.cc relies on when a colonist
-// settles. Without it the agent replans forever and is served the same blocked
-// route every time.
+// This is unit-path specific: `unit_route_cache_` is consulted by
+// `process_unit_cached` and not by the weighted batch, so a caller on the
+// weighted planner does not hit it. examples/web_colony/colony.cc performs the
+// bump regardless, because the obligation attaches to editing a field the
+// movement class reads rather than to the planner in use today.
 struct ClosedTag {};
 
 using GateSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
