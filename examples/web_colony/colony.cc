@@ -75,6 +75,11 @@ using Traveler = tess::movement::MovementClass<
     tess::movement::FieldCost<CostTag>>;
 constexpr std::uint32_t kMaxCost = 4;
 constexpr std::uint32_t kTerrainDirty = 1U << 0U;
+// Bumps a chunk's content version when a colonist settles or leaves, without
+// waking the terrain consumers. Deliberately not kTerrainDirty: the topology
+// task and the delta collector both filter on that bit, and a colonist parking
+// is not terrain. See refresh_settled_agents for why the version has to move.
+constexpr std::uint32_t kSettledDirty = 1U << 1U;
 
 struct BuildAck {
   std::size_t tiles = 0;
@@ -260,7 +265,34 @@ struct Demo {
     for (auto& agent : agents) {
       const auto settled =
           !agent.has_goal || agent.phase == tess::PathAgentPhase::Unreachable;
+      if ((world.field<SettledTag>(agent.position) != 0) == settled) {
+        continue;
+      }
       world.field<SettledTag>(agent.position) = settled;
+      // Settling is a world edit as far as the unit route cache is concerned,
+      // because `Traveler` reads this field: the tile just changed
+      // passability. That cache invalidates on chunk versions, and a plain
+      // field write bumps none, so without this the next replan can be handed
+      // a cached route straight through the tile that has just become
+      // impassable -- and the agent then retries that step forever, kept alive
+      // but never unblocked by the retry refund below.
+      //
+      // Mark then clear: the version bump is the part the cache fingerprint
+      // reads, and clearing leaves no dirty flag for the terrain consumers.
+      // Only on an actual change, or every tick would invalidate the cache.
+      //
+      // Currently inert here: this demo plans through the weighted batch, and
+      // the route cache is consulted only by the unit path. It is done anyway
+      // because the obligation attaches to editing a field the movement class
+      // reads, not to today's choice of planner -- switching this demo to unit
+      // planning, or enabling the field-product caches, would otherwise
+      // reintroduce the bug silently. tests/tess_path_runtime_test.cc pins the
+      // behaviour on the path where it does bite.
+      const auto key =
+          tess::chunk_key<Shape>(tess::chunk_coord<Shape>(agent.position));
+      world.mark_dirty(key, kSettledDirty,
+                       tess::Box3{agent.position, tess::Extent3{1, 1, 1}});
+      world.clear_dirty(key, kSettledDirty);
     }
     for (auto& agent : agents) {
       if (agent.phase != tess::PathAgentPhase::Blocked || !agent.has_goal) {
@@ -426,7 +458,17 @@ struct Demo {
     for (std::size_t i = 0; i < agents.size(); ++i) {
       // Leaving home clears the settled marker: the tile is a through route
       // again, not an obstacle, from the moment its owner is travelling.
-      world.field<SettledTag>(agents[i].position) = false;
+      // Opening a tile is as much a passability change as closing one, so it
+      // is announced the same way -- see refresh_settled_agents.
+      if (world.field<SettledTag>(agents[i].position) != 0) {
+        world.field<SettledTag>(agents[i].position) = false;
+        const auto key = tess::chunk_key<Shape>(
+            tess::chunk_coord<Shape>(agents[i].position));
+        world.mark_dirty(
+            key, kSettledDirty,
+            tess::Box3{agents[i].position, tess::Extent3{1, 1, 1}});
+        world.clear_dirty(key, kSettledDirty);
+      }
       tess::set_path_agent_goal(tick_state, agents[i],
                                 outbound ? away_tile(i) : home_tile(i));
     }
