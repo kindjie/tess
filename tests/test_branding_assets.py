@@ -187,6 +187,17 @@ def test_colony_demo_reports_terminal_bottleneck_outcomes():
   assert "kSettledDirty" in model
   assert "world.mark_dirty(key, kSettledDirty" in model
 
+  # A colony can stop dead with nobody declared terminal -- two agents each
+  # standing on the tile the other needs. Reporting only the terminal count
+  # left that reading as a running colony over a frozen grid, so sustained
+  # absence of movement is reported too, and the page must keep saying
+  # "Colony running" in the ordinary case for the Pages smoke.
+  assert "tess_colony_stalled_ticks" in model
+  assert "_tess_colony_stalled_ticks" in build_script
+  assert "api.stalledTicks()" in app
+  assert "Colony stalled" in app
+  assert "'Colony running'" in app
+
 
 def test_doxygen_uses_the_compact_symbol():
   cmake = read("CMakeLists.txt")
