@@ -13,6 +13,10 @@ const clearButton = document.getElementById('clear-walls');
 // Mirrors kWallMinX/kWallMaxX in colony.cc: painting is rejected in the
 // spawn band on the left and the turnaround band on the right.
 const bandWidth = 10;
+// Mirrors the FixedStepAccumulator rate in colony.cc.
+const ticksPerSecond = 20;
+// Five seconds of no agent moving at all. Well above transient contention.
+const stallTicks = 5 * ticksPerSecond;
 
 let api = null;
 let module = null;
@@ -140,9 +144,23 @@ function frame(timestamp) {
     } else {
       arrivedSince = 0;
     }
-    message.textContent = unreachable === 0 ?
-        'Colony running' :
-        `${unreachable} agents reached a terminal blocked state`;
+    // A colony can stop dead with nobody declared terminal: two agents each
+    // standing on the tile the other needs block each other forever. Reporting
+    // only the terminal count left that reading as "Colony running" over a
+    // frozen grid, so a sustained absence of movement is reported too. The
+    // threshold is far above ordinary convoy shuffling, which clears in a tick
+    // or two.
+    const stalledTicks = api.stalledTicks();
+    if (unreachable > 0) {
+      message.textContent =
+          `${unreachable} agents reached a terminal blocked state`;
+    } else if (stalledTicks >= stallTicks) {
+      message.textContent =
+          `Colony stalled: no agent has moved for ${
+              Math.floor(stalledTicks / ticksPerSecond)}s`;
+    } else {
+      message.textContent = 'Colony running';
+    }
     metrics.textContent = `${emaUs.toFixed(0)} µs/tick · ` +
         `${arrived}/${count} arrived · ${unreachable} terminal · ` +
         `trip ${trips}`;
@@ -179,6 +197,8 @@ createTessColony()
         arrived: instance.cwrap('tess_colony_arrived', 'number', []),
         unreachable: instance.cwrap(
             'tess_colony_unreachable', 'number', []),
+        stalledTicks: instance.cwrap(
+            'tess_colony_stalled_ticks', 'number', []),
       };
       width = api.width();
       height = api.height();

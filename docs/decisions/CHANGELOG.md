@@ -6,6 +6,29 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-27 - Report a colony that has stopped moving
+
+- Changed: the web colony demo counts consecutive fixed ticks in which no agent
+  advanced while goals remain, exposes the count as
+  `tess_colony_stalled_ticks`, and the page reports a stall after five seconds
+  of no movement. The terminal message keeps precedence, and an ordinary
+  running colony still renders exactly "Colony running", which the Pages smoke
+  greps.
+- Reason: two agents can each stand on the tile the other needs. Both block,
+  both have their retry budget refunded by the search-based terminal check, and
+  neither is ever declared terminal -- so `relaunch` never fires and the page
+  read "Colony running" over a frozen grid. Deciding the terminal verdict by
+  search made the verdict truthful and this failure silent; nothing reported
+  that the colony had stopped. A randomised geometry search found it in roughly
+  2% of wall layouts.
+- Affected docs: design changelog.
+- Affected code: web colony example and its page, the WebAssembly export list,
+  and the browser-demo contract test. The self-check gains the geometry the
+  search found, which deadlocks three of forty-eight agents with nothing
+  reported.
+- Not addressed here: the demo still cannot resolve that deadlock, which needs
+  an atomic exchange between the two agents. Reporting it is the separable half.
+
 ## 2026-07-27 - Announce settled colonists to the route cache
 
 - Changed: the web colony demo writes `SettledTag` only when the value actually

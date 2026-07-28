@@ -55,6 +55,7 @@ cp "$root/docs/assets/tess-logo-dark.svg" "$colony/logo.svg"
 colony_exports='["_main","_tess_colony_width","_tess_colony_height"'
 colony_exports+=',"_tess_colony_reset","_tess_colony_set_wall"'
 colony_exports+=',"_tess_colony_set_strategy","_tess_colony_tick"'
+colony_exports+=',"_tess_colony_stalled_ticks"'
 colony_exports+=',"_tess_colony_tiles","_tess_colony_agents"'
 colony_exports+=',"_tess_colony_agent_count","_tess_colony_arrived"'
 colony_exports+=',"_tess_colony_unreachable"'

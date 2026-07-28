@@ -132,6 +132,8 @@ struct Demo {
   tess::FixedStepAccumulator accumulator{20, 8};
   bool outbound = true;
   int trips = 1;
+  // Consecutive fixed ticks with zero agent movement. See AgentTaskFn.
+  std::size_t stalled_ticks = 0;
 
   struct BuildTaskFn {
     Demo* demo;
@@ -342,10 +344,23 @@ struct Demo {
       // terrain is still right -- rebuilding it as colonists settle would
       // churn topology over something that is not terrain -- so the precheck
       // it can soundly answer is made explicitly, in refresh_settled_agents.
-      (void)tess::tick_weighted_path_agents_with_movement<
+      const auto stats = tess::tick_weighted_path_agents_with_movement<
           World, Traveler, kMaxCost, OccupancyTag, ReservationTag>(
           demo->tick_state, demo->world, demo->agents, demo->runtime, options,
           0, nullptr);
+      // A colony can stop dead without any agent being declared terminal --
+      // two agents each standing on the tile the other needs will block, be
+      // refunded, and block again forever. Nobody reports that today, so the
+      // page reads "Colony running" over a frozen grid. Count consecutive
+      // ticks in which not one agent moved; the page turns that into a
+      // stalled message. Arrival is progress, so a colony waiting out the
+      // relaunch dwell is not stalled.
+      if (stats.movement.advanced == 0 &&
+          demo->arrived() < static_cast<int>(demo->agents.size())) {
+        ++demo->stalled_ticks;
+      } else {
+        demo->stalled_ticks = 0;
+      }
       return {};
     }
   };
@@ -539,6 +554,11 @@ TESS_DEMO_EXPORT int tess_colony_unreachable() {
   return demo ? demo->unreachable() : 0;
 }
 
+/// Consecutive fixed ticks in which no agent moved while goals remain.
+TESS_DEMO_EXPORT int tess_colony_stalled_ticks() {
+  return demo ? static_cast<int>(demo->stalled_ticks) : 0;
+}
+
 }  // extern "C"
 
 int main() {
@@ -627,6 +647,54 @@ int main() {
     if (tess_colony_unreachable() != 8) {
       std::cerr << "web colony model: sealed goals not reported as terminal ("
                 << tess_colony_unreachable() << "/8)\n";
+      return 1;
+    }
+
+    // Regression: a colony that has stopped dead must say so. Two agents can
+    // each stand on the tile the other needs; both block, both have their
+    // retry budget refunded, and neither is ever declared terminal, so the
+    // page read "Colony running" over a frozen grid. This wall set was found
+    // by a randomised geometry search and reproduces it: three walls whose
+    // gaps do not line up, leaving three of forty-eight agents deadlocked
+    // against each other with nothing reported.
+    constexpr int kStallAgents = 48;
+    tess_colony_reset(kStallAgents);
+    for (int frame = 0; frame < 300; ++frame) {
+      (void)tess_colony_tick(0.05);
+      if (tess_colony_arrived() == kStallAgents) {
+        (void)tess_colony_relaunch();
+      }
+    }
+    constexpr int kStallWalls[3][3] = {
+        {49, 47, 48}, {24, 10, 12}, {75, 23, 24}};
+    for (const auto& spec : kStallWalls) {
+      for (int y = 0; y < kHeight; ++y) {
+        if (y < spec[1] || y >= spec[2]) {
+          tess_colony_set_wall(spec[0], y);
+        }
+      }
+    }
+    for (int frame = 0; frame < 1200; ++frame) {
+      (void)tess_colony_tick(0.05);
+      if (tess_colony_arrived() == kStallAgents) {
+        (void)tess_colony_relaunch();
+      }
+    }
+    if (tess_colony_arrived() == kStallAgents) {
+      std::cerr << "web colony model: stall scenario no longer deadlocks; "
+                   "pick a new geometry rather than deleting the check\n";
+      return 1;
+    }
+    if (tess_colony_unreachable() != 0) {
+      std::cerr << "web colony model: stall scenario reported "
+                << tess_colony_unreachable()
+                << " terminal; it is meant to cover the case where nothing "
+                   "is reported at all\n";
+      return 1;
+    }
+    if (tess_colony_stalled_ticks() < 100) {
+      std::cerr << "web colony model: frozen colony not reported as stalled ("
+                << tess_colony_stalled_ticks() << " stalled ticks)\n";
       return 1;
     }
     std::cout << "web colony model: ok\n";
