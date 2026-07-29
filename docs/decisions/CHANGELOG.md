@@ -6,6 +6,38 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-28 - PIBT movement tier and the per-tile distance read
+
+- Changed: new `sim/pibt_movement.h` adds an opt-in decision tier —
+  priority inheritance with backtracking (PIBT) over caller-supplied
+  per-agent tile ranking, with adaptive priorities in caller-owned
+  `PibtPriorities`, edge conflicts following the shared `SwapPolicy`, and
+  application through the joint commit's batch semantics. A weighted tick
+  driver mirrors the joint one. `DistanceFieldProduct::distance_at` ships
+  the deferred O(1) per-tile distance read (with an `unreachable_distance`
+  sentinel) as the ready-made class-consistent ranking oracle.
+- Reason: the joint commit only admits moves along retained routes, so
+  wedges whose resolution requires yielding onto an off-route tile persist
+  under `Forbid` regardless of patience. Instrumenting the Phase 3 gate
+  cells per-seed revised the gate's own story: most thin-ring stranding is
+  *sealing* — settled arrivals cutting goals off, unsolvable for any
+  movement tier and re-scoped to goal placement — while PIBT's real,
+  measured edge is live congestion: stranded-but-reachable residuals drop
+  from 30 to 5 (ring width 2) and 2 to 0 (width 3), one width-3 seed flips
+  from sealed to fully solved, and dead-end yields resolve under `Forbid`.
+  The tier is selected per population by contention; the colony deliberately
+  does not adopt it.
+- Affected docs: simulation architecture (PIBT Movement section; the
+  settled-obstacle recipe elevated to a consumer contract), path
+  architecture (`distance_at`), public surface manifest, test inventory,
+  optimization log (gate re-evaluation and lab-scale cost measurements).
+- Affected code: new public header wired into both umbrellas; the ranking
+  oracle contract (must share the agent's movement-class passability) is
+  enforced by test; `lab/pibt_*` benchmarks mirror the joint entries one
+  for one (chain admission is linear-recursive versus the joint fixpoint's
+  quadratic sweep: 4.5x faster at 1024 agents; steady-state denial costs
+  about 2x at small counts and converges by 1024).
+
 ## 2026-07-28 - Joint movement commit with an explicit swap policy
 
 - Changed: new `sim/joint_movement.h` decides one tick's moves as a set.

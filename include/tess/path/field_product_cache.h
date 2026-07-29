@@ -112,6 +112,35 @@ class DistanceFieldProduct {
     return reached_nodes_;
   }
 
+  /// Sentinel returned by `distance_at` for unreached or invalid tiles.
+  static constexpr std::uint32_t unreachable_distance =
+      std::numeric_limits<std::uint32_t>::max();
+
+  // Freshness and model identity remain the caller's job, exactly as for the
+  // route cache: validate with `is_valid` after world edits and route full
+  // queries through the stamp-checked readers. This accessor guards only the
+  // O(1) shape-identity fields, because a per-tile oracle consulted several
+  // times per agent per tick cannot afford the readers' full validation.
+  /// Reads the stored distance-to-nearest-goal at `coord`, or the sentinel.
+  template <typename World>
+  [[nodiscard]] auto distance_at(Coord3 coord) const noexcept -> std::uint32_t {
+    using Shape = typename World::shape_type;
+    if (status_ != PathStatus::Found ||
+        tile_count_ != detail::tile_count<World>() ||
+        chunk_count_ != World::chunk_count ||
+        local_tile_count_ != World::local_tile_count ||
+        shape_size_ != ShapeTraits<Shape>::size ||
+        chunk_extent_ != ShapeTraits<Shape>::chunk || !contains<Shape>(coord)) {
+      return unreachable_distance;
+    }
+    const auto index =
+        static_cast<std::size_t>(detail::tile_index<Shape>(coord));
+    if (index >= distance_.size()) {
+      return unreachable_distance;
+    }
+    return distance_[index];
+  }
+
   [[nodiscard]] auto byte_size() const noexcept -> std::size_t {
     return distance_.size() * sizeof(std::uint32_t) +
            goals_.size() * sizeof(Coord3) +

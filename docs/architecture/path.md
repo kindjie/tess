@@ -640,7 +640,14 @@ builds from one or more goals, stores an ordered goal list, copies the dense
 distance array out of scratch, and captures chunk versions for chunks reached
 by the field.
 Replay and nearest-target queries reject stale products before returning a
-path. `FieldProductCache` is caller-owned and exact-match only: lookup keys
+path. `distance_at<World>(coord)` reads one tile's distance-to-nearest-goal
+in O(1), returning `DistanceFieldProduct::unreachable_distance` for
+unreached tiles, coordinates outside the shape, products whose shape
+identity does not match `World`, and unbuilt products; it guards only those
+O(1) identity checks — content freshness against a mutated world stays the
+caller's job, exactly as for the route cache. Its primary consumer is a
+PIBT ranking oracle built over the same movement class the agents move
+with. `FieldProductCache` is caller-owned and exact-match only: lookup keys
 include the passability tag identity, shape-compatible tile/chunk metadata,
 and ordered goals. Products are world-sized, so the cache stores each one
 behind stable per-entry heap storage and takes ownership on

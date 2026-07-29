@@ -100,6 +100,77 @@ of agents shifts one place), and swaps (the two-agent cycle) all fail
   `tick_weighted_path_agents_with_movement` with the joint advance in place
   of the per-agent one and optionally reports the joint stats.
 
+### PIBT Movement
+
+The joint commit only admits moves along retained routes: an agent whose
+route is blocked never considers stepping aside, so a head-on in a dead-end
+corridor under `SwapPolicy::Forbid` wedges forever even when a side pocket
+would let one agent yield. The PIBT tier (priority inheritance with
+backtracking, after Okumura et al.) closes that gap: each agent ranks
+staying put plus every legal transition of its movement class, the
+highest-priority agent decides first, an agent whose chosen tile is held by
+an undecided peer lends that peer its priority so the peer decides — and
+possibly yields off its route — immediately, and a peer that cannot place
+anywhere backtracks the chooser to its next candidate. It is an opt-in
+sibling of the joint advance, selected per population where contention
+justifies its cost, not a replacement.
+
+- `PibtPriorities` is caller-owned adaptive priority state, index-paired
+  with the agent span exactly like `PathAgentRoutes`: `elapsed` increments
+  each tick an agent is unarrived and resets on arrival, and higher elapsed
+  decides earlier (span index breaks ties). Adaptive priorities are load-
+  bearing: PIBT's reachability guarantee (every agent reaches its goal in
+  finite time on graphs whose adjacent vertices share a cycle of length
+  three or more) depends on them.
+- `advance_path_agents_with_pibt<World, ClassOrTag, OccupancyTag,
+  ReservationTag>(world, agents, routes, priorities, scratch, rank,
+  options, dirty_mask)` decides one step per agent and applies the decided
+  configuration with the joint commit's semantics: sources clear before
+  destinations set, reservations clear on entry, a move off the retained
+  route drops it (`NoPath`) so scoped resubmission replans, and observer
+  callbacks (overload) fire only after the whole configuration is applied.
+  Edge conflicts follow the shared `SwapPolicy` from `JointMoveOptions`;
+  vertex conflicts backtrack. The advance is dense-only (like the
+  distance-field product family) and reuses `JointMoveScratch`.
+- **The ranking oracle is the caller's, and it MUST share the agent's
+  movement-class passability.** `rank(agent_index, coord)` returns lower
+  values for better tiles; a terrain-only oracle under a settled-aware
+  class rates standing beside an obstruction above any detour and parks the
+  agent there forever (proven in the tier's tests).
+  `DistanceFieldProduct::distance_at` provides an exact per-tile oracle
+  from `build_distance_field_product` over the same movement class; rebuild
+  the product when the class's inputs (for example a settled set) change.
+- `tick_weighted_path_agents_with_pibt<World, Class, MaxCost, OccupancyTag,
+  ReservationTag>` mirrors the joint tick driver with the PIBT advance in
+  place of the joint one.
+
+Selection guidance from the gate evidence: on thin cycle-rich maps the
+dominant stranding cause is *sealing* — settled arrivals cutting a live
+agent's goal off — which no movement tier can resolve; goal placement owns
+that hazard (see the settled recipe below). PIBT's measurable edge over the
+joint commit is live congestion: it eliminates most stranded-but-reachable
+residuals, resolves yield-requiring wedges under `Forbid`, and keeps
+populations moving so fewer seals form. Below that contention regime the
+joint commit is sufficient and cheaper to drive (no ranking oracle to
+maintain).
+
+#### The Settled-Obstacle Recipe Is a Consumer Contract
+
+Any consumer that turns idle agents into obstacles (the colony's settled
+marking) must follow all three steps, for every movement tier:
+
+1. Mark the obstacle field only when an agent's settled state *changes*
+   (arrived or terminally unreachable), not every tick.
+2. Announce the change: `mark_dirty` + `clear_dirty` with the movement
+   dirty mask, so route caches observe the content-version bump — plain
+   field writes bump nothing and stale routes reproduce the pre-settled
+   deadlocks wholesale.
+3. Plan and rank with a movement class that excludes the obstacle field
+   (settled-aware), never the terrain-only class.
+
+Omitting any step reproduces the original colony deadlock; omitting step 3
+in a PIBT ranking oracle parks agents permanently beside obstructions.
+
 ### Render Deltas
 
 - `RenderTileDelta` records a changed tile coordinate, chunk key, local tile

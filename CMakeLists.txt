@@ -140,6 +140,7 @@ set(
   include/tess/sim/movement.h
   include/tess/sim/path_agent.h
   include/tess/sim/path_agent_tick.h
+  include/tess/sim/pibt_movement.h
   include/tess/sim/render_delta.h
   include/tess/sim/schedule.h
   include/tess/sim/scheduler.h
