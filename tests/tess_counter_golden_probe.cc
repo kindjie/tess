@@ -21,10 +21,13 @@
 #include <tess/diagnostics/diagnostics.h>
 #include <tess/tess.h>
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <fstream>
+#include <string>
 #include <vector>
 
 namespace {
@@ -99,10 +102,11 @@ auto build_serpentine(PathWorld& world) -> Endpoints {
   return Endpoints{tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}};
 }
 
-void emit_path_counters(std::FILE* out,
-                        const tess::diagnostics::PathCounters& counters) {
-  std::fprintf(
-      out,
+auto emit_path_counters(const tess::diagnostics::PathCounters& counters)
+    -> std::string {
+  std::array<char, 2048> buffer{};
+  const int written = std::snprintf(
+      buffer.data(), buffer.size(),
       "{\"scratch_clear_calls\": %llu, \"scratch_clear_nodes\": %llu, "
       "\"initializations\": %llu, \"start_passability_checks\": %llu, "
       "\"goal_passability_checks\": %llu, \"heap_pushes\": %llu, "
@@ -131,12 +135,16 @@ void emit_path_counters(std::FILE* out,
       static_cast<unsigned long long>(counters.touched_nodes),
       static_cast<unsigned long long>(counters.heuristic_calls),
       static_cast<unsigned long long>(counters.reconstructed_nodes));
+  check(written > 0 && static_cast<std::size_t>(written) < buffer.size(),
+        "emit", "path counter formatting overflow");
+  return std::string{buffer.data()};
 }
 
-void emit_queued_counters(
-    std::FILE* out, const tess::diagnostics::QueuedPhaseCounters& counters) {
-  std::fprintf(
-      out,
+auto emit_queued_counters(
+    const tess::diagnostics::QueuedPhaseCounters& counters) -> std::string {
+  std::array<char, 2048> buffer{};
+  const int written = std::snprintf(
+      buffer.data(), buffer.size(),
       "{\"phase_calls\": %llu, \"phase_operations\": %llu, "
       "\"phase_invalid_ranges\": %llu, \"phase_failures\": %llu, "
       "\"partitioned_phase_calls\": %llu, \"dirty_partitions\": %llu, "
@@ -155,6 +163,9 @@ void emit_queued_counters(
       static_cast<unsigned long long>(counters.worker_pool_workers),
       static_cast<unsigned long long>(counters.dirty_records_collected),
       static_cast<unsigned long long>(counters.dirty_chunks_merged));
+  check(written > 0 && static_cast<std::size_t>(written) < buffer.size(),
+        "emit", "queued counter formatting overflow");
+  return std::string{buffer.data()};
 }
 
 auto run_astar_serpentine() -> tess::diagnostics::PathCounters {
@@ -323,32 +334,31 @@ auto main(int argc, char** argv) -> int {
       std::fprintf(stderr, "usage: %s <observed.json>\n", argv[0]);
       return EXIT_FAILURE;
     }
-    std::FILE* out = std::fopen(argv[1], "wb");
-    if (out == nullptr) {
-      std::fprintf(stderr, "cannot open %s\n", argv[1]);
-      return EXIT_FAILURE;
-    }
-
     const auto astar = run_astar_serpentine();
     const auto weighted = run_weighted_serpentine();
     const auto unit_product = run_unit_product_replay();
     const auto weighted_product = run_weighted_product_nearest();
     const auto queued = run_queued_serial_update();
 
-    std::fprintf(out, "{\"schema\": 1, \"workloads\": {");
-    std::fprintf(out, "\"astar_serpentine\": {\"path\": ");
-    emit_path_counters(out, astar);
-    std::fprintf(out, "}, \"weighted_serpentine\": {\"path\": ");
-    emit_path_counters(out, weighted);
-    std::fprintf(out, "}, \"unit_product_replay\": {\"path\": ");
-    emit_path_counters(out, unit_product);
-    std::fprintf(out, "}, \"weighted_product_nearest\": {\"path\": ");
-    emit_path_counters(out, weighted_product);
-    std::fprintf(out, "}, \"queued_serial_update\": {\"queued\": ");
-    emit_queued_counters(out, queued);
-    std::fprintf(out, "}}}\n");
-    if (std::fclose(out) != 0) {
-      std::fprintf(stderr, "cannot finish writing %s\n", argv[1]);
+    std::string document;
+    document += "{\"schema\": 1, \"workloads\": {";
+    document += "\"astar_serpentine\": {\"path\": ";
+    document += emit_path_counters(astar);
+    document += "}, \"weighted_serpentine\": {\"path\": ";
+    document += emit_path_counters(weighted);
+    document += "}, \"unit_product_replay\": {\"path\": ";
+    document += emit_path_counters(unit_product);
+    document += "}, \"weighted_product_nearest\": {\"path\": ";
+    document += emit_path_counters(weighted_product);
+    document += "}, \"queued_serial_update\": {\"queued\": ";
+    document += emit_queued_counters(queued);
+    document += "}}}\n";
+
+    std::ofstream out{argv[1], std::ios::binary};
+    out << document;
+    out.close();
+    if (!out) {
+      std::fprintf(stderr, "cannot write %s\n", argv[1]);
       return EXIT_FAILURE;
     }
   } catch (const std::exception& error) {
