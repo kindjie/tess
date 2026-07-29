@@ -127,3 +127,59 @@ def test_malformed_observed_fails_closed(tmp_path):
     check_counter_goldens.main(
       ("--observed", str(observed), "--golden", str(golden))
     )
+
+
+@pytest.mark.parametrize(
+  "doc",
+  (
+    {"schema": 2, "workloads": {}},
+    {"schema": True, "workloads": {}},
+    {"workloads": {}},
+    {"schema": 1, "workloads": []},
+    {"schema": 1, "workloads": {"astar": []}},
+    {"schema": 1, "workloads": {"astar": {"path": {"heap_pushes": True}}}},
+    {"schema": 1, "workloads": {"astar": {"path": {"heap_pushes": -1}}}},
+    {"schema": 1, "workloads": {"astar": {"path": {"heap_pushes": 1.5}}}},
+  ),
+)
+def test_structurally_invalid_documents_fail_closed(tmp_path, doc):
+  golden = tmp_path / "golden.json"
+  observed = tmp_path / "observed.json"
+  _write(golden, _doc({}))
+  _write(observed, doc)
+
+  with pytest.raises(SystemExit):
+    check_counter_goldens.main(
+      ("--observed", str(observed), "--golden", str(golden))
+    )
+
+
+def test_matching_rerun_removes_a_stale_drift_report(tmp_path, monkeypatch):
+  monkeypatch.delenv("TESS_COUNTER_GOLDENS_STRICT", raising=False)
+  golden = tmp_path / "golden.json"
+  observed = tmp_path / "observed.json"
+  report = tmp_path / "drift.md"
+  doc = _doc({"astar": {"path": {"heap_pushes": 12}}})
+  _write(golden, doc)
+  _write(observed, doc)
+  report.write_text("stale drift", encoding="utf-8")
+
+  code = check_counter_goldens.main(
+    (
+      "--observed", str(observed),
+      "--golden", str(golden),
+      "--drift-report", str(report),
+    )
+  )
+
+  assert code == 0
+  assert not report.exists()
+
+
+def test_report_cells_escape_markdown_pipes():
+  rows = [("a|b", "path", "heap|pushes", 1, 2)]
+
+  report = check_counter_goldens.render_report(rows)
+
+  assert "a\\|b" in report
+  assert "heap\\|pushes" in report

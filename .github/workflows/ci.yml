@@ -553,6 +553,15 @@ jobs:
       - name: Test
         run: ctest --preset bench
 
+      # Release-configuration counter-golden drift (shadow mode).
+      - name: Surface counter-golden drift
+        if: ${{ always() }}
+        run: |
+          if [ -f build/bench/tests/counter-golden-drift.md ]; then
+            cat build/bench/tests/counter-golden-drift.md \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Benchmark thresholds
         if: github.event_name != 'pull_request'
         run: |

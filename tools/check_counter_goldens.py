@@ -18,14 +18,50 @@ from pathlib import Path
 from typing import Any
 
 
+SCHEMA_VERSION = 1
+
+
+def _is_counter_value(value: object) -> bool:
+  # Counters are unsigned integers; bool is an int subclass and JSON
+  # true would otherwise compare equal to 1, so reject it explicitly.
+  return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
 def load(path: Path) -> dict[str, Any]:
-  """Load a counter JSON document, failing closed on malformed input."""
+  """Load and structurally validate a counter JSON document.
+
+  Fails closed on anything that is not exactly the probe's shape:
+  schema pin, string-keyed workload and family mappings, and
+  nonnegative integer counters (bool rejected).
+  """
   try:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
   except (OSError, json.JSONDecodeError) as error:
     raise SystemExit(f"error: cannot read {path}: {error}") from error
-  if not isinstance(data, dict) or "workloads" not in data:
-    raise SystemExit(f"error: {path} is not a counter document")
+
+  def invalid(reason: str) -> SystemExit:
+    return SystemExit(f"error: {path} is not a counter document: {reason}")
+
+  if not isinstance(data, dict):
+    raise invalid("root is not an object")
+  schema = data.get("schema")
+  if isinstance(schema, bool) or schema != SCHEMA_VERSION:
+    raise invalid(f"schema {schema!r} != {SCHEMA_VERSION}")
+  workloads = data.get("workloads")
+  if not isinstance(workloads, dict):
+    raise invalid("workloads is not an object")
+  for workload, families in workloads.items():
+    if not isinstance(workload, str) or not isinstance(families, dict):
+      raise invalid(f"workload {workload!r} is not an object")
+    for family, counters in families.items():
+      if not isinstance(family, str) or not isinstance(counters, dict):
+        raise invalid(f"family {workload}/{family!r} is not an object")
+      for counter, value in counters.items():
+        if not isinstance(counter, str) or not _is_counter_value(value):
+          raise invalid(
+            f"counter {workload}/{family}/{counter!r} is not a "
+            "nonnegative integer"
+          )
   return data
 
 
@@ -82,10 +118,13 @@ def render_report(
     "| Workload | Family | Counter | Golden | Observed |",
     "| --- | --- | --- | --- | --- |",
   ]
+  def cell(value: object) -> str:
+    return str(value).replace("|", "\\|")
+
   for workload, family, counter, golden_value, observed_value in rows:
     lines.append(
-      f"| {workload} | {family} | {counter} "
-      f"| {golden_value} | {observed_value} |"
+      f"| {cell(workload)} | {cell(family)} | {cell(counter)} "
+      f"| {cell(golden_value)} | {cell(observed_value)} |"
     )
   return "\n".join(lines) + "\n"
 
@@ -119,6 +158,10 @@ def main(argv: list[str] | None = None) -> int:
   golden = load(args.golden)
   rows = diff_counters(golden, observed)
   if not rows:
+    if args.drift_report:
+      # A stale report from an earlier drifted run must not outlive
+      # the run that resolved it (multi-config builds share the path).
+      args.drift_report.unlink(missing_ok=True)
     print("counter goldens match")
     return 0
 

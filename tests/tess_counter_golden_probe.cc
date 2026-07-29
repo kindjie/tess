@@ -306,6 +306,12 @@ auto run_queued_serial_update() -> tess::diagnostics::QueuedPhaseCounters {
            "queued_serial_update", "first chunk dirty flags");
   check_eq(world.meta(tess::ChunkKey{0}).version, 1, "queued_serial_update",
            "first chunk version");
+  check_eq(world.field<TerrainTag>(tess::Coord3{4, 0, 0}), 4,
+           "queued_serial_update", "second chunk write");
+  check_eq(world.dirty_flags(tess::ChunkKey{1}), kDirtyTerrain,
+           "queued_serial_update", "second chunk dirty flags");
+  check_eq(world.meta(tess::ChunkKey{1}).version, 1, "queued_serial_update",
+           "second chunk version");
   return counters;
 }
 
