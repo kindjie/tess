@@ -9,6 +9,7 @@
 #include <tess/experimental/maintenance.h>
 #include <tess/ops/async_work.h>
 #include <tess/sim/event_stream.h>
+#include <tess/sim/joint_movement.h>
 #include <tess/tess.h>
 
 #include <array>
@@ -17,6 +18,8 @@
 #include <utility>
 
 namespace {
+
+namespace mv = tess::movement;
 
 using tess::diagnostics::FlowAccounting;
 using tess::diagnostics::FlowCounters;
@@ -186,6 +189,8 @@ struct ThrowingMove {
   ThrowingMove(const ThrowingMove&) = default;
   auto operator=(const ThrowingMove&) -> ThrowingMove& = default;
   ThrowingMove(ThrowingMove&&) = default;
+  // This type exists to throw on move assignment.
+  // NOLINTNEXTLINE(performance-noexcept-move-constructor,bugprone-exception-escape)
   auto operator=(ThrowingMove&&) -> ThrowingMove& {
     throw std::runtime_error{"move"};
   }
@@ -353,11 +358,15 @@ TEST(TessMaintenanceFlow, ImmediateSchedulerAccountsSelfSchedulesAsCoalesced) {
 }
 
 struct AgentPassableTag {};
+struct AgentCostTag {};
 struct AgentOccupancyTag {};
 struct AgentReservationTag {};
 using AgentSchema = tess::FieldSchema<tess::Field<AgentPassableTag, bool>,
+                                      tess::Field<AgentCostTag, std::uint32_t>,
                                       tess::Field<AgentOccupancyTag, bool>,
                                       tess::Field<AgentReservationTag, bool>>;
+using AgentWalker =
+    mv::MovementClass<mv::Field<AgentPassableTag>, mv::FieldCost<AgentCostTag>>;
 using AgentShape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
 using AgentWorld = tess::AlwaysResidentWorld<AgentShape, AgentSchema>;
 
@@ -496,6 +505,42 @@ TEST(TessAgentFlow, TickStateCopiesStartUnattached) {
 
   auto moved = std::move(original);
   EXPECT_EQ(moved.flow_accounting, &accounting);
+}
+
+TEST(TessAgentFlow, JointMovementTierAccountsArrivals) {
+  AgentWorld world;
+  for (std::int64_t y = 0; y < 8; ++y) {
+    for (std::int64_t x = 0; x < 8; ++x) {
+      world.field<AgentPassableTag>(tess::Coord3{x, y, 0}) = true;
+      world.field<AgentCostTag>(tess::Coord3{x, y, 0}) = 1;
+    }
+  }
+  tess::PathAgentTickState tick_state;
+  FlowAccounting accounting;
+  tick_state.flow_accounting = &accounting;
+  std::array<tess::PathAgentState, 1> agents{};
+  agents[0].position = tess::Coord3{0, 0, 0};
+  tess::PathRequestRuntime runtime;
+  tess::JointMoveScratch scratch;
+  scratch.reserve(1);
+
+  tess::observe_path_agent_flow_tick(tick_state, agents, 1);
+  tess::set_path_agent_goal(tick_state, agents[0], tess::Coord3{0, 2, 0});
+  for (std::uint64_t tick = 2; tick <= 8; ++tick) {
+    tess::observe_path_agent_flow_tick(tick_state, agents, tick);
+    (void)tess::tick_weighted_path_agents_with_joint_movement<
+        AgentWorld, AgentWalker, 4096u, AgentOccupancyTag, AgentReservationTag>(
+        tick_state, world, agents, runtime, scratch);
+    if (!agents[0].has_goal) {
+      break;
+    }
+  }
+
+  EXPECT_FALSE(agents[0].has_goal);
+  EXPECT_EQ(accounting.counters.completed, 1u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 0u);
+  EXPECT_TRUE(accounting.counters.admission_identity_holds());
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
 }
 
 }  // namespace

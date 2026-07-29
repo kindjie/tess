@@ -412,6 +412,7 @@
     "EntityDelta",
     "EntityDeltaKind",
     "EventStream",
+    "fail_path_agent_flow",
     "FixedStepAccumulator",
     "FixedStepFrame",
     "is_transient_movement_failure",

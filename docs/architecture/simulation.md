@@ -685,8 +685,9 @@ reports as live terminalizes it as superseded, while re-arming after a
 terminal outcome is a fresh admission. The tick-state
 `clear_path_agent_goal` cancels a live goal. `arrive_path_agent`
 completes the lifecycle at the arrival transition inside the advance
-helpers, and blocked-budget exhaustion terminalizes as failed at the
-`Unreachable` transition. `observe_path_agent_flow_tick` drives the
+helpers — including the joint-movement and PIBT tiers — and
+`fail_path_agent_flow` terminalizes it as failed at every structural
+failure and blocked-budget exhaustion `Unreachable` transition. `observe_path_agent_flow_tick` drives the
 per-tick inventory weighting and refreshes the oldest outstanding goal
 age from per-agent admission stamps. The bare state-only goal helpers
 perform no accounting and say so.
