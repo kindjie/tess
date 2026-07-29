@@ -17,6 +17,33 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-07-29 - Paired Sentinel Replay Reproduces The 2026-07-23 Catch
+
+- Area: validation of the new paired base-vs-head sentinel runner
+  (`tools/paired_bench.py`, redesign phase 2 slice 1) against the one
+  confirmed genuine catch in the threshold gate's history.
+- Method: local arm64 Release builds of the exact historical pair — base
+  c300560 (main before the roadmap-completion regressions), head f92b5f5
+  (the commit CI run 30041607406 measured) — compared over the four
+  confirmed-catch sentinels with the shipped parameters (10 alternating
+  rounds, paired per-round-ratio bootstrap, 8% effect floor, 2 us
+  materiality floor, re-run-once confirmation).
+- Evidence: verdict `regression` on all four. cached_astar_batch +395.2%
+  [+390.6%, +397.1%], field_product_cache_hit_replay +156.0%, nearest_
+  target_product +158.5%, weighted_batch_planner +9.3% [+8.6%, +10.1%] —
+  the last clearing the 8% floor with a CI excluding it. Local deltas
+  exceed the hosted +19-28% ceiling overshoots because ceilings measure
+  excess over calibrated maxima, not over the pre-regression base, and
+  the arm64 build amplifies the per-edge abstraction overhead.
+- Decision: the detector demonstrably reproduces the historical catch
+  end to end on the exact commit pair. This is local evidence only; the
+  section 4.3 exit criterion still requires the hosted-runner replay
+  during the phase 4 write-up, and the ceilings remain authoritative
+  until every criterion is met.
+- Follow-up conditions: if the shadow period shows a divergence in which
+  the ceilings fire truthfully and the paired run stays silent, classify
+  it against this replay's sensitivity before tuning any floor.
+
 ## 2026-07-28 - Phase 3 Gate Re-Evaluation: Sealing, Not Patience, Dominates
 
 - Area: the PIBT-tier go/no-go evidence — width-2/3 ring and cross gate

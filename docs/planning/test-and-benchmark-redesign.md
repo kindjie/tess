@@ -766,7 +766,11 @@ that introduces this document.
    areas are exactly the perf-classified ones; ops/, diagnostics/,
    debug/, gpu/, and experimental/ are declared unrepresented pending
    the counter-golden slice), the path-filtered shadow job, and the
-   dispatch sentinel-confirmation workflow. Remaining in this phase:
+   dispatch sentinel-confirmation workflow. A local replay of the
+   2026-07-23 catch on its exact commit pair reproduced the detection on
+   all four confirmed-catch sentinels (optimization log, "Paired
+   Sentinel Replay"); the hosted-runner replay remains a phase 4 exit
+   criterion. Remaining in this phase:
    counter goldens, change-point alerting with runner fingerprinting,
    the section 4.2 full-suite confirmation, advisory coverage, the
    workload-matrix catalog, profiling-protocol wiring, and pre-push
