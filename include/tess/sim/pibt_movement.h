@@ -1,16 +1,23 @@
 #pragma once
 
 // PIBT movement tier: priority inheritance with backtracking, composed with
-// the joint commit's swap policy. The joint advance resolves chains and
-// cycles along retained routes; on cycle-rich geometry that is not enough —
-// a width-2 ring (biconnected, provably jointly solvable) strands roughly a
-// fifth of its agents under `SwapPolicy::Permit` regardless of retry
-// patience, because no agent ever considers an alternative tile. PIBT does:
-// each agent ranks staying put and every legal neighbour, the
+// the joint commit's swap policy. The joint advance only admits moves along
+// retained routes, so an agent whose route is blocked never considers
+// stepping aside, and wedges whose resolution requires yielding onto an
+// off-route tile persist regardless of retry patience. PIBT closes that
+// gap: each agent ranks staying put and every legal neighbour, the
 // highest-priority agent decides first, an agent whose chosen tile is held
-// by an undecided peer lends that peer its priority so the peer decides
-// immediately, and a peer that cannot place anywhere backtracks the chooser
-// to its next candidate.
+// by an undecided peer lends that peer its priority so the peer decides —
+// and possibly yields off its route — immediately, and a peer that cannot
+// place anywhere backtracks the chooser to its next candidate.
+//
+// The gate evidence scoping this tier (optimization log, "Phase 3 Gate
+// Re-Evaluation"): on thin cycle-rich maps the dominant stranding cause is
+// sealing — settled arrivals cutting a live agent's goal off — which no
+// movement tier can resolve; goal placement owns that hazard. PIBT's
+// measured edge is live congestion: it eliminates most
+// stranded-but-reachable residuals, resolves dead-end yields under
+// `Forbid`, and keeps populations moving so fewer seals form.
 //
 // Two contracts carry the tier's correctness:
 //
@@ -43,6 +50,32 @@
 
 namespace tess {
 
+namespace detail {
+
+inline constexpr std::size_t kPibtMaxCandidates = 16;
+
+// One pending decision in an inheritance chain. Chains are bounded only by
+// the agent count, so frames live in caller-owned heap storage rather than
+// on the process stack.
+struct PibtFrame {
+  struct Candidate {
+    Coord3 coord{};
+    std::uint32_t rank_value = 0;
+  };
+  std::uint32_t agent = 0;
+  std::uint32_t next_candidate = 0;
+  std::uint32_t candidate_count = 0;
+  bool waiting = false;
+  Candidate candidates[kPibtMaxCandidates] = {};
+};
+
+template <typename Ranking>
+concept PibtRanking = requires(Ranking& rank, std::size_t agent, Coord3 coord) {
+  { rank(agent, coord) } -> std::convertible_to<std::uint32_t>;
+};
+
+}  // namespace detail
+
 // Index-paired with the agent span handed to the advance, exactly like
 // `PathAgentRoutes`: a caller that reorders, removes, or compacts its agents
 // between ticks must reset this state or keep it in sync itself.
@@ -52,22 +85,17 @@ struct PibtPriorities {
   std::vector<std::uint32_t> elapsed;
   /// Scratch decision order; contents are an implementation detail.
   std::vector<std::uint32_t> order;
+  /// Scratch decision stack for inheritance chains; contents are an
+  /// implementation detail.
+  std::vector<detail::PibtFrame> frames;
 
-  /// Pre-sizes both containers for `agent_count` agents.
+  /// Pre-sizes the containers for `agent_count` agents.
   void reserve(std::size_t agent_count) {
     elapsed.reserve(agent_count);
     order.reserve(agent_count);
+    frames.reserve(agent_count);
   }
 };
-
-namespace detail {
-
-template <typename Ranking>
-concept PibtRanking = requires(Ranking& rank, std::size_t agent, Coord3 coord) {
-  { rank(agent, coord) } -> std::convertible_to<std::uint32_t>;
-};
-
-}  // namespace detail
 
 // One decision pass per step (`max_steps` passes, zero meaning paused as in
 // the joint advance; a pass that moves nobody ends the call early since it
@@ -191,29 +219,28 @@ auto advance_path_agents_with_pibt(
       }
     }
 
-    // Candidate buffers reuse scratch: `cycle_walk` holds ranked candidate
-    // coordinate keys per decision frame is not possible (recursion), so the
-    // recursive decision uses stack-local fixed candidate arrays bounded by the
-    // lattice's maximum degree plus one.
-    struct Candidate {
-      Coord3 coord{};
-      std::uint32_t rank_value = 0;
-    };
-    constexpr std::size_t kMaxCandidates = 16;
-
     const auto find_occupant = [&](Coord3 coord) -> std::uint32_t {
       return detail::joint_find_occupant(scratch, tile_key<Shape>(coord).value);
     };
     const auto claim = [&](Coord3 coord) -> bool {
       return detail::joint_claim(scratch, tile_key<Shape>(coord).value);
     };
-    // 2-4: the recursive decision.
-    const auto decide = [&](auto&& self, std::size_t i) -> bool {
+
+    // 2-4: the decision machine. Decisions cannot share one scratch candidate
+    // buffer (an inheritance chain holds every participant's ranked
+    // candidates at once), and chain length is bounded only by the agent
+    // count, so each participant gets a fixed-size frame on the caller-owned
+    // `priorities.frames` stack — never the process stack.
+    auto& frames = priorities.frames;
+    frames.clear();
+
+    // Starts agent `i` deciding: either pushes its frame or fails
+    // immediately. An impassable source cannot be vacated, exactly as
+    // `commit_movement_intent` fails `BlockedFrom`; the agent keeps its tile
+    // and an inheriting caller must backtrack.
+    const auto start_deciding = [&](std::size_t i) -> bool {
       scratch.state[i] = deciding;
       const auto position = agents[i].position;
-      // An impassable source cannot be vacated, exactly as
-      // `commit_movement_intent` fails `BlockedFrom`; the agent keeps its tile
-      // and an inheriting caller must backtrack.
       if (!detail::is_passable<World, ClassOrTag>(world, position)) {
         (void)claim(position);
         scratch.failure[i] =
@@ -221,12 +248,14 @@ auto advance_path_agents_with_pibt(
         scratch.state[i] = decided;
         return false;
       }
-      Candidate candidates[kMaxCandidates];
-      std::size_t count = 0;
+      frames.emplace_back();
+      auto& frame = frames.back();
+      frame.agent = static_cast<std::uint32_t>(i);
       const auto index = detail::tile_index<Shape>(position);
       model.for_each_forward(world, position, index, [&](auto probe) {
         if (probe.availability != TransitionAvailability::Legal ||
-            probe.cost_overflow || count >= kMaxCandidates - 1) {
+            probe.cost_overflow ||
+            frame.candidate_count >= detail::kPibtMaxCandidates - 1) {
           return;
         }
         const auto coord = detail::tile_coord<Shape>(probe.to_index);
@@ -241,30 +270,66 @@ auto advance_path_agents_with_pibt(
           return;  // occupied by something outside this span, as in the joint
                    // pass's external-occupant rejection
         }
-        candidates[count++] = Candidate{coord, rank(i, coord)};
+        frame.candidates[frame.candidate_count++] = {coord, rank(i, coord)};
       });
-      candidates[count++] = Candidate{position, rank(i, position)};
-      // Insertion sort: allocation-free and stable, so the model's enumeration
-      // order breaks ranking ties deterministically.
-      for (std::size_t a = 1; a < count; ++a) {
-        const auto value = candidates[a];
-        std::size_t b = a;
-        while (b > 0 && candidates[b - 1].rank_value > value.rank_value) {
-          candidates[b] = candidates[b - 1];
+      frame.candidates[frame.candidate_count++] = {position, rank(i, position)};
+      // Insertion sort: allocation-free and stable, so the model's
+      // enumeration order breaks ranking ties deterministically.
+      for (std::uint32_t a = 1; a < frame.candidate_count; ++a) {
+        const auto value = frame.candidates[a];
+        std::uint32_t b = a;
+        while (b > 0 && frame.candidates[b - 1].rank_value > value.rank_value) {
+          frame.candidates[b] = frame.candidates[b - 1];
           --b;
         }
-        candidates[b] = value;
+        frame.candidates[b] = value;
       }
+      return true;
+    };
 
-      for (std::size_t k = 0; k < count; ++k) {
-        const auto v = candidates[k].coord;
+    const auto run_decision = [&](std::size_t root) {
+      if (!start_deciding(root)) {
+        return;
+      }
+      bool child_succeeded = false;
+      while (!frames.empty()) {
+        auto& frame = frames.back();
+        const auto i = static_cast<std::size_t>(frame.agent);
+        const auto position = agents[i].position;
+        if (frame.waiting) {
+          frame.waiting = false;
+          if (child_succeeded) {
+            scratch.state[i] = decided;
+            frames.pop_back();
+            child_succeeded = true;
+            continue;
+          }
+          // The inherited peer failed and stays on its tile; its claim must
+          // survive to protect it from later deciders (pypibt re-marks
+          // `occupied_nxt` with the failed agent), so only this agent's
+          // tentative desire is undone before trying the next candidate.
+          scratch.desired[i] = position;
+          ++frame.next_candidate;
+        }
+        if (frame.next_candidate >= frame.candidate_count) {
+          // Nowhere to place: keep the tile so inheritance chains cannot
+          // displace this agent, and report failure to the inheriting caller.
+          (void)claim(position);
+          scratch.desired[i] = position;
+          scratch.state[i] = decided;
+          frames.pop_back();
+          child_succeeded = false;
+          continue;
+        }
+        const auto v = frame.candidates[frame.next_candidate].coord;
         const auto occupant = find_occupant(v);
         const bool moving = !(v == position);
         // Edge conflict: the occupant of `v` is entering this agent's tile.
-        // `desired` starts at each agent's own position, so equality with this
-        // agent's position means the occupant actively chose it — whether it is
-        // fully decided or is the inheritance parent still mid-decision (the
-        // parent writes `desired` before recursing, as pypibt sets `Q_to`).
+        // `desired` starts at each agent's own position, so equality with
+        // this agent's position means the occupant actively chose it —
+        // whether it is fully decided or is the inheritance parent further
+        // down the stack (the parent writes `desired` before its peer
+        // decides, as pypibt sets `Q_to`).
         bool is_swap = false;
         if (moving && occupant != none &&
             scratch.desired[occupant] == position) {
@@ -284,11 +349,13 @@ auto advance_path_agents_with_pibt(
           }
           if (!allow) {
             ++stats.swaps_denied;
+            ++frame.next_candidate;
             continue;
           }
           is_swap = true;
         }
         if (!claim(v)) {
+          ++frame.next_candidate;
           continue;  // vertex conflict
         }
         if (is_swap) {
@@ -300,25 +367,19 @@ auto advance_path_agents_with_pibt(
         scratch.desired[i] = v;
         if (moving && occupant != none &&
             scratch.state[occupant] == undecided) {
-          // Priority inheritance: the occupant decides now; if it cannot place
-          // anywhere, try the next candidate. The claim on `v` must NOT be
-          // released — the failed peer stays on `v`, so the claim now protects
-          // it from later deciders (pypibt re-marks `occupied_nxt` with the
-          // failed agent for the same reason).
-          if (!self(self, occupant)) {
-            scratch.desired[i] = position;
-            continue;
+          // Priority inheritance: the occupant decides next with this
+          // agent's turn. `frame` may be invalidated by the push, so the
+          // waiting flag is set first.
+          frame.waiting = true;
+          if (!start_deciding(static_cast<std::size_t>(occupant))) {
+            child_succeeded = false;  // resolved inline; waiting handles it
           }
+          continue;
         }
         scratch.state[i] = decided;
-        return true;
+        frames.pop_back();
+        child_succeeded = true;
       }
-      // Nowhere to place: keep the tile so inheritance chains cannot displace
-      // this agent, and report failure to the inheriting caller.
-      (void)claim(position);
-      scratch.desired[i] = position;
-      scratch.state[i] = decided;
-      return false;
     };
 
     for (const auto i : priorities.order) {
@@ -331,7 +392,7 @@ auto advance_path_agents_with_pibt(
         scratch.state[agent_index] = decided;
         continue;
       }
-      (void)decide(decide, agent_index);
+      run_decision(agent_index);
     }
 
     // 5: apply the configuration with the joint commit's semantics.
@@ -387,6 +448,10 @@ auto advance_path_agents_with_pibt(
       if (agent.position == agent.goal) {
         clear_path_agent_goal(agent);
         agent.status = PathStatus::Found;
+        // Reset priority at the commit itself: a caller may assign a new
+        // goal before the next pass, and the journey it just finished must
+        // not carry its accumulated priority into the new one.
+        priorities.elapsed[i] = 0;
         ++stats.frame.arrived;
       }
     }

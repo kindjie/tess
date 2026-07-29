@@ -678,6 +678,57 @@ TEST(TessPibtMovement, SwapCounterOnlyCountsSecuredExchanges) {
   EXPECT_FALSE(agents[2].position == (tess::Coord3{3, 1, 0}));
 }
 
+TEST(TessPibtMovement, ArrivalResetsPriorityBeforeAnyNewGoal) {
+  // An arrival must reset its adaptive priority at the commit itself: if
+  // the application assigns the agent a new goal before the next pass, the
+  // stale `elapsed` from the finished journey would otherwise outrank
+  // agents that have genuinely waited longer.
+  World world;
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  fill_world(world, true);
+  add_agent(world, agents, routes, {{2, 2, 0}, {2, 1, 0}});  // A, arriving
+  add_agent(world, agents, routes,
+            {{4, 0, 0}, {3, 0, 0}, {2, 0, 0}});  // B, en route
+
+  tess::PibtPriorities priorities;
+  priorities.elapsed = {100, 50};
+  tess::JointMoveScratch scratch;
+  const auto rank = [&](std::size_t agent, tess::Coord3 c) -> std::uint32_t {
+    const auto goal =
+        agents[agent].has_goal ? agents[agent].goal : agents[agent].position;
+    return static_cast<std::uint32_t>(std::abs(c.x - goal.x) +
+                                      std::abs(c.y - goal.y));
+  };
+
+  // A arrives; its priority resets at the commit. B advances toward (2,0).
+  (void)tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
+                                            ReservationTag>(
+      world, std::span<tess::PathAgentState>(agents), routes, priorities,
+      scratch, rank);
+  ASSERT_FALSE(agents[0].has_goal);
+  ASSERT_EQ(agents[0].position, (tess::Coord3{2, 1, 0}));
+  ASSERT_EQ(agents[1].position, (tess::Coord3{3, 0, 0}));
+  EXPECT_EQ(priorities.elapsed[0], 0u);
+
+  // The application immediately hands A a new goal contending with B for
+  // (2,0). A and B are not adjacent to each other, only to the contested
+  // tile, so the higher priority simply claims it first: B's accumulated
+  // wait must outrank A's reset one.
+  agents[0].goal = {2, 0, 0};
+  agents[0].has_goal = true;
+  agents[0].status = tess::PathStatus::Found;
+  agents[0].phase = tess::PathAgentPhase::Following;
+  routes.routes[0] = {agents[0].position, {2, 0, 0}};
+  agents[0].path_index = 0;
+  (void)tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
+                                            ReservationTag>(
+      world, std::span<tess::PathAgentState>(agents), routes, priorities,
+      scratch, rank);
+  EXPECT_EQ(agents[1].position, (tess::Coord3{2, 0, 0}));
+  EXPECT_EQ(agents[0].position, (tess::Coord3{2, 1, 0}));
+}
+
 TEST(TessPibtMovement, HeadOnPairFollowsSwapPolicy) {
   const auto build = [](World& world, std::vector<tess::PathAgentState>& agents,
                         tess::PathAgentRoutes& routes) {
