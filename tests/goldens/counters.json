@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "workloads": {
+    "astar_serpentine": {
+      "path": {
+        "blocked_neighbors": 0,
+        "closed_neighbors": 52,
+        "closed_pops": 3,
+        "cost_reads": 0,
+        "goal_passability_checks": 1,
+        "heap_pops": 43,
+        "heap_pushes": 53,
+        "heuristic_calls": 53,
+        "initializations": 1,
+        "neighbor_candidates": 116,
+        "passability_checks": 51,
+        "reconstructed_nodes": 52,
+        "relax_attempts": 64,
+        "relax_successes": 52,
+        "scratch_clear_calls": 1,
+        "scratch_clear_nodes": 0,
+        "stale_pops": 0,
+        "start_passability_checks": 1,
+        "touched_nodes": 50
+      }
+    },
+    "queued_serial_update": {
+      "queued": {
+        "dirty_chunks_merged": 2,
+        "dirty_partitions": 2,
+        "dirty_records_collected": 2,
+        "partitioned_phase_calls": 1,
+        "phase_calls": 1,
+        "phase_failures": 0,
+        "phase_invalid_ranges": 0,
+        "phase_operations": 2,
+        "scoped_thread_calls": 0,
+        "scoped_thread_workers": 0,
+        "worker_pool_calls": 0,
+        "worker_pool_workers": 0
+      }
+    },
+    "unit_product_replay": {
+      "path": {
+        "blocked_neighbors": 26,
+        "closed_neighbors": 101,
+        "closed_pops": 0,
+        "cost_reads": 0,
+        "goal_passability_checks": 1,
+        "heap_pops": 52,
+        "heap_pushes": 52,
+        "heuristic_calls": 0,
+        "initializations": 1,
+        "neighbor_candidates": 178,
+        "passability_checks": 178,
+        "reconstructed_nodes": 25,
+        "relax_attempts": 0,
+        "relax_successes": 0,
+        "scratch_clear_calls": 1,
+        "scratch_clear_nodes": 0,
+        "stale_pops": 0,
+        "start_passability_checks": 1,
+        "touched_nodes": 52
+      }
+    },
+    "weighted_product_nearest": {
+      "path": {
+        "blocked_neighbors": 0,
+        "closed_neighbors": 0,
+        "closed_pops": 0,
+        "cost_reads": 2,
+        "goal_passability_checks": 0,
+        "heap_pops": 0,
+        "heap_pushes": 0,
+        "heuristic_calls": 0,
+        "initializations": 0,
+        "neighbor_candidates": 0,
+        "passability_checks": 0,
+        "reconstructed_nodes": 0,
+        "relax_attempts": 0,
+        "relax_successes": 0,
+        "scratch_clear_calls": 0,
+        "scratch_clear_nodes": 0,
+        "stale_pops": 0,
+        "start_passability_checks": 0,
+        "touched_nodes": 0
+      }
+    },
+    "weighted_serpentine": {
+      "path": {
+        "blocked_neighbors": 0,
+        "closed_neighbors": 52,
+        "closed_pops": 6,
+        "cost_reads": 14,
+        "goal_passability_checks": 1,
+        "heap_pops": 46,
+        "heap_pushes": 56,
+        "heuristic_calls": 56,
+        "initializations": 1,
+        "neighbor_candidates": 117,
+        "passability_checks": 14,
+        "reconstructed_nodes": 39,
+        "relax_attempts": 65,
+        "relax_successes": 55,
+        "scratch_clear_calls": 1,
+        "scratch_clear_nodes": 0,
+        "stale_pops": 0,
+        "start_passability_checks": 1,
+        "touched_nodes": 50
+      }
+    }
+  }
+}

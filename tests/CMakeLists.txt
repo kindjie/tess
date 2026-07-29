@@ -703,3 +703,56 @@ target_compile_definitions(
 tess_apply_project_options(tess_imgui_tools_test)
 
 tess_discover_tests(tess_imgui_tools_test)
+
+# Deterministic counter-golden probe (redesign section 3.3, shadow mode):
+# a gtest-free executable emits observed PathCounters/QueuedPhaseCounters
+# values, and the python checker compares them against the committed
+# golden. Shadow mode reports drift without gating; setting
+# TESS_COUNTER_GOLDENS_STRICT=1 in the environment makes drift fail
+# (the redesign's phase 4 promotion). The checker only registers when a
+# python interpreter exists, so consumers without one lose the check,
+# never the build.
+add_executable(
+  tess_counter_golden_probe
+  tess_counter_golden_probe.cc
+)
+target_link_libraries(
+  tess_counter_golden_probe
+  PRIVATE tess::tess
+)
+target_compile_definitions(
+  tess_counter_golden_probe
+  PRIVATE TESS_ENABLE_DIAGNOSTICS
+)
+tess_apply_project_options(tess_counter_golden_probe)
+
+add_test(
+  NAME TessCounterGoldenProbe
+  COMMAND tess_counter_golden_probe
+          "${CMAKE_CURRENT_BINARY_DIR}/counter-observed.json"
+)
+set_tests_properties(
+  TessCounterGoldenProbe
+  PROPERTIES FIXTURES_SETUP TessCounterGoldens
+)
+
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(NOT Python3_Interpreter_FOUND)
+  message(STATUS
+    "tess: no python3 interpreter; counter-golden check unavailable")
+endif()
+if(Python3_Interpreter_FOUND)
+  add_test(
+    NAME TessCounterGoldenCheck
+    COMMAND
+      Python3::Interpreter
+      "${PROJECT_SOURCE_DIR}/tools/check_counter_goldens.py"
+      --observed "${CMAKE_CURRENT_BINARY_DIR}/counter-observed.json"
+      --golden "${CMAKE_CURRENT_SOURCE_DIR}/goldens/counters.json"
+      --drift-report "${CMAKE_CURRENT_BINARY_DIR}/counter-golden-drift.md"
+  )
+  set_tests_properties(
+    TessCounterGoldenCheck
+    PROPERTIES FIXTURES_REQUIRED TessCounterGoldens
+  )
+endif()
