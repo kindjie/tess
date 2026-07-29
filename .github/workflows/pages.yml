@@ -110,6 +110,7 @@ jobs:
             --ignore-missing-anchor api/functions_vars.html#index_m \
             --ignore-missing-anchor api/functions_vars.html#index_n \
             --ignore-missing-anchor api/functions_vars.html#index_e \
+            --ignore-missing-anchor api/functions_vars.html#index_f \
             --ignore-missing-anchor api/functions_vars.html#index_o \
             --ignore-missing-anchor api/functions_vars.html#index_u \
             --ignore-missing-anchor api/functions_func.html#index_~ \
