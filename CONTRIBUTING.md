@@ -60,6 +60,16 @@ run werror, release, TSan, macOS, the full-tree clang-tidy sweep, and
 the benchmark threshold gates; a failed non-PR run files or extends a
 rolling `ci-failure` issue.
 
+Pull requests touching perf-sensitive paths also run a **shadow-mode
+paired sentinel benchmark job** (`tools/paired_bench.py` over
+`bench/sentinels.json`): base and head binaries interleave a small
+composite sentinel set and the verdict lands in the job's step summary
+and artifact. Shadow means informational — it never blocks a merge; the
+calibrated threshold gates remain authoritative. A suspected regression
+can be confirmed between two explicit commits with the "Paired sentinel
+confirmation" dispatch workflow, which does fail on a confirmed
+regression.
+
 CI runs primarily on `ubuntu-24.04` with Clang and covers:
 
 - Dev build and unit tests: `cmake --build --preset dev`,

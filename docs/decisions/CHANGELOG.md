@@ -6,6 +6,41 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-29 - Paired sentinel benchmarks in shadow mode (phase 2, slice 1)
+
+- Changed: pull requests touching perf-sensitive paths now run a paired
+  base-vs-head sentinel benchmark job in shadow mode. Both sides build
+  the new `bench-only` preset's `tess_bench` (the base with explicit
+  flags, since its commit may predate the preset), interleave twelve
+  composite sentinels in alternating rounds, and judge each through a
+  paired per-round-ratio bootstrap: a sentinel flags only when the 95%
+  CI lower bound clears an 8% effect floor and a 2 µs materiality
+  floor, and a flag must survive one fresh re-run to be a regression.
+  The shadow job never gates (it is not in `CI Gate`'s needs); a
+  `workflow_dispatch` sentinel-confirmation workflow runs the same
+  comparison Bonferroni-adjusted and fails on confirmed regressions.
+  `bench/sentinels.json` also carries the section 4.5 source map with a
+  test-enforced coherence rule: directories mapped to sentinels are
+  exactly the directories the classifier calls perf-sensitive, and
+  areas no sentinel can observe (ops/, diagnostics/, debug/, gpu/,
+  experimental/) are declared unrepresented and skip the paired job.
+- Reason: the redesign's section 4.1 — measure time through paired
+  statistics where a ceiling cannot distinguish noise from work — with
+  the section 4.3 shadow discipline: the calibrated threshold gates
+  remain authoritative until the replacement reproduces the 2026-07-23
+  catch and clears the exit criteria. Sentinel selection was measured,
+  not assumed: families offering only nanosecond micro-benches (queued,
+  scheduler) are recorded as gaps for the counter-golden slice instead
+  of being mapped to sentinels that could never clear the materiality
+  floor.
+- Affected docs: testing and benchmarking redesign (phase 2 status),
+  CONTRIBUTING quality-gates section, tests/AGENTS.md.
+- Affected code: `.github/workflows/ci.yml`,
+  `.github/workflows/paired-bench.yml`, `CMakePresets.json`,
+  `bench/sentinels.json`, `tools/paired_bench.py`,
+  `tools/ci_changes.py`, `tests/test_paired_bench.py`,
+  `tests/test_ci_changes.py`, `tests/test_cmake_compatibility.py`.
+
 ## 2026-07-28 - Tiered CI topology (redesign phase 1)
 
 - Changed: the CI workflow is tiered per the testing and benchmarking

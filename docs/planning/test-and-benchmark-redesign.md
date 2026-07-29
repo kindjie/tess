@@ -758,6 +758,23 @@ that introduces this document.
    protocol wired into the PR check summary and pointed to from
    CONTRIBUTING.md; the pre-push slimming of section 6 (prerequisite: the
    tested CTest-label source-to-test mapping).
+   *Status: first slice implemented 2026-07-29 — the `bench-only`
+   preset, `tools/paired_bench.py` (paired per-round bootstrap, 8%
+   effect + 2 µs materiality floors, re-run-once, Bonferroni-adjusted
+   confirm mode), the twelve-sentinel set and section 4.5 source map in
+   `bench/sentinels.json` with a test-enforced coherence rule (mapped
+   areas are exactly the perf-classified ones; ops/, diagnostics/,
+   debug/, gpu/, and experimental/ are declared unrepresented pending
+   the counter-golden slice), the path-filtered shadow job, and the
+   dispatch sentinel-confirmation workflow. A local replay of the
+   2026-07-23 catch on its exact commit pair reproduced the detection on
+   all four confirmed-catch sentinels (optimization log, "Paired
+   Sentinel Replay"); the hosted-runner replay remains a phase 4 exit
+   criterion. Remaining in this phase:
+   counter goldens, change-point alerting with runner fingerprinting,
+   the section 4.2 full-suite confirmation, advisory coverage, the
+   workload-matrix catalog, profiling-protocol wiring, and pre-push
+   slimming.*
 3. Scenario layer: procedural generators, then the S2 macro-harness (with
    PR-tier smoke), then S3. S1 stays on in-repo procedural data: the
    external-data legs (manifest entries, fetch tool, cache verification, the

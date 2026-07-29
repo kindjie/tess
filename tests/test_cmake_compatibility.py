@@ -115,6 +115,21 @@ def test_consumer_preset_stays_consumer_shaped():
     assert "inherits" not in consumer
 
 
+def test_bench_only_preset_stays_benchmark_shaped():
+    presets = json.loads(
+        (REPO_ROOT / "CMakePresets.json").read_text(encoding="utf-8")
+    )
+    configure = {p["name"]: p for p in presets["configurePresets"]}
+
+    bench_only = configure["bench-only"]
+    assert bench_only["inherits"] == "bench"
+    assert bench_only["cacheVariables"]["TESS_BUILD_TESTING"] == "OFF"
+    assert bench_only["cacheVariables"]["TESS_BUILD_EXAMPLES"] == "OFF"
+
+    build = {p["name"]: p for p in presets["buildPresets"]}
+    assert build["bench-only"]["targets"] == ["tess_bench"]
+
+
 def test_required_grid_data_needs_explicit_opt_in(tmp_path):
     env = os.environ.copy()
     env["CMAKE_CXX_COMPILER_LAUNCHER"] = (
