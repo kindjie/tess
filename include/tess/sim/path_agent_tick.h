@@ -23,6 +23,9 @@ struct PathAgentTickState {
   // Per-agent retained routes; see PathAgentRoutes for the index-pairing
   // contract (reorder/remove agents => mark_pathing_dirty).
   PathAgentRoutes routes{};
+  /// Optional caller-owned goal-lifecycle accounting (see FlowCounters).
+  /// The accountant must outlive the tick state's use of it.
+  diagnostics::FlowAccounting* flow_accounting = nullptr;
 };
 
 /// Configures per-tick movement, caching, and blocked-agent retry limits.
@@ -65,10 +68,65 @@ inline void mark_pathing_dirty(PathAgentTickState& state) noexcept {
 // shared flag and one new goal replanned the whole batch every tick
 // (optimization-log 2026-07-11, S11.4 soak observation).
 /// Arms one agent goal without forcing unrelated following agents to replan.
+///
+/// With flow accounting attached this is an admission; replacing a
+/// still-outstanding goal terminalizes it as superseded first, while
+/// re-arming after a terminal outcome (arrival or exhaustion) is a
+/// fresh admission with no second terminal bucket.
 inline void set_path_agent_goal(PathAgentTickState& state,
                                 PathAgentState& agent, Coord3 goal) noexcept {
-  static_cast<void>(state);
+  if (state.flow_accounting != nullptr) {
+    auto& accounting = *state.flow_accounting;
+    if (path_agent_goal_outstanding(agent)) {
+      ++accounting.counters.superseded;
+      accounting.record_left_outstanding();
+      accounting.counters.residence_ticks_accumulated +=
+          accounting.last_observed_tick - agent.armed_tick;
+    }
+    ++accounting.counters.offered;
+    accounting.record_admitted();
+    agent.armed_tick = accounting.last_observed_tick;
+  }
   set_path_agent_goal(agent, goal);
+}
+
+/// Clears one agent goal, cancelling a still-outstanding lifecycle.
+inline void clear_path_agent_goal(PathAgentTickState& state,
+                                  PathAgentState& agent) noexcept {
+  if (state.flow_accounting != nullptr && path_agent_goal_outstanding(agent)) {
+    auto& accounting = *state.flow_accounting;
+    ++accounting.counters.cancelled;
+    accounting.record_left_outstanding();
+    accounting.counters.residence_ticks_accumulated +=
+        accounting.last_observed_tick - agent.armed_tick;
+  }
+  clear_path_agent_goal(agent);
+}
+
+/**
+ * Observes one monotonic tick for goal-lifecycle time accounting.
+ *
+ * Call once per simulation tick before arming, clearing, or ticking:
+ * weights outstanding inventory and refreshes the oldest outstanding
+ * goal age from per-agent admission stamps.
+ */
+inline void observe_path_agent_flow_tick(PathAgentTickState& state,
+                                         std::span<const PathAgentState> agents,
+                                         std::uint64_t tick) noexcept {
+  if (state.flow_accounting == nullptr) {
+    return;
+  }
+  state.flow_accounting->observe_tick(tick);
+  auto oldest = tick;
+  auto any = false;
+  for (const auto& agent : agents) {
+    if (path_agent_goal_outstanding(agent)) {
+      any = true;
+      oldest = agent.armed_tick < oldest ? agent.armed_tick : oldest;
+    }
+  }
+  state.flow_accounting->counters.oldest_outstanding_age_ticks =
+      any ? tick - oldest : 0;
 }
 
 // Scans agents ahead of a tick's path processing. NeedsPath agents request
@@ -77,10 +135,10 @@ inline void set_path_agent_goal(PathAgentTickState& state,
 // occupancy/reservations; invalid routes request a re-path. Exhausted agents
 // become terminally Unreachable and stop both processing and movement.
 /// Advances retry accounting and reports whether any agent needs planning.
-inline auto prepare_path_agent_processing(std::span<PathAgentState> agents,
-                                          PathAgentTickOptions options,
-                                          PathAgentTickStats& stats) noexcept
-    -> bool {
+inline auto prepare_path_agent_processing(
+    std::span<PathAgentState> agents, PathAgentTickOptions options,
+    PathAgentTickStats& stats,
+    diagnostics::FlowAccounting* accounting = nullptr) noexcept -> bool {
   bool needs_processing = false;
   for (auto& agent : agents) {
     if (!agent.has_goal) {
@@ -108,6 +166,12 @@ inline auto prepare_path_agent_processing(std::span<PathAgentState> agents,
       agent.phase = PathAgentPhase::Unreachable;
       agent.status = PathStatus::NoPath;
       ++stats.repath_exhausted;
+      if (accounting != nullptr) {
+        ++accounting->counters.failed;
+        accounting->record_left_outstanding();
+        accounting->counters.residence_ticks_accumulated +=
+            accounting->last_observed_tick - agent.armed_tick;
+      }
     }
   }
   return needs_processing;
@@ -124,8 +188,8 @@ template <typename World, typename ClassOrTag>
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  const bool repath_needed =
-      prepare_path_agent_processing(agents, options, stats);
+  const bool repath_needed = prepare_path_agent_processing(
+      agents, options, stats, state.flow_accounting);
   state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
     const auto scope =
@@ -137,7 +201,8 @@ template <typename World, typename ClassOrTag>
     state.pathing_dirty = false;
   }
 
-  stats.movement = advance_path_agents(agents, state.routes, options.max_steps);
+  stats.movement = advance_path_agents(agents, state.routes, options.max_steps,
+                                       state.flow_accounting);
   return stats;
 }
 
@@ -152,8 +217,8 @@ template <typename World, typename ClassOrTag, typename Provider>
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  const bool repath_needed =
-      prepare_path_agent_processing(agents, options, stats);
+  const bool repath_needed = prepare_path_agent_processing(
+      agents, options, stats, state.flow_accounting);
   state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
     const auto scope =
@@ -165,7 +230,8 @@ template <typename World, typename ClassOrTag, typename Provider>
     state.pathing_dirty = false;
   }
 
-  stats.movement = advance_path_agents(agents, state.routes, options.max_steps);
+  stats.movement = advance_path_agents(agents, state.routes, options.max_steps,
+                                       state.flow_accounting);
   return stats;
 }
 
@@ -181,8 +247,8 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  const bool repath_needed =
-      prepare_path_agent_processing(agents, options, stats);
+  const bool repath_needed = prepare_path_agent_processing(
+      agents, options, stats, state.flow_accounting);
   state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
     const auto scope =
@@ -197,7 +263,8 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   stats.movement =
       advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
                                         ReservationTag>(
-          world, agents, state.routes, options.max_steps, movement_dirty_mask);
+          world, agents, state.routes, options.max_steps, movement_dirty_mask,
+          state.flow_accounting);
   return stats;
 }
 
@@ -213,8 +280,8 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  const bool repath_needed =
-      prepare_path_agent_processing(agents, options, stats);
+  const bool repath_needed = prepare_path_agent_processing(
+      agents, options, stats, state.flow_accounting);
   state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
     const auto scope =
@@ -230,7 +297,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
       advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
                                         ReservationTag>(
           world, agents, state.routes, options.max_steps, movement_dirty_mask,
-          provider);
+          provider, state.flow_accounting);
   return stats;
 }
 
@@ -247,8 +314,8 @@ template <typename World, typename Class, std::uint32_t MaxCost>
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  const bool repath_needed =
-      prepare_path_agent_processing(agents, options, stats);
+  const bool repath_needed = prepare_path_agent_processing(
+      agents, options, stats, state.flow_accounting);
   state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
     const auto scope =
@@ -260,7 +327,8 @@ template <typename World, typename Class, std::uint32_t MaxCost>
     state.pathing_dirty = false;
   }
 
-  stats.movement = advance_path_agents(agents, state.routes, options.max_steps);
+  stats.movement = advance_path_agents(agents, state.routes, options.max_steps,
+                                       state.flow_accounting);
   return stats;
 }
 
@@ -276,8 +344,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  const bool repath_needed =
-      prepare_path_agent_processing(agents, options, stats);
+  const bool repath_needed = prepare_path_agent_processing(
+      agents, options, stats, state.flow_accounting);
   state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
     const auto scope =
@@ -289,7 +357,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     state.pathing_dirty = false;
   }
 
-  stats.movement = advance_path_agents(agents, state.routes, options.max_steps);
+  stats.movement = advance_path_agents(agents, state.routes, options.max_steps,
+                                       state.flow_accounting);
   return stats;
 }
 
@@ -305,8 +374,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  const bool repath_needed =
-      prepare_path_agent_processing(agents, options, stats);
+  const bool repath_needed = prepare_path_agent_processing(
+      agents, options, stats, state.flow_accounting);
   state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
     const auto scope =
@@ -320,7 +389,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 
   stats.movement = advance_path_agents_with_movement<World, Class, OccupancyTag,
                                                      ReservationTag>(
-      world, agents, state.routes, options.max_steps, movement_dirty_mask);
+      world, agents, state.routes, options.max_steps, movement_dirty_mask,
+      state.flow_accounting);
   return stats;
 }
 
@@ -336,8 +406,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  const bool repath_needed =
-      prepare_path_agent_processing(agents, options, stats);
+  const bool repath_needed = prepare_path_agent_processing(
+      agents, options, stats, state.flow_accounting);
   state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
     const auto scope =
@@ -352,7 +422,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   stats.movement = advance_path_agents_with_movement<World, Class, OccupancyTag,
                                                      ReservationTag>(
       world, agents, state.routes, options.max_steps, movement_dirty_mask,
-      provider);
+      provider, state.flow_accounting);
   return stats;
 }
 
@@ -368,8 +438,8 @@ template <typename World, typename PassableTag, typename CostTag,
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  const bool repath_needed =
-      prepare_path_agent_processing(agents, options, stats);
+  const bool repath_needed = prepare_path_agent_processing(
+      agents, options, stats, state.flow_accounting);
   state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
     const auto scope =
@@ -382,7 +452,8 @@ template <typename World, typename PassableTag, typename CostTag,
     state.pathing_dirty = false;
   }
 
-  stats.movement = advance_path_agents(agents, state.routes, options.max_steps);
+  stats.movement = advance_path_agents(agents, state.routes, options.max_steps,
+                                       state.flow_accounting);
   return stats;
 }
 
@@ -398,8 +469,8 @@ template <typename World, typename PassableTag, typename CostTag,
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  const bool repath_needed =
-      prepare_path_agent_processing(agents, options, stats);
+  const bool repath_needed = prepare_path_agent_processing(
+      agents, options, stats, state.flow_accounting);
   state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
     const auto scope =
@@ -415,7 +486,8 @@ template <typename World, typename PassableTag, typename CostTag,
   stats.movement =
       advance_path_agents_with_movement<World, PassableTag, OccupancyTag,
                                         ReservationTag>(
-          world, agents, state.routes, options.max_steps, movement_dirty_mask);
+          world, agents, state.routes, options.max_steps, movement_dirty_mask,
+          state.flow_accounting);
   return stats;
 }
 

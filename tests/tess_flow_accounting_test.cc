@@ -9,7 +9,9 @@
 #include <tess/experimental/maintenance.h>
 #include <tess/ops/async_work.h>
 #include <tess/sim/event_stream.h>
+#include <tess/tess.h>
 
+#include <array>
 #include <cstdint>
 #include <stdexcept>
 #include <utility>
@@ -299,6 +301,101 @@ TEST(TessMaintenanceFlow, ImmediateSchedulerAccountsSelfSchedulesAsCoalesced) {
   EXPECT_EQ(accounting.counters.coalesced_into_pending, 1u);
   EXPECT_EQ(accounting.counters.completed, 1u);
   EXPECT_EQ(accounting.counters.consumed_work_units, 2u);
+  EXPECT_TRUE(accounting.counters.admission_identity_holds());
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
+struct AgentPassableTag {};
+using AgentSchema = tess::FieldSchema<tess::Field<AgentPassableTag, bool>>;
+using AgentShape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
+using AgentWorld = tess::AlwaysResidentWorld<AgentShape, AgentSchema>;
+
+TEST(TessAgentFlow, GoalLifecyclesAccountAtTransitions) {
+  AgentWorld world;
+  for (std::int64_t y = 0; y < 8; ++y) {
+    for (std::int64_t x = 0; x < 8; ++x) {
+      world.field<AgentPassableTag>(tess::Coord3{x, y, 0}) = true;
+    }
+  }
+  tess::PathAgentTickState tick_state;
+  FlowAccounting accounting;
+  tick_state.flow_accounting = &accounting;
+  std::array<tess::PathAgentState, 2> agents{};
+  agents[0].position = tess::Coord3{0, 0, 0};
+  agents[1].position = tess::Coord3{7, 0, 0};
+  tess::PathRequestRuntime runtime;
+
+  tess::observe_path_agent_flow_tick(tick_state, agents, 1);
+  tess::set_path_agent_goal(tick_state, agents[0], tess::Coord3{2, 0, 0});
+  tess::set_path_agent_goal(tick_state, agents[1], tess::Coord3{7, 3, 0});
+  EXPECT_EQ(accounting.counters.admitted, 2u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 2u);
+
+  // Replacing an outstanding goal supersedes it; clearing cancels.
+  tess::set_path_agent_goal(tick_state, agents[1], tess::Coord3{7, 5, 0});
+  EXPECT_EQ(accounting.counters.superseded, 1u);
+  tess::clear_path_agent_goal(tick_state, agents[1]);
+  EXPECT_EQ(accounting.counters.cancelled, 1u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 1u);
+
+  // Drive agent 0 to arrival through the tick driver.
+  auto options = tess::PathAgentTickOptions{};
+  options.max_steps = 8;
+  for (std::uint64_t tick = 2; tick < 8; ++tick) {
+    tess::observe_path_agent_flow_tick(tick_state, agents, tick);
+    const auto stats =
+        tess::tick_unit_path_agents<AgentWorld, AgentPassableTag>(
+            tick_state, world, agents, runtime, options);
+    if (stats.movement.arrived > 0 || stats.pathing.arrived > 0) {
+      break;
+    }
+  }
+  EXPECT_EQ(accounting.counters.completed, 1u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 0u);
+  EXPECT_TRUE(accounting.counters.admission_identity_holds());
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
+TEST(TessAgentFlow, ExhaustedRetriesTerminalizeAsFailed) {
+  AgentWorld world;
+  for (std::int64_t y = 0; y < 8; ++y) {
+    for (std::int64_t x = 0; x < 8; ++x) {
+      world.field<AgentPassableTag>(tess::Coord3{x, y, 0}) = true;
+    }
+  }
+  // Wall the goal off completely: planning fails every tick.
+  world.field<AgentPassableTag>(tess::Coord3{6, 6, 0}) = false;
+  world.field<AgentPassableTag>(tess::Coord3{7, 5, 0}) = false;
+  world.field<AgentPassableTag>(tess::Coord3{6, 7, 0}) = false;
+
+  tess::PathAgentTickState tick_state;
+  FlowAccounting accounting;
+  tick_state.flow_accounting = &accounting;
+  std::array<tess::PathAgentState, 1> agents{};
+  agents[0].position = tess::Coord3{0, 0, 0};
+  tess::PathRequestRuntime runtime;
+  auto options = tess::PathAgentTickOptions{};
+  options.max_blocked_retries = 2;
+
+  tess::set_path_agent_goal(tick_state, agents[0], tess::Coord3{7, 7, 0});
+  for (std::uint64_t tick = 1; tick <= 8; ++tick) {
+    tess::observe_path_agent_flow_tick(tick_state, agents, tick);
+    (void)tess::tick_unit_path_agents<AgentWorld, AgentPassableTag>(
+        tick_state, world, agents, runtime, options);
+    if (agents[0].phase == tess::PathAgentPhase::Unreachable) {
+      break;
+    }
+  }
+
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Unreachable);
+  EXPECT_EQ(accounting.counters.failed, 1u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 0u);
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+
+  // Re-arming a terminal goal is a fresh admission, not a supersede.
+  tess::set_path_agent_goal(tick_state, agents[0], tess::Coord3{1, 0, 0});
+  EXPECT_EQ(accounting.counters.superseded, 0u);
+  EXPECT_EQ(accounting.counters.admitted, 2u);
   EXPECT_TRUE(accounting.counters.admission_identity_holds());
   EXPECT_TRUE(accounting.counters.retention_identity_holds());
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tess/diagnostics/diagnostics.h>
 #include <tess/path/path_runtime.h>
 #include <tess/path/precheck.h>
 #include <tess/sim/movement.h>
@@ -39,6 +40,8 @@ struct PathAgentState {
   PathAgentPhase phase = PathAgentPhase::Idle;
   bool has_goal = false;
   std::uint32_t blocked_retries = 0;
+  /// Flow-accounting admission stamp (see the tick-state goal APIs).
+  std::uint64_t armed_tick = 0;
 };
 
 /// Summarizes path submission, results, movement, and failure outcomes.
@@ -140,6 +143,9 @@ inline void resume_path_agent(PathAgentState& agent) noexcept {
 }  // namespace detail
 
 /// Arms `agent` to plan a route toward `goal` on the next processing pass.
+///
+/// This bare state helper performs no flow accounting; the tick-state
+/// overload is the accounted entry point.
 inline void set_path_agent_goal(PathAgentState& agent, Coord3 goal) noexcept {
   agent.goal = goal;
   agent.path_index = 0;
@@ -150,6 +156,9 @@ inline void set_path_agent_goal(PathAgentState& agent, Coord3 goal) noexcept {
 }
 
 /// Returns `agent` to the idle state and invalidates its route ticket.
+///
+/// This bare state helper performs no flow accounting; the tick-state
+/// overload is the accounted entry point.
 inline void clear_path_agent_goal(PathAgentState& agent) noexcept {
   agent.goal = {};
   agent.ticket = {};
@@ -160,11 +169,29 @@ inline void clear_path_agent_goal(PathAgentState& agent) noexcept {
   agent.has_goal = false;
 }
 
+/// Whether `agent` carries an admitted, non-terminal goal lifecycle.
+[[nodiscard]] inline auto path_agent_goal_outstanding(
+    const PathAgentState& agent) noexcept -> bool {
+  return agent.has_goal && agent.phase != PathAgentPhase::Unreachable;
+}
+
+/// Completes an arrived agent's goal lifecycle and returns it to idle.
+inline void arrive_path_agent(
+    PathAgentState& agent, diagnostics::FlowAccounting* accounting) noexcept {
+  if (accounting != nullptr) {
+    ++accounting->counters.completed;
+    accounting->record_left_outstanding();
+    accounting->counters.residence_ticks_accumulated +=
+        accounting->last_observed_tick - agent.armed_tick;
+  }
+  clear_path_agent_goal(agent);
+}
+
 /// Rebuilds runtime requests according to `scope` and returns submit counts.
-inline auto submit_path_agents(std::span<PathAgentState> agents,
-                               PathRequestRuntime& runtime,
-                               PathSubmitScope scope = PathSubmitScope::All)
-    -> PathAgentFrameStats {
+inline auto submit_path_agents(
+    std::span<PathAgentState> agents, PathRequestRuntime& runtime,
+    PathSubmitScope scope = PathSubmitScope::All,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   PathAgentFrameStats stats;
   runtime.clear_requests();
 
@@ -180,7 +207,7 @@ inline auto submit_path_agents(std::span<PathAgentState> agents,
       continue;
     }
     if (agent.position == agent.goal) {
-      clear_path_agent_goal(agent);
+      arrive_path_agent(agent, accounting);
       ++stats.arrived;
       continue;
     }
@@ -289,10 +316,10 @@ inline auto apply_path_agent_results(std::span<PathAgentState> agents,
  * `NeedsOnly` pass deliberately makes skipped tickets stale; advance those
  * agents through `PathAgentRoutes` instead.
  */
-inline auto advance_path_agents(std::span<PathAgentState> agents,
-                                const PathRequestRuntime& runtime,
-                                std::size_t max_steps = 1)
-    -> PathAgentFrameStats {
+inline auto advance_path_agents(
+    std::span<PathAgentState> agents, const PathRequestRuntime& runtime,
+    std::size_t max_steps = 1,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   PathAgentFrameStats stats;
   if (max_steps == 0) {
     return stats;
@@ -317,7 +344,7 @@ inline auto advance_path_agents(std::span<PathAgentState> agents,
       detail::resume_path_agent(agent);
       ++stats.advanced;
       if (agent.position == agent.goal) {
-        clear_path_agent_goal(agent);
+        arrive_path_agent(agent, accounting);
         agent.status = PathStatus::Found;
         ++stats.arrived;
         break;
@@ -343,13 +370,11 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
  * Tickets must come from the runtime's current `All` submission. Use the
  * retained-route overload after a `NeedsOnly` pass.
  */
-inline auto advance_path_agents_with_movement(World& world,
-                                              std::span<PathAgentState> agents,
-                                              const PathRequestRuntime& runtime,
-                                              std::size_t max_steps,
-                                              std::uint32_t movement_dirty_mask,
-                                              OnCommit&& on_commit)
-    -> PathAgentFrameStats {
+inline auto advance_path_agents_with_movement(
+    World& world, std::span<PathAgentState> agents,
+    const PathRequestRuntime& runtime, std::size_t max_steps,
+    std::uint32_t movement_dirty_mask, OnCommit&& on_commit,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   PathAgentFrameStats stats;
   if (max_steps == 0) {
     return stats;
@@ -403,7 +428,7 @@ inline auto advance_path_agents_with_movement(World& world,
       on_commit(agent_index, from, to);
       ++stats.advanced;
       if (agent.position == agent.goal) {
-        clear_path_agent_goal(agent);
+        arrive_path_agent(agent, accounting);
         agent.status = PathStatus::Found;
         ++stats.arrived;
         break;
@@ -425,23 +450,22 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 inline auto advance_path_agents_with_movement(
     World& world, std::span<PathAgentState> agents,
     const PathRequestRuntime& runtime, std::size_t max_steps = 1,
-    std::uint32_t movement_dirty_mask = 0) -> PathAgentFrameStats {
+    std::uint32_t movement_dirty_mask = 0,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   return advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
                                            ReservationTag>(
       world, agents, runtime, max_steps, movement_dirty_mask,
-      [](std::size_t, Coord3, Coord3) {});
+      [](std::size_t, Coord3, Coord3) {}, accounting);
 }
 
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag, typename Provider>
 /// Advances retained routes through provider-aware movement commits.
-inline auto advance_path_agents_with_movement(World& world,
-                                              std::span<PathAgentState> agents,
-                                              const PathAgentRoutes& routes,
-                                              std::size_t max_steps,
-                                              std::uint32_t movement_dirty_mask,
-                                              const Provider& provider)
-    -> PathAgentFrameStats {
+inline auto advance_path_agents_with_movement(
+    World& world, std::span<PathAgentState> agents,
+    const PathAgentRoutes& routes, std::size_t max_steps,
+    std::uint32_t movement_dirty_mask, const Provider& provider,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   TESS_ASSERT(routes.routes.size() >= agents.size());
   PathAgentFrameStats stats;
   if (max_steps == 0) {
@@ -479,7 +503,7 @@ inline auto advance_path_agents_with_movement(World& world,
       detail::resume_path_agent(agent);
       ++stats.advanced;
       if (agent.position == agent.goal) {
-        clear_path_agent_goal(agent);
+        arrive_path_agent(agent, accounting);
         agent.status = PathStatus::Found;
         ++stats.arrived;
         break;
@@ -494,10 +518,10 @@ inline auto advance_path_agents_with_movement(World& world,
 // survives processing passes that did not resubmit this agent
 // (PathSubmitScope::NeedsOnly).
 /// Advances agents along retained routes without validating world movement.
-inline auto advance_path_agents(std::span<PathAgentState> agents,
-                                const PathAgentRoutes& routes,
-                                std::size_t max_steps = 1)
-    -> PathAgentFrameStats {
+inline auto advance_path_agents(
+    std::span<PathAgentState> agents, const PathAgentRoutes& routes,
+    std::size_t max_steps = 1,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   // The pool is const here, so it must already cover the span (the tick
   // drivers ensure_size before processing; direct callers must too).
   TESS_ASSERT(routes.routes.size() >= agents.size());
@@ -526,7 +550,7 @@ inline auto advance_path_agents(std::span<PathAgentState> agents,
       detail::resume_path_agent(agent);
       ++stats.advanced;
       if (agent.position == agent.goal) {
-        clear_path_agent_goal(agent);
+        arrive_path_agent(agent, accounting);
         agent.status = PathStatus::Found;
         ++stats.arrived;
         break;
@@ -541,13 +565,11 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag, typename OnCommit>
   requires std::invocable<OnCommit&, std::size_t, Coord3, Coord3>
 /// Advances retained routes and reports each validated movement commit.
-inline auto advance_path_agents_with_movement(World& world,
-                                              std::span<PathAgentState> agents,
-                                              const PathAgentRoutes& routes,
-                                              std::size_t max_steps,
-                                              std::uint32_t movement_dirty_mask,
-                                              OnCommit&& on_commit)
-    -> PathAgentFrameStats {
+inline auto advance_path_agents_with_movement(
+    World& world, std::span<PathAgentState> agents,
+    const PathAgentRoutes& routes, std::size_t max_steps,
+    std::uint32_t movement_dirty_mask, OnCommit&& on_commit,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   // Same pool-coverage precondition as the plain route-pool advance.
   TESS_ASSERT(routes.routes.size() >= agents.size());
   PathAgentFrameStats stats;
@@ -598,7 +620,7 @@ inline auto advance_path_agents_with_movement(World& world,
       on_commit(agent_index, from, to);
       ++stats.advanced;
       if (agent.position == agent.goal) {
-        clear_path_agent_goal(agent);
+        arrive_path_agent(agent, accounting);
         agent.status = PathStatus::Found;
         ++stats.arrived;
         break;
@@ -615,11 +637,12 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 inline auto advance_path_agents_with_movement(
     World& world, std::span<PathAgentState> agents,
     const PathAgentRoutes& routes, std::size_t max_steps = 1,
-    std::uint32_t movement_dirty_mask = 0) -> PathAgentFrameStats {
+    std::uint32_t movement_dirty_mask = 0,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   return advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
                                            ReservationTag>(
       world, agents, routes, max_steps, movement_dirty_mask,
-      [](std::size_t, Coord3, Coord3) {});
+      [](std::size_t, Coord3, Coord3) {}, accounting);
 }
 
 /// Adds every counter in `rhs` into `lhs`.
