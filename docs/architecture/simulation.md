@@ -61,6 +61,45 @@ deltas.
   Provider exceptions propagate whenever enumeration is required; the
   provider contract does not require enumeration to be `noexcept`.
 
+### Joint Movement
+
+The per-agent commit validates each destination against current occupancy, so
+a move into a tile being vacated in the same tick is unreachable by
+construction: chains ("everyone steps forward together"), rotations (a cycle
+of agents shifts one place), and swaps (the two-agent cycle) all fail
+`Occupied` under it. Joint movement decides one tick's moves as a set.
+
+- `SwapPolicy` selects whether a mutually blocked pair may exchange tiles:
+  `Forbid` (default; the standard multi-agent path finding constraint),
+  `Permit`, or `PermitOnDeadlock`, which admits the exchange only after both
+  members have been blocked for `JointMoveOptions::deadlock_ticks`
+  consecutive ticks. Permitting a swap means both agents traverse the same
+  edge in opposite directions for one tick — a semantic decision, not a
+  tuning knob. Cycles of length three or more involve no shared edge and are
+  admitted under every policy.
+- `JointMoveOptions` carries the swap policy and deadlock threshold;
+  `JointMoveStats` reports the standard movement frame stats plus chained
+  admissions, rotations, swaps, and denied swaps; `JointMoveScratch` is the
+  caller-owned workspace whose `reserve` keeps the warm path allocation-free.
+- `advance_path_agents_with_joint_movement<World, ClassOrTag, OccupancyTag,
+  ReservationTag>(world, agents, routes, scratch, options, max_steps,
+  dirty_mask)` validates every eligible agent's next route step exactly as
+  `commit_movement_intent` does, claims free destinations in span order,
+  admits moves whose destinations are vacated this tick to a fixpoint, then
+  admits the remaining wants-cycles by policy and applies the admitted set at
+  once (sources clear before destinations set). A destination that is both
+  occupied and reserved fails `Reserved` rather than joining admission, so a
+  reservation cannot vanish behind a vacating occupant. Failure handling,
+  route invalidation, arrival handling, reservation clearing on entry, and
+  per-move dirty marking all match the per-agent advance; outcomes are
+  deterministic given the caller's span order, and input-order invariance is
+  a non-goal, exactly as for `advance_path_agents_with_movement`. An
+  observer overload reports each committed move.
+- `tick_weighted_path_agents_with_joint_movement<World, Class, MaxCost,
+  OccupancyTag, ReservationTag>` mirrors
+  `tick_weighted_path_agents_with_movement` with the joint advance in place
+  of the per-agent one and optionally reports the joint stats.
+
 ### Render Deltas
 
 - `RenderTileDelta` records a changed tile coordinate, chunk key, local tile

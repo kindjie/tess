@@ -18,6 +18,7 @@ add_executable(
   tess_render_delta_bench.cc
   tess_residency_bench.cc
   tess_scheduler_bench.cc
+  tess_joint_movement_bench.cc
   tess_spatial_bench.cc
   tess_maintenance_bench.cc
   tess_topology_bench.cc
@@ -39,6 +40,7 @@ add_executable(
   tess_persistence_bench.cc
   tess_render_delta_bench.cc
   tess_scheduler_bench.cc
+  tess_joint_movement_bench.cc
   tess_spatial_bench.cc
   tess_maintenance_bench.cc
   tess_transition_bench.cc

@@ -17,6 +17,31 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-07-28 - Joint Movement Admission Cost At Colony Scale
+
+- Area: `advance_path_agents_with_joint_movement` on a 128x128 world (the
+  colony's shape), `lab/` benchmark family (no threshold targets).
+- Hypothesis: joint admission -- validation, occupant index, chain fixpoint,
+  cycle walk, batch apply -- fits comfortably inside the colony's 50 ms fixed
+  tick at populations up to 1,024 agents.
+- Evidence: three-run local arm64 medians. The all-cycles worst case
+  (`lab/joint_headon_denied_128x128`, every agent in a denied 2-cycle) costs
+  4.3 us at 128 agents, 42 us at 512, and 154 us at 1,024 -- 0.3% of the tick
+  budget at the demo's maximum population. Full chain drain including
+  per-iteration state reset (`lab/joint_chain_reset_128x128`) costs 59 us at
+  128 agents and 901 us at 1,024 (~1.8% of budget, reset included). Growth
+  from 512 to 1,024 denied pairs is superlinear (3.6x), consistent with the
+  per-cycle-walk `on_walk` reset and sorted-vector claims; irrelevant at
+  these budgets.
+- Decision: ship the joint advance with caller-owned scratch and no
+  micro-optimisation; the colony adopts it with `SwapPolicy::Permit`, and its
+  three recorded livelock seeds resolve (four post-wall trips each, zero
+  terminal, stall counter quiet) where the per-agent driver reproduces the
+  historic 890-motionless-tick wedge.
+- Retry conditions: profile the admission pass if a consumer runs it above
+  roughly 4,096 agents per tick, or if the denied-cycle path ever shows up in
+  a real workload's profile; the `on_walk` reset is the first candidate.
+
 ## 2026-07-28 - Multi-Agent Deadlock Resolution Screening
 
 - Area: multi-agent local movement — resolving the deadlock class that

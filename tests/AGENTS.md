@@ -548,6 +548,19 @@
   depend on the blocked frontier (face neighbors of touched chunks) so
   opening a fully-sealed chunk invalidates them, and rebuilding a portal
   route product from its own `waypoints()` span is safe.
+- `tess_joint_movement_test`: joint movement commit coverage — a
+  chain drains in one tick and a four-cycle rotates where the per-agent
+  commit provably cannot (the legacy advance is asserted to move one and zero
+  agents respectively inside the same tests), the two-agent cycle follows
+  `SwapPolicy` including the `PermitOnDeadlock` blocked-budget gate, a
+  reservation blocks admission even behind a vacating occupant and is
+  cleared on entry, an impassable next tile invalidates the route for scoped
+  resubmission, shared free destinations resolve by span order, dirty-mask
+  marking covers both chunks, `max_steps` zero/multi-step semantics match the
+  per-agent advance, outcomes are deterministic across identical runs, the
+  warm pass allocates nothing after `JointMoveScratch::reserve`, and the
+  weighted joint tick driver resolves a one-wide corridor head-on under
+  `Permit` while deliberately keeping the wedge under `Forbid`;
 - `tess_path_runtime_test`: verifies the path request runtime MVP, including
   ticketed request/result lookup, stable copied result spans, unit route-cache
   reuse and invalidation across world edits, opt-in unit field-product cache

@@ -103,6 +103,10 @@ jobs:
           # each exception target-specific so every other missing anchor fails.
           python3 tools/check_docs_links.py build/site \
             --ignore-missing-anchor api/functions_vars.html#index_b \
+            --ignore-missing-anchor api/functions_vars.html#index_c \
+            --ignore-missing-anchor api/functions_vars.html#index_d \
+            --ignore-missing-anchor api/functions_vars.html#index_r \
+            --ignore-missing-anchor api/functions_vars.html#index_s \
             --ignore-missing-anchor api/functions_vars.html#index_m \
             --ignore-missing-anchor api/functions_vars.html#index_n \
             --ignore-missing-anchor api/functions_func.html#index_~ \
