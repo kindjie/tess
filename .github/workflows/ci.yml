@@ -36,6 +36,7 @@ jobs:
     outputs:
       code_required: ${{ steps.classify.outputs.code_required }}
       tsan_required: ${{ steps.classify.outputs.tsan_required }}
+      perf_required: ${{ steps.classify.outputs.perf_required }}
       quality_presets: ${{ steps.classify.outputs.quality_presets }}
     steps:
       - name: Check out repository history
@@ -199,6 +200,7 @@ jobs:
           tests/test_git_hooks.py
           tests/test_ci_changes.py
           tests/test_clang_tidy_changed.py
+          tests/test_paired_bench.py
           tests/test_benchmark_tools.py
           tests/test_branding_assets.py
           tests/test_check_public_surface.py
@@ -544,6 +546,96 @@ jobs:
           name: benchmark-baselines-${{ github.run_id }}
           path: build/bench/bench/ci-baselines/*.json
           retention-days: 30
+
+  # Shadow-mode paired sentinel run (redesign section 4.1): base and
+  # head bench-only binaries interleave the sentinel set on one runner
+  # and the verdict lands in the step summary and an artifact. Shadow
+  # mode never gates — this job is deliberately NOT in ci-gate's needs,
+  # so neither a regression verdict nor an infrastructure failure can
+  # block a merge while the calibrated threshold gates remain
+  # authoritative (section 4.3). The base build uses explicit flags
+  # because the base commit may predate the bench-only preset.
+  paired-bench:
+    needs: changes
+    if: >-
+      ${{ github.event_name == 'pull_request' &&
+          needs.changes.outputs.code_required == 'true' &&
+          needs.changes.outputs.perf_required == 'true' }}
+    name: Paired Sentinel Benchmarks (shadow)
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      CXX: clang++
+      # Normalize absolute paths so the base worktree build hits the
+      # same cache entries as the head build.
+      CCACHE_BASEDIR: ${{ github.workspace }}/..
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install ccache
+        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-paired-${{ github.sha }}
+          restore-keys: |
+            ccache-paired-
+            ccache-bench-
+
+      - name: Build head sentinel binary
+        run: |
+          cmake --preset bench-only
+          cmake --build --preset bench-only
+          ccache -s
+
+      # Explicit flags rather than the preset: the base commit may
+      # predate bench-only. The worktree lives beside the workspace so
+      # CCACHE_BASEDIR covers both checkouts.
+      - name: Build base sentinel binary
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base_dir="$(dirname "$GITHUB_WORKSPACE")/paired-base"
+          git worktree add "$base_dir" "$PR_BASE_SHA"
+          cmake -S "$base_dir" -B "$base_dir/build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DTESS_BUILD_TESTING=OFF \
+            -DTESS_BUILD_EXAMPLES=OFF \
+            -DTESS_BUILD_BENCHMARKS=ON \
+            -DTESS_ENABLE_WARNINGS=ON \
+            -DTESS_ENABLE_ENTT=ON \
+            -DTESS_ENABLE_FLECS=ON \
+            -DTESS_WARNINGS_AS_ERRORS=ON
+          cmake --build "$base_dir/build" --target tess_bench
+          ccache -s
+
+      - name: Paired sentinel run (shadow)
+        run: |
+          python3 tools/paired_bench.py \
+            --base-binary \
+              "$(dirname "$GITHUB_WORKSPACE")/paired-base/build/bench/tess_bench" \
+            --head-binary build/bench-only/bench/tess_bench \
+            --sentinels bench/sentinels.json \
+            --mode shadow \
+            --summary paired-summary.md \
+            --json paired-report.json
+          cat paired-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload paired report
+        # upload-artifact v7.0.1.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: paired-bench-${{ github.run_id }}
+          path: |
+            paired-report.json
+            paired-summary.md
+          retention-days: 90
 
   # Stable ruleset target for the required jobs in this workflow.
   # Documentation remains an independent required workflow.

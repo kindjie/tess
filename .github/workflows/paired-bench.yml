@@ -1,0 +1,109 @@
+name: Paired sentinel confirmation
+
+# Maintainer-triggered confirmation mode of the paired SENTINEL run:
+# confirms or refutes a suspected regression between two explicit
+# revisions under Bonferroni-adjusted statistical criteria, failing on
+# a confirmed regression. This covers the sentinel set only; the
+# section 4.2 full-suite paired confirmation arrives with the
+# change-point slice. Runs only on hosted runners against repository
+# history — never untrusted code.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Base commit SHA (full)
+        required: true
+      head:
+        description: Head commit SHA (full)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paired-bench-confirm
+  cancel-in-progress: false
+
+env:
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_BASEDIR: ${{ github.workspace }}/..
+
+jobs:
+  confirm:
+    name: Paired Sentinel Confirmation
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install ccache
+        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-paired-confirm-${{ github.run_id }}
+          restore-keys: |
+            ccache-paired-
+            ccache-bench-
+
+      # Both sides build with explicit flags so any historical commit
+      # works, preset or no preset.
+      - name: Build both sentinel binaries
+        env:
+          BASE_SHA: ${{ inputs.base }}
+          HEAD_SHA: ${{ inputs.head }}
+        run: |
+          for side in base head; do
+            if [ "$side" = base ]; then sha="$BASE_SHA"; else sha="$HEAD_SHA"; fi
+            echo "$sha" | grep -qE '^[0-9a-f]{40}$' || {
+              echo "error: $side must be a full lowercase commit SHA" >&2
+              exit 1
+            }
+            side_dir="$(dirname "$GITHUB_WORKSPACE")/paired-$side"
+            git worktree add "$side_dir" "$sha"
+            cmake -S "$side_dir" -B "$side_dir/build" \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DTESS_BUILD_TESTING=OFF \
+              -DTESS_BUILD_EXAMPLES=OFF \
+              -DTESS_BUILD_BENCHMARKS=ON \
+              -DTESS_ENABLE_WARNINGS=ON \
+              -DTESS_ENABLE_ENTT=ON \
+              -DTESS_ENABLE_FLECS=ON \
+              -DTESS_WARNINGS_AS_ERRORS=ON
+            cmake --build "$side_dir/build" --target tess_bench
+            ccache -s
+          done
+
+      - name: Paired sentinel run (confirm)
+        run: |
+          python3 tools/paired_bench.py \
+            --base-binary \
+              "$(dirname "$GITHUB_WORKSPACE")/paired-base/build/bench/tess_bench" \
+            --head-binary \
+              "$(dirname "$GITHUB_WORKSPACE")/paired-head/build/bench/tess_bench" \
+            --sentinels bench/sentinels.json \
+            --mode confirm \
+            --summary paired-summary.md \
+            --json paired-report.json
+          cat paired-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload paired report
+        if: ${{ always() }}
+        # upload-artifact v7.0.1.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: paired-bench-confirm-${{ github.run_id }}
+          path: |
+            paired-report.json
+            paired-summary.md
+          retention-days: 90
