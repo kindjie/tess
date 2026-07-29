@@ -410,6 +410,7 @@
     "PathAgentTickStats",
     "PathOverlayDelta",
     "PathSubmitScope",
+    "PibtPriorities",
     "RenderTileDelta",
     "RenderVersion",
     "ResumableWorkTask",
@@ -436,6 +437,7 @@
     "advance_path_agents",
     "advance_path_agents_with_joint_movement",
     "advance_path_agents_with_movement",
+    "advance_path_agents_with_pibt",
     "advance_sim_tick",
     "apply_path_agent_results",
     "clear_path_agent_goal",
@@ -469,6 +471,7 @@
     "tick_weighted_path_agents",
     "tick_weighted_path_agents_with_joint_movement",
     "tick_weighted_path_agents_with_movement",
+    "tick_weighted_path_agents_with_pibt",
     "tick_weighted_scheduler",
     "validate_movement_intent"
   ],

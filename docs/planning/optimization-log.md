@@ -17,6 +17,66 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-07-28 - Phase 3 Gate Re-Evaluation: Sealing, Not Patience, Dominates
+
+- Area: the PIBT-tier go/no-go evidence — width-2/3 ring and cross gate
+  cells (64x64, n=48, 20 seeded instances, real weighted tick driver, full
+  settled consumer recipe, retry patience effectively infinite).
+- Hypothesis (from the original gate run): a width-2 ring is biconnected and
+  therefore jointly solvable, so the joint commit's 1/20 solve rate under
+  `Permit` is an algorithm gap the PIBT tier should close.
+- Evidence: classifying every stranded agent's goal by a class-consistent
+  BFS under the final settled set splits the residuals into
+  stranded-but-reachable (an algorithm gap) versus sealed (settled arrivals
+  cut the goal off — unsolvable for any movement tier; the pebble-motion
+  solvability argument does not survive settle-on-arrival). Ring width 2:
+  joint 1/20 solved with 30 reachable + 194 sealed residuals; PIBT 1/20 with
+  5 reachable + 191 sealed. Ring width 3: joint 17/20 (2 reachable + 6
+  sealed), PIBT 18/20 (0 reachable + 3 sealed), including one seed where the
+  joint run seals and the PIBT run fully solves in 120 ticks. Control: with
+  goals restricted to the outer lane (seal-proof by construction — the inner
+  lane stays a free circuit), the joint commit solves 20/20 even at n=96,
+  and faster than PIBT (125 versus 243 average ticks at n=96).
+- Decision: ship the PIBT tier with an honest, narrower justification —
+  live-congestion resolution (reachable residuals 30->5 and 2->0), dead-end
+  yields under `Forbid` that the route-bound joint commit categorically
+  cannot make (deterministic test), and secondarily fewer seals formed
+  because populations keep moving. Sealing itself is re-scoped as a goal
+  placement/lifecycle hazard documented in the settled-recipe consumer
+  contract, not a movement-tier problem. The decisive regression is the
+  width-3 seed the two tiers split on plus the deterministic pocket-yield
+  scenario, not the width-2 cell (both tiers fail it identically for
+  non-algorithmic reasons).
+- Follow-up conditions: if a consumer needs thin-ring random-goal workloads
+  to complete, the lever is goal placement (or unsettling on demand), not a
+  stronger mover; revisit only with LaCAM-class search plus that evidence.
+
+## 2026-07-28 - PIBT Decision Cost Against The Joint Baseline
+
+- Area: `advance_path_agents_with_pibt` on the joint lab benches' 128x128
+  world and layouts (`lab/pibt_*` mirrors `lab/joint_*` one for one).
+- Hypothesis: PIBT decisions (priority order, candidate ranking,
+  inheritance, backtracking) cost the screening study's expected 4-6x over
+  joint admission.
+- Evidence: three-run local arm64 medians, trivial Manhattan oracle (oracle
+  maintenance is caller-side and excluded by design). Steady-state denial
+  (`lab/pibt_headon_denied_128x128`, boxed pairs): 7.9 us at 128 agents,
+  66 us at 512, 141 us at 1,024 versus joint 4.1/42/154 — about 2x at small
+  counts, converging then crossing below joint at 1,024 (denial work per
+  pair is constant; joint re-runs its whole pipeline). Chain drain including
+  identical reset accounting (`lab/pibt_chain_reset_128x128`): 8.2 us at
+  128, 200 us at 1,024 versus joint 59/903 — 4.5x FASTER, because one
+  inheritance recursion admits a chain in linear time while the joint
+  vacated-chain fixpoint re-scans the span per round (quadratic in chain
+  length). The screening 4-6x expectation measured oracle upkeep, which
+  lives with the caller here.
+- Decision: no micro-optimisation; the tier's real recurring cost is the
+  caller's ranking-oracle maintenance (`distance_at` product rebuilds on
+  settled-set change), which the architecture docs call out.
+- Retry conditions: profile if a consumer drives PIBT above roughly 4,096
+  agents per tick; the joint chain fixpoint's quadratic sweep is now also a
+  known candidate if joint-side chain workloads ever dominate a profile.
+
 ## 2026-07-28 - Joint Movement Admission Cost At Colony Scale
 
 - Area: `advance_path_agents_with_joint_movement` on a 128x128 world (the

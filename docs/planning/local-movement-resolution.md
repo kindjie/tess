@@ -304,6 +304,19 @@ maps and for agents with extent, at 4–6× the cheap tier. Built only if
 library-scale evidence shows the cheap resolver leaving real gaps; the
 screening's thin cells do not justify it on their own.
 
+**Status: BUILT** (`sim/pibt_movement.h`, with
+`DistanceFieldProduct::distance_at` as the ready-made oracle). The gate
+re-evaluation revised the gate's own story: per-seed residual classification
+showed most thin-ring stranding is *sealing* (settled arrivals cutting goals
+off — unsolvable for any movement tier; settle-on-arrival breaks the
+pebble-motion solvability argument), while the tier's real, measured edge is
+live congestion — stranded-but-reachable residuals 30→5 (ring w2) and 2→0
+(w3), one w3 seed flipped from sealed to solved, and dead-end yields under
+`Forbid` that the route-bound joint commit categorically cannot make. Full
+evidence in the optimization log ("Phase 3 Gate Re-Evaluation"); lab cost
+mirrors in `lab/pibt_*` (chain admission 4.5× faster than the joint
+fixpoint; steady-state denial ~2× at small n, converging by 1,024).
+
 ### Assignment is the caller's layer
 
 No movement strategy resolved duplicate goals, and none should: that is an
