@@ -19,6 +19,7 @@
 // this gtest-free executable.
 
 #include <tess/diagnostics/diagnostics.h>
+#include <tess/experimental/maintenance.h>
 #include <tess/tess.h>
 
 #include <array>
@@ -326,6 +327,166 @@ auto run_queued_serial_update() -> tess::diagnostics::QueuedPhaseCounters {
   return counters;
 }
 
+auto emit_flow_counters(const tess::diagnostics::FlowCounters& counters)
+    -> std::string {
+  std::array<char, 2048> buffer{};
+  const int written = std::snprintf(
+      buffer.data(), buffer.size(),
+      "{\"offered\": %llu, \"admitted\": %llu, \"rejected\": %llu, "
+      "\"coalesced_into_pending\": %llu, \"completed\": %llu, "
+      "\"cancelled\": %llu, \"superseded\": %llu, \"stale\": %llu, "
+      "\"failed\": %llu, \"dropped_after_admission\": %llu, "
+      "\"offered_work_units\": %llu, \"consumed_work_units\": %llu, "
+      "\"outstanding_current\": %llu, \"outstanding_high_water\": %llu, "
+      "\"inventory_tick_weighted\": %llu, "
+      "\"residence_ticks_accumulated\": %llu, "
+      "\"oldest_outstanding_age_ticks\": %llu}",
+      static_cast<unsigned long long>(counters.offered),
+      static_cast<unsigned long long>(counters.admitted),
+      static_cast<unsigned long long>(counters.rejected),
+      static_cast<unsigned long long>(counters.coalesced_into_pending),
+      static_cast<unsigned long long>(counters.completed),
+      static_cast<unsigned long long>(counters.cancelled),
+      static_cast<unsigned long long>(counters.superseded),
+      static_cast<unsigned long long>(counters.stale),
+      static_cast<unsigned long long>(counters.failed),
+      static_cast<unsigned long long>(counters.dropped_after_admission),
+      static_cast<unsigned long long>(counters.offered_work_units),
+      static_cast<unsigned long long>(counters.consumed_work_units),
+      static_cast<unsigned long long>(counters.outstanding_current),
+      static_cast<unsigned long long>(counters.outstanding_high_water),
+      static_cast<unsigned long long>(counters.inventory_tick_weighted),
+      static_cast<unsigned long long>(counters.residence_ticks_accumulated),
+      static_cast<unsigned long long>(counters.oldest_outstanding_age_ticks));
+  check(written > 0 && static_cast<std::size_t>(written) < buffer.size(),
+        "emit", "flow counter formatting overflow");
+  return std::string{buffer.data()};
+}
+
+void check_identities(const tess::diagnostics::FlowCounters& counters,
+                      const char* workload) {
+  // Conservation is an invariant, never golden data: a violation fails
+  // the probe outright even though value drift is shadow-reported.
+  check(counters.admission_identity_holds(), workload,
+        "admission identity violated");
+  check(counters.retention_identity_holds(), workload,
+        "retention identity violated");
+}
+
+auto flow_step_ready(void*, tess::AsyncWorkBudget, int& value)
+    -> tess::AsyncWorkStep {
+  value = 7;
+  return {tess::AsyncStepState::Ready, 1, tess::AsyncVersion{2}};
+}
+
+auto flow_step_pending(void*, tess::AsyncWorkBudget, int&)
+    -> tess::AsyncWorkStep {
+  return {tess::AsyncStepState::Pending, 1, {}};
+}
+
+auto run_flow_async() -> tess::diagnostics::FlowCounters {
+  tess::ResumableWorkQueue<int> queue;
+  tess::diagnostics::FlowAccounting accounting;
+  queue.set_flow_accounting(&accounting);
+  queue.observe_flow_tick(1);
+
+  auto ready_work = flow_step_ready;
+  auto pending_work = flow_step_pending;
+  (void)queue.submit(nullptr, ready_work);
+  const auto cancelled = queue.submit(nullptr, pending_work);
+  const auto dropped = queue.submit(nullptr, pending_work);
+  (void)dropped;
+  const auto immediate = queue.submit_immediate(3, tess::AsyncVersion{1});
+  check(queue.cancel(cancelled), "flow_async", "cancel failed");
+  queue.observe_flow_tick(4);
+  (void)queue.advance(tess::AsyncWorkBudget{4});
+  check(queue.mark_stale_if_version(immediate, tess::AsyncVersion{9}),
+        "flow_async", "stale reclassification failed");
+  queue.observe_flow_tick(6);
+  queue.clear();
+  check_identities(accounting.counters, "flow_async");
+  return accounting.counters;
+}
+
+auto run_flow_events() -> tess::diagnostics::FlowCounters {
+  tess::EventStream<int> stream;
+  stream.reserve_events(2);
+  tess::diagnostics::FlowAccounting accounting;
+  stream.set_flow_accounting(&accounting);
+  stream.observe_flow_tick(1);
+  check(stream.publish(9, 1), "flow_events", "publish failed");
+  check(stream.publish(9, 2), "flow_events", "publish failed");
+  check(!stream.publish(9, 3), "flow_events", "overflow accepted");
+  stream.observe_flow_tick(3);
+  stream.consume_all();
+  check(stream.publish(10, 4), "flow_events", "publish failed");
+  stream.discard_all();
+  check_identities(accounting.counters, "flow_events");
+  return accounting.counters;
+}
+
+class FlowMaintenanceTask final
+    : public tess::experimental::maintenance::MaintenanceTask {
+ public:
+  void run(
+      tess::experimental::maintenance::MaintenanceBudget& budget) override {
+    check(budget.consume(2), "flow_maintenance", "budget exhausted");
+  }
+};
+
+auto run_flow_maintenance() -> tess::diagnostics::FlowCounters {
+  namespace mnt = tess::experimental::maintenance;
+  mnt::CoalescingScheduler scheduler{1};
+  tess::diagnostics::FlowAccounting accounting;
+  scheduler.set_flow_accounting(&accounting);
+  scheduler.observe_flow_tick(2);
+  FlowMaintenanceTask task_a;
+  FlowMaintenanceTask task_b;
+  check(scheduler.schedule(task_a), "flow_maintenance", "schedule failed");
+  check(scheduler.schedule(task_a), "flow_maintenance", "coalesce failed");
+  check(!scheduler.schedule(task_b), "flow_maintenance",
+        "capacity accepted over bound");
+  scheduler.observe_flow_tick(5);
+  check(scheduler.run_some(mnt::MaintenanceBudget{8}), "flow_maintenance",
+        "drain failed");
+  check_identities(accounting.counters, "flow_maintenance");
+  return accounting.counters;
+}
+
+auto run_flow_agents() -> tess::diagnostics::FlowCounters {
+  PathWorld world;
+  const auto endpoints = build_serpentine(world);
+  tess::PathAgentTickState tick_state;
+  tess::diagnostics::FlowAccounting accounting;
+  tick_state.flow_accounting = &accounting;
+  std::vector<tess::PathAgentState> agents(2);
+  agents[0].position = endpoints.start;
+  agents[1].position = tess::Coord3{1, 0, 0};
+  tess::PathRequestRuntime runtime;
+  auto options = tess::PathAgentTickOptions{};
+  options.max_steps = 4;
+
+  tess::observe_path_agent_flow_tick(tick_state, agents, 1);
+  tess::set_path_agent_goal(tick_state, agents[0], endpoints.goal);
+  tess::set_path_agent_goal(tick_state, agents[1], tess::Coord3{1, 6, 0});
+  tess::set_path_agent_goal(tick_state, agents[1],
+                            tess::Coord3{1, 4, 0});  // supersede
+  auto arrivals = std::size_t{0};
+  for (std::uint64_t tick = 2; tick <= 16; ++tick) {
+    tess::observe_path_agent_flow_tick(tick_state, agents, tick);
+    const auto stats = tess::tick_unit_path_agents<PathWorld, PassableTag>(
+        tick_state, world, agents, runtime, options);
+    arrivals += stats.pathing.arrived + stats.movement.arrived;
+    if (arrivals >= 1 && tick >= 4) {
+      break;
+    }
+  }
+  tess::clear_path_agent_goal(tick_state, agents[0]);
+  check(arrivals >= 1, "flow_agents", "no agent arrived");
+  check_identities(accounting.counters, "flow_agents");
+  return accounting.counters;
+}
+
 }  // namespace
 
 auto main(int argc, char** argv) -> int {
@@ -339,6 +500,10 @@ auto main(int argc, char** argv) -> int {
     const auto unit_product = run_unit_product_replay();
     const auto weighted_product = run_weighted_product_nearest();
     const auto queued = run_queued_serial_update();
+    const auto flow_async = run_flow_async();
+    const auto flow_events = run_flow_events();
+    const auto flow_maintenance = run_flow_maintenance();
+    const auto flow_agents = run_flow_agents();
 
     std::string document;
     document += "{\"schema\": 1, \"workloads\": {";
@@ -352,6 +517,14 @@ auto main(int argc, char** argv) -> int {
     document += emit_path_counters(weighted_product);
     document += "}, \"queued_serial_update\": {\"queued\": ";
     document += emit_queued_counters(queued);
+    document += "}, \"flow_async\": {\"flow\": ";
+    document += emit_flow_counters(flow_async);
+    document += "}, \"flow_events\": {\"flow\": ";
+    document += emit_flow_counters(flow_events);
+    document += "}, \"flow_maintenance\": {\"flow\": ";
+    document += emit_flow_counters(flow_maintenance);
+    document += "}, \"flow_agents\": {\"flow\": ";
+    document += emit_flow_counters(flow_agents);
     document += "}}}\n";
 
     std::ofstream out{argv[1], std::ios::binary};
