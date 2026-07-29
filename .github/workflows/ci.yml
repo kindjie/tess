@@ -1,16 +1,28 @@
 name: CI
 
+# Tiered per docs/planning/test-and-benchmark-redesign.md section 5 and
+# docs/planning/ci-failure-classification-2026-07-28.md: pull requests
+# run the blocking set (dev, GCC, hooks, ASan, cppcheck, Windows, bench
+# compile+smoke, diff-scoped clang-tidy, path-filtered TSan); pushes to
+# main, the weekly schedule, and manual dispatches additionally run the
+# full matrix (werror, TSan, full-tree clang-tidy, release, macOS) and
+# the benchmark threshold gates with baseline artifact collection.
 on:
   pull_request:
   push:
     branches:
       - main
+  schedule:
+    - cron: "41 5 * * 3"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# The event name keeps a scheduled full run from cancelling an in-flight
+# main push run sharing the same ref.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -23,6 +35,8 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       code_required: ${{ steps.classify.outputs.code_required }}
+      tsan_required: ${{ steps.classify.outputs.tsan_required }}
+      quality_presets: ${{ steps.classify.outputs.quality_presets }}
     steps:
       - name: Check out repository history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -30,15 +44,19 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      # Scheduled and dispatched runs have no comparison range and fail
+      # closed to the full tier inside the classifier.
       - name: Classify changed paths
         id: classify
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BASE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
         run: >-
           python3 tools/ci_changes.py
           "${PR_BASE_SHA:-$PUSH_BASE_SHA}" "$HEAD_SHA"
+          --event "$EVENT_NAME"
           >> "$GITHUB_OUTPUT"
 
   dev:
@@ -180,6 +198,7 @@ jobs:
           pytest
           tests/test_git_hooks.py
           tests/test_ci_changes.py
+          tests/test_clang_tidy_changed.py
           tests/test_benchmark_tools.py
           tests/test_branding_assets.py
           tests/test_check_public_surface.py
@@ -213,6 +232,9 @@ jobs:
       - name: Documentation versions
         run: python tools/check_doc_versions.py
 
+  # The preset list is tier-dependent: pull requests run dev-asan and
+  # dev-cppcheck (plus dev-tsan when concurrency-sensitive paths changed);
+  # full-tier events run every preset including the full-tree clang-tidy.
   quality:
     needs: changes
     if: ${{ needs.changes.outputs.code_required == 'true' }}
@@ -221,13 +243,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset:
-          - dev-werror
-          - dev-asan
-          - dev-tsan
-          - dev-cppcheck
-          - dev-clang-tidy
-          - release
+        preset: ${{ fromJSON(needs.changes.outputs.quality_presets) }}
     env:
       CC: clang
       CXX: clang++
@@ -301,12 +317,60 @@ jobs:
           matrix.preset == 'release'
         run: ctest --preset "${{ matrix.preset }}"
 
+  # Blocking diff-scoped clang-tidy for pull requests: changed sources go
+  # through the compilation database, changed headers through synthesized
+  # translation units. The job's exit status is the signal; the full-tree
+  # sweep runs on main in the quality matrix.
+  tidy-diff:
+    needs: changes
+    if: >-
+      ${{ github.event_name == 'pull_request' &&
+          needs.changes.outputs.code_required == 'true' }}
+    name: Diff Clang-Tidy
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install ccache and clang-tidy
+        run: |
+          sudo apt-get update || true
+          sudo apt-get install -y ccache clang-tidy
+
+      - name: Show tool versions
+        run: |
+          cmake --version
+          clang++ --version
+          clang-tidy --version
+
+      - name: Configure
+        run: cmake --preset dev
+
+      - name: Diff-scoped clang-tidy
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: >-
+          python3 tools/clang_tidy_changed.py
+          "$PR_BASE_SHA" "$HEAD_SHA"
+          --build-dir build/dev
+
   # No benchmark gates on macOS: bench/thresholds/*.json ceilings are
   # calibrated against the Linux ubuntu-24.04 runner family and would
-  # misfire on Apple Silicon runners.
+  # misfire on Apple Silicon runners. Full tier only: macOS has never
+  # failed independently of the Linux jobs (see the 2026-07-28 failure
+  # classification), so a regression surfaces one merge later on main.
   macos:
     needs: changes
-    if: ${{ needs.changes.outputs.code_required == 'true' }}
+    if: >-
+      ${{ github.event_name != 'pull_request' &&
+          needs.changes.outputs.code_required == 'true' }}
     name: macOS Build And Tests (${{ matrix.preset }})
     runs-on: macos-15
     strategy:
@@ -402,6 +466,10 @@ jobs:
           TESS_INSTALL_SMOKE_CONFIG: Debug
         run: tools/install_smoke.sh
 
+  # Pull requests compile the bench tree and run the smoke suite (build
+  # and API rot, bench_check hooks); threshold gating and baseline
+  # artifact collection run on the full tier, staying authoritative until
+  # the redesign's phase 4 shadow-mode criteria retire them.
   bench:
     needs: changes
     if: ${{ needs.changes.outputs.code_required == 'true' }}
@@ -440,92 +508,36 @@ jobs:
       - name: Test
         run: ctest --preset bench
 
-      - name: Key benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_key_thresholds
-
-      - name: Storage benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_storage_thresholds
-
-      - name: Block benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_block_thresholds
-
-      - name: Block pipeline benchmark thresholds
-        run: >-
-          cmake --build --preset bench --target
-          tess_bench_block_pipeline_thresholds
-
-      - name: Queued benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_queued_thresholds
-
-      - name: Path benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_path_thresholds
-
-      - name: Topology benchmark thresholds
-        run: >-
-          cmake --build --preset bench --target
-          tess_bench_topology_thresholds
-
-      - name: Scheduler benchmark thresholds
-        run: >-
-          cmake --build --preset bench --target
-          tess_bench_scheduler_thresholds
-
-      - name: Residency benchmark thresholds
-        run: >-
-          cmake --build --preset bench --target
-          tess_bench_residency_thresholds
-
-      - name: Maintenance benchmark thresholds
-        run: >-
-          cmake --build --preset bench --target
-          tess_bench_maintenance_thresholds
-
-      - name: Persistence benchmark thresholds
-        run: >-
-          cmake --build --preset bench --target
-          tess_bench_persistence_thresholds
-
-      - name: Query benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_query_thresholds
-
-      - name: Spatial benchmark thresholds
-        run: >-
-          cmake --build --preset bench --target
-          tess_bench_spatial_thresholds
-
-      - name: Parallel benchmark thresholds
-        run: >-
-          cmake --build --preset bench --target
-          tess_bench_parallel_thresholds
-
-      - name: Ecs benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_ecs_thresholds
-
-      - name: Render delta benchmark thresholds
-        run: >-
-          cmake --build --preset bench --target
-          tess_bench_render_delta_thresholds
-
-      - name: Fields benchmark thresholds
-        run: cmake --build --preset bench --target tess_bench_fields_thresholds
-
-      - name: Diagnostics benchmark thresholds
-        run: >-
-          cmake --build --preset bench --target
-          tess_bench_diagnostics_thresholds
+      - name: Benchmark thresholds
+        if: github.event_name != 'pull_request'
+        run: |
+          for family in key storage block block_pipeline queued path \
+              topology scheduler residency maintenance persistence query \
+              spatial parallel ecs render_delta fields diagnostics; do
+            echo "::group::${family}"
+            cmake --build --preset bench \
+              --target "tess_bench_${family}_thresholds"
+            echo "::endgroup::"
+          done
 
       - name: Collect non-gating benchmark baselines
-        if: github.ref == 'refs/heads/main'
+        if: >-
+          github.event_name != 'pull_request' &&
+          github.ref == 'refs/heads/main'
         run: cmake --build --preset bench --target tess_bench_ci_baselines
 
       - name: Write benchmark artifact metadata
-        if: github.ref == 'refs/heads/main'
+        if: >-
+          github.event_name != 'pull_request' &&
+          github.ref == 'refs/heads/main'
         run: |
           tools/benchmark_artifact_metadata.py \
             --out build/bench/bench/ci-baselines/metadata.json
 
       - name: Upload benchmark baseline artifact
-        if: github.ref == 'refs/heads/main'
+        if: >-
+          github.event_name != 'pull_request' &&
+          github.ref == 'refs/heads/main'
         # upload-artifact v7.0.1.
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -544,29 +556,99 @@ jobs:
       - gcc
       - hooks-backstop
       - quality
+      - tidy-diff
       - macos
       - windows
       - bench
     runs-on: ubuntu-24.04
     steps:
       - name: Require successful CI jobs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           test "${{ needs.changes.result }}" = success
           test "${{ needs.hooks-backstop.result }}" = success
-          test "${{ needs.changes.outputs.code_required }}" = true ||
-            test "${{ needs.changes.outputs.code_required }}" = false
-          if [ "${{ needs.changes.outputs.code_required }}" = true ]; then
+          code="${{ needs.changes.outputs.code_required }}"
+          test "$code" = true || test "$code" = false
+          if [ "$code" = true ]; then
             test "${{ needs.dev.result }}" = success
             test "${{ needs.gcc.result }}" = success
             test "${{ needs.quality.result }}" = success
-            test "${{ needs.macos.result }}" = success
             test "${{ needs.windows.result }}" = success
             test "${{ needs.bench.result }}" = success
+            if [ "$EVENT_NAME" = pull_request ]; then
+              test "${{ needs.tidy-diff.result }}" = success
+              test "${{ needs.macos.result }}" = skipped
+            else
+              test "${{ needs.tidy-diff.result }}" = skipped
+              test "${{ needs.macos.result }}" = success
+            fi
           else
             test "${{ needs.dev.result }}" = skipped
             test "${{ needs.gcc.result }}" = skipped
             test "${{ needs.quality.result }}" = skipped
+            test "${{ needs.tidy-diff.result }}" = skipped
             test "${{ needs.macos.result }}" = skipped
             test "${{ needs.windows.result }}" = skipped
             test "${{ needs.bench.result }}" = skipped
+          fi
+
+  # Keeps demoted-job regressions owned: a failed main, scheduled, or
+  # dispatched run files or extends one rolling ci-failure issue. Never
+  # runs on pull_request events and never executes repository code. The
+  # repository-wide concurrency group serializes concurrent reporters so
+  # the find-then-create dedupe cannot race itself into duplicates.
+  report-failure:
+    name: Report CI Failure
+    concurrency:
+      group: ci-failure-report
+    if: >-
+      ${{ always() && github.event_name != 'pull_request' &&
+          contains(needs.*.result, 'failure') }}
+    needs:
+      - changes
+      - dev
+      - gcc
+      - hooks-backstop
+      - quality
+      - tidy-diff
+      - macos
+      - windows
+      - bench
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-24.04
+    steps:
+      - name: File or update the ci-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          gh label create ci-failure \
+            --repo "$GITHUB_REPOSITORY" \
+            --description "Automated report of a non-PR CI failure" \
+            --color B60205 --force
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          run_url="$run_url/actions/runs/$GITHUB_RUN_ID"
+          failed=$(printf '%s' "$JOB_RESULTS" | python3 -c '
+          import json, sys
+          needs = json.load(sys.stdin)
+          print(", ".join(sorted(
+            job for job, state in needs.items()
+            if state["result"] == "failure"
+          )))
+          ')
+          title="CI failing on ${GITHUB_REF_NAME}"
+          body="CI ${GITHUB_EVENT_NAME} run failed: ${run_url}
+          Failed jobs: ${failed}"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --label ci-failure --state open \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" \
+              --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --label ci-failure --title "$title" --body "$body"
           fi
