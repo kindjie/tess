@@ -198,6 +198,84 @@ TEST(TessJointMovement, HeadOnPairFollowsSwapPolicy) {
   }
 }
 
+TEST(TessJointMovement, CyclesFreeNoTilesSoFollowersWait) {
+  // A cycle is volume-preserving: it refills every tile it vacates, so a
+  // follower whose next tile belongs to a rotating cycle cannot enter it
+  // this tick -- the predecessor in the cycle does. The follower waits as an
+  // ordinary occupancy block and proceeds next tick.
+  World world;
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  fill_world(world);
+  add_agent(world, agents, routes, {{1, 1, 0}, {2, 1, 0}});
+  add_agent(world, agents, routes, {{2, 1, 0}, {2, 2, 0}});
+  add_agent(world, agents, routes, {{2, 2, 0}, {1, 2, 0}});
+  add_agent(world, agents, routes, {{1, 2, 0}, {1, 1, 0}});
+  add_agent(world, agents, routes, {{3, 1, 0}, {2, 1, 0}, {2, 0, 0}});
+
+  tess::JointMoveScratch scratch;
+  const auto stats = joint(world, agents, routes, scratch);  // Forbid
+  EXPECT_EQ(stats.rotations, 1u);
+  EXPECT_EQ(stats.chained, 0u);
+  EXPECT_EQ(stats.frame.advanced, 4u);
+  EXPECT_EQ(agents[4].position, (tess::Coord3{3, 1, 0}));
+  EXPECT_EQ(agents[4].phase, tess::PathAgentPhase::Blocked);
+  EXPECT_EQ(agents[4].status, tess::PathStatus::Found);
+  // The rotation left (2, 1) occupied by the cycle's own predecessor.
+  EXPECT_TRUE(world.field<OccupancyTag>(tess::Coord3{2, 1, 0}));
+}
+
+TEST(TessJointMovement, SwapsFreeNoTilesSoFollowersWait) {
+  // Same invariant for the two-agent cycle: an exchange refills both tiles,
+  // so a follower behind either half waits.
+  World world;
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  fill_world(world);
+  add_agent(world, agents, routes, {{2, 1, 0}, {3, 1, 0}});
+  add_agent(world, agents, routes, {{3, 1, 0}, {2, 1, 0}});
+  add_agent(world, agents, routes, {{1, 1, 0}, {2, 1, 0}, {2, 2, 0}});
+
+  tess::JointMoveScratch scratch;
+  const auto stats = joint(world, agents, routes, scratch,
+                           tess::JointMoveOptions{tess::SwapPolicy::Permit});
+  EXPECT_EQ(stats.swaps, 1u);
+  EXPECT_EQ(stats.chained, 0u);
+  EXPECT_EQ(stats.frame.advanced, 2u);
+  EXPECT_EQ(agents[2].position, (tess::Coord3{1, 1, 0}));
+  EXPECT_EQ(agents[2].phase, tess::PathAgentPhase::Blocked);
+}
+
+TEST(TessJointMovement, ObserverSeesTheFullyAppliedConfiguration) {
+  // Callbacks fire after the whole round applies, so each one observes the
+  // final positions of BOTH halves of a swap, and an injective mirror can
+  // buffer the round safely.
+  World world;
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  fill_world(world);
+  add_agent(world, agents, routes, {{1, 1, 0}, {2, 1, 0}});
+  add_agent(world, agents, routes, {{2, 1, 0}, {1, 1, 0}});
+
+  tess::JointMoveScratch scratch;
+  std::size_t callbacks = 0;
+  bool consistent = true;
+  const auto stats = tess::advance_path_agents_with_joint_movement<
+      World, PassableTag, OccupancyTag, ReservationTag>(
+      world, std::span<tess::PathAgentState>(agents), routes, scratch,
+      tess::JointMoveOptions{tess::SwapPolicy::Permit}, 1u, 0u,
+      [&](std::size_t index, tess::Coord3 from, tess::Coord3 to) {
+        ++callbacks;
+        consistent = consistent && agents[index].position == to &&
+                     !(from == to) &&
+                     agents[0].position == (tess::Coord3{2, 1, 0}) &&
+                     agents[1].position == (tess::Coord3{1, 1, 0});
+      });
+  EXPECT_EQ(stats.swaps, 1u);
+  EXPECT_EQ(callbacks, 2u);
+  EXPECT_TRUE(consistent);
+}
+
 TEST(TessJointMovement, PermitOnDeadlockWaitsForTheBlockedBudget) {
   World world;
   std::vector<tess::PathAgentState> agents;

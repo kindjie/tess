@@ -27,6 +27,7 @@
 #include <tess/core/shape.h>
 #include <tess/sim/movement.h>
 #include <tess/sim/path_agent.h>
+#include <tess/sim/path_agent_tick.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -53,7 +54,11 @@ enum class SwapPolicy : std::uint8_t {
 struct JointMoveOptions {
   SwapPolicy swap_policy = SwapPolicy::Forbid;
   /// Consecutive blocked ticks both members of a 2-cycle must have accrued
-  /// before `SwapPolicy::PermitOnDeadlock` admits the exchange.
+  /// before `SwapPolicy::PermitOnDeadlock` admits the exchange. This gates on
+  /// each member's own `blocked_retries` streak, not on how long the specific
+  /// pair has been mutually blocked: two long-congested agents that have only
+  /// just met exchange immediately. Per-pair streak tracking is deliberately
+  /// deferred until a consumer needs the stricter gate.
   std::uint32_t deadlock_ticks = 4;
 };
 
@@ -86,6 +91,9 @@ struct JointMoveScratch {
   std::vector<std::uint8_t> failure;
   std::vector<std::uint32_t> cycle_walk;
   std::vector<std::uint8_t> on_walk;
+  std::vector<std::uint8_t> walked;
+  std::vector<std::uint32_t> committed;
+  std::vector<Coord3> committed_from;
 
   /// Pre-sizes every internal container for `agent_count` agents.
   void reserve(std::size_t agent_count) {
@@ -97,6 +105,9 @@ struct JointMoveScratch {
     failure.reserve(agent_count);
     cycle_walk.reserve(agent_count);
     on_walk.reserve(agent_count);
+    walked.reserve(agent_count);
+    committed.reserve(agent_count);
+    committed_from.reserve(agent_count);
   }
 };
 
@@ -148,7 +159,9 @@ enum class JointState : std::uint8_t {
 //      mover is admitted. This drains queues in one tick.
 //   4. The unresolved remainder is exactly the set of wants-cycles. Cycles of
 //      length >= 3 rotate; 2-cycles follow `SwapPolicy`; chains ending at an
-//      unadmitted or external occupant record `Occupied`.
+//      unadmitted or external occupant record `Occupied`. A cycle refills
+//      every tile it vacates, so cycle admission never unlocks further
+//      chains -- the fixpoint in step 3 is the only chain pass needed.
 //   5. Admitted moves apply as a set: sources clear, destinations set, and
 //      per-move dirty marking matches `commit_movement_intent`.
 /// Advances retained routes with joint (batch) movement admission.
@@ -175,6 +188,8 @@ auto advance_path_agents_with_joint_movement(
         n, static_cast<std::uint8_t>(detail::JointState::Inactive));
     scratch.failure.assign(n, static_cast<std::uint8_t>(MovementStatus::Moved));
     scratch.claimed.clear();
+    scratch.committed.clear();
+    scratch.committed_from.clear();
 
     // Position index over every agent, movers or not: an occupied destination
     // must distinguish "held by an agent in this batch" from "held by
@@ -284,10 +299,16 @@ auto advance_path_agents_with_joint_movement(
       }
     }
 
-    // 4: the unresolved remainder is the wants-cycle set.
+    // 4: the unresolved remainder is the wants-cycle set. A cycle is
+    // volume-preserving -- it refills every tile it vacates -- so admitting
+    // one can never free a tile for a trailing chain; every genuinely freed
+    // tile traces back to a move into a free tile, which the fixpoint above
+    // already drained. Chain members walked here therefore wait this tick.
+    scratch.walked.assign(n, 0);
     for (std::size_t start = 0; start < n; ++start) {
       if (scratch.state[start] !=
-          static_cast<std::uint8_t>(detail::JointState::Pending)) {
+              static_cast<std::uint8_t>(detail::JointState::Pending) ||
+          scratch.walked[start] != 0) {
         continue;
       }
       scratch.cycle_walk.clear();
@@ -298,23 +319,24 @@ auto advance_path_agents_with_joint_movement(
                  static_cast<std::uint8_t>(detail::JointState::Pending) &&
              scratch.on_walk[at] == 0) {
         scratch.on_walk[at] = 1;
+        scratch.walked[at] = 1;
         scratch.cycle_walk.push_back(at);
         at = detail::joint_find_occupant(
             scratch, tile_key<Shape>(scratch.desired[at]).value);
       }
 
       const bool closed = at != none && scratch.on_walk[at] != 0;
+      if (!closed) {
+        continue;  // an open chain; settled by the sweep below
+      }
       std::size_t cycle_begin = scratch.cycle_walk.size();
-      if (closed) {
-        for (std::size_t k = 0; k < scratch.cycle_walk.size(); ++k) {
-          if (scratch.cycle_walk[k] == at) {
-            cycle_begin = k;
-            break;
-          }
+      for (std::size_t k = 0; k < scratch.cycle_walk.size(); ++k) {
+        if (scratch.cycle_walk[k] == at) {
+          cycle_begin = k;
+          break;
         }
       }
-      const auto cycle_len =
-          closed ? scratch.cycle_walk.size() - cycle_begin : 0;
+      const auto cycle_len = scratch.cycle_walk.size() - cycle_begin;
 
       bool admit = false;
       if (cycle_len >= 3) {
@@ -342,9 +364,9 @@ auto advance_path_agents_with_joint_movement(
         }
       }
 
-      if (admit) {
-        for (std::size_t k = cycle_begin; k < scratch.cycle_walk.size(); ++k) {
-          const auto member = scratch.cycle_walk[k];
+      for (std::size_t k = cycle_begin; k < scratch.cycle_walk.size(); ++k) {
+        const auto member = scratch.cycle_walk[k];
+        if (admit) {
           // Cycle destinations are cycle members' current positions, which no
           // admitted mover can have claimed; the claim still guards the
           // invariant.
@@ -352,13 +374,7 @@ auto advance_path_agents_with_joint_movement(
               scratch, tile_key<Shape>(scratch.desired[member]).value);
           scratch.state[member] =
               static_cast<std::uint8_t>(detail::JointState::Admitted);
-        }
-      }
-      // Everyone walked and not admitted (open-chain members and refused
-      // cycles) waits on an occupied tile.
-      for (const auto member : scratch.cycle_walk) {
-        if (scratch.state[member] ==
-            static_cast<std::uint8_t>(detail::JointState::Pending)) {
+        } else {
           scratch.state[member] =
               static_cast<std::uint8_t>(detail::JointState::Failed);
           scratch.failure[member] =
@@ -367,28 +383,14 @@ auto advance_path_agents_with_joint_movement(
       }
     }
 
-    // Chains admitted after the fixpoint above may unlock further pending
-    // agents only through cycle admission, which pass 4 has now settled, so
-    // one more chain sweep covers moves behind a rotated cycle.
-    changed = true;
-    while (changed) {
-      changed = false;
-      for (std::size_t i = 0; i < n; ++i) {
-        if (scratch.state[i] !=
-            static_cast<std::uint8_t>(detail::JointState::Pending)) {
-          continue;
-        }
-        const auto key = tile_key<Shape>(scratch.desired[i]).value;
-        const auto occupant = detail::joint_find_occupant(scratch, key);
-        if (occupant != none &&
-            scratch.state[occupant] ==
-                static_cast<std::uint8_t>(detail::JointState::Admitted) &&
-            detail::joint_claim(scratch, key)) {
-          scratch.state[i] =
-              static_cast<std::uint8_t>(detail::JointState::Admitted);
-          ++stats.chained;
-          changed = true;
-        }
+    // Whatever is still pending waits on an occupied tile.
+    for (std::size_t i = 0; i < n; ++i) {
+      if (scratch.state[i] ==
+          static_cast<std::uint8_t>(detail::JointState::Pending)) {
+        scratch.state[i] =
+            static_cast<std::uint8_t>(detail::JointState::Failed);
+        scratch.failure[i] =
+            static_cast<std::uint8_t>(MovementStatus::Occupied);
       }
     }
 
@@ -419,7 +421,8 @@ auto advance_path_agents_with_joint_movement(
           ++agent.path_index;
           agent.position = to;
           detail::resume_path_agent(agent);
-          on_commit(i, from, to);
+          scratch.committed.push_back(static_cast<std::uint32_t>(i));
+          scratch.committed_from.push_back(from);
           ++stats.frame.advanced;
           if (agent.position == agent.goal) {
             clear_path_agent_goal(agent);
@@ -445,6 +448,20 @@ auto advance_path_agents_with_joint_movement(
         case detail::JointState::Pending:
           break;
       }
+    }
+
+    // Observer callbacks fire only after the whole round's world and agent
+    // state has been applied, so every callback observes the final
+    // configuration — including both halves of a swap. An observer that
+    // maintains an injective tile-to-entity mirror must still buffer the
+    // round: applying removals for every reported move before any insertion
+    // is the only order that survives swaps and rotations, since a per-move
+    // upsert collides with a not-yet-processed peer's stale entry. An
+    // observer exception propagates with world and agents fully consistent;
+    // callbacks for the round's later moves are skipped.
+    for (std::size_t k = 0; k < scratch.committed.size(); ++k) {
+      const auto index = static_cast<std::size_t>(scratch.committed[k]);
+      on_commit(index, scratch.committed_from[k], agents[index].position);
     }
 
     if (admitted_count == 0) {
