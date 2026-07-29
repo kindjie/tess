@@ -103,10 +103,13 @@ def diff_counters(
 
 def render_report(
   rows: list[tuple[str, str, str, object, object]],
+  *,
+  strict: bool = False,
 ) -> str:
   """Render the drift table shown in the step summary."""
+  mode = "strict mode" if strict else "shadow mode"
   lines = [
-    "### Counter golden drift (shadow mode)",
+    f"### Counter golden drift ({mode})",
     "",
     "Deterministic work counters diverged from"
     " `tests/goldens/counters.json`. If the behavior change is"
@@ -165,13 +168,13 @@ def main(argv: list[str] | None = None) -> int:
     print("counter goldens match")
     return 0
 
-  report = render_report(rows)
-  print(report)
-  if args.drift_report:
-    args.drift_report.write_text(report, encoding="utf-8")
   strict = args.strict or (
     os.environ.get("TESS_COUNTER_GOLDENS_STRICT", "") == "1"
   )
+  report = render_report(rows, strict=strict)
+  print(report)
+  if args.drift_report:
+    args.drift_report.write_text(report, encoding="utf-8")
   if strict:
     print("error: counter goldens drifted (strict mode)", file=sys.stderr)
     return 1

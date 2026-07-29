@@ -9,9 +9,10 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 ## 2026-07-29 - Counter goldens in shadow mode (phase 2, slice 2)
 
 - Changed: a gtest-free probe (`tests/tess_counter_golden_probe.cc`,
-  diagnostics enabled target-locally) runs four fixed serial workloads —
-  unit and weighted A* over the canonical serpentine maze, a
-  distance-field product build with nearest-target replay, and a queued
+  diagnostics enabled target-locally) runs five fixed serial workloads —
+  unit and weighted A* over the canonical serpentine maze, a unit
+  distance-field product replay, a weighted product with
+  nearest-target replay (the entry-cost read path), and a queued
   serial field update with dirty merge — and emits the observed
   `PathCounters`/`QueuedPhaseCounters` values as JSON. A ctest fixture
   pair compares them against the committed

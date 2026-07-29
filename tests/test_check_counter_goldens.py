@@ -183,3 +183,12 @@ def test_report_cells_escape_markdown_pipes():
 
   assert "a\\|b" in report
   assert "heap\\|pushes" in report
+
+
+def test_strict_reports_are_labeled_strict():
+  rows = [("astar", "path", "heap_pushes", 1, 2)]
+
+  assert "strict mode" in check_counter_goldens.render_report(
+    rows, strict=True
+  )
+  assert "shadow mode" in check_counter_goldens.render_report(rows)
