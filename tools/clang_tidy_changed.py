@@ -3,14 +3,15 @@
 
 The blocking pull-request clang-tidy gate: changed sources are checked
 through the compilation database, and changed headers — most of this
-header-only library — through a real database translation unit that
-includes them (which carries the right feature macros for gated
-headers), falling back to a synthesized one-include translation unit
-when no consumer exists yet. Analyzer or build configuration changes
-add a representative reference check so the gate never passes with
-zero checks on a change that could alter diagnostics. The full-tree
-sweep runs on main; this tool trades its breadth for pull-request
-latency without losing coverage on the changed surface.
+header-only library — through a real database translation unit whose
+resolved include closure reaches them and whose compile command defines
+the feature macro a gated header needs, falling back to a synthesized
+one-include translation unit when no configured consumer exists yet.
+Analyzer or build configuration changes add a representative reference
+check so the gate never passes with zero checks on a change that could
+alter diagnostics. The full-tree sweep runs on main; this tool trades
+its breadth for pull-request latency without losing coverage on the
+changed surface.
 """
 
 from __future__ import annotations
@@ -38,24 +39,37 @@ SOURCE_PREFIXES = ("tests/", "examples/")
 # introduce coverage the full tree never had.
 EXCLUDED_PREFIXES = ("bench/", "tests/webgpu_stub/")
 # Sources deliberately outside the dev preset's compilation database:
-# standalone consumer-smoke projects, the bench-preset-only data test,
-# and the real-WebGPU example. Anything else missing from the database
-# fails the gate — a new or renamed source must not silently evade the
-# only blocking pull-request clang-tidy job.
-GATED_SOURCE_PREFIXES = (
+# standalone consumer-smoke projects and the real-WebGPU example (whole
+# directories), and the bench-preset-only data test (exact file).
+# Anything else missing from the database fails the gate — a new or
+# renamed source must not silently evade the only blocking pull-request
+# clang-tidy job.
+GATED_SOURCE_DIRECTORIES = (
   "examples/webgpu_compute/",
   "tests/fetchcontent_consumer/",
   "tests/install_consumer/",
-  "tests/tess_grid_benchmark_data",
 )
-# Changes that can alter clang-tidy's behavior without touching any
-# checkable source; they trigger a representative reference check.
+GATED_SOURCE_FILES = ("tests/tess_grid_benchmark_data_test.cc",)
+# Changes that can alter clang-tidy's behavior or the analyzed surface
+# without touching any checkable source; they trigger a representative
+# reference check.
 CONFIG_TRIGGER_FILES = (
   ".clang-tidy",
+  ".github/workflows/ci.yml",
   "CMakePresets.json",
+  "include/tess/version.h.in",
   "tools/clang_tidy_changed.py",
 )
 CONFIG_TRIGGER_DIRECTORIES = ("cmake/",)
+# Feature-gated directories and the macro a consumer's compile command
+# must define for clang-tidy to analyze the gated code at all.
+FEATURE_MACRO_DIRECTORIES = (
+  ("include/tess/debug/", "TESS_ENABLE_IMGUI"),
+  ("include/tess/diagnostics/", "TESS_ENABLE_DIAGNOSTICS"),
+  ("include/tess/ecs/entt/", "TESS_ENABLE_ENTT"),
+  ("include/tess/ecs/flecs/", "TESS_ENABLE_FLECS"),
+  ("include/tess/gpu/", "TESS_ENABLE_WEBGPU"),
+)
 
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s+["<]([^">]+)[">]', re.MULTILINE)
 
@@ -112,53 +126,100 @@ def source_disposition(path: str, *, in_database: bool) -> str:
   """Return 'check', 'skip', or 'fail' for an existing changed source."""
   if in_database:
     return "check"
-  if path.startswith(GATED_SOURCE_PREFIXES):
+  if path.startswith(GATED_SOURCE_DIRECTORIES) or path in GATED_SOURCE_FILES:
     return "skip"
   return "fail"
 
 
-def include_reference(path: str) -> str:
-  """Return the include spelling consumers use for a changed header."""
-  if path.startswith("include/"):
-    return path.removeprefix("include/")
-  return Path(path).name
-
-
-def find_includer(
-  header: str,
-  tu_includes: Mapping[str, tuple[str, ...]],
-) -> str | None:
-  """Find a database translation unit that directly includes a header.
-
-  Prefers test translation units over examples so feature-gated headers
-  get the consumer that defines their macros. Returns None when nothing
-  includes the header directly.
-  """
-  reference = include_reference(header)
-  ordered = sorted(
-    tu_includes,
-    key=lambda path: (not path.startswith("tests/"), path),
-  )
-  for path in ordered:
-    if reference in tu_includes[path]:
-      return path
+def required_macro(path: str) -> str | None:
+  """Return the feature macro a header's consumer must define, if any."""
+  for directory, macro in FEATURE_MACRO_DIRECTORIES:
+    if path.startswith(directory):
+      return macro
   return None
 
 
-def read_tu_includes(
-  sources: Iterable[Path],
+def entry_defines(entry: dict[str, Any], macro: str) -> bool:
+  """Return whether a database entry's compile command defines a macro."""
+  if "arguments" in entry:
+    command = " ".join(entry["arguments"])
+  else:
+    command = entry["command"]
+  return macro in command
+
+
+def resolve_include(target: str, repo_root: Path) -> str | None:
+  """Map an include string to the repo-relative file it names, if any."""
+  for prefix in ("include", "tests"):
+    candidate = repo_root / prefix / target
+    if candidate.is_file():
+      return f"{prefix}/{target}"
+  return None
+
+
+def read_direct_includes(
+  files: Iterable[Path],
   repo_root: Path,
 ) -> dict[str, tuple[str, ...]]:
-  """Map repo-relative database sources to their direct include targets."""
+  """Map repo-relative files to the repo files they directly include."""
   includes = {}
-  for source in sources:
+  for source in files:
     try:
       text = source.read_text(encoding="utf-8")
     except OSError:
       continue
     relative = source.relative_to(repo_root).as_posix()
-    includes[relative] = tuple(INCLUDE_RE.findall(text))
+    resolved = (
+      resolve_include(target, repo_root)
+      for target in INCLUDE_RE.findall(text)
+    )
+    includes[relative] = tuple(
+      target for target in resolved if target is not None
+    )
   return includes
+
+
+def include_closure(
+  start: Iterable[str],
+  graph: Mapping[str, tuple[str, ...]],
+) -> frozenset[str]:
+  """Return every file reachable through the resolved include graph."""
+  seen = set()
+  stack = list(start)
+  while stack:
+    node = stack.pop()
+    if node in seen:
+      continue
+    seen.add(node)
+    stack.extend(graph.get(node, ()))
+  return frozenset(seen)
+
+
+def find_consumer(
+  header: str,
+  tu_entries: Mapping[str, dict[str, Any]],
+  graph: Mapping[str, tuple[str, ...]],
+) -> str | None:
+  """Find a database translation unit whose closure reaches a header.
+
+  Textual include edges ignore preprocessor gating, so a feature-gated
+  header additionally requires the consumer's compile command to define
+  its macro — otherwise the preprocessor drops the gated code and the
+  check would silently analyze nothing. Test translation units are
+  preferred over examples. Returns None when no configured consumer
+  reaches the header.
+  """
+  macro = required_macro(header)
+  ordered = sorted(
+    tu_entries,
+    key=lambda path: (not path.startswith("tests/"), path),
+  )
+  for path in ordered:
+    if macro is not None and not entry_defines(tu_entries[path], macro):
+      continue
+    if header in include_closure(graph.get(path, ()), graph):
+      return path
+  return None
 
 
 def reference_compile_flags(entry: dict[str, Any]) -> tuple[str, ...]:
@@ -286,6 +347,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
   )
   parser.add_argument("--jobs", type=int, default=4)
   parser.add_argument("--clang-tidy", default="clang-tidy")
+  parser.add_argument(
+    "--repo-root",
+    type=Path,
+    default=Path(__file__).resolve().parents[1],
+    help=argparse.SUPPRESS,
+  )
   return parser.parse_args(argv)
 
 
@@ -294,7 +361,7 @@ def main(argv: Sequence[str] | None = None) -> int:
   if not valid_revision(args.base) or not valid_revision(args.head):
     print("error: invalid comparison revision", file=sys.stderr)
     return 1
-  repo_root = Path(__file__).resolve().parents[1]
+  repo_root = args.repo_root.resolve()
   database_path = args.build_dir / "compile_commands.json"
   if not database_path.is_file():
     print(f"error: {database_path} not found", file=sys.stderr)
@@ -304,12 +371,17 @@ def main(argv: Sequence[str] | None = None) -> int:
   paths = changed_paths(args.base, args.head)
   candidates = select_candidates(paths)
   index = database_index(entries)
-  repo_sources = [
-    path
-    for path in sorted(index)
+  tu_entries = {
+    path.relative_to(repo_root).as_posix(): entry
+    for path, entry in index.items()
     if path.is_relative_to(repo_root) and path.suffix == ".cc"
+  }
+  graph_files = [
+    *(repo_root / "include").rglob("*.h"),
+    *(repo_root / "tests").rglob("*.h"),
+    *(repo_root / path for path in tu_entries),
   ]
-  tu_includes = read_tu_includes(repo_sources, repo_root)
+  graph = read_direct_includes(graph_files, repo_root)
 
   tu_paths = []
   synthesized = []
@@ -317,12 +389,17 @@ def main(argv: Sequence[str] | None = None) -> int:
   for path in candidates.headers:
     if not (repo_root / path).is_file():
       continue  # deleted in this range
-    includer = find_includer(path, tu_includes)
-    if includer is None:
+    consumer = find_consumer(path, tu_entries, graph)
+    if consumer is None:
+      if required_macro(path) is not None:
+        print(
+          f"warning: {path} is feature-gated with no configured "
+          "consumer; the synthesized check cannot analyze gated code"
+        )
       synthesized.append(path)
     else:
-      print(f"checking {path} through {includer}")
-      tu_paths.append(includer)
+      print(f"checking {path} through {consumer}")
+      tu_paths.append(consumer)
   for path in candidates.sources:
     if not (repo_root / path).is_file():
       continue  # deleted in this range

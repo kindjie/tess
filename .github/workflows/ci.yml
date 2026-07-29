@@ -597,7 +597,11 @@ jobs:
   # dispatched run files or extends one rolling ci-failure issue. Never
   # runs on pull_request events and never executes repository code. The
   # repository-wide concurrency group serializes concurrent reporters so
-  # the find-then-create dedupe cannot race itself into duplicates.
+  # the find-then-create dedupe cannot race itself into duplicates;
+  # Actions keeps only one reporter pending per group, so when three or
+  # more failed runs overlap an intermediate comment can be replaced by
+  # the newest — acceptable for a rolling issue that names the latest
+  # failing run.
   report-failure:
     name: Report CI Failure
     concurrency:
@@ -615,6 +619,7 @@ jobs:
       - macos
       - windows
       - bench
+      - ci-gate
     permissions:
       contents: read
       issues: write
