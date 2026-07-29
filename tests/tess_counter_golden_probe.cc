@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <vector>
 
 namespace {
@@ -311,36 +312,41 @@ auto run_queued_serial_update() -> tess::diagnostics::QueuedPhaseCounters {
 }  // namespace
 
 auto main(int argc, char** argv) -> int {
-  if (argc != 2) {
-    std::fprintf(stderr, "usage: %s <observed.json>\n", argv[0]);
-    return EXIT_FAILURE;
-  }
-  std::FILE* out = std::fopen(argv[1], "wb");
-  if (out == nullptr) {
-    std::fprintf(stderr, "cannot open %s\n", argv[1]);
-    return EXIT_FAILURE;
-  }
+  try {
+    if (argc != 2) {
+      std::fprintf(stderr, "usage: %s <observed.json>\n", argv[0]);
+      return EXIT_FAILURE;
+    }
+    std::FILE* out = std::fopen(argv[1], "wb");
+    if (out == nullptr) {
+      std::fprintf(stderr, "cannot open %s\n", argv[1]);
+      return EXIT_FAILURE;
+    }
 
-  const auto astar = run_astar_serpentine();
-  const auto weighted = run_weighted_serpentine();
-  const auto unit_product = run_unit_product_replay();
-  const auto weighted_product = run_weighted_product_nearest();
-  const auto queued = run_queued_serial_update();
+    const auto astar = run_astar_serpentine();
+    const auto weighted = run_weighted_serpentine();
+    const auto unit_product = run_unit_product_replay();
+    const auto weighted_product = run_weighted_product_nearest();
+    const auto queued = run_queued_serial_update();
 
-  std::fprintf(out, "{\"schema\": 1, \"workloads\": {");
-  std::fprintf(out, "\"astar_serpentine\": {\"path\": ");
-  emit_path_counters(out, astar);
-  std::fprintf(out, "}, \"weighted_serpentine\": {\"path\": ");
-  emit_path_counters(out, weighted);
-  std::fprintf(out, "}, \"unit_product_replay\": {\"path\": ");
-  emit_path_counters(out, unit_product);
-  std::fprintf(out, "}, \"weighted_product_nearest\": {\"path\": ");
-  emit_path_counters(out, weighted_product);
-  std::fprintf(out, "}, \"queued_serial_update\": {\"queued\": ");
-  emit_queued_counters(out, queued);
-  std::fprintf(out, "}}}\n");
-  if (std::fclose(out) != 0) {
-    std::fprintf(stderr, "cannot finish writing %s\n", argv[1]);
+    std::fprintf(out, "{\"schema\": 1, \"workloads\": {");
+    std::fprintf(out, "\"astar_serpentine\": {\"path\": ");
+    emit_path_counters(out, astar);
+    std::fprintf(out, "}, \"weighted_serpentine\": {\"path\": ");
+    emit_path_counters(out, weighted);
+    std::fprintf(out, "}, \"unit_product_replay\": {\"path\": ");
+    emit_path_counters(out, unit_product);
+    std::fprintf(out, "}, \"weighted_product_nearest\": {\"path\": ");
+    emit_path_counters(out, weighted_product);
+    std::fprintf(out, "}, \"queued_serial_update\": {\"queued\": ");
+    emit_queued_counters(out, queued);
+    std::fprintf(out, "}}}\n");
+    if (std::fclose(out) != 0) {
+      std::fprintf(stderr, "cannot finish writing %s\n", argv[1]);
+      return EXIT_FAILURE;
+    }
+  } catch (const std::exception& error) {
+    std::fprintf(stderr, "counter probe failed: %s\n", error.what());
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;
