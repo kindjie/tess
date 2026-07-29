@@ -32,6 +32,7 @@
 #include <tess/sim/auto_exec.h>
 #include <tess/sim/delta_frame.h>
 #include <tess/sim/event_stream.h>
+#include <tess/sim/joint_movement.h>
 #include <tess/sim/movement.h>
 #include <tess/sim/path_agent.h>
 #include <tess/sim/path_agent_tick.h>

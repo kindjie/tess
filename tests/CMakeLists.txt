@@ -398,6 +398,19 @@ tess_apply_project_options(tess_persistence_test)
 tess_discover_tests(tess_persistence_test)
 
 add_executable(
+  tess_joint_movement_test
+  allocation_counter.cc
+  tess_joint_movement_test.cc
+)
+target_link_libraries(
+  tess_joint_movement_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_joint_movement_test)
+
+tess_discover_tests(tess_joint_movement_test)
+
+add_executable(
   tess_path_runtime_test
   allocation_counter.cc
   tess_path_runtime_test.cc

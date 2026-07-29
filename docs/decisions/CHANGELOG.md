@@ -6,6 +6,38 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-28 - Joint movement commit with an explicit swap policy
+
+- Changed: new `sim/joint_movement.h` decides one tick's moves as a set.
+  `advance_path_agents_with_joint_movement` admits a move whose destination is
+  vacated in the same tick — chains drain in one tick, cycles of length three
+  or more rotate under every policy, and the two-agent cycle follows an
+  explicit `SwapPolicy` (`Forbid` by default, `Permit`,
+  `PermitOnDeadlock`). A weighted tick driver mirrors the existing one with
+  the joint advance in place of the per-agent advance. Validation, failure
+  handling, reservations, arrival handling, and dirty marking match
+  `commit_movement_intent`, with one deliberate strengthening: a destination
+  that is both occupied and reserved fails `Reserved` rather than joining
+  admission, so a reservation cannot vanish behind a vacating occupant.
+- Reason: the per-agent commit validates each destination against current
+  state, so a move into a tile being vacated the same tick is unreachable by
+  construction — the deadlock class the movement-resolution screening study
+  identified as the library's missing primitive, and the class behind the
+  colony's recorded three-wall livelock. Swap admission is a semantic choice
+  (agents traverse one edge in opposite directions for a tick), so it ships
+  as an explicit policy defaulting to the standard MAPF constraint; existing
+  callers see no behavioural change.
+- Affected docs: simulation architecture (Joint Movement section), public
+  surface manifest, test inventory, optimization log (lab-scale cost
+  measurements).
+- Affected code: new public header wired into both umbrellas; the web colony
+  demo adopts the joint driver with `SwapPolicy::Permit`, flipping its
+  bottleneck regression from "must report the silent stall" to "must keep
+  completing trips" — the three recorded livelock seeds now resolve with zero
+  terminal agents and a quiet stall counter, and the per-agent driver still
+  fails that regression with the historic 890-motionless-tick signature.
+  `lab/`-family benchmarks record joint admission cost at colony scale.
+
 ## 2026-07-27 - Report a colony that has stopped moving
 
 - Changed: the web colony demo counts consecutive fixed ticks in which no agent

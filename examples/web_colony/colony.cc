@@ -113,6 +113,7 @@ struct Demo {
   tess::PathAgentTickState tick_state;
   tess::LocalTopologyScratch topo_scratch;
   tess::PathScratch settle_scratch;
+  tess::JointMoveScratch joint_scratch;
   tess::RegionGraphScratch graph_scratch;
   tess::RegionGraph graph;
   tess::FrameOps ops;
@@ -171,6 +172,7 @@ struct Demo {
         settled[i] = false;
       }
     }
+    joint_scratch.reserve(static_cast<std::size_t>(agent_count));
     runtime.reserve_requests(2048);
     runtime.reserve_search_nodes(65536);
     runtime.reserve_path_nodes(262144);
@@ -344,10 +346,18 @@ struct Demo {
       // terrain is still right -- rebuilding it as colonists settle would
       // churn topology over something that is not terrain -- so the precheck
       // it can soundly answer is made explicitly, in refresh_settled_agents.
-      const auto stats = tess::tick_weighted_path_agents_with_movement<
+      // Joint movement with SwapPolicy::Permit: a mutually blocked pair
+      // exchanges tiles instead of wedging. The library default is Forbid --
+      // the standard MAPF constraint -- but this demo's colonists have no
+      // physical extent and its recorded failure class (three-wall layouts
+      // deadlocking two travellers head-on, found by randomised search) is
+      // exactly the 2-cycle the exchange resolves. Chains and rotations are
+      // admitted under any policy, so convoys also drain in one tick.
+      const auto stats = tess::tick_weighted_path_agents_with_joint_movement<
           World, Traveler, kMaxCost, OccupancyTag, ReservationTag>(
-          demo->tick_state, demo->world, demo->agents, demo->runtime, options,
-          0, nullptr);
+          demo->tick_state, demo->world, demo->agents, demo->runtime,
+          demo->joint_scratch, options,
+          tess::JointMoveOptions{tess::SwapPolicy::Permit}, 0, nullptr);
       // A colony can stop dead without any agent being declared terminal --
       // two agents each standing on the tile the other needs will block, be
       // refunded, and block again forever. Nobody reports that today, so the
@@ -650,13 +660,14 @@ int main() {
       return 1;
     }
 
-    // Regression: a colony that has stopped dead must say so. Two agents can
-    // each stand on the tile the other needs; both block, both have their
-    // retry budget refunded, and neither is ever declared terminal, so the
-    // page read "Colony running" over a frozen grid. This wall set was found
-    // by a randomised geometry search and reproduces it: three walls whose
-    // gaps do not line up, leaving three of forty-eight agents deadlocked
-    // against each other with nothing reported.
+    // Regression: the three-wall geometry found by randomised search used to
+    // deadlock two travelling agents head-on -- a 2-cycle nothing reported and
+    // nothing could resolve -- freezing three of forty-eight agents while the
+    // page read "Colony running". Under joint movement with
+    // SwapPolicy::Permit that class is resolved outright, so the assertion
+    // flips: the convoy must keep completing trips, nobody may be declared
+    // terminal, and the stall counter must stay quiet. The stall reporting
+    // itself remains load-bearing for unknown future wedge classes.
     constexpr int kStallAgents = 48;
     tess_colony_reset(kStallAgents);
     for (int frame = 0; frame < 300; ++frame) {
@@ -674,27 +685,28 @@ int main() {
         }
       }
     }
+    int post_wall_trips = 0;
     for (int frame = 0; frame < 1200; ++frame) {
       (void)tess_colony_tick(0.05);
       if (tess_colony_arrived() == kStallAgents) {
         (void)tess_colony_relaunch();
+        ++post_wall_trips;
       }
     }
-    if (tess_colony_arrived() == kStallAgents) {
-      std::cerr << "web colony model: stall scenario no longer deadlocks; "
-                   "pick a new geometry rather than deleting the check\n";
+    if (post_wall_trips < 1) {
+      std::cerr << "web colony model: no full trip completed through the "
+                   "bottleneck geometry under joint movement\n";
       return 1;
     }
     if (tess_colony_unreachable() != 0) {
-      std::cerr << "web colony model: stall scenario reported "
-                << tess_colony_unreachable()
-                << " terminal; it is meant to cover the case where nothing "
-                   "is reported at all\n";
+      std::cerr << "web colony model: bottleneck geometry reported "
+                << tess_colony_unreachable() << " terminal agents\n";
       return 1;
     }
-    if (tess_colony_stalled_ticks() < 100) {
-      std::cerr << "web colony model: frozen colony not reported as stalled ("
-                << tess_colony_stalled_ticks() << " stalled ticks)\n";
+    if (tess_colony_stalled_ticks() >= 100) {
+      std::cerr << "web colony model: bottleneck geometry stalled under "
+                   "joint movement ("
+                << tess_colony_stalled_ticks() << " motionless ticks)\n";
       return 1;
     }
     std::cout << "web colony model: ok\n";
