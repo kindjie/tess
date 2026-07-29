@@ -5,7 +5,9 @@
 - [Concurrency plan](concurrency-plan.md)
 - [Benchmark plan](benchmark-plan.md)
 - [Testing and benchmarking redesign](test-and-benchmark-redesign.md)
+- [Local movement resolution screening study](local-movement-resolution.md)
 - [Optimization log](optimization-log.md)
+- [Optimization log archive, 2026-06 through 2026-07-12](optimization-log-archive-2026-06-07.md)
 
 Planning docs should be updated when scope, sequencing, or acceptance criteria
 change materially.
