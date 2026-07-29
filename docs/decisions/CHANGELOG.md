@@ -36,6 +36,10 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 - Affected docs: testing and benchmarking redesign (phase 1 status),
   CONTRIBUTING quality-gates section, tests/AGENTS.md catalog entries
   for the classifier and the diff-scoped runner.
+- Affected code: `.github/workflows/ci.yml`, `tools/ci_changes.py`,
+  `tools/clang_tidy_changed.py`, `tests/test_ci_changes.py`,
+  `tests/test_clang_tidy_changed.py`, and the workflow-structure pins
+  in `tests/test_git_hooks.py` and `tests/test_benchmark_tools.py`.
 
 ## 2026-07-28 - PIBT movement tier and the per-tile distance read
 
