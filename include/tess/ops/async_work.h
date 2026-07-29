@@ -118,10 +118,12 @@ class ResumableWorkQueue {
         generation_{other.generation_},
         in_advance_{false} {}
   auto operator=(const ResumableWorkQueue& other) -> ResumableWorkQueue& {
-    slots_ = other.slots_;
-    generation_ = other.generation_;
-    in_advance_ = false;
-    accounting_ = nullptr;
+    if (this != &other) {
+      slots_ = other.slots_;
+      generation_ = other.generation_;
+      in_advance_ = false;
+      accounting_ = nullptr;
+    }
     return *this;
   }
   ResumableWorkQueue(ResumableWorkQueue&& other) noexcept
@@ -132,11 +134,13 @@ class ResumableWorkQueue {
     other.accounting_ = nullptr;
   }
   auto operator=(ResumableWorkQueue&& other) noexcept -> ResumableWorkQueue& {
-    slots_ = std::move(other.slots_);
-    generation_ = other.generation_;
-    in_advance_ = false;
-    accounting_ = other.accounting_;
-    other.accounting_ = nullptr;
+    if (this != &other) {
+      slots_ = std::move(other.slots_);
+      generation_ = other.generation_;
+      in_advance_ = false;
+      accounting_ = other.accounting_;
+      other.accounting_ = nullptr;
+    }
     return *this;
   }
   ~ResumableWorkQueue() = default;

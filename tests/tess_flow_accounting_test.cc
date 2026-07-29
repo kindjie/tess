@@ -173,6 +173,12 @@ TEST(TessAsyncFlow, MovingAQueueTransfersTheAttachment) {
   auto copy = moved;
   (void)copy.submit_immediate(2);
   EXPECT_EQ(accounting.counters.admitted, 1u);
+
+  // Self-assignment keeps the attachment and the tickets.
+  auto& self = moved;
+  moved = self;
+  (void)moved.submit_immediate(3);
+  EXPECT_EQ(accounting.counters.admitted, 2u);
 }
 
 TEST(TessEventFlow, PublishRejectConsumeAndDiscardKeepIdentities) {
