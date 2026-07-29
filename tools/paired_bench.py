@@ -366,6 +366,8 @@ def main(argv: Sequence[str] | None = None) -> int:
   args = parse_args(sys.argv[1:] if argv is None else argv)
   try:
     config = load_config(args.sentinels)
+    if args.repetitions is not None and args.repetitions < 1:
+      raise ToolError("--repetitions must be at least 1")
     if args.repetitions:
       config = Config(
         sentinels=config.sentinels,
