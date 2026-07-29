@@ -573,7 +573,12 @@
   class-consistent oracle detours; priority inheritance displaces a
   lower-priority blocker in the same tick; backtracking falls back to the
   chooser's next candidate when the inherited peer is boxed; a failed peer's
-  tile stays claimed so later deciders cannot stack onto it; head-on pairs
+  tile stays claimed so later deciders cannot stack onto it; tiles occupied
+  by anything outside the agent span are never entered; an impassable source
+  fails `BlockedFrom` exactly as `commit_movement_intent`; `max_steps` zero
+  pauses movement and larger values multi-step with early exit; the swap
+  counter counts only secured exchanges (a policy-allowed reverse edge that
+  loses its vertex claim counts nothing); head-on pairs
   follow `SwapPolicy` with swap/denial counters; outcomes are deterministic
   across identical runs; the warm pass allocates nothing after
   `PibtPriorities::reserve` plus `JointMoveScratch::reserve`; and

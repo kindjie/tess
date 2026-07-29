@@ -535,6 +535,149 @@ TEST(TessPibtMovement, FailedPeerKeepsItsClaimSoLaterDecidersCannotStack) {
   EXPECT_EQ(agents[2].position, (tess::Coord3{2, 2, 0}));
 }
 
+TEST(TessPibtMovement, ExternalOccupantsAreNeverEntered) {
+  // Occupancy owned by anything outside the agent span (another population,
+  // an application marker) must block admission exactly as in the joint
+  // pass; the occupant index only knows span agents, so the world bit is
+  // the authority.
+  World world;
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  fill_world(world, false);
+  for (const auto c :
+       {tess::Coord3{1, 1, 0}, tess::Coord3{2, 1, 0}, tess::Coord3{3, 1, 0}}) {
+    world.field<PassableTag>(c) = true;
+  }
+  add_agent(world, agents, routes, {{1, 1, 0}, {2, 1, 0}, {3, 1, 0}});
+  world.field<OccupancyTag>(tess::Coord3{2, 1, 0}) = true;  // external
+
+  tess::PibtPriorities priorities;
+  tess::JointMoveScratch scratch;
+  const auto rank = [&](std::size_t, tess::Coord3 c) -> std::uint32_t {
+    return static_cast<std::uint32_t>(std::abs(c.x - 3) + std::abs(c.y - 1));
+  };
+  const auto stats =
+      tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
+                                          ReservationTag>(
+          world, std::span<tess::PathAgentState>(agents), routes, priorities,
+          scratch, rank);
+  EXPECT_EQ(stats.frame.advanced, 0u);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{1, 1, 0}));
+  EXPECT_TRUE(world.field<OccupancyTag>(tess::Coord3{2, 1, 0}));
+}
+
+TEST(TessPibtMovement, ImpassableSourceFailsBlockedFrom) {
+  // Terrain changed under a standing agent: `commit_movement_intent` fails
+  // `BlockedFrom`, and so must PIBT — the agent neither moves nor yields to
+  // inheritance.
+  World world;
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  fill_world(world, true);
+  add_agent(world, agents, routes, {{2, 2, 0}, {3, 2, 0}});
+  world.field<PassableTag>(tess::Coord3{2, 2, 0}) = false;
+
+  tess::PibtPriorities priorities;
+  tess::JointMoveScratch scratch;
+  const auto rank = [&](std::size_t, tess::Coord3 c) -> std::uint32_t {
+    return static_cast<std::uint32_t>(std::abs(c.x - 3) + std::abs(c.y - 2));
+  };
+  const auto stats =
+      tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
+                                          ReservationTag>(
+          world, std::span<tess::PathAgentState>(agents), routes, priorities,
+          scratch, rank);
+  EXPECT_EQ(stats.frame.advanced, 0u);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{2, 2, 0}));
+  EXPECT_EQ(stats.frame.movement_failures.blocked, 1u);
+  EXPECT_EQ(stats.frame.movement_failures.occupied, 0u);
+}
+
+TEST(TessPibtMovement, MaxStepsPausesAndMultiSteps) {
+  const auto build = [](World& world, std::vector<tess::PathAgentState>& agents,
+                        tess::PathAgentRoutes& routes) {
+    fill_world(world, true);
+    add_agent(world, agents, routes,
+              {{1, 1, 0}, {2, 1, 0}, {3, 1, 0}, {4, 1, 0}});
+  };
+  const auto rank = [](std::vector<tess::PathAgentState>& agents) {
+    return [&agents](std::size_t agent, tess::Coord3 c) -> std::uint32_t {
+      const auto goal = agents[agent].goal;
+      return static_cast<std::uint32_t>(std::abs(c.x - goal.x) +
+                                        std::abs(c.y - goal.y));
+    };
+  };
+
+  {
+    // Zero steps is paused movement, as in the joint advance.
+    World world;
+    std::vector<tess::PathAgentState> agents;
+    tess::PathAgentRoutes routes;
+    build(world, agents, routes);
+    tess::PibtPriorities priorities;
+    tess::JointMoveScratch scratch;
+    const auto stats =
+        tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
+                                            ReservationTag>(
+            world, std::span<tess::PathAgentState>(agents), routes, priorities,
+            scratch, rank(agents), {}, 0);
+    EXPECT_EQ(stats.frame.advanced, 0u);
+    EXPECT_EQ(agents[0].position, (tess::Coord3{1, 1, 0}));
+  }
+  {
+    // Two steps advance two route tiles in one call and stop early once the
+    // goal is reached.
+    World world;
+    std::vector<tess::PathAgentState> agents;
+    tess::PathAgentRoutes routes;
+    build(world, agents, routes);
+    tess::PibtPriorities priorities;
+    tess::JointMoveScratch scratch;
+    const auto stats =
+        tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
+                                            ReservationTag>(
+            world, std::span<tess::PathAgentState>(agents), routes, priorities,
+            scratch, rank(agents), {}, 2);
+    EXPECT_EQ(stats.frame.advanced, 2u);
+    EXPECT_EQ(agents[0].position, (tess::Coord3{3, 1, 0}));
+    EXPECT_EQ(agents[0].path_index, 2u);
+  }
+}
+
+TEST(TessPibtMovement, SwapCounterOnlyCountsSecuredExchanges) {
+  // C -> A -> B in span order with C deciding first: C claims A's tile, A
+  // inherits and claims B's tile, and B's policy-allowed reverse edge onto
+  // A's tile then loses the vertex claim to C. No exchange happens, so the
+  // swap counter must stay at zero.
+  World world;
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  fill_world(world, true);
+  add_agent(world, agents, routes, {{1, 1, 0}, {2, 1, 0}});  // C
+  add_agent(world, agents, routes, {{2, 1, 0}, {3, 1, 0}});  // A
+  add_agent(world, agents, routes, {{3, 1, 0}, {2, 1, 0}});  // B
+
+  tess::PibtPriorities priorities;
+  priorities.elapsed = {100, 50, 0};  // C, then A, then B
+  tess::JointMoveScratch scratch;
+  const auto rank = [&](std::size_t agent, tess::Coord3 c) -> std::uint32_t {
+    const auto goal = agents[agent].goal;
+    return static_cast<std::uint32_t>(std::abs(c.x - goal.x) +
+                                      std::abs(c.y - goal.y));
+  };
+  const auto stats =
+      tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
+                                          ReservationTag>(
+          world, std::span<tess::PathAgentState>(agents), routes, priorities,
+          scratch, rank, tess::JointMoveOptions{tess::SwapPolicy::Permit});
+  EXPECT_EQ(stats.swaps, 0u);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{2, 1, 0}));
+  EXPECT_EQ(agents[1].position, (tess::Coord3{3, 1, 0}));
+  // B yielded somewhere other than the contested pair of tiles.
+  EXPECT_FALSE(agents[2].position == (tess::Coord3{2, 1, 0}));
+  EXPECT_FALSE(agents[2].position == (tess::Coord3{3, 1, 0}));
+}
+
 TEST(TessPibtMovement, HeadOnPairFollowsSwapPolicy) {
   const auto build = [](World& world, std::vector<tess::PathAgentState>& agents,
                         tess::PathAgentRoutes& routes) {
