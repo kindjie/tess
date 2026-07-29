@@ -936,9 +936,21 @@
   drift scan asserting every header owning a threading primitive is
   classified sensitive), TSan fail-closed behavior, and per-event
   quality-preset selection.
+- `tess_flow_accounting_test`
+  (`tests/tess_flow_accounting_test.cc`): per-transition coverage for
+  the diagnostics flow-accounting layer — FlowCounters conservation
+  identities, delta-weighted tick observation, snapshot verdicts, and
+  the four instrumented flows (resumable work queue including stale
+  reclassification, clear-drops, move/copy attachment semantics, and
+  oldest-age tracking; event streams including overflow rejection,
+  consume versus discard, and residence; maintenance schedulers
+  including coalescing, capacity rejection, throwing tasks, and
+  immediate-backend self-schedules; path-agent goal lifecycles
+  including supersede, cancel, arrival, retry-exhaustion failure, and
+  terminal re-arming).
 - `tess_counter_golden_probe`
   (`tests/tess_counter_golden_probe.cc`): gtest-free probe behind the
-  shadow-mode counter goldens (redesign section 3.3). Five fixed
+  shadow-mode counter goldens (redesign section 3.3). Nine fixed
   serial workloads — unit and weighted serpentine A*, unit product
   replay, weighted product nearest-target, queued serial update with
   dirty merge — run under scoped diagnostics sinks, pin their exact

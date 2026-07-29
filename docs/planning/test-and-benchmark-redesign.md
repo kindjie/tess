@@ -362,13 +362,28 @@ transition, not at every repeated schedule call, so arrival counts stay
 meaningful.
 
 Two kinds of assertion follow. The exact conservation identities are
-golden-gated like any other counter, and there are two of them rather than
-one, because a rejected offer was never admitted and an offer absorbed by an
-already-pending item is not a second admitted item:
+hard-checked by the probe (an invariant a golden update must never
+launder) while the counter values themselves are golden-gated, and
+there are two identities rather than one, because a rejected offer was
+never admitted and an offer absorbed by an already-pending item is not
+a second admitted item:
 
 - `offered == admitted + rejected + coalesced_into_pending`;
 - `admitted == terminal + outstanding`, with `terminal` equal to the sum of
-  its post-admission outcome categories.
+  its post-admission outcome categories (completed, cancelled,
+  superseded, stale, **failed**, dropped-after-admission — the real
+  async and agent state machines have genuine error terminals, so the
+  taxonomy carries a failed bucket).
+
+Counting conventions fixed at implementation (2026-07-29): admission IS
+the clean-to-pending transition — a schedule call for an item that is
+not pending admits it, and a repeat while pending is an offer counted
+as coalesced, which is exactly what the maintenance backends' existing
+`coalesced_calls` metric already measured; a produced result that goes
+stale before retirement reclassifies from completed to stale (the one
+documented non-monotonic bucket) so one admission lands in exactly one
+terminal bucket; and unbounded flush budgets never count as offered
+work units.
 
 Fixed-tick-window derived quantities — average
 inventory L, accepted rate lambda, mean residence time W — serve as a

@@ -6,6 +6,46 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-29 - Queue-flow accounting (phase 2, slice 3)
+
+- Changed: `tess::diagnostics` gains ungated flow accounting —
+  `FlowCounters` (the section 3.3 admission/terminal taxonomy plus a
+  `failed` bucket), the caller-owned `FlowAccounting` accountant with
+  delta-weighted tick observation, and the UI-agnostic
+  `FlowHealthSnapshot`. Four flows account every transition at the
+  point where the fact is known: the resumable work queue (exhaustive
+  lifecycle mapping; completed-to-stale reclassification is the one
+  documented non-monotonic bucket; immediate submission commits last,
+  fixing an Unbound-slot leak on a throwing move; moves transfer the
+  attachment, copies start unattached), event streams (retained
+  inventory with `consume_all`/`discard_all`; legacy `clear` counts
+  conservatively as discarded), the experimental maintenance schedulers
+  (lock-scoped updates, in-flight work stays outstanding, throwing
+  tasks terminalize failed, budget-delta consumed units, unbounded
+  flush budgets are never offered work, immediate-backend
+  self-schedules are coalesced offers), and the path-agent goal
+  lifecycle (admission at tick-state goal arming with per-agent
+  `armed_tick` stamps, supersede on live replacement, cancel on clear,
+  complete at arrival, failed at `Unreachable`; bare state helpers stay
+  unaccounted and say so). The counter-golden probe gains four flow
+  workloads whose conservation identities are hard checks — invariants
+  a golden `--update` must never launder — while their values are
+  golden-gated in shadow like every other counter.
+- Reason: section 3.3's queue-flow accounting discipline, brought to
+  the transition points after review showed state reconstruction cannot
+  recover admission or terminal history. The maintained plan is amended
+  in the same slice: the terminal taxonomy carries `failed`, and
+  admission is defined as the clean-to-pending transition.
+- Affected docs: testing and benchmarking redesign (section 3.3),
+  architecture diagnostics and simulation pages, surface manifest,
+  tests/AGENTS.md.
+- Affected code: `include/tess/diagnostics/diagnostics.h`,
+  `include/tess/ops/async_work.h`, `include/tess/sim/event_stream.h`,
+  `include/tess/experimental/maintenance.h`,
+  `include/tess/sim/path_agent.h`, `include/tess/sim/path_agent_tick.h`,
+  `tests/tess_flow_accounting_test.cc`,
+  `tests/tess_counter_golden_probe.cc`, `tests/goldens/counters.json`.
+
 ## 2026-07-29 - Counter goldens in shadow mode (phase 2, slice 2)
 
 - Changed: a gtest-free probe (`tests/tess_counter_golden_probe.cc`,
