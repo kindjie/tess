@@ -135,6 +135,15 @@
       }
     },
     {
+      "name": "bench-only",
+      "displayName": "Benchmark Release (benchmarks only, no tests or examples)",
+      "inherits": "bench",
+      "cacheVariables": {
+        "TESS_BUILD_TESTING": "OFF",
+        "TESS_BUILD_EXAMPLES": "OFF"
+      }
+    },
+    {
       "name": "bench-profile",
       "displayName": "Benchmark Profiling",
       "binaryDir": "${sourceDir}/build/${presetName}",
@@ -236,6 +245,11 @@
     {
       "name": "bench",
       "configurePreset": "bench"
+    },
+    {
+      "name": "bench-only",
+      "configurePreset": "bench-only",
+      "targets": ["tess_bench"]
     },
     {
       "name": "bench-profile",
