@@ -6,6 +6,41 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-28 - Tiered CI topology (redesign phase 1)
+
+- Changed: the CI workflow is tiered per the testing and benchmarking
+  redesign's section 5. Pull requests block on dev, GCC, hook backstop,
+  ASan, cppcheck, Windows, benchmark compile+smoke, a new diff-scoped
+  clang-tidy job (`tools/clang_tidy_changed.py` — changed sources via the
+  compilation database, changed headers via synthesized translation
+  units), and TSan only when `tools/ci_changes.py` classifies a changed
+  path as concurrency-sensitive (fail-closed; a test-enforced drift scan
+  keeps the curated path set aligned with headers owning threading
+  primitives). Pushes to main, a new weekly scheduled run, and manual
+  dispatches additionally run werror, release, TSan, macOS, the
+  full-tree clang-tidy sweep, the benchmark threshold gates, and
+  baseline artifact collection; failed non-PR runs file or extend a
+  rolling `ci-failure` issue. The `Protect main` ruleset's required
+  contexts — `CI Gate` from this workflow and `Build documentation` from
+  the Documentation workflow — keep their exact names, so no ruleset
+  edit accompanies the re-tier; `CI Gate` gains per-event expectations.
+- Reason: the 2026-07-28 failure classification
+  ([planning record](../planning/ci-failure-classification-2026-07-28.md))
+  re-verified that dev-werror, release, and both macOS jobs have never
+  failed in isolation, that clang-tidy's catches do not require the
+  full-tree run's latency on the PR critical path, and that cppcheck's
+  classified record (one isolated real catch, ~3-minute post-#59 cost)
+  keeps its blocking seat. Threshold gating moves to the main tier and
+  stays authoritative until the redesign's phase 4 shadow-mode exit
+  criteria are met.
+- Affected docs: testing and benchmarking redesign (phase 1 status),
+  CONTRIBUTING quality-gates section, tests/AGENTS.md catalog entries
+  for the classifier and the diff-scoped runner.
+- Affected code: `.github/workflows/ci.yml`, `tools/ci_changes.py`,
+  `tools/clang_tidy_changed.py`, `tests/test_ci_changes.py`,
+  `tests/test_clang_tidy_changed.py`, and the workflow-structure pins
+  in `tests/test_git_hooks.py` and `tests/test_benchmark_tools.py`.
+
 ## 2026-07-28 - PIBT movement tier and the per-tile distance read
 
 - Changed: new `sim/pibt_movement.h` adds an opt-in decision tier —

@@ -404,10 +404,14 @@ def test_new_threshold_families_are_gated_and_collected_in_ci():
     "spatial": ("spatial", "spatial"),
   }
 
+  threshold_step = workflow.split("      - name: Benchmark thresholds\n", 1)
+  assert len(threshold_step) == 2
+  family_loop = threshold_step[1].split("      - name:", 1)[0]
+
   for target_suffix, (file_stem, benchmark_prefix) in families.items():
     target = f"tess_bench_{target_suffix}_thresholds"
     assert target in cmake
-    assert target in workflow
+    assert re.search(rf"\b{target_suffix}\b", family_loop)
     assert cmake.count(f"--benchmark_filter={benchmark_prefix}/.*") == 2
     assert f"ci-baselines/{file_stem}.json" in cmake
 

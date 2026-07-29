@@ -445,6 +445,7 @@ def test_ci_gate_aggregates_every_required_ci_job():
     "gcc",
     "hooks-backstop",
     "quality",
+    "tidy-diff",
     "macos",
     "windows",
     "bench",
@@ -469,7 +470,6 @@ def test_documentation_only_changes_skip_expensive_ci_fail_closed():
     "dev",
     "gcc",
     "quality",
-    "macos",
     "windows",
     "bench",
   )
@@ -488,6 +488,7 @@ def test_documentation_only_changes_skip_expensive_ci_fail_closed():
   assert '          HEAD_SHA: ${{ github.sha }}\n' in workflow
   assert "          python3 tools/ci_changes.py\n" in workflow
   assert '          "${PR_BASE_SHA:-$PUSH_BASE_SHA}" "$HEAD_SHA"\n' in workflow
+  assert '          --event "$EVENT_NAME"\n' in workflow
   assert '          >> "$GITHUB_OUTPUT"\n' in workflow
   for job_id in expensive_jobs:
     assert (
@@ -497,6 +498,24 @@ def test_documentation_only_changes_skip_expensive_ci_fail_closed():
       in workflow
     )
 
+  # Tier-conditional jobs also require code_required, fail closed.
+  assert (
+    "  tidy-diff:\n"
+    "    needs: changes\n"
+    "    if: >-\n"
+    "      ${{ github.event_name == 'pull_request' &&\n"
+    "          needs.changes.outputs.code_required == 'true' }}\n"
+    in workflow
+  )
+  assert (
+    "  macos:\n"
+    "    needs: changes\n"
+    "    if: >-\n"
+    "      ${{ github.event_name != 'pull_request' &&\n"
+    "          needs.changes.outputs.code_required == 'true' }}\n"
+    in workflow
+  )
+
   assert "  hooks-backstop:\n    name: Hook Backstop Checks\n" in workflow
   assert "          tests/test_ci_changes.py\n" in workflow
 
@@ -504,10 +523,9 @@ def test_documentation_only_changes_skip_expensive_ci_fail_closed():
   assert "      - changes\n" in ci_gate
   assert 'test "${{ needs.changes.result }}" = success' in ci_gate
   assert (
-    'test "${{ needs.changes.outputs.code_required }}" = true ||\n'
-    '            test "${{ needs.changes.outputs.code_required }}" = false'
-    in ci_gate
+    'code="${{ needs.changes.outputs.code_required }}"\n' in ci_gate
   )
+  assert 'test "$code" = true || test "$code" = false' in ci_gate
   for job_id in expensive_jobs:
     assert (
       f'test "${{{{ needs.{job_id}.result }}}}" = success' in ci_gate
@@ -562,9 +580,19 @@ def test_non_gating_benchmark_baselines_run_only_on_main():
     "Upload benchmark baseline artifact",
   )
 
+  main_only_if = (
+    "        if: >-\n"
+    "          github.event_name != 'pull_request' &&\n"
+    "          github.ref == 'refs/heads/main'\n"
+  )
   for name in main_only_steps:
     step = bench.split(f"      - name: {name}\n", 1)[1]
-    assert step.startswith("        if: github.ref == 'refs/heads/main'\n")
+    assert step.startswith(main_only_if)
+
+  thresholds = bench.split("      - name: Benchmark thresholds\n", 1)[1]
+  assert thresholds.startswith(
+    "        if: github.event_name != 'pull_request'\n"
+  )
 
 
 def test_pages_build_has_only_the_permissions_needed_to_configure_pages():

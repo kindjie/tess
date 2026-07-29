@@ -735,6 +735,18 @@ that introduces this document.
    diff-scoped/full-tree clang-tidy split; **keep threshold gating and
    artifact collection**; add the weekly auto-issue; measure the resulting
    job budgets and publish the derived PR latency figure. Workflow-only.
+   *Status: implemented 2026-07-28 — classification in the
+   [failure-classification record](ci-failure-classification-2026-07-28.md)
+   (cppcheck keeps its blocking seat), re-tier and weekly auto-issue in
+   the CI workflow. Provisional measured budgets — n=2 successful
+   pull-request runs of the restructured tier, warm compiler caches,
+   2026-07-29: end-to-end median 9.2 minutes, critical path Windows
+   MSVC at 8.9, against the pre-restructure 18.6-26.3 minute
+   clang-tidy-bound critical path. Next tier: dev build+tests 4.5 m,
+   cppcheck 2.9 m, TSan 1.8 m, ASan 1.5 m, bench compile+smoke 1.1 m,
+   GCC 1.0 m, diff clang-tidy 0.7 m, hook backstop 0.4 m. These are
+   first observations, not calibrated budgets; re-derive them over a
+   larger window once the tier has accumulated ordinary pull requests.*
 2. Counter-golden and change-point tooling (with runner fingerprinting in
    artifacts); paired A/B timing as both a path-filtered `pull_request`
    sentinel job and a `workflow_dispatch` full-confirmation mode, backed by
