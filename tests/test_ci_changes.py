@@ -318,6 +318,7 @@ def test_cli_emits_all_outputs_for_pull_request(monkeypatch, capsys):
   assert captured.out == (
     "code_required=true\n"
     "tsan_required=false\n"
+    "perf_required=true\n"
     'quality_presets=["dev-asan", "dev-cppcheck"]\n'
   )
 
@@ -334,6 +335,87 @@ def test_cli_fails_closed_for_full_tier_events(monkeypatch, capsys):
   assert captured.out == (
     "code_required=false\n"
     "tsan_required=true\n"
+    "perf_required=true\n"
     'quality_presets=["dev-werror", "dev-asan", "dev-tsan", '
     '"dev-cppcheck", "dev-clang-tidy", "release"]\n'
   )
+
+
+# --- Perf-sensitive classification for the paired sentinel job ---
+
+
+@pytest.mark.parametrize(
+  "path",
+  (
+    "include/tess/path/astar.h",
+    "include/tess/storage/dense.h",
+    "include/tess/simulation.h",
+    "bench/tess_path_bench.cc",
+    "bench/sentinels.json",
+    "cmake/TessProjectOptions.cmake",
+    "CMakeLists.txt",
+    "CMakePresets.json",
+    ".github/workflows/ci.yml",
+    "tools/ci_changes.py",
+    "tools/paired_bench.py",
+  ),
+)
+def test_perf_sensitive_paths_select_the_paired_run(path):
+  assert ci_changes.is_perf_sensitive_path(path)
+
+
+@pytest.mark.parametrize(
+  "path",
+  (
+    "docs/index.md",
+    "tests/tess_shape_test.cc",
+    "examples/quickstart.cc",
+    "tools/check_docs_links.py",
+    # Directories no sentinel can observe: running the paired job on
+    # these would measure nothing. The source map records the gap.
+    "include/tess/ops/queued.h",
+    "include/tess/gpu/webgpu_backend.h",
+    "include/tess/debug/imgui/panels.h",
+    "include/tess/diagnostics/trace.h",
+    "include/tess/experimental/maintenance.h",
+  ),
+)
+def test_perf_insensitive_paths_skip_the_paired_run(path):
+  assert not ci_changes.is_perf_sensitive_path(path)
+
+
+def test_perf_classification_selects_on_sensitive_path():
+  classification = ci_changes.classify_perf_paths(
+    ("docs/index.md", "include/tess/path/astar.h")
+  )
+
+  assert classification.perf_required
+  assert "include/tess/path/astar.h" in classification.reason
+
+
+def test_perf_classification_skips_without_sensitive_paths():
+  classification = ci_changes.classify_perf_paths(
+    ("docs/index.md", "tests/tess_shape_test.cc")
+  )
+
+  assert not classification.perf_required
+
+
+def test_perf_classification_fails_closed_on_empty_change_set():
+  assert ci_changes.classify_perf_paths(()).perf_required
+
+
+def test_perf_range_fails_closed_on_invalid_revision():
+  assert ci_changes.classify_perf_range("", SHA_B).perf_required
+
+
+def test_cli_emits_perf_required(monkeypatch, capsys):
+  monkeypatch.setattr(
+    ci_changes,
+    "changed_paths",
+    lambda _base, _head, run=None: ("include/tess/path/astar.h",),
+  )
+
+  assert ci_changes.main((SHA_A, SHA_B, "--event", "pull_request")) == 0
+  captured = capsys.readouterr()
+  assert "perf_required=true\n" in captured.out

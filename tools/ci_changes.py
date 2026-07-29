@@ -62,6 +62,33 @@ CONCURRENCY_SENSITIVE_TEST_PREFIXES = (
   "tests/tess_webgpu",
 )
 
+# Paths whose changes can move what the paired sentinel run measures:
+# the library itself, the benchmarks, anything that changes compile
+# flags, and the paired run's own orchestration (self-validation).
+# Library directories that no sentinel can observe are excluded — the
+# sentinel source map in bench/sentinels.json must declare exactly
+# these as unrepresented, and tests/test_paired_bench.py enforces that
+# the two lists agree.
+PERF_SENSITIVE_PREFIXES = (
+  ".github/workflows/",
+  "bench/",
+  "cmake/",
+  "include/tess/",
+)
+PERF_INSENSITIVE_OVERRIDES = (
+  "include/tess/debug/",
+  "include/tess/diagnostics/",
+  "include/tess/experimental/",
+  "include/tess/gpu/",
+  "include/tess/ops/",
+)
+PERF_SENSITIVE_FILES = (
+  "CMakeLists.txt",
+  "CMakePresets.json",
+  "tools/ci_changes.py",
+  "tools/paired_bench.py",
+)
+
 FULL_QUALITY_PRESETS = (
   "dev-werror",
   "dev-asan",
@@ -208,6 +235,51 @@ def classify_tsan_range(
   return classify_tsan_paths(paths)
 
 
+@dataclass(frozen=True)
+class PerfClassification:
+  """A fail-closed paired-run selection and its human-readable reason."""
+
+  perf_required: bool
+  reason: str
+
+
+def is_perf_sensitive_path(path: str) -> bool:
+  """Return whether a path selects the paired sentinel benchmark run."""
+  if path.startswith(PERF_INSENSITIVE_OVERRIDES):
+    return False
+  return (
+    path.startswith(PERF_SENSITIVE_PREFIXES)
+    or path in PERF_SENSITIVE_FILES
+  )
+
+
+def classify_perf_paths(paths: Iterable[str]) -> PerfClassification:
+  """Require the paired run unless no changed path is perf-sensitive."""
+  changed = tuple(paths)
+  if not changed:
+    return PerfClassification(True, "no changed paths found")
+  for path in changed:
+    if is_perf_sensitive_path(path):
+      return PerfClassification(True, f"perf-sensitive path: {path!r}")
+  return PerfClassification(False, "no perf-sensitive changes")
+
+
+def classify_perf_range(
+  base: str,
+  head: str,
+  *,
+  run: Callable[..., subprocess.CompletedProcess[bytes]] = subprocess.run,
+) -> PerfClassification:
+  """Classify a range for the paired run, failing closed on errors."""
+  if not valid_revision(base) or not valid_revision(head):
+    return PerfClassification(True, "invalid comparison revision")
+  try:
+    paths = changed_paths(base, head, run=run)
+  except (OSError, subprocess.CalledProcessError):
+    return PerfClassification(True, "unable to inspect changed paths")
+  return classify_perf_paths(paths)
+
+
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("base", help="full base commit object ID")
@@ -228,8 +300,13 @@ def main(argv: Sequence[str] | None = None) -> int:
   else:
     tsan = TsanClassification(True, "full-tier event runs TSan directly")
   presets = quality_presets(args.event, tsan_required=tsan.tsan_required)
+  if args.event == "pull_request":
+    perf = classify_perf_range(args.base, args.head)
+  else:
+    perf = PerfClassification(True, "full-tier event")
   print(f"code_required={str(classification.code_required).lower()}")
   print(f"tsan_required={str(tsan.tsan_required).lower()}")
+  print(f"perf_required={str(perf.perf_required).lower()}")
   print(f"quality_presets={json.dumps(list(presets))}")
   print(
     f"CI change classification: {classification.reason}",
@@ -237,6 +314,10 @@ def main(argv: Sequence[str] | None = None) -> int:
   )
   print(
     f"CI TSan classification: {tsan.reason}",
+    file=sys.stderr,
+  )
+  print(
+    f"CI perf classification: {perf.reason}",
     file=sys.stderr,
   )
   return 0
