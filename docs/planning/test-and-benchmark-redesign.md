@@ -770,8 +770,17 @@ that introduces this document.
    2026-07-23 catch on its exact commit pair reproduced the detection on
    all four confirmed-catch sentinels (optimization log, "Paired
    Sentinel Replay"); the hosted-runner replay remains a phase 4 exit
-   criterion. Remaining in this phase:
-   counter goldens, change-point alerting with runner fingerprinting,
+   criterion. Counter goldens for the existing
+   `PathCounters`/`QueuedPhaseCounters` families shipped 2026-07-29 in
+   shadow mode: a serial-only deterministic probe emits observed values,
+   `tools/check_counter_goldens.py` compares them against
+   `tests/goldens/counters.json` (drift surfaces in the dev job's step
+   summary without gating; `TESS_COUNTER_GOLDENS_STRICT=1` is the
+   phase 4 promotion switch), and the intentional-change workflow is the
+   checker's `--update` flag committed in the same pull request.
+   Remaining in this phase: the queue-flow accounting instrumentation
+   and its conservation-identity goldens (section 3.3's second part),
+   change-point alerting with runner fingerprinting,
    the section 4.2 full-suite confirmation, advisory coverage, the
    workload-matrix catalog, profiling-protocol wiring, and pre-push
    slimming.*

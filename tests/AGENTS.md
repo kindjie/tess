@@ -936,6 +936,23 @@
   drift scan asserting every header owning a threading primitive is
   classified sensitive), TSan fail-closed behavior, and per-event
   quality-preset selection.
+- `tess_counter_golden_probe`
+  (`tests/tess_counter_golden_probe.cc`): gtest-free probe behind the
+  shadow-mode counter goldens (redesign section 3.3). Five fixed
+  serial workloads — unit and weighted serpentine A*, unit product
+  replay, weighted product nearest-target, queued serial update with
+  dirty merge — run under scoped diagnostics sinks, pin their exact
+  functional outcomes (costs, node counts, targets, written fields,
+  merged counts, versions), and emit observed
+  `PathCounters`/`QueuedPhaseCounters` JSON for the checker. Registered
+  as the `TessCounterGoldenProbe`/`TessCounterGoldenCheck` ctest
+  fixture pair; drift is advisory until the strict promotion.
+- `tests/test_check_counter_goldens.py`: pytest coverage for
+  `tools/check_counter_goldens.py` — per-counter drift rows, missing
+  and unexpected workloads/families as drift, shadow-mode zero exit
+  with report writing, strict-mode failure, matching strict pass, the
+  `--update` regeneration workflow, and malformed-document fail-closed
+  behavior.
 - `tests/test_paired_bench.py`: pytest coverage for the paired sentinel
   benchmark runner (`tools/paired_bench.py`) and the sentinel contract in
   `bench/sentinels.json`. It pins the twelve-sentinel definitions against
