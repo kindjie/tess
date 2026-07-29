@@ -145,5 +145,195 @@ def test_cli_writes_github_output_and_reason(monkeypatch, capsys):
 
   assert ci_changes.main((SHA_A, SHA_B)) == 0
   captured = capsys.readouterr()
-  assert captured.out == "code_required=false\n"
-  assert captured.err == "CI change classification: documentation-only change\n"
+  assert "code_required=false\n" in captured.out
+  assert "tsan_required=true\n" in captured.out
+  assert (
+    "CI change classification: documentation-only change\n" in captured.err
+  )
+
+
+# --- Concurrency-sensitive classification for the path-filtered TSan job ---
+
+
+@pytest.mark.parametrize(
+  "path",
+  (
+    "include/tess/ops/phase_executor.h",
+    "include/tess/ops/result_channel.h",
+    "include/tess/ops/queued.h",
+    "include/tess/experimental/maintenance.h",
+    "include/tess/gpu/webgpu_backend.h",
+    "include/tess/diagnostics/trace.h",
+    "include/tess/sim/schedule.h",
+    "include/tess/sim/scheduler.h",
+    "include/tess/sim/auto_exec.h",
+    "include/tess/sim/async_work_task.h",
+    "include/tess/simulation.h",
+    "include/tess/tess.h",
+    "tests/tess_phase_executor_test.cc",
+    "tests/tess_queued_contract_test.cc",
+    "tests/tess_sim_schedule_test.cc",
+    "tests/tess_sim_scheduler_test.cc",
+    "tests/tess_maintenance_test.cc",
+    "tests/tess_webgpu_backend_test.cc",
+    "tests/tess_sim_auto_exec_test.cc",
+    "tests/tess_execution_phase_safety_test.cc",
+    "tests/allocation_counter.cc",
+    "tests/webgpu_stub/webgpu.h",
+    "tests/CMakeLists.txt",
+    "cmake/TessProjectOptions.cmake",
+    "CMakeLists.txt",
+    "CMakePresets.json",
+    ".github/workflows/ci.yml",
+    "tools/ci_changes.py",
+  ),
+)
+def test_concurrency_sensitive_paths_select_tsan(path):
+  assert ci_changes.is_concurrency_sensitive_path(path)
+
+
+@pytest.mark.parametrize(
+  "path",
+  (
+    "include/tess/path/astar.h",
+    "include/tess/sim/movement.h",
+    "include/tess/sim/pibt_movement.h",
+    "include/tess/storage/dense.h",
+    "docs/index.md",
+    "tests/tess_shape_test.cc",
+    "examples/quickstart.cc",
+    "bench/CMakeLists.txt",
+    "tools/check_docs_links.py",
+  ),
+)
+def test_concurrency_insensitive_paths_skip_tsan(path):
+  assert not ci_changes.is_concurrency_sensitive_path(path)
+
+
+def test_files_owning_concurrency_primitives_are_sensitive():
+  """A new threaded header or test must not miss the TSan path filter."""
+  import re as _re
+
+  repo = Path(__file__).resolve().parents[1]
+  pattern = _re.compile(
+    r"std::(jthread|thread|mutex|shared_mutex|scoped_lock|unique_lock"
+    r"|lock_guard|atomic|condition_variable|future|async|promise"
+    r"|stop_token|barrier|latch|counting_semaphore|binary_semaphore)\b"
+  )
+  candidates = [
+    *(repo / "include" / "tess").rglob("*.h"),
+    *(repo / "tests").rglob("*.h"),
+    *(repo / "tests").rglob("*.cc"),
+  ]
+  offenders = [
+    source.relative_to(repo).as_posix()
+    for source in candidates
+    if pattern.search(source.read_text(encoding="utf-8"))
+    and not ci_changes.is_concurrency_sensitive_path(
+      source.relative_to(repo).as_posix()
+    )
+  ]
+
+  assert offenders == []
+
+
+def test_tsan_classification_selects_on_sensitive_path():
+  classification = ci_changes.classify_tsan_paths(
+    ("include/tess/path/astar.h", "include/tess/ops/queued.h")
+  )
+
+  assert classification.tsan_required
+  assert "include/tess/ops/queued.h" in classification.reason
+
+
+def test_tsan_classification_skips_without_sensitive_paths():
+  classification = ci_changes.classify_tsan_paths(
+    ("include/tess/path/astar.h", "docs/index.md")
+  )
+
+  assert not classification.tsan_required
+  assert classification.reason == "no concurrency-sensitive changes"
+
+
+def test_tsan_classification_fails_closed_on_empty_change_set():
+  assert ci_changes.classify_tsan_paths(()).tsan_required
+
+
+def test_tsan_range_fails_closed_on_invalid_revision():
+  classification = ci_changes.classify_tsan_range("", SHA_B)
+
+  assert classification.tsan_required
+  assert classification.reason == "invalid comparison revision"
+
+
+def test_tsan_range_fails_closed_on_git_failure():
+  def fail(_command, **_kwargs):
+    raise subprocess.CalledProcessError(128, "git diff")
+
+  classification = ci_changes.classify_tsan_range(SHA_A, SHA_B, run=fail)
+
+  assert classification.tsan_required
+  assert classification.reason == "unable to inspect changed paths"
+
+
+# --- Quality-gate preset selection per event ---
+
+
+@pytest.mark.parametrize("event", ("push", "schedule", "workflow_dispatch"))
+def test_full_tier_events_run_every_quality_preset(event):
+  assert ci_changes.quality_presets(event, tsan_required=False) == (
+    "dev-werror",
+    "dev-asan",
+    "dev-tsan",
+    "dev-cppcheck",
+    "dev-clang-tidy",
+    "release",
+  )
+
+
+def test_pull_request_runs_reduced_quality_presets():
+  assert ci_changes.quality_presets("pull_request", tsan_required=False) == (
+    "dev-asan",
+    "dev-cppcheck",
+  )
+
+
+def test_pull_request_adds_tsan_when_required():
+  assert ci_changes.quality_presets("pull_request", tsan_required=True) == (
+    "dev-asan",
+    "dev-cppcheck",
+    "dev-tsan",
+  )
+
+
+def test_cli_emits_all_outputs_for_pull_request(monkeypatch, capsys):
+  monkeypatch.setattr(
+    ci_changes,
+    "changed_paths",
+    lambda _base, _head, run=None: ("include/tess/path/astar.h",),
+  )
+
+  assert ci_changes.main((SHA_A, SHA_B, "--event", "pull_request")) == 0
+  captured = capsys.readouterr()
+  assert captured.out == (
+    "code_required=true\n"
+    "tsan_required=false\n"
+    'quality_presets=["dev-asan", "dev-cppcheck"]\n'
+  )
+
+
+def test_cli_fails_closed_for_full_tier_events(monkeypatch, capsys):
+  monkeypatch.setattr(
+    ci_changes,
+    "changed_paths",
+    lambda _base, _head, run=None: ("docs/guide.md",),
+  )
+
+  assert ci_changes.main((SHA_A, SHA_B, "--event", "push")) == 0
+  captured = capsys.readouterr()
+  assert captured.out == (
+    "code_required=false\n"
+    "tsan_required=true\n"
+    'quality_presets=["dev-werror", "dev-asan", "dev-tsan", '
+    '"dev-cppcheck", "dev-clang-tidy", "release"]\n'
+  )
