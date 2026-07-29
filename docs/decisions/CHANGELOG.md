@@ -6,6 +6,37 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-29 - Counter goldens in shadow mode (phase 2, slice 2)
+
+- Changed: a gtest-free probe (`tests/tess_counter_golden_probe.cc`,
+  diagnostics enabled target-locally) runs five fixed serial workloads —
+  unit and weighted A* over the canonical serpentine maze, a unit
+  distance-field product replay, a weighted product with
+  nearest-target replay (the entry-cost read path), and a queued
+  serial field update with dirty merge — and emits the observed
+  `PathCounters`/`QueuedPhaseCounters` values as JSON. A ctest fixture
+  pair compares them against the committed
+  `tests/goldens/counters.json` through
+  `tools/check_counter_goldens.py`: shadow mode reports drift in the dev
+  job's step summary without gating, `TESS_COUNTER_GOLDENS_STRICT=1`
+  fails on drift (the phase 4 promotion switch), and `--update` is the
+  intentional-change workflow, committed in the same pull request.
+  Serial-only per section 3.3 (pool workers do not aggregate into the
+  caller's thread-local sink). Allocation counts are deliberately not
+  golden-gated: container growth differs across standard libraries, and
+  the zero-allocation guarantees already have dedicated tests.
+- Reason: the redesign's section 4.1 counter-golden leg — exact,
+  noise-free work accounting on pull requests that distinguishes "doing
+  more work" from "running slower", entering service in shadow mode
+  beside the ceilings per section 4.3 so cross-platform expansion-order
+  drift is observed before anything gates.
+- Affected docs: testing and benchmarking redesign (phase 2 status),
+  CONTRIBUTING quality-gates section, tests/AGENTS.md.
+- Affected code: `tests/tess_counter_golden_probe.cc`,
+  `tests/goldens/counters.json`, `tests/CMakeLists.txt`,
+  `tools/check_counter_goldens.py`,
+  `tests/test_check_counter_goldens.py`, `.github/workflows/ci.yml`.
+
 ## 2026-07-29 - Paired sentinel benchmarks in shadow mode (phase 2, slice 1)
 
 - Changed: pull requests touching perf-sensitive paths now run a paired

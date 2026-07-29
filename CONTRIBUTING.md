@@ -70,6 +70,24 @@ can be confirmed between two explicit commits with the "Paired sentinel
 confirmation" dispatch workflow, which does fail on a confirmed
 regression.
 
+**Counter goldens** (also shadow mode): the ctest fixture pair
+`TessCounterGoldenProbe`/`TessCounterGoldenCheck` compares deterministic
+work counters from fixed serial workloads against
+`tests/goldens/counters.json`. Behavioral drift is advisory — it prints,
+lands in the dev job's step summary, and never fails the suite — but
+probe failures, malformed documents, and tooling errors still fail like
+any test. When a change intentionally moves the counters, regenerate the
+golden in the same pull request:
+
+```sh
+build/dev/tests/tess_counter_golden_probe /tmp/observed.json
+tools/check_counter_goldens.py --observed /tmp/observed.json \
+  --golden tests/goldens/counters.json --update
+```
+
+Setting `TESS_COUNTER_GOLDENS_STRICT=1` makes drift fail (the redesign's
+phase 4 promotion path).
+
 CI runs primarily on `ubuntu-24.04` with Clang and covers:
 
 - Dev build and unit tests: `cmake --build --preset dev`,

@@ -99,6 +99,17 @@ jobs:
       - name: Test
         run: ctest --preset dev
 
+      # Shadow-mode counter goldens (redesign section 3.3): the ctest
+      # fixture pair above never fails on drift, but drift must be seen
+      # even when an unrelated step fails.
+      - name: Surface counter-golden drift
+        if: ${{ always() }}
+        run: |
+          if [ -f build/dev/tests/counter-golden-drift.md ]; then
+            cat build/dev/tests/counter-golden-drift.md \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Example smoke
         run: |
           ran=0
@@ -201,6 +212,7 @@ jobs:
           tests/test_ci_changes.py
           tests/test_clang_tidy_changed.py
           tests/test_paired_bench.py
+          tests/test_check_counter_goldens.py
           tests/test_benchmark_tools.py
           tests/test_branding_assets.py
           tests/test_check_public_surface.py
@@ -319,6 +331,16 @@ jobs:
           matrix.preset == 'release'
         run: ctest --preset "${{ matrix.preset }}"
 
+      # Counter-golden drift is shadow-mode and per-tier: each preset
+      # that ran ctest surfaces its own report (redesign section 3.3).
+      - name: Surface counter-golden drift
+        if: ${{ always() }}
+        run: |
+          report="build/${{ matrix.preset }}/tests/counter-golden-drift.md"
+          if [ -f "$report" ]; then
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   # Blocking diff-scoped clang-tidy for pull requests: changed sources go
   # through the compilation database, changed headers through synthesized
   # translation units. The job's exit status is the signal; the full-tree
@@ -415,6 +437,16 @@ jobs:
       - name: Test
         run: ctest --preset "${{ matrix.preset }}"
 
+      # Cross-platform counter-golden drift is exactly what shadow mode
+      # exists to observe before any promotion to strict.
+      - name: Surface counter-golden drift
+        if: ${{ always() }}
+        run: |
+          report="build/${{ matrix.preset }}/tests/counter-golden-drift.md"
+          if [ -f "$report" ]; then
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Install smoke
         if: matrix.preset == 'dev'
         run: tools/install_smoke.sh
@@ -459,6 +491,17 @@ jobs:
           ctest --test-dir build/windows-msvc -C Release --output-on-failure
           --no-tests=error
           -R "TessAllocationCounter|StrongAllocation|FailedStore"
+
+      # Windows counter-golden drift is the portability evidence the
+      # redesign requires before goldens can gate (risk 4).
+      - name: Surface counter-golden drift
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          report="build/windows-msvc/tests/counter-golden-drift.md"
+          if [ -f "$report" ]; then
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Install smoke
         shell: bash
@@ -509,6 +552,15 @@ jobs:
 
       - name: Test
         run: ctest --preset bench
+
+      # Release-configuration counter-golden drift (shadow mode).
+      - name: Surface counter-golden drift
+        if: ${{ always() }}
+        run: |
+          if [ -f build/bench/tests/counter-golden-drift.md ]; then
+            cat build/bench/tests/counter-golden-drift.md \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Benchmark thresholds
         if: github.event_name != 'pull_request'
