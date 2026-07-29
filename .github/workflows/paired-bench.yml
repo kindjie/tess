@@ -34,6 +34,7 @@ jobs:
   confirm:
     name: Paired Sentinel Confirmation
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     env:
       CC: clang
       CXX: clang++
@@ -84,8 +85,11 @@ jobs:
             ccache -s
           done
 
+      # Capture the exit status so a confirmed regression still lands
+      # its summary before failing the step.
       - name: Paired sentinel run (confirm)
         run: |
+          status=0
           python3 tools/paired_bench.py \
             --base-binary \
               "$(dirname "$GITHUB_WORKSPACE")/paired-base/build/bench/tess_bench" \
@@ -94,8 +98,10 @@ jobs:
             --sentinels bench/sentinels.json \
             --mode confirm \
             --summary paired-summary.md \
-            --json paired-report.json
-          cat paired-summary.md >> "$GITHUB_STEP_SUMMARY"
+            --json paired-report.json || status=$?
+          [ -f paired-summary.md ] && \
+            cat paired-summary.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
       - name: Upload paired report
         if: ${{ always() }}

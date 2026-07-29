@@ -92,16 +92,62 @@ def parse_results(
   metrics: Mapping[str, str],
 ) -> dict[str, float]:
   """Extract each sentinel's configured metric from benchmark JSON."""
-  data = json.loads(payload)
-  values = {}
-  for benchmark in data.get("benchmarks", []):
-    name = benchmark["name"]
-    if name in metrics:
-      values[name] = float(benchmark[metrics[name]])
+  try:
+    data = json.loads(payload)
+    values = {}
+    for benchmark in data.get("benchmarks", []):
+      name = benchmark["name"]
+      if name in metrics:
+        values[name] = float(benchmark[metrics[name]])
+  except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+    raise ToolError(f"unparseable benchmark output: {error}") from error
   missing = sorted(set(metrics) - set(values))
   if missing:
     raise ToolError(f"benchmark output missing sentinels: {missing}")
   return values
+
+
+def list_benchmarks(binary: Path) -> frozenset[str]:
+  """Return the benchmark names a binary registers."""
+  try:
+    result = subprocess.run(
+      (str(binary), "--benchmark_list_tests=true"),
+      capture_output=True,
+      text=True,
+      timeout=120,
+    )
+  except (OSError, subprocess.TimeoutExpired) as error:
+    raise ToolError(f"cannot list benchmarks in {binary}: {error}") from error
+  if result.returncode != 0:
+    raise ToolError(f"{binary} failed to list benchmarks")
+  return frozenset(
+    line.strip() for line in result.stdout.splitlines() if line.strip()
+  )
+
+
+def comparable_sentinels(
+  config: Config,
+  base_names: frozenset[str],
+  head_names: frozenset[str],
+) -> tuple[dict[str, Sentinel], dict[str, str]]:
+  """Split sentinels into comparable and skipped-with-reason.
+
+  A sentinel renamed or removed on one side cannot be compared; it is
+  reported rather than silently dropped, and an empty comparable set
+  fails the run.
+  """
+  comparable = {}
+  skipped = {}
+  for name, sentinel in config.sentinels.items():
+    if name not in base_names:
+      skipped[name] = "not registered in the base binary"
+    elif name not in head_names:
+      skipped[name] = "not registered in the head binary"
+    else:
+      comparable[name] = sentinel
+  if not comparable:
+    raise ToolError("no sentinel is registered in both binaries")
+  return comparable, skipped
 
 
 def round_sides(round_index: int) -> tuple[str, str]:
@@ -122,7 +168,12 @@ def run_binary(
     f"--benchmark_filter={filter_re}",
     "--benchmark_format=json",
   )
-  result = subprocess.run(command, capture_output=True, text=True)
+  try:
+    result = subprocess.run(
+      command, capture_output=True, text=True, timeout=1200
+    )
+  except (OSError, subprocess.TimeoutExpired) as error:
+    raise ToolError(f"cannot run {binary}: {error}") from error
   if result.returncode != 0:
     raise ToolError(
       f"{binary} exited {result.returncode}: {result.stderr.strip()[:500]}"
@@ -176,8 +227,10 @@ def _paired_bootstrap_ci(
     deltas.append(statistics.median(sample) - 1.0)
   deltas.sort()
   tail = (1.0 - confidence) / 2.0
+  # Conservative symmetric percentile indices: round the lower bound
+  # down and mirror it, widening rather than narrowing the interval.
   low_index = int(tail * (len(deltas) - 1))
-  high_index = int((1.0 - tail) * (len(deltas) - 1))
+  high_index = len(deltas) - 1 - low_index
   return (deltas[low_index], deltas[high_index])
 
 
@@ -195,11 +248,13 @@ def evaluate_sentinel(
   """Judge one sentinel's paired samples against both floors."""
   if len(base) != len(head):
     raise ToolError(f"{name}: unpaired sample counts {len(base)}/{len(head)}")
-  ratios = [h / b for b, h in zip(base, head) if b > 0]
-  if not ratios:
-    raise ToolError(f"{name}: no valid paired rounds")
+  for value in (*base, *head):
+    if not (value > 0.0 and value == value and value != float("inf")):
+      raise ToolError(f"{name}: non-finite or nonpositive sample {value!r}")
+  ratios = [h / b for b, h in zip(base, head)]
   base_median = statistics.median(base)
   head_median = statistics.median(head)
+  paired_delta = statistics.median(h - b for b, h in zip(base, head))
   delta_relative = statistics.median(ratios) - 1.0
   ci_low, ci_high = _paired_bootstrap_ci(
     ratios,
@@ -207,10 +262,7 @@ def evaluate_sentinel(
     confidence=confidence,
     seed=seed,
   )
-  flagged = (
-    ci_low > effect_floor
-    and (head_median - base_median) > materiality_ns
-  )
+  flagged = ci_low > effect_floor and paired_delta > materiality_ns
   return SentinelResult(
     name=name,
     base_median=base_median,
@@ -266,12 +318,15 @@ def render_markdown(
   overall: str,
   *,
   mode: str,
+  confidence: float = 0.95,
+  skipped: Mapping[str, str] | None = None,
 ) -> str:
   """Render the step-summary table."""
+  level = f"{confidence * 100.0:.4f}".rstrip("0").rstrip(".") + "%"
   lines = [
     f"### Paired sentinel run — **{overall}** ({mode} mode)",
     "",
-    "| Sentinel | Base median | Head median | Δ | 95% CI | Verdict |",
+    f"| Sentinel | Base median | Head median | Δ | {level} CI | Verdict |",
     "| --- | --- | --- | --- | --- | --- |",
   ]
   for result, verdict in judged:
@@ -283,6 +338,8 @@ def render_markdown(
       f"| [{result.ci_low:+.1%}, {result.ci_high:+.1%}] "
       f"| {verdict} |"
     )
+  for name, reason in sorted((skipped or {}).items()):
+    lines.append(f"| {name} | — | — | — | — | skipped: {reason} |")
   if mode == "shadow":
     lines.append("")
     lines.append(
@@ -323,25 +380,46 @@ def main(argv: Sequence[str] | None = None) -> int:
       if not Path(binary).is_file():
         raise ToolError(f"benchmark binary not found: {binary}")
 
+    base_names = list_benchmarks(args.base_binary)
+    head_names = list_benchmarks(args.head_binary)
+    comparable, skipped = comparable_sentinels(
+      config, base_names, head_names
+    )
+    config = Config(
+      sentinels=comparable,
+      source_map=config.source_map,
+      repetitions=config.repetitions,
+      effect_floor=config.effect_floor,
+      materiality_ns=config.materiality_ns,
+      resamples=config.resamples,
+      confidence=config.confidence,
+    )
+    for name, reason in sorted(skipped.items()):
+      print(f"skipping {name}: {reason}", flush=True)
+
     if args.mode == "confirm":
       # One confirmed regression fails the run, so control the
-      # family-wise error across the sentinel set.
+      # family-wise error across the sentinel set — and give the
+      # narrower tails enough bootstrap resolution to be stable.
+      confirm_confidence = adjusted_confidence(
+        config.confidence, len(config.sentinels)
+      )
+      tail = (1.0 - confirm_confidence) / 2.0
       config = Config(
         sentinels=config.sentinels,
         source_map=config.source_map,
         repetitions=config.repetitions,
         effect_floor=config.effect_floor,
         materiality_ns=config.materiality_ns,
-        resamples=config.resamples,
-        confidence=adjusted_confidence(
-          config.confidence, len(config.sentinels)
-        ),
+        resamples=max(config.resamples, int(100.0 / max(tail, 1e-6))),
+        confidence=confirm_confidence,
       )
 
     samples = collect(args.base_binary, args.head_binary, config)
     first_pass = evaluate(samples, config, seed=args.seed)
     flagged = [r for r in first_pass if r.flagged]
     confirmations: dict[str, bool] = {}
+    rerun = {}
     if flagged:
       print(
         f"{len(flagged)} sentinel(s) flagged; re-running once to confirm",
@@ -363,6 +441,9 @@ def main(argv: Sequence[str] | None = None) -> int:
       "mode": args.mode,
       "verdict": overall,
       "repetitions": config.repetitions,
+      "confidence": config.confidence,
+      "resamples": config.resamples,
+      "skipped": skipped,
       "sentinels": {
         result.name: {
           "base_median_ns": result.base_median,
@@ -371,6 +452,20 @@ def main(argv: Sequence[str] | None = None) -> int:
           "ci_low": result.ci_low,
           "ci_high": result.ci_high,
           "verdict": verdict,
+          **(
+            {
+              "confirmation": {
+                "base_median_ns": rerun[result.name].base_median,
+                "head_median_ns": rerun[result.name].head_median,
+                "delta_relative": rerun[result.name].delta_relative,
+                "ci_low": rerun[result.name].ci_low,
+                "ci_high": rerun[result.name].ci_high,
+                "flagged": rerun[result.name].flagged,
+              }
+            }
+            if result.name in rerun
+            else {}
+          ),
         }
         for result, verdict in judged
       },
@@ -379,7 +474,13 @@ def main(argv: Sequence[str] | None = None) -> int:
       args.json_out.write_text(
         json.dumps(report, indent=2) + "\n", encoding="utf-8"
       )
-    summary = render_markdown(judged, overall, mode=args.mode)
+    summary = render_markdown(
+      judged,
+      overall,
+      mode=args.mode,
+      confidence=config.confidence,
+      skipped=skipped,
+    )
     if args.summary:
       args.summary.write_text(summary, encoding="utf-8")
     print(summary)

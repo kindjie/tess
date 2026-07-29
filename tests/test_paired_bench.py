@@ -274,8 +274,15 @@ def _fake_binary(path, values):
       for name, value in values.items()
     ]
   }
+  names = "\n".join(values)
   path.write_text(
-    "#!/bin/sh\ncat <<'JSON'\n" + json.dumps(payload) + "\nJSON\n",
+    "#!/bin/sh\n"
+    'case "$1" in\n'
+    "  --benchmark_list_tests=*)\n"
+    f"    cat <<'NAMES'\n{names}\nNAMES\n"
+    "    exit 0;;\n"
+    "esac\n"
+    "cat <<'JSON'\n" + json.dumps(payload) + "\nJSON\n",
     encoding="utf-8",
   )
   path.chmod(0o755)
@@ -431,3 +438,118 @@ def test_confirm_mode_confidence_is_bonferroni_adjusted():
   assert paired_bench.adjusted_confidence(0.95, 12) == pytest.approx(
     1.0 - 0.05 / 12
   )
+
+
+def test_main_skips_sentinels_missing_from_one_side(tmp_path, capsys):
+  base = tmp_path / "base_bench"
+  head = tmp_path / "head_bench"
+  # The head renamed b/old to b/new: neither name is comparable, and the
+  # run reports the skip instead of aborting.
+  _fake_binary(base, {"a/b": 100.0, "b/old": 50.0})
+  _fake_binary(head, {"a/b": 101.0, "b/new": 50.0})
+  sentinels = tmp_path / "sentinels.json"
+  _sentinel_file(sentinels, ["a/b", "b/old", "b/new"])
+  out = tmp_path / "out.json"
+
+  code = paired_bench.main(
+    (
+      "--base-binary", str(base),
+      "--head-binary", str(head),
+      "--sentinels", str(sentinels),
+      "--json", str(out),
+      "--mode", "shadow",
+      "--seed", "7",
+    )
+  )
+
+  assert code == 0
+  report = json.loads(out.read_text())
+  assert report["verdict"] == "pass"
+  assert report["skipped"] == {
+    "b/new": "not registered in the base binary",
+    "b/old": "not registered in the head binary",
+  }
+  assert set(report["sentinels"]) == {"a/b"}
+
+
+def test_main_fails_when_no_sentinel_is_comparable(tmp_path, capsys):
+  base = tmp_path / "base_bench"
+  head = tmp_path / "head_bench"
+  _fake_binary(base, {"only/base": 1.0})
+  _fake_binary(head, {"only/head": 1.0})
+  sentinels = tmp_path / "sentinels.json"
+  _sentinel_file(sentinels, ["only/base", "only/head"])
+
+  code = paired_bench.main(
+    (
+      "--base-binary", str(base),
+      "--head-binary", str(head),
+      "--sentinels", str(sentinels),
+      "--mode", "shadow",
+    )
+  )
+
+  assert code == 1
+
+
+def test_confirm_report_carries_confidence_and_confirmation_pass(tmp_path):
+  base = tmp_path / "base_bench"
+  head = tmp_path / "head_bench"
+  _fake_binary(base, {"a/b": 100.0})
+  _fake_binary(head, {"a/b": 150.0})
+  sentinels = tmp_path / "sentinels.json"
+  _sentinel_file(sentinels, ["a/b"])
+  out = tmp_path / "out.json"
+  summary = tmp_path / "summary.md"
+
+  code = paired_bench.main(
+    (
+      "--base-binary", str(base),
+      "--head-binary", str(head),
+      "--sentinels", str(sentinels),
+      "--json", str(out),
+      "--summary", str(summary),
+      "--mode", "confirm",
+      "--seed", "7",
+    )
+  )
+
+  assert code == 1
+  report = json.loads(out.read_text())
+  assert report["confidence"] == 0.95  # single sentinel: no adjustment
+  assert report["sentinels"]["a/b"]["confirmation"]["flagged"] is True
+  assert "95% CI" in summary.read_text()
+
+
+def test_nonpositive_samples_fail_closed():
+  with pytest.raises(paired_bench.ToolError):
+    paired_bench.evaluate_sentinel(
+      "s",
+      [100.0, 0.0],
+      [100.0, 100.0],
+      effect_floor=0.08,
+      materiality_ns=2.0,
+      resamples=100,
+      confidence=0.95,
+      seed=7,
+    )
+
+
+def test_materiality_uses_the_paired_median_difference():
+  # Marginal medians differ by 2500 ns, but the paired per-round
+  # differences have median 1500 ns — below a 2000 ns floor.
+  base = [1000.0, 1000.0, 2000.0]
+  head = [1500.0, 3500.0, 3500.0]
+
+  result = paired_bench.evaluate_sentinel(
+    "s",
+    base,
+    head,
+    effect_floor=0.08,
+    materiality_ns=2000.0,
+    resamples=500,
+    confidence=0.95,
+    seed=7,
+  )
+
+  assert not result.flagged
