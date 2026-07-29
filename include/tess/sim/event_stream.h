@@ -114,9 +114,65 @@ class EventStream {
       return;
     }
     accounting_->observe_tick(tick);
+    const auto now = accounting_->last_observed_tick;
     accounting_->counters.oldest_outstanding_age_ticks =
-        events_.empty() ? 0 : tick - oldest_published_tick_;
+        events_.empty() ? 0 : now - oldest_published_tick_;
   }
+
+  EventStream() = default;
+
+  // An attached accountant tracks exactly one stream: copies start
+  // unattached with cleared residence stamps, moves transfer the
+  // attachment. Assigning over an instrumented, non-empty stream would
+  // orphan outstanding inventory, so the destination must be empty or
+  // unattached.
+  EventStream(const EventStream& other)
+      : events_{other.events_},
+        max_events_{other.max_events_},
+        next_sequence_{other.next_sequence_},
+        rejected_events_{other.rejected_events_} {}
+  auto operator=(const EventStream& other) -> EventStream& {
+    if (this != &other) {
+      TESS_ASSERT(accounting_ == nullptr || events_.empty());
+      events_ = other.events_;
+      max_events_ = other.max_events_;
+      next_sequence_ = other.next_sequence_;
+      rejected_events_ = other.rejected_events_;
+      oldest_published_tick_ = 0;
+      published_tick_total_ = 0;
+      accounting_ = nullptr;
+    }
+    return *this;
+  }
+  EventStream(EventStream&& other) noexcept
+      : events_{std::move(other.events_)},
+        max_events_{other.max_events_},
+        next_sequence_{other.next_sequence_},
+        rejected_events_{other.rejected_events_},
+        oldest_published_tick_{other.oldest_published_tick_},
+        published_tick_total_{other.published_tick_total_},
+        accounting_{other.accounting_} {
+    other.accounting_ = nullptr;
+    other.oldest_published_tick_ = 0;
+    other.published_tick_total_ = 0;
+  }
+  auto operator=(EventStream&& other) noexcept -> EventStream& {
+    if (this != &other) {
+      TESS_ASSERT(accounting_ == nullptr || events_.empty());
+      events_ = std::move(other.events_);
+      max_events_ = other.max_events_;
+      next_sequence_ = other.next_sequence_;
+      rejected_events_ = other.rejected_events_;
+      oldest_published_tick_ = other.oldest_published_tick_;
+      published_tick_total_ = other.published_tick_total_;
+      accounting_ = other.accounting_;
+      other.accounting_ = nullptr;
+      other.oldest_published_tick_ = 0;
+      other.published_tick_total_ = 0;
+    }
+    return *this;
+  }
+  ~EventStream() = default;
 
  private:
   void retire_batch(bool consumed) noexcept {

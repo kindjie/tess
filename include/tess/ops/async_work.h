@@ -119,6 +119,9 @@ class ResumableWorkQueue {
         in_advance_{false} {}
   auto operator=(const ResumableWorkQueue& other) -> ResumableWorkQueue& {
     if (this != &other) {
+      // Assigning over an instrumented, non-empty queue would orphan
+      // its accountant's outstanding inventory.
+      TESS_ASSERT(accounting_ == nullptr || slots_.empty());
       slots_ = other.slots_;
       generation_ = other.generation_;
       in_advance_ = false;
@@ -135,6 +138,7 @@ class ResumableWorkQueue {
   }
   auto operator=(ResumableWorkQueue&& other) noexcept -> ResumableWorkQueue& {
     if (this != &other) {
+      TESS_ASSERT(accounting_ == nullptr || slots_.empty());
       slots_ = std::move(other.slots_);
       generation_ = other.generation_;
       in_advance_ = false;
@@ -168,7 +172,8 @@ class ResumableWorkQueue {
       return;
     }
     accounting_->observe_tick(tick);
-    auto oldest = tick;
+    const auto now = accounting_->last_observed_tick;
+    auto oldest = now;
     auto any_pending = false;
     for (const auto& slot : slots_) {
       if (slot.state == AsyncResultState::Pending) {
@@ -177,7 +182,7 @@ class ResumableWorkQueue {
       }
     }
     accounting_->counters.oldest_outstanding_age_ticks =
-        any_pending ? tick - oldest : 0;
+        any_pending ? now - oldest : 0;
   }
 
   void reserve_tickets(std::size_t count) {

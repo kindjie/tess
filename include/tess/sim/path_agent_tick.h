@@ -24,8 +24,45 @@ struct PathAgentTickState {
   // contract (reorder/remove agents => mark_pathing_dirty).
   PathAgentRoutes routes{};
   /// Optional caller-owned goal-lifecycle accounting (see FlowCounters).
-  /// The accountant must outlive the tick state's use of it.
+  /// The accountant must outlive the tick state's use of it. Attach or
+  /// detach only while no accounted goal is outstanding, and never
+  /// duplicate an attached tick state: two states updating one
+  /// accountant double-terminalize lifecycles. Copies therefore start
+  /// unattached and moves transfer the attachment.
   diagnostics::FlowAccounting* flow_accounting = nullptr;
+
+  PathAgentTickState() = default;
+  PathAgentTickState(const PathAgentTickState& other)
+      : clock{other.clock},
+        pathing_dirty{other.pathing_dirty},
+        routes{other.routes} {}
+  auto operator=(const PathAgentTickState& other) -> PathAgentTickState& {
+    if (this != &other) {
+      clock = other.clock;
+      pathing_dirty = other.pathing_dirty;
+      routes = other.routes;
+      flow_accounting = nullptr;
+    }
+    return *this;
+  }
+  PathAgentTickState(PathAgentTickState&& other) noexcept
+      : clock{other.clock},
+        pathing_dirty{other.pathing_dirty},
+        routes{std::move(other.routes)},
+        flow_accounting{other.flow_accounting} {
+    other.flow_accounting = nullptr;
+  }
+  auto operator=(PathAgentTickState&& other) noexcept -> PathAgentTickState& {
+    if (this != &other) {
+      clock = other.clock;
+      pathing_dirty = other.pathing_dirty;
+      routes = std::move(other.routes);
+      flow_accounting = other.flow_accounting;
+      other.flow_accounting = nullptr;
+    }
+    return *this;
+  }
+  ~PathAgentTickState() = default;
 };
 
 /// Configures per-tick movement, caching, and blocked-agent retry limits.
@@ -117,7 +154,8 @@ inline void observe_path_agent_flow_tick(PathAgentTickState& state,
     return;
   }
   state.flow_accounting->observe_tick(tick);
-  auto oldest = tick;
+  const auto now = state.flow_accounting->last_observed_tick;
+  auto oldest = now;
   auto any = false;
   for (const auto& agent : agents) {
     if (path_agent_goal_outstanding(agent)) {
@@ -126,7 +164,7 @@ inline void observe_path_agent_flow_tick(PathAgentTickState& state,
     }
   }
   state.flow_accounting->counters.oldest_outstanding_age_ticks =
-      any ? tick - oldest : 0;
+      any ? now - oldest : 0;
 }
 
 // Scans agents ahead of a tick's path processing. NeedsPath agents request
@@ -196,7 +234,7 @@ template <typename World, typename ClassOrTag>
         state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_unit_path_agents<World, ClassOrTag>(
         world, agents, runtime, options.cache_policy, graph, scope,
-        &state.routes);
+        &state.routes, state.flow_accounting);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -225,7 +263,7 @@ template <typename World, typename ClassOrTag, typename Provider>
         state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_unit_path_agents<World, ClassOrTag>(
         world, agents, runtime, options.cache_policy, graph, scope,
-        &state.routes, provider);
+        &state.routes, provider, state.flow_accounting);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -255,7 +293,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
         state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_unit_path_agents<World, ClassOrTag>(
         world, agents, runtime, options.cache_policy, graph, scope,
-        &state.routes);
+        &state.routes, state.flow_accounting);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -288,7 +326,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
         state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_unit_path_agents<World, ClassOrTag>(
         world, agents, runtime, options.cache_policy, graph, scope,
-        &state.routes, provider);
+        &state.routes, provider, state.flow_accounting);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -322,7 +360,7 @@ template <typename World, typename Class, std::uint32_t MaxCost>
         state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_weighted_path_agents<World, Class, MaxCost>(
         world, agents, runtime, options.cache_policy, graph, scope,
-        &state.routes);
+        &state.routes, state.flow_accounting);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -352,7 +390,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
         state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_weighted_path_agents<World, Class, MaxCost>(
         world, agents, runtime, options.cache_policy, graph, scope,
-        &state.routes, provider);
+        &state.routes, provider, state.flow_accounting);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -382,7 +420,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
         state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_weighted_path_agents<World, Class, MaxCost>(
         world, agents, runtime, options.cache_policy, graph, scope,
-        &state.routes);
+        &state.routes, state.flow_accounting);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -414,7 +452,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
         state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_weighted_path_agents<World, Class, MaxCost>(
         world, agents, runtime, options.cache_policy, graph, scope,
-        &state.routes, provider);
+        &state.routes, provider, state.flow_accounting);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -447,7 +485,7 @@ template <typename World, typename PassableTag, typename CostTag,
     stats.pathing =
         process_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(
             world, agents, runtime, options.cache_policy, graph, scope,
-            &state.routes);
+            &state.routes, state.flow_accounting);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -478,7 +516,7 @@ template <typename World, typename PassableTag, typename CostTag,
     stats.pathing =
         process_weighted_path_agents<World, PassableTag, CostTag, MaxCost>(
             world, agents, runtime, options.cache_policy, graph, scope,
-            &state.routes);
+            &state.routes, state.flow_accounting);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }

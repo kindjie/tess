@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <exception>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -384,6 +385,16 @@ auto flow_step_pending(void*, tess::AsyncWorkBudget, int&)
   return {tess::AsyncStepState::Pending, 1, {}};
 }
 
+auto flow_step_failed(void*, tess::AsyncWorkBudget, int&)
+    -> tess::AsyncWorkStep {
+  return {tess::AsyncStepState::Failed, 0, {}};
+}
+
+auto flow_step_stale(void*, tess::AsyncWorkBudget, int&)
+    -> tess::AsyncWorkStep {
+  return {tess::AsyncStepState::Stale, 1, {}};
+}
+
 auto run_flow_async() -> tess::diagnostics::FlowCounters {
   tess::ResumableWorkQueue<int> queue;
   tess::diagnostics::FlowAccounting accounting;
@@ -392,14 +403,20 @@ auto run_flow_async() -> tess::diagnostics::FlowCounters {
 
   auto ready_work = flow_step_ready;
   auto pending_work = flow_step_pending;
+  auto failed_work = flow_step_failed;
+  auto stale_work = flow_step_stale;
   (void)queue.submit(nullptr, ready_work);
   const auto cancelled = queue.submit(nullptr, pending_work);
   const auto dropped = queue.submit(nullptr, pending_work);
   (void)dropped;
+  const auto superseded = queue.submit(nullptr, pending_work);
+  (void)queue.submit(nullptr, failed_work);
+  (void)queue.submit(nullptr, stale_work);
   const auto immediate = queue.submit_immediate(3, tess::AsyncVersion{1});
   check(queue.cancel(cancelled), "flow_async", "cancel failed");
+  check(queue.supersede(superseded), "flow_async", "supersede failed");
   queue.observe_flow_tick(4);
-  (void)queue.advance(tess::AsyncWorkBudget{4});
+  (void)queue.advance(tess::AsyncWorkBudget{8});
   check(queue.mark_stale_if_version(immediate, tess::AsyncVersion{9}),
         "flow_async", "stale reclassification failed");
   queue.observe_flow_tick(6);
@@ -434,6 +451,14 @@ class FlowMaintenanceTask final
   }
 };
 
+class FlowThrowingTask final
+    : public tess::experimental::maintenance::MaintenanceTask {
+ public:
+  void run(tess::experimental::maintenance::MaintenanceBudget&) override {
+    throw std::runtime_error{"flow maintenance failure"};
+  }
+};
+
 auto run_flow_maintenance() -> tess::diagnostics::FlowCounters {
   namespace mnt = tess::experimental::maintenance;
   mnt::CoalescingScheduler scheduler{1};
@@ -449,6 +474,16 @@ auto run_flow_maintenance() -> tess::diagnostics::FlowCounters {
   scheduler.observe_flow_tick(5);
   check(scheduler.run_some(mnt::MaintenanceBudget{8}), "flow_maintenance",
         "drain failed");
+  FlowThrowingTask throwing;
+  check(scheduler.schedule(throwing), "flow_maintenance",
+        "schedule after drain failed");
+  auto threw = false;
+  try {
+    (void)scheduler.flush();
+  } catch (const std::exception&) {
+    threw = true;
+  }
+  check(threw, "flow_maintenance", "throwing task did not propagate");
   check_identities(accounting.counters, "flow_maintenance");
   return accounting.counters;
 }
@@ -483,6 +518,28 @@ auto run_flow_agents() -> tess::diagnostics::FlowCounters {
   }
   tess::clear_path_agent_goal(tick_state, agents[0]);
   check(arrivals >= 1, "flow_agents", "no agent arrived");
+
+  // Retry exhaustion on a sealed goal, then a terminal re-arm.
+  world.field<PassableTag>(tess::Coord3{0, 6, 0}) = false;
+  world.field<PassableTag>(tess::Coord3{1, 7, 0}) = false;
+  tess::mark_pathing_dirty(tick_state);
+  options.max_steps = 1;
+  auto exhaust_options = options;
+  exhaust_options.max_blocked_retries = 2;
+  tess::set_path_agent_goal(tick_state, agents[0], tess::Coord3{0, 7, 0});
+  for (std::uint64_t tick = 20; tick <= 32; ++tick) {
+    tess::observe_path_agent_flow_tick(tick_state, agents, tick);
+    (void)tess::tick_unit_path_agents<PathWorld, PassableTag>(
+        tick_state, world, agents, runtime, exhaust_options);
+    if (agents[0].phase == tess::PathAgentPhase::Unreachable) {
+      break;
+    }
+  }
+  check(agents[0].phase == tess::PathAgentPhase::Unreachable, "flow_agents",
+        "sealed goal did not exhaust");
+  tess::set_path_agent_goal(tick_state, agents[0],
+                            tess::Coord3{0, 1, 0});  // terminal re-arm
+  tess::clear_path_agent_goal(tick_state, agents[0]);
   check_identities(accounting.counters, "flow_agents");
   return accounting.counters;
 }

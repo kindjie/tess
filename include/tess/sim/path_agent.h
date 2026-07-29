@@ -175,6 +175,20 @@ inline void clear_path_agent_goal(PathAgentState& agent) noexcept {
   return agent.has_goal && agent.phase != PathAgentPhase::Unreachable;
 }
 
+/// Terminalizes an agent's goal lifecycle as failed at a structural
+/// failure or exhaustion transition; the phase change stays the
+/// caller's.
+inline void fail_path_agent_flow(
+    const PathAgentState& agent,
+    diagnostics::FlowAccounting* accounting) noexcept {
+  if (accounting != nullptr) {
+    ++accounting->counters.failed;
+    accounting->record_left_outstanding();
+    accounting->counters.residence_ticks_accumulated +=
+        accounting->last_observed_tick - agent.armed_tick;
+  }
+}
+
 /// Completes an arrived agent's goal lifecycle and returns it to idle.
 inline void arrive_path_agent(
     PathAgentState& agent, diagnostics::FlowAccounting* accounting) noexcept {
@@ -418,6 +432,7 @@ inline auto advance_path_agents_with_movement(
           // bug; terminal until a new goal re-arms the lifecycle.
           agent.status = PathStatus::NoPath;
           agent.phase = PathAgentPhase::Unreachable;
+          fail_path_agent_flow(agent, accounting);
         }
         break;
       }
@@ -495,6 +510,7 @@ inline auto advance_path_agents_with_movement(
         } else {
           agent.status = PathStatus::NoPath;
           agent.phase = PathAgentPhase::Unreachable;
+          fail_path_agent_flow(agent, accounting);
         }
         break;
       }
@@ -610,6 +626,7 @@ inline auto advance_path_agents_with_movement(
         } else {
           agent.status = PathStatus::NoPath;
           agent.phase = PathAgentPhase::Unreachable;
+          fail_path_agent_flow(agent, accounting);
         }
         break;
       }
@@ -675,8 +692,9 @@ template <typename World, typename ClassOrTag>
     PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     PathSubmitScope scope = PathSubmitScope::All,
-    PathAgentRoutes* routes = nullptr) -> PathAgentFrameStats {
-  auto stats = submit_path_agents(agents, runtime, scope);
+    PathAgentRoutes* routes = nullptr,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
+  auto stats = submit_path_agents(agents, runtime, scope, accounting);
   (void)runtime.template process_unit_cached<World, ClassOrTag>(world, policy,
                                                                 graph);
   add_path_agent_stats(
@@ -691,9 +709,9 @@ template <typename World, typename ClassOrTag, typename Provider>
     const World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathRuntimeCachePolicy policy,
     const RegionGraphT<typename World::residency_type>* graph,
-    PathSubmitScope scope, PathAgentRoutes* routes, const Provider& provider)
-    -> PathAgentFrameStats {
-  auto stats = submit_path_agents(agents, runtime, scope);
+    PathSubmitScope scope, PathAgentRoutes* routes, const Provider& provider,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
+  auto stats = submit_path_agents(agents, runtime, scope, accounting);
   (void)runtime.template process_unit_cached<World, ClassOrTag>(
       world, policy, graph, provider);
   add_path_agent_stats(
@@ -709,8 +727,9 @@ template <typename World, typename Class, std::uint32_t MaxCost>
     PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     PathSubmitScope scope = PathSubmitScope::All,
-    PathAgentRoutes* routes = nullptr) -> PathAgentFrameStats {
-  auto stats = submit_path_agents(agents, runtime, scope);
+    PathAgentRoutes* routes = nullptr,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
+  auto stats = submit_path_agents(agents, runtime, scope, accounting);
   (void)runtime.template process_weighted_batch<World, Class, MaxCost>(
       world, policy, graph);
   add_path_agent_stats(
@@ -726,9 +745,9 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     const World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathRuntimeCachePolicy policy,
     const RegionGraphT<typename World::residency_type>* graph,
-    PathSubmitScope scope, PathAgentRoutes* routes, const Provider& provider)
-    -> PathAgentFrameStats {
-  auto stats = submit_path_agents(agents, runtime, scope);
+    PathSubmitScope scope, PathAgentRoutes* routes, const Provider& provider,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
+  auto stats = submit_path_agents(agents, runtime, scope, accounting);
   (void)runtime.template process_weighted_batch<World, Class, MaxCost>(
       world, policy, graph, provider);
   add_path_agent_stats(
@@ -745,8 +764,9 @@ template <typename World, typename PassableTag, typename CostTag,
     PathRequestRuntime& runtime, PathRuntimeCachePolicy policy = {},
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     PathSubmitScope scope = PathSubmitScope::All,
-    PathAgentRoutes* routes = nullptr) -> PathAgentFrameStats {
-  auto stats = submit_path_agents(agents, runtime, scope);
+    PathAgentRoutes* routes = nullptr,
+    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
+  auto stats = submit_path_agents(agents, runtime, scope, accounting);
   (void)runtime
       .template process_weighted_batch<World, PassableTag, CostTag, MaxCost>(
           world, policy, graph);

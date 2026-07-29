@@ -181,6 +181,47 @@ TEST(TessAsyncFlow, MovingAQueueTransfersTheAttachment) {
   EXPECT_EQ(accounting.counters.admitted, 2u);
 }
 
+struct ThrowingMove {
+  ThrowingMove() = default;
+  ThrowingMove(const ThrowingMove&) = default;
+  auto operator=(const ThrowingMove&) -> ThrowingMove& = default;
+  ThrowingMove(ThrowingMove&&) = default;
+  auto operator=(ThrowingMove&&) -> ThrowingMove& {
+    throw std::runtime_error{"move"};
+  }
+  ~ThrowingMove() = default;
+};
+
+TEST(TessAsyncFlow, ThrowingImmediateMoveAdmitsNothing) {
+  tess::ResumableWorkQueue<ThrowingMove> queue;
+  FlowAccounting accounting;
+  queue.set_flow_accounting(&accounting);
+
+  EXPECT_THROW((void)queue.submit_immediate(ThrowingMove{}),
+               std::runtime_error);
+
+  EXPECT_EQ(queue.size(), 0u);
+  EXPECT_EQ(accounting.counters.offered, 0u);
+  EXPECT_EQ(accounting.counters.admitted, 0u);
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
+TEST(TessEventFlow, CopiesStartUnattachedAndCannotDoubleRetire) {
+  tess::EventStream<int> stream;
+  stream.reserve_events(2);
+  FlowAccounting accounting;
+  stream.set_flow_accounting(&accounting);
+  ASSERT_TRUE(stream.publish(3, 1));
+
+  auto copy = stream;
+  copy.consume_all();  // unattached: accounting untouched
+  stream.consume_all();
+
+  EXPECT_EQ(accounting.counters.completed, 1u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 0u);
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
 TEST(TessEventFlow, PublishRejectConsumeAndDiscardKeepIdentities) {
   tess::EventStream<int> stream;
   stream.reserve_events(2);
@@ -312,7 +353,11 @@ TEST(TessMaintenanceFlow, ImmediateSchedulerAccountsSelfSchedulesAsCoalesced) {
 }
 
 struct AgentPassableTag {};
-using AgentSchema = tess::FieldSchema<tess::Field<AgentPassableTag, bool>>;
+struct AgentOccupancyTag {};
+struct AgentReservationTag {};
+using AgentSchema = tess::FieldSchema<tess::Field<AgentPassableTag, bool>,
+                                      tess::Field<AgentOccupancyTag, bool>,
+                                      tess::Field<AgentReservationTag, bool>>;
 using AgentShape = tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
 using AgentWorld = tess::AlwaysResidentWorld<AgentShape, AgentSchema>;
 
@@ -404,6 +449,53 @@ TEST(TessAgentFlow, ExhaustedRetriesTerminalizeAsFailed) {
   EXPECT_EQ(accounting.counters.admitted, 2u);
   EXPECT_TRUE(accounting.counters.admission_identity_holds());
   EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
+TEST(TessAgentFlow, StructuralMovementFailureTerminalizesAsFailed) {
+  AgentWorld world;
+  for (std::int64_t y = 0; y < 8; ++y) {
+    for (std::int64_t x = 0; x < 8; ++x) {
+      world.field<AgentPassableTag>(tess::Coord3{x, y, 0}) = true;
+    }
+  }
+  FlowAccounting accounting;
+  tess::PathAgentTickState tick_state;
+  tick_state.flow_accounting = &accounting;
+  std::array<tess::PathAgentState, 1> agents{};
+  agents[0].position = tess::Coord3{0, 0, 0};
+  tess::observe_path_agent_flow_tick(tick_state, agents, 1);
+  tess::set_path_agent_goal(tick_state, agents[0], tess::Coord3{5, 5, 0});
+  agents[0].phase = tess::PathAgentPhase::Following;
+  agents[0].status = tess::PathStatus::Found;
+
+  // A retained route whose next step is not adjacent is a caller bug
+  // the movement-validated advance treats as a terminal structural
+  // failure.
+  tess::PathAgentRoutes routes;
+  routes.ensure_size(1);
+  routes.routes[0] = {tess::Coord3{0, 0, 0}, tess::Coord3{4, 4, 0}};
+  const auto stats = tess::advance_path_agents_with_movement<
+      AgentWorld, AgentPassableTag, AgentOccupancyTag, AgentReservationTag>(
+      world, std::span<tess::PathAgentState>{agents}, routes, 1, 0u,
+      tick_state.flow_accounting);
+  (void)stats;
+
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Unreachable);
+  EXPECT_EQ(accounting.counters.failed, 1u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 0u);
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
+TEST(TessAgentFlow, TickStateCopiesStartUnattached) {
+  tess::PathAgentTickState original;
+  FlowAccounting accounting;
+  original.flow_accounting = &accounting;
+
+  auto copy = original;
+  EXPECT_EQ(copy.flow_accounting, nullptr);
+
+  auto moved = std::move(original);
+  EXPECT_EQ(moved.flow_accounting, &accounting);
 }
 
 }  // namespace

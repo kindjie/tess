@@ -276,15 +276,29 @@ class QueuedScheduler : public MaintenanceScheduler {
     accounting_ = accounting;
   }
 
-  /// Observes one monotonic tick: weights inventory, refreshes oldest age.
+  /// Observes one monotonic tick: weights inventory and refreshes the
+  /// oldest outstanding age across both queued and in-flight work.
   void observe_flow_tick(std::uint64_t tick) {
     const auto lock = std::scoped_lock{queue_mutex_};
     if (accounting_ == nullptr) {
       return;
     }
     accounting_->observe_tick(tick);
-    accounting_->counters.oldest_outstanding_age_ticks =
-        queue_.empty() ? 0 : tick - queue_.oldest_admitted_tick();
+    const auto now = accounting_->last_observed_tick;
+    auto any = false;
+    auto oldest = now;
+    if (!queue_.empty()) {
+      any = true;
+      oldest = queue_.oldest_admitted_tick();
+    }
+    if (running_active_ && running_admitted_tick_ < oldest) {
+      any = true;
+      oldest = running_admitted_tick_;
+    }
+    if (running_active_ && !any) {
+      any = true;
+    }
+    accounting_->counters.oldest_outstanding_age_ticks = any ? now - oldest : 0;
   }
 
  private:
@@ -297,6 +311,8 @@ class QueuedScheduler : public MaintenanceScheduler {
       const auto lock = std::scoped_lock{queue_mutex_};
       running_thread_ = std::this_thread::get_id();
       running_task_scheduled_ = false;
+      running_active_ = true;
+      running_admitted_tick_ = entry.admitted_tick;
     }
     try {
       task.run(budget);
@@ -308,6 +324,7 @@ class QueuedScheduler : public MaintenanceScheduler {
       const auto lock = std::scoped_lock{queue_mutex_};
       running_thread_ = {};
       running_task_scheduled_ = false;
+      running_active_ = false;
       account_terminal(entry, before, budget.remaining(), false);
       throw;
     }
@@ -317,6 +334,7 @@ class QueuedScheduler : public MaintenanceScheduler {
       scheduled_follow_up = running_task_scheduled_;
       running_thread_ = {};
       running_task_scheduled_ = false;
+      running_active_ = false;
       account_terminal(entry, before, budget.remaining(), true);
     }
     // A no-op task may finish without consuming budget. A task that queues
@@ -349,6 +367,8 @@ class QueuedScheduler : public MaintenanceScheduler {
   MetricsStore metrics_;
   std::thread::id running_thread_;
   bool running_task_scheduled_ = false;
+  bool running_active_ = false;
+  std::uint64_t running_admitted_tick_ = 0;
   diagnostics::FlowAccounting* accounting_ = nullptr;
 };
 
