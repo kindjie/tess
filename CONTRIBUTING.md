@@ -49,6 +49,17 @@ Project warnings are errors in the `dev-werror`, `dev-asan`, `dev-tsan`,
 `release`, `bench`, `bench-profile`, and `windows-msvc` presets. CI also
 uses `dev-werror` for the required GCC portability build.
 
+CI is tiered (see
+[`docs/planning/test-and-benchmark-redesign.md`](docs/planning/test-and-benchmark-redesign.md)
+section 5): pull requests block on the dev, GCC, hook-backstop, ASan,
+cppcheck, Windows, and benchmark compile+smoke jobs, plus a diff-scoped
+clang-tidy job (`tools/clang_tidy_changed.py`) and a TSan job that runs
+when concurrency-sensitive paths change (`tools/ci_changes.py`). Pushes
+to main, the weekly scheduled run, and manual dispatches additionally
+run werror, release, TSan, macOS, the full-tree clang-tidy sweep, and
+the benchmark threshold gates; a failed non-PR run files or extends a
+rolling `ci-failure` issue.
+
 CI runs primarily on `ubuntu-24.04` with Clang and covers:
 
 - Dev build and unit tests: `cmake --build --preset dev`,
@@ -79,8 +90,10 @@ CI runs primarily on `ubuntu-24.04` with Clang and covers:
 - Benchmark threshold gates, one per suite (CPU time except parallel wall
   time):
   `cmake --build --preset bench --target tess_bench_<suite>_thresholds`
-  for `key`, `storage`, `block`, `queued`, `path`, `topology`, `scheduler`,
-  `residency`, `parallel`, `ecs`, `render_delta`, `fields`, and `diagnostics`
+  for `key`, `storage`, `block`, `block_pipeline`, `queued`, `path`,
+  `topology`, `scheduler`, `residency`, `maintenance`, `persistence`,
+  `query`, `spatial`, `parallel`, `ecs`, `render_delta`, `fields`, and
+  `diagnostics`
 - Non-gating CI benchmark baseline collection:
   `cmake --build --preset bench --target tess_bench_ci_baselines`
 

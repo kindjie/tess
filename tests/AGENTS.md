@@ -928,10 +928,21 @@
   synchronization between documented dependency versions and their workflow
   or direct-input pins.
 - `tests/test_ci_changes.py`: pytest coverage for the required CI workflow's
-  fail-closed documentation-only classifier. It pins the narrow path
+  fail-closed change classifier. It pins the narrow documentation path
   allowlist, empty and mixed change behavior, full nonzero revision validation,
   NUL-delimited Git output, disabled rename detection, Git-error fallback, and
-  the job-output command-line contract.
+  the job-output command-line contract; for the tiered topology it pins the
+  concurrency-sensitive path set behind the pull-request TSan gate (with a
+  drift scan asserting every header owning a threading primitive is
+  classified sensitive), TSan fail-closed behavior, and per-event
+  quality-preset selection.
+- `tests/test_clang_tidy_changed.py`: pytest coverage for the diff-scoped
+  pull-request clang-tidy runner (`tools/clang_tidy_changed.py`). It pins
+  candidate selection (header/source split, bench and webgpu_stub
+  exclusions, deduplication), compile-flag extraction from both
+  compilation-database entry forms, synthesized header translation units,
+  database-backed source commands, absolute-path database indexing, and the
+  fail-closed reference-entry requirement.
 - `tests/test_check_public_docs.py`: pytest coverage for the dependency-free,
   all-public-header Doxygen comment gate (`tools/check_public_docs.py`).
   Synthetic fixtures verify block and line comments across templates,

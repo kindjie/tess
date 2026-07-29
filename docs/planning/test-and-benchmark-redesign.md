@@ -735,6 +735,10 @@ that introduces this document.
    diff-scoped/full-tree clang-tidy split; **keep threshold gating and
    artifact collection**; add the weekly auto-issue; measure the resulting
    job budgets and publish the derived PR latency figure. Workflow-only.
+   *Status: implemented 2026-07-28 — classification in the
+   [failure-classification record](ci-failure-classification-2026-07-28.md)
+   (cppcheck keeps its blocking seat), re-tier and weekly auto-issue in
+   the CI workflow; measured budgets below.*
 2. Counter-golden and change-point tooling (with runner fingerprinting in
    artifacts); paired A/B timing as both a path-filtered `pull_request`
    sentinel job and a `workflow_dispatch` full-confirmation mode, backed by
