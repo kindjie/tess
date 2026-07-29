@@ -1,0 +1,306 @@
+// Conservation-identity and transition-point coverage for the flow
+// accounting layer (redesign section 3.3, queue-flow accounting):
+// FlowCounters identities, the delta-weighted tick observation
+// protocol, and the ResumableWorkQueue's exhaustive transition mapping
+// including the documented completed->stale reclassification.
+
+#include <gtest/gtest.h>
+#include <tess/diagnostics/diagnostics.h>
+#include <tess/experimental/maintenance.h>
+#include <tess/ops/async_work.h>
+#include <tess/sim/event_stream.h>
+
+#include <cstdint>
+#include <stdexcept>
+#include <utility>
+
+namespace {
+
+using tess::diagnostics::FlowAccounting;
+using tess::diagnostics::FlowCounters;
+
+auto step_ready(void*, tess::AsyncWorkBudget, int& value)
+    -> tess::AsyncWorkStep {
+  value = 7;
+  return {tess::AsyncStepState::Ready, 1, tess::AsyncVersion{2}};
+}
+
+auto step_pending(void*, tess::AsyncWorkBudget, int&) -> tess::AsyncWorkStep {
+  return {tess::AsyncStepState::Pending, 1, {}};
+}
+
+auto step_failed(void*, tess::AsyncWorkBudget, int&) -> tess::AsyncWorkStep {
+  return {tess::AsyncStepState::Failed, 0, {}};
+}
+
+TEST(TessFlowCounters, IdentitiesHoldOnZeroAndSimpleFlows) {
+  FlowCounters counters;
+  EXPECT_TRUE(counters.admission_identity_holds());
+  EXPECT_TRUE(counters.retention_identity_holds());
+
+  counters.offered = 5;
+  counters.admitted = 3;
+  counters.rejected = 1;
+  counters.coalesced_into_pending = 1;
+  counters.completed = 2;
+  counters.outstanding_current = 1;
+  EXPECT_TRUE(counters.admission_identity_holds());
+  EXPECT_TRUE(counters.retention_identity_holds());
+  EXPECT_EQ(counters.terminal(), 2u);
+
+  counters.failed = 1;  // one admission, two buckets: identity breaks
+  EXPECT_FALSE(counters.retention_identity_holds());
+}
+
+TEST(TessFlowAccounting, ObserveTickWeightsInventoryByElapsedTicks) {
+  FlowAccounting accounting;
+  accounting.counters.outstanding_current = 3;
+  accounting.observe_tick(4);
+  EXPECT_EQ(accounting.counters.inventory_tick_weighted, 12u);
+  accounting.observe_tick(6);
+  EXPECT_EQ(accounting.counters.inventory_tick_weighted, 18u);
+  accounting.observe_tick(6);  // non-advancing observation adds nothing
+  EXPECT_EQ(accounting.counters.inventory_tick_weighted, 18u);
+}
+
+TEST(TessFlowAccounting, SnapshotReportsBothIdentities) {
+  FlowAccounting accounting;
+  accounting.counters.offered = 1;
+  const auto health = tess::diagnostics::snapshot(accounting);
+  EXPECT_FALSE(health.admission_identity_ok);
+  EXPECT_TRUE(health.retention_identity_ok);
+}
+
+TEST(TessAsyncFlow, SubmitAdvanceAndTerminalsKeepIdentities) {
+  tess::ResumableWorkQueue<int> queue;
+  FlowAccounting accounting;
+  queue.set_flow_accounting(&accounting);
+  queue.observe_flow_tick(1);
+
+  auto ready_work = step_ready;
+  auto pending_work = step_pending;
+  auto failed_work = step_failed;
+  const auto ready = queue.submit(nullptr, ready_work);
+  const auto cancelled = queue.submit(nullptr, pending_work);
+  const auto superseded = queue.submit(nullptr, pending_work);
+  const auto failed = queue.submit(nullptr, failed_work);
+  (void)ready;
+  (void)failed;
+  EXPECT_EQ(accounting.counters.offered, 4u);
+  EXPECT_EQ(accounting.counters.admitted, 4u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 4u);
+  EXPECT_EQ(accounting.counters.outstanding_high_water, 4u);
+
+  EXPECT_TRUE(queue.cancel(cancelled));
+  EXPECT_TRUE(queue.supersede(superseded));
+  queue.observe_flow_tick(3);
+  const auto stats = queue.advance(tess::AsyncWorkBudget{8});
+  EXPECT_EQ(stats.invoked, 2u);
+
+  const auto& counters = accounting.counters;
+  EXPECT_EQ(counters.completed, 1u);
+  EXPECT_EQ(counters.cancelled, 1u);
+  EXPECT_EQ(counters.superseded, 1u);
+  EXPECT_EQ(counters.failed, 1u);
+  EXPECT_EQ(counters.outstanding_current, 0u);
+  EXPECT_EQ(counters.offered_work_units, 8u);
+  EXPECT_EQ(counters.consumed_work_units, 1u);
+  // Cancel/supersede at tick 1 (residence 0 each); ready and failed
+  // terminalize at tick 3 (residence 2 each, submitted at tick 1).
+  EXPECT_EQ(counters.residence_ticks_accumulated, 4u);
+  EXPECT_TRUE(counters.admission_identity_holds());
+  EXPECT_TRUE(counters.retention_identity_holds());
+}
+
+TEST(TessAsyncFlow, ImmediateResultsCompleteAtSubmissionAndReclassifyStale) {
+  tess::ResumableWorkQueue<int> queue;
+  FlowAccounting accounting;
+  queue.set_flow_accounting(&accounting);
+
+  const auto ticket = queue.submit_immediate(9, tess::AsyncVersion{1});
+  EXPECT_EQ(accounting.counters.completed, 1u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 0u);
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+
+  EXPECT_TRUE(queue.mark_stale_if_version(ticket, tess::AsyncVersion{2}));
+  EXPECT_EQ(accounting.counters.completed, 0u);
+  EXPECT_EQ(accounting.counters.stale, 1u);
+  EXPECT_TRUE(accounting.counters.admission_identity_holds());
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
+TEST(TessAsyncFlow, ClearDropsPendingWorkAfterAdmission) {
+  tess::ResumableWorkQueue<int> queue;
+  FlowAccounting accounting;
+  queue.set_flow_accounting(&accounting);
+  auto pending_work = step_pending;
+  (void)queue.submit(nullptr, pending_work);
+  (void)queue.submit_immediate(1);
+
+  queue.clear();
+
+  EXPECT_EQ(accounting.counters.dropped_after_admission, 1u);
+  EXPECT_EQ(accounting.counters.completed, 1u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 0u);
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
+TEST(TessAsyncFlow, OldestAgeTracksTheEarliestPendingSubmission) {
+  tess::ResumableWorkQueue<int> queue;
+  FlowAccounting accounting;
+  queue.set_flow_accounting(&accounting);
+  auto pending_work = step_pending;
+  queue.observe_flow_tick(2);
+  (void)queue.submit(nullptr, pending_work);
+  queue.observe_flow_tick(7);
+  EXPECT_EQ(accounting.counters.oldest_outstanding_age_ticks, 5u);
+  queue.clear();
+  queue.observe_flow_tick(9);
+  EXPECT_EQ(accounting.counters.oldest_outstanding_age_ticks, 0u);
+}
+
+TEST(TessAsyncFlow, MovingAQueueTransfersTheAttachment) {
+  tess::ResumableWorkQueue<int> source;
+  FlowAccounting accounting;
+  source.set_flow_accounting(&accounting);
+  auto moved = std::move(source);
+  (void)moved.submit_immediate(1);
+  EXPECT_EQ(accounting.counters.admitted, 1u);
+
+  // The copy starts unattached: no double counting.
+  auto copy = moved;
+  (void)copy.submit_immediate(2);
+  EXPECT_EQ(accounting.counters.admitted, 1u);
+}
+
+TEST(TessEventFlow, PublishRejectConsumeAndDiscardKeepIdentities) {
+  tess::EventStream<int> stream;
+  stream.reserve_events(2);
+  FlowAccounting accounting;
+  stream.set_flow_accounting(&accounting);
+  stream.observe_flow_tick(1);
+
+  EXPECT_TRUE(stream.publish(10, 1));
+  EXPECT_TRUE(stream.publish(10, 2));
+  EXPECT_FALSE(stream.publish(10, 3));  // over the bound
+  EXPECT_EQ(accounting.counters.offered, 3u);
+  EXPECT_EQ(accounting.counters.admitted, 2u);
+  EXPECT_EQ(accounting.counters.rejected, 1u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 2u);
+
+  stream.observe_flow_tick(4);
+  EXPECT_EQ(accounting.counters.oldest_outstanding_age_ticks, 3u);
+  stream.consume_all();
+  EXPECT_EQ(accounting.counters.completed, 2u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 0u);
+  EXPECT_EQ(accounting.counters.residence_ticks_accumulated, 6u);
+  EXPECT_TRUE(accounting.counters.admission_identity_holds());
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+
+  EXPECT_TRUE(stream.publish(11, 4));
+  stream.clear();  // conservative: unread batch counts dropped
+  EXPECT_EQ(accounting.counters.dropped_after_admission, 1u);
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
+class CountingTask final
+    : public tess::experimental::maintenance::MaintenanceTask {
+ public:
+  void run(
+      tess::experimental::maintenance::MaintenanceBudget& budget) override {
+    (void)budget.consume(2);
+    ++runs;
+  }
+  int runs = 0;
+};
+
+class ThrowingTask final
+    : public tess::experimental::maintenance::MaintenanceTask {
+ public:
+  void run(tess::experimental::maintenance::MaintenanceBudget&) override {
+    throw std::runtime_error{"maintenance failure"};
+  }
+};
+
+TEST(TessMaintenanceFlow, CoalescingScheduleDrainAndRejectKeepIdentities) {
+  namespace mnt = tess::experimental::maintenance;
+  mnt::CoalescingScheduler scheduler{1};
+  FlowAccounting accounting;
+  scheduler.set_flow_accounting(&accounting);
+  scheduler.observe_flow_tick(2);
+
+  CountingTask task_a;
+  CountingTask task_b;
+  EXPECT_TRUE(scheduler.schedule(task_a));   // admitted
+  EXPECT_TRUE(scheduler.schedule(task_a));   // coalesced into pending
+  EXPECT_FALSE(scheduler.schedule(task_b));  // capacity rejected
+  EXPECT_EQ(accounting.counters.offered, 3u);
+  EXPECT_EQ(accounting.counters.admitted, 1u);
+  EXPECT_EQ(accounting.counters.coalesced_into_pending, 1u);
+  EXPECT_EQ(accounting.counters.rejected, 1u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 1u);
+
+  scheduler.observe_flow_tick(5);
+  EXPECT_EQ(accounting.counters.oldest_outstanding_age_ticks, 3u);
+  EXPECT_TRUE(scheduler.run_some(mnt::MaintenanceBudget{8}));
+  EXPECT_EQ(task_a.runs, 1);
+  EXPECT_EQ(accounting.counters.completed, 1u);
+  EXPECT_EQ(accounting.counters.offered_work_units, 8u);
+  EXPECT_EQ(accounting.counters.consumed_work_units, 2u);
+  EXPECT_EQ(accounting.counters.residence_ticks_accumulated, 3u);
+  EXPECT_TRUE(accounting.counters.admission_identity_holds());
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
+TEST(TessMaintenanceFlow, ThrowingTasksTerminalizeAsFailed) {
+  namespace mnt = tess::experimental::maintenance;
+  mnt::FifoScheduler scheduler{4};
+  FlowAccounting accounting;
+  scheduler.set_flow_accounting(&accounting);
+  ThrowingTask task;
+  EXPECT_TRUE(scheduler.schedule(task));
+
+  EXPECT_THROW((void)scheduler.flush(), std::runtime_error);
+
+  EXPECT_EQ(accounting.counters.failed, 1u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 0u);
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
+TEST(TessMaintenanceFlow, ImmediateSchedulerAccountsSelfSchedulesAsCoalesced) {
+  namespace mnt = tess::experimental::maintenance;
+
+  class SelfScheduling final : public mnt::MaintenanceTask {
+   public:
+    explicit SelfScheduling(mnt::MaintenanceScheduler& scheduler)
+        : scheduler_{&scheduler} {}
+    void run(mnt::MaintenanceBudget& budget) override {
+      (void)budget.consume(1);
+      if (++runs == 1) {
+        EXPECT_TRUE(scheduler_->schedule(*this));
+      }
+    }
+    int runs = 0;
+
+   private:
+    mnt::MaintenanceScheduler* scheduler_;
+  };
+
+  mnt::ImmediateScheduler scheduler;
+  FlowAccounting accounting;
+  scheduler.set_flow_accounting(&accounting);
+  SelfScheduling task{scheduler};
+
+  EXPECT_TRUE(scheduler.schedule(task));
+
+  EXPECT_EQ(task.runs, 2);
+  EXPECT_EQ(accounting.counters.offered, 2u);
+  EXPECT_EQ(accounting.counters.admitted, 1u);
+  EXPECT_EQ(accounting.counters.coalesced_into_pending, 1u);
+  EXPECT_EQ(accounting.counters.completed, 1u);
+  EXPECT_EQ(accounting.counters.consumed_work_units, 2u);
+  EXPECT_TRUE(accounting.counters.admission_identity_holds());
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
+}  // namespace

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/diagnostics/diagnostics.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -108,6 +109,73 @@ class ResumableWorkQueue {
  public:
   using WorkFn = AsyncWorkStep (*)(void*, AsyncWorkBudget, T&);
 
+  ResumableWorkQueue() = default;
+
+  // An attached accountant tracks exactly one queue: copies start
+  // unattached and moves transfer the attachment.
+  ResumableWorkQueue(const ResumableWorkQueue& other)
+      : slots_{other.slots_},
+        generation_{other.generation_},
+        in_advance_{false} {}
+  auto operator=(const ResumableWorkQueue& other) -> ResumableWorkQueue& {
+    slots_ = other.slots_;
+    generation_ = other.generation_;
+    in_advance_ = false;
+    accounting_ = nullptr;
+    return *this;
+  }
+  ResumableWorkQueue(ResumableWorkQueue&& other) noexcept
+      : slots_{std::move(other.slots_)},
+        generation_{other.generation_},
+        in_advance_{false},
+        accounting_{other.accounting_} {
+    other.accounting_ = nullptr;
+  }
+  auto operator=(ResumableWorkQueue&& other) noexcept -> ResumableWorkQueue& {
+    slots_ = std::move(other.slots_);
+    generation_ = other.generation_;
+    in_advance_ = false;
+    accounting_ = other.accounting_;
+    other.accounting_ = nullptr;
+    return *this;
+  }
+  ~ResumableWorkQueue() = default;
+
+  /**
+   * Attaches caller-owned flow accounting; null detaches.
+   *
+   * Attach or detach only while the queue is empty so the retention
+   * identity starts true; the accountant must outlive the attachment.
+   */
+  void set_flow_accounting(diagnostics::FlowAccounting* accounting) noexcept {
+    TESS_ASSERT(slots_.empty());
+    accounting_ = accounting;
+  }
+
+  /**
+   * Observes one monotonic simulation tick for time accounting.
+   *
+   * Call once per tick before that tick's transitions: weights the
+   * outstanding inventory by elapsed ticks and refreshes the oldest
+   * outstanding age from per-slot submission stamps.
+   */
+  void observe_flow_tick(std::uint64_t tick) noexcept {
+    if (accounting_ == nullptr) {
+      return;
+    }
+    accounting_->observe_tick(tick);
+    auto oldest = tick;
+    auto any_pending = false;
+    for (const auto& slot : slots_) {
+      if (slot.state == AsyncResultState::Pending) {
+        any_pending = true;
+        oldest = slot.submitted_tick < oldest ? slot.submitted_tick : oldest;
+      }
+    }
+    accounting_->counters.oldest_outstanding_age_ticks =
+        any_pending ? tick - oldest : 0;
+  }
+
   void reserve_tickets(std::size_t count) {
     if (reject_reentrant_mutation()) {
       return;
@@ -135,6 +203,7 @@ class ResumableWorkQueue {
       std::source_location source = std::source_location::current())
       -> AsyncTicket {
     if (reject_reentrant_mutation()) {
+      account_rejected_offer();
       return {};
     }
     TESS_ASSERT(work != nullptr);
@@ -147,6 +216,11 @@ class ResumableWorkQueue {
     slot.required_version = required_version;
     slot.source = source;
     slot.state = AsyncResultState::Pending;
+    if (accounting_ != nullptr) {
+      ++accounting_->counters.offered;
+      accounting_->record_admitted();
+      slot.submitted_tick = accounting_->last_observed_tick;
+    }
     return AsyncTicket{index, generation_};
   }
 
@@ -155,16 +229,25 @@ class ResumableWorkQueue {
       std::source_location source = std::source_location::current())
       -> AsyncTicket {
     if (reject_reentrant_mutation()) {
+      account_rejected_offer();
       return {};
     }
     TESS_ASSERT(slots_.size() <= std::numeric_limits<std::uint32_t>::max());
     const auto index = static_cast<std::uint32_t>(slots_.size());
-    slots_.push_back(Slot{});
-    auto& slot = slots_.back();
+    // Build the slot before storing it so a throwing value move admits
+    // nothing and leaves no Unbound slot behind.
+    auto slot = Slot{};
     slot.value = std::move(value);
     slot.result_version = result_version;
     slot.source = source;
     slot.state = AsyncResultState::Immediate;
+    slots_.push_back(std::move(slot));
+    if (accounting_ != nullptr) {
+      auto& counters = accounting_->counters;
+      ++counters.offered;
+      ++counters.admitted;
+      ++counters.completed;
+    }
     return AsyncTicket{index, generation_};
   }
 
@@ -183,6 +266,9 @@ class ResumableWorkQueue {
     in_advance_ = true;
     const auto guard = AdvanceGuard{in_advance_};
     auto stats = AsyncAdvanceStats{};
+    if (accounting_ != nullptr) {
+      accounting_->counters.offered_work_units += budget.max_items;
+    }
     auto remaining = budget.max_items;
     auto invocations_remaining = budget.max_items;
     for (auto& slot : slots_) {
@@ -200,6 +286,7 @@ class ResumableWorkQueue {
       TESS_ASSERT(step.items_done <= remaining);
       if (step.items_done > remaining) {
         slot.state = AsyncResultState::Failed;
+        account_terminal(slot);
         continue;
       }
       remaining -= step.items_done;
@@ -209,15 +296,21 @@ class ResumableWorkQueue {
           break;
         case AsyncStepState::Ready:
           slot.state = AsyncResultState::Ready;
+          account_terminal(slot);
           break;
         case AsyncStepState::Failed:
           slot.state = AsyncResultState::Failed;
+          account_terminal(slot);
           break;
         case AsyncStepState::Stale:
           slot.state = AsyncResultState::Stale;
+          account_terminal(slot);
           break;
       }
       stats.items_done += step.items_done;
+    }
+    if (accounting_ != nullptr) {
+      accounting_->counters.consumed_work_units += stats.items_done;
     }
     summarize_states(stats);
     return stats;
@@ -292,6 +385,17 @@ class ResumableWorkQueue {
       return false;
     }
     slot->state = AsyncResultState::Stale;
+    if (accounting_ != nullptr) {
+      // Reclassification, not a second terminal outcome: the result
+      // completed earlier and its residence was already recorded, so
+      // only the buckets swap. `completed` is non-monotonic here by
+      // documented design.
+      auto& counters = accounting_->counters;
+      if (counters.completed > 0) {
+        --counters.completed;
+      }
+      ++counters.stale;
+    }
     return true;
   }
 
@@ -306,6 +410,14 @@ class ResumableWorkQueue {
   void clear() noexcept {
     if (reject_reentrant_mutation()) {
       return;
+    }
+    if (accounting_ != nullptr) {
+      for (auto& slot : slots_) {
+        if (slot.state == AsyncResultState::Pending) {
+          ++accounting_->counters.dropped_after_admission;
+          close_outstanding(slot);
+        }
+      }
     }
     slots_.clear();
     ++generation_;
@@ -323,6 +435,7 @@ class ResumableWorkQueue {
     AsyncVersion result_version{};
     std::source_location source = std::source_location::current();
     AsyncResultState state = AsyncResultState::Unbound;
+    std::uint64_t submitted_tick = 0;
   };
 
   [[nodiscard]] auto reject_reentrant_mutation() const noexcept -> bool {
@@ -331,6 +444,13 @@ class ResumableWorkQueue {
     }
     TESS_ASSERT_MSG(!in_advance_, "queue mutation during advance");
     return true;
+  }
+
+  void account_rejected_offer() noexcept {
+    if (accounting_ != nullptr) {
+      ++accounting_->counters.offered;
+      ++accounting_->counters.rejected;
+    }
   }
 
   [[nodiscard]] auto find(AsyncTicket ticket) noexcept -> Slot* {
@@ -357,7 +477,45 @@ class ResumableWorkQueue {
       return false;
     }
     slot->state = state;
+    account_terminal(*slot);
     return true;
+  }
+
+  /// Buckets one just-terminalized Pending slot and closes its
+  /// outstanding entry. Immediate results are accounted at submission.
+  void account_terminal(Slot& slot) noexcept {
+    if (accounting_ == nullptr) {
+      return;
+    }
+    auto& counters = accounting_->counters;
+    switch (slot.state) {
+      case AsyncResultState::Ready:
+        ++counters.completed;
+        break;
+      case AsyncResultState::Failed:
+        ++counters.failed;
+        break;
+      case AsyncResultState::Cancelled:
+        ++counters.cancelled;
+        break;
+      case AsyncResultState::Superseded:
+        ++counters.superseded;
+        break;
+      case AsyncResultState::Stale:
+        ++counters.stale;
+        break;
+      case AsyncResultState::Unbound:
+      case AsyncResultState::Immediate:
+      case AsyncResultState::Pending:
+        return;
+    }
+    close_outstanding(slot);
+  }
+
+  void close_outstanding(const Slot& slot) noexcept {
+    accounting_->record_left_outstanding();
+    accounting_->counters.residence_ticks_accumulated +=
+        accounting_->last_observed_tick - slot.submitted_tick;
   }
 
   void summarize_states(AsyncAdvanceStats& stats) const noexcept {
@@ -387,6 +545,7 @@ class ResumableWorkQueue {
   std::vector<Slot> slots_;
   std::uint64_t generation_ = 1;
   bool in_advance_ = false;
+  diagnostics::FlowAccounting* accounting_ = nullptr;
 };
 
 }  // namespace tess
