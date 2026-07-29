@@ -289,7 +289,13 @@ def wait_for_state(
   """Run a browser and wait without fast-forwarding asynchronous GPU work."""
   deadline = time.monotonic() + timeout
   expression = dataset_expression(dataset)
-  with tempfile.TemporaryDirectory(prefix="tess-browser-") as profile_dir:
+  # Chrome's helper processes can still be flushing the profile when the
+  # context manager removes it; failing a verified smoke over that cleanup
+  # race (Errno 39, "Directory not empty") is worse than leaking a temp
+  # directory on an ephemeral runner.
+  with tempfile.TemporaryDirectory(
+    prefix="tess-browser-", ignore_cleanup_errors=True
+  ) as profile_dir:
     profile = Path(profile_dir)
     command = [
       browser,
