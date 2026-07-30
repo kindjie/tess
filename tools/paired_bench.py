@@ -363,8 +363,8 @@ def render_markdown(
     )
   lines.append("")
   lines.append(
-    "Investigating a verdict? Follow the profiling protocol in "
-    "CONTRIBUTING.md: counters first, reproduce paired locally, "
+    f"Investigating a verdict? Follow the [profiling protocol]"
+    f"({PROTOCOL_URL}): counters first, reproduce paired locally, "
     "profile under `bench-profile`, record the outcome in the "
     "optimization log."
   )
@@ -373,12 +373,29 @@ def render_markdown(
     if verdict in ("advisory", "regression")
   ]
   if flagged:
+    lines.append("")
+    lines.append("Local reproduction command (both binaries built per")
+    lines.append("the protocol; diagnostics-family suspects use the")
+    lines.append("`tess_bench_diagnostics` binaries instead):")
+    lines.append("")
+    lines.append("```sh")
+    lines.append("python3 tools/paired_bench.py --mode confirm \\")
     lines.append(
-      "Paste-ready suspect list for local reproduction: "
-      f"`--suspects={','.join(flagged)}`"
+      "  --base-binary <base>/build/bench-only/bench/tess_bench \\"
     )
+    lines.append("  --head-binary build/bench-only/bench/tess_bench \\")
+    lines.append(
+      "  --sentinels bench/sentinels.json"
+      " --thresholds-dir bench/thresholds \\"
+    )
+    lines.append(f"  --suspects={','.join(flagged)}")
+    lines.append("```")
   return "\n".join(lines) + "\n"
 
+
+PROTOCOL_URL = (
+  "https://github.com/kindjie/tess/blob/main/CONTRIBUTING.md"
+)
 
 MAX_SUSPECTS = 64
 

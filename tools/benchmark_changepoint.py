@@ -205,13 +205,27 @@ def render_report(result: dict[str, Any]) -> str:
         f"| {suspect['newest_median_ns']:,.0f} ns "
         f"| {suspect['delta_relative']:+.1%} |"
     )
-  names = ",".join(s["benchmark"] for s in result["suspects"])
+  suspects = [s["benchmark"] for s in result["suspects"]]
+  # The confirmation tool refuses more than 64 suspects; a broad
+  # shift must confirm in batches rather than get a command that
+  # always fails.
+  shown = suspects[:64]
+  names = ",".join(shown)
+  overflow = len(suspects) - len(shown)
   lines.append("")
   lines.append(
-      "After confirmation, the profiling protocol in CONTRIBUTING.md"
-      " applies (counters first, reproduce paired, profile under"
-      " `bench-profile`, record in the optimization log). Paste-ready"
-      f" suspect list: `--suspects={names}`"
+      "Confirmation is the reproduce-paired step of the [profiling"
+      " protocol](https://github.com/kindjie/tess/blob/main/"
+      "CONTRIBUTING.md); a confirmed shift proceeds to"
+      " profile-and-diff under `bench-profile`, and every outcome —"
+      " accepted, rejected, or inconclusive — lands in the"
+      " optimization log. Paste-ready suspect list:"
+      f" `--suspects={names}`"
+      + (
+          f" (plus {overflow} more; the confirmation tool caps at 64"
+          " suspects per run — confirm in batches)"
+          if overflow else ""
+      )
   )
   return "\n".join(lines) + "\n"
 

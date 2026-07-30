@@ -240,3 +240,17 @@ def test_report_links_the_profiling_protocol(tmp_path):
 
   assert "profiling protocol" in report
   assert "--suspects=path/x" in report
+
+
+def test_report_caps_the_paste_ready_suspect_list(tmp_path):
+  values_base = {f"path/b{i:03d}": 10_000.0 for i in range(70)}
+  values_up = {name: 14_000.0 for name in values_base}
+  for run in range(9):
+    _artifact(tmp_path, 100 + run, values_base)
+  for run in range(9, 12):
+    _artifact(tmp_path, 100 + run, values_up)
+
+  report = benchmark_changepoint.render_report(_detect(tmp_path))
+
+  assert "plus 6 more" in report
+  assert "caps at 64" in report

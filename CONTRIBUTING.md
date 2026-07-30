@@ -101,20 +101,26 @@ sentinel run returns `advisory` or `regression`, or a
    the golden in the same PR.
 2. **Reproduce paired.** If counters are flat but time moved,
    reproduce locally before investigating — hosted-runner noise is
-   not a finding. Build both revisions and run the paired tool with
-   the flagged names (the check summary prints a paste-ready
-   `--suspects=` list):
+   not a finding. Build both revisions and run the paired tool; the
+   check summary prints the exact command including a complete
+   `--suspects=...` option. Suspects from the diagnostics-binary
+   families (`diagnostics/`, `ecs/`, `render_delta/`, `fields/`)
+   reproduce against `tess_bench_diagnostics` instead of
+   `tess_bench`, so build both targets:
 
    ```sh
    git worktree add /tmp/tess-base <base-sha>
-   cmake --preset bench-only && cmake --build --preset bench-only
+   cmake --preset bench-only
+   cmake --build build/bench-only --target tess_bench \
+     tess_bench_diagnostics
    (cd /tmp/tess-base && cmake --preset bench-only && \
-     cmake --build --preset bench-only)
-   tools/paired_bench.py --mode confirm \
+     cmake --build build/bench-only --target tess_bench \
+       tess_bench_diagnostics)
+   python3 tools/paired_bench.py --mode confirm \
      --base-binary /tmp/tess-base/build/bench-only/bench/tess_bench \
      --head-binary build/bench-only/bench/tess_bench \
      --sentinels bench/sentinels.json --thresholds-dir bench/thresholds \
-     --suspects <paste from the summary>
+     --suspects=<paste the list from the check summary>
    ```
 3. **Profile and diff.** Build both revisions under the
    `bench-profile` preset, capture at matched filters and durations,
