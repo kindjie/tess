@@ -663,3 +663,46 @@ def test_lab_literals_in_comments_are_ignored(tmp_path):
   names = cwm.lab_registrations(tmp_path)
 
   assert names == {"lab/probe_active"}
+
+
+def test_top_level_alternation_cannot_escape_anchoring():
+  # fullmatch is structural: the right branch of a top-level
+  # alternation cannot match as an unanchored substring.
+  catalog = _catalog(
+    families=[
+      _family(
+        pattern=r"^path/astar_open_2d|special$",
+        captures={},
+      )
+    ]
+  )
+
+  errors = cwm.check(
+    catalog, {"path/astar_open_2d", "path/very_special_thing"}
+  )
+
+  assert any("path/very_special_thing" in e and "no family rule" in e
+             for e in errors)
+
+
+def test_non_string_selector_value_fails():
+  # A JSON integer worker_count would never equal the string cell
+  # value, silently disabling retirement forever.
+  catalog = _catalog(
+    families=[_family()],
+    unmeasured=[
+      {
+        "selector": {"executor_kind": "pool", "worker_count": 8},
+        "reason": "written the natural JSON way",
+      }
+    ],
+  )
+
+  errors = cwm.check(catalog, {"path/astar_open_2d"})
+
+  assert any("worker_count" in e or "vocabulary" in e for e in errors)
+
+
+def test_min_time_suffixes_are_control_suffixes():
+  assert cwm.canonical("path/x/min_time:2.000") == "path/x"
+  assert cwm.canonical("path/x/min_warmup_time:0.5") == "path/x"

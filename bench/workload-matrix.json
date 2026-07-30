@@ -12,7 +12,8 @@
     "containing 'sparse' usually mean sparse BLOCKERS (a layout);",
     "maintenance/sparse|dense is a task-scheduling pattern (payload).",
     "Only residency/* and the one sparse_resident batch planner use",
-    "sparse storage."
+    "sparse storage.",
+    "The portal batch registrations stay non-composite: each measures one uniform configuration (room_portals, shared goal), unlike the mixed-goal batch families marked composite."
   ],
   "vocabularies": {
     "storage": [

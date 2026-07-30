@@ -58,7 +58,8 @@ VOCABULARY_DIMENSIONS = ("layout", "storage", "executor_kind")
 # changes concurrency, so a benchmark using it must be classified
 # with its executor dimensions rather than collapsed.
 CONTROL_SUFFIX = re.compile(
-  r"/(iterations:\d+|repeats:\d+|manual_time|real_time|process_time)$"
+  r"/(iterations:\d+|repeats:\d+|manual_time|real_time|process_time"
+  r"|min_time:[0-9.]+|min_warmup_time:[0-9.]+)$"
 )
 
 # Tokens in a registration name that assert a dimension and therefore
@@ -98,7 +99,10 @@ def threshold_registrations(thresholds_dir: Path) -> set[str]:
   names: set[str] = set()
   for manifest in sorted(Path(thresholds_dir).glob("*.json")):
     payload = _load_json(manifest)
-    entries = payload.get("benchmarks", payload)
+    entries = (
+      payload if isinstance(payload, list)
+      else payload.get("benchmarks", payload)
+    )
     if isinstance(entries, dict):
       names.update(entries.keys())
     elif isinstance(entries, list):
@@ -115,6 +119,10 @@ BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 def lab_registrations(bench_sources: Path) -> set[str]:
   """lab/ name literals from active code (comments stripped)."""
   names: set[str] = set()
+  if not Path(bench_sources).is_dir():
+    raise MatrixError(
+      f"bench sources directory {bench_sources} does not exist"
+    )
   for source in sorted(Path(bench_sources).glob("*.cc")):
     text = source.read_text(encoding="utf-8")
     text = BLOCK_COMMENT.sub("", text)
@@ -143,7 +151,10 @@ def _match_rules(
 ) -> list[dict[str, Any]]:
   matched = []
   for rule in catalog.get("families", []):
-    if re.search(rule["pattern"], name):
+    # fullmatch makes anchoring structural: a top-level alternation
+    # cannot leave one branch unanchored the way ^...|...$ can under
+    # search().
+    if re.fullmatch(rule["pattern"], name):
       matched.append(rule)
   return matched
 
@@ -152,7 +163,7 @@ def _cell_for(
   rule: dict[str, Any], name: str, errors: list[str]
 ) -> dict[str, str]:
   cell = dict(rule.get("defaults", {}))
-  match = re.search(rule["pattern"], name)
+  match = re.fullmatch(rule["pattern"], name)
   assert match is not None
   for dimension, group in rule.get("captures", {}).items():
     value = match.group(group)
@@ -197,7 +208,12 @@ def _cell_for(
 def classify(
   catalog: dict[str, Any], universe: set[str]
 ) -> dict[str, dict[str, str]]:
-  """Canonical name -> generated workload cell (best effort)."""
+  """Canonical name -> generated workload cell (best effort).
+
+  Test helper only: unmatched and ambiguous names are silently
+  dropped and consumption errors discarded — use check() for any
+  reporting purpose.
+  """
   cells: dict[str, dict[str, str]] = {}
   for name in sorted({canonical(raw) for raw in universe}):
     matched = _match_rules(catalog, name)
@@ -247,14 +263,18 @@ def _validate_rules(
           f"family rule {family!r}: capture key {dimension!r} is not "
           f"a dimension (misspelling?)"
         )
-      if not isinstance(group, int) or group > compiled.groups:
+      if (
+        not isinstance(group, int)
+        or group < 1
+        or group > compiled.groups
+      ):
         errors.append(
           f"family rule {family!r}: capture for {dimension} names "
           f"group {group} but the pattern has {compiled.groups}"
         )
     canonical_universe = {canonical(raw) for raw in universe}
     for key in rule.get("overrides", {}):
-      if not compiled.search(key):
+      if not compiled.fullmatch(key):
         errors.append(
           f"family rule {family!r}: override key {key!r} does not "
           "match the rule pattern — stale after a rename?"
@@ -340,8 +360,11 @@ def check(catalog: dict[str, Any], universe: set[str]) -> list[str]:
       continue
     bad_values = [
       (k, v) for k, v in selector.items()
-      if (k in VOCABULARY_DIMENSIONS and v not in vocabularies.get(k, []))
+      if not isinstance(v, str)
+      or (k in VOCABULARY_DIMENSIONS and v not in vocabularies.get(k, []))
       or (k == "family" and v not in known_families)
+      or (k == "worker_count"
+          and v != "not_applicable" and not v.isdigit())
     ]
     if bad_values:
       errors.append(
