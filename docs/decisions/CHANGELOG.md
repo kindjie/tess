@@ -6,6 +6,40 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-30 - Benchmark workload-matrix catalog (phase 2, slice 7)
+
+- Changed: benchmark workload coverage is now a declarative,
+  drift-checked catalog (`bench/workload-matrix.json`). Operation-level
+  family rules classify every registration through fail-closed
+  grammars — anchored regexes whose capture groups map to dimensions —
+  with curated family defaults and per-name overrides supplying what
+  names cannot express (hidden chunk extents, storage semantics,
+  fixture payloads). Measured cells are generated from classification,
+  never hand-listed. Dimensions: world extent, chunk extent, layout
+  (qualitative: open, room_portals, sparse_blockers, ...), storage
+  (always_resident | sparse_resident | not_applicable), executor kind,
+  worker count, payload. Known-unmeasured cells are structured
+  selectors with reasons; a measured cell matching one fails the check
+  so filled gaps force the entry to retire. `composite` registrations
+  (one timing over conflated configurations) never count as measured
+  cells. `tools/check_workload_matrix.py` verifies bidirectional
+  coherence statically on the hooks tier (threshold manifests + lab
+  literals) and against the compiled registration union of both bench
+  binaries in the bench job — the runtime authority that survives the
+  phase 4 threshold retirement.
+- Reason: section 4.5's second bullet — the meaningful benchmark
+  coverage axis is the workload space, recorded as reviewable
+  statements with a drift check instead of audit-time discoveries.
+  Curation from source reading, not names: the `sparse` token means
+  three different things across families (sparse blockers in
+  always-resident worlds, task-scheduling patterns, and — in exactly
+  five registrations — true sparse-resident storage).
+- Affected docs: testing and benchmarking redesign (section 10
+  status), CONTRIBUTING.md, tests/AGENTS.md.
+- Affected code: new `bench/workload-matrix.json`,
+  `tools/check_workload_matrix.py`, `tests/test_workload_matrix.py`;
+  `.github/workflows/ci.yml`.
+
 ## 2026-07-30 - Advisory coverage reporting (phase 2, slice 6)
 
 - Changed: the weekly CI tier gains an advisory coverage job (never in

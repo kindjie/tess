@@ -829,10 +829,18 @@ that introduces this document.
    manifest assumption (maintenance benchmarks do execute
    `experimental/maintenance.h`) and surfacing real gaps
    (`core/lattice.h`, `storage/residency.h`, `sim/scheduler.h`).
-   Automatic dispatch on series breaks and longer-than-30-day
-   artifact retention (section 7) remain open in this phase.
-   Remaining in this phase: the workload-matrix catalog,
-   profiling-protocol wiring, and pre-push slimming.*
+   The workload-matrix catalog (section 4.5, second bullet) shipped
+   2026-07-30: `bench/workload-matrix.json` classifies every
+   registration through fail-closed operation-family grammars with
+   curated defaults/overrides for what names cannot express, generates
+   measured cells from that classification, and records
+   known-unmeasured cells as structured selectors that must retire
+   when a matching cell lands; `tools/check_workload_matrix.py`
+   enforces coherence statically on the hooks tier and against the
+   compiled registration union in the bench job. Automatic dispatch on
+   series breaks and longer-than-30-day artifact retention (section 7)
+   remain open in this phase. Remaining in this phase:
+   profiling-protocol wiring and pre-push slimming.*
 3. Scenario layer: procedural generators, then the S2 macro-harness (with
    PR-tier smoke), then S3. S1 stays on in-repo procedural data: the
    external-data legs (manifest entries, fetch tool, cache verification, the

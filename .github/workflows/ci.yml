@@ -215,6 +215,7 @@ jobs:
           tests/test_check_counter_goldens.py
           tests/test_benchmark_changepoint.py
           tests/test_coverage_gaps.py
+          tests/test_workload_matrix.py
           tests/test_benchmark_tools.py
           tests/test_branding_assets.py
           tests/test_check_public_surface.py
@@ -554,6 +555,23 @@ jobs:
 
       - name: Test
         run: ctest --preset bench
+
+      # The compiled registration union is the authoritative workload
+      # universe (section 4.5): the static hooks-tier check covers
+      # threshold manifests and lab literals, but only the binaries
+      # know what is actually registered — and this survives the
+      # phase 4 threshold-manifest retirement.
+      - name: Workload-matrix drift check
+        run: |
+          ./build/bench/bench/tess_bench --benchmark_list_tests \
+            > build/bench/registrations-main.txt
+          ./build/bench/bench/tess_bench_diagnostics \
+            --benchmark_list_tests \
+            > build/bench/registrations-diagnostics.txt
+          python3 tools/check_workload_matrix.py \
+            --catalog bench/workload-matrix.json \
+            --registrations build/bench/registrations-main.txt \
+            --registrations build/bench/registrations-diagnostics.txt
 
       # Release-configuration counter-golden drift (shadow mode).
       - name: Surface counter-golden drift
