@@ -857,7 +857,15 @@ that introduces this document.
    label propagation. Phase 2 is CLOSED except the two section 7
    opens above.*
 3. Scenario layer: procedural generators, then the S2 macro-harness (with
-   PR-tier smoke), then S3. S1 stays on in-repo procedural data: the
+   PR-tier smoke), then S3.
+   *Status: the S1 in-repo procedural layer shipped 2026-07-30 —
+   deterministic recursive-division-maze and room-and-corridor
+   generators (SplitMix64 integer PRNG, strict Moving AI text into the
+   existing harness parser) with a deterministic endpoint sampler, all
+   verified against the independent Dijkstra reference with exact
+   equality in both movement modes and both directions on every PR
+   (tests/grid_map_generators.h, tess_grid_map_generators_test). The
+   external-data legs stay rights-gated. Next: the S2 macro-harness.* S1 stays on in-repo procedural data: the
    external-data legs (manifest entries, fetch tool, cache verification, the
    strict data job — grid-benchmark TDD phases 1-2) remain gated, and phase 3
    preserves the rights gate rather than unblocking it. It opens only on a

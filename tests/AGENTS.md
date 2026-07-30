@@ -914,6 +914,17 @@
   their assigned document. One test asserts the committed
   `docs/architecture/surface.json` stays complete against the real
   `TESS_PUBLIC_HEADERS` headers.
+- `tess_grid_map_generators_test`: deterministic procedural map
+  generators for the S1 scenario layer (`tests/grid_map_generators.h`
+  — recursive-division maze and room-and-corridor, SplitMix64 integer
+  PRNG, strict Moving AI text emission). Pins extent/parameter
+  contract rejection, byte-identical regeneration, the exact
+  SplitMix64 stream, a stable tiny-map golden, full passable
+  connectivity via a single BFS flood, guaranteed first-room
+  placement, deterministic endpoint sampling (farthest-pair
+  inclusion), and the S1 oracle leg: tess A* equals the independent
+  Dijkstra reference exactly, Orthogonal and DiagonalBothClear, both
+  directions, on every generated case.
 - `tests/test_git_hooks.py`: pytest coverage for the hook and CI backstop
   helpers. It pins NUL-safe staged/tracked/index-diff path handling, exact
   indexed-blob reads that do not follow symlinks, fail-closed read errors,

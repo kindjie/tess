@@ -6,6 +6,27 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-30 - S1 procedural generators and oracle leg (phase 3, slice 1)
+
+- Changed: the scenario layer's in-repo S1 leg exists —
+  tests/grid_map_generators.h provides seeded deterministic
+  recursive-division-maze and room-and-corridor generators emitting
+  strict Moving AI map text for the existing grid-benchmark harness
+  parser, plus a single-BFS connectivity check and a deterministic
+  endpoint sampler that always includes the flood fill's farthest
+  pair. tess_grid_map_generators_test verifies determinism (pinned
+  SplitMix64 stream and byte-identical regeneration), parser
+  round-trips, full connectivity by construction, and the oracle leg:
+  tess A* agrees exactly with the independent Dijkstra reference in
+  both movement modes and both directions across the fixed generated
+  matrix, on every PR.
+- Reason: redesign section 3.1 S1 in-repo layer (sequencing item 3);
+  the external-data legs stay rights-gated and untouched.
+- Affected docs: testing and benchmarking redesign (item 3 status),
+  tests/AGENTS.md.
+- Affected code: new tests/grid_map_generators.h,
+  tests/tess_grid_map_generators_test.cc; tests/CMakeLists.txt.
+
 ## 2026-07-30 - Pre-push slimming with tested test-impact labels (phase 2, slice 9)
 
 - Changed: the pre-push hook runs configure + build + the

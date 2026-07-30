@@ -76,6 +76,16 @@ tess_apply_project_options(tess_grid_benchmark_harness_test)
 
 tess_discover_tests(tess_grid_benchmark_harness_test LABELS core path storage topology)
 
+add_executable(
+  tess_grid_map_generators_test
+  tess_grid_map_generators_test.cc
+)
+target_link_libraries(
+  tess_grid_map_generators_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_grid_map_generators_test)
+
+tess_discover_tests(tess_grid_map_generators_test LABELS core path storage topology)
+
 if(TESS_ENABLE_GRID_BENCHMARK_DATA)
   set(_tess_grid_manifest
       "${PROJECT_SOURCE_DIR}/tools/grid_benchmark_manifest.json")
