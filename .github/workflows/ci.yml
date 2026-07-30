@@ -213,6 +213,7 @@ jobs:
           tests/test_clang_tidy_changed.py
           tests/test_paired_bench.py
           tests/test_check_counter_goldens.py
+          tests/test_benchmark_changepoint.py
           tests/test_benchmark_tools.py
           tests/test_branding_assets.py
           tests/test_check_public_surface.py
@@ -586,7 +587,8 @@ jobs:
           github.ref == 'refs/heads/main'
         run: |
           tools/benchmark_artifact_metadata.py \
-            --out build/bench/bench/ci-baselines/metadata.json
+            --out build/bench/bench/ci-baselines/metadata.json \
+            --build-dir build/bench
 
       - name: Upload benchmark baseline artifact
         if: >-
@@ -741,6 +743,101 @@ jobs:
             test "${{ needs.macos.result }}" = skipped
             test "${{ needs.windows.result }}" = skipped
             test "${{ needs.bench.result }}" = skipped
+          fi
+
+  # Change-point alerting (redesign section 4.2): a dedicated job so
+  # the bench job, which executes pull-request code, never holds write
+  # permissions. Runs only on pushes to main (the artifact series is
+  # once-per-main-push by construction), downloads the trailing
+  # baseline artifacts, and files or extends one rolling
+  # perf-change-point issue when a sustained shift is suspected.
+  # Alerting is advisory: this job's failure is an infrastructure
+  # problem, not a performance verdict, and it gates nothing.
+  change-point:
+    name: Benchmark Change Point
+    needs: bench
+    if: >-
+      ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' }}
+    concurrency:
+      group: perf-change-point
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download trailing baseline artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p trailing
+          gh api \
+            'repos/${{ github.repository }}/actions/artifacts?per_page=100' \
+            --paginate \
+            --jq '.artifacts[]
+                  | select(.name | startswith("benchmark-baselines-"))
+                  | select(.expired == false)
+                  | "\(.id) \(.workflow_run.id)"' \
+            | head -40 \
+            | while read -r artifact_id run_id; do
+                dir="trailing/$run_id"
+                [ -d "$dir" ] && continue
+                mkdir -p "$dir"
+                gh api \
+                  "repos/${{ github.repository }}/actions/artifacts/$artifact_id/zip" \
+                  > "$dir/a.zip" || { rm -rf "$dir"; continue; }
+                unzip -qo "$dir/a.zip" -d "$dir" && rm "$dir/a.zip"
+              done
+          find trailing -mindepth 1 -maxdepth 1 -type d | wc -l
+
+      - name: Detect change points
+        run: |
+          python3 tools/benchmark_changepoint.py \
+            --artifacts trailing \
+            --report change-point.md \
+            --json change-point.json
+          cat change-point.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: File or update the perf-change-point issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          verdict=$(python3 -c \
+            "import json; print(json.load(open('change-point.json'))['verdict'])")
+          if [ "$verdict" != "suspects" ]; then
+            echo "verdict: $verdict — no issue action"
+            exit 0
+          fi
+          marker="<!-- perf-change-point:${GITHUB_RUN_ID} -->"
+          body="$marker
+          $(cat change-point.md)"
+          gh label create perf-change-point \
+            --repo "$GITHUB_REPOSITORY" \
+            --description "Automated sustained benchmark shift suspicion" \
+            --color D93F0B --force
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --label perf-change-point --state open \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            if gh issue view "$existing" --repo "$GITHUB_REPOSITORY" \
+                --json comments --jq '.comments[].body' \
+                | grep -qF "$marker"; then
+              echo "already reported by this run"
+            else
+              gh issue comment "$existing" \
+                --repo "$GITHUB_REPOSITORY" --body "$body"
+            fi
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --label perf-change-point \
+              --title "Sustained benchmark shift suspected" --body "$body"
           fi
 
   # Keeps demoted-job regressions owned: a failed main, scheduled, or
