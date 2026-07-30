@@ -982,8 +982,10 @@
   parsing and fail-closed missing-sentinel behavior, ABBA round order,
   the paired per-round-ratio bootstrap (flagging, noise, materiality
   floor, determinism, pairing sensitivity), Bonferroni adjustment,
-  verdict combination, markdown rendering, and end-to-end orchestration
-  against fake benchmark binaries in shadow and confirm modes.
+  verdict combination, markdown rendering, end-to-end orchestration
+  against fake benchmark binaries in shadow and confirm modes, and the
+  suspect-scoped confirmation path (threshold-manifest metric lookup,
+  the 64-name cap, unit normalization, end-to-end suspect verdicts).
 - `tests/test_clang_tidy_changed.py`: pytest coverage for the diff-scoped
   pull-request clang-tidy runner (`tools/clang_tidy_changed.py`). It pins
   candidate selection (header/source split, bench and webgpu_stub
