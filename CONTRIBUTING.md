@@ -88,6 +88,17 @@ tools/check_counter_goldens.py --observed /tmp/observed.json \
 Setting `TESS_COUNTER_GOLDENS_STRICT=1` makes drift fail (the redesign's
 phase 4 promotion path).
 
+**Workload matrix**: `bench/workload-matrix.json` declares which
+workload cells (world extent x chunk extent x layout x storage x
+executor x payload) the benchmark suite measures, via per-family name
+grammars plus curated defaults. Adding, renaming, or removing a
+benchmark must keep it coherent — `tools/check_workload_matrix.py
+--catalog bench/workload-matrix.json --thresholds-dir bench/thresholds
+--bench-sources bench` runs the static check locally (CI also checks
+the compiled registration union in the bench job). A new benchmark
+that fits an existing family grammar needs no catalog edit; new
+vocabulary or an unmatched name fails until classified.
+
 **Advisory coverage** (weekly tier, never gating): the scheduled run
 publishes an llvm-cov summary of the test suite and a benchmark
 gap-finder report — which public headers no benchmark executes

@@ -1,0 +1,581 @@
+{
+  "comment": [
+    "Benchmark workload matrix (redesign section 4.5, second bullet):",
+    "which cells of (world extent x chunk extent x layout x storage x",
+    "executor x payload) the benchmark suite measures, derived from",
+    "registration names through fail-closed family grammars plus",
+    "curated defaults/overrides for what names cannot express, checked",
+    "by tools/check_workload_matrix.py (hooks tier + bench job).",
+    "Extents with depth 1 omit the trailing x1 (512x512 means",
+    "512x512x1). Scenario-layer cells (section 3.1) join in phase 3.",
+    "storage=always_resident means an AlwaysResidentWorld: names",
+    "containing 'sparse' usually mean sparse BLOCKERS (a layout);",
+    "maintenance/sparse|dense is a task-scheduling pattern (payload).",
+    "Only residency/* and the one sparse_resident batch planner use",
+    "sparse storage."
+  ],
+  "vocabularies": {
+    "storage": ["always_resident", "sparse_resident", "not_applicable"],
+    "executor_kind": ["serial", "pool", "scoped_threads"],
+    "layout": [
+      "open", "room_portals", "sparse_blockers", "axis_detour",
+      "striped_maze", "wall_gap", "branch_lattice", "single_blocker",
+      "sealed", "slab_gap", "slab_multi_gap", "corridor_3d",
+      "carved_lanes", "construction_stripe", "not_applicable"
+    ]
+  },
+  "families": [
+    {
+      "family": "path/astar_unit",
+      "pattern": "^path/astar_(open|wall_gap|axis_detour|striped_maze|sparse_blockers|room_portals|branch_lattice)(?:_2d)?(?:_(64x64|512x512|1024x1024))?$",
+      "captures": {"layout": 1, "world_extent": 2},
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1 request"
+      },
+      "overrides": {
+        "path/astar_open_2d": {"world_extent": "16x16", "chunk_extent": "16x16"},
+        "path/astar_open_2d_64x64": {"chunk_extent": "16x16"}
+      }
+    },
+    {
+      "family": "path/astar_unit_special",
+      "pattern": "^path/astar_(short|medium|long)_open_(512x512)$",
+      "captures": {"world_extent": 2},
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1 request, distance-classed endpoints"
+      }
+    },
+    {
+      "family": "path/astar_blocked",
+      "pattern": "^path/astar_(alternate_direct|no_path)_(512x512|1024x1024)$",
+      "captures": {"world_extent": 2},
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "sealed", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1 request"
+      },
+      "overrides": {
+        "path/astar_alternate_direct_512x512": {"layout": "single_blocker"}
+      }
+    },
+    {
+      "family": "path/astar_plane_gap_miss",
+      "pattern": "^path/astar_plane_gap_miss_(512x512|3d_64x64x16)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "wall_gap", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1 request, sealed best gap forcing scan miss"
+      },
+      "overrides": {
+        "path/astar_plane_gap_miss_512x512": {"world_extent": "512x512"},
+        "path/astar_plane_gap_miss_3d_64x64x16": {
+          "world_extent": "64x64x16", "chunk_extent": "16x16x4",
+          "layout": "slab_gap"
+        }
+      }
+    },
+    {
+      "family": "path/astar_vertical",
+      "pattern": "^path/astar_vertical_(open|wall_gap|striped_maze)_(512x512)$",
+      "captures": {"layout": 1},
+      "defaults": {
+        "world_extent": "1x512x512", "chunk_extent": "1x32x32",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1 request"
+      },
+      "overrides": {
+        "path/astar_vertical_open_512x512": {"world_extent": "1x512x512"},
+        "path/astar_vertical_wall_gap_512x512": {"world_extent": "1x512x512"},
+        "path/astar_vertical_striped_maze_512x512": {"world_extent": "1x512x512"}
+      }
+    },
+    {
+      "family": "path/astar_3d",
+      "pattern": "^path/astar_(open|slab_gap|slab_no_gap|slab_multi_gap|corridor)_3d_(64x64x16)$",
+      "captures": {"world_extent": 2},
+      "defaults": {
+        "world_extent": "64x64x16", "chunk_extent": "16x16x4",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1 request"
+      },
+      "overrides": {
+        "path/astar_slab_gap_3d_64x64x16": {"layout": "slab_gap"},
+        "path/astar_slab_no_gap_3d_64x64x16": {"layout": "sealed"},
+        "path/astar_slab_multi_gap_3d_64x64x16": {"layout": "slab_multi_gap"},
+        "path/astar_corridor_3d_64x64x16": {"layout": "corridor_3d"}
+      }
+    },
+    {
+      "family": "path/astar_batch",
+      "pattern": "^path/(?:cached_)?astar_batch_100_(open|mixed|suffix_open|shared_room_portals|multigoal_room_portals|mixed_repeated_room_portals|shared_sparse)_(512x512)$",
+      "captures": {"world_extent": 2},
+      "composite": true,
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "100 requests"
+      },
+      "overrides": {
+        "path/astar_batch_100_shared_room_portals_512x512": {"layout": "room_portals"},
+        "path/astar_batch_100_multigoal_room_portals_512x512": {"layout": "room_portals"},
+        "path/astar_batch_100_mixed_repeated_room_portals_512x512": {"layout": "room_portals"},
+        "path/cached_astar_batch_100_mixed_repeated_room_portals_512x512": {"layout": "room_portals"},
+        "path/astar_batch_100_shared_sparse_512x512": {"layout": "sparse_blockers"}
+      }
+    },
+    {
+      "family": "path/weighted_astar_unit",
+      "pattern": "^path/weighted_astar_(open|axis_detour|sparse_blockers|room_portals)_(512x512)$",
+      "captures": {"layout": 1, "world_extent": 2},
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1 request, 2-field weighted schema"
+      }
+    },
+    {
+      "family": "path/weighted_batch",
+      "pattern": "^path/(?:bounded_)?weighted_(?:astar|distance_field)_batch_100_(mixed|shared_sparse|multigoal_sparse)_(512x512)$",
+      "captures": {"world_extent": 2},
+      "composite": true,
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "sparse_blockers", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "100 requests, 2-field weighted schema"
+      }
+    },
+    {
+      "family": "path/weighted_batch_planner",
+      "pattern": "^path/weighted_batch_planner_100_(multigoal_sparse|multigoal_sparse_resident|neargoal_open)_(512x512)$",
+      "captures": {"world_extent": 2},
+      "composite": true,
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "sparse_blockers", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "100 requests, group width 7"
+      },
+      "overrides": {
+        "path/weighted_batch_planner_100_multigoal_sparse_resident_512x512": {
+          "storage": "sparse_resident"
+        },
+        "path/weighted_batch_planner_100_neargoal_open_512x512": {
+          "layout": "open"
+        }
+      }
+    },
+    {
+      "family": "path/portal",
+      "pattern": "^path/weighted_(?:chunk_)?portal_[a-z_]*?(?:batch_100_)?room_portals_(512x512)$",
+      "captures": {"world_extent": 1},
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "room_portals", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1 request, portal routing"
+      },
+      "overrides": {
+        "path/weighted_portal_segment_cache_batch_100_room_portals_512x512": {"payload": "100 requests, shared goal"},
+        "path/weighted_portal_endpoint_segments_batch_100_room_portals_512x512": {"payload": "100 requests, shared goal"},
+        "path/weighted_portal_first_field_cache_batch_100_room_portals_512x512": {"payload": "100 requests, first-hop field cache"}
+      }
+    },
+    {
+      "family": "path/distance_field_batch",
+      "pattern": "^path/distance_field_batch_100_(shared_room_portals|multigoal_room_portals|shared_sparse)_(512x512)$",
+      "captures": {"world_extent": 2},
+      "composite": true,
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "room_portals", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "100 starts over shared distance fields"
+      },
+      "overrides": {
+        "path/distance_field_batch_100_shared_sparse_512x512": {"layout": "sparse_blockers"}
+      }
+    },
+    {
+      "family": "path/field_product",
+      "pattern": "^path/(?:distance_field_product_build_8_goal_room_portals|weighted_field_product_build_8_goal_open|weighted_field_product_replay_open|nearest_target_product_100_starts_room_portals|field_product_cache_hit_replay_room_portals|field_product_cache_stale_rejection_room_portals|field_product_cache_lru_eviction)_(512x512)$",
+      "captures": {"world_extent": 1},
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "room_portals", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "field-product build/replay/cache operations"
+      },
+      "overrides": {
+        "path/weighted_field_product_build_8_goal_open_512x512": {"layout": "open"},
+        "path/weighted_field_product_replay_open_512x512": {"layout": "open"},
+        "path/field_product_cache_lru_eviction_512x512": {"layout": "open"}
+      }
+    },
+    {
+      "family": "path/agent",
+      "pattern": "^path/agent_(?:runtime|tick)_100_(unit|weighted)_[a-z_0-9]*?(512x512)$",
+      "captures": {"world_extent": 2},
+      "composite": true,
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "100 path agents"
+      },
+      "overrides": {
+        "path/agent_runtime_100_unit_shared_wall_gap_route_cache_512x512": {"layout": "wall_gap"},
+        "path/agent_runtime_100_unit_shared_wall_gap_field_cache_512x512": {"layout": "wall_gap"},
+        "path/agent_runtime_100_unit_scattered_wall_gap_route_cache_512x512": {"layout": "wall_gap"},
+        "path/agent_runtime_100_unit_scattered_wall_gap_field_cache_512x512": {"layout": "wall_gap"},
+        "path/agent_runtime_100_weighted_shared_512x512": {"layout": "sparse_blockers"},
+        "path/agent_tick_100_weighted_shared_dirty_512x512": {"layout": "sparse_blockers"},
+        "path/agent_runtime_100_weighted_mixed_512x512": {"layout": "sparse_blockers"},
+        "path/agent_tick_100_weighted_goal_churn_512x512": {"layout": "sparse_blockers"}
+      }
+    },
+    {
+      "family": "path/resolved",
+      "pattern": "^path/resolved_(diagonal|hex|stair_provider)_open_(128x128|128x128x2)$",
+      "captures": {"world_extent": 2},
+      "defaults": {
+        "world_extent": "128x128", "chunk_extent": "32x32",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1 request, resolved transition model"
+      },
+      "overrides": {
+        "path/resolved_stair_provider_open_128x128x2": {"chunk_extent": "32x32x2"}
+      }
+    },
+    {
+      "family": "key/conversions",
+      "pattern": "^key/(?:chunk_coord|local_coord|local_tile_id|tile_key|coord_from_tile_key)_(?:2d|3d|single_chunk|huge)_(?:u64|u128)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "4096x4096", "chunk_extent": "64x64",
+        "layout": "not_applicable", "storage": "not_applicable",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "pure coordinate math on a Shape"
+      },
+      "overrides": {
+        "key/tile_key_3d_u64": {"world_extent": "1024x1024x128", "chunk_extent": "32x32x8"},
+        "key/coord_from_tile_key_3d_u64": {"world_extent": "1024x1024x128", "chunk_extent": "32x32x8"},
+        "key/tile_key_single_chunk_u64": {"world_extent": "1024x1024", "chunk_extent": "1024x1024"},
+        "key/tile_key_huge_u128": {"world_extent": "2^34x2^33x256", "chunk_extent": "32x32x4"},
+        "key/coord_from_tile_key_huge_u128": {"world_extent": "2^34x2^33x256", "chunk_extent": "32x32x4"}
+      }
+    },
+    {
+      "family": "storage/page",
+      "pattern": "^storage/(?:field_span_acquisition|chunk_field_write_read_iteration|single_chunk_page_iteration|flat_array_iteration)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "4096x4096", "chunk_extent": "64x64",
+        "layout": "not_applicable", "storage": "not_applicable",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "single chunk-page field access"
+      },
+      "overrides": {
+        "storage/single_chunk_page_iteration": {"world_extent": "256x256", "chunk_extent": "256x256"},
+        "storage/flat_array_iteration": {"world_extent": "not_applicable", "chunk_extent": "not_applicable", "payload": "flat std::array baseline, 65536 tiles"}
+      }
+    },
+    {
+      "family": "storage/world",
+      "pattern": "^storage/world_[a-z_]+?(_16k)?$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "1024x1024", "chunk_extent": "64x64",
+        "layout": "not_applicable", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "256 chunks"
+      },
+      "overrides": {
+        "storage/world_dirty_chunks_iteration_16k": {"world_extent": "8192x8192", "payload": "16384 chunks, 5462 dirty"}
+      }
+    },
+    {
+      "family": "block/iteration",
+      "pattern": "^block/(?:explicit_domain_iteration|dirty_domain_iteration|context_iteration_2d|scratch_allocate_u32|context_scratch_tile_iteration_2d|chunk_tile_iteration_(?:2d|3d)|chunk_boundary_scan_(?:2d|3d))$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "1024x1024", "chunk_extent": "64x64",
+        "layout": "not_applicable", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "chunk/domain iteration"
+      },
+      "overrides": {
+        "block/scratch_allocate_u32": {"world_extent": "not_applicable", "storage": "not_applicable", "payload": "4096-u32 scratch allocation"},
+        "block/chunk_tile_iteration_3d": {"world_extent": "128x128x32", "chunk_extent": "16x16x8"},
+        "block/chunk_boundary_scan_2d": {"world_extent": "4096x4096"},
+        "block/chunk_boundary_scan_3d": {"world_extent": "128x128x32", "chunk_extent": "16x16x8"}
+      }
+    },
+    {
+      "family": "block_pipeline",
+      "pattern": "^block_pipeline/(?:fused|materialized)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "not_applicable", "chunk_extent": "not_applicable",
+        "layout": "not_applicable", "storage": "not_applicable",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "4096-element filter/map/reduce pipeline"
+      }
+    },
+    {
+      "family": "queued/execute",
+      "pattern": "^queued/execute_resident_update(?:_with_results)?$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "1024x1024", "chunk_extent": "64x64",
+        "layout": "not_applicable", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1 resident-chunks op over 256 chunks"
+      }
+    },
+    {
+      "family": "parallel/ops",
+      "pattern": "^parallel/(?:chunk_fill|chunk_compute|tile_touch)_(?:(serial)|(pool|scoped_threads)_w(\\d+))$",
+      "captures": {"executor_kind": 2, "worker_count": 3},
+      "defaults": {
+        "world_extent": "1024x1024", "chunk_extent": "64x64",
+        "layout": "not_applicable", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "256 per-chunk ops, one parallel phase"
+      }
+    },
+    {
+      "family": "ecs/registry",
+      "pattern": "^ecs/(?:collect_sort|apply|flecs_collect|flecs_collect_apply)_(1k|10k|100k)$",
+      "captures": {"payload": 1},
+      "defaults": {
+        "world_extent": "not_applicable", "chunk_extent": "not_applicable",
+        "layout": "not_applicable", "storage": "not_applicable",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1k"
+      }
+    },
+    {
+      "family": "ecs/index",
+      "pattern": "^ecs/index_move$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "not_applicable", "chunk_extent": "not_applicable",
+        "layout": "not_applicable", "storage": "not_applicable",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "4096 live mappings, 1 move per iteration"
+      }
+    },
+    {
+      "family": "ecs/tick",
+      "pattern": "^ecs/tick_(?:entt|raw_span)_(1k|10k)$",
+      "captures": {"payload": 1},
+      "defaults": {
+        "world_extent": "64x1024", "chunk_extent": "8x8",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1k"
+      },
+      "overrides": {
+        "ecs/tick_entt_10k": {"world_extent": "64x10240"},
+        "ecs/tick_raw_span_10k": {"world_extent": "64x10240"}
+      }
+    },
+    {
+      "family": "ecs/alloc_gate",
+      "pattern": "^ecs/tick_entt_alloc_gate$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "64x1024", "chunk_extent": "8x8",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "256 agents, allocation gate"
+      }
+    },
+    {
+      "family": "fields/products",
+      "pattern": "^fields/(?:goalset_build_(?:1|16|256)|nearest_target|cache_hit|cache_miss_store|cache_eviction|build_alloc_gate)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "64x64", "chunk_extent": "8x8",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "goal-set field products and cache operations"
+      }
+    },
+    {
+      "family": "topology/region_graph",
+      "pattern": "^topology/(?:region_graph_build_open|region_graph_build_composed_class|region_graph_update_single_chunk|reachable_far|coarse_path_far|area_index_build_256_areas|area_lookup_256_areas|precheck_reachable|precheck_unreachable)_(512x512)$",
+      "captures": {"world_extent": 1},
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "32x32",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "region graph / reachability over 256 chunks"
+      },
+      "overrides": {
+        "topology/region_graph_build_composed_class_512x512": {"layout": "construction_stripe"},
+        "topology/precheck_unreachable_512x512": {"layout": "sealed"}
+      }
+    },
+    {
+      "family": "residency/streaming",
+      "pattern": "^residency/(?:resident_lookup|ensure_resident_hit|eviction_churn_(?:64|512))$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "65536x65536", "chunk_extent": "32x32",
+        "layout": "not_applicable", "storage": "sparse_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "residency budget lookup/eviction cycles"
+      }
+    },
+    {
+      "family": "maintenance/schedulers",
+      "pattern": "^maintenance/(?:sparse|dense)/(?:immediate|fifo|coalescing)/(?:256|512)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "not_applicable", "chunk_extent": "not_applicable",
+        "layout": "not_applicable", "storage": "not_applicable",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "task scheduling pattern (sparse=distinct tasks, dense=repeated task)"
+      }
+    },
+    {
+      "family": "scheduler/tick",
+      "pattern": "^scheduler/(?:empty_tick|cadence_dispatch_100|dirty_trigger|event_trigger|resumable_work_step)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "not_applicable", "chunk_extent": "not_applicable",
+        "layout": "not_applicable", "storage": "not_applicable",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "schedule-loop tick dispatch"
+      }
+    },
+    {
+      "family": "scheduler/auto_exec",
+      "pattern": "^scheduler/auto_exec_tick$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "256x256", "chunk_extent": "32x32",
+        "layout": "not_applicable", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1 resident-chunks op over 64 chunks per tick"
+      }
+    },
+    {
+      "family": "render_delta/collect",
+      "pattern": "^render_delta/(?:collect_sparse_64|collect_box_64|entity_moves_1k_coalesced|entity_moves_1k_per_step|baseline_4096|collect_alloc_gate)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "8x8",
+        "layout": "not_applicable", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "render-delta collection over 4096 chunks"
+      }
+    },
+    {
+      "family": "persistence/archive",
+      "pattern": "^persistence/(?:save|load)_dense_(512x512)_2_fields$",
+      "captures": {"world_extent": 1},
+      "defaults": {
+        "world_extent": "512x512", "chunk_extent": "64x64",
+        "layout": "not_applicable", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "64-chunk 2-field archive round-trip leg"
+      }
+    },
+    {
+      "family": "query/scan",
+      "pattern": "^query/(?:box|radius)/(?:per_tile|spans)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "4096x4096", "chunk_extent": "64x64",
+        "layout": "not_applicable", "storage": "not_applicable",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "box 512x512-tile / radius-256 scans on a Shape"
+      }
+    },
+    {
+      "family": "spatial/local_coordination",
+      "pattern": "^spatial/local_coordination_(1000x4)$",
+      "captures": {"payload": 1},
+      "defaults": {
+        "world_extent": "not_applicable", "chunk_extent": "not_applicable",
+        "layout": "not_applicable", "storage": "not_applicable",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "1000 move requests x 4 options"
+      }
+    },
+    {
+      "family": "diagnostics/probes",
+      "pattern": "^diagnostics/(?:trace_record|record_timing|scoped_timer|warning_sink)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "not_applicable", "chunk_extent": "not_applicable",
+        "layout": "not_applicable", "storage": "not_applicable",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "single diagnostics record per iteration"
+      }
+    },
+    {
+      "family": "lab/joint_movement",
+      "pattern": "^lab/joint_(headon_denied|chain_reset)_(128x128)(?:/\\d+)?$",
+      "captures": {"world_extent": 2},
+      "defaults": {
+        "world_extent": "128x128", "chunk_extent": "16x16",
+        "layout": "open", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "joint-movement agent pairs/chains (arg = count)"
+      }
+    },
+    {
+      "family": "lab/pibt_movement",
+      "pattern": "^lab/pibt_(headon_denied|chain_reset)_(128x128)(?:/\\d+)?$",
+      "captures": {"world_extent": 2},
+      "defaults": {
+        "world_extent": "128x128", "chunk_extent": "16x16",
+        "layout": "carved_lanes", "storage": "always_resident",
+        "executor_kind": "serial", "worker_count": "1",
+        "payload": "PIBT agent pairs/chains (arg = count)"
+      }
+    }
+  ],
+  "unmeasured": [
+    {
+      "selector": {"executor_kind": "pool", "worker_count": "8"},
+      "reason": "pool executors are measured only at w2/w4; wider pools are deferred to the phase 8 controlled-hardware campaign"
+    },
+    {
+      "selector": {"executor_kind": "scoped_threads", "worker_count": "2"},
+      "reason": "scoped-thread executors are measured only at w4"
+    },
+    {
+      "selector": {"storage": "sparse_resident", "layout": "room_portals"},
+      "reason": "sparse-resident pathfinding is measured only on the sparse-blockers batch planner; structured-map sparse streaming arrives with scenario S3 (section 3.1)"
+    },
+    {
+      "selector": {"world_extent": "2048x2048"},
+      "reason": "worlds beyond 1024x1024 (except the residency 65536-extent shell) arrive with the S2 macro-harness world-size axis (section 3.1)",
+      "policy": true
+    },
+    {
+      "selector": {"executor_kind": "pool", "layout": "room_portals"},
+      "reason": "no pathfinding benchmark runs under a pool executor; parallel coverage is confined to chunk fill/compute/touch ops",
+      "policy": true
+    }
+  ]
+}

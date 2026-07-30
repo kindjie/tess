@@ -986,6 +986,22 @@
   against fake benchmark binaries in shadow and confirm modes, and the
   suspect-scoped confirmation path (threshold-manifest metric lookup,
   the 64-name cap, unit normalization, end-to-end suspect verdicts).
+- `tests/test_workload_matrix.py`: pytest coverage for the benchmark
+  workload-matrix drift checker (`tools/check_workload_matrix.py`) and
+  the shipped catalog (`bench/workload-matrix.json`). It pins
+  exactly-one-rule classification (unclassified and doubly matched
+  names fail), dead-rule detection, capture/default/override
+  precedence, fail-closed dimension-token consumption (extent and
+  executor tokens must be captured or explicitly overridden),
+  unknown-versus-not_applicable dimension values, vocabulary
+  enforcement, structured unmeasured selectors (reason required,
+  unknown dimensions fail, a measured cell matching a selector forces
+  retirement, `policy` entries exempt, `composite` registrations never
+  retire selectors), Google Benchmark control-suffix
+  canonicalization, the three universe sources (threshold manifests,
+  `lab/` source literals, runtime listing files), nonzero exit on
+  findings, and the real catalog's coherence with the real manifests
+  and lab literals.
 - `tests/test_coverage_gaps.py`: pytest coverage for the benchmark
   coverage gap-finder (`tools/coverage_gaps.py`). It pins the
   declared-public-header inventory (parsed from
