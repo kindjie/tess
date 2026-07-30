@@ -845,8 +845,17 @@ that introduces this document.
    `--suspects=` list when flagged), the change-point suspect report,
    and the counter-drift table (as step 1). Automatic dispatch on
    series breaks and longer-than-30-day artifact retention (section 7)
-   remain open in this phase. Remaining in this phase: pre-push
-   slimming.*
+   remain open in this phase. Pre-push slimming shipped 2026-07-30
+   with its section 3.7 prerequisite: every discovered test carries a
+   tested forward impact label set (`subsystem:`/`target:`/
+   `prepush:always`), the hook classifies the pushed range tri-state
+   (full / affected subset via one anchored `-L` regex / build-only
+   for docs, examples, and bench) failing open to the full suite,
+   `TESS_PREPUSH_FULL=1` restores the full cycle with consumer
+   smokes, the conditional benchmark build is dropped (the PR
+   bench-smoke job owns compile rot), and the CI dev job asserts
+   label propagation. Phase 2 is CLOSED except the two section 7
+   opens above.*
 3. Scenario layer: procedural generators, then the S2 macro-harness (with
    PR-tier smoke), then S3. S1 stays on in-repo procedural data: the
    external-data legs (manifest entries, fetch tool, cache verification, the

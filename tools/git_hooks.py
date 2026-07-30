@@ -87,7 +87,6 @@ ZERO_SHA_RE = re.compile(r"^0+$")
 PUSH_SHA_RE = re.compile(r"^[0-9a-f]{40,64}$")
 CMAKE_TEST_TARGET_RE = re.compile(r"add_executable\(\s*(tess_[A-Za-z0-9_]+)")
 AGENTS_TEST_TARGET_RE = re.compile(r"`(tess_[A-Za-z0-9_]+)`")
-BENCH_PREFIXES = ("bench/", "cmake/", "include/")
 
 ByteReader = Callable[[str], bytes]
 
@@ -785,6 +784,148 @@ def read_push_refs() -> list[PushRef]:
   return parse_push_refs(sys.stdin.read())
 
 
+# Pre-push test selection (redesign sections 3.7 and 6): changed paths
+# map to CTest labels declared in tests/CMakeLists.txt. The mapping
+# fails open — anything unrecognized selects the full suite, and only
+# provably inert paths (docs) or compile-only paths (examples, bench)
+# downgrade to a build without tests.
+SUBSYSTEM_LABELS = frozenset((
+  "block", "core", "debug", "diagnostics", "ecs", "experimental",
+  "gpu", "ops", "path", "persistence", "query", "sim", "spatial",
+  "storage", "topology",
+))
+
+# core/ and the umbrella/aggregate headers reach everything; treat
+# them as full-suite triggers rather than trusting a single label.
+FULL_SUITE_SUBSYSTEMS = frozenset(("core", "storage"))
+
+# .github/ is NOT inert: workflow changes decide whether the
+# authoritative CI gates run, so they fail open to the full suite.
+INERT_PREFIXES = ("docs/",)
+INERT_SUFFIXES = (".md",)
+INERT_FILES = frozenset((
+  "LICENSE", ".gitignore", ".gitattributes", "CODEOWNERS",
+))
+
+DISCOVER_CALL_RE = re.compile(
+  r"tess_discover_tests\(\s*(\w+)", re.MULTILINE
+)
+
+
+def gtest_targets(
+  cmake_lists: Path = REPO_ROOT / "tests" / "CMakeLists.txt",
+) -> frozenset[str]:
+  """Targets registered through tess_discover_tests."""
+  try:
+    text = cmake_lists.read_text(encoding="utf-8")
+  except OSError:
+    return frozenset()
+  return frozenset(DISCOVER_CALL_RE.findall(text))
+
+
+def classify_push_paths(
+  names: Iterable[str],
+  targets: frozenset[str],
+) -> tuple[str, frozenset[str]]:
+  """Map changed paths to ("full" | "select" | "build-only", labels).
+
+  Zero selected labels NEVER silently means build-only: only paths
+  positively classified as inert or compile-only downgrade, and any
+  unrecognized path selects the full suite.
+  """
+  labels: set[str] = set()
+  build_only = False
+  for name in names:
+    base = name.rsplit("/", 1)[-1]
+    if (
+      name.startswith(INERT_PREFIXES)
+      or name.endswith(INERT_SUFFIXES)
+      or base in INERT_FILES
+    ):
+      continue
+    if name == "bench/tess_diagnostics_alloc_hooks.cc":
+      # Compiled into dev test targets, not only benchmarks.
+      return ("full", frozenset())
+    if name.startswith(("examples/", "bench/")):
+      build_only = True
+      continue
+    if name.startswith("include/tess/"):
+      remainder = name[len("include/tess/"):]
+      subsystem, _, rest = remainder.partition("/")
+      if (
+        rest
+        and subsystem in SUBSYSTEM_LABELS
+        and subsystem not in FULL_SUITE_SUBSYSTEMS
+      ):
+        labels.add(f"subsystem:{subsystem}")
+        continue
+      # Umbrella headers, version.h.in, core/, storage/, or an
+      # unknown subsystem: everything may depend on it.
+      return ("full", frozenset())
+    if name.startswith("tests/"):
+      stem = base[:-3] if base.endswith(".cc") else ""
+      if stem in targets and stem not in CONDITIONAL_TARGETS:
+        labels.add(f"target:{stem}")
+        continue
+      # Helpers, fixtures, goldens, CMakeLists, unknown sources.
+      return ("full", frozenset())
+    # tools/, cmake/, CMakeLists.txt, presets, anything else.
+    return ("full", frozenset())
+  if labels:
+    return ("select", frozenset(labels))
+  if build_only:
+    return ("build-only", frozenset())
+  # Nothing but inert paths changed.
+  return ("build-only", frozenset())
+
+
+def selection_regex(labels: frozenset[str]) -> str:
+  """One delimiter-anchored ORed -L expression.
+
+  Repeated -L flags AND in ctest, so the selection is a single ORed
+  regex. Labels may arrive from CMake either as separate entries or
+  as one ;-joined string (the gtest_discover_tests PROPERTIES
+  forwarding differs across CMake versions), so alternatives anchor
+  on start/end-or-semicolon rather than ^$ alone.
+  """
+  alternatives = sorted(labels | {"prepush:always"})
+  joined = "|".join(re.escape(label) for label in alternatives)
+  return f"(^|;)({joined})(;|$)"
+
+
+# Targets behind configure options are absent from the dev build; a
+# target label naming one selects zero tests, so their sources fail
+# open to the full suite instead.
+CONDITIONAL_TARGETS = frozenset({"tess_grid_benchmark_data_test"})
+
+
+def push_range_paths(updates: list[PushRef]) -> list[str] | None:
+  """Union of changed paths across refs; None means fail open."""
+  if not updates:
+    # Manual invocation or fully malformed ref input: never downgrade
+    # to build-only on absent evidence.
+    return None
+  names: list[str] = []
+  for ref in updates:
+    if ref.is_new():
+      return None
+    try:
+      names.extend(
+        nul_paths(
+          git_bytes(
+            [
+              "diff", "--name-only", "--no-renames", "-z",
+              f"{ref.remote_sha}..{ref.local_sha}",
+            ],
+            REPO_ROOT,
+          )
+        )
+      )
+    except RepositoryReadError:
+      return None
+  return names
+
+
 def pre_push() -> int:
   refs = read_push_refs()
   status("running pre-push checks")
@@ -805,28 +946,46 @@ def pre_push() -> int:
   commands = [
     ["cmake", "--preset", "dev"],
     ["cmake", "--build", "--preset", "dev"],
-    ["ctest", "--preset", "dev"],
-    ["tools/install_smoke.sh"],
-    ["tools/fetchcontent_smoke.sh"],
   ]
-  if should_build_bench(updates):
+  if os.environ.get("TESS_PREPUSH_FULL", "") == "1":
+    # Opt-in full cycle: unfiltered suite plus the consumer smokes.
+    # Never includes benchmarks or the python tool tests — CI's PR
+    # tier owns both (bench-smoke job; hook-backstop pytest).
+    status("TESS_PREPUSH_FULL=1: full suite and consumer smokes")
     commands.extend([
-      ["cmake", "--preset", "bench"],
-      ["cmake", "--build", "--preset", "bench"],
+      ["ctest", "--preset", "dev"],
+      ["tools/install_smoke.sh"],
+      ["tools/fetchcontent_smoke.sh"],
     ])
+  else:
+    names = push_range_paths(updates)
+    if names is None:
+      verdict, labels = ("full", frozenset())
+      status("push range unresolvable; running the full suite")
+    else:
+      verdict, labels = classify_push_paths(names, gtest_targets())
+    if verdict == "select":
+      regex = selection_regex(labels)
+      status(
+        "running the affected-test subset "
+        f"({', '.join(sorted(labels))}; TESS_PREPUSH_FULL=1 for the "
+        "full cycle)"
+      )
+      commands.append(["ctest", "--preset", "dev", "-L", regex])
+    elif verdict == "build-only":
+      status(
+        "no test-affecting changes; configure+build only "
+        "(TESS_PREPUSH_FULL=1 for the full cycle)"
+      )
+    else:
+      status("running the full test suite")
+      commands.append(["ctest", "--preset", "dev"])
   for command in commands:
     result = run(command)
     if result.returncode != 0:
       return fail(f"command failed: {' '.join(command)}")
   status("pre-push checks passed")
   return 0
-
-
-def bench_paths_changed(names: Iterable[str]) -> bool:
-  return any(
-    name == "CMakeLists.txt" or name.startswith(BENCH_PREFIXES)
-    for name in names
-  )
 
 
 def diff_paths(
@@ -840,38 +999,6 @@ def diff_paths(
       repo_root,
     )
   )
-
-
-def should_build_bench(updates: list[PushRef]) -> bool:
-  if updates:
-    for ref in updates:
-      if ref.is_new():
-        return True
-      try:
-        changed = diff_paths(f"{ref.remote_sha}..{ref.local_sha}")
-      except RepositoryReadError:
-        return True
-      if bench_paths_changed(changed):
-        return True
-    return False
-  upstream = run(
-    [
-      "git",
-      "rev-parse",
-      "--abbrev-ref",
-      "--symbolic-full-name",
-      "@{upstream}",
-    ],
-    capture=True,
-  )
-  if upstream.returncode != 0:
-    return True
-  base = upstream.stdout.strip()
-  try:
-    changed = diff_paths(base, "HEAD")
-  except RepositoryReadError:
-    return True
-  return bench_paths_changed(changed)
 
 
 def install_hooks() -> int:

@@ -3,12 +3,34 @@ include(GoogleTest)
 
 tess_require_googletest()
 
+# Every discovered test carries a target:<name> label plus the
+# subsystem:<dir> labels of its forward impact set — the subsystems
+# whose changes must run it (redesign sections 3.7 and 6; the pre-push
+# hook selects tests by these labels, and tests/test_git_hooks.py
+# checks the mapping). ALWAYS adds prepush:always for tests that run
+# on every selective push.
 function(tess_discover_tests target)
+  cmake_parse_arguments(ARG "ALWAYS" "" "LABELS" ${ARGN})
+  set(labels "target:${target}")
+  if(ARG_ALWAYS)
+    list(APPEND labels "prepush:always")
+  endif()
+  foreach(subsystem IN LISTS ARG_LABELS)
+    list(APPEND labels "subsystem:${subsystem}")
+  endforeach()
+  # gtest_discover_tests forwards PROPERTIES through an unquoted
+  # expansion: CMake 3.x splices a bare list (LABELS keeps only the
+  # first element; the rest become property NAMES), while CMake 4
+  # forwards it intact. Escaping the separators is stable on both,
+  # at the cost of the labels landing as ONE ;-joined label string —
+  # the pre-push selection regex matches labels delimiter-aware
+  # ((^|;)label(;|$)) so both forms select identically.
+  string(REPLACE ";" "\\;" labels "${labels}")
   gtest_discover_tests(
     ${target}
     DISCOVERY_MODE PRE_TEST
     DISCOVERY_TIMEOUT 30
-    PROPERTIES TIMEOUT 60
+    PROPERTIES TIMEOUT 60 LABELS "${labels}"
   )
 endfunction()
 
@@ -23,7 +45,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_allocation_counter_test)
 
-tess_discover_tests(tess_allocation_counter_test)
+tess_discover_tests(tess_allocation_counter_test ALWAYS)
 
 add_executable(tess_smoke tess_smoke.cc)
 target_link_libraries(tess_smoke PRIVATE tess::tess GTest::gtest_main)
@@ -36,13 +58,13 @@ target_compile_definitions(
 )
 tess_apply_project_options(tess_smoke)
 
-tess_discover_tests(tess_smoke)
+tess_discover_tests(tess_smoke LABELS block core diagnostics ecs experimental gpu ops path persistence query sim spatial storage topology)
 
 add_executable(tess_shape_test allocation_counter.cc tess_shape_test.cc)
 target_link_libraries(tess_shape_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_shape_test)
 
-tess_discover_tests(tess_shape_test)
+tess_discover_tests(tess_shape_test LABELS core)
 
 add_executable(
   tess_grid_benchmark_harness_test
@@ -52,7 +74,7 @@ target_link_libraries(
   tess_grid_benchmark_harness_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_grid_benchmark_harness_test)
 
-tess_discover_tests(tess_grid_benchmark_harness_test)
+tess_discover_tests(tess_grid_benchmark_harness_test LABELS core path storage topology)
 
 if(TESS_ENABLE_GRID_BENCHMARK_DATA)
   set(_tess_grid_manifest
@@ -117,26 +139,26 @@ add_executable(tess_storage_test allocation_counter.cc tess_storage_test.cc)
 target_link_libraries(tess_storage_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_storage_test)
 
-tess_discover_tests(tess_storage_test)
+tess_discover_tests(tess_storage_test LABELS core storage topology)
 
 add_executable(tess_residency_test allocation_counter.cc tess_residency_test.cc)
 target_link_libraries(tess_residency_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_residency_test)
 
-tess_discover_tests(tess_residency_test)
+tess_discover_tests(tess_residency_test LABELS core path storage topology)
 
 add_executable(tess_block_test allocation_counter.cc tess_block_test.cc)
 target_link_libraries(tess_block_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_block_test)
 
-tess_discover_tests(tess_block_test)
+tess_discover_tests(tess_block_test LABELS block core storage)
 
 add_executable(
   tess_query_span_test allocation_counter.cc tess_query_span_test.cc)
 target_link_libraries(tess_query_span_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_query_span_test)
 
-tess_discover_tests(tess_query_span_test)
+tess_discover_tests(tess_query_span_test LABELS core query)
 
 add_executable(
   tess_block_pipeline_test allocation_counter.cc tess_block_pipeline_test.cc)
@@ -144,7 +166,7 @@ target_link_libraries(
   tess_block_pipeline_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_block_pipeline_test)
 
-tess_discover_tests(tess_block_pipeline_test)
+tess_discover_tests(tess_block_pipeline_test LABELS block core storage)
 
 add_executable(
   tess_maintenance_test allocation_counter.cc tess_maintenance_test.cc)
@@ -152,7 +174,7 @@ target_link_libraries(
   tess_maintenance_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_maintenance_test)
 
-tess_discover_tests(tess_maintenance_test)
+tess_discover_tests(tess_maintenance_test LABELS core diagnostics experimental)
 
 add_executable(
   tess_queued_planning_test
@@ -165,13 +187,13 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_queued_planning_test)
 
-tess_discover_tests(tess_queued_planning_test)
+tess_discover_tests(tess_queued_planning_test LABELS block core ops storage)
 
 add_executable(tess_queued_test allocation_counter.cc tess_queued_test.cc)
 target_link_libraries(tess_queued_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_queued_test)
 
-tess_discover_tests(tess_queued_test)
+tess_discover_tests(tess_queued_test LABELS block core ops storage)
 
 add_executable(
   tess_queued_contract_test
@@ -184,7 +206,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_queued_contract_test)
 
-tess_discover_tests(tess_queued_contract_test)
+tess_discover_tests(tess_queued_contract_test LABELS block core ops path sim storage topology)
 
 add_executable(
   tess_execution_phase_safety_test
@@ -196,7 +218,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_execution_phase_safety_test)
 
-tess_discover_tests(tess_execution_phase_safety_test)
+tess_discover_tests(tess_execution_phase_safety_test LABELS block core ops storage)
 
 add_executable(
   tess_phase_executor_test
@@ -209,7 +231,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_phase_executor_test)
 
-tess_discover_tests(tess_phase_executor_test)
+tess_discover_tests(tess_phase_executor_test LABELS core ops)
 
 add_executable(
   tess_queued_results_test allocation_counter.cc tess_queued_results_test.cc)
@@ -217,28 +239,28 @@ target_link_libraries(
   tess_queued_results_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_queued_results_test)
 
-tess_discover_tests(tess_queued_results_test)
+tess_discover_tests(tess_queued_results_test LABELS block core ops storage)
 
 add_executable(tess_movement_class_test tess_movement_class_test.cc)
 target_link_libraries(
   tess_movement_class_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_movement_class_test)
 
-tess_discover_tests(tess_movement_class_test)
+tess_discover_tests(tess_movement_class_test LABELS core storage topology)
 
 add_executable(tess_transition_model_test tess_transition_model_test.cc)
 target_link_libraries(
   tess_transition_model_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_transition_model_test)
 
-tess_discover_tests(tess_transition_model_test)
+tess_discover_tests(tess_transition_model_test LABELS core storage topology)
 
 add_executable(tess_path_movement_class_test tess_path_movement_class_test.cc)
 target_link_libraries(
   tess_path_movement_class_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_path_movement_class_test)
 
-tess_discover_tests(tess_path_movement_class_test)
+tess_discover_tests(tess_path_movement_class_test LABELS core path sim storage topology)
 
 add_executable(tess_topology_movement_test tess_topology_movement_test.cc
                                             allocation_counter.cc)
@@ -246,7 +268,7 @@ target_link_libraries(
   tess_topology_movement_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_topology_movement_test)
 
-tess_discover_tests(tess_topology_movement_test)
+tess_discover_tests(tess_topology_movement_test LABELS core path storage topology)
 
 add_executable(
   tess_topology_test
@@ -256,7 +278,7 @@ add_executable(
 target_link_libraries(tess_topology_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_topology_test)
 
-tess_discover_tests(tess_topology_test)
+tess_discover_tests(tess_topology_test LABELS core storage topology)
 
 add_executable(
   tess_topology_coarse_path_test
@@ -267,7 +289,7 @@ target_link_libraries(
   tess_topology_coarse_path_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_topology_coarse_path_test)
 
-tess_discover_tests(tess_topology_coarse_path_test)
+tess_discover_tests(tess_topology_coarse_path_test LABELS core storage topology)
 
 add_executable(
   tess_topology_sparse_test
@@ -277,7 +299,7 @@ target_link_libraries(
   tess_topology_sparse_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_topology_sparse_test)
 
-tess_discover_tests(tess_topology_sparse_test)
+tess_discover_tests(tess_topology_sparse_test LABELS core storage topology)
 
 add_executable(
   tess_path_precheck_test allocation_counter.cc tess_path_precheck_test.cc)
@@ -285,7 +307,7 @@ target_link_libraries(
   tess_path_precheck_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_path_precheck_test)
 
-tess_discover_tests(tess_path_precheck_test)
+tess_discover_tests(tess_path_precheck_test LABELS core path storage topology)
 
 add_executable(
   tess_path_precheck_runtime_test
@@ -298,26 +320,26 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_path_precheck_runtime_test)
 
-tess_discover_tests(tess_path_precheck_runtime_test)
+tess_discover_tests(tess_path_precheck_runtime_test LABELS core path sim storage topology)
 
 add_executable(tess_path_runtime_sparse_test tess_path_runtime_sparse_test.cc)
 target_link_libraries(
   tess_path_runtime_sparse_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_path_runtime_sparse_test)
 
-tess_discover_tests(tess_path_runtime_sparse_test)
+tess_discover_tests(tess_path_runtime_sparse_test LABELS core path sim storage topology)
 
 add_executable(tess_path_test allocation_counter.cc tess_path_test.cc)
 target_link_libraries(tess_path_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_path_test)
 
-tess_discover_tests(tess_path_test)
+tess_discover_tests(tess_path_test LABELS core path storage topology)
 
 add_executable(tess_path_view_test allocation_counter.cc tess_path_view_test.cc)
 target_link_libraries(tess_path_view_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_path_view_test)
 
-tess_discover_tests(tess_path_view_test)
+tess_discover_tests(tess_path_view_test LABELS core path)
 
 add_executable(tess_path_search_test tess_path_search_test.cc)
 target_link_libraries(
@@ -326,7 +348,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_path_search_test)
 
-tess_discover_tests(tess_path_search_test)
+tess_discover_tests(tess_path_search_test LABELS core path sim storage topology)
 
 add_executable(
   tess_path_cache_test
@@ -336,7 +358,7 @@ add_executable(
 target_link_libraries(tess_path_cache_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_path_cache_test)
 
-tess_discover_tests(tess_path_cache_test)
+tess_discover_tests(tess_path_cache_test LABELS core path storage topology)
 
 add_executable(tess_path_product_test tess_path_product_test.cc)
 target_link_libraries(
@@ -345,7 +367,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_path_product_test)
 
-tess_discover_tests(tess_path_product_test)
+tess_discover_tests(tess_path_product_test LABELS core path storage topology)
 
 add_executable(
   tess_weighted_field_product_test
@@ -356,7 +378,7 @@ target_link_libraries(
   tess_weighted_field_product_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_weighted_field_product_test)
 
-tess_discover_tests(tess_weighted_field_product_test)
+tess_discover_tests(tess_weighted_field_product_test LABELS core path storage topology)
 
 add_executable(
   tess_area_index_test allocation_counter.cc tess_area_index_test.cc)
@@ -364,7 +386,7 @@ target_link_libraries(
   tess_area_index_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_area_index_test)
 
-tess_discover_tests(tess_area_index_test)
+tess_discover_tests(tess_area_index_test LABELS core spatial storage topology)
 
 add_executable(
   tess_tactical_assignment_test
@@ -375,7 +397,7 @@ target_link_libraries(
   tess_tactical_assignment_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_tactical_assignment_test)
 
-tess_discover_tests(tess_tactical_assignment_test)
+tess_discover_tests(tess_tactical_assignment_test LABELS core spatial)
 
 add_executable(
   tess_local_coordination_test
@@ -386,7 +408,7 @@ target_link_libraries(
   tess_local_coordination_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_local_coordination_test)
 
-tess_discover_tests(tess_local_coordination_test)
+tess_discover_tests(tess_local_coordination_test LABELS core spatial)
 
 add_executable(
   tess_persistence_test
@@ -395,7 +417,7 @@ add_executable(
 target_link_libraries(tess_persistence_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_persistence_test)
 
-tess_discover_tests(tess_persistence_test)
+tess_discover_tests(tess_persistence_test LABELS core path persistence storage topology)
 
 add_executable(
   tess_joint_movement_test
@@ -408,7 +430,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_joint_movement_test)
 
-tess_discover_tests(tess_joint_movement_test)
+tess_discover_tests(tess_joint_movement_test LABELS core path sim storage topology)
 
 add_executable(
   tess_pibt_movement_test
@@ -421,7 +443,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_pibt_movement_test)
 
-tess_discover_tests(tess_pibt_movement_test)
+tess_discover_tests(tess_pibt_movement_test LABELS core path sim storage topology)
 
 add_executable(
   tess_path_runtime_test
@@ -434,7 +456,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_path_runtime_test)
 
-tess_discover_tests(tess_path_runtime_test)
+tess_discover_tests(tess_path_runtime_test LABELS core path storage topology)
 
 add_executable(
   tess_path_weighted_batch_test
@@ -447,7 +469,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_path_weighted_batch_test)
 
-tess_discover_tests(tess_path_weighted_batch_test)
+tess_discover_tests(tess_path_weighted_batch_test LABELS core path storage topology)
 
 add_executable(tess_path_portal_route_test tess_path_portal_route_test.cc)
 target_link_libraries(
@@ -456,7 +478,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_path_portal_route_test)
 
-tess_discover_tests(tess_path_portal_route_test)
+tess_discover_tests(tess_path_portal_route_test LABELS core path storage topology)
 
 add_executable(
   tess_path_agent_test
@@ -469,7 +491,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_path_agent_test)
 
-tess_discover_tests(tess_path_agent_test)
+tess_discover_tests(tess_path_agent_test LABELS core path sim storage topology)
 
 add_executable(
   tess_path_agent_tick_test
@@ -482,7 +504,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_path_agent_tick_test)
 
-tess_discover_tests(tess_path_agent_tick_test)
+tess_discover_tests(tess_path_agent_tick_test LABELS core path sim storage topology)
 
 add_executable(
   tess_ecs_adapter_test
@@ -495,7 +517,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_ecs_adapter_test)
 
-tess_discover_tests(tess_ecs_adapter_test)
+tess_discover_tests(tess_ecs_adapter_test LABELS core ecs path sim storage topology)
 
 add_executable(tess_gpu_interface_test tess_gpu_interface_test.cc)
 target_link_libraries(
@@ -504,7 +526,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_gpu_interface_test)
 
-tess_discover_tests(tess_gpu_interface_test)
+tess_discover_tests(tess_gpu_interface_test LABELS core gpu storage)
 
 # Compiles the optional WebGPU backend against an API-matching stable C stub.
 add_executable(tess_webgpu_backend_test tess_webgpu_backend_test.cc)
@@ -522,7 +544,7 @@ target_compile_definitions(
 )
 tess_apply_project_options(tess_webgpu_backend_test)
 
-tess_discover_tests(tess_webgpu_backend_test)
+tess_discover_tests(tess_webgpu_backend_test LABELS core gpu storage)
 
 add_executable(
   tess_render_delta_frame_test
@@ -535,7 +557,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_render_delta_frame_test)
 
-tess_discover_tests(tess_render_delta_frame_test)
+tess_discover_tests(tess_render_delta_frame_test LABELS core ecs path sim storage topology)
 
 if(TESS_ENABLE_ENTT)
   include(TessEnttDeps)
@@ -555,7 +577,7 @@ if(TESS_ENABLE_ENTT)
   target_compile_definitions(tess_ecs_entt_test PRIVATE TESS_ENABLE_ENTT)
   tess_apply_project_options(tess_ecs_entt_test)
 
-  tess_discover_tests(tess_ecs_entt_test)
+  tess_discover_tests(tess_ecs_entt_test LABELS core ecs path sim storage topology)
 endif()
 
 if(TESS_ENABLE_FLECS)
@@ -575,7 +597,7 @@ if(TESS_ENABLE_FLECS)
   target_compile_definitions(tess_ecs_flecs_test PRIVATE TESS_ENABLE_FLECS)
   tess_apply_project_options(tess_ecs_flecs_test)
 
-  tess_discover_tests(tess_ecs_flecs_test)
+  tess_discover_tests(tess_ecs_flecs_test LABELS core ecs path sim storage topology)
 endif()
 
 add_executable(tess_sim_auto_exec_test tess_sim_auto_exec_test.cc)
@@ -583,7 +605,7 @@ target_link_libraries(
   tess_sim_auto_exec_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_sim_auto_exec_test)
 
-tess_discover_tests(tess_sim_auto_exec_test)
+tess_discover_tests(tess_sim_auto_exec_test LABELS block core ops sim storage)
 
 add_executable(
   tess_sim_schedule_test
@@ -596,7 +618,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_sim_schedule_test)
 
-tess_discover_tests(tess_sim_schedule_test)
+tess_discover_tests(tess_sim_schedule_test LABELS core diagnostics sim)
 
 add_executable(
   tess_sim_scheduler_test
@@ -609,13 +631,13 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_sim_scheduler_test)
 
-tess_discover_tests(tess_sim_scheduler_test)
+tess_discover_tests(tess_sim_scheduler_test LABELS block core ops path sim storage topology)
 
 add_executable(tess_assert_test tess_assert_test.cc)
 target_link_libraries(tess_assert_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_assert_test)
 
-tess_discover_tests(tess_assert_test)
+tess_discover_tests(tess_assert_test LABELS core path storage)
 
 add_executable(tess_diagnostics_default_test tess_diagnostics_default_test.cc)
 target_link_libraries(
@@ -624,7 +646,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_diagnostics_default_test)
 
-tess_discover_tests(tess_diagnostics_default_test)
+tess_discover_tests(tess_diagnostics_default_test LABELS diagnostics)
 
 add_executable(
   tess_diagnostics_enabled_test
@@ -641,7 +663,7 @@ target_compile_definitions(
 )
 tess_apply_project_options(tess_diagnostics_enabled_test)
 
-tess_discover_tests(tess_diagnostics_enabled_test)
+tess_discover_tests(tess_diagnostics_enabled_test LABELS block core diagnostics ops path storage topology)
 
 add_executable(
   tess_diagnostics_trace_test
@@ -658,7 +680,7 @@ target_compile_definitions(
 )
 tess_apply_project_options(tess_diagnostics_trace_test)
 
-tess_discover_tests(tess_diagnostics_trace_test)
+tess_discover_tests(tess_diagnostics_trace_test LABELS block core diagnostics ops storage)
 
 # Compile-checks the opt-in ImGui panels against a minimal ImGui stub (no real
 # Dear ImGui dependency), with both diagnostics and imgui gates on.
@@ -680,7 +702,7 @@ target_compile_definitions(
 )
 tess_apply_project_options(tess_diagnostics_panels_test)
 
-tess_discover_tests(tess_diagnostics_panels_test)
+tess_discover_tests(tess_diagnostics_panels_test LABELS core debug diagnostics storage)
 
 # Compile-checks the opt-in world tools with the imgui gate on and diagnostics
 # deliberately off, proving that tooling does not depend on diagnostics state.
@@ -702,7 +724,7 @@ target_compile_definitions(
 )
 tess_apply_project_options(tess_imgui_tools_test)
 
-tess_discover_tests(tess_imgui_tools_test)
+tess_discover_tests(tess_imgui_tools_test LABELS core debug storage)
 
 add_executable(
   tess_flow_accounting_test
@@ -714,7 +736,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_flow_accounting_test)
 
-tess_discover_tests(tess_flow_accounting_test)
+tess_discover_tests(tess_flow_accounting_test LABELS core diagnostics experimental ops path sim storage topology)
 
 # Deterministic counter-golden probe (redesign section 3.3, shadow mode):
 # a gtest-free executable emits observed PathCounters/QueuedPhaseCounters
@@ -745,7 +767,7 @@ add_test(
 )
 set_tests_properties(
   TessCounterGoldenProbe
-  PROPERTIES FIXTURES_SETUP TessCounterGoldens
+  PROPERTIES FIXTURES_SETUP TessCounterGoldens LABELS "prepush:always"
 )
 
 find_package(Python3 QUIET COMPONENTS Interpreter)
@@ -766,5 +788,6 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(
     TessCounterGoldenCheck
     PROPERTIES FIXTURES_REQUIRED TessCounterGoldens
+               LABELS "prepush:always"
   )
 endif()
