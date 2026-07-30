@@ -17,6 +17,35 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-07-30 - Full-Suite Paired Confirmation Rejected On Tail Validity
+
+- Area: the design of section 4.2's on-demand confirmation
+  (`tools/paired_bench.py` confirm mode, the paired-bench dispatch
+  workflow).
+- Hypothesis: a literal full-suite paired A/B mode (all ~193 gated
+  benchmarks, five rounds for wall-clock reasons) could confirm
+  change-point suspicions under the sentinel run's statistics.
+- Evidence: at 193-way Bonferroni confidence (99.974%, tail 1.3e-4)
+  a five-observation bootstrap percentile collapses to the sample
+  minimum, so a benchmark at the 8% null boundary flags with
+  probability 1/32 per pass; with re-run-once the illustrative
+  suite-level false-confirm rate is ~17%, before shared-runner
+  correlation makes it worse. Resample cost is also quadratic (~149M
+  bootstrap medians per evaluation). Measured single full-suite
+  invocation: ~208 s, so a five-round A/B pass is ~35 minutes and a
+  flagged run ~70, per side of the statistics' validity problem.
+- Decision: rejected. Formal confirmation is suspect-scoped (up to 64
+  predeclared names; Bonferroni sizes to the list — at n=64 the tail
+  is 3.9e-4 with 256k resamples, resolvable and ~0.6 s per suspect),
+  metrics come from the threshold manifests, benchmarks whose scale
+  cannot clear the materiality floor report "immaterial-scale", and a
+  requested suspect unavailable in either revision fails the run. The
+  broad sweep remains the change-point detector's job.
+- Follow-up conditions: revisit only with a method calibrated for
+  small-sample extreme tails (for example exact permutation bounds) or
+  with enough rounds to resolve suite-wide tails, and re-measure the
+  wall-clock budget then.
+
 ## 2026-07-29 - Change-Point Backtest Flags A 3-4x Fields Family Step At v0.12
 
 - Area: first backtest of the new change-point detector

@@ -679,3 +679,27 @@ def test_immaterial_scale_suspects_are_not_reported_as_pass(tmp_path):
   assert code == 0  # not a confirmed regression, but not a refutation
   report = json.loads(out.read_text())
   assert report["sentinels"]["block/scratch"]["verdict"] == "immaterial-scale"
+
+
+def test_unavailable_requested_suspects_fail_the_confirmation(tmp_path):
+  base = tmp_path / "base_bench"
+  head = tmp_path / "head_bench"
+  _fake_binary(base, {"fields/x": 100.0})
+  _fake_binary(head, {"fields/x": 100.0})
+  sentinels = tmp_path / "sentinels.json"
+  _sentinel_file(sentinels, ["ignored/sentinel"])
+  thresholds = tmp_path / "thresholds"
+  thresholds.mkdir()
+
+  code = paired_bench.main(
+    (
+      "--base-binary", str(base),
+      "--head-binary", str(head),
+      "--sentinels", str(sentinels),
+      "--suspects", "fields/x,fields/renamed",
+      "--thresholds-dir", str(thresholds),
+      "--mode", "confirm",
+    )
+  )
+
+  assert code == 1

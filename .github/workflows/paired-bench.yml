@@ -24,7 +24,10 @@ on:
       suspects:
         description: >-
           Optional comma-separated benchmark names to confirm instead of
-          the sentinel set (max 64; statistics size to this list)
+          the sentinel set (max 64; statistics size to this list; a name
+          unavailable in either revision fails the run; diagnostics-only
+          registrations cannot be confirmed here — they live outside the
+          tess_bench binary)
         required: false
         default: ""
 

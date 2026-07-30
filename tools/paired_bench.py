@@ -379,7 +379,9 @@ def load_threshold_metrics(thresholds_dir: Path) -> dict[str, str]:
     try:
       entries = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
-      raise ToolError(f"unreadable thresholds manifest {manifest}: {error}")
+      raise ToolError(
+        f"unreadable thresholds manifest {manifest}: {error}"
+      ) from error
     for name, entry in entries.get("benchmarks", {}).items():
       if entry.get("max_real_time_ns") is not None:
         metrics[name] = "real_time"
@@ -487,6 +489,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     for name, reason in sorted(skipped.items()):
       print(f"skipping {name}: {reason}", flush=True)
+    if args.suspects and skipped:
+      # A requested suspect that cannot be compared must fail the
+      # confirmation outright: the remaining suspects passing would
+      # otherwise read as a refutation the run never performed.
+      raise ToolError(
+        "requested suspects unavailable for comparison: "
+        + ", ".join(sorted(skipped))
+      )
 
     if args.mode == "confirm":
       # One confirmed regression fails the run, so control the
