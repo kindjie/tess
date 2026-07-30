@@ -299,6 +299,11 @@ class ResumableWorkQueue {
         continue;
       }
       remaining -= step.items_done;
+      if (accounting_ != nullptr) {
+        // Committed per step: a later callback's exception must not
+        // discard work already consumed in this advance.
+        accounting_->counters.consumed_work_units += step.items_done;
+      }
       slot.result_version = step.result_version;
       switch (step.state) {
         case AsyncStepState::Pending:
@@ -317,9 +322,6 @@ class ResumableWorkQueue {
           break;
       }
       stats.items_done += step.items_done;
-    }
-    if (accounting_ != nullptr) {
-      accounting_->counters.consumed_work_units += stats.items_done;
     }
     summarize_states(stats);
     return stats;

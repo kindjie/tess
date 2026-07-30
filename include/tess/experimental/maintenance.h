@@ -364,6 +364,27 @@ class QueuedScheduler : public MaintenanceScheduler {
   mutable std::mutex queue_mutex_;
   std::mutex run_mutex_;
   BoundedTaskQueue queue_;
+
+ public:
+  /// Destroying a scheduler with queued work drops it after admission,
+  /// so an attached accountant's retention identity stays truthful.
+  ~QueuedScheduler() override {
+    if (accounting_ == nullptr) {
+      return;
+    }
+    for (;;) {
+      const auto entry = queue_.pop();
+      if (entry.task == nullptr) {
+        break;
+      }
+      ++accounting_->counters.dropped_after_admission;
+      accounting_->record_left_outstanding();
+      accounting_->counters.residence_ticks_accumulated +=
+          accounting_->last_observed_tick - entry.admitted_tick;
+    }
+  }
+
+ private:
   MetricsStore metrics_;
   std::thread::id running_thread_;
   bool running_task_scheduled_ = false;

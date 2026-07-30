@@ -507,6 +507,41 @@ TEST(TessAgentFlow, TickStateCopiesStartUnattached) {
   EXPECT_EQ(moved.flow_accounting, &accounting);
 }
 
+TEST(TessMaintenanceFlow, DestroyingASchedulerDropsQueuedWork) {
+  namespace mnt = tess::experimental::maintenance;
+  FlowAccounting accounting;
+  CountingTask task;
+  {
+    mnt::FifoScheduler scheduler{4};
+    scheduler.set_flow_accounting(&accounting);
+    ASSERT_TRUE(scheduler.schedule(task));
+  }
+
+  EXPECT_EQ(accounting.counters.dropped_after_admission, 1u);
+  EXPECT_EQ(accounting.counters.outstanding_current, 0u);
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
+TEST(TessAsyncFlow, ConsumedUnitsSurviveALaterThrowingCallback) {
+  tess::ResumableWorkQueue<int> queue;
+  FlowAccounting accounting;
+  queue.set_flow_accounting(&accounting);
+  auto ready_work = step_ready;
+  auto throwing_work =
+      +[](void*, tess::AsyncWorkBudget, int&) -> tess::AsyncWorkStep {
+    throw std::runtime_error{"step"};
+  };
+  (void)queue.submit(nullptr, ready_work);
+  (void)queue.submit(nullptr, throwing_work);
+
+  EXPECT_THROW((void)queue.advance(tess::AsyncWorkBudget{4}),
+               std::runtime_error);
+
+  EXPECT_EQ(accounting.counters.consumed_work_units, 1u);
+  EXPECT_EQ(accounting.counters.completed, 1u);
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+}
+
 TEST(TessAgentFlow, JointMovementTierAccountsArrivals) {
   AgentWorld world;
   for (std::int64_t y = 0; y < 8; ++y) {
