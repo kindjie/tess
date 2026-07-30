@@ -6,6 +6,28 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-30 - Suspect-scoped paired confirmation (phase 2, slice 5)
+
+- Changed: the paired confirmation workflow accepts a predeclared
+  suspect list (up to 64 benchmark names, typically pasted from the
+  change-point issue) that replaces the sentinel set; each suspect is
+  judged on its threshold-manifest metric (real time where the gate is
+  real time — the parallel pool suite and the manually timed cache
+  benchmarks — CPU time otherwise, including ungated lab
+  registrations), the Bonferroni family sizes to the list, and
+  benchmark output units are normalized. The sentinel default and the
+  shadow job are unchanged.
+- Reason: review of a literal full-suite mode showed five-round
+  extreme-tail bootstrap intervals collapse to the sample minimum at
+  193-way confidence (an illustrative 17% suite-level false-confirm
+  rate), so section 4.2's confirmation leg is completed as targeted
+  confirmation of predeclared suspects, with the broad sweep remaining
+  the change-point detector's job. The plan records the resolution.
+- Affected docs: testing and benchmarking redesign (section 10 status),
+  tests/AGENTS.md.
+- Affected code: `tools/paired_bench.py`,
+  `.github/workflows/paired-bench.yml`, `tests/test_paired_bench.py`.
+
 ## 2026-07-29 - Runner fingerprinting and change-point alerting (phase 2, slice 4)
 
 - Changed: benchmark baseline artifacts carry a runner fingerprint —

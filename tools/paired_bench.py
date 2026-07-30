@@ -92,13 +92,15 @@ def parse_results(
   metrics: Mapping[str, str],
 ) -> dict[str, float]:
   """Extract each sentinel's configured metric from benchmark JSON."""
+  unit_to_ns = {"ns": 1.0, "us": 1_000.0, "ms": 1_000_000.0, "s": 1e9}
   try:
     data = json.loads(payload)
     values = {}
     for benchmark in data.get("benchmarks", []):
       name = benchmark["name"]
       if name in metrics:
-        values[name] = float(benchmark[metrics[name]])
+        scale = unit_to_ns[benchmark.get("time_unit", "ns")]
+        values[name] = float(benchmark[metrics[name]]) * scale
   except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
     raise ToolError(f"unparseable benchmark output: {error}") from error
   missing = sorted(set(metrics) - set(values))
@@ -298,8 +300,21 @@ def evaluate(
   return results
 
 
-def sentinel_verdict(flagged: bool, confirmed: bool | None) -> str:
-  """Combine the first pass and the confirmation pass into a verdict."""
+def sentinel_verdict(
+  flagged: bool,
+  confirmed: bool | None,
+  *,
+  immaterial: bool = False,
+) -> str:
+  """Combine the first pass and the confirmation pass into a verdict.
+
+  A benchmark whose baseline runs below the scale where the effect
+  floor can clear the materiality floor cannot flag by construction;
+  reporting that as "pass" would present a refutation the statistics
+  never performed, so it gets its own verdict instead.
+  """
+  if immaterial and not flagged:
+    return "immaterial-scale"
   if not flagged:
     return "pass"
   return "regression" if confirmed else "advisory"
@@ -349,11 +364,74 @@ def render_markdown(
   return "\n".join(lines) + "\n"
 
 
+MAX_SUSPECTS = 64
+
+
+def load_threshold_metrics(thresholds_dir: Path) -> dict[str, str]:
+  """Map benchmark names to their gated metric from the manifests.
+
+  A benchmark gated on real time (the parallel pool suite and manually
+  timed cache benchmarks) is judged on real time here too; everything
+  else, including ungated lab registrations, defaults to CPU time.
+  """
+  metrics: dict[str, str] = {}
+  for manifest in sorted(thresholds_dir.glob("*.json")):
+    try:
+      entries = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+      raise ToolError(
+        f"unreadable thresholds manifest {manifest}: {error}"
+      ) from error
+    for name, entry in entries.get("benchmarks", {}).items():
+      if entry.get("max_real_time_ns") is not None:
+        metrics[name] = "real_time"
+      else:
+        metrics[name] = "cpu_time"
+  return metrics
+
+
+def suspect_sentinels(
+  names: Sequence[str],
+  thresholds_dir: Path,
+) -> dict[str, Sentinel]:
+  """Build the confirmation set from predeclared suspect names.
+
+  Formal confirmation is deliberately suspect-scoped: the Bonferroni
+  family sizes to this list, and lists beyond MAX_SUSPECTS are refused
+  because extreme-tail bootstrap intervals at broad scopes are not
+  statistically valid at practical round counts.
+  """
+  cleaned = [name.strip() for name in names if name.strip()]
+  if not cleaned:
+    raise ToolError("no suspect benchmark names given")
+  if len(cleaned) > MAX_SUSPECTS:
+    raise ToolError(
+      f"{len(cleaned)} suspects exceeds the {MAX_SUSPECTS} cap; formal "
+      "confirmation is targeted — narrow the list to the change-point "
+      "report's suspects"
+    )
+  metrics = load_threshold_metrics(thresholds_dir)
+  return {
+    name: Sentinel(metric=metrics.get(name, "cpu_time")) for name in cleaned
+  }
+
+
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--base-binary", required=True, type=Path)
   parser.add_argument("--head-binary", required=True, type=Path)
   parser.add_argument("--sentinels", required=True, type=Path)
+  parser.add_argument(
+    "--suspects",
+    help="comma/newline-separated benchmark names replacing the sentinel "
+         "set for a targeted confirmation (statistics size to this list)",
+  )
+  parser.add_argument(
+    "--thresholds-dir",
+    type=Path,
+    default=Path(__file__).resolve().parents[1] / "bench" / "thresholds",
+    help=argparse.SUPPRESS,
+  )
   parser.add_argument("--mode", choices=("shadow", "confirm"), required=True)
   parser.add_argument("--summary", type=Path)
   parser.add_argument("--json", dest="json_out", type=Path)
@@ -366,6 +444,19 @@ def main(argv: Sequence[str] | None = None) -> int:
   args = parse_args(sys.argv[1:] if argv is None else argv)
   try:
     config = load_config(args.sentinels)
+    if args.suspects:
+      config = Config(
+        sentinels=suspect_sentinels(
+          args.suspects.replace(",", "\n").split("\n"),
+          args.thresholds_dir,
+        ),
+        source_map={},
+        repetitions=config.repetitions,
+        effect_floor=config.effect_floor,
+        materiality_ns=config.materiality_ns,
+        resamples=config.resamples,
+        confidence=config.confidence,
+      )
     if args.repetitions is not None and args.repetitions < 1:
       raise ToolError("--repetitions must be at least 1")
     if args.repetitions:
@@ -398,6 +489,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     for name, reason in sorted(skipped.items()):
       print(f"skipping {name}: {reason}", flush=True)
+    if args.suspects and skipped:
+      # A requested suspect that cannot be compared must fail the
+      # confirmation outright: the remaining suspects passing would
+      # otherwise read as a refutation the run never performed.
+      raise ToolError(
+        "requested suspects unavailable for comparison: "
+        + ", ".join(sorted(skipped))
+      )
 
     if args.mode == "confirm":
       # One confirmed regression fails the run, so control the
@@ -434,7 +533,16 @@ def main(argv: Sequence[str] | None = None) -> int:
       confirmations = {r.name: rerun[r.name].flagged for r in flagged}
 
     judged = [
-      (result, sentinel_verdict(result.flagged, confirmations.get(result.name)))
+      (
+        result,
+        sentinel_verdict(
+          result.flagged,
+          confirmations.get(result.name),
+          immaterial=(
+            result.base_median * config.effect_floor <= config.materiality_ns
+          ),
+        ),
+      )
       for result in first_pass
     ]
     overall = run_verdict([verdict for _, verdict in judged])

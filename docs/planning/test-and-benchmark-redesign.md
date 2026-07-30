@@ -492,8 +492,14 @@ metadata records little beyond runner OS — and the detector stratifies by
 fingerprint: a fleet or image migration is a series break, not a
 regression, and when fingerprints shift the detector dispatches a paired
 confirmation instead of opening an issue from unpaired data. Suspected
-regressions are confirmed on demand by a
-full paired A/B run under the same statistical criteria. Paired runs execute
+regressions are confirmed on demand by a paired A/B run over the
+predeclared suspect list under the same statistical criteria (amended
+2026-07-30: a literal full-suite confirmation is statistically invalid
+at practical round counts — extreme-tail bootstrap intervals collapse
+at suite-wide Bonferroni confidence — so formal confirmation is
+suspect-scoped and the broad sweep stays with the change-point
+detector; benchmarks whose scale cannot clear the materiality floor
+report "immaterial-scale" rather than a false refutation). Paired runs execute
 only on hosted runners or trusted post-merge commits — never untrusted code
 on personal or self-hosted hardware.
 
@@ -800,12 +806,19 @@ that introduces this document.
    fingerprint, the control-chart detector (section 12's resolution)
    runs per main push in a dedicated write-permissioned job and feeds
    one rolling perf-change-point issue, and a fingerprint series break
-   points at the manual sentinel confirmation — automatic dispatch of
-   a full-suite paired confirmation and longer-than-30-day artifact
-   retention (section 7) remain open in this phase. Remaining in this
-   phase: the section 4.2 full-suite confirmation, advisory coverage,
-   the workload-matrix catalog, profiling-protocol wiring, and
-   pre-push slimming.*
+   points at the manual sentinel confirmation. On-demand confirmation
+   shipped 2026-07-30 as suspect-scoped rather than literally
+   full-suite: the confirmation workflow accepts a predeclared list of
+   up to 64 benchmark names (the change-point report's suspects),
+   sizes the Bonferroni family to that list, and judges each on its
+   threshold-manifest metric — extreme-tail bootstrap intervals over
+   hundreds of benchmarks are not statistically valid at practical
+   round counts, so a broad sweep belongs to the change-point detector
+   and formal confirmation stays targeted. Automatic dispatch on
+   series breaks and longer-than-30-day artifact retention (section 7)
+   remain open in this phase. Remaining in this phase: advisory
+   coverage, the workload-matrix catalog, profiling-protocol wiring,
+   and pre-push slimming.*
 3. Scenario layer: procedural generators, then the S2 macro-harness (with
    PR-tier smoke), then S3. S1 stays on in-repo procedural data: the
    external-data legs (manifest entries, fetch tool, cache verification, the

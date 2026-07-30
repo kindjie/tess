@@ -553,3 +553,153 @@ def test_materiality_uses_the_paired_median_difference():
   )
 
   assert not result.flagged
+
+
+def test_threshold_metrics_follow_the_gating_convention(tmp_path):
+  thresholds = tmp_path / "thresholds"
+  thresholds.mkdir()
+  (thresholds / "a.json").write_text(
+    json.dumps(
+      {
+        "benchmarks": {
+          "parallel/pool": {"max_real_time_ns": 5, "max_cpu_time_ns": None},
+          "path/search": {"max_real_time_ns": None, "max_cpu_time_ns": 7},
+        }
+      }
+    ),
+    encoding="utf-8",
+  )
+
+  metrics = paired_bench.load_threshold_metrics(thresholds)
+
+  assert metrics == {"parallel/pool": "real_time", "path/search": "cpu_time"}
+
+
+def test_suspect_set_sizes_to_the_list_with_metric_lookup(tmp_path):
+  thresholds = tmp_path / "thresholds"
+  thresholds.mkdir()
+  (thresholds / "a.json").write_text(
+    json.dumps(
+      {"benchmarks": {"parallel/pool": {"max_real_time_ns": 5}}}
+    ),
+    encoding="utf-8",
+  )
+
+  sentinels = paired_bench.suspect_sentinels(
+    ["parallel/pool", " lab/unlisted ", ""], thresholds
+  )
+
+  assert sentinels["parallel/pool"].metric == "real_time"
+  assert sentinels["lab/unlisted"].metric == "cpu_time"
+  assert len(sentinels) == 2
+
+
+def test_suspect_lists_are_capped(tmp_path):
+  thresholds = tmp_path / "thresholds"
+  thresholds.mkdir()
+
+  with pytest.raises(paired_bench.ToolError):
+    paired_bench.suspect_sentinels(
+      [f"b/{i}" for i in range(65)], thresholds
+    )
+
+
+def test_parse_results_converts_time_units():
+  payload = {
+    "benchmarks": [
+      {"name": "a/b", "cpu_time": 5.0, "real_time": 1.0, "time_unit": "us"},
+    ]
+  }
+
+  values = paired_bench.parse_results(json.dumps(payload), {"a/b": "cpu_time"})
+
+  assert values == {"a/b": 5_000.0}
+
+
+def test_main_confirms_a_suspect_list_end_to_end(tmp_path):
+  base = tmp_path / "base_bench"
+  head = tmp_path / "head_bench"
+  _fake_binary(base, {"fields/x": 100.0, "other/y": 100.0})
+  _fake_binary(head, {"fields/x": 150.0, "other/y": 100.0})
+  sentinels = tmp_path / "sentinels.json"
+  _sentinel_file(sentinels, ["ignored/sentinel"])
+  thresholds = tmp_path / "thresholds"
+  thresholds.mkdir()
+  (thresholds / "f.json").write_text(
+    json.dumps({"benchmarks": {"fields/x": {"max_cpu_time_ns": 1}}}),
+    encoding="utf-8",
+  )
+  out = tmp_path / "out.json"
+
+  code = paired_bench.main(
+    (
+      "--base-binary", str(base),
+      "--head-binary", str(head),
+      "--sentinels", str(sentinels),
+      "--suspects", "fields/x",
+      "--thresholds-dir", str(thresholds),
+      "--json", str(out),
+      "--mode", "confirm",
+      "--seed", "7",
+    )
+  )
+
+  assert code == 1
+  report = json.loads(out.read_text())
+  assert set(report["sentinels"]) == {"fields/x"}
+  assert report["sentinels"]["fields/x"]["verdict"] == "regression"
+
+
+def test_immaterial_scale_suspects_are_not_reported_as_pass(tmp_path):
+  base = tmp_path / "base_bench"
+  head = tmp_path / "head_bench"
+  # 25 ns baseline: a 40x regression still cannot clear the 2 ns-scaled
+  # floor in this config (floor 2000 ns), so "pass" would be a lie.
+  _fake_binary(base, {"block/scratch": 25.0})
+  _fake_binary(head, {"block/scratch": 1000.0})
+  sentinels = tmp_path / "sentinels.json"
+  _sentinel_file(sentinels, ["block/scratch"])
+  # Raise the floor to the production value for this scenario.
+  config = json.loads(sentinels.read_text())
+  config["parameters"]["materiality_floor_ns"] = 2000.0
+  sentinels.write_text(json.dumps(config), encoding="utf-8")
+  out = tmp_path / "out.json"
+
+  code = paired_bench.main(
+    (
+      "--base-binary", str(base),
+      "--head-binary", str(head),
+      "--sentinels", str(sentinels),
+      "--json", str(out),
+      "--mode", "confirm",
+      "--seed", "7",
+    )
+  )
+
+  assert code == 0  # not a confirmed regression, but not a refutation
+  report = json.loads(out.read_text())
+  assert report["sentinels"]["block/scratch"]["verdict"] == "immaterial-scale"
+
+
+def test_unavailable_requested_suspects_fail_the_confirmation(tmp_path):
+  base = tmp_path / "base_bench"
+  head = tmp_path / "head_bench"
+  _fake_binary(base, {"fields/x": 100.0})
+  _fake_binary(head, {"fields/x": 100.0})
+  sentinels = tmp_path / "sentinels.json"
+  _sentinel_file(sentinels, ["ignored/sentinel"])
+  thresholds = tmp_path / "thresholds"
+  thresholds.mkdir()
+
+  code = paired_bench.main(
+    (
+      "--base-binary", str(base),
+      "--head-binary", str(head),
+      "--sentinels", str(sentinels),
+      "--suspects", "fields/x,fields/renamed",
+      "--thresholds-dir", str(thresholds),
+      "--mode", "confirm",
+    )
+  )
+
+  assert code == 1
