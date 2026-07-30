@@ -40,11 +40,17 @@ def _export(path, files):
 
 
 def _tree(root, headers):
+  """Header files plus a CMakeLists.txt declaring them public."""
   include_root = root / "include" / "tess"
   for header in headers:
     target = include_root / header
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("#pragma once\n", encoding="utf-8")
+  listed = "\n".join(f"  include/tess/{header}" for header in headers)
+  (root / "CMakeLists.txt").write_text(
+    "set(\n  TESS_PUBLIC_HEADERS\n" + listed + "\n)\n",
+    encoding="utf-8",
+  )
   return include_root
 
 
@@ -52,11 +58,19 @@ def _analyze(tmp_path, headers, exports, known_gaps=None):
   include_root = _tree(tmp_path, headers)
   export_paths = []
   for index, files in enumerate(exports):
+    resolved = [
+      (
+        name if name.startswith("/") else str(include_root / name),
+        covered,
+        count,
+      )
+      for name, covered, count in files
+    ]
     path = tmp_path / f"export-{index}.json"
-    _export(path, files)
+    _export(path, resolved)
     export_paths.append(path)
   return coverage_gaps.analyze(
-    export_paths, include_root, known_gaps=known_gaps or []
+    export_paths, include_root, headers, known_gaps=known_gaps or []
   )
 
 
@@ -64,7 +78,7 @@ def test_executed_header_is_not_a_gap(tmp_path):
   result = _analyze(
     tmp_path,
     ["path/astar.h"],
-    [[("/ci/repo/include/tess/path/astar.h", 5, 9)]],
+    [[("path/astar.h", 5, 9)]],
   )
 
   assert result["gaps"] == []
@@ -77,7 +91,7 @@ def test_zero_region_header_is_a_gap(tmp_path):
   result = _analyze(
     tmp_path,
     ["gpu/interface.h"],
-    [[("/ci/repo/include/tess/gpu/interface.h", 0, 4)]],
+    [[("gpu/interface.h", 0, 4)]],
   )
 
   gaps = result["gaps"]
@@ -91,8 +105,8 @@ def test_header_absent_from_every_export_is_a_gap(tmp_path):
   # "not applicable".
   result = _analyze(
     tmp_path,
-    ["spatial/never_built.h"],
-    [[("/ci/repo/include/tess/core/other.h", 1, 1)]],
+    ["spatial/never_built.h", "core/other.h"],
+    [[("core/other.h", 1, 1)]],
   )
 
   gaps = {gap["header"]: gap for gap in result["gaps"]}
@@ -105,8 +119,8 @@ def test_execution_in_any_export_counts(tmp_path):
     tmp_path,
     ["diagnostics/trace.h"],
     [
-      [("/ci/repo/include/tess/diagnostics/trace.h", 0, 6)],
-      [("/ci/repo/include/tess/diagnostics/trace.h", 4, 6)],
+      [("diagnostics/trace.h", 0, 6)],
+      [("diagnostics/trace.h", 4, 6)],
     ],
   )
 
@@ -120,7 +134,7 @@ def test_known_gap_headers_are_reported_separately(tmp_path):
   result = _analyze(
     tmp_path,
     ["debug/imgui_panel.h", "debug/fresh.h", "sim/movement.h"],
-    [[("/ci/repo/include/tess/sim/movement.h", 0, 3)]],
+    [[("sim/movement.h", 0, 3)]],
     known_gaps=[
       {"header": "debug/imgui_panel.h", "reason": "dev-only ImGui helpers"}
     ],
@@ -141,13 +155,26 @@ def test_known_gap_entry_for_an_executed_header_is_stale(tmp_path):
   result = _analyze(
     tmp_path,
     ["gpu/backend.h"],
-    [[("/ci/repo/include/tess/gpu/backend.h", 2, 4)]],
+    [[("gpu/backend.h", 2, 4)]],
     known_gaps=[{"header": "gpu/backend.h", "reason": "no benchmarks"}],
   )
 
   assert result["gaps"] == []
   assert result["known_gaps"] == []
   assert result["stale_known_gaps"] == ["gpu/backend.h"]
+
+
+def test_orphan_known_gap_entry_is_stale(tmp_path):
+  # A manifest entry naming a removed, renamed, or misspelled header
+  # must surface for cleanup instead of silently vanishing.
+  result = _analyze(
+    tmp_path,
+    ["path/astar.h"],
+    [[("path/astar.h", 1, 1)]],
+    known_gaps=[{"header": "gpu/removed.h", "reason": "stale entry"}],
+  )
+
+  assert result["stale_known_gaps"] == ["gpu/removed.h"]
 
 
 def test_files_outside_the_include_root_are_ignored(tmp_path):
@@ -158,7 +185,7 @@ def test_files_outside_the_include_root_are_ignored(tmp_path):
       [
         ("/ci/repo/bench/tess_bench.cc", 9, 9),
         ("/ci/repo/build/_deps/benchmark-src/src/timers.cc", 3, 3),
-        ("/ci/repo/include/tess/core/grid.h", 2, 2),
+        ("core/grid.h", 2, 2),
       ]
     ],
   )
@@ -167,14 +194,26 @@ def test_files_outside_the_include_root_are_ignored(tmp_path):
   assert result["headers"][0]["header"] == "core/grid.h"
 
 
+def test_lookalike_dependency_paths_do_not_count(tmp_path):
+  # A dependency path that merely CONTAINS include/tess/ must not mark
+  # the repository header as executed; matching is by resolved prefix.
+  result = _analyze(
+    tmp_path,
+    ["core/grid.h"],
+    [[("/deps/vendored/include/tess/core/grid.h", 5, 5)]],
+  )
+
+  assert [gap["header"] for gap in result["gaps"]] == ["core/grid.h"]
+
+
 def test_subsystem_summary_counts_headers_and_gaps(tmp_path):
   result = _analyze(
     tmp_path,
     ["path/astar.h", "path/cache.h", "gpu/interface.h"],
     [
       [
-        ("/ci/repo/include/tess/path/astar.h", 5, 9),
-        ("/ci/repo/include/tess/path/cache.h", 0, 4),
+        ("path/astar.h", 5, 9),
+        ("path/cache.h", 0, 4),
       ]
     ],
   )
@@ -190,7 +229,7 @@ def test_top_level_headers_form_their_own_subsystem(tmp_path):
   result = _analyze(
     tmp_path,
     ["tess.h"],
-    [[("/ci/repo/include/tess/tess.h", 1, 1)]],
+    [[("tess.h", 1, 1)]],
   )
 
   assert result["subsystems"][0]["subsystem"] == "(top-level)"
@@ -205,7 +244,9 @@ def test_unrecognized_export_type_fails(tmp_path):
   )
 
   with pytest.raises(coverage_gaps.CoverageError):
-    coverage_gaps.analyze([bad], include_root, known_gaps=[])
+    coverage_gaps.analyze(
+      [bad], include_root, ["core/grid.h"], known_gaps=[]
+    )
 
 
 def test_corrupt_export_fails(tmp_path):
@@ -214,24 +255,79 @@ def test_corrupt_export_fails(tmp_path):
   bad.write_text("truncated{", encoding="utf-8")
 
   with pytest.raises(coverage_gaps.CoverageError):
-    coverage_gaps.analyze([bad], include_root, known_gaps=[])
+    coverage_gaps.analyze(
+      [bad], include_root, ["core/grid.h"], known_gaps=[]
+    )
+
+
+def test_export_with_non_list_data_fails(tmp_path):
+  # Schema violations must surface as CoverageError, not TypeError.
+  include_root = _tree(tmp_path, ["core/grid.h"])
+  bad = tmp_path / "export.json"
+  bad.write_text(
+    json.dumps(
+      {
+        "type": "llvm.coverage.json.export",
+        "version": "2.0.1",
+        "data": {"files": []},
+      }
+    ),
+    encoding="utf-8",
+  )
+
+  with pytest.raises(coverage_gaps.CoverageError):
+    coverage_gaps.analyze(
+      [bad], include_root, ["core/grid.h"], known_gaps=[]
+    )
 
 
 def test_missing_include_root_fails(tmp_path):
   export = tmp_path / "export.json"
-  _export(export, [("/ci/repo/include/tess/core/grid.h", 1, 1)])
+  _export(export, [("/ci/include/tess/core/grid.h", 1, 1)])
 
   with pytest.raises(coverage_gaps.CoverageError):
     coverage_gaps.analyze(
-      [export], tmp_path / "missing", known_gaps=[]
+      [export], tmp_path / "missing", ["core/grid.h"], known_gaps=[]
     )
+
+
+def test_public_headers_come_from_the_declared_set(tmp_path):
+  # The physical tree is not the public API: implementation headers
+  # (TESS_IMPLEMENTATION_HEADERS) are excluded and the generated
+  # version.h is included.
+  (tmp_path / "CMakeLists.txt").write_text(
+    "set(\n"
+    "  TESS_PUBLIC_HEADERS\n"
+    "  include/tess/core/lattice.h\n"
+    "  include/tess/path/astar.h\n"
+    ")\n"
+    "set(\n"
+    "  TESS_IMPLEMENTATION_HEADERS\n"
+    "  include/tess/core/uint128.h\n"
+    "  include/tess/path/detail/astar.h\n"
+    ")\n",
+    encoding="utf-8",
+  )
+
+  headers = coverage_gaps.public_headers(tmp_path / "CMakeLists.txt")
+
+  assert headers == ["core/lattice.h", "path/astar.h", "version.h"]
+
+
+def test_public_headers_without_the_block_fails(tmp_path):
+  (tmp_path / "CMakeLists.txt").write_text(
+    "add_library(tess INTERFACE)\n", encoding="utf-8"
+  )
+
+  with pytest.raises(coverage_gaps.CoverageError):
+    coverage_gaps.public_headers(tmp_path / "CMakeLists.txt")
 
 
 def test_report_lists_new_gaps_before_known_ones(tmp_path):
   result = _analyze(
     tmp_path,
     ["debug/imgui_panel.h", "sim/movement.h", "path/astar.h"],
-    [[("/ci/repo/include/tess/path/astar.h", 3, 3)]],
+    [[("path/astar.h", 3, 3)]],
     known_gaps=[
       {"header": "debug/imgui_panel.h", "reason": "dev-only ImGui helpers"}
     ],
@@ -248,60 +344,12 @@ def test_report_with_no_new_gaps_says_so(tmp_path):
   result = _analyze(
     tmp_path,
     ["path/astar.h"],
-    [[("/ci/repo/include/tess/path/astar.h", 3, 3)]],
+    [[("path/astar.h", 3, 3)]],
   )
 
   report = coverage_gaps.render_report(result)
 
   assert "No new benchmark coverage gaps" in report
-
-
-def test_main_writes_markdown_and_json(tmp_path):
-  include_root = _tree(tmp_path, ["path/astar.h", "gpu/interface.h"])
-  export = tmp_path / "export.json"
-  _export(export, [("/ci/repo/include/tess/path/astar.h", 3, 3)])
-  markdown = tmp_path / "report.md"
-  payload = tmp_path / "report.json"
-
-  code = coverage_gaps.main(
-    [
-      f"--export={export}",
-      f"--include-root={include_root}",
-      f"--out-markdown={markdown}",
-      f"--out-json={payload}",
-    ]
-  )
-
-  assert code == 0
-  assert "gpu/interface.h" in markdown.read_text(encoding="utf-8")
-  saved = json.loads(payload.read_text(encoding="utf-8"))
-  assert [gap["header"] for gap in saved["gaps"]] == ["gpu/interface.h"]
-
-
-def test_main_stays_zero_when_gaps_exist(tmp_path):
-  # Advisory always: gaps are report content, not a failure.
-  include_root = _tree(tmp_path, ["gpu/interface.h"])
-  export = tmp_path / "export.json"
-  _export(export, [("/ci/repo/include/tess/core/other.h", 1, 1)])
-
-  code = coverage_gaps.main(
-    [f"--export={export}", f"--include-root={include_root}"]
-  )
-
-  assert code == 0
-
-
-def test_main_fails_loudly_on_missing_export(tmp_path):
-  include_root = _tree(tmp_path, ["core/grid.h"])
-
-  code = coverage_gaps.main(
-    [
-      f"--export={tmp_path / 'absent.json'}",
-      f"--include-root={include_root}",
-    ]
-  )
-
-  assert code == 1
 
 
 def _ctest_json(tmp_path, commands):
@@ -332,6 +380,42 @@ def test_ctest_objects_deduplicates_build_dir_executables(tmp_path):
       [str(binary_a), "--gtest_filter=A.*"],
       [str(binary_a), "--gtest_filter=B.*"],
       [str(binary_b)],
+    ],
+  )
+
+  objects = coverage_gaps.ctest_objects(payload, build)
+
+  assert objects == sorted([str(binary_a), str(binary_b)])
+
+
+def test_ctest_objects_resolves_gtest_launcher_commands(tmp_path):
+  # gtest_discover_tests registers tests as cmake launcher commands;
+  # command[0] is cmake, and the instrumented binary hides in a
+  # TEST_EXECUTABLE argument (both -D forms occur).
+  build = tmp_path / "build"
+  (build / "tests").mkdir(parents=True)
+  binary_a = build / "tests" / "tess_core_test"
+  binary_b = build / "tests" / "tess_path_test"
+  for binary in (binary_a, binary_b):
+    binary.write_bytes(b"\x7fELF")
+  payload = _ctest_json(
+    tmp_path,
+    [
+      [
+        "/usr/bin/cmake",
+        "-D",
+        f"TEST_EXECUTABLE={binary_a}",
+        "-D",
+        "TEST_EXECUTOR=",
+        "-P",
+        "/usr/share/cmake/GoogleTest/GoogleTestAddTests.cmake",
+      ],
+      [
+        "/usr/bin/cmake",
+        f"-DTEST_EXECUTABLE={binary_b}",
+        "-P",
+        "/usr/share/cmake/GoogleTest/GoogleTestAddTests.cmake",
+      ],
     ],
   )
 
@@ -396,6 +480,110 @@ def test_objects_main_fails_without_binaries(tmp_path, capsys):
   assert "no instrumented test executables" in capsys.readouterr().err
 
 
+def test_main_writes_markdown_and_json(tmp_path):
+  include_root = _tree(tmp_path, ["path/astar.h", "gpu/interface.h"])
+  export = tmp_path / "export.json"
+  _export(export, [(str(include_root / "path/astar.h"), 3, 3)])
+  markdown = tmp_path / "report.md"
+  payload = tmp_path / "report.json"
+
+  code = coverage_gaps.main(
+    [
+      f"--export={export}",
+      f"--include-root={include_root}",
+      f"--cmake-lists={tmp_path / 'CMakeLists.txt'}",
+      f"--out-markdown={markdown}",
+      f"--out-json={payload}",
+    ]
+  )
+
+  assert code == 0
+  assert "gpu/interface.h" in markdown.read_text(encoding="utf-8")
+  saved = json.loads(payload.read_text(encoding="utf-8"))
+  gap_headers = [gap["header"] for gap in saved["gaps"]]
+  assert "gpu/interface.h" in gap_headers
+  # The generated public header is part of the inventory even though
+  # it never exists in the source tree.
+  assert "version.h" in gap_headers
+
+
+def test_main_stays_zero_when_gaps_exist(tmp_path):
+  # Advisory always: gaps are report content, not a failure.
+  include_root = _tree(tmp_path, ["gpu/interface.h"])
+  export = tmp_path / "export.json"
+  _export(export, [])
+
+  code = coverage_gaps.main(
+    [
+      f"--export={export}",
+      f"--include-root={include_root}",
+      f"--cmake-lists={tmp_path / 'CMakeLists.txt'}",
+    ]
+  )
+
+  assert code == 0
+
+
+def test_main_fails_loudly_on_missing_export(tmp_path):
+  include_root = _tree(tmp_path, ["core/grid.h"])
+
+  code = coverage_gaps.main(
+    [
+      f"--export={tmp_path / 'absent.json'}",
+      f"--include-root={include_root}",
+      f"--cmake-lists={tmp_path / 'CMakeLists.txt'}",
+    ]
+  )
+
+  assert code == 1
+
+
+def test_main_fails_loudly_on_unwritable_output(tmp_path):
+  include_root = _tree(tmp_path, ["core/grid.h"])
+  export = tmp_path / "export.json"
+  _export(export, [])
+
+  code = coverage_gaps.main(
+    [
+      f"--export={export}",
+      f"--include-root={include_root}",
+      f"--cmake-lists={tmp_path / 'CMakeLists.txt'}",
+      f"--out-markdown={tmp_path}",
+    ]
+  )
+
+  assert code == 1
+
+
+def test_duplicate_known_gap_entries_fail(tmp_path):
+  include_root = _tree(tmp_path, ["core/grid.h"])
+  export = tmp_path / "export.json"
+  _export(export, [])
+  gaps_file = tmp_path / "known.json"
+  gaps_file.write_text(
+    json.dumps(
+      {
+        "known_gaps": [
+          {"header": "core/grid.h", "reason": "one"},
+          {"header": "core/grid.h", "reason": "two"},
+        ]
+      }
+    ),
+    encoding="utf-8",
+  )
+
+  code = coverage_gaps.main(
+    [
+      f"--export={export}",
+      f"--include-root={include_root}",
+      f"--cmake-lists={tmp_path / 'CMakeLists.txt'}",
+      f"--known-gaps={gaps_file}",
+    ]
+  )
+
+  assert code == 1
+
+
 def test_known_gaps_file_round_trips(tmp_path):
   include_root = _tree(tmp_path, ["debug/panel.h"])
   export = tmp_path / "export.json"
@@ -417,6 +605,7 @@ def test_known_gaps_file_round_trips(tmp_path):
     [
       f"--export={export}",
       f"--include-root={include_root}",
+      f"--cmake-lists={tmp_path / 'CMakeLists.txt'}",
       f"--known-gaps={gaps_file}",
       f"--out-json={payload}",
     ]
@@ -424,5 +613,5 @@ def test_known_gaps_file_round_trips(tmp_path):
 
   assert code == 0
   saved = json.loads(payload.read_text(encoding="utf-8"))
-  assert saved["gaps"] == []
+  assert saved["gaps"] != []  # version.h is a new gap in this fixture
   assert [gap["header"] for gap in saved["known_gaps"]] == ["debug/panel.h"]

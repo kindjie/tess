@@ -821,7 +821,8 @@ that introduces this document.
    publishes an llvm-cov test-suite summary (every instrumented test
    binary passed via `-object` — mappings live in binaries, not
    profiles), and `tools/coverage_gaps.py` joins smoke-mode runs of
-   both bench binaries against the public header tree, distinguishing
+   both bench binaries against the declared public header set,
+   distinguishing
    zero-covered from absent-from-export evidence, with an
    exact-header acknowledged-gaps manifest and stale-entry detection.
    The first local run validated the design by catching a wrong

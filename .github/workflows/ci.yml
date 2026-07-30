@@ -947,27 +947,32 @@ jobs:
       - name: Benchmark gap-finder
         # Smoke mode runs every registration in both binaries; timing
         # distortion from instrumentation is irrelevant to a
-        # coverage-only run (section 4.5).
-        env:
-          LLVM_PROFILE_FILE: >-
-            ${{ github.workspace }}/build/bench-coverage/profiles/bench-%m-%p.profraw
+        # coverage-only run (section 4.5). The binaries compile shared
+        # sources under different definitions, so each gets its own
+        # profile set and export — a combined export produces
+        # mismatched-data warnings and unreliable per-file numbers —
+        # and the gap-finder merges best-coverage across the exports.
         run: |
-          mkdir -p build/bench-coverage/profiles
-          ./build/bench-coverage/bench/tess_bench \
-            --benchmark_min_time=0.001 > /dev/null
-          ./build/bench-coverage/bench/tess_bench_diagnostics \
-            --benchmark_min_time=0.001 > /dev/null
-          llvm-profdata-18 merge \
-            build/bench-coverage/profiles/*.profraw \
-            -o build/bench-coverage/bench.profdata
-          llvm-cov-18 export -summary-only \
-            build/bench-coverage/bench/tess_bench \
-            -object build/bench-coverage/bench/tess_bench_diagnostics \
-            -instr-profile build/bench-coverage/bench.profdata \
-            > build/bench-coverage/bench-coverage-export.json
+          run_bench() {
+            mkdir -p "build/bench-coverage/profiles-$1"
+            LLVM_PROFILE_FILE="$PWD/build/bench-coverage/profiles-$1/%m-%p.profraw" \
+              "./build/bench-coverage/bench/$1" \
+              --benchmark_min_time=0.001s > /dev/null
+            llvm-profdata-18 merge \
+              "build/bench-coverage/profiles-$1"/*.profraw \
+              -o "build/bench-coverage/$1.profdata"
+            llvm-cov-18 export -summary-only \
+              "build/bench-coverage/bench/$1" \
+              -instr-profile "build/bench-coverage/$1.profdata" \
+              > "build/bench-coverage/$1-coverage-export.json"
+          }
+          run_bench tess_bench
+          run_bench tess_bench_diagnostics
           python3 tools/coverage_gaps.py \
-            --export build/bench-coverage/bench-coverage-export.json \
+            --export build/bench-coverage/tess_bench-coverage-export.json \
+            --export build/bench-coverage/tess_bench_diagnostics-coverage-export.json \
             --include-root include/tess \
+            --cmake-lists CMakeLists.txt \
             --known-gaps tools/coverage_known_gaps.json \
             --out-markdown build/bench-coverage/coverage-gaps.md \
             --out-json build/bench-coverage/coverage-gaps.json
@@ -981,7 +986,8 @@ jobs:
           name: coverage-reports-${{ github.run_id }}
           path: |
             build/dev-coverage/test-coverage-export.json
-            build/bench-coverage/bench-coverage-export.json
+            build/bench-coverage/tess_bench-coverage-export.json
+            build/bench-coverage/tess_bench_diagnostics-coverage-export.json
             build/bench-coverage/coverage-gaps.md
             build/bench-coverage/coverage-gaps.json
           retention-days: 90

@@ -18,8 +18,10 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   executable is passed via `-object`, because coverage mappings live
   in binaries rather than profiles — and a benchmark gap-finder:
   smoke-mode runs of every registration in both bench binaries joined
-  by `tools/coverage_gaps.py` against the public header tree,
-  reporting which headers no benchmark executes. Headers absent from
+  by `tools/coverage_gaps.py` against the declared public header set
+  (`TESS_PUBLIC_HEADERS` plus the generated `version.h`; the physical
+  tree includes private implementation headers), reporting which
+  public headers no benchmark executes. Headers absent from
   the export entirely (never included or never instantiated) are
   distinguished from mapped-but-unexecuted ones; acknowledged gaps
   live in an exact-header manifest (`tools/coverage_known_gaps.json`)

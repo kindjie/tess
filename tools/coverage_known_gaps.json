@@ -42,6 +42,10 @@
     {
       "header": "core/assert.h",
       "reason": "assertion bodies compile out under NDEBUG in Release bench builds"
+    },
+    {
+      "header": "version.h",
+      "reason": "generated constants-only header; no executable regions"
     }
   ]
 }

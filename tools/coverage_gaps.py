@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -48,7 +49,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _export_file_summaries(
-  path: Path, marker: str
+  path: Path, include_root: Path
 ) -> dict[str, dict[str, int]]:
   """Map header-relative paths to region summaries for one export."""
   payload = _load_json(path)
@@ -57,14 +58,26 @@ def _export_file_summaries(
       f"{path} is not an llvm-cov export (type="
       f"{payload.get('type')!r})"
     )
+  data = payload.get("data")
+  if not isinstance(data, list):
+    raise CoverageError(f"{path}: export 'data' is not a list")
+  # Exact resolved-prefix matching: a dependency or generated path that
+  # merely ends in include/tess/ must not mark repository headers as
+  # executed.
+  prefix = str(include_root.resolve())
   summaries: dict[str, dict[str, int]] = {}
-  for entry in payload.get("data", []):
-    for file_row in entry.get("files", []):
-      filename = file_row.get("filename", "")
-      position = filename.rfind(marker)
-      if position < 0:
+  for entry in data:
+    if not isinstance(entry, dict):
+      raise CoverageError(f"{path}: export entry is not an object")
+    files = entry.get("files", [])
+    if not isinstance(files, list):
+      raise CoverageError(f"{path}: export 'files' is not a list")
+    for file_row in files:
+      filename = str(file_row.get("filename", ""))
+      try:
+        relative = str(Path(filename).resolve().relative_to(prefix))
+      except ValueError:
         continue
-      relative = filename[position + len(marker):]
       regions = file_row.get("summary", {}).get("regions", {})
       count = int(regions.get("count", 0))
       covered = int(regions.get("covered", 0))
@@ -74,13 +87,39 @@ def _export_file_summaries(
   return summaries
 
 
-def _repository_headers(include_root: Path) -> list[str]:
-  if not include_root.is_dir():
-    raise CoverageError(f"include root {include_root} does not exist")
-  return sorted(
-    str(path.relative_to(include_root))
-    for path in include_root.rglob("*.h")
-  )
+PUBLIC_HEADERS_BLOCK = re.compile(
+  r"set\(\s*TESS_PUBLIC_HEADERS\s*(.*?)\)", re.DOTALL
+)
+HEADER_ENTRY = re.compile(r"include/tess/(\S+?\.h)")
+
+
+def public_headers(cmake_lists: Path) -> list[str]:
+  """The declared public header set (relative to include/tess).
+
+  The physical tree under include/tess is NOT the public API:
+  CMakeLists.txt separates implementation headers (core/uint128.h,
+  path/detail/...) into TESS_IMPLEMENTATION_HEADERS, and the installed
+  tess/version.h is generated outside the source include directory.
+  """
+  try:
+    text = cmake_lists.read_text(encoding="utf-8")
+  except OSError as error:
+    raise CoverageError(
+      f"cannot read {cmake_lists}: {error}"
+    ) from error
+  match = PUBLIC_HEADERS_BLOCK.search(text)
+  if match is None:
+    raise CoverageError(
+      f"{cmake_lists} has no set(TESS_PUBLIC_HEADERS ...) block"
+    )
+  headers = HEADER_ENTRY.findall(match.group(1))
+  if not headers:
+    raise CoverageError(
+      f"{cmake_lists}: TESS_PUBLIC_HEADERS block lists no headers"
+    )
+  # The generated, installed public header; it lives in the build tree.
+  headers.append("version.h")
+  return sorted(headers)
 
 
 def _subsystem(header: str) -> str:
@@ -92,16 +131,17 @@ def _subsystem(header: str) -> str:
 def analyze(
   export_paths: list[Path],
   include_root: Path,
+  headers: list[str],
   *,
   known_gaps: list[dict[str, str]],
 ) -> dict[str, Any]:
-  """Join export summaries against the header tree; classify gaps."""
-  headers = _repository_headers(include_root)
-  marker = "include/tess/"
+  """Join export summaries against the header set; classify gaps."""
+  if not include_root.is_dir():
+    raise CoverageError(f"include root {include_root} does not exist")
   merged: dict[str, dict[str, int]] = {}
   for path in export_paths:
     for relative, summary in _export_file_summaries(
-      Path(path), marker
+      Path(path), include_root
     ).items():
       existing = merged.get(relative)
       if existing is None or summary["covered"] > existing["covered"]:
@@ -135,7 +175,13 @@ def analyze(
 
   gaps = []
   known = []
-  stale_known = []
+  # Stale entries: acknowledged headers that gained coverage, plus
+  # orphans naming headers that no longer exist (removed, renamed, or
+  # misspelled) — both would otherwise vanish from every output.
+  header_set = set(headers)
+  stale_known = sorted(
+    header for header in known_reasons if header not in header_set
+  )
   for row in rows:
     if row["executed"]:
       if row["header"] in known_reasons:
@@ -172,6 +218,27 @@ def analyze(
   }
 
 
+def _command_executables(command: list[str]) -> list[str]:
+  """Candidate executables for one ctest command.
+
+  gtest_discover_tests registers tests through a CMake launcher
+  (``cmake -D TEST_EXECUTABLE=<binary> -P .../GoogleTestAddTests``),
+  so ``command[0]`` is cmake, not the instrumented binary; the real
+  executable arrives as a ``TEST_EXECUTABLE=`` argument in either the
+  split (``-D`` ``TEST_EXECUTABLE=...``) or fused
+  (``-DTEST_EXECUTABLE=...``) form. CMake documents the substitution,
+  not a stable command layout, so both the direct and launcher shapes
+  are candidates.
+  """
+  candidates = [command[0]]
+  for argument in command[1:]:
+    if argument.startswith("-D"):
+      argument = argument[2:]
+    if argument.startswith("TEST_EXECUTABLE="):
+      candidates.append(argument.split("=", 1)[1])
+  return candidates
+
+
 def ctest_objects(ctest_json: Path, build_dir: Path) -> list[str]:
   """Instrumented test executables from ctest --show-only=json-v1."""
   payload = _load_json(Path(ctest_json))
@@ -181,13 +248,14 @@ def ctest_objects(ctest_json: Path, build_dir: Path) -> list[str]:
     command = test.get("command") or []
     if not command:
       continue
-    executable = Path(command[0])
-    try:
-      executable.resolve().relative_to(build_root)
-    except ValueError:
-      continue
-    if executable.is_file():
-      objects.add(str(executable))
+    for candidate in _command_executables(command):
+      executable = Path(candidate)
+      try:
+        executable.resolve().relative_to(build_root)
+      except ValueError:
+        continue
+      if executable.is_file():
+        objects.add(str(executable))
   if not objects:
     raise CoverageError(
       f"no instrumented test executables found under {build_dir}"
@@ -233,7 +301,9 @@ def render_report(result: dict[str, Any]) -> str:
 
   stale = result["stale_known_gaps"]
   if stale:
-    lines.append("### Stale known-gap entries (now executed — remove)")
+    lines.append(
+      "### Stale known-gap entries (executed or missing — remove)"
+    )
     lines.append("")
     for header in stale:
       lines.append(f"- `{header}`")
@@ -251,11 +321,24 @@ def _load_known_gaps(path: Path | None) -> list[dict[str, str]]:
     return []
   payload = _load_json(path)
   entries = payload.get("known_gaps", [])
+  if not isinstance(entries, list):
+    raise CoverageError(f"{path}: known_gaps is not a list")
+  seen = set()
   for entry in entries:
-    if "header" not in entry or "reason" not in entry:
+    if (
+      not isinstance(entry, dict)
+      or not entry.get("header")
+      or not entry.get("reason")
+    ):
       raise CoverageError(
-        f"{path}: every known_gaps entry needs header and reason"
+        f"{path}: every known_gaps entry needs a non-empty header "
+        "and reason"
       )
+    if entry["header"] in seen:
+      raise CoverageError(
+        f"{path}: duplicate known_gaps entry {entry['header']!r}"
+      )
+    seen.add(entry["header"])
   return entries
 
 
@@ -270,6 +353,12 @@ def main(argv: list[str] | None = None) -> int:
     help="llvm-cov export JSON (repeat per bench binary)",
   )
   parser.add_argument("--include-root", required=True, type=Path)
+  parser.add_argument(
+    "--cmake-lists",
+    required=True,
+    type=Path,
+    help="CMakeLists.txt declaring TESS_PUBLIC_HEADERS",
+  )
   parser.add_argument("--known-gaps", type=Path)
   parser.add_argument("--out-markdown", type=Path)
   parser.add_argument("--out-json", type=Path)
@@ -279,19 +368,20 @@ def main(argv: list[str] | None = None) -> int:
     result = analyze(
       args.exports,
       args.include_root,
+      public_headers(args.cmake_lists),
       known_gaps=_load_known_gaps(args.known_gaps),
     )
-  except CoverageError as error:
+    report = render_report(result)
+    if args.out_markdown is not None:
+      args.out_markdown.write_text(report, encoding="utf-8")
+    if args.out_json is not None:
+      args.out_json.write_text(
+        json.dumps(result, indent=2) + "\n", encoding="utf-8"
+      )
+  except (CoverageError, OSError) as error:
     print(f"error: {error}", file=sys.stderr)
     return 1
 
-  report = render_report(result)
-  if args.out_markdown is not None:
-    args.out_markdown.write_text(report, encoding="utf-8")
-  if args.out_json is not None:
-    args.out_json.write_text(
-      json.dumps(result, indent=2) + "\n", encoding="utf-8"
-    )
   print(report)
   return 0
 

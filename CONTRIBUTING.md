@@ -97,19 +97,20 @@ Clang:
 
 ```sh
 cmake --preset bench-coverage && cmake --build --preset bench-coverage
-LLVM_PROFILE_FILE="$PWD/build/bench-coverage/bench-%m-%p.profraw" \
-  ./build/bench-coverage/bench/tess_bench --benchmark_min_time=0.001
-LLVM_PROFILE_FILE="$PWD/build/bench-coverage/bench-%m-%p.profraw" \
-  ./build/bench-coverage/bench/tess_bench_diagnostics \
-  --benchmark_min_time=0.001
-llvm-profdata merge build/bench-coverage/bench-*.profraw \
-  -o build/bench-coverage/bench.profdata
-llvm-cov export -summary-only build/bench-coverage/bench/tess_bench \
-  -object build/bench-coverage/bench/tess_bench_diagnostics \
-  -instr-profile build/bench-coverage/bench.profdata \
-  > build/bench-coverage/export.json
-tools/coverage_gaps.py --export build/bench-coverage/export.json \
-  --include-root include/tess --known-gaps tools/coverage_known_gaps.json
+for binary in tess_bench tess_bench_diagnostics; do  # separate profiles
+  LLVM_PROFILE_FILE="$PWD/build/bench-coverage/$binary-%m-%p.profraw" \
+    "./build/bench-coverage/bench/$binary" --benchmark_min_time=0.001s
+  llvm-profdata merge "build/bench-coverage/$binary"-*.profraw \
+    -o "build/bench-coverage/$binary.profdata"
+  llvm-cov export -summary-only "build/bench-coverage/bench/$binary" \
+    -instr-profile "build/bench-coverage/$binary.profdata" \
+    > "build/bench-coverage/$binary-export.json"
+done
+tools/coverage_gaps.py \
+  --export build/bench-coverage/tess_bench-export.json \
+  --export build/bench-coverage/tess_bench_diagnostics-export.json \
+  --include-root include/tess --cmake-lists CMakeLists.txt \
+  --known-gaps tools/coverage_known_gaps.json
 ```
 
 CI runs primarily on `ubuntu-24.04` with Clang and covers:
