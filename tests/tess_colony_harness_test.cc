@@ -76,6 +76,14 @@ TEST(TessColonyHarness, DrivesTheStackAndMakesProgress) {
   // every invariance test below vacuous.
   EXPECT_EQ(run.ticks, config.ticks);
   EXPECT_EQ(run.final_positions.size(), config.agents);
+  // The placement scan must have satisfied the requested population:
+  // a silently smaller colony would weaken every assertion here and
+  // in the invariance tests.
+  EXPECT_EQ(run.agents_unplaced, 0u);
+  // Agents that arrived or exhausted their retries keep no goal. The
+  // harness does not reassign, so this is also the signal that a
+  // longer run would idle.
+  EXPECT_EQ(run.agents_idle_at_end, run.arrivals);
   EXPECT_GT(run.total_steps, 0u);
   EXPECT_GT(run.arrivals, 0u);
   EXPECT_EQ(run.counters.churn_events, 4u);

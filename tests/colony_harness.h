@@ -100,6 +100,15 @@ struct ColonyCounters {
 
 struct ColonyRun {
   std::uint64_t ticks = 0;
+  // Requested minus placed. The placement scan can run out of
+  // qualifying tiles before reaching the requested population, and a
+  // silently smaller colony would weaken every assertion below it.
+  std::size_t agents_unplaced = 0;
+  // Agents with no goal at end of run: arrivals plus retry
+  // exhaustions. The harness does not reassign goals, so a run longer
+  // than the initial routes idles — visible here rather than as a
+  // mysteriously flat step count.
+  std::size_t agents_idle_at_end = 0;
   std::size_t arrivals = 0;
   std::size_t total_steps = 0;
   std::vector<tess::Coord3> final_positions;
@@ -295,8 +304,16 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
     for (const auto& goal : assigned_goals) {
       mark(goal);
     }
+    // Enough candidates for the whole run: a fixed cap would silently
+    // stop churning partway through a long scenario.
+    const std::size_t wanted =
+        config_.churn_period == 0
+            ? 0
+            : (static_cast<std::size_t>(config_.ticks / config_.churn_period) +
+               1) *
+                  config_.churn_chunks;
     for (std::size_t attempt = 0;
-         attempt < interior.size() && churn_pool.size() < 64; ++attempt) {
+         attempt < interior.size() && churn_pool.size() < wanted; ++attempt) {
       const auto logical = interior[rng.below(interior.size())];
       const auto lx = static_cast<std::int64_t>(logical % map.width);
       const auto ly = static_cast<std::int64_t>(logical / map.width);
@@ -543,6 +560,10 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
       }
     }
 
+    // Terrain deltas only: agent movement is committed through
+    // occupancy under kOccupancyDirty and is not published here, so
+    // delta_publishes counts terrain edits rather than every visible
+    // change.
     tess::collect_tile_deltas(deltas, *world, kTerrainDirty);
     const auto frame = deltas.publish();
     if (!frame.empty()) {
@@ -588,11 +609,15 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
   }
 
   result.ticks = config_.ticks;
+  result.agents_unplaced = config_.agents - agents.size();
   result.final_positions.reserve(agents.size());
   for (std::size_t i = 0; i < agents.size(); ++i) {
     result.final_positions.push_back(agents[i].position);
-    if (!agents[i].has_goal && agents[i].position == assigned_goals[i]) {
-      ++result.arrivals;
+    if (!agents[i].has_goal) {
+      ++result.agents_idle_at_end;
+      if (agents[i].position == assigned_goals[i]) {
+        ++result.arrivals;
+      }
     }
   }
   result.agent_flow = flow.counters;
