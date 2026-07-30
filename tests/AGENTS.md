@@ -922,9 +922,13 @@
   SplitMix64 stream, a stable tiny-map golden, full passable
   connectivity via a single BFS flood, guaranteed first-room
   placement, deterministic endpoint sampling (farthest-pair
-  inclusion), and the S1 oracle leg: tess A* equals the independent
-  Dijkstra reference exactly, Orthogonal and DiagonalBothClear, both
-  directions, on every generated case.
+  inclusion), rejection of room extents whose margin check would
+  overflow, a contract sweep asserting that every accepted extent
+  pair from 8x8 to 64x64 parses and is fully connected for both
+  generators (about 6500 maps, 3 s under ASan), and the S1 oracle
+  leg: tess A* equals the independent Dijkstra reference exactly,
+  Orthogonal and DiagonalBothClear, both directions, on every
+  generated case.
 - `tests/test_git_hooks.py`: pytest coverage for the hook and CI backstop
   helpers. It pins NUL-safe staged/tracked/index-diff path handling, exact
   indexed-blob reads that do not follow symlinks, fail-closed read errors,

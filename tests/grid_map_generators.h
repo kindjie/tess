@@ -37,7 +37,9 @@ class SplitMix64 {
   // (Lemire, 32-bit form): every product fits in 64 bits, so this
   // needs no 128-bit type — MSVC has none — and yields the identical
   // stream on every supported compiler. Bounds here are map extents,
-  // far below 2^32.
+  // far below 2^32. Multiply-shift alone carries a range bias below
+  // 2^-32, which is irrelevant for layout choices that only have to
+  // be varied and reproducible, not statistically uniform.
   auto below(std::uint64_t bound) -> std::uint64_t {
     const std::uint64_t draw = next() >> 32;
     return (draw * bound) >> 32;
@@ -173,9 +175,13 @@ struct RoomParams {
 inline auto room_and_corridor(std::size_t width, std::size_t height,
                               std::uint64_t seed, RoomParams params = {})
     -> std::optional<RoomMapResult> {
+  // The margin comparison subtracts rather than adds: max_extent is
+  // caller-supplied, so `max_extent + 2` could wrap and let an
+  // oversized room through into an out-of-bounds write. valid_extents
+  // runs first, so the smaller dimension is at least 8 here.
   if (!detail::valid_extents(width, height) || params.min_extent < 2 ||
       params.max_extent < params.min_extent ||
-      params.max_extent + 2 > std::min(width, height) ||
+      params.max_extent > std::min(width, height) - 2 ||
       params.room_attempts == 0) {
     return std::nullopt;
   }

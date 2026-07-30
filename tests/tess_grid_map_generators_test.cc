@@ -138,6 +138,45 @@ TEST(TessGridMapGenerators, GeneratedMapsParseAndAreFullyConnected) {
   }
 }
 
+TEST(TessGridMapGenerators, RejectsOverflowingRoomExtents) {
+  // max_extent + 2 would wrap and let an oversized room through into
+  // an out-of-bounds write; the margin check must subtract instead.
+  EXPECT_FALSE(grid::room_and_corridor(
+      8, 8, 0, {1, 2, std::numeric_limits<std::size_t>::max()}));
+  EXPECT_FALSE(grid::room_and_corridor(
+      64, 64, 0, {4, 4, std::numeric_limits<std::size_t>::max() - 1}));
+}
+
+// Contract sweep: every accepted extent pair and parity combination,
+// for both generators, must parse and be fully connected. This is the
+// advertised 8..64 contract checked directly rather than inferred
+// from a handful of sizes.
+TEST(TessGridMapGenerators, EveryAcceptedExtentIsConnected) {
+  std::size_t checked = 0;
+  for (std::size_t width = grid::kMinGeneratedExtent;
+       width <= grid::kMaxGeneratedExtent; ++width) {
+    for (std::size_t height = grid::kMinGeneratedExtent;
+         height <= grid::kMaxGeneratedExtent; ++height) {
+      SCOPED_TRACE(::testing::Message() << width << "x" << height);
+      const auto maze = grid::parse_map("sweep", maze_text(width, height, 7));
+      ASSERT_TRUE(maze);
+      const auto maze_flood = grid::flood_fill(maze.value);
+      ASSERT_GT(maze_flood.passable, 0u);
+      ASSERT_EQ(maze_flood.reached, maze_flood.passable);
+
+      const auto rooms = room_map(width, height, 7, {6, 3, 5});
+      const auto room_parsed = grid::parse_map("sweep", rooms.text);
+      ASSERT_TRUE(room_parsed);
+      const auto room_flood = grid::flood_fill(room_parsed.value);
+      ASSERT_GE(rooms.rooms, 1u);
+      ASSERT_GT(room_flood.passable, 0u);
+      ASSERT_EQ(room_flood.reached, room_flood.passable);
+      checked += 2;
+    }
+  }
+  EXPECT_GT(checked, 6000u);
+}
+
 TEST(TessGridMapGenerators, RoomMapsGuaranteeAtLeastOneRoom) {
   const auto result = room_map(64, 64, 0xC3, {12, 4, 10});
   EXPECT_GE(result.rooms, 1u);
