@@ -814,11 +814,25 @@ that introduces this document.
    threshold-manifest metric — extreme-tail bootstrap intervals over
    hundreds of benchmarks are not statistically valid at practical
    round counts, so a broad sweep belongs to the change-point detector
-   and formal confirmation stays targeted. Automatic dispatch on
-   series breaks and longer-than-30-day artifact retention (section 7)
-   remain open in this phase. Remaining in this phase: advisory
-   coverage, the workload-matrix catalog, profiling-protocol wiring,
-   and pre-push slimming.*
+   and formal confirmation stays targeted. Advisory coverage
+   (sections 3.6 and 4.5) shipped 2026-07-30 on the weekly tier: a
+   `TESS_ENABLE_COVERAGE` option routes Clang source-based coverage
+   flags through the header-only interface target, the coverage job
+   publishes an llvm-cov test-suite summary (every instrumented test
+   binary passed via `-object` — mappings live in binaries, not
+   profiles), and `tools/coverage_gaps.py` joins smoke-mode runs of
+   both bench binaries against the declared public header set,
+   distinguishing
+   zero-covered from absent-from-export evidence, with an
+   exact-header acknowledged-gaps manifest and stale-entry detection.
+   The first local run validated the design by catching a wrong
+   manifest assumption (maintenance benchmarks do execute
+   `experimental/maintenance.h`) and surfacing real gaps
+   (`core/lattice.h`, `storage/residency.h`, `sim/scheduler.h`).
+   Automatic dispatch on series breaks and longer-than-30-day
+   artifact retention (section 7) remain open in this phase.
+   Remaining in this phase: the workload-matrix catalog,
+   profiling-protocol wiring, and pre-push slimming.*
 3. Scenario layer: procedural generators, then the S2 macro-harness (with
    PR-tier smoke), then S3. S1 stays on in-repo procedural data: the
    external-data legs (manifest entries, fetch tool, cache verification, the

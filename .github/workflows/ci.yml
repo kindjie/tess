@@ -214,6 +214,7 @@ jobs:
           tests/test_paired_bench.py
           tests/test_check_counter_goldens.py
           tests/test_benchmark_changepoint.py
+          tests/test_coverage_gaps.py
           tests/test_benchmark_tools.py
           tests/test_branding_assets.py
           tests/test_check_public_surface.py
@@ -845,6 +846,157 @@ jobs:
               --body-file issue-body.md
           fi
 
+  # Advisory coverage reports (redesign sections 3.6 and 4.5), weekly
+  # tier only. Two reports, both diagnostic and never gating (this job
+  # is deliberately NOT in ci-gate's needs; a coverage-percentage gate
+  # is section 3.6's explicit non-goal): an llvm-cov summary of the
+  # full test suite, and the benchmark gap-finder — a smoke-mode run of
+  # every registration in both bench binaries reporting which public
+  # headers no benchmark executes. Toolchain pins: the runner image
+  # ships clang without a matching bare llvm-cov/llvm-profdata, so the
+  # versioned clang-18 + llvm-18 pair is installed and used explicitly.
+  # tess is header-only, so coverage mappings live in the consuming
+  # binaries: llvm-cov must receive EVERY instrumented executable via
+  # -object or headers silently vanish from the report.
+  coverage:
+    name: Advisory Coverage
+    if: >-
+      ${{ github.event_name == 'schedule' ||
+          github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CC: clang-18
+      CXX: clang++-18
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        run: |
+          (sudo apt-get update || true)
+          sudo apt-get install -y ccache clang-18 llvm-18
+
+      - name: Show tool versions
+        run: |
+          cmake --version
+          clang++-18 --version
+          llvm-profdata-18 show --version
+          llvm-cov-18 --version
+
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-coverage-${{ github.sha }}
+          restore-keys: ccache-coverage-
+
+      - name: Configure test suite
+        run: cmake --preset dev-coverage
+
+      - name: Build test suite
+        run: cmake --build --preset dev-coverage
+
+      - name: Run tests with profiling
+        # %m disambiguates by binary signature and %p by process, so
+        # parallel ctest and PRE_TEST discovery processes cannot
+        # clobber each other's profiles.
+        env:
+          LLVM_PROFILE_FILE: >-
+            ${{ github.workspace }}/build/dev-coverage/test-profiles/tess-%m-%p.profraw
+        run: |
+          mkdir -p build/dev-coverage/test-profiles
+          ctest --preset dev-coverage
+
+      - name: Test-suite coverage report
+        run: |
+          ls build/dev-coverage/test-profiles/*.profraw > /dev/null
+          llvm-profdata-18 merge \
+            build/dev-coverage/test-profiles/*.profraw \
+            -o build/dev-coverage/tests.profdata
+          ctest --test-dir build/dev-coverage --show-only=json-v1 \
+            > build/dev-coverage/ctest-tests.json
+          # A plain file indirection (not process substitution) so a
+          # ctest-objects failure stops the step here, at the true
+          # cause, instead of surfacing later as an empty llvm-cov
+          # argument.
+          python3 tools/coverage_gaps.py ctest-objects \
+            --ctest-json build/dev-coverage/ctest-tests.json \
+            --build-dir build/dev-coverage \
+            > build/dev-coverage/coverage-objects.txt
+          mapfile -t objects < build/dev-coverage/coverage-objects.txt
+          args=("${objects[0]}")
+          for object in "${objects[@]:1}"; do
+            args+=(-object "$object")
+          done
+          {
+            echo '## Test-suite coverage (advisory)'
+            echo '```'
+            llvm-cov-18 report "${args[@]}" \
+              -instr-profile build/dev-coverage/tests.profdata \
+              "$PWD/include/tess"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          llvm-cov-18 export -summary-only "${args[@]}" \
+            -instr-profile build/dev-coverage/tests.profdata \
+            > build/dev-coverage/test-coverage-export.json
+
+      - name: Configure benchmarks
+        run: cmake --preset bench-coverage
+
+      - name: Build benchmarks
+        run: cmake --build --preset bench-coverage
+
+      - name: Benchmark gap-finder
+        # Smoke mode runs every registration in both binaries; timing
+        # distortion from instrumentation is irrelevant to a
+        # coverage-only run (section 4.5). The binaries compile shared
+        # sources under different definitions, so each gets its own
+        # profile set and export — a combined export produces
+        # mismatched-data warnings and unreliable per-file numbers —
+        # and the gap-finder merges best-coverage across the exports.
+        run: |
+          run_bench() {
+            mkdir -p "build/bench-coverage/profiles-$1"
+            LLVM_PROFILE_FILE="$PWD/build/bench-coverage/profiles-$1/%m-%p.profraw" \
+              "./build/bench-coverage/bench/$1" \
+              --benchmark_min_time=0.001s > /dev/null
+            llvm-profdata-18 merge \
+              "build/bench-coverage/profiles-$1"/*.profraw \
+              -o "build/bench-coverage/$1.profdata"
+            llvm-cov-18 export -summary-only \
+              "build/bench-coverage/bench/$1" \
+              -instr-profile "build/bench-coverage/$1.profdata" \
+              > "build/bench-coverage/$1-coverage-export.json"
+          }
+          run_bench tess_bench
+          run_bench tess_bench_diagnostics
+          python3 tools/coverage_gaps.py \
+            --export build/bench-coverage/tess_bench-coverage-export.json \
+            --export build/bench-coverage/tess_bench_diagnostics-coverage-export.json \
+            --include-root include/tess \
+            --cmake-lists CMakeLists.txt \
+            --known-gaps tools/coverage_known_gaps.json \
+            --out-markdown build/bench-coverage/coverage-gaps.md \
+            --out-json build/bench-coverage/coverage-gaps.json
+          cat build/bench-coverage/coverage-gaps.md \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage reports
+        # upload-artifact v7.0.1.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coverage-reports-${{ github.run_id }}
+          path: |
+            build/dev-coverage/test-coverage-export.json
+            build/bench-coverage/tess_bench-coverage-export.json
+            build/bench-coverage/tess_bench_diagnostics-coverage-export.json
+            build/bench-coverage/coverage-gaps.md
+            build/bench-coverage/coverage-gaps.json
+          retention-days: 90
+
   # Keeps demoted-job regressions owned: a failed main, scheduled, or
   # dispatched run files or extends one rolling ci-failure issue. Never
   # runs on pull_request events and never executes repository code. The
@@ -871,6 +1023,7 @@ jobs:
       - macos
       - windows
       - bench
+      - coverage
       - ci-gate
     permissions:
       contents: read
