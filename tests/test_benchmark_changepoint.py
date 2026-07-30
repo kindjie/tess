@@ -206,3 +206,25 @@ def test_fingerprinted_artifacts_must_attest_push_and_main(tmp_path):
   artifacts = benchmark_changepoint.load_history(tmp_path)
 
   assert [a["run_id"] for a in artifacts if a["run_id"] == 999] == []
+
+
+def test_returning_underfilled_fingerprint_is_insufficient_history(tmp_path):
+  # fp-b has appeared before but lacks history; a return to it is not
+  # a series break.
+  for run in range(12):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0}, key="fp-a")
+  _artifact(tmp_path, 112, {"path/x": 10_000.0}, key="fp-b")
+  _artifact(tmp_path, 113, {"path/x": 10_000.0}, key="fp-a")
+  _artifact(tmp_path, 114, {"path/x": 10_000.0}, key="fp-b")
+
+  assert _detect(tmp_path)["verdict"] == "insufficient-history"
+
+
+def test_corrupt_benchmark_file_poisons_the_artifact(tmp_path):
+  for run in range(12):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
+  (tmp_path / "111" / "extra.json").write_text("truncated{", encoding="utf-8")
+
+  artifacts = benchmark_changepoint.load_history(tmp_path)
+
+  assert [a["run_id"] for a in artifacts if a["run_id"] == 111] == []

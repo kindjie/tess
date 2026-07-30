@@ -77,7 +77,9 @@ def load_artifact(
     try:
       data = json.loads(result.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-      continue
+      # A truncated family file must not yield a partial artifact that
+      # the detector could call clean without evaluating the family.
+      return None
     samples: dict[str, list[float]] = {}
     for row in data.get("benchmarks", []):
       if row.get("run_type") == "aggregate":
@@ -126,11 +128,9 @@ def detect(
   newest_key = artifacts[-1]["key"]
   stratum = [a for a in artifacts if a["key"] == newest_key]
   if len(stratum) < CANDIDATES + MIN_BASELINE:
-    previous_key = artifacts[-2]["key"] if len(artifacts) > 1 else None
-    verdict = (
-        "series-break"
-        if previous_key is not None and previous_key != newest_key
-        else "insufficient-history"
+    seen_before = any(a["key"] == newest_key for a in artifacts[:-1])
+    verdict = "insufficient-history" if seen_before else (
+        "series-break" if len(artifacts) > 1 else "insufficient-history"
     )
     return {
         "verdict": verdict,
@@ -187,8 +187,10 @@ def render_report(result: dict[str, Any]) -> str:
   lines = [
       "### Benchmark change-point check: sustained shift suspected",
       "",
-      f"Suspect commit range: `{result['last_clean_commit']}` (last clean)"
-      f" ... `{result['first_elevated_commit']}` (first elevated).",
+      f"Suspect commit range: `{result['last_clean_commit']}` (newest"
+      f" baseline artifact) ... `{result['first_elevated_commit']}` (first"
+      " flagged candidate). A shift older than the three candidates may"
+      " originate earlier in the baseline window.",
       "Confirm or refute with the paired sentinel confirmation workflow"
       " before acting; hosted-runner alerting is advisory"
       " (redesign section 4.2).",
@@ -232,6 +234,19 @@ def main(argv: list[str] | None = None) -> int:
   )
   result["artifacts_loaded"] = len(artifacts)
   result["directories_downloaded"] = downloaded
+  newest_dir = max(
+      (int(d.name) for d in args.artifacts.iterdir()
+       if d.is_dir() and d.name.isdigit()),
+      default=0,
+  )
+  if artifacts and newest_dir > artifacts[-1]["run_id"]:
+    print(
+        "::warning::change-point: the newest downloaded artifact "
+        f"(run {newest_dir}) was unusable; analysis reflects an older "
+        "run and the fingerprint producer should be checked"
+    )
+    result["verdict"] = "newest-unusable"
+    result["suspects"] = []
   if downloaded > 0 and not artifacts:
     # A dead loader must be loud, never a green "no-data".
     print(
