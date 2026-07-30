@@ -205,28 +205,48 @@ def render_report(result: dict[str, Any]) -> str:
         f"| {suspect['newest_median_ns']:,.0f} ns "
         f"| {suspect['delta_relative']:+.1%} |"
     )
+  # The diagnostics-binary families cannot be confirmed by the
+  # dispatch workflow (it builds tess_bench only); presenting them as
+  # paste-ready would produce a run that always fails.
+  diagnostics_families = ("diagnostics/", "ecs/", "render_delta/",
+                          "fields/")
   suspects = [s["benchmark"] for s in result["suspects"]]
+  confirmable = [
+      s for s in suspects if not s.startswith(diagnostics_families)
+  ]
+  diagnostics_only = [
+      s for s in suspects if s.startswith(diagnostics_families)
+  ]
   # The confirmation tool refuses more than 64 suspects; a broad
   # shift must confirm in batches rather than get a command that
   # always fails.
-  shown = suspects[:64]
-  names = ",".join(shown)
-  overflow = len(suspects) - len(shown)
+  shown = confirmable[:64]
+  overflow = len(confirmable) - len(shown)
   lines.append("")
   lines.append(
       "Confirmation is the reproduce-paired step of the [profiling"
       " protocol](https://github.com/kindjie/tess/blob/main/"
       "CONTRIBUTING.md); a confirmed shift proceeds to"
       " profile-and-diff under `bench-profile`, and every outcome —"
-      " accepted, rejected, or inconclusive — lands in the"
-      " optimization log. Paste-ready suspect list:"
-      f" `--suspects={names}`"
-      + (
-          f" (plus {overflow} more; the confirmation tool caps at 64"
-          " suspects per run — confirm in batches)"
-          if overflow else ""
-      )
+      " accepted, rejected, deferred, or inconclusive — lands in the"
+      " optimization log."
   )
+  if shown:
+    lines.append(
+        f"Paste-ready suspect list: `--suspects={','.join(shown)}`"
+        + (
+            f" (plus {overflow} more; the confirmation tool caps at 64"
+            " suspects per run — confirm in batches)"
+            if overflow else ""
+        )
+    )
+  if diagnostics_only:
+    lines.append(
+        "Diagnostics-binary suspects (not confirmable by the dispatch"
+        " workflow, which builds `tess_bench` only — reproduce locally"
+        " against `tess_bench_diagnostics` builds per the protocol): "
+        + ", ".join(f"`{name}`" for name in diagnostics_only)
+    )
   return "\n".join(lines) + "\n"
 
 

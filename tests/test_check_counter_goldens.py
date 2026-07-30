@@ -201,3 +201,12 @@ def test_drift_report_points_at_the_profiling_protocol():
 
   assert "profiling protocol" in report
   assert "step 1" in report
+
+
+def test_structural_drift_is_not_called_algorithmic():
+  report = check_counter_goldens.render_report(
+    [("w", "fam", "-", None, True)]
+  )
+
+  assert "schema drift" in report
+  assert "step 1" not in report

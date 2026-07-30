@@ -129,13 +129,33 @@ def render_report(
       f"| {cell(workload)} | {cell(family)} | {cell(counter)} "
       f"| {cell(golden_value)} | {cell(observed_value)} |"
     )
-  lines.append("")
-  lines.append(
-    "Counter drift is step 1 of the [profiling protocol]"
-    "(https://github.com/kindjie/tess/blob/main/CONTRIBUTING.md):"
-    " work changed, so the diagnosis is algorithmic — decide whether"
-    " the new work is intended before reaching for a profiler."
+  # Structural rows (missing/extra workloads, families, or counters —
+  # non-integer golden/observed cells) are instrumentation or schema
+  # drift, not evidence the algorithm did different work.
+  structural = any(
+    not _is_counter_value(golden_value)
+    or not _is_counter_value(observed_value)
+    for _, _, _, golden_value, observed_value in rows
   )
+  numeric = any(
+    _is_counter_value(golden_value) and _is_counter_value(observed_value)
+    for _, _, _, golden_value, observed_value in rows
+  )
+  lines.append("")
+  if numeric:
+    lines.append(
+      "Changed counter values are step 1 of the [profiling protocol]"
+      "(https://github.com/kindjie/tess/blob/main/CONTRIBUTING.md):"
+      " work changed, so the diagnosis is algorithmic — decide whether"
+      " the new work is intended before reaching for a profiler."
+    )
+  if structural:
+    lines.append(
+      "Rows with missing or extra workloads/families/counters are"
+      " instrumentation or schema drift, not changed algorithmic work"
+      " — fix the probe/golden pairing rather than investigating"
+      " performance."
+    )
   return "\n".join(lines) + "\n"
 
 
