@@ -23,6 +23,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "grid_benchmark_harness.h"
@@ -73,6 +74,11 @@ struct ColonyConfig {
   // keeping the incrementally updated one. The two must answer
   // identically (section 3.2's incremental == fresh recompute gate).
   bool rebuild_graph_before_sampling = false;
+  // Compares the incrementally updated graph against a freshly built
+  // shadow graph after every churn event, BEFORE agents move that
+  // tick. End-of-run sampling alone cannot catch an intermediate
+  // graph that is wrong and later self-heals.
+  bool verify_fresh_graph_each_churn = false;
 };
 
 // Scenario-level counters. PathAgentTickStats::repaths_requested only
@@ -83,6 +89,8 @@ struct ColonyCounters {
   std::uint64_t churn_events = 0;
   std::uint64_t churn_operations = 0;
   std::uint64_t churn_acked_tiles = 0;
+  std::uint64_t fresh_graph_comparisons = 0;
+  std::uint64_t fresh_graph_mismatches = 0;
   std::uint64_t blocked_route_repaths = 0;
   std::uint64_t blocked_retry_exhaustions = 0;
   std::uint64_t executed_runs = 0;
@@ -130,6 +138,10 @@ class Colony {
                 "world extent must be a whole multiple of the logical map");
   static_assert(Shape::size.x == Shape::size.y,
                 "the colony scenario uses square worlds");
+  static_assert(scale() >= 2,
+                "churn blocks a scaled block's centre tile, which only "
+                "provably keeps the world connected when the block is at "
+                "least 2x2");
 
   explicit Colony(ColonyConfig config) : config_(config) {}
 
@@ -347,7 +359,9 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
     tess::PathAgentTickState* tick_state = nullptr;
     ColonyRun* result = nullptr;
     bool cold_cache = false;
+    bool verify_fresh = false;
     tess::PathRequestRuntime* runtime = nullptr;
+    const std::vector<std::pair<tess::Coord3, tess::Coord3>>* probes = nullptr;
     std::vector<tess::ChunkKey> dirty_scratch;
 
     auto operator()(const tess::ScheduleTaskContext&)
@@ -364,6 +378,27 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
         ++result->counters.world_replan_passes;
         if (cold_cache) {
           runtime->clear_caches();
+        }
+        if (verify_fresh && probes != nullptr) {
+          // Section 3.2's differential checked while it still matters:
+          // a wrong intermediate graph changes THIS tick's routes even
+          // if a later rebuild heals it, so comparing only at the end
+          // of the run would miss it.
+          tess::LocalTopologyScratch fresh_scratch;
+          tess::RegionGraph fresh_graph;
+          tess::build_region_graph<WorldType, Walker>(*world, fresh_scratch,
+                                                      fresh_graph);
+          tess::RegionGraphScratch reach_scratch;
+          for (const auto& probe : *probes) {
+            const auto live = tess::reachable<Shape>(
+                *graph, probe.first, probe.second, reach_scratch);
+            const auto fresh = tess::reachable<Shape>(
+                fresh_graph, probe.first, probe.second, reach_scratch);
+            ++result->counters.fresh_graph_comparisons;
+            if (live.status != fresh.status) {
+              ++result->counters.fresh_graph_mismatches;
+            }
+          }
         }
       }
       return {};
@@ -389,9 +424,24 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
     }
   };
 
-  TopologyTask topology_task{
-      world.get(), &topo_scratch,      &graph,   &tick_state,
-      &result,     config_.cold_cache, &runtime, {}};
+  // Probe pairs for the per-churn differential: each agent's start
+  // and goal, fixed up front so the comparison is stable.
+  std::vector<std::pair<tess::Coord3, tess::Coord3>> probes;
+  probes.reserve(agents.size());
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    probes.emplace_back(agents[i].position, assigned_goals[i]);
+  }
+
+  TopologyTask topology_task{world.get(),
+                             &topo_scratch,
+                             &graph,
+                             &tick_state,
+                             &result,
+                             config_.cold_cache,
+                             config_.verify_fresh_graph_each_churn,
+                             &runtime,
+                             &probes,
+                             {}};
   AgentTask agent_task{world.get(), std::span<tess::PathAgentState>{agents},
                        &runtime,    &tick_state,
                        &result,     &graph};
@@ -433,19 +483,35 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
       // One operation per DISTINCT chunk: the auto-exec task selects
       // the pool by phase operation count, so a single multi-chunk
       // operation would never engage it.
-      std::vector<tess::ChunkKey> keys;
-      for (std::uint32_t i = 0;
-           i < config_.churn_chunks && churn_cursor < churn_pool.size();
+      // The edit script is chosen by COORDINATE, independently of the
+      // chunk decomposition: consuming candidates while deduplicating
+      // by ChunkKey would make two chunk shapes block different tiles,
+      // and the chunk-size invariance test would then be comparing two
+      // different scenarios.
+      for (std::uint32_t taken = 0;
+           taken < config_.churn_chunks && churn_cursor < churn_pool.size();
            ++churn_cursor) {
         const auto& edit = churn_pool[churn_cursor];
-        const auto key =
-            tess::chunk_key<Shape>(tess::chunk_coord<Shape>(edit.coord));
-        if (std::find(keys.begin(), keys.end(), key) != keys.end()) {
+        // An agent standing here would be walled in mid-route. Setup
+        // excluded starts and goals, but occupancy moves.
+        if (world->template field<OccupancyTag>(edit.coord)) {
           continue;
         }
-        keys.push_back(key);
         pending_edits.push_back(edit);
-        ++i;
+        ++taken;
+      }
+      // One operation per distinct chunk covering that script: the
+      // auto-exec task selects the pool by phase operation count, so a
+      // single multi-chunk operation would never engage it. The
+      // operation count may differ across chunk shapes; the terrain
+      // the script produces does not.
+      std::vector<tess::ChunkKey> keys;
+      for (const auto& edit : pending_edits) {
+        const auto key =
+            tess::chunk_key<Shape>(tess::chunk_coord<Shape>(edit.coord));
+        if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+          keys.push_back(key);
+        }
       }
       for (const auto& key : keys) {
         (void)ops.update_field(
@@ -455,7 +521,7 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
             tess::WritePolicy::UniquePerChunk);
         ++result.counters.churn_operations;
       }
-      if (!keys.empty()) {
+      if (!pending_edits.empty()) {
         ++result.counters.churn_events;
       }
     }

@@ -156,7 +156,7 @@ TEST(TessColonyHarness, ChunkSizeDoesNotChangeResults) {
   expect_same_outcome(chunk32, chunk64);
 }
 
-TEST(TessColonyHarness, ColdCacheMatchesWarmCache) {
+TEST(TessColonyHarness, ClearingRuntimeCachesDoesNotChangeResults) {
   auto warm = base_config();
   auto cold = base_config();
   cold.cold_cache = true;
@@ -164,9 +164,30 @@ TEST(TessColonyHarness, ColdCacheMatchesWarmCache) {
   const auto warm_run = NarrowColony(warm).run();
   const auto cold_run = NarrowColony(cold).run();
 
-  // Dropping retained routes and products on every world change
-  // costs time; it must never change an outcome.
+  // Clearing the runtime caches on every world change must not move
+  // an agent. This is a smoke check, not section 3.2's cache
+  // differential: with distinct goals and the default cache policy,
+  // this scenario does not populate the product cache it clears, so
+  // a genuine warm-hit-versus-cold-miss comparison needs a
+  // repeated-goal workload it does not yet run.
   expect_same_outcome(warm_run, cold_run);
+}
+
+TEST(TessColonyHarness, IncrementalTopologyMatchesFreshAfterEveryChurn) {
+  auto config = base_config();
+  config.verify_fresh_graph_each_churn = true;
+
+  const auto run = NarrowColony(config).run();
+
+  // Section 3.2's incremental == fresh gate checked while it still
+  // matters: after each churn event the incrementally updated graph
+  // is compared against a freshly built one BEFORE agents move that
+  // tick. Comparing only at the end of the run would miss a wrong
+  // intermediate graph that later self-heals.
+  EXPECT_EQ(run.counters.fresh_graph_comparisons,
+            run.counters.world_replan_passes * config.agents);
+  EXPECT_GT(run.counters.fresh_graph_comparisons, 0u);
+  EXPECT_EQ(run.counters.fresh_graph_mismatches, 0u);
 }
 
 TEST(TessColonyHarness, IncrementalTopologyMatchesFreshRebuild) {
@@ -177,11 +198,12 @@ TEST(TessColonyHarness, IncrementalTopologyMatchesFreshRebuild) {
   const auto incremental_run = NarrowColony(incremental).run();
   const auto fresh_run = NarrowColony(fresh).run();
 
-  // Section 3.2's incremental == fresh recompute gate: the graph
-  // updated chunk-by-chunk across four churn events must answer
-  // exactly like one rebuilt from scratch over the same final
-  // terrain. The sample carries both reachable and unreachable
-  // answers, so a uniformly wrong graph cannot pass.
+  // The end-of-run half of the differential: the graph updated
+  // chunk-by-chunk across four churn events answers exactly like one
+  // rebuilt over the same final terrain. The negative half of the
+  // sample targets a blocked endpoint, so it exercises endpoint
+  // validation rather than disconnected-component reachability; the
+  // per-churn test above is the stronger of the two.
   ASSERT_EQ(incremental_run.sampled_reachability.size(),
             2u * incremental.agents);
   const auto reachable =
