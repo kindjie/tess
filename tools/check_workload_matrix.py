@@ -54,10 +54,11 @@ VOCABULARY_DIMENSIONS = ("layout", "storage", "executor_kind")
 # Google Benchmark control suffixes carry measurement configuration,
 # not workload identity. Meaningful workload arguments (for example
 # maintenance/flush_budget/256) are plain integers WITH the family
-# prefix and are kept.
+# prefix and are kept. threads:N is deliberately NOT stripped: it
+# changes concurrency, so a benchmark using it must be classified
+# with its executor dimensions rather than collapsed.
 CONTROL_SUFFIX = re.compile(
-  r"/(iterations:\d+|repeats:\d+|manual_time|real_time|process_time"
-  r"|threads:\d+)$"
+  r"/(iterations:\d+|repeats:\d+|manual_time|real_time|process_time)$"
 )
 
 # Tokens in a registration name that assert a dimension and therefore
@@ -145,37 +146,43 @@ def _cell_for(
   cell = dict(rule.get("defaults", {}))
   match = re.search(rule["pattern"], name)
   assert match is not None
-  captures = rule.get("captures", {})
-  consumed_spans = []
-  for dimension, group in captures.items():
+  for dimension, group in rule.get("captures", {}).items():
     value = match.group(group)
     if value is not None:
       cell[dimension] = value
-      consumed_spans.append(match.span(group))
   overrides = rule.get("overrides", {}).get(name)
-  overridden = set()
   if overrides:
     cell.update(overrides)
-    overridden = set(overrides)
+  cell["family"] = rule["family"]
 
-  for token_re, dimension_hint in (
-    (EXTENT_TOKEN, ("world_extent", "chunk_extent", "payload")),
-    (EXECUTOR_TOKEN, ("executor_kind", "worker_count")),
-  ):
-    for token in token_re.finditer(name):
-      start, end = token.span()
-      # Overlap suffices: an executor token like pool_w2 spans two
-      # capture groups plus the literal connector between them.
-      in_capture = any(
-        not (ce <= start or end <= cs) for cs, ce in consumed_spans
+  # Value-based token consumption: a dimension token in the name is
+  # consumed only when the generated cell actually AGREES with it —
+  # an extent must appear in world_extent, chunk_extent, or payload
+  # (substring, so 512x512 names a 1x512x512 vertical world), and an
+  # executor token must match BOTH executor_kind and worker_count.
+  # Partial captures or defaults that contradict the name fail.
+  for token in EXTENT_TOKEN.finditer(name):
+    value = token.group(0)
+    if not any(
+      value in str(cell.get(dimension, ""))
+      for dimension in ("world_extent", "chunk_extent", "payload")
+    ):
+      errors.append(
+        f"{rule['family']}: extent token {value!r} in {name!r} is "
+        "not reflected in world_extent, chunk_extent, or payload"
       )
-      in_override = any(hint in overridden for hint in dimension_hint)
-      if not in_capture and not in_override:
-        errors.append(
-          f"{rule['family']}: unconsumed dimension token "
-          f"{token.group(0)!r} in {name!r} — capture it or add a "
-          "per-name override for the dimension it asserts"
-        )
+  for token in EXECUTOR_TOKEN.finditer(name):
+    kind, width = token.group(0).rsplit("_w", 1)
+    if (
+      cell.get("executor_kind") != kind
+      or str(cell.get("worker_count")) != width
+    ):
+      errors.append(
+        f"{rule['family']}: executor token {token.group(0)!r} in "
+        f"{name!r} contradicts executor_kind="
+        f"{cell.get('executor_kind')!r} worker_count="
+        f"{cell.get('worker_count')!r}"
+      )
   return cell
 
 
@@ -197,6 +204,48 @@ def _selector_matches(
   return all(cell.get(k) == v for k, v in selector.items())
 
 
+def _validate_rules(
+  rules: list[dict[str, Any]], universe: set[str], errors: list[str]
+) -> None:
+  """Catalog-shape validation: fail loudly, never with a traceback."""
+  for rule in rules:
+    family = rule.get("family")
+    if not family or "pattern" not in rule or "defaults" not in rule:
+      errors.append(
+        f"family rule {family!r} is missing family/pattern/defaults"
+      )
+      continue
+    pattern = rule["pattern"]
+    if not pattern.startswith("^") or not pattern.endswith("$"):
+      errors.append(
+        f"family rule {family!r}: pattern must be anchored with "
+        "^ and $"
+      )
+    try:
+      compiled = re.compile(pattern)
+    except re.error as error:
+      errors.append(f"family rule {family!r}: bad pattern: {error}")
+      continue
+    for dimension, group in rule.get("captures", {}).items():
+      if not isinstance(group, int) or group > compiled.groups:
+        errors.append(
+          f"family rule {family!r}: capture for {dimension} names "
+          f"group {group} but the pattern has {compiled.groups}"
+        )
+    canonical_universe = {canonical(raw) for raw in universe}
+    for key in rule.get("overrides", {}):
+      if not compiled.search(key):
+        errors.append(
+          f"family rule {family!r}: override key {key!r} does not "
+          "match the rule pattern — stale after a rename?"
+        )
+      elif key not in canonical_universe:
+        errors.append(
+          f"family rule {family!r}: override key {key!r} matches no "
+          "registration — stale after a removal?"
+        )
+
+
 def check(catalog: dict[str, Any], universe: set[str]) -> list[str]:
   """All drift findings for the catalog against the universe."""
   errors: list[str] = []
@@ -204,6 +253,9 @@ def check(catalog: dict[str, Any], universe: set[str]) -> list[str]:
   canonical_names = sorted({canonical(raw) for raw in universe})
 
   rules = catalog.get("families", [])
+  _validate_rules(rules, universe, errors)
+  if errors:
+    return errors
   matched_by_rule: dict[str, int] = {r["family"]: 0 for r in rules}
   measured_cells: list[tuple[str, dict[str, str]]] = []
 
@@ -256,14 +308,35 @@ def check(catalog: dict[str, Any], universe: set[str]) -> list[str]:
       errors.append(
         f"unmeasured selector {selector} has no reason"
       )
-    unknown_dims = [k for k in selector if k not in DIMENSIONS]
+    known_families = {rule["family"] for rule in rules}
+    unknown_dims = [
+      k for k in selector if k not in DIMENSIONS and k != "family"
+    ]
     if unknown_dims:
       errors.append(
         f"unmeasured selector {selector} uses unknown dimension(s) "
         f"{unknown_dims}"
       )
       continue
-    if entry.get("policy", False):
+    bad_values = [
+      (k, v) for k, v in selector.items()
+      if (k in VOCABULARY_DIMENSIONS and v not in vocabularies.get(k, []))
+      or (k == "family" and v not in known_families)
+    ]
+    if bad_values:
+      errors.append(
+        f"unmeasured selector {selector} uses value(s) outside the "
+        f"vocabulary/family list: {bad_values} — a typo here can "
+        "never trigger retirement"
+      )
+      continue
+    policy = entry.get("policy", False)
+    if not isinstance(policy, bool):
+      errors.append(
+        f"unmeasured selector {selector}: policy must be a boolean"
+      )
+      continue
+    if policy:
       continue
     for name, cell in measured_cells:
       if _selector_matches(selector, cell):
@@ -303,6 +376,11 @@ def main(argv: list[str] | None = None) -> int:
     if not universe:
       raise MatrixError("no registration universe provided")
     errors = check(catalog, universe)
+  except (KeyError, TypeError, AttributeError) as error:
+    print(
+      f"error: malformed catalog structure: {error!r}", file=sys.stderr
+    )
+    return 1
   except MatrixError as error:
     print(f"error: {error}", file=sys.stderr)
     return 1

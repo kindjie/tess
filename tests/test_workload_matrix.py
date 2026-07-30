@@ -6,8 +6,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 import check_workload_matrix as cwm  # noqa: E402
@@ -80,7 +78,8 @@ def test_dead_rule_fails():
     families=[
       _family(),
       _family(family="path/retired",
-              pattern=r"^path/retired_bench$"),
+              pattern=r"^path/retired_bench$",
+              captures={}),
     ]
   )
 
@@ -141,7 +140,7 @@ def test_unconsumed_dimension_token_fails():
 
   errors = cwm.check(catalog, {"parallel/chunk_fill_pool_w2"})
 
-  assert any("unconsumed" in e and "pool_w2" in e for e in errors)
+  assert any("pool_w2" in e and "contradicts" in e for e in errors)
 
 
 def test_consumed_executor_token_passes():
@@ -191,7 +190,7 @@ def test_override_consumes_token_without_capture():
         },
         overrides={
           "spatial/local_coordination_1000x4": {
-            "payload": "1000 requests x 4 options"
+            "payload": "1000x4 (move requests x options)"
           }
         },
       )
@@ -200,7 +199,7 @@ def test_override_consumes_token_without_capture():
 
   errors = cwm.check(catalog, {"spatial/local_coordination_1000x4"})
 
-  assert not any("unconsumed" in e for e in errors)
+  assert not any("not reflected" in e for e in errors)
 
 
 def test_unknown_dimension_value_fails():
@@ -325,7 +324,9 @@ def test_canonical_name_strips_control_suffixes():
     "path/x/iterations:5000/manual_time"
   ) == "path/x"
   assert cwm.canonical("path/x/real_time") == "path/x"
-  assert cwm.canonical("path/x/threads:4") == "path/x"
+  # threads:N changes concurrency: it is identity-bearing and must
+  # be classified through executor dimensions, never collapsed.
+  assert cwm.canonical("path/x/threads:4") == "path/x/threads:4"
   # Meaningful workload arguments are NOT control suffixes.
   assert cwm.canonical("maintenance/flush_budget/256") == (
     "maintenance/flush_budget/256"
@@ -404,7 +405,12 @@ def test_main_reports_errors_and_exits_nonzero(tmp_path, capsys):
 
 
 def test_real_catalog_is_coherent_with_real_manifests():
-  """The shipped catalog classifies every real registration."""
+  """The shipped catalog classifies the full static universe.
+
+  Static = threshold manifests + lab literals; the compiled
+  registration union (with expanded /arg names) is checked by the
+  bench CI job against the same catalog.
+  """
   repo = Path(__file__).resolve().parents[1]
   catalog = json.loads(
     (repo / "bench" / "workload-matrix.json").read_text(encoding="utf-8")
@@ -416,3 +422,211 @@ def test_real_catalog_is_coherent_with_real_manifests():
   errors = cwm.check(catalog, universe)
 
   assert errors == []
+
+
+def test_extent_token_contradicting_the_cell_fails():
+  # A name asserting 1024x1024 while the family default says 512x512
+  # and nothing captures the token must fail, not silently default.
+  catalog = _catalog(
+    families=[
+      _family(
+        pattern=r"^path/astar_open_2d_1024x1024$",
+        captures={},
+      )
+    ]
+  )
+
+  errors = cwm.check(catalog, {"path/astar_open_2d_1024x1024"})
+
+  assert any("1024x1024" in e and "not reflected" in e for e in errors)
+
+
+def test_partial_extent_capture_still_fails():
+  # Capturing only one half of an extent token must not count as
+  # consumption (the value-agreement rule requires the full token).
+  catalog = _catalog(
+    families=[
+      _family(
+        pattern=r"^path/astar_open_2d_(1024)x1024$",
+        captures={"payload": 1},
+      )
+    ]
+  )
+
+  errors = cwm.check(catalog, {"path/astar_open_2d_1024x1024"})
+
+  assert any("not reflected" in e for e in errors)
+
+
+def test_partial_executor_capture_still_fails():
+  # Capturing the kind but defaulting the width must fail: pool_w4
+  # with worker_count defaulting to 1 is a silent lie.
+  catalog = _catalog(
+    families=[
+      _family(
+        family="parallel/fill",
+        pattern=r"^parallel/chunk_fill_(pool)_w4$",
+        captures={"executor_kind": 1},
+        defaults={
+          "world_extent": "512x512",
+          "chunk_extent": "32x32",
+          "layout": "not_applicable",
+          "storage": "always_resident",
+          "executor_kind": "pool",
+          "worker_count": "1",
+          "payload": "not_applicable",
+        },
+      )
+    ]
+  )
+
+  errors = cwm.check(catalog, {"parallel/chunk_fill_pool_w4"})
+
+  assert any("contradicts" in e for e in errors)
+
+
+def test_policy_selector_is_exempt_from_retirement():
+  catalog = _catalog(
+    families=[_family()],
+    unmeasured=[
+      {
+        "selector": {"layout": "open"},
+        "reason": "open-ended scope statement",
+        "policy": True,
+      }
+    ],
+  )
+
+  errors = cwm.check(catalog, {"path/astar_open_2d"})
+
+  assert errors == []
+
+
+def test_family_selector_scopes_retirement():
+  # A gap can be family-scoped: another family supplying the same
+  # dimensions must not retire it.
+  families = [
+    _family(),
+    _family(
+      family="path/other",
+      pattern=r"^path/other_open$",
+      captures={},
+    ),
+  ]
+  catalog = _catalog(
+    families=families,
+    unmeasured=[
+      {
+        "selector": {"family": "path/other", "layout": "room_portals"},
+        "reason": "room portals unmeasured for this operation",
+      }
+    ],
+  )
+
+  errors = cwm.check(
+    catalog, {"path/astar_open_2d", "path/other_open"}
+  )
+
+  assert errors == []
+
+
+def test_selector_vocabulary_typo_fails():
+  catalog = _catalog(
+    families=[_family()],
+    unmeasured=[
+      {
+        "selector": {"executor_kind": "pools"},
+        "reason": "typo can never retire",
+      }
+    ],
+  )
+
+  errors = cwm.check(catalog, {"path/astar_open_2d"})
+
+  assert any("vocabulary" in e or "typo" in e for e in errors)
+
+
+def test_unknown_family_in_selector_fails():
+  catalog = _catalog(
+    families=[_family()],
+    unmeasured=[
+      {
+        "selector": {"family": "path/nonexistent"},
+        "reason": "names a family that does not exist",
+      }
+    ],
+  )
+
+  errors = cwm.check(catalog, {"path/astar_open_2d"})
+
+  assert any("path/nonexistent" in e for e in errors)
+
+
+def test_unanchored_pattern_fails():
+  catalog = _catalog(
+    families=[_family(pattern=r"path/astar_open_2d")]
+  )
+
+  errors = cwm.check(catalog, {"path/astar_open_2d"})
+
+  assert any("anchored" in e for e in errors)
+
+
+def test_stale_override_key_fails():
+  catalog = _catalog(
+    families=[
+      _family(
+        overrides={"path/astar_open_2d_renamed": {"layout": "open"}}
+      )
+    ]
+  )
+
+  errors = cwm.check(catalog, {"path/astar_open_2d"})
+
+  assert any("override key" in e for e in errors)
+
+
+def test_removed_override_target_fails():
+  # Override key matches the pattern but the registration is gone.
+  catalog = _catalog(
+    families=[
+      _family(
+        overrides={
+          "path/astar_open_2d_64x64": {"chunk_extent": "8x8"}
+        }
+      )
+    ]
+  )
+
+  errors = cwm.check(catalog, {"path/astar_open_2d"})
+
+  assert any("matches no registration" in e and "override" in e
+             for e in errors)
+
+
+def test_bad_regex_reports_instead_of_raising():
+  catalog = _catalog(families=[_family(pattern=r"^path/astar[$")])
+
+  errors = cwm.check(catalog, {"path/astar_open_2d"})
+
+  assert any("bad pattern" in e for e in errors)
+
+
+def test_malformed_catalog_exits_nonzero_without_traceback(
+  tmp_path, capsys
+):
+  catalog_file = tmp_path / "matrix.json"
+  catalog_file.write_text(
+    json.dumps({"families": [{"pattern": 42}]}), encoding="utf-8"
+  )
+  thresholds = tmp_path / "thresholds"
+  thresholds.mkdir()
+  (thresholds / "x.json").write_text(
+    json.dumps({"benchmarks": [{"name": "path/x"}]}), encoding="utf-8"
+  )
+
+  code = cwm.main(
+    [f"--catalog={catalog_file}", f"--thresholds-dir={thresholds}"]
+  )
+
+  assert code == 1
