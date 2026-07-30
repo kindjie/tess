@@ -648,3 +648,34 @@ def test_main_confirms_a_suspect_list_end_to_end(tmp_path):
   report = json.loads(out.read_text())
   assert set(report["sentinels"]) == {"fields/x"}
   assert report["sentinels"]["fields/x"]["verdict"] == "regression"
+
+
+def test_immaterial_scale_suspects_are_not_reported_as_pass(tmp_path):
+  base = tmp_path / "base_bench"
+  head = tmp_path / "head_bench"
+  # 25 ns baseline: a 40x regression still cannot clear the 2 ns-scaled
+  # floor in this config (floor 2000 ns), so "pass" would be a lie.
+  _fake_binary(base, {"block/scratch": 25.0})
+  _fake_binary(head, {"block/scratch": 1000.0})
+  sentinels = tmp_path / "sentinels.json"
+  _sentinel_file(sentinels, ["block/scratch"])
+  # Raise the floor to the production value for this scenario.
+  config = json.loads(sentinels.read_text())
+  config["parameters"]["materiality_floor_ns"] = 2000.0
+  sentinels.write_text(json.dumps(config), encoding="utf-8")
+  out = tmp_path / "out.json"
+
+  code = paired_bench.main(
+    (
+      "--base-binary", str(base),
+      "--head-binary", str(head),
+      "--sentinels", str(sentinels),
+      "--json", str(out),
+      "--mode", "confirm",
+      "--seed", "7",
+    )
+  )
+
+  assert code == 0  # not a confirmed regression, but not a refutation
+  report = json.loads(out.read_text())
+  assert report["sentinels"]["block/scratch"]["verdict"] == "immaterial-scale"

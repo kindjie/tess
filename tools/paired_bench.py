@@ -300,8 +300,21 @@ def evaluate(
   return results
 
 
-def sentinel_verdict(flagged: bool, confirmed: bool | None) -> str:
-  """Combine the first pass and the confirmation pass into a verdict."""
+def sentinel_verdict(
+  flagged: bool,
+  confirmed: bool | None,
+  *,
+  immaterial: bool = False,
+) -> str:
+  """Combine the first pass and the confirmation pass into a verdict.
+
+  A benchmark whose baseline runs below the scale where the effect
+  floor can clear the materiality floor cannot flag by construction;
+  reporting that as "pass" would present a refutation the statistics
+  never performed, so it gets its own verdict instead.
+  """
+  if immaterial and not flagged:
+    return "immaterial-scale"
   if not flagged:
     return "pass"
   return "regression" if confirmed else "advisory"
@@ -510,7 +523,16 @@ def main(argv: Sequence[str] | None = None) -> int:
       confirmations = {r.name: rerun[r.name].flagged for r in flagged}
 
     judged = [
-      (result, sentinel_verdict(result.flagged, confirmations.get(result.name)))
+      (
+        result,
+        sentinel_verdict(
+          result.flagged,
+          confirmations.get(result.name),
+          immaterial=(
+            result.base_median * config.effect_floor <= config.materiality_ns
+          ),
+        ),
+      )
       for result in first_pass
     ]
     overall = run_verdict([verdict for _, verdict in judged])

@@ -492,8 +492,14 @@ metadata records little beyond runner OS — and the detector stratifies by
 fingerprint: a fleet or image migration is a series break, not a
 regression, and when fingerprints shift the detector dispatches a paired
 confirmation instead of opening an issue from unpaired data. Suspected
-regressions are confirmed on demand by a
-full paired A/B run under the same statistical criteria. Paired runs execute
+regressions are confirmed on demand by a paired A/B run over the
+predeclared suspect list under the same statistical criteria (amended
+2026-07-30: a literal full-suite confirmation is statistically invalid
+at practical round counts — extreme-tail bootstrap intervals collapse
+at suite-wide Bonferroni confidence — so formal confirmation is
+suspect-scoped and the broad sweep stays with the change-point
+detector; benchmarks whose scale cannot clear the materiality floor
+report "immaterial-scale" rather than a false refutation). Paired runs execute
 only on hosted runners or trusted post-merge commits — never untrusted code
 on personal or self-hosted hardware.
 
