@@ -33,11 +33,14 @@ class SplitMix64 {
     return z ^ (z >> 31);
   }
 
-  // Bounded selection via 128-bit multiply-shift (Lemire): defined
-  // behavior, no modulo bias dependence on library distributions.
+  // Bounded selection by multiply-shift over the high 32 bits
+  // (Lemire, 32-bit form): every product fits in 64 bits, so this
+  // needs no 128-bit type — MSVC has none — and yields the identical
+  // stream on every supported compiler. Bounds here are map extents,
+  // far below 2^32.
   auto below(std::uint64_t bound) -> std::uint64_t {
-    return static_cast<std::uint64_t>(
-        (static_cast<unsigned __int128>(next()) * bound) >> 64);
+    const std::uint64_t draw = next() >> 32;
+    return (draw * bound) >> 32;
   }
 
  private:
@@ -179,7 +182,10 @@ inline auto room_and_corridor(std::size_t width, std::size_t height,
   detail::GridBuilder grid(width, height, false);
   SplitMix64 rng(seed);
   struct Room {
-    std::size_t x, y, w, h;
+    std::size_t x = 0;
+    std::size_t y = 0;
+    std::size_t w = 0;
+    std::size_t h = 0;
     [[nodiscard]] auto cx() const -> std::size_t { return x + w / 2; }
     [[nodiscard]] auto cy() const -> std::size_t { return y + h / 2; }
   };
@@ -223,9 +229,13 @@ inline auto room_and_corridor(std::size_t width, std::size_t height,
       const std::size_t cy = current.cy();
       const std::size_t px = prev.cx();
       const std::size_t py = prev.cy();
-      while (cx != px) {
+      // Horizontal run toward the previous center, then a vertical
+      // run at that column: both endpoints are room centers inside
+      // the map, so every write stays in bounds and the run
+      // terminates after |cx - px| steps.
+      const std::size_t step = (px > cx) ? 1 : std::size_t(-1);
+      for (; cx != px; cx += step) {
         grid.at(cx, cy) = '.';
-        cx += (px > cx) ? 1 : std::size_t(-1);
       }
       for (std::size_t yy = std::min(cy, py); yy <= std::max(cy, py); ++yy) {
         grid.at(px, yy) = '.';
@@ -326,10 +336,13 @@ inline auto deterministic_endpoints(const BenchmarkMap& map, std::uint64_t seed,
                      coord(flood.farthest_index));
   SplitMix64 rng(seed);
   while (pairs.size() < count) {
-    const std::size_t a = passable[rng.below(passable.size())];
-    const std::size_t b = passable[rng.below(passable.size())];
-    if (a == b && passable.size() > 1) {
-      continue;
+    std::size_t a = passable[rng.below(passable.size())];
+    std::size_t b = passable[rng.below(passable.size())];
+    // Distinct endpoints where the map allows it. The redraw is
+    // bounded so the loop provably terminates whatever the stream
+    // does; a single-cell map keeps its degenerate pair.
+    for (int retry = 0; a == b && passable.size() > 1 && retry < 8; ++retry) {
+      b = passable[rng.below(passable.size())];
     }
     pairs.emplace_back(coord(a), coord(b));
   }

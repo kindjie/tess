@@ -2,7 +2,9 @@
 #include <tess/tess.h>
 
 #include <cstdint>
+#include <limits>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -28,23 +30,31 @@ using Diagonal =
 // The exact PR-tier matrix from the design: two generators, one odd
 // and one even extent each, fixed seeds, six endpoint pairs per map.
 struct GeneratedCase {
-  const char* name;
+  const char* name = nullptr;
   std::string text;
 };
+
+// The generators return optionals for out-of-contract extents; every
+// call here is in contract, and value_or keeps the accesses checked.
+auto maze_text(std::size_t width, std::size_t height, std::uint64_t seed)
+    -> std::string {
+  return grid::recursive_division_maze(width, height, seed)
+      .value_or(std::string{});
+}
+
+auto room_map(std::size_t width, std::size_t height, std::uint64_t seed,
+              grid::RoomParams params = {}) -> grid::RoomMapResult {
+  return grid::room_and_corridor(width, height, seed, params)
+      .value_or(grid::RoomMapResult{});
+}
 
 auto generated_cases() -> const std::vector<GeneratedCase>& {
   static const std::vector<GeneratedCase> cases = [] {
     std::vector<GeneratedCase> out;
-    out.push_back(
-        {"maze_33x33", grid::recursive_division_maze(33, 33, 0xA1).value()});
-    out.push_back(
-        {"maze_48x37", grid::recursive_division_maze(48, 37, 0xB2).value()});
-    out.push_back(
-        {"rooms_64x64",
-         grid::room_and_corridor(64, 64, 0xC3, {12, 4, 10}).value().text});
-    out.push_back(
-        {"rooms_40x24",
-         grid::room_and_corridor(40, 24, 0xD4, {12, 4, 10}).value().text});
+    out.push_back({"maze_33x33", maze_text(33, 33, 0xA1)});
+    out.push_back({"maze_48x37", maze_text(48, 37, 0xB2)});
+    out.push_back({"rooms_64x64", room_map(64, 64, 0xC3, {12, 4, 10}).text});
+    out.push_back({"rooms_40x24", room_map(40, 24, 0xD4, {12, 4, 10}).text});
     return out;
   }();
   return cases;
@@ -66,10 +76,11 @@ TEST(TessGridMapGenerators, RejectsOutOfContractExtents) {
 
 TEST(TessGridMapGenerators, RegenerationIsByteIdentical) {
   for (int i = 0; i < 2; ++i) {
-    EXPECT_EQ(grid::recursive_division_maze(33, 33, 0xA1).value(),
-              grid::recursive_division_maze(33, 33, 0xA1).value());
-    const auto a = grid::room_and_corridor(40, 24, 0xD4).value();
-    const auto b = grid::room_and_corridor(40, 24, 0xD4).value();
+    EXPECT_FALSE(maze_text(33, 33, 0xA1).empty());
+    EXPECT_EQ(maze_text(33, 33, 0xA1), maze_text(33, 33, 0xA1));
+    const auto a = room_map(40, 24, 0xD4);
+    const auto b = room_map(40, 24, 0xD4);
+    EXPECT_FALSE(a.text.empty());
     EXPECT_EQ(a.text, b.text);
     EXPECT_EQ(a.rooms, b.rooms);
   }
@@ -87,17 +98,31 @@ TEST(TessGridMapGenerators, SplitMixStreamMatchesPinnedValues) {
 }
 
 TEST(TessGridMapGenerators, TinyMazeGoldenTextIsStable) {
-  // Cross-platform golden for the full generation pipeline. If an
-  // intentional algorithm change moves this, update the literal in
-  // the same commit and say so in the message.
-  const auto text = grid::recursive_division_maze(9, 9, 42).value();
+  // Cross-platform golden for the whole generation pipeline: PRNG
+  // stream, division order, wall/gap placement, and emission. A
+  // platform or algorithm change that moves any of them fails here.
+  // If the change is intentional, update this literal in the same
+  // commit and say so in the message.
+  static constexpr std::string_view kGolden =
+      "type octile\n"
+      "height 9\n"
+      "width 9\n"
+      "map\n"
+      ".@.......\n"
+      ".@.@.@.@.\n"
+      "...@.@.@.\n"
+      ".@.@@@@@@\n"
+      ".@...@...\n"
+      ".@.@@@@@.\n"
+      ".@.......\n"
+      ".@.@@@@@.\n"
+      ".@...@...\n";
+
+  const auto text = maze_text(9, 9, 42);
+
+  EXPECT_EQ(text, kGolden);
   const auto parsed = grid::parse_map("golden.map", text);
   ASSERT_TRUE(parsed);
-  static const std::string kExpectedPrefix =
-      "type octile\nheight 9\nwidth 9\nmap\n";
-  EXPECT_EQ(text.substr(0, kExpectedPrefix.size()), kExpectedPrefix);
-  // Pin the exact carved layout.
-  EXPECT_EQ(text, grid::recursive_division_maze(9, 9, 42).value());
   const auto flood = grid::flood_fill(parsed.value);
   EXPECT_EQ(flood.reached, flood.passable);
 }
@@ -114,10 +139,9 @@ TEST(TessGridMapGenerators, GeneratedMapsParseAndAreFullyConnected) {
 }
 
 TEST(TessGridMapGenerators, RoomMapsGuaranteeAtLeastOneRoom) {
-  const auto result = grid::room_and_corridor(64, 64, 0xC3, {12, 4, 10});
-  ASSERT_TRUE(result);
-  EXPECT_GE(result->rooms, 1u);
-  const auto parsed = grid::parse_map("rooms.map", result->text);
+  const auto result = room_map(64, 64, 0xC3, {12, 4, 10});
+  EXPECT_GE(result.rooms, 1u);
+  const auto parsed = grid::parse_map("rooms.map", result.text);
   ASSERT_TRUE(parsed);
   // The guaranteed first room provides at least min_extent^2 floor.
   const auto flood = grid::flood_fill(parsed.value);
@@ -125,8 +149,7 @@ TEST(TessGridMapGenerators, RoomMapsGuaranteeAtLeastOneRoom) {
 }
 
 TEST(TessGridMapGenerators, EndpointSamplingIsDeterministicAndValid) {
-  const auto parsed = grid::parse_map(
-      "maze.map", grid::recursive_division_maze(33, 33, 0xA1).value());
+  const auto parsed = grid::parse_map("maze.map", maze_text(33, 33, 0xA1));
   ASSERT_TRUE(parsed);
   const auto first =
       grid::deterministic_endpoints(parsed.value, kEndpointSeed, 4);
@@ -154,21 +177,28 @@ void expect_oracle_agreement(const grid::BenchmarkMap& map, tess::Coord3 start,
   ASSERT_EQ(grid::load_map<PassableTag>(map, world), grid::LoadStatus::Loaded);
   tess::PathScratch scratch;
 
-  const auto orthogonal_reference = grid::reference_cost(
-      map, start, goal, grid::ReferenceMovement::Orthogonal);
+  // Sentinel: a reachable pair never yields nullopt, and the sentinel
+  // can never equal a real cost, so an absent reference still fails.
+  static constexpr std::uint64_t kNoReference =
+      std::numeric_limits<std::uint64_t>::max();
+
+  const auto orthogonal_reference =
+      grid::reference_cost(map, start, goal,
+                           grid::ReferenceMovement::Orthogonal)
+          .value_or(kNoReference);
   const auto orthogonal = tess::astar_path<decltype(world), PassableTag>(
       world, {start, goal}, scratch);
-  ASSERT_TRUE(orthogonal_reference.has_value());
   ASSERT_EQ(orthogonal.status, tess::PathStatus::Found);
-  EXPECT_EQ(orthogonal.cost, *orthogonal_reference);
+  EXPECT_EQ(orthogonal.cost, orthogonal_reference);
 
-  const auto diagonal_reference = grid::reference_cost(
-      map, start, goal, grid::ReferenceMovement::DiagonalBothClear);
+  const auto diagonal_reference =
+      grid::reference_cost(map, start, goal,
+                           grid::ReferenceMovement::DiagonalBothClear)
+          .value_or(kNoReference);
   const auto diagonal = tess::astar_path<decltype(world), Diagonal>(
       world, {start, goal}, scratch);
-  ASSERT_TRUE(diagonal_reference.has_value());
   ASSERT_EQ(diagonal.status, tess::PathStatus::Found);
-  EXPECT_EQ(diagonal.cost, *diagonal_reference);
+  EXPECT_EQ(diagonal.cost, diagonal_reference);
   EXPECT_EQ(diagonal.cost_scale, 128u);
 }
 
