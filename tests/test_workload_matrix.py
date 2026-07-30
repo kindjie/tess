@@ -630,3 +630,36 @@ def test_malformed_catalog_exits_nonzero_without_traceback(
   )
 
   assert code == 1
+
+
+def test_misspelled_capture_dimension_fails():
+  catalog = _catalog(
+    families=[_family(captures={"world_extnet": 1})]
+  )
+
+  errors = cwm.check(catalog, {"path/astar_open_2d"})
+
+  assert any("world_extnet" in e and "not a dimension" in e
+             for e in errors)
+
+
+def test_duplicate_family_identifier_fails():
+  catalog = _catalog(families=[_family(), _family()])
+
+  errors = cwm.check(catalog, {"path/astar_open_2d"})
+
+  assert any("more than once" in e for e in errors)
+
+
+def test_lab_literals_in_comments_are_ignored(tmp_path):
+  source = tmp_path / "tess_lab_bench.cc"
+  source.write_text(
+    'RegisterBenchmark("lab/probe_active", fn);\n'
+    '// RegisterBenchmark("lab/probe_disabled", fn);\n'
+    '/* historical: "lab/probe_removed" was retired */\n',
+    encoding="utf-8",
+  )
+
+  names = cwm.lab_registrations(tmp_path)
+
+  assert names == {"lab/probe_active"}

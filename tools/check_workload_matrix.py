@@ -108,10 +108,18 @@ def threshold_registrations(thresholds_dir: Path) -> set[str]:
   return names
 
 
+LINE_COMMENT = re.compile(r"//[^\n]*")
+BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
 def lab_registrations(bench_sources: Path) -> set[str]:
+  """lab/ name literals from active code (comments stripped)."""
   names: set[str] = set()
   for source in sorted(Path(bench_sources).glob("*.cc")):
-    names.update(LAB_LITERAL.findall(source.read_text(encoding="utf-8")))
+    text = source.read_text(encoding="utf-8")
+    text = BLOCK_COMMENT.sub("", text)
+    text = LINE_COMMENT.sub("", text)
+    names.update(LAB_LITERAL.findall(text))
   return names
 
 
@@ -208,6 +216,7 @@ def _validate_rules(
   rules: list[dict[str, Any]], universe: set[str], errors: list[str]
 ) -> None:
   """Catalog-shape validation: fail loudly, never with a traceback."""
+  seen_families: set[str] = set()
   for rule in rules:
     family = rule.get("family")
     if not family or "pattern" not in rule or "defaults" not in rule:
@@ -215,6 +224,12 @@ def _validate_rules(
         f"family rule {family!r} is missing family/pattern/defaults"
       )
       continue
+    if family in seen_families:
+      errors.append(
+        f"family rule {family!r} is declared more than once"
+      )
+      continue
+    seen_families.add(family)
     pattern = rule["pattern"]
     if not pattern.startswith("^") or not pattern.endswith("$"):
       errors.append(
@@ -227,6 +242,11 @@ def _validate_rules(
       errors.append(f"family rule {family!r}: bad pattern: {error}")
       continue
     for dimension, group in rule.get("captures", {}).items():
+      if dimension not in DIMENSIONS:
+        errors.append(
+          f"family rule {family!r}: capture key {dimension!r} is not "
+          f"a dimension (misspelling?)"
+        )
       if not isinstance(group, int) or group > compiled.groups:
         errors.append(
           f"family rule {family!r}: capture for {dimension} names "
