@@ -865,7 +865,21 @@ that introduces this document.
    verified against the independent Dijkstra reference with exact
    equality in both movement modes and both directions on every PR
    (tests/grid_map_generators.h, tess_grid_map_generators_test). The
-   external-data legs stay rights-gated. Next: the S2 macro-harness.* S1 stays on in-repo procedural data: the
+   external-data legs stay rights-gated. The S2 colony macro-harness
+   shipped 2026-07-30 (tests/colony_harness.h,
+   tess_colony_harness_test): 100 agents with goals driven through the
+   production stack — schedule loop, queued ops with result channels
+   and an auto-exec task, weighted path agents with movement,
+   incremental region-graph topology, and render deltas — over terrain
+   raster-scaled from the S1 logical map, with churn enqueuing one
+   operation per touched chunk so the worker pool genuinely
+   dispatches. It lands the metamorphic gates the scenario layer
+   exists to enable (section 3.2): serial == pool, worker-count
+   invariance, chunk-size invariance, field-payload-width invariance,
+   cold cache == warm cache, and incremental topology == fresh
+   rebuild, plus section 3.3's flow identities and a serial-only
+   scenario golden. Next: S3 sparse streaming under residency
+   budget.* S1 stays on in-repo procedural data: the
    external-data legs (manifest entries, fetch tool, cache verification, the
    strict data job — grid-benchmark TDD phases 1-2) remain gated, and phase 3
    preserves the rights gate rather than unblocking it. It opens only on a

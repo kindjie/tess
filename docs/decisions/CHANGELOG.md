@@ -6,6 +6,44 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-30 - S2 colony macro-harness (phase 3, slice 2)
+
+- Changed: `tests/colony_harness.h` drives N agents with goals through
+  the production stack — `Schedule`, an `AutoExecTask` over queued ops
+  with a result channel, weighted path agents with movement,
+  incremental region-graph topology, and `DeltaCollector` publishes —
+  parameterized by agent count, churn, executor and worker count,
+  world size, chunk size, and field payload width. Terrain is the S1
+  logical room map raster-scaled into the world, so the same topology
+  carries across world sizes. `tess_colony_harness_test` runs the
+  section 5 PR-tier matrix (N=100, serial plus pool at two worker
+  counts) and asserts serial == pool, worker-count invariance,
+  chunk-size invariance, payload-width invariance, incremental
+  topology == a fresh rebuild both per churn event and at end of run,
+  section 3.3's flow identities, and a serial-only outcome golden.
+- Reason: redesign section 3.1's S2 bullet. Three wiring details are
+  load-bearing and were each caught in review: `SimPhase::Movement`
+  precedes `Topology`, so the rebuild registers in `Pathing` and only
+  it marks pathing dirty — otherwise agents replan against a stale
+  graph; the auto-exec task selects its executor by phase operation
+  count, so churn enqueues one operation per distinct chunk and the
+  tests assert `pool_phases > 0` rather than comparing two idle runs;
+  and a cost of zero reads as blocked, so every passable tile carries
+  a positive weight or the world is immobile. The churn script is
+  chosen by coordinate rather than by chunk key, so two chunk shapes
+  block identical tiles, and it skips tiles an agent currently
+  occupies.
+- Remaining for later slices: agent counts of 1k and 10k, worlds of
+  1024 and 2048, worker counts of 1 and 8, multiple seeds and churn
+  rates, wall removal, a repeated-goal workload that actually
+  populates the caches (the current cold-cache test is a smoke check,
+  not section 3.2's cache differential), deterministic work-counter
+  goldens beyond the outcome golden, and the weekly soak.
+- Affected docs: testing and benchmarking redesign (item 3 status),
+  tests/AGENTS.md.
+- Affected code: new `tests/colony_harness.h`,
+  `tests/tess_colony_harness_test.cc`; `tests/CMakeLists.txt`.
+
 ## 2026-07-30 - S1 procedural generators and oracle leg (phase 3, slice 1)
 
 - Changed: the scenario layer's in-repo S1 leg exists —
