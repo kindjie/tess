@@ -314,6 +314,24 @@ def test_public_headers_come_from_the_declared_set(tmp_path):
   assert headers == ["core/lattice.h", "path/astar.h", "version.h"]
 
 
+def test_public_headers_survive_parenthesized_comments(tmp_path):
+  # A CMake comment containing (...) inside the block must not
+  # truncate the inventory at the first closing parenthesis.
+  (tmp_path / "CMakeLists.txt").write_text(
+    "set(\n"
+    "  TESS_PUBLIC_HEADERS\n"
+    "  include/tess/core/lattice.h\n"
+    "  # grouped with storage (see docs/architecture/storage.md)\n"
+    "  include/tess/storage/world.h\n"
+    ")\n",
+    encoding="utf-8",
+  )
+
+  headers = coverage_gaps.public_headers(tmp_path / "CMakeLists.txt")
+
+  assert headers == ["core/lattice.h", "storage/world.h", "version.h"]
+
+
 def test_public_headers_without_the_block_fails(tmp_path):
   (tmp_path / "CMakeLists.txt").write_text(
     "add_library(tess INTERFACE)\n", encoding="utf-8"

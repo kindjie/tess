@@ -918,10 +918,15 @@ jobs:
             -o build/dev-coverage/tests.profdata
           ctest --test-dir build/dev-coverage --show-only=json-v1 \
             > build/dev-coverage/ctest-tests.json
-          mapfile -t objects < <( \
-            python3 tools/coverage_gaps.py ctest-objects \
-              --ctest-json build/dev-coverage/ctest-tests.json \
-              --build-dir build/dev-coverage)
+          # A plain file indirection (not process substitution) so a
+          # ctest-objects failure stops the step here, at the true
+          # cause, instead of surfacing later as an empty llvm-cov
+          # argument.
+          python3 tools/coverage_gaps.py ctest-objects \
+            --ctest-json build/dev-coverage/ctest-tests.json \
+            --build-dir build/dev-coverage \
+            > build/dev-coverage/coverage-objects.txt
+          mapfile -t objects < build/dev-coverage/coverage-objects.txt
           args=("${objects[0]}")
           for object in "${objects[@]:1}"; do
             args+=(-object "$object")

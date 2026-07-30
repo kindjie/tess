@@ -87,8 +87,12 @@ def _export_file_summaries(
   return summaries
 
 
+# The block terminator is the closing parenthesis alone at the start
+# of a line (the repository's CMake style): matching a bare first ")"
+# would silently truncate the inventory at any parenthesized comment
+# inside the block.
 PUBLIC_HEADERS_BLOCK = re.compile(
-  r"set\(\s*TESS_PUBLIC_HEADERS\s*(.*?)\)", re.DOTALL
+  r"set\(\s*TESS_PUBLIC_HEADERS\s*(.*?)^\)", re.DOTALL | re.MULTILINE
 )
 HEADER_ENTRY = re.compile(r"include/tess/(\S+?\.h)")
 
