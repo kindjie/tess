@@ -77,6 +77,15 @@
       }
     },
     {
+      "name": "dev-coverage",
+      "displayName": "Developer Debug Coverage (clang source-based)",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "TESS_ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
       "name": "consumer",
       "displayName": "Consumer Install",
       "description": "Headers-only install: no tests or network fetches.",
@@ -141,6 +150,14 @@
       "cacheVariables": {
         "TESS_BUILD_TESTING": "OFF",
         "TESS_BUILD_EXAMPLES": "OFF"
+      }
+    },
+    {
+      "name": "bench-coverage",
+      "displayName": "Benchmark Coverage (clang source-based, smoke-mode runs)",
+      "inherits": "bench-only",
+      "cacheVariables": {
+        "TESS_ENABLE_COVERAGE": "ON"
       }
     },
     {
@@ -252,6 +269,15 @@
       "targets": ["tess_bench"]
     },
     {
+      "name": "dev-coverage",
+      "configurePreset": "dev-coverage"
+    },
+    {
+      "name": "bench-coverage",
+      "configurePreset": "bench-coverage",
+      "targets": ["tess_bench", "tess_bench_diagnostics"]
+    },
+    {
       "name": "bench-profile",
       "configurePreset": "bench-profile"
     },
@@ -276,6 +302,17 @@
       "name": "dev",
       "inherits": "test-base",
       "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-coverage",
+      "inherits": "test-base",
+      "configurePreset": "dev-coverage",
+      "execution": {
+        "timeout": 180
+      },
       "output": {
         "outputOnFailure": true
       }

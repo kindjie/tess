@@ -1,0 +1,47 @@
+{
+  "comment": [
+    "Acknowledged benchmark coverage gaps for tools/coverage_gaps.py",
+    "(redesign section 4.5). Exact headers only — a new header under",
+    "these directories must surface as a NEW gap until someone",
+    "acknowledges it here with a reason. Entries whose header gains",
+    "benchmark coverage are reported as stale for removal."
+  ],
+  "known_gaps": [
+    {
+      "header": "debug/imgui/panels.h",
+      "reason": "dev-only ImGui helpers; no benchmark exists or is planned"
+    },
+    {
+      "header": "debug/imgui/tools.h",
+      "reason": "dev-only ImGui helpers; no benchmark exists or is planned"
+    },
+    {
+      "header": "gpu/backend.h",
+      "reason": "no GPU benchmarks; the CPU stays authoritative and consumers own GPU pipelines"
+    },
+    {
+      "header": "gpu/descriptors.h",
+      "reason": "no GPU benchmarks; the CPU stays authoritative and consumers own GPU pipelines"
+    },
+    {
+      "header": "gpu/webgpu_backend.h",
+      "reason": "no GPU benchmarks; the CPU stays authoritative and consumers own GPU pipelines"
+    },
+    {
+      "header": "tess.h",
+      "reason": "umbrella include-only header; no executable regions"
+    },
+    {
+      "header": "pathfinding.h",
+      "reason": "umbrella include-only header; no executable regions"
+    },
+    {
+      "header": "simulation.h",
+      "reason": "umbrella include-only header; no executable regions"
+    },
+    {
+      "header": "core/assert.h",
+      "reason": "assertion bodies compile out under NDEBUG in Release bench builds"
+    }
+  ]
+}

@@ -986,6 +986,19 @@
   against fake benchmark binaries in shadow and confirm modes, and the
   suspect-scoped confirmation path (threshold-manifest metric lookup,
   the 64-name cap, unit normalization, end-to-end suspect verdicts).
+- `tests/test_coverage_gaps.py`: pytest coverage for the benchmark
+  coverage gap-finder (`tools/coverage_gaps.py`). It pins gap
+  classification (executed versus zero-covered-regions versus
+  absent-from-export, the latter because never-included headers and
+  uninstantiated templates produce no llvm-cov file row at all),
+  best-coverage merging across multiple exports, exclusion of files
+  outside the include root, subsystem summaries, the exact-header
+  known-gaps manifest (acknowledged gaps render separately; entries
+  whose header gained coverage are reported stale), advisory zero-exit
+  with gaps present, fail-closed behavior on malformed or missing
+  inputs, markdown report ordering, and the `ctest-objects` mode that
+  lists deduplicated instrumented test executables for llvm-cov
+  `-object` arguments.
 - `tests/test_clang_tidy_changed.py`: pytest coverage for the diff-scoped
   pull-request clang-tidy runner (`tools/clang_tidy_changed.py`). It pins
   candidate selection (header/source split, bench and webgpu_stub

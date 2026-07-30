@@ -88,6 +88,30 @@ tools/check_counter_goldens.py --observed /tmp/observed.json \
 Setting `TESS_COUNTER_GOLDENS_STRICT=1` makes drift fail (the redesign's
 phase 4 promotion path).
 
+**Advisory coverage** (weekly tier, never gating): the scheduled run
+publishes an llvm-cov summary of the test suite and a benchmark
+gap-finder report — which public headers no benchmark executes
+(`tools/coverage_gaps.py`; acknowledged gaps live in
+`tools/coverage_known_gaps.json` with reasons). Reproduce locally with
+Clang:
+
+```sh
+cmake --preset bench-coverage && cmake --build --preset bench-coverage
+LLVM_PROFILE_FILE="$PWD/build/bench-coverage/bench-%m-%p.profraw" \
+  ./build/bench-coverage/bench/tess_bench --benchmark_min_time=0.001
+LLVM_PROFILE_FILE="$PWD/build/bench-coverage/bench-%m-%p.profraw" \
+  ./build/bench-coverage/bench/tess_bench_diagnostics \
+  --benchmark_min_time=0.001
+llvm-profdata merge build/bench-coverage/bench-*.profraw \
+  -o build/bench-coverage/bench.profdata
+llvm-cov export -summary-only build/bench-coverage/bench/tess_bench \
+  -object build/bench-coverage/bench/tess_bench_diagnostics \
+  -instr-profile build/bench-coverage/bench.profdata \
+  > build/bench-coverage/export.json
+tools/coverage_gaps.py --export build/bench-coverage/export.json \
+  --include-root include/tess --known-gaps tools/coverage_known_gaps.json
+```
+
 CI runs primarily on `ubuntu-24.04` with Clang and covers:
 
 - Dev build and unit tests: `cmake --build --preset dev`,

@@ -6,6 +6,36 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-30 - Advisory coverage reporting (phase 2, slice 6)
+
+- Changed: the weekly CI tier gains an advisory coverage job (never in
+  ci-gate; a coverage-percentage gate stays an explicit non-goal). A
+  new `TESS_ENABLE_COVERAGE` option routes Clang source-based coverage
+  flags through the header-only interface target (instrumenting
+  exactly the consuming translation units, not fetched dependencies,
+  and kept out of the installed export set). The job publishes an
+  llvm-cov summary of the full test suite — every instrumented test
+  executable is passed via `-object`, because coverage mappings live
+  in binaries rather than profiles — and a benchmark gap-finder:
+  smoke-mode runs of every registration in both bench binaries joined
+  by `tools/coverage_gaps.py` against the public header tree,
+  reporting which headers no benchmark executes. Headers absent from
+  the export entirely (never included or never instantiated) are
+  distinguished from mapped-but-unexecuted ones; acknowledged gaps
+  live in an exact-header manifest (`tools/coverage_known_gaps.json`)
+  with reasons and stale-entry detection.
+- Reason: sections 3.6 and 4.5 — the 2026-07-11 audit found the
+  sparse-storage benchmark gap by hand; this finds that class of gap
+  mechanically. The first local run caught a wrong manifest
+  assumption (maintenance benchmarks execute
+  `experimental/maintenance.h`) and surfaced real gaps such as
+  `core/lattice.h` and `storage/residency.h`.
+- Affected docs: testing and benchmarking redesign (section 10
+  status), CONTRIBUTING.md, tests/AGENTS.md.
+- Affected code: `CMakeLists.txt`, `CMakePresets.json`,
+  `.github/workflows/ci.yml`, new `tools/coverage_gaps.py`,
+  `tools/coverage_known_gaps.json`, `tests/test_coverage_gaps.py`.
+
 ## 2026-07-30 - Suspect-scoped paired confirmation (phase 2, slice 5)
 
 - Changed: the paired confirmation workflow accepts a predeclared

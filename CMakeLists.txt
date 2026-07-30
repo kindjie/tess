@@ -42,6 +42,11 @@ option(TESS_BUILD_TESTING "Build tess tests" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_EXAMPLES "Build tess examples" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
 option(TESS_BUILD_DOCS "Build the tess API reference with Doxygen" OFF)
+option(
+  TESS_ENABLE_COVERAGE
+  "Instrument tess consumers with Clang source-based coverage"
+  OFF
+)
 set(
   TESS_GRID_BENCHMARK_DATA_DIR
   ""
@@ -86,6 +91,32 @@ add_library(tess INTERFACE)
 add_library(tess::tess ALIAS tess)
 
 target_compile_features(tess INTERFACE cxx_std_20)
+
+# Source-based coverage for the weekly advisory reports (redesign
+# section 3.6). tess is header-only, so instrumentation necessarily
+# lives in consuming translation units; routing the flags through the
+# interface target instruments exactly those TUs and leaves fetched
+# dependencies alone. BUILD_INTERFACE keeps the flags out of the
+# installed export set. Clang-only: llvm-cov reads this format.
+if(TESS_ENABLE_COVERAGE)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(
+      FATAL_ERROR
+      "TESS_ENABLE_COVERAGE requires Clang (source-based coverage); "
+      "the compiler is ${CMAKE_CXX_COMPILER_ID}"
+    )
+  endif()
+  target_compile_options(
+    tess
+    INTERFACE
+      $<BUILD_INTERFACE:-fprofile-instr-generate -fcoverage-mapping>
+  )
+  target_link_options(
+    tess
+    INTERFACE
+      $<BUILD_INTERFACE:-fprofile-instr-generate>
+  )
+endif()
 
 set(TESS_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
 configure_file(
