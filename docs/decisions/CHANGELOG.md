@@ -6,6 +6,29 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-30 - Profiling protocol wired to its signals (phase 2, slice 8)
+
+- Changed: the section 4.6 profiling protocol is now attached to the
+  moments a contributor meets a performance signal. CONTRIBUTING.md
+  documents the four-step escalation (counters first; reproduce
+  paired locally with a concrete worktree + `paired_bench.py` recipe;
+  profile and diff under `bench-profile`; record every outcome in the
+  optimization log), and the three signal surfaces link it: the
+  paired sentinel summary appends the pointer on every verdict plus a
+  paste-ready `--suspects=` list when something flagged, the
+  change-point suspect report appends the same after its
+  confirm-first advice, and the counter-drift table names itself as
+  step 1 (work changed means the diagnosis is algorithmic).
+- Reason: the profiling tooling existed but nothing connected it to
+  its triggers; contributors here are largely automated agents, so
+  the protocol must live where the signal appears. Optional guidance,
+  never a gate — hosted runners have no reliable PMU access.
+- Affected docs: CONTRIBUTING.md, testing and benchmarking redesign
+  (section 10 status).
+- Affected code: `tools/paired_bench.py`,
+  `tools/benchmark_changepoint.py`, `tools/check_counter_goldens.py`
+  (report renderers only).
+
 ## 2026-07-30 - Benchmark workload-matrix catalog (phase 2, slice 7)
 
 - Changed: benchmark workload coverage is now a declarative,

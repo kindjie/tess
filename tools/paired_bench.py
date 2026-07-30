@@ -361,6 +361,22 @@ def render_markdown(
       "Shadow mode: results are informational; the calibrated threshold "
       "gates remain authoritative (redesign section 4.3)."
     )
+  lines.append("")
+  lines.append(
+    "Investigating a verdict? Follow the profiling protocol in "
+    "CONTRIBUTING.md: counters first, reproduce paired locally, "
+    "profile under `bench-profile`, record the outcome in the "
+    "optimization log."
+  )
+  flagged = [
+    result.name for result, verdict in judged
+    if verdict in ("advisory", "regression")
+  ]
+  if flagged:
+    lines.append(
+      "Paste-ready suspect list for local reproduction: "
+      f"`--suspects={','.join(flagged)}`"
+    )
   return "\n".join(lines) + "\n"
 
 

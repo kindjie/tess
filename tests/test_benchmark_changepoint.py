@@ -228,3 +228,15 @@ def test_corrupt_benchmark_file_poisons_the_artifact(tmp_path):
   artifacts = benchmark_changepoint.load_history(tmp_path)
 
   assert [a["run_id"] for a in artifacts if a["run_id"] == 111] == []
+
+
+def test_report_links_the_profiling_protocol(tmp_path):
+  for run in range(9):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
+  for run in range(9, 12):
+    _artifact(tmp_path, 100 + run, {"path/x": 14_000.0})
+
+  report = benchmark_changepoint.render_report(_detect(tmp_path))
+
+  assert "profiling protocol" in report
+  assert "--suspects=path/x" in report

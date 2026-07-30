@@ -205,6 +205,14 @@ def render_report(result: dict[str, Any]) -> str:
         f"| {suspect['newest_median_ns']:,.0f} ns "
         f"| {suspect['delta_relative']:+.1%} |"
     )
+  names = ",".join(s["benchmark"] for s in result["suspects"])
+  lines.append("")
+  lines.append(
+      "After confirmation, the profiling protocol in CONTRIBUTING.md"
+      " applies (counters first, reproduce paired, profile under"
+      " `bench-profile`, record in the optimization log). Paste-ready"
+      f" suspect list: `--suspects={names}`"
+  )
   return "\n".join(lines) + "\n"
 
 

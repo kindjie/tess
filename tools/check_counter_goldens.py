@@ -129,6 +129,13 @@ def render_report(
       f"| {cell(workload)} | {cell(family)} | {cell(counter)} "
       f"| {cell(golden_value)} | {cell(observed_value)} |"
     )
+  lines.append("")
+  lines.append(
+    "Counter drift is step 1 of the profiling protocol in"
+    " CONTRIBUTING.md: work changed, so the diagnosis is algorithmic"
+    " — decide whether the new work is intended before reaching for a"
+    " profiler."
+  )
   return "\n".join(lines) + "\n"
 
 

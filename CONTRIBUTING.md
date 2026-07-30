@@ -88,6 +88,43 @@ tools/check_counter_goldens.py --observed /tmp/observed.json \
 Setting `TESS_COUNTER_GOLDENS_STRICT=1` makes drift fail (the redesign's
 phase 4 promotion path).
 
+**Profiling protocol** (optional, signal-triggered — never a gate):
+when the change classifier flags perf-sensitive paths, the paired
+sentinel run returns `advisory` or `regression`, or a
+`perf-change-point` issue opens, investigate in escalation order
+(redesign section 4.6):
+
+1. **Counters first.** Read the counter-drift table in the check
+   summary. If work changed (`expanded_nodes`, retries, merges), the
+   diagnosis is algorithmic — the golden diff names the behavior
+   change and profiling is usually unnecessary. If intended, update
+   the golden in the same PR.
+2. **Reproduce paired.** If counters are flat but time moved,
+   reproduce locally before investigating — hosted-runner noise is
+   not a finding. Build both revisions and run the paired tool with
+   the flagged names (the check summary prints a paste-ready
+   `--suspects=` list):
+
+   ```sh
+   git worktree add /tmp/tess-base <base-sha>
+   cmake --preset bench-only && cmake --build --preset bench-only
+   (cd /tmp/tess-base && cmake --preset bench-only && \
+     cmake --build --preset bench-only)
+   tools/paired_bench.py --mode confirm \
+     --base-binary /tmp/tess-base/build/bench-only/bench/tess_bench \
+     --head-binary build/bench-only/bench/tess_bench \
+     --sentinels bench/sentinels.json --thresholds-dir bench/thresholds \
+     --suspects <paste from the summary>
+   ```
+3. **Profile and diff.** Build both revisions under the
+   `bench-profile` preset, capture at matched filters and durations,
+   and diff the symbol summaries (see the benchmark plan's profiling
+   workflow). Attribute the delta to a symbol or call path before
+   concluding anything.
+4. **Record.** Accepted, rejected, and inconclusive outcomes all go
+   to `docs/planning/optimization-log.md` — inconclusive entries stop
+   the next contributor from repeating the dead end.
+
 **Workload matrix**: `bench/workload-matrix.json` declares which
 workload cells (world extent x chunk extent x layout x storage x
 executor x payload) the benchmark suite measures, via per-family name

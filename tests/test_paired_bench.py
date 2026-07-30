@@ -703,3 +703,32 @@ def test_unavailable_requested_suspects_fail_the_confirmation(tmp_path):
   )
 
   assert code == 1
+
+
+def test_report_links_the_profiling_protocol():
+  result = paired_bench.SentinelResult(
+    name="path/x", base_median=100.0, head_median=130.0,
+    delta_relative=0.30, ci_low=0.25, ci_high=0.35, flagged=True,
+  )
+
+  summary = paired_bench.render_markdown(
+    [(result, "regression")], "regression", mode="confirm"
+  )
+
+  assert "profiling protocol" in summary
+  assert "CONTRIBUTING.md" in summary
+  assert "--suspects=path/x" in summary
+
+
+def test_passing_report_links_protocol_without_suspects():
+  result = paired_bench.SentinelResult(
+    name="path/x", base_median=100.0, head_median=101.0,
+    delta_relative=0.01, ci_low=-0.02, ci_high=0.03, flagged=False,
+  )
+
+  summary = paired_bench.render_markdown(
+    [(result, "pass")], "pass", mode="shadow"
+  )
+
+  assert "profiling protocol" in summary
+  assert "--suspects=" not in summary
