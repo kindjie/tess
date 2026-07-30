@@ -56,12 +56,19 @@ def load_artifact(
     # Backtesting only: artifacts that predate fingerprinting share one
     # legacy stratum. CI never passes --allow-legacy.
     key = "legacy"
-  if metadata.get("event_name") not in (None, "push"):
-    # Older artifacts predate the event field; new ones must be pushes.
-    return None
-  ref = metadata.get("ref")
-  if ref not in (None, "main", "refs/heads/main"):
-    return None
+  if key == "legacy":
+    # Pre-fingerprint artifacts also predate the event/ref fields.
+    if metadata.get("event_name") not in (None, "push"):
+      return None
+    if metadata.get("ref") not in (None, "main", "refs/heads/main"):
+      return None
+  else:
+    # Fingerprinted artifacts must positively attest to a main push;
+    # absence is exclusion, not tolerance (series provenance).
+    if metadata.get("event_name") != "push":
+      return None
+    if metadata.get("ref") not in ("main", "refs/heads/main"):
+      return None
 
   medians: dict[str, float] = {}
   for result in sorted(directory.glob("*.json")):
@@ -168,6 +175,13 @@ def detect(
 def render_report(result: dict[str, Any]) -> str:
   """Render the markdown report for the step summary and issue."""
   verdict = result["verdict"]
+  if verdict == "series-break":
+    return (
+        "### Benchmark change-point check: series break\n\n"
+        "The runner fingerprint changed; confirm any suspicion manually "
+        "with the paired sentinel confirmation workflow while the new "
+        "stratum accumulates history.\n"
+    )
   if verdict != "suspects":
     return f"### Benchmark change-point check: {verdict}\n"
   lines = [
@@ -210,11 +224,21 @@ def main(argv: list[str] | None = None) -> int:
     print(f"error: {args.artifacts} is not a directory")
     return 1
   artifacts = load_history(args.artifacts, allow_legacy=args.allow_legacy)
+  downloaded = sum(1 for d in args.artifacts.iterdir() if d.is_dir())
   result = detect(
       artifacts,
       relative_floor=args.relative_floor,
       absolute_floor_ns=args.absolute_floor_ns,
   )
+  result["artifacts_loaded"] = len(artifacts)
+  result["directories_downloaded"] = downloaded
+  if downloaded > 0 and not artifacts:
+    # A dead loader must be loud, never a green "no-data".
+    print(
+        "::warning::change-point loaded zero artifacts from "
+        f"{downloaded} downloaded directories; the fingerprint producer "
+        "or provenance filter is broken"
+    )
   report = render_report(result)
   print(report)
   if args.report:

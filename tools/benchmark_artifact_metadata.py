@@ -62,6 +62,7 @@ def normalized_flags(compile_commands: Path, source_suffix: str) -> str | None:
     entries = json.loads(compile_commands.read_text(encoding="utf-8"))
   except (OSError, json.JSONDecodeError):
     return None
+  flag_sets = []
   for entry in entries:
     if not str(entry.get("file", "")).endswith(source_suffix):
       continue
@@ -80,8 +81,12 @@ def normalized_flags(compile_commands: Path, source_suffix: str) -> str | None:
       if argument.startswith(("-I", "-isystem")) or "/" in argument:
         continue
       kept.append(argument)
-    return " ".join(sorted(kept))
-  return None
+    # Original order preserved (value arguments stay paired with their
+    # options); multiple matching translation units (the diagnostics
+    # binary shares the source) pick the smallest joined form so a
+    # CMake target reorder cannot rotate the fingerprint.
+    flag_sets.append(" ".join(kept))
+  return min(flag_sets) if flag_sets else None
 
 
 def build_fingerprint(build_dir: Path) -> dict[str, object]:

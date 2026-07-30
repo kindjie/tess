@@ -784,8 +784,11 @@ jobs:
             --jq '.artifacts[]
                   | select(.name | startswith("benchmark-baselines-"))
                   | select(.expired == false)
+                  | select(.workflow_run.head_branch == "main")
+                  | select(.workflow_run.repository_id
+                           == .workflow_run.head_repository_id)
                   | "\(.id) \(.workflow_run.id)"' \
-            | head -40 \
+            | head -60 \
             | while read -r artifact_id run_id; do
                 dir="trailing/$run_id"
                 [ -d "$dir" ] && continue
@@ -816,8 +819,8 @@ jobs:
             exit 0
           fi
           marker="<!-- perf-change-point:${GITHUB_RUN_ID} -->"
-          body="$marker
-          $(cat change-point.md)"
+          printf '%s\n\n' "$marker" > issue-body.md
+          cat change-point.md >> issue-body.md
           gh label create perf-change-point \
             --repo "$GITHUB_REPOSITORY" \
             --description "Automated sustained benchmark shift suspicion" \
@@ -827,17 +830,19 @@ jobs:
             --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
             if gh issue view "$existing" --repo "$GITHUB_REPOSITORY" \
-                --json comments --jq '.comments[].body' \
+                --json body,comments \
+                --jq '.body, .comments[].body' \
                 | grep -qF "$marker"; then
               echo "already reported by this run"
             else
               gh issue comment "$existing" \
-                --repo "$GITHUB_REPOSITORY" --body "$body"
+                --repo "$GITHUB_REPOSITORY" --body-file issue-body.md
             fi
           else
             gh issue create --repo "$GITHUB_REPOSITORY" \
               --label perf-change-point \
-              --title "Sustained benchmark shift suspected" --body "$body"
+              --title "Sustained benchmark shift suspected" \
+              --body-file issue-body.md
           fi
 
   # Keeps demoted-job regressions owned: a failed main, scheduled, or

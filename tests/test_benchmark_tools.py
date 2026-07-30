@@ -697,3 +697,80 @@ def test_metadata_ref_falls_back_to_github_ref(tmp_path, monkeypatch):
   assert code == 0
   data = json.loads(out.read_text(encoding="utf-8"))
   assert data["ref"] == "refs/pull/1/merge"
+
+
+def test_normalized_flags_drop_paths_and_stay_deterministic(tmp_path):
+  db = tmp_path / "compile_commands.json"
+  db.write_text(
+    json.dumps(
+      [
+        {
+          "file": "/repo/bench/tess_bench.cc",
+          "command": (
+            "/usr/bin/clang++ -I/repo/include -isystem /deps -O3 -DNDEBUG "
+            "-std=gnu++20 -o bench/tess_bench.cc.o -c /repo/bench/tess_bench.cc"
+          ),
+        },
+        {
+          "file": "/repo/bench/tess_bench.cc",
+          "arguments": [
+            "clang++", "-I/repo/include", "-O3", "-DNDEBUG",
+            "-DTESS_ENABLE_DIAGNOSTICS", "-std=gnu++20",
+            "-c", "/repo/bench/tess_bench.cc", "-o", "x.o",
+          ],
+        },
+      ]
+    ),
+    encoding="utf-8",
+  )
+
+  flags = benchmark_artifact_metadata.normalized_flags(db, "tess_bench.cc")
+
+  # Deterministic pick across entry order, paths dropped, order kept.
+  assert flags == "-O3 -DNDEBUG -DTESS_ENABLE_DIAGNOSTICS -std=gnu++20"
+  assert benchmark_artifact_metadata.normalized_flags(
+    tmp_path / "absent.json", "tess_bench.cc"
+  ) is None
+
+
+def test_fingerprint_missing_fields_are_unusable(tmp_path, monkeypatch):
+  monkeypatch.delenv("ImageOS", raising=False)
+  monkeypatch.delenv("ImageVersion", raising=False)
+
+  fingerprint = benchmark_artifact_metadata.build_fingerprint(tmp_path)
+
+  assert fingerprint["usable"] is False
+  assert fingerprint["key"] is None
+
+
+def test_fingerprint_complete_fields_key_deterministically(
+  tmp_path, monkeypatch
+):
+  monkeypatch.setenv("ImageOS", "ubuntu24")
+  monkeypatch.setenv("ImageVersion", "20260729.1")
+  monkeypatch.setattr(
+    benchmark_artifact_metadata, "cpu_model", lambda: "TestCPU"
+  )
+  monkeypatch.setattr(
+    benchmark_artifact_metadata,
+    "compiler_version",
+    lambda _c: "clang version 19",
+  )
+  (tmp_path / "compile_commands.json").write_text(
+    json.dumps(
+      [
+        {
+          "file": "/r/bench/tess_bench.cc",
+          "command": "c++ -O3 -c /r/bench/tess_bench.cc -o o.o",
+        }
+      ]
+    ),
+    encoding="utf-8",
+  )
+
+  first = benchmark_artifact_metadata.build_fingerprint(tmp_path)
+  second = benchmark_artifact_metadata.build_fingerprint(tmp_path)
+
+  assert first["usable"] is True
+  assert first["key"] == second["key"]
+  assert first["bench_flags"] == "-O3"

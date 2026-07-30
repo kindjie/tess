@@ -169,3 +169,40 @@ def test_report_names_suspects_and_range(tmp_path):
   assert "path/x" in report
   assert "c108" in report
   assert "+40.0%" in report
+
+
+def test_fingerprinted_artifacts_must_attest_push_and_main(tmp_path):
+  # A fingerprinted artifact with absent provenance fields is excluded;
+  # absence is only tolerated for pre-fingerprint legacy artifacts.
+  for run in range(12):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
+  directory = tmp_path / "999"
+  directory.mkdir()
+  (directory / "metadata.json").write_text(
+    json.dumps(
+      {
+        "run_id": "999",
+        "fingerprint": {"usable": True, "key": "fp-a"},
+      }
+    ),
+    encoding="utf-8",
+  )
+  (directory / "bench.json").write_text(
+    json.dumps(
+      {
+        "benchmarks": [
+          {
+            "name": "path/x",
+            "run_type": "iteration",
+            "time_unit": "ns",
+            "cpu_time": 90_000.0,
+          }
+        ]
+      }
+    ),
+    encoding="utf-8",
+  )
+
+  artifacts = benchmark_changepoint.load_history(tmp_path)
+
+  assert [a["run_id"] for a in artifacts if a["run_id"] == 999] == []
