@@ -114,7 +114,9 @@ jobs:
           for test in payload["tests"]:
             props = {p["name"]: p.get("value")
                      for p in test.get("properties", [])}
-            labels = set(props.get("LABELS") or [])
+            labels = set()
+            for entry in props.get("LABELS") or []:
+              labels |= set(entry.split(";"))
             seen |= labels
             if "target:tess_path_test" in labels:
               path_labels |= labels

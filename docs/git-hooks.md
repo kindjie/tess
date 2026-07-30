@@ -99,22 +99,13 @@ UV_CACHE_DIR=build/uv-cache \
 ### Pre-push range semantics
 
 Git feeds the pre-push hook one line per ref being pushed
-(`<local ref> <local sha> <remote ref> <remote sha>`). The hook parses those
-lines and:
-
-- skips the build entirely when the push only deletes remote refs;
-- decides whether to build the benchmark preset from the pushed range
-  (`<remote sha>..<local sha>`) instead of guessing from the upstream. A
-  new remote ref, an unresolvable range, or a manual run without an
-  upstream all fall back to building the benchmarks (the honest default);
-- warns loudly when a pushed sha is not the current worktree `HEAD`.
-
-Known limitation: the build and tests always run against the current
-worktree, not a checkout of the pushed commit. When the pushed sha differs
-from `HEAD` (for example `git push origin other-branch`), the hook still
-validates the worktree and prints a warning naming the pushed ref. CI
-validates the pushed commits exactly, so treat the warning as a reminder
-that local results may not match CI.
+(`<local-ref> <local-sha> <remote-ref> <remote-sha>`). The hook unions
+the changed paths across every non-delete ref and classifies them for
+test selection. New refs, unresolvable ranges, malformed or absent
+ref input, and any unrecognized path fail open to the full suite;
+delete-only pushes skip the checks entirely. When the pushed commit
+is not the worktree HEAD the hook warns that it validates the
+worktree, not that commit.
 
 ## CI backstop
 

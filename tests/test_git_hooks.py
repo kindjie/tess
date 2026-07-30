@@ -1040,7 +1040,7 @@ def test_pre_push_selects_affected_labels(monkeypatch):
   assert selected == [
     [
       "ctest", "--preset", "dev", "-L",
-      "^(prepush:always|subsystem:path)$",
+      "(^|;)(prepush:always|subsystem:path)(;|$)",
     ]
   ]
 
@@ -1154,9 +1154,16 @@ def test_classify_mixed_inert_and_subsystem_selects():
   assert labels == frozenset({"subsystem:query"})
 
 
-def test_selection_regex_is_anchored_and_always_included():
+def test_selection_regex_is_delimiter_anchored_and_always_included():
   regex = git_hooks.selection_regex(frozenset({"subsystem:query"}))
-  assert regex == "^(prepush:always|subsystem:query)$"
+  assert regex == "(^|;)(prepush:always|subsystem:query)(;|$)"
+  # Matches both separate and ;-joined label forms, without
+  # substring collisions.
+  pattern = re.compile(regex)
+  assert pattern.search("subsystem:query")
+  assert pattern.search("target:tess_x;subsystem:query;subsystem:core")
+  assert not pattern.search("subsystem:querytail")
+  assert not pattern.search("target:subsystem:query_test")
 
 
 def test_gtest_targets_parses_real_cmake():
@@ -1425,9 +1432,27 @@ def test_labels_propagate_into_discovered_tests():
       prop["name"]: prop.get("value")
       for prop in test.get("properties", [])
     }
-    labels = set(props.get("LABELS") or [])
+    labels = set()
+    for entry in props.get("LABELS") or []:
+      labels |= set(entry.split(";"))
     by_label |= labels
     if "target:tess_path_test" in labels:
       path_test_labels |= labels
   assert "prepush:always" in by_label
   assert {"subsystem:path", "target:tess_path_test"} <= path_test_labels
+
+
+def test_empty_ref_input_fails_open_to_full():
+  assert git_hooks.push_range_paths([]) is None
+
+
+def test_conditional_target_source_runs_full():
+  verdict, _labels = git_hooks.classify_push_paths(
+    ["tests/tess_grid_benchmark_data_test.cc"],
+    frozenset({"tess_grid_benchmark_data_test"}),
+  )
+  assert verdict == "full"
+
+
+def test_workflow_changes_are_not_inert():
+  assert _classify([".github/workflows/ci.yml"])[0] == "full"

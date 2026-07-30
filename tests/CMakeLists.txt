@@ -18,6 +18,14 @@ function(tess_discover_tests target)
   foreach(subsystem IN LISTS ARG_LABELS)
     list(APPEND labels "subsystem:${subsystem}")
   endforeach()
+  # gtest_discover_tests forwards PROPERTIES through an unquoted
+  # expansion: CMake 3.x splices a bare list (LABELS keeps only the
+  # first element; the rest become property NAMES), while CMake 4
+  # forwards it intact. Escaping the separators is stable on both,
+  # at the cost of the labels landing as ONE ;-joined label string —
+  # the pre-push selection regex matches labels delimiter-aware
+  # ((^|;)label(;|$)) so both forms select identically.
+  string(REPLACE ";" "\\;" labels "${labels}")
   gtest_discover_tests(
     ${target}
     DISCOVERY_MODE PRE_TEST
@@ -409,7 +417,7 @@ add_executable(
 target_link_libraries(tess_persistence_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_persistence_test)
 
-tess_discover_tests(tess_persistence_test LABELS core path persistence storage)
+tess_discover_tests(tess_persistence_test LABELS core path persistence storage topology)
 
 add_executable(
   tess_joint_movement_test
@@ -623,7 +631,7 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_sim_scheduler_test)
 
-tess_discover_tests(tess_sim_scheduler_test LABELS core ops path sim storage topology)
+tess_discover_tests(tess_sim_scheduler_test LABELS block core ops path sim storage topology)
 
 add_executable(tess_assert_test tess_assert_test.cc)
 target_link_libraries(tess_assert_test PRIVATE tess::tess GTest::gtest_main)
@@ -655,7 +663,7 @@ target_compile_definitions(
 )
 tess_apply_project_options(tess_diagnostics_enabled_test)
 
-tess_discover_tests(tess_diagnostics_enabled_test LABELS core diagnostics ops path storage topology)
+tess_discover_tests(tess_diagnostics_enabled_test LABELS block core diagnostics ops path storage topology)
 
 add_executable(
   tess_diagnostics_trace_test
@@ -672,7 +680,7 @@ target_compile_definitions(
 )
 tess_apply_project_options(tess_diagnostics_trace_test)
 
-tess_discover_tests(tess_diagnostics_trace_test LABELS core diagnostics ops storage)
+tess_discover_tests(tess_diagnostics_trace_test LABELS block core diagnostics ops storage)
 
 # Compile-checks the opt-in ImGui panels against a minimal ImGui stub (no real
 # Dear ImGui dependency), with both diagnostics and imgui gates on.

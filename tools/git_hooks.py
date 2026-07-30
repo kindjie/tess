@@ -799,7 +799,9 @@ SUBSYSTEM_LABELS = frozenset((
 # them as full-suite triggers rather than trusting a single label.
 FULL_SUITE_SUBSYSTEMS = frozenset(("core", "storage"))
 
-INERT_PREFIXES = ("docs/", ".github/")
+# .github/ is NOT inert: workflow changes decide whether the
+# authoritative CI gates run, so they fail open to the full suite.
+INERT_PREFIXES = ("docs/",)
 INERT_SUFFIXES = (".md",)
 INERT_FILES = frozenset((
   "LICENSE", ".gitignore", ".gitattributes", "CODEOWNERS",
@@ -862,7 +864,7 @@ def classify_push_paths(
       return ("full", frozenset())
     if name.startswith("tests/"):
       stem = base[:-3] if base.endswith(".cc") else ""
-      if stem in targets:
+      if stem in targets and stem not in CONDITIONAL_TARGETS:
         labels.add(f"target:{stem}")
         continue
       # Helpers, fixtures, goldens, CMakeLists, unknown sources.
@@ -878,13 +880,31 @@ def classify_push_paths(
 
 
 def selection_regex(labels: frozenset[str]) -> str:
-  """One anchored ORed -L expression (repeated -L flags AND)."""
+  """One delimiter-anchored ORed -L expression.
+
+  Repeated -L flags AND in ctest, so the selection is a single ORed
+  regex. Labels may arrive from CMake either as separate entries or
+  as one ;-joined string (the gtest_discover_tests PROPERTIES
+  forwarding differs across CMake versions), so alternatives anchor
+  on start/end-or-semicolon rather than ^$ alone.
+  """
   alternatives = sorted(labels | {"prepush:always"})
-  return "^(" + "|".join(re.escape(label) for label in alternatives) + ")$"
+  joined = "|".join(re.escape(label) for label in alternatives)
+  return f"(^|;)({joined})(;|$)"
+
+
+# Targets behind configure options are absent from the dev build; a
+# target label naming one selects zero tests, so their sources fail
+# open to the full suite instead.
+CONDITIONAL_TARGETS = frozenset({"tess_grid_benchmark_data_test"})
 
 
 def push_range_paths(updates: list[PushRef]) -> list[str] | None:
   """Union of changed paths across refs; None means fail open."""
+  if not updates:
+    # Manual invocation or fully malformed ref input: never downgrade
+    # to build-only on absent evidence.
+    return None
   names: list[str] = []
   for ref in updates:
     if ref.is_new():
