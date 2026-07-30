@@ -4,9 +4,10 @@ name: Paired sentinel confirmation
 # confirms or refutes a suspected regression between two explicit
 # revisions under Bonferroni-adjusted statistical criteria, failing on
 # a confirmed regression. This covers the sentinel set only; the
-# section 4.2 full-suite paired confirmation arrives with the
-# change-point slice. Runs only on hosted runners against repository
-# history — never untrusted code.
+# section 4.2 full-suite paired confirmation is still open (the
+# change-point slice shipped detection and the rolling issue without
+# it). Runs only on hosted runners against repository history — never
+# untrusted code.
 
 on:
   workflow_dispatch:

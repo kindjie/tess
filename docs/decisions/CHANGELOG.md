@@ -6,6 +6,38 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-29 - Runner fingerprinting and change-point alerting (phase 2, slice 4)
+
+- Changed: benchmark baseline artifacts carry a runner fingerprint —
+  CPU model, core count, runner image, compiler identity, and the
+  normalized effective compile flags of the benchmark binary from
+  `compile_commands.json` — with missing fields marking the artifact
+  unusable rather than joining a shared null stratum.
+  `tools/benchmark_changepoint.py` runs the section 12 resolution: a
+  control-chart rule over per-artifact medians, stratified by
+  fingerprint with stratum resumption, flagging only when the newest
+  three same-stratum artifacts each clear a 10% relative and 2 µs
+  absolute floor over the trailing-30 baseline median (minimum 8).
+  A dedicated main-push-only `change-point` job — separate from the
+  bench job, which executes pull-request code and therefore never
+  holds write permissions — downloads the trailing artifacts, runs the
+  detector, and files or extends one rolling `perf-change-point` issue
+  with an idempotency marker; fingerprint series breaks point at the
+  manual sentinel confirmation. Alerting never gates.
+- Reason: section 4.2's hosted-runner alerting leg. The detector was
+  backtested against the real artifact history before shipping and
+  immediately surfaced a genuine finding: a sustained 3-4x fields
+  family step at the v0.12 completion merge that the post-merge
+  threshold recalibration had silently absorbed (optimization log,
+  "Change-Point Backtest") — the section 2.3 calibration loophole this
+  machinery exists to close.
+- Affected docs: testing and benchmarking redesign (sections 10 and
+  12), optimization log, tests/AGENTS.md.
+- Affected code: `tools/benchmark_artifact_metadata.py`,
+  `tools/benchmark_changepoint.py`,
+  `tests/test_benchmark_changepoint.py`, `.github/workflows/ci.yml`,
+  `.github/workflows/paired-bench.yml`.
+
 ## 2026-07-29 - Queue-flow accounting (phase 2, slice 3)
 
 - Changed: `tess::diagnostics` gains ungated flow accounting —

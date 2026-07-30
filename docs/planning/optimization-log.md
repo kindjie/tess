@@ -17,6 +17,32 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-07-29 - Change-Point Backtest Flags A 3-4x Fields Family Step At v0.12
+
+- Area: first backtest of the new change-point detector
+  (`tools/benchmark_changepoint.py`) against the repository's real
+  trailing main artifacts (legacy single-stratum mode; 19 usable
+  artifacts in the recent window).
+- Evidence: 29 benchmarks — the fields family plus adjacent
+  product/cache workloads — show a clean sustained step, for example
+  `fields/goalset_build_16` from a 117-135 us band (11 consecutive
+  artifacts) to a 364-475 us band (8 consecutive artifacts, still
+  current). The step lands exactly at 61f8044 (the roadmap-completion
+  merge, #59), whose diff rewrites `field_product_cache.h` (+922
+  lines) and `distance_field_box.h` while `tess_fields_bench.cc` is
+  unchanged — same workload, 3-4x slower. The post-merge threshold
+  recalibration (2026-07-24, "Gate Previously Smoke-Only Benchmark
+  Families") accepted the elevated levels as the new baseline, which
+  is the section 2.3 self-referential-calibration loophole in action.
+- Decision: recorded as a confirmed-sustained, unconfirmed-cause
+  suspect. Not remediated in the change-point slice; the follow-up is
+  a paired base-vs-head comparison of c300560 versus 61f8044 over the
+  fields family and, if the regression is unintended, a targeted fix
+  with the detector's commit range as the starting bisection window.
+- Follow-up conditions: when the fields cost is intended (weighted
+  product capability), the intent must be written down here and the
+  ceilings' provenance annotated; silence is what let it pass.
+
 ## 2026-07-29 - Paired Sentinel Replay Reproduces The 2026-07-23 Catch
 
 - Area: validation of the new paired base-vs-head sentinel runner

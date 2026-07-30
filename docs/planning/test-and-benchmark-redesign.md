@@ -793,12 +793,19 @@ that introduces this document.
    summary without gating; `TESS_COUNTER_GOLDENS_STRICT=1` is the
    phase 4 promotion switch), and the intentional-change workflow is the
    checker's `--update` flag committed in the same pull request.
-   Remaining in this phase: the queue-flow accounting instrumentation
-   and its conservation-identity goldens (section 3.3's second part),
-   change-point alerting with runner fingerprinting,
-   the section 4.2 full-suite confirmation, advisory coverage, the
-   workload-matrix catalog, profiling-protocol wiring, and pre-push
-   slimming.*
+   Queue-flow accounting (section 3.3's second part) shipped
+   2026-07-29 with hard-checked conservation identities. Runner
+   fingerprinting and change-point alerting shipped 2026-07-29 in
+   partial form: artifacts carry the CPU/image/compiler/flags
+   fingerprint, the control-chart detector (section 12's resolution)
+   runs per main push in a dedicated write-permissioned job and feeds
+   one rolling perf-change-point issue, and a fingerprint series break
+   points at the manual sentinel confirmation — automatic dispatch of
+   a full-suite paired confirmation and longer-than-30-day artifact
+   retention (section 7) remain open in this phase. Remaining in this
+   phase: the section 4.2 full-suite confirmation, advisory coverage,
+   the workload-matrix catalog, profiling-protocol wiring, and
+   pre-push slimming.*
 3. Scenario layer: procedural generators, then the S2 macro-harness (with
    PR-tier smoke), then S3. S1 stays on in-repo procedural data: the
    external-data legs (manifest entries, fetch tool, cache verification, the
@@ -861,9 +868,21 @@ that introduces this document.
   representative per remaining family, capped around 12).
 - Whether counter goldens are stored per-platform from the start or only
   after a portability failure.
-- Change-point detector choice and window (simple control-chart rules over
-  medians versus a formal change-point test) — decided in phase 2 with
-  tests.
+- Change-point detector choice and window — RESOLVED 2026-07-29:
+  simple control-chart rules over per-artifact medians of raw
+  repetitions (aggregates ignored, units normalized to nanoseconds),
+  stratified by runner fingerprint with stratum resumption. A benchmark
+  flags only when the newest three same-stratum artifacts each satisfy
+  `median > baseline_median * 1.10` AND
+  `median - baseline_median > 2000 ns`, with the baseline the up-to-30
+  prior same-stratum artifacts excluding the candidates (minimum 8;
+  fewer is "insufficient history"). Backtested against the real
+  artifact history before shipping: one borderline +10.8% alert over a
+  16-artifact legacy window, and a genuine 3-4x sustained fields-family
+  step at the v0.12 merge (optimization log, "Change-Point Backtest").
+  Acceptance posture: alerting is a rolling issue, never a gate, so the
+  tolerable false-issue rate is one borderline alert per multi-week
+  window, as backtested.
 - Where long-retention benchmark artifacts live (data branch versus
   extended artifact retention versus published dataset).
 - Naming and hosting for the comparative repository, and the fixture-pack

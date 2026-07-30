@@ -959,6 +959,14 @@
   `PathCounters`/`QueuedPhaseCounters` JSON for the checker. Registered
   as the `TessCounterGoldenProbe`/`TessCounterGoldenCheck` ctest
   fixture pair; drift is advisory until the strict promotion.
+- `tests/test_benchmark_changepoint.py`: pytest coverage for the
+  change-point detector (`tools/benchmark_changepoint.py`) —
+  insufficient-history and single-spike suppression, sustained-shift
+  flagging with the suspect commit range, the absolute materiality
+  floor, fingerprint series breaks versus stratum resumption on
+  alternating fleets, exclusion of unusable/non-push/non-main
+  artifacts, aggregate-row skipping, unit normalization, and report
+  rendering.
 - `tests/test_check_counter_goldens.py`: pytest coverage for
   `tools/check_counter_goldens.py` — per-counter drift rows, missing
   and unexpected workloads/families as drift, shadow-mode zero exit
