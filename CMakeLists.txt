@@ -270,6 +270,12 @@ if(TESS_BUILD_TESTING)
         "-DTESS_DECLARED_HEADERS=$<JOIN:${TESS_INSTALL_HEADERS},;>"
         -P ${PROJECT_SOURCE_DIR}/cmake/check-public-headers.cmake
     )
+    # Seconds-cheap install-contract check; runs on every selective
+    # pre-push (the -L selection would otherwise exclude it).
+    set_tests_properties(
+      tess_installed_headers_file_set
+      PROPERTIES LABELS "prepush:always"
+    )
     add_subdirectory(tests)
   endif()
 endif()

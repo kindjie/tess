@@ -6,6 +6,7 @@ import base64
 import os
 import re
 import socket
+import json
 import subprocess
 import sys
 import time
@@ -996,12 +997,9 @@ def test_parse_push_refs_ignores_blank_and_malformed_lines():
   assert git_hooks.parse_push_refs("") == []
 
 
-def test_should_build_bench_for_new_remote_ref():
-  ref = git_hooks.PushRef("refs/heads/new", SHA_A, "refs/heads/new", ZEROS)
-  assert git_hooks.should_build_bench([ref]) is True
-
-
-def test_pre_push_configures_bench_before_building_new_ref(monkeypatch):
+def test_pre_push_new_ref_runs_full_suite(monkeypatch):
+  # An unresolvable range fails open to the full suite (no bench
+  # build: the PR bench-smoke job owns compile rot).
   ref = git_hooks.PushRef("refs/heads/new", SHA_A, "refs/heads/new", ZEROS)
   commands: list[list[str]] = []
 
@@ -1010,48 +1008,161 @@ def test_pre_push_configures_bench_before_building_new_ref(monkeypatch):
     stdout = f"{SHA_A}\n" if argv == ["git", "rev-parse", "HEAD"] else ""
     return subprocess.CompletedProcess(argv, 0, stdout=stdout)
 
+  monkeypatch.delenv("TESS_PREPUSH_FULL", raising=False)
   monkeypatch.setattr(git_hooks, "read_push_refs", lambda: [ref])
   monkeypatch.setattr(git_hooks, "run", fake_run)
 
   assert git_hooks.pre_push() == 0
-  configure = ["cmake", "--preset", "bench"]
-  build = ["cmake", "--build", "--preset", "bench"]
-  assert commands[-2:] == [configure, build]
-
-
-def test_pre_push_skips_bench_commands_when_gating_is_false(monkeypatch):
-  ref = git_hooks.PushRef("refs/heads/main", SHA_A, "refs/heads/main", SHA_B)
-  commands: list[list[str]] = []
-
-  def fake_run(argv, **_kwargs):
-    commands.append(argv)
-    stdout = f"{SHA_A}\n" if argv == ["git", "rev-parse", "HEAD"] else ""
-    return subprocess.CompletedProcess(argv, 0, stdout=stdout)
-
-  monkeypatch.setattr(git_hooks, "read_push_refs", lambda: [ref])
-  monkeypatch.setattr(git_hooks, "should_build_bench", lambda _updates: False)
-  monkeypatch.setattr(git_hooks, "run", fake_run)
-
-  assert git_hooks.pre_push() == 0
+  assert ["ctest", "--preset", "dev"] in commands
   assert all("bench" not in command for command in commands)
+  assert ["tools/install_smoke.sh"] not in commands
 
 
-def test_should_build_bench_when_range_is_unresolvable():
+def test_pre_push_selects_affected_labels(monkeypatch):
   ref = git_hooks.PushRef("refs/heads/x", SHA_A, "refs/heads/x", SHA_B)
-  assert git_hooks.should_build_bench([ref]) is True
+  commands: list[list[str]] = []
+
+  def fake_run(argv, **_kwargs):
+    commands.append(argv)
+    stdout = f"{SHA_A}\n" if argv == ["git", "rev-parse", "HEAD"] else ""
+    return subprocess.CompletedProcess(argv, 0, stdout=stdout)
+
+  monkeypatch.delenv("TESS_PREPUSH_FULL", raising=False)
+  monkeypatch.setattr(git_hooks, "read_push_refs", lambda: [ref])
+  monkeypatch.setattr(
+    git_hooks, "push_range_paths",
+    lambda _updates: ["include/tess/path/astar.h"],
+  )
+  monkeypatch.setattr(git_hooks, "run", fake_run)
+
+  assert git_hooks.pre_push() == 0
+  selected = [c for c in commands if c[:2] == ["ctest", "--preset"]]
+  assert selected == [
+    [
+      "ctest", "--preset", "dev", "-L",
+      "^(prepush:always|subsystem:path)$",
+    ]
+  ]
 
 
-def test_bench_paths_changed_prefixes():
-  assert git_hooks.bench_paths_changed(["bench/foo.cc"])
-  assert git_hooks.bench_paths_changed(["cmake/Foo.cmake"])
-  assert git_hooks.bench_paths_changed(["include/tess/tess.h"])
-  assert git_hooks.bench_paths_changed(["CMakeLists.txt"])
-  assert not git_hooks.bench_paths_changed([
-    "tests/CMakeLists.txt",
-    "docs/git-hooks.md",
-    "tools/git_hooks.py",
-  ])
-  assert not git_hooks.bench_paths_changed([])
+def test_pre_push_docs_only_builds_without_tests(monkeypatch):
+  ref = git_hooks.PushRef("refs/heads/x", SHA_A, "refs/heads/x", SHA_B)
+  commands: list[list[str]] = []
+
+  def fake_run(argv, **_kwargs):
+    commands.append(argv)
+    stdout = f"{SHA_A}\n" if argv == ["git", "rev-parse", "HEAD"] else ""
+    return subprocess.CompletedProcess(argv, 0, stdout=stdout)
+
+  monkeypatch.delenv("TESS_PREPUSH_FULL", raising=False)
+  monkeypatch.setattr(git_hooks, "read_push_refs", lambda: [ref])
+  monkeypatch.setattr(
+    git_hooks, "push_range_paths",
+    lambda _updates: ["docs/planning/notes.md", "README.md"],
+  )
+  monkeypatch.setattr(git_hooks, "run", fake_run)
+
+  assert git_hooks.pre_push() == 0
+  assert not any(c[0] == "ctest" for c in commands)
+  assert ["cmake", "--build", "--preset", "dev"] in commands
+
+
+def test_pre_push_full_opt_in_overrides_everything(monkeypatch):
+  ref = git_hooks.PushRef("refs/heads/x", SHA_A, "refs/heads/x", SHA_B)
+  commands: list[list[str]] = []
+
+  def fake_run(argv, **_kwargs):
+    commands.append(argv)
+    stdout = f"{SHA_A}\n" if argv == ["git", "rev-parse", "HEAD"] else ""
+    return subprocess.CompletedProcess(argv, 0, stdout=stdout)
+
+  monkeypatch.setenv("TESS_PREPUSH_FULL", "1")
+  monkeypatch.setattr(git_hooks, "read_push_refs", lambda: [ref])
+  monkeypatch.setattr(
+    git_hooks, "push_range_paths",
+    lambda _updates: ["docs/planning/notes.md"],
+  )
+  monkeypatch.setattr(git_hooks, "run", fake_run)
+
+  assert git_hooks.pre_push() == 0
+  assert ["ctest", "--preset", "dev"] in commands
+  assert ["tools/install_smoke.sh"] in commands
+  assert ["tools/fetchcontent_smoke.sh"] in commands
+
+
+def _classify(names):
+  return git_hooks.classify_push_paths(
+    names, frozenset({"tess_path_test", "tess_storage_test"})
+  )
+
+
+def test_classify_subsystem_paths_select_labels():
+  verdict, labels = _classify(["include/tess/path/astar.h"])
+  assert verdict == "select"
+  assert labels == frozenset({"subsystem:path"})
+
+
+def test_classify_core_and_umbrellas_run_full():
+  for name in (
+    "include/tess/core/lattice.h",
+    "include/tess/storage/world.h",
+    "include/tess/tess.h",
+    "include/tess/pathfinding.h",
+    "include/tess/version.h.in",
+  ):
+    assert _classify([name])[0] == "full", name
+
+
+def test_classify_test_source_selects_its_target():
+  verdict, labels = _classify(["tests/tess_path_test.cc"])
+  assert verdict == "select"
+  assert labels == frozenset({"target:tess_path_test"})
+
+
+def test_classify_unknown_test_source_runs_full():
+  assert _classify(["tests/allocation_counter.cc"])[0] == "full"
+  assert _classify(["tests/CMakeLists.txt"])[0] == "full"
+
+
+def test_classify_tools_and_cmake_run_full():
+  assert _classify(["tools/git_hooks.py"])[0] == "full"
+  assert _classify(["CMakeLists.txt"])[0] == "full"
+  assert _classify(["cmake/warnings.cmake"])[0] == "full"
+
+
+def test_classify_bench_and_examples_build_only():
+  verdict, labels = _classify(["bench/tess_bench.cc", "examples/demo.cc"])
+  assert verdict == "build-only"
+  assert labels == frozenset()
+
+
+def test_classify_alloc_hooks_source_runs_full():
+  # Compiled into dev test targets, not only benchmarks.
+  assert _classify(["bench/tess_diagnostics_alloc_hooks.cc"])[0] == "full"
+
+
+def test_classify_docs_only_is_build_only():
+  verdict, _labels = _classify(["docs/planning/x.md", "LICENSE"])
+  assert verdict == "build-only"
+
+
+def test_classify_mixed_inert_and_subsystem_selects():
+  verdict, labels = _classify(
+    ["docs/x.md", "include/tess/query/span.h"]
+  )
+  assert verdict == "select"
+  assert labels == frozenset({"subsystem:query"})
+
+
+def test_selection_regex_is_anchored_and_always_included():
+  regex = git_hooks.selection_regex(frozenset({"subsystem:query"}))
+  assert regex == "^(prepush:always|subsystem:query)$"
+
+
+def test_gtest_targets_parses_real_cmake():
+  targets = git_hooks.gtest_targets()
+  assert "tess_path_test" in targets
+  assert "tess_counter_golden_probe" not in targets
 
 
 CMAKE_FIXTURE = """
@@ -1224,3 +1335,99 @@ def test_compile_requirements_uses_pinned_uv_and_canonical_command(tmp_path):
     "-o",
     str(output),
   ]
+
+
+LABELED_CALL_RE = re.compile(
+  r"tess_discover_tests\(\s*(\w+)([^)]*)\)", re.MULTILINE
+)
+
+
+def _declared_labels():
+  text = (
+    git_hooks.REPO_ROOT / "tests" / "CMakeLists.txt"
+  ).read_text(encoding="utf-8")
+  calls = {}
+  for match in LABELED_CALL_RE.finditer(text):
+    target, args = match.group(1), match.group(2).split()
+    labels = set()
+    if "ALWAYS" in args:
+      labels.add("prepush:always")
+    if "LABELS" in args:
+      labels |= {
+        f"subsystem:{token}"
+        for token in args[args.index("LABELS") + 1:]
+      }
+    calls[target] = labels
+  return calls
+
+
+def test_every_discovered_target_declares_its_impact():
+  # The tested source-to-test mapping (redesign section 6): every
+  # target declares subsystems or is explicitly ALWAYS/bare.
+  calls = _declared_labels()
+  assert set(calls) == set(git_hooks.gtest_targets())
+  bare_allowed = {"tess_grid_benchmark_data_test"}
+  for target, labels in calls.items():
+    subsystems = {
+      label.split(":", 1)[1]
+      for label in labels
+      if label.startswith("subsystem:")
+    }
+    assert subsystems <= git_hooks.SUBSYSTEM_LABELS, (target, subsystems)
+    if not labels:
+      assert target in bare_allowed, (
+        f"{target} declares no labels; add its impact set"
+      )
+
+
+def test_every_subsystem_has_at_least_one_labeled_test():
+  # A subsystem whose changes would select zero tests is a silent
+  # under-selection bug — no acknowledged gaps: every subsystem
+  # (including gpu and debug) has direct tests today.
+  covered = set()
+  for labels in _declared_labels().values():
+    covered |= {
+      label.split(":", 1)[1]
+      for label in labels
+      if label.startswith("subsystem:")
+    }
+  assert covered == set(git_hooks.SUBSYSTEM_LABELS)
+
+
+def test_subsystem_vocabulary_matches_include_tree():
+  subsystems = {
+    child.name
+    for child in (git_hooks.REPO_ROOT / "include" / "tess").iterdir()
+    if child.is_dir()
+  }
+  assert subsystems == set(git_hooks.SUBSYSTEM_LABELS)
+
+
+def test_labels_propagate_into_discovered_tests():
+  # Build-level check that CMake actually attached the labels; runs
+  # wherever a configured dev build exists (the CI dev job runs it
+  # explicitly after building).
+  build_dir = git_hooks.REPO_ROOT / "build" / "dev"
+  if not (build_dir / "CTestTestfile.cmake").exists():
+    pytest.skip("no configured dev build")
+  listing = subprocess.run(
+    ["ctest", "--test-dir", str(build_dir), "--show-only=json-v1"],
+    capture_output=True,
+    text=True,
+    timeout=600,
+  )
+  assert listing.returncode == 0
+  payload = json.loads(listing.stdout)
+  by_label = set()
+  path_test_labels = set()
+  for test in payload["tests"]:
+    props = {
+      prop["name"]: prop.get("value")
+      for prop in test.get("properties", [])
+    }
+    labels = set(props.get("LABELS") or [])
+    by_label |= labels
+    if "target:tess_path_test" in labels:
+      path_test_labels |= labels
+  assert "prepush:always" in by_label
+  assert {"subsystem:path", "target:tess_path_test"} <= path_test_labels

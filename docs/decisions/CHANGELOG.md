@@ -6,6 +6,38 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-30 - Pre-push slimming with tested test-impact labels (phase 2, slice 9)
+
+- Changed: the pre-push hook runs configure + build + the
+  affected-test subset instead of the full cycle. Every discovered
+  test declares a forward impact label set in tests/CMakeLists.txt
+  (`subsystem:<dir>` = a change there must run this test, curated
+  from tests/AGENTS.md guarantees; `target:<name>` automatic;
+  `prepush:always` on the installed-headers check, the
+  counter-golden pair, and the link-free allocation-counter test).
+  The hook classifies the pushed range tri-state — full, selected
+  labels composed into one anchored ORed `-L` regex (repeated -L
+  flags AND in ctest), or build-only for docs/examples/bench — and
+  fails open: tools, CMake files, core/ and storage/ headers,
+  umbrella headers, test helpers, unresolvable ranges, and new refs
+  all run the full suite. `TESS_PREPUSH_FULL=1` overrides everything
+  and adds the consumer smokes; the conditional benchmark build is
+  dropped (the PR bench-smoke job owns compile rot). The mapping is
+  tested: label declarations parse-checked against the target set
+  and subsystem vocabulary, reverse coverage requires every
+  subsystem to select at least one test (no acknowledged gaps — gpu
+  and debug have direct tests), and both a local pytest and a CI
+  dev-job step assert CMake actually propagated the labels.
+- Reason: section 6 (minutes of friction on every push, multiplied
+  for agent contributors) with section 3.7's label mapping promoted
+  to a tested prerequisite; the hook-backstop CI job is unchanged
+  and authoritative.
+- Affected docs: docs/git-hooks.md, testing and benchmarking
+  redesign (section 10 status), tests/AGENTS.md.
+- Affected code: tests/CMakeLists.txt, CMakeLists.txt,
+  tools/git_hooks.py, tests/test_git_hooks.py,
+  .github/workflows/ci.yml.
+
 ## 2026-07-30 - Profiling protocol wired to its signals (phase 2, slice 8)
 
 - Changed: the section 4.6 profiling protocol is now attached to the

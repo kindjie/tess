@@ -99,6 +99,31 @@ jobs:
       - name: Test
         run: ctest --preset dev
 
+      # The pre-push hook selects tests by these labels (redesign
+      # section 6); this asserts CMake actually attached them where a
+      # configured build exists.
+      - name: Verify pre-push label propagation
+        run: |
+          ctest --test-dir build/dev --show-only=json-v1 \
+            > build/dev/ctest-labels.json
+          python3 - <<'EOF'
+          import json
+          payload = json.load(open("build/dev/ctest-labels.json"))
+          seen = set()
+          path_labels = set()
+          for test in payload["tests"]:
+            props = {p["name"]: p.get("value")
+                     for p in test.get("properties", [])}
+            labels = set(props.get("LABELS") or [])
+            seen |= labels
+            if "target:tess_path_test" in labels:
+              path_labels |= labels
+          assert "prepush:always" in seen, seen
+          assert {"subsystem:path", "target:tess_path_test"} <= \
+            path_labels, path_labels
+          print(f"{len(seen)} distinct labels propagated")
+          EOF
+
       # Shadow-mode counter goldens (redesign section 3.3): the ctest
       # fixture pair above never fails on drift, but drift must be seen
       # even when an unrelated step fails.
