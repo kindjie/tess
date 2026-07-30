@@ -228,3 +228,44 @@ def test_corrupt_benchmark_file_poisons_the_artifact(tmp_path):
   artifacts = benchmark_changepoint.load_history(tmp_path)
 
   assert [a["run_id"] for a in artifacts if a["run_id"] == 111] == []
+
+
+def test_report_links_the_profiling_protocol(tmp_path):
+  for run in range(9):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
+  for run in range(9, 12):
+    _artifact(tmp_path, 100 + run, {"path/x": 14_000.0})
+
+  report = benchmark_changepoint.render_report(_detect(tmp_path))
+
+  assert "profiling protocol" in report
+  assert "--suspects=path/x" in report
+
+
+def test_report_caps_the_paste_ready_suspect_list(tmp_path):
+  values_base = {f"path/b{i:03d}": 10_000.0 for i in range(70)}
+  values_up = {name: 14_000.0 for name in values_base}
+  for run in range(9):
+    _artifact(tmp_path, 100 + run, values_base)
+  for run in range(9, 12):
+    _artifact(tmp_path, 100 + run, values_up)
+
+  report = benchmark_changepoint.render_report(_detect(tmp_path))
+
+  assert "plus 6 more" in report
+  assert "caps at 64" in report
+
+
+def test_report_routes_diagnostics_suspects_separately(tmp_path):
+  values_base = {"path/x": 10_000.0, "fields/goalset_build_16": 9_000.0}
+  values_up = {"path/x": 14_000.0, "fields/goalset_build_16": 13_000.0}
+  for run in range(9):
+    _artifact(tmp_path, 100 + run, values_base)
+  for run in range(9, 12):
+    _artifact(tmp_path, 100 + run, values_up)
+
+  report = benchmark_changepoint.render_report(_detect(tmp_path))
+
+  assert "--suspects=path/x" in report
+  assert "fields/goalset_build_16" in report
+  assert "not confirmable by the dispatch workflow" in report

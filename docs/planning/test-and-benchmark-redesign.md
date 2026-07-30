@@ -837,10 +837,16 @@ that introduces this document.
    known-unmeasured cells as structured selectors that must retire
    when a matching cell lands; `tools/check_workload_matrix.py`
    enforces coherence statically on the hooks tier and against the
-   compiled registration union in the bench job. Automatic dispatch on
+   compiled registration union in the bench job. The profiling
+   protocol (section 4.6) was wired up 2026-07-30: CONTRIBUTING.md
+   carries the four-step escalation with a concrete local
+   paired-reproduction recipe, and all three signal surfaces link it —
+   the paired sentinel summary on every verdict (with a paste-ready
+   `--suspects=` list when flagged), the change-point suspect report,
+   and the counter-drift table (as step 1). Automatic dispatch on
    series breaks and longer-than-30-day artifact retention (section 7)
-   remain open in this phase. Remaining in this phase:
-   profiling-protocol wiring and pre-push slimming.*
+   remain open in this phase. Remaining in this phase: pre-push
+   slimming.*
 3. Scenario layer: procedural generators, then the S2 macro-harness (with
    PR-tier smoke), then S3. S1 stays on in-repo procedural data: the
    external-data legs (manifest entries, fetch tool, cache verification, the
