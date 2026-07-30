@@ -369,4 +369,143 @@ inline void event_queued_dirty_merge(std::uint64_t chunks) noexcept {
 }
 #endif
 
+/**
+ * Deterministic admission and terminal accounting for one bounded flow.
+ *
+ * Plain ungated data, like `EventStream` rejection counts: flows update
+ * an attached accountant at the transition where each fact is known, so
+ * histories are never reconstructed from current state. Two
+ * conservation identities hold at every quiescent point; they are
+ * invariants, not tunable goldens. `completed` is non-monotonic in
+ * exactly one documented case: a produced result that later goes stale
+ * before retirement is reclassified from `completed` to `stale` so one
+ * admission lands in exactly one terminal bucket.
+ */
+struct FlowCounters {
+  /// Admission offers, including rejected and coalesced ones.
+  std::uint64_t offered = 0;
+  /// Offers accepted as new flow items.
+  std::uint64_t admitted = 0;
+  /// Offers refused at the admission boundary.
+  std::uint64_t rejected = 0;
+  /// Offers absorbed by an item that was already pending.
+  std::uint64_t coalesced_into_pending = 0;
+  /// Items that reached their intended result.
+  std::uint64_t completed = 0;
+  /// Items explicitly cancelled by the caller.
+  std::uint64_t cancelled = 0;
+  /// Items replaced by a newer admission of the same slot or goal.
+  std::uint64_t superseded = 0;
+  /// Items whose result no longer satisfies its version requirement.
+  std::uint64_t stale = 0;
+  /// Items that terminated in an error state.
+  std::uint64_t failed = 0;
+  /// Admitted items discarded before reaching any other terminal state.
+  std::uint64_t dropped_after_admission = 0;
+  /// Work units offered through explicitly bounded budgets.
+  std::uint64_t offered_work_units = 0;
+  /// Work units actually consumed by flow items.
+  std::uint64_t consumed_work_units = 0;
+  /// Admitted, non-terminal items right now.
+  std::uint64_t outstanding_current = 0;
+  /// Highest simultaneous outstanding count observed.
+  std::uint64_t outstanding_high_water = 0;
+  /// Sum over observed ticks of outstanding items times elapsed ticks.
+  std::uint64_t inventory_tick_weighted = 0;
+  /// Total admission-to-terminal ticks over terminalized items.
+  std::uint64_t residence_ticks_accumulated = 0;
+  /// Age in ticks of the oldest still-outstanding item, as last observed.
+  std::uint64_t oldest_outstanding_age_ticks = 0;
+
+  /// Sum of every terminal outcome bucket.
+  [[nodiscard]] constexpr auto terminal() const noexcept -> std::uint64_t {
+    return completed + cancelled + superseded + stale + failed +
+           dropped_after_admission;
+  }
+
+  /// Every offer was admitted, rejected, or coalesced — never lost.
+  [[nodiscard]] constexpr auto admission_identity_holds() const noexcept
+      -> bool {
+    return offered == admitted + rejected + coalesced_into_pending;
+  }
+
+  /// Every admitted item is terminal or still outstanding — never both.
+  [[nodiscard]] constexpr auto retention_identity_holds() const noexcept
+      -> bool {
+    return admitted == terminal() + outstanding_current;
+  }
+
+  /// Returns the counters to their zero-initialized state.
+  void reset() noexcept { *this = FlowCounters{}; }
+};
+
+/**
+ * Caller-owned accountant one flow updates at its transitions.
+ *
+ * Attach while the flow is empty, keep it alive for the attachment, and
+ * drive time accounting by calling the flow's `observe_flow_tick` once
+ * per simulation tick with a monotonic tick, before that tick's
+ * transitions. Inventory is weighted by elapsed ticks: an observation
+ * at tick `t` adds `outstanding * (t - last_observed_tick)`. Accounting
+ * is serial: concurrent flows synchronize updates under their own
+ * locks, and snapshots are meaningful only at quiescent points.
+ */
+struct FlowAccounting {
+  /// The accumulated flow counters.
+  FlowCounters counters{};
+  /// The most recent tick passed to an observation.
+  std::uint64_t last_observed_tick = 0;
+
+  /// Weights current inventory by the elapsed ticks since the last
+  /// observation and advances the observation clock.
+  void observe_tick(std::uint64_t tick) noexcept {
+    if (tick > last_observed_tick) {
+      counters.inventory_tick_weighted +=
+          counters.outstanding_current * (tick - last_observed_tick);
+      last_observed_tick = tick;
+    }
+  }
+
+  /// Records one admission at the current observation tick.
+  void record_admitted() noexcept {
+    ++counters.admitted;
+    ++counters.outstanding_current;
+    if (counters.outstanding_current > counters.outstanding_high_water) {
+      counters.outstanding_high_water = counters.outstanding_current;
+    }
+  }
+
+  /// Records one terminal transition leaving the outstanding set.
+  void record_left_outstanding() noexcept {
+    if (counters.outstanding_current > 0) {
+      --counters.outstanding_current;
+    }
+  }
+};
+
+/**
+ * UI-agnostic health view of one flow's accounting.
+ *
+ * Exposes the counters plus both conservation verdicts for debug
+ * panels and tools without binding them to any UI toolkit.
+ */
+struct FlowHealthSnapshot {
+  /// The counters at snapshot time.
+  FlowCounters counters{};
+  /// Whether every offer is accounted for.
+  bool admission_identity_ok = false;
+  /// Whether every admitted item is terminal or outstanding.
+  bool retention_identity_ok = false;
+};
+
+/// Builds the health snapshot for one accountant's counters.
+[[nodiscard]] inline auto snapshot(const FlowAccounting& accounting) noexcept
+    -> FlowHealthSnapshot {
+  return FlowHealthSnapshot{
+      accounting.counters,
+      accounting.counters.admission_identity_holds(),
+      accounting.counters.retention_identity_holds(),
+  };
+}
+
 }  // namespace tess::diagnostics

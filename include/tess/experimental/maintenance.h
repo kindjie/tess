@@ -1,5 +1,8 @@
 #pragma once
 
+#include <tess/core/assert.h>
+#include <tess/diagnostics/diagnostics.h>
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -111,16 +114,23 @@ class MetricsStore {
   std::atomic<std::uint64_t> capacity_failures_ = 0;
 };
 
+/// One queued maintenance entry with its flow-accounting admission stamp.
+struct QueuedMaintenanceEntry {
+  MaintenanceTask* task = nullptr;
+  std::uint64_t admitted_tick = 0;
+};
+
 class BoundedTaskQueue {
  public:
-  explicit BoundedTaskQueue(std::size_t capacity) : tasks_(capacity) {}
+  explicit BoundedTaskQueue(std::size_t capacity) : entries_(capacity) {}
 
-  [[nodiscard]] auto push(MaintenanceTask& task) noexcept -> bool {
-    if (size_ == tasks_.size()) {
+  [[nodiscard]] auto push(MaintenanceTask& task,
+                          std::uint64_t admitted_tick) noexcept -> bool {
+    if (size_ == entries_.size()) {
       return false;
     }
-    const auto tail = (head_ + size_) % tasks_.size();
-    tasks_[tail] = &task;
+    const auto tail = (head_ + size_) % entries_.size();
+    entries_[tail] = QueuedMaintenanceEntry{&task, admitted_tick};
     ++size_;
     return true;
   }
@@ -128,29 +138,35 @@ class BoundedTaskQueue {
   [[nodiscard]] auto contains(const MaintenanceTask& task) const noexcept
       -> bool {
     for (std::size_t offset = 0; offset < size_; ++offset) {
-      const auto index = (head_ + offset) % tasks_.size();
-      if (tasks_[index] == &task) {
+      const auto index = (head_ + offset) % entries_.size();
+      if (entries_[index].task == &task) {
         return true;
       }
     }
     return false;
   }
 
-  [[nodiscard]] auto pop() noexcept -> MaintenanceTask* {
+  [[nodiscard]] auto pop() noexcept -> QueuedMaintenanceEntry {
     if (size_ == 0) {
-      return nullptr;
+      return {};
     }
-    auto* task = tasks_[head_];
-    tasks_[head_] = nullptr;
-    head_ = (head_ + 1) % tasks_.size();
+    auto entry = entries_[head_];
+    entries_[head_] = {};
+    head_ = (head_ + 1) % entries_.size();
     --size_;
-    return task;
+    return entry;
   }
 
   [[nodiscard]] auto empty() const noexcept -> bool { return size_ == 0; }
 
+  [[nodiscard]] auto size() const noexcept -> std::size_t { return size_; }
+
+  [[nodiscard]] auto oldest_admitted_tick() const noexcept -> std::uint64_t {
+    return size_ == 0 ? 0 : entries_[head_].admitted_tick;
+  }
+
  private:
-  std::vector<MaintenanceTask*> tasks_;
+  std::vector<QueuedMaintenanceEntry> entries_;
   std::size_t head_ = 0;
   std::size_t size_ = 0;
 };
@@ -172,31 +188,50 @@ class QueuedScheduler : public MaintenanceScheduler {
           running_task_scheduled_ = true;
         }
         metrics_.record_coalesced();
+        if (accounting_ != nullptr) {
+          ++accounting_->counters.offered;
+          ++accounting_->counters.coalesced_into_pending;
+        }
         return true;
       }
     }
-    if (!queue_.push(task)) {
+    const auto admitted_tick =
+        accounting_ != nullptr ? accounting_->last_observed_tick : 0;
+    if (!queue_.push(task, admitted_tick)) {
       metrics_.record_capacity_failure();
+      if (accounting_ != nullptr) {
+        ++accounting_->counters.offered;
+        ++accounting_->counters.rejected;
+      }
       return false;
     }
     if (called_from_task) {
       running_task_scheduled_ = true;
+    }
+    if (accounting_ != nullptr) {
+      ++accounting_->counters.offered;
+      accounting_->record_admitted();
     }
     return true;
   }
 
   [[nodiscard]] auto run_some(MaintenanceBudget budget) -> bool override {
     const auto run_lock = std::scoped_lock{run_mutex_};
+    if (accounting_ != nullptr &&
+        budget.remaining() != std::numeric_limits<std::uint64_t>::max()) {
+      const auto lock = std::scoped_lock{queue_mutex_};
+      accounting_->counters.offered_work_units += budget.remaining();
+    }
     while (budget.remaining() != 0) {
-      MaintenanceTask* task = nullptr;
+      auto entry = detail::QueuedMaintenanceEntry{};
       {
         const auto queue_lock = std::scoped_lock{queue_mutex_};
-        task = queue_.pop();
+        entry = queue_.pop();
       }
-      if (task == nullptr) {
+      if (entry.task == nullptr) {
         return true;
       }
-      if (!run_task(*task, budget)) {
+      if (!run_task(entry, budget)) {
         return false;
       }
     }
@@ -205,17 +240,19 @@ class QueuedScheduler : public MaintenanceScheduler {
 
   [[nodiscard]] auto flush() -> bool override {
     const auto run_lock = std::scoped_lock{run_mutex_};
+    // The unbounded flush budget is deliberately not offered work: it
+    // is not a meaningful workload measurement.
     auto budget = MaintenanceBudget{};
     for (;;) {
-      MaintenanceTask* task = nullptr;
+      auto entry = detail::QueuedMaintenanceEntry{};
       {
         const auto queue_lock = std::scoped_lock{queue_mutex_};
-        task = queue_.pop();
+        entry = queue_.pop();
       }
-      if (task == nullptr) {
+      if (entry.task == nullptr) {
         return true;
       }
-      if (!run_task(*task, budget)) {
+      if (!run_task(entry, budget)) {
         return false;
       }
     }
@@ -225,15 +262,57 @@ class QueuedScheduler : public MaintenanceScheduler {
     return metrics_.snapshot();
   }
 
+  /**
+   * Attaches caller-owned flow accounting; null detaches.
+   *
+   * Attach or detach only while the queue is empty and no drain is
+   * running; updates happen under the scheduler's own locks, and
+   * snapshots are meaningful only at quiescent points (serial use).
+   */
+  void set_flow_accounting(diagnostics::FlowAccounting* accounting) {
+    const auto run_lock = std::scoped_lock{run_mutex_};
+    const auto lock = std::scoped_lock{queue_mutex_};
+    TESS_ASSERT(queue_.empty());
+    accounting_ = accounting;
+  }
+
+  /// Observes one monotonic tick: weights inventory and refreshes the
+  /// oldest outstanding age across both queued and in-flight work.
+  void observe_flow_tick(std::uint64_t tick) {
+    const auto lock = std::scoped_lock{queue_mutex_};
+    if (accounting_ == nullptr) {
+      return;
+    }
+    accounting_->observe_tick(tick);
+    const auto now = accounting_->last_observed_tick;
+    auto any = false;
+    auto oldest = now;
+    if (!queue_.empty()) {
+      any = true;
+      oldest = queue_.oldest_admitted_tick();
+    }
+    if (running_active_ && running_admitted_tick_ < oldest) {
+      any = true;
+      oldest = running_admitted_tick_;
+    }
+    if (running_active_ && !any) {
+      any = true;
+    }
+    accounting_->counters.oldest_outstanding_age_ticks = any ? now - oldest : 0;
+  }
+
  private:
-  [[nodiscard]] auto run_task(MaintenanceTask& task, MaintenanceBudget& budget)
-      -> bool {
+  [[nodiscard]] auto run_task(detail::QueuedMaintenanceEntry entry,
+                              MaintenanceBudget& budget) -> bool {
+    auto& task = *entry.task;
     metrics_.record_execution();
     const auto before = budget.remaining();
     {
       const auto lock = std::scoped_lock{queue_mutex_};
       running_thread_ = std::this_thread::get_id();
       running_task_scheduled_ = false;
+      running_active_ = true;
+      running_admitted_tick_ = entry.admitted_tick;
     }
     try {
       task.run(budget);
@@ -245,6 +324,8 @@ class QueuedScheduler : public MaintenanceScheduler {
       const auto lock = std::scoped_lock{queue_mutex_};
       running_thread_ = {};
       running_task_scheduled_ = false;
+      running_active_ = false;
+      account_terminal(entry, before, budget.remaining(), false);
       throw;
     }
     auto scheduled_follow_up = false;
@@ -253,6 +334,8 @@ class QueuedScheduler : public MaintenanceScheduler {
       scheduled_follow_up = running_task_scheduled_;
       running_thread_ = {};
       running_task_scheduled_ = false;
+      running_active_ = false;
+      account_terminal(entry, before, budget.remaining(), true);
     }
     // A no-op task may finish without consuming budget. A task that queues
     // follow-up work has not finished, however, so continuing could spin
@@ -261,12 +344,53 @@ class QueuedScheduler : public MaintenanceScheduler {
     return budget.remaining() != before || !scheduled_follow_up;
   }
 
+  /// Buckets one popped entry after its run; callers hold queue_mutex_.
+  /// A popped-but-running task stayed outstanding until here, so the
+  /// retention identity holds at every quiescent point.
+  void account_terminal(const detail::QueuedMaintenanceEntry& entry,
+                        std::uint64_t budget_before, std::uint64_t budget_after,
+                        bool completed) noexcept {
+    if (accounting_ == nullptr) {
+      return;
+    }
+    auto& counters = accounting_->counters;
+    counters.consumed_work_units += budget_before - budget_after;
+    ++(completed ? counters.completed : counters.failed);
+    accounting_->record_left_outstanding();
+    counters.residence_ticks_accumulated +=
+        accounting_->last_observed_tick - entry.admitted_tick;
+  }
+
   mutable std::mutex queue_mutex_;
   std::mutex run_mutex_;
   BoundedTaskQueue queue_;
+
+ public:
+  /// Destroying a scheduler with queued work drops it after admission,
+  /// so an attached accountant's retention identity stays truthful.
+  ~QueuedScheduler() override {
+    if (accounting_ == nullptr) {
+      return;
+    }
+    for (;;) {
+      const auto entry = queue_.pop();
+      if (entry.task == nullptr) {
+        break;
+      }
+      ++accounting_->counters.dropped_after_admission;
+      accounting_->record_left_outstanding();
+      accounting_->counters.residence_ticks_accumulated +=
+          accounting_->last_observed_tick - entry.admitted_tick;
+    }
+  }
+
+ private:
   MetricsStore metrics_;
   std::thread::id running_thread_;
   bool running_task_scheduled_ = false;
+  bool running_active_ = false;
+  std::uint64_t running_admitted_tick_ = 0;
+  diagnostics::FlowAccounting* accounting_ = nullptr;
 };
 
 }  // namespace detail
@@ -289,9 +413,11 @@ class ImmediateScheduler final : public MaintenanceScheduler {
       }
       if (active->pending == std::numeric_limits<std::uint64_t>::max()) {
         metrics_.record_capacity_failure();
+        account_offer(Offer::Rejected);
         return false;
       }
       ++active->pending;
+      account_offer(Offer::Coalesced);
       return true;
     }
 
@@ -309,17 +435,31 @@ class ImmediateScheduler final : public MaintenanceScheduler {
     // during the same schedule() call; task.run() cannot retain the frame.
     // cppcheck-suppress danglingLifetime
     const auto guard = ActiveRunGuard{active_run_, active.parent};
+    account_offer(Offer::Admitted);
     auto budget = MaintenanceBudget{};
+    auto completed_ok = true;
+    auto consumed_total = std::uint64_t{0};
     while (active.pending != 0) {
       --active.pending;
       const auto before = budget.remaining();
       metrics_.record_execution();
-      task.run(budget);
+      try {
+        task.run(budget);
+      } catch (...) {
+        consumed_total += before - budget.remaining();
+        account_run_terminal(consumed_total, true);
+        throw;
+      }
+      consumed_total += before - budget.remaining();
       if (active.pending != 0 && budget.remaining() == before) {
-        return false;
+        completed_ok = false;
+        break;
       }
     }
-    return true;
+    // A zero-progress abandonment still ran the admitted request; its
+    // residual repeats were coalesced offers, never admissions.
+    account_run_terminal(consumed_total, false);
+    return completed_ok;
   }
 
   [[nodiscard]] auto run_some(MaintenanceBudget) -> bool override {
@@ -330,6 +470,28 @@ class ImmediateScheduler final : public MaintenanceScheduler {
     return metrics_.snapshot();
   }
 
+  /**
+   * Attaches caller-owned flow accounting; null detaches.
+   *
+   * Attach or detach only while no schedule call is running; updates
+   * happen under the scheduler's lock (serial snapshots).
+   */
+  void set_flow_accounting(diagnostics::FlowAccounting* accounting) {
+    const auto run_lock = std::scoped_lock{run_mutex_};
+    TESS_ASSERT(active_run_ == nullptr);
+    accounting_ = accounting;
+  }
+
+  /// Observes one monotonic tick; the immediate backend never retains
+  /// work across calls, so only inventory weighting applies.
+  void observe_flow_tick(std::uint64_t tick) {
+    const auto run_lock = std::scoped_lock{run_mutex_};
+    if (accounting_ != nullptr) {
+      accounting_->observe_tick(tick);
+      accounting_->counters.oldest_outstanding_age_ticks = 0;
+    }
+  }
+
  private:
   struct ActiveRun {
     MaintenanceTask* task = nullptr;
@@ -337,9 +499,39 @@ class ImmediateScheduler final : public MaintenanceScheduler {
     ActiveRun* parent = nullptr;
   };
 
+  enum class Offer : std::uint8_t { Admitted, Rejected, Coalesced };
+
+  void account_offer(Offer offer) noexcept {
+    if (accounting_ == nullptr) {
+      return;
+    }
+    ++accounting_->counters.offered;
+    switch (offer) {
+      case Offer::Admitted:
+        accounting_->record_admitted();
+        break;
+      case Offer::Rejected:
+        ++accounting_->counters.rejected;
+        break;
+      case Offer::Coalesced:
+        ++accounting_->counters.coalesced_into_pending;
+        break;
+    }
+  }
+
+  void account_run_terminal(std::uint64_t consumed, bool failed) noexcept {
+    if (accounting_ == nullptr) {
+      return;
+    }
+    accounting_->counters.consumed_work_units += consumed;
+    ++(failed ? accounting_->counters.failed : accounting_->counters.completed);
+    accounting_->record_left_outstanding();
+  }
+
   detail::MetricsStore metrics_;
   std::recursive_mutex run_mutex_;
   ActiveRun* active_run_ = nullptr;
+  diagnostics::FlowAccounting* accounting_ = nullptr;
 };
 
 /// Bounded non-deduplicating queue used as the amplification baseline.

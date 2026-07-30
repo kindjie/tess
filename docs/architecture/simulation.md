@@ -674,6 +674,24 @@ unrelated edits. Collection clips each chunk's dirty bounds to the chunk's
 own world-space box before visiting tiles, so bounds that span chunk borders
 or leave the shape emit deltas only for tiles the chunk owns.
 
+## Goal-Lifecycle Flow Accounting
+
+The path-agent goal lifecycle participates in the diagnostics flow
+accounting: `PathAgentTickState` carries an optional caller-owned
+`FlowAccounting`, and every transition is counted where it happens.
+Arming a goal through the tick-state `set_path_agent_goal` is an
+admission; replacing a goal that `path_agent_goal_outstanding` still
+reports as live terminalizes it as superseded, while re-arming after a
+terminal outcome is a fresh admission. The tick-state
+`clear_path_agent_goal` cancels a live goal. `arrive_path_agent`
+completes the lifecycle at the arrival transition inside the advance
+helpers — including the joint-movement and PIBT tiers — and
+`fail_path_agent_flow` terminalizes it as failed at every structural
+failure and blocked-budget exhaustion `Unreachable` transition. `observe_path_agent_flow_tick` drives the
+per-tick inventory weighting and refreshes the oldest outstanding goal
+age from per-agent admission stamps. The bare state-only goal helpers
+perform no accounting and say so.
+
 ## Deliberate Limits
 
 The public schedule remains synchronous at its caller boundary even when an

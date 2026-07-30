@@ -208,6 +208,31 @@ their structured public statistics; tess does not duplicate a general editor.
 The API-matching stub test runs the world tools with diagnostics deliberately
 off, pinning the independent gate and non-mutating intent boundary.
 
+## Flow Accounting (ungated)
+
+`FlowCounters`, `FlowAccounting`, `FlowHealthSnapshot`, and `snapshot`
+are plain ungated data — unlike the macro-gated counter sinks above,
+they exist in every build, because flows update them deterministically
+at their own transition points rather than through instrumentation
+macros. A caller attaches a `FlowAccounting` to one flow (the resumable
+work queue, an event stream, an experimental maintenance scheduler, or
+the path-agent goal lifecycle through its tick state) while the flow is
+empty, keeps it alive for the attachment, and calls the flow's
+`observe_flow_tick` once per simulation tick with a monotonic tick.
+
+Every offer is counted as admitted, rejected, or coalesced into an
+already-pending item, and every admitted item lands in exactly one
+terminal bucket (completed, cancelled, superseded, stale, failed, or
+dropped after admission) or stays outstanding. Two conservation
+identities follow and hold at every quiescent point; they are
+invariants checked by the counter-golden probe directly, never values a
+golden update may launder. Inventory is weighted by elapsed ticks, and
+residence accumulates admission-to-terminal ticks from per-item stamps.
+One documented exception to bucket monotonicity exists: a produced
+result that later goes stale before retirement is reclassified from
+`completed` to `stale`. `FlowHealthSnapshot` packages the counters and
+both identity verdicts for tools without binding any UI toolkit.
+
 ## Deliberate Limits
 
 Beyond the counters, warning sink, trace/timing, planner trace, snapshot export,

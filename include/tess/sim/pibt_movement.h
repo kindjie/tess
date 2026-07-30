@@ -137,7 +137,8 @@ auto advance_path_agents_with_pibt(
     const PathAgentRoutes& routes, PibtPriorities& priorities,
     JointMoveScratch& scratch, Ranking&& rank, JointMoveOptions options,
     std::size_t max_steps, std::uint32_t movement_dirty_mask,
-    OnCommit&& on_commit) -> JointMoveStats {
+    OnCommit&& on_commit, diagnostics::FlowAccounting* accounting = nullptr)
+    -> JointMoveStats {
   using Shape = typename World::shape_type;
   using Class = movement::movement_class_of<ClassOrTag>;
   using Model = ResolvedTransitionModel<World, Class, AdjacentTransitions>;
@@ -446,7 +447,7 @@ auto advance_path_agents_with_pibt(
       scratch.committed_from.push_back(from);
       ++stats.frame.advanced;
       if (agent.position == agent.goal) {
-        clear_path_agent_goal(agent);
+        arrive_path_agent(agent, accounting);
         agent.status = PathStatus::Found;
         // Reset priority at the commit itself: a caller may assign a new
         // goal before the next pass, and the journey it just finished must
@@ -478,13 +479,13 @@ auto advance_path_agents_with_pibt(
     World& world, std::span<PathAgentState> agents,
     const PathAgentRoutes& routes, PibtPriorities& priorities,
     JointMoveScratch& scratch, Ranking&& rank, JointMoveOptions options = {},
-    std::size_t max_steps = 1, std::uint32_t movement_dirty_mask = 0)
-    -> JointMoveStats {
+    std::size_t max_steps = 1, std::uint32_t movement_dirty_mask = 0,
+    diagnostics::FlowAccounting* accounting = nullptr) -> JointMoveStats {
   return advance_path_agents_with_pibt<World, ClassOrTag, OccupancyTag,
                                        ReservationTag>(
       world, agents, routes, priorities, scratch, std::forward<Ranking>(rank),
       options, max_steps, movement_dirty_mask,
-      [](std::size_t, Coord3, Coord3) {});
+      [](std::size_t, Coord3, Coord3) {}, accounting);
 }
 
 // Mirrors `tick_weighted_path_agents_with_joint_movement` with the PIBT
@@ -504,15 +505,15 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   PathAgentTickStats stats;
   stats.tick = advance_sim_tick(state.clock);
 
-  const bool repath_needed =
-      prepare_path_agent_processing(agents, options, stats);
+  const bool repath_needed = prepare_path_agent_processing(
+      agents, options, stats, state.flow_accounting);
   state.routes.ensure_size(agents.size());
   if (state.pathing_dirty || repath_needed) {
     const auto scope =
         state.pathing_dirty ? PathSubmitScope::All : PathSubmitScope::NeedsOnly;
     stats.pathing = process_weighted_path_agents<World, Class, MaxCost>(
         world, agents, runtime, options.cache_policy, graph, scope,
-        &state.routes);
+        &state.routes, state.flow_accounting);
     stats.processed_paths = true;
     state.pathing_dirty = false;
   }
@@ -521,7 +522,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
       advance_path_agents_with_pibt<World, Class, OccupancyTag, ReservationTag>(
           world, agents, state.routes, priorities, scratch,
           std::forward<Ranking>(rank), pibt_options, options.max_steps,
-          movement_dirty_mask);
+          movement_dirty_mask, state.flow_accounting);
   stats.movement = moved.frame;
   if (pibt_stats != nullptr) {
     *pibt_stats = moved;

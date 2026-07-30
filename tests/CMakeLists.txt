@@ -704,6 +704,18 @@ tess_apply_project_options(tess_imgui_tools_test)
 
 tess_discover_tests(tess_imgui_tools_test)
 
+add_executable(
+  tess_flow_accounting_test
+  tess_flow_accounting_test.cc
+)
+target_link_libraries(
+  tess_flow_accounting_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_flow_accounting_test)
+
+tess_discover_tests(tess_flow_accounting_test)
+
 # Deterministic counter-golden probe (redesign section 3.3, shadow mode):
 # a gtest-free executable emits observed PathCounters/QueuedPhaseCounters
 # values, and the python checker compares them against the committed
