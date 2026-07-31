@@ -1,9 +1,14 @@
 // The types both probe translation units instantiate. Defined once so
 // the two units genuinely name the SAME specialization: comparing
 // identities of different types would prove nothing.
+//
+// This header deliberately includes only the narrow headers it needs,
+// never an umbrella: pulling in tess.h here would pre-include most of
+// the public surface and make the ordered sweeps in the probe units
+// no-ops behind their include guards.
 #pragma once
 
-#include <tess/tess.h>
+#include <tess/core/shape.h>
 
 #include <cstdint>
 

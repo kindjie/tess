@@ -43,15 +43,13 @@
 
 namespace tess_test::contract {
 
-// Shared between the cell's two units so both name the same
-// specialization.
-struct CellProbeTag {};
+struct CellProbeTag;
 
-// Each cell links TWO units built with the identical configuration,
-// so a macro-gated definition that lost its inline becomes a
-// duplicate symbol at link time. One unit alone cannot show that.
-auto macro_cell_probe_first() -> std::uintptr_t {
-  return tess::detail::tag_identity<CellProbeTag>();
+// The cell's second unit: identical configuration, so any definition
+// that should be inline and is not appears twice at link time.
+auto macro_cell_probe_second() -> std::uintptr_t {
+  struct SecondTag {};
+  return tess::detail::tag_identity<SecondTag>();
 }
 
 }  // namespace tess_test::contract

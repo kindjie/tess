@@ -1,7 +1,19 @@
 // Every public header, in declaration order.
+//
+// The sweep must be the FIRST tess include in the unit, or the headers
+// it is meant to parse in a specific order arrive already included and
+// their guards make the sweep a no-op. That is why the block is fenced
+// from the formatter, which sorts includes alphabetically and would
+// put the sweep last.
+
+// clang-format off
+#include "tess_all_headers_forward.h"
+// clang-format on
+
+#include <cstdint>
+
 #include "contract.h"
 #include "probe_types.h"
-#include "tess_all_headers_forward.h"
 
 namespace tess_test::contract {
 

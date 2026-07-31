@@ -930,7 +930,12 @@
   outside their owning header) and `tess_contract_cells` (the
   macro-configuration matrix: bare, NDEBUG, diagnostics, EnTT-only,
   Flecs-only, ImGui, WebGPU — the mixed-adapter cells being coverage
-  no preset provides).
+  no preset provides). Each cell is an executable built from two
+  identically configured translation units, not an object library: it
+  takes a link step for a definition that should be inline and is not
+  to surface as a duplicate symbol, which is how the diagnostics cell
+  covers the `inline thread_local` counter pointers that every other
+  probe preprocesses away.
 - `tess_sparse_stream_test`: the S3 sparse-streaming scenario
   (`tests/sparse_stream_harness.h`) searching the S1 terrain in a
   `SparseResidentWorld` under budget fractions of the world's chunks,

@@ -125,16 +125,25 @@ target_link_libraries(
   tess_consumer_contract_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_consumer_contract_test)
 
-tess_discover_tests(tess_consumer_contract_test LABELS block core diagnostics ecs experimental gpu ops path persistence query sim spatial storage topology)
+tess_discover_tests(tess_consumer_contract_test LABELS block core debug diagnostics ecs experimental gpu ops path persistence query sim spatial storage topology)
 
 # Macro-configuration matrix (redesign section 10 item 5). Each cell is
 # a compile-and-link target, not a test: the contract is that the
 # configuration builds at all. The mixed-adapter cells are the coverage
 # no preset provides -- dev presets pin EnTT and Flecs both on, consumer
 # presets pin both off.
+# Each cell is an EXECUTABLE built from two identically configured
+# translation units plus a main that calls into both. An object library
+# would only compile: it takes a link step for a definition that should
+# be inline and is not to show up as a duplicate symbol.
 function(tess_add_macro_cell name)
   cmake_parse_arguments(CELL "" "" "DEFINES;INCLUDES;LINKS" ${ARGN})
-  add_library(${name} OBJECT consumer_contract/macro_cell.cc)
+  add_executable(
+    ${name}
+    consumer_contract/macro_cell.cc
+    consumer_contract/macro_cell_second.cc
+    consumer_contract/macro_cell_main.cc
+  )
   target_include_directories(
     ${name} PRIVATE "${TESS_HEADER_SWEEP_DIR}" ${CELL_INCLUDES})
   target_link_libraries(${name} PRIVATE tess::tess ${CELL_LINKS})
