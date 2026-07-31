@@ -31,7 +31,10 @@ search, allocation tracking, and queued phase execution. It lives in
   heuristic calls (`event_path_heuristic`), and reconstructed nodes
   (`event_path_reconstruct_node`).
 - `AllocationCounters` records allocation and deallocation counts and bytes
-  through `record_allocation(size)` and `record_deallocation(size)`.
+  through `record_allocation(size)` and `record_deallocation(size)`. It also
+  tracks best-effort live and peak-live bytes. Exact live accounting requires
+  sized deallocation hooks; an unsized free records the event but cannot
+  subtract an unknown byte count.
 - `QueuedPhaseCounters` records queued phase execution: validated phase
   calls and operations (`event_queued_phase_execute`), invalid phase tokens
   (`event_queued_phase_invalid_range`), phase failures
@@ -107,7 +110,9 @@ capture, gated by the same `TESS_ENABLE_DIAGNOSTICS` switch.
   `trace_category_count` is the corresponding public array-bound constant.
 - `TraceRecord` is one structured point: a category, a non-owning
   `std::string_view label` (same static-storage contract as `Warning::message`
-  and `PathView`), a `value` datum, and a monotonic `sequence` ordinal.
+  and `PathView`), a `value` datum, a monotonic `sequence` ordinal, and a
+  `TraceRecordKind` distinguishing events from duration spans. Duration spans
+  additionally carry inclusive allocation and deallocation byte deltas.
 - `TraceBuffer` is caller-owned. It wraps a `std::span<TraceRecord>` the caller
   supplies (which must outlive the buffer and any scope targeting it) and holds
   an inline per-category `TraceCategoryStats` accumulator, so nothing here
@@ -128,7 +133,11 @@ capture, gated by the same `TESS_ENABLE_DIAGNOSTICS` switch.
   `ScopedTrace` records nothing even if a buffer is installed before it ends,
   and nested scopes attribute timing to the buffer that was active when the span
   began. On destruction it folds the elapsed nanoseconds into the category's
-  timing accumulator and appends a record whose `value` is that duration.
+  timing accumulator and appends a duration record whose `value` is that
+  duration. If the same allocation-counter scope remains active from timer
+  construction through destruction, the record also carries inclusive
+  allocation/free byte deltas for the span. A timer that outlives that scope
+  still records its duration but reports zero allocation traffic.
 
 ## Planner Trace
 
@@ -150,14 +159,17 @@ This is the first library code to feed the trace buffer; a consumer installs a
 
 ## Snapshot Export
 
-`include/tess/diagnostics/export.h` provides plain, self-contained snapshot
+`include/tess/diagnostics/export.h` provides plain value snapshots
 structs so a panel or consumer can hold diagnostics without touching the live
 sinks. `TimingSnapshot` copies every category's `TraceCategoryStats` out of a
 `TraceBuffer` (with a Count-guarding `category()` accessor); `DiagnosticsSnapshot`
 bundles copies of the `PathCounters`, `AllocationCounters`, and
-`QueuedPhaseCounters` a caller owns alongside a `TimingSnapshot`. `capture_timing`
-and `capture_diagnostics` assemble them as pure copies, so a snapshot outlives
-its sources unchanged.
+`QueuedPhaseCounters` a caller owns alongside a `TimingSnapshot` and the newest
+`diagnostics_snapshot_trace_capacity` (currently 64) trace records. Records
+omitted by this bound are included in the snapshot's dropped count. Trace
+labels retain the trace API's static-storage contract.
+`capture_timing` and `capture_diagnostics` assemble the copies without
+allocating.
 
 ## ImGui Panels (opt-in)
 
@@ -175,6 +187,8 @@ not include it.
   `unsigned long long` casts for portable printf-style formatting, so they
   compile across ImGui versions.
 - `draw_timing_panel(TimingSnapshot)` renders the per-category timing table;
+  `draw_recent_timing_spans_panel(DiagnosticsSnapshot)` renders each retained
+  duration with milliseconds and inclusive allocation/free byte deltas;
   `draw_path_counters_panel`, `draw_queued_counters_panel`, and
   `draw_allocation_counters_panel` render their counter structs; and
   `draw_diagnostics_panel(DiagnosticsSnapshot)` draws every section in order.
@@ -183,6 +197,14 @@ not include it.
 tess validates the header in CI against a minimal ImGui stub
 (`tests/imgui_stub/imgui.h`, `tess_diagnostics_panels_test`); the real Dear
 ImGui build is exercised by a downstream consumer.
+
+When diagnostics are enabled, `Schedule::run_tick` automatically records a
+`Scheduler` duration named `schedule_tick` and one nested duration named after
+each executed task. Installing `ScopedTrace` and, optionally,
+`ScopedAllocationCounters` around `run_tick` is therefore sufficient for the
+reference panel to attribute tick time and allocation traffic to task labels.
+Skipped tasks produce no duration. Worker-thread work remains subject to the
+thread-local limitation below.
 
 ## ImGui World Tools (opt-in)
 

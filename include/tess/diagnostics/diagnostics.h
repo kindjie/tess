@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #if defined(TESS_ENABLE_DIAGNOSTICS)
 /** Expands to 1 when diagnostic instrumentation is compiled in. */
@@ -84,6 +85,11 @@ struct AllocationCounters {
   std::uint64_t allocation_bytes = 0;
   std::uint64_t deallocations = 0;
   std::uint64_t deallocation_bytes = 0;
+  // Best-effort retained-byte accounting. Unsized deallocation hooks pass
+  // zero and therefore cannot reduce this value; consumers that require exact
+  // live memory must supply sized allocator hooks.
+  std::uint64_t live_bytes = 0;
+  std::uint64_t peak_live_bytes = 0;
 
   void reset() noexcept { *this = AllocationCounters{}; }
 };
@@ -108,6 +114,8 @@ struct QueuedPhaseCounters {
 
 inline thread_local PathCounters* active_path_counters = nullptr;
 inline thread_local AllocationCounters* active_allocation_counters = nullptr;
+inline thread_local std::uint64_t active_allocation_scope_id = 0;
+inline thread_local std::uint64_t next_allocation_scope_id = 1;
 inline thread_local QueuedPhaseCounters* active_queued_phase_counters = nullptr;
 
 /** Installs path counters on the current thread for the lifetime of a scope. */
@@ -133,18 +141,29 @@ class ScopedPathCounters {
 class ScopedAllocationCounters {
  public:
   explicit ScopedAllocationCounters(AllocationCounters& counters) noexcept
-      : previous_{active_allocation_counters} {
+      : previous_{active_allocation_counters},
+        previous_scope_id_{active_allocation_scope_id},
+        scope_id_{next_allocation_scope_id++} {
+    if (next_allocation_scope_id == 0) {
+      next_allocation_scope_id = 1;
+    }
     active_allocation_counters = &counters;
+    active_allocation_scope_id = scope_id_;
   }
 
   ScopedAllocationCounters(const ScopedAllocationCounters&) = delete;
   auto operator=(const ScopedAllocationCounters&)
       -> ScopedAllocationCounters& = delete;
 
-  ~ScopedAllocationCounters() { active_allocation_counters = previous_; }
+  ~ScopedAllocationCounters() {
+    active_allocation_counters = previous_;
+    active_allocation_scope_id = previous_scope_id_;
+  }
 
  private:
   AllocationCounters* previous_;
+  std::uint64_t previous_scope_id_;
+  std::uint64_t scope_id_;
 };
 
 /**
@@ -170,16 +189,29 @@ class ScopedQueuedPhaseCounters {
 /** Records one allocation in the current thread's active counter sink. */
 inline void record_allocation(std::size_t size) noexcept {
   if (active_allocation_counters != nullptr) {
-    ++active_allocation_counters->allocations;
-    active_allocation_counters->allocation_bytes += size;
+    auto& counters = *active_allocation_counters;
+    ++counters.allocations;
+    counters.allocation_bytes += size;
+    const auto bytes = static_cast<std::uint64_t>(size);
+    const auto maximum = std::numeric_limits<std::uint64_t>::max();
+    counters.live_bytes = bytes > maximum - counters.live_bytes
+                              ? maximum
+                              : counters.live_bytes + bytes;
+    if (counters.live_bytes > counters.peak_live_bytes) {
+      counters.peak_live_bytes = counters.live_bytes;
+    }
   }
 }
 
 /** Records one deallocation in the current thread's active counter sink. */
 inline void record_deallocation(std::size_t size = 0) noexcept {
   if (active_allocation_counters != nullptr) {
-    ++active_allocation_counters->deallocations;
-    active_allocation_counters->deallocation_bytes += size;
+    auto& counters = *active_allocation_counters;
+    ++counters.deallocations;
+    counters.deallocation_bytes += size;
+    const auto bytes = static_cast<std::uint64_t>(size);
+    counters.live_bytes =
+        bytes > counters.live_bytes ? 0 : counters.live_bytes - bytes;
   }
 }
 

@@ -37,6 +37,7 @@
     "capture_diagnostics",
     "capture_timing",
     "category_name",
+    "diagnostics_snapshot_trace_capacity",
     "DiagnosticsSnapshot",
     "draw_allocation_counters_panel",
     "draw_bool_field_editor",
@@ -44,6 +45,7 @@
     "draw_diagnostics_panel",
     "draw_path_counters_panel",
     "draw_queued_counters_panel",
+    "draw_recent_timing_spans_panel",
     "draw_timing_panel",
     "draw_world_overview",
     "event_path_clear",
@@ -101,6 +103,7 @@
     "TraceCategory",
     "TraceCategoryStats",
     "TraceRecord",
+    "TraceRecordKind",
     "Warning",
     "WarningCategory",
     "WarningSink"

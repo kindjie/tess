@@ -858,14 +858,20 @@
   drop, per-category `record_timing` accumulation (first-sample min/max, Count
   sentinel guarded on both record and record_timing), `clear()`, `ScopedTrace`
   nesting, the `ScopedTimer` capture-at-construction binding (a second buffer
-  installed before the timer ends must not receive the sample), and
+  installed before the timer ends must not receive the sample), safe zero-byte
+  attribution when a timer outlives its allocation-counter scope, and
   allocation-free recording. Planner trace -- a conflicting plan and a
   phase-assignment plan produce the expected `Planner` records. Snapshot export
-  -- `capture_diagnostics`/`capture_timing` copy every category and counter.
+  -- `capture_diagnostics`/`capture_timing` copy every category and counter,
+  retain a bounded newest-record window, and timed spans attribute inclusive
+  allocation/free byte deltas. Schedule coverage pins automatic total-tick and
+  per-task spans.
 - `tess_diagnostics_panels_test` (diagnostics-enabled, `TESS_ENABLE_IMGUI` on):
   compile-and-run check for the opt-in diagnostics panels against a minimal
   ImGui stub (`tests/imgui_stub/imgui.h`) so a panel bug surfaces here rather
   than only in a real-ImGui consumer. Exercises every diagnostics draw function
+  including recent timed spans with allocation traffic and live/peak memory,
+  accepts an empty timed-span label without forwarding a null `%.*s` pointer,
   and pins `category_name` for every trace category; includes both optional
   headers together to reject detail-helper collisions.
 - `tess_imgui_tools_test` (`TESS_ENABLE_IMGUI` on, diagnostics off): verifies

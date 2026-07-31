@@ -290,6 +290,34 @@ TEST(TessDiagnostics, ScopedAllocationCountersRecordGlobalNewAndDelete) {
   EXPECT_GE(counters.deallocations, 1u);
 }
 
+TEST(TessDiagnostics, AllocationCountersTrackLiveAndPeakBytes) {
+  tess::diagnostics::AllocationCounters counters;
+  {
+    tess::diagnostics::ScopedAllocationCounters scope{counters};
+    tess::diagnostics::record_allocation(12);
+    tess::diagnostics::record_allocation(20);
+    tess::diagnostics::record_deallocation(12);
+  }
+
+  EXPECT_EQ(counters.allocation_bytes, 32u);
+  EXPECT_EQ(counters.deallocation_bytes, 12u);
+  EXPECT_EQ(counters.live_bytes, 20u);
+  EXPECT_EQ(counters.peak_live_bytes, 32u);
+}
+
+TEST(TessDiagnostics, UnknownOrOversizedFreeNeverUnderflowsLiveBytes) {
+  tess::diagnostics::AllocationCounters counters;
+  {
+    tess::diagnostics::ScopedAllocationCounters scope{counters};
+    tess::diagnostics::record_allocation(8);
+    tess::diagnostics::record_deallocation(0);
+    tess::diagnostics::record_deallocation(64);
+  }
+
+  EXPECT_EQ(counters.live_bytes, 0u);
+  EXPECT_EQ(counters.peak_live_bytes, 8u);
+}
+
 TEST(TessDiagnostics, DeletingNullDoesNotRecordDeallocation) {
   tess::diagnostics::AllocationCounters counters;
   {

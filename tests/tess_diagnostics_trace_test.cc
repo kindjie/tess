@@ -18,6 +18,7 @@ using tess::diagnostics::ScopedTrace;
 using tess::diagnostics::TraceBuffer;
 using tess::diagnostics::TraceCategory;
 using tess::diagnostics::TraceRecord;
+using tess::diagnostics::TraceRecordKind;
 using tess::diagnostics::Warning;
 using tess::diagnostics::WarningCategory;
 
@@ -290,6 +291,46 @@ TEST(TessScopedTimer, RecordsTimingAndRecordWhenTraceActive) {
   ASSERT_EQ(buffer.size(), 1u);
   EXPECT_EQ(buffer[0].category, TraceCategory::Path);
   EXPECT_EQ(buffer[0].label, kTickLabel);
+  EXPECT_EQ(buffer[0].kind, TraceRecordKind::Duration);
+}
+
+TEST(TessScopedTimer, AttributesAllocationTrafficToTimedSpan) {
+  std::array<TraceRecord, 4> storage{};
+  TraceBuffer buffer{storage};
+  tess::diagnostics::AllocationCounters allocation;
+  {
+    tess::diagnostics::ScopedTrace trace_scope{buffer};
+    tess::diagnostics::ScopedAllocationCounters allocation_scope{allocation};
+    ScopedTimer timer{TraceCategory::Path, "search"};
+    tess::diagnostics::record_allocation(96);
+    tess::diagnostics::record_deallocation(32);
+  }
+
+  ASSERT_EQ(buffer.size(), 1u);
+  EXPECT_EQ(buffer[0].kind, TraceRecordKind::Duration);
+  EXPECT_EQ(buffer[0].allocation_bytes, 96u);
+  EXPECT_EQ(buffer[0].deallocation_bytes, 32u);
+}
+
+TEST(TessScopedTimer, DoesNotReadAllocationCountersAfterScopeEnds) {
+  std::array<TraceRecord, 4> storage{};
+  TraceBuffer buffer{storage};
+  std::optional<ScopedTimer> timer;
+  {
+    tess::diagnostics::ScopedTrace trace_scope{buffer};
+    {
+      tess::diagnostics::AllocationCounters allocation;
+      tess::diagnostics::ScopedAllocationCounters allocation_scope{allocation};
+      timer.emplace(TraceCategory::Path, "search");
+      tess::diagnostics::record_allocation(96);
+    }
+    timer.reset();
+  }
+
+  ASSERT_EQ(buffer.size(), 1u);
+  EXPECT_EQ(buffer[0].kind, TraceRecordKind::Duration);
+  EXPECT_EQ(buffer[0].allocation_bytes, 0u);
+  EXPECT_EQ(buffer[0].deallocation_bytes, 0u);
 }
 
 TEST(TessScopedTimer, BindsToBufferActiveAtConstruction) {
@@ -435,6 +476,7 @@ TEST(TessDiagnosticsExport, CapturesCountersAndTiming) {
   TraceBuffer buffer{storage};
   buffer.record_timing(TraceCategory::Topology, 40);
   buffer.record_timing(TraceCategory::Topology, 60);
+  buffer.record_span(TraceCategory::Topology, "rebuild", 60, 128, 32);
 
   const tess::diagnostics::AllocationCounters allocation;
   const tess::diagnostics::QueuedPhaseCounters queued;
@@ -444,8 +486,8 @@ TEST(TessDiagnosticsExport, CapturesCountersAndTiming) {
   EXPECT_EQ(snapshot.path.heap_pushes, 2u);
   EXPECT_EQ(snapshot.path.heap_pops, 1u);
   const auto& topo = snapshot.timing.category(TraceCategory::Topology);
-  EXPECT_EQ(topo.samples, 2u);
-  EXPECT_EQ(topo.total_ns, 100u);
+  EXPECT_EQ(topo.samples, 3u);
+  EXPECT_EQ(topo.total_ns, 160u);
   EXPECT_EQ(topo.min_ns, 40u);
   EXPECT_EQ(topo.max_ns, 60u);
 
@@ -453,9 +495,67 @@ TEST(TessDiagnosticsExport, CapturesCountersAndTiming) {
   // reads clean zeros.
   EXPECT_EQ(snapshot.timing.category(TraceCategory::Path).samples, 0u);
   EXPECT_EQ(snapshot.timing.category(TraceCategory::Count).samples, 0u);
+  ASSERT_EQ(snapshot.trace_record_count, 1u);
+  EXPECT_EQ(snapshot.trace_records[0].label, "rebuild");
+  EXPECT_EQ(snapshot.trace_records[0].kind, TraceRecordKind::Duration);
+  EXPECT_EQ(snapshot.trace_records[0].allocation_bytes, 128u);
+  EXPECT_EQ(snapshot.trace_records[0].deallocation_bytes, 32u);
 
   const auto timing_only = tess::diagnostics::capture_timing(buffer);
-  EXPECT_EQ(timing_only.category(TraceCategory::Topology).total_ns, 100u);
+  EXPECT_EQ(timing_only.category(TraceCategory::Topology).total_ns, 160u);
+}
+
+TEST(TessDiagnosticsExport, RetainsMostRecentTraceRecords) {
+  constexpr auto capacity =
+      tess::diagnostics::diagnostics_snapshot_trace_capacity;
+  std::array<TraceRecord, capacity + 3> storage{};
+  TraceBuffer buffer{storage};
+  for (std::uint64_t index = 0; index < capacity + 3; ++index) {
+    buffer.record_span(TraceCategory::Scheduler, "task", index, index, 0);
+  }
+
+  const tess::diagnostics::PathCounters path;
+  const tess::diagnostics::AllocationCounters allocation;
+  const tess::diagnostics::QueuedPhaseCounters queued;
+  const auto snapshot =
+      tess::diagnostics::capture_diagnostics(path, allocation, queued, buffer);
+
+  EXPECT_EQ(snapshot.trace_record_count, capacity);
+  EXPECT_EQ(snapshot.trace_records_dropped, 3u);
+  EXPECT_EQ(snapshot.trace_records.front().value, 3u);
+  EXPECT_EQ(snapshot.trace_records.back().value, capacity + 2u);
+}
+
+TEST(TessScheduleDiagnostics, AttributesTickAndTaskTimeAndAllocations) {
+  struct Task {
+    auto operator()(const tess::ScheduleTaskContext&)
+        -> tess::ScheduleTaskResult {
+      tess::diagnostics::record_allocation(48);
+      return {};
+    }
+  } task;
+
+  tess::Schedule schedule;
+  schedule.add_task(
+      {"path-agents", tess::SimPhase::Pathing, tess::Cadence::every_tick()},
+      task);
+  schedule.seal();
+  tess::SimClock clock;
+  std::array<TraceRecord, 4> storage{};
+  TraceBuffer buffer{storage};
+  tess::diagnostics::AllocationCounters allocation;
+  {
+    ScopedTrace trace_scope{buffer};
+    tess::diagnostics::ScopedAllocationCounters allocation_scope{allocation};
+    static_cast<void>(schedule.run_tick(clock));
+  }
+
+  ASSERT_EQ(buffer.size(), 2u);
+  EXPECT_EQ(buffer[0].label, "path-agents");
+  EXPECT_EQ(buffer[0].kind, TraceRecordKind::Duration);
+  EXPECT_EQ(buffer[0].allocation_bytes, 48u);
+  EXPECT_EQ(buffer[1].label, "schedule_tick");
+  EXPECT_EQ(buffer[1].allocation_bytes, 48u);
 }
 
 }  // namespace

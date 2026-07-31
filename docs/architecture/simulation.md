@@ -470,6 +470,11 @@ flowchart TB
   exact payload before notifying its mask;
   `run_tick(clock)` advances the clock and dispatches, returning
   `ScheduleTickStats`; `task_stats(id)` reports per-task counters.
+- In diagnostics builds, an active trace receives an inclusive
+  `Scheduler/schedule_tick` duration and one nested duration named after each
+  executed task. When allocation counters are active, those duration records
+  also attribute inclusive allocation/free byte deltas. All instrumentation
+  compiles out when diagnostics are disabled.
 - A task result's `dirty_mask` merges into every task's pending mask
   immediately: later-phase OnDirty tasks fire in the SAME tick,
   earlier-phase tasks the next tick.

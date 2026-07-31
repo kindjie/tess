@@ -10,6 +10,9 @@ namespace tess::diagnostics {
 
 #if TESS_DIAGNOSTICS_ENABLED
 
+/** Maximum recent records retained in a diagnostics value snapshot. */
+inline constexpr std::size_t diagnostics_snapshot_trace_capacity = 64;
+
 /**
  * Per-category timing totals copied independently of a live trace buffer.
  *
@@ -42,6 +45,9 @@ struct DiagnosticsSnapshot {
   AllocationCounters allocation;
   QueuedPhaseCounters queued;
   TimingSnapshot timing;
+  std::array<TraceRecord, diagnostics_snapshot_trace_capacity> trace_records{};
+  std::size_t trace_record_count = 0;
+  std::uint64_t trace_records_dropped = 0;
 };
 
 /**
@@ -67,7 +73,21 @@ struct DiagnosticsSnapshot {
     const PathCounters& path, const AllocationCounters& allocation,
     const QueuedPhaseCounters& queued, const TraceBuffer& buffer) noexcept
     -> DiagnosticsSnapshot {
-  return DiagnosticsSnapshot{path, allocation, queued, capture_timing(buffer)};
+  DiagnosticsSnapshot snapshot;
+  snapshot.path = path;
+  snapshot.allocation = allocation;
+  snapshot.queued = queued;
+  snapshot.timing = capture_timing(buffer);
+  const auto omitted = buffer.size() > snapshot.trace_records.size()
+                           ? buffer.size() - snapshot.trace_records.size()
+                           : std::size_t{0};
+  snapshot.trace_record_count = buffer.size() - omitted;
+  snapshot.trace_records_dropped =
+      buffer.dropped() + static_cast<std::uint64_t>(omitted);
+  for (std::size_t index = 0; index < snapshot.trace_record_count; ++index) {
+    snapshot.trace_records[index] = buffer[omitted + index];
+  }
+  return snapshot;
 }
 
 #endif  // TESS_DIAGNOSTICS_ENABLED

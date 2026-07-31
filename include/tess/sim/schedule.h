@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/diagnostics/trace.h>
 #include <tess/sim/event_stream.h>
 #include <tess/sim/time.h>
 
@@ -334,6 +335,10 @@ class Schedule {
   }
 
   auto run_tick(SimClock& clock) -> ScheduleTickStats {
+#if TESS_DIAGNOSTICS_ENABLED
+    diagnostics::ScopedTimer tick_timer{diagnostics::TraceCategory::Scheduler,
+                                        "schedule_tick"};
+#endif
     TESS_ASSERT(sealed_);
     TESS_ASSERT(!in_run_);
     // Scope guard rather than a trailing store: a throwing task callback
@@ -466,6 +471,10 @@ class Schedule {
     context.budget_items = budget;
     context.pending_events = fired_events;
     auto result = ScheduleTaskResult{};
+#if TESS_DIAGNOSTICS_ENABLED
+    diagnostics::ScopedTimer task_timer{diagnostics::TraceCategory::Scheduler,
+                                        task.desc.name};
+#endif
     try {
       result = task.fn(task.ctx, context);
     } catch (...) {
