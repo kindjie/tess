@@ -914,6 +914,20 @@
   their assigned document. One test asserts the committed
   `docs/architecture/surface.json` stays complete against the real
   `TESS_PUBLIC_HEADERS` headers.
+- `tess_sparse_stream_test`: the S3 sparse-streaming scenario
+  (`tests/sparse_stream_harness.h`) searching the S1 terrain in a
+  `SparseResidentWorld` under budget fractions of the world's chunks,
+  streaming chunks in and retrying on `PathStatus::Indeterminate`
+  against a dense reference. Pins fully-resident equivalence (sparse
+  storage does not change an answer), streaming soundness at 25% and
+  5% budgets (a streamed cost is an upper bound on the optimum, never
+  below it; never a path the dense world denies; never a NoPath
+  contradicting it; a loop that gives up reports Indeterminate rather
+  than a definitive status), the budget ceiling at every step, the
+  measured cost of a tight budget (more streaming rounds, fewer
+  convergences), section 3.3's admission and retention identities over
+  residency admission, coalesced hits and LRU displacement, and
+  determinism. About 0.7 s in Debug and 3 s under ASan.
 - `tess_colony_harness_test`: the S2 colony macro-harness
   (`tests/colony_harness.h`) driving 100 agents with goals through the
   production stack — schedule loop, auto-exec queued ops with a result

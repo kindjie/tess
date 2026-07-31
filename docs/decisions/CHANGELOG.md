@@ -6,6 +6,39 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-30 - S3 sparse streaming under a residency budget (phase 3, slice 3)
+
+- Changed: `tests/sparse_stream_harness.h` searches the S1 terrain in a
+  `SparseResidentWorld` under a budget expressed as a fraction of the
+  world's chunks, streaming chunks in and retrying on
+  `PathStatus::Indeterminate` until the answer converges, with a dense
+  reference world answering the identical requests.
+  `tess_sparse_stream_test` asserts fully-resident equivalence,
+  streaming soundness at 25% and 5% budgets, the budget ceiling, the
+  measured cost of a tight budget, section 3.3's flow identities over
+  residency admission and eviction, and determinism.
+- Reason: redesign section 3.1's S3 bullet. Convergence was measured
+  rather than assumed, and the measurement is the finding: **a
+  streamed cost is an upper bound, not the optimum.** The search
+  returns `Found` on reaching the goal even when it skipped
+  non-resident chunks, so an on-demand loop that stops at the first
+  definitive answer can report a longer route than the dense world's.
+  A fully resident sparse world does match dense exactly, so this is a
+  property of stopping early, not of sparse storage. The tests
+  therefore assert the bound and the soundness directions rather than
+  equality. Two further library facts shaped the harness: every search
+  entry point defaults to `MissingChunkPolicy::TreatAsBlocked`, which
+  would answer `NoPath` instead of asking for more chunks, and
+  `ensure_resident` hands back a zeroed page, so a streamed chunk —
+  including one evicted and streamed again — must be refilled.
+  Residency has no flow-accounting hooks of its own, so the harness
+  attributes admissions, coalesced hits, and LRU displacements around
+  its own calls; library-side hooks would be a separate change.
+- Affected docs: testing and benchmarking redesign (item 3 status),
+  tests/AGENTS.md.
+- Affected code: new `tests/sparse_stream_harness.h`,
+  `tests/tess_sparse_stream_test.cc`; `tests/CMakeLists.txt`.
+
 ## 2026-07-30 - S2 colony macro-harness (phase 3, slice 2)
 
 - Changed: `tests/colony_harness.h` drives N agents with goals through

@@ -96,6 +96,16 @@ tess_apply_project_options(tess_colony_harness_test)
 
 tess_discover_tests(tess_colony_harness_test LABELS block core diagnostics ops path sim storage topology)
 
+add_executable(
+  tess_sparse_stream_test
+  tess_sparse_stream_test.cc
+)
+target_link_libraries(
+  tess_sparse_stream_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_sparse_stream_test)
+
+tess_discover_tests(tess_sparse_stream_test LABELS core path storage topology)
+
 if(TESS_ENABLE_GRID_BENCHMARK_DATA)
   set(_tess_grid_manifest
       "${PROJECT_SOURCE_DIR}/tools/grid_benchmark_manifest.json")
