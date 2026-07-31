@@ -21,13 +21,22 @@ on:
       head:
         description: Head commit SHA (full)
         required: true
+      binary:
+        description: >-
+          Which benchmark binary the suspects live in. The fields,
+          render_delta, ecs and diagnostics families are registered in
+          tess_bench_diagnostics; everything else is in tess_bench.
+        type: choice
+        default: tess_bench
+        options:
+          - tess_bench
+          - tess_bench_diagnostics
       suspects:
         description: >-
           Optional comma-separated benchmark names to confirm instead of
           the sentinel set (max 64; statistics size to this list; a name
-          unavailable in either revision fails the run; diagnostics-only
-          registrations cannot be confirmed here — they live outside the
-          tess_bench binary)
+          unavailable in the selected binary fails the run, so pick the
+          binary that registers them)
         required: false
         default: ""
 
@@ -76,6 +85,7 @@ jobs:
         env:
           BASE_SHA: ${{ inputs.base }}
           HEAD_SHA: ${{ inputs.head }}
+          BENCH_BINARY: ${{ inputs.binary }}
         run: |
           for side in base head; do
             if [ "$side" = base ]; then sha="$BASE_SHA"; else sha="$HEAD_SHA"; fi
@@ -115,7 +125,11 @@ jobs:
               -DTESS_ENABLE_ENTT=ON \
               -DTESS_ENABLE_FLECS=ON \
               -DTESS_WARNINGS_AS_ERRORS=ON
-            cmake --build "$side_dir/build" --target tess_bench
+            # Only the selected target: tess_bench_diagnostics did not
+            # exist before 2026-06-04, and building it unconditionally
+            # would break comparisons against older commits, which is
+            # exactly what this workflow is for.
+            cmake --build "$side_dir/build" --target "$BENCH_BINARY"
             ccache -s
           done
 
@@ -124,13 +138,14 @@ jobs:
       - name: Paired sentinel run (confirm)
         env:
           SUSPECTS: ${{ inputs.suspects }}
+          BENCH_BINARY: ${{ inputs.binary }}
         run: |
           status=0
           args=(
             --base-binary
-            "$(dirname "$GITHUB_WORKSPACE")/paired-base/build/bench/tess_bench"
+            "$(dirname "$GITHUB_WORKSPACE")/paired-base/build/bench/$BENCH_BINARY"
             --head-binary
-            "$(dirname "$GITHUB_WORKSPACE")/paired-head/build/bench/tess_bench"
+            "$(dirname "$GITHUB_WORKSPACE")/paired-head/build/bench/$BENCH_BINARY"
             --sentinels bench/sentinels.json
             --mode confirm
             --summary paired-summary.md
