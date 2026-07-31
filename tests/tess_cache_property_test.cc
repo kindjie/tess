@@ -386,7 +386,7 @@ class FieldProductCacheModel {
 class RouteCacheModel {
  public:
   static constexpr std::uint32_t kRoutes = 5;
-  static constexpr std::uint32_t kActions = 6;
+  static constexpr std::uint32_t kActions = 7;
   static constexpr std::uint32_t kOperationCount = kRoutes * kActions;
   static constexpr std::size_t kMaxEntries = 3;
   // Sized against the routes actually generated: a normal route is
@@ -428,6 +428,9 @@ class RouteCacheModel {
         // because entries key on (start, goal) and carry no class.
         rebind_class(route % 2 == 0);
         break;
+      case 5:
+        query_suffix();
+        break;
       default:
         cache_.invalidate();
         break;
@@ -464,6 +467,12 @@ class RouteCacheModel {
     }
     if (hit_reported_search_) {
       return violation("a cache hit reports no search work", 1, 0);
+    }
+    if (cap_breach_kept_entries_) {
+      return violation("a cap breach invalidates the whole cache", 1, 0);
+    }
+    if (rebind_kept_entries_) {
+      return violation("a class rebind drops every resident route", 1, 0);
     }
     return std::nullopt;
   }
@@ -502,10 +511,23 @@ class RouteCacheModel {
     return tess::PathRequest{tess::Coord3{x, 0, 0}, tess::Coord3{7, 7, 0}};
   }
 
-  void query(std::uint32_t route) {
+  void query(std::uint32_t route) { issue(request_for(route)); }
+
+  // A request starting at an interior node of the last served route,
+  // with the same goal: the only shape that can reach the suffix index.
+  // Without it, repeated identical requests satisfy a combined hit
+  // counter while suffix reuse is never exercised at all.
+  void query_suffix() {
+    if (last_path_.size() < 3) {
+      return;
+    }
+    issue(tess::PathRequest{last_path_[last_path_.size() / 2], last_goal_});
+  }
+
+  void issue(tess::PathRequest request) {
     const auto before = cache_.stats();
     ++queries_;
-    const auto result = run(request_for(route));
+    const auto result = run(request);
     const auto after = cache_.stats();
     const auto was_hit =
         after.hits != before.hits || after.suffix_hits != before.suffix_hits;
@@ -513,6 +535,23 @@ class RouteCacheModel {
     // pair is the observable signature of not having searched.
     if (was_hit && (result.expanded_nodes != 0 || result.reached_nodes != 0)) {
       hit_reported_search_ = true;
+    }
+    // A cap breach invalidates the WHOLE cache and then inserts the one
+    // new route, so at most one entry may survive. Checking only that
+    // the counter moved would also pass for an implementation that
+    // dropped a single route and stayed within bounds.
+    if (after.cap_invalidations != before.cap_invalidations &&
+        after.entries > 1) {
+      cap_breach_kept_entries_ = true;
+    }
+    // Likewise a class rebind drops every entry before the query runs,
+    // so at most the newly stored route can remain.
+    if (after.class_rebinds != before.class_rebinds && after.entries > 1) {
+      rebind_kept_entries_ = true;
+    }
+    if (result.status == tess::PathStatus::Found && !result.path.empty()) {
+      last_path_.assign(result.path.begin(), result.path.end());
+      last_goal_ = request.goal;
     }
   }
 
@@ -562,8 +601,12 @@ class RouteCacheModel {
   tess::RouteCacheScratch cache_{};
   std::size_t queries_ = 0;
   std::size_t skips_with_residents_ = 0;
+  std::vector<tess::Coord3> last_path_;
+  tess::Coord3 last_goal_{};
   bool oversized_disturbed_ = false;
   bool hit_reported_search_ = false;
+  bool cap_breach_kept_entries_ = false;
+  bool rebind_kept_entries_ = false;
   bool alternate_class_ = false;
 };
 
@@ -908,7 +951,8 @@ TEST(TessCacheProperty, TheRouteSweepReachesEveryCachePath) {
   std::size_t skips_with_residents = 0;
   std::size_t cap_invalidations = 0;
   std::size_t rebinds = 0;
-  std::size_t hits = 0;
+  std::size_t exact_hits = 0;
+  std::size_t suffix_hits = 0;
   for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
     RouteCacheModel model;
     for (const auto op : prop.sequence_for(seed, kSteps)) {
@@ -918,10 +962,18 @@ TEST(TessCacheProperty, TheRouteSweepReachesEveryCachePath) {
     skips_with_residents += model.skips_with_residents();
     cap_invalidations += model.cap_invalidations();
     rebinds += model.class_rebinds();
-    hits += model.hits() + model.suffix_hits();
+    exact_hits += model.hits();
+    suffix_hits += model.suffix_hits();
   }
 
-  EXPECT_GT(hits, 0U) << "the sweep never served a route from cache";
+  // Counted separately on purpose. A combined total is satisfied by
+  // repeated identical requests alone, so suffix reuse could be
+  // disabled entirely -- or degrade to a miss -- while the accounting
+  // invariant still held and this test still passed.
+  EXPECT_GT(exact_hits, 0U) << "the sweep never served an exact hit";
+  EXPECT_GT(suffix_hits, 0U)
+      << "the sweep never served a SUFFIX hit, so first-write-wins suffix "
+         "reuse was never exercised";
   EXPECT_GT(skips, 0U) << "the sweep never skipped an oversized route";
   EXPECT_GT(skips_with_residents, 0U)
       << "every oversized skip happened against an EMPTY cache, so the rule "
