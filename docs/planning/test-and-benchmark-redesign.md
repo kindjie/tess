@@ -915,6 +915,27 @@ that introduces this document.
 5. Consumer-contract and packaging: header-set verification, ODR tests,
    macro-config matrix, Conan 2 recipe, vcpkg overlay, integration-policy
    document.
+   *Status: the consumer-contract half shipped 2026-07-31. The public
+   and implementation headers now occupy separate file sets, so
+   `VERIFY_INTERFACE_HEADER_SETS` compiles every public header
+   standalone while leaving the path-detail fragments alone — they
+   deliberately `#error` outside their owning header, so verifying
+   them would fail correctly. Three probe translation units include
+   the public set in declaration order, reverse order, and leaf-first
+   with no umbrella, linked together so a lost `inline` or a
+   non-inline namespace-scope definition fails the build; the test
+   then compares tess's own identity facilities across units, which a
+   single-unit test cannot do. A macro-configuration matrix builds
+   seven cells including EnTT-only and Flecs-only — combinations no
+   preset provides, since dev presets pin both adapters on and
+   consumer presets pin both off — reusing the existing ImGui and
+   WebGPU stubs rather than adding dependencies. Deliberately NOT
+   done: a configure-time compiler-version rejection, which would
+   turn "minimum tested" into "reject everything below" and refuse
+   untested-but-working compilers; `cxx_std_20` already states the
+   language requirement, and a published tested-version matrix with
+   pinned floor jobs is the honest form. Remaining: Conan 2 recipe,
+   vcpkg overlay, integration-policy document, compiler matrix.*
 6. Generated performance page; retire the manual snapshot policy
    (CONTRIBUTING.md update).
 7. Property/state-machine harness; weekly long seeds; parser fuzzing.

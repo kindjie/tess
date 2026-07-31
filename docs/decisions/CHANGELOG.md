@@ -6,6 +6,43 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-31 - Consumer-contract tests (phase 5, slice a)
+
+- Changed: public and implementation headers now occupy separate
+  CMake file sets, and `VERIFY_INTERFACE_HEADER_SETS` verifies
+  `HEADERS;generated_headers` explicitly — compiling all 65 public
+  headers standalone while leaving the path-detail fragments alone,
+  which `#error` outside their owning header by design. Three probe
+  translation units include the public set in declaration order,
+  reverse order, and leaf-first with no umbrella, and are linked
+  together; `tess_consumer_contract_test` then compares tess's own
+  identity facilities (`tag_identity`, `planned_world_stamp`) across
+  units. A macro-configuration matrix builds seven cells: bare,
+  NDEBUG, diagnostics, EnTT-only, Flecs-only, ImGui, and WebGPU.
+- Reason: redesign section 10 item 5. The install rule names the new
+  file set explicitly, because every interface file set of an exported
+  target must appear there or the template definitions the public
+  headers need would be dropped; installed paths and files are
+  unchanged, though the exported CMake metadata now shows the split.
+  The mixed-adapter cells are genuinely new coverage — every dev
+  preset pins EnTT and Flecs both on and every consumer preset pins
+  both off, so no build anywhere had one without the other. The
+  identity comparison was verified to have teeth by mutation: making
+  `tag_identity` per-translation-unit fails the test.
+- Deliberately not done: a configure-time compiler-version rejection.
+  "Minimum tested" and "reject everything below" are different
+  contracts, and a fatal check would refuse untested-but-working
+  compilers, backports, and consumers who add tess as a subproject
+  without using it. `target_compile_features(cxx_std_20)` already
+  states the language requirement; a published matrix of continuously
+  tested versions with pinned floor jobs is the honest form and is
+  recorded as remaining.
+- Affected docs: testing and benchmarking redesign (item 5 status),
+  tests/AGENTS.md.
+- Affected code: `CMakeLists.txt`, `tests/CMakeLists.txt`,
+  `.github/workflows/ci.yml`, new `tests/consumer_contract/`,
+  `tests/tess_consumer_contract_test.cc`.
+
 ## 2026-07-30 - Paired confirmation fetches unreachable commits
 
 - Changed: the paired sentinel confirmation workflow fetches a

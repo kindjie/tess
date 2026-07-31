@@ -207,12 +207,25 @@ set(
 
 set(TESS_INSTALL_HEADERS ${TESS_PUBLIC_HEADERS} ${TESS_IMPLEMENTATION_HEADERS})
 
+# Public and implementation headers live in separate file sets so the
+# standalone-compilation check can verify exactly the public contract.
+# Implementation fragments are deliberately not standalone: the
+# path/detail headers #error when included outside their owning public
+# header. Both sets install to the same paths as before -- every
+# interface file set of an exported target must be named in the install
+# rule, so omitting implementation_headers there would drop the
+# template definitions the public headers need.
 target_sources(
   tess
   INTERFACE
     FILE_SET HEADERS
     BASE_DIRS include
-    FILES ${TESS_INSTALL_HEADERS}
+    FILES ${TESS_PUBLIC_HEADERS}
+  INTERFACE
+    FILE_SET implementation_headers
+    TYPE HEADERS
+    BASE_DIRS include
+    FILES ${TESS_IMPLEMENTATION_HEADERS}
   INTERFACE
     FILE_SET generated_headers
     TYPE HEADERS
@@ -220,10 +233,51 @@ target_sources(
     FILES "${TESS_GENERATED_INCLUDE_DIR}/tess/version.h"
 )
 
+# Standalone compilation of every public header: CMake generates one
+# translation unit per header in the selected sets, each including only
+# that header. The selection is explicit because an empty selector
+# verifies every interface set, including the non-standalone
+# implementation fragments.
+set_target_properties(
+  tess
+  PROPERTIES
+    VERIFY_INTERFACE_HEADER_SETS ON
+    INTERFACE_HEADER_SETS_TO_VERIFY "HEADERS;generated_headers"
+)
+
+# Generated include sweeps for the consumer-contract probes: one
+# header per line in declaration order and in reverse, regenerated from
+# the declared public set so a new header joins both automatically.
+set(TESS_HEADER_SWEEP_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/sweep")
+file(MAKE_DIRECTORY "${TESS_HEADER_SWEEP_DIR}")
+set(_tess_sweep_forward "#pragma once\n")
+set(_tess_sweep_reverse_list ${TESS_PUBLIC_HEADERS})
+list(REVERSE _tess_sweep_reverse_list)
+set(_tess_sweep_reverse "#pragma once\n")
+foreach(_header IN LISTS TESS_PUBLIC_HEADERS)
+  string(REPLACE "include/" "" _relative "${_header}")
+  string(APPEND _tess_sweep_forward "#include <${_relative}>\n")
+endforeach()
+foreach(_header IN LISTS _tess_sweep_reverse_list)
+  string(REPLACE "include/" "" _relative "${_header}")
+  string(APPEND _tess_sweep_reverse "#include <${_relative}>\n")
+endforeach()
+file(
+  GENERATE
+  OUTPUT "${TESS_HEADER_SWEEP_DIR}/tess_all_headers_forward.h"
+  CONTENT "${_tess_sweep_forward}"
+)
+file(
+  GENERATE
+  OUTPUT "${TESS_HEADER_SWEEP_DIR}/tess_all_headers_reverse.h"
+  CONTENT "${_tess_sweep_reverse}"
+)
+
 install(
   TARGETS tess
   EXPORT tess-targets
   FILE_SET HEADERS
+  FILE_SET implementation_headers
   FILE_SET generated_headers
 )
 

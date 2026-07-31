@@ -99,6 +99,15 @@ jobs:
       - name: Test
         run: ctest --preset dev
 
+      # Consumer contract (redesign section 10 item 5): every public
+      # header compiles standalone, and the macro-configuration matrix
+      # builds — including the mixed-adapter cells no preset covers.
+      - name: Standalone public headers
+        run: cmake --build build/dev --target tess_verify_interface_header_sets
+
+      - name: Macro-configuration matrix
+        run: cmake --build build/dev --target tess_contract_cells
+
       # The pre-push hook selects tests by these labels (redesign
       # section 6); this asserts CMake actually attached them where a
       # configured build exists.
