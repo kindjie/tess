@@ -214,8 +214,12 @@ void run_property(const char* name) {
 
   for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
     const auto failing = prop.run(seed, kSteps);
-    ASSERT_FALSE(failing.has_value()) << "seed " << seed << "\n"
-                                      << prop.report(*failing);
+    // Guarded rather than asserted on the stream: the report is only
+    // reachable when a failure exists, and writing it this way lets
+    // static analysis see that too.
+    if (failing.has_value()) {
+      FAIL() << "seed " << seed << "\n" << prop.report(*failing);
+    }
   }
 }
 
@@ -257,17 +261,20 @@ TEST(TessProperty, HarnessDetectsAndShrinksASeededDefect) {
     failing = prop.run(seed, 64);
   }
 
-  ASSERT_TRUE(failing.has_value()) << "the harness missed a seeded defect";
+  if (!failing.has_value()) {
+    FAIL() << "the harness missed a seeded defect";
+  }
+  const std::vector<std::uint32_t>& shrunk = *failing;
   // Shrunk to the minimum that still fails: two operations, both the
   // offending one. Anything longer means the shrinker gave up early.
-  EXPECT_EQ(failing->size(), 2u) << prop.report(*failing);
-  for (const auto op : *failing) {
+  EXPECT_EQ(shrunk.size(), 2u) << prop.report(shrunk);
+  for (const auto op : shrunk) {
     EXPECT_EQ(op, 3u);
   }
   // The reported sequence must actually reproduce, or the replay
   // command in the report is a lie.
-  EXPECT_TRUE(prop.replay(*failing).has_value());
-  EXPECT_NE(prop.replay_command(*failing).find("TESS_PROPERTY_REPLAY"),
+  EXPECT_TRUE(prop.replay(shrunk).has_value());
+  EXPECT_NE(prop.replay_command(shrunk).find("TESS_PROPERTY_REPLAY"),
             std::string::npos);
 }
 

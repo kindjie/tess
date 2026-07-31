@@ -156,7 +156,18 @@ class Property {
 /// printed replay command reproduces a failure without editing code.
 [[nodiscard]] inline auto replay_from_environment()
     -> std::optional<std::vector<std::uint32_t>> {
+  // MSVC deprecates getenv because the returned pointer aliases a
+  // static buffer that a concurrent setenv can invalidate. The value is
+  // copied into text below before anything else runs, and a test reads
+  // its replay variable once at start-up, so the hazard does not apply.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
   const char* raw = std::getenv("TESS_PROPERTY_REPLAY");
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
   if (raw == nullptr) {
     return std::nullopt;
   }
