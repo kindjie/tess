@@ -84,6 +84,17 @@ jobs:
               exit 1
             }
             side_dir="$(dirname "$GITHUB_WORKSPACE")/paired-$side"
+            # A squash-merged pull request's head commit is not
+            # reachable from main, so a plain clone cannot see it — and
+            # those are exactly the commits a confirmation replays.
+            # Fetch the object explicitly when it is missing.
+            if ! git cat-file -e "$sha^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$sha" || {
+                echo "error: $sha is not fetchable from origin;" \
+                  "a pull-request head may have been garbage collected" >&2
+                exit 1
+              }
+            fi
             git worktree add "$side_dir" "$sha"
             cmake -S "$side_dir" -B "$side_dir/build" \
               -DCMAKE_BUILD_TYPE=Release \

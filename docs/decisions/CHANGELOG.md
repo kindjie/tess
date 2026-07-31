@@ -6,6 +6,22 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-30 - Paired confirmation fetches unreachable commits
+
+- Changed: the paired sentinel confirmation workflow fetches a
+  requested commit explicitly when the checkout cannot already see it,
+  and fails with a clear message when the object is genuinely
+  unfetchable.
+- Reason: a squash-merged pull request's head commit is not reachable
+  from main, so the workflow's clone could not resolve it and
+  `git worktree add` failed with `invalid reference`. Those are
+  precisely the commits a confirmation replays — the 2026-07-23 catch
+  that section 4.3's criterion 2 replays lives on a squashed pull
+  request head — so the workflow could not perform its central job for
+  the case that motivated it.
+- Affected docs: threshold-retirement assessment.
+- Affected code: `.github/workflows/paired-bench.yml`.
+
 ## 2026-07-30 - S3 sparse streaming under a residency budget (phase 3, slice 3)
 
 - Changed: `tests/sparse_stream_harness.h` searches the S1 terrain in a
