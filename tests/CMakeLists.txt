@@ -127,6 +127,12 @@ tess_apply_project_options(tess_consumer_contract_test)
 
 tess_discover_tests(tess_consumer_contract_test LABELS block core debug diagnostics ecs experimental gpu ops path persistence query sim spatial storage topology)
 
+add_executable(tess_property_test tess_property_test.cc)
+target_link_libraries(tess_property_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_property_test)
+
+tess_discover_tests(tess_property_test LABELS core ops sim storage)
+
 # Macro-configuration matrix (redesign section 10 item 5). Each cell is
 # a compile-and-link target, not a test: the contract is that the
 # configuration builds at all. The mixed-adapter cells are the coverage

@@ -8,6 +8,37 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-31 - Property/state-machine harness (phase 7, slice a)
+
+- Changed: `tests/property_harness.h` runs seeded operation sequences
+  against a model, checks every invariant after every step, shrinks a
+  failing sequence by delta debugging, and prints a replay command;
+  `TESS_PROPERTY_REPLAY` replays an explicit sequence.
+  `tess_property_test` applies it to residency
+  (ensure/touch/evict/mark-dirty) and schedule ticks.
+- Reason: redesign section 3.4. Those two areas had no seeded coverage
+  at all — their tests drive fixed hand-written sequences, so an
+  invariant that only breaks on an unusual interleaving had nothing
+  looking for it. The invariants asserted are ones the library already
+  computes: resident count and byte budget against their ceilings, the
+  resident-implies-nonzero-generation pairing that lets a handle
+  detect its own staleness, and
+  `tasks_run + tasks_skipped == tasks_due` with a monotone tick.
+- A deliberately broken model is part of the suite. It fails only
+  after a specific operation appears twice, so the harness must
+  detect it, shrink 64 steps to exactly those two operations, and
+  produce a sequence that reproduces — a property harness that has
+  never failed is indistinguishable from one that cannot fail.
+- Remaining in this phase: queued-edit and cache sequences (the
+  existing 24-seed queued test shuffles a fixed operation multiset
+  rather than varying kind, and the caches have the richest stated
+  invariants with no seeded coverage), the weekly long-seed tier, and
+  parser fuzzing.
+- Affected docs: testing and benchmarking redesign (item 7 status),
+  tests/AGENTS.md.
+- Affected code: new `tests/property_harness.h`,
+  `tests/tess_property_test.cc`; `tests/CMakeLists.txt`.
+
 ## 2026-07-31 - Conan recipe and vcpkg overlay (phase 5, slice b)
 
 - Changed: `conanfile.py` declares tess a Conan 2 `header-library`
