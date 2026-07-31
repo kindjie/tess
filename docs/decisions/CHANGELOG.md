@@ -8,6 +8,19 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-31 - Route cache properties (phase 7, slice b-ii)
+
+- Changed: `tess_cache_property_test` gains a `RouteCacheScratch` model
+  driving seeded query, oversized-query, class-rebind and invalidate
+  sequences. Asserts both caps as hard bounds (the cache has no
+  eviction: a breach invalidates wholesale), that every query resolves
+  as exactly one of exact hit, suffix hit or miss, that a served route
+  reports zero expanded and reached nodes, and that an oversized route
+  is skipped without disturbing residents.
+- Changed: coverage gates require the sweep to serve from cache, skip
+  an oversized route with residents present, breach a cap, and rebind
+  the movement class.
+
 ## 2026-07-31 - Field-product cache properties (phase 7, slice b-ii)
 
 - Changed: `tess_cache_property_test` drives seeded store, lookup, world

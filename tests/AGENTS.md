@@ -983,6 +983,28 @@
   directly — fill to budget, refresh the oldest entry, force one
   eviction — and is the test that owns the LRU claim; inverting its
   expectations makes it fail, which is what establishes it can.
+  A second model covers `RouteCacheScratch`, whose policy is different
+  enough that a shared model would assert something false: it has NO
+  eviction, so an insert breaching either the entry or node cap
+  invalidates the WHOLE cache, and a single route longer than the node
+  cap is skipped outright instead. Asserts both caps as hard bounds,
+  that every query resolves as exactly one of exact hit, suffix hit or
+  miss, that a served route reports zero expanded and reached nodes
+  (the observable signature of not having searched), and that an
+  oversized skip leaves residents alone.
+
+  That last one needs a carve-out the harness found on its own:
+  `cached_astar_path` binds the movement class at the START of the
+  call, and a rebind drops every entry by design, so a call that both
+  rebound and skipped legitimately empties the cache. Attributing that
+  loss to the skip was a modelling error, caught and shrunk to the
+  four-operation sequence `20,16,21,18` with a replay command that
+  reproduced it.
+
+  Note the node cap is 40, not 64: at 64 the corner-to-corner route
+  (63 nodes on this grid) fit inside the cap, so nothing was ever
+  skipped. The coverage gate caught that too.
+
 - `tess_queued_property_test`: seeded planning sequences over queued
   operations (redesign section 3.4, phase 7 slice b-i). Randomizes all
   nine `OperationKind` values against every write policy, four
