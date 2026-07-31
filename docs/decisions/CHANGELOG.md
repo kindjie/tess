@@ -8,6 +8,21 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-31 - Per-tick timing and allocation attribution
+
+- Changed: diagnostics duration records carry inclusive allocation and
+  deallocation byte deltas when an allocation sink is active. Allocation
+  counters additionally report best-effort live and peak-live bytes without
+  changing the exact count/total contract; unsized frees remain explicitly
+  inexact.
+- Added: diagnostics snapshots retain the newest 64 trace records and expose
+  omitted records through their dropped count. The Dear ImGui diagnostics
+  panel renders those duration spans in milliseconds alongside allocation
+  traffic and renders live/peak allocation bytes.
+- Changed: diagnostics-enabled schedules automatically time the complete tick
+  and each executed task under its static task label. Diagnostics-off builds
+  retain no timer or allocation-attribution code.
+
 ## 2026-07-31 - Parser fuzzing (phase 7, slice c)
 
 - Added: `tests/test_parser_fuzz.py` drives seeded malformed and valid

@@ -58,6 +58,14 @@ inline constexpr std::size_t trace_category_count =
     static_cast<std::size_t>(TraceCategory::Count);
 
 /**
+ * Distinguishes instantaneous events from measured duration spans.
+ */
+enum class TraceRecordKind : std::uint8_t {
+  Event,
+  Duration,
+};
+
+/**
  * One structured, non-owning trace point retained by a `TraceBuffer`.
  *
  * `label` must outlive every reader of the buffer. `value` is defined by the
@@ -68,6 +76,9 @@ struct TraceRecord {
   std::string_view label;
   std::uint64_t value = 0;
   std::uint64_t sequence = 0;
+  TraceRecordKind kind = TraceRecordKind::Event;
+  std::uint64_t allocation_bytes = 0;
+  std::uint64_t deallocation_bytes = 0;
 };
 
 /** Timing distribution accumulated for one trace category. */
@@ -110,6 +121,23 @@ class TraceBuffer {
   // never carries a non-category value.
   void record(TraceCategory category, std::string_view label,
               std::uint64_t value) noexcept {
+    record_impl(category, label, value, TraceRecordKind::Event, 0, 0);
+  }
+
+  /** Records one duration and its inclusive allocation traffic. */
+  void record_span(TraceCategory category, std::string_view label,
+                   std::uint64_t nanos, std::uint64_t allocation_bytes = 0,
+                   std::uint64_t deallocation_bytes = 0) noexcept {
+    record_timing(category, nanos);
+    record_impl(category, label, nanos, TraceRecordKind::Duration,
+                allocation_bytes, deallocation_bytes);
+  }
+
+ private:
+  void record_impl(TraceCategory category, std::string_view label,
+                   std::uint64_t value, TraceRecordKind kind,
+                   std::uint64_t allocation_bytes,
+                   std::uint64_t deallocation_bytes) noexcept {
     const auto seq = sequence_++;
     if (storage_.empty() ||
         static_cast<std::size_t>(category) >= trace_category_count) {
@@ -123,9 +151,12 @@ class TraceBuffer {
       ++count_;
     }
     const auto slot = (head_ + count_ - 1) % storage_.size();
-    storage_[slot] = TraceRecord{category, label, value, seq};
+    storage_[slot] = TraceRecord{
+        category,          label, value, seq, kind, allocation_bytes,
+        deallocation_bytes};
   }
 
+ public:
   // Fold one timing sample (nanoseconds) into a category's accumulator. Records
   // against the Count sentinel or any out-of-range category are ignored.
   // total_ns is a running sum that wraps only after ~584 years of accumulated
@@ -260,9 +291,18 @@ class ScopedTimer {
  public:
   ScopedTimer(TraceCategory category, std::string_view label) noexcept
       : target_{active_trace_buffer},
+        allocation_target_{active_allocation_counters},
         category_{category},
         label_{label},
-        start_{std::chrono::steady_clock::now()} {}
+        start_{target_ == nullptr ? std::chrono::steady_clock::time_point{}
+                                  : std::chrono::steady_clock::now()},
+        allocation_bytes_at_start_{allocation_target_ == nullptr
+                                       ? 0
+                                       : allocation_target_->allocation_bytes},
+        deallocation_bytes_at_start_{
+            allocation_target_ == nullptr
+                ? 0
+                : allocation_target_->deallocation_bytes} {}
 
   ScopedTimer(const ScopedTimer&) = delete;
   auto operator=(const ScopedTimer&) -> ScopedTimer& = delete;
@@ -276,15 +316,30 @@ class ScopedTimer {
         std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
     const auto nanos =
         ticks < 0 ? std::uint64_t{0} : static_cast<std::uint64_t>(ticks);
-    target_->record_timing(category_, nanos);
-    target_->record(category_, label_, nanos);
+    const auto allocation_bytes =
+        allocation_target_ == nullptr || allocation_target_->allocation_bytes <
+                                             allocation_bytes_at_start_
+            ? 0
+            : allocation_target_->allocation_bytes - allocation_bytes_at_start_;
+    const auto deallocation_bytes =
+        allocation_target_ == nullptr ||
+                allocation_target_->deallocation_bytes <
+                    deallocation_bytes_at_start_
+            ? 0
+            : allocation_target_->deallocation_bytes -
+                  deallocation_bytes_at_start_;
+    target_->record_span(category_, label_, nanos, allocation_bytes,
+                         deallocation_bytes);
   }
 
  private:
   TraceBuffer* target_;
+  AllocationCounters* allocation_target_;
   TraceCategory category_;
   std::string_view label_;
   std::chrono::steady_clock::time_point start_;
+  std::uint64_t allocation_bytes_at_start_;
+  std::uint64_t deallocation_bytes_at_start_;
 };
 
 #endif  // TESS_DIAGNOSTICS_ENABLED

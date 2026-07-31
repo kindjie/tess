@@ -34,6 +34,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace tess::debug::imgui {
 
@@ -122,12 +123,44 @@ inline void draw_allocation_counters_panel(
   ImGui::Text("free: %llu (%llu bytes)",
               detail::to_ull(allocation.deallocations),
               detail::to_ull(allocation.deallocation_bytes));
+  ImGui::Text("live / peak: %llu / %llu bytes",
+              detail::to_ull(allocation.live_bytes),
+              detail::to_ull(allocation.peak_live_bytes));
+}
+
+/** Draws the newest duration spans with inclusive allocation traffic. */
+inline void draw_recent_timing_spans_panel(
+    const diagnostics::DiagnosticsSnapshot& snapshot) {
+  ImGui::TextUnformatted("Recent timed spans");
+  ImGui::Separator();
+  for (std::size_t index = 0; index < snapshot.trace_record_count; ++index) {
+    const auto& record = snapshot.trace_records[index];
+    if (record.kind != diagnostics::TraceRecordKind::Duration) {
+      continue;
+    }
+    const auto label_size =
+        record.label.size() >
+                static_cast<std::size_t>(std::numeric_limits<int>::max())
+            ? std::numeric_limits<int>::max()
+            : static_cast<int>(record.label.size());
+    const auto milliseconds = static_cast<double>(record.value) / 1'000'000.0;
+    ImGui::Text("%-10s %.*s: %.3f ms; alloc/free %llu/%llu bytes",
+                category_name(record.category), label_size, record.label.data(),
+                milliseconds, detail::to_ull(record.allocation_bytes),
+                detail::to_ull(record.deallocation_bytes));
+  }
+  if (snapshot.trace_records_dropped != 0) {
+    ImGui::Text("dropped: %llu",
+                detail::to_ull(snapshot.trace_records_dropped));
+  }
 }
 
 /** Draws all timing, path, queue, and allocation snapshot sections. */
 inline void draw_diagnostics_panel(
     const diagnostics::DiagnosticsSnapshot& snapshot) {
   draw_timing_panel(snapshot.timing);
+  ImGui::Separator();
+  draw_recent_timing_spans_panel(snapshot);
   ImGui::Separator();
   draw_path_counters_panel(snapshot.path);
   ImGui::Separator();

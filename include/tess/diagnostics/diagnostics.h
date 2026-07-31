@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #if defined(TESS_ENABLE_DIAGNOSTICS)
 /** Expands to 1 when diagnostic instrumentation is compiled in. */
@@ -84,6 +85,11 @@ struct AllocationCounters {
   std::uint64_t allocation_bytes = 0;
   std::uint64_t deallocations = 0;
   std::uint64_t deallocation_bytes = 0;
+  // Best-effort retained-byte accounting. Unsized deallocation hooks pass
+  // zero and therefore cannot reduce this value; consumers that require exact
+  // live memory must supply sized allocator hooks.
+  std::uint64_t live_bytes = 0;
+  std::uint64_t peak_live_bytes = 0;
 
   void reset() noexcept { *this = AllocationCounters{}; }
 };
@@ -170,16 +176,29 @@ class ScopedQueuedPhaseCounters {
 /** Records one allocation in the current thread's active counter sink. */
 inline void record_allocation(std::size_t size) noexcept {
   if (active_allocation_counters != nullptr) {
-    ++active_allocation_counters->allocations;
-    active_allocation_counters->allocation_bytes += size;
+    auto& counters = *active_allocation_counters;
+    ++counters.allocations;
+    counters.allocation_bytes += size;
+    const auto bytes = static_cast<std::uint64_t>(size);
+    const auto maximum = std::numeric_limits<std::uint64_t>::max();
+    counters.live_bytes = bytes > maximum - counters.live_bytes
+                              ? maximum
+                              : counters.live_bytes + bytes;
+    if (counters.live_bytes > counters.peak_live_bytes) {
+      counters.peak_live_bytes = counters.live_bytes;
+    }
   }
 }
 
 /** Records one deallocation in the current thread's active counter sink. */
 inline void record_deallocation(std::size_t size = 0) noexcept {
   if (active_allocation_counters != nullptr) {
-    ++active_allocation_counters->deallocations;
-    active_allocation_counters->deallocation_bytes += size;
+    auto& counters = *active_allocation_counters;
+    ++counters.deallocations;
+    counters.deallocation_bytes += size;
+    const auto bytes = static_cast<std::uint64_t>(size);
+    counters.live_bytes =
+        bytes > counters.live_bytes ? 0 : counters.live_bytes - bytes;
   }
 }
 

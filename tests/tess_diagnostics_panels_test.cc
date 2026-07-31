@@ -22,8 +22,20 @@ namespace {
   snapshot.path.heap_pushes = 12;
   snapshot.queued.phase_calls = 3;
   snapshot.allocation.allocations = 1;
+  snapshot.allocation.live_bytes = 64;
+  snapshot.allocation.peak_live_bytes = 128;
   snapshot.timing.per_category[static_cast<std::size_t>(
       tess::diagnostics::TraceCategory::Path)] = {2, 100, 40, 60};
+  snapshot.trace_records[0] = {
+      tess::diagnostics::TraceCategory::Scheduler,
+      "schedule_tick",
+      2'000'000,
+      0,
+      tess::diagnostics::TraceRecordKind::Duration,
+      256,
+      64,
+  };
+  snapshot.trace_record_count = 1;
   return snapshot;
 }
 
@@ -34,6 +46,7 @@ TEST(TessDiagnosticsPanels, DrawFunctionsCompileAndRun) {
   tess::debug::imgui::draw_path_counters_panel(snapshot.path);
   tess::debug::imgui::draw_queued_counters_panel(snapshot.queued);
   tess::debug::imgui::draw_allocation_counters_panel(snapshot.allocation);
+  tess::debug::imgui::draw_recent_timing_spans_panel(snapshot);
   SUCCEED();
 }
 
