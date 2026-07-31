@@ -17,6 +17,54 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## The v0.12 Fields Regression Is Confirmed: 2.3x To 2.8x, Not Noise
+
+- Date: 2026-07-31
+- Outcome: **confirmed regression, awaiting an intent decision**
+- Evidence: hosted paired confirmation, CI run 30599407227, base
+  `c300560` versus head `61f8044` (the v0.12 merge), diagnostics
+  binary, Bonferroni-adjusted to the seven-name suspect list.
+
+The change-point detector's backtest flagged a sustained fields-family
+step at the v0.12 merge, which recalibration had silently absorbed.
+That suspicion is now confirmed against the exact commit pair, on
+hosted runners, at 99.29% per-comparison confidence:
+
+| Benchmark | Base | Head | Delta | Verdict |
+| --- | ---: | ---: | ---: | --- |
+| `fields/goalset_build_1` | 124,444 ns | 352,296 ns | +180.5% | regression |
+| `fields/goalset_build_256` | 156,725 ns | 364,645 ns | +134.5% | regression |
+| `fields/goalset_build_16` | 145,878 ns | 365,615 ns | +151.0% | regression |
+| `fields/cache_miss_store` | 145,832 ns | 363,127 ns | +150.9% | regression |
+| `fields/cache_eviction` | 147,513 ns | 357,825 ns | +142.6% | regression |
+| `fields/cache_hit` | 35 ns | 47 ns | +36.3% | immaterial-scale |
+| `fields/nearest_target` | 140 ns | 143 ns | +2.2% | immaterial-scale |
+
+Five of seven confirm as regressions; the two that do not are
+nanosecond-scale and fall below the materiality floor, which is the
+verdict working as designed rather than a partial result.
+
+The shape is informative. Every regressed benchmark lands at roughly
+355,000-365,000 ns regardless of its base cost, which spanned
+124,000-157,000 ns. A uniform ceiling rather than a proportional
+slowdown points at a fixed cost added to every field-product build —
+the `field_product_cache.h` rewrite in that merge is the obvious
+suspect — rather than an algorithmic change that would scale with goal
+count. Note that `goalset_build_1` and `goalset_build_256` now cost
+almost the same, which is what a per-build constant looks like.
+
+**This needs a maintainer decision, not a fix from here.** If the v0.12
+rewrite bought correctness or a capability worth a fixed per-build
+cost, the ceilings should be recalibrated deliberately and this entry
+closed as accepted. If it did not, this is a live 2.3x-2.8x regression
+that has been shipping since v0.12. Either way the gate did not catch
+it: recalibration absorbed the step, which is the section 2.3 loophole
+the redesign exists to close.
+
+Next step if pursued: counters first per the profiling protocol, since
+a fixed per-build cost should show up as changed work rather than
+needing a profiler.
+
 ## Streaming To Certification Costs 3.5x The Rounds And Buys The Optimum
 
 - Date: 2026-07-30
