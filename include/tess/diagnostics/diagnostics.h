@@ -114,6 +114,8 @@ struct QueuedPhaseCounters {
 
 inline thread_local PathCounters* active_path_counters = nullptr;
 inline thread_local AllocationCounters* active_allocation_counters = nullptr;
+inline thread_local std::uint64_t active_allocation_scope_id = 0;
+inline thread_local std::uint64_t next_allocation_scope_id = 1;
 inline thread_local QueuedPhaseCounters* active_queued_phase_counters = nullptr;
 
 /** Installs path counters on the current thread for the lifetime of a scope. */
@@ -139,18 +141,29 @@ class ScopedPathCounters {
 class ScopedAllocationCounters {
  public:
   explicit ScopedAllocationCounters(AllocationCounters& counters) noexcept
-      : previous_{active_allocation_counters} {
+      : previous_{active_allocation_counters},
+        previous_scope_id_{active_allocation_scope_id},
+        scope_id_{next_allocation_scope_id++} {
+    if (next_allocation_scope_id == 0) {
+      next_allocation_scope_id = 1;
+    }
     active_allocation_counters = &counters;
+    active_allocation_scope_id = scope_id_;
   }
 
   ScopedAllocationCounters(const ScopedAllocationCounters&) = delete;
   auto operator=(const ScopedAllocationCounters&)
       -> ScopedAllocationCounters& = delete;
 
-  ~ScopedAllocationCounters() { active_allocation_counters = previous_; }
+  ~ScopedAllocationCounters() {
+    active_allocation_counters = previous_;
+    active_allocation_scope_id = previous_scope_id_;
+  }
 
  private:
   AllocationCounters* previous_;
+  std::uint64_t previous_scope_id_;
+  std::uint64_t scope_id_;
 };
 
 /**

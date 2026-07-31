@@ -312,6 +312,27 @@ TEST(TessScopedTimer, AttributesAllocationTrafficToTimedSpan) {
   EXPECT_EQ(buffer[0].deallocation_bytes, 32u);
 }
 
+TEST(TessScopedTimer, DoesNotReadAllocationCountersAfterScopeEnds) {
+  std::array<TraceRecord, 4> storage{};
+  TraceBuffer buffer{storage};
+  std::optional<ScopedTimer> timer;
+  {
+    tess::diagnostics::ScopedTrace trace_scope{buffer};
+    {
+      tess::diagnostics::AllocationCounters allocation;
+      tess::diagnostics::ScopedAllocationCounters allocation_scope{allocation};
+      timer.emplace(TraceCategory::Path, "search");
+      tess::diagnostics::record_allocation(96);
+    }
+    timer.reset();
+  }
+
+  ASSERT_EQ(buffer.size(), 1u);
+  EXPECT_EQ(buffer[0].kind, TraceRecordKind::Duration);
+  EXPECT_EQ(buffer[0].allocation_bytes, 0u);
+  EXPECT_EQ(buffer[0].deallocation_bytes, 0u);
+}
+
 TEST(TessScopedTimer, BindsToBufferActiveAtConstruction) {
   std::array<TraceRecord, 4> a_storage{};
   std::array<TraceRecord, 4> b_storage{};

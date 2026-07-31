@@ -144,9 +144,10 @@ inline void draw_recent_timing_spans_panel(
             ? std::numeric_limits<int>::max()
             : static_cast<int>(record.label.size());
     const auto milliseconds = static_cast<double>(record.value) / 1'000'000.0;
+    const auto* label = record.label.empty() ? "" : record.label.data();
     ImGui::Text("%-10s %.*s: %.3f ms; alloc/free %llu/%llu bytes",
-                category_name(record.category), label_size, record.label.data(),
-                milliseconds, detail::to_ull(record.allocation_bytes),
+                category_name(record.category), label_size, label, milliseconds,
+                detail::to_ull(record.allocation_bytes),
                 detail::to_ull(record.deallocation_bytes));
   }
   if (snapshot.trace_records_dropped != 0) {

@@ -50,6 +50,18 @@ TEST(TessDiagnosticsPanels, DrawFunctionsCompileAndRun) {
   SUCCEED();
 }
 
+TEST(TessDiagnosticsPanels, EmptyTimingLabelUsesValidStringPointer) {
+  tess_imgui_stub::reset();
+  tess::diagnostics::DiagnosticsSnapshot snapshot;
+  snapshot.trace_records[0].kind = tess::diagnostics::TraceRecordKind::Duration;
+  snapshot.trace_record_count = 1;
+
+  tess::debug::imgui::draw_recent_timing_spans_panel(snapshot);
+
+  ASSERT_NE(tess_imgui_stub::last_precision_string, nullptr);
+  EXPECT_STREQ(tess_imgui_stub::last_precision_string, "");
+}
+
 TEST(TessDiagnosticsPanels, CategoryNamesCoverEveryCategory) {
   using tess::diagnostics::TraceCategory;
   EXPECT_STREQ(tess::debug::imgui::category_name(TraceCategory::General),

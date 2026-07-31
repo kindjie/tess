@@ -292,6 +292,7 @@ class ScopedTimer {
   ScopedTimer(TraceCategory category, std::string_view label) noexcept
       : target_{active_trace_buffer},
         allocation_target_{active_allocation_counters},
+        allocation_scope_id_{active_allocation_scope_id},
         category_{category},
         label_{label},
         start_{target_ == nullptr ? std::chrono::steady_clock::time_point{}
@@ -316,15 +317,18 @@ class ScopedTimer {
         std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
     const auto nanos =
         ticks < 0 ? std::uint64_t{0} : static_cast<std::uint64_t>(ticks);
+    const auto allocation_scope_is_active =
+        allocation_target_ != nullptr &&
+        allocation_target_ == active_allocation_counters &&
+        allocation_scope_id_ == active_allocation_scope_id;
     const auto allocation_bytes =
-        allocation_target_ == nullptr || allocation_target_->allocation_bytes <
-                                             allocation_bytes_at_start_
+        !allocation_scope_is_active || allocation_target_->allocation_bytes <
+                                           allocation_bytes_at_start_
             ? 0
             : allocation_target_->allocation_bytes - allocation_bytes_at_start_;
     const auto deallocation_bytes =
-        allocation_target_ == nullptr ||
-                allocation_target_->deallocation_bytes <
-                    deallocation_bytes_at_start_
+        !allocation_scope_is_active || allocation_target_->deallocation_bytes <
+                                           deallocation_bytes_at_start_
             ? 0
             : allocation_target_->deallocation_bytes -
                   deallocation_bytes_at_start_;
@@ -335,6 +339,7 @@ class ScopedTimer {
  private:
   TraceBuffer* target_;
   AllocationCounters* allocation_target_;
+  std::uint64_t allocation_scope_id_;
   TraceCategory category_;
   std::string_view label_;
   std::chrono::steady_clock::time_point start_;

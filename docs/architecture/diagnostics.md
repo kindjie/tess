@@ -134,8 +134,10 @@ capture, gated by the same `TESS_ENABLE_DIAGNOSTICS` switch.
   and nested scopes attribute timing to the buffer that was active when the span
   began. On destruction it folds the elapsed nanoseconds into the category's
   timing accumulator and appends a duration record whose `value` is that
-  duration. If allocation counters were active when the timer began, the
-  record also carries inclusive allocation/free byte deltas for the span.
+  duration. If the same allocation-counter scope remains active from timer
+  construction through destruction, the record also carries inclusive
+  allocation/free byte deltas for the span. A timer that outlives that scope
+  still records its duration but reports zero allocation traffic.
 
 ## Planner Trace
 

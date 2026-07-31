@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdarg>
+#include <cstring>
+
 // Minimal Dear ImGui stub used only to compile-check
 // tess/debug/imgui headers without pulling in the real Dear ImGui dependency.
 // The signatures mirror the real ImGui API used by the reference panels and
@@ -24,11 +27,13 @@ namespace tess_imgui_stub {
 inline bool checkbox_pending = false;
 inline bool checkbox_changed = false;
 inline bool checkbox_value = false;
+inline const char* last_precision_string = nullptr;
 
 inline void reset() noexcept {
   checkbox_pending = false;
   checkbox_changed = false;
   checkbox_value = false;
+  last_precision_string = nullptr;
 }
 
 inline void set_next_checkbox(bool changed, bool value) noexcept {
@@ -44,7 +49,17 @@ namespace ImGui {
 // Attribute lives on a preceding declaration (as in real ImGui); the inline
 // definition below inherits it.
 inline void Text(const char* fmt, ...) TESS_STUB_IM_FMTARGS(1);
-inline void Text(const char*, ...) {}
+inline void Text(const char* fmt, ...) {
+  if (std::strstr(fmt, "%.*s") == nullptr) {
+    return;
+  }
+  std::va_list args;
+  va_start(args, fmt);
+  static_cast<void>(va_arg(args, const char*));
+  static_cast<void>(va_arg(args, int));
+  tess_imgui_stub::last_precision_string = va_arg(args, const char*);
+  va_end(args);
+}
 inline void TextUnformatted(const char*, const char* = nullptr) {}
 inline void Separator() {}
 inline bool Checkbox(const char*, bool* value) {
