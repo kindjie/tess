@@ -972,6 +972,12 @@
   and the problem, rather than an AttributeError from the middle of a
   comprehension, which tells an operator nothing about what to fix.
 
+  `KeyError` and `TypeError` are deliberately NOT declared refusals:
+  `main` catches only `ToolError`, so either reaches the operator as a
+  traceback naming no file — listing them would make the fuzzer accept
+  its own target. Tightening that surfaced a third defect: missing or
+  mistyped `parameters` fields raised a raw `KeyError`.
+
   It found real defects on its first run: `paired_bench.parse_results`
   caught four exception types but not `AttributeError`, so a payload
   whose top level was not an object (`null`, a bare number, a list —
@@ -984,9 +990,13 @@
   load-bearing: the first proves the harness detects an undeclared
   exception (note `pytest.fail` raises `Failed`, which derives from
   BaseException, so catching `Exception` silently misses it), the
-  second proves the seeds produce parsable input as well as garbage —
-  all-garbage would make every parser reject everything and the
-  property would hold without a success path ever running.
+  second requires EACH parser to accept at least one seed. Its first
+  version only checked that `json.loads` succeeded somewhere, which is
+  not the same thing: the paired parsers need specific benchmark names
+  and parameter keys, so all 200 seeds were rejected while the
+  assertion passed — a parser that rejected literally everything would
+  have satisfied it. Measured: without a deliberately valid payload
+  shape, `parse_results` and `load_config` accept zero seeds.
 
 - `tess_dirty_property_test`: seeded deferred-dirty sequences
   (redesign section 3.4, phase 7 slice b-iii). Split out of the
