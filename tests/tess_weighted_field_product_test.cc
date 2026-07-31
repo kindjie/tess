@@ -254,6 +254,36 @@ TEST(TessWeightedFieldProduct, RelevantWorldEditInvalidatesCachedProduct) {
   EXPECT_EQ(cache.stats().stale_rejections, 1u);
 }
 
+TEST(TessWeightedFieldProduct,
+     BlockedFrontierCapturesOnlyReachedAndFaceNeighborChunks) {
+  using WideShape =
+      tess::Shape<tess::Extent3{16, 4, 1}, tess::Extent3{4, 4, 1}>;
+  using WideWorld = tess::AlwaysResidentWorld<WideShape, Schema>;
+  WideWorld world;
+  fill_open(world);
+  for (std::int64_t y = 0; y < 4; ++y) {
+    for (std::int64_t x = 4; x < 8; ++x) {
+      world.template field<PassableTag>({x, y, 0}) = false;
+    }
+  }
+  tess::GoalSet goals;
+  goals.add({0, 0, 0});
+  tess::DistanceFieldScratch scratch;
+  tess::DistanceFieldProduct product;
+
+  ASSERT_EQ((tess::build_weighted_distance_field_product<WideWorld, Walker>(
+                 world, goals, scratch, product)
+                 .status),
+            tess::PathStatus::Found);
+  ASSERT_EQ(product.dependencies().size(), 2u);
+
+  world.mark_dirty(tess::ChunkKey{2}, 1u, tess::Box3{{8, 0, 0}, {1, 1, 1}});
+  EXPECT_TRUE(product.is_valid(world));
+
+  world.mark_dirty(tess::ChunkKey{1}, 1u, tess::Box3{{4, 0, 0}, {1, 1, 1}});
+  EXPECT_FALSE(product.is_valid(world));
+}
+
 TEST(TessWeightedFieldProduct, ReservedWarmRebuildDoesNotAllocate) {
   World world;
   fill_open(world);
