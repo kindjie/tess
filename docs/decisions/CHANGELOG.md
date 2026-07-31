@@ -8,6 +8,17 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-31 - Adaptive sparse chunk directory
+
+- Changed: `SparseResidentWorld` uses direct key-to-slot indexing when its
+  residency capacity covers the bounded world's complete chunk key space.
+  Worlds whose key space exceeds the budget retain the fixed-capacity hash
+  directory and its backward-shift deletion behavior.
+- Rationale: sampled profiles of fully resident sparse path planning placed
+  repeated hash probes in the dominant neighbor loop. The direct form removes
+  those probes and reduces directory storage without changing slot, eviction,
+  generation, or allocation-after-construction contracts.
+
 ## 2026-07-31 - Per-tick timing and allocation attribution
 
 - Changed: diagnostics duration records carry inclusive allocation and

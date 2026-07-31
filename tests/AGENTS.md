@@ -101,9 +101,11 @@
   prior `ResidencyHandle`) and fresh zeroed data; explicit `evict` releases
   residency and bytes; `resident_chunk_keys` enumerates exactly the resident
   set; dirty/active queries visit only resident chunks (no full-world scan);
-  residency survives directory backward-shift deletion under churn; and both
-  the warm resident-set access path and evict/reload slot reuse allocate
-  nothing after warmup. Sparse path coverage also pins bounded weighted-field
+  directory coverage pins direct full-key-space lookup, erase, slot reuse, and
+  out-of-range rejection plus bounded hashed lookup for large key spaces and
+  backward-shift deletion under churn; both warm resident-set access and
+  evict/reload slot reuse allocate nothing after warmup. Sparse path coverage
+  also pins bounded weighted-field
   status precedence when one flood encounters both missing topology and cost
   overflow.
 - `tess_block_test`: verifies chunk-domain builders, policy-typed `BlockCtx`

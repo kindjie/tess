@@ -173,10 +173,13 @@ gone. `residency_generation(key)` returns 0 for a non-resident chunk.
 dirty/active queries and `mark_*` helpers behave identically to the dense world
 but iterate only resident chunks. No accessor or query scans `0..chunk_count`,
 preserving the "no hidden full-world scans" invariant at sparse scale. The
-directory is a fixed-capacity open-addressing map with backward-shift deletion,
-so long-lived evict/reload churn allocates nothing and accumulates no
-tombstones. Both worlds share one `ChunkMeta` mutation implementation
-(`tess/storage/chunk_meta.h`), so dirty/active/version semantics are identical.
+directory uses a direct key-to-slot array when the residency capacity covers
+the bounded world's complete chunk key space. Larger key spaces use a
+fixed-capacity open-addressing map with backward-shift deletion. Both forms
+allocate once; long-lived evict/reload churn reallocates nothing, and the
+hashed form accumulates no tombstones. Both worlds share one `ChunkMeta`
+mutation implementation (`tess/storage/chunk_meta.h`), so dirty, active, and
+version semantics are identical.
 
 ## Chunk Metadata
 

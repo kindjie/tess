@@ -17,16 +17,25 @@ namespace tess {
 
 namespace detail {
 
-// Fixed-capacity open-addressing map from ChunkKey to a resident slot index.
-// The table is sized to twice the residency capacity (rounded up to a power
-// of two) and never rehashes, so lookups, inserts, and erases allocate
-// nothing after construction. Deletion uses backward-shift compaction so no
-// tombstones accumulate over long-lived evict/reload churn.
+// Fixed-capacity map from ChunkKey to a resident slot index. When the residency
+// capacity covers the complete key space, a direct slot array avoids hashing
+// every tile access and uses less directory storage. Larger key spaces use an
+// open-addressing table sized to twice the residency capacity (rounded up to a
+// power of two). Neither representation reallocates after construction, and
+// hashed deletion uses backward-shift compaction so no tombstones accumulate.
 class ChunkDirectory {
  public:
   static constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
-  void reset(std::size_t capacity) {
+  void reset(std::size_t capacity, std::uint64_t key_count) {
+    if (key_count <= static_cast<std::uint64_t>(capacity)) {
+      std::vector<Bucket>{}.swap(buckets_);
+      direct_slots_.assign(static_cast<std::size_t>(key_count), npos);
+      mask_ = 0;
+      return;
+    }
+
+    std::vector<std::size_t>{}.swap(direct_slots_);
     std::size_t table = 2;
     while (table < capacity * 2) {
       table <<= 1u;
@@ -36,6 +45,15 @@ class ChunkDirectory {
   }
 
   [[nodiscard]] std::size_t find(ChunkKey key) const noexcept {
+    // Hashed tables always have a nonzero mask (their minimum size is two), so
+    // the mask is also the mode tag without adding another hot-path load.
+    if (mask_ == 0) {
+      if (key.value >= direct_slots_.size()) {
+        return npos;
+      }
+      return direct_slots_[static_cast<std::size_t>(key.value)];
+    }
+
     std::size_t i = home(key);
     while (buckets_[i].occupied) {
       if (buckets_[i].key == key) {
@@ -49,6 +67,12 @@ class ChunkDirectory {
   // Precondition: key is not already present and the table has a free bucket
   // (guaranteed while the number of resident chunks stays <= capacity).
   void insert(ChunkKey key, std::size_t slot) noexcept {
+    if (mask_ == 0) {
+      TESS_ASSERT(key.value < direct_slots_.size());
+      direct_slots_[static_cast<std::size_t>(key.value)] = slot;
+      return;
+    }
+
     std::size_t i = home(key);
     while (buckets_[i].occupied) {
       i = (i + 1) & mask_;
@@ -57,6 +81,18 @@ class ChunkDirectory {
   }
 
   bool erase(ChunkKey key) noexcept {
+    if (mask_ == 0) {
+      if (key.value >= direct_slots_.size()) {
+        return false;
+      }
+      auto& slot = direct_slots_[static_cast<std::size_t>(key.value)];
+      if (slot == npos) {
+        return false;
+      }
+      slot = npos;
+      return true;
+    }
+
     std::size_t i = home(key);
     while (buckets_[i].occupied && buckets_[i].key != key) {
       i = (i + 1) & mask_;
@@ -110,6 +146,7 @@ class ChunkDirectory {
   }
 
   std::vector<Bucket> buckets_;
+  std::vector<std::size_t> direct_slots_;
   std::size_t mask_ = 0;
 };
 
@@ -173,7 +210,7 @@ class World<Shape, Schema, SparseResident> {
     for (std::size_t slot = capacity_; slot-- > 0;) {
       free_slots_.push_back(slot);
     }
-    directory_.reset(capacity_);
+    directory_.reset(capacity_, chunk_count);
   }
 
   /** Returns the maximum number of simultaneously resident chunks. */

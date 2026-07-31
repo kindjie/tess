@@ -51,6 +51,39 @@ template <typename Shape>
   return keys;
 }
 
+TEST(TessChunkDirectory, FullKeySpaceSupportsLookupEraseAndSlotReuse) {
+  tess::detail::ChunkDirectory directory;
+  directory.reset(4, 4);
+
+  directory.insert(tess::ChunkKey{3}, 1);
+  directory.insert(tess::ChunkKey{0}, 3);
+  EXPECT_EQ(directory.find(tess::ChunkKey{3}), 1u);
+  EXPECT_EQ(directory.find(tess::ChunkKey{0}), 3u);
+  EXPECT_EQ(directory.find(tess::ChunkKey{2}),
+            tess::detail::ChunkDirectory::npos);
+  EXPECT_EQ(directory.find(tess::ChunkKey{4}),
+            tess::detail::ChunkDirectory::npos);
+
+  EXPECT_TRUE(directory.erase(tess::ChunkKey{3}));
+  EXPECT_FALSE(directory.erase(tess::ChunkKey{3}));
+  directory.insert(tess::ChunkKey{3}, 2);
+  EXPECT_EQ(directory.find(tess::ChunkKey{3}), 2u);
+}
+
+TEST(TessChunkDirectory, BoundedCapacitySupportsSparseLargeKeys) {
+  tess::detail::ChunkDirectory directory;
+  directory.reset(2, 1'000'000'000ull);
+
+  directory.insert(tess::ChunkKey{999'999'999ull}, 0);
+  directory.insert(tess::ChunkKey{123'456'789ull}, 1);
+  EXPECT_EQ(directory.find(tess::ChunkKey{999'999'999ull}), 0u);
+  EXPECT_EQ(directory.find(tess::ChunkKey{123'456'789ull}), 1u);
+  EXPECT_TRUE(directory.erase(tess::ChunkKey{999'999'999ull}));
+  EXPECT_EQ(directory.find(tess::ChunkKey{999'999'999ull}),
+            tess::detail::ChunkDirectory::npos);
+  EXPECT_EQ(directory.find(tess::ChunkKey{123'456'789ull}), 1u);
+}
+
 TEST(TessResidency, HugeSparseWorldConstructsAndStaysEmptyUntilResident) {
   Sparse<HugeSparse> world{tess::ResidencyConfig{4 * page_bytes<HugeSparse>()}};
 
