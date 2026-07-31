@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -30,7 +33,15 @@ using ResidencyWorld =
 /// Random ensure/touch/evict/mark-dirty over a budgeted sparse world.
 class ResidencyModel {
  public:
-  static constexpr std::uint32_t kOperationCount = 12;
+  static constexpr std::size_t kBudgetChunks = 4;
+  // Strictly greater than the capacity in chunks, so a sequence can
+  // fill the world and force eviction.
+  static constexpr std::uint32_t kKeySpace = 6;
+  // Four actions across every key: the key space must exceed capacity
+  // or the budget bounds and the LRU eviction path are unreachable, and
+  // the invariants below would be asserted against a world that never
+  // fills up.
+  static constexpr std::uint32_t kOperationCount = 4 * kKeySpace;
 
   ResidencyModel()
       : world_(tess::ResidencyConfig{kBudgetChunks *
@@ -41,6 +52,7 @@ class ResidencyModel {
     // operation encoding stays a single integer the shrinker can drop.
     const auto action = op % 4;
     const auto key = tess::ChunkKey{op / 4 % kKeySpace};
+    const auto resident_before = world_.resident_count();
     switch (action) {
       case 0: {
         const auto generation_before = world_.residency_generation(key);
@@ -49,7 +61,18 @@ class ResidencyModel {
         if (generation_before != 0 && generation_after != generation_before) {
           reload_without_evict_ = true;
         }
+        // A freshly loaded page draws from a monotone clock, so its
+        // generation must exceed every generation ever issued. Reusing
+        // one would make an evicted chunk's stale handle indistinguish-
+        // able from a live one.
+        if (generation_before == 0 && generation_after <= highest_generation_) {
+          reused_generation_ = generation_after;
+        }
         highest_generation_ = std::max(highest_generation_, generation_after);
+        // Loading a chunk into a full world is the LRU eviction path.
+        if (generation_before == 0 && resident_before == world_.capacity()) {
+          ++lru_evictions_;
+        }
         break;
       }
       case 1:
@@ -66,6 +89,19 @@ class ResidencyModel {
         }
         break;
     }
+    peak_resident_ = std::max(peak_resident_, world_.resident_count());
+  }
+
+  /// The most chunks resident at once, so a test can confirm the sweep
+  /// reaches the capacity bound instead of assuming it does.
+  [[nodiscard]] auto peak_resident() const -> std::size_t {
+    return peak_resident_;
+  }
+
+  /// How many chunks were dropped to make room, which is the only way
+  /// the LRU eviction path runs.
+  [[nodiscard]] auto lru_evictions() const -> std::size_t {
+    return lru_evictions_;
   }
 
   [[nodiscard]] auto check() const -> std::optional<property::Violation> {
@@ -90,13 +126,14 @@ class ResidencyModel {
       return violation(
           "ensure_resident on a resident chunk keeps its generation", 1, 0);
     }
+    if (reused_generation_ != 0) {
+      return violation("a newly loaded chunk draws an unused generation",
+                       reused_generation_, highest_generation_);
+    }
     return std::nullopt;
   }
 
  private:
-  static constexpr std::size_t kBudgetChunks = 4;
-  static constexpr std::uint64_t kKeySpace = 16;
-
   static auto violation(const char* name, std::uint64_t observed,
                         std::uint64_t bound)
       -> std::optional<property::Violation> {
@@ -107,6 +144,9 @@ class ResidencyModel {
 
   ResidencyWorld world_;
   std::uint64_t highest_generation_ = 0;
+  std::uint64_t reused_generation_ = 0;
+  std::size_t peak_resident_ = 0;
+  std::size_t lru_evictions_ = 0;
   bool reload_without_evict_ = false;
 };
 
@@ -203,9 +243,16 @@ void run_property(const char* name) {
   const property::Property<Model> prop(name, Model::kOperationCount);
 
   // A printed replay command must actually reproduce, so honour it
-  // ahead of the seed sweep.
-  if (const auto replay = property::replay_from_environment()) {
-    const auto violation = prop.replay(*replay);
+  // ahead of the seed sweep. An unusable request fails rather than
+  // falling through to the sweep, which would report a pass for a run
+  // the operator believed was replaying a specific failure.
+  const auto request =
+      property::replay_from_environment(Model::kOperationCount);
+  if (request.present) {
+    if (!request.error.empty()) {
+      FAIL() << request.error;
+    }
+    const auto violation = prop.replay(request.sequence);
     EXPECT_FALSE(violation.has_value())
         << "replayed sequence still fails: "
         << (violation ? violation->invariant : "");
@@ -265,8 +312,9 @@ TEST(TessProperty, HarnessDetectsAndShrinksASeededDefect) {
     FAIL() << "the harness missed a seeded defect";
   }
   const std::vector<std::uint32_t>& shrunk = *failing;
-  // Shrunk to the minimum that still fails: two operations, both the
-  // offending one. Anything longer means the shrinker gave up early.
+  // Shrunk to two operations, both the offending one. Nothing shorter
+  // fails here, so 1-minimality and the true minimum coincide for this
+  // model; anything longer means the shrinker gave up early.
   EXPECT_EQ(shrunk.size(), 2u) << prop.report(shrunk);
   for (const auto op : shrunk) {
     EXPECT_EQ(op, 3u);
@@ -287,12 +335,142 @@ TEST(TessProperty, ReplayFromEnvironmentReproducesASequence) {
   EXPECT_FALSE(prop.replay({3}).has_value());
 }
 
+// Sets an environment variable for the duration of a scope, so the
+// replay path can be tested through the environment it actually reads
+// without leaking a value into the tests that follow.
+class ScopedEnvironment {
+ public:
+  ScopedEnvironment(const char* name, const char* value) : name_(name) {
+    set(name_, value);
+  }
+  ScopedEnvironment(const ScopedEnvironment&) = delete;
+  auto operator=(const ScopedEnvironment&) -> ScopedEnvironment& = delete;
+  ScopedEnvironment(ScopedEnvironment&&) = delete;
+  auto operator=(ScopedEnvironment&&) -> ScopedEnvironment& = delete;
+  ~ScopedEnvironment() { set(name_, nullptr); }
+
+ private:
+  static void set(const char* name, const char* value) {
+#if defined(_MSC_VER)
+    // _putenv_s removes the variable when given an empty value.
+    (void)_putenv_s(name, value == nullptr ? "" : value);
+#else
+    if (value == nullptr) {
+      (void)unsetenv(name);
+    } else {
+      (void)setenv(name, value, 1);
+    }
+#endif
+  }
+
+  const char* name_;
+};
+
+TEST(TessProperty, ReplayCommandRoundTripsThroughTheEnvironment) {
+  const property::Property<BrokenModel> prop("TessProperty.Broken",
+                                             BrokenModel::kOperationCount);
+  const std::vector<std::uint32_t> sequence{3, 3};
+  const auto command = prop.replay_command(sequence);
+
+  // Take the value straight out of the printed command: if the command
+  // spells the sequence in a form the reader cannot parse back, the
+  // report is useless no matter how correct the shrink was.
+  const std::string key = "TESS_PROPERTY_REPLAY=";
+  const auto begin = command.find(key);
+  ASSERT_NE(begin, std::string::npos) << command;
+  const auto value_begin = begin + key.size();
+  const auto value_end = command.find(' ', value_begin);
+  ASSERT_NE(value_end, std::string::npos) << command;
+  const auto value = command.substr(value_begin, value_end - value_begin);
+
+  const ScopedEnvironment env("TESS_PROPERTY_REPLAY", value.c_str());
+  const auto request =
+      property::replay_from_environment(BrokenModel::kOperationCount);
+  ASSERT_TRUE(request.present);
+  EXPECT_TRUE(request.error.empty()) << request.error;
+  EXPECT_EQ(request.sequence, sequence);
+  // The recovered sequence must still demonstrate the failure.
+  EXPECT_TRUE(prop.replay(request.sequence).has_value());
+
+  // The test name is anchored, so it cannot select a lookalike, and the
+  // command names no build directory: a failure found under ASan does
+  // not reproduce against a build/dev binary.
+  EXPECT_NE(command.find("-R '^TessProperty\\.Broken$'"), std::string::npos)
+      << command;
+  EXPECT_EQ(command.find("build/dev"), std::string::npos) << command;
+}
+
+TEST(TessProperty, AnUnsetReplayVariableRunsTheSweep) {
+  // The dangerous case: a variable exported with no value must not
+  // count as a replay request, or every property test would report a
+  // pass having run nothing at all.
+  for (const char* value : {"", "   ", "\t\n"}) {
+    const ScopedEnvironment env("TESS_PROPERTY_REPLAY", value);
+    const auto request = property::replay_from_environment(4);
+    EXPECT_FALSE(request.present) << "value '" << value << "'";
+    EXPECT_TRUE(request.error.empty()) << request.error;
+  }
+}
+
+TEST(TessProperty, MalformedReplaySequencesAreRejected) {
+  // Every one of these was silently accepted, truncated, or thrown as
+  // an unhelpful std::stoul error before the parser checked its work.
+  for (const char* text : {"1junk", "abc", "-1", "+1", " 1", "3,", ",3", "3,,4",
+                           "4294967296", "99999999999999999999"}) {
+    const auto request = property::parse_replay_sequence(text, 8);
+    EXPECT_TRUE(request.present) << "value '" << text << "'";
+    EXPECT_FALSE(request.error.empty())
+        << "accepted malformed value '" << text << "'";
+    EXPECT_TRUE(request.sequence.empty()) << "value '" << text << "'";
+  }
+
+  // An operation the model cannot perform is rejected too: replaying it
+  // would drive the model outside the space the sequence came from.
+  const auto out_of_range = property::parse_replay_sequence("2,8", 8);
+  EXPECT_TRUE(out_of_range.present);
+  EXPECT_FALSE(out_of_range.error.empty());
+
+  const auto valid = property::parse_replay_sequence("0,7,3", 8);
+  EXPECT_TRUE(valid.present);
+  EXPECT_TRUE(valid.error.empty()) << valid.error;
+  EXPECT_EQ(valid.sequence, (std::vector<std::uint32_t>{0, 7, 3}));
+}
+
 TEST(TessProperty, ResidencyInvariantsHoldUnderRandomSequences) {
   run_property<ResidencyModel>("TessProperty.Residency");
 }
 
 TEST(TessProperty, ScheduleInvariantsHoldUnderRandomSequences) {
   run_property<ScheduleModel>("TessProperty.Schedule");
+}
+
+TEST(TessProperty, TheResidencySweepReachesCapacityAndEvicts) {
+  // An earlier encoding could only ever address three of six chunks, so
+  // a four-chunk world never filled and the capacity, byte-budget and
+  // eviction invariants above were asserted against a world that could
+  // not violate them. Passing invariants that cannot be reached are
+  // indistinguishable from no coverage, so the sweep's reach is now
+  // asserted rather than assumed.
+  const property::Property<ResidencyModel> prop(
+      "TessProperty.Residency", ResidencyModel::kOperationCount);
+
+  std::size_t peak = 0;
+  std::size_t evictions = 0;
+  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
+    ResidencyModel model;
+    for (const auto op : prop.sequence_for(seed, kSteps)) {
+      model.apply(op);
+    }
+    peak = std::max(peak, model.peak_resident());
+    evictions += model.lru_evictions();
+  }
+
+  EXPECT_EQ(peak, ResidencyModel::kBudgetChunks)
+      << "the sweep never filled the world, so its capacity and byte-budget "
+         "invariants were never actually tested";
+  EXPECT_GT(evictions, 0U)
+      << "the sweep never evicted, so the generation invariants never saw a "
+         "reloaded chunk";
 }
 
 }  // namespace
