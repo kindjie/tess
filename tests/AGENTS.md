@@ -943,7 +943,20 @@
   Shrinking is 1-minimal, not globally minimum: only chunk-aligned runs
   are dropped, and a candidate is kept only if it reproduces the SAME
   invariant, so a shrink cannot drift onto a different, easier
-  violation. Bounded to 24 seeds x 64 steps on the pull-request tier.
+  violation. Bounded to 24 seeds x 64 steps on the pull-request tier;
+  the weekly `Long-Seed Property Sweeps` job raises both through
+  `TESS_PROPERTY_SEEDS` and `TESS_PROPERTY_STEPS` (400 x 192, ~85s for
+  all four suites). A malformed or zero value is an ERROR, not a silent
+  fallback — a weekly run that quietly executed the pull-request
+  workload would report a long-seed pass it never performed. The job
+  proves the override took effect by checking that a zero budget is
+  rejected, rather than trusting that exporting a variable did
+  something.
+
+  Tests that read the budget must UNSET the variables when asserting
+  defaults: the weekly job exports them, so assuming a clean
+  environment fails there. Running the real weekly workload locally is
+  what surfaced that.
   The printed replay command names no build directory on purpose — a
   failure found under ASan does not reproduce against a `build/dev`
   binary — so run it from the build directory that produced it.

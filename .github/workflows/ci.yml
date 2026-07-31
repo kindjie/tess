@@ -901,6 +901,62 @@ jobs:
               --body-file issue-body.md
           fi
 
+  # Long-seed property sweeps (redesign section 3.4), weekly tier only.
+  # The pull-request tier runs 24 seeds so it stays inside the PR time
+  # budget; that is enough to catch a broken invariant but not enough to
+  # reach the rarer interleavings. This job raises both seeds and steps
+  # through the environment.
+  #
+  # The counts are exported, never defaulted silently: the harness
+  # treats a malformed or zero value as an ERROR rather than falling
+  # back, because a weekly run that quietly executed the pull-request
+  # workload would report a long-seed pass it never performed. The step
+  # below asserts the raised budget was actually applied rather than
+  # trusting that exporting a variable had an effect.
+  long-seed-properties:
+    name: Long-Seed Property Sweeps
+    if: >-
+      ${{ github.event_name == 'schedule' ||
+          github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CC: clang
+      CXX: clang++
+      TESS_PROPERTY_SEEDS: "400"
+      TESS_PROPERTY_STEPS: "192"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure
+        run: cmake --preset dev
+
+      - name: Build property suites
+        run: >-
+          cmake --build build/dev --parallel
+          --target tess_property_test tess_queued_property_test
+          tess_cache_property_test tess_dirty_property_test
+
+      - name: Confirm the raised budget is in effect
+        run: |
+          # A zero budget must be rejected, which proves the harness is
+          # reading these variables at all. If it silently defaulted,
+          # this would pass and the whole job would be theatre.
+          if TESS_PROPERTY_SEEDS=0 ./build/dev/tests/tess_property_test \
+              --gtest_filter='*TheSweepBudgetHonoursTheEnvironment*' \
+              >/dev/null 2>&1; then
+            echo "error: the harness ignored a zero seed budget, so the" \
+              "long-seed configuration is not actually applied" >&2
+            exit 1
+          fi
+          echo "seeds=$TESS_PROPERTY_SEEDS steps=$TESS_PROPERTY_STEPS"
+
+      - name: Run long-seed sweeps
+        run: ctest --test-dir build/dev -R 'Property' --output-on-failure
+
   # Advisory coverage reports (redesign sections 3.6 and 4.5), weekly
   # tier only. Two reports, both diagnostic and never gating (this job
   # is deliberately NOT in ci-gate's needs; a coverage-percentage gate

@@ -301,6 +301,65 @@ struct ReplayRequest {
   return request;
 }
 
+/// How many seeds and steps a sweep should run.
+struct SweepBudget {
+  std::uint64_t seeds = 0;
+  std::size_t steps = 0;
+  std::string error;
+};
+
+/// Reads a positive integer override from the environment.
+///
+/// Blank counts as unset. Anything else that is not a positive decimal
+/// number is an ERROR rather than a silent fallback: a weekly tier that
+/// quietly ran the pull-request workload would report a long-seed pass
+/// it never performed, which is the same silent-success failure the
+/// replay parser guards against.
+[[nodiscard]] inline auto positive_override(const char* name,
+                                            std::uint64_t fallback,
+                                            std::string& error)
+    -> std::uint64_t {
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+  const char* raw = std::getenv(name);
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+  if (raw == nullptr) {
+    return fallback;
+  }
+  const std::string text(raw);
+  if (text.find_first_not_of(" \t\r\n") == std::string::npos) {
+    return fallback;
+  }
+  std::uint64_t value = 0;
+  const auto* const first = text.data();
+  const auto* const last = text.data() + text.size();
+  const auto parsed = std::from_chars(first, last, value);
+  if (parsed.ec != std::errc{} || parsed.ptr != last || value == 0) {
+    std::ostringstream out;
+    out << name << " must be a positive decimal count, got '" << text << "'";
+    error = out.str();
+    return fallback;
+  }
+  return value;
+}
+
+/// The sweep size, raised on the weekly tier through the environment.
+[[nodiscard]] inline auto sweep_budget(std::uint64_t default_seeds,
+                                       std::size_t default_steps)
+    -> SweepBudget {
+  SweepBudget budget;
+  budget.seeds =
+      positive_override("TESS_PROPERTY_SEEDS", default_seeds, budget.error);
+  budget.steps = static_cast<std::size_t>(positive_override(
+      "TESS_PROPERTY_STEPS", static_cast<std::uint64_t>(default_steps),
+      budget.error));
+  return budget;
+}
+
 /// Reads an explicit replay sequence from the environment, so a
 /// printed replay command reproduces a failure without editing code.
 [[nodiscard]] inline auto replay_from_environment(std::uint32_t operation_count)
