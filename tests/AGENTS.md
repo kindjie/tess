@@ -947,6 +947,42 @@
   The printed replay command names no build directory on purpose — a
   failure found under ASan does not reproduce against a `build/dev`
   binary — so run it from the build directory that produced it.
+- `tess_cache_property_test`: seeded sequences over `FieldProductCache`
+  (redesign section 3.4, phase 7 slice b-ii). The caches carry the
+  richest stated invariants in the library and had NO seeded coverage:
+  every existing cache test drives a fixed hand-written sequence.
+  Randomizes store, lookup, world edit (the only way staleness is
+  reachable), clear, and an over-budget store across six keys against a
+  three-product budget, checking after every step that a non-empty
+  cache stays inside its byte budget, that entry and byte accounting
+  match a from-scratch model, and that a rejected store changes
+  nothing.
+
+  The over-budget candidate is made oversized by carrying thousands of
+  goals, NOT by lowering the budget. Lowering it evicts every resident
+  first, so the store would be offered to an empty cache and the rule
+  it claims to test — that a rejected store preserves existing entries
+  — would be checked against nothing. A coverage gate requires
+  refusals that happened while the cache still held entries.
+
+  Two traps are load-bearing. `hits + misses == lookups` is WRONG: a
+  stale match erases its entry and counts as a rejection, not a miss,
+  so the identity is `hits + misses + stale_rejections`. And residency
+  is not validity — a world edit invalidates every product while the
+  entries stay resident until a lookup discovers it, so a probe after
+  an edit finds nothing though the cache still reports entries.
+  Conflating those two is what the LRU test caught on its first run.
+
+  **`TheModelsResidencyPredictionMatchesTheCache` does not verify the
+  eviction policy, and its name says so on purpose.** Mutation testing
+  showed a model predicting FIFO instead of LRU passes it unchanged:
+  the sweep yields only a handful of hits per seed, so the state where
+  the policies disagree is essentially never reached, and neither
+  reweighting the actions nor shrinking the key space changed that.
+  `ALookupRefreshesRecencyAndSavesAnEntry` constructs that state
+  directly — fill to budget, refresh the oldest entry, force one
+  eviction — and is the test that owns the LRU claim; inverting its
+  expectations makes it fail, which is what establishes it can.
 - `tess_queued_property_test`: seeded planning sequences over queued
   operations (redesign section 3.4, phase 7 slice b-i). Randomizes all
   nine `OperationKind` values against every write policy, four
