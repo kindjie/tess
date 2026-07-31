@@ -6,6 +6,10 @@ no network access and builds no code. GoogleTest, Google Benchmark, EnTT, and
 Flecs are development or optional integration dependencies fetched only by
 developer presets; ordinary consumers do not link them through `tess::tess`.
 
+What tess guarantees once integrated — exceptions, RTTI, determinism
+across thread counts, thread ownership, and steady-state allocations —
+is in the [integration policy](integration-policy.md).
+
 ## FetchContent
 
 Pin a release tag or immutable commit rather than a moving branch:

@@ -21,11 +21,21 @@ on:
       head:
         description: Head commit SHA (full)
         required: true
+      binary:
+        description: >-
+          Which benchmark binary the suspects live in. The fields,
+          render_delta, ecs and diagnostics families are registered in
+          tess_bench_diagnostics; everything else is in tess_bench.
+        type: choice
+        default: tess_bench
+        options:
+          - tess_bench
+          - tess_bench_diagnostics
       suspects:
         description: >-
           Optional comma-separated benchmark names to confirm instead of
           the sentinel set (max 64; statistics size to this list; a name
-          unavailable in either revision fails the run; diagnostics-only
+          unavailable in the selected binary fails the run; diagnostics-only
           registrations cannot be confirmed here — they live outside the
           tess_bench binary)
         required: false
@@ -115,7 +125,8 @@ jobs:
               -DTESS_ENABLE_ENTT=ON \
               -DTESS_ENABLE_FLECS=ON \
               -DTESS_WARNINGS_AS_ERRORS=ON
-            cmake --build "$side_dir/build" --target tess_bench
+            cmake --build "$side_dir/build" --target tess_bench \
+              tess_bench_diagnostics
             ccache -s
           done
 
@@ -124,13 +135,14 @@ jobs:
       - name: Paired sentinel run (confirm)
         env:
           SUSPECTS: ${{ inputs.suspects }}
+          BENCH_BINARY: ${{ inputs.binary }}
         run: |
           status=0
           args=(
             --base-binary
-            "$(dirname "$GITHUB_WORKSPACE")/paired-base/build/bench/tess_bench"
+            "$(dirname "$GITHUB_WORKSPACE")/paired-base/build/bench/$BENCH_BINARY"
             --head-binary
-            "$(dirname "$GITHUB_WORKSPACE")/paired-head/build/bench/tess_bench"
+            "$(dirname "$GITHUB_WORKSPACE")/paired-head/build/bench/$BENCH_BINARY"
             --sentinels bench/sentinels.json
             --mode confirm
             --summary paired-summary.md

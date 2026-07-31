@@ -70,6 +70,7 @@ nav:
       - Presentation: guide/presentation.md
       - Diagnostics: guide/diagnostics.md
   - Installation: packaging.md
+  - Integration policy: integration-policy.md
   - Examples: examples.md
   - Use cases: use-cases.md
   - API reference: https://tess.owx.dev/api/
