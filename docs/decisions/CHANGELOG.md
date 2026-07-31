@@ -6,6 +6,45 @@ Records meaningful design changes from the original TDDs. Entries from
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-30 - S3 sparse streaming under a residency budget (phase 3, slice 3)
+
+- Changed: `tests/sparse_stream_harness.h` searches the S1 terrain in a
+  `SparseResidentWorld` under a budget expressed as a fraction of the
+  world's chunks, streaming chunks in and retrying on
+  `PathStatus::Indeterminate` until the answer converges, with a dense
+  reference world answering the identical requests.
+  `tess_sparse_stream_test` asserts fully-resident equivalence,
+  streaming soundness at 25% and 5% budgets, the budget ceiling, the
+  measured cost of a tight budget, section 3.3's flow identities over
+  residency admission and eviction, and determinism.
+- Reason: redesign section 3.1's S3 bullet. The finding that shaped
+  it: **a definitive answer is not a converged one.** The search
+  returns `Found` on reaching the goal even when it skipped
+  non-resident chunks, so a loop that stops at the first definitive
+  answer reports an upper bound, not the optimum — witnessed at a
+  quarter budget. Convergence therefore has to be certified: the loop
+  keeps streaming past the first answer until nothing further could
+  change it, and only then does the result equal the dense optimum,
+  which the tests assert exactly. Where the budget cannot hold what
+  the search needs, certification is impossible and the tests assert
+  the bound and the soundness directions instead. The harness exposes
+  both strategies, because the difference is the finding: stopping at
+  the first answer costs 8 streaming rounds and leaves two of twelve
+  routes longer than optimal, while streaming to certification costs
+  28 rounds and matches the dense optimum everywhere. Recorded in the
+  optimization log. Two further library facts shaped the harness: every search
+  entry point defaults to `MissingChunkPolicy::TreatAsBlocked`, which
+  would answer `NoPath` instead of asking for more chunks, and
+  `ensure_resident` hands back a zeroed page, so a streamed chunk —
+  including one evicted and streamed again — must be refilled.
+  Residency has no flow-accounting hooks of its own, so the harness
+  attributes admissions, coalesced hits, and LRU displacements around
+  its own calls; library-side hooks would be a separate change.
+- Affected docs: testing and benchmarking redesign (item 3 status),
+  tests/AGENTS.md.
+- Affected code: new `tests/sparse_stream_harness.h`,
+  `tests/tess_sparse_stream_test.cc`; `tests/CMakeLists.txt`.
+
 ## 2026-07-30 - S2 colony macro-harness (phase 3, slice 2)
 
 - Changed: `tests/colony_harness.h` drives N agents with goals through
