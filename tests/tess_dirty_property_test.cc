@@ -94,6 +94,13 @@ class DirtyMergeModel {
     if (merge_left_records_) {
       return violation("a successful merge clears the accumulator", 1, 0);
     }
+    if (wrong_empty_mask_status_) {
+      return violation("a zero mask reports IgnoredEmptyMask", 1, 0);
+    }
+    if (world_not_marked_) {
+      return violation(
+          "a merge marks every distinct chunk with the ORed dirty mask", 1, 0);
+    }
     if (collect_lost_records_) {
       return violation(
           "collection moves every partition record into the accumulator and "
@@ -116,6 +123,17 @@ class DirtyMergeModel {
   }
 
  private:
+  struct Record {
+    std::uint32_t chunk = 0;
+    std::uint32_t mask = 0;
+
+    friend auto operator==(Record, Record) -> bool = default;
+    friend auto operator<(Record lhs, Record rhs) -> bool {
+      return lhs.chunk != rhs.chunk ? lhs.chunk < rhs.chunk
+                                    : lhs.mask < rhs.mask;
+    }
+  };
+
   static auto violation(const char* name, std::uint64_t observed,
                         std::uint64_t expected)
       -> std::optional<property::Violation> {
@@ -143,11 +161,18 @@ class DirtyMergeModel {
         world_, tess::ChunkKey{chunk}, mask,
         tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
     if (mask == 0) {
+      // The exact status matters: callers distinguish a deliberately
+      // ignored empty mask from invalid input through this result, so
+      // accepting any non-Recorded outcome would hide a valid call
+      // being misreported as InvalidChunk or InvalidShape.
+      if (status != tess::PlannedDirtyRecordStatus::IgnoredEmptyMask) {
+        wrong_empty_mask_status_ = true;
+      }
       ++empty_masks_;
       return;
     }
     if (status == tess::PlannedDirtyRecordStatus::Recorded) {
-      expected_.push_back(chunk);
+      expected_.push_back(Record{chunk, mask});
     }
   }
 
@@ -172,11 +197,23 @@ class DirtyMergeModel {
     // The number of DISTINCT chunks among the pending records is what a
     // merge must report -- coalescing means the record count is an
     // upper bound, not the answer.
-    auto distinct = expected_;
+    std::vector<std::uint32_t> distinct;
+    std::vector<std::uint32_t> ored(kChunks, 0);
+    for (const auto& record : expected_) {
+      distinct.push_back(record.chunk);
+      ored[record.chunk] |= record.mask;
+    }
     std::sort(distinct.begin(), distinct.end());
     distinct.erase(std::unique(distinct.begin(), distinct.end()),
                    distinct.end());
     const auto pending_records = expected_.size();
+
+    // What the world held before, so the merge's contribution is
+    // isolated from earlier merges.
+    std::vector<std::uint32_t> before(kChunks, 0);
+    for (std::uint32_t chunk = 0; chunk < kChunks; ++chunk) {
+      before[chunk] = world_.dirty_flags(tess::ChunkKey{chunk});
+    }
 
     const auto result = tess::merge_planned_dirty(world_, dirty_);
     if (!result.ok()) {
@@ -191,6 +228,16 @@ class DirtyMergeModel {
     }
     if (!dirty_.records().empty()) {
       merge_left_records_ = true;
+    }
+    // The bookkeeping being right says nothing about the world having
+    // been marked. A merge that reported the correct count while
+    // dropping an ORed bit, or skipping a chunk entirely, passed every
+    // check above.
+    for (std::uint32_t chunk = 0; chunk < kChunks; ++chunk) {
+      const auto expected_flags = before[chunk] | ored[chunk];
+      if (world_.dirty_flags(tess::ChunkKey{chunk}) != expected_flags) {
+        world_not_marked_ = true;
+      }
     }
     expected_.clear();
   }
@@ -207,11 +254,14 @@ class DirtyMergeModel {
         world_, tess::ChunkKey{chunk}, mask,
         tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
     if (mask == 0) {
+      if (status != tess::PlannedDirtyRecordStatus::IgnoredEmptyMask) {
+        wrong_empty_mask_status_ = true;
+      }
       ++empty_masks_;
       return;
     }
     if (status == tess::PlannedDirtyRecordStatus::Recorded) {
-      partitioned_.push_back(chunk);
+      partitioned_.push_back(Record{chunk, mask});
     }
   }
 
@@ -245,17 +295,31 @@ class DirtyMergeModel {
     if (pending != 0) {
       ++collects_with_records_;
     }
-    for (const auto chunk : partitioned_) {
-      expected_.push_back(chunk);
+    for (const auto& record : partitioned_) {
+      expected_.push_back(record);
     }
     partitioned_.clear();
+    // Counts alone do not establish conservation: dropping one record
+    // and duplicating another preserves the total. Compare the actual
+    // (chunk, mask) content the accumulator now holds.
+    std::vector<Record> observed;
+    for (const auto& record : dirty_.records()) {
+      observed.push_back(Record{static_cast<std::uint32_t>(record.chunk.value),
+                                record.dirty_mask});
+    }
+    auto modelled = expected_;
+    std::sort(observed.begin(), observed.end());
+    std::sort(modelled.begin(), modelled.end());
+    if (observed != modelled) {
+      collect_lost_records_ = true;
+    }
   }
 
   DirtyWorld world_{};
   tess::PlannedDirtyAccumulator dirty_{};
   tess::PlannedDirtyPartitions partitions_{};
-  std::vector<std::uint32_t> expected_;
-  std::vector<std::uint32_t> partitioned_;
+  std::vector<Record> expected_;
+  std::vector<Record> partitioned_;
   std::size_t merges_ = 0;
   std::size_t coalesced_merges_ = 0;
   std::size_t empty_masks_ = 0;
@@ -266,6 +330,8 @@ class DirtyMergeModel {
   bool merge_miscounted_ = false;
   bool merge_left_records_ = false;
   bool collect_lost_records_ = false;
+  bool world_not_marked_ = false;
+  bool wrong_empty_mask_status_ = false;
 };
 
 constexpr std::size_t kSteps = 48;
