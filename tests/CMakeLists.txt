@@ -106,6 +106,99 @@ tess_apply_project_options(tess_sparse_stream_test)
 
 tess_discover_tests(tess_sparse_stream_test LABELS core diagnostics path storage topology)
 
+# Consumer-contract probes: three translation units that include the
+# public headers in declaration order, reverse order, and leaf-first
+# with no umbrella, linked together so duplicate symbols and lost
+# inlines fail the build, then compared for cross-unit identity.
+add_executable(
+  tess_consumer_contract_test
+  tess_consumer_contract_test.cc
+  consumer_contract/forward_tu.cc
+  consumer_contract/reverse_tu.cc
+  consumer_contract/leaf_first_tu.cc
+)
+target_include_directories(
+  tess_consumer_contract_test
+  PRIVATE "${TESS_HEADER_SWEEP_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
+)
+target_link_libraries(
+  tess_consumer_contract_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_consumer_contract_test)
+
+tess_discover_tests(tess_consumer_contract_test LABELS block core diagnostics ecs experimental gpu ops path persistence query sim spatial storage topology)
+
+# Macro-configuration matrix (redesign section 10 item 5). Each cell is
+# a compile-and-link target, not a test: the contract is that the
+# configuration builds at all. The mixed-adapter cells are the coverage
+# no preset provides -- dev presets pin EnTT and Flecs both on, consumer
+# presets pin both off.
+function(tess_add_macro_cell name)
+  cmake_parse_arguments(CELL "" "" "DEFINES;INCLUDES;LINKS" ${ARGN})
+  add_library(${name} OBJECT consumer_contract/macro_cell.cc)
+  target_include_directories(
+    ${name} PRIVATE "${TESS_HEADER_SWEEP_DIR}" ${CELL_INCLUDES})
+  target_link_libraries(${name} PRIVATE tess::tess ${CELL_LINKS})
+  target_compile_definitions(${name} PRIVATE ${CELL_DEFINES})
+  tess_apply_project_options(${name})
+endfunction()
+
+# The consumer default: no optional integration, no diagnostics.
+tess_add_macro_cell(tess_contract_cell_bare)
+
+# Assertions compiled out, the configuration a release consumer ships.
+tess_add_macro_cell(tess_contract_cell_ndebug DEFINES NDEBUG)
+
+# Diagnostics on without any adapter.
+tess_add_macro_cell(
+  tess_contract_cell_diagnostics DEFINES TESS_ENABLE_DIAGNOSTICS)
+
+if(TESS_ENABLE_ENTT)
+  tess_add_macro_cell(
+    tess_contract_cell_entt_only
+    DEFINES TESS_CONTRACT_CELL_ENTT_ONLY TESS_ENABLE_ENTT
+    LINKS EnTT::EnTT
+  )
+endif()
+
+if(TESS_ENABLE_FLECS)
+  tess_add_macro_cell(
+    tess_contract_cell_flecs_only
+    DEFINES TESS_CONTRACT_CELL_FLECS_ONLY TESS_ENABLE_FLECS
+    LINKS flecs::flecs_static
+  )
+endif()
+
+# ImGui and WebGPU reuse the existing stubs, so the matrix needs no new
+# dependency.
+tess_add_macro_cell(
+  tess_contract_cell_imgui
+  DEFINES TESS_CONTRACT_CELL_IMGUI TESS_ENABLE_IMGUI TESS_ENABLE_DIAGNOSTICS
+  INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/imgui_stub"
+)
+
+tess_add_macro_cell(
+  tess_contract_cell_webgpu
+  DEFINES TESS_CONTRACT_CELL_WEBGPU TESS_ENABLE_WEBGPU
+  INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/webgpu_stub"
+)
+
+# One aggregate so CI and the pre-push hook build every cell together.
+add_custom_target(
+  tess_contract_cells
+  DEPENDS
+    tess_contract_cell_bare
+    tess_contract_cell_ndebug
+    tess_contract_cell_diagnostics
+    tess_contract_cell_imgui
+    tess_contract_cell_webgpu
+)
+if(TESS_ENABLE_ENTT)
+  add_dependencies(tess_contract_cells tess_contract_cell_entt_only)
+endif()
+if(TESS_ENABLE_FLECS)
+  add_dependencies(tess_contract_cells tess_contract_cell_flecs_only)
+endif()
+
 if(TESS_ENABLE_GRID_BENCHMARK_DATA)
   set(_tess_grid_manifest
       "${PROJECT_SOURCE_DIR}/tools/grid_benchmark_manifest.json")
