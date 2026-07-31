@@ -156,6 +156,9 @@ class ScheduleModel {
   static constexpr std::uint32_t kOperationCount = 8;
 
   ScheduleModel() {
+    every_.runs = &every_runs_;
+    dirty_.runs = &dirty_runs_;
+    event_.runs = &event_runs_;
     schedule_.reserve_tasks(3);
     (void)schedule_.add_task(
         {"every", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()},
@@ -172,13 +175,25 @@ class ScheduleModel {
   void apply(std::uint32_t op) {
     switch (op % 4) {
       case 0: {
+        const auto callbacks_before = total_runs();
         const auto stats = schedule_.run_tick(clock_);
         last_ = stats;
+        // An independent tally of callback entries: the schedule's own
+        // count of what it ran must match what actually ran.
+        if (total_runs() - callbacks_before != stats.tasks_run) {
+          callbacks_disagreed_ = true;
+        }
         if (stats.tick <= previous_tick_ && ticked_) {
           tick_regressed_ = true;
         }
         previous_tick_ = stats.tick;
         ticked_ = true;
+        ++ticks_;
+        // An every-tick cadence is due on every tick and nothing here
+        // disables it, so its tally must track the tick count exactly.
+        if (every_runs_ != ticks_) {
+          every_tick_missed_ = true;
+        }
         break;
       }
       case 1:
@@ -193,6 +208,12 @@ class ScheduleModel {
     }
   }
 
+  /// Counters a test can use to confirm the sweep actually ticks and
+  /// enters each cadence, instead of passing because nothing ran.
+  [[nodiscard]] auto ticks() const -> std::size_t { return ticks_; }
+  [[nodiscard]] auto dirty_runs() const -> std::size_t { return dirty_runs_; }
+  [[nodiscard]] auto event_runs() const -> std::size_t { return event_runs_; }
+
   [[nodiscard]] auto check() const -> std::optional<property::Violation> {
     if (!ticked_) {
       return std::nullopt;
@@ -205,6 +226,20 @@ class ScheduleModel {
       return property::Violation{"tasks_run + tasks_skipped == tasks_due",
                                  detail.str(), 0};
     }
+    if (callbacks_disagreed_) {
+      std::ostringstream detail;
+      detail << "the schedule reported " << last_.tasks_run
+             << " run, but a different number of callbacks were entered";
+      return property::Violation{"tasks_run counts the callbacks that ran",
+                                 detail.str(), 0};
+    }
+    if (every_tick_missed_) {
+      std::ostringstream detail;
+      detail << "an every-tick task ran " << every_runs_ << " times over "
+             << ticks_ << " ticks";
+      return property::Violation{"an every-tick task runs on every tick",
+                                 detail.str(), 0};
+    }
     if (tick_regressed_) {
       return property::Violation{"tick advances monotonically",
                                  "a tick did not exceed its predecessor", 0};
@@ -215,22 +250,43 @@ class ScheduleModel {
  private:
   static constexpr std::uint32_t kMask = 1U << 0U;
 
+  // Counts through a pointer, so the tally survives however the
+  // schedule stores the callable. A task that returns without recording
+  // anything gives `tasks_run` no independent witness: every operand of
+  // the identity below would come from the same stats struct, and a
+  // scheduler that ran the wrong tasks — or none — would still satisfy
+  // it.
   struct CountingTask {
+    std::size_t* runs = nullptr;
+
     auto operator()(const tess::ScheduleTaskContext&)
         -> tess::ScheduleTaskResult {
+      if (runs != nullptr) {
+        ++*runs;
+      }
       return {};
     }
   };
 
+  [[nodiscard]] auto total_runs() const -> std::size_t {
+    return every_runs_ + dirty_runs_ + event_runs_;
+  }
+
   tess::Schedule schedule_;
   tess::SimClock clock_;
+  std::size_t every_runs_ = 0;
+  std::size_t dirty_runs_ = 0;
+  std::size_t event_runs_ = 0;
   CountingTask every_;
   CountingTask dirty_;
   CountingTask event_;
   tess::ScheduleTickStats last_{};
   std::uint64_t previous_tick_ = 0;
+  std::size_t ticks_ = 0;
   bool ticked_ = false;
   bool tick_regressed_ = false;
+  bool callbacks_disagreed_ = false;
+  bool every_tick_missed_ = false;
 };
 
 // Bounded sequences on the pull-request tier (section 3.4); the weekly
@@ -471,6 +527,34 @@ TEST(TessProperty, TheResidencySweepReachesCapacityAndEvicts) {
   EXPECT_GT(evictions, 0U)
       << "the sweep never evicted, so the generation invariants never saw a "
          "reloaded chunk";
+}
+
+TEST(TessProperty, TheScheduleSweepTicksAndEntersEveryCadence) {
+  // The schedule invariants are all conditioned on having ticked, and
+  // the dirty and event cadences only run once something has notified
+  // them. If the sweep never reached those paths the invariants would
+  // hold over an idle schedule and report a pass.
+  const property::Property<ScheduleModel> prop("TessProperty.Schedule",
+                                               ScheduleModel::kOperationCount);
+
+  std::size_t ticks = 0;
+  std::size_t dirty = 0;
+  std::size_t event = 0;
+  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
+    ScheduleModel model;
+    for (const auto op : prop.sequence_for(seed, kSteps)) {
+      model.apply(op);
+    }
+    ticks += model.ticks();
+    dirty += model.dirty_runs();
+    event += model.event_runs();
+  }
+
+  EXPECT_GT(ticks, 0U) << "the sweep never ticked";
+  EXPECT_GT(dirty, 0U) << "the on-dirty cadence never ran, so notify_dirty was "
+                          "never followed by a tick that observed it";
+  EXPECT_GT(event, 0U) << "the on-event cadence never ran, so notify_events "
+                          "was never followed by a tick that observed it";
 }
 
 }  // namespace
