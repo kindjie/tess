@@ -24,9 +24,17 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   plan; an unsupported write policy yields a prefix plus diagnostics,
   which is now asserted as such rather than treated as a full
   partition.
-- Changed: `TheSweepReachesEveryPlanningOutcome` requires the sweep to
-  reach a hazard conflict, a multi-phase plan, an unsupported-policy
-  prefix, and all nine kinds, so none of the above can hold vacuously.
+- Changed: the sweep must reach a hazard conflict, a multi-phase plan,
+  an unsupported-policy prefix, all nine kinds, and the
+  invalid-policy, invalid-domain and invalid-field-access rejections,
+  so none of the above can hold vacuously. Non-dense identity is
+  unreachable from `FrameOps` by construction and is covered by a
+  focused test of the span overload instead.
+- Fixed: a property's replay command named a hand-written string rather
+  than a registered test, so the anchored `ctest -R` regex selected
+  nothing and ctest exited zero — a reproduction command that silently
+  ran nothing. The name now comes from the running test, and a test
+  asserts it resolves to a registered one.
 
 ## 2026-07-31 - Property/state-machine harness (phase 7, slice a)
 

@@ -974,11 +974,18 @@
   deliberately accepts arbitrary operations and rejects non-dense
   identity instead.
 
-  `TheSweepReachesEveryPlanningOutcome` gates all of it: the sweep must
-  produce a hazard conflict, a multi-phase plan, an unsupported-policy
-  prefix, and all nine kinds. Field-access masks are in the operation
-  alphabet precisely because a hazard needs intersecting masks — without
-  them the hazard rule would hold vacuously.
+  `TheSweepReachesEveryPlanningOutcomeItCanReach` gates all of it: the
+  sweep must produce a hazard conflict, a multi-phase plan, an
+  unsupported-policy prefix, all nine kinds, and the invalid-policy,
+  invalid-domain and invalid-field-access rejections. The alphabet
+  carries field-access masks (a hazard needs intersecting masks), an
+  out-of-range chunk key, an unsorted duplicate key set (so the
+  descriptor's normalization is exercised rather than handed
+  already-normal input), and one policy value outside the enum —
+  without each of those the corresponding rule holds vacuously. The
+  test name is qualified because `InvalidIdentity` is NOT reachable
+  from `FrameOps`, which always assigns dense identities; the span
+  overload's rejection of non-dense input is covered separately.
 - `tess_consumer_contract_test`: the consumer contract (redesign
   section 10 item 5). Three probe translation units in
   `tests/consumer_contract/` include the public header set in

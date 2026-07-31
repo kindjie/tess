@@ -9,6 +9,8 @@
 // failure with a command that reproduces it is a fix.
 #pragma once
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <charconv>
 #include <cstddef>
@@ -28,6 +30,22 @@
 namespace tess_test::property {
 
 using tess_test::grid_benchmark::SplitMix64;
+
+/// The running test's full "Suite.Name", which is what a replay command
+/// has to name.
+///
+/// Taking it from gtest rather than a string literal is the point: a
+/// hand-written property name that does not match a registered test
+/// produces an anchored `ctest -R` regex selecting nothing, and ctest
+/// reports "No tests were found" and exits ZERO. A replay command that
+/// silently succeeds without running anything is worse than none.
+[[nodiscard]] inline auto current_test_name() -> std::string {
+  const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+  if (info == nullptr) {
+    return "UnknownTest";
+  }
+  return std::string(info->test_suite_name()) + "." + info->name();
+}
 
 /// One invariant violation: which invariant, and what it saw.
 struct Violation {
