@@ -942,13 +942,16 @@ jobs:
 
       - name: Confirm the raised budget is in effect
         run: |
-          # A zero budget must be rejected, which proves the harness is
-          # reading these variables at all. If it silently defaulted,
-          # this would pass and the whole job would be theatre.
-          if TESS_PROPERTY_SEEDS=0 ./build/dev/tests/tess_property_test \
-              --gtest_filter='*TheSweepBudgetHonoursTheEnvironment*' \
-              >/dev/null 2>&1; then
-            echo "error: the harness ignored a zero seed budget, so the" \
+          # A zero budget must be rejected, which proves a sweep really
+          # reads these variables. Point this at an actual SWEEP, not at
+          # the budget unit test: that test unsets and replaces the
+          # variables around every call, so it passes under an inherited
+          # zero and would invert this check into an unconditional
+          # failure.
+          if TESS_PROPERTY_SEEDS=0 \
+              ./build/dev/tests/tess_dirty_property_test \
+              --gtest_filter='*MergeInvariants*' >/dev/null 2>&1; then
+            echo "error: a sweep ignored a zero seed budget, so the" \
               "long-seed configuration is not actually applied" >&2
             exit 1
           fi
@@ -1135,6 +1138,7 @@ jobs:
       - windows
       - bench
       - coverage
+      - long-seed-properties
       - ci-gate
     permissions:
       contents: read
