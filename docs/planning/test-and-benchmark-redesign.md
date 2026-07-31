@@ -904,6 +904,14 @@ that introduces this document.
    result, and the divergence and false-positive records. If the criteria
    are not met, this phase does not run and the ceilings stay; that outcome
    is a legitimate result, not a blocked phase.
+   *Status: assessed 2026-07-30 and NOT RUN — the ceilings stay
+   ([assessment](threshold-retirement-assessment-2026-07-30.md)).
+   Criterion 1 binds: shadow mode began 2026-07-29 and the last release
+   predates it, so no release cycle has elapsed since. Criterion 2 is met
+   locally on the exact base/head pair, with a hosted replay dispatched.
+   Criteria 3 and 4 cannot be evaluated yet — the shadow window contains
+   no ceiling firings, so there is no divergence record and no
+   false-positive sample. Re-assess after the next release.*
 5. Consumer-contract and packaging: header-set verification, ODR tests,
    macro-config matrix, Conan 2 recipe, vcpkg overlay, integration-policy
    document.
