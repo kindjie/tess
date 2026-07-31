@@ -8,6 +8,17 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-31 - Weekly long-seed property tier (phase 7, slice c)
+
+- Changed: property sweeps take their seed and step counts from
+  `TESS_PROPERTY_SEEDS` and `TESS_PROPERTY_STEPS`, defaulting to the
+  pull-request tier. A malformed or zero value fails the test rather
+  than falling back, so a weekly run cannot report a long-seed pass it
+  never performed.
+- Added: a weekly `Long-Seed Property Sweeps` job running all four
+  property suites at 400 seeds x 192 steps, which first asserts the
+  override is honoured by checking that a zero budget is rejected.
+
 ## 2026-07-31 - Deferred dirty properties (phase 7, slice b-iii)
 
 - Changed: `tess_dirty_property_test` drives seeded record, merge,

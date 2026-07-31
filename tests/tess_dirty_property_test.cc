@@ -334,10 +334,18 @@ class DirtyMergeModel {
   bool wrong_empty_mask_status_ = false;
 };
 
-constexpr std::size_t kSteps = 48;
-constexpr std::uint64_t kSeeds = 24;
+// Pull-request tier defaults. The weekly tier raises both
+// through TESS_PROPERTY_SEEDS and TESS_PROPERTY_STEPS; a
+// malformed value fails loudly rather than silently running
+// the smaller workload and reporting a long-seed pass.
+constexpr std::size_t kDefaultSteps = 48;
+constexpr std::uint64_t kDefaultSeeds = 24;
 
 TEST(TessDirtyProperty, MergeInvariantsHoldUnderRandomSequences) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   const property::Property<DirtyMergeModel> prop(
       property::current_test_name(), DirtyMergeModel::kOperationCount);
 
@@ -354,8 +362,8 @@ TEST(TessDirtyProperty, MergeInvariantsHoldUnderRandomSequences) {
     return;
   }
 
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
-    const auto failing = prop.run(seed, kSteps);
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
+    const auto failing = prop.run(seed, budget.steps);
     if (failing.has_value()) {
       FAIL() << "seed " << seed << "\n" << prop.report(*failing);
     }
@@ -363,6 +371,10 @@ TEST(TessDirtyProperty, MergeInvariantsHoldUnderRandomSequences) {
 }
 
 TEST(TessDirtyProperty, TheSweepReachesEveryMergePath) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   const property::Property<DirtyMergeModel> prop(
       property::current_test_name(), DirtyMergeModel::kOperationCount);
 
@@ -371,9 +383,9 @@ TEST(TessDirtyProperty, TheSweepReachesEveryMergePath) {
   std::size_t empty_masks = 0;
   std::size_t out_of_range = 0;
   std::size_t collects_with_records = 0;
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
     DirtyMergeModel model;
-    for (const auto op : prop.sequence_for(seed, kSteps)) {
+    for (const auto op : prop.sequence_for(seed, budget.steps)) {
       model.apply(op);
     }
     merges += model.merges();

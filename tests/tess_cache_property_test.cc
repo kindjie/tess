@@ -784,10 +784,18 @@ class PortalSegmentCacheModel {
   bool duplicate_grew_ = false;
 };
 
-constexpr std::size_t kSteps = 48;
-constexpr std::uint64_t kSeeds = 24;
+// Pull-request tier defaults. The weekly tier raises both
+// through TESS_PROPERTY_SEEDS and TESS_PROPERTY_STEPS; a
+// malformed value fails loudly rather than silently running
+// the smaller workload and reporting a long-seed pass.
+constexpr std::size_t kDefaultSteps = 48;
+constexpr std::uint64_t kDefaultSeeds = 24;
 
 TEST(TessCacheProperty, FieldProductInvariantsHoldUnderRandomSequences) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   const property::Property<FieldProductCacheModel> prop(
       property::current_test_name(), FieldProductCacheModel::kOperationCount);
 
@@ -804,8 +812,8 @@ TEST(TessCacheProperty, FieldProductInvariantsHoldUnderRandomSequences) {
     return;
   }
 
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
-    const auto failing = prop.run(seed, kSteps);
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
+    const auto failing = prop.run(seed, budget.steps);
     if (failing.has_value()) {
       FAIL() << "seed " << seed << "\n" << prop.report(*failing);
     }
@@ -813,6 +821,10 @@ TEST(TessCacheProperty, FieldProductInvariantsHoldUnderRandomSequences) {
 }
 
 TEST(TessCacheProperty, TheFieldProductSweepReachesEveryCachePath) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   // Without these the bounds above hold over a cache that never filled,
   // never went stale, and never refused anything.
   const property::Property<FieldProductCacheModel> prop(
@@ -823,9 +835,9 @@ TEST(TessCacheProperty, TheFieldProductSweepReachesEveryCachePath) {
   std::size_t oversized = 0;
   std::size_t with_residents = 0;
   std::size_t replacements = 0;
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
     FieldProductCacheModel model;
-    for (const auto op : prop.sequence_for(seed, kSteps)) {
+    for (const auto op : prop.sequence_for(seed, budget.steps)) {
       model.apply(op);
     }
     evictions += model.evictions();
@@ -882,6 +894,10 @@ TEST(TessCacheProperty, ALookupRefreshesRecencyAndSavesAnEntry) {
 }
 
 TEST(TessCacheProperty, TheModelsResidencyPredictionMatchesTheCache) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   // Probing every key at the end of a sequence recovers the resident
   // set: a lookup refreshes recency but never changes membership, so
   // comparing the recovered set against the model's prediction is sound
@@ -902,9 +918,9 @@ TEST(TessCacheProperty, TheModelsResidencyPredictionMatchesTheCache) {
   const property::Property<FieldProductCacheModel> prop(
       property::current_test_name(), FieldProductCacheModel::kOperationCount);
 
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
     FieldProductCacheModel model;
-    for (const auto op : prop.sequence_for(seed, kSteps)) {
+    for (const auto op : prop.sequence_for(seed, budget.steps)) {
       model.apply(op);
     }
     auto expected = model.expected_probe();
@@ -919,6 +935,10 @@ TEST(TessCacheProperty, TheModelsResidencyPredictionMatchesTheCache) {
 }
 
 TEST(TessCacheProperty, RouteCacheInvariantsHoldUnderRandomSequences) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   const property::Property<RouteCacheModel> prop(
       property::current_test_name(), RouteCacheModel::kOperationCount);
 
@@ -935,8 +955,8 @@ TEST(TessCacheProperty, RouteCacheInvariantsHoldUnderRandomSequences) {
     return;
   }
 
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
-    const auto failing = prop.run(seed, kSteps);
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
+    const auto failing = prop.run(seed, budget.steps);
     if (failing.has_value()) {
       FAIL() << "seed " << seed << "\n" << prop.report(*failing);
     }
@@ -944,6 +964,10 @@ TEST(TessCacheProperty, RouteCacheInvariantsHoldUnderRandomSequences) {
 }
 
 TEST(TessCacheProperty, TheRouteSweepReachesEveryCachePath) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   const property::Property<RouteCacheModel> prop(
       property::current_test_name(), RouteCacheModel::kOperationCount);
 
@@ -953,9 +977,9 @@ TEST(TessCacheProperty, TheRouteSweepReachesEveryCachePath) {
   std::size_t rebinds = 0;
   std::size_t exact_hits = 0;
   std::size_t suffix_hits = 0;
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
     RouteCacheModel model;
-    for (const auto op : prop.sequence_for(seed, kSteps)) {
+    for (const auto op : prop.sequence_for(seed, budget.steps)) {
       model.apply(op);
     }
     skips += model.oversized_skips();
@@ -987,6 +1011,10 @@ TEST(TessCacheProperty, TheRouteSweepReachesEveryCachePath) {
 }
 
 TEST(TessCacheProperty, PortalSegmentInvariantsHoldUnderRandomSequences) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   const property::Property<PortalSegmentCacheModel> prop(
       property::current_test_name(), PortalSegmentCacheModel::kOperationCount);
 
@@ -1003,8 +1031,8 @@ TEST(TessCacheProperty, PortalSegmentInvariantsHoldUnderRandomSequences) {
     return;
   }
 
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
-    const auto failing = prop.run(seed, kSteps);
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
+    const auto failing = prop.run(seed, budget.steps);
     if (failing.has_value()) {
       FAIL() << "seed " << seed << "\n" << prop.report(*failing);
     }
@@ -1012,6 +1040,10 @@ TEST(TessCacheProperty, PortalSegmentInvariantsHoldUnderRandomSequences) {
 }
 
 TEST(TessCacheProperty, ThePortalSweepReachesEveryCachePath) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   const property::Property<PortalSegmentCacheModel> prop(
       property::current_test_name(), PortalSegmentCacheModel::kOperationCount);
 
@@ -1020,9 +1052,9 @@ TEST(TessCacheProperty, ThePortalSweepReachesEveryCachePath) {
   std::size_t hits = 0;
   std::size_t misses_with_entries = 0;
   std::size_t live_restores = 0;
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
     PortalSegmentCacheModel model;
-    for (const auto op : prop.sequence_for(seed, kSteps)) {
+    for (const auto op : prop.sequence_for(seed, budget.steps)) {
       model.apply(op);
     }
     sweeps += model.sweeps();

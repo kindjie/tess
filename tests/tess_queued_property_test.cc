@@ -530,10 +530,18 @@ class QueuedPlanModel {
   std::uint32_t statuses_seen_ = 0;
 };
 
-constexpr std::size_t kSteps = 24;
-constexpr std::uint64_t kSeeds = 24;
+// Pull-request tier defaults. The weekly tier raises both
+// through TESS_PROPERTY_SEEDS and TESS_PROPERTY_STEPS; a
+// malformed value fails loudly rather than silently running
+// the smaller workload and reporting a long-seed pass.
+constexpr std::size_t kDefaultSteps = 24;
+constexpr std::uint64_t kDefaultSeeds = 24;
 
 TEST(TessQueuedProperty, PlanningInvariantsHoldUnderRandomSequences) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   const property::Property<QueuedPlanModel> prop(
       property::current_test_name(), QueuedPlanModel::kOperationCount);
 
@@ -550,8 +558,8 @@ TEST(TessQueuedProperty, PlanningInvariantsHoldUnderRandomSequences) {
     return;
   }
 
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
-    const auto failing = prop.run(seed, kSteps);
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
+    const auto failing = prop.run(seed, budget.steps);
     if (failing.has_value()) {
       FAIL() << "seed " << seed << "\n" << prop.report(*failing);
     }
@@ -559,6 +567,10 @@ TEST(TessQueuedProperty, PlanningInvariantsHoldUnderRandomSequences) {
 }
 
 TEST(TessQueuedProperty, TheSweepReachesEveryPlanningOutcomeItCanReach) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   // Each of these gates guards an invariant that would otherwise hold
   // vacuously: no conflict means the hazard rule is never exercised, a
   // single phase means the partition rule is trivial, and an
@@ -571,9 +583,9 @@ TEST(TessQueuedProperty, TheSweepReachesEveryPlanningOutcomeItCanReach) {
   std::size_t unsupported = 0;
   std::uint32_t kinds = 0;
   std::uint32_t statuses = 0;
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
     QueuedPlanModel model;
-    for (const auto op : prop.sequence_for(seed, kSteps)) {
+    for (const auto op : prop.sequence_for(seed, budget.steps)) {
       model.apply(op);
     }
     hazards += model.hazard_conflicts();

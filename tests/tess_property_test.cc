@@ -291,8 +291,12 @@ class ScheduleModel {
 
 // Bounded sequences on the pull-request tier (section 3.4); the weekly
 // tier can raise both numbers through the environment.
-constexpr std::size_t kSteps = 64;
-constexpr std::uint64_t kSeeds = 24;
+// Pull-request tier defaults. The weekly tier raises both
+// through TESS_PROPERTY_SEEDS and TESS_PROPERTY_STEPS; a
+// malformed value fails loudly rather than silently running
+// the smaller workload and reporting a long-seed pass.
+constexpr std::size_t kDefaultSteps = 64;
+constexpr std::uint64_t kDefaultSeeds = 24;
 
 template <typename Model>
 void run_property() {
@@ -305,6 +309,11 @@ void run_property() {
   // ahead of the seed sweep. An unusable request fails rather than
   // falling through to the sweep, which would report a pass for a run
   // the operator believed was replaying a specific failure.
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
+
   const auto request =
       property::replay_from_environment(Model::kOperationCount);
   if (request.present) {
@@ -318,8 +327,8 @@ void run_property() {
     return;
   }
 
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
-    const auto failing = prop.run(seed, kSteps);
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
+    const auto failing = prop.run(seed, budget.steps);
     // Guarded rather than asserted on the stream: the report is only
     // reachable when a failure exists, and writing it this way lets
     // static analysis see that too.
@@ -507,6 +516,50 @@ TEST(TessProperty, TheReplayCommandNamesARegisteredTest) {
                              "replay command would select nothing";
 }
 
+TEST(TessProperty, TheSweepBudgetHonoursTheEnvironment) {
+  // The weekly tier raises the sweep through these variables. If an
+  // override were ignored, or a malformed one silently fell back, the
+  // weekly run would report a long-seed pass having run the
+  // pull-request workload -- the same silent success the replay parser
+  // guards against, one level up.
+  // Explicitly UNSET rather than assuming a clean environment: the
+  // weekly job exports both variables, so a test that assumed nothing
+  // was set would fail there. Running the real weekly workload locally
+  // is what surfaced that.
+  {
+    const ScopedEnvironment seeds("TESS_PROPERTY_SEEDS", nullptr);
+    const ScopedEnvironment steps("TESS_PROPERTY_STEPS", nullptr);
+    const auto budget = property::sweep_budget(24, 64);
+    EXPECT_TRUE(budget.error.empty()) << budget.error;
+    EXPECT_EQ(budget.seeds, 24U);
+    EXPECT_EQ(budget.steps, 64U);
+  }
+  {
+    const ScopedEnvironment seeds("TESS_PROPERTY_SEEDS", "500");
+    const ScopedEnvironment steps("TESS_PROPERTY_STEPS", "256");
+    const auto budget = property::sweep_budget(24, 64);
+    EXPECT_TRUE(budget.error.empty()) << budget.error;
+    EXPECT_EQ(budget.seeds, 500U);
+    EXPECT_EQ(budget.steps, 256U);
+  }
+  // Blank is "unset", so an exported-but-empty variable still runs the
+  // default rather than collapsing the sweep.
+  {
+    const ScopedEnvironment seeds("TESS_PROPERTY_SEEDS", "  ");
+    const ScopedEnvironment steps("TESS_PROPERTY_STEPS", nullptr);
+    const auto budget = property::sweep_budget(24, 64);
+    EXPECT_TRUE(budget.error.empty()) << budget.error;
+    EXPECT_EQ(budget.seeds, 24U);
+  }
+  // Anything else is an error, including zero: a zero-seed sweep runs
+  // nothing at all and would pass.
+  for (const char* bad : {"0", "-5", "12x", "abc", "99999999999999999999"}) {
+    const ScopedEnvironment seeds("TESS_PROPERTY_SEEDS", bad);
+    const auto budget = property::sweep_budget(24, 64);
+    EXPECT_FALSE(budget.error.empty()) << "accepted '" << bad << "'";
+  }
+}
+
 TEST(TessProperty, AnUnsetReplayVariableRunsTheSweep) {
   // The dangerous case: a variable exported with no value must not
   // count as a replay request, or every property test would report a
@@ -552,6 +605,10 @@ TEST(TessProperty, ScheduleInvariantsHoldUnderRandomSequences) {
 }
 
 TEST(TessProperty, TheResidencySweepReachesCapacityAndEvicts) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   // An earlier encoding could only ever address three of six chunks, so
   // a four-chunk world never filled and the capacity, byte-budget and
   // eviction invariants above were asserted against a world that could
@@ -563,9 +620,9 @@ TEST(TessProperty, TheResidencySweepReachesCapacityAndEvicts) {
 
   std::size_t peak = 0;
   std::size_t evictions = 0;
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
     ResidencyModel model;
-    for (const auto op : prop.sequence_for(seed, kSteps)) {
+    for (const auto op : prop.sequence_for(seed, budget.steps)) {
       model.apply(op);
     }
     peak = std::max(peak, model.peak_resident());
@@ -581,6 +638,10 @@ TEST(TessProperty, TheResidencySweepReachesCapacityAndEvicts) {
 }
 
 TEST(TessProperty, TheScheduleSweepTicksAndEntersEveryCadence) {
+  const auto budget = property::sweep_budget(kDefaultSeeds, kDefaultSteps);
+  if (!budget.error.empty()) {
+    FAIL() << budget.error;
+  }
   // The schedule invariants are all conditioned on having ticked, and
   // the dirty and event cadences only run once something has notified
   // them. If the sweep never reached those paths the invariants would
@@ -591,9 +652,9 @@ TEST(TessProperty, TheScheduleSweepTicksAndEntersEveryCadence) {
   std::size_t ticks = 0;
   std::size_t dirty = 0;
   std::size_t event = 0;
-  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
+  for (std::uint64_t seed = 1; seed <= budget.seeds; ++seed) {
     ScheduleModel model;
-    for (const auto op : prop.sequence_for(seed, kSteps)) {
+    for (const auto op : prop.sequence_for(seed, budget.steps)) {
       model.apply(op);
     }
     ticks += model.ticks();
