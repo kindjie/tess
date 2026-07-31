@@ -12,6 +12,7 @@ import os
 import re
 
 from conan import ConanFile
+from conan.tools.build import check_min_cppstd
 from conan.tools.cmake import CMake, CMakeToolchain, cmake_layout
 from conan.tools.files import copy
 
@@ -47,6 +48,11 @@ class TessConan(ConanFile):
 
     def set_version(self):
         self.version = self.version or _version_from_cmake(self.recipe_folder)
+
+    def validate(self):
+        # tess is C++20 throughout; fail at graph time with a clear
+        # message rather than deep in a template error.
+        check_min_cppstd(self, 20)
 
     def layout(self):
         cmake_layout(self)
@@ -91,5 +97,3 @@ class TessConan(ConanFile):
         # package provides.
         self.cpp_info.set_property("cmake_file_name", "tess")
         self.cpp_info.set_property("cmake_target_name", "tess::tess")
-        # The library is C++20; state it so Conan can validate.
-        self.cpp_info.cxxflags = []

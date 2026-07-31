@@ -3,8 +3,8 @@
 Records meaningful design changes from the original TDDs. Entries from
 2026-07-09 through 2026-07-10 that postdate the earlier archive are in
 [`CHANGELOG-archive-2026-07-09-10.md`](CHANGELOG-archive-2026-07-09-10.md);
-entries from 2026-07-24 through 2026-07-28 are in
-[`CHANGELOG-archive-2026-07-24-28.md`](CHANGELOG-archive-2026-07-24-28.md);
+entries from 2026-07-11 through 2026-07-28 are in
+[`CHANGELOG-archive-2026-07-11-28.md`](CHANGELOG-archive-2026-07-11-28.md);
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 

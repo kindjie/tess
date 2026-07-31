@@ -1,4 +1,4 @@
-# Design Changelog Archive (2026-07-24 through 2026-07-28)
+# Design Changelog Archive (2026-07-11 through 2026-07-28)
 
 Entries moved from the live changelog in reverse-chronological order. The
 live log is [`CHANGELOG.md`](CHANGELOG.md).
