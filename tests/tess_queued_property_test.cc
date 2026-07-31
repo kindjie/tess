@@ -2,6 +2,7 @@
 #include <tess/tess.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -174,10 +175,17 @@ class QueuedPlanModel {
       case 3:
         return tess::WritePolicy::Unsafe;
       default:
-        // Outside the enumerated set: the planner must reject it rather
-        // than treat it as one of the valid policies. Representable in
-        // the underlying type, so the cast is well defined.
-        return static_cast<tess::WritePolicy>(9);
+        // Outside the enumerated set, which is a value the library
+        // expects: `is_valid_write_policy` exists precisely to screen
+        // runtime policy values that name no enumerator, and the
+        // planner must reject rather than misread one.
+        //
+        // Spelled with bit_cast rather than static_cast because
+        // clang-analyzer flags an enum cast outside the enumerator
+        // range even when, as here, the underlying type is fixed at
+        // uint8_t and the value is therefore representable. bit_cast
+        // says the same thing without needing a suppression.
+        return std::bit_cast<tess::WritePolicy>(std::uint8_t{9});
     }
   }
 
