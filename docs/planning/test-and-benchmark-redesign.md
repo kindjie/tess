@@ -960,7 +960,13 @@ that introduces this document.
    models, deferred dirty execution and merge (split out because
    planning creates no dirty records, so those gates cannot be reached
    from an enqueue-and-plan model), the weekly long-seed tier, and
-   parser fuzzing.*
+   parser fuzzing. Slices b-ii and b-iii followed: the three caches
+   (each needing its own model, since their bound, eviction and
+   staleness policies all differ) and the deferred dirty accumulator.
+   Two invariants were caught by the harness itself rather than by
+   review, each shrunk to a two-to-four operation sequence with a
+   replay command that reproduced. Remaining: the weekly long-seed
+   tier and parser fuzzing.*
 8. First controlled-hardware campaign (development machine, handheld
    target, cloud bare metal): scaling, latency, world-size; publish and
    record in the optimization log.

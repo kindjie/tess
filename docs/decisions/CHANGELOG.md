@@ -8,6 +8,18 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-31 - Deferred dirty properties (phase 7, slice b-iii)
+
+- Changed: `tess_dirty_property_test` drives seeded record, merge,
+  partition-record and collect sequences over the deferred dirty
+  accumulator, which planning alone cannot reach because planning
+  creates no dirty records. Asserts the ignore-empty-mask rule, the
+  out-of-range rejection, that a merge reports distinct chunks rather
+  than record count, that a successful merge clears the accumulator,
+  and that collection conserves every record.
+- Changed: gates require a merge that actually coalesced, a zero mask,
+  an out-of-range chunk, and a collection with records present.
+
 ## 2026-07-31 - Portal segment cache properties (phase 7, slice b-ii)
 
 - Changed: `tess_cache_property_test` gains a
