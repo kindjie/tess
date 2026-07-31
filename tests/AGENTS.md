@@ -1005,6 +1005,16 @@
   (63 nodes on this grid) fit inside the cap, so nothing was ever
   skipped. The coverage gate caught that too.
 
+  A third model covers `WeightedPortalSegmentCache`, the third distinct
+  policy in three headers: an ENTRY budget rather than a byte budget,
+  sweep-then-evict-oldest rather than LRU, and stale entries that
+  linger until a sweep reclaims them. Asserts the budget bound, that a
+  miss or stale entry leaves the caller's output buffer untouched, and
+  that re-storing a request does not add a second entry — but only
+  while the existing entry is still LIVE, because `find` skips a stale
+  match without erasing it, so below budget a re-store legitimately
+  appends a duplicate. The unconditional idempotence claim is false.
+
 - `tess_queued_property_test`: seeded planning sequences over queued
   operations (redesign section 3.4, phase 7 slice b-i). Randomizes all
   nine `OperationKind` values against every write policy, four

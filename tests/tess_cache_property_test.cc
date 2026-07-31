@@ -24,11 +24,15 @@ namespace property = tess_test::property;
 struct PassableTag {};
 // A second movement class, so a rebind is expressible at all.
 struct OtherTag {};
+struct CostTag {};
+struct OtherCostTag {};
 
 using CacheShape =
     tess::Shape<tess::Extent3{32, 32, 1}, tess::Extent3{16, 16, 1}>;
 using CacheSchema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
-                                      tess::Field<OtherTag, std::uint8_t>>;
+                                      tess::Field<OtherTag, std::uint8_t>,
+                                      tess::Field<CostTag, std::uint32_t>,
+                                      tess::Field<OtherCostTag, std::uint32_t>>;
 using CacheWorld = tess::AlwaysResidentWorld<CacheShape, CacheSchema>;
 
 /// Random store/lookup/evict/stale sequences over a budgeted product
@@ -563,6 +567,180 @@ class RouteCacheModel {
   bool alternate_class_ = false;
 };
 
+using PortalClass = tess::movement::LegacyWeighted<PassableTag, CostTag>;
+using OtherPortalClass =
+    tess::movement::LegacyWeighted<PassableTag, OtherCostTag>;
+
+// The portal segment cache is the third policy in three headers: an
+// ENTRY budget (not bytes), sweep-then-evict-oldest rather than LRU, and
+// stale entries that linger until a sweep reclaims them. A shared model
+// across the three would assert something false for two of them.
+class PortalSegmentCacheModel {
+ public:
+  static constexpr std::uint32_t kSegments = 5;
+  static constexpr std::uint32_t kActions = 6;
+  static constexpr std::uint32_t kOperationCount = kSegments * kActions;
+  static constexpr std::size_t kBudget = 3;
+
+  PortalSegmentCacheModel() {
+    for (auto& page : world_.chunks()) {
+      for (auto& tile : page.template field_span<PassableTag>()) {
+        tile = 1;
+      }
+      for (auto& cost : page.template field_span<CostTag>()) {
+        cost = 1;
+      }
+      for (auto& cost : page.template field_span<OtherCostTag>()) {
+        cost = 1;
+      }
+    }
+    scratch_.reserve_nodes(256);
+    cache_.set_segment_budget(kBudget);
+  }
+
+  void apply(std::uint32_t op) {
+    const auto segment = op % kSegments;
+    switch (op / kSegments % kActions) {
+      case 0:
+      case 1:
+        store(segment);
+        break;
+      case 2:
+      case 3:
+        lookup(segment);
+        break;
+      case 4:
+        // A world edit makes every stored segment stale. They stay
+        // resident until a sweep or a budget-triggered compaction
+        // removes them, which is the interleaving worth randomizing.
+        touch_world();
+        break;
+      default:
+        cache_.sweep_stale(world_);
+        break;
+    }
+  }
+
+  [[nodiscard]] auto check() const -> std::optional<property::Violation> {
+    const auto stats = cache_.stats();
+    if (cache_.size() > cache_.segment_budget()) {
+      return violation("entries stay within the segment budget", cache_.size(),
+                       cache_.segment_budget());
+    }
+    if (stats.entries != cache_.size()) {
+      return violation("size() and the reported entry count agree",
+                       stats.entries, cache_.size());
+    }
+    if (stats.entries == 0 && stats.path_nodes != 0) {
+      return violation("an empty cache holds no path storage", stats.path_nodes,
+                       0);
+    }
+    if (miss_touched_output_) {
+      return violation("a miss or stale entry leaves the output untouched", 1,
+                       0);
+    }
+    if (duplicate_grew_) {
+      return violation("re-storing a live request does not add a second entry",
+                       1, 0);
+    }
+    return std::nullopt;
+  }
+
+  [[nodiscard]] auto sweeps() const -> std::size_t {
+    return cache_.stats().sweeps;
+  }
+  [[nodiscard]] auto evictions() const -> std::size_t {
+    return cache_.stats().evictions;
+  }
+  [[nodiscard]] auto hits() const -> std::size_t { return hits_; }
+  [[nodiscard]] auto misses_with_entries() const -> std::size_t {
+    return misses_with_entries_;
+  }
+  [[nodiscard]] auto live_restores() const -> std::size_t {
+    return live_restores_;
+  }
+
+ private:
+  static auto violation(const char* name, std::uint64_t observed,
+                        std::uint64_t expected)
+      -> std::optional<property::Violation> {
+    std::ostringstream detail;
+    detail << "observed " << observed << ", expected " << expected;
+    return property::Violation{name, detail.str(), 0};
+  }
+
+  [[nodiscard]] static auto request_for(std::uint32_t segment)
+      -> tess::PathRequest {
+    const auto y = static_cast<std::int64_t>(segment);
+    return tess::PathRequest{tess::Coord3{0, y, 0}, tess::Coord3{5, y, 0}};
+  }
+
+  void store(std::uint32_t segment) {
+    const auto request = request_for(segment);
+    const auto result =
+        tess::weighted_astar_path<CacheWorld, PassableTag, CostTag>(
+            world_, request, scratch_);
+    if (result.status != tess::PathStatus::Found) {
+      return;
+    }
+    const auto before = cache_.size();
+    // Whether this request is already cached AND still valid decides
+    // whether a re-store is a no-op. A stale match is skipped without
+    // being erased, so below budget a re-store legitimately appends a
+    // duplicate -- the idempotence claim holds only for live entries.
+    std::vector<tess::Coord3> probe;
+    auto view = cache_.for_class<PortalClass>();
+    const auto live = view.lookup_append(world_, request, probe).found;
+
+    auto store_view = cache_.for_class<PortalClass>();
+    store_view.store(world_, request, result);
+    if (live && cache_.size() > before) {
+      duplicate_grew_ = true;
+    }
+    if (live) {
+      ++live_restores_;
+    }
+  }
+
+  void lookup(std::uint32_t segment) {
+    std::vector<tess::Coord3> out;
+    out.push_back(tess::Coord3{99, 99, 0});
+    const auto marker = out.size();
+    const auto entries_before = cache_.size();
+
+    auto view = cache_.for_class<PortalClass>();
+    const auto hit = view.lookup_append(world_, request_for(segment), out);
+    if (hit.found) {
+      ++hits_;
+      return;
+    }
+    // A miss or a stale entry must leave the caller's buffer exactly as
+    // it was.
+    if (out.size() != marker) {
+      miss_touched_output_ = true;
+    }
+    if (entries_before != 0) {
+      ++misses_with_entries_;
+    }
+  }
+
+  void touch_world() {
+    world_.mark_dirty(
+        tess::ChunkKey{0}, ++world_version_,
+        tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
+  }
+
+  CacheWorld world_{};
+  tess::PathScratch scratch_{};
+  tess::WeightedPortalSegmentCache cache_{};
+  std::size_t hits_ = 0;
+  std::size_t misses_with_entries_ = 0;
+  std::size_t live_restores_ = 0;
+  std::uint32_t world_version_ = 0;
+  bool miss_touched_output_ = false;
+  bool duplicate_grew_ = false;
+};
+
 constexpr std::size_t kSteps = 48;
 constexpr std::uint64_t kSeeds = 24;
 
@@ -753,6 +931,64 @@ TEST(TessCacheProperty, TheRouteSweepReachesEveryCachePath) {
          "policy was never exercised";
   EXPECT_GT(rebinds, 0U)
       << "the sweep never rebound the movement class, so the drop-on-rebind "
+         "rule was never exercised";
+}
+
+TEST(TessCacheProperty, PortalSegmentInvariantsHoldUnderRandomSequences) {
+  const property::Property<PortalSegmentCacheModel> prop(
+      property::current_test_name(), PortalSegmentCacheModel::kOperationCount);
+
+  const auto request = property::replay_from_environment(
+      PortalSegmentCacheModel::kOperationCount);
+  if (request.present) {
+    if (!request.error.empty()) {
+      FAIL() << request.error;
+    }
+    const auto violation = prop.replay(request.sequence);
+    EXPECT_FALSE(violation.has_value())
+        << "replayed sequence still fails: "
+        << (violation ? violation->invariant : "");
+    return;
+  }
+
+  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
+    const auto failing = prop.run(seed, kSteps);
+    if (failing.has_value()) {
+      FAIL() << "seed " << seed << "\n" << prop.report(*failing);
+    }
+  }
+}
+
+TEST(TessCacheProperty, ThePortalSweepReachesEveryCachePath) {
+  const property::Property<PortalSegmentCacheModel> prop(
+      property::current_test_name(), PortalSegmentCacheModel::kOperationCount);
+
+  std::size_t sweeps = 0;
+  std::size_t evictions = 0;
+  std::size_t hits = 0;
+  std::size_t misses_with_entries = 0;
+  std::size_t live_restores = 0;
+  for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
+    PortalSegmentCacheModel model;
+    for (const auto op : prop.sequence_for(seed, kSteps)) {
+      model.apply(op);
+    }
+    sweeps += model.sweeps();
+    evictions += model.evictions();
+    hits += model.hits();
+    misses_with_entries += model.misses_with_entries();
+    live_restores += model.live_restores();
+  }
+
+  EXPECT_GT(hits, 0U) << "the sweep never served a segment";
+  EXPECT_GT(sweeps, 0U) << "the sweep never compacted";
+  EXPECT_GT(evictions, 0U)
+      << "the sweep never evicted, so the budget bound was never enforced";
+  EXPECT_GT(misses_with_entries, 0U)
+      << "every miss happened against an EMPTY cache, so the rule that a miss "
+         "leaves the output untouched was never tested with entries present";
+  EXPECT_GT(live_restores, 0U)
+      << "no request was ever re-stored while still live, so the idempotence "
          "rule was never exercised";
 }
 
