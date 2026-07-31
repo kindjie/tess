@@ -924,12 +924,29 @@
   stability across a redundant ensure) and schedule ticks
   (`tasks_run + tasks_skipped == tasks_due`, monotone tick) — both
   areas that previously had NO seeded coverage, only fixed
-  hand-written sequences. A deliberately broken model proves the
-  harness can fail: it must find a defect that needs two specific
-  operations, shrink 64 steps to exactly those two, and produce a
-  sequence that reproduces. Bounded to 24 seeds x 64 steps on the
-  pull-request tier; `TESS_PROPERTY_REPLAY` replays an explicit
-  sequence.
+  hand-written sequences. It also asserts that a newly loaded page
+  never reuses a generation, which is what makes an evicted chunk's
+  stale handle detectable.
+
+  Three things about this harness are load-bearing and must not be
+  weakened. A deliberately broken model proves the harness can fail: it
+  must find a defect that needs two specific operations, shrink 64
+  steps to exactly those two, and produce a sequence that reproduces.
+  A coverage test asserts the residency sweep actually fills the world
+  and evicts — an earlier operation encoding could only address three
+  of six chunks, so a four-chunk world never filled and every ceiling
+  invariant was asserted against a world incapable of violating them.
+  And an unusable `TESS_PROPERTY_REPLAY` fails loudly instead of
+  falling back to the sweep, because a blank value once parsed as an
+  empty sequence and skipped the sweep entirely while reporting a pass.
+
+  Shrinking is 1-minimal, not globally minimum: only chunk-aligned runs
+  are dropped, and a candidate is kept only if it reproduces the SAME
+  invariant, so a shrink cannot drift onto a different, easier
+  violation. Bounded to 24 seeds x 64 steps on the pull-request tier.
+  The printed replay command names no build directory on purpose — a
+  failure found under ASan does not reproduce against a `build/dev`
+  binary — so run it from the build directory that produced it.
 - `tess_consumer_contract_test`: the consumer contract (redesign
   section 10 item 5). Three probe translation units in
   `tests/consumer_contract/` include the public header set in
