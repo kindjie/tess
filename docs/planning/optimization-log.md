@@ -17,6 +17,37 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## Streaming To Certification Costs 3.5x The Rounds And Buys The Optimum
+
+- Date: 2026-07-30
+- Outcome: accepted (recorded as a scenario contract, not a code change)
+- Evidence: `tests/tess_sparse_stream_test.cc` (S3 scenario), 256x256
+  world in 32x32 chunks, 12 deterministic requests.
+
+A sparse search returns `Found` as soon as it pops the goal, even when
+it skipped non-resident chunks along the way. A stream-and-retry loop
+that stops at the first definitive answer therefore reports an **upper
+bound** on the cost, not the optimum — measured at 2 of 12 requests
+even with a budget large enough to hold the entire world.
+
+Streaming past the first answer until full residency can be certified
+closes the gap: all 12 requests then match the dense reference exactly.
+The price is streaming rounds — 28 versus 8 for the same twelve
+requests, about 3.5x.
+
+Consequences recorded in the scenario harness rather than the library:
+
+- A latency-sensitive consumer that stops early must treat the cost as
+  an upper bound; it is never below the true optimum, so it is safe for
+  admission decisions but not for cost comparisons between routes.
+- Certification requires the budget to hold what the search needs. At a
+  quarter budget nothing certifies, and at 5% (three chunks) only one
+  of twelve requests reaches any definitive answer at all — the loop
+  stops cleanly rather than thrashing.
+- Keeping the best answer seen across the sweep matters: a later
+  resident set can support only a worse route, so a loop that reports
+  the latest rather than the best would regress its own bound.
+
 ## 2026-07-30 - Full-Suite Paired Confirmation Rejected On Tail Validity
 
 - Area: the design of section 4.2's on-demand confirmation

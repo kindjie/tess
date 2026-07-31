@@ -104,7 +104,7 @@ target_link_libraries(
   tess_sparse_stream_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_sparse_stream_test)
 
-tess_discover_tests(tess_sparse_stream_test LABELS core path storage topology)
+tess_discover_tests(tess_sparse_stream_test LABELS core diagnostics path storage topology)
 
 if(TESS_ENABLE_GRID_BENCHMARK_DATA)
   set(_tess_grid_manifest

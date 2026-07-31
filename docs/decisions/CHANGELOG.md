@@ -27,7 +27,12 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   change it, and only then does the result equal the dense optimum,
   which the tests assert exactly. Where the budget cannot hold what
   the search needs, certification is impossible and the tests assert
-  the bound and the soundness directions instead. Two further library facts shaped the harness: every search
+  the bound and the soundness directions instead. The harness exposes
+  both strategies, because the difference is the finding: stopping at
+  the first answer costs 8 streaming rounds and leaves two of twelve
+  routes longer than optimal, while streaming to certification costs
+  28 rounds and matches the dense optimum everywhere. Recorded in the
+  optimization log. Two further library facts shaped the harness: every search
   entry point defaults to `MissingChunkPolicy::TreatAsBlocked`, which
   would answer `NoPath` instead of asking for more chunks, and
   `ensure_resident` hands back a zeroed page, so a streamed chunk —

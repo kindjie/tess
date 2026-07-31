@@ -85,6 +85,11 @@ void expect_streaming_is_sound(const sparse::StreamRun& run) {
       EXPECT_GE(outcome.cost, run.dense_cost[i])
           << "streamed cost is below the true optimum";
     } else if (outcome.status == tess::PathStatus::NoPath) {
+      // Note: the room-and-corridor terrain is one connected
+      // component and endpoints are chosen passable, so the dense
+      // reference is always Found and this branch does not currently
+      // fire. It is kept as a guard rather than as coverage; an
+      // enclosed-region fixture would be needed to exercise it.
       EXPECT_NE(run.dense_status[i], tess::PathStatus::Found)
           << "reported NoPath where the dense world finds a route";
     } else {
@@ -124,20 +129,26 @@ TEST(TessSparseStream, ResidencyStaysWithinBudget) {
   }
 }
 
-TEST(TessSparseStream, BoundedAnswersAreWitnessedNotVacuous) {
-  const auto run = Stream(config_at(0.25)).run();
+TEST(TessSparseStream, StoppingAtTheFirstAnswerYieldsAnUpperBound) {
+  auto config = config_at(1.0);
+  config.stop_at_first_definitive = true;
 
-  // The upper bound must actually be exercised: at least one
-  // definitive answer under a partial budget costs strictly more than
-  // the dense optimum. Without this, the >= assertions above would
-  // pass even if streaming always happened to find the optimum, and
-  // the documented finding would be unevidenced.
+  const auto run = Stream(config).run();
+
+  // The finding, witnessed rather than asserted in the abstract: even
+  // with a budget large enough to hold the whole world, a loop that
+  // stops at the first definitive answer reports strictly longer
+  // routes than the optimum, because the search returns on reaching
+  // the goal while non-resident chunks were still skipped. Streaming
+  // on to certification (the test above) removes exactly this gap.
   std::size_t strictly_above = 0;
   for (std::size_t i = 0; i < run.outcomes.size(); ++i) {
+    SCOPED_TRACE(i);
     const auto& outcome = run.outcomes[i];
-    if (outcome.definitive && !outcome.optimal_certified &&
-        outcome.status == tess::PathStatus::Found &&
-        outcome.cost > run.dense_cost[i]) {
+    ASSERT_TRUE(outcome.definitive);
+    EXPECT_FALSE(outcome.optimal_certified);
+    EXPECT_GE(outcome.cost, run.dense_cost[i]);
+    if (outcome.cost > run.dense_cost[i]) {
       ++strictly_above;
     }
   }
@@ -166,14 +177,25 @@ TEST(TessSparseStream, StreamingGolden) {
 
   EXPECT_EQ(full.capacity_chunks, 64u);
   EXPECT_EQ(counts(full), std::make_pair(std::size_t{12}, std::size_t{12}));
+  EXPECT_EQ(full.total_stream_steps, 28u);
 
   EXPECT_EQ(quarter.capacity_chunks, 16u);
-  EXPECT_EQ(counts(quarter), std::make_pair(std::size_t{11}, std::size_t{0}));
+  EXPECT_EQ(counts(quarter), std::make_pair(std::size_t{9}, std::size_t{0}));
+  EXPECT_EQ(quarter.total_stream_steps, 204u);
 
   // Three resident chunks cannot hold a corridor, so almost nothing
   // reaches a definitive answer: the loop stops cleanly instead.
   EXPECT_EQ(tight.capacity_chunks, 3u);
   EXPECT_EQ(counts(tight), std::make_pair(std::size_t{1}, std::size_t{0}));
+  EXPECT_EQ(tight.total_stream_steps, 264u);
+
+  // The cost of certainty: stopping at the first answer is far
+  // cheaper in streaming rounds and never certifies.
+  auto fast = config_at(1.0);
+  fast.stop_at_first_definitive = true;
+  const auto fast_run = Stream(fast).run();
+  EXPECT_EQ(counts(fast_run), std::make_pair(std::size_t{12}, std::size_t{0}));
+  EXPECT_EQ(fast_run.total_stream_steps, 8u);
 }
 
 TEST(TessSparseStream, ResidencyFlowIdentitiesHold) {

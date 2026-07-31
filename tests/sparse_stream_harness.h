@@ -56,6 +56,13 @@ struct StreamConfig {
   // the dense one; the on-demand loop legitimately stops at the first
   // definitive answer and so only bounds the cost from above.
   bool stream_all_before_search = false;
+  // Stops at the first definitive answer instead of streaming on to
+  // certify optimality. This is the strategy a latency-sensitive
+  // consumer would use, and the reason the distinction matters: the
+  // search returns Found on reaching the goal even when it skipped
+  // non-resident chunks, so stopping there yields an upper bound on
+  // the cost rather than the optimum.
+  bool stop_at_first_definitive = false;
 };
 
 struct StreamOutcome {
@@ -304,14 +311,25 @@ auto SparseStream<Shape>::run() -> StreamRun {
       const auto answer = tess::astar_path<SparseWorld, PassableTag>(
           *sparse, request, scratch, tess::MissingChunkPolicy::Indeterminate);
       if (answer.status != tess::PathStatus::Indeterminate) {
-        // A definitive answer bounds the cost from above, but the
+        // A definitive answer bounds the cost from above, because the
         // search stops on reaching the goal even when it skipped
         // non-resident chunks. Section 3.1 asks for convergence, so
-        // keep streaming: the answer is only certified optimal once
-        // nothing further can be made resident for this request.
-        outcome.status = answer.status;
-        outcome.cost = answer.cost;
+        // keep streaming — but keep the BEST answer seen rather than
+        // the latest: under a partial budget a later resident set can
+        // support only a worse route, and discarding a tighter bound
+        // already in hand would be a regression, not progress.
+        const auto improves = !outcome.definitive ||
+                              (answer.status == tess::PathStatus::Found &&
+                               (outcome.status != tess::PathStatus::Found ||
+                                answer.cost < outcome.cost));
+        if (improves) {
+          outcome.status = answer.status;
+          outcome.cost = answer.cost;
+        }
         outcome.definitive = true;
+        if (config_.stop_at_first_definitive) {
+          break;
+        }
       }
       ++outcome.stream_steps;
 
@@ -341,14 +359,23 @@ auto SparseStream<Shape>::run() -> StreamRun {
                   return left.second.value < right.second.value;
                 });
 
+      // Take only candidates never offered for this request, and never
+      // more in one round than the budget can hold: examining the
+      // greedy prefix alone would stop the loop while untried chunks
+      // remained, because eviction keeps returning already-streamed
+      // chunks to the candidate list, and an oversized batch would
+      // evict its own head before the retry.
+      const auto batch = std::min(config_.stream_batch, sparse->capacity());
       std::size_t fresh = 0;
-      for (std::size_t taken = 0;
-           taken < config_.stream_batch && taken < candidates.size(); ++taken) {
-        const auto key = candidates[taken].second;
-        if (note_streamed(key)) {
-          ++fresh;
+      for (const auto& candidate : candidates) {
+        if (fresh == batch) {
+          break;
         }
-        stream_chunk(key);
+        if (!note_streamed(candidate.second)) {
+          continue;
+        }
+        ++fresh;
+        stream_chunk(candidate.second);
         ++outcome.chunks_streamed;
       }
       if (fresh == 0) {
@@ -359,8 +386,14 @@ auto SparseStream<Shape>::run() -> StreamRun {
         const auto settled = tess::astar_path<SparseWorld, PassableTag>(
             *sparse, request, scratch, tess::MissingChunkPolicy::Indeterminate);
         if (settled.status != tess::PathStatus::Indeterminate) {
-          outcome.status = settled.status;
-          outcome.cost = settled.cost;
+          const auto improves = !outcome.definitive ||
+                                (settled.status == tess::PathStatus::Found &&
+                                 (outcome.status != tess::PathStatus::Found ||
+                                  settled.cost < outcome.cost));
+          if (improves) {
+            outcome.status = settled.status;
+            outcome.cost = settled.cost;
+          }
           outcome.definitive = true;
           // Certified optimal only when the final search could see
           // the whole world at once. Offering every chunk is not
