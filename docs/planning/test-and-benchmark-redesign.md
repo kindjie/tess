@@ -965,8 +965,13 @@ that introduces this document.
    staleness policies all differ) and the deferred dirty accumulator.
    Two invariants were caught by the harness itself rather than by
    review, each shrunk to a two-to-four operation sequence with a
-   replay command that reproduced. Remaining: the weekly long-seed
-   tier and parser fuzzing.*
+   replay command that reproduced. Slice c closed the phase: the
+   weekly `Long-Seed Property Sweeps` job (400 seeds x 192 steps,
+   with a malformed or zero budget treated as an error so a weekly run
+   cannot report a long-seed pass it never performed), and seeded
+   parser fuzzing that found two real robustness defects in
+   `paired_bench` on its first run — a truncated benchmark payload
+   escaped as a raw traceback naming no file.*
 8. First controlled-hardware campaign (development machine, handheld
    target, cloud bare metal): scaling, latency, world-size; publish and
    record in the optimization log.
