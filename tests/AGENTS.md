@@ -1091,6 +1091,18 @@
   exit on findings, and the shipped catalog's coherence with the
   static universe (manifests plus lab literals; the compiled
   registration union is checked in the bench CI job).
+- `tests/test_packaging_recipes.py`: pytest coverage for the Conan 2
+  recipe (`conanfile.py`) and the vcpkg overlay port (`ports/tess/`).
+  A version or option set restated in three places drifts silently and
+  surfaces as a broken package for a consumer rather than a red build,
+  so these pin every restatement against the single source of truth:
+  the port version equals `cmake/tess-version.cmake`, the Conan recipe
+  derives the version rather than hardcoding it, both configure the
+  same consumer option set, the port declares the header-only layout
+  vcpkg's post-build checks require, and the packaging document no
+  longer claims no recipe exists. Neither tool is installed in CI, so
+  these check recipe content and correspondence, not a completed
+  package build.
 - `tests/test_coverage_gaps.py`: pytest coverage for the benchmark
   coverage gap-finder (`tools/coverage_gaps.py`). It pins the
   declared-public-header inventory (parsed from

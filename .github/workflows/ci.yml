@@ -252,6 +252,7 @@ jobs:
           tests/test_benchmark_changepoint.py
           tests/test_coverage_gaps.py
           tests/test_workload_matrix.py
+          tests/test_packaging_recipes.py
           tests/test_benchmark_tools.py
           tests/test_branding_assets.py
           tests/test_check_public_surface.py
