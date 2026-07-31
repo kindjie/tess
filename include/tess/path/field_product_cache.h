@@ -616,6 +616,84 @@ class FieldProductCache {
   std::uint64_t clock_ = 0;
 };
 
+namespace detail {
+
+template <typename World, typename Model>
+void capture_field_product_dependencies(const World& world,
+                                        std::span<const std::uint64_t> touched,
+                                        std::vector<std::uint8_t>& seen,
+                                        ChunkVersionDependencies& dependencies,
+                                        const Model& model) {
+  using Shape = typename World::shape_type;
+  using Traits = ShapeTraits<Shape>;
+
+  seen.assign(static_cast<std::size_t>(World::chunk_count), 0);
+  if constexpr (Model::preserves_default_connectivity &&
+                std::is_same_v<typename Model::step_policy,
+                               movement::DefaultSteps>) {
+    // Default orthogonal steps cross at most one chunk face. Expanding the
+    // reached chunk set by one face therefore captures every blocked frontier
+    // tile without re-enumerating transitions for every reached tile.
+    const auto reached_chunks = dependencies.size();
+    for (std::size_t i = 0; i < reached_chunks; ++i) {
+      seen[static_cast<std::size_t>(dependencies.chunks()[i].key.value)] = 1;
+    }
+    for (std::size_t i = 0; i < reached_chunks; ++i) {
+      const auto center = chunk_coord<Shape>(dependencies.chunks()[i].key);
+      const auto add = [&](ChunkCoord3 neighbor) {
+        const auto key = chunk_key<Shape>(neighbor);
+        auto& mark = seen[static_cast<std::size_t>(key.value)];
+        if (mark == 0) {
+          mark = 1;
+          dependencies.add_chunk_unique(world, key);
+        }
+      };
+      if (center.x > 0) {
+        add(ChunkCoord3{center.x - 1, center.y, center.z});
+      }
+      if (center.x + 1 < Traits::chunk_count_x) {
+        add(ChunkCoord3{center.x + 1, center.y, center.z});
+      }
+      if (center.y > 0) {
+        add(ChunkCoord3{center.x, center.y - 1, center.z});
+      }
+      if (center.y + 1 < Traits::chunk_count_y) {
+        add(ChunkCoord3{center.x, center.y + 1, center.z});
+      }
+      if (center.z > 0) {
+        add(ChunkCoord3{center.x, center.y, center.z - 1});
+      }
+      if (center.z + 1 < Traits::chunk_count_z) {
+        add(ChunkCoord3{center.x, center.y, center.z + 1});
+      }
+    }
+  } else {
+    // Diagonal clearance, hex seams, and provider edges require the exact
+    // transition-level dependency enumeration.
+    for (const auto dependency : dependencies.chunks()) {
+      seen[static_cast<std::size_t>(dependency.key.value)] = 1;
+    }
+    for (const auto index : touched) {
+      model.for_each_dependency_chunk(
+          world, tile_coord<Shape>(index), [&](ChunkKey key) {
+            auto& mark = seen[static_cast<std::size_t>(key.value)];
+            if (mark == 0) {
+              mark = 1;
+              dependencies.add_chunk_unique(world, key);
+            }
+          });
+    }
+  }
+  if constexpr (Model::has_special_transitions) {
+    // A provider may derive an edge from state outside the regular stencil.
+    // Without a generic provider index, whole-world capture is the only sound
+    // invalidation rule for persistent dense products.
+    dependencies.capture_all(world);
+  }
+}
+
+}  // namespace detail
+
 /// Builds a dense-world multi-goal field into caller-owned `product`.
 ///
 /// Invalid goals return `InvalidGoal`. Reusing reserved product and scratch
@@ -818,35 +896,10 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
     product.dependencies_.add_chunk(world, chunk_key<Shape>(key));
   }
   // The flood never touches a node inside a fully-blocked chunk, but an edit
-  // that opens one changes reachability, so it must invalidate the product.
-  // Every candidate transition and its clearance tiles are dependencies, so
-  // opening a blocked frontier or diagonal corner invalidates the product.
-  // The scratch seen-set keeps this pass linear (add_chunk's
-  // duplicate scan would make it quadratic in chunk count), and indexing
-  // re-reads chunks() each pass because appends may grow the vector.
-  {
-    auto& seen = scratch.chunk_seen_;
-    seen.assign(static_cast<std::size_t>(World::chunk_count), 0);
-    for (const auto dependency : product.dependencies_.chunks()) {
-      seen[static_cast<std::size_t>(dependency.key.value)] = 1;
-    }
-    for (const auto index : scratch.touched_) {
-      model.for_each_dependency_chunk(
-          world, detail::tile_coord<Shape>(index), [&](ChunkKey key) {
-            auto& mark = seen[static_cast<std::size_t>(key.value)];
-            if (mark == 0) {
-              mark = 1;
-              product.dependencies_.add_chunk_unique(world, key);
-            }
-          });
-    }
-  }
-  if constexpr (Model::has_special_transitions) {
-    // A provider may derive an edge from state outside the regular stencil.
-    // Without a generic provider index, whole-world capture is the only
-    // sound invalidation rule for persistent dense products.
-    product.dependencies_.capture_all(world);
-  }
+  // that opens one changes reachability, so capture the entire frontier too.
+  detail::capture_field_product_dependencies<World, Model>(
+      world, scratch.touched_, scratch.chunk_seen_, product.dependencies_,
+      model);
   product.status_ =
       cost_overflow ? PathStatus::CostOverflow : PathStatus::Found;
   product.expanded_nodes_ = expanded_nodes;
@@ -987,24 +1040,9 @@ auto build_weighted_distance_field_product(const World& world,
         world,
         chunk_key<Shape>(tile_key<Shape>(detail::tile_coord<Shape>(index))));
   }
-  auto& seen = scratch.chunk_seen_;
-  seen.assign(static_cast<std::size_t>(World::chunk_count), 0);
-  for (const auto dependency : product.dependencies_.chunks()) {
-    seen[static_cast<std::size_t>(dependency.key.value)] = 1;
-  }
-  for (const auto index : scratch.touched_) {
-    model.for_each_dependency_chunk(
-        world, detail::tile_coord<Shape>(index), [&](ChunkKey key) {
-          auto& mark = seen[static_cast<std::size_t>(key.value)];
-          if (mark == 0) {
-            mark = 1;
-            product.dependencies_.add_chunk_unique(world, key);
-          }
-        });
-  }
-  if constexpr (Model::has_special_transitions) {
-    product.dependencies_.capture_all(world);
-  }
+  detail::capture_field_product_dependencies<World, Model>(
+      world, scratch.touched_, scratch.chunk_seen_, product.dependencies_,
+      model);
   product.status_ =
       cost_overflow ? PathStatus::CostOverflow : PathStatus::Found;
   product.expanded_nodes_ = expanded_nodes;

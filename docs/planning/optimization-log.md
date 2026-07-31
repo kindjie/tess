@@ -17,10 +17,45 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-07-31 - Restore Chunk-Level Capture For Default Field Products
+
+- Area: unit and weighted distance-field product dependency capture.
+- Hypothesis: the v0.12 regression came from replacing the default orthogonal
+  builder's reached-chunk frontier expansion with exact transition enumeration
+  for every reached tile, even though axis steps cross at most one chunk face.
+- Evidence: the exact `c300560`/current local diagnostic-binary A/B reproduced
+  a 42-51% regression on Apple Silicon while expanded and reached counts stayed
+  fixed at 4,096. A 2 kHz Samply profile attributed 8,799 of 33,043 leaf
+  samples (26.6%) directly to `for_each_dependency_chunk`. Restoring the
+  chunk-level path changed the five build/store medians as follows (10
+  repetitions, 0.2 s minimum, CPU time):
+
+| Benchmark | Base | Regressed | Fixed |
+| --- | ---: | ---: | ---: |
+| `fields/goalset_build_1` | 80,356 ns | 121,461 ns | 82,198 ns |
+| `fields/goalset_build_16` | 94,896 ns | 136,305 ns | 96,805 ns |
+| `fields/goalset_build_256` | 94,745 ns | 134,643 ns | 94,406 ns |
+| `fields/cache_miss_store` | 95,509 ns | 136,633 ns | 95,056 ns |
+| `fields/cache_eviction` | 94,140 ns | 135,961 ns | 94,324 ns |
+
+The formal alternating paired confirmation against `c300560` then passed all
+five suspects: fixed deltas ranged from +0.2% to +2.6%, with every 99%
+confidence interval below the 8% effect floor.
+
+- Decision: accepted locally. Default orthogonal adjacency now expands the
+  reached chunk set by one face, reducing dependency capture from
+  O(reached tiles x transitions) to O(reached chunks x faces). Diagonal, hex,
+  and custom-provider models retain exact per-transition capture. The same
+  helper covers unit and weighted products, and a weighted blocked-frontier
+  test pins the exact reached-plus-face-neighbor invalidation contract.
+- Follow-up conditions: confirm on the hosted Clang 18 runner, where the
+  original slowdown amplified to 2.3x-2.8x. Do not recalibrate the elevated
+  v0.12 ceilings before that confirmation.
+
 ## The v0.12 Fields Regression Is Confirmed: 2.3x To 2.8x, Not Noise
 
 - Date: 2026-07-31
-- Outcome: **confirmed regression, awaiting an intent decision**
+- Outcome: **confirmed regression; root cause and local remediation above**
 - Evidence: hosted paired confirmation, CI run 30599407227, base
   `c300560` versus head `61f8044` (the v0.12 merge), diagnostics
   binary, Bonferroni-adjusted to the seven-name suspect list.
@@ -53,17 +88,11 @@ suspect — rather than an algorithmic change that would scale with goal
 count. Note that `goalset_build_1` and `goalset_build_256` now cost
 almost the same, which is what a per-build constant looks like.
 
-**This needs a maintainer decision, not a fix from here.** If the v0.12
-rewrite bought correctness or a capability worth a fixed per-build
-cost, the ceilings should be recalibrated deliberately and this entry
-closed as accepted. If it did not, this is a live 2.3x-2.8x regression
-that has been shipping since v0.12. Either way the gate did not catch
-it: recalibration absorbed the step, which is the section 2.3 loophole
-the redesign exists to close.
-
-Next step if pursued: counters first per the profiling protocol, since
-a fixed per-build cost should show up as changed work rather than
-needing a profiler.
+The follow-up profile established that this was not an unavoidable cost of the
+new transition capability. Exact per-tile dependency enumeration had replaced
+the sufficient chunk-level frontier expansion even for default axis steps. The
+gate still did not catch the original step: recalibration absorbed it, which is
+the section 2.3 loophole the redesign exists to close.
 
 ## Streaming To Certification Costs 3.5x The Rounds And Buys The Optimum
 

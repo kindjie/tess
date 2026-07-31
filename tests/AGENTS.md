@@ -153,8 +153,9 @@
   distance products, exact path and nearest-target replay, movement-class
   cache identity, live stateful-provider instances with equal revisions
   remaining distinct cache keys, provider-composed reverse transitions and
-  their exact costs in weighted and unit products, version invalidation,
-  degenerate vertical layout support, and warm allocation-free rebuilds.
+  their exact costs in weighted and unit products, exact reached-chunk plus
+  blocked-frontier dependency invalidation, degenerate vertical layout support,
+  and warm allocation-free rebuilds.
 - `tess_area_index_test`: verifies caller-keyed grouping of region-graph
   regions into area summaries, deterministic area identities and adjacency,
   coordinate lookup, zero-key region omission with incident portals skipped,
