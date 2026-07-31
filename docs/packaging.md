@@ -71,8 +71,27 @@ the narrowest public header that owns the API.
 
 ## Package-manager status
 
-No tess recipe has been accepted into vcpkg or Conan Center yet. Until one is,
-the installed-package and `FetchContent` paths above are the supported paths.
-An in-repository vcpkg overlay or Conan recipe may be used to prove packaging
-before proposing it to a central registry, but central submissions should
+No tess recipe has been accepted into vcpkg or Conan Center yet, so the
+installed-package and `FetchContent` paths above remain the supported ones.
+
+The repository does carry both recipes, so the packaging shape can be proven
+before anything is proposed to a central registry:
+
+- `conanfile.py` — a Conan 2 recipe. tess is declared a `header-library`
+  whose package id clears settings, so one package serves every compiler and
+  build type.
+- `ports/tess/` — a vcpkg overlay port. Use it with
+  `--overlay-ports=ports` from a checkout.
+
+Both configure the same option set as the `consumer` preset — no tests,
+examples, benchmarks, docs, or optional adapters — so what they install is the
+surface `find_package(tess)` installs rather than a second definition free to
+drift. `tests/test_packaging_recipes.py` pins that correspondence, including
+the version, which lives only in `cmake/tess-version.cmake`.
+
+Two honest limitations. The overlay port's `SHA512` is a placeholder: it is
+filled in when a release is tagged, because vcpkg hashes a published archive
+rather than a working tree. And neither recipe is exercised end to end in CI,
+since neither tool is installed there — the tests check the recipes' contents
+and correspondence, not a completed package build. Central submissions should
 follow a public, stable release rather than an unreleased commit.

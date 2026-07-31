@@ -467,6 +467,22 @@ is adopted yet.
 [work-contract-commit]: https://github.com/buildingcpp/work_contract/commit/3f56a17e36db57846a086e20d8788478287f3c86
 [signal-tree-commit]: https://github.com/buildingcpp/signal_tree/commit/f7b59510e117bc6156af86a6b8689ca4a3832e3c
 
+## vcpkg port helpers
+
+`ports/tess/vcpkg.json` declares host dependencies on `vcpkg-cmake` and
+`vcpkg-cmake-config`. Both are vcpkg's own port-authoring helpers, not
+runtime or link dependencies of tess:
+
+- `vcpkg-cmake` provides `vcpkg_cmake_configure` and `vcpkg_cmake_install`,
+  which the portfile uses instead of hand-rolled CMake invocations.
+- `vcpkg-cmake-config` provides `vcpkg_cmake_config_fixup`, which relocates
+  the installed CMake package files into vcpkg's expected layout.
+
+They are resolved by vcpkg itself when the overlay port is built, are never
+fetched by this repository's own build, and reach no consumer of
+`tess::tess`. A consumer installing tess through CMake or FetchContent never
+sees them.
+
 ## Documentation assets (vendored)
 
 - `doxygen-awesome-css` `v2.4.2` — MIT-licensed stylesheet set for the
