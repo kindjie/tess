@@ -957,12 +957,24 @@
   `mark_dirty` at four, and all nine kinds appeared together in exactly
   one test, once.
 
-  The headline property is that **planning is independent of the
-  operation kind**: the planner never reads `op.kind` and the report
-  does not carry it, so rewriting every operation's kind must not
-  change a single outcome. The model asserts this by copying the
+  The headline property is that **planning decisions and diagnostics
+  ignore the operation kind**: the planner never reads `op.kind` and
+  the report does not carry it, so rewriting every operation's kind
+  must not change any outcome. The model asserts this by copying the
   queued operations, rewriting only that field, replanning, and
-  comparing. Mutation-verified.
+  comparing every report field except the source location plus every
+  planned-operation field except the kind — which IS deliberately
+  preserved, and is asserted to be. Comparing only report rows would
+  miss a planner that used the kind to alter what an accepted operation
+  carries into execution. Mutation-verified.
+
+  It rewrites to `MarkDirty` as well as `BuildFieldProduct` for a
+  specific reason: `FrameOps::mark_dirty` synthesizes its own metadata
+  (read-only, mask copied into `dirty_mask` and invalidations), so the
+  generated policy and read/write masks are discarded for that kind.
+  The alphabet's kind x policy x access product is therefore not real
+  for `MarkDirty`, and the rewrite is the only route by which the
+  planner ever sees one carrying arbitrary metadata.
 
   Three claims here are deliberately narrower than they look, because
   the wider version is false. Phases partition the plan contiguously

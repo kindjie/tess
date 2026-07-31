@@ -268,8 +268,13 @@ class QueuedPlanModel {
             tess::ResidencyDesc::from(payload(), std::move(metadata)));
         break;
       case tess::OperationKind::MarkDirty:
-        // mark_dirty synthesizes its own metadata from the mask, so it
-        // cannot carry an arbitrary access descriptor.
+        // mark_dirty synthesizes its own metadata: read-only, with the
+        // mask copied into dirty_mask and invalidations. The generated
+        // policy and read/write masks are therefore DISCARDED for this
+        // kind, so the alphabet's kind x policy x access product is not
+        // real here. check_kind_independence() compensates by planning
+        // a copy with every kind rewritten to MarkDirty, which is the
+        // only way MarkDirty meets arbitrary metadata.
         (void)ops_.mark_dirty(
             tess::MarkDirtyDesc{std::move(domain), access.dirty_mask});
         break;
@@ -380,10 +385,24 @@ class QueuedPlanModel {
   // before.
   [[nodiscard]] auto check_kind_independence() const
       -> std::optional<property::Violation> {
+    if (auto drift = compare_rewritten(tess::OperationKind::BuildFieldProduct);
+        drift.has_value()) {
+      return drift;
+    }
+    // MarkDirty specifically: the typed enqueue path collapses its
+    // metadata, so this is the only route by which the planner sees a
+    // MarkDirty operation carrying an arbitrary policy and read/write
+    // masks. Without it, a kind-dependent bug in that corner would go
+    // unnoticed however many MarkDirty operations the sweep enqueued.
+    return compare_rewritten(tess::OperationKind::MarkDirty);
+  }
+
+  [[nodiscard]] auto compare_rewritten(tess::OperationKind kind) const
+      -> std::optional<property::Violation> {
     auto rewritten = std::vector<tess::QueuedOperation>(
         ops_.operations().begin(), ops_.operations().end());
     for (auto& op : rewritten) {
-      op.kind = tess::OperationKind::BuildFieldProduct;
+      op.kind = kind;
     }
     tess::ExecutionReport mirror;
     (void)tess::plan_operations(world_, rewritten, mirror);
@@ -441,12 +460,39 @@ class QueuedPlanModel {
                            rhs[c].value, lhs[c].value);
         }
       }
-      if (mirror.plan().operations()[i].kind !=
-          tess::OperationKind::BuildFieldProduct) {
+      // Every planned field except the kind must survive the rewrite.
+      // Comparing only the report row would miss a planner that used
+      // the kind to alter what an accepted operation carries into
+      // execution while leaving its row identical.
+      const auto& lhs_op = report_.plan().operations()[i];
+      const auto& rhs_op = mirror.plan().operations()[i];
+      const bool same_planned =
+          lhs_op.handle.value == rhs_op.handle.value &&
+          lhs_op.id.value == rhs_op.id.value &&
+          lhs_op.access.write_policy == rhs_op.access.write_policy &&
+          lhs_op.access.domain_kind == rhs_op.access.domain_kind &&
+          lhs_op.access.domain_mask == rhs_op.access.domain_mask &&
+          lhs_op.field_access == rhs_op.field_access &&
+          lhs_op.write_policy == rhs_op.write_policy &&
+          lhs_op.priority == rhs_op.priority &&
+          lhs_op.budget_policy == rhs_op.budget_policy &&
+          lhs_op.payload.data == rhs_op.payload.data &&
+          lhs_op.payload.count == rhs_op.payload.count &&
+          lhs_op.payload.item_size == rhs_op.payload.item_size &&
+          lhs_op.payload.type_identity == rhs_op.payload.type_identity &&
+          lhs_op.backend == rhs_op.backend &&
+          lhs_op.exactness == rhs_op.exactness;
+      if (!same_planned) {
         return violation(
-            "an accepted operation keeps the kind it was given",
-            static_cast<std::uint64_t>(mirror.plan().operations()[i].kind),
-            static_cast<std::uint64_t>(tess::OperationKind::BuildFieldProduct));
+            "an accepted operation carries the same payload and metadata "
+            "whatever its kind",
+            static_cast<std::uint64_t>(lhs_op.write_policy),
+            static_cast<std::uint64_t>(rhs_op.write_policy));
+      }
+      if (rhs_op.kind != kind) {
+        return violation("an accepted operation keeps the kind it was given",
+                         static_cast<std::uint64_t>(rhs_op.kind),
+                         static_cast<std::uint64_t>(kind));
       }
     }
     if (mirror.planned_count() != report_.planned_count()) {
