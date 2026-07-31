@@ -17,16 +17,17 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   streaming soundness at 25% and 5% budgets, the budget ceiling, the
   measured cost of a tight budget, section 3.3's flow identities over
   residency admission and eviction, and determinism.
-- Reason: redesign section 3.1's S3 bullet. Convergence was measured
-  rather than assumed, and the measurement is the finding: **a
-  streamed cost is an upper bound, not the optimum.** The search
+- Reason: redesign section 3.1's S3 bullet. The finding that shaped
+  it: **a definitive answer is not a converged one.** The search
   returns `Found` on reaching the goal even when it skipped
-  non-resident chunks, so an on-demand loop that stops at the first
-  definitive answer can report a longer route than the dense world's.
-  A fully resident sparse world does match dense exactly, so this is a
-  property of stopping early, not of sparse storage. The tests
-  therefore assert the bound and the soundness directions rather than
-  equality. Two further library facts shaped the harness: every search
+  non-resident chunks, so a loop that stops at the first definitive
+  answer reports an upper bound, not the optimum — witnessed at a
+  quarter budget. Convergence therefore has to be certified: the loop
+  keeps streaming past the first answer until nothing further could
+  change it, and only then does the result equal the dense optimum,
+  which the tests assert exactly. Where the budget cannot hold what
+  the search needs, certification is impossible and the tests assert
+  the bound and the soundness directions instead. Two further library facts shaped the harness: every search
   entry point defaults to `MissingChunkPolicy::TreatAsBlocked`, which
   would answer `NoPath` instead of asking for more chunks, and
   `ensure_resident` hands back a zeroed page, so a streamed chunk —

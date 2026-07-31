@@ -918,16 +918,21 @@
   (`tests/sparse_stream_harness.h`) searching the S1 terrain in a
   `SparseResidentWorld` under budget fractions of the world's chunks,
   streaming chunks in and retrying on `PathStatus::Indeterminate`
-  against a dense reference. Pins fully-resident equivalence (sparse
-  storage does not change an answer), streaming soundness at 25% and
-  5% budgets (a streamed cost is an upper bound on the optimum, never
-  below it; never a path the dense world denies; never a NoPath
-  contradicting it; a loop that gives up reports Indeterminate rather
-  than a definitive status), the budget ceiling at every step, the
-  measured cost of a tight budget (more streaming rounds, fewer
-  convergences), section 3.3's admission and retention identities over
-  residency admission, coalesced hits and LRU displacement, and
-  determinism. About 0.7 s in Debug and 3 s under ASan.
+  against a dense reference. Pins fully-resident equivalence, and
+  stream-and-retry convergence: the loop streams past the first
+  definitive answer until nothing further could change it, and a
+  certified answer must equal the dense optimum exactly. Where the
+  budget cannot certify, it pins soundness instead (an uncertified
+  cost is an upper bound, never below the optimum; never a path the
+  dense world denies; never a NoPath contradicting it; a loop that
+  gives up reports Indeterminate; any other definitive status fails),
+  with a witness test proving the bound is exercised rather than
+  vacuous. Also the budget ceiling at every step, a streaming golden
+  across three budget fractions (the relationship is not monotone, so
+  the counts are pinned rather than compared), section 3.3's identities
+  over residency admission, coalesced hits and eviction checked against
+  the world's own resident count, and determinism. About 1.3 s in Debug
+  and 3 s under ASan.
 - `tess_colony_harness_test`: the S2 colony macro-harness
   (`tests/colony_harness.h`) driving 100 agents with goals through the
   production stack — schedule loop, auto-exec queued ops with a result

@@ -65,10 +65,16 @@ struct StreamOutcome {
   std::uint64_t cost = 0;
   std::size_t stream_steps = 0;
   std::size_t chunks_streamed = 0;
-  // False when the loop stopped without a definitive answer: either it
-  // hit the step cap or a round streamed nothing new, which is what
-  // eviction thrash looks like from the outside.
-  bool converged = false;
+  // A definitive (non-Indeterminate) answer was reached. On its own
+  // this only bounds the cost from above: the search returns Found on
+  // reaching the goal even when it skipped non-resident chunks.
+  bool definitive = false;
+  // The stronger property section 3.1 asks for: streaming continued
+  // past the first definitive answer until nothing further could be
+  // made resident for this request, so the answer is the dense
+  // optimum rather than an upper bound. Only reachable when the
+  // budget can hold what the search needs.
+  bool optimal_certified = false;
 };
 
 struct StreamRun {
@@ -79,6 +85,9 @@ struct StreamRun {
   std::size_t capacity_chunks = 0;
   std::size_t peak_resident = 0;
   std::size_t total_stream_steps = 0;
+  // Residency at the end of the run, for comparing the harness's flow
+  // arithmetic against the world's own state.
+  std::size_t final_resident = 0;
   bool stayed_within_budget = true;
   // Residency admissions and departures, attributed by this harness:
   // the sparse world has no flow-accounting hooks of its own.
@@ -171,8 +180,8 @@ auto SparseStream<Shape>::run() -> StreamRun {
     }
   }
 
-  // Dense answers first: the reference every converged sparse answer
-  // must match.
+  // Dense answers first: the reference a certified-optimal sparse
+  // answer must match exactly.
   {
     tess::PathScratch scratch;
     for (const auto& request : requests) {
@@ -195,16 +204,9 @@ auto SparseStream<Shape>::run() -> StreamRun {
 
   // Chunk origins, so a streamed chunk can be filled without scanning
   // the whole world.
-  const auto chunk_origin = [&](tess::ChunkKey key) -> tess::Coord3 {
-    for (std::int64_t cy = 0; cy < kSizeY; cy += kChunkY) {
-      for (std::int64_t cx = 0; cx < kSizeX; cx += kChunkX) {
-        const auto origin = tess::Coord3{cx, cy, 0};
-        if (tess::chunk_key<Shape>(tess::chunk_coord<Shape>(origin)) == key) {
-          return origin;
-        }
-      }
-    }
-    return tess::Coord3{0, 0, 0};
+  const auto chunk_origin = [](tess::ChunkKey key) -> tess::Coord3 {
+    return tess::coord<Shape>(tess::chunk_coord<Shape>(key),
+                              tess::LocalTileId{0});
   };
 
   // Streams one chunk and fills it. A page arrives zeroed, so an
@@ -223,11 +225,14 @@ auto SparseStream<Shape>::run() -> StreamRun {
     if (already) {
       ++residency.counters.coalesced_into_pending;
     } else {
-      residency.record_admitted();
       if (sparse->resident_count() == before) {
+        // A replacement, not a growth: the displaced chunk leaves
+        // before the new one is counted, so the high-water mark never
+        // records a capacity+1 inventory that never existed.
         residency.record_left_outstanding();
         ++residency.counters.dropped_after_admission;
       }
+      residency.record_admitted();
     }
     const auto origin = chunk_origin(key);
     for (std::int64_t y = origin.y; y < origin.y + kChunkY; ++y) {
@@ -280,7 +285,9 @@ auto SparseStream<Shape>::run() -> StreamRun {
           tess::MissingChunkPolicy::Indeterminate);
       outcome.status = answer.status;
       outcome.cost = answer.cost;
-      outcome.converged = answer.status != tess::PathStatus::Indeterminate;
+      outcome.definitive = answer.status != tess::PathStatus::Indeterminate;
+      // Everything is resident, so this is the dense optimum.
+      outcome.optimal_certified = outcome.definitive;
       result.outcomes.push_back(outcome);
       continue;
     }
@@ -297,10 +304,14 @@ auto SparseStream<Shape>::run() -> StreamRun {
       const auto answer = tess::astar_path<SparseWorld, PassableTag>(
           *sparse, request, scratch, tess::MissingChunkPolicy::Indeterminate);
       if (answer.status != tess::PathStatus::Indeterminate) {
+        // A definitive answer bounds the cost from above, but the
+        // search stops on reaching the goal even when it skipped
+        // non-resident chunks. Section 3.1 asks for convergence, so
+        // keep streaming: the answer is only certified optimal once
+        // nothing further can be made resident for this request.
         outcome.status = answer.status;
         outcome.cost = answer.cost;
-        outcome.converged = true;
-        break;
+        outcome.definitive = true;
       }
       ++outcome.stream_steps;
 
@@ -341,10 +352,24 @@ auto SparseStream<Shape>::run() -> StreamRun {
         ++outcome.chunks_streamed;
       }
       if (fresh == 0) {
-        // Nothing new became resident: either everything is already
-        // streamed for this request, or the budget is evicting chunks
-        // as fast as they arrive. Either way this request cannot make
-        // progress, so stop rather than spin.
+        // No candidate outside the streamed set remains: either every
+        // chunk has been offered for this request, or the budget is
+        // evicting them as fast as they arrive. Re-search once more so
+        // the recorded answer reflects the final resident set.
+        const auto settled = tess::astar_path<SparseWorld, PassableTag>(
+            *sparse, request, scratch, tess::MissingChunkPolicy::Indeterminate);
+        if (settled.status != tess::PathStatus::Indeterminate) {
+          outcome.status = settled.status;
+          outcome.cost = settled.cost;
+          outcome.definitive = true;
+          // Certified optimal only when the final search could see
+          // the whole world at once. Offering every chunk is not
+          // enough under a tight budget: eviction means the search
+          // still saw a subgraph, so its answer stays a bound.
+          outcome.optimal_certified =
+              sparse->resident_count() ==
+              static_cast<std::size_t>(SparseWorld::chunk_count);
+        }
         break;
       }
     }
@@ -353,6 +378,7 @@ auto SparseStream<Shape>::run() -> StreamRun {
     result.outcomes.push_back(outcome);
   }
 
+  result.final_resident = sparse->resident_count();
   result.residency_flow = residency.counters;
   return result;
 }

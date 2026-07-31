@@ -2,6 +2,7 @@
 #include <tess/tess.h>
 
 #include <cstdint>
+#include <utility>
 
 #include "sparse_stream_harness.h"
 
@@ -35,7 +36,24 @@ TEST(TessSparseStream, FullyResidentSparseWorldMatchesDense) {
   ASSERT_EQ(run.outcomes.size(), run.dense_status.size());
   for (std::size_t i = 0; i < run.outcomes.size(); ++i) {
     SCOPED_TRACE(i);
-    EXPECT_TRUE(run.outcomes[i].converged);
+    EXPECT_TRUE(run.outcomes[i].optimal_certified);
+    EXPECT_EQ(run.outcomes[i].status, run.dense_status[i]);
+    EXPECT_EQ(run.outcomes[i].cost, run.dense_cost[i]);
+  }
+}
+
+TEST(TessSparseStream, StreamAndRetryConvergesToTheDenseOptimum) {
+  // Section 3.1's contract: stream and retry to convergence, and the
+  // converged result equals the dense reference. Convergence needs a
+  // budget that can hold what the search needs; the loop keeps
+  // streaming past the first definitive answer until it can certify
+  // that nothing further could change it.
+  const auto run = Stream(config_at(1.0)).run();
+
+  ASSERT_EQ(run.outcomes.size(), run.dense_status.size());
+  for (std::size_t i = 0; i < run.outcomes.size(); ++i) {
+    SCOPED_TRACE(i);
+    ASSERT_TRUE(run.outcomes[i].optimal_certified);
     EXPECT_EQ(run.outcomes[i].status, run.dense_status[i]);
     EXPECT_EQ(run.outcomes[i].cost, run.dense_cost[i]);
   }
@@ -51,13 +69,17 @@ void expect_streaming_is_sound(const sparse::StreamRun& run) {
   for (std::size_t i = 0; i < run.outcomes.size(); ++i) {
     SCOPED_TRACE(i);
     const auto& outcome = run.outcomes[i];
-    if (!outcome.converged) {
+    if (!outcome.definitive) {
       // A loop that gave up must say so rather than report a
       // definitive status.
       EXPECT_EQ(outcome.status, tess::PathStatus::Indeterminate);
       continue;
     }
-    if (outcome.status == tess::PathStatus::Found) {
+    if (outcome.optimal_certified) {
+      // Certified answers are the optimum, not a bound.
+      EXPECT_EQ(outcome.status, run.dense_status[i]);
+      EXPECT_EQ(outcome.cost, run.dense_cost[i]);
+    } else if (outcome.status == tess::PathStatus::Found) {
       EXPECT_EQ(run.dense_status[i], tess::PathStatus::Found)
           << "streamed a path the dense world says does not exist";
       EXPECT_GE(outcome.cost, run.dense_cost[i])
@@ -65,6 +87,11 @@ void expect_streaming_is_sound(const sparse::StreamRun& run) {
     } else if (outcome.status == tess::PathStatus::NoPath) {
       EXPECT_NE(run.dense_status[i], tess::PathStatus::Found)
           << "reported NoPath where the dense world finds a route";
+    } else {
+      // Endpoints are chosen passable and in bounds, so nothing else
+      // is a legitimate definitive status here.
+      ADD_FAILURE() << "unexpected definitive status "
+                    << static_cast<int>(outcome.status);
     }
   }
 }
@@ -97,24 +124,56 @@ TEST(TessSparseStream, ResidencyStaysWithinBudget) {
   }
 }
 
-TEST(TessSparseStream, TighterBudgetsStreamHarderAndConvergeLess) {
+TEST(TessSparseStream, BoundedAnswersAreWitnessedNotVacuous) {
+  const auto run = Stream(config_at(0.25)).run();
+
+  // The upper bound must actually be exercised: at least one
+  // definitive answer under a partial budget costs strictly more than
+  // the dense optimum. Without this, the >= assertions above would
+  // pass even if streaming always happened to find the optimum, and
+  // the documented finding would be unevidenced.
+  std::size_t strictly_above = 0;
+  for (std::size_t i = 0; i < run.outcomes.size(); ++i) {
+    const auto& outcome = run.outcomes[i];
+    if (outcome.definitive && !outcome.optimal_certified &&
+        outcome.status == tess::PathStatus::Found &&
+        outcome.cost > run.dense_cost[i]) {
+      ++strictly_above;
+    }
+  }
+  EXPECT_GT(strictly_above, 0u)
+      << "no request demonstrated the upper-bound behaviour";
+}
+
+// Behavioural golden for the streaming axis. Budget fraction changes
+// outcomes in ways no invariant captures, and the relationship is not
+// monotone -- a mid budget can stream more rounds than a tight one
+// because more requests keep making progress -- so the numbers are
+// pinned rather than compared.
+TEST(TessSparseStream, StreamingGolden) {
+  const auto full = Stream(config_at(1.0)).run();
   const auto quarter = Stream(config_at(0.25)).run();
   const auto tight = Stream(config_at(0.05)).run();
 
-  const auto converged = [](const sparse::StreamRun& run) {
-    std::size_t count = 0;
+  const auto counts = [](const sparse::StreamRun& run) {
+    std::pair<std::size_t, std::size_t> result{0, 0};
     for (const auto& outcome : run.outcomes) {
-      count += outcome.converged ? 1u : 0u;
+      result.first += outcome.definitive ? 1u : 0u;
+      result.second += outcome.optimal_certified ? 1u : 0u;
     }
-    return count;
+    return result;
   };
 
-  EXPECT_LT(tight.capacity_chunks, quarter.capacity_chunks);
-  // The measured cost of a tight budget: more streaming rounds for
-  // fewer answers. Pinned so a change in eviction or search behaviour
-  // that quietly improves or degrades streaming shows up here.
-  EXPECT_GT(tight.total_stream_steps, quarter.total_stream_steps);
-  EXPECT_LT(converged(tight), converged(quarter));
+  EXPECT_EQ(full.capacity_chunks, 64u);
+  EXPECT_EQ(counts(full), std::make_pair(std::size_t{12}, std::size_t{12}));
+
+  EXPECT_EQ(quarter.capacity_chunks, 16u);
+  EXPECT_EQ(counts(quarter), std::make_pair(std::size_t{11}, std::size_t{0}));
+
+  // Three resident chunks cannot hold a corridor, so almost nothing
+  // reaches a definitive answer: the loop stops cleanly instead.
+  EXPECT_EQ(tight.capacity_chunks, 3u);
+  EXPECT_EQ(counts(tight), std::make_pair(std::size_t{1}, std::size_t{0}));
 }
 
 TEST(TessSparseStream, ResidencyFlowIdentitiesHold) {
@@ -133,9 +192,11 @@ TEST(TessSparseStream, ResidencyFlowIdentitiesHold) {
       << " terminal=" << run.residency_flow.terminal()
       << " outstanding=" << run.residency_flow.outstanding_current;
   EXPECT_GT(run.residency_flow.admitted, 0u);
-  // Outstanding is exactly what is resident, and a tight budget must
-  // have displaced something.
-  EXPECT_LE(run.residency_flow.outstanding_current, run.capacity_chunks);
+  // The accounting must describe the world, not just itself: the
+  // outstanding count is exactly what is resident, and the high-water
+  // mark never exceeds the budget.
+  EXPECT_EQ(run.residency_flow.outstanding_current, run.final_resident);
+  EXPECT_LE(run.residency_flow.outstanding_high_water, run.capacity_chunks);
   EXPECT_GT(run.residency_flow.dropped_after_admission, 0u);
 }
 
@@ -149,7 +210,9 @@ TEST(TessSparseStream, RunsAreDeterministic) {
     SCOPED_TRACE(i);
     EXPECT_EQ(first.outcomes[i].status, second.outcomes[i].status);
     EXPECT_EQ(first.outcomes[i].cost, second.outcomes[i].cost);
-    EXPECT_EQ(first.outcomes[i].converged, second.outcomes[i].converged);
+    EXPECT_EQ(first.outcomes[i].definitive, second.outcomes[i].definitive);
+    EXPECT_EQ(first.outcomes[i].optimal_certified,
+              second.outcomes[i].optimal_certified);
     EXPECT_EQ(first.outcomes[i].chunks_streamed,
               second.outcomes[i].chunks_streamed);
   }

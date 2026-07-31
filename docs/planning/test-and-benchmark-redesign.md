@@ -881,19 +881,19 @@ that introduces this document.
    scenario golden. S3 sparse streaming shipped 2026-07-30
    (tests/sparse_stream_harness.h, tess_sparse_stream_test): the same
    terrain searched under residency budget fractions, streaming
-   chunks in and retrying until the answer converges, against a dense
-   reference world. It measured rather than assumed convergence, and
-   the measurement is the finding: a fully resident sparse world
-   answers exactly like the dense one, but an on-demand streaming
-   loop stops at the first definitive answer, which the search may
-   return while non-resident chunks were skipped — so a streamed cost
-   is an UPPER BOUND on the true cost, not the optimum. The tests
-   assert that bound and the soundness directions (never a path where
-   none exists, never below the optimum, never a NoPath contradicting
-   the dense reference), the budget ceiling, the measured cost of a
-   tight budget, and section 3.3's flow identities applied to
-   residency admission and eviction. The scenario layer is complete;
-   the weekly soak and the larger axes stay open.* S1 stays on in-repo procedural data: the
+   chunks in and retrying to convergence, against a dense reference
+   world. Convergence is certified rather than assumed: a definitive
+   answer alone only bounds the cost from above, because the search
+   returns on reaching the goal even when it skipped non-resident
+   chunks, so the loop keeps streaming until nothing further could
+   change the answer. When the budget can hold what the search needs,
+   every certified answer equals the dense optimum exactly; when it
+   cannot, the answer stays a witnessed upper bound and the tests
+   assert the soundness directions instead. Also pinned: the budget
+   ceiling, a streaming golden across three budget fractions, and
+   section 3.3's flow identities over residency admission, coalesced
+   hits, and eviction. The scenario layer is complete; the weekly soak
+   and the larger axes stay open.* S1 stays on in-repo procedural data: the
    external-data legs (manifest entries, fetch tool, cache verification, the
    strict data job — grid-benchmark TDD phases 1-2) remain gated, and phase 3
    preserves the rights gate rather than unblocking it. It opens only on a
