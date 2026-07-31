@@ -295,8 +295,11 @@ constexpr std::size_t kSteps = 64;
 constexpr std::uint64_t kSeeds = 24;
 
 template <typename Model>
-void run_property(const char* name) {
-  const property::Property<Model> prop(name, Model::kOperationCount);
+void run_property() {
+  // The name comes from the running test, so the replay command can
+  // never name a test that does not exist.
+  const property::Property<Model> prop(property::current_test_name(),
+                                       Model::kOperationCount);
 
   // A printed replay command must actually reproduce, so honour it
   // ahead of the seed sweep. An unusable request fails rather than
@@ -355,7 +358,7 @@ class BrokenModel {
 };
 
 TEST(TessProperty, HarnessDetectsAndShrinksASeededDefect) {
-  const property::Property<BrokenModel> prop("TessProperty.Broken",
+  const property::Property<BrokenModel> prop(property::current_test_name(),
                                              BrokenModel::kOperationCount);
 
   // Some seed in a modest sweep must produce two threes in 64 steps.
@@ -383,7 +386,7 @@ TEST(TessProperty, HarnessDetectsAndShrinksASeededDefect) {
 }
 
 TEST(TessProperty, ReplayFromEnvironmentReproducesASequence) {
-  const property::Property<BrokenModel> prop("TessProperty.Broken",
+  const property::Property<BrokenModel> prop(property::current_test_name(),
                                              BrokenModel::kOperationCount);
 
   // The exact sequence a report would print must fail on replay.
@@ -423,7 +426,7 @@ class ScopedEnvironment {
 };
 
 TEST(TessProperty, ReplayCommandRoundTripsThroughTheEnvironment) {
-  const property::Property<BrokenModel> prop("TessProperty.Broken",
+  const property::Property<BrokenModel> prop(property::current_test_name(),
                                              BrokenModel::kOperationCount);
   const std::vector<std::uint32_t> sequence{3, 3};
   const auto command = prop.replay_command(sequence);
@@ -451,9 +454,57 @@ TEST(TessProperty, ReplayCommandRoundTripsThroughTheEnvironment) {
   // The test name is anchored, so it cannot select a lookalike, and the
   // command names no build directory: a failure found under ASan does
   // not reproduce against a build/dev binary.
-  EXPECT_NE(command.find("-R '^TessProperty\\.Broken$'"), std::string::npos)
+  EXPECT_NE(
+      command.find(
+          "-R '^TessProperty\\.ReplayCommandRoundTripsThroughTheEnvironment$'"),
+      std::string::npos)
       << command;
   EXPECT_EQ(command.find("build/dev"), std::string::npos) << command;
+}
+
+TEST(TessProperty, TheReplayCommandNamesARegisteredTest) {
+  // The regression this pins: the command anchors the property name as
+  // a CTest regex, so a name that is not a registered test selects
+  // NOTHING — and ctest prints "No tests were found" and exits zero. A
+  // reproduction command that silently succeeds while running nothing
+  // is the worst possible failure for this tool, and a hand-written
+  // name drifts from the test it belongs to as soon as either is
+  // renamed.
+  const auto name = property::current_test_name();
+  EXPECT_EQ(name, "TessProperty.TheReplayCommandNamesARegisteredTest");
+
+  const property::Property<BrokenModel> prop(name,
+                                             BrokenModel::kOperationCount);
+  // The command escapes regex metacharacters, so the dot separating
+  // suite from test appears backslashed.
+  std::string escaped;
+  for (const char c : name) {
+    if (c == '.') {
+      escaped.push_back('\\');
+    }
+    escaped.push_back(c);
+  }
+  const auto command = prop.replay_command({3, 3});
+  EXPECT_NE(command.find("-R '^" + escaped + "$'"), std::string::npos)
+      << command;
+
+  // The name must belong to a test gtest actually registered, or the
+  // anchored regex matches nothing.
+  const auto* unit_test = ::testing::UnitTest::GetInstance();
+  bool registered = false;
+  for (int suite = 0; suite < unit_test->total_test_suite_count(); ++suite) {
+    const auto* test_suite = unit_test->GetTestSuite(suite);
+    for (int test = 0; test < test_suite->total_test_count(); ++test) {
+      const auto full = std::string(test_suite->name()) + "." +
+                        test_suite->GetTestInfo(test)->name();
+      if (full == name) {
+        registered = true;
+      }
+    }
+  }
+  EXPECT_TRUE(registered) << name
+                          << " is not a registered test, so its "
+                             "replay command would select nothing";
 }
 
 TEST(TessProperty, AnUnsetReplayVariableRunsTheSweep) {
@@ -493,11 +544,11 @@ TEST(TessProperty, MalformedReplaySequencesAreRejected) {
 }
 
 TEST(TessProperty, ResidencyInvariantsHoldUnderRandomSequences) {
-  run_property<ResidencyModel>("TessProperty.Residency");
+  run_property<ResidencyModel>();
 }
 
 TEST(TessProperty, ScheduleInvariantsHoldUnderRandomSequences) {
-  run_property<ScheduleModel>("TessProperty.Schedule");
+  run_property<ScheduleModel>();
 }
 
 TEST(TessProperty, TheResidencySweepReachesCapacityAndEvicts) {
@@ -508,7 +559,7 @@ TEST(TessProperty, TheResidencySweepReachesCapacityAndEvicts) {
   // indistinguishable from no coverage, so the sweep's reach is now
   // asserted rather than assumed.
   const property::Property<ResidencyModel> prop(
-      "TessProperty.Residency", ResidencyModel::kOperationCount);
+      property::current_test_name(), ResidencyModel::kOperationCount);
 
   std::size_t peak = 0;
   std::size_t evictions = 0;
@@ -534,7 +585,7 @@ TEST(TessProperty, TheScheduleSweepTicksAndEntersEveryCadence) {
   // the dirty and event cadences only run once something has notified
   // them. If the sweep never reached those paths the invariants would
   // hold over an idle schedule and report a pass.
-  const property::Property<ScheduleModel> prop("TessProperty.Schedule",
+  const property::Property<ScheduleModel> prop(property::current_test_name(),
                                                ScheduleModel::kOperationCount);
 
   std::size_t ticks = 0;
