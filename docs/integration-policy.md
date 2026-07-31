@@ -7,17 +7,29 @@ leaving you to find out.
 
 ## Exceptions
 
-tess **uses exceptions and cannot be built with `-fno-exceptions`.**
-Headers contain `try`/`catch` blocks — rollback and join-then-rethrow
-guards in the executors, schedule, topology, and auto-exec task — so
-disabling exceptions is a compile error, not a degraded mode.
+tess **uses exceptions, and its aggregate surfaces cannot be built
+with `-fno-exceptions`.** The executors, schedule, topology, and
+auto-exec task contain unconditional `try`/`catch` rollback and
+join-then-rethrow guards, so including `tess.h`, `pathfinding.h`, or
+`simulation.h` under `-fno-exceptions` is a compile error rather than a
+degraded mode. A consumer including only a narrow exception-free header
+such as `<tess/storage/world.h>` can still build that way — there is no
+tess object library of its own — but that is not a supported
+configuration and nothing tests it.
 
-What throws:
+Exceptions tess throws itself:
 
 - `std::length_error` when a bounded structure would exceed its
   capacity (the portal segment cache, planned dirty records).
 - `std::bad_alloc` from allocation, including implicitly from any
   container growth.
+
+Exceptions you can also receive through tess:
+
+- **Anything your own callback throws.** Callback exceptions propagate
+  verbatim; tess neither swallows nor translates them.
+- `std::system_error` if thread construction fails while an executor is
+  starting up.
 
 What is guaranteed when something throws:
 
@@ -59,8 +71,18 @@ Caveats stated plainly:
 
 ## Determinism across thread counts
 
-Identical inputs produce identical results whether operations run
-serially or on a worker pool, and regardless of worker count.
+For **deterministic, operation-local kernels** — callbacks whose
+observable behaviour depends only on the chunk and inputs they are
+handed — identical inputs produce identical results whether operations
+run serially or on a worker pool, and regardless of worker count.
+
+That condition is load-bearing, not boilerplate. The callback object is
+shared across workers, so a kernel that is merely thread-*safe* can
+still be order-dependent: one that stamps chunks with an atomic
+counter, or accumulates into shared state, will observe worker
+scheduling. Disjoint writes prevent data races; they do not make an
+arbitrary kernel deterministic. Determinism is a property you and tess
+provide together.
 
 The mechanism, not just the claim:
 
@@ -103,11 +125,17 @@ Ownership and lifetime:
 - `ScopedThreadPhaseExecutor` spawns and joins per phase, and allocates
   on every call. It is the simple option, not the allocation-free one.
 
-Constraints you must honour:
+Constraints you must honour, specific to
+`WorkerPoolPhaseExecutor` (`SerialPhaseExecutor` is stateless and
+`ScopedThreadPhaseExecutor` keeps its dispatch state locally, so
+neither carries these):
 
-- At most one dispatch per executor may be in flight.
-- A callback must not re-enter its own executor or reserve on it.
-  Debug builds assert; release builds deadlock, exactly as documented.
+- At most one dispatch per pool executor may be in flight.
+- A callback must not re-enter its own pool executor, and must not call
+  `reserve_operations` on it during a dispatch. Debug builds assert.
+  Release builds **deadlock or race** — reserving mid-dispatch can
+  reallocate the results storage while workers are writing through it,
+  which is memory corruption, not merely a hang.
 - **Callbacks are shared across pool workers.** The kernel you supply
   must be stateless or self-synchronising.
 - `Schedule::notify_dirty`, `notify_events`, and `request_run` are
@@ -127,26 +155,38 @@ tess does **not** claim to be allocation-free. It claims that specific
 operations do not allocate **once warm and reserved**, and it tests
 that claim.
 
-Proven allocation-free in steady state, after the matching reserve:
+Proven allocation-free in steady state, after the matching reserve —
+stated at the granularity the tests actually cover:
 
-- Worker-pool and serial dispatch of queued operations.
+- Worker-pool and serial dispatch at the executor level, and the
+  queued-operation wrapper under the serial executor. There is no
+  allocation-counted test of the queued wrapper *on a pool*, so treat
+  that combination as untested rather than proven.
 - Queued-operation planning through the reuse overload.
 - Schedule ticks.
 - Render-delta collection.
-- ECS and EnTT ticks.
+- Warmed **movement-only** ECS ticks, for the generic, EnTT, and Flecs
+  adapters. Those tests assert that path processing did not occur, so
+  this is not a claim about ticks that plan paths.
 
-Three benchmarks additionally abort if a steady-state iteration
+Four benchmarks additionally abort if a steady-state iteration
 allocates, so a regression fails rather than quietly costing
-allocations.
+allocations: path A*, EnTT ECS, fields, and render delta.
 
 The conditions are the contract:
 
-- Every claim above depends on having reserved for the working set:
-  operations for the pool, capacity for delta frames, maximum
-  population for ECS batches, chunk count for field products.
+- Every claim above depends on having reserved for the working set,
+  and the reservations are more than one number: operations for the
+  pool, capacity for delta frames, maximum population for ECS batches,
+  and — for field products — goal, node, dependency, and scratch
+  capacity, not merely chunk count. Under-reserving any one of them
+  reintroduces allocation.
 - A phase larger than the reserved size reallocates on that dispatch.
-- Caches allocate on insert and eviction until they reach their
-  capacity bound.
+- Caches differ, and the difference matters. A cache backed by a
+  reusable reserved arena stops allocating once warm; the field-product
+  cache allocates a fresh heap-owned product for **every new-key
+  store**, before it evicts to budget. A full cache under a churning
+  key set therefore keeps allocating on every miss, indefinitely.
 - First touch and growth allocate. There is no global "never allocates
   after warmup" property, and claiming one would be false.
 
@@ -159,15 +199,19 @@ support means *continuously tested*, and the honest picture is uneven:
 | --- | --- | --- |
 | Ubuntu 24.04 | Clang | Build, full test suite, sanitizers, install and FetchContent smokes, standalone-header and macro-configuration checks |
 | Ubuntu 24.04 | GCC | **Compile only** — no test execution |
-| macOS 15 | Clang | Build and tests, but **not on pull requests** — only after merge |
+| macOS 15 | Clang | Build and tests on every non-PR full-tier event (main pushes, the weekly schedule, manual dispatches) — **never on pull requests** |
 | Windows 2025 | MSVC | Build and tests, required on pull requests |
 
 Consequences worth knowing before you depend on a platform:
 
 - A GCC-specific runtime bug would not be caught: GCC is a
   compile-only gate.
-- A macOS regression can merge and only surface on the next main run.
+- A macOS regression can merge and only surface on the next main,
+  scheduled, or dispatched run.
 - Benchmarks and coverage run on Ubuntu only.
+- Every platform job is skipped for documentation-only changes, and
+  pull-request thread sanitizer coverage is path-filtered rather than
+  universal.
 
 **No minimum compiler version is enforced or claimed.** The build
 requires C++20 through `target_compile_features`, and nothing rejects
