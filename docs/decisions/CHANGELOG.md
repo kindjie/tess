@@ -8,6 +8,20 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-31 - Parser fuzzing (phase 7, slice c)
+
+- Added: `tests/test_parser_fuzz.py` drives seeded malformed and valid
+  payloads through the benchmark and sentinel parsers, asserting each
+  fails diagnosably rather than raising an exception that names no
+  file.
+- Fixed: `paired_bench.parse_results` did not catch `AttributeError`,
+  so benchmark output whose top level was not an object — what a
+  truncated write leaves behind — escaped as a raw traceback instead of
+  a tool error. Found by the new fuzzing.
+- Fixed: `paired_bench.load_config` indexed the sentinel and parameter
+  objects without a shape check, so a hand-edited file failed with
+  `AttributeError` or `TypeError` instead of naming the bad field.
+
 ## 2026-07-31 - Weekly long-seed property tier (phase 7, slice c)
 
 - Changed: property sweeps take their seed and step counts from

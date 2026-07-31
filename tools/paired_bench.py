@@ -63,14 +63,30 @@ class SentinelResult:
 
 def load_config(path: Path) -> Config:
   """Load and validate the sentinel definition file."""
-  data = json.loads(Path(path).read_text(encoding="utf-8"))
+  try:
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+  except json.JSONDecodeError as error:
+    raise ToolError(f"{path}: malformed JSON: {error}") from error
+  # Shape-check before indexing, so a hand-edited file reports which
+  # part is wrong instead of raising AttributeError or TypeError from
+  # somewhere in the middle of a comprehension.
+  if not isinstance(data, dict):
+    raise ToolError(f"{path} must contain a JSON object")
+  raw_sentinels = data.get("sentinels")
+  if not isinstance(raw_sentinels, dict):
+    raise ToolError(f"{path}: 'sentinels' must be an object")
+  for name, entry in raw_sentinels.items():
+    if not isinstance(entry, dict) or "metric" not in entry:
+      raise ToolError(f"{path}: sentinel '{name}' needs a 'metric' field")
   sentinels = {
     name: Sentinel(metric=entry["metric"])
-    for name, entry in data["sentinels"].items()
+    for name, entry in raw_sentinels.items()
   }
   if not sentinels:
     raise ToolError("sentinel file defines no sentinels")
-  parameters = data["parameters"]
+  parameters = data.get("parameters")
+  if not isinstance(parameters, dict):
+    raise ToolError(f"{path}: 'parameters' must be an object")
   return Config(
     sentinels=sentinels,
     source_map=data.get("source_map", {}),
@@ -101,7 +117,17 @@ def parse_results(
       if name in metrics:
         scale = unit_to_ns[benchmark.get("time_unit", "ns")]
         values[name] = float(benchmark[metrics[name]]) * scale
-  except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+  except (
+    AttributeError,
+    json.JSONDecodeError,
+    KeyError,
+    TypeError,
+    ValueError,
+  ) as error:
+    # AttributeError included deliberately: a payload whose top level is
+    # not an object (a truncated write leaves `null`, a bare number, or
+    # a list) reaches .get on a non-dict and would otherwise escape as a
+    # raw traceback naming no file. Seeded fuzzing found it.
     raise ToolError(f"unparseable benchmark output: {error}") from error
   missing = sorted(set(metrics) - set(values))
   if missing:
@@ -369,7 +395,8 @@ def render_markdown(
     "optimization log."
   )
   flagged = [
-    result.name for result, verdict in judged
+    result.name
+    for result, verdict in judged
     if verdict in ("advisory", "regression")
   ]
   if flagged:
@@ -380,22 +407,17 @@ def render_markdown(
     lines.append("")
     lines.append("```sh")
     lines.append("python3 tools/paired_bench.py --mode confirm \\")
-    lines.append(
-      "  --base-binary <base>/build/bench-only/bench/tess_bench \\"
-    )
+    lines.append("  --base-binary <base>/build/bench-only/bench/tess_bench \\")
     lines.append("  --head-binary build/bench-only/bench/tess_bench \\")
     lines.append(
-      "  --sentinels bench/sentinels.json"
-      " --thresholds-dir bench/thresholds \\"
+      "  --sentinels bench/sentinels.json --thresholds-dir bench/thresholds \\"
     )
     lines.append(f"  --suspects={','.join(flagged)}")
     lines.append("```")
   return "\n".join(lines) + "\n"
 
 
-PROTOCOL_URL = (
-  "https://github.com/kindjie/tess/blob/main/CONTRIBUTING.md"
-)
+PROTOCOL_URL = "https://github.com/kindjie/tess/blob/main/CONTRIBUTING.md"
 
 MAX_SUSPECTS = 64
 
@@ -457,7 +479,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
   parser.add_argument(
     "--suspects",
     help="comma/newline-separated benchmark names replacing the sentinel "
-         "set for a targeted confirmation (statistics size to this list)",
+    "set for a targeted confirmation (statistics size to this list)",
   )
   parser.add_argument(
     "--thresholds-dir",
@@ -508,9 +530,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     base_names = list_benchmarks(args.base_binary)
     head_names = list_benchmarks(args.head_binary)
-    comparable, skipped = comparable_sentinels(
-      config, base_names, head_names
-    )
+    comparable, skipped = comparable_sentinels(config, base_names, head_names)
     config = Config(
       sentinels=comparable,
       source_map=config.source_map,
