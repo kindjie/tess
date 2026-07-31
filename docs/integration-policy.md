@@ -48,8 +48,16 @@ What is **not** guaranteed:
 - There is no library-wide strong exception guarantee. Individual
   operations document their own rollback behaviour; absent that, assume
   the basic guarantee.
-- Assertion failures do not throw. A failed `TESS_ASSERT` aborts, which
-  is what keeps `noexcept` functions honest.
+- Assertion failures never throw, so `noexcept` functions stay honest.
+  But note **when** they fire: assertions default to enabled only while
+  `NDEBUG` is absent. Release and benchmark builds define `NDEBUG`, so
+  the macros compile to nothing and the preconditions on unchecked hot
+  accessors go **unverified in production** — a violation is undefined
+  behaviour there, not an abort. Do not design around assertions as a
+  fail-fast safety net in a release build; use the checked entry points
+  (`try_resolve`, `try_field`, plan validation), which validate at
+  runtime in every configuration. Define `TESS_ENABLE_ASSERTS=1`
+  explicitly if you want the checks in an optimised build.
 
 ## RTTI
 
