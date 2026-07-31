@@ -958,6 +958,13 @@
   match a from-scratch model, and that a rejected store changes
   nothing.
 
+  The over-budget candidate is made oversized by carrying thousands of
+  goals, NOT by lowering the budget. Lowering it evicts every resident
+  first, so the store would be offered to an empty cache and the rule
+  it claims to test — that a rejected store preserves existing entries
+  — would be checked against nothing. A coverage gate requires
+  refusals that happened while the cache still held entries.
+
   Two traps are load-bearing. `hits + misses == lookups` is WRONG: a
   stale match erases its entry and counts as a rejection, not a miss,
   so the identity is `hits + misses + stale_rejections`. And residency

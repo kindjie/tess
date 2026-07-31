@@ -16,6 +16,10 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   byte accounting against a from-scratch model, that a rejected store
   mutates nothing, and that a stale match counts as a rejection rather
   than a miss.
+- Changed: the over-budget candidate is oversized by its goal count
+  rather than by lowering the budget, which would evict every resident
+  before the store and check the preserve-residents rule against an
+  empty cache; a gate requires refusals with entries still present.
 - Changed: pins least-recently-used eviction with a constructed case —
   fill to budget, refresh the oldest entry, force one eviction — rather
   than relying on the random sweep, which mutation testing showed cannot

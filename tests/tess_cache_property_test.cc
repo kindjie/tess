@@ -151,6 +151,11 @@ class FieldProductCacheModel {
   [[nodiscard]] auto oversized_rejections() const -> std::size_t {
     return oversized_rejections_;
   }
+  /// Rejections that happened while the cache still held entries --
+  /// the only ones that actually test the preserve-residents rule.
+  [[nodiscard]] auto rejections_with_residents() const -> std::size_t {
+    return rejections_with_residents_;
+  }
   [[nodiscard]] auto replacements() const -> std::size_t {
     return replacements_;
   }
@@ -252,30 +257,55 @@ class FieldProductCacheModel {
     }
   }
 
+  // A candidate too large for the whole budget, offered to a cache that
+  // still holds its residents.
+  //
+  // The first version of this lowered the budget to one byte, which
+  // evicted everything before the store was attempted -- so it only
+  // ever proved that an oversized product is refused by an EMPTY cache,
+  // and the invariant it claimed to test (a rejected store preserves
+  // existing entries) was checked against nothing. The candidate is now
+  // made oversized by carrying thousands of goals, which inflates its
+  // entry beyond the budget while every resident stays exactly where it
+  // was.
   void store_oversized(std::uint32_t key) {
-    // A budget of one byte cannot hold any product, so this store must
-    // be refused without touching what is already cached.
     const auto before = cache_.stats();
-    const auto saved_budget = cache_byte_budget();
-    cache_.set_byte_budget(1);
-    // Lowering the budget evicts immediately, so re-raise it and rebuild
-    // the model's view before judging the store itself.
-    const auto emptied = cache_.stats();
-    resident_.clear();
-    auto product = build(key);
+    auto product = build_oversized(key);
+    if (product.status() != tess::PathStatus::Found) {
+      return;
+    }
     const auto stored =
         cache_.store<CacheWorld, PassableTag>(std::move(product));
+    const auto after = cache_.stats();
     if (stored) {
       rejected_store_mutated_ = true;
-    } else {
-      ++oversized_rejections_;
-      const auto after = cache_.stats();
-      if (after.entries != emptied.entries || after.bytes != emptied.bytes) {
-        rejected_store_mutated_ = true;
-      }
+      return;
     }
-    cache_.set_byte_budget(saved_budget);
-    (void)before;
+    ++oversized_rejections_;
+    if (after.entries != before.entries || after.bytes != before.bytes ||
+        after.evictions != before.evictions) {
+      rejected_store_mutated_ = true;
+    }
+    if (before.entries != 0) {
+      ++rejections_with_residents_;
+    }
+  }
+
+  [[nodiscard]] auto build_oversized(std::uint32_t key)
+      -> tess::DistanceFieldProduct {
+    tess::GoalSet goals;
+    goals.reserve(kOversizedGoals);
+    for (std::size_t i = 0; i < kOversizedGoals; ++i) {
+      const auto x = static_cast<std::int32_t>((key + i) % 31 + 1);
+      const auto y = static_cast<std::int32_t>((key + i / 31) % 31 + 1);
+      goals.add(tess::Coord3{x, y, 0});
+    }
+    tess::DistanceFieldProduct product;
+    product.reserve_goals(kOversizedGoals);
+    product.reserve_dependencies(CacheWorld::chunk_count);
+    (void)tess::build_distance_field_product<CacheWorld, PassableTag>(
+        world_, goals, scratch_, product);
+    return product;
   }
 
   void lookup(std::uint32_t key) {
@@ -320,6 +350,9 @@ class FieldProductCacheModel {
   }
 
   static constexpr std::size_t kEntryOverheadAllowance = 512;
+  // Enough goals that the entry's own goal storage dwarfs the whole
+  // budget, so the candidate cannot fit however empty the cache is.
+  static constexpr std::size_t kOversizedGoals = 4096;
 
   CacheWorld world_{};
   tess::DistanceFieldScratch scratch_{};
@@ -329,6 +362,7 @@ class FieldProductCacheModel {
   std::size_t measured_entry_bytes_ = 0;
   std::size_t lookups_ = 0;
   std::size_t oversized_rejections_ = 0;
+  std::size_t rejections_with_residents_ = 0;
   std::size_t replacements_ = 0;
   std::uint64_t world_version_ = 0;
   std::vector<std::uint64_t> stored_version_ =
@@ -374,6 +408,7 @@ TEST(TessCacheProperty, TheFieldProductSweepReachesEveryCachePath) {
   std::size_t evictions = 0;
   std::size_t stale = 0;
   std::size_t oversized = 0;
+  std::size_t with_residents = 0;
   std::size_t replacements = 0;
   for (std::uint64_t seed = 1; seed <= kSeeds; ++seed) {
     FieldProductCacheModel model;
@@ -383,6 +418,7 @@ TEST(TessCacheProperty, TheFieldProductSweepReachesEveryCachePath) {
     evictions += model.evictions();
     stale += model.stale_rejections();
     oversized += model.oversized_rejections();
+    with_residents += model.rejections_with_residents();
     replacements += model.replacements();
   }
 
@@ -392,6 +428,10 @@ TEST(TessCacheProperty, TheFieldProductSweepReachesEveryCachePath) {
       << "the sweep never went stale, so the stale-is-not-a-miss rule was "
          "never exercised";
   EXPECT_GT(oversized, 0U) << "the sweep never refused an over-budget store";
+  EXPECT_GT(with_residents, 0U)
+      << "every over-budget refusal happened against an EMPTY cache, so the "
+         "rule that a rejected store preserves existing entries was never "
+         "actually tested";
   EXPECT_GT(replacements, 0U)
       << "the sweep never replaced an existing key in place";
 }
