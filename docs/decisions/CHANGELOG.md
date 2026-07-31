@@ -8,6 +8,26 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-07-31 - Queued-operation planning properties (phase 7, slice b-i)
+
+- Changed: `tess_queued_property_test` drives seeded planning sequences
+  over all nine `OperationKind` values, every write policy, four
+  field-access patterns, and overlapping or disjoint chunk domains,
+  replanning the whole batch after each enqueue. Asserts report
+  cardinality and identity, plan accounting, ascending deduplicated
+  chunks, the hazard rule, and that only a hazard rejection carries
+  conflict diagnostics.
+- Changed: pins the property that planning is independent of the
+  operation kind — the planner never reads `op.kind` and the report
+  does not carry it — by rewriting only that field and comparing.
+- Changed: phase partitioning is asserted only for a successful phase
+  plan; an unsupported write policy yields a prefix plus diagnostics,
+  which is now asserted as such rather than treated as a full
+  partition.
+- Changed: `TheSweepReachesEveryPlanningOutcome` requires the sweep to
+  reach a hazard conflict, a multi-phase plan, an unsupported-policy
+  prefix, and all nine kinds, so none of the above can hold vacuously.
+
 ## 2026-07-31 - Property/state-machine harness (phase 7, slice a)
 
 - Changed: `tests/property_harness.h` runs seeded operation sequences

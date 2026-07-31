@@ -131,7 +131,13 @@ add_executable(tess_property_test tess_property_test.cc)
 target_link_libraries(tess_property_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_property_test)
 
+add_executable(tess_queued_property_test tess_queued_property_test.cc)
+target_link_libraries(
+  tess_queued_property_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_queued_property_test)
+
 tess_discover_tests(tess_property_test LABELS core ops sim storage)
+tess_discover_tests(tess_queued_property_test LABELS core ops storage)
 
 # Macro-configuration matrix (redesign section 10 item 5). Each cell is
 # a compile-and-link target, not a test: the contract is that the

@@ -946,10 +946,21 @@ that introduces this document.
    only fixed hand-written sequences. A deliberately broken model
    proves the harness can detect, shrink, and reproduce a defect,
    since a property harness that has never failed is
-   indistinguishable from one that cannot. Remaining in this phase:
-   queued-edit and cache sequences (the existing 24-seed queued test
-   shuffles a fixed operation multiset rather than varying kind), the
-   weekly long-seed tier, and parser fuzzing.*
+   indistinguishable from one that cannot. Slice b-i followed
+   (`tess_queued_property_test`): seeded planning sequences over all
+   nine operation kinds, every write policy, four field-access
+   patterns and overlapping domains, pinning the previously untested
+   property that planning is independent of the operation kind. The
+   design review before that slice caught three invariants that were
+   false against correct behaviour — phase partitioning holds only for
+   a successful phase plan, only hazard rejections carry conflict
+   diagnostics, and handle density is a FrameOps guarantee rather than
+   a planner one — and three coverage gates that were unreachable from
+   the drafted alphabet. Remaining in this phase: the three cache
+   models, deferred dirty execution and merge (split out because
+   planning creates no dirty records, so those gates cannot be reached
+   from an enqueue-and-plan model), the weekly long-seed tier, and
+   parser fuzzing.*
 8. First controlled-hardware campaign (development machine, handheld
    target, cloud bare metal): scaling, latency, world-size; publish and
    record in the optimization log.

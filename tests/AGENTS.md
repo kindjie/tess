@@ -947,6 +947,38 @@
   The printed replay command names no build directory on purpose — a
   failure found under ASan does not reproduce against a `build/dev`
   binary — so run it from the build directory that produced it.
+- `tess_queued_property_test`: seeded planning sequences over queued
+  operations (redesign section 3.4, phase 7 slice b-i). Randomizes all
+  nine `OperationKind` values against every write policy, four
+  field-access patterns, and overlapping/disjoint chunk domains, then
+  replans the whole batch after every enqueue so an invariant that only
+  breaks for a particular ORDER of kinds and policies is exercised.
+  Before this, the suite enqueued `update_field` at 90 call sites and
+  `mark_dirty` at four, and all nine kinds appeared together in exactly
+  one test, once.
+
+  The headline property is that **planning is independent of the
+  operation kind**: the planner never reads `op.kind` and the report
+  does not carry it, so rewriting every operation's kind must not
+  change a single outcome. The model asserts this by copying the
+  queued operations, rewriting only that field, replanning, and
+  comparing. Mutation-verified.
+
+  Three claims here are deliberately narrower than they look, because
+  the wider version is false. Phases partition the plan contiguously
+  ONLY when the phase plan is ok: parallel phases support just
+  `ReadOnly` and `UniquePerChunk`, so any `UniquePerTile` or `Unsafe`
+  operation stops planning part-way and the phases built so far are a
+  PREFIX. Only a `HazardConflict` row carries conflict diagnostics.
+  And handle/id density is a `FrameOps` guarantee — the span overload
+  deliberately accepts arbitrary operations and rejects non-dense
+  identity instead.
+
+  `TheSweepReachesEveryPlanningOutcome` gates all of it: the sweep must
+  produce a hazard conflict, a multi-phase plan, an unsupported-policy
+  prefix, and all nine kinds. Field-access masks are in the operation
+  alphabet precisely because a hazard needs intersecting masks — without
+  them the hazard rule would hold vacuously.
 - `tess_consumer_contract_test`: the consumer contract (redesign
   section 10 item 5). Three probe translation units in
   `tests/consumer_contract/` include the public header set in
