@@ -939,6 +939,17 @@ that introduces this document.
 6. Generated performance page; retire the manual snapshot policy
    (CONTRIBUTING.md update).
 7. Property/state-machine harness; weekly long seeds; parser fuzzing.
+   *Status: the harness shipped 2026-07-31 (`tests/property_harness.h`,
+   `tess_property_test`) with delta-debugging shrink and a
+   `TESS_PROPERTY_REPLAY` replay path, covering residency and schedule
+   ticks — the two named areas that had no seeded coverage at all,
+   only fixed hand-written sequences. A deliberately broken model
+   proves the harness can detect, shrink, and reproduce a defect,
+   since a property harness that has never failed is
+   indistinguishable from one that cannot. Remaining in this phase:
+   queued-edit and cache sequences (the existing 24-seed queued test
+   shuffles a fixed operation multiset rather than varying kind), the
+   weekly long-seed tier, and parser fuzzing.*
 8. First controlled-hardware campaign (development machine, handheld
    target, cloud bare metal): scaling, latency, world-size; publish and
    record in the optimization log.

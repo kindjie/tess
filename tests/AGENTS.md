@@ -914,6 +914,22 @@
   their assigned document. One test asserts the committed
   `docs/architecture/surface.json` stays complete against the real
   `TESS_PUBLIC_HEADERS` headers.
+- `tess_property_test`: the seeded property/state-machine harness
+  (`tests/property_harness.h`, redesign section 3.4). Drives random
+  operation sequences against a model, checks every invariant after
+  every step, shrinks a failure by delta debugging, and prints a
+  replay command. Covers residency (ensure/touch/evict/mark-dirty
+  against resident-count and byte-budget ceilings, the
+  resident-implies-nonzero-generation pairing, and generation
+  stability across a redundant ensure) and schedule ticks
+  (`tasks_run + tasks_skipped == tasks_due`, monotone tick) — both
+  areas that previously had NO seeded coverage, only fixed
+  hand-written sequences. A deliberately broken model proves the
+  harness can fail: it must find a defect that needs two specific
+  operations, shrink 64 steps to exactly those two, and produce a
+  sequence that reproduces. Bounded to 24 seeds x 64 steps on the
+  pull-request tier; `TESS_PROPERTY_REPLAY` replays an explicit
+  sequence.
 - `tess_consumer_contract_test`: the consumer contract (redesign
   section 10 item 5). Three probe translation units in
   `tests/consumer_contract/` include the public header set in
