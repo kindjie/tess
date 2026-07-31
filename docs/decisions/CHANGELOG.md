@@ -21,6 +21,8 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 - Fixed: `paired_bench.load_config` indexed the sentinel and parameter
   objects without a shape check, so a hand-edited file failed with
   `AttributeError` or `TypeError` instead of naming the bad field.
+  Each statistical parameter is now fetched and converted individually,
+  so a missing or mistyped one names itself.
 
 ## 2026-07-31 - Weekly long-seed property tier (phase 7, slice c)
 

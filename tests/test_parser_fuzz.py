@@ -61,7 +61,7 @@ SEEDS = 200
 
 def random_json_text(rng: random.Random) -> str:
   """A payload that is plausible JSON, valid or not."""
-  shape = rng.randrange(8)
+  shape = rng.randrange(9)
   if shape == 0:
     return ""
   if shape == 1:
@@ -81,7 +81,39 @@ def random_json_text(rng: random.Random) -> str:
       "sentinels": {"a": {"metric": "real_time"}},
       "parameters": random_value(rng, depth=0),
     })
+  if shape == 7:
+    # Fully valid for BOTH paired parsers. Without a shape every target
+    # accepts, all 200 seeds are rejected and the property holds without
+    # a success path ever running -- which a json.loads check cannot
+    # detect, because parsable is not the same as acceptable.
+    return json.dumps(valid_payload(rng))
   return "".join(rng.choice('{}[]",:0123456789ntrue lfas') for _ in range(30))
+
+
+def valid_payload(rng: random.Random) -> dict[str, Any]:
+  """A payload both paired parsers accept, with varying numbers."""
+  return {
+    "benchmarks": [
+      {
+        "name": name,
+        "real_time": rng.uniform(1.0, 1000.0),
+        "cpu_time": rng.uniform(1.0, 1000.0),
+        "time_unit": rng.choice(["ns", "us", "ms"]),
+      }
+      for name in ("a", "b")
+    ],
+    "sentinels": {
+      "a": {"metric": "real_time"},
+      "b": {"metric": "cpu_time"},
+    },
+    "parameters": {
+      "repetitions": rng.randrange(1, 9),
+      "effect_floor_relative": rng.uniform(0.01, 0.5),
+      "materiality_floor_ns": rng.uniform(1.0, 1000.0),
+      "bootstrap_resamples": rng.randrange(10, 100),
+      "confidence": rng.uniform(0.5, 0.99),
+    },
+  }
 
 
 def random_benchmarks(rng: random.Random) -> Any:
@@ -217,20 +249,41 @@ def test_the_fuzzer_can_actually_fail() -> None:
   assert_diagnosable(declared, 1, "payload", "probe")
 
 
-def test_the_generator_reaches_valid_and_invalid_payloads() -> None:
-  """The seeds must produce parsable input as well as garbage.
+def test_every_parser_reaches_a_success_path(tmp_path: Path) -> None:
+  """Each target must accept at least one seed, not merely parse one.
 
-  All-garbage input would make every parser reject everything, and the
-  property would hold without a single success path ever running.
+  The first version of this checked only that `json.loads` succeeded on
+  some payload. Syntactically valid JSON is not valid INPUT: the paired
+  parsers require specific benchmark names and parameter keys, so every
+  one of the 200 seeds was rejected while this assertion passed. A
+  parser that rejected literally everything would have satisfied it.
   """
-  parsed = 0
+  metrics = {"a": "real_time", "b": "cpu_time"}
+  thresholds_ok = paired_results_ok = paired_config_ok = 0
   rejected = 0
+
   for seed in range(1, SEEDS + 1):
     payload = random_json_text(random.Random(seed))
+    path = tmp_path / f"payload-{seed}.json"
+    path.write_text(payload, encoding="utf-8")
+
     try:
-      json.loads(payload)
-      parsed += 1
-    except (json.JSONDecodeError, ValueError):
+      benchmark_thresholds.load_json(path)
+      thresholds_ok += 1
+    except DECLARED:
       rejected += 1
-  assert parsed > 0, "no seed produced parsable JSON"
-  assert rejected > 0, "no seed produced malformed JSON"
+    try:
+      paired_bench.parse_results(payload, metrics)
+      paired_results_ok += 1
+    except DECLARED:
+      pass
+    try:
+      paired_bench.load_config(path)
+      paired_config_ok += 1
+    except DECLARED:
+      pass
+
+  assert thresholds_ok > 0, "load_json accepted no seed"
+  assert paired_results_ok > 0, "parse_results accepted no seed"
+  assert paired_config_ok > 0, "load_config accepted no seed"
+  assert rejected > 0, "no seed was rejected, so the refusal paths never ran"

@@ -18,7 +18,7 @@ import random
 import statistics
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -87,14 +87,29 @@ def load_config(path: Path) -> Config:
   parameters = data.get("parameters")
   if not isinstance(parameters, dict):
     raise ToolError(f"{path}: 'parameters' must be an object")
+
+  # Each parameter is fetched and converted individually so a missing or
+  # mistyped one names itself. main() catches only ToolError, so a raw
+  # KeyError or TypeError from here reaches the operator as a traceback
+  # that says nothing about which field of which file to fix.
+  def number(key: str, convert: Callable[[Any], float | int]) -> Any:
+    if key not in parameters:
+      raise ToolError(f"{path}: 'parameters' is missing '{key}'")
+    try:
+      return convert(parameters[key])
+    except (TypeError, ValueError) as error:
+      raise ToolError(
+        f"{path}: parameter '{key}' is not a number: {parameters[key]!r}"
+      ) from error
+
   return Config(
     sentinels=sentinels,
     source_map=data.get("source_map", {}),
-    repetitions=int(parameters["repetitions"]),
-    effect_floor=float(parameters["effect_floor_relative"]),
-    materiality_ns=float(parameters["materiality_floor_ns"]),
-    resamples=int(parameters["bootstrap_resamples"]),
-    confidence=float(parameters["confidence"]),
+    repetitions=number("repetitions", int),
+    effect_floor=number("effect_floor_relative", float),
+    materiality_ns=number("materiality_floor_ns", float),
+    resamples=number("bootstrap_resamples", int),
+    confidence=number("confidence", float),
   )
 
 
