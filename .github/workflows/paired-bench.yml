@@ -88,10 +88,20 @@ jobs:
             # reachable from main, so a plain clone cannot see it — and
             # those are exactly the commits a confirmation replays.
             # Fetch the object explicitly when it is missing.
+            #
+            # The fetch is anonymous on purpose. This job builds and
+            # runs benchmark code from whatever historical commits were
+            # requested, so the checkout deliberately does not persist
+            # credentials: a token in the local Git config would be
+            # readable by that code. Anonymous fetch is sufficient while
+            # the repository is public; if it is ever made private this
+            # path needs an explicitly scoped credential rather than a
+            # persisted one.
             if ! git cat-file -e "$sha^{commit}" 2>/dev/null; then
               git fetch --no-tags --depth=1 origin "$sha" || {
-                echo "error: $sha is not fetchable from origin;" \
-                  "a pull-request head may have been garbage collected" >&2
+                echo "error: cannot fetch $sha from origin. Either the" \
+                  "commit was garbage collected, or the repository is" \
+                  "private and this anonymous fetch has no credentials" >&2
                 exit 1
               }
             fi
