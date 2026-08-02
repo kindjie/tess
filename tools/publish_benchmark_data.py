@@ -5,7 +5,9 @@ Redesign section 7 requires per-main timing and counter artifacts to
 outlive GitHub's 30-day artifact retention so a bisection weeks later
 still has data. Section 12 settles where they live: an orphan data
 branch, because it survives retention policy without adding an external
-dependency and the payload is small JSON.
+dependency and the payload is small JSON. Note that orphaning separates
+ancestry, NOT transfer cost: a default `git clone` still fetches this
+branch's objects, so the payload staying small is what keeps it cheap.
 
 This module only decides the layout and the index; the workflow does the
 git plumbing. Keeping the decision pure is what makes it testable --
@@ -54,6 +56,24 @@ def destination(commit: str, timestamp: str, name: str) -> str:
   return f"baselines/{year}/{month}/{commit}/{name}"
 
 
+# Google Benchmark's context block carries the runner's host name and the
+# absolute path of the executable. This branch is public, so those are
+# stripped: the measurements and the run's identity are the point, and a
+# runner hostname is neither useful for bisection nor ours to publish.
+MACHINE_FIELDS = frozenset({"host_name", "executable", "load_avg", "caches"})
+
+
+def sanitize(payload: dict[str, Any]) -> dict[str, Any]:
+  """Drop machine-identifying context, keeping the measurements."""
+  cleaned = dict(payload)
+  context = cleaned.get("context")
+  if isinstance(context, dict):
+    cleaned["context"] = {
+      key: value for key, value in context.items() if key not in MACHINE_FIELDS
+    }
+  return cleaned
+
+
 def plan_publication(
   sources: list[Path],
   commit: str,
@@ -88,8 +108,25 @@ def plan_publication(
       raise ToolError(f"{source}: malformed JSON: {error}") from error
     if not isinstance(parsed, dict):
       raise ToolError(f"{source}: must contain a JSON object")
-    benchmarks += len(parsed.get("benchmarks", []))
-    files[destination(commit, timestamp, source.name)] = payload
+    records = parsed.get("benchmarks", [])
+    if not isinstance(records, list):
+      raise ToolError(f"{source}: 'benchmarks' must be an array")
+    benchmarks += len(records)
+    files[destination(commit, timestamp, source.name)] = (
+      json.dumps(sanitize(parsed), indent=2, sort_keys=True) + "\n"
+    )
+
+  # sources being non-empty is not the same as having DATA: the
+  # production artifact always carries a metadata file, and Google
+  # Benchmark can emit an empty `benchmarks` array. Without this, a run
+  # that measured nothing publishes metadata-only history and reports
+  # success -- the exact silent-success failure the empty check above
+  # exists to prevent, one level up.
+  if benchmarks == 0:
+    raise ToolError(
+      "no benchmark records to publish; every source was empty or carried "
+      "only metadata"
+    )
 
   index_entry = {
     "commit": commit,
@@ -115,10 +152,16 @@ def merge_index(existing: str | None, entry: dict[str, Any]) -> str:
       raise ToolError(f"index is malformed JSON: {error}") from error
     if not isinstance(loaded, dict) or not isinstance(loaded.get("runs"), list):
       raise ToolError("index must be an object with a 'runs' array")
+    # Filtering a malformed row would turn recoverable corruption into
+    # permanent history loss on the next publish, which contradicts the
+    # fail-loudly contract everywhere else in this tool.
+    for position, run in enumerate(loaded["runs"]):
+      if not isinstance(run, dict) or "commit" not in run:
+        raise ToolError(
+          f"index run {position} is not an object with a 'commit'"
+        )
     entries = [
-      run
-      for run in loaded["runs"]
-      if isinstance(run, dict) and run.get("commit") != entry["commit"]
+      run for run in loaded["runs"] if run.get("commit") != entry["commit"]
     ]
   entries.insert(0, entry)
   entries.sort(key=lambda run: run.get("timestamp", ""), reverse=True)

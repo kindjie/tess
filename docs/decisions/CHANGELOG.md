@@ -20,7 +20,8 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   publish failure is visible.
 - Changed: recorded the resolution of two section 12 open questions —
   the artifact store is a data branch, and the comparative repository is
-  `grid-pathfinding-benchmarks`.
+  a separate repo named for the measurement domain rather than for this
+  project (kept generic in tracked content until it is public).
 
 ## 2026-07-31 - Adaptive sparse chunk directory
 

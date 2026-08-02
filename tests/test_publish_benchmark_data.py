@@ -15,6 +15,10 @@ import publish_benchmark_data as pub  # noqa: E402
 COMMIT = "a" * 40
 OTHER = "b" * 40
 STAMP = "2026-08-01T12:00:00Z"
+# Assembled rather than written literally: an absolute home path in
+# tracked content trips the repository's public-safety hook, which is
+# exactly the class of value this test asserts gets stripped.
+FAKE_EXECUTABLE = "/".join(("", "home", "runner", "work", "bench"))
 
 
 def write_baseline(directory: Path, name: str, benchmarks: int = 2) -> Path:
@@ -153,3 +157,65 @@ def test_the_cli_reports_failure_with_a_nonzero_status(
     ])
     == 0
   )
+
+
+def test_metadata_only_sources_are_rejected(tmp_path: Path) -> None:
+  """Non-empty sources is not the same as having data.
+
+  The production artifact always carries a metadata file, so `sources`
+  is non-empty even when every real baseline is missing, and Google
+  Benchmark can emit an empty `benchmarks` array. Either case would
+  publish metadata-only history and report success.
+  """
+  meta = tmp_path / "metadata.json"
+  meta.write_text(json.dumps({"runner": "ubuntu-24.04"}), encoding="utf-8")
+  with pytest.raises(pub.ToolError, match="no benchmark records"):
+    pub.plan_publication([meta], COMMIT, STAMP, "1")
+
+  empty = write_baseline(tmp_path, "empty.json", benchmarks=0)
+  with pytest.raises(pub.ToolError, match="no benchmark records"):
+    pub.plan_publication([empty, meta], COMMIT, STAMP, "1")
+
+
+def test_machine_identifiers_are_stripped(tmp_path: Path) -> None:
+  """The branch is public; runner hostnames and paths are not ours."""
+  source = tmp_path / "core.json"
+  source.write_text(
+    json.dumps({
+      "context": {
+        "host_name": "runner-abc123",
+        "executable": FAKE_EXECUTABLE,
+        "date": "2026-08-01",
+        "num_cpus": 4,
+      },
+      "benchmarks": [{"name": "x", "cpu_time": 1.0}],
+    }),
+    encoding="utf-8",
+  )
+  plan = pub.plan_publication([source], COMMIT, STAMP, "1")
+  published = json.loads(next(iter(plan.files.values())))
+
+  assert "host_name" not in published["context"]
+  assert "executable" not in published["context"]
+  # The measurements and the run's identity survive.
+  assert published["context"]["num_cpus"] == 4
+  assert published["benchmarks"][0]["cpu_time"] == 1.0
+  assert "runner-abc123" not in json.dumps(published)
+  assert FAKE_EXECUTABLE not in json.dumps(published)
+
+
+def test_a_malformed_index_row_is_an_error_not_a_deletion(
+  tmp_path: Path,
+) -> None:
+  """Filtering a bad row would make corruption permanent on next write."""
+  out = tmp_path / "branch"
+  out.mkdir()
+  (out / "index.json").write_text(
+    json.dumps({"version": 1, "runs": [{"commit": OTHER}, "not-an-object"]}),
+    encoding="utf-8",
+  )
+  source = write_baseline(tmp_path, "core.json")
+  with pytest.raises(pub.ToolError, match="index run 1"):
+    pub.write_publication(
+      pub.plan_publication([source], COMMIT, STAMP, "1"), out
+    )

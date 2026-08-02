@@ -910,9 +910,19 @@ jobs:
   #
   # Never gating: a publish failure must not fail a merged commit, but it
   # must be VISIBLE, so the job is in report-failure's needs rather than
-  # in ci-gate's. An empty publish is treated as an error by the tool --
-  # a step that writes nothing and reports success is indistinguishable
-  # from a healthy run until the history is needed and missing.
+  # in ci-gate's. An empty or metadata-only publish is an error in the
+  # tool -- a step that writes nothing and reports success is
+  # indistinguishable from a healthy run until the history is needed and
+  # missing.
+  #
+  # KNOWN GAP: the workflow-level concurrency group cancels a superseded
+  # main run, and this job waits on bench, so a commit merged while an
+  # earlier run is still building publishes nothing. The history is
+  # therefore per-completed-main-RUN, not per-commit, and rapid merges
+  # leave holes. Acceptable for bisection, which reads the nearest
+  # neighbours rather than requiring every commit; closing it would need
+  # a separate non-cancelling workflow. Do not describe this history as
+  # covering every main commit.
   publish-benchmark-history:
     name: Publish Benchmark History
     needs: bench
@@ -951,8 +961,17 @@ jobs:
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Orphan branch, created on first run. --no-checkout keeps the
-          # worktree empty until we populate it.
+          # Every remote command carries the token, reads included. The
+          # repository is public today, so anonymous reads would work --
+          # but if it ever goes private, an unauthenticated ls-remote
+          # fails, this branch is mistaken for absent, and each run then
+          # recreates it and is rejected. History would stop after one
+          # publication with no error that names the cause.
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' \
+            "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          git config --local "http.extraheader" "$auth"
+
+          # Orphan branch, created on first run.
           if git ls-remote --exit-code --heads origin "$DATA_BRANCH" \
               >/dev/null 2>&1; then
             git fetch --no-tags --depth=1 origin "$DATA_BRANCH"
@@ -983,13 +1002,10 @@ jobs:
           git commit -m "Publish baselines for ${HEAD_SHA:0:12}"
           # Concurrent main merges race for this branch; rebase and retry
           # rather than force-pushing over another run's history.
-          # The header is supplied per command so no credential is written
-          # to .git/config. Fetches are anonymous: the repository is
-          # public and only the push needs to be authenticated.
-          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' \
-            "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          # The worktree has its own config; carry the same header there.
+          git config --local "http.extraheader" "$auth"
           for attempt in 1 2 3; do
-            if git -c "http.extraheader=$auth" push origin "$DATA_BRANCH"; then
+            if git push origin "$DATA_BRANCH"; then
               exit 0
             fi
             echo "push rejected (attempt $attempt), rebasing"
