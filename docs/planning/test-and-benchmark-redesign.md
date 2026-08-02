@@ -1031,7 +1031,17 @@ that introduces this document.
   Acceptance posture: alerting is a rolling issue, never a gate, so the
   tolerable false-issue rate is one borderline alert per multi-week
   window, as backtested.
-- Where long-retention benchmark artifacts live (data branch versus
-  extended artifact retention versus published dataset).
-- Naming and hosting for the comparative repository, and the fixture-pack
-  publishing format.
+- ~~Where long-retention benchmark artifacts live.~~ **Decided
+  2026-08-01: an orphan data branch.** It is the only option that
+  survives GitHub's retention policy without adding an external
+  dependency, and the payload is small JSON. Extended artifact
+  retention still caps out and is not queryable without the API; a
+  published dataset adds a third-party surface for data that is already
+  public. The branch carries no working tree, so a normal clone does
+  not pay for it.
+- ~~Naming and hosting for the comparative repository.~~ **Decided
+  2026-08-01: `kindjie/grid-pathfinding-benchmarks`, private during
+  bootstrap.** Deliberately does not contain "tess": section 9's whole
+  rationale is that comparisons published from inside the measured
+  project invite self-favouring suspicion, and the name should not
+  undercut that. The fixture-pack publishing format remains open.

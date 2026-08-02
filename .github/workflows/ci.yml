@@ -901,6 +901,104 @@ jobs:
               --body-file issue-body.md
           fi
 
+  # Long-retention benchmark history (redesign sections 7 and 12), main
+  # pushes only. GitHub expires run artifacts after 30 days, so a
+  # bisection weeks later has nothing to read; section 12 settles the
+  # store as an ORPHAN data branch, which survives retention policy
+  # without adding an external dependency. The branch carries no working
+  # tree, so a normal clone does not pay for it.
+  #
+  # Never gating: a publish failure must not fail a merged commit, but it
+  # must be VISIBLE, so the job is in report-failure's needs rather than
+  # in ci-gate's. An empty publish is treated as an error by the tool --
+  # a step that writes nothing and reports success is indistinguishable
+  # from a healthy run until the history is needed and missing.
+  publish-benchmark-history:
+    name: Publish Benchmark History
+    needs: bench
+    if: >-
+      ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          needs.bench.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Not persisted, matching every other checkout here: a token in
+          # .git/config is readable by anything the job later runs. The
+          # push below authenticates for that one command instead.
+          persist-credentials: false
+
+      - name: Download baselines
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: benchmark-baselines-${{ github.run_id }}
+          path: baselines
+
+      - name: Publish to the data branch
+        env:
+          DATA_BRANCH: benchmark-data
+          HEAD_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Orphan branch, created on first run. --no-checkout keeps the
+          # worktree empty until we populate it.
+          if git ls-remote --exit-code --heads origin "$DATA_BRANCH" \
+              >/dev/null 2>&1; then
+            git fetch --no-tags --depth=1 origin "$DATA_BRANCH"
+            git worktree add ../data-branch "origin/$DATA_BRANCH" --detach
+            git -C ../data-branch switch -c "$DATA_BRANCH"
+          else
+            git worktree add --detach ../data-branch
+            git -C ../data-branch checkout --orphan "$DATA_BRANCH"
+            git -C ../data-branch rm -rf --quiet . || true
+          fi
+
+          python3 tools/publish_benchmark_data.py \
+            --out-dir ../data-branch \
+            --commit "$HEAD_SHA" \
+            --timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --run-id "$RUN_ID" \
+            baselines/*.json
+
+          cd ../data-branch
+          git add -A
+          # Nothing staged means the tool wrote nothing new. Benign on a
+          # re-run of an unchanged commit, so report and stop rather than
+          # failing a merged commit.
+          if git diff --cached --quiet; then
+            echo "no change to publish"
+            exit 0
+          fi
+          git commit -m "Publish baselines for ${HEAD_SHA:0:12}"
+          # Concurrent main merges race for this branch; rebase and retry
+          # rather than force-pushing over another run's history.
+          # The header is supplied per command so no credential is written
+          # to .git/config. Fetches are anonymous: the repository is
+          # public and only the push needs to be authenticated.
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' \
+            "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          for attempt in 1 2 3; do
+            if git -c "http.extraheader=$auth" push origin "$DATA_BRANCH"; then
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt), rebasing"
+            git fetch --no-tags origin "$DATA_BRANCH"
+            git rebase "origin/$DATA_BRANCH" || exit 1
+          done
+          echo "error: could not publish after 3 attempts" >&2
+          exit 1
+
   # Long-seed property sweeps (redesign section 3.4), weekly tier only.
   # The pull-request tier runs 24 seeds so it stays inside the PR time
   # budget; that is enough to catch a broken invariant but not enough to
@@ -1139,6 +1237,7 @@ jobs:
       - bench
       - coverage
       - long-seed-properties
+      - publish-benchmark-history
       - ci-gate
     permissions:
       contents: read
