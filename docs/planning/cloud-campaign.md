@@ -73,23 +73,45 @@ is the one case worth interrupting someone for.
 
 Run it after every campaign. It costs nothing.
 
+## Project
+
+Reuses the existing benchmark project and bucket rather than creating
+new ones. The project already has billing, the required APIs, the
+`compute.vmExternalIpAccess` org-policy override, and — the item with
+Console lead time — a granted `C3_CPUS` quota of 200, against the 192
+this machine type needs. Verified 2026-08-02: no instances, no disks,
+quota usage 0.
+
+tess artifacts go under a `tess/` bucket prefix so they stay separate
+from the other project's results. Billing is not separated; if that
+becomes necessary, a distinct project means requesting the quota again.
+
 ## Preflight
 
 - `gcloud` authenticated: `gcloud auth list`
-- **Quota**: `c3-standard-192-metal` needs `C3_CPUS >= 192` in the target
-  region. The default project quota is **24**, so this fails until a
-  quota increase is granted through the Console. Request it before the
-  first run, not during it.
+- Quota: `c3-standard-192-metal` needs `C3_CPUS >= 192` in the target
+  region. Already granted in the reused project. A **fresh** project
+  starts at 24 and needs a Console request, which has lead time.
 - A results bucket in the same region.
 
 ## Running
 
 ```sh
+# Prints the plan and creates nothing. Verified to issue no gcloud or
+# gsutil calls at all -- checked by shimming both onto PATH and
+# confirming an empty call log, and by comparing a full project
+# inventory before and after.
 tools/cloud/run_metal_bench.sh \
-  --project=ID --bucket=gs://BUCKET --dry-run   # prints the plan, creates nothing
+  --project=PROJECT --bucket=gs://BUCKET/tess --dry-run
 
-tools/cloud/run_metal_bench.sh --project=ID --bucket=gs://BUCKET
+tools/cloud/run_metal_bench.sh --project=PROJECT --bucket=gs://BUCKET/tess
 ```
+
+Both scripts run on the bash 3.2 that macOS ships. That is not
+incidental: the first versions used `mapfile` and `${VAR,,}`, both bash
+4+, so the reaper exited 127 on the machine an operator would most
+likely run it from — the safety net failing on the one host that
+matters.
 
 The driver prints the plan and the worst-case cost, then asks for
 confirmation unless `--yes` is passed. It packages the working tree —
