@@ -39,6 +39,10 @@ listing_unreliable() {
   grep -qiE "did not succeed|was not found|PERMISSION_DENIED|Reauthentication|invalid.*credential|quota|rate limit" <<<"$text"
 }
 
+# `^tess-` covers both prefixes: the validation tier creates tess-vm-*
+# and a disk stranded by one of those bills exactly as much as a metal
+# one. An alternation like ^tess-(metal|vm)- crashes gcloud with a
+# TypeError, so the broader prefix is used deliberately.
 # An unattached disk keeps billing and is invisible to an instance-only
 # listing. --boot-disk-auto-delete covers the normal cascade, but a
 # partial create or a failed cascade can strand one.
@@ -51,7 +55,7 @@ reap_disks() {
   err="$(mktemp -t reap-disk-err-XXXXXX)"
   set +e
   out="$(gcloud compute disks list --project="$PROJECT" \
-    --filter='-users:* AND name~^tess-metal-' \
+    --filter='-users:* AND name~^tess-' \
     --format='value(name,zone.basename(),sizeGb)' 2>"$err")"
   status=$?
   set -e
