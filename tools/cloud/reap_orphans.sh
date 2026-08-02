@@ -185,6 +185,10 @@ if listing_unreliable "$list_status" "$list_err_text"; then
   echo "$list_err_text" >&2
   echo "Cannot confirm whether anything is running. Check manually" \
     "before assuming nothing is billing." >&2
+  # A failure listing INSTANCES does not mean listing DISKS would fail,
+  # and a stranded disk bills on its own. Try the independent audit
+  # before giving up.
+  reap_disks || true
   exit 1
 fi
 # This one is benign: it only means no resource carries the label yet.

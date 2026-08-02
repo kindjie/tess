@@ -72,8 +72,10 @@ cleanup_and_die() {
     # runbook calls the case worth acting on.
     # Negative PID targets the whole group, so an in-flight gsutil goes
     # with it. Falls back to the bare PID if the group signal fails.
-    kill -TERM -- "-$HEARTBEAT_PID" 2>/dev/null \
-      || kill -TERM "$HEARTBEAT_PID" 2>/dev/null || true
+    if (( ${HEARTBEAT_GROUP:-0} )); then
+      kill -TERM -- "-$HEARTBEAT_PID" 2>/dev/null || true
+    fi
+    kill -TERM "$HEARTBEAT_PID" 2>/dev/null || true
     wait "$HEARTBEAT_PID" 2>/dev/null || true
     sleep 1
   fi
@@ -152,9 +154,28 @@ heartbeat() {
 # setsid so the heartbeat and any gsutil it spawns share a process
 # group that can be killed as a unit. Signalling only the shell leaves
 # an in-flight upload running, which then races the final status write.
-setsid bash -c "$(declare -f heartbeat); STAGE_FILE='$STAGE_FILE'; \
-  BUCKET='$BUCKET'; heartbeat" &
-HEARTBEAT_PID=$!
+# A missing setsid would fail silently here: command-not-found in a
+# background job does not trip errexit, HEARTBEAT_PID would hold a dead
+# child, and the paid run would proceed with no heartbeat and no
+# incremental log upload -- monitoring gone, with nothing saying so.
+if command -v setsid >/dev/null 2>&1; then
+  setsid bash -c "$(declare -f heartbeat); STAGE_FILE='$STAGE_FILE'; \
+    BUCKET='$BUCKET'; heartbeat" &
+  HEARTBEAT_PID=$!
+  HEARTBEAT_GROUP=1
+else
+  echo "warning: setsid missing; heartbeat cannot be killed as a group" >&2
+  heartbeat &
+  HEARTBEAT_PID=$!
+  HEARTBEAT_GROUP=0
+fi
+sleep 1
+if ! kill -0 "$HEARTBEAT_PID" 2>/dev/null; then
+  echo "ERROR: the heartbeat did not start; this run would have no" \
+    "progress signal at all" >&2
+  exit 5
+fi
+echo "heartbeat running (pid $HEARTBEAT_PID)"
 
 set_stage "installing packages"
 export DEBIAN_FRONTEND=noninteractive
