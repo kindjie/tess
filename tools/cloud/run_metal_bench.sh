@@ -112,6 +112,11 @@ GIT_COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 # built from `ls-files --cached --others`, so anything it picks up that
 # the commit does not contain must show in the provenance -- otherwise a
 # result claims a clean commit while measuring different source.
+# `git describe --dirty` records the tree state in a form the instance
+# can echo back. The tarball ships without .git, so without a hash the
+# recorded commit is only an ASSERTION -- a dirty tree would look clean.
+GIT_DESCRIBE="$(git -C "$REPO_ROOT" describe --always --dirty --tags \
+  2>/dev/null || echo unknown)"
 GIT_DIRTY=""
 if ! git -C "$REPO_ROOT" diff --quiet \
    || ! git -C "$REPO_ROOT" diff --cached --quiet \
@@ -123,7 +128,14 @@ fi
 # Lowercase: GCE instance names allow only lowercase letters, digits and
 # hyphens, and a UTC timestamp carries an uppercase T and Z.
 RUN_ID="$(date -u +%Y%m%dt%H%M%Sz)"
-INSTANCE_NAME="tess-metal-$RUN_ID"
+# The instance name lands in host_name inside the result JSON, so a
+# virtualized run must not be named "metal" -- someone reading the raw
+# results later would take it for a bare-metal measurement.
+case "$MACHINE_TYPE" in
+  *-metal) NAME_PREFIX="tess-metal" ;;
+  *)       NAME_PREFIX="tess-vm" ;;
+esac
+INSTANCE_NAME="$NAME_PREFIX-$RUN_ID"
 if ! [[ "$INSTANCE_NAME" =~ ^[a-z]([-a-z0-9]*[a-z0-9])?$ ]]; then
   echo "error: computed instance name '$INSTANCE_NAME' is not a valid" \
     "GCE name" >&2
@@ -172,6 +184,7 @@ Campaign plan
   instance       $INSTANCE_NAME
   boot disk      ${BOOT_DISK_SIZE_GB}GB $BOOT_DISK_TYPE
   commit         ${GIT_COMMIT:0:12}${GIT_DIRTY}
+  describe       $GIT_DESCRIBE
   results        $BUCKET_PREFIX
   counters       $COUNTER_NOTE
   hard cap       $MAX_RUN_DURATION  (counted from reaching RUNNING)
@@ -366,6 +379,16 @@ trap cleanup INT TERM
 SRC_TARBALL="$(mktemp -t tess-campaign-XXXXXX.tar.gz)"
 git -C "$REPO_ROOT" ls-files --exclude-standard --cached --others -z \
   | tar --null -czf "$SRC_TARBALL" -C "$REPO_ROOT" -T -
+# Hashed before upload so the instance can prove it built what was
+# sent, rather than trusting a commit id it cannot check.
+if command -v shasum >/dev/null 2>&1; then
+  SRC_SHA256="$(shasum -a 256 "$SRC_TARBALL" | awk '{print $1}')"
+elif command -v sha256sum >/dev/null 2>&1; then
+  SRC_SHA256="$(sha256sum "$SRC_TARBALL" | awk '{print $1}')"
+else
+  SRC_SHA256=""
+  echo "warning: no sha256 tool; the instance cannot verify the source" >&2
+fi
 gsutil -q cp "$SRC_TARBALL" "$BUCKET_PREFIX/source.tar.gz"
 
 STARTUP_FILE="$REPO_ROOT/tools/cloud/setup_metal_vm.sh"
@@ -418,7 +441,7 @@ gcloud compute instances create "$INSTANCE_NAME" \
   --labels="tess-campaign=1,tess-run-id=$RUN_ID" \
   --scopes="https://www.googleapis.com/auth/devstorage.read_write,https://www.googleapis.com/auth/compute" \
   --metadata-from-file="startup-script=$STARTUP_FILE" \
-  --metadata="^;;^tess-bucket=$BUCKET_PREFIX;;tess-source-url=$BUCKET_PREFIX/source.tar.gz;;tess-run-id=$RUN_ID;;tess-git-commit=${GIT_COMMIT}${GIT_DIRTY};;tess-require-counters=$REQUIRE_COUNTERS" \
+  --metadata="^;;^tess-bucket=$BUCKET_PREFIX;;tess-source-url=$BUCKET_PREFIX/source.tar.gz;;tess-run-id=$RUN_ID;;tess-git-commit=${GIT_COMMIT}${GIT_DIRTY};;tess-require-counters=$REQUIRE_COUNTERS;;tess-source-sha256=$SRC_SHA256;;tess-git-describe=$GIT_DESCRIBE" \
   || create_status=$?
 
 if (( create_status != 0 )); then

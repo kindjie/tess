@@ -118,6 +118,8 @@ RUN_ID="$(metadata instance/attributes/tess-run-id)"
 GIT_COMMIT="$(metadata instance/attributes/tess-git-commit)"
 REQUIRE_COUNTERS="$(metadata instance/attributes/tess-require-counters)"
 REQUIRE_COUNTERS="${REQUIRE_COUNTERS:-1}"
+SOURCE_SHA256="$(metadata instance/attributes/tess-source-sha256)"
+GIT_DESCRIBE="$(metadata instance/attributes/tess-git-describe)"
 
 [[ -n "$BUCKET" && -n "$SOURCE_URL" ]] || {
   echo "FATAL: missing bucket metadata" >&2; exit 1; }
@@ -195,6 +197,22 @@ WORK=/opt/tess-campaign
 mkdir -p "$WORK"
 cd "$WORK"
 gsutil -q cp "$SOURCE_URL" source.tar.gz
+# The tarball ships without .git, so the recorded commit is otherwise an
+# assertion the instance cannot check. Verifying the hash makes the
+# provenance of every published number defensible: these results came
+# from exactly this archive.
+if [[ -n "$SOURCE_SHA256" ]]; then
+  actual_sha="$(sha256sum source.tar.gz | awk '{print $1}')"
+  if [[ "$actual_sha" != "$SOURCE_SHA256" ]]; then
+    echo "FATAL: source archive hash mismatch" >&2
+    echo "  expected $SOURCE_SHA256" >&2
+    echo "  actual   $actual_sha" >&2
+    exit 6
+  fi
+  echo "source verified: sha256 $actual_sha"
+else
+  echo "warning: no source hash supplied; provenance is unverified" >&2
+fi
 tar -xzf source.tar.gz
 
 # Counters need this; a bare-metal instance is allowed to set it, which
@@ -267,6 +285,10 @@ mkdir -p results
 {
   echo "run_id: $RUN_ID"
   echo "commit: $GIT_COMMIT"
+  echo "git_describe: ${GIT_DESCRIBE:-unknown}"
+  echo "source_sha256: ${SOURCE_SHA256:-unverified}"
+  echo "image: $(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2)"
+  echo "benchmark_flags: --benchmark_repetitions=10 --benchmark_min_time=0.2s"
   echo "machine: $(metadata instance/machine-type | awk -F/ '{print $NF}')"
   echo "compiler: $($CXX --version | head -1)"
   echo "cmake: $(cmake --version | head -1)"
@@ -296,6 +318,21 @@ publish() {
 
 set_stage "benchmarking"
 publish results/machine.txt
+
+# The build's load was still decaying when the previous run started
+# measuring (load average 4.39 on a 4-vCPU box). Waiting costs nothing
+# against a 20-minute sweep and removes a contaminant from the first
+# family measured.
+echo "settling before measurement..."
+for _ in $(seq 1 30); do
+  load="$(cut -d' ' -f1 /proc/loadavg)"
+  # Integer compare: bash has no float arithmetic.
+  if [[ "${load%%.*}" -lt 1 ]]; then
+    break
+  fi
+  sleep 5
+done
+echo "load average at start of benchmarking: $(cut -d' ' -f1-3 /proc/loadavg)"
 
 # Failures handled per iteration with `if !`, NOT `done || { ... }`.
 # Putting a compound command on the left of || disables errexit for

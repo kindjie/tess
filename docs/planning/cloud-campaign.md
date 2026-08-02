@@ -144,6 +144,38 @@ including uncommitted changes — so the instance measures exactly what is
 checked out, and records the commit with a `-dirty` suffix so such a
 result is never mistaken for a clean-tree number.
 
+Provenance is **verified, not asserted**. The tarball ships without
+`.git`, so a recorded commit id is something the instance cannot check —
+a dirty tree would look clean. The driver hashes the archive, the
+instance re-hashes what it downloaded and aborts on a mismatch, and
+`machine.txt` records the hash alongside `git describe --dirty`, the OS
+image, and the exact benchmark flags.
+
+Instance names are tier-specific — `tess-metal-*` or `tess-vm-*` —
+because the name lands in `host_name` inside the result JSON, and a
+virtualized result carrying a "metal" name would be misread later.
+
+## Validation run, 2026-08-02
+
+A `c3-standard-4` run at ~$0.09 exercised this path end to end before
+any metal spend: 24 minutes, exit 0, both binaries measured (184 and
+177 benchmarks, 10 repetitions), self-deleted, no instances or disks
+left, reaper clean.
+
+It earned its cost immediately. The **first attempt failed before
+creating anything**: `"${EMPTY[@]}"` is an unbound variable under
+`set -u` in bash 3.2, which six review rounds across two independent
+reviewers had not caught. The **PMU probe also proved itself** — it
+detected `cycles='<not supported>'` on the virtualized guest, the exact
+case where `perf stat` exits 0 while returning nothing usable.
+
+What the validation did NOT cover, and what therefore runs for the
+first time on the expensive machine: IDPF networking, Hyperdisk on the
+metal SKU, `TERMINATE` maintenance, the duration-cap-plus-delete
+combination on metal, the PMU-required abort path, and **the entire
+counter-attribution pass**. If that pass fails, the timing data is
+already uploaded per stage and remains usable.
+
 ## Monitoring a run
 
 ```sh
