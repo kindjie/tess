@@ -90,6 +90,9 @@ GIT_COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 GIT_DIRTY=""
 git -C "$REPO_ROOT" diff --quiet || GIT_DIRTY="-dirty"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+# GCE labels must be lowercase. Done with tr, not ${VAR,,}, which is
+# bash 4+ and fails on the bash 3.2 macOS ships.
+RUN_ID_LOWER="$(printf '%s' "$RUN_ID" | tr '[:upper:]' '[:lower:]')"
 INSTANCE_NAME="tess-metal-$RUN_ID"
 BUCKET_PREFIX="$BUCKET/campaigns/$RUN_ID"
 
@@ -185,7 +188,7 @@ gcloud compute instances create "$INSTANCE_NAME" \
   --no-restart-on-failure \
   --max-run-duration="$MAX_RUN_DURATION" \
   --instance-termination-action=DELETE \
-  --labels="tess-campaign=1,tess-run-id=${RUN_ID,,}" \
+  --labels="tess-campaign=1,tess-run-id=$RUN_ID_LOWER" \
   --scopes="https://www.googleapis.com/auth/devstorage.read_write,https://www.googleapis.com/auth/compute" \
   --metadata-from-file="startup-script=$STARTUP_FILE" \
   --metadata="^;;^tess-bucket=$BUCKET_PREFIX;;tess-source-url=$BUCKET_PREFIX/source.tar.gz;;tess-run-id=$RUN_ID;;tess-git-commit=${GIT_COMMIT}${GIT_DIRTY}"

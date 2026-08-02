@@ -61,7 +61,13 @@ fi
 
 # Every zone, not a configured one: an orphan in a zone the current
 # config does not name is exactly the orphan nobody finds by hand.
-mapfile -t FOUND < <(
+# while-read rather than mapfile: mapfile is bash 4+, and macOS ships
+# bash 3.2, so the reaper would have exited 127 on the machine an
+# operator is most likely to run it from.
+FOUND=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && FOUND+=("$line")
+done < <(
   gcloud compute instances list \
     --project="$PROJECT" \
     --filter="labels.${LABEL%%=*}=${LABEL#*=}" \
