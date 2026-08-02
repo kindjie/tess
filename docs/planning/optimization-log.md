@@ -50,6 +50,61 @@ Entries from 2026-07-12 and earlier are in
   shows a material regression or the remaining 1.35x sparse/dense gap becomes
   a priority. Do not specialize that API from the raw nanosecond lookup alone.
 
+## 2026-08-02 - First Bare-Metal Campaign (post-fix baseline)
+
+- Area: section 8's cloud bare-metal tier, first execution.
+- Machine: `c3-standard-192-metal`, Xeon Platinum 8481C, Ubuntu 24.04.4,
+  clang 18.1.3, kernel 6.17.0-1021-gcp. Commit `3a7b12d`
+  (`v0.4.0-86-g3a7b12d`), source archive verified by SHA-256. 28 minutes,
+  about $4.70.
+- Timing evidence: 184 and 177 benchmarks at 10 repetitions, zero errors.
+  **Median CV 0.12% against 2.03% on the shared-VM validation run** -- a
+  roughly seventeen-fold reduction. All eight fields benchmarks at
+  CV <= 0.91%. Residual noise is concentrated in three intrinsically
+  jittery groups (`queued/execute_resident_update`, the `parallel/*_pool`
+  family, and the manual-time LRU eviction benchmark) and is workload
+  behaviour rather than machine noise.
+- Counter evidence: the PMU is exposed on metal and returned usable
+  values for all eight fields benchmarks. Legitimate conclusions are
+  RATES only -- IPC 3.3-5.1, branch mispredicts around 1.0-1.6 per
+  thousand instructions on the build paths versus about 2 per million on
+  the lookup paths, and LLC misses at 0.001-0.007 MPKI, meaning the
+  fields working set is cache-resident and memory traffic is not the
+  bottleneck.
+
+### What this does NOT support
+
+Recorded because the first analysis of this data got it wrong twice.
+
+- **Cross-benchmark comparison of the raw counter columns.** `perf`
+  wraps the whole process, so a cheaper benchmark runs more iterations
+  in the fixed min-time and accumulates more of everything.
+  `fields/cache_hit` shows the highest cycle count purely because it ran
+  about 6.7M iterations; it is the cheapest operation measured.
+- **The per-iteration normalisation attempted during analysis.** It
+  divided counter-run totals by TIMING-run iteration counts, which have
+  different min-times, and inverted the true ordering: it implied
+  `goalset_build_1` costs twice `goalset_build_16` when the timings show
+  it is 13% cheaper. Per-operation cycles should come from
+  `median_ns x measured_frequency`, not from that division.
+- **Production-binary microarchitectural claims.** The counter pass runs
+  the diagnostics binary, whose fields kernels are 12-21% slower because
+  of allocation hooks.
+- **"The regression is fixed."** `90b61ef` is an ancestor of every
+  commit measured here, so there is no pre-fix arm. The hosted
+  alternating paired confirmation remains the evidence that closes it;
+  this campaign corroborates without independently proving the delta.
+- **Metal-versus-VM speedup.** The two runs differ in both machine and
+  commit.
+- **Threshold recalibration.** One snapshot on a different machine.
+
+- Follow-up: publish the counter run's own iteration count and
+  task-clock (done, this commit) so future rows can be normalised; a
+  paired pre/post-`90b61ef` run on this recipe if the fix is to be
+  quantified on metal; pinning plus a performance governor as the next
+  controlled experiment, since the counter pass drifted 2.5-3.8 GHz;
+  dedicated handling for the three noisy groups before any of them gate.
+
 ## 2026-08-01 - Hosted Confirmation Of The Field Product Fix
 
 - Area: follow-up to the 2026-07-31 chunk-level capture restoration.

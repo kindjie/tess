@@ -294,8 +294,10 @@ mkdir -p results
   echo "cmake: $(cmake --version | head -1)"
   echo "kernel: $(uname -r)"
   echo "perf_event_paranoid: $(cat /proc/sys/kernel/perf_event_paranoid)"
-  echo "cpu_pinning: none (idle 192-core host; pinning left out"
-  echo "  deliberately as an untested variable)"
+  echo "cpu_pinning: none (deliberate; left out as an untested variable)"
+  echo "online_cpus: $(nproc)"
+  echo "cpu_scaling_enabled: see the benchmark JSON context"
+  echo "counter_pass_flags: --benchmark_min_time=1s (single repetition)"
   lscpu
 } > results/machine.txt
 
@@ -380,8 +382,15 @@ fields/cache_eviction|\
 fields/nearest_target|\
 fields/build_alloc_gate}"
   COUNTER_FAILURES=0
-  echo "benchmark,cycles,instructions,cache-misses,branch-misses" \
+  # These are PROCESS TOTALS, not per-operation costs. Comparing the
+  # raw columns between benchmarks is invalid -- a faster benchmark
+  # runs more iterations in the fixed min-time and accumulates more of
+  # everything. Divide by the matching counter-iters-*.json first.
+  echo "# process totals per benchmark, NOT per-operation; normalise" \
+    "with counter-iters-<benchmark>.json before comparing rows" \
     > results/perf-per-benchmark.csv
+  echo "benchmark,cycles,instructions,cache-misses,branch-misses,task-clock-ms" \
+    >> results/perf-per-benchmark.csv
   IFS='|' read -ra COUNTER_LIST <<< "$COUNTER_BENCHMARKS"
   for bench in "${COUNTER_LIST[@]}"; do
     [[ -n "$bench" ]] || continue
@@ -391,7 +400,8 @@ fields/build_alloc_gate}"
     # would otherwise carry real numeric counters -- of process startup
     # -- attributed to a benchmark that never ran.
     rm -f "/tmp/counter-check-$$.json"
-    if perf stat -x';' -e cycles,instructions,cache-misses,branch-misses \
+    if perf stat -x';' \
+         -e cycles,instructions,cache-misses,branch-misses,task-clock \
          -o "/tmp/perf-$$.csv" -- \
          build/bench/tess_bench_diagnostics \
          --benchmark_filter="^${bench}\$" \
@@ -421,7 +431,8 @@ fields/build_alloc_gate}"
       # reads as one.
       if numeric "$cyc" && numeric "$ins" \
          && numeric "$cms" && numeric "$bms"; then
-        echo "$bench,${cyc},${ins},${cms},${bms}" \
+        tsk="$(field_for task-clock)"
+        echo "$bench,${cyc},${ins},${cms},${bms},${tsk:-}" \
           >> results/perf-per-benchmark.csv
       else
         echo "warning: non-numeric counters for $bench" \
@@ -437,10 +448,18 @@ fields/build_alloc_gate}"
       # diagnosed after the instance is gone.
       cp "/tmp/perf-$$.csv" "results/perf-raw-${bench//\//_}.csv" 2>/dev/null || true
       publish "results/perf-raw-${bench//\//_}.csv"
+      # The counter run's OWN iteration count. Without it these totals
+      # cannot be turned into per-operation figures: perf wraps the
+      # whole process, so a cheaper benchmark simply runs more
+      # iterations and accumulates more cycles. The first campaign
+      # published the totals without it and they were misread.
+      cp "/tmp/counter-check-$$.json" \
+        "results/counter-iters-${bench//\//_}.json" 2>/dev/null || true
+      publish "results/counter-iters-${bench//\//_}.json"
     else
       echo "warning: counters failed for $bench, or the filter matched" \
         "no benchmark" >&2
-      echo "$bench,,,," >> results/perf-per-benchmark.csv
+      echo "$bench,,,,," >> results/perf-per-benchmark.csv
       COUNTER_FAILURES=$(( COUNTER_FAILURES + 1 ))
     fi
     publish results/perf-per-benchmark.csv
