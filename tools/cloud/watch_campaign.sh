@@ -54,13 +54,20 @@ done
 
 # If given a parent prefix, follow the newest campaign under it rather
 # than making the operator paste a run id.
+# An explicit campaign prefix must keep being treated as one even
+# before status.txt exists, or the first minutes of a run get
+# misclassified as a parent prefix and the suppressed `ls` failure ends
+# the watch with no explanation.
 resolve_prefix() {
+  case "$BUCKET" in
+    */campaigns/*) printf '%s' "${BUCKET%/}"; return ;;
+  esac
   if gsutil -q stat "$BUCKET/status.txt" 2>/dev/null; then
-    printf '%s' "$BUCKET"
+    printf '%s' "${BUCKET%/}"
     return
   fi
   local newest
-  newest="$(gsutil ls "$BUCKET/campaigns/" 2>/dev/null | sort | tail -1)"
+  newest="$(gsutil ls "$BUCKET/campaigns/" 2>/dev/null | sort | tail -1)" || true
   printf '%s' "${newest%/}"
 }
 
@@ -73,10 +80,20 @@ snapshot() {
 
   echo "-- instance --"
   local live
+  local list_status
+  set +e
   live="$(gcloud compute instances list --project="$PROJECT" \
     --filter='labels.tess-campaign=1' \
-    --format='value(name,status,creationTimestamp)' 2>/dev/null || true)"
-  if [[ -z "$live" ]]; then
+    --format='value(name,status,creationTimestamp)' 2>&1)"
+  list_status=$?
+  set -e
+  if (( list_status != 0 )); then
+    # Do not report "nothing running" when the answer is "could not
+    # ask" -- that reads as a clean bill of health for a live machine.
+    echo "ERROR: could not list instances; status unknown"
+    echo "$live"
+    live=""
+  elif [[ -z "$live" ]]; then
     echo "no campaign instance running (finished, or not started)"
   else
     echo "$live"

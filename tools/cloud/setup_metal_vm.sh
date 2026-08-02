@@ -14,6 +14,19 @@
 # either alone has a failure mode the other covers.
 set -euo pipefail
 
+# Identity FIRST, then the trap, then anything that can fail. The
+# logging pipe and the metadata reads are themselves fallible; arming
+# the self-delete after them leaves a window where a failure strands a
+# $10/hour machine.
+metadata_early() {
+  curl -fsS -H "Metadata-Flavor: Google" \
+    "http://metadata.google.internal/computeMetadata/v1/$1" 2>/dev/null || true
+}
+INSTANCE_NAME="$(metadata_early instance/name)"
+ZONE_PATH="$(metadata_early instance/zone)"
+ZONE="${ZONE_PATH##*/}"
+PROJECT="$(metadata_early project/project-id)"
+
 exec > >(tee -a /var/log/tess-campaign.log) 2>&1
 echo "campaign startup at $(date -u +%FT%TZ)"
 
@@ -21,11 +34,6 @@ metadata() {
   curl -fsS -H "Metadata-Flavor: Google" \
     "http://metadata.google.internal/computeMetadata/v1/$1" 2>/dev/null || true
 }
-
-INSTANCE_NAME="$(metadata instance/name)"
-ZONE_PATH="$(metadata instance/zone)"
-ZONE="${ZONE_PATH##*/}"
-PROJECT="$(metadata project/project-id)"
 
 # ---- Self-delete trap, armed before any fallible work ---------------
 cleanup_and_die() {
@@ -64,6 +72,8 @@ BUCKET="$(metadata instance/attributes/tess-bucket)"
 SOURCE_URL="$(metadata instance/attributes/tess-source-url)"
 RUN_ID="$(metadata instance/attributes/tess-run-id)"
 GIT_COMMIT="$(metadata instance/attributes/tess-git-commit)"
+REQUIRE_COUNTERS="$(metadata instance/attributes/tess-require-counters)"
+REQUIRE_COUNTERS="${REQUIRE_COUNTERS:-1}"
 
 [[ -n "$BUCKET" && -n "$SOURCE_URL" ]] || {
   echo "FATAL: missing bucket metadata" >&2; exit 1; }
@@ -130,7 +140,18 @@ if command -v perf >/dev/null 2>&1 \
   PERF_OK=1
   echo "PMU: available"
 else
-  echo "PMU: UNAVAILABLE -- this run yields timings only, no counters" >&2
+  echo "PMU: UNAVAILABLE" >&2
+  if [[ "$REQUIRE_COUNTERS" == "1" ]]; then
+    # Counters are the only reason this tier costs what it does. A
+    # timing-only run here buys numbers a cheap shared VM produces, so
+    # stop now rather than spend 45 more minutes of metal time. The
+    # trap self-deletes on the way out.
+    echo "FATAL: counters required but unavailable; aborting before" \
+      "spending the run. Re-run with --allow-no-counters to accept" \
+      "timings only." >&2
+    exit 3
+  fi
+  echo "continuing without counters (--allow-no-counters)" >&2
 fi
 
 export CC=clang CXX=clang++
@@ -165,11 +186,17 @@ mkdir -p results
 # whole run is close to the duration cap, and GCE deletes at the cap
 # regardless of state -- a single upload at the end means an overrun
 # loses everything, including the stages that had already completed.
+UPLOAD_FAILURES=0
 publish() {
   local path="$1"
   [[ -f "$path" ]] || return 0
-  gsutil -q cp "$path" "$BUCKET/$(basename "$path")" \
-    || echo "warning: could not upload $path"
+  # One retry: a transient GCS error should not silently cost a result.
+  gsutil -q cp "$path" "$BUCKET/$(basename "$path")" 2>/dev/null \
+    || gsutil -q cp "$path" "$BUCKET/$(basename "$path")" 2>/dev/null \
+    || {
+      echo "ERROR: could not upload $path" >&2
+      UPLOAD_FAILURES=$(( UPLOAD_FAILURES + 1 ))
+    }
 }
 
 set_stage "benchmarking"
@@ -186,7 +213,13 @@ for binary in build/bench/tess_bench build/bench/tess_bench_diagnostics; do
     --benchmark_out="results/$name.json" \
     --benchmark_out_format=json
   publish "results/$name.json"
-done
+done || {
+  # A benchmark that died still leaves a partial JSON worth having.
+  echo "warning: a benchmark binary failed; publishing partial output" >&2
+  for partial in results/*.json; do
+    [[ -f "$partial" ]] && publish "$partial"
+  done
+}
 
 # ---- Per-benchmark counters -----------------------------------------
 # A single `perf stat` over the whole binary averages ~200 heterogeneous
@@ -208,17 +241,40 @@ fields/cache_eviction}"
   for bench in "${COUNTER_LIST[@]}"; do
     [[ -n "$bench" ]] || continue
     echo "counters for $bench"
-    if perf stat -x, -e cycles,instructions,cache-misses,branch-misses \
+    if perf stat -x';' -e cycles,instructions,cache-misses,branch-misses \
          -o "/tmp/perf-$$.csv" -- \
          build/bench/tess_bench_diagnostics \
          --benchmark_filter="^${bench}\$" \
          --benchmark_min_time=1s >/dev/null 2>&1; then
-      cyc=$(awk -F, '/cycles/ {print $1; exit}' "/tmp/perf-$$.csv")
-      ins=$(awk -F, '/instructions/ {print $1; exit}' "/tmp/perf-$$.csv")
-      cms=$(awk -F, '/cache-misses/ {print $1; exit}' "/tmp/perf-$$.csv")
-      bms=$(awk -F, '/branch-misses/ {print $1; exit}' "/tmp/perf-$$.csv")
-      echo "$bench,${cyc:-},${ins:-},${cms:-},${bms:-}" \
-        >> results/perf-per-benchmark.csv
+      # Match the EVENT FIELD exactly, not the whole record. perf's -x
+      # output is "not-quite-CSV" and a substring match on the line can
+      # hit metric text, a PMU-qualified duplicate, or another event
+      # whose name contains the one wanted. Field 3 is the event name
+      # for this invocation (no interval, no per-CPU aggregation);
+      # field 1 is the value.
+      field_for() {
+        awk -F';' -v want="$1" \
+          '$3 == want { print $1; exit }' "/tmp/perf-$$.csv"
+      }
+      cyc=$(field_for cycles)
+      ins=$(field_for instructions)
+      cms=$(field_for cache-misses)
+      bms=$(field_for branch-misses)
+      # "<not counted>" and "<not supported>" are not numbers. Accepting
+      # them would publish a counter row that looks measured and is not.
+      numeric() { [[ "$1" =~ ^[0-9]+$ ]]; }
+      if numeric "$cyc" && numeric "$ins"; then
+        echo "$bench,${cyc},${ins},${cms:-},${bms:-}" \
+          >> results/perf-per-benchmark.csv
+      else
+        echo "warning: non-numeric counters for $bench (cycles='$cyc'" \
+          "instructions='$ins')" >&2
+        echo "$bench,,,," >> results/perf-per-benchmark.csv
+      fi
+      # Keep the raw output: without it a suspect row cannot be
+      # diagnosed after the instance is gone.
+      cp "/tmp/perf-$$.csv" "results/perf-raw-${bench//\//_}.csv" 2>/dev/null || true
+      publish "results/perf-raw-${bench//\//_}.csv"
     else
       echo "warning: counters failed for $bench"
       echo "$bench,,,," >> results/perf-per-benchmark.csv
@@ -229,4 +285,14 @@ else
   echo "skipping counter attribution: PMU unavailable"
 fi
 
-echo "all stages uploaded to $BUCKET"
+# Sweep anything a per-stage publish missed, then report honestly. A
+# blanket "all stages uploaded" after warnings is how a partial result
+# gets mistaken for a complete one.
+for leftover in results/*; do
+  [[ -f "$leftover" ]] && publish "$leftover"
+done
+if (( UPLOAD_FAILURES > 0 )); then
+  echo "WARNING: $UPLOAD_FAILURES upload(s) failed; results are INCOMPLETE" >&2
+else
+  echo "all stages uploaded to $BUCKET"
+fi

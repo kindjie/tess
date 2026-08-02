@@ -23,6 +23,46 @@ MAX_AGE_MINUTES=0
 ASSUME_YES=0
 DRY_RUN=0
 
+# An unattached disk keeps billing and is invisible to an instance-only
+# listing. --boot-disk-auto-delete covers the normal cascade, but a
+# partial create or a failed cascade can strand one.
+reap_disks() {
+  local out status err
+  err="$(mktemp -t reap-disk-err-XXXXXX)"
+  set +e
+  out="$(gcloud compute disks list --project="$PROJECT" \
+    --filter='-users:* AND name~^tess-metal-' \
+    --format='value(name,zone,sizeGb)' 2>"$err")"
+  status=$?
+  set -e
+  rm -f "$err"
+  if (( status != 0 )); then
+    echo "warning: could not list disks; check for stranded disks" >&2
+    return 0
+  fi
+  [[ -z "$out" ]] && return 0
+  echo
+  echo "unattached campaign disks (these bill):"
+  echo "$out"
+  if (( DRY_RUN )); then
+    echo "dry run: leaving them"
+    return 0
+  fi
+  if (( ! ASSUME_YES )); then
+    read -r -p "delete these disks? [y/N] " reply
+    [[ "$reply" == [yY] ]] || return 0
+  fi
+  while IFS= read -r row; do
+    [[ -n "$row" ]] || continue
+    local dname dzone
+    dname=$(awk '{print $1}' <<<"$row")
+    dzone=$(awk '{print $2}' <<<"$row")
+    echo "deleting disk $dname in $dzone..."
+    gcloud compute disks delete "$dname" --project="$PROJECT" \
+      --zone="$dzone" --quiet || echo "error: failed to delete $dname" >&2
+  done <<< "$out"
+}
+
 usage() {
   cat <<'EOF'
 Usage: reap_orphans.sh [options]
@@ -64,18 +104,57 @@ fi
 # while-read rather than mapfile: mapfile is bash 4+, and macOS ships
 # bash 3.2, so the reaper would have exited 127 on the machine an
 # operator is most likely to run it from.
+#
+# The list command's failure is NOT swallowed. Discarding stderr and
+# forcing success turns an auth failure, a wrong project, or an API
+# outage into "no campaign instances found" and exit 0 -- a clean bill
+# of health from a tool that could not see anything at all. In the one
+# place whose whole job is catching an expensive mistake, failing open
+# is the worst possible default.
+# stdout and stderr kept SEPARATE. Folding stderr into the row list
+# turns a gcloud warning into a fake instance row -- observed: a
+# "WARNING: The following..." line parsed as an instance named WARNING.
+list_output=""
+list_err="$(mktemp -t reap-err-XXXXXX)"
+set +e
+list_output="$(gcloud compute instances list \
+  --project="$PROJECT" \
+  --filter="labels.${LABEL%%=*}=${LABEL#*=}" \
+  --format='value(name,zone,creationTimestamp,status)' 2>"$list_err")"
+list_status=$?
+set -e
+# Exit status alone is NOT sufficient. `gcloud compute instances list`
+# returns 0 for a nonexistent project, an auth failure, or a partial
+# zone failure, reporting only "Some requests did not succeed" on
+# stderr. A partial failure is the dangerous one: the list is
+# incomplete, so an orphan can be hidden behind a warning while this
+# prints a clean bill of health.
+list_err_text="$(cat "$list_err" 2>/dev/null || true)"
+rm -f "$list_err"
+if (( list_status != 0 )) \
+   || grep -qiE "did not succeed|was not found|PERMISSION_DENIED|\
+Reauthentication|invalid.*credential" <<<"$list_err_text"; then
+  echo "error: could not reliably list instances in $PROJECT" >&2
+  echo "$list_err_text" >&2
+  echo "Cannot confirm whether anything is running. Check manually" \
+    "before assuming nothing is billing." >&2
+  exit 1
+fi
+# This one is benign: it only means no resource carries the label yet.
+if [[ -n "$list_err_text" ]] \
+   && ! grep -qi "filter keys were not present" <<<"$list_err_text"; then
+  echo "note: gcloud wrote diagnostics while listing:" >&2
+  echo "$list_err_text" >&2
+fi
+
 FOUND=()
 while IFS= read -r line; do
   [[ -n "$line" ]] && FOUND+=("$line")
-done < <(
-  gcloud compute instances list \
-    --project="$PROJECT" \
-    --filter="labels.${LABEL%%=*}=${LABEL#*=}" \
-    --format='value(name,zone,creationTimestamp,status)' 2>/dev/null || true
-)
+done <<< "$list_output"
 
 if (( ${#FOUND[@]} == 0 )); then
   echo "no campaign instances found in $PROJECT"
+  reap_disks
   exit 0
 fi
 
@@ -90,9 +169,18 @@ for row in "${FOUND[@]}"; do
 
   # GNU and BSD date disagree on parsing; try both rather than assuming
   # the operator's machine.
-  created_epoch=$(date -u -d "$created" +%s 2>/dev/null \
-    || date -u -j -f "%Y-%m-%dT%H:%M:%S" "${created%%.*}" +%s 2>/dev/null \
-    || echo 0)
+  # GNU date parses the offset directly. BSD date does not accept the
+  # fractional seconds, and dropping the OFFSET as well as the fraction
+  # would mis-age an instance by hours -- enough to reap one early. Strip
+  # only the fraction, keep the offset, and tell BSD date about it.
+  created_epoch=$(date -u -d "$created" +%s 2>/dev/null || echo 0)
+  if (( created_epoch == 0 )); then
+    normalized="$(printf '%s' "$created" | sed -E 's/\.[0-9]+//')"
+    normalized="${normalized/Z/+0000}"
+    normalized="$(printf '%s' "$normalized" | sed -E 's/([+-][0-9]{2}):([0-9]{2})$/\1\2/')"
+    created_epoch=$(date -u -j -f "%Y-%m-%dT%H:%M:%S%z" \
+      "$normalized" +%s 2>/dev/null || echo 0)
+  fi
   if (( created_epoch == 0 )); then
     # Unparseable timestamp must not silently exclude an instance from
     # reaping -- err toward listing it.
@@ -142,3 +230,4 @@ if (( failures > 0 )); then
   exit 1
 fi
 echo "all selected instances deleted"
+reap_disks
