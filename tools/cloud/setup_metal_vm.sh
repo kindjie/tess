@@ -491,6 +491,11 @@ if (( UPLOAD_FAILURES > 0 )); then
   CAMPAIGN_STATUS=1
 fi
 if (( CAMPAIGN_STATUS == 0 )); then
-  echo "campaign complete; all stages uploaded to $BUCKET"
+  # Run id, not the bucket URI. The log itself is an artifact, and a
+  # private bucket name in it is the one thing in these results that
+  # must never reach the public data branch -- the JSON sanitiser does
+  # not cover log files. The operator already knows the destination;
+  # the log does not need to repeat it.
+  echo "campaign complete; all stages uploaded (run $RUN_ID)"
 fi
 exit "$CAMPAIGN_STATUS"

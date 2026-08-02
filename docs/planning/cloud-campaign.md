@@ -275,6 +275,14 @@ Machine details are appropriate in that private bucket. They are **not**
 appropriate on the public benchmark data branch, whose publisher strips
 host names and absolute paths — see `tools/publish_benchmark_data.py`.
 
+**The sanitiser only covers Google Benchmark JSON.** `campaign.log`,
+`machine.txt` and the perf CSVs pass through it untouched, so they must
+never be hand-copied to the public branch. The startup script no longer
+logs the bucket URI (it logs the run id), which removed the only
+credential-adjacent identifier the first campaign produced; the
+instance name still appears as `host_name` inside the JSON, and that is
+exactly what the publisher strips.
+
 ## Discrepancy found in the reference project
 
 Worth knowing before trusting its runbook: `docs/gcp/README.md` there
