@@ -52,7 +52,7 @@ reap_disks() {
   set +e
   out="$(gcloud compute disks list --project="$PROJECT" \
     --filter='-users:* AND name~^tess-metal-' \
-    --format='value(name,zone,sizeGb)' 2>"$err")"
+    --format='value(name,zone.basename(),sizeGb)' 2>"$err")"
   status=$?
   set -e
   err_text="$(cat "$err" 2>/dev/null || true)"
@@ -136,6 +136,17 @@ if ! [[ "$MAX_AGE_MINUTES" =~ ^[0-9]+$ ]]; then
   echo "error: --older-than must be a whole number of minutes" >&2
   exit 2
 fi
+# --yes with the default age of 0 selects everything, including a
+# campaign that is currently running. That combination is exactly what
+# a cron entry would use, and it would delete a live $10/hour run
+# mid-flight. Require the age to be stated explicitly.
+if (( ASSUME_YES )) && (( MAX_AGE_MINUTES == 0 )) && (( ! DRY_RUN )); then
+  echo "error: --yes with --older-than=0 would delete a RUNNING campaign." \
+    >&2
+  echo "Pass an explicit --older-than (for example 120) to confirm you" \
+    "mean only stale instances." >&2
+  exit 2
+fi
 
 # Every zone, not a configured one: an orphan in a zone the current
 # config does not name is exactly the orphan nobody finds by hand.
@@ -158,7 +169,7 @@ set +e
 list_output="$(gcloud compute instances list \
   --project="$PROJECT" \
   --filter="labels.${LABEL%%=*}=${LABEL#*=}" \
-  --format='value(name,zone,creationTimestamp,status)' 2>"$list_err")"
+  --format='value(name,zone.basename(),creationTimestamp,status)' 2>"$list_err")"
 list_status=$?
 set -e
 # Exit status alone is NOT sufficient. `gcloud compute instances list`
@@ -196,12 +207,13 @@ fi
 
 now_epoch=$(date -u +%s)
 declare -a REAP=()
-printf '%-38s %-18s %-22s %s\n' INSTANCE ZONE CREATED AGE
+printf '%-30s %-16s %-10s %-22s %s\n' INSTANCE ZONE STATUS CREATED AGE
 for row in "${FOUND[@]}"; do
   [[ -z "$row" ]] && continue
   name=$(awk '{print $1}' <<<"$row")
   zone=$(awk '{print $2}' <<<"$row")
   created=$(awk '{print $3}' <<<"$row")
+  status=$(awk '{print $4}' <<<"$row")
 
   # GNU and BSD date disagree on parsing; try both rather than assuming
   # the operator's machine.
@@ -225,7 +237,10 @@ for row in "${FOUND[@]}"; do
     age_minutes=$(( (now_epoch - created_epoch) / 60 ))
   fi
 
-  printf '%-38s %-18s %-22s %sm\n' "$name" "$zone" "$created" "$age_minutes"
+  # STATUS shown, not just fetched: without it a $10/hour run in flight
+  # is indistinguishable from an orphan in the confirmation table.
+  printf '%-30s %-16s %-10s %-22s %sm\n' \
+    "$name" "$zone" "${status:-?}" "$created" "$age_minutes"
   if (( age_minutes >= MAX_AGE_MINUTES )); then
     REAP+=("$name|$zone")
   fi

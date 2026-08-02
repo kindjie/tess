@@ -104,7 +104,12 @@ Google's bare-metal documentation:
 | Hyperdisk boot disk | "Bare metal instances use only Hyperdisk storage" — `pd-balanced` is rejected |
 | IDPF network interface | No hypervisor, so no gVNIC or VirtIO |
 | `--maintenance-policy=TERMINATE` | Live migration unsupported |
-| No Shielded VM / vTPM flags | Unavailable on C3 bare metal |
+| `--no-shielded-*` passed **explicitly** | Unavailable on C3 metal, and gcloud enables vTPM and integrity monitoring by default for Shielded-capable images like Ubuntu 24.04 — leaving them unset is not the same as disabling them |
+
+Untested until the first run: whether `--max-run-duration` with
+`--instance-termination-action=DELETE` is accepted for C3 metal on
+standard provisioning. If it is rejected the create fails cleanly at no
+cost, which is the acceptable direction to be wrong in.
 
 ## Preflight
 
@@ -195,7 +200,18 @@ cannot contaminate the numbers this campaign exists to produce.
 would average ~200 heterogeneous benchmarks into one row and attribute
 nothing.
 
-The PMU is checked at start-up and the answer is recorded either way.
+The PMU probe checks the counter VALUES, not `perf stat`'s exit status.
+perf returns 0 when the events open but report `<not counted>` or
+`<not supported>`; only a hard permission error is nonzero. Since this
+gate is the sole protection for the run's value, trusting the exit
+status would let it pass on a machine with no usable counters and
+surface 45 paid minutes later as empty rows.
+
+Each counter run also writes `--benchmark_out` and the row is only
+accepted if the benchmark name appears in it. A filter matching nothing
+exits 0 and perf succeeds, so the row would otherwise carry real
+numeric counters — of process startup — attributed to a benchmark that
+never ran.
 Hardware counters are the whole reason this tier costs what it does;
 finding out afterwards that they were unavailable means having paid for
 timings a cheap shared VM could have produced. `perf` comes from a
