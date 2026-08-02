@@ -18,6 +18,13 @@ set -euo pipefail
 # logging pipe and the metadata reads are themselves fallible; arming
 # the self-delete after them leaves a window where a failure strands a
 # $10/hour machine.
+# gcloud and gsutil are snaps on Ubuntu GCE images, and the guest
+# agent's script environment has historically not included /snap/bin.
+# Without this the self-delete silently no-ops and the duration cap
+# becomes the only cleanup -- $15 for zero results. One line turns an
+# accepted loss into a non-event.
+export PATH="$PATH:/snap/bin:/usr/local/bin"
+
 # Bounded and retried. This runs BEFORE the self-delete trap exists, so
 # an unbounded request here is the one place the script can hang with
 # nothing watching it. --max-time caps each attempt; the retry covers a
@@ -58,7 +65,13 @@ cleanup_and_die() {
   set +e
   # Stop the heartbeat first so it cannot race the final upload.
   if [[ -n "${HEARTBEAT_PID:-}" ]]; then
+    # kill then WAIT: killing the loop does not stop an in-flight
+    # `gsutil cp`, which could otherwise overwrite status.txt with a
+    # stale "benchmarking" after the final write -- leaving the watcher
+    # showing a permanently stale heartbeat for a clean run, which the
+    # runbook calls the case worth acting on.
     kill "$HEARTBEAT_PID" 2>/dev/null || true
+    wait "$HEARTBEAT_PID" 2>/dev/null || true
   fi
   echo "campaign finished with status $code at $(date -u +%FT%TZ)"
   if [[ -n "${BUCKET:-}" ]]; then
@@ -159,13 +172,25 @@ sysctl -w kernel.perf_event_paranoid=0 \
 # unavailable after a 45-minute run means paying for numbers a cheap
 # shared VM could have produced. Recorded either way so the result is
 # never ambiguous after the fact.
+# Exit status is not enough: perf returns 0 when the events open but
+# report "<not counted>" or "<not supported>". Only a hard
+# perf_event_open permission error is nonzero. Since this gate is the
+# sole protection for the run's entire value proposition, it validates
+# the VALUES the same way the publish path does.
 PERF_OK=0
-if command -v perf >/dev/null 2>&1 \
-   && perf stat -e cycles,instructions true >/dev/null 2>&1; then
-  PERF_OK=1
-  echo "PMU: available"
-else
-  echo "PMU: UNAVAILABLE" >&2
+if command -v perf >/dev/null 2>&1; then
+  probe_out="$(perf stat -x';' -e cycles,instructions -- true 2>&1 || true)"
+  probe_cycles="$(awk -F';' '$3 == "cycles" { print $1; exit }' \
+    <<<"$probe_out")"
+  if [[ "$probe_cycles" =~ ^[0-9]+$ ]] && (( probe_cycles > 0 )); then
+    PERF_OK=1
+    echo "PMU: available (probe counted $probe_cycles cycles)"
+  else
+    echo "PMU: events opened but returned no usable value" \
+      "(cycles='$probe_cycles')" >&2
+  fi
+fi
+if (( PERF_OK == 0 )); then
   if [[ "$REQUIRE_COUNTERS" == "1" ]]; then
     # Counters are the only reason this tier costs what it does. A
     # timing-only run here buys numbers a cheap shared VM produces, so
@@ -187,6 +212,18 @@ cmake -S . -B build -G Ninja \
   -DTESS_BUILD_BENCHMARKS=ON \
   -DTESS_BUILD_EXAMPLES=OFF
 cmake --build build --parallel
+
+# A build that produced neither binary would otherwise run zero
+# benchmarks, publish only machine.txt, and exit 0 -- the full boot,
+# apt and build price for nothing, reported as clean. The `-x` guard in
+# the loop below silently tolerates that, so assert here instead.
+for required in build/bench/tess_bench build/bench/tess_bench_diagnostics; do
+  if [[ ! -x "$required" ]]; then
+    echo "FATAL: $required was not built; aborting rather than" \
+      "reporting a zero-benchmark run as successful" >&2
+    exit 4
+  fi
+done
 
 mkdir -p results
 # Machine identity is recorded for the campaign record; this file goes
@@ -260,22 +297,37 @@ done
 # timing comes from a perf-wrapped process.
 if (( PERF_OK )); then
   set_stage "counter attribution"
+  # All eight of the fields family, not a subset. This campaign exists
+  # because of a fields regression, the marginal cost is seconds, and a
+  # one-shot run should not omit half the family it was run for.
   COUNTER_BENCHMARKS="${COUNTER_BENCHMARKS:-\
 fields/goalset_build_1|\
+fields/goalset_build_16|\
 fields/goalset_build_256|\
+fields/cache_hit|\
 fields/cache_miss_store|\
-fields/cache_eviction}"
+fields/cache_eviction|\
+fields/nearest_target}"
+  COUNTER_FAILURES=0
   echo "benchmark,cycles,instructions,cache-misses,branch-misses" \
     > results/perf-per-benchmark.csv
   IFS='|' read -ra COUNTER_LIST <<< "$COUNTER_BENCHMARKS"
   for bench in "${COUNTER_LIST[@]}"; do
     [[ -n "$bench" ]] || continue
     echo "counters for $bench"
+    # --benchmark_out so the run can be PROVEN to have happened. A
+    # filter matching nothing exits 0 and perf succeeds, so the row
+    # would otherwise carry real numeric counters -- of process startup
+    # -- attributed to a benchmark that never ran.
+    rm -f "/tmp/counter-check-$$.json"
     if perf stat -x';' -e cycles,instructions,cache-misses,branch-misses \
          -o "/tmp/perf-$$.csv" -- \
          build/bench/tess_bench_diagnostics \
          --benchmark_filter="^${bench}\$" \
-         --benchmark_min_time=1s >/dev/null 2>&1; then
+         --benchmark_min_time=1s \
+         --benchmark_out="/tmp/counter-check-$$.json" \
+         --benchmark_out_format=json >/dev/null 2>&1 \
+       && grep -qF "\"$bench\"" "/tmp/counter-check-$$.json" 2>/dev/null; then
       # Match the EVENT FIELD exactly, not the whole record. perf's -x
       # output is "not-quite-CSV" and a substring match on the line can
       # hit metric text, a PMU-qualified duplicate, or another event
@@ -311,8 +363,10 @@ fields/cache_eviction}"
       cp "/tmp/perf-$$.csv" "results/perf-raw-${bench//\//_}.csv" 2>/dev/null || true
       publish "results/perf-raw-${bench//\//_}.csv"
     else
-      echo "warning: counters failed for $bench"
+      echo "warning: counters failed for $bench, or the filter matched" \
+        "no benchmark" >&2
       echo "$bench,,,," >> results/perf-per-benchmark.csv
+      COUNTER_FAILURES=$(( COUNTER_FAILURES + 1 ))
     fi
     publish results/perf-per-benchmark.csv
   done
@@ -330,6 +384,10 @@ done
 # success after a benchmark died. Both counters decide the exit status,
 # which the EXIT handler records in status.txt.
 CAMPAIGN_STATUS=0
+if (( ${COUNTER_FAILURES:-0} > 0 )); then
+  echo "ERROR: ${COUNTER_FAILURES} counter capture(s) failed" >&2
+  CAMPAIGN_STATUS=1
+fi
 if (( BENCH_FAILURES > 0 )); then
   echo "ERROR: $BENCH_FAILURES benchmark binary/binaries FAILED" >&2
   CAMPAIGN_STATUS=1

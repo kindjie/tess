@@ -26,8 +26,11 @@
 # C3 bare metal is not a normal VM. It takes Hyperdisk only, requires an
 # IDPF network interface (no gVNIC or VirtIO, since there is no
 # hypervisor), requires TERMINATE maintenance behaviour, and does not
-# support Shielded VM or vTPM. Those are platform requirements, not
-# preferences: getting any wrong fails the create.
+# support Shielded VM or vTPM -- and gcloud enables vTPM and integrity
+# monitoring BY DEFAULT for Shielded-capable images such as Ubuntu
+# 24.04, so they must be disabled EXPLICITLY rather than merely left
+# unset. Platform requirements, not preferences: any one wrong fails
+# the create.
 set -euo pipefail
 
 PROJECT="${TESS_GCP_PROJECT:-}"
@@ -165,14 +168,41 @@ fi
 # its attached service account, so if that account cannot delete
 # instances the primary cleanup mechanism is gone and only the duration
 # cap remains. Better to learn that now than from a bill.
-echo "preflight: checking delete permission..."
+# The identity that matters is the instance's attached service account,
+# NOT the operator: self-delete and every upload run as that account.
+# test-iam-permissions answers for the caller, so checking only that
+# produces confidence about the wrong principal.
+echo "preflight: checking permissions..."
 PERMS="$(gcloud projects test-iam-permissions "$PROJECT" \
   --permissions=compute.instances.delete \
   --format='value(permissions)' 2>/dev/null || true)"
 if [[ "$PERMS" != *compute.instances.delete* ]]; then
-  echo "warning: could not confirm compute.instances.delete for this" \
-    "account. If the INSTANCE service account also lacks it, self-delete" \
-    "fails and only the duration cap remains." >&2
+  echo "warning: the OPERATOR cannot confirm compute.instances.delete" >&2
+fi
+
+# Asked for rather than constructed. Building the address from the
+# project number would hardcode Google's service-account domain, which
+# this repository's public-safety hook flags as an email address, and
+# would also be wrong if the project uses a non-default account.
+INSTANCE_SA="$(gcloud compute project-info describe --project="$PROJECT" \
+  --format='value(defaultServiceAccount)' 2>/dev/null || true)"
+if [[ -n "$INSTANCE_SA" ]]; then
+  SA_ROLES="$(gcloud projects get-iam-policy "$PROJECT" \
+    --flatten='bindings[].members' \
+    --filter="bindings.members:${INSTANCE_SA}" \
+    --format='value(bindings.role)' 2>/dev/null || true)"
+  if [[ -z "$SA_ROLES" ]]; then
+    echo "WARNING: the instance service account has no visible project" >&2
+    echo "  role ($INSTANCE_SA). Newer organizations disable the" >&2
+    echo "  automatic Editor grant; without it the source fetch and every" >&2
+    echo "  upload fail, self-delete fails, and the duration cap becomes" >&2
+    echo "  the only cleanup -- paying the cap for zero results." >&2
+  else
+    echo "  instance service account: $(echo "$SA_ROLES" | tr '\n' ' ')"
+  fi
+else
+  echo "warning: could not resolve the instance service account, so it" \
+    "was NOT checked" >&2
 fi
 
 if (( ! ASSUME_YES )); then
@@ -211,10 +241,32 @@ remove_instance_if_present() {
       echo "error: DELETE FAILED -- the instance may still be billing." >&2
       echo "  Run: tools/cloud/reap_orphans.sh --project=$PROJECT" >&2
     fi
-  elif [[ "$describe_err" != *"not found"* && "$describe_err" != *404* ]]; then
-    echo "warning: could not determine whether $INSTANCE_NAME exists:" >&2
-    echo "  $describe_err" >&2
-    echo "  Run tools/cloud/reap_orphans.sh --project=$PROJECT" >&2
+  else
+    # A 404 straight after an interrupted create is NOT proof of
+    # absence: killing the client does not cancel the server-side
+    # operation, so the instance may still be materializing. Re-check
+    # before believing it, and never exit silently either way.
+    local waited=0 recheck
+    while (( waited < 90 )); do
+      sleep 10
+      waited=$(( waited + 10 ))
+      set +e
+      gcloud compute instances describe "$INSTANCE_NAME" \
+        --project="$PROJECT" --zone="$ZONE" \
+        --format='value(name)' >/dev/null 2>&1
+      recheck=$?
+      set -e
+      if (( recheck == 0 )); then
+        echo "instance appeared after ${waited}s; deleting..." >&2
+        gcloud compute instances delete "$INSTANCE_NAME" \
+          --project="$PROJECT" --zone="$ZONE" --delete-disks=all --quiet \
+          || echo "error: DELETE FAILED -- run reap_orphans.sh" >&2
+        return
+      fi
+    done
+    echo "no instance named $INSTANCE_NAME after ${waited}s" >&2
+    echo "  (describe said: ${describe_err:-nothing})" >&2
+    echo "  Confirm with: tools/cloud/reap_orphans.sh --project=$PROJECT" >&2
   fi
 }
 
@@ -255,6 +307,9 @@ gcloud compute instances create "$INSTANCE_NAME" \
   --boot-disk-auto-delete \
   --network-interface=nic-type=IDPF \
   --maintenance-policy=TERMINATE \
+  --no-shielded-secure-boot \
+  --no-shielded-vtpm \
+  --no-shielded-integrity-monitoring \
   --no-restart-on-failure \
   --max-run-duration="$MAX_RUN_DURATION" \
   --instance-termination-action=DELETE \
