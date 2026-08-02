@@ -93,6 +93,14 @@ done
 [[ -n "$BUCKET" ]]  || { echo "error: --bucket required" >&2; exit 2; }
 [[ "$BUCKET" == gs://* ]] || {
   echo "error: --bucket must start with gs://" >&2; exit 2; }
+# The bucket path is embedded in a single-quoted shell command on the
+# instance, so an apostrophe would break or alter that command. Restrict
+# to the characters GCS paths actually use rather than quoting around a
+# hostile value.
+[[ "$BUCKET" =~ ^gs://[A-Za-z0-9._/-]+$ ]] || {
+  echo "error: --bucket may contain only letters, digits, dot, dash," \
+    "underscore and slash" >&2
+  exit 2; }
 [[ "$MAX_RUN_DURATION" =~ ^[0-9]+[smh]$ ]] || {
   echo "error: --max-run-duration must look like 45m or 2h" >&2; exit 2; }
 
@@ -226,11 +234,19 @@ SRC_TARBALL=""
 # gcloud has no global deadline, so a stalled call would make the
 # "90 second" bound below meaningless. `timeout` is used when present;
 # when it is not, the bound is best-effort and says so.
+# -k sends KILL after TERM, so a child that ignores TERM is still
+# bounded. Without a timeout binary at all, the cleanup deliberately
+# does NOT ignore signals -- an unbounded call the operator cannot
+# interrupt is worse than an interruptible one.
+TIMEOUT_BIN=""
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_BIN="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_BIN="gtimeout"
+fi
 bounded_gcloud() {
-  if command -v timeout >/dev/null 2>&1; then
-    timeout 60 gcloud "$@"
-  elif command -v gtimeout >/dev/null 2>&1; then
-    gtimeout 60 gcloud "$@"
+  if [[ -n "$TIMEOUT_BIN" ]]; then
+    "$TIMEOUT_BIN" -k 10 60 gcloud "$@"
   else
     gcloud "$@"
   fi
@@ -272,10 +288,12 @@ remove_instance_if_present() {
     # About 90s of polling; each gcloud call is separately bounded by
     # `timeout` when available, so the total is bounded in practice
     # rather than guaranteed.
-    local waited=0 recheck
-    while (( waited < 90 )); do
+    # Wall clock, not accumulated sleep: each bounded gcloud can take up
+    # to 60s, so counting only the sleeps understated the real bound by
+    # roughly an order of magnitude.
+    local deadline=$(( SECONDS + 90 )) recheck
+    while (( SECONDS < deadline )); do
       sleep 10
-      waited=$(( waited + 10 ))
       set +e
       bounded_gcloud compute instances describe "$INSTANCE_NAME" \
         --project="$PROJECT" --zone="$ZONE" \
@@ -283,14 +301,14 @@ remove_instance_if_present() {
       recheck=$?
       set -e
       if (( recheck == 0 )); then
-        echo "instance appeared after ${waited}s; deleting..." >&2
+        echo "instance appeared during recheck; deleting..." >&2
         bounded_gcloud compute instances delete "$INSTANCE_NAME" \
           --project="$PROJECT" --zone="$ZONE" --delete-disks=all --quiet \
           || echo "error: DELETE FAILED -- run reap_orphans.sh" >&2
         return
       fi
     done
-    echo "no instance named $INSTANCE_NAME after ${waited}s" >&2
+    echo "no instance named $INSTANCE_NAME after the recheck window" >&2
     echo "  (describe said: ${describe_err:-nothing})" >&2
     echo "  Confirm with: tools/cloud/reap_orphans.sh --project=$PROJECT" >&2
   fi
@@ -299,10 +317,16 @@ remove_instance_if_present() {
 CREATE_ATTEMPTED=0
 CLEANUP_RUNNING=0
 cleanup() {
-  # IGNORE further signals rather than restoring the default. Restoring
-  # it meant a second Ctrl-C during the poll or the delete killed the
-  # driver outright -- exactly when an instance gets stranded.
-  trap '' INT TERM
+  # Ignore further signals ONLY when every call inside is bounded.
+  # Without a timeout binary a wedged gcloud would otherwise be
+  # uninterruptible forever, which is worse than the stranding this
+  # protects against -- and the reaper still covers that case.
+  if [[ -n "$TIMEOUT_BIN" ]]; then
+    trap '' INT TERM
+  else
+    trap - INT TERM
+    echo "note: no timeout binary; cleanup stays interruptible" >&2
+  fi
   if (( CLEANUP_RUNNING )); then
     return
   fi
