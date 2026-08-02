@@ -27,8 +27,6 @@ ZONE_PATH="$(metadata_early instance/zone)"
 ZONE="${ZONE_PATH##*/}"
 PROJECT="$(metadata_early project/project-id)"
 
-exec > >(tee -a /var/log/tess-campaign.log) 2>&1
-echo "campaign startup at $(date -u +%FT%TZ)"
 
 metadata() {
   curl -fsS -H "Metadata-Flavor: Google" \
@@ -38,6 +36,10 @@ metadata() {
 # ---- Self-delete trap, armed before any fallible work ---------------
 cleanup_and_die() {
   local code=$?
+  # Everything in here is best-effort EXCEPT the delete. Under errexit a
+  # failed log copy or status write would abort the handler before it
+  # ever reached the delete, stranding the instance.
+  set +e
   # Stop the heartbeat first so it cannot race the final upload.
   if [[ -n "${HEARTBEAT_PID:-}" ]]; then
     kill "$HEARTBEAT_PID" 2>/dev/null || true
@@ -55,7 +57,7 @@ cleanup_and_die() {
   if [[ -n "${BUCKET:-}" ]]; then
     gsutil -q cp /var/log/tess-campaign.log "$BUCKET/campaign.log" || true
   fi
-  if [[ -n "$INSTANCE_NAME" && -n "$ZONE" ]]; then
+  if [[ -n "$INSTANCE_NAME" && -n "$ZONE" && -n "$PROJECT" ]]; then
     echo "self-deleting $INSTANCE_NAME"
     gcloud compute instances delete "$INSTANCE_NAME" \
       --zone="$ZONE" --project="$PROJECT" --quiet || true
@@ -67,6 +69,13 @@ cleanup_and_die() {
   fi
 }
 trap cleanup_and_die EXIT
+
+# Logging installed AFTER the trap. Process substitution can fail,
+# and a failure here previously terminated the script before the
+# self-delete existed -- stranding a $10/hour machine at the one
+# moment nothing else was watching.
+exec > >(tee -a /var/log/tess-campaign.log) 2>&1
+echo "campaign startup at $(date -u +%FT%TZ)"
 
 BUCKET="$(metadata instance/attributes/tess-bucket)"
 SOURCE_URL="$(metadata instance/attributes/tess-source-url)"
@@ -202,24 +211,29 @@ publish() {
 set_stage "benchmarking"
 publish results/machine.txt
 
+# Failures handled per iteration with `if !`, NOT `done || { ... }`.
+# Putting a compound command on the left of || disables errexit for
+# everything inside it, so a failed benchmark would continue silently
+# and the handler might never run -- the campaign could then report
+# success after a benchmark died.
+BENCH_FAILURES=0
 for binary in build/bench/tess_bench build/bench/tess_bench_diagnostics; do
   [[ -x "$binary" ]] || continue
   name="$(basename "$binary")"
   echo "running $name at $(date -u +%FT%TZ)"
-  "$binary" \
-    --benchmark_format=json \
-    --benchmark_repetitions=10 \
-    --benchmark_min_time=0.2s \
-    --benchmark_out="results/$name.json" \
-    --benchmark_out_format=json
+  if ! "$binary" \
+      --benchmark_format=json \
+      --benchmark_repetitions=10 \
+      --benchmark_min_time=0.2s \
+      --benchmark_out="results/$name.json" \
+      --benchmark_out_format=json; then
+    echo "ERROR: $name failed; publishing whatever it wrote" >&2
+    BENCH_FAILURES=$(( BENCH_FAILURES + 1 ))
+  fi
+  # Published either way: a partial JSON from a died binary is still
+  # worth having.
   publish "results/$name.json"
-done || {
-  # A benchmark that died still leaves a partial JSON worth having.
-  echo "warning: a benchmark binary failed; publishing partial output" >&2
-  for partial in results/*.json; do
-    [[ -f "$partial" ]] && publish "$partial"
-  done
-}
+done
 
 # ---- Per-benchmark counters -----------------------------------------
 # A single `perf stat` over the whole binary averages ~200 heterogeneous
@@ -263,12 +277,17 @@ fields/cache_eviction}"
       # "<not counted>" and "<not supported>" are not numbers. Accepting
       # them would publish a counter row that looks measured and is not.
       numeric() { [[ "$1" =~ ^[0-9]+$ ]]; }
-      if numeric "$cyc" && numeric "$ins"; then
-        echo "$bench,${cyc},${ins},${cms:-},${bms:-}" \
+      # ALL FOUR validated. Publishing "<not counted>" verbatim in the
+      # cache-miss column would put a non-measurement in a column that
+      # reads as one.
+      if numeric "$cyc" && numeric "$ins" \
+         && numeric "$cms" && numeric "$bms"; then
+        echo "$bench,${cyc},${ins},${cms},${bms}" \
           >> results/perf-per-benchmark.csv
       else
-        echo "warning: non-numeric counters for $bench (cycles='$cyc'" \
-          "instructions='$ins')" >&2
+        echo "warning: non-numeric counters for $bench" \
+          "(cycles='$cyc' instructions='$ins' cache-misses='$cms'" \
+          "branch-misses='$bms')" >&2
         echo "$bench,,,," >> results/perf-per-benchmark.csv
       fi
       # Keep the raw output: without it a suspect row cannot be

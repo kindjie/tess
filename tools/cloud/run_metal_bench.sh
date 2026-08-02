@@ -188,10 +188,8 @@ fi
 # delete the instance we just launched, and trapping EXIT alongside the
 # signals makes the handler reentrant, since it calls exit itself.
 SRC_TARBALL=""
-cleanup() {
-  trap - INT TERM
-  [[ -n "$SRC_TARBALL" && -f "$SRC_TARBALL" ]] && rm -f "$SRC_TARBALL"
-
+# Shared by the interrupt handler and the failed-create path.
+remove_instance_if_present() {
   # Distinguish "not there" from "could not tell". Treating an API error
   # as absent is exactly how an instance gets left running.
   local describe_err describe_status
@@ -203,19 +201,28 @@ cleanup() {
   set -e
 
   if (( describe_status == 0 )); then
-    echo >&2
-    echo "cleanup: deleting $INSTANCE_NAME..." >&2
+    echo "deleting $INSTANCE_NAME..." >&2
+    set +e
     gcloud compute instances delete "$INSTANCE_NAME" \
-      --project="$PROJECT" --zone="$ZONE" --delete-disks=all --quiet \
-      || {
-        echo "error: cleanup FAILED. Run:" >&2
-        echo "  tools/cloud/reap_orphans.sh --project=$PROJECT" >&2
-      }
+      --project="$PROJECT" --zone="$ZONE" --delete-disks=all --quiet
+    local delete_status=$?
+    set -e
+    if (( delete_status != 0 )); then
+      echo "error: DELETE FAILED -- the instance may still be billing." >&2
+      echo "  Run: tools/cloud/reap_orphans.sh --project=$PROJECT" >&2
+    fi
   elif [[ "$describe_err" != *"not found"* && "$describe_err" != *404* ]]; then
     echo "warning: could not determine whether $INSTANCE_NAME exists:" >&2
     echo "  $describe_err" >&2
     echo "  Run tools/cloud/reap_orphans.sh --project=$PROJECT" >&2
   fi
+}
+
+cleanup() {
+  trap - INT TERM
+  [[ -n "$SRC_TARBALL" && -f "$SRC_TARBALL" ]] && rm -f "$SRC_TARBALL"
+  echo >&2
+  remove_instance_if_present
   exit 130
 }
 trap cleanup INT TERM
@@ -230,6 +237,13 @@ STARTUP_FILE="$REPO_ROOT/tools/cloud/setup_metal_vm.sh"
 [[ -f "$STARTUP_FILE" ]] || {
   echo "error: missing $STARTUP_FILE" >&2; exit 1; }
 
+# The create is checked explicitly. With only INT/TERM trapped, a
+# nonzero exit here would otherwise end the script through errexit
+# without running any cleanup -- and the API can accept the request and
+# still return an error to the client, leaving an instance that never
+# reaches RUNNING. Such an instance runs neither its own startup trap
+# nor the duration timer, so nothing but the reaper would ever find it.
+create_status=0
 gcloud compute instances create "$INSTANCE_NAME" \
   --project="$PROJECT" \
   --zone="$ZONE" \
@@ -247,7 +261,16 @@ gcloud compute instances create "$INSTANCE_NAME" \
   --labels="tess-campaign=1,tess-run-id=$RUN_ID" \
   --scopes="https://www.googleapis.com/auth/devstorage.read_write,https://www.googleapis.com/auth/compute" \
   --metadata-from-file="startup-script=$STARTUP_FILE" \
-  --metadata="^;;^tess-bucket=$BUCKET_PREFIX;;tess-source-url=$BUCKET_PREFIX/source.tar.gz;;tess-run-id=$RUN_ID;;tess-git-commit=${GIT_COMMIT}${GIT_DIRTY};;tess-require-counters=$REQUIRE_COUNTERS"
+  --metadata="^;;^tess-bucket=$BUCKET_PREFIX;;tess-source-url=$BUCKET_PREFIX/source.tar.gz;;tess-run-id=$RUN_ID;;tess-git-commit=${GIT_COMMIT}${GIT_DIRTY};;tess-require-counters=$REQUIRE_COUNTERS" \
+  || create_status=$?
+
+if (( create_status != 0 )); then
+  echo >&2
+  echo "error: instance create failed (status $create_status)." >&2
+  echo "Checking for a partially created instance..." >&2
+  remove_instance_if_present
+  exit 1
+fi
 
 # Handed off: the instance owns its own lifecycle from here.
 trap - INT TERM
