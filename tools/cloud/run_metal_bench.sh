@@ -141,6 +141,19 @@ cap_minutes() {
     h) echo $(( n * 60 )) ;;
   esac
 }
+# Tier-dependent label and price. Quoting a metal hourly rate for a
+# validation instance would overstate the cost by roughly sixty times
+# and train the operator to ignore the number.
+case "$MACHINE_TYPE" in
+  *-metal)
+    TIER_LABEL="bare metal"
+    ;;
+  *)
+    TIER_LABEL="virtualized -- validation tier"
+    HOURLY_USD="${HOURLY_USD_OVERRIDE:-0.20}"
+    ;;
+esac
+
 CAP_MIN="$(cap_minutes "$MAX_RUN_DURATION")"
 WORST_USD="$(awk -v h="$HOURLY_USD" -v m="$CAP_MIN" \
   'BEGIN { printf "%.2f", h * m / 60 }')"
@@ -155,7 +168,7 @@ cat <<EOF
 Campaign plan
   project        $PROJECT
   zone           $ZONE
-  machine        $MACHINE_TYPE
+  machine        $MACHINE_TYPE ($TIER_LABEL)
   instance       $INSTANCE_NAME
   boot disk      ${BOOT_DISK_SIZE_GB}GB $BOOT_DISK_TYPE
   commit         ${GIT_COMMIT:0:12}${GIT_DIRTY}
@@ -367,6 +380,24 @@ STARTUP_FILE="$REPO_ROOT/tools/cloud/setup_metal_vm.sh"
 # nor the duration timer, so nothing but the reaper would ever find it.
 create_status=0
 CREATE_ATTEMPTED=1
+# The metal-only flags are applied only for a metal machine type. IDPF
+# networking and the Shielded opt-outs are REQUIREMENTS on bare metal
+# and REJECTED (or pointless) on a normal VM, so hardcoding them would
+# make the cheap validation tier impossible to run through this same
+# code -- and validating a different code path proves nothing.
+CREATE_EXTRA=()
+case "$MACHINE_TYPE" in
+  *-metal)
+    CREATE_EXTRA+=(
+      --network-interface=nic-type=IDPF
+      --maintenance-policy=TERMINATE
+      --no-shielded-secure-boot
+      --no-shielded-vtpm
+      --no-shielded-integrity-monitoring
+    )
+    ;;
+esac
+
 gcloud compute instances create "$INSTANCE_NAME" \
   --project="$PROJECT" \
   --zone="$ZONE" \
@@ -376,11 +407,7 @@ gcloud compute instances create "$INSTANCE_NAME" \
   --boot-disk-size="${BOOT_DISK_SIZE_GB}GB" \
   --boot-disk-type="$BOOT_DISK_TYPE" \
   --boot-disk-auto-delete \
-  --network-interface=nic-type=IDPF \
-  --maintenance-policy=TERMINATE \
-  --no-shielded-secure-boot \
-  --no-shielded-vtpm \
-  --no-shielded-integrity-monitoring \
+  "${CREATE_EXTRA[@]}" \
   --no-restart-on-failure \
   --max-run-duration="$MAX_RUN_DURATION" \
   --instance-termination-action=DELETE \
