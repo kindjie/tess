@@ -70,8 +70,12 @@ cleanup_and_die() {
     # stale "benchmarking" after the final write -- leaving the watcher
     # showing a permanently stale heartbeat for a clean run, which the
     # runbook calls the case worth acting on.
-    kill "$HEARTBEAT_PID" 2>/dev/null || true
+    # Negative PID targets the whole group, so an in-flight gsutil goes
+    # with it. Falls back to the bare PID if the group signal fails.
+    kill -TERM -- "-$HEARTBEAT_PID" 2>/dev/null \
+      || kill -TERM "$HEARTBEAT_PID" 2>/dev/null || true
     wait "$HEARTBEAT_PID" 2>/dev/null || true
+    sleep 1
   fi
   echo "campaign finished with status $code at $(date -u +%FT%TZ)"
   if [[ -n "${BUCKET:-}" ]]; then
@@ -121,16 +125,22 @@ REQUIRE_COUNTERS="${REQUIRE_COUNTERS:-1}"
 # close to the duration cap is exactly when you want to know whether it
 # is working or wedged. Pushes the log and a one-line status every 30s,
 # so `gsutil cat .../campaign.log` from anywhere shows current progress.
-STAGE="starting"
+# The stage lives in a FILE, not a variable. `heartbeat &` runs in a
+# subshell with its own copy of the parent's variables, so a variable
+# would stay at its initial value forever and every heartbeat would
+# report "starting" for the whole run -- verified directly. The file is
+# the only thing both processes can see.
+STAGE_FILE=/tmp/tess-campaign-stage
+echo "starting" > "$STAGE_FILE"
 set_stage() {
-  STAGE="$1"
-  echo "[stage] $STAGE at $(date -u +%FT%TZ)"
+  echo "$1" > "$STAGE_FILE"
+  echo "[stage] $1 at $(date -u +%FT%TZ)"
 }
 heartbeat() {
   while true; do
     sleep 30
     {
-      echo "stage: $STAGE"
+      echo "stage: $(cat "$STAGE_FILE" 2>/dev/null || echo unknown)"
       echo "updated: $(date -u +%FT%TZ)"
       echo "uptime_seconds: $(cut -d. -f1 /proc/uptime)"
     } > /tmp/status.txt
@@ -139,7 +149,11 @@ heartbeat() {
       2>/dev/null || true
   done
 }
-heartbeat &
+# setsid so the heartbeat and any gsutil it spawns share a process
+# group that can be killed as a unit. Signalling only the shell leaves
+# an in-flight upload running, which then races the final status write.
+setsid bash -c "$(declare -f heartbeat); STAGE_FILE='$STAGE_FILE'; \
+  BUCKET='$BUCKET'; heartbeat" &
 HEARTBEAT_PID=$!
 
 set_stage "installing packages"
@@ -232,9 +246,7 @@ mkdir -p results
 {
   echo "run_id: $RUN_ID"
   echo "commit: $GIT_COMMIT"
-  echo "machine: $(curl -fsS -H 'Metadata-Flavor: Google' \
-    http://metadata.google.internal/computeMetadata/v1/instance/machine-type \
-    | awk -F/ '{print $NF}')"
+  echo "machine: $(metadata instance/machine-type | awk -F/ '{print $NF}')"
   echo "compiler: $($CXX --version | head -1)"
   echo "cmake: $(cmake --version | head -1)"
   echo "kernel: $(uname -r)"
@@ -307,7 +319,8 @@ fields/goalset_build_256|\
 fields/cache_hit|\
 fields/cache_miss_store|\
 fields/cache_eviction|\
-fields/nearest_target}"
+fields/nearest_target|\
+fields/build_alloc_gate}"
   COUNTER_FAILURES=0
   echo "benchmark,cycles,instructions,cache-misses,branch-misses" \
     > results/perf-per-benchmark.csv
@@ -357,6 +370,10 @@ fields/nearest_target}"
           "(cycles='$cyc' instructions='$ins' cache-misses='$cms'" \
           "branch-misses='$bms')" >&2
         echo "$bench,,,," >> results/perf-per-benchmark.csv
+        # Counted, not just warned. An empty row followed by "campaign
+        # complete" and exit 0 is the same silent success this file has
+        # already produced twice.
+        COUNTER_FAILURES=$(( COUNTER_FAILURES + 1 ))
       fi
       # Keep the raw output: without it a suspect row cannot be
       # diagnosed after the instance is gone.
