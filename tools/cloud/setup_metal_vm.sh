@@ -98,8 +98,14 @@ set_stage "installing packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
-  build-essential cmake ninja-build clang git python3 linux-tools-common \
-  linux-tools-generic
+  build-essential cmake ninja-build clang git python3 linux-tools-common
+# perf lives in a kernel-matched package. linux-tools-generic does NOT
+# match the GCE kernel, and linux-tools-common alone provides only a
+# wrapper that errors. Try the exact kernel first, then the GCE flavour.
+apt-get install -y -qq "linux-tools-$(uname -r)" \
+  || apt-get install -y -qq linux-tools-gcp \
+  || apt-get install -y -qq linux-tools-generic \
+  || echo "warning: no linux-tools package installed"
 
 set_stage "fetching source"
 WORK=/opt/tess-campaign
@@ -110,8 +116,22 @@ tar -xzf source.tar.gz
 
 # Counters need this; a bare-metal instance is allowed to set it, which
 # is the whole reason for using metal over a shared VM.
-sysctl -w kernel.perf_event_paranoid=0 || \
-  echo "warning: perf_event_paranoid not settable; counters may be limited"
+sysctl -w kernel.perf_event_paranoid=0 \
+  || echo "warning: perf_event_paranoid not settable"
+
+# Establish NOW whether the PMU actually works. Hardware counters are the
+# entire reason this tier is worth its price; discovering they are
+# unavailable after a 45-minute run means paying for numbers a cheap
+# shared VM could have produced. Recorded either way so the result is
+# never ambiguous after the fact.
+PERF_OK=0
+if command -v perf >/dev/null 2>&1 \
+   && perf stat -e cycles,instructions true >/dev/null 2>&1; then
+  PERF_OK=1
+  echo "PMU: available"
+else
+  echo "PMU: UNAVAILABLE -- this run yields timings only, no counters" >&2
+fi
 
 export CC=clang CXX=clang++
 set_stage "building"
@@ -132,6 +152,12 @@ mkdir -p results
   echo "machine: $(curl -fsS -H 'Metadata-Flavor: Google' \
     http://metadata.google.internal/computeMetadata/v1/instance/machine-type \
     | awk -F/ '{print $NF}')"
+  echo "compiler: $($CXX --version | head -1)"
+  echo "cmake: $(cmake --version | head -1)"
+  echo "kernel: $(uname -r)"
+  echo "perf_event_paranoid: $(cat /proc/sys/kernel/perf_event_paranoid)"
+  echo "cpu_pinning: none (idle 192-core host; pinning left out"
+  echo "  deliberately as an untested variable)"
   lscpu
 } > results/machine.txt
 
@@ -162,11 +188,45 @@ for binary in build/bench/tess_bench build/bench/tess_bench_diagnostics; do
   publish "results/$name.json"
 done
 
-if command -v perf >/dev/null; then
-  perf stat -x, -o results/perf-stat.csv \
-    build/bench/tess_bench --benchmark_min_time=0.1s \
-    || echo "warning: perf stat failed; continuing"
-  publish results/perf-stat.csv
+# ---- Per-benchmark counters -----------------------------------------
+# A single `perf stat` over the whole binary averages ~200 heterogeneous
+# benchmarks into one row, which attributes nothing. Counters are only
+# useful per benchmark, so each is wrapped in its own filtered run.
+#
+# Deliberately a SEPARATE pass, after the timing pass: no published
+# timing comes from a perf-wrapped process.
+if (( PERF_OK )); then
+  set_stage "counter attribution"
+  COUNTER_BENCHMARKS="${COUNTER_BENCHMARKS:-\
+fields/goalset_build_1|\
+fields/goalset_build_256|\
+fields/cache_miss_store|\
+fields/cache_eviction}"
+  echo "benchmark,cycles,instructions,cache-misses,branch-misses" \
+    > results/perf-per-benchmark.csv
+  IFS='|' read -ra COUNTER_LIST <<< "$COUNTER_BENCHMARKS"
+  for bench in "${COUNTER_LIST[@]}"; do
+    [[ -n "$bench" ]] || continue
+    echo "counters for $bench"
+    if perf stat -x, -e cycles,instructions,cache-misses,branch-misses \
+         -o "/tmp/perf-$$.csv" -- \
+         build/bench/tess_bench_diagnostics \
+         --benchmark_filter="^${bench}\$" \
+         --benchmark_min_time=1s >/dev/null 2>&1; then
+      cyc=$(awk -F, '/cycles/ {print $1; exit}' "/tmp/perf-$$.csv")
+      ins=$(awk -F, '/instructions/ {print $1; exit}' "/tmp/perf-$$.csv")
+      cms=$(awk -F, '/cache-misses/ {print $1; exit}' "/tmp/perf-$$.csv")
+      bms=$(awk -F, '/branch-misses/ {print $1; exit}' "/tmp/perf-$$.csv")
+      echo "$bench,${cyc:-},${ins:-},${cms:-},${bms:-}" \
+        >> results/perf-per-benchmark.csv
+    else
+      echo "warning: counters failed for $bench"
+      echo "$bench,,,," >> results/perf-per-benchmark.csv
+    fi
+    publish results/perf-per-benchmark.csv
+  done
+else
+  echo "skipping counter attribution: PMU unavailable"
 fi
 
 echo "all stages uploaded to $BUCKET"
