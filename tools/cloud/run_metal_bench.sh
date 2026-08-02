@@ -385,6 +385,10 @@ CREATE_ATTEMPTED=1
 # and REJECTED (or pointless) on a normal VM, so hardcoding them would
 # make the cheap validation tier impossible to run through this same
 # code -- and validating a different code path proves nothing.
+# Expanded below as ${CREATE_EXTRA[@]+"${CREATE_EXTRA[@]}"}: bash 3.2
+# treats "${empty[@]}" as an unbound variable under `set -u`, so the
+# plain form aborts the script on the non-metal tier. Found by actually
+# running it -- six rounds of review did not.
 CREATE_EXTRA=()
 case "$MACHINE_TYPE" in
   *-metal)
@@ -407,7 +411,7 @@ gcloud compute instances create "$INSTANCE_NAME" \
   --boot-disk-size="${BOOT_DISK_SIZE_GB}GB" \
   --boot-disk-type="$BOOT_DISK_TYPE" \
   --boot-disk-auto-delete \
-  "${CREATE_EXTRA[@]}" \
+  ${CREATE_EXTRA[@]+"${CREATE_EXTRA[@]}"} \
   --no-restart-on-failure \
   --max-run-duration="$MAX_RUN_DURATION" \
   --instance-termination-action=DELETE \
