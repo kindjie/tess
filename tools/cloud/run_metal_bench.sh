@@ -35,11 +35,16 @@ IMAGE_FAMILY="ubuntu-2404-lts-amd64"
 IMAGE_PROJECT="ubuntu-os-cloud"
 BOOT_DISK_SIZE_GB=100
 BOOT_DISK_TYPE="pd-balanced"
-# Deliberately tighter than the reference project's 90m. At metal
-# pricing the cap is a cost ceiling, not just a safety net: 45m is about
-# $7.50 worst case. Raise it explicitly for a longer sweep, knowing what
-# that costs.
-MAX_RUN_DURATION="45m"
+# 90m, not the 45m this started at. The closest measured analogue -- the
+# hosted main-branch bench job -- takes 37m, of which 36m is benchmark
+# execution at the same 10 repetitions this campaign uses. A 45m cap left
+# no margin, and GCE deletes at the cap regardless of state, so an
+# overrun would lose the results AND still bill the full cap.
+#
+# The cap is a ceiling, not a cost: the instance self-deletes as soon as
+# it finishes, so a normal ~45m run bills ~45m. The extra headroom is
+# only charged if it is actually used.
+MAX_RUN_DURATION="90m"
 HOURLY_USD="10.00"
 ASSUME_YES=0
 DRY_RUN=0
@@ -52,7 +57,7 @@ Usage: run_metal_bench.sh [options]
   --bucket=gs://NAME    results bucket          [$TESS_GCP_BUCKET]
   --zone=ZONE           GCE zone                [$TESS_GCP_ZONE]
   --machine-type=TYPE   instance type           [c3-standard-192-metal]
-  --max-run-duration=D  hard kill cap           [45m]
+  --max-run-duration=D  hard kill cap           [90m]
   --yes / -y            skip the confirmation prompt
   --dry-run             print the plan and exit; creates nothing
   --help                this text
