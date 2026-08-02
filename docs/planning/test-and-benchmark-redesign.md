@@ -1031,7 +1031,22 @@ that introduces this document.
   Acceptance posture: alerting is a rolling issue, never a gate, so the
   tolerable false-issue rate is one borderline alert per multi-week
   window, as backtested.
-- Where long-retention benchmark artifacts live (data branch versus
-  extended artifact retention versus published dataset).
-- Naming and hosting for the comparative repository, and the fixture-pack
-  publishing format.
+- ~~Where long-retention benchmark artifacts live.~~ **Decided
+  2026-08-01: an orphan data branch.** It is the only option that
+  survives GitHub's retention policy without adding an external
+  dependency, and the payload is small JSON. Extended artifact
+  retention still caps out and is not queryable without the API; a
+  published dataset adds a third-party surface for data that is already
+  public. Orphaning separates ancestry, not transfer cost: a default
+  clone still fetches the branch's objects, so keeping the per-run
+  payload small is what keeps it cheap, and a retention bound becomes
+  necessary if it stops being small.
+- ~~Naming and hosting for the comparative repository.~~ **Decided
+  2026-08-01: a separate repository under the same owner, private during
+  bootstrap, named for the measurement domain rather than for tess.**
+  Section 9's rationale is that comparisons published from inside the
+  measured project invite self-favouring suspicion, so the name must not
+  carry this project's. The specific name stays out of tracked content
+  until the repository is public and recorded as a declared dependency,
+  per the generic-reference rule. The fixture-pack publishing format
+  remains open.

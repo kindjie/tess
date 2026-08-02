@@ -8,6 +8,21 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-01 - Long-retention benchmark history (phase 6, slice a)
+
+- Added: `tools/publish_benchmark_data.py` lays out per-main benchmark
+  baselines for an orphan `benchmark-data` branch, sharded by month and
+  keyed by commit so a re-run corrects its row rather than duplicating
+  it. An empty publish is an error, not a quiet success.
+- Added: a main-only `Publish Benchmark History` job that writes each
+  run's baselines to that branch, retrying on the race between
+  concurrent merges. Never gating, but in `report-failure`'s needs so a
+  publish failure is visible.
+- Changed: recorded the resolution of two section 12 open questions —
+  the artifact store is a data branch, and the comparative repository is
+  a separate repo named for the measurement domain rather than for this
+  project (kept generic in tracked content until it is public).
+
 ## 2026-07-31 - Adaptive sparse chunk directory
 
 - Changed: `SparseResidentWorld` uses direct key-to-slot indexing when its

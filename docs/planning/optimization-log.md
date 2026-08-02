@@ -50,6 +50,39 @@ Entries from 2026-07-12 and earlier are in
   shows a material regression or the remaining 1.35x sparse/dense gap becomes
   a priority. Do not specialize that API from the raw nanosecond lookup alone.
 
+## 2026-08-01 - Hosted Confirmation Of The Field Product Fix
+
+- Area: follow-up to the 2026-07-31 chunk-level capture restoration.
+- Evidence: alternating paired confirmation on the hosted ubuntu-24.04
+  runner, `c300560` base against `7f25018` head, five suspects in
+  `tess_bench_diagnostics` (run 30732908152). All five pass:
+
+| Sentinel | Base | Head | Delta | 99% CI |
+| --- | ---: | ---: | ---: | ---: |
+| `fields/cache_eviction` | 146,831 ns | 143,247 ns | -2.1% | [-3.6%, -0.6%] |
+| `fields/cache_miss_store` | 140,100 ns | 139,427 ns | -0.6% | [-3.2%, +0.4%] |
+| `fields/goalset_build_1` | 129,593 ns | 133,187 ns | +2.8% | [+1.3%, +3.7%] |
+| `fields/goalset_build_16` | 124,269 ns | 128,306 ns | +3.0% | [+2.6%, +4.3%] |
+| `fields/goalset_build_256` | 151,161 ns | 144,416 ns | -4.6% | [-5.5%, -4.0%] |
+
+  Every interval sits inside the 8% effect floor, and the hosted base
+  medians (124-151 us) match the pre-regression range. The 2.3x-2.8x
+  hosted amplification of the original slowdown is gone.
+- Decision: the 2026-07-31 remediation is confirmed on the runner family
+  the gates are calibrated against. The regression is closed as a defect
+  with a root cause, not absorbed by recalibration.
+- Ceilings: **not recalibrated, deliberately.** The fields family still
+  carries bootstrap ceilings (850 us - 1.1 ms against ~124-151 us
+  observed, roughly 7x headroom), which is why a 2.3x-2.8x regression
+  passed the gate. Recalibrating needs the documented 10-artifact rule
+  at 2x maximum observed, and only **2** unexpired baseline artifacts
+  post-date the fix. A window spanning the regression would bake the
+  inflated numbers in, which is precisely the section 2.3 loophole.
+- Follow-up conditions: recalibrate the five fields ceilings once ten
+  post-fix main-run baselines exist. The data branch landing alongside
+  this entry makes that window assemblable without racing the 30-day
+  artifact expiry that would otherwise keep resetting the count.
+
 ## 2026-07-31 - Restore Chunk-Level Capture For Default Field Products
 
 - Area: unit and weighted distance-field product dependency capture.
