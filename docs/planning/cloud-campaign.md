@@ -161,6 +161,32 @@ install and an extra `perf stat` pass add time. The cap is 90m against
 that estimate. Results upload per stage rather than in one batch at the
 end, so an overrun still yields whatever completed.
 
+## What the run captures, and why
+
+Two passes, kept separate on purpose.
+
+**Timing pass** — both binaries, 10 repetitions, unwrapped. No published
+timing comes from a process running under `perf`, so instrumentation
+cannot contaminate the numbers this campaign exists to produce.
+
+**Counter pass** — one filtered `perf stat` per benchmark, anchored so
+`^fields/goalset_build_1$` matches exactly that benchmark and not the
+`_16` and `_256` variants. A single `perf stat` over the whole binary
+would average ~200 heterogeneous benchmarks into one row and attribute
+nothing.
+
+The PMU is checked at start-up and the answer is recorded either way.
+Hardware counters are the whole reason this tier costs what it does;
+finding out afterwards that they were unavailable means having paid for
+timings a cheap shared VM could have produced. `perf` comes from a
+kernel-matched package — `linux-tools-generic` does NOT match the GCE
+kernel, and `linux-tools-common` alone provides a wrapper that errors —
+so the install tries the exact kernel first, then the GCE flavour.
+
+No CPU pinning. On an idle 192-core host the benefit is marginal, and it
+is a variable that cannot be validated before the run; `machine.txt`
+records its absence rather than leaving it implicit.
+
 ## Results
 
 Uploaded to `gs://BUCKET/campaigns/<run-id>/`: per-binary benchmark
