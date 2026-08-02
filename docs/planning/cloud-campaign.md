@@ -31,18 +31,20 @@ Any one is sufficient. They exist together because each has a blind spot
 the others cover.
 
 1. **GCE `--max-run-duration` with `--instance-termination-action=DELETE`.**
-   Enforced by the platform. Holds even if the instance never boots, the
-   startup script dies immediately, or the driver is `kill -9`ed.
-   Default here is **45m** (~$7.50 worst case), deliberately tighter
-   than the reference project's 90m: at metal pricing the cap is a cost
-   ceiling, not merely a safety net.
+   Enforced by the platform, so it survives the driver being `kill -9`ed
+   or the startup script dying.
+   Default **90m** (~$15 worst case) against a 40-50m estimate. The
+   clock starts when the instance reaches **RUNNING**, so this does not
+   protect a resource that never boots — the reaper covers that case.
 2. **The startup script self-deletes**, success or failure, with its
    trap armed as soon as the instance name and zone are known — before
    any fallible work. A machine that failed to build bills exactly as
    much as one that is working.
-3. **The driver's `EXIT`/`INT`/`TERM` trap**, armed *before* the create
-   call, so a failure inside `instances create` that leaves a partial
-   instance is still covered.
+3. **The driver's `INT`/`TERM` trap**, armed *before* the create call so
+   a partial create is covered, and **disarmed after a successful
+   create** — the run is meant to outlive the driver. It deliberately
+   does not trap `EXIT`: doing so deleted the instance immediately on
+   normal exit, and made the handler reentrant since it calls `exit`.
 4. **`reap_orphans.sh`** — finds anything the first three missed.
 
 `--boot-disk-auto-delete` matters as much as any of them: a deleted
@@ -85,6 +87,18 @@ quota usage 0.
 tess artifacts go under a `tess/` bucket prefix so they stay separate
 from the other project's results. Billing is not separated; if that
 becomes necessary, a distinct project means requesting the quota again.
+
+## C3 bare-metal platform requirements
+
+Not preferences; getting any wrong fails the create. Confirmed against
+Google's bare-metal documentation:
+
+| Requirement | Why |
+| --- | --- |
+| Hyperdisk boot disk | "Bare metal instances use only Hyperdisk storage" — `pd-balanced` is rejected |
+| IDPF network interface | No hypervisor, so no gVNIC or VirtIO |
+| `--maintenance-policy=TERMINATE` | Live migration unsupported |
+| No Shielded VM / vTPM flags | Unavailable on C3 bare metal |
 
 ## Preflight
 
@@ -190,8 +204,12 @@ records its absence rather than leaving it implicit.
 ## Results
 
 Uploaded to `gs://BUCKET/campaigns/<run-id>/`: per-binary benchmark
-JSON, `machine.txt` (full `lscpu`), `perf-stat.csv` when counters are
-available, and `campaign.log`.
+JSON, `machine.txt` (full `lscpu` plus toolchain), `perf-per-benchmark.csv`
+and the raw `perf-raw-*.csv` behind it, and `campaign.log`.
+
+Uploads happen per stage with one retry, and failures are counted — the
+script reports results as INCOMPLETE rather than printing a blanket
+success after a warning.
 
 Machine details are appropriate in that private bucket. They are **not**
 appropriate on the public benchmark data branch, whose publisher strips
