@@ -68,10 +68,16 @@ tools/cloud/reap_orphans.sh --project=ID --older-than=120 --yes
 ```
 
 It searches **every zone**, because an orphan in a zone your current
-config does not name is exactly the orphan nobody finds by hand. It
-exits 0 when nothing is found — safe for a cron or a habitual
-post-campaign check — and nonzero **only when a delete failed**, which
-is the one case worth interrupting someone for.
+config does not name is exactly the orphan nobody finds by hand, and it
+audits unattached disks on **every** path — a stranded disk bills
+whether or not an instance was found, was too young to reap, or the
+prompt was declined.
+
+Exit status is 0 when nothing was found and everything asked for was
+removed. It is nonzero when a delete failed **or when a listing could
+not be trusted**: gcloud returns 0 for a missing project, an auth
+problem, or a partial zone failure, warning only on stderr. "I could not
+tell" must not read the same as "nothing is running".
 
 Run it after every campaign. It costs nothing.
 

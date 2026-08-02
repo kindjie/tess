@@ -18,9 +18,25 @@ set -euo pipefail
 # logging pipe and the metadata reads are themselves fallible; arming
 # the self-delete after them leaves a window where a failure strands a
 # $10/hour machine.
+# Bounded and retried. This runs BEFORE the self-delete trap exists, so
+# an unbounded request here is the one place the script can hang with
+# nothing watching it. --max-time caps each attempt; the retry covers a
+# metadata server that is briefly not ready during boot.
+#
+# The exposure if identity still comes back empty is bounded: the
+# startup script only runs once the instance has reached RUNNING, so
+# --max-run-duration is already counting down and the worst case is the
+# cap, not an indefinite instance.
 metadata_early() {
-  curl -fsS -H "Metadata-Flavor: Google" \
-    "http://metadata.google.internal/computeMetadata/v1/$1" 2>/dev/null || true
+  local path="$1" value=""
+  for _ in 1 2 3; do
+    value="$(curl -fsS --max-time 5 -H "Metadata-Flavor: Google" \
+      "http://metadata.google.internal/computeMetadata/v1/$path" \
+      2>/dev/null || true)"
+    [[ -n "$value" ]] && break
+    sleep 1
+  done
+  printf '%s' "$value"
 }
 INSTANCE_NAME="$(metadata_early instance/name)"
 ZONE_PATH="$(metadata_early instance/zone)"
@@ -29,7 +45,7 @@ PROJECT="$(metadata_early project/project-id)"
 
 
 metadata() {
-  curl -fsS -H "Metadata-Flavor: Google" \
+  curl -fsS --max-time 10 -H "Metadata-Flavor: Google" \
     "http://metadata.google.internal/computeMetadata/v1/$1" 2>/dev/null || true
 }
 
@@ -310,8 +326,19 @@ fi
 for leftover in results/*; do
   [[ -f "$leftover" ]] && publish "$leftover"
 done
-if (( UPLOAD_FAILURES > 0 )); then
-  echo "WARNING: $UPLOAD_FAILURES upload(s) failed; results are INCOMPLETE" >&2
-else
-  echo "all stages uploaded to $BUCKET"
+# Counting a failure and never reading the count is how a run reports
+# success after a benchmark died. Both counters decide the exit status,
+# which the EXIT handler records in status.txt.
+CAMPAIGN_STATUS=0
+if (( BENCH_FAILURES > 0 )); then
+  echo "ERROR: $BENCH_FAILURES benchmark binary/binaries FAILED" >&2
+  CAMPAIGN_STATUS=1
 fi
+if (( UPLOAD_FAILURES > 0 )); then
+  echo "ERROR: $UPLOAD_FAILURES upload(s) failed; results are INCOMPLETE" >&2
+  CAMPAIGN_STATUS=1
+fi
+if (( CAMPAIGN_STATUS == 0 )); then
+  echo "campaign complete; all stages uploaded to $BUCKET"
+fi
+exit "$CAMPAIGN_STATUS"
