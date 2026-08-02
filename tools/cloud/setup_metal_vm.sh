@@ -30,7 +30,19 @@ PROJECT="$(metadata project/project-id)"
 # ---- Self-delete trap, armed before any fallible work ---------------
 cleanup_and_die() {
   local code=$?
+  # Stop the heartbeat first so it cannot race the final upload.
+  if [[ -n "${HEARTBEAT_PID:-}" ]]; then
+    kill "$HEARTBEAT_PID" 2>/dev/null || true
+  fi
   echo "campaign finished with status $code at $(date -u +%FT%TZ)"
+  if [[ -n "${BUCKET:-}" ]]; then
+    {
+      echo "stage: finished"
+      echo "exit_code: $code"
+      echo "updated: $(date -u +%FT%TZ)"
+    } > /tmp/status.txt
+    gsutil -q cp /tmp/status.txt "$BUCKET/status.txt" 2>/dev/null || true
+  fi
   # Best effort: get the log off the box before it disappears.
   if [[ -n "${BUCKET:-}" ]]; then
     gsutil -q cp /var/log/tess-campaign.log "$BUCKET/campaign.log" || true
@@ -56,12 +68,40 @@ GIT_COMMIT="$(metadata instance/attributes/tess-git-commit)"
 [[ -n "$BUCKET" && -n "$SOURCE_URL" ]] || {
   echo "FATAL: missing bucket metadata" >&2; exit 1; }
 
+# ---- Progress heartbeat ---------------------------------------------
+# Without this the only signal is the instance still existing, and a run
+# close to the duration cap is exactly when you want to know whether it
+# is working or wedged. Pushes the log and a one-line status every 30s,
+# so `gsutil cat .../campaign.log` from anywhere shows current progress.
+STAGE="starting"
+set_stage() {
+  STAGE="$1"
+  echo "[stage] $STAGE at $(date -u +%FT%TZ)"
+}
+heartbeat() {
+  while true; do
+    sleep 30
+    {
+      echo "stage: $STAGE"
+      echo "updated: $(date -u +%FT%TZ)"
+      echo "uptime_seconds: $(cut -d. -f1 /proc/uptime)"
+    } > /tmp/status.txt
+    gsutil -q cp /tmp/status.txt "$BUCKET/status.txt" 2>/dev/null || true
+    gsutil -q cp /var/log/tess-campaign.log "$BUCKET/campaign.log" \
+      2>/dev/null || true
+  done
+}
+heartbeat &
+HEARTBEAT_PID=$!
+
+set_stage "installing packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
   build-essential cmake ninja-build clang git python3 linux-tools-common \
   linux-tools-generic
 
+set_stage "fetching source"
 WORK=/opt/tess-campaign
 mkdir -p "$WORK"
 cd "$WORK"
@@ -74,6 +114,7 @@ sysctl -w kernel.perf_event_paranoid=0 || \
   echo "warning: perf_event_paranoid not settable; counters may be limited"
 
 export CC=clang CXX=clang++
+set_stage "building"
 cmake -S . -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DTESS_BUILD_TESTING=OFF \
@@ -94,23 +135,38 @@ mkdir -p results
   lscpu
 } > results/machine.txt
 
+# Uploaded as each stage finishes, not in one batch at the end. The
+# whole run is close to the duration cap, and GCE deletes at the cap
+# regardless of state -- a single upload at the end means an overrun
+# loses everything, including the stages that had already completed.
+publish() {
+  local path="$1"
+  [[ -f "$path" ]] || return 0
+  gsutil -q cp "$path" "$BUCKET/$(basename "$path")" \
+    || echo "warning: could not upload $path"
+}
+
+set_stage "benchmarking"
+publish results/machine.txt
+
 for binary in build/bench/tess_bench build/bench/tess_bench_diagnostics; do
   [[ -x "$binary" ]] || continue
   name="$(basename "$binary")"
-  echo "running $name"
+  echo "running $name at $(date -u +%FT%TZ)"
   "$binary" \
     --benchmark_format=json \
     --benchmark_repetitions=10 \
     --benchmark_min_time=0.2s \
     --benchmark_out="results/$name.json" \
     --benchmark_out_format=json
+  publish "results/$name.json"
 done
 
 if command -v perf >/dev/null; then
   perf stat -x, -o results/perf-stat.csv \
-    build/bench/tess_bench --benchmark_min_time=0.1s || \
-    echo "warning: perf stat failed; continuing"
+    build/bench/tess_bench --benchmark_min_time=0.1s \
+    || echo "warning: perf stat failed; continuing"
+  publish results/perf-stat.csv
 fi
 
-gsutil -q -m cp -r results/* "$BUCKET/"
-echo "results uploaded to $BUCKET"
+echo "all stages uploaded to $BUCKET"

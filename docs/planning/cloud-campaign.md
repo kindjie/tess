@@ -119,6 +119,48 @@ including uncommitted changes — so the instance measures exactly what is
 checked out, and records the commit with a `-dirty` suffix so such a
 result is never mistaken for a clean-tree number.
 
+## Monitoring a run
+
+```sh
+tools/cloud/watch_campaign.sh --project=PROJECT --bucket=gs://BUCKET/tess
+tools/cloud/watch_campaign.sh ... --once      # one snapshot
+tools/cloud/watch_campaign.sh ... --serial    # add serial console
+```
+
+Read-only; creates and deletes nothing. It shows three signals because
+they fail differently:
+
+| Signal | Tells you |
+| --- | --- |
+| `status.txt` | The instance's own heartbeat, rewritten every 30s with the current stage |
+| Instance list | Whether GCE still has it, and how long it has run |
+| Serial console | Failures that happen before the startup script can upload anything |
+
+**A stale heartbeat with a live instance is the case worth acting on**:
+something hung, and it bills until the duration cap. Kill it with
+`reap_orphans.sh` rather than waiting.
+
+Stages reported: `installing packages`, `fetching source`, `building`,
+`benchmarking`, `finished` (with the exit code).
+
+## Expected duration
+
+About 40-50 minutes, dominated by benchmark execution rather than build.
+Derived from the hosted main-branch bench job, the closest measured
+analogue, which runs the same 10 repetitions:
+
+| Step | Hosted runner |
+| --- | ---: |
+| Build (warm ccache) | 0:36 |
+| Threshold gate run | 8:47 |
+| Collect baselines | 27:20 |
+| Total | **37:22** |
+
+Metal differs both ways: the build is cold but has 192 cores, while apt
+install and an extra `perf stat` pass add time. The cap is 90m against
+that estimate. Results upload per stage rather than in one batch at the
+end, so an overrun still yields whatever completed.
+
 ## Results
 
 Uploaded to `gs://BUCKET/campaigns/<run-id>/`: per-binary benchmark
