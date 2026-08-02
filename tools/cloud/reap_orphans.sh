@@ -26,8 +26,12 @@ DRY_RUN=0
 # An unattached disk keeps billing and is invisible to an instance-only
 # listing. --boot-disk-auto-delete covers the normal cascade, but a
 # partial create or a failed cascade can strand one.
+# Returns nonzero if a stranded disk could not be listed or deleted.
+# The first version of this warned and returned success -- reproducing,
+# in the new code, exactly the fail-open defect that had just been fixed
+# for the instance listing.
 reap_disks() {
-  local out status err
+  local out status err err_text
   err="$(mktemp -t reap-disk-err-XXXXXX)"
   set +e
   out="$(gcloud compute disks list --project="$PROJECT" \
@@ -35,10 +39,18 @@ reap_disks() {
     --format='value(name,zone,sizeGb)' 2>"$err")"
   status=$?
   set -e
+  err_text="$(cat "$err" 2>/dev/null || true)"
   rm -f "$err"
-  if (( status != 0 )); then
-    echo "warning: could not list disks; check for stranded disks" >&2
-    return 0
+  # Same reasoning as the instance listing: gcloud can return 0 while
+  # only warning that some requests failed, which means the answer is
+  # incomplete rather than empty.
+  if (( status != 0 )) \
+     || grep -qiE "did not succeed|was not found|PERMISSION_DENIED" \
+          <<<"$err_text"; then
+    echo "error: could not reliably list disks in $PROJECT" >&2
+    echo "$err_text" >&2
+    echo "A stranded boot disk would keep billing; check manually." >&2
+    return 1
   fi
   [[ -z "$out" ]] && return 0
   echo
@@ -52,15 +64,24 @@ reap_disks() {
     read -r -p "delete these disks? [y/N] " reply
     [[ "$reply" == [yY] ]] || return 0
   fi
+  local disk_failures=0
   while IFS= read -r row; do
     [[ -n "$row" ]] || continue
     local dname dzone
     dname=$(awk '{print $1}' <<<"$row")
     dzone=$(awk '{print $2}' <<<"$row")
     echo "deleting disk $dname in $dzone..."
-    gcloud compute disks delete "$dname" --project="$PROJECT" \
-      --zone="$dzone" --quiet || echo "error: failed to delete $dname" >&2
+    if ! gcloud compute disks delete "$dname" --project="$PROJECT" \
+         --zone="$dzone" --quiet; then
+      echo "error: FAILED to delete disk $dname in $dzone" >&2
+      disk_failures=$(( disk_failures + 1 ))
+    fi
   done <<< "$out"
+  if (( disk_failures > 0 )); then
+    echo "error: $disk_failures disk(s) still present and billing" >&2
+    return 1
+  fi
+  return 0
 }
 
 usage() {
@@ -154,7 +175,7 @@ done <<< "$list_output"
 
 if (( ${#FOUND[@]} == 0 )); then
   echo "no campaign instances found in $PROJECT"
-  reap_disks
+  reap_disks || exit 1
   exit 0
 fi
 
@@ -230,4 +251,4 @@ if (( failures > 0 )); then
   exit 1
 fi
 echo "all selected instances deleted"
-reap_disks
+reap_disks || exit 1
