@@ -198,7 +198,11 @@ if [[ -n "$INSTANCE_SA" ]]; then
     echo "  upload fail, self-delete fails, and the duration cap becomes" >&2
     echo "  the only cleanup -- paying the cap for zero results." >&2
   else
-    echo "  instance service account: $(echo "$SA_ROLES" | tr '\n' ' ')"
+    echo "  instance service account has role(s):" \
+      "$(echo "$SA_ROLES" | tr '\n' ' ')"
+    echo "  NOTE: role visibility only -- this does not prove the" \
+      "account can delete instances or write the bucket, and" \
+      "bucket-level or inherited grants are not visible here." >&2
   fi
 else
   echo "warning: could not resolve the instance service account, so it" \
@@ -219,12 +223,25 @@ fi
 # signals makes the handler reentrant, since it calls exit itself.
 SRC_TARBALL=""
 # Shared by the interrupt handler and the failed-create path.
+# gcloud has no global deadline, so a stalled call would make the
+# "90 second" bound below meaningless. `timeout` is used when present;
+# when it is not, the bound is best-effort and says so.
+bounded_gcloud() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 60 gcloud "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout 60 gcloud "$@"
+  else
+    gcloud "$@"
+  fi
+}
+
 remove_instance_if_present() {
   # Distinguish "not there" from "could not tell". Treating an API error
   # as absent is exactly how an instance gets left running.
   local describe_err describe_status
   set +e
-  describe_err="$(gcloud compute instances describe "$INSTANCE_NAME" \
+  describe_err="$(bounded_gcloud compute instances describe "$INSTANCE_NAME" \
     --project="$PROJECT" --zone="$ZONE" \
     --format='value(name)' 2>&1 >/dev/null)"
   describe_status=$?
@@ -233,7 +250,7 @@ remove_instance_if_present() {
   if (( describe_status == 0 )); then
     echo "deleting $INSTANCE_NAME..." >&2
     set +e
-    gcloud compute instances delete "$INSTANCE_NAME" \
+    bounded_gcloud compute instances delete "$INSTANCE_NAME" \
       --project="$PROJECT" --zone="$ZONE" --delete-disks=all --quiet
     local delete_status=$?
     set -e
@@ -246,19 +263,28 @@ remove_instance_if_present() {
     # absence: killing the client does not cancel the server-side
     # operation, so the instance may still be materializing. Re-check
     # before believing it, and never exit silently either way.
+    # Only worth polling if a create was actually issued. Interrupting
+    # during the tarball upload otherwise costs 90 seconds waiting for
+    # an instance that was never requested.
+    if (( ! CREATE_ATTEMPTED )); then
+      return
+    fi
+    # About 90s of polling; each gcloud call is separately bounded by
+    # `timeout` when available, so the total is bounded in practice
+    # rather than guaranteed.
     local waited=0 recheck
     while (( waited < 90 )); do
       sleep 10
       waited=$(( waited + 10 ))
       set +e
-      gcloud compute instances describe "$INSTANCE_NAME" \
+      bounded_gcloud compute instances describe "$INSTANCE_NAME" \
         --project="$PROJECT" --zone="$ZONE" \
         --format='value(name)' >/dev/null 2>&1
       recheck=$?
       set -e
       if (( recheck == 0 )); then
         echo "instance appeared after ${waited}s; deleting..." >&2
-        gcloud compute instances delete "$INSTANCE_NAME" \
+        bounded_gcloud compute instances delete "$INSTANCE_NAME" \
           --project="$PROJECT" --zone="$ZONE" --delete-disks=all --quiet \
           || echo "error: DELETE FAILED -- run reap_orphans.sh" >&2
         return
@@ -270,8 +296,18 @@ remove_instance_if_present() {
   fi
 }
 
+CREATE_ATTEMPTED=0
+CLEANUP_RUNNING=0
 cleanup() {
-  trap - INT TERM
+  # IGNORE further signals rather than restoring the default. Restoring
+  # it meant a second Ctrl-C during the poll or the delete killed the
+  # driver outright -- exactly when an instance gets stranded.
+  trap '' INT TERM
+  if (( CLEANUP_RUNNING )); then
+    return
+  fi
+  CLEANUP_RUNNING=1
+  echo "cleaning up; further interrupts ignored..." >&2
   [[ -n "$SRC_TARBALL" && -f "$SRC_TARBALL" ]] && rm -f "$SRC_TARBALL"
   echo >&2
   remove_instance_if_present
@@ -296,6 +332,7 @@ STARTUP_FILE="$REPO_ROOT/tools/cloud/setup_metal_vm.sh"
 # reaches RUNNING. Such an instance runs neither its own startup trap
 # nor the duration timer, so nothing but the reaper would ever find it.
 create_status=0
+CREATE_ATTEMPTED=1
 gcloud compute instances create "$INSTANCE_NAME" \
   --project="$PROJECT" \
   --zone="$ZONE" \

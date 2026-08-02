@@ -166,7 +166,13 @@ something hung, and it bills until the duration cap. Kill it with
 `reap_orphans.sh` rather than waiting.
 
 Stages reported: `installing packages`, `fetching source`, `building`,
-`benchmarking`, `finished` (with the exit code).
+`benchmarking`, `counter attribution`, `finished` (with the exit code).
+
+The stage is passed through a FILE, not a shell variable. `heartbeat &`
+runs in a subshell with its own copy of the parent's variables, so a
+variable would have stayed at its initial value and every heartbeat
+would have reported `starting` for the entire run — verified directly
+before fixing.
 
 ## Expected duration
 
