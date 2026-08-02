@@ -23,6 +23,22 @@ MAX_AGE_MINUTES=0
 ASSUME_YES=0
 DRY_RUN=0
 
+# One definition of "this listing cannot be trusted", used by BOTH
+# listings. Two copies drifted apart once already: the disk check
+# omitted the reauthentication and invalid-credential cases the instance
+# check had, so an expired credential could return an empty disk list
+# that read as clean.
+#
+# gcloud exits 0 for a missing project, an auth problem, or a PARTIAL
+# zone failure, warning only on stderr. A partial failure is the
+# dangerous one: the answer is incomplete rather than empty, so an
+# orphan hides behind the warning.
+listing_unreliable() {
+  local status="$1" text="$2"
+  (( status != 0 )) && return 0
+  grep -qiE "did not succeed|was not found|PERMISSION_DENIED|Reauthentication|invalid.*credential|quota|rate limit" <<<"$text"
+}
+
 # An unattached disk keeps billing and is invisible to an instance-only
 # listing. --boot-disk-auto-delete covers the normal cascade, but a
 # partial create or a failed cascade can strand one.
@@ -44,9 +60,7 @@ reap_disks() {
   # Same reasoning as the instance listing: gcloud can return 0 while
   # only warning that some requests failed, which means the answer is
   # incomplete rather than empty.
-  if (( status != 0 )) \
-     || grep -qiE "did not succeed|was not found|PERMISSION_DENIED" \
-          <<<"$err_text"; then
+  if listing_unreliable "$status" "$err_text"; then
     echo "error: could not reliably list disks in $PROJECT" >&2
     echo "$err_text" >&2
     echo "A stranded boot disk would keep billing; check manually." >&2
@@ -94,9 +108,12 @@ Usage: reap_orphans.sh [options]
   --dry-run           list what would be deleted, delete nothing
   --help              this text
 
-Exit status is 0 when nothing was found, so this is safe to run from a
-cron or a post-campaign check. It is nonzero only if a delete FAILED --
-an orphan that could not be removed is the one case worth waking up for.
+Exit status is 0 when nothing was found and everything asked for was
+removed, so this is safe to run from a cron or a post-campaign check.
+
+It is nonzero when a delete FAILED, or when a listing could not be
+trusted -- "I could not tell" must not read the same as "nothing is
+running", since both would otherwise leave a machine billing.
 EOF
 }
 
@@ -152,9 +169,7 @@ set -e
 # prints a clean bill of health.
 list_err_text="$(cat "$list_err" 2>/dev/null || true)"
 rm -f "$list_err"
-if (( list_status != 0 )) \
-   || grep -qiE "did not succeed|was not found|PERMISSION_DENIED|\
-Reauthentication|invalid.*credential" <<<"$list_err_text"; then
+if listing_unreliable "$list_status" "$list_err_text"; then
   echo "error: could not reliably list instances in $PROJECT" >&2
   echo "$list_err_text" >&2
   echo "Cannot confirm whether anything is running. Check manually" \
@@ -216,39 +231,44 @@ for row in "${FOUND[@]}"; do
   fi
 done
 
+# Single exit point from here down. The disk audit is INDEPENDENT of
+# what happened to the instances -- a stranded disk bills whether or not
+# an instance was found, was too young to reap, or the operator declined
+# the prompt. Earlier versions returned before the audit on all three of
+# those paths, which defeated the point of having it.
+EXIT_STATUS=0
+
 if (( ${#REAP[@]} == 0 )); then
   echo
   echo "nothing older than ${MAX_AGE_MINUTES}m; nothing to reap"
-  exit 0
-fi
-
-echo
-echo "${#REAP[@]} instance(s) selected for deletion"
-if (( DRY_RUN )); then
-  echo "dry run: deleting nothing"
-  exit 0
-fi
-
-if (( ! ASSUME_YES )); then
-  read -r -p "delete these instances? [y/N] " reply
-  [[ "$reply" == [yY] ]] || { echo "aborted"; exit 0; }
-fi
-
-failures=0
-for entry in "${REAP[@]}"; do
-  name="${entry%%|*}"
-  zone="${entry##*|}"
-  echo "deleting $name in $zone..."
-  if ! gcloud compute instances delete "$name" \
-       --project="$PROJECT" --zone="$zone" --quiet; then
-    echo "error: FAILED to delete $name in $zone" >&2
-    failures=$(( failures + 1 ))
+else
+  echo
+  echo "${#REAP[@]} instance(s) selected for deletion"
+  if (( DRY_RUN )); then
+    echo "dry run: deleting nothing"
+  elif (( ! ASSUME_YES )) && { read -r -p "delete these instances? [y/N] " reply
+                               [[ "$reply" != [yY] ]]; }; then
+    echo "aborted; not deleting instances"
+  else
+    failures=0
+    for entry in "${REAP[@]}"; do
+      name="${entry%%|*}"
+      zone="${entry##*|}"
+      echo "deleting $name in $zone..."
+      if ! gcloud compute instances delete "$name" \
+           --project="$PROJECT" --zone="$zone" --quiet; then
+        echo "error: FAILED to delete $name in $zone" >&2
+        failures=$(( failures + 1 ))
+      fi
+    done
+    if (( failures > 0 )); then
+      echo "error: $failures instance(s) still running and billing" >&2
+      EXIT_STATUS=1
+    else
+      echo "all selected instances deleted"
+    fi
   fi
-done
-
-if (( failures > 0 )); then
-  echo "error: $failures instance(s) still running and billing" >&2
-  exit 1
 fi
-echo "all selected instances deleted"
-reap_disks || exit 1
+
+reap_disks || EXIT_STATUS=1
+exit "$EXIT_STATUS"
