@@ -244,9 +244,17 @@ if command -v timeout >/dev/null 2>&1; then
 elif command -v gtimeout >/dev/null 2>&1; then
   TIMEOUT_BIN="gtimeout"
 fi
+# Two bounds. A describe is a quick read, but deleting a bare-metal
+# instance can keep the client waiting well past a minute, and a 60s cap
+# there would report "DELETE FAILED -- may still be billing" while the
+# server-side delete was in fact proceeding. That fails in the safe
+# direction (it sends the operator to the reaper, which then finds
+# nothing) but it is a false alarm about money, which is the last thing
+# this tooling should cry wolf about.
 bounded_gcloud() {
+  local seconds="${BOUNDED_GCLOUD_SECONDS:-60}"
   if [[ -n "$TIMEOUT_BIN" ]]; then
-    "$TIMEOUT_BIN" -k 10 60 gcloud "$@"
+    "$TIMEOUT_BIN" -k 10 "$seconds" gcloud "$@"
   else
     gcloud "$@"
   fi
@@ -266,7 +274,8 @@ remove_instance_if_present() {
   if (( describe_status == 0 )); then
     echo "deleting $INSTANCE_NAME..." >&2
     set +e
-    bounded_gcloud compute instances delete "$INSTANCE_NAME" \
+    BOUNDED_GCLOUD_SECONDS=300 bounded_gcloud compute instances delete \
+      "$INSTANCE_NAME" \
       --project="$PROJECT" --zone="$ZONE" --delete-disks=all --quiet
     local delete_status=$?
     set -e
@@ -302,7 +311,8 @@ remove_instance_if_present() {
       set -e
       if (( recheck == 0 )); then
         echo "instance appeared during recheck; deleting..." >&2
-        bounded_gcloud compute instances delete "$INSTANCE_NAME" \
+        BOUNDED_GCLOUD_SECONDS=300 bounded_gcloud compute instances delete \
+          "$INSTANCE_NAME" \
           --project="$PROJECT" --zone="$ZONE" --delete-disks=all --quiet \
           || echo "error: DELETE FAILED -- run reap_orphans.sh" >&2
         return
