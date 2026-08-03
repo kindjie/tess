@@ -182,8 +182,12 @@ echo "heartbeat running (pid $HEARTBEAT_PID)"
 set_stage "installing packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
+# numactl is for the thread-scaling stage: the world is allocated and
+# first-touched on one thread, so on a 4-node box a 190-worker sweep would
+# otherwise measure remote-memory latency rather than the executor.
 apt-get install -y -qq \
-  build-essential cmake ninja-build clang git python3 linux-tools-common
+  build-essential cmake ninja-build clang git python3 linux-tools-common \
+  numactl
 # perf lives in a kernel-matched package. linux-tools-generic does NOT
 # match the GCE kernel, and linux-tools-common alone provides only a
 # wrapper that errors. Try the exact kernel first, then the GCE flavour.
@@ -289,6 +293,15 @@ mkdir -p results
   echo "source_sha256: ${SOURCE_SHA256:-unverified}"
   echo "image: $(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2)"
   echo "benchmark_flags: --benchmark_repetitions=10 --benchmark_min_time=0.2s"
+  echo "sweep_flags: --benchmark_repetitions=20 --benchmark_min_time=0.2s"
+  # Reported from what is actually installed. Claiming interleave here
+  # while the sweep silently fell back to first-touch would turn a
+  # memory-placement artifact into a published scaling curve.
+  if command -v numactl >/dev/null 2>&1; then
+    echo "sweep_memory_policy: numactl --interleave=all"
+  else
+    echo "sweep_memory_policy: NONE (numactl missing; first-touch)"
+  fi
   echo "machine: $(metadata instance/machine-type | awk -F/ '{print $NF}')"
   echo "compiler: $($CXX --version | head -1)"
   echo "cmake: $(cmake --version | head -1)"
@@ -359,6 +372,58 @@ for binary in build/bench/tess_bench build/bench/tess_bench_diagnostics; do
   # worth having.
   publish "results/$name.json"
 done
+
+# ---- Thread-scaling sweep -------------------------------------------
+# Its own stage, after the timing pass, so a failure here cannot cost the
+# campaign's primary results. Its own binary too, which is why it is not
+# in the loop above: registering a 190-worker sweep in tess_bench would
+# have run it there as well.
+#
+# Run under `numactl --interleave=all`. AlwaysResidentWorld allocates and
+# zero-fills every page on its constructing thread, so with default
+# first-touch placement the whole 32 MiB world lands on one NUMA node and
+# every worker beyond that node measures remote access. Interleaving is
+# one flag and removes the dominant placement artifact. It is not thread
+# pinning -- that, and the frequency governor, remain the open follow-ups
+# recorded in docs/planning/optimization-log.md.
+#
+# 20 repetitions, not the timing pass's 10: this produces a curve, and a
+# curve needs per-point dispersion tight enough to tell a real knee from
+# noise. CV per point is checked before anything is published.
+SWEEP_FAILURES=0
+sweep_binary=build/bench/tess_bench_thread_scaling
+if [[ -x "$sweep_binary" ]]; then
+  set_stage "thread-scaling sweep"
+  sweep_name="$(basename "$sweep_binary")"
+  sweep_runner=()
+  if command -v numactl >/dev/null 2>&1; then
+    sweep_runner=(numactl --interleave=all)
+    echo "thread-scaling memory policy: interleave=all"
+  else
+    # Recorded, not silently accepted: without it the high-worker end of
+    # the curve is a memory-placement measurement and must not be
+    # published as a scaling result.
+    echo "WARNING: numactl missing; sweep runs under default first-touch" \
+      "placement and its high-worker points are NOT publishable" >&2
+    SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+  fi
+  echo "running $sweep_name at $(date -u +%FT%TZ)"
+  if ! "${sweep_runner[@]+"${sweep_runner[@]}"}" "$sweep_binary" \
+      --benchmark_format=json \
+      --benchmark_repetitions=20 \
+      --benchmark_min_time=0.2s \
+      --benchmark_out="results/$sweep_name.json" \
+      --benchmark_out_format=json; then
+    echo "ERROR: $sweep_name failed; publishing whatever it wrote" >&2
+    SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+  fi
+  publish "results/$sweep_name.json"
+else
+  # Not fatal -- the campaign's primary results are already measured and
+  # uploaded by this point -- but not silent either.
+  echo "ERROR: $sweep_binary was not built; no thread-scaling data" >&2
+  SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+fi
 
 # ---- Per-benchmark counters -----------------------------------------
 # A single `perf stat` over the whole binary averages ~200 heterogeneous
@@ -484,6 +549,11 @@ if (( ${COUNTER_FAILURES:-0} > 0 )); then
 fi
 if (( BENCH_FAILURES > 0 )); then
   echo "ERROR: $BENCH_FAILURES benchmark binary/binaries FAILED" >&2
+  CAMPAIGN_STATUS=1
+fi
+if (( ${SWEEP_FAILURES:-0} > 0 )); then
+  echo "ERROR: ${SWEEP_FAILURES} thread-scaling problem(s); the sweep is" \
+    "NOT publishable as a scaling result" >&2
   CAMPAIGN_STATUS=1
 fi
 if (( UPLOAD_FAILURES > 0 )); then

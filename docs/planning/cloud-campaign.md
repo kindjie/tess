@@ -220,17 +220,25 @@ analogue, which runs the same 10 repetitions:
 | Total | **37:22** |
 
 Metal differs both ways: the build is cold but has 192 cores, while apt
-install and an extra `perf stat` pass add time. The cap is 90m against
-that estimate. Results upload per stage rather than in one batch at the
-end, so an overrun still yields whatever completed.
+install and an extra `perf stat` pass add time. The first metal run came
+in at 28 minutes. The thread-scaling sweep adds a further 15-45 minutes
+— 84 registrations at 20 repetitions, and the high-worker points of the
+cheap workloads are the slow ones. The cap is 90m against that estimate.
+Results upload per stage rather than in one batch at the end, so an
+overrun still yields whatever completed.
 
 ## What the run captures, and why
 
-Two passes, kept separate on purpose.
+Three passes, kept separate on purpose.
 
 **Timing pass** — both binaries, 10 repetitions, unwrapped. No published
 timing comes from a process running under `perf`, so instrumentation
 cannot contaminate the numbers this campaign exists to produce.
+
+**Thread-scaling sweep** — `tess_bench_thread_scaling`, 20 repetitions,
+under `numactl --interleave=all`. Its own stage after the timing pass, so
+a failure here cannot cost the campaign's primary results, and its own
+binary so it never runs inside the timing pass — see below.
 
 **Counter pass** — one filtered `perf stat` per benchmark, anchored so
 `^fields/goalset_build_1$` matches exactly that benchmark and not the
@@ -261,11 +269,53 @@ No CPU pinning. On an idle 192-core host the benefit is marginal, and it
 is a variable that cannot be validated before the run; `machine.txt`
 records its absence rather than leaving it implicit.
 
+### The thread-scaling sweep
+
+`tess_bench_thread_scaling` is a separate binary, and that is the whole
+mechanism rather than a packaging preference. Four call sites run
+`tess_bench` with no `--benchmark_filter` — the weekly coverage job, the
+paired-base comparison, the workload-matrix drift check, and this
+campaign's own timing pass. A 190-worker sweep registered in `tess_bench`
+would build 190-thread pools on four-core runners and would run twice per
+campaign. Negative filters at four sites fail open; a separate binary
+does not.
+
+`numactl --interleave=all` is not optional. `AlwaysResidentWorld`
+allocates and zero-fills every page on its constructing thread, so under
+default first-touch placement the 32 MiB world lands on one of the four
+NUMA nodes and every worker beyond that node measures remote access
+rather than the executor. If `numactl` is missing the sweep still runs,
+but the run is marked failed and the result is not publishable as a
+scaling curve. Pinning and the frequency governor remain open follow-ups
+from the first campaign; interleaving is the one that costs a flag.
+
+20 repetitions rather than 10, because this pass produces a curve and a
+curve needs per-point dispersion tight enough to distinguish a knee from
+noise. `tools/thread_scaling_report.py` turns the JSON into markdown and
+**exits non-zero if any point exceeds 5% CV** — a noisy sweep is reported
+but explicitly not publishable.
+
+The report prints the pool's quantization ceiling beside every
+measurement. The pool claims runs of
+`stride = max(1, chunks / (workers * 4))` chunks, so the reachable
+speedup is capped below the worker count at most widths, and as a
+fraction of the workers asked for that cap sawtooths: 100% at 32 and 64
+workers, 81% at 48 in between, 86% at 190. Growing the world does not
+smooth this out — the stride grows with it. Without the ceiling in the
+same row, the dip at 48 reads as a hardware knee.
+
+Speedup is against `SerialPhaseExecutor` at the same world size, never
+against the one-worker pool, which still pays dispatch and a thread
+handoff; on a dev box it measured 10% *faster* than serial on
+`chunk_fill`, so the two are not interchangeable.
+
 ## Results
 
 Uploaded to `gs://BUCKET/campaigns/<run-id>/`: per-binary benchmark
-JSON, `machine.txt` (full `lscpu` plus toolchain), `perf-per-benchmark.csv`
-and the raw `perf-raw-*.csv` behind it, and `campaign.log`.
+JSON (including `tess_bench_thread_scaling.json`), `machine.txt` (full
+`lscpu` plus toolchain, and the memory policy the sweep actually ran
+under), `perf-per-benchmark.csv` and the raw `perf-raw-*.csv` behind it,
+and `campaign.log`.
 
 Uploads happen per stage with one retry, and failures are counted — the
 script reports results as INCOMPLETE rather than printing a blanket

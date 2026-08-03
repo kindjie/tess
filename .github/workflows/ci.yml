@@ -598,6 +598,11 @@ jobs:
       # threshold manifests and lab literals, but only the binaries
       # know what is actually registered — and this survives the
       # phase 4 threshold-manifest retirement.
+      #
+      # tess_bench_thread_scaling is listed but never executed here: it is
+      # a campaign-only worker-count sweep that builds pools far wider
+      # than a shared runner has cores. Listing it is what keeps it from
+      # rotting, since nothing else in CI runs it.
       - name: Workload-matrix drift check
         run: |
           ./build/bench/bench/tess_bench --benchmark_list_tests \
@@ -605,10 +610,14 @@ jobs:
           ./build/bench/bench/tess_bench_diagnostics \
             --benchmark_list_tests \
             > build/bench/registrations-diagnostics.txt
+          ./build/bench/bench/tess_bench_thread_scaling \
+            --benchmark_list_tests \
+            > build/bench/registrations-thread-scaling.txt
           python3 tools/check_workload_matrix.py \
             --catalog bench/workload-matrix.json \
             --registrations build/bench/registrations-main.txt \
-            --registrations build/bench/registrations-diagnostics.txt
+            --registrations build/bench/registrations-diagnostics.txt \
+            --registrations build/bench/registrations-thread-scaling.txt
 
       # Release-configuration counter-golden drift (shadow mode).
       - name: Surface counter-golden drift
