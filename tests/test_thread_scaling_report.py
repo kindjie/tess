@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -32,7 +33,7 @@ def _entry(name, real_time, run_type="iteration", aggregate=None):
 
 
 def _results(
-  points, workloads=("chunk_compute",), workers=None, repetitions=None
+  points, workloads=None, workers=None, repetitions=None, serial=None
 ):
   """A Google Benchmark JSON blob for the given per-point timings.
 
@@ -41,18 +42,23 @@ def _results(
   exceed the ceiling at 24, 48, 96 and 190 workers and is correctly
   rejected as impossible, so it cannot be the fixture default.
   """
+  workloads = workloads or thread_scaling_report.EXPECTED_WORKLOADS
   workers = workers or thread_scaling_report.EXPECTED_WORKERS
   if repetitions is None:
     repetitions = thread_scaling_report.MIN_SAMPLES
   serial_default = 1000.0
   benchmarks = []
   for workload in workloads:
-    for _ in range(repetitions):
+    for index in range(repetitions):
+      # `serial` supplies per-repetition values when a test needs a noisy
+      # denominator; otherwise every repetition is identical.
+      value = (
+        serial[index % len(serial)]
+        if serial
+        else points.get((workload, "serial"), serial_default)
+      )
       benchmarks.append(
-        _entry(
-          f"lab/thread_scaling/{workload}/serial/real_time",
-          points.get((workload, "serial"), serial_default),
-        )
+        _entry(f"lab/thread_scaling/{workload}/serial/real_time", value)
       )
     for count in workers:
       ceiling = thread_scaling_report.quantization_ceiling(
@@ -72,6 +78,25 @@ def _write(tmp_path, blob):
   path = tmp_path / "sweep.json"
   path.write_text(json.dumps(blob), encoding="utf-8")
   return path
+
+
+def _padded(blob):
+  """Fill in whole workloads a focused fixture left out.
+
+  A sweep artifact must contain every workload, so a fixture that only
+  cares about one still has to carry the rest for the report to accept
+  it. Tests that are about the manifest itself do not use this.
+  """
+  present = {
+    name.split("/")[2]
+    for name in (entry["name"] for entry in blob["benchmarks"])
+  }
+  missing = [
+    w for w in thread_scaling_report.EXPECTED_WORKLOADS if w not in present
+  ]
+  if missing:
+    blob["benchmarks"].extend(_results({}, workloads=missing)["benchmarks"])
+  return blob
 
 
 # --- Quantization ceiling ---------------------------------------------
@@ -140,7 +165,7 @@ def test_missing_serial_baseline_is_an_error(tmp_path):
 
 def test_complete_sweep_loads(tmp_path):
   points = thread_scaling_report.load_points(_write(tmp_path, _results({})))
-  assert set(points) == {"chunk_compute"}
+  assert set(points) == set(thread_scaling_report.EXPECTED_WORKLOADS)
   assert points["chunk_compute"].serial_ns > 0
 
 
@@ -151,7 +176,7 @@ def test_uses_real_time_not_cpu_time(tmp_path):
   # The dispatcher blocks, so its cpu_time is ~900x smaller. Reading the
   # wrong column would report the pool as almost free.
   blob = _results({("chunk_compute", "serial"): 28_000_000.0})
-  points = thread_scaling_report.load_points(_write(tmp_path, blob))
+  points = thread_scaling_report.load_points(_write(tmp_path, _padded(blob)))
   assert points["chunk_compute"].serial_ns == pytest.approx(28_000_000.0)
 
 
@@ -165,7 +190,7 @@ def test_aggregate_rows_are_ignored(tmp_path):
       aggregate="mean",
     )
   )
-  points = thread_scaling_report.load_points(_write(tmp_path, blob))
+  points = thread_scaling_report.load_points(_write(tmp_path, _padded(blob)))
   # The bogus 1.0 ns aggregate must not become the reported median.
   assert points["chunk_compute"].by_workers[4].median_ns > 1.0
 
@@ -184,7 +209,7 @@ def test_median_and_cv_come_from_repetitions(tmp_path):
       blob["benchmarks"].append(
         _entry(f"lab/thread_scaling/chunk_fill/{count}/real_time", 500.0)
       )
-  points = thread_scaling_report.load_points(_write(tmp_path, blob))
+  points = thread_scaling_report.load_points(_write(tmp_path, _padded(blob)))
   point = points["chunk_fill"].by_workers[4]
   assert point.median_ns == pytest.approx(200.0)
   assert point.samples == 3
@@ -205,7 +230,7 @@ def test_speedup_denominator_is_the_serial_executor(tmp_path):
     },
     workloads=("chunk_fill",),
   )
-  points = thread_scaling_report.load_points(_write(tmp_path, blob))
+  points = thread_scaling_report.load_points(_write(tmp_path, _padded(blob)))
   rows = thread_scaling_report.rows_for(points["chunk_fill"], chunks=4096)
   row = next(r for r in rows if r.workers == 4)
   # 1000/250 against serial, not 500/250 against the one-worker pool.
@@ -217,7 +242,7 @@ def test_one_worker_pool_is_reported_separately_from_serial(tmp_path):
     {("chunk_fill", "serial"): 1000.0, ("chunk_fill", 1): 1200.0},
     workloads=("chunk_fill",),
   )
-  points = thread_scaling_report.load_points(_write(tmp_path, blob))
+  points = thread_scaling_report.load_points(_write(tmp_path, _padded(blob)))
   rows = thread_scaling_report.rows_for(points["chunk_fill"], chunks=4096)
   row = next(r for r in rows if r.workers == 1)
   assert row.speedup == pytest.approx(1000.0 / 1200.0)
@@ -240,7 +265,7 @@ def test_noisy_points_are_flagged(tmp_path):
       blob["benchmarks"].append(
         _entry(f"lab/thread_scaling/chunk_fill/{count}/real_time", 500.0)
       )
-  points = thread_scaling_report.load_points(_write(tmp_path, blob))
+  points = thread_scaling_report.load_points(_write(tmp_path, _padded(blob)))
   rows = thread_scaling_report.rows_for(points["chunk_fill"], chunks=4096)
   noisy = [r for r in rows if r.cv > thread_scaling_report.CV_LIMIT]
   assert [r.workers for r in noisy] == [4]
@@ -260,7 +285,7 @@ def test_report_exits_nonzero_when_a_point_is_too_noisy(tmp_path, capsys):
       blob["benchmarks"].append(
         _entry(f"lab/thread_scaling/chunk_fill/{count}/real_time", 500.0)
       )
-  status = thread_scaling_report.main([str(_write(tmp_path, blob))])
+  status = thread_scaling_report.main([str(_write(tmp_path, _padded(blob)))])
   assert status == 1
   assert "not publishable" in capsys.readouterr().err
 
@@ -270,7 +295,7 @@ def test_single_repetition_is_not_publishable(tmp_path, capsys):
   # and the noise gate is vacuous, so a run that measured nothing would
   # otherwise be declared clean.
   blob = _results({}, repetitions=1)
-  status = thread_scaling_report.main([str(_write(tmp_path, blob))])
+  status = thread_scaling_report.main([str(_write(tmp_path, _padded(blob)))])
   assert status == 1
   assert "repetition" in capsys.readouterr().err
 
@@ -288,9 +313,81 @@ def test_speedup_above_the_ceiling_is_reported(tmp_path, capsys):
     {("chunk_fill", "serial"): 1000.0, ("chunk_fill", 48): 1000.0 / 48},
     workloads=("chunk_fill",),
   )
-  status = thread_scaling_report.main([str(_write(tmp_path, blob))])
+  status = thread_scaling_report.main([str(_write(tmp_path, _padded(blob)))])
   assert status == 1
-  assert "exceeds the 39.0x quantization ceiling" in capsys.readouterr().err
+  assert "the 39.0x quantization ceiling" in capsys.readouterr().err
+
+
+# --- The whole artifact, not just the points it happens to contain -----
+
+
+def test_missing_workloads_are_an_error(tmp_path):
+  # Worker counts were checked only within workloads the artifact
+  # contained, so a sweep that lost six of its seven workloads -- the
+  # low-work end the crossover depends on -- was accepted as complete.
+  blob = _results({}, workloads=("chunk_fill",))
+  with pytest.raises(thread_scaling_report.ReportError, match="tile_touch"):
+    thread_scaling_report.load_points(_write(tmp_path, blob))
+
+
+def test_workload_list_matches_the_benchmark_source():
+  source = (REPO / "bench" / "tess_thread_scaling_bench.cc").read_text(
+    encoding="utf-8"
+  )
+  registered = set(
+    re.findall(r'->Name\("lab/thread_scaling/([a-z0-9_]+)"\)', source)
+  )
+  assert registered == set(thread_scaling_report.EXPECTED_WORKLOADS)
+
+
+# --- The serial baseline is gated too ----------------------------------
+
+
+def test_noisy_serial_baseline_is_not_publishable(tmp_path, capsys):
+  # It is the denominator of every speedup in the table, so noise there
+  # contaminates the whole workload rather than one point.
+  blob = _results({}, serial=[500.0, 1500.0, 1000.0])
+  status = thread_scaling_report.main([str(_write(tmp_path, _padded(blob)))])
+  assert status == 1
+  assert "denominator" in capsys.readouterr().err
+
+
+# --- The ceiling check accounts for the executor difference ------------
+
+
+def test_one_worker_pool_beating_serial_is_not_called_impossible(
+  tmp_path, capsys
+):
+  # The pool and the serial executor are different code paths: a dev-box
+  # run measured the one-worker pool 10% faster on chunk_fill. Against the
+  # bare 1.0x ceiling that reads as impossible at every width.
+  advantage = 1.10
+  points = {}
+  for workload in thread_scaling_report.EXPECTED_WORKLOADS:
+    points[(workload, "serial")] = 1000.0
+    for count in thread_scaling_report.EXPECTED_WORKERS:
+      ceiling = thread_scaling_report.quantization_ceiling(
+        thread_scaling_report.SWEEP_CHUNKS, count
+      )
+      points[(workload, count)] = 1000.0 / (ceiling * advantage)
+  status = thread_scaling_report.main([str(_write(tmp_path, _results(points)))])
+  assert status == 0, capsys.readouterr().err
+
+
+def test_speedup_beyond_the_scaled_model_is_still_caught(tmp_path, capsys):
+  points = {}
+  for workload in thread_scaling_report.EXPECTED_WORKLOADS:
+    points[(workload, "serial")] = 1000.0
+    for count in thread_scaling_report.EXPECTED_WORKERS:
+      ceiling = thread_scaling_report.quantization_ceiling(
+        thread_scaling_report.SWEEP_CHUNKS, count
+      )
+      points[(workload, count)] = 1000.0 / ceiling
+  # Way past what the ceiling allows even after any one-worker advantage.
+  points[("chunk_fill", 48)] = 1000.0 / 90.0
+  status = thread_scaling_report.main([str(_write(tmp_path, _results(points)))])
+  assert status == 1
+  assert "--chunks likely" in capsys.readouterr().err
 
 
 # --- Bootstrap confidence intervals ------------------------------------

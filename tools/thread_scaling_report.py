@@ -45,6 +45,20 @@ from typing import Any
 # a single worker count is dropped, so the point set is checked here.
 EXPECTED_WORKERS: tuple[int, ...] = (1, 2, 4, 8, 16, 24, 32, 48, 64, 96, 190)
 
+# Must match the registrations in the same file. Checking worker counts
+# only within the workloads an artifact happens to contain would accept a
+# sweep that lost six of its seven workloads -- including, silently, the
+# low-work points the crossover result depends on.
+EXPECTED_WORKLOADS: tuple[str, ...] = (
+  "chunk_compute",
+  "chunk_fill",
+  "partial_fill_1536",
+  "partial_fill_192",
+  "partial_fill_64",
+  "partial_fill_640",
+  "tile_touch",
+)
+
 # Must match SweepTraits in the same file.
 SWEEP_CHUNKS = 4096
 
@@ -62,10 +76,19 @@ CV_LIMIT = 0.05
 # The campaign uses 20; this is the floor at which the gate is honest.
 MIN_SAMPLES = 3
 
-# Measured speedup cannot exceed the pool's own run-claiming ceiling. If
-# it does, the model and the data disagree -- almost always a --chunks
-# that does not match the world the sweep actually ran. Allowed a little
-# slack so ordinary noise near the ceiling is not reported as impossible.
+# How far a measured speedup may exceed the modelled maximum before it is
+# reported as impossible. Usually that means a --chunks that does not
+# describe the world the sweep ran on, which silently invalidates every
+# ceiling in the table.
+#
+# The model is `ceiling(workers) * one_worker_speedup`, not the ceiling
+# alone. The pool and the serial executor are different code paths, so
+# the pool can beat serial for reasons that have nothing to do with
+# parallelism -- a dev-box run measured the ONE-worker pool 10% faster
+# than serial on chunk_fill. Against the bare ceiling that reading is
+# "impossible" at every width; against this model it is just the pool's
+# non-parallel advantage, and the ceiling bounds only the parallel gain
+# on top of it.
 CEILING_TOLERANCE = 0.10
 
 NAME_PREFIX = "lab/thread_scaling/"
@@ -280,6 +303,13 @@ def load_points(path: Path) -> dict[str, Workload]:
   if not workloads:
     raise ReportError(f"{path} contains no {NAME_PREFIX} benchmarks")
 
+  absent = [name for name in EXPECTED_WORKLOADS if name not in workloads]
+  if absent:
+    raise ReportError(
+      f"{path} is missing workload(s) {', '.join(absent)}; the work-per-chunk "
+      "axis is incomplete and the crossover cannot be read from it"
+    )
+
   for workload in workloads.values():
     if not workload.serial.samples_ns:
       raise ReportError(
@@ -401,6 +431,17 @@ def main(argv: list[str] | None = None) -> int:
     "interval spans 1.0 is `unresolved`, not evidence that the pool helps."
   )
   print()
+  print(
+    "Each interval is marginal, not simultaneous. With "
+    f"{len(EXPECTED_WORKLOADS) * len(EXPECTED_WORKERS)} pool comparisons in a "
+    "full sweep and no multiplicity correction, read an individual verdict as "
+    "descriptive; a handful of borderline calls across the whole table is "
+    "expected even when nothing is wrong. Intervals also describe "
+    "repetition noise only -- they say nothing about drift shared across a "
+    "point's repetitions, and benchmark order is not randomised against the "
+    "worker axis."
+  )
+  print()
 
   problems: list[str] = []
   for name in sorted(workloads):
@@ -418,6 +459,18 @@ def main(argv: list[str] | None = None) -> int:
         f"{name}/serial ({workload.serial.samples} repetition(s), "
         f"need {MIN_SAMPLES})"
       )
+    # The serial baseline is the denominator of every speedup in the
+    # table, so noise in it contaminates the whole workload rather than
+    # one point. Gating only the pool rows lets that pass silently.
+    elif workload.serial.cv > CV_LIMIT:
+      problems.append(
+        f"{name}/serial (CV {workload.serial.cv * 100:.2f}%, and it is the "
+        "denominator of every speedup in this table)"
+      )
+
+    # The pool's non-parallel advantage over the serial executor, which
+    # the quantization ceiling does not describe; see CEILING_TOLERANCE.
+    one_worker = next((r.speedup for r in rows if r.workers == 1), 1.0)
     for row in rows:
       if row.samples < MIN_SAMPLES:
         problems.append(
@@ -426,10 +479,13 @@ def main(argv: list[str] | None = None) -> int:
         )
       elif row.cv > CV_LIMIT:
         problems.append(f"{name}/{row.workers} (CV {row.cv * 100:.2f}%)")
-      if row.speedup > row.ceiling * (1.0 + CEILING_TOLERANCE):
+      modelled_max = row.ceiling * one_worker
+      if row.speedup > modelled_max * (1.0 + CEILING_TOLERANCE):
         problems.append(
-          f"{name}/{row.workers} (speedup {row.speedup:.2f}x exceeds the "
-          f"{row.ceiling:.1f}x quantization ceiling; --chunks likely wrong)"
+          f"{name}/{row.workers} (speedup {row.speedup:.2f}x exceeds "
+          f"{modelled_max:.1f}x, the {row.ceiling:.1f}x quantization ceiling "
+          f"scaled by the {one_worker:.2f}x one-worker pool; --chunks likely "
+          "does not match the world the sweep ran on)"
         )
 
   if problems:

@@ -291,9 +291,42 @@ from the first campaign; interleaving is the one that costs a flag.
 
 20 repetitions rather than 10, because this pass produces a curve and a
 curve needs per-point dispersion tight enough to distinguish a knee from
-noise. `tools/thread_scaling_report.py` turns the JSON into markdown and
-**exits non-zero if any point exceeds 5% CV** — a noisy sweep is reported
-but explicitly not publishable.
+noise. `tools/thread_scaling_report.py` runs **on the machine that
+produced the data**, uploading `thread-scaling-report.md` next to the
+JSON. It refuses to call a sweep publishable when any point exceeds 5%
+CV, when the serial baseline — the denominator of every speedup —
+exceeds it, when a point has fewer than three repetitions, when a
+workload or a worker count is missing, or when a speedup exceeds what
+the quantization ceiling allows.
+
+That verdict is deliberately **not** part of the campaign's exit status.
+"Too noisy to publish as a curve" is a judgement about the data, not a
+failure of the run; the JSON is still worth having, and folding it in
+would blur it into the failures that mean something actually broke.
+
+The sweep runs under `timeout`. Google Benchmark has no internal cap, so
+a pool that deadlocked at an untested width would otherwise run until
+GCE deletes the instance at the duration cap — and since the JSON is
+written at process exit, that would lose the sweep entirely while still
+being billed for it.
+
+Every speedup carries a 95% percentile bootstrap interval, resampling
+both the serial and pool repetitions and dividing, because the
+uncertainty of a ratio is not the uncertainty of either half. The
+`vs serial` verdict is read off that interval: a 1.05× speedup whose
+interval spans 1.0 is `unresolved`, not evidence the pool helps. The
+intervals are marginal rather than simultaneous — there are 77 pool
+comparisons and no multiplicity correction — so a handful of borderline
+calls across a full table is expected even when nothing is wrong.
+
+The intervals describe repetition noise only. Benchmark order is not
+randomised against the worker axis: Google Benchmark runs all
+repetitions of a point consecutively, and points are registered in
+increasing worker order, so a smooth thermal or frequency drift could
+imitate a worker-count trend while every within-point CV stays low.
+Registration is workload-major, which gives a usable cross-check — the
+worker axis is traversed seven times, so drift aliasing should show up
+as knee positions that disagree between workloads.
 
 The report prints the pool's quantization ceiling beside every
 measurement. The pool claims runs of

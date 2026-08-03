@@ -389,7 +389,15 @@ done
 #
 # 20 repetitions, not the timing pass's 10: this produces a curve, and a
 # curve needs per-point dispersion tight enough to tell a real knee from
-# noise. CV per point is checked before anything is published.
+# noise. The analysis pass below turns the JSON into markdown and decides
+# whether the dispersion allows publishing a curve at all.
+#
+# Bounded by `timeout`. Google Benchmark has no internal cap, so a pool
+# that deadlocks at an untested width would otherwise run until GCE
+# deletes the instance at the duration cap -- and because the JSON is
+# written at process exit, that loses the sweep entirely while still
+# being billed for it. 45 minutes is roughly three times the estimate.
+SWEEP_TIMEOUT_SECONDS="${SWEEP_TIMEOUT_SECONDS:-2700}"
 SWEEP_FAILURES=0
 sweep_binary=build/bench/tess_bench_thread_scaling
 if [[ -x "$sweep_binary" ]]; then
@@ -407,17 +415,47 @@ if [[ -x "$sweep_binary" ]]; then
       "placement and its high-worker points are NOT publishable" >&2
     SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
   fi
+  # -k sends KILL if the process ignores TERM, so a wedged worker pool
+  # cannot outlive its own timeout.
+  sweep_guard=()
+  if command -v timeout >/dev/null 2>&1; then
+    sweep_guard=(timeout -k 30 "$SWEEP_TIMEOUT_SECONDS")
+  else
+    echo "WARNING: no timeout binary; sweep is unbounded" >&2
+  fi
   echo "running $sweep_name at $(date -u +%FT%TZ)"
-  if ! "${sweep_runner[@]+"${sweep_runner[@]}"}" "$sweep_binary" \
+  if ! "${sweep_guard[@]+"${sweep_guard[@]}"}" \
+      "${sweep_runner[@]+"${sweep_runner[@]}"}" "$sweep_binary" \
       --benchmark_format=json \
       --benchmark_repetitions=20 \
       --benchmark_min_time=0.2s \
       --benchmark_out="results/$sweep_name.json" \
       --benchmark_out_format=json; then
-    echo "ERROR: $sweep_name failed; publishing whatever it wrote" >&2
+    echo "ERROR: $sweep_name failed or timed out after" \
+      "${SWEEP_TIMEOUT_SECONDS}s; publishing whatever it wrote" >&2
     SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
   fi
   publish "results/$sweep_name.json"
+
+  # The runbook promised the dispersion was checked before publication;
+  # nothing was checking it. Run the report on the machine that produced
+  # the data, and upload its verdict alongside the JSON.
+  #
+  # Deliberately NOT folded into CAMPAIGN_STATUS. "Too noisy to publish
+  # as a curve" is a judgement about the data, not a failure of the run;
+  # the JSON is still worth having, and marking the campaign failed would
+  # blur that into the failures that mean something went wrong.
+  if [[ -f "results/$sweep_name.json" ]]; then
+    if python3 tools/thread_scaling_report.py "results/$sweep_name.json" \
+        > "results/thread-scaling-report.md" 2> "results/thread-scaling.log"; then
+      echo "thread-scaling sweep is publishable as a curve"
+    else
+      echo "NOTE: thread-scaling sweep is NOT publishable as a curve:"
+      cat "results/thread-scaling.log" >&2 || true
+    fi
+    publish "results/thread-scaling-report.md"
+    publish "results/thread-scaling.log"
+  fi
 else
   # Not fatal -- the campaign's primary results are already measured and
   # uploaded by this point -- but not silent either.

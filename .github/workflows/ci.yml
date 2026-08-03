@@ -603,6 +603,11 @@ jobs:
       # a campaign-only worker-count sweep that builds pools far wider
       # than a shared runner has cores. Listing it is what keeps it from
       # rotting, since nothing else in CI runs it.
+      #
+      # --bench-sources additionally greps bench/*.cc for whole `lab/`
+      # name literals, so a name assembled from a macro or a
+      # concatenation -- which yields a fragment no family rule can
+      # classify -- fails here rather than at analysis time.
       - name: Workload-matrix drift check
         run: |
           ./build/bench/bench/tess_bench --benchmark_list_tests \
@@ -617,7 +622,8 @@ jobs:
             --catalog bench/workload-matrix.json \
             --registrations build/bench/registrations-main.txt \
             --registrations build/bench/registrations-diagnostics.txt \
-            --registrations build/bench/registrations-thread-scaling.txt
+            --registrations build/bench/registrations-thread-scaling.txt \
+            --bench-sources bench
 
       # Release-configuration counter-golden drift (shadow mode).
       - name: Surface counter-golden drift
