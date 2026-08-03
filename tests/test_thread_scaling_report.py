@@ -29,24 +29,40 @@ def _entry(name, real_time, run_type="iteration", aggregate=None):
   return entry
 
 
-def _results(points, workloads=("chunk_compute",), workers=None):
-  """A Google Benchmark JSON blob for the given per-point timings."""
+def _results(
+  points, workloads=("chunk_compute",), workers=None, repetitions=None
+):
+  """A Google Benchmark JSON blob for the given per-point timings.
+
+  Unspecified points scale at exactly the pool's quantization ceiling --
+  the fastest a point can legitimately be. Perfect linear scaling would
+  exceed the ceiling at 24, 48, 96 and 190 workers and is correctly
+  rejected as impossible, so it cannot be the fixture default.
+  """
   workers = workers or thread_scaling_report.EXPECTED_WORKERS
+  if repetitions is None:
+    repetitions = thread_scaling_report.MIN_SAMPLES
+  serial_default = 1000.0
   benchmarks = []
   for workload in workloads:
-    benchmarks.append(
-      _entry(
-        f"lab/thread_scaling/{workload}/serial/real_time",
-        points.get((workload, "serial"), 1000.0),
-      )
-    )
-    for count in workers:
+    for _ in range(repetitions):
       benchmarks.append(
         _entry(
-          f"lab/thread_scaling/{workload}/{count}/real_time",
-          points.get((workload, count), 1000.0 / count),
+          f"lab/thread_scaling/{workload}/serial/real_time",
+          points.get((workload, "serial"), serial_default),
         )
       )
+    for count in workers:
+      ceiling = thread_scaling_report.quantization_ceiling(
+        thread_scaling_report.SWEEP_CHUNKS, count
+      )
+      for _ in range(repetitions):
+        benchmarks.append(
+          _entry(
+            f"lab/thread_scaling/{workload}/{count}/real_time",
+            points.get((workload, count), serial_default / ceiling),
+          )
+        )
   return {"benchmarks": benchmarks}
 
 
@@ -245,6 +261,34 @@ def test_report_exits_nonzero_when_a_point_is_too_noisy(tmp_path, capsys):
   status = thread_scaling_report.main([str(_write(tmp_path, blob))])
   assert status == 1
   assert "not publishable" in capsys.readouterr().err
+
+
+def test_single_repetition_is_not_publishable(tmp_path, capsys):
+  # A CV needs samples. With one repetition per point the CV reads 0.00%
+  # and the noise gate is vacuous, so a run that measured nothing would
+  # otherwise be declared clean.
+  blob = _results({}, repetitions=1)
+  status = thread_scaling_report.main([str(_write(tmp_path, blob))])
+  assert status == 1
+  assert "repetition" in capsys.readouterr().err
+
+
+def test_enough_repetitions_passes(tmp_path, capsys):
+  status = thread_scaling_report.main([str(_write(tmp_path, _results({})))])
+  assert status == 0, capsys.readouterr().err
+
+
+def test_speedup_above_the_ceiling_is_reported(tmp_path, capsys):
+  # Impossible by construction: it means --chunks does not describe the
+  # world the sweep ran on, so every ceiling in the table is wrong.
+  # 48 workers: ceiling is 39.0x, so a clean 48x cannot be real.
+  blob = _results(
+    {("chunk_fill", "serial"): 1000.0, ("chunk_fill", 48): 1000.0 / 48},
+    workloads=("chunk_fill",),
+  )
+  status = thread_scaling_report.main([str(_write(tmp_path, blob))])
+  assert status == 1
+  assert "exceeds the 39.0x quantization ceiling" in capsys.readouterr().err
 
 
 # --- Output -----------------------------------------------------------

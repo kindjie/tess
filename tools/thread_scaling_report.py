@@ -55,6 +55,18 @@ RUNS_PER_WORKER = 4
 # from noise, so the report refuses to call it publishable.
 CV_LIMIT = 0.05
 
+# A CV needs samples to mean anything. Below two it is undefined and this
+# tool reports 0.0, which would sail through the CV gate -- a one-shot run
+# would be declared publishable precisely because it measured nothing.
+# The campaign uses 20; this is the floor at which the gate is honest.
+MIN_SAMPLES = 3
+
+# Measured speedup cannot exceed the pool's own run-claiming ceiling. If
+# it does, the model and the data disagree -- almost always a --chunks
+# that does not match the world the sweep actually ran. Allowed a little
+# slack so ordinary noise near the ceiling is not reported as impossible.
+CEILING_TOLERANCE = 0.10
+
 NAME_PREFIX = "lab/thread_scaling/"
 CONTROL_SUFFIX = "/real_time"
 
@@ -108,6 +120,7 @@ class Row:
   ceiling: float
   efficiency: float
   cv: float
+  samples: int
 
 
 def quantization_ceiling(chunks: int, workers: int) -> float:
@@ -218,6 +231,7 @@ def rows_for(workload: Workload, chunks: int) -> list[Row]:
         # the ceiling is what the hardware and the memory system explain.
         efficiency=speedup / ceiling if ceiling else 0.0,
         cv=point.cv,
+        samples=point.samples,
       )
     )
   return rows
@@ -277,22 +291,38 @@ def main(argv: list[str] | None = None) -> int:
   )
   print()
 
-  noisy: list[str] = []
+  problems: list[str] = []
   for name in sorted(workloads):
-    table, rows = format_workload(workloads[name], args.chunks)
+    workload = workloads[name]
+    table, rows = format_workload(workload, args.chunks)
     print(table)
     print()
-    noisy.extend(
-      f"{name}/{row.workers} (CV {row.cv * 100:.2f}%)"
-      for row in rows
-      if row.cv > CV_LIMIT
-    )
 
-  if noisy:
+    # Checked before the CV, because too few samples makes the CV read
+    # 0.00% and the noise check vacuous rather than failing.
+    if workload.serial.samples < MIN_SAMPLES:
+      problems.append(
+        f"{name}/serial ({workload.serial.samples} repetition(s), "
+        f"need {MIN_SAMPLES})"
+      )
+    for row in rows:
+      if row.samples < MIN_SAMPLES:
+        problems.append(
+          f"{name}/{row.workers} ({row.samples} repetition(s), "
+          f"need {MIN_SAMPLES})"
+        )
+      elif row.cv > CV_LIMIT:
+        problems.append(f"{name}/{row.workers} (CV {row.cv * 100:.2f}%)")
+      if row.speedup > row.ceiling * (1.0 + CEILING_TOLERANCE):
+        problems.append(
+          f"{name}/{row.workers} (speedup {row.speedup:.2f}x exceeds the "
+          f"{row.ceiling:.1f}x quantization ceiling; --chunks likely wrong)"
+        )
+
+  if problems:
     print(
       f"thread_scaling_report: not publishable as a curve; "
-      f"{len(noisy)} point(s) exceed the {CV_LIMIT * 100:.0f}% CV limit: "
-      + ", ".join(noisy),
+      f"{len(problems)} problem(s): " + ", ".join(problems),
       file=sys.stderr,
     )
     return 1
