@@ -2,10 +2,13 @@
 """Draw the serial-versus-pool crossover as an SVG.
 
 One chart, deliberately. The 2026-08-03 campaigns produced exactly one
-result robust enough to put in front of an adopter: at four or more
-workers the pool beats the serial executor above roughly 95 ns of work
-per chunk and loses below roughly 45 ns, and both campaigns agree on that
-bracket despite differing in thread pinning and clock control. The
+result robust enough to put in front of an adopter: at FOUR workers the
+pool beats the serial executor above roughly 100 ns of work per chunk
+and loses below roughly 45 ns, and both campaigns agree on that bracket
+despite differing in thread pinning and clock control. The win side
+holds at four workers and above; the lose side does not -- ~44 ns loses
+at four workers and wins from eight upward -- which is why the chart
+plots one width rather than implying a range. The
 scaling curve those campaigns were run to produce is not publishable --
 cross-socket points sit at 8-22% CV even pinned -- so it is not drawn
 here. See docs/planning/optimization-log.md.

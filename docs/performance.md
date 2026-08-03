@@ -27,18 +27,26 @@ not by how many chunks there are.
 
 ![Serial versus pool speedup against work per chunk](assets/thread-scaling-crossover.svg)
 
-At four or more workers, on the machine below:
+**At four workers**, on the machine below:
 
-- **Above roughly 95 ns of work per chunk the pool wins**, and keeps
-  winning as the work grows — reaching 3.1x at four workers for a
-  compute-bound chunk.
+- **Above roughly 100 ns of work per chunk the pool wins**, and keeps
+  winning as the work grows — reaching 3.1x for a compute-bound chunk.
+  This holds at four workers and above.
 - **Below roughly 45 ns per chunk the pool loses**, and the lighter the
   work the worse it gets: a one-tile-per-chunk phase runs about 3x
   *slower* through the pool than serially.
 - **Between those two figures the answer depends on your workload.**
 
-A practical starting point: use about 100 ns of per-chunk work as the
-threshold, then measure on your own hardware. You can read your own
+The lower figure is the one that moves with worker count: it falls as
+you add workers. Work of about 44 ns per chunk loses at four workers but
+wins from eight upward (1.3x at eight, 1.6x at sixteen). The upper
+figure is the safe one to design against, because it holds across every
+width measured.
+
+Those are the nearest measured points either side, not an interpolated
+boundary: the pool lost at 47 ns and won at 97 ns. Use about 100 ns of
+per-chunk work as a starting threshold, then measure on your own
+hardware. You can read your own
 figure straight off a serial run — total phase time divided by chunk
 count.
 

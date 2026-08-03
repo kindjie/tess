@@ -948,7 +948,7 @@
         "storage": "always_resident",
         "executor_kind": "pool",
         "worker_count": "1",
-        "payload": "4096 per-chunk ops, one parallel phase; workload sets per-chunk work from ~16 ns to ~6472 ns"
+        "payload": "4096 per-chunk ops, one parallel phase; workload sets per-chunk work from ~11 ns to ~6473 ns"
       }
     }
   ],
