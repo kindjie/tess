@@ -564,6 +564,17 @@ if [[ -x "$sweep_binary" ]]; then
         --benchmark_out_format=json > /dev/null; then
       echo "ERROR: $point failed or timed out" >&2
       SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+    elif ! grep -q "\"name\": \"$point\"" \
+        "results/sweep/${label}.json" 2>/dev/null \
+      || ! grep -q "\"name\": \"lab/thread_scaling/${workload}/serial/real_time\"" \
+        "results/sweep/${label}.json" 2>/dev/null; then
+      # Exit status alone is not evidence of measurement: Google
+      # Benchmark exits zero when its filter matches nothing. Without
+      # this, 77 zero-match invocations report "measured 77 of 77" and
+      # the campaign exits clean having measured nothing at all.
+      echo "ERROR: $point produced no rows for itself and its serial" \
+        "baseline; the filter matched nothing" >&2
+      SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
     else
       sweep_done=$(( sweep_done + 1 ))
     fi
