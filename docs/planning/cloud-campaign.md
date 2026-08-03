@@ -338,6 +338,15 @@ an artificially low one. Both the achieved governor and the turbo state
 are recorded in `machine.txt`, because the failure that matters is not
 knowing.
 
+A governor that is not `performance` **counts as a sweep failure**, the
+same as a missing `taskset` or `numactl`. An uncontrolled clock
+invalidates a curve just as surely as uncontrolled placement, and a
+warning buried in `machine.txt` is not a control. The validation tier
+trips this deliberately: a GCE VM exposes no `cpufreq` at all, which is
+itself worth knowing — it means the validation run can exercise every
+mechanical path but cannot prove the governor works, and only bare metal
+can.
+
 20 repetitions rather than 10, because this pass produces a curve and a
 curve needs per-point dispersion tight enough to distinguish a knee from
 noise. `tools/thread_scaling_report.py` runs **on the machine that

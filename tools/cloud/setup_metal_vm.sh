@@ -504,6 +504,22 @@ if [[ -x "$sweep_binary" ]]; then
     SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
   fi
 
+  # An uncontrolled clock invalidates the curve exactly as surely as
+  # uncontrolled placement does, so it is counted the same way rather
+  # than left as a warning in machine.txt that nobody reads. The
+  # 2026-08-03 campaign measured single-thread clocks from 2.35 to 3.79
+  # GHz on an idle machine; a sweep taken across that is not a curve.
+  #
+  # The validation tier trips this deliberately -- a GCE VM exposes no
+  # cpufreq at all -- which is correct: a VM cannot produce a publishable
+  # curve either, and the run is already non-publishable for want of the
+  # wide worker counts.
+  if [[ "$GOVERNOR_SET" != "performance" ]]; then
+    echo "ERROR: cpufreq governor is '$GOVERNOR_SET', not performance;" \
+      "frequency is uncontrolled and the curve is not publishable" >&2
+    SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+  fi
+
   mkdir -p results/sweep
   # Pool points only. Each process ALSO re-measures that workload's serial
   # baseline, under the same pinning, so the speedup ratio is computed
