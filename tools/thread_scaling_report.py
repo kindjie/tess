@@ -137,6 +137,12 @@ class Workload:
   name: str
   serial: Point = field(default_factory=Point)
   by_workers: dict[int, Point] = field(default_factory=dict)
+  # Serial samples measured in the SAME process as each width's pool
+  # point, when the campaign paired them; see load_points.
+  serial_by_width: dict[int, Point] = field(default_factory=dict)
+
+  def serial_for(self, workers: int) -> Point:
+    return self.serial_by_width.get(workers) or self.serial
 
   @property
   def serial_ns(self) -> float:
@@ -240,9 +246,30 @@ def bootstrap_ratio_p(
     bottom = statistics.median(rng.choices(denominator, k=len(denominator)))
     if bottom and top / bottom < 1.0:
       below += 1
-  tail = min(below, resamples - below) / resamples
-  # Never report zero: the bootstrap cannot resolve past 1/resamples.
-  return max(2.0 * tail, 1.0 / resamples)
+  # Plus-one (Davison & Hinkley) rather than count/resamples. The naive
+  # ratio returns 0 when no resample lands on the far side, and clamping
+  # that to 1/resamples makes the floor -- and therefore the Holm-adjusted
+  # verdict -- a function of the Monte Carlo budget rather than of the
+  # data. At 1,000 resamples a point read `unresolved` and at 10,000 the
+  # same 20 observations read `slower`, which is a defect, not a result.
+  tail = min(below, resamples - below)
+  return min(1.0, 2.0 * (tail + 1) / (resamples + 1))
+
+
+def resolution_floor(resamples: int = BOOTSTRAP_RESAMPLES) -> float:
+  """Smallest p-value this many resamples can distinguish from zero."""
+  return 2.0 / (resamples + 1)
+
+
+def required_resamples(comparisons: int, alpha: float = 0.05) -> int:
+  """Resamples needed before a Holm-corrected verdict is even reachable.
+
+  The most significant of `comparisons` tests must clear `alpha /
+  comparisons`, so the floor `2/(B+1)` has to sit below that. Below this
+  budget every verdict is `unresolved` no matter what the data says --
+  a silent, uniform failure that looks like a cautious result.
+  """
+  return math.ceil(2.0 * comparisons / alpha)
 
 
 def holm_adjust(pvalues: list[float]) -> list[float]:
@@ -292,30 +319,20 @@ def quantization_ceiling(chunks: int, workers: int) -> float:
   return chunks / critical_path
 
 
-def load_points(paths: Path | list[Path]) -> dict[str, Workload]:
-  """Parse sweep JSON(s), checking the expected point set is complete.
+def _parse_file(path: Path) -> list[tuple[str, str, float]]:
+  """(workload, tail, real_time) triples from one Google Benchmark JSON."""
+  try:
+    blob: Any = json.loads(Path(path).read_text(encoding="utf-8"))
+  except OSError as error:
+    raise ReportError(f"cannot read {path}: {error}") from error
+  except json.JSONDecodeError as error:
+    raise ReportError(f"{path} is not valid JSON: {error}") from error
+  found = blob.get("benchmarks") if isinstance(blob, dict) else None
+  if not isinstance(found, list):
+    raise ReportError(f"{path} has no 'benchmarks' array")
 
-  Accepts several files so a pinned campaign -- one process per point, so
-  each can be given its own CPU set -- reassembles into one sweep.
-  """
-  if isinstance(paths, (str, Path)):
-    paths = [Path(paths)]
-  entries: list[Any] = []
-  for path in paths:
-    try:
-      blob: Any = json.loads(Path(path).read_text(encoding="utf-8"))
-    except OSError as error:
-      raise ReportError(f"cannot read {path}: {error}") from error
-    except json.JSONDecodeError as error:
-      raise ReportError(f"{path} is not valid JSON: {error}") from error
-    found = blob.get("benchmarks") if isinstance(blob, dict) else None
-    if not isinstance(found, list):
-      raise ReportError(f"{path} has no 'benchmarks' array")
-    entries.extend(found)
-  path = paths[0] if len(paths) == 1 else Path(f"{len(paths)} result files")
-
-  workloads: dict[str, Workload] = {}
-  for entry in entries:
+  triples: list[tuple[str, str, float]] = []
+  for entry in found:
     if not isinstance(entry, dict):
       continue
     # Aggregate rows restate the repetitions Google Benchmark already
@@ -341,20 +358,69 @@ def load_points(paths: Path | list[Path]) -> dict[str, Workload]:
     real_time = entry.get("real_time")
     if not isinstance(real_time, (int, float)):
       raise ReportError(f"'{name}' has no numeric real_time")
+    triples.append((workload_name, tail, float(real_time)))
+  return triples
 
-    workload = workloads.setdefault(workload_name, Workload(workload_name))
-    if tail == "serial":
-      workload.serial.samples_ns.append(float(real_time))
-    else:
+
+def load_points(paths: Path | list[Path]) -> dict[str, Workload]:
+  """Parse sweep JSON(s), checking the expected point set is complete.
+
+  Accepts several files because a pinned campaign runs one process per
+  point so each can be given its own CPU set.
+
+  Serial baselines are tracked PER FILE as well as pooled. When a point's
+  process also measured the serial baseline, the speedup for that point
+  is computed against that process's own serial run. Otherwise every
+  ratio would straddle a process boundary, and process identity is
+  perfectly confounded with worker count in a one-process-per-point
+  campaign -- which matters here, because this project has already
+  measured a benchmark whose cost moved 73% on a code-layout change.
+  """
+  if isinstance(paths, (str, Path)):
+    paths = [Path(paths)]
+
+  workloads: dict[str, Workload] = {}
+  seen_pool: dict[tuple[str, int], Path] = {}
+  for path in paths:
+    file_serial: dict[str, list[float]] = {}
+    file_pool: dict[str, dict[int, list[float]]] = {}
+    for workload_name, tail, value in _parse_file(path):
+      if tail == "serial":
+        file_serial.setdefault(workload_name, []).append(value)
+        continue
       try:
         workers = int(tail)
       except ValueError as error:
         raise ReportError(
-          f"cannot parse a worker count from '{name}'"
+          f"cannot parse a worker count from '{workload_name}/{tail}'"
         ) from error
-      workload.by_workers.setdefault(workers, Point()).samples_ns.append(
-        float(real_time)
+      file_pool.setdefault(workload_name, {}).setdefault(workers, []).append(
+        value
       )
+
+    for workload_name, samples in file_serial.items():
+      workload = workloads.setdefault(workload_name, Workload(workload_name))
+      workload.serial.samples_ns.extend(samples)
+    for workload_name, widths in file_pool.items():
+      workload = workloads.setdefault(workload_name, Workload(workload_name))
+      for workers, samples in widths.items():
+        key = (workload_name, workers)
+        if key in seen_pool:
+          # Silently summing them would average two different pinnings
+          # or two different runs into one point.
+          raise ReportError(
+            f"'{workload_name}/{workers}' appears in both {seen_pool[key]} "
+            f"and {path}; each point must be measured once"
+          )
+        seen_pool[key] = path
+        workload.by_workers.setdefault(workers, Point()).samples_ns.extend(
+          samples
+        )
+        paired = file_serial.get(workload_name)
+        if paired:
+          workload.serial_by_width[workers] = Point(list(paired))
+
+  path = paths[0] if len(paths) == 1 else Path(f"{len(paths)} result files")
 
   if not workloads:
     raise ReportError(f"{path} contains no {NAME_PREFIX} benchmarks")
@@ -384,18 +450,21 @@ def load_points(paths: Path | list[Path]) -> dict[str, Workload]:
 def rows_for(
   workload: Workload, chunks: int, resamples: int = BOOTSTRAP_RESAMPLES
 ) -> list[Row]:
-  serial_ns = workload.serial_ns
   rows: list[Row] = []
   for workers in sorted(workload.by_workers):
     point = workload.by_workers[workers]
+    # The serial run from this point's own process when the campaign
+    # paired them, so the ratio does not straddle a process boundary.
+    baseline = workload.serial_for(workers)
+    serial_ns = baseline.median_ns
     median = point.median_ns
     speedup = serial_ns / median if median else 0.0
     ceiling = quantization_ceiling(chunks, workers)
     speedup_lo, speedup_hi = bootstrap_ratio_ci(
-      workload.serial.samples_ns, point.samples_ns, resamples=resamples
+      baseline.samples_ns, point.samples_ns, resamples=resamples
     )
     pvalue = bootstrap_ratio_p(
-      workload.serial.samples_ns, point.samples_ns, resamples=resamples
+      baseline.samples_ns, point.samples_ns, resamples=resamples
     )
     rows.append(
       Row(
@@ -482,6 +551,19 @@ def main(argv: list[str] | None = None) -> int:
 
   try:
     workloads = load_points(args.results)
+    comparisons = sum(len(w.by_workers) for w in workloads.values())
+    needed = required_resamples(comparisons)
+    if args.bootstrap_resamples < needed:
+      # Refused rather than run: below this budget the Holm-corrected
+      # p-value cannot drop under alpha for ANY point, so every verdict
+      # would read `unresolved` -- a uniform silent failure that looks
+      # exactly like a cautious result.
+      raise ReportError(
+        f"--bootstrap-resamples {args.bootstrap_resamples} cannot resolve "
+        f"{comparisons} corrected comparisons; the p-value floor would be "
+        f"{resolution_floor(args.bootstrap_resamples):.4f} and every verdict "
+        f"would be 'unresolved'. Use at least {needed}"
+      )
   except ReportError as error:
     print(f"thread_scaling_report: {error}", file=sys.stderr)
     return 1

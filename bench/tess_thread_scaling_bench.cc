@@ -61,8 +61,18 @@ static_assert(kChunkCount == 4096, "sweep world sizing changed");
 constexpr auto kWarm = tess_bench::WarmUp::kYes;
 
 // Topology-shaped, not powers of two, for the c3-standard-192-metal target:
-// 24 is one NUMA node, 48 one socket, 96 all physical cores, 190 leaves a
-// core for the dispatcher. Powers of two miss every one of those boundaries.
+// under the campaign's pinning (tools/cloud/sweep_cpu_plan.py) 24 puts every
+// THREAD on one NUMA node, 48 on one socket, 96 one per physical core, and
+// 190 every core plus 94 SMT siblings. Powers of two miss all of those.
+//
+// Threads only. The campaign also runs under --interleave=all, so memory is
+// spread across all four nodes at every width and a NUMA-locality knee
+// cannot appear here; knees that do appear are SMT or bandwidth. That is
+// the trade that makes widths comparable to one another.
+//
+// At 190 the dispatcher shares the pinned set rather than getting a core of
+// its own; it blocks in done_cv_.wait for the whole phase, so it competes
+// only at dispatch and completion.
 // The list is also the expected-point manifest for analysis: the workload
 // matrix cannot notice a single missing worker count, because its family
 // rule still matches the other ten.

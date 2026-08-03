@@ -451,6 +451,115 @@ def test_verdict_reports_the_crossover_direction():
   assert thread_scaling_report.verdict(0.3, 0.20) == "unresolved"
 
 
+def test_pvalue_floor_does_not_depend_on_the_resample_budget():
+  # The defect this replaced: a naive count/resamples p-value clamped to
+  # 1/resamples made the Holm-adjusted verdict a function of the Monte
+  # Carlo budget. The same 20 observations read `unresolved` at 1,000
+  # resamples and `slower` at 10,000, which is not a result.
+  serial = [1000.0] * 20
+  pool = [250.0] * 20
+  small = thread_scaling_report.bootstrap_ratio_p(serial, pool, resamples=1000)
+  large = thread_scaling_report.bootstrap_ratio_p(serial, pool, resamples=20000)
+  # Both are at their resolution floor; neither claims more than it can.
+  assert small == pytest.approx(thread_scaling_report.resolution_floor(1000))
+  assert large == pytest.approx(thread_scaling_report.resolution_floor(20000))
+  assert small > large  # more resamples resolve further, and say so
+
+
+def test_pvalue_is_never_zero():
+  p = thread_scaling_report.bootstrap_ratio_p([1e9] * 20, [1.0] * 20)
+  assert p > 0.0
+
+
+def test_required_resamples_makes_a_corrected_verdict_reachable():
+  need = thread_scaling_report.required_resamples(77)
+  assert thread_scaling_report.resolution_floor(need) * 77 <= 0.05
+  # One fewer and the tightest possible corrected p misses the threshold.
+  assert thread_scaling_report.resolution_floor(need // 2) * 77 > 0.05
+
+
+def test_default_budget_is_adequate_for_a_full_sweep():
+  comparisons = len(thread_scaling_report.EXPECTED_WORKLOADS) * len(
+    thread_scaling_report.EXPECTED_WORKERS
+  )
+  assert thread_scaling_report.BOOTSTRAP_RESAMPLES >= (
+    thread_scaling_report.required_resamples(comparisons)
+  )
+
+
+def test_too_few_resamples_is_refused_rather_than_silently_unresolved(
+  tmp_path, capsys
+):
+  status = thread_scaling_report.main([
+    str(_write(tmp_path, _results({}))),
+    "--bootstrap-resamples",
+    "100",
+  ])
+  assert status == 1
+  assert "resamples" in capsys.readouterr().err
+
+
+# --- Pairing the serial baseline with each point's own process --------
+
+
+def _per_point_files(tmp_path, serial_for_width):
+  """One file per width, each carrying its own serial run.
+
+  The shape a pinned campaign produces: every point is a separate
+  process, and each re-measures the serial baseline so the ratio does not
+  straddle a process boundary.
+  """
+  full = _results({})
+  paths = []
+  for width in thread_scaling_report.EXPECTED_WORKERS:
+    out = []
+    for entry in full["benchmarks"]:
+      if entry["name"].endswith("/serial/real_time"):
+        out.append(dict(entry, real_time=serial_for_width(width)))
+      elif entry["name"].endswith(f"/{width}/real_time"):
+        out.append(entry)
+    path = tmp_path / f"w{width}.json"
+    path.write_text(json.dumps({"benchmarks": out}))
+    paths.append(path)
+  return paths
+
+
+def test_paired_serial_is_preferred_over_the_pooled_one(tmp_path):
+  # One process per point means an unpaired ratio straddles a process
+  # boundary, and process identity is confounded with worker count.
+  paths = _per_point_files(tmp_path, lambda w: 1000.0 + w)
+  wl = thread_scaling_report.load_points(paths)["chunk_compute"]
+  assert wl.serial_for(2).median_ns == pytest.approx(1002.0)
+  assert wl.serial_for(96).median_ns == pytest.approx(1096.0)
+  # The pooled baseline mixes every process and would be wrong for both.
+  assert wl.serial.samples > wl.serial_for(2).samples
+
+
+def test_paired_serial_changes_the_computed_speedup(tmp_path):
+  paths = _per_point_files(tmp_path, lambda w: 1000.0 + w * 100.0)
+  wl = thread_scaling_report.load_points(paths)["chunk_compute"]
+  rows = thread_scaling_report.rows_for(wl, chunks=4096, resamples=500)
+  row = next(r for r in rows if r.workers == 2)
+  assert row.speedup == pytest.approx(1200.0 / row.median_ns)
+
+
+def test_unpaired_artifact_still_uses_the_pooled_serial(tmp_path):
+  points = thread_scaling_report.load_points(_write(tmp_path, _results({})))
+  wl = points["chunk_compute"]
+  # One file: the paired baseline IS the pooled one, by construction.
+  assert wl.serial_for(4).samples_ns == wl.serial.samples_ns
+
+
+def test_a_point_measured_twice_is_an_error(tmp_path):
+  a = tmp_path / "a.json"
+  b = tmp_path / "b.json"
+  blob = _results({})
+  a.write_text(json.dumps(blob))
+  b.write_text(json.dumps(blob))
+  with pytest.raises(thread_scaling_report.ReportError, match="once"):
+    thread_scaling_report.load_points([a, b])
+
+
 def test_holm_is_monotone_and_never_shrinks_a_pvalue():
   raw = [0.001, 0.01, 0.04, 0.5]
   adj = thread_scaling_report.holm_adjust(raw)

@@ -114,6 +114,13 @@ last); the `performance` governor is set before measuring and the
 achieved state recorded; and verdicts are Holm-corrected across the whole
 artifact rather than read off marginal intervals.
 
+**A caveat on the persistence re-measurement.** The governor change
+applies to the main timing pass too, so the next campaign's
+`persistence/save_dense` number will not be a clean A/B against either
+earlier campaign: a difference could be the governor rather than layout.
+Distinguishing them needs the two binaries run under the same governor,
+not two campaigns run under different ones.
+
 **Still uncontrolled:** benchmark order is not randomised against the
 worker axis, so a smooth drift could still imitate a worker-count trend.
 Registration is workload-major, so the axis is traversed seven times and

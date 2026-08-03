@@ -299,11 +299,23 @@ not produce a curve.
 So each point now runs in **its own process, pinned with `taskset`** to a
 CPU set chosen by `tools/cloud/sweep_cpu_plan.py`: one thread per
 physical core, filling NUMA nodes in order, SMT siblings only once every
-core is occupied. That also makes the worker counts mean what the sweep
-always claimed — on this machine 24 is exactly one NUMA node, 48 one
-socket, 96 every physical core, and 190 every core plus 94 siblings.
-Unpinned, those were just numbers. The per-point JSONs are merged into
-the single `tess_bench_thread_scaling.json` the analysis expects.
+core is occupied. The per-point JSONs are merged into the single
+`tess_bench_thread_scaling.json` the analysis expects, and each process
+also re-measures that workload's serial baseline under the same pinning
+so the speedup ratio is computed within one process.
+
+**What the worker counts do and do not mean.** Pinning makes them
+topological in *threads*: at 24 workers every thread is on NUMA node 0,
+at 48 on socket 0, at 96 one per physical core, at 190 every core plus 94
+siblings. It does **not** make them topological in *memory*, because
+`--interleave=all` spreads the world across all four nodes regardless —
+so at 24 workers roughly three quarters of the memory is remote by
+construction. That is deliberate: interleaving gives every width the same
+memory-latency profile, which is what makes the widths comparable to each
+other. The cost is that a genuine NUMA-locality knee cannot appear in
+this curve; knees that do appear are SMT or bandwidth, not locality.
+Measuring locality would need `--membind` following the pinned nodes,
+which is a different experiment and not this one.
 
 The **frequency governor** is set to `performance` before measuring. The
 2026-08-03 run recorded `CPU(s) scaling MHz: 21%` against an 800–3800 MHz

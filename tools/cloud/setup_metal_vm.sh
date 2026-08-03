@@ -298,9 +298,18 @@ if [[ -w /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]]; then
   for gov in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
     echo performance > "$gov" 2>/dev/null || true
   done
-  GOVERNOR_SET="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor \
-    2>/dev/null || echo unknown)"
-  echo "cpufreq governor set to: $GOVERNOR_SET"
+  # Verified across EVERY cpu, not just cpu0. A per-CPU write can fail
+  # silently, and a sweep pinned to cores 24-47 does not care what core 0
+  # is set to -- reading one core and reporting it as the machine's state
+  # is how a partially-applied governor becomes an unnoticed variable.
+  GOVERNOR_SET="$(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor \
+    2>/dev/null | sort -u | paste -sd, -)"
+  if [[ "$GOVERNOR_SET" == "performance" ]]; then
+    echo "cpufreq governor: performance on all CPUs"
+  else
+    echo "WARNING: cpufreq governor is not uniform across CPUs:" \
+      "$GOVERNOR_SET" >&2
+  fi
 else
   echo "WARNING: cpufreq governor not writable; frequency is uncontrolled" >&2
 fi
@@ -458,7 +467,11 @@ if [[ -x "$sweep_binary" ]]; then
   if command -v timeout >/dev/null 2>&1; then
     sweep_guard=(timeout -k 30 "$SWEEP_POINT_TIMEOUT_SECONDS")
   else
-    echo "WARNING: no timeout binary; sweep points are unbounded" >&2
+    # Counted, not just warned: without it a wedged width runs until GCE
+    # deletes the instance, and the deadline check between points cannot
+    # interrupt a point that never returns.
+    echo "ERROR: no timeout binary; sweep points are unbounded" >&2
+    SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
   fi
   # One process per point, each pinned to its own CPU set.
   #
@@ -474,16 +487,42 @@ if [[ -x "$sweep_binary" ]]; then
   # this machine 24 is exactly one NUMA node, 48 one socket, 96 every
   # physical core, 190 every core plus 94 SMT siblings. Unpinned they are
   # just numbers.
+  # Probed once. Counting it per point would report one missing tool as
+  # 77 failures and bury whatever else went wrong.
+  HAVE_TASKSET=0
+  if command -v taskset >/dev/null 2>&1; then
+    HAVE_TASKSET=1
+  else
+    echo "ERROR: taskset missing; every point runs unpinned and thread" \
+      "placement is uncontrolled -- the curve is not publishable" >&2
+    SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+  fi
+
   mkdir -p results/sweep
-  sweep_points="$("$sweep_binary" --benchmark_list_tests 2>/dev/null)"
+  # Pool points only. Each process ALSO re-measures that workload's serial
+  # baseline, under the same pinning, so the speedup ratio is computed
+  # within one process. With one process per point, process identity --
+  # ASLR, code layout, allocator state -- is otherwise perfectly
+  # confounded with worker count, and this project has already measured a
+  # benchmark whose cost moved 73% on a code-layout change alone.
+  sweep_points="$("$sweep_binary" --benchmark_list_tests 2>/dev/null \
+    | grep -v '/serial/real_time$' || true)"
   sweep_total=0
+  [[ -n "$sweep_points" ]] && sweep_total="$(printf '%s\n' "$sweep_points" \
+    | grep -c .)"
+  if (( sweep_total == 0 )); then
+    # Zero points measured, merged, and reported as a clean empty sweep
+    # is the failure mode this guards: it looks identical to success.
+    echo "ERROR: the sweep binary listed no pool points" >&2
+    SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+  fi
   sweep_done=0
   sweep_deadline=$(( SECONDS + SWEEP_TIMEOUT_SECONDS ))
   while IFS= read -r point; do
     [[ -n "$point" ]] || continue
-    sweep_total=$(( sweep_total + 1 ))
     # lab/thread_scaling/<workload>/<width>/real_time
     width="${point%/real_time}"; width="${width##*/}"
+    workload="${point#lab/thread_scaling/}"; workload="${workload%%/*}"
     label="${point#lab/thread_scaling/}"; label="${label//\//_}"
 
     if (( SECONDS >= sweep_deadline )); then
@@ -493,29 +532,25 @@ if [[ -x "$sweep_binary" ]]; then
       break
     fi
 
-    # A serial point is one thread; give it one core.
-    plan_width="$width"
-    [[ "$plan_width" == "serial" ]] && plan_width=1
-    if ! cpu_list="$(python3 tools/cloud/sweep_cpu_plan.py "$plan_width" \
+    if ! cpu_list="$(python3 tools/cloud/sweep_cpu_plan.py "$width" \
         2>/dev/null | cut -f2)" || [[ -z "$cpu_list" ]]; then
-      echo "ERROR: no CPU plan for width $plan_width ($point)" >&2
+      echo "ERROR: no CPU plan for width $width ($point)" >&2
       SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
       continue
     fi
 
     pin=()
-    if command -v taskset >/dev/null 2>&1; then
+    if (( HAVE_TASKSET )); then
       pin=(taskset -c "$cpu_list")
-    else
-      echo "WARNING: taskset missing; $point runs unpinned and its" \
-        "placement is uncontrolled" >&2
-      SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
     fi
 
+    # The serial baseline shares the point's CPU set. It is one thread,
+    # so a wider mask costs it nothing, and measuring it here is what
+    # keeps the ratio inside a single process.
     if ! "${sweep_guard[@]+"${sweep_guard[@]}"}" \
         "${pin[@]+"${pin[@]}"}" \
         "${sweep_runner[@]+"${sweep_runner[@]}"}" "$sweep_binary" \
-        --benchmark_filter="^${point}\$" \
+        --benchmark_filter="^lab/thread_scaling/${workload}/(serial|${width})/real_time\$" \
         --benchmark_format=json \
         --benchmark_repetitions=20 \
         --benchmark_min_time=0.2s \
@@ -528,25 +563,38 @@ if [[ -x "$sweep_binary" ]]; then
     fi
   done <<< "$sweep_points"
   echo "thread-scaling: measured $sweep_done of $sweep_total points"
+  if (( sweep_done < sweep_total )); then
+    SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+  fi
 
   # Merged into the single artifact the analysis and the runbook expect;
-  # 84 separate uploads would be the same data, harder to use.
-  python3 - <<'MERGE' || SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
-import glob, json, pathlib
+  # 77 separate uploads would be the same data, harder to use. A file
+  # that will not parse is counted, not skipped: silently dropping it
+  # would turn a lost point into a smaller-looking sweep.
+  if ! python3 - <<'MERGE'
+import glob, json, pathlib, sys
 merged = []
 context = None
+bad = 0
 for path in sorted(glob.glob("results/sweep/*.json")):
     try:
         blob = json.loads(pathlib.Path(path).read_text())
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError) as error:
+        print(f"ERROR: cannot read {path}: {error}", file=sys.stderr)
+        bad += 1
         continue
     context = context or blob.get("context")
     merged.extend(blob.get("benchmarks", []))
 pathlib.Path("results/tess_bench_thread_scaling.json").write_text(
     json.dumps({"context": context or {}, "benchmarks": merged})
 )
-print(f"merged {len(merged)} benchmark records")
+print(f"merged {len(merged)} benchmark records from"
+      f" {len(glob.glob('results/sweep/*.json')) - bad} file(s)")
+sys.exit(1 if bad else 0)
 MERGE
+  then
+    SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+  fi
   publish "results/$sweep_name.json"
 
   # The runbook promised the dispersion was checked before publication;
