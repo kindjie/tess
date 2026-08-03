@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import statistics
 import sys
 from dataclasses import dataclass, field
@@ -69,6 +70,13 @@ CEILING_TOLERANCE = 0.10
 
 NAME_PREFIX = "lab/thread_scaling/"
 CONTROL_SUFFIX = "/real_time"
+
+# Percentile bootstrap settings. Seeded, because a report that prints
+# different intervals each time it is run over the same artifact cannot
+# be quoted in a document or diffed against a later campaign.
+BOOTSTRAP_RESAMPLES = 10_000
+BOOTSTRAP_SEED = 20260802
+CONFIDENCE = 0.95
 
 
 class ReportError(Exception):
@@ -117,10 +125,84 @@ class Row:
   workers: int
   median_ns: float
   speedup: float
+  speedup_lo: float
+  speedup_hi: float
   ceiling: float
   efficiency: float
   cv: float
   samples: int
+
+  @property
+  def verdict(self) -> str:
+    return verdict(self.speedup_lo, self.speedup_hi)
+
+
+def _percentiles(values: list[float]) -> tuple[float, float]:
+  values.sort()
+  lo_index = int((1.0 - CONFIDENCE) / 2.0 * len(values))
+  hi_index = min(len(values) - 1, int((1.0 + CONFIDENCE) / 2.0 * len(values)))
+  return values[lo_index], values[hi_index]
+
+
+def bootstrap_median_ci(
+  samples: list[float],
+  resamples: int = BOOTSTRAP_RESAMPLES,
+  seed: int = BOOTSTRAP_SEED,
+) -> tuple[float, float]:
+  """Percentile bootstrap interval for the median of `samples`.
+
+  Non-parametric on purpose: benchmark timings are right-skewed, so an
+  interval derived from a normal assumption would be wrong in the
+  direction that matters -- too narrow on the slow tail.
+  """
+  if not samples:
+    raise ReportError("cannot bootstrap an empty sample")
+  if len(samples) == 1:
+    return samples[0], samples[0]
+  rng = random.Random(seed)
+  size = len(samples)
+  medians = [
+    statistics.median(rng.choices(samples, k=size)) for _ in range(resamples)
+  ]
+  return _percentiles(medians)
+
+
+def bootstrap_ratio_ci(
+  numerator: list[float],
+  denominator: list[float],
+  resamples: int = BOOTSTRAP_RESAMPLES,
+  seed: int = BOOTSTRAP_SEED,
+) -> tuple[float, float]:
+  """Percentile bootstrap interval for median(numerator)/median(denominator).
+
+  Speedup is a ratio of two independently noisy estimates, and the
+  uncertainty of a ratio is not the uncertainty of either half. Resampling
+  both and dividing propagates it without assuming a distribution for the
+  quotient, which has no closed form worth trusting at these sample sizes.
+  """
+  if not numerator or not denominator:
+    raise ReportError("cannot bootstrap an empty sample")
+  rng = random.Random(seed)
+  ratios: list[float] = []
+  for _ in range(resamples):
+    top = statistics.median(rng.choices(numerator, k=len(numerator)))
+    bottom = statistics.median(rng.choices(denominator, k=len(denominator)))
+    ratios.append(top / bottom if bottom else 0.0)
+  return _percentiles(ratios)
+
+
+def verdict(speedup_lo: float, speedup_hi: float) -> str:
+  """Whether the pool beat the serial executor, given the interval.
+
+  This is the crossover claim the adopter page rests on, so it is derived
+  from the interval rather than from the point estimate: a speedup of
+  1.05x whose interval spans 1.0 is not evidence that the pool helps.
+  """
+  if speedup_lo > 1.0:
+    return "faster"
+  if speedup_hi < 1.0:
+    return "slower"
+  return "unresolved"
 
 
 def quantization_ceiling(chunks: int, workers: int) -> float:
@@ -213,7 +295,9 @@ def load_points(path: Path) -> dict[str, Workload]:
   return workloads
 
 
-def rows_for(workload: Workload, chunks: int) -> list[Row]:
+def rows_for(
+  workload: Workload, chunks: int, resamples: int = BOOTSTRAP_RESAMPLES
+) -> list[Row]:
   serial_ns = workload.serial_ns
   rows: list[Row] = []
   for workers in sorted(workload.by_workers):
@@ -221,11 +305,16 @@ def rows_for(workload: Workload, chunks: int) -> list[Row]:
     median = point.median_ns
     speedup = serial_ns / median if median else 0.0
     ceiling = quantization_ceiling(chunks, workers)
+    speedup_lo, speedup_hi = bootstrap_ratio_ci(
+      workload.serial.samples_ns, point.samples_ns, resamples=resamples
+    )
     rows.append(
       Row(
         workers=workers,
         median_ns=median,
         speedup=speedup,
+        speedup_lo=speedup_lo,
+        speedup_hi=speedup_hi,
         ceiling=ceiling,
         # Against the ceiling, not against the worker count: the gap to
         # the ceiling is what the hardware and the memory system explain.
@@ -237,24 +326,32 @@ def rows_for(workload: Workload, chunks: int) -> list[Row]:
   return rows
 
 
-def format_workload(workload: Workload, chunks: int) -> tuple[str, list[Row]]:
-  rows = rows_for(workload, chunks)
+def format_workload(
+  workload: Workload, chunks: int, resamples: int = BOOTSTRAP_RESAMPLES
+) -> tuple[str, list[Row]]:
+  rows = rows_for(workload, chunks, resamples=resamples)
   serial_us = workload.serial_ns / 1000.0
+  serial_lo, serial_hi = bootstrap_median_ci(
+    workload.serial.samples_ns, resamples=resamples
+  )
   lines = [
     f"### {workload.name}",
     "",
-    f"Serial baseline: {serial_us:,.1f} us over {chunks:,} chunks "
-    f"({workload.serial_ns / chunks:.1f} ns per chunk), "
+    f"Serial baseline: {serial_us:,.1f} us "
+    f"(95% CI {serial_lo / 1000.0:,.1f} - {serial_hi / 1000.0:,.1f}) over "
+    f"{chunks:,} chunks ({workload.serial_ns / chunks:.1f} ns per chunk), "
     f"{workload.serial.samples} repetitions.",
     "",
-    "| workers | median (us) | speedup | ceiling | of ceiling | CV |",
-    "| ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| workers | median (us) | speedup | 95% CI | vs serial | ceiling "
+    "| of ceiling | CV |",
+    "| ---: | ---: | ---: | :---: | :--- | ---: | ---: | ---: |",
   ]
   for row in rows:
     flag = " !" if row.cv > CV_LIMIT else ""
     lines.append(
       f"| {row.workers} | {row.median_ns / 1000.0:,.1f} | "
-      f"{row.speedup:.2f}x | {row.ceiling:.1f}x | "
+      f"{row.speedup:.2f}x | {row.speedup_lo:.2f} - {row.speedup_hi:.2f} | "
+      f"{row.verdict} | {row.ceiling:.1f}x | "
       f"{row.efficiency * 100:.0f}% | {row.cv * 100:.2f}%{flag} |"
     )
   return "\n".join(lines), rows
@@ -268,6 +365,12 @@ def main(argv: list[str] | None = None) -> int:
     type=int,
     default=SWEEP_CHUNKS,
     help="Chunk count the sweep ran over, for the quantization ceiling.",
+  )
+  parser.add_argument(
+    "--bootstrap-resamples",
+    type=int,
+    default=BOOTSTRAP_RESAMPLES,
+    help="Bootstrap resamples per interval.",
   )
   args = parser.parse_args(argv)
 
@@ -290,11 +393,21 @@ def main(argv: list[str] | None = None) -> int:
     "hardware knee."
   )
   print()
+  print(
+    f"Intervals are {CONFIDENCE * 100:.0f}% percentile bootstrap over "
+    f"{args.bootstrap_resamples:,} resamples of the repetitions, seeded so "
+    "the same artifact always yields the same interval. `vs serial` is read "
+    "off the interval rather than the point estimate: a 1.05x speedup whose "
+    "interval spans 1.0 is `unresolved`, not evidence that the pool helps."
+  )
+  print()
 
   problems: list[str] = []
   for name in sorted(workloads):
     workload = workloads[name]
-    table, rows = format_workload(workload, args.chunks)
+    table, rows = format_workload(
+      workload, args.chunks, resamples=args.bootstrap_resamples
+    )
     print(table)
     print()
 

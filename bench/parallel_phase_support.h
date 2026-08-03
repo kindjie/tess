@@ -75,12 +75,38 @@ inline void enqueue_per_chunk_updates(tess::FrameOps& ops,
   }
 }
 
+// Whether to execute one untimed phase before the measured loop.
+//
+// NOT for page faults. `World()` zero-initializes every chunk page in
+// its constructor (storage/world.h), so first touch already happens
+// before the loop; an A/B on a dev box found no median shift, which is
+// what put that theory to rest.
+//
+// What the first measured iteration does still pay is a cold cache and
+// cold pool threads. The sweep's world is 32 MiB against 210 MiB of L3
+// on the target machine, so iteration one reads from DRAM and later
+// iterations from L3, and the pool's workers have not yet been scheduled
+// onto their cores. That is a bias rather than noise, and it lands
+// unequally: amortized across a thousand iterations it vanishes, across
+// eight it does not, and the sweep's iteration counts span two orders of
+// magnitude (measured 55 to 1167 within one workload).
+//
+// The two families choose differently, and deliberately. The sweep warms
+// up, because it publishes a curve whose points must be comparable to
+// each other across a wide range of iteration counts. The gated
+// `parallel/` family does not, because its value is comparability with
+// its own recorded history: warming it up would step every one of its
+// baselines and its trend series at once. That bias exists there too,
+// smaller at 256 chunks, and is left as an open item rather than fixed
+// silently as a side effect of the sweep.
+enum class WarmUp { kNo, kYes };
+
 // Runs one-parallel-phase partitioned execution of `fn` over every chunk
 // with the given executor and reports worker/chunk counters.
 //
 // Counters are written after the timed loop, never inside it: a counter
 // update in the loop body would be measured as part of the workload.
-template <typename World, typename Executor, typename Fn>
+template <WarmUp Warm, typename World, typename Executor, typename Fn>
 void run_parallel_phase(benchmark::State& state, const Executor& executor,
                         double workers, World& world, Fn&& fn) {
   constexpr auto count = static_cast<std::size_t>(World::chunk_count);
@@ -103,6 +129,16 @@ void run_parallel_phase(benchmark::State& state, const Executor& executor,
   scratch.reserve_dirty_records_per_operation(1);
   scratch.reserve_merged_dirty_records(count);
 
+  // Outside the loop, so its cost is not measured. It also warms the
+  // pool's worker threads, which otherwise start cold on iteration one.
+  if constexpr (Warm == WarmUp::kYes) {
+    const auto warmed = tess::execute_phase_partitioned_dirty_with<
+        tess::WritePolicy::UniquePerChunk>(executor, world, report.plan(),
+                                           phase, scratch, fn);
+    bench_check(warmed.chunk_count == count,
+                "warm-up phase did not visit every chunk");
+  }
+
   std::uint64_t last_chunk_count = 0;
   for (auto _ : state) {
     const auto result = tess::execute_phase_partitioned_dirty_with<
@@ -121,12 +157,12 @@ void run_parallel_phase(benchmark::State& state, const Executor& executor,
 // Every tile of every chunk is written each iteration, so per-operation
 // work is a full span fill: enough work per chunk for parallel dispatch
 // to amortize, small enough that dispatch overhead stays visible.
-template <typename Traits, typename Executor>
+template <typename Traits, WarmUp Warm, typename Executor>
 void run_chunk_fill(benchmark::State& state, const Executor& executor,
                     double workers) {
   using TerrainTag = typename Traits::TerrainTag;
   typename Traits::World world;
-  run_parallel_phase(state, executor, workers, world, [](auto view) {
+  run_parallel_phase<Warm>(state, executor, workers, world, [](auto view) {
     auto terrain = view.template field_span<TerrainTag>();
     for (auto& tile : terrain) {
       tile = static_cast<std::uint16_t>(view.key().value + 1);
@@ -148,7 +184,7 @@ void run_chunk_fill(benchmark::State& state, const Executor& executor,
 // single-tile touch bracket the serial/parallel crossover two orders of
 // magnitude apart; these intermediate points narrow that bracket, which
 // is the only adopter-facing result the sweep produces.
-template <typename Traits, std::size_t Tiles, typename Executor>
+template <typename Traits, std::size_t Tiles, WarmUp Warm, typename Executor>
 void run_partial_fill(benchmark::State& state, const Executor& executor,
                       double workers) {
   using TerrainTag = typename Traits::TerrainTag;
@@ -157,7 +193,7 @@ void run_partial_fill(benchmark::State& state, const Executor& executor,
   static_assert(Tiles <= Traits::chunk_tile_count,
                 "partial fill is wider than the chunk");
   typename Traits::World world;
-  run_parallel_phase(state, executor, workers, world, [](auto view) {
+  run_parallel_phase<Warm>(state, executor, workers, world, [](auto view) {
     auto terrain = view.template field_span<TerrainTag>();
     for (std::size_t i = 0; i < Tiles; ++i) {
       terrain[i] = static_cast<std::uint16_t>(view.key().value + 1);
@@ -178,12 +214,12 @@ void run_partial_fill(benchmark::State& state, const Executor& executor,
 
 // One-tile writes per chunk keep per-operation work near zero, so this
 // family measures per-backend dispatch overhead amplification.
-template <typename Traits, typename Executor>
+template <typename Traits, WarmUp Warm, typename Executor>
 void run_tile_touch(benchmark::State& state, const Executor& executor,
                     double workers) {
   using TerrainTag = typename Traits::TerrainTag;
   typename Traits::World world;
-  run_parallel_phase(state, executor, workers, world, [](auto view) {
+  run_parallel_phase<Warm>(state, executor, workers, world, [](auto view) {
     auto terrain = view.template field_span<TerrainTag>();
     terrain[0] = static_cast<std::uint16_t>(view.key().value);
   });
@@ -192,12 +228,12 @@ void run_tile_touch(benchmark::State& state, const Executor& executor,
 // A serial per-tile dependency chain makes each operation compute-bound
 // (tens of microseconds), so this family shows how backends scale when
 // per-operation work actually amortizes dispatch.
-template <typename Traits, typename Executor>
+template <typename Traits, WarmUp Warm, typename Executor>
 void run_chunk_compute(benchmark::State& state, const Executor& executor,
                        double workers) {
   using TerrainTag = typename Traits::TerrainTag;
   typename Traits::World world;
-  run_parallel_phase(state, executor, workers, world, [](auto view) {
+  run_parallel_phase<Warm>(state, executor, workers, world, [](auto view) {
     auto terrain = view.template field_span<TerrainTag>();
     auto hash = static_cast<std::uint32_t>(view.key().value) * 2654435761u + 1u;
     for (auto& tile : terrain) {

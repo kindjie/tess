@@ -32,57 +32,67 @@ constexpr auto kChunkCount = ParallelTraits::chunk_count;
 
 void BM_parallel_chunk_fill_serial(benchmark::State& state) {
   const tess::SerialPhaseExecutor executor;
-  tess_bench::run_chunk_fill<ParallelTraits>(state, executor, 1.0);
+  tess_bench::run_chunk_fill<ParallelTraits, tess_bench::WarmUp::kNo>(
+      state, executor, 1.0);
 }
 
 void BM_parallel_chunk_fill_scoped_threads_w4(benchmark::State& state) {
   const tess::ScopedThreadPhaseExecutor executor{4};
-  tess_bench::run_chunk_fill<ParallelTraits>(state, executor, 4.0);
+  tess_bench::run_chunk_fill<ParallelTraits, tess_bench::WarmUp::kNo>(
+      state, executor, 4.0);
 }
 
 void BM_parallel_chunk_fill_pool_w2(benchmark::State& state) {
   const tess::WorkerPoolPhaseExecutor executor{2};
   executor.reserve_operations(kChunkCount);
-  tess_bench::run_chunk_fill<ParallelTraits>(state, executor, 2.0);
+  tess_bench::run_chunk_fill<ParallelTraits, tess_bench::WarmUp::kNo>(
+      state, executor, 2.0);
 }
 
 void BM_parallel_chunk_fill_pool_w4(benchmark::State& state) {
   const tess::WorkerPoolPhaseExecutor executor{4};
   executor.reserve_operations(kChunkCount);
-  tess_bench::run_chunk_fill<ParallelTraits>(state, executor, 4.0);
+  tess_bench::run_chunk_fill<ParallelTraits, tess_bench::WarmUp::kNo>(
+      state, executor, 4.0);
 }
 
 void BM_parallel_chunk_compute_serial(benchmark::State& state) {
   const tess::SerialPhaseExecutor executor;
-  tess_bench::run_chunk_compute<ParallelTraits>(state, executor, 1.0);
+  tess_bench::run_chunk_compute<ParallelTraits, tess_bench::WarmUp::kNo>(
+      state, executor, 1.0);
 }
 
 void BM_parallel_chunk_compute_pool_w2(benchmark::State& state) {
   const tess::WorkerPoolPhaseExecutor executor{2};
   executor.reserve_operations(kChunkCount);
-  tess_bench::run_chunk_compute<ParallelTraits>(state, executor, 2.0);
+  tess_bench::run_chunk_compute<ParallelTraits, tess_bench::WarmUp::kNo>(
+      state, executor, 2.0);
 }
 
 void BM_parallel_chunk_compute_pool_w4(benchmark::State& state) {
   const tess::WorkerPoolPhaseExecutor executor{4};
   executor.reserve_operations(kChunkCount);
-  tess_bench::run_chunk_compute<ParallelTraits>(state, executor, 4.0);
+  tess_bench::run_chunk_compute<ParallelTraits, tess_bench::WarmUp::kNo>(
+      state, executor, 4.0);
 }
 
 void BM_parallel_tile_touch_serial(benchmark::State& state) {
   const tess::SerialPhaseExecutor executor;
-  tess_bench::run_tile_touch<ParallelTraits>(state, executor, 1.0);
+  tess_bench::run_tile_touch<ParallelTraits, tess_bench::WarmUp::kNo>(
+      state, executor, 1.0);
 }
 
 void BM_parallel_tile_touch_scoped_threads_w4(benchmark::State& state) {
   const tess::ScopedThreadPhaseExecutor executor{4};
-  tess_bench::run_tile_touch<ParallelTraits>(state, executor, 4.0);
+  tess_bench::run_tile_touch<ParallelTraits, tess_bench::WarmUp::kNo>(
+      state, executor, 4.0);
 }
 
 void BM_parallel_tile_touch_pool_w4(benchmark::State& state) {
   const tess::WorkerPoolPhaseExecutor executor{4};
   executor.reserve_operations(kChunkCount);
-  tess_bench::run_tile_touch<ParallelTraits>(state, executor, 4.0);
+  tess_bench::run_tile_touch<ParallelTraits, tess_bench::WarmUp::kNo>(
+      state, executor, 4.0);
 }
 
 BENCHMARK(BM_parallel_chunk_fill_serial)->Name("parallel/chunk_fill_serial");

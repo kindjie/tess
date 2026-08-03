@@ -49,6 +49,17 @@ using SweepTraits = tess_bench::PhaseWorldTraits<tess::Extent3{4096, 4096, 1},
 constexpr auto kChunkCount = SweepTraits::chunk_count;
 static_assert(kChunkCount == 4096, "sweep world sizing changed");
 
+// One untimed phase before the measured loop, so the first measured
+// iteration does not pay for a cold cache and unscheduled pool threads.
+// The 32 MiB world fits in the target machine's 210 MiB L3, so iteration
+// one reads from DRAM and the rest from L3. That bias lands unequally
+// here because iteration counts span two orders of magnitude (measured
+// 55 to 1167 within tile_touch alone). It is not about page faults --
+// World() zero-fills every page in its constructor. The gated parallel/
+// family deliberately does not warm up; see WarmUp in
+// parallel_phase_support.h.
+constexpr auto kWarm = tess_bench::WarmUp::kYes;
+
 // Topology-shaped, not powers of two, for the c3-standard-192-metal target:
 // 24 is one NUMA node, 48 one socket, 96 all physical cores, 190 leaves a
 // core for the dispatcher. Powers of two miss every one of those boundaries.
@@ -100,19 +111,23 @@ template <Workload W, typename Executor>
 void run_workload(benchmark::State& state, const Executor& executor,
                   double workers) {
   if constexpr (W == Workload::kTileTouch) {
-    tess_bench::run_tile_touch<SweepTraits>(state, executor, workers);
+    tess_bench::run_tile_touch<SweepTraits, kWarm>(state, executor, workers);
   } else if constexpr (W == Workload::kPartialFill64) {
-    tess_bench::run_partial_fill<SweepTraits, 64>(state, executor, workers);
+    tess_bench::run_partial_fill<SweepTraits, 64, kWarm>(state, executor,
+                                                         workers);
   } else if constexpr (W == Workload::kPartialFill192) {
-    tess_bench::run_partial_fill<SweepTraits, 192>(state, executor, workers);
+    tess_bench::run_partial_fill<SweepTraits, 192, kWarm>(state, executor,
+                                                          workers);
   } else if constexpr (W == Workload::kPartialFill640) {
-    tess_bench::run_partial_fill<SweepTraits, 640>(state, executor, workers);
+    tess_bench::run_partial_fill<SweepTraits, 640, kWarm>(state, executor,
+                                                          workers);
   } else if constexpr (W == Workload::kPartialFill1536) {
-    tess_bench::run_partial_fill<SweepTraits, 1536>(state, executor, workers);
+    tess_bench::run_partial_fill<SweepTraits, 1536, kWarm>(state, executor,
+                                                           workers);
   } else if constexpr (W == Workload::kChunkFill) {
-    tess_bench::run_chunk_fill<SweepTraits>(state, executor, workers);
+    tess_bench::run_chunk_fill<SweepTraits, kWarm>(state, executor, workers);
   } else {
-    tess_bench::run_chunk_compute<SweepTraits>(state, executor, workers);
+    tess_bench::run_chunk_compute<SweepTraits, kWarm>(state, executor, workers);
   }
 }
 

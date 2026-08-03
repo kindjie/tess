@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import random
+import statistics
 import sys
 from pathlib import Path
 
@@ -289,6 +291,78 @@ def test_speedup_above_the_ceiling_is_reported(tmp_path, capsys):
   status = thread_scaling_report.main([str(_write(tmp_path, blob))])
   assert status == 1
   assert "exceeds the 39.0x quantization ceiling" in capsys.readouterr().err
+
+
+# --- Bootstrap confidence intervals ------------------------------------
+#
+# The speedup is a ratio of two noisy medians. Printed bare it invites
+# reading a 3% difference between adjacent points as a knee, so every
+# speedup carries an interval and the crossover verdict is derived from
+# whether that interval clears 1.0.
+
+
+def test_ci_is_degenerate_for_identical_samples():
+  lo, hi = thread_scaling_report.bootstrap_median_ci([5.0] * 20)
+  assert lo == pytest.approx(5.0)
+  assert hi == pytest.approx(5.0)
+
+
+def test_ci_brackets_the_median():
+  samples = [10.0, 11.0, 12.0, 13.0, 100.0]
+  lo, hi = thread_scaling_report.bootstrap_median_ci(samples)
+  assert lo <= statistics.median(samples) <= hi
+
+
+def test_ci_is_deterministic_for_a_given_seed():
+  samples = [10.0, 11.0, 12.0, 13.0, 100.0]
+  first = thread_scaling_report.bootstrap_median_ci(samples, seed=7)
+  second = thread_scaling_report.bootstrap_median_ci(samples, seed=7)
+  assert first == second
+
+
+def test_ci_narrows_with_more_samples():
+  rng = random.Random(1)
+  few = [rng.gauss(100.0, 10.0) for _ in range(5)]
+  many = [rng.gauss(100.0, 10.0) for _ in range(200)]
+  wide = thread_scaling_report.bootstrap_median_ci(few)
+  narrow = thread_scaling_report.bootstrap_median_ci(many)
+  assert (narrow[1] - narrow[0]) < (wide[1] - wide[0])
+
+
+def test_speedup_ci_excludes_one_when_clearly_faster():
+  serial = [1000.0] * 20
+  pool = [250.0] * 20
+  lo, hi = thread_scaling_report.bootstrap_ratio_ci(serial, pool)
+  assert lo > 1.0
+  assert lo <= 4.0 <= hi
+
+
+def test_speedup_ci_includes_one_when_indistinguishable():
+  rng = random.Random(3)
+  serial = [rng.gauss(1000.0, 100.0) for _ in range(20)]
+  pool = [rng.gauss(1000.0, 100.0) for _ in range(20)]
+  lo, hi = thread_scaling_report.bootstrap_ratio_ci(serial, pool)
+  assert lo < 1.0 < hi
+
+
+def test_verdict_reports_the_crossover_direction():
+  assert thread_scaling_report.verdict(1.4, 1.9) == "faster"
+  assert thread_scaling_report.verdict(0.3, 0.8) == "slower"
+  assert thread_scaling_report.verdict(0.9, 1.2) == "unresolved"
+
+
+def test_rows_carry_a_speedup_interval(tmp_path):
+  points = thread_scaling_report.load_points(_write(tmp_path, _results({})))
+  rows = thread_scaling_report.rows_for(points["chunk_compute"], chunks=4096)
+  row = next(r for r in rows if r.workers == 4)
+  assert row.speedup_lo <= row.speedup <= row.speedup_hi
+
+
+def test_markdown_shows_the_interval_and_verdict(tmp_path, capsys):
+  thread_scaling_report.main([str(_write(tmp_path, _results({})))])
+  out = capsys.readouterr().out
+  assert "95% CI" in out
+  assert "vs serial" in out
 
 
 # --- Output -----------------------------------------------------------
