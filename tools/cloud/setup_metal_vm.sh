@@ -282,6 +282,35 @@ for required in build/bench/tess_bench build/bench/tess_bench_diagnostics; do
   fi
 done
 
+# ---- Frequency governor ---------------------------------------------
+# The 2026-08-03 campaign recorded `CPU(s) scaling MHz: 21%` against a
+# 800-3800 MHz range, and its counter pass measured single-thread
+# effective clocks from 2.35 to 3.79 GHz across benchmarks minutes apart
+# on an idle machine. A benchmark that is sometimes clocked at 62% of
+# another benchmark's rate cannot be compared against it, and no number
+# of repetitions fixes it.
+#
+# Best effort by design: not every image exposes cpufreq, and a campaign
+# is still worth running without it. What is NOT acceptable is not
+# knowing, so the achieved state is recorded in machine.txt either way.
+GOVERNOR_SET="unavailable"
+if [[ -w /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]]; then
+  for gov in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+    echo performance > "$gov" 2>/dev/null || true
+  done
+  GOVERNOR_SET="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor \
+    2>/dev/null || echo unknown)"
+  echo "cpufreq governor set to: $GOVERNOR_SET"
+else
+  echo "WARNING: cpufreq governor not writable; frequency is uncontrolled" >&2
+fi
+# intel_pstate exposes turbo separately. Leaving turbo ON is deliberate:
+# adopters run with turbo on, and the goal is a stable clock rather than
+# an artificially low one. Recorded so the state is never assumed.
+TURBO_STATE="unknown"
+[[ -r /sys/devices/system/cpu/intel_pstate/no_turbo ]] && \
+  TURBO_STATE="no_turbo=$(cat /sys/devices/system/cpu/intel_pstate/no_turbo)"
+
 mkdir -p results
 # Machine identity is recorded for the campaign record; this file goes
 # to a private bucket, not the public data branch, so full CPU details
@@ -307,7 +336,9 @@ mkdir -p results
   echo "cmake: $(cmake --version | head -1)"
   echo "kernel: $(uname -r)"
   echo "perf_event_paranoid: $(cat /proc/sys/kernel/perf_event_paranoid)"
-  echo "cpu_pinning: none (deliberate; left out as an untested variable)"
+  echo "cpu_pinning: main pass none; thread-scaling sweep taskset per point"
+  echo "cpufreq_governor: $GOVERNOR_SET"
+  echo "turbo: $TURBO_STATE"
   echo "online_cpus: $(nproc)"
   echo "cpu_scaling_enabled: see the benchmark JSON context"
   echo "counter_pass_flags: --benchmark_min_time=1s (single repetition)"
@@ -382,10 +413,11 @@ done
 # Run under `numactl --interleave=all`. AlwaysResidentWorld allocates and
 # zero-fills every page on its constructing thread, so with default
 # first-touch placement the whole 32 MiB world lands on one NUMA node and
-# every worker beyond that node measures remote access. Interleaving is
-# one flag and removes the dominant placement artifact. It is not thread
-# pinning -- that, and the frequency governor, remain the open follow-ups
-# recorded in docs/planning/optimization-log.md.
+# every worker beyond that node measures remote access.
+#
+# Memory placement was necessary but not sufficient. The 2026-08-03
+# campaign had interleaving and still could not publish a curve, because
+# THREAD placement was uncontrolled; see the pinned per-point loop below.
 #
 # 20 repetitions, not the timing pass's 10: this produces a curve, and a
 # curve needs per-point dispersion tight enough to tell a real knee from
@@ -395,9 +427,10 @@ done
 # Bounded by `timeout`. Google Benchmark has no internal cap, so a pool
 # that deadlocks at an untested width would otherwise run until GCE
 # deletes the instance at the duration cap -- and because the JSON is
-# written at process exit, that loses the sweep entirely while still
-# being billed for it. 45 minutes is roughly three times the estimate.
+# written at process exit, that loses that point entirely while still
+# being billed for it.
 SWEEP_TIMEOUT_SECONDS="${SWEEP_TIMEOUT_SECONDS:-2700}"
+SWEEP_POINT_TIMEOUT_SECONDS="${SWEEP_POINT_TIMEOUT_SECONDS:-300}"
 SWEEP_FAILURES=0
 sweep_binary=build/bench/tess_bench_thread_scaling
 if [[ -x "$sweep_binary" ]]; then
@@ -417,24 +450,103 @@ if [[ -x "$sweep_binary" ]]; then
   fi
   # -k sends KILL if the process ignores TERM, so a wedged worker pool
   # cannot outlive its own timeout.
+  # Per POINT, not per sweep: with one process per point, a single
+  # timeout as large as the whole budget would let one wedged width
+  # consume every remaining point's time. The overall budget is enforced
+  # separately by the deadline check inside the loop.
   sweep_guard=()
   if command -v timeout >/dev/null 2>&1; then
-    sweep_guard=(timeout -k 30 "$SWEEP_TIMEOUT_SECONDS")
+    sweep_guard=(timeout -k 30 "$SWEEP_POINT_TIMEOUT_SECONDS")
   else
-    echo "WARNING: no timeout binary; sweep is unbounded" >&2
+    echo "WARNING: no timeout binary; sweep points are unbounded" >&2
   fi
-  echo "running $sweep_name at $(date -u +%FT%TZ)"
-  if ! "${sweep_guard[@]+"${sweep_guard[@]}"}" \
-      "${sweep_runner[@]+"${sweep_runner[@]}"}" "$sweep_binary" \
-      --benchmark_format=json \
-      --benchmark_repetitions=20 \
-      --benchmark_min_time=0.2s \
-      --benchmark_out="results/$sweep_name.json" \
-      --benchmark_out_format=json; then
-    echo "ERROR: $sweep_name failed or timed out after" \
-      "${SWEEP_TIMEOUT_SECONDS}s; publishing whatever it wrote" >&2
-    SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
-  fi
+  # One process per point, each pinned to its own CPU set.
+  #
+  # The 2026-08-03 campaign ran the whole sweep in one unpinned process
+  # and thread placement dominated everything above ~32 workers: CVs of
+  # 16-33%, and repetitions splitting into discrete modes rather than
+  # scattering. chunk_compute/4 sat at either 3.94x or 3.01x depending on
+  # whether the kernel happened to give the four workers four separate
+  # physical cores or let two of them share one core's SMT threads.
+  # Averaging that lottery does not produce a curve.
+  #
+  # Pinning also makes the worker counts mean what the sweep claims: on
+  # this machine 24 is exactly one NUMA node, 48 one socket, 96 every
+  # physical core, 190 every core plus 94 SMT siblings. Unpinned they are
+  # just numbers.
+  mkdir -p results/sweep
+  sweep_points="$("$sweep_binary" --benchmark_list_tests 2>/dev/null)"
+  sweep_total=0
+  sweep_done=0
+  sweep_deadline=$(( SECONDS + SWEEP_TIMEOUT_SECONDS ))
+  while IFS= read -r point; do
+    [[ -n "$point" ]] || continue
+    sweep_total=$(( sweep_total + 1 ))
+    # lab/thread_scaling/<workload>/<width>/real_time
+    width="${point%/real_time}"; width="${width##*/}"
+    label="${point#lab/thread_scaling/}"; label="${label//\//_}"
+
+    if (( SECONDS >= sweep_deadline )); then
+      echo "ERROR: sweep budget of ${SWEEP_TIMEOUT_SECONDS}s exhausted with" \
+        "$(( sweep_total - sweep_done )) point(s) unmeasured" >&2
+      SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+      break
+    fi
+
+    # A serial point is one thread; give it one core.
+    plan_width="$width"
+    [[ "$plan_width" == "serial" ]] && plan_width=1
+    if ! cpu_list="$(python3 tools/cloud/sweep_cpu_plan.py "$plan_width" \
+        2>/dev/null | cut -f2)" || [[ -z "$cpu_list" ]]; then
+      echo "ERROR: no CPU plan for width $plan_width ($point)" >&2
+      SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+      continue
+    fi
+
+    pin=()
+    if command -v taskset >/dev/null 2>&1; then
+      pin=(taskset -c "$cpu_list")
+    else
+      echo "WARNING: taskset missing; $point runs unpinned and its" \
+        "placement is uncontrolled" >&2
+      SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+    fi
+
+    if ! "${sweep_guard[@]+"${sweep_guard[@]}"}" \
+        "${pin[@]+"${pin[@]}"}" \
+        "${sweep_runner[@]+"${sweep_runner[@]}"}" "$sweep_binary" \
+        --benchmark_filter="^${point}\$" \
+        --benchmark_format=json \
+        --benchmark_repetitions=20 \
+        --benchmark_min_time=0.2s \
+        --benchmark_out="results/sweep/${label}.json" \
+        --benchmark_out_format=json > /dev/null; then
+      echo "ERROR: $point failed or timed out" >&2
+      SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+    else
+      sweep_done=$(( sweep_done + 1 ))
+    fi
+  done <<< "$sweep_points"
+  echo "thread-scaling: measured $sweep_done of $sweep_total points"
+
+  # Merged into the single artifact the analysis and the runbook expect;
+  # 84 separate uploads would be the same data, harder to use.
+  python3 - <<'MERGE' || SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+import glob, json, pathlib
+merged = []
+context = None
+for path in sorted(glob.glob("results/sweep/*.json")):
+    try:
+        blob = json.loads(pathlib.Path(path).read_text())
+    except (OSError, json.JSONDecodeError):
+        continue
+    context = context or blob.get("context")
+    merged.extend(blob.get("benchmarks", []))
+pathlib.Path("results/tess_bench_thread_scaling.json").write_text(
+    json.dumps({"context": context or {}, "benchmarks": merged})
+)
+print(f"merged {len(merged)} benchmark records")
+MERGE
   publish "results/$sweep_name.json"
 
   # The runbook promised the dispersion was checked before publication;

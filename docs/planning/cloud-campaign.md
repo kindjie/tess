@@ -286,8 +286,35 @@ default first-touch placement the 32 MiB world lands on one of the four
 NUMA nodes and every worker beyond that node measures remote access
 rather than the executor. If `numactl` is missing the sweep still runs,
 but the run is marked failed and the result is not publishable as a
-scaling curve. Pinning and the frequency governor remain open follow-ups
-from the first campaign; interleaving is the one that costs a flag.
+scaling curve.
+
+**Memory placement alone was not enough.** The 2026-08-03 campaign had
+interleaving and still could not publish a curve: CVs of 16–33% above 32
+workers, with repetitions splitting into discrete modes rather than
+scattering. `chunk_compute/4` sat at either 3.94× or 3.01× depending on
+whether the kernel gave its four workers four separate physical cores or
+let two of them share one core's SMT threads. Averaging that lottery does
+not produce a curve.
+
+So each point now runs in **its own process, pinned with `taskset`** to a
+CPU set chosen by `tools/cloud/sweep_cpu_plan.py`: one thread per
+physical core, filling NUMA nodes in order, SMT siblings only once every
+core is occupied. That also makes the worker counts mean what the sweep
+always claimed — on this machine 24 is exactly one NUMA node, 48 one
+socket, 96 every physical core, and 190 every core plus 94 siblings.
+Unpinned, those were just numbers. The per-point JSONs are merged into
+the single `tess_bench_thread_scaling.json` the analysis expects.
+
+The **frequency governor** is set to `performance` before measuring. The
+2026-08-03 run recorded `CPU(s) scaling MHz: 21%` against an 800–3800 MHz
+range, and its counter pass measured single-thread effective clocks from
+2.35 to 3.79 GHz across benchmarks minutes apart on an idle machine. A
+benchmark clocked at 62% of another's rate cannot be compared against it,
+and no number of repetitions repairs that. Turbo is deliberately left on
+— adopters run with turbo on, and the goal is a stable clock rather than
+an artificially low one. Both the achieved governor and the turbo state
+are recorded in `machine.txt`, because the failure that matters is not
+knowing.
 
 20 repetitions rather than 10, because this pass produces a curve and a
 curve needs per-point dispersion tight enough to distinguish a knee from
@@ -312,12 +339,22 @@ being billed for it.
 
 Every speedup carries a 95% percentile bootstrap interval, resampling
 both the serial and pool repetitions and dividing, because the
-uncertainty of a ratio is not the uncertainty of either half. The
-`vs serial` verdict is read off that interval: a 1.05× speedup whose
-interval spans 1.0 is `unresolved`, not evidence the pool helps. The
-intervals are marginal rather than simultaneous — there are 77 pool
-comparisons and no multiplicity correction — so a handful of borderline
-calls across a full table is expected even when nothing is wrong.
+uncertainty of a ratio is not the uncertainty of either half. Those
+intervals are shown for scale only. The `vs serial` verdict is read off
+a two-sided bootstrap p-value, **Holm-corrected across every pool
+comparison in the artifact**, because the crossover is read across
+workloads rather than within one table.
+
+That correction is not ceremonial. On the 2026-08-03 data the point that
+appeared to fix the lower end of the crossover, `partial_fill_64` at two
+workers, had a marginal interval of 0.91–0.99 — apparently decisive — and
+an adjusted p of 0.090, which is not. The corrected bracket rests on
+different points than the uncorrected one did.
+
+A p-value rather than a corrected interval because correcting a
+percentile bootstrap for 77 comparisons would need the 0.03rd percentile
+of the resample distribution, a quantile 20 repetitions cannot support
+however many resamples are drawn.
 
 The intervals describe repetition noise only. Benchmark order is not
 randomised against the worker axis: Google Benchmark runs all

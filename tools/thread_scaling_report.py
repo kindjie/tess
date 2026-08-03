@@ -154,10 +154,12 @@ class Row:
   efficiency: float
   cv: float
   samples: int
+  pvalue: float
+  adjusted_p: float = 1.0
 
   @property
   def verdict(self) -> str:
-    return verdict(self.speedup_lo, self.speedup_hi)
+    return verdict(self.speedup, self.adjusted_p)
 
 
 def _percentiles(values: list[float]) -> tuple[float, float]:
@@ -214,18 +216,63 @@ def bootstrap_ratio_ci(
   return _percentiles(ratios)
 
 
-def verdict(speedup_lo: float, speedup_hi: float) -> str:
-  """Whether the pool beat the serial executor, given the interval.
+def bootstrap_ratio_p(
+  numerator: list[float],
+  denominator: list[float],
+  resamples: int = BOOTSTRAP_RESAMPLES,
+  seed: int = BOOTSTRAP_SEED,
+) -> float:
+  """Two-sided bootstrap p-value for median(num)/median(den) != 1.
 
-  This is the crossover claim the adopter page rests on, so it is derived
-  from the interval rather than from the point estimate: a speedup of
-  1.05x whose interval spans 1.0 is not evidence that the pool helps.
+  A p-value rather than an extreme quantile of the interval, because
+  correcting a percentile bootstrap for 77 comparisons would need the
+  0.03rd percentile of the resample distribution -- a quantile 20
+  repetitions cannot support no matter how many resamples are drawn.
+  Counting how often the resampled ratio lands on the wrong side of 1.0
+  degrades gracefully instead.
   """
-  if speedup_lo > 1.0:
-    return "faster"
-  if speedup_hi < 1.0:
-    return "slower"
-  return "unresolved"
+  if not numerator or not denominator:
+    raise ReportError("cannot bootstrap an empty sample")
+  rng = random.Random(seed)
+  below = 0
+  for _ in range(resamples):
+    top = statistics.median(rng.choices(numerator, k=len(numerator)))
+    bottom = statistics.median(rng.choices(denominator, k=len(denominator)))
+    if bottom and top / bottom < 1.0:
+      below += 1
+  tail = min(below, resamples - below) / resamples
+  # Never report zero: the bootstrap cannot resolve past 1/resamples.
+  return max(2.0 * tail, 1.0 / resamples)
+
+
+def holm_adjust(pvalues: list[float]) -> list[float]:
+  """Holm-Bonferroni step-down adjustment, preserving input order.
+
+  Every published verdict is one of many comparisons drawn from the same
+  artifact. Uncorrected, a handful of borderline calls across a full
+  sweep is expected even when nothing is happening, which is exactly the
+  kind of reading the crossover claim must not rest on.
+  """
+  order = sorted(range(len(pvalues)), key=lambda i: pvalues[i])
+  adjusted = [0.0] * len(pvalues)
+  running = 0.0
+  for rank, index in enumerate(order):
+    scaled = (len(pvalues) - rank) * pvalues[index]
+    running = max(running, min(1.0, scaled))
+    adjusted[index] = running
+  return adjusted
+
+
+def verdict(speedup: float, adjusted_p: float, alpha: float = 0.05) -> str:
+  """Whether the pool beat serial, after correcting for multiplicity.
+
+  Derived from the corrected p-value rather than the point estimate: a
+  1.05x speedup that survives no correction is not evidence the pool
+  helps, and the adopter-facing crossover rests on exactly this call.
+  """
+  if adjusted_p >= alpha:
+    return "unresolved"
+  return "faster" if speedup > 1.0 else "slower"
 
 
 def quantization_ceiling(chunks: int, workers: int) -> float:
@@ -245,18 +292,27 @@ def quantization_ceiling(chunks: int, workers: int) -> float:
   return chunks / critical_path
 
 
-def load_points(path: Path) -> dict[str, Workload]:
-  """Parse a sweep JSON, checking the expected point set is complete."""
-  try:
-    blob: Any = json.loads(Path(path).read_text(encoding="utf-8"))
-  except OSError as error:
-    raise ReportError(f"cannot read {path}: {error}") from error
-  except json.JSONDecodeError as error:
-    raise ReportError(f"{path} is not valid JSON: {error}") from error
+def load_points(paths: Path | list[Path]) -> dict[str, Workload]:
+  """Parse sweep JSON(s), checking the expected point set is complete.
 
-  entries = blob.get("benchmarks") if isinstance(blob, dict) else None
-  if not isinstance(entries, list):
-    raise ReportError(f"{path} has no 'benchmarks' array")
+  Accepts several files so a pinned campaign -- one process per point, so
+  each can be given its own CPU set -- reassembles into one sweep.
+  """
+  if isinstance(paths, (str, Path)):
+    paths = [Path(paths)]
+  entries: list[Any] = []
+  for path in paths:
+    try:
+      blob: Any = json.loads(Path(path).read_text(encoding="utf-8"))
+    except OSError as error:
+      raise ReportError(f"cannot read {path}: {error}") from error
+    except json.JSONDecodeError as error:
+      raise ReportError(f"{path} is not valid JSON: {error}") from error
+    found = blob.get("benchmarks") if isinstance(blob, dict) else None
+    if not isinstance(found, list):
+      raise ReportError(f"{path} has no 'benchmarks' array")
+    entries.extend(found)
+  path = paths[0] if len(paths) == 1 else Path(f"{len(paths)} result files")
 
   workloads: dict[str, Workload] = {}
   for entry in entries:
@@ -338,6 +394,9 @@ def rows_for(
     speedup_lo, speedup_hi = bootstrap_ratio_ci(
       workload.serial.samples_ns, point.samples_ns, resamples=resamples
     )
+    pvalue = bootstrap_ratio_p(
+      workload.serial.samples_ns, point.samples_ns, resamples=resamples
+    )
     rows.append(
       Row(
         workers=workers,
@@ -351,15 +410,30 @@ def rows_for(
         efficiency=speedup / ceiling if ceiling else 0.0,
         cv=point.cv,
         samples=point.samples,
+        pvalue=pvalue,
       )
     )
   return rows
 
 
+def adjust_across_workloads(rows_by_workload: dict[str, list[Row]]) -> None:
+  """Apply the multiplicity correction over every comparison at once.
+
+  Correcting within a workload would still leave the sweep as a whole
+  uncorrected, and the crossover claim is read across workloads -- so the
+  family of tests is the entire artifact, not one table.
+  """
+  flat = [row for rows in rows_by_workload.values() for row in rows]
+  for row, adjusted in zip(flat, holm_adjust([r.pvalue for r in flat])):
+    row.adjusted_p = adjusted
+
+
 def format_workload(
-  workload: Workload, chunks: int, resamples: int = BOOTSTRAP_RESAMPLES
-) -> tuple[str, list[Row]]:
-  rows = rows_for(workload, chunks, resamples=resamples)
+  workload: Workload,
+  rows: list[Row],
+  chunks: int,
+  resamples: int = BOOTSTRAP_RESAMPLES,
+) -> str:
   serial_us = workload.serial_ns / 1000.0
   serial_lo, serial_hi = bootstrap_median_ci(
     workload.serial.samples_ns, resamples=resamples
@@ -372,24 +446,26 @@ def format_workload(
     f"{chunks:,} chunks ({workload.serial_ns / chunks:.1f} ns per chunk), "
     f"{workload.serial.samples} repetitions.",
     "",
-    "| workers | median (us) | speedup | 95% CI | vs serial | ceiling "
-    "| of ceiling | CV |",
-    "| ---: | ---: | ---: | :---: | :--- | ---: | ---: | ---: |",
+    "| workers | median (us) | speedup | 95% CI | adj p | vs serial "
+    "| ceiling | of ceiling | CV |",
+    "| ---: | ---: | ---: | :---: | ---: | :--- | ---: | ---: | ---: |",
   ]
   for row in rows:
     flag = " !" if row.cv > CV_LIMIT else ""
     lines.append(
       f"| {row.workers} | {row.median_ns / 1000.0:,.1f} | "
       f"{row.speedup:.2f}x | {row.speedup_lo:.2f} - {row.speedup_hi:.2f} | "
-      f"{row.verdict} | {row.ceiling:.1f}x | "
+      f"{row.adjusted_p:.3f} | {row.verdict} | {row.ceiling:.1f}x | "
       f"{row.efficiency * 100:.0f}% | {row.cv * 100:.2f}%{flag} |"
     )
-  return "\n".join(lines), rows
+  return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument("results", type=Path)
+  # Several files, because pinning each point to its own CPU set means
+  # one Google Benchmark process per point, each writing its own JSON.
+  parser.add_argument("results", nargs="+", type=Path)
   parser.add_argument(
     "--chunks",
     type=int,
@@ -426,28 +502,41 @@ def main(argv: list[str] | None = None) -> int:
   print(
     f"Intervals are {CONFIDENCE * 100:.0f}% percentile bootstrap over "
     f"{args.bootstrap_resamples:,} resamples of the repetitions, seeded so "
-    "the same artifact always yields the same interval. `vs serial` is read "
-    "off the interval rather than the point estimate: a 1.05x speedup whose "
-    "interval spans 1.0 is `unresolved`, not evidence that the pool helps."
+    "the same artifact always yields the same interval. They are marginal, "
+    "so they are shown for scale and are NOT what the verdict rests on."
   )
   print()
   print(
-    "Each interval is marginal, not simultaneous. With "
-    f"{len(EXPECTED_WORKLOADS) * len(EXPECTED_WORKERS)} pool comparisons in a "
-    "full sweep and no multiplicity correction, read an individual verdict as "
-    "descriptive; a handful of borderline calls across the whole table is "
-    "expected even when nothing is wrong. Intervals also describe "
-    "repetition noise only -- they say nothing about drift shared across a "
-    "point's repetitions, and benchmark order is not randomised against the "
-    "worker axis."
+    "`adj p` is a two-sided bootstrap p-value against a speedup of 1.0, "
+    "Holm-corrected across every pool comparison in the artifact, and "
+    "`vs serial` is read off it. That correction matters: on the 2026-08-03 "
+    "campaign the point that appeared to fix the lower end of the crossover "
+    "had a marginal interval of 0.91-0.99 but did not survive correction. "
+    "Corrections apply to the whole sweep because the crossover is read "
+    "across workloads, not within one table."
   )
   print()
+  print(
+    "Intervals and p-values describe repetition noise only. They say nothing "
+    "about drift shared across a point's repetitions, and benchmark order is "
+    "not randomised against the worker axis."
+  )
+  print()
+
+  rows_by_workload = {
+    name: rows_for(
+      workloads[name], args.chunks, resamples=args.bootstrap_resamples
+    )
+    for name in sorted(workloads)
+  }
+  adjust_across_workloads(rows_by_workload)
 
   problems: list[str] = []
   for name in sorted(workloads):
     workload = workloads[name]
-    table, rows = format_workload(
-      workload, args.chunks, resamples=args.bootstrap_resamples
+    rows = rows_by_workload[name]
+    table = format_workload(
+      workload, rows, args.chunks, resamples=args.bootstrap_resamples
     )
     print(table)
     print()

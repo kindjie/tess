@@ -50,6 +50,76 @@ Entries from 2026-07-12 and earlier are in
   shows a material regression or the remaining 1.35x sparse/dense gap becomes
   a priority. Do not specialize that API from the raw nanosecond lookup alone.
 
+## 2026-08-03 - Thread-Scaling Sweep (first attempt; curve not publishable)
+
+A worker-count sweep from 1 to 190 workers over seven workloads on a
+4096-chunk world, run on `c3-standard-192-metal` under
+`numactl --interleave=all`, 20 repetitions, no thread pinning and no
+governor control. 39 minutes, ~$6.57, exit 0.
+
+**The curve could not be published, and the analysis gate said so.**
+`tools/thread_scaling_report.py` flagged 57 points; CV reached 16-33%
+above 32 workers.
+
+**The noise was thread placement, not jitter.** Repetitions split into
+discrete modes rather than scattering. `chunk_compute/4` sat at either
+~6.73 ms or ~8.81 ms, a 31% gap with almost nothing between; the fast
+mode is 3.94x against a 4.0 quantization ceiling, and the slow mode's
+3.01x matches two of the four workers sharing one core's SMT threads at
+sibling efficiency ~0.53. `chunk_compute/8` shows three levels in the
+same ratios that 0, 1 and 2 colocated pairs predict, with the same
+efficiency. Two alternatives were ruled out from the artifact: Google
+Benchmark's `iterations` is constant across all 20 repetitions of all 84
+points, and the pool's `job_stride` is deterministic per width.
+
+Attribution is weaker at 96 and 190 workers, where 191 threads on 192
+CPUs leaves almost no placement freedom and oversubscription and
+all-core frequency licensing are co-suspects. "Unusable" holds either
+way.
+
+**The crossover did survive, and it was the point of the exercise.**
+Corrected for multiplicity across all 77 pool comparisons, at two workers
+the pool loses at 42.3 ns of work per chunk and wins at 90.1 ns. The
+uncorrected reading was tighter and wrong: `partial_fill_64` at two
+workers has a marginal interval of 0.91-0.99, which looks decisive, and
+an adjusted p of 0.090, which is not.
+
+The bracket is conditional on this machine, this width, and unpinned
+placement. Under good placement it likely sits lower: the two fast-mode
+repetitions of `partial_fill_64/2` beat serial outright.
+
+**Frequency was uncontrolled and demonstrably wandered.** `machine.txt`
+recorded `CPU(s) scaling MHz: 21%` against an 800-3800 MHz range, and the
+counter pass measured single-thread effective clocks from 2.35 to 3.79
+GHz across benchmarks minutes apart on an idle machine.
+
+**An unrelated anomaly in the main pass.** All seven `fields/*` held
+within 0.3% of the previous campaign -- the historical regression did not
+recur -- and all 184 benchmarks stayed under their ceilings, the closest
+at 65%. But `persistence/save_dense_512x512_2_fields` measured +73%
+(6.83 -> 11.82 ms) with 0.1% CV in both campaigns, while `load_dense` in
+the same binary was unchanged at 1.000x and the same benchmark in
+`tess_bench_diagnostics` was unchanged at 1.003x. Frequency cannot
+produce that pattern. No library code changed between the campaigns, and
+an arm64 A/B of the two commits reproduces nothing (10.506 vs 10.508 ms),
+so the leading explanation is x86 code layout shifted by the
+`parallel_phase_support.h` extraction. Unresolved; it is a bench-binary
+artifact at 19% of its ceiling, invisible to library consumers, and the
+next campaign re-measures it.
+
+**Changed as a result:** each sweep point now runs in its own process
+pinned with `taskset` to a CPU set from `tools/cloud/sweep_cpu_plan.py`
+(one thread per physical core, filling NUMA nodes in order, SMT siblings
+last); the `performance` governor is set before measuring and the
+achieved state recorded; and verdicts are Holm-corrected across the whole
+artifact rather than read off marginal intervals.
+
+**Still uncontrolled:** benchmark order is not randomised against the
+worker axis, so a smooth drift could still imitate a worker-count trend.
+Registration is workload-major, so the axis is traversed seven times and
+drift aliasing should show as knee positions disagreeing between
+workloads -- a cross-check, not a fix.
+
 ## 2026-08-02 - First Bare-Metal Campaign (post-fix baseline)
 
 - Area: section 8's cloud bare-metal tier, first execution.

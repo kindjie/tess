@@ -443,9 +443,68 @@ def test_speedup_ci_includes_one_when_indistinguishable():
 
 
 def test_verdict_reports_the_crossover_direction():
-  assert thread_scaling_report.verdict(1.4, 1.9) == "faster"
-  assert thread_scaling_report.verdict(0.3, 0.8) == "slower"
-  assert thread_scaling_report.verdict(0.9, 1.2) == "unresolved"
+  # Verdict is (speedup, Holm-adjusted p): direction from the estimate,
+  # licence to state it from the corrected p-value.
+  assert thread_scaling_report.verdict(1.4, 0.001) == "faster"
+  assert thread_scaling_report.verdict(0.3, 0.001) == "slower"
+  assert thread_scaling_report.verdict(1.4, 0.20) == "unresolved"
+  assert thread_scaling_report.verdict(0.3, 0.20) == "unresolved"
+
+
+def test_holm_is_monotone_and_never_shrinks_a_pvalue():
+  raw = [0.001, 0.01, 0.04, 0.5]
+  adj = thread_scaling_report.holm_adjust(raw)
+  assert all(a >= r for a, r in zip(adj, raw))
+  assert adj == sorted(adj)
+
+
+def test_holm_of_a_single_test_is_the_pvalue():
+  assert thread_scaling_report.holm_adjust([0.02]) == [pytest.approx(0.02)]
+
+
+def test_holm_caps_at_one():
+  assert max(thread_scaling_report.holm_adjust([0.5, 0.6, 0.9])) <= 1.0
+
+
+def test_bootstrap_p_is_small_when_clearly_different():
+  p = thread_scaling_report.bootstrap_ratio_p([1000.0] * 20, [250.0] * 20)
+  assert p <= 2.0 / thread_scaling_report.BOOTSTRAP_RESAMPLES
+
+
+def test_bootstrap_p_is_large_when_indistinguishable():
+  rng = random.Random(11)
+  a = [rng.gauss(1000.0, 100.0) for _ in range(20)]
+  b = [rng.gauss(1000.0, 100.0) for _ in range(20)]
+  assert thread_scaling_report.bootstrap_ratio_p(a, b) > 0.05
+
+
+def test_correction_spans_all_workloads_not_one_table(tmp_path):
+  # The crossover is read across workloads, so the family of tests is the
+  # whole artifact; correcting per table would leave the sweep uncorrected.
+  points = thread_scaling_report.load_points(_write(tmp_path, _results({})))
+  rows = {
+    n: thread_scaling_report.rows_for(points[n], chunks=4096, resamples=2000)
+    for n in points
+  }
+  thread_scaling_report.adjust_across_workloads(rows)
+  flat = [r for rs in rows.values() for r in rs]
+  assert len(flat) == len(thread_scaling_report.EXPECTED_WORKLOADS) * len(
+    thread_scaling_report.EXPECTED_WORKERS
+  )
+  assert all(r.adjusted_p >= r.pvalue for r in flat)
+
+
+def test_multiple_result_files_reassemble_into_one_sweep(tmp_path):
+  # A pinned campaign runs one process per point, so the report must
+  # accept the per-point files and treat them as a single sweep.
+  full = _results({})
+  half = len(full["benchmarks"]) // 2
+  a = tmp_path / "a.json"
+  b = tmp_path / "b.json"
+  a.write_text(json.dumps({"benchmarks": full["benchmarks"][:half]}))
+  b.write_text(json.dumps({"benchmarks": full["benchmarks"][half:]}))
+  points = thread_scaling_report.load_points([a, b])
+  assert set(points) == set(thread_scaling_report.EXPECTED_WORKLOADS)
 
 
 def test_rows_carry_a_speedup_interval(tmp_path):
