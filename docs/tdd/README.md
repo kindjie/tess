@@ -30,6 +30,7 @@ When implementation diverges from a TDD:
 - [GPU backend interface](gpu-backend-interface.md)
 - [Diagnostics and tooling](diagnostics-and-tooling.md)
 - [Modern C++ / compile-time safety](modern-cpp-compile-time-safety.md)
+- [Exception-free build support](no-exceptions-support.md) (proposed)
 - [Lattices and the resolved transition model](lattice-and-transition-model.md)
 - [External grid benchmark data and the scenario oracle][benchmark-data]
   (network-free harness shipped; external acquisition gated)
