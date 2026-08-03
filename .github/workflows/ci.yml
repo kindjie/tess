@@ -1060,6 +1060,24 @@ jobs:
         with:
           persist-credentials: false
 
+      # The workflow-level CMAKE_CXX_COMPILER_LAUNCHER points at ccache,
+      # which ubuntu-24.04 runners do not ship. Without this the very
+      # first try-compile dies with "ccache: No such file or directory"
+      # and the job fails at configure, before a single sweep runs. It
+      # only shows up here because this job runs on the schedule and on
+      # manual dispatch, never on a pull request. Every other Linux job
+      # installs ccache; Windows is unaffected because the Visual Studio
+      # generator ignores the launcher variable.
+      - name: Install ccache
+        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-long-seed-${{ github.sha }}
+          restore-keys: ccache-long-seed-
+
       - name: Configure
         run: cmake --preset dev
 
