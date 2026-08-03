@@ -51,8 +51,8 @@ over a 4096-chunk world, 20 repetitions per point, speedup against
 `SerialPhaseExecutor` at the same world size. Two-worker results are
 withheld: they carry an unexplained anomaly under pinning. Beyond one
 socket the measurements are too noisy to publish at all — see
-[the optimization log](planning/optimization-log.md) for the full
-campaign record, including what these numbers do not show.
+the [optimization log][optimization-log] for the full campaign record,
+including what these numbers do not show.
 
 ## Trend snapshot
 
