@@ -50,6 +50,91 @@ Entries from 2026-07-12 and earlier are in
   shows a material regression or the remaining 1.35x sparse/dense gap becomes
   a priority. Do not specialize that API from the raw nanosecond lookup alone.
 
+## 2026-08-03 - Second Bare-Metal Campaign (pinned, clock-controlled)
+
+Re-ran the sweep with each point pinned via `taskset` to a planned CPU
+set and the `performance` governor set and verified across all CPUs. 46
+minutes, ~$7.70, exit 0, all 77 points measured.
+
+**Pinning plus clock control cut variance sharply at low and mid
+widths.** Median CV by width, first campaign -> second: w4 7.12% ->
+0.65%, w8 6.12% -> 0.54%, w16 8.04% -> 0.55%, w24 9.16% -> 0.54%. Within
+socket 0 the median CV is 0.69%. The two changes cannot be separated:
+the first campaign had neither pinning nor clock control.
+
+**It did not help across sockets.** w64 18.06% -> 14.70%, w96 16.88% ->
+17.69%, w190 21.95% -> 21.48%; median 17.46% for widths >= 64. The curve
+is still not publishable, and 24 points fail the gate.
+
+**The crossover replicated, and that is the result worth having.** At
+four workers the sign agrees for every workload across both campaigns
+despite the different regimes: below ~47 ns per chunk the pool loses,
+above ~94 ns it wins. The first campaign's four-worker bracket was
+47.5-90.1 ns and the second's is 46.9-93.6 ns. Published on
+docs/performance.md as ~45-95 ns with a recommendation to measure
+locally.
+
+### What review refuted
+
+Three causal explanations I proposed do not survive:
+
+- *"Residual noise above 64 workers is memory-path contention."*
+  `tile_touch` touches one tile per chunk and has essentially no memory
+  traffic, yet its CV goes 1.80% at w48 to 11.06% at w64 to 22.54% at
+  w96. Interleaving was on in BOTH campaigns and at every width, so the
+  memory configuration does not change at w64. Thread placement does.
+  The noise also is not monotone in load: `chunk_fill` is 10.83% at w32
+  and 3.19% at w48.
+- *"Two workers are handicapped because the dispatcher does per-iteration
+  work inside the timed loop."* It does not: it wakes workers, blocks in
+  `done_cv_.wait`, then scans results. And at w1 -- where the dispatcher
+  shares one CPU with the only worker -- the total overhead is ~4 us per
+  iteration, 0.015%. A dispatcher stealing CPU would hurt w1 most; w1 is
+  unaffected and only w2 is hurt.
+- *"w32/w48 are slower pinned because of worse memory locality."* Under
+  uniform interleave across four nodes the expected access mix is
+  placement-invariant: 25% local / 25% same-socket / 50% cross-socket
+  either way. Better candidates, unmeasured: per-socket turbo budget
+  concentrating 32-48 active cores on one socket, and mesh/UPI
+  concentration. No per-point frequency telemetry exists to decide it.
+
+### The open anomaly
+
+Pinned w2 is uniformly ~1.5x slower than unpinned across every
+substantial workload, and its throughput matches two workers sharing one
+physical core's SMT threads -- which the CPU plan should have made
+impossible. Pinned w4 likewise matches the *slow* mode of the unpinned
+campaign's bimodal w4 rather than its fast mode. This cannot be
+adjudicated from the artifacts, because the masks that were actually
+applied were recorded nowhere. Both are now captured
+(`sweep-cpu-masks.tsv`, `lscpu-topology.csv`); a plan is not evidence of
+what ran. Two-worker results are withheld from the adopter page until
+this is resolved.
+
+The cheap next step is a targeted diagnostic rather than another sweep:
+A/B the masks {0,1} vs {0,2} vs {0,96} vs {0,1,2} at w2/w4 with
+per-thread placement sampling and aperf/mperf capture.
+
+### The persistence anomaly reverted
+
+`persistence/save_dense_512x512_2_fields`: 6.833 ms -> 11.821 ms (+73%)
+-> **6.839 ms**, within 0.09% of the original, while the median change
+across all 184 main-pass benchmarks was +0.04%. It was not a library
+regression and not the code-layout effect proposed for it. The governor
+changed between the campaigns so attribution is not definitive, but the
+ratio 11.82/6.83 = 1.73 matches the 3.79/2.2 GHz clock range the first
+campaign recorded, which fits frequency better than layout.
+
+### Publishable, and not
+
+Published: the four-worker crossover bracket, as a range, with the
+machine stated. Withheld: any two-worker bracket, the full scaling
+curve, and every causal narrative above that review did not support.
+A methodology note worth carrying forward -- single-socket pinned points
+measure at ~0.7% median CV on this class of machine; cross-socket points
+do not get below ~15% even pinned and clock-controlled, so cross-socket
+speedup claims need interval reporting rather than point estimates.
+
 ## 2026-08-03 - Thread-Scaling Sweep (first attempt; curve not publishable)
 
 A worker-count sweep from 1 to 190 workers over seven workloads on a

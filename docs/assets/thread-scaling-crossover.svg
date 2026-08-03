@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 420" width="720" height="420" role="img" aria-label="4 workers, c3-standard-192-metal, 4096 chunks; shaded band = crossover">
+<style>
+.fg{fill:#1b1b1b}.axis{stroke:#8a8a8a;stroke-width:1}
+.grid{stroke:#d8d8d8;stroke-width:1}
+.unity{stroke:#1b1b1b;stroke-width:1.5;stroke-dasharray:5 4}
+.band{fill:#f0a202;opacity:0.16}
+text{font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:12px}
+@media (prefers-color-scheme: dark){.fg{fill:#e8e8e8}.axis{stroke:#7d7d7d}.grid{stroke:#333}.unity{stroke:#e8e8e8}}
+</style>
+<rect class="band" x="202.5" y="30" width="68.8" height="310"/>
+<line class="grid" x1="64" y1="340.0" x2="700" y2="340.0"/>
+<text class="fg" x="54" y="344.0" text-anchor="end">0.0x</text>
+<line class="grid" x1="64" y1="295.7" x2="700" y2="295.7"/>
+<text class="fg" x="54" y="299.7" text-anchor="end">0.5x</text>
+<line class="grid" x1="64" y1="251.4" x2="700" y2="251.4"/>
+<text class="fg" x="54" y="255.4" text-anchor="end">1.0x</text>
+<line class="grid" x1="64" y1="207.1" x2="700" y2="207.1"/>
+<text class="fg" x="54" y="211.1" text-anchor="end">1.5x</text>
+<line class="grid" x1="64" y1="162.9" x2="700" y2="162.9"/>
+<text class="fg" x="54" y="166.9" text-anchor="end">2.0x</text>
+<line class="grid" x1="64" y1="118.6" x2="700" y2="118.6"/>
+<text class="fg" x="54" y="122.6" text-anchor="end">2.5x</text>
+<line class="grid" x1="64" y1="74.3" x2="700" y2="74.3"/>
+<text class="fg" x="54" y="78.3" text-anchor="end">3.0x</text>
+<line class="grid" x1="64" y1="30.0" x2="700" y2="30.0"/>
+<text class="fg" x="54" y="34.0" text-anchor="end">3.5x</text>
+<line class="grid" x1="64.0" y1="30" x2="64.0" y2="340"/>
+<text class="fg" x="64.0" y="358.0" text-anchor="middle">10</text>
+<line class="grid" x1="276.0" y1="30" x2="276.0" y2="340"/>
+<text class="fg" x="276.0" y="358.0" text-anchor="middle">100</text>
+<line class="grid" x1="488.0" y1="30" x2="488.0" y2="340"/>
+<text class="fg" x="488.0" y="358.0" text-anchor="middle">1k</text>
+<line class="grid" x1="700.0" y1="30" x2="700.0" y2="340"/>
+<text class="fg" x="700.0" y="358.0" text-anchor="middle">10k</text>
+<line class="unity" x1="64" y1="251.4" x2="700" y2="251.4"/>
+<text class="fg" x="696" y="245.4" text-anchor="end">serial and pool equal</text>
+<path d="M75.7,309.8 L199.6,256.7 L206.4,255.6 L270.0,198.0 L322.4,145.4 L378.4,123.5 L660.0,68.8" fill="none" stroke="#2a6f97" stroke-width="2"/>
+<circle class="pt" cx="75.7" cy="309.8" r="4" fill="#2a6f97"/>
+<circle class="pt" cx="199.6" cy="256.7" r="4" fill="#2a6f97"/>
+<circle class="pt" cx="206.4" cy="255.6" r="4" fill="#2a6f97"/>
+<circle class="pt" cx="270.0" cy="198.0" r="4" fill="#2a6f97"/>
+<circle class="pt" cx="322.4" cy="145.4" r="4" fill="#2a6f97"/>
+<circle class="pt" cx="378.4" cy="123.5" r="4" fill="#2a6f97"/>
+<circle class="pt" cx="660.0" cy="68.8" r="4" fill="#2a6f97"/>
+<circle cx="76" cy="42.0" r="4" fill="#2a6f97"/>
+<text class="fg" x="88" y="46.0">pinned, performance governor</text>
+<path d="M76.3,313.3 L196.8,263.2 L207.4,260.7 L266.4,224.1 L320.4,181.0 L375.4,86.8 L660.0,72.7" fill="none" stroke="#bc4b51" stroke-width="2"/>
+<circle class="pt" cx="76.3" cy="313.3" r="4" fill="#bc4b51"/>
+<circle class="pt" cx="196.8" cy="263.2" r="4" fill="#bc4b51"/>
+<circle class="pt" cx="207.4" cy="260.7" r="4" fill="#bc4b51"/>
+<circle class="pt" cx="266.4" cy="224.1" r="4" fill="#bc4b51"/>
+<circle class="pt" cx="320.4" cy="181.0" r="4" fill="#bc4b51"/>
+<circle class="pt" cx="375.4" cy="86.8" r="4" fill="#bc4b51"/>
+<circle class="pt" cx="660.0" cy="72.7" r="4" fill="#bc4b51"/>
+<circle cx="76" cy="60.0" r="4" fill="#bc4b51"/>
+<text class="fg" x="88" y="64.0">unpinned, uncontrolled clock</text>
+<line class="axis" x1="64" y1="340" x2="700" y2="340"/>
+<line class="axis" x1="64" y1="30" x2="64" y2="340"/>
+<text class="fg" x="382" y="380" text-anchor="middle">work per chunk (nanoseconds, log scale)</text>
+<text class="fg" x="16" y="185" transform="rotate(-90 16 185)" text-anchor="middle">speedup over serial</text>
+<text class="fg" x="382" y="408" text-anchor="middle" opacity="0.75">4 workers, c3-standard-192-metal, 4096 chunks; shaded band = crossover</text>
+</svg>

@@ -521,6 +521,12 @@ if [[ -x "$sweep_binary" ]]; then
   fi
 
   mkdir -p results/sweep
+  : > results/sweep-cpu-masks.tsv
+  # The planner trusts lscpu's CORE column to tell physical cores from
+  # SMT siblings. If that mapping is not what the plan assumed, every
+  # mask is wrong and nothing downstream can tell. Keep the input.
+  lscpu -p=CPU,CORE,SOCKET,NODE > results/lscpu-topology.csv 2>/dev/null || \
+    echo "WARNING: could not capture lscpu topology" >&2
   # Pool points only. Each process ALSO re-measures that workload's serial
   # baseline, under the same pinning, so the speedup ratio is computed
   # within one process. With one process per point, process identity --
@@ -565,6 +571,12 @@ if [[ -x "$sweep_binary" ]]; then
     if (( HAVE_TASKSET )); then
       pin=(taskset -c "$cpu_list")
     fi
+    # Recorded per point. The 2026-08-03 pinned campaign produced w2 and
+    # w4 timings whose signature matched SMT co-location that the plan
+    # should have made impossible, and it could not be adjudicated
+    # afterwards because the masks that were actually applied appeared in
+    # no artifact. A plan is not evidence of what ran.
+    echo "$point	$cpu_list" >> results/sweep-cpu-masks.tsv
 
     # The serial baseline shares the point's CPU set. It is one thread,
     # so a wider mask costs it nothing, and measuring it here is what
@@ -638,6 +650,8 @@ MERGE
     SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
   fi
   publish "results/$sweep_name.json"
+  publish "results/sweep-cpu-masks.tsv"
+  publish "results/lscpu-topology.csv"
   # The per-point files are the raw record of which process measured
   # what. The merged artifact carries the same information in its
   # tess_run_group tags, but only these show it unaltered, and once the
