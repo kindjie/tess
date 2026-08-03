@@ -240,20 +240,29 @@ def bootstrap_ratio_p(
   if not numerator or not denominator:
     raise ReportError("cannot bootstrap an empty sample")
   rng = random.Random(seed)
-  below = 0
+  at_or_below = 0
+  at_or_above = 0
   for _ in range(resamples):
     top = statistics.median(rng.choices(numerator, k=len(numerator)))
     bottom = statistics.median(rng.choices(denominator, k=len(denominator)))
-    if bottom and top / bottom < 1.0:
-      below += 1
-  # Plus-one (Davison & Hinkley) rather than count/resamples. The naive
+    ratio = top / bottom if bottom else 0.0
+    # Both tails count ties. Counting `< 1` against `>= 1` instead makes
+    # exactly-equal data look maximally significant: every resample of
+    # two identical samples gives a ratio of exactly 1.0, the "below"
+    # count is 0, and a 1.00x speedup is reported as `slower`.
+    if ratio <= 1.0:
+      at_or_below += 1
+    if ratio >= 1.0:
+      at_or_above += 1
+  # Plus-one (Phipson & Smyth) rather than count/resamples. The naive
   # ratio returns 0 when no resample lands on the far side, and clamping
   # that to 1/resamples makes the floor -- and therefore the Holm-adjusted
   # verdict -- a function of the Monte Carlo budget rather than of the
   # data. At 1,000 resamples a point read `unresolved` and at 10,000 the
   # same 20 observations read `slower`, which is a defect, not a result.
-  tail = min(below, resamples - below)
-  return min(1.0, 2.0 * (tail + 1) / (resamples + 1))
+  lower = (at_or_below + 1) / (resamples + 1)
+  upper = (at_or_above + 1) / (resamples + 1)
+  return min(1.0, 2.0 * min(lower, upper))
 
 
 def resolution_floor(resamples: int = BOOTSTRAP_RESAMPLES) -> float:
@@ -269,7 +278,10 @@ def required_resamples(comparisons: int, alpha: float = 0.05) -> int:
   budget every verdict is `unresolved` no matter what the data says --
   a silent, uniform failure that looks like a cautious result.
   """
-  return math.ceil(2.0 * comparisons / alpha)
+  # Smallest B with `comparisons * 2/(B+1) < alpha`, which is
+  # floor(2*comparisons/alpha) -- ceiling is one too many whenever the
+  # quotient is not an integer.
+  return math.floor(2.0 * comparisons / alpha)
 
 
 def holm_adjust(pvalues: list[float]) -> list[float]:
@@ -319,8 +331,20 @@ def quantization_ceiling(chunks: int, workers: int) -> float:
   return chunks / critical_path
 
 
-def _parse_file(path: Path) -> list[tuple[str, str, float]]:
-  """(workload, tail, real_time) triples from one Google Benchmark JSON."""
+RUN_GROUP_KEY = "tess_run_group"
+
+
+def _parse_file(path: Path) -> list[tuple[str, str, float, str]]:
+  """(workload, tail, real_time, run_group) from one Benchmark JSON.
+
+  `run_group` identifies the process a record came from. A campaign that
+  pins each point runs one process per point and then merges the results
+  into a single artifact; without a per-record tag that merge silently
+  destroys the serial/pool pairing, and every width falls back to the
+  pooled baseline -- the exact thing the pairing exists to avoid.
+  Untagged records fall back to the file they were read from, which is
+  correct for a single-process artifact.
+  """
   try:
     blob: Any = json.loads(Path(path).read_text(encoding="utf-8"))
   except OSError as error:
@@ -358,7 +382,8 @@ def _parse_file(path: Path) -> list[tuple[str, str, float]]:
     real_time = entry.get("real_time")
     if not isinstance(real_time, (int, float)):
       raise ReportError(f"'{name}' has no numeric real_time")
-    triples.append((workload_name, tail, float(real_time)))
+    group = str(entry.get(RUN_GROUP_KEY, "") or path)
+    triples.append((workload_name, tail, float(real_time), group))
   return triples
 
 
@@ -379,14 +404,27 @@ def load_points(paths: Path | list[Path]) -> dict[str, Workload]:
   if isinstance(paths, (str, Path)):
     paths = [Path(paths)]
 
-  workloads: dict[str, Workload] = {}
-  seen_pool: dict[tuple[str, int], Path] = {}
+  # Grouped by the process each record came from, NOT by the file it was
+  # read from. The campaign merges its 77 per-point processes into one
+  # artifact before analysis, so grouping by file would collapse every
+  # serial run back into a single cross-process pool -- destroying the
+  # pairing on exactly the path that matters.
+  triples: list[tuple[str, str, float, str]] = []
   for path in paths:
-    file_serial: dict[str, list[float]] = {}
-    file_pool: dict[str, dict[int, list[float]]] = {}
-    for workload_name, tail, value in _parse_file(path):
+    triples.extend(_parse_file(path))
+
+  groups: dict[str, list[tuple[str, str, float]]] = {}
+  for workload_name, tail, value, group in triples:
+    groups.setdefault(group, []).append((workload_name, tail, value))
+
+  workloads: dict[str, Workload] = {}
+  seen_pool: dict[tuple[str, int], str] = {}
+  for group, records in groups.items():
+    group_serial: dict[str, list[float]] = {}
+    group_pool: dict[str, dict[int, list[float]]] = {}
+    for workload_name, tail, value in records:
       if tail == "serial":
-        file_serial.setdefault(workload_name, []).append(value)
+        group_serial.setdefault(workload_name, []).append(value)
         continue
       try:
         workers = int(tail)
@@ -394,14 +432,14 @@ def load_points(paths: Path | list[Path]) -> dict[str, Workload]:
         raise ReportError(
           f"cannot parse a worker count from '{workload_name}/{tail}'"
         ) from error
-      file_pool.setdefault(workload_name, {}).setdefault(workers, []).append(
+      group_pool.setdefault(workload_name, {}).setdefault(workers, []).append(
         value
       )
 
-    for workload_name, samples in file_serial.items():
+    for workload_name, samples in group_serial.items():
       workload = workloads.setdefault(workload_name, Workload(workload_name))
       workload.serial.samples_ns.extend(samples)
-    for workload_name, widths in file_pool.items():
+    for workload_name, widths in group_pool.items():
       workload = workloads.setdefault(workload_name, Workload(workload_name))
       for workers, samples in widths.items():
         key = (workload_name, workers)
@@ -409,14 +447,14 @@ def load_points(paths: Path | list[Path]) -> dict[str, Workload]:
           # Silently summing them would average two different pinnings
           # or two different runs into one point.
           raise ReportError(
-            f"'{workload_name}/{workers}' appears in both {seen_pool[key]} "
-            f"and {path}; each point must be measured once"
+            f"'{workload_name}/{workers}' appears in both "
+            f"{seen_pool[key]} and {group}; each point must be measured once"
           )
-        seen_pool[key] = path
+        seen_pool[key] = group
         workload.by_workers.setdefault(workers, Point()).samples_ns.extend(
           samples
         )
-        paired = file_serial.get(workload_name)
+        paired = group_serial.get(workload_name)
         if paired:
           workload.serial_by_width[workers] = Point(list(paired))
 

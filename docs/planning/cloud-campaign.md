@@ -299,10 +299,20 @@ not produce a curve.
 So each point now runs in **its own process, pinned with `taskset`** to a
 CPU set chosen by `tools/cloud/sweep_cpu_plan.py`: one thread per
 physical core, filling NUMA nodes in order, SMT siblings only once every
-core is occupied. The per-point JSONs are merged into the single
-`tess_bench_thread_scaling.json` the analysis expects, and each process
-also re-measures that workload's serial baseline under the same pinning
-so the speedup ratio is computed within one process.
+core is occupied. Each process also re-measures that workload's serial baseline under the
+same pinning, so the speedup ratio is computed within one process rather
+than against a baseline from a different one.
+
+That pairing has to survive the merge. The per-point JSONs are combined
+into the single `tess_bench_thread_scaling.json` the analysis expects,
+and the merge **stamps every record with the process it came from**
+(`tess_run_group`); the report groups on that tag, not on the file it
+read. Without the tag the merge silently undid the pairing — all eleven
+serial runs for a workload became one indistinguishable pool and every
+width fell back to a cross-process baseline, which is precisely the
+confounding the pinning exists to remove. The per-point files are also
+uploaded as `sweep-per-point.tar.gz`, because once the instance is
+deleted nothing can reconstruct them.
 
 **What the worker counts do and do not mean.** Pinning makes them
 topological in *threads*: at 24 workers every thread is on NUMA node 0,

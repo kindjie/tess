@@ -20,8 +20,11 @@ CPUs 0-95 one per physical core and 96-191 their siblings):
     96 workers -> every physical core, no SMT
    190 workers -> every physical core plus 94 siblings
 
-Unpinned, those are just numbers. Pinned, a knee at 48 is a socket
-boundary and a knee at 96 is the onset of SMT.
+Unpinned, those are just numbers. Pinned, they describe where the
+THREADS are. They do not describe where the memory is: the campaign also
+runs under `numactl --interleave=all`, so the world is spread across all
+four nodes at every width and a NUMA-locality knee cannot appear. Knees
+that do appear are SMT or bandwidth.
 
 Policy, in order: one thread per physical core, filling NUMA nodes in
 order so that a width which fits a node uses exactly that node; SMT

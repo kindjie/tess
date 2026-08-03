@@ -474,8 +474,9 @@ def test_pvalue_is_never_zero():
 def test_required_resamples_makes_a_corrected_verdict_reachable():
   need = thread_scaling_report.required_resamples(77)
   assert thread_scaling_report.resolution_floor(need) * 77 <= 0.05
-  # One fewer and the tightest possible corrected p misses the threshold.
-  assert thread_scaling_report.resolution_floor(need // 2) * 77 > 0.05
+  # One fewer and the tightest corrected p only reaches the threshold,
+  # which `verdict` reads as unresolved.
+  assert thread_scaling_report.resolution_floor(need - 1) * 77 >= 0.05
 
 
 def test_default_budget_is_adequate_for_a_full_sweep():
@@ -541,6 +542,50 @@ def test_paired_serial_changes_the_computed_speedup(tmp_path):
   rows = thread_scaling_report.rows_for(wl, chunks=4096, resamples=500)
   row = next(r for r in rows if r.workers == 2)
   assert row.speedup == pytest.approx(1200.0 / row.median_ns)
+
+
+def test_merged_multiprocess_artifact_keeps_its_pairing(tmp_path):
+  """The shape the campaign actually analyses.
+
+  Per-point files are merged into ONE artifact before the report runs.
+  Grouping by file would collapse all 11 serial runs per workload into a
+  single cross-process pool, silently undoing the pairing on the only
+  path that matters -- which is exactly what happened before records
+  carried a run-group tag.
+  """
+  merged = {"benchmarks": []}
+  for width in thread_scaling_report.EXPECTED_WORKERS:
+    full = _results({})
+    for entry in full["benchmarks"]:
+      if entry["name"].endswith("/serial/real_time"):
+        merged["benchmarks"].append(
+          dict(entry, real_time=1000.0 + width, tess_run_group=f"w{width}")
+        )
+      elif entry["name"].endswith(f"/{width}/real_time"):
+        merged["benchmarks"].append(dict(entry, tess_run_group=f"w{width}"))
+  wl = thread_scaling_report.load_points(_write(tmp_path, merged))[
+    "chunk_compute"
+  ]
+  assert wl.serial_for(2).median_ns == pytest.approx(1002.0)
+  assert wl.serial_for(96).median_ns == pytest.approx(1096.0)
+  # And the pooled baseline is still the union across processes.
+  assert wl.serial.samples > wl.serial_for(2).samples
+
+
+def test_untagged_merged_artifact_falls_back_to_the_pooled_serial(tmp_path):
+  # Older artifacts have no run-group tags; they must still parse, just
+  # without pairing.
+  points = thread_scaling_report.load_points(_write(tmp_path, _results({})))
+  assert points["chunk_compute"].serial.samples > 0
+
+
+def test_equal_samples_are_not_reported_as_different():
+  # Counting `< 1` against `>= 1` made every resample of two identical
+  # samples land in the same bucket, so a 1.00x speedup came back with
+  # the minimum possible p-value and read as `slower`.
+  p = thread_scaling_report.bootstrap_ratio_p([1000.0] * 20, [1000.0] * 20)
+  assert p == pytest.approx(1.0)
+  assert thread_scaling_report.verdict(1.0, p) == "unresolved"
 
 
 def test_unpaired_artifact_still_uses_the_pooled_serial(tmp_path):

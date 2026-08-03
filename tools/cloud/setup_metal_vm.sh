@@ -438,7 +438,13 @@ done
 # deletes the instance at the duration cap -- and because the JSON is
 # written at process exit, that loses that point entirely while still
 # being billed for it.
-SWEEP_TIMEOUT_SECONDS="${SWEEP_TIMEOUT_SECONDS:-2700}"
+# Raised from 2700 when each point began re-measuring its own serial
+# baseline: ~154 benchmark runs rather than 84, plus 77 process
+# startups. The per-point timeout bounds a runaway width, so a
+# larger overall budget costs nothing when things go well and
+# avoids losing the whole curve to a deadline when they are merely
+# slow.
+SWEEP_TIMEOUT_SECONDS="${SWEEP_TIMEOUT_SECONDS:-3600}"
 SWEEP_POINT_TIMEOUT_SECONDS="${SWEEP_POINT_TIMEOUT_SECONDS:-300}"
 SWEEP_FAILURES=0
 sweep_binary=build/bench/tess_bench_thread_scaling
@@ -584,7 +590,16 @@ for path in sorted(glob.glob("results/sweep/*.json")):
         bad += 1
         continue
     context = context or blob.get("context")
-    merged.extend(blob.get("benchmarks", []))
+    # Stamp the source process onto every record. Without this the merge
+    # destroys the serial/pool pairing: all 11 serial runs for a workload
+    # become one indistinguishable pool, and the report silently falls
+    # back to a cross-process baseline -- the confounding the per-point
+    # pinning exists to remove.
+    group = pathlib.Path(path).stem
+    for record in blob.get("benchmarks", []):
+        if isinstance(record, dict):
+            record["tess_run_group"] = group
+        merged.append(record)
 pathlib.Path("results/tess_bench_thread_scaling.json").write_text(
     json.dumps({"context": context or {}, "benchmarks": merged})
 )
@@ -596,6 +611,16 @@ MERGE
     SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
   fi
   publish "results/$sweep_name.json"
+  # The per-point files are the raw record of which process measured
+  # what. The merged artifact carries the same information in its
+  # tess_run_group tags, but only these show it unaltered, and once the
+  # instance is deleted nothing can reconstruct them.
+  if tar -czf results/sweep-per-point.tar.gz -C results sweep 2>/dev/null; then
+    publish "results/sweep-per-point.tar.gz"
+  else
+    echo "ERROR: could not archive the per-point sweep files" >&2
+    SWEEP_FAILURES=$(( SWEEP_FAILURES + 1 ))
+  fi
 
   # The runbook promised the dispersion was checked before publication;
   # nothing was checking it. Run the report on the machine that produced
