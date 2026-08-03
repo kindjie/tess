@@ -148,3 +148,37 @@ def test_reads_a_sweep_artifact(tmp_path):
   path.write_text(json.dumps({"benchmarks": benchmarks}))
   points = thread_scaling_chart.points_from_sweep(path, workers=4, chunks=4096)
   assert points == [(pytest.approx(1000.0 / 4096), pytest.approx(2.5))]
+
+
+def test_pairs_serial_per_process(tmp_path):
+  """A merged multi-process artifact must not pool serial baselines.
+
+  The campaign runs one process per width and each re-measures its own
+  serial run; pooling them divides a width's pool median by baselines
+  from every other process, which is the confounding the paired runs
+  exist to remove.
+  """
+  import json
+
+  benchmarks = []
+  for width, serial in ((2, 1000.0), (4, 2000.0)):
+    for _ in range(3):
+      benchmarks.append({
+        "name": "lab/thread_scaling/chunk_fill/serial/real_time",
+        "run_type": "iteration",
+        "real_time": serial,
+        "tess_run_group": f"w{width}",
+      })
+      benchmarks.append({
+        "name": f"lab/thread_scaling/chunk_fill/{width}/real_time",
+        "run_type": "iteration",
+        "real_time": serial / 2.0,
+        "tess_run_group": f"w{width}",
+      })
+  path = tmp_path / "merged.json"
+  path.write_text(json.dumps({"benchmarks": benchmarks}))
+
+  # Width 4's speedup must use its own 2000.0 baseline (2.0x), not the
+  # pooled median of 1000 and 2000.
+  points = thread_scaling_chart.points_from_sweep(path, workers=4, chunks=4096)
+  assert points == [(pytest.approx(2000.0 / 4096), pytest.approx(2.0))]

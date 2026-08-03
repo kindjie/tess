@@ -127,7 +127,17 @@ fi
 
 # Lowercase: GCE instance names allow only lowercase letters, digits and
 # hyphens, and a UTC timestamp carries an uppercase T and Z.
-RUN_ID="$(date -u +%Y%m%dt%H%M%Sz)"
+# Second-resolution time alone is the instance name, the bucket prefix
+# and the source-archive path. Two drivers started in the same second
+# would collide on all three: the second overwrites the first's archive,
+# gets an already-exists error from `instances create`, and then runs the
+# failed-create cleanup -- deleting the FIRST run's live instance. A
+# random suffix makes the identity unique.
+# $RANDOM rather than a urandom pipeline: `tr ... | head -c 4` takes
+# SIGPIPE when head closes the pipe, which under `set -o pipefail` exits
+# the driver silently before it prints anything at all.
+RUN_SUFFIX="$(printf '%04x' $(( RANDOM % 65536 )))"
+RUN_ID="$(date -u +%Y%m%dt%H%M%Sz)${RUN_SUFFIX}"
 # The instance name lands in host_name inside the result JSON, so a
 # virtualized run must not be named "metal" -- someone reading the raw
 # results later would take it for a bare-metal measurement.

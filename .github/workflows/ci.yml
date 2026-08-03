@@ -265,6 +265,9 @@ jobs:
           tests/test_header_compile_cost.py
           tests/test_grid_benchmark_manifest.py
           tests/test_steamdeck_tools.py
+          tests/test_thread_scaling_report.py
+          tests/test_thread_scaling_chart.py
+          tests/test_sweep_cpu_plan.py
 
       # Failing gate (promoted 2026-07-07 after a clean shake-out):
       # public symbols must be documented in a maintained architecture

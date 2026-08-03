@@ -4,10 +4,13 @@ Redesign section 8's cloud tier. Bare metal exists here for two things
 the shared-runner pool cannot give: **hardware counters** and a **quiet
 machine**. Nothing else justifies the price.
 
-> **Nothing in this runbook has been run yet.** The scripts are written,
-> syntax-checked, shellchecked, and exercised through `--dry-run`. No
-> instance has been created and no cost has been incurred. The first
-> real run needs a maintainer's explicit go-ahead.
+> **Runs to date.** Three: a `c3-standard-4` validation run and two
+> `c3-standard-192-metal` campaigns (2026-08-02 unpinned, 2026-08-03
+> pinned and clock-controlled), about $14 in total. All three
+> self-deleted with no orphans. Results are recorded in
+> [optimization-log.md](optimization-log.md); the published outcome is
+> the serial-versus-pool crossover on `docs/performance.md`. Every run
+> needs a maintainer's explicit go-ahead.
 
 ## Cost, and why this document is mostly about cleanup
 
@@ -106,10 +109,9 @@ Google's bare-metal documentation:
 | `--maintenance-policy=TERMINATE` | Live migration unsupported |
 | `--no-shielded-*` passed **explicitly** | Unavailable on C3 metal, and gcloud enables vTPM and integrity monitoring by default for Shielded-capable images like Ubuntu 24.04 — leaving them unset is not the same as disabling them |
 
-Untested until the first run: whether `--max-run-duration` with
-`--instance-termination-action=DELETE` is accepted for C3 metal on
-standard provisioning. If it is rejected the create fails cleanly at no
-cost, which is the acceptable direction to be wrong in.
+`--max-run-duration` with `--instance-termination-action=DELETE` is
+accepted for C3 metal on standard provisioning — confirmed by three
+runs, all of which self-deleted before the cap was reached.
 
 ## Preflight
 

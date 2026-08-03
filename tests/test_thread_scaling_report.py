@@ -708,3 +708,62 @@ def test_chunk_count_matches_the_benchmark_source():
     encoding="utf-8"
   )
   assert f"kChunkCount == {thread_scaling_report.SWEEP_CHUNKS}" in source
+
+
+def test_a_noisy_paired_serial_is_caught(tmp_path, capsys):
+  """The gate must check the baseline each row divides by.
+
+  Pooling hides it: one width's paired serial can be wild while the
+  other ten groups dilute the pooled CV below the limit.
+  """
+  noisy_width = 96
+  paths = []
+  for width in thread_scaling_report.EXPECTED_WORKERS:
+    entries = []
+    full = _results({})
+    for entry in full["benchmarks"]:
+      if entry["name"].endswith("/serial/real_time"):
+        value = 1000.0
+        entries.append(dict(entry, real_time=value, tess_run_group=f"w{width}"))
+      elif entry["name"].endswith(f"/{width}/real_time"):
+        entries.append(dict(entry, tess_run_group=f"w{width}"))
+    if width == noisy_width:
+      # Replace this group's serial run with a wildly variable one.
+      for index, entry in enumerate(entries):
+        if entry["name"].endswith("/serial/real_time"):
+          entries[index] = dict(entry, real_time=500.0 if index % 2 else 1600.0)
+    path = tmp_path / f"w{width}.json"
+    path.write_text(json.dumps({"benchmarks": entries}))
+    paths.append(path)
+
+  status = thread_scaling_report.main([str(p) for p in paths])
+  assert status == 1
+  assert "paired serial" in capsys.readouterr().err
+
+
+def test_a_stale_chunk_count_is_refused(tmp_path, capsys):
+  """The artifact reports what it measured; the flag must agree.
+
+  A stale --chunks rescales every per-chunk work figure and therefore
+  the published crossover, and the quantization ceiling is
+  scale-invariant so nothing else would notice.
+  """
+  blob = _results({})
+  for entry in blob["benchmarks"]:
+    entry["chunks"] = 4096.0
+  status = thread_scaling_report.main([
+    str(_write(tmp_path, blob)),
+    "--chunks",
+    "8192",
+  ])
+  assert status == 1
+  assert "disagrees" in capsys.readouterr().err
+
+
+def test_a_matching_chunk_count_is_accepted(tmp_path, capsys):
+  blob = _results({})
+  for entry in blob["benchmarks"]:
+    entry["chunks"] = 4096.0
+  assert thread_scaling_report.main([str(_write(tmp_path, blob))]) == 0, (
+    capsys.readouterr().err
+  )

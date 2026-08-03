@@ -334,7 +334,9 @@ def quantization_ceiling(chunks: int, workers: int) -> float:
 RUN_GROUP_KEY = "tess_run_group"
 
 
-def _parse_file(path: Path) -> list[tuple[str, str, float, str]]:
+def _parse_file(
+  path: Path, observed_chunks: set[int] | None = None
+) -> list[tuple[str, str, float, str]]:
   """(workload, tail, real_time, run_group) from one Benchmark JSON.
 
   `run_group` identifies the process a record came from. A campaign that
@@ -355,7 +357,9 @@ def _parse_file(path: Path) -> list[tuple[str, str, float, str]]:
   if not isinstance(found, list):
     raise ReportError(f"{path} has no 'benchmarks' array")
 
-  triples: list[tuple[str, str, float]] = []
+  if observed_chunks is None:
+    observed_chunks = set()
+  triples: list[tuple[str, str, float, str]] = []
   for entry in found:
     if not isinstance(entry, dict):
       continue
@@ -383,11 +387,21 @@ def _parse_file(path: Path) -> list[tuple[str, str, float, str]]:
     if not isinstance(real_time, (int, float)):
       raise ReportError(f"'{name}' has no numeric real_time")
     group = str(entry.get(RUN_GROUP_KEY, "") or path)
+    # The benchmark reports the chunk count it actually ran over. A
+    # stale --chunks silently rescales every per-chunk work figure and
+    # therefore the published crossover -- doubling it halves the
+    # reported ns/chunk -- and the quantization ceiling is
+    # scale-invariant, so no existing check would notice.
+    counted = entry.get("chunks")
+    if isinstance(counted, (int, float)) and counted > 0:
+      observed_chunks.add(int(counted))
     triples.append((workload_name, tail, float(real_time), group))
   return triples
 
 
-def load_points(paths: Path | list[Path]) -> dict[str, Workload]:
+def load_points(
+  paths: Path | list[Path], chunks: int | None = None
+) -> dict[str, Workload]:
   """Parse sweep JSON(s), checking the expected point set is complete.
 
   Accepts several files because a pinned campaign runs one process per
@@ -410,8 +424,9 @@ def load_points(paths: Path | list[Path]) -> dict[str, Workload]:
   # serial run back into a single cross-process pool -- destroying the
   # pairing on exactly the path that matters.
   triples: list[tuple[str, str, float, str]] = []
+  observed_chunks: set[int] = set()
   for path in paths:
-    triples.extend(_parse_file(path))
+    triples.extend(_parse_file(path, observed_chunks))
 
   groups: dict[str, list[tuple[str, str, float]]] = {}
   for workload_name, tail, value, group in triples:
@@ -457,6 +472,14 @@ def load_points(paths: Path | list[Path]) -> dict[str, Workload]:
         paired = group_serial.get(workload_name)
         if paired:
           workload.serial_by_width[workers] = Point(list(paired))
+
+  # The artifact says what it measured; trust it over the flag.
+  if observed_chunks and chunks is not None and observed_chunks != {chunks}:
+    raise ReportError(
+      f"--chunks {chunks} disagrees with the {sorted(observed_chunks)} the "
+      "artifact reports; every per-chunk work figure, and therefore the "
+      "published crossover, would be rescaled by the difference"
+    )
 
   path = paths[0] if len(paths) == 1 else Path(f"{len(paths)} result files")
 
@@ -588,7 +611,7 @@ def main(argv: list[str] | None = None) -> int:
   args = parser.parse_args(argv)
 
   try:
-    workloads = load_points(args.results)
+    workloads = load_points(args.results, chunks=args.chunks)
     comparisons = sum(len(w.by_workers) for w in workloads.values())
     needed = required_resamples(comparisons)
     if args.bootstrap_resamples < needed:
@@ -680,7 +703,22 @@ def main(argv: list[str] | None = None) -> int:
     # The pool's non-parallel advantage over the serial executor, which
     # the quantization ceiling does not describe; see CEILING_TOLERANCE.
     one_worker = next((r.speedup for r in rows if r.workers == 1), 1.0)
+    # The gate must check the baseline each row actually divides by. The
+    # pooled serial can look clean while one width's paired baseline is
+    # noisy or short, because the other ten groups dilute it.
     for row in rows:
+      baseline = workload.serial_for(row.workers)
+      if baseline is not workload.serial:
+        if baseline.samples < MIN_SAMPLES:
+          problems.append(
+            f"{name}/{row.workers} paired serial ({baseline.samples} "
+            f"repetition(s), need {MIN_SAMPLES})"
+          )
+        elif baseline.cv > CV_LIMIT:
+          problems.append(
+            f"{name}/{row.workers} paired serial (CV "
+            f"{baseline.cv * 100:.2f}%, the denominator of this row)"
+          )
       if row.samples < MIN_SAMPLES:
         problems.append(
           f"{name}/{row.workers} ({row.samples} repetition(s), "

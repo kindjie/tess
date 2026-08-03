@@ -91,7 +91,14 @@ def points_from_sweep(
     blob: Any = json.loads(Path(path).read_text(encoding="utf-8"))
   except (OSError, json.JSONDecodeError) as error:
     raise ChartError(f"cannot read {path}: {error}") from error
-  samples: dict[str, list[float]] = {}
+  # Grouped by the process each record came from, exactly as
+  # thread_scaling_report does. A pinned campaign runs one process per
+  # point and each re-measures its own serial baseline; pooling those
+  # baselines would divide a width-4 pool median by serial runs from all
+  # eleven processes, reintroducing the process confounding the paired
+  # runs exist to remove. Untagged artifacts fall back to one group,
+  # which is correct for a single-process run.
+  groups: dict[str, dict[str, list[float]]] = {}
   for entry in blob.get("benchmarks", []):
     if not isinstance(entry, dict) or entry.get("run_type") != "iteration":
       continue
@@ -99,18 +106,25 @@ def points_from_sweep(
     if not name.startswith("lab/thread_scaling/"):
       continue
     stem = name[len("lab/thread_scaling/") :].removesuffix("/real_time")
-    samples.setdefault(stem, []).append(float(entry.get("real_time", 0.0)))
+    group = str(entry.get("tess_run_group", "") or "<single>")
+    groups.setdefault(group, {}).setdefault(stem, []).append(
+      float(entry.get("real_time", 0.0))
+    )
 
   points: list[tuple[float, float]] = []
-  for key in sorted(samples):
-    workload, _, tail = key.rpartition("/")
-    if tail != "serial":
-      continue
-    serial = statistics.median(samples[key])
-    pool = samples.get(f"{workload}/{workers}")
-    if not pool or not serial:
-      continue
-    points.append((serial / chunks, serial / statistics.median(pool)))
+  for group in sorted(groups):
+    samples = groups[group]
+    for key in sorted(samples):
+      workload, _, tail = key.rpartition("/")
+      if tail != "serial":
+        continue
+      pool = samples.get(f"{workload}/{workers}")
+      if not pool:
+        continue
+      serial = statistics.median(samples[key])
+      if not serial:
+        continue
+      points.append((serial / chunks, serial / statistics.median(pool)))
   return sorted(points)
 
 
