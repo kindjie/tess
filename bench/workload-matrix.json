@@ -932,16 +932,27 @@
         "worker_count": "1",
         "payload": "agent chains (arg = agent count)"
       }
+    },
+    {
+      "family": "lab/thread_scaling",
+      "pattern": "^lab/thread_scaling/(?:tile_touch|partial_fill_(?:64|192|640|1536)|chunk_fill|chunk_compute)(?:/(?:(serial)|(\\d+)))?$",
+      "captures": {
+        "executor_kind": 1,
+        "worker_count": 2
+      },
+      "note": "worker-count sweep, campaign-only; lives in the separate tess_bench_thread_scaling binary so the four unfiltered tess_bench call sites never run it. Registered names carry a /real_time suffix from UseRealTime() -- required because the dispatcher blocks and its cpu_time is near zero -- which the checker strips as a control suffix",
+      "defaults": {
+        "world_extent": "4096x4096",
+        "chunk_extent": "64x64",
+        "layout": "not_applicable",
+        "storage": "always_resident",
+        "executor_kind": "pool",
+        "worker_count": "1",
+        "payload": "4096 per-chunk ops, one parallel phase; workload sets per-chunk work from ~11 ns to ~6473 ns"
+      }
     }
   ],
   "unmeasured": [
-    {
-      "selector": {
-        "executor_kind": "pool",
-        "worker_count": "8"
-      },
-      "reason": "pool executors are measured only at w2/w4; wider pools are deferred to the phase 8 controlled-hardware campaign"
-    },
     {
       "selector": {
         "executor_kind": "scoped_threads",
@@ -960,7 +971,7 @@
       "selector": {
         "world_extent": "2048x2048"
       },
-      "reason": "worlds beyond 1024x1024 (except the residency 65536-extent shell) arrive with the S2 macro-harness world-size axis (section 3.1)",
+      "reason": "worlds beyond 1024x1024 (except the residency 65536-extent shell and the lab/thread_scaling 4096x4096 sweep, which needs the chunks to keep per-worker quantization off the curve) arrive with the S2 macro-harness world-size axis (section 3.1)",
       "policy": true
     },
     {

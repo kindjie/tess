@@ -56,8 +56,14 @@ void fill_goals(tess::GoalSet& goals, std::size_t count) {
   }
 }
 
-// Reverse flood from N goals over the open 64x64 world: the goal-count
-// scaling headline.
+// Reverse flood from N goals over the open 64x64 world.
+//
+// NOT a goal-count scaling curve, despite the family naming. The flood
+// visits every one of the 4096 tiles whatever the seed count, so cost is
+// bounded by world size, not goal count; more goals only add seed
+// insertions. Measured 1/16/256 goals at 84/98/97 us -- flat, as the
+// algorithm implies. Read a flat line here as "goal count is not the
+// cost driver", not as evidence of good scaling.
 void run_goalset_build_bench(benchmark::State& state, std::size_t goal_count) {
   static auto* world = make_world();
   tess::GoalSet goals;
@@ -79,6 +85,12 @@ void run_goalset_build_bench(benchmark::State& state, std::size_t goal_count) {
     auto status = result.status;
     benchmark::DoNotOptimize(status);
   }
+  // Set AFTER the timed loop, from values the loop already captured, so
+  // the published timings are unaffected. Nothing here may move inside
+  // the loop: these numbers exist to make a result auditable later, not
+  // at the cost of changing what was measured.
+  state.counters["reached_nodes"] = static_cast<double>(reached);
+  state.counters["goal_count"] = static_cast<double>(goal_count);
   fields_bench_check(reached == kTileCount,
                      "open-world flood did not reach every tile");
 }

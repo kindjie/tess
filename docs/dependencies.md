@@ -244,6 +244,38 @@ once in `FlecsPathAgentContext`, because Flecs documents repeated query
 creation as expensive. Adapter collection never performs structural mutation;
 goal removal and other structural changes occur only after iteration.
 
+## Cloud bare-metal campaign tooling
+
+- Google Cloud CLI (`gcloud`, `gsutil`): https://cloud.google.com/sdk/docs
+- GCE bare-metal instances:
+  https://cloud.google.com/compute/docs/instances/bare-metal-instances
+- `numactl`: https://github.com/numactl/numactl
+- `util-linux` (`taskset`, `lscpu`):
+  https://github.com/util-linux/util-linux
+- Linux CPUFreq governors:
+  https://www.kernel.org/doc/html/latest/admin-guide/pm/cpufreq.html
+
+Operator-side, campaign-only, and required by nothing the library, tests,
+benchmarks, or CI build. `tools/cloud/run_metal_bench.sh` and
+`tools/cloud/reap_orphans.sh` run on the operator's machine and need only
+the Google Cloud CLI; both are written for the bash 3.2 that macOS ships,
+because the safety net failing on the host an operator is most likely to
+use is the failure that matters.
+
+The remaining tools are installed by `tools/cloud/setup_metal_vm.sh` on
+the instance itself: `numactl` for the thread-scaling sweep's memory
+policy, `taskset` and `lscpu` (util-linux, present on the Ubuntu image)
+for its per-point CPU pinning, and a kernel-matched `linux-tools` package
+for `perf`. `linux-tools-generic` does NOT match the GCE kernel and
+`linux-tools-common` alone provides only a wrapper that errors, so the
+install tries the exact kernel first and then the GCE flavour. A missing
+`numactl`, `taskset`, or writable cpufreq governor does not abort the
+run; each is counted as a failure so the sweep is recorded as not
+publishable rather than silently measured under uncontrolled conditions.
+
+See [planning/cloud-campaign.md](planning/cloud-campaign.md) for the
+runbook and the cleanup mechanisms.
+
 ## GitHub Actions
 
 - Checkout action version: `actions/checkout@v7.0.1` (pinned to

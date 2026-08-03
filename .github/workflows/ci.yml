@@ -265,6 +265,9 @@ jobs:
           tests/test_header_compile_cost.py
           tests/test_grid_benchmark_manifest.py
           tests/test_steamdeck_tools.py
+          tests/test_thread_scaling_report.py
+          tests/test_thread_scaling_chart.py
+          tests/test_sweep_cpu_plan.py
 
       # Failing gate (promoted 2026-07-07 after a clean shake-out):
       # public symbols must be documented in a maintained architecture
@@ -598,6 +601,16 @@ jobs:
       # threshold manifests and lab literals, but only the binaries
       # know what is actually registered — and this survives the
       # phase 4 threshold-manifest retirement.
+      #
+      # tess_bench_thread_scaling is listed but never executed here: it is
+      # a campaign-only worker-count sweep that builds pools far wider
+      # than a shared runner has cores. Listing it is what keeps it from
+      # rotting, since nothing else in CI runs it.
+      #
+      # --bench-sources additionally greps bench/*.cc for whole `lab/`
+      # name literals, so a name assembled from a macro or a
+      # concatenation -- which yields a fragment no family rule can
+      # classify -- fails here rather than at analysis time.
       - name: Workload-matrix drift check
         run: |
           ./build/bench/bench/tess_bench --benchmark_list_tests \
@@ -605,10 +618,15 @@ jobs:
           ./build/bench/bench/tess_bench_diagnostics \
             --benchmark_list_tests \
             > build/bench/registrations-diagnostics.txt
+          ./build/bench/bench/tess_bench_thread_scaling \
+            --benchmark_list_tests \
+            > build/bench/registrations-thread-scaling.txt
           python3 tools/check_workload_matrix.py \
             --catalog bench/workload-matrix.json \
             --registrations build/bench/registrations-main.txt \
-            --registrations build/bench/registrations-diagnostics.txt
+            --registrations build/bench/registrations-diagnostics.txt \
+            --registrations build/bench/registrations-thread-scaling.txt \
+            --bench-sources bench
 
       # Release-configuration counter-golden drift (shadow mode).
       - name: Surface counter-golden drift
@@ -1044,6 +1062,24 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # The workflow-level CMAKE_CXX_COMPILER_LAUNCHER points at ccache,
+      # which ubuntu-24.04 runners do not ship. Without this the very
+      # first try-compile dies with "ccache: No such file or directory"
+      # and the job fails at configure, before a single sweep runs. It
+      # only shows up here because this job runs on the schedule and on
+      # manual dispatch, never on a pull request. Every other Linux job
+      # installs ccache; Windows is unaffected because the Visual Studio
+      # generator ignores the launcher variable.
+      - name: Install ccache
+        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-long-seed-${{ github.sha }}
+          restore-keys: ccache-long-seed-
 
       - name: Configure
         run: cmake --preset dev

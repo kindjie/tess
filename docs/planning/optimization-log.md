@@ -50,6 +50,223 @@ Entries from 2026-07-12 and earlier are in
   shows a material regression or the remaining 1.35x sparse/dense gap becomes
   a priority. Do not specialize that API from the raw nanosecond lookup alone.
 
+## 2026-08-03 - Second Bare-Metal Campaign (pinned, clock-controlled)
+
+Re-ran the sweep with each point pinned via `taskset` to a planned CPU
+set and the `performance` governor set and verified across all CPUs. 46
+minutes, ~$7.70, exit 0, all 77 points measured.
+
+**Pinning plus clock control cut variance sharply at low and mid
+widths.** Median CV by width, first campaign -> second: w4 7.12% ->
+0.65%, w8 6.12% -> 0.54%, w16 8.04% -> 0.55%, w24 9.16% -> 0.54%. Within
+socket 0 the median CV is 0.69%. The two changes cannot be separated:
+the first campaign had neither pinning nor clock control.
+
+**It did not help across sockets.** w64 18.06% -> 14.70%, w96 16.88% ->
+17.69%, w190 21.95% -> 21.48%; median 17.46% for widths >= 64. The curve
+is still not publishable, and 24 points fail the gate.
+
+**The crossover replicated, and that is the result worth having.** At
+four workers the sign agrees for every workload across both campaigns
+despite the different regimes: below ~47 ns per chunk the pool loses,
+above ~94 ns it wins. The first campaign's four-worker bracket was
+47.5-90.1 ns and the second's is 46.9-93.6 ns. Published on
+docs/performance.md as ~45-95 ns with a recommendation to measure
+locally.
+
+### What review refuted
+
+Three causal explanations I proposed do not survive:
+
+- *"Residual noise above 64 workers is memory-path contention."*
+  `tile_touch` touches one tile per chunk and has essentially no memory
+  traffic, yet its CV goes 1.80% at w48 to 11.06% at w64 to 22.54% at
+  w96. Interleaving was on in BOTH campaigns and at every width, so the
+  memory configuration does not change at w64. Thread placement does.
+  The noise also is not monotone in load: `chunk_fill` is 10.83% at w32
+  and 3.19% at w48.
+- *"Two workers are handicapped because the dispatcher does per-iteration
+  work inside the timed loop."* It does not: it wakes workers, blocks in
+  `done_cv_.wait`, then scans results. And at w1 -- where the dispatcher
+  shares one CPU with the only worker -- the total overhead is ~4 us per
+  iteration, 0.015%. A dispatcher stealing CPU would hurt w1 most; w1 is
+  unaffected and only w2 is hurt.
+- *"w32/w48 are slower pinned because of worse memory locality."* Under
+  uniform interleave across four nodes the expected access mix is
+  placement-invariant: 25% local / 25% same-socket / 50% cross-socket
+  either way. Better candidates, unmeasured: per-socket turbo budget
+  concentrating 32-48 active cores on one socket, and mesh/UPI
+  concentration. No per-point frequency telemetry exists to decide it.
+
+### The open anomaly
+
+Pinned w2 is uniformly ~1.5x slower than unpinned across every
+substantial workload, and its throughput matches two workers sharing one
+physical core's SMT threads -- which the CPU plan should have made
+impossible. Pinned w4 likewise matches the *slow* mode of the unpinned
+campaign's bimodal w4 rather than its fast mode. This cannot be
+adjudicated from the artifacts, because the masks that were actually
+applied were recorded nowhere. Both are now captured
+(`sweep-cpu-masks.tsv`, `lscpu-topology.csv`); a plan is not evidence of
+what ran. Two-worker results are withheld from the adopter page until
+this is resolved.
+
+The cheap next step is a targeted diagnostic rather than another sweep:
+A/B the masks {0,1} vs {0,2} vs {0,96} vs {0,1,2} at w2/w4 with
+per-thread placement sampling and aperf/mperf capture.
+
+### The persistence anomaly reverted
+
+`persistence/save_dense_512x512_2_fields`: 6.833 ms -> 11.821 ms (+73%)
+-> **6.839 ms**, within 0.09% of the original, while the median change
+across all 184 main-pass benchmarks was +0.04%. It was not a library
+regression and not the code-layout effect proposed for it. The governor
+changed between the campaigns so attribution is not definitive, but the
+ratio 11.82/6.83 = 1.73 matches the 3.79/2.2 GHz clock range the first
+campaign recorded, which fits frequency better than layout.
+
+### Publishable, and not
+
+Published: the four-worker crossover bracket, as a range, with the
+machine stated. Withheld: any two-worker bracket, the full scaling
+curve, and every causal narrative above that review did not support.
+A methodology note worth carrying forward -- single-socket pinned points
+measure at ~0.7% median CV on this class of machine; cross-socket points
+do not get below ~15% even pinned and clock-controlled, so cross-socket
+speedup claims need interval reporting rather than point estimates.
+
+## 2026-08-03 - Thread-Scaling Sweep (first attempt; curve not publishable)
+
+A worker-count sweep from 1 to 190 workers over seven workloads on a
+4096-chunk world, run on `c3-standard-192-metal` under
+`numactl --interleave=all`, 20 repetitions, no thread pinning and no
+governor control. 39 minutes, ~$6.57, exit 0.
+
+**The curve could not be published, and the analysis gate said so.**
+`tools/thread_scaling_report.py` flagged 57 points; CV reached 16-33%
+above 32 workers.
+
+**The noise was thread placement, not jitter.** Repetitions split into
+discrete modes rather than scattering. `chunk_compute/4` sat at either
+~6.73 ms or ~8.81 ms, a 31% gap with almost nothing between; the fast
+mode is 3.94x against a 4.0 quantization ceiling, and the slow mode's
+3.01x matches two of the four workers sharing one core's SMT threads at
+sibling efficiency ~0.53. `chunk_compute/8` shows three levels in the
+same ratios that 0, 1 and 2 colocated pairs predict, with the same
+efficiency. Two alternatives were ruled out from the artifact: Google
+Benchmark's `iterations` is constant across all 20 repetitions of all 84
+points, and the pool's `job_stride` is deterministic per width.
+
+Attribution is weaker at 96 and 190 workers, where 191 threads on 192
+CPUs leaves almost no placement freedom and oversubscription and
+all-core frequency licensing are co-suspects. "Unusable" holds either
+way.
+
+**The crossover did survive, and it was the point of the exercise.**
+Corrected for multiplicity across all 77 pool comparisons, at two workers
+the pool loses at 42.3 ns of work per chunk and wins at 90.1 ns. The
+uncorrected reading was tighter and wrong: `partial_fill_64` at two
+workers has a marginal interval of 0.91-0.99, which looks decisive, and
+an adjusted p of 0.090, which is not.
+
+The bracket is conditional on this machine, this width, and unpinned
+placement. Under good placement it likely sits lower: the two fast-mode
+repetitions of `partial_fill_64/2` beat serial outright.
+
+**Frequency was uncontrolled and demonstrably wandered.** `machine.txt`
+recorded `CPU(s) scaling MHz: 21%` against an 800-3800 MHz range, and the
+counter pass measured single-thread effective clocks from 2.35 to 3.79
+GHz across benchmarks minutes apart on an idle machine.
+
+**An unrelated anomaly in the main pass.** All seven `fields/*` held
+within 0.3% of the previous campaign -- the historical regression did not
+recur -- and all 184 benchmarks stayed under their ceilings, the closest
+at 65%. But `persistence/save_dense_512x512_2_fields` measured +73%
+(6.83 -> 11.82 ms) with 0.1% CV in both campaigns, while `load_dense` in
+the same binary was unchanged at 1.000x and the same benchmark in
+`tess_bench_diagnostics` was unchanged at 1.003x. Frequency cannot
+produce that pattern. No library code changed between the campaigns, and
+an arm64 A/B of the two commits reproduces nothing (10.506 vs 10.508 ms),
+so the leading explanation is x86 code layout shifted by the
+`parallel_phase_support.h` extraction. Unresolved; it is a bench-binary
+artifact at 19% of its ceiling, invisible to library consumers, and the
+next campaign re-measures it.
+
+**Changed as a result:** each sweep point now runs in its own process
+pinned with `taskset` to a CPU set from `tools/cloud/sweep_cpu_plan.py`
+(one thread per physical core, filling NUMA nodes in order, SMT siblings
+last); the `performance` governor is set before measuring and the
+achieved state recorded; and verdicts are Holm-corrected across the whole
+artifact rather than read off marginal intervals.
+
+**A caveat on the persistence re-measurement.** The governor change
+applies to the main timing pass too, so the next campaign's
+`persistence/save_dense` number will not be a clean A/B against either
+earlier campaign: a difference could be the governor rather than layout.
+Distinguishing them needs the two binaries run under the same governor,
+not two campaigns run under different ones.
+
+**Still uncontrolled:** benchmark order is not randomised against the
+worker axis, so a smooth drift could still imitate a worker-count trend.
+Registration is workload-major, so the axis is traversed seven times and
+drift aliasing should show as knee positions disagreeing between
+workloads -- a cross-check, not a fix.
+
+## 2026-08-02 - First Bare-Metal Campaign (post-fix baseline)
+
+- Area: section 8's cloud bare-metal tier, first execution.
+- Machine: `c3-standard-192-metal`, Xeon Platinum 8481C, Ubuntu 24.04.4,
+  clang 18.1.3, kernel 6.17.0-1021-gcp. Commit `3a7b12d`
+  (`v0.4.0-86-g3a7b12d`), source archive verified by SHA-256. 28 minutes,
+  about $4.70.
+- Timing evidence: 184 and 177 benchmarks at 10 repetitions, zero errors.
+  **Median CV 0.12% against 2.03% on the shared-VM validation run** -- a
+  roughly seventeen-fold reduction. All eight fields benchmarks at
+  CV <= 0.91%. Residual noise is concentrated in three intrinsically
+  jittery groups (`queued/execute_resident_update`, the `parallel/*_pool`
+  family, and the manual-time LRU eviction benchmark) and is workload
+  behaviour rather than machine noise.
+- Counter evidence: the PMU is exposed on metal and returned usable
+  values for all eight fields benchmarks. Legitimate conclusions are
+  RATES only -- IPC 3.3-5.1, branch mispredicts around 1.0-1.6 per
+  thousand instructions on the build paths versus about 2 per million on
+  the lookup paths, and LLC misses at 0.001-0.007 MPKI, meaning the
+  fields working set is cache-resident and memory traffic is not the
+  bottleneck.
+
+### What this does NOT support
+
+Recorded because the first analysis of this data got it wrong twice.
+
+- **Cross-benchmark comparison of the raw counter columns.** `perf`
+  wraps the whole process, so a cheaper benchmark runs more iterations
+  in the fixed min-time and accumulates more of everything.
+  `fields/cache_hit` shows the highest cycle count purely because it ran
+  about 6.7M iterations; it is the cheapest operation measured.
+- **The per-iteration normalisation attempted during analysis.** It
+  divided counter-run totals by TIMING-run iteration counts, which have
+  different min-times, and inverted the true ordering: it implied
+  `goalset_build_1` costs twice `goalset_build_16` when the timings show
+  it is 13% cheaper. Per-operation cycles should come from
+  `median_ns x measured_frequency`, not from that division.
+- **Production-binary microarchitectural claims.** The counter pass runs
+  the diagnostics binary, whose fields kernels are 12-21% slower because
+  of allocation hooks.
+- **"The regression is fixed."** `90b61ef` is an ancestor of every
+  commit measured here, so there is no pre-fix arm. The hosted
+  alternating paired confirmation remains the evidence that closes it;
+  this campaign corroborates without independently proving the delta.
+- **Metal-versus-VM speedup.** The two runs differ in both machine and
+  commit.
+- **Threshold recalibration.** One snapshot on a different machine.
+
+- Follow-up: publish the counter run's own iteration count and
+  task-clock (done, this commit) so future rows can be normalised; a
+  paired pre/post-`90b61ef` run on this recipe if the fix is to be
+  quantified on metal; pinning plus a performance governor as the next
+  controlled experiment, since the counter pass drifted 2.5-3.8 GHz;
+  dedicated handling for the three noisy groups before any of them gate.
+
 ## 2026-08-01 - Hosted Confirmation Of The Field Product Fix
 
 - Area: follow-up to the 2026-07-31 chunk-level capture restoration.

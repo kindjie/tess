@@ -59,6 +59,20 @@ target_compile_definitions(
 )
 tess_apply_project_options(tess_bench_diagnostics)
 
+# The thread-scaling sweep is its own binary on purpose. Four call sites run
+# tess_bench unfiltered (weekly coverage, paired-base comparison, the
+# workload-matrix drift check, and the metal campaign's main timing stage);
+# a 190-worker sweep registered there would build 190-thread pools on
+# four-core runners and run twice per campaign. Negative filters at four
+# sites fail open. It is kept out of tess_bench_diagnostics as well, whose
+# allocation hooks distort timings by 12-21%.
+add_executable(tess_bench_thread_scaling tess_thread_scaling_bench.cc)
+target_link_libraries(
+  tess_bench_thread_scaling
+  PRIVATE tess::tess benchmark::benchmark_main
+)
+tess_apply_project_options(tess_bench_thread_scaling)
+
 if(TESS_ENABLE_ENTT)
   include(TessEnttDeps)
   tess_require_entt()
