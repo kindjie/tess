@@ -347,7 +347,8 @@ mkdir -p results
   echo "cmake: $(cmake --version | head -1)"
   echo "kernel: $(uname -r)"
   echo "perf_event_paranoid: $(cat /proc/sys/kernel/perf_event_paranoid)"
-  echo "cpu_pinning: main pass none; thread-scaling sweep taskset per point"
+  echo "cpu_pinning: main pass none; sweep taskset per point," \
+    "N+1 CPUs (N workers plus the dispatcher)"
   echo "cpufreq_governor: $GOVERNOR_SET"
   echo "turbo: $TURBO_STATE"
   echo "online_cpus: $(nproc)"

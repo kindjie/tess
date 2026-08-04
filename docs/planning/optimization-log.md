@@ -82,11 +82,40 @@ mask; `chunk_fill` peaks around 7x at width 24 and then declines. Those
 are saturation, not harness defects.
 
 **The curve is still not publishable**: 31 points over the 5% CV limit,
-against 24 before. High widths remain noisy (14-24% CV at 64 and above),
-and width 2 -- clean at 0.40% in the diagnostic -- came in at 13-26% CV
-in campaign conditions. The diagnostic ran ten points in two minutes;
-the campaign runs 77 back-to-back over 35, so run length or
-point-to-point interference is the obvious suspect and is untested.
+against 24 before. High widths remain noisy (14-24% CV at 64 and above).
+
+**And the fix made width 2 worse for light workloads**, which review
+caught and my first explanation got wrong. I blamed run length -- the
+diagnostic ran ten points in two minutes against the campaign's 77 over
+35 -- but the diagnostic only ever measured `chunk_compute`, and
+`chunk_compute` at width 2 is *cleaner* in the campaign than before.
+Width-2 CV, exactly-N to N+1:
+
+| workload | exactly-N | N+1 |
+| --- | ---: | ---: |
+| `chunk_compute` | 4.28% | 0.27% |
+| `chunk_fill` | 1.21% | 0.45% |
+| `partial_fill_1536` | 2.29% | 16.41% |
+| `partial_fill_640` | 0.83% | 26.50% |
+| `partial_fill_192` | 1.46% | 17.85% |
+| `partial_fill_64` | 1.00% | 13.35% |
+| `tile_touch` | 1.04% | 6.62% |
+
+It splits by workload weight, not by run length. The same points were
+low-CV under the old mask -- and pinned in the slow mode, which is what
+the fix removed. The artifact-supported reading is that a slow mode
+still exists inside the 3-CPU mask at width 2 and is entered per
+repetition: `taskset` constrains the process, not thread placement
+within it, so two workers can land on the `{0,96}` SMT pair instead of
+`{0,1}`. Light workloads have short phases, so a placement flip costs
+proportionally more.
+
+The published bracket is unaffected: it rests on width 4, where the
+bracketing points measure 2.33% and 2.17% CV.
+
+The direct test and likely fix is per-thread affinity -- each worker
+bound to its own CPU and the dispatcher to the extra one -- rather than
+a process-wide mask. Not attempted here.
 
 **An analysis error worth recording.** My first comparison took the
 median efficiency across all seven workloads and produced nonsense --
