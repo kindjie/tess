@@ -120,6 +120,49 @@ def cpus_for_width(cpus: dict[int, Cpu], width: int) -> list[int]:
   return chosen
 
 
+def mask_for_width(cpus: dict[int, Cpu], width: int) -> list[int]:
+  """The CPUs to pin a `width`-worker point to, dispatcher included.
+
+  The pool runs `width` worker threads AND the benchmark's dispatching
+  thread. Pinning all of them to exactly `width` CPUs measured 65%
+  efficiency at width 2 on c3-standard-192-metal against 100% with one
+  more CPU, with CV 5.91% against 0.11% -- and the failure was a
+  distinct slow mode, entered always for adjacent cores and
+  intermittently for masks spanning a node or socket, not a level shift.
+  So the dispatcher gets a CPU of its own.
+
+  It is taken from an SMT sibling of a worker's core wherever possible,
+  not from the next physical core. The widths were chosen so that 24 is
+  one NUMA node and 48 one socket; spending the next physical core would
+  push the mask into the next node and quietly destroy that meaning,
+  while a sibling stays in the same node by construction. Once every
+  core is occupied the sibling is already a worker's, and any free CPU
+  will do.
+  """
+  workers = cpus_for_width(cpus, width)
+  taken = set(workers)
+
+  by_core: dict[int, list[int]] = {}
+  for cpu in sorted(cpus.values(), key=lambda c: c.cpu):
+    by_core.setdefault(cpu.core, []).append(cpu.cpu)
+
+  # A sibling of a worker's own core: same node, same socket, free.
+  for worker in workers:
+    for sibling in by_core[cpus[worker].core]:
+      if sibling not in taken:
+        return sorted(workers + [sibling])
+
+  # Every sibling is in use; fall back to any free CPU.
+  for cpu in sorted(cpus):
+    if cpu not in taken:
+      return sorted(workers + [cpu])
+
+  raise PlanError(
+    f"width {width} plus a dispatcher does not fit the machine's "
+    f"{len(cpus)} logical CPUs"
+  )
+
+
 def taskset_list(chosen: list[int]) -> str:
   return ",".join(str(c) for c in sorted(chosen))
 
@@ -142,6 +185,12 @@ def main(argv: list[str] | None = None) -> int:
     "widths", nargs="+", type=int, help="worker counts to plan for"
   )
   parser.add_argument(
+    "--workers-only",
+    action="store_true",
+    help="emit only the worker CPUs, omitting the dispatcher's -- the "
+    "degraded configuration, kept so a run can measure it deliberately",
+  )
+  parser.add_argument(
     "--topology",
     help="file with lscpu -p output; defaults to running lscpu",
   )
@@ -155,7 +204,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     cpus = parse_topology(text)
     for width in args.widths:
-      print(f"{width}\t{taskset_list(cpus_for_width(cpus, width))}")
+      chosen = (
+        cpus_for_width(cpus, width)
+        if args.workers_only
+        else mask_for_width(cpus, width)
+      )
+      print(f"{width}\t{taskset_list(chosen)}")
   except PlanError as error:
     print(f"sweep_cpu_plan: {error}", file=sys.stderr)
     return 1

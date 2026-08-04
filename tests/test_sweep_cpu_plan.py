@@ -121,3 +121,78 @@ def test_a_smaller_machine_still_plans_within_its_cores():
   assert len(_plan(2, topology)) == 2
   cpus = sweep_cpu_plan.parse_topology(topology)
   assert len({cpus[c].core for c in _plan(2, topology)}) == 2
+
+
+# --- The dispatcher needs a CPU of its own --------------------------
+#
+# Measured on c3-standard-192-metal 2026-08-04: pinning N workers to
+# exactly N CPUs puts the pool's N workers AND the dispatching thread on
+# N CPUs, and the result drops into a distinct slow mode -- 65%
+# efficiency at width 2 against 100% with one more CPU, and CV 5.91%
+# against 0.11%. It was always slow for adjacent cores {0,1} and
+# intermittently slow for masks spanning a node or socket (3/10 and 2/10
+# repetitions), which is a mode mixture rather than a level shift.
+
+
+def _mask(width, topology=None):
+  cpus = sweep_cpu_plan.parse_topology(topology or _metal_topology())
+  return sweep_cpu_plan.mask_for_width(cpus, width)
+
+
+def test_mask_gives_the_dispatcher_its_own_cpu():
+  for width in (1, 2, 4, 24, 48, 96):
+    assert len(_mask(width)) == width + 1
+
+
+def test_mask_contains_every_worker_cpu():
+  for width in (1, 2, 4, 24):
+    workers = set(_plan(width))
+    assert workers <= set(_mask(width))
+
+
+def test_dispatcher_cpu_is_not_a_worker_cpu():
+  for width in (1, 2, 4, 24):
+    workers = _plan(width)
+    extra = [c for c in _mask(width) if c not in workers]
+    assert len(extra) == 1
+
+
+def test_dispatcher_does_not_drag_the_mask_into_another_numa_node():
+  """Width 24 is meant to be exactly one NUMA node.
+
+  Taking the next physical core as the dispatcher's would move the mask
+  into node 1 and quietly destroy the topological meaning of the width.
+  The SMT sibling of a worker core is in the same node, so it is used
+  instead.
+  """
+  cpus = sweep_cpu_plan.parse_topology(_metal_topology())
+  for width in (24, 48):
+    nodes = {cpus[c].node for c in _mask(width)}
+    worker_nodes = {cpus[c].node for c in _plan(width)}
+    assert nodes == worker_nodes
+
+
+def test_dispatcher_prefers_a_sibling_of_a_worker_core():
+  # Width 2 workers are cores 0 and 1 (CPUs 0,1); sibling(0) is 96.
+  assert sorted(_mask(2)) == [0, 1, 96]
+
+
+def test_widest_point_still_fits_the_machine():
+  mask = _mask(190)
+  assert len(mask) == 191
+  assert len(set(mask)) == 191
+
+
+def test_mask_beyond_the_machine_is_an_error():
+  with pytest.raises(sweep_cpu_plan.PlanError):
+    _mask(192)
+
+
+def test_mask_is_deterministic():
+  assert _mask(48) == _mask(48)
+
+
+def test_small_machine_mask_still_works():
+  # 4 CPUs, 2 physical cores: width 1 leaves room for a dispatcher.
+  topology = "\n".join(f"{c},{c % 2},0,0" for c in range(4))
+  assert len(_mask(1, topology)) == 2

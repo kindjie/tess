@@ -120,6 +120,8 @@ REQUIRE_COUNTERS="$(metadata instance/attributes/tess-require-counters)"
 REQUIRE_COUNTERS="${REQUIRE_COUNTERS:-1}"
 SOURCE_SHA256="$(metadata instance/attributes/tess-source-sha256)"
 GIT_DESCRIBE="$(metadata instance/attributes/tess-git-describe)"
+DIAGNOSTIC="$(metadata instance/attributes/tess-diagnostic)"
+DIAGNOSTIC="${DIAGNOSTIC:-}"
 
 [[ -n "$BUCKET" && -n "$SOURCE_URL" ]] || {
   echo "FATAL: missing bucket metadata" >&2; exit 1; }
@@ -389,6 +391,39 @@ for _ in $(seq 1 30); do
 done
 echo "load average at start of benchmarking: $(cut -d' ' -f1-3 /proc/loadavg)"
 
+# ---- Diagnostic mode ------------------------------------------------
+# Replaces the campaign entirely: a targeted width-2 experiment under
+# several CPU masks, not a sweep. It shares every stage above -- source
+# verification, build, governor, machine.txt -- and every cleanup
+# guarantee below, so the only thing that differs is what gets measured.
+if [[ -n "$DIAGNOSTIC" && "$DIAGNOSTIC" != "0" ]]; then
+  set_stage "width-2 diagnostic"
+  DIAG_STATUS=0
+  # -f, not -x: the script is invoked through `bash`, so its mode is
+  # irrelevant -- and testing -x cost a run when the file shipped
+  # without the executable bit and the failure reported it as missing.
+  if [[ -f tools/cloud/diagnose_pool_width.sh ]]; then
+    DIAG_MODE="$DIAGNOSTIC" bash tools/cloud/diagnose_pool_width.sh \
+      || DIAG_STATUS=1
+  else
+    echo "FATAL: tools/cloud/diagnose_pool_width.sh is not in the source" \
+      "tarball; it is packaged by git ls-files, so check it is not" \
+      "ignored" >&2
+    DIAG_STATUS=1
+  fi
+  # Published whatever happened: a partial diagnostic is still evidence,
+  # and the topology capture is useful even if the measurement failed.
+  for artifact in results/diagnostic/*; do
+    [[ -f "$artifact" ]] && publish "$artifact"
+  done
+  if (( UPLOAD_FAILURES > 0 )); then
+    echo "ERROR: $UPLOAD_FAILURES upload(s) failed" >&2
+    DIAG_STATUS=1
+  fi
+  echo "diagnostic complete with status $DIAG_STATUS"
+  exit "$DIAG_STATUS"
+fi
+
 # Failures handled per iteration with `if !`, NOT `done || { ... }`.
 # Putting a compound command on the left of || disables errexit for
 # everything inside it, so a failed benchmark would continue silently
@@ -493,6 +528,13 @@ if [[ -x "$sweep_binary" ]]; then
   # this machine 24 is exactly one NUMA node, 48 one socket, 96 every
   # physical core, 190 every core plus 94 SMT siblings. Unpinned they are
   # just numbers.
+  #
+  # The mask holds N+1 CPUs, not N. The pool runs N workers AND the
+  # dispatching thread; giving them exactly N CPUs measured 65%
+  # efficiency at width 2 against 100% with one more, and CV 5.91%
+  # against 0.11% (metal diagnostic, 2026-08-04). The extra CPU is an
+  # SMT sibling of a worker core, so the mask stays inside the same NUMA
+  # node and the width keeps its topological meaning.
   # Probed once. Counting it per point would report one missing tool as
   # 77 failures and bury whatever else went wrong.
   HAVE_TASKSET=0

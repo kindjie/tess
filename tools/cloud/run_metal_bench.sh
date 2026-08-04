@@ -47,6 +47,7 @@ BOOT_DISK_TYPE="hyperdisk-balanced"
 MAX_RUN_DURATION="90m"
 HOURLY_USD="10.00"
 REQUIRE_COUNTERS=1
+DIAGNOSTIC=""
 ASSUME_YES=0
 DRY_RUN=0
 
@@ -60,6 +61,8 @@ Usage: run_metal_bench.sh [options]
   --machine-type=TYPE   instance type           [c3-standard-192-metal]
   --max-run-duration=D  hard kill cap           [90m]
   --allow-no-counters   run even if the PMU is unavailable
+  --diagnostic          run the pool mask survey, not the campaign
+  --diagnostic=validate run the paired fixed/degraded mask A/B
   --yes / -y            skip the confirmation prompt
   --dry-run             print the plan and exit; creates nothing
   --help                this text
@@ -82,6 +85,15 @@ for arg in "$@"; do
     --machine-type=*)     MACHINE_TYPE="${arg#*=}" ;;
     --max-run-duration=*) MAX_RUN_DURATION="${arg#*=}" ;;
     --allow-no-counters)  REQUIRE_COUNTERS=0 ;;
+    # Runs tools/cloud/diagnose_pool_width.sh on the instance instead of
+    # the campaign. Same instance lifetime, same self-delete, same cap;
+    # only the measurement differs. Counters are not required because the
+    # diagnostic measures wall time under different CPU masks.
+    --diagnostic)         DIAGNOSTIC=masks; REQUIRE_COUNTERS=0 ;;
+    # --diagnostic=validate runs the paired fixed/degraded A/B that
+    # proves the N+1 mask fix, including the negative arm that must
+    # still fail.
+    --diagnostic=*)       DIAGNOSTIC="${arg#*=}"; REQUIRE_COUNTERS=0 ;;
     --yes|-y)             ASSUME_YES=1 ;;
     --dry-run)            DRY_RUN=1 ;;
     --help|-h)            usage; exit 0 ;;
@@ -176,6 +188,12 @@ case "$MACHINE_TYPE" in
     ;;
 esac
 
+if [[ -n "$DIAGNOSTIC" ]]; then
+  MODE_LABEL="pool diagnostic '$DIAGNOSTIC' (NOT the campaign)"
+else
+  MODE_LABEL="full campaign"
+fi
+
 CAP_MIN="$(cap_minutes "$MAX_RUN_DURATION")"
 WORST_USD="$(awk -v h="$HOURLY_USD" -v m="$CAP_MIN" \
   'BEGIN { printf "%.2f", h * m / 60 }')"
@@ -191,6 +209,7 @@ Campaign plan
   project        $PROJECT
   zone           $ZONE
   machine        $MACHINE_TYPE ($TIER_LABEL)
+  mode           $MODE_LABEL
   instance       $INSTANCE_NAME
   boot disk      ${BOOT_DISK_SIZE_GB}GB $BOOT_DISK_TYPE
   commit         ${GIT_COMMIT:0:12}${GIT_DIRTY}
@@ -451,7 +470,7 @@ gcloud compute instances create "$INSTANCE_NAME" \
   --labels="tess-campaign=1,tess-run-id=$RUN_ID" \
   --scopes="https://www.googleapis.com/auth/devstorage.read_write,https://www.googleapis.com/auth/compute" \
   --metadata-from-file="startup-script=$STARTUP_FILE" \
-  --metadata="^;;^tess-bucket=$BUCKET_PREFIX;;tess-source-url=$BUCKET_PREFIX/source.tar.gz;;tess-run-id=$RUN_ID;;tess-git-commit=${GIT_COMMIT}${GIT_DIRTY};;tess-require-counters=$REQUIRE_COUNTERS;;tess-source-sha256=$SRC_SHA256;;tess-git-describe=$GIT_DESCRIBE" \
+  --metadata="^;;^tess-bucket=$BUCKET_PREFIX;;tess-source-url=$BUCKET_PREFIX/source.tar.gz;;tess-run-id=$RUN_ID;;tess-git-commit=${GIT_COMMIT}${GIT_DIRTY};;tess-require-counters=$REQUIRE_COUNTERS;;tess-source-sha256=$SRC_SHA256;;tess-git-describe=$GIT_DESCRIBE;;tess-diagnostic=$DIAGNOSTIC" \
   || create_status=$?
 
 if (( create_status != 0 )); then
