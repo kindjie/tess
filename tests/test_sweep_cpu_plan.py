@@ -229,3 +229,111 @@ def test_diagnostic_ceiling_matches_the_report_tool():
     assert shell_formula(w) == pytest.approx(
       thread_scaling_report.quantization_ceiling(4096, w)
     ), w
+
+
+# --- the paired-validation verdict ------------------------------------
+#
+# `--diagnostic=validate` is the negative control for the N+1 mask fix,
+# and it used to decide success purely from command exit status. Every
+# benchmark invocation can succeed while the run proves nothing: if the
+# mask never reached `taskset`, both arms measure the same thing, both
+# look clean, and the run reports a pass. These cover the verdict that
+# now stands between that and a green run.
+
+import diagnostic_verdict  # noqa: E402
+
+
+# The arms actually measured on c3-standard-192-metal, as fractions of
+# the quantization ceiling. Note width 24: the exactly-N mask does NOT
+# degrade there, so a rule demanding a gap at every width would fail a
+# correct run on real hardware.
+OBSERVED = {
+  "fixed_w2": 0.99, "degraded_w2": 0.65,
+  "fixed_w4": 0.99, "degraded_w4": 0.69,
+  "fixed_w8": 0.98, "degraded_w8": 0.80,
+  "fixed_w16": 0.96, "degraded_w16": 0.79,
+  "fixed_w24": 0.96, "degraded_w24": 0.97,
+}
+
+
+def test_verdict_passes_the_run_that_validated_the_fix():
+  passed, lines = diagnostic_verdict.verdict(OBSERVED)
+  assert passed, lines
+
+
+def test_verdict_tolerates_a_width_where_the_control_does_not_fire():
+  # Width 24 alone has no gap, and that is a real property of the
+  # hardware rather than a broken run -- but it must not be the ONLY
+  # width, or nothing was controlled.
+  passed, _ = diagnostic_verdict.verdict(
+    {"fixed_w24": 0.96, "degraded_w24": 0.97}
+  )
+  assert not passed
+
+
+def test_verdict_fails_when_the_mask_never_reached_taskset():
+  """The defect the negative control exists to catch.
+
+  If `taskset` silently ignored the CPU list, both arms measure the
+  same machine and both come back clean. Exit status cannot see it.
+  """
+  both_clean = {
+    label: 0.98 if label.startswith("fixed") else 0.97 for label in OBSERVED
+  }
+  passed, lines = diagnostic_verdict.verdict(both_clean)
+  assert not passed
+  assert any("negative control" in line for line in lines)
+
+
+def test_verdict_fails_when_the_fixed_arm_does_not_recover():
+  degraded_fix = dict(OBSERVED)
+  degraded_fix["fixed_w16"] = 0.72
+  passed, lines = diagnostic_verdict.verdict(degraded_fix)
+  assert not passed
+  assert any("w16" in line and "FAIL" in line for line in lines)
+
+
+def test_verdict_fails_on_a_missing_arm():
+  # A width whose benchmark died leaves one arm behind; the remaining
+  # arm is not a comparison.
+  half = {k: v for k, v in OBSERVED.items() if k != "degraded_w8"}
+  passed, lines = diagnostic_verdict.verdict(half)
+  assert not passed
+  assert any("degraded" in line and "missing" in line for line in lines)
+
+
+def test_verdict_fails_when_nothing_was_measured():
+  passed, lines = diagnostic_verdict.verdict({})
+  assert not passed
+  assert lines
+
+
+def test_verdict_ignores_labels_without_a_width():
+  # Mask-survey labels (`two_cores`, `smt_pair`) carry no `_wN`, and
+  # must not be mistaken for a paired arm.
+  passed, _ = diagnostic_verdict.verdict({"two_cores": 0.99, "smt_pair": 0.65})
+  assert not passed
+
+
+def test_diagnostic_script_requires_the_paired_serial_row():
+  """A filter matching nothing exits zero, for serial as for pool."""
+  script = (REPO / "tools" / "cloud" / "diagnose_pool_width.sh").read_text()
+  assert 'for row in "serial" "${width}"' in script
+
+
+def test_diagnostic_script_fails_on_an_unplannable_width():
+  """`mapfile` from a process substitution reports success regardless.
+
+  A width the planner cannot fit used to drop out of the array without
+  a word, and the run went on to validate whichever widths remained.
+  """
+  script = (REPO / "tools" / "cloud" / "diagnose_pool_width.sh").read_text()
+  assert "mapfile -t MASKS < <(\n" not in script
+  assert "FATAL: cannot plan the fixed mask for width" in script
+  assert "FATAL: planner returned an empty mask for width" in script
+
+
+def test_diagnostic_script_fails_the_run_on_a_failed_verdict():
+  script = (REPO / "tools" / "cloud" / "diagnose_pool_width.sh").read_text()
+  assert "REPORT_STATUS=$?" in script
+  assert "if (( REPORT_STATUS != 0 )); then" in script

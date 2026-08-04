@@ -90,15 +90,34 @@ done
 # that cannot be shown to be off is not a fix that has been shown to be
 # on.
 if [[ "${DIAG_MODE:-masks}" == "validate" ]]; then
-  mapfile -t MASKS < <(
-    for w in ${DIAG_WIDTHS:-2 4 8 16 24}; do
-      fixed="$(python3 tools/cloud/sweep_cpu_plan.py "$w" | cut -f2)"
-      degraded="$(python3 tools/cloud/sweep_cpu_plan.py "$w" --workers-only \
-        | cut -f2)"
-      printf 'fixed_w%s\t%s\t%s\n' "$w" "$fixed" "$w"
-      printf 'degraded_w%s\t%s\t%s\n' "$w" "$degraded" "$w"
-    done
-  )
+  # Built in this shell, not read from a process substitution. `mapfile`
+  # reports success no matter what the producer did, so a width the
+  # planner could not fit -- a smaller validation instance, say -- used
+  # to drop out silently and the run went on to "validate" whichever
+  # widths happened to fit, exiting 0.
+  MASKS=()
+  # shellcheck disable=SC2086  # deliberate word splitting: a width list.
+  for w in ${DIAG_WIDTHS:-2 4 8 16 24}; do
+    if ! fixed="$(python3 tools/cloud/sweep_cpu_plan.py "$w" | cut -f2)"; then
+      echo "FATAL: cannot plan the fixed mask for width $w" >&2
+      exit 1
+    fi
+    if ! degraded="$(python3 tools/cloud/sweep_cpu_plan.py "$w" \
+        --workers-only | cut -f2)"; then
+      echo "FATAL: cannot plan the degraded mask for width $w" >&2
+      exit 1
+    fi
+    if [[ -z "$fixed" || -z "$degraded" ]]; then
+      echo "FATAL: planner returned an empty mask for width $w" >&2
+      exit 1
+    fi
+    MASKS+=("$(printf 'fixed_w%s\t%s\t%s' "$w" "$fixed" "$w")")
+    MASKS+=("$(printf 'degraded_w%s\t%s\t%s' "$w" "$degraded" "$w")")
+  done
+  if (( ${#MASKS[@]} == 0 )); then
+    echo "FATAL: DIAG_WIDTHS planned no arms at all" >&2
+    exit 1
+  fi
   echo "validation masks, straight from the production planner:"
   printf '  %s\n' "${MASKS[@]}"
   printf '%s\n' "${MASKS[@]}" > results/diagnostic/masks.tsv
@@ -196,10 +215,17 @@ for entry in "${MASKS[@]}"; do
       continue
     fi
     # Exit status is not evidence of measurement: a filter matching
-    # nothing exits zero.
-    if ! grep -q "\"name\": \"lab/thread_scaling/${WORKLOAD}/${width}/real_time\"" \
-        "$out" 2>/dev/null; then
-      echo "ERROR: $label width $width produced no rows" >&2
+    # nothing exits zero. BOTH rows have to be here. The report forms a
+    # ratio, so a missing serial row leaves `serial = None` and the
+    # point drops out of the table without a word -- the same silent
+    # narrowing the campaign sweep already guards against.
+    missing=""
+    for row in "serial" "${width}"; do
+      grep -q "\"name\": \"lab/thread_scaling/${WORKLOAD}/${row}/real_time\"" \
+        "$out" 2>/dev/null || missing="$missing $row"
+    done
+    if [[ -n "$missing" ]]; then
+      echo "ERROR: $label width $width produced no rows for:$missing" >&2
       DIAG_FAILURES=$(( DIAG_FAILURES + 1 ))
       continue
     fi
@@ -209,8 +235,12 @@ for entry in "${MASKS[@]}"; do
 done
 
 # ---- Report ---------------------------------------------------------
-python3 - <<'REPORT' | tee results/diagnostic/report.txt
-import json, pathlib, statistics as st
+# In validate mode the report also renders the verdict, and a failed
+# verdict must fail the run -- so its status is captured rather than
+# discarded by the pipe into tee.
+REPORT_STATUS=0
+python3 - <<'REPORT' | tee results/diagnostic/report.txt || REPORT_STATUS=$?
+import json, os, pathlib, statistics as st, sys
 
 rows = []
 summary = pathlib.Path("results/diagnostic/summary.tsv")
@@ -248,6 +278,22 @@ for label, cpus, w, serial, pool, sp, eff in rows:
           f"{sp:>9.2f}{eff*100:>11.0f}%")
 
 print()
+if os.environ.get("DIAG_MODE", "masks") == "validate":
+    # The table is not the deliverable here; the verdict is. Every
+    # invocation can succeed while the run proves nothing, because a
+    # mask that never reached taskset makes both arms measure the same
+    # thing and both look clean.
+    sys.path.insert(0, "tools/cloud")
+    import diagnostic_verdict
+    passed, lines = diagnostic_verdict.verdict(
+        {label: eff for label, _, _, _, _, _, eff in rows})
+    print("validation verdict -- fixed (N+1) against degraded (exactly-N):")
+    for line in lines:
+        print(line)
+    print("VALIDATION PASSED" if passed else "VALIDATION FAILED")
+    if not passed:
+        raise SystemExit(1)
+
 two = {label: eff for label, _, w, _, _, _, eff in rows if w == 2}
 if "two_cores" in two:
     print(f"campaign mask (two_cores) at width 2: {two['two_cores']*100:.0f}%"
@@ -265,5 +311,9 @@ REPORT
 
 if (( DIAG_FAILURES > 0 )); then
   echo "ERROR: $DIAG_FAILURES diagnostic point(s) failed" >&2
+  exit 1
+fi
+if (( REPORT_STATUS != 0 )); then
+  echo "ERROR: the report stage failed (status $REPORT_STATUS)" >&2
   exit 1
 fi
