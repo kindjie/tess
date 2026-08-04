@@ -50,6 +50,152 @@ Entries from 2026-07-12 and earlier are in
   shows a material regression or the remaining 1.35x sparse/dense gap becomes
   a priority. Do not specialize that API from the raw nanosecond lookup alone.
 
+## 2026-08-04 - Third Campaign (fixed mask): the published bracket was wrong
+
+Re-ran the full seven-workload sweep at `813dc9d` with the N+1 mask. 46
+minutes, ~$8, exit 0. Verified from `sweep-cpu-masks.tsv` that all 77
+points ran with N+1 CPUs -- a plan is not evidence of what ran.
+
+**The fix holds at scale.** `chunk_compute` against the pool's own
+ceiling, exactly-N to N+1: width 2 64%->99%, width 4 77%->99%, width 8
+82%->98%, width 16 79%->96%. Width 24 was already at 95% and is
+unchanged, as the diagnostic predicted -- the dispatcher's penalty is
+about 1/N of the mask.
+
+**The published crossover was wrong, and wrong in the direction that
+understates the library.** docs/performance.md said the pool loses below
+about 45 ns of work per chunk at four workers. Under the fixed mask,
+44.8 ns wins at 1.17x and 46.7 ns at 1.16x, both Holm-significant. The observed crossover is bracketed between 11.5 ns (loses, 0.34x) and
+44.8 ns (wins); nothing between them, or below 11.5 ns, was measured.
+The degraded mask had been costing the pool roughly a third of its
+throughput at low widths, and that loss was published as a property of
+the library.
+
+Corrected on the page, and the chart regenerated from this campaign
+alone. The earlier "both campaigns agree" support is withdrawn: both of
+those campaigns were measured under the defect, so their agreement
+reflected a shared artifact rather than independent confirmation.
+
+**Beyond 24 workers nothing improved, and that appears to be real.**
+`chunk_compute` plateaus near 34x from width 64 onward under either
+mask; `chunk_fill` peaks around 7x at width 24 and then declines. Those
+are saturation, not harness defects.
+
+**The curve is still not publishable**: 31 points over the 5% CV limit,
+against 24 before. High widths remain noisy (14-24% CV at 64 and above).
+
+**And the fix made width 2 worse for light workloads**, which review
+caught and my first explanation got wrong. I blamed run length -- the
+diagnostic ran ten points in two minutes against the campaign's 77 over
+35 -- but the diagnostic only ever measured `chunk_compute`, and
+`chunk_compute` at width 2 is *cleaner* in the campaign than before.
+Width-2 CV, exactly-N to N+1:
+
+| workload | exactly-N | N+1 |
+| --- | ---: | ---: |
+| `chunk_compute` | 4.28% | 0.27% |
+| `chunk_fill` | 1.21% | 0.45% |
+| `partial_fill_1536` | 2.29% | 16.41% |
+| `partial_fill_640` | 0.83% | 26.50% |
+| `partial_fill_192` | 1.46% | 17.85% |
+| `partial_fill_64` | 1.00% | 13.35% |
+| `tile_touch` | 1.04% | 6.62% |
+
+It splits by workload weight, not by run length. The same points were
+low-CV under the old mask -- and pinned in the slow mode, which is what
+the fix removed. The artifact-supported reading is that a slow mode
+still exists inside the 3-CPU mask at width 2 and is entered per
+repetition: `taskset` constrains the process, not thread placement
+within it, so two workers can land on the `{0,96}` SMT pair instead of
+`{0,1}`. Light workloads have short phases, so a placement flip costs
+proportionally more.
+
+The published bracket is unaffected: it rests on width 4, where the
+bracketing points measure 2.33% and 2.17% CV.
+
+The direct test and likely fix is per-thread affinity -- each worker
+bound to its own CPU and the dispatcher to the extra one -- rather than
+a process-wide mask. Not attempted here.
+
+**An analysis error worth recording.** My first comparison took the
+median efficiency across all seven workloads and produced nonsense --
+1% at width 190 -- because `tile_touch` and the light fills legitimately
+never scale. Their low efficiency is the crossover, not a defect.
+Efficiency has to be read per workload.
+
+## 2026-08-04 - The Width-2 Anomaly Was the Harness (resolved)
+
+The open anomaly from the 2026-08-03 campaign is closed, and it was a
+defect in the measurement setup rather than in the executor. Two
+diagnostic runs on `c3-standard-192-metal` plus one on a
+`c3-standard-4`, about $3.20 in total.
+
+**Cause.** `sweep_cpu_plan.py` pinned each point to exactly N CPUs. The
+pool runs N worker threads *and* the benchmark's dispatching thread, so
+N+1 threads shared N CPUs and the measurement dropped into a distinct
+slow mode. Varying only the mask, holding everything else fixed:
+
+| mask at width 2 | CPUs | reps in fast mode | efficiency |
+| --- | ---: | ---: | ---: |
+| `{0,1}` two adjacent cores | 2 | 0/10 | 65% |
+| `{0,24}` across NUMA nodes | 2 | 7/10 | 99% |
+| `{0,48}` across sockets | 2 | 8/10 | 98% |
+| `{0,96}` one core, both SMT threads | 2 | 10/10 | 93% |
+| `{0,1,2}` | 3 | 10/10 | 100% |
+| `{0,1,2,3}` | 4 | 10/10 | 98% |
+
+It is a mode mixture, not a level shift: adjacent cores were slow on
+every repetition, node- and socket-spanning masks only sometimes, and
+any mask with a spare CPU never. A median alone hides that, which is why
+the pass criterion below counts modes.
+
+**Fix.** `mask_for_width()` allocates N+1 CPUs. The extra one is an SMT
+sibling of a worker's core rather than the next physical core, so the
+mask stays inside the same NUMA node and the widths keep their
+topological meaning -- 24 is still exactly one node, 48 one socket.
+Verified on hardware: the dispatcher lands on CPU 96, whose node and
+socket sets match the workers' at every width.
+
+**Validation** (paired arms, one run, masks from the production planner):
+
+| width | before | after | ceiling |
+| ---: | ---: | ---: | ---: |
+| 2 | 65% | 99% | 2.0 |
+| 4 | 69% | 99% | 4.0 |
+| 8 | 80% | 98% | 8.0 |
+| 16 | 79% | 96% | 16.0 |
+| 24 | 97% | 96% | 19.5 |
+
+The fixed arm reached the fast mode on 10 of 10 repetitions at every
+width, with CV 0.40% against 5.12% at width 2. The degraded arm still
+failed in the same run, which is the control that matters: had both arms
+looked clean it would have meant the mask never reached `taskset`.
+
+**This also closes the uniform 77-82% loss** recorded on 2026-08-03 as a
+separate question. It was the same defect: the dispatcher's penalty is
+roughly 1/N of the mask, so it is catastrophic at width 2 and fades by
+width 24.
+
+**A correction to that entry's arithmetic.** It reported width 24 at 77%
+by dividing speedup by width. The pool's own quantization ceiling at 24
+workers is 19.5, not 24, so the campaign's 18.52 was 95% of what is
+achievable -- width 24 was never degraded. The report tool prints an "of
+ceiling" column for exactly this reason; the ad-hoc analysis ignored it.
+
+**Refuted along the way**, each against data rather than argument: that
+the collapse was SMT co-location (the live topology shows sibling(0) =
+96, so `{0,1}` is two distinct cores, and a real sibling pair was
+*faster* than the campaign's mask); that it was dispatcher CPU cost
+(22 us against a 20,557 us wall); that it was an Amdahl serial floor
+(fitted at 114-164 us, ~1.3% of T(4)); and that it was a fixed extra
+cost in the pool path (pool w1 equals serial to 0.015%).
+
+**Consequence for the published crossover.** The bracket on
+docs/performance.md was derived from sweeps run under the degraded mask.
+Speedups move -- `chunk_compute` at width 4 goes 2.78x to 3.96x -- so
+while that workload's verdict is unchanged, the bracket itself has to be
+re-measured under the fixed mask before it can be relied on.
+
 ## 2026-08-03 - Second Bare-Metal Campaign (pinned, clock-controlled)
 
 Re-ran the sweep with each point pinned via `taskset` to a planned CPU

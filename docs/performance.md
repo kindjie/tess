@@ -29,36 +29,44 @@ not by how many chunks there are.
 
 **At four workers**, on the machine below:
 
-- **Above roughly 100 ns of work per chunk the pool wins**, and keeps
-  winning as the work grows — reaching 3.1x for a compute-bound chunk.
-  This holds at four workers and above.
-- **Below roughly 45 ns per chunk the pool loses**, and the lighter the
-  work the worse it gets: a one-tile-per-chunk phase runs about 3x
-  *slower* through the pool than serially.
-- **Between those two figures the answer depends on your workload.**
+- **Above roughly 45 ns of work per chunk the pool wins**, and keeps
+  winning as the work grows — 1.2x at 45 ns, 1.9x at 97 ns, and 4.0x for
+  a compute-bound chunk.
+- **At roughly 12 ns per chunk it loses badly**: a one-tile-per-chunk
+  phase runs about 3x *slower* through the pool than serially.
+- **The crossover is bracketed, not pinned.** The nearest measured points
+  either side are 11.5 ns, which loses, and 44.8 ns, which wins; nothing
+  between them was measured, and nothing below 11.5 ns was measured at
+  all.
 
-The lower figure is the one that moves with worker count: it falls as
-you add workers. Work of about 44 ns per chunk loses at four workers but
-wins from eight upward (1.3x at eight, 1.6x at sixteen). The upper
-figure is the safe one to design against, because it holds across every
-width measured.
+A practical starting point: if a chunk does more than about 50 ns of
+work, use the pool. You can read your own figure off a serial run —
+total phase time divided by chunk count — then measure.
 
-Those are the nearest measured points either side, not an interpolated
-boundary: the pool lost at 47 ns and won at 97 ns. Use about 100 ns of
-per-chunk work as a starting threshold, then measure on your own
-hardware. You can read your own
-figure straight off a serial run — total phase time divided by chunk
-count.
+Design against the upper figure. The lower one is a single measured
+point rather than a boundary, and where the crossover sits at other
+worker counts was not measured in this campaign.
 
-Both campaigns plotted above agree on this bracket despite differing in
-thread pinning and CPU frequency control, which is why it is stated as a
-range rather than a single number.
+**Scope.** These are figures from one machine under controlled
+conditions, not portable constants.
 
-**Scope.** Measured on a `c3-standard-192-metal` (2x48 core Xeon 8481C)
-over a 4096-chunk world, 20 repetitions per point, speedup against
-`SerialPhaseExecutor` at the same world size. Two-worker results are
-withheld: they carry an unexplained anomaly under pinning. Beyond one
-socket the measurements are too noisy to publish at all — see
+| | |
+| --- | --- |
+| CPU | Intel Xeon Platinum 8481C, 2 sockets x 48 cores x 2 threads |
+| Topology | 4 NUMA nodes, 105 MiB L3 per socket |
+| Instance | `c3-standard-192-metal` |
+| Clock | `performance` governor, turbo enabled |
+| Memory policy | `numactl --interleave=all` |
+| Pinning | one worker per physical core, plus a CPU for the dispatcher |
+| World | 4096 chunks of 64x64 tiles |
+| Method | 20 repetitions per point; speedup against `SerialPhaseExecutor` measured in the same process under the same pinning |
+| Measured | 2026-08-04, one campaign |
+
+The governor and the memory policy matter as much as the CPU: without
+them the same code on the same machine measures differently, which is
+why they are stated rather than assumed. Two-worker results are withheld: they are too noisy in campaign
+conditions to state. Beyond about 24 workers the measurements are too
+noisy to publish at all — see
 the [optimization log][optimization-log] for the full campaign record,
 including what these numbers do not show.
 

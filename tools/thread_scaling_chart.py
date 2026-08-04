@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
 """Draw the serial-versus-pool crossover as an SVG.
 
-One chart, deliberately. The 2026-08-03 campaigns produced exactly one
-result robust enough to put in front of an adopter: at FOUR workers the
-pool beats the serial executor above roughly 100 ns of work per chunk
-and loses below roughly 45 ns, and both campaigns agree on that bracket
-despite differing in thread pinning and clock control. The win side
-holds at four workers and above; the lose side does not -- ~44 ns loses
-at four workers and wins from eight upward -- which is why the chart
-plots one width rather than implying a range. The
-scaling curve those campaigns were run to produce is not publishable --
-cross-socket points sit at 8-22% CV even pinned -- so it is not drawn
+One chart, deliberately. The 2026-08-04 campaign produced exactly one
+result robust enough to put in front of an adopter: at four workers the
+pool beats the serial executor from about 45 ns of work per chunk
+upward, and loses at about 12 ns. The crossover is bracketed by the
+nearest measured points, 11.5 ns and 44.8 ns, with nothing measured
+between them.
+
+Regenerate with:
+
+    python3 tools/thread_scaling_chart.py \
+      --sweep "4 workers, one worker per physical core=<sweep.json>" \
+      --workers 4 --band 11.4656,44.8148 \
+      --title "4 workers on c3-standard-192-metal, 4096 chunks, \
+performance governor; band spans the nearest measured points" \
+      --out docs/assets/thread-scaling-crossover.svg
+
+The scaling curve those campaigns were run to produce is still not
+publishable -- 31 points over the 5% CV limit -- so it is not drawn
 here. See docs/planning/optimization-log.md.
 
 SVG is emitted by hand rather than through a plotting library because the
@@ -270,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
   )
   parser.add_argument("--workers", type=int, default=4)
   parser.add_argument("--chunks", type=int, default=4096)
-  parser.add_argument("--band", default="45,95")
+  parser.add_argument("--band", default="11.4656,44.8148")
   parser.add_argument("--title", required=True)
   parser.add_argument("--out", type=Path, required=True)
   args = parser.parse_args(argv)

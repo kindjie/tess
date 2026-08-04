@@ -767,3 +767,71 @@ def test_a_matching_chunk_count_is_accepted(tmp_path, capsys):
   assert thread_scaling_report.main([str(_write(tmp_path, blob))]) == 0, (
     capsys.readouterr().err
   )
+
+
+# --- Published results must say what produced them -------------------
+
+
+MACHINE_TXT = """commit: abc123
+git_describe: v0.4.0-99-gabc123
+image: Ubuntu 24.04.4 LTS
+sweep_flags: --benchmark_repetitions=20 --benchmark_min_time=0.2s
+sweep_memory_policy: numactl --interleave=all
+machine: c3-standard-192-metal
+compiler: Ubuntu clang version 18.1.3 (1ubuntu1)
+kernel: 6.17.0-1021-gcp
+cpu_pinning: thread-scaling sweep taskset per point, N+1 CPUs
+cpufreq_governor: performance
+turbo: no_turbo=0
+online_cpus: 192
+Model name:                              Intel(R) Xeon(R) Platinum 8481C
+Thread(s) per core:                      2
+Core(s) per socket:                      48
+Socket(s):                               2
+NUMA node(s):                            4
+CPU max MHz:                             3800.0000
+"""
+
+
+def test_machine_facts_are_parsed(tmp_path):
+  path = tmp_path / "machine.txt"
+  path.write_text(MACHINE_TXT)
+  facts = thread_scaling_report.machine_facts(path)
+  assert facts["machine"] == "c3-standard-192-metal"
+  assert facts["cpufreq_governor"] == "performance"
+  assert facts["Model name"] == "Intel(R) Xeon(R) Platinum 8481C"
+  assert facts["NUMA node(s)"] == "4"
+
+
+def test_machine_section_names_the_hardware(tmp_path, capsys):
+  machine = tmp_path / "machine.txt"
+  machine.write_text(MACHINE_TXT)
+  thread_scaling_report.main(
+    [str(_write(tmp_path, _results({}))), "--machine", str(machine)]
+  )
+  out = capsys.readouterr().out
+  # The CPU, the topology, and the two controls that make the numbers
+  # reproducible must all appear.
+  for expected in (
+    "Xeon(R) Platinum 8481C",
+    "c3-standard-192-metal",
+    "performance",
+    "numactl --interleave=all",
+    "clang version 18.1.3",
+    "v0.4.0-99-gabc123",
+  ):
+    assert expected in out, expected
+
+
+def test_report_still_works_without_machine_facts(tmp_path, capsys):
+  # The file is optional; an artifact alone must still produce a report.
+  assert thread_scaling_report.main([str(_write(tmp_path, _results({})))]) == 0
+  assert "Thread-scaling sweep" in capsys.readouterr().out
+
+
+def test_missing_machine_file_is_an_error(tmp_path, capsys):
+  status = thread_scaling_report.main(
+    [str(_write(tmp_path, _results({}))), "--machine", str(tmp_path / "nope")]
+  )
+  assert status == 1
+  assert "machine" in capsys.readouterr().err.lower()

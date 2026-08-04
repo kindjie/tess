@@ -301,7 +301,17 @@ not produce a curve.
 So each point now runs in **its own process, pinned with `taskset`** to a
 CPU set chosen by `tools/cloud/sweep_cpu_plan.py`: one thread per
 physical core, filling NUMA nodes in order, SMT siblings only once every
-core is occupied. Each process also re-measures that workload's serial baseline under the
+core is occupied.
+
+**The mask holds N+1 CPUs.** The pool runs N workers *and* a dispatching
+thread, and confining all of them to N CPUs drops the measurement into a
+distinct slow mode — 65% efficiency at width 2 against 100% with one
+more CPU, and CV 5.91% against 0.11%. It was entered on every repetition
+for adjacent cores and intermittently for masks spanning a node or
+socket, so it is a mode mixture rather than a level shift, and a median
+alone hides it. The extra CPU comes from an SMT sibling of a worker's
+core rather than the next physical core, which keeps the mask inside the
+same NUMA node and preserves what the width means. Each process also re-measures that workload's serial baseline under the
 same pinning, so the speedup ratio is computed within one process rather
 than against a baseline from a different one.
 
