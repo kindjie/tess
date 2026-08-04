@@ -50,6 +50,50 @@ Entries from 2026-07-12 and earlier are in
   shows a material regression or the remaining 1.35x sparse/dense gap becomes
   a priority. Do not specialize that API from the raw nanosecond lookup alone.
 
+## 2026-08-04 - Third Campaign (fixed mask): the published bracket was wrong
+
+Re-ran the full seven-workload sweep at `813dc9d` with the N+1 mask. 46
+minutes, ~$8, exit 0. Verified from `sweep-cpu-masks.tsv` that all 77
+points ran with N+1 CPUs -- a plan is not evidence of what ran.
+
+**The fix holds at scale.** `chunk_compute` against the pool's own
+ceiling, exactly-N to N+1: width 2 64%->99%, width 4 77%->99%, width 8
+82%->98%, width 16 79%->96%. Width 24 was already at 95% and is
+unchanged, as the diagnostic predicted -- the dispatcher's penalty is
+about 1/N of the mask.
+
+**The published crossover was wrong, and wrong in the direction that
+understates the library.** docs/performance.md said the pool loses below
+about 45 ns of work per chunk at four workers. Under the fixed mask,
+44.8 ns wins at 1.17x and 46.7 ns at 1.16x, both Holm-significant. The
+real crossover sits between 11.5 ns (loses, 0.34x) and 44.8 ns (wins).
+The degraded mask had been costing the pool roughly a third of its
+throughput at low widths, and that loss was published as a property of
+the library.
+
+Corrected on the page, and the chart regenerated from this campaign
+alone. The earlier "both campaigns agree" support is withdrawn: both of
+those campaigns were measured under the defect, so their agreement
+reflected a shared artifact rather than independent confirmation.
+
+**Beyond 24 workers nothing improved, and that appears to be real.**
+`chunk_compute` plateaus near 34x from width 64 onward under either
+mask; `chunk_fill` peaks around 7x at width 24 and then declines. Those
+are saturation, not harness defects.
+
+**The curve is still not publishable**: 31 points over the 5% CV limit,
+against 24 before. High widths remain noisy (14-24% CV at 64 and above),
+and width 2 -- clean at 0.40% in the diagnostic -- came in at 13-26% CV
+in campaign conditions. The diagnostic ran ten points in two minutes;
+the campaign runs 77 back-to-back over 35, so run length or
+point-to-point interference is the obvious suspect and is untested.
+
+**An analysis error worth recording.** My first comparison took the
+median efficiency across all seven workloads and produced nonsense --
+1% at width 190 -- because `tile_touch` and the light fills legitimately
+never scale. Their low efficiency is the crossover, not a defect.
+Efficiency has to be read per workload.
+
 ## 2026-08-04 - The Width-2 Anomaly Was the Harness (resolved)
 
 The open anomaly from the 2026-08-03 campaign is closed, and it was a
