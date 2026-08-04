@@ -226,15 +226,23 @@ for line in summary.read_text().splitlines() if summary.exists() else []:
     pool = med(f"/{width}/real_time")
     if serial and pool:
         w = int(width)
+        # Against the pool's quantization ceiling, NOT against the width.
+        # The ceiling is 19.5 at 24 workers, so dividing by the width
+        # reports a true 96% as 78% -- the exact arithmetic error the
+        # optimization log records as corrected, which was still sitting
+        # in this script.
+        stride = max(1, 4096 // (w * 4))
+        runs = -(-4096 // stride)
+        ceiling = 4096 / (-(-runs // w) * stride)
         rows.append((label, cpus, w, serial, pool, serial / pool,
-                     serial / pool / w))
+                     serial / pool / ceiling))
 
 print()
 print("width-2 pool diagnostic -- speedup against the serial run measured")
 print("in the SAME process under the SAME mask")
 print()
 print(f"{'mask':<14}{'cpus':<18}{'w':>3}{'serial us':>12}{'pool us':>12}"
-      f"{'speedup':>9}{'efficiency':>12}")
+      f"{'speedup':>9}{'of ceiling':>12}")
 for label, cpus, w, serial, pool, sp, eff in rows:
     print(f"{label:<14}{cpus:<18}{w:>3}{serial/1000:>12.1f}{pool/1000:>12.1f}"
           f"{sp:>9.2f}{eff*100:>11.0f}%")

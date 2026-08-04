@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "cloud"))
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "tools" / "cloud"))
 
 import sweep_cpu_plan  # noqa: E402
 
@@ -196,3 +197,35 @@ def test_small_machine_mask_still_works():
   # 4 CPUs, 2 physical cores: width 1 leaves room for a dispatcher.
   topology = "\n".join(f"{c},{c % 2},0,0" for c in range(4))
   assert len(_mask(1, topology)) == 2
+
+
+def test_diagnostic_reports_against_the_ceiling_not_the_width():
+  """The diagnostic script computed efficiency as speedup/width.
+
+  The pool's quantization ceiling at 24 workers is 19.5, so a genuine
+  96% result was reported as 78% -- the same arithmetic error the
+  optimization log records as corrected, still living in the script.
+  """
+  script = (REPO / "tools" / "cloud" / "diagnose_pool_width.sh").read_text()
+  assert "serial / pool / w))" not in script, (
+    "diagnostic divides by width instead of the quantization ceiling"
+  )
+  assert "ceiling = 4096 / (-(-runs // w) * stride)" in script
+
+
+def test_diagnostic_ceiling_matches_the_report_tool():
+  """One formula, two implementations -- they must agree."""
+  import sys
+
+  sys.path.insert(0, str(REPO / "tools"))
+  import thread_scaling_report
+
+  def shell_formula(w, chunks=4096):
+    stride = max(1, chunks // (w * 4))
+    runs = -(-chunks // stride)
+    return chunks / (-(-runs // w) * stride)
+
+  for w in (1, 2, 4, 8, 16, 24, 32, 48, 64, 96, 190):
+    assert shell_formula(w) == pytest.approx(
+      thread_scaling_report.quantization_ceiling(4096, w)
+    ), w

@@ -32,17 +32,20 @@ not by how many chunks there are.
 - **Above roughly 45 ns of work per chunk the pool wins**, and keeps
   winning as the work grows — 1.2x at 45 ns, 1.9x at 97 ns, and 4.0x for
   a compute-bound chunk.
-- **Below roughly 12 ns per chunk it loses badly**: a one-tile-per-chunk
+- **At roughly 12 ns per chunk it loses badly**: a one-tile-per-chunk
   phase runs about 3x *slower* through the pool than serially.
-- **Between those two figures it was not measured.** The nearest points
-  either side are 11.5 ns, which loses, and 44.8 ns, which wins.
+- **The crossover is bracketed, not pinned.** The nearest measured points
+  either side are 11.5 ns, which loses, and 44.8 ns, which wins; nothing
+  between them was measured, and nothing below 11.5 ns was measured at
+  all.
 
 A practical starting point: if a chunk does more than about 50 ns of
 work, use the pool. You can read your own figure off a serial run —
 total phase time divided by chunk count — then measure.
 
-The lower figure moves with worker count, falling as workers are added.
-The upper one is the safe figure to design against.
+Design against the upper figure. The lower one is a single measured
+point rather than a boundary, and where the crossover sits at other
+worker counts was not measured in this campaign.
 
 **Scope.** These are figures from one machine under controlled
 conditions, not portable constants.

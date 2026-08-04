@@ -65,8 +65,8 @@ about 1/N of the mask.
 **The published crossover was wrong, and wrong in the direction that
 understates the library.** docs/performance.md said the pool loses below
 about 45 ns of work per chunk at four workers. Under the fixed mask,
-44.8 ns wins at 1.17x and 46.7 ns at 1.16x, both Holm-significant. The
-real crossover sits between 11.5 ns (loses, 0.34x) and 44.8 ns (wins).
+44.8 ns wins at 1.17x and 46.7 ns at 1.16x, both Holm-significant. The observed crossover is bracketed between 11.5 ns (loses, 0.34x) and
+44.8 ns (wins); nothing between them, or below 11.5 ns, was measured.
 The degraded mask had been costing the pool roughly a third of its
 throughput at low widths, and that loss was published as a property of
 the library.
