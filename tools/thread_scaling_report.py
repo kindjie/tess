@@ -334,6 +334,68 @@ def quantization_ceiling(chunks: int, workers: int) -> float:
 RUN_GROUP_KEY = "tess_run_group"
 
 
+# The facts a published number has to carry to be reproducible: what CPU,
+# how many of it, and the two controls (clock and memory policy) without
+# which the numbers are not comparable to anything.
+MACHINE_KEYS: tuple[tuple[str, str], ...] = (
+  ("machine", "Instance type"),
+  ("Model name", "CPU"),
+  ("Socket(s)", "Sockets"),
+  ("Core(s) per socket", "Cores per socket"),
+  ("Thread(s) per core", "Threads per core"),
+  ("NUMA node(s)", "NUMA nodes"),
+  ("CPU max MHz", "Max clock (MHz)"),
+  ("cpufreq_governor", "Governor"),
+  ("turbo", "Turbo"),
+  ("cpu_pinning", "Pinning"),
+  ("sweep_memory_policy", "Memory policy"),
+  ("sweep_flags", "Benchmark flags"),
+  ("compiler", "Compiler"),
+  ("kernel", "Kernel"),
+  ("image", "OS image"),
+  ("git_describe", "Source"),
+)
+
+
+def machine_facts(path: Path) -> dict[str, str]:
+  """Parse `key: value` lines from a campaign's machine.txt.
+
+  Handles both the campaign's own lines and the embedded `lscpu` block,
+  which uses the same shape with wide padding.
+  """
+  try:
+    text = Path(path).read_text(encoding="utf-8")
+  except OSError as error:
+    raise ReportError(f"cannot read machine file {path}: {error}") from error
+  facts: dict[str, str] = {}
+  for line in text.splitlines():
+    key, sep, value = line.partition(":")
+    if not sep:
+      continue
+    key = key.strip()
+    value = value.strip()
+    # First occurrence wins: lscpu repeats some keys per NUMA node.
+    if key and value and key not in facts:
+      facts[key] = value
+  return facts
+
+
+def format_machine(facts: dict[str, str]) -> str:
+  lines = ["## Machine and configuration", ""]
+  lines.append("| | |")
+  lines.append("| --- | --- |")
+  for key, label in MACHINE_KEYS:
+    if key in facts:
+      lines.append(f"| {label} | {facts[key]} |")
+  lines.append("")
+  lines.append(
+    "Reproducing these numbers needs the governor and memory policy above "
+    "as much as the CPU: an uncontrolled clock or a different placement "
+    "moves them more than the code does."
+  )
+  return "\n".join(lines)
+
+
 def _parse_file(
   path: Path, observed_chunks: set[int] | None = None
 ) -> list[tuple[str, str, float, str]]:
@@ -603,6 +665,12 @@ def main(argv: list[str] | None = None) -> int:
     help="Chunk count the sweep ran over, for the quantization ceiling.",
   )
   parser.add_argument(
+    "--machine",
+    type=Path,
+    help="campaign machine.txt, so the published report names the "
+    "hardware and the controls it was measured under",
+  )
+  parser.add_argument(
     "--bootstrap-resamples",
     type=int,
     default=BOOTSTRAP_RESAMPLES,
@@ -631,6 +699,13 @@ def main(argv: list[str] | None = None) -> int:
 
   print("## Thread-scaling sweep")
   print()
+  if args.machine is not None:
+    try:
+      print(format_machine(machine_facts(args.machine)))
+    except ReportError as error:
+      print(f"thread_scaling_report: {error}", file=sys.stderr)
+      return 1
+    print()
   print(
     "Wall time (`real_time`); the dispatching thread blocks, so `cpu_time` "
     "understates the pool by roughly three orders of magnitude. Speedup is "

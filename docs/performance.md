@@ -54,9 +54,23 @@ Both campaigns plotted above agree on this bracket despite differing in
 thread pinning and CPU frequency control, which is why it is stated as a
 range rather than a single number.
 
-**Scope.** Measured on a `c3-standard-192-metal` (2x48 core Xeon 8481C)
-over a 4096-chunk world, 20 repetitions per point, speedup against
-`SerialPhaseExecutor` at the same world size. Two-worker results are
+**Scope.** These are figures from one machine under controlled
+conditions, not portable constants.
+
+| | |
+| --- | --- |
+| CPU | Intel Xeon Platinum 8481C, 2 sockets x 48 cores x 2 threads |
+| Topology | 4 NUMA nodes, 105 MiB L3 per socket |
+| Instance | `c3-standard-192-metal` |
+| Clock | `performance` governor, turbo enabled |
+| Memory policy | `numactl --interleave=all` |
+| Pinning | one worker per physical core, plus a CPU for the dispatcher |
+| World | 4096 chunks of 64x64 tiles |
+| Method | 20 repetitions per point; speedup against `SerialPhaseExecutor` measured in the same process under the same pinning |
+
+The governor and the memory policy matter as much as the CPU: without
+them the same code on the same machine measures differently, which is
+why they are stated rather than assumed. Two-worker results are
 withheld: they carry an unexplained anomaly under pinning. Beyond one
 socket the measurements are too noisy to publish at all — see
 the [optimization log][optimization-log] for the full campaign record,

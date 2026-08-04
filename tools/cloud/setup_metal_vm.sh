@@ -714,7 +714,11 @@ MERGE
   # the JSON is still worth having, and marking the campaign failed would
   # blur that into the failures that mean something went wrong.
   if [[ -f "results/$sweep_name.json" ]]; then
+    # --machine so the report names the CPU, topology, governor and
+    # memory policy it was measured under. A speedup without them is not
+    # reproducible by anyone reading it.
     if python3 tools/thread_scaling_report.py "results/$sweep_name.json" \
+        --machine results/machine.txt \
         > "results/thread-scaling-report.md" 2> "results/thread-scaling.log"; then
       echo "thread-scaling sweep is publishable as a curve"
     else
