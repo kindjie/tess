@@ -429,7 +429,7 @@ jobs:
         if: matrix.preset == 'dev-clang-tidy'
         run: |
           sudo apt-get update || true
-          sudo apt-get install -y clang-tidy
+          sudo apt-get install -y clang-tidy-18
 
       - name: Install cppcheck 2.21.0
         if: matrix.preset == 'dev-cppcheck'
@@ -457,11 +457,19 @@ jobs:
         run: |
           cmake --version
           clang++ --version
-          if command -v clang-tidy >/dev/null; then clang-tidy --version; fi
+          if command -v clang-tidy-18 >/dev/null; then
+            clang-tidy-18 --version
+          fi
           if command -v cppcheck >/dev/null; then cppcheck --version; fi
 
       - name: Configure
-        run: cmake --preset "${{ matrix.preset }}"
+        run: |
+          if [[ "${{ matrix.preset }}" == dev-clang-tidy ]]; then
+            cmake --preset dev-clang-tidy \
+              -DTESS_CLANG_TIDY_EXE=clang-tidy-18
+          else
+            cmake --preset "${{ matrix.preset }}"
+          fi
 
       - name: Build
         if: matrix.preset != 'dev-clang-tidy'
@@ -513,13 +521,13 @@ jobs:
       - name: Install ccache and clang-tidy
         run: |
           sudo apt-get update || true
-          sudo apt-get install -y ccache clang-tidy
+          sudo apt-get install -y ccache clang-tidy-18
 
       - name: Show tool versions
         run: |
           cmake --version
           clang++ --version
-          clang-tidy --version
+          clang-tidy-18 --version
 
       - name: Configure
         run: cmake --preset dev
@@ -532,6 +540,7 @@ jobs:
           python3 tools/clang_tidy_changed.py
           "$PR_BASE_SHA" "$HEAD_SHA"
           --build-dir build/dev
+          --clang-tidy clang-tidy-18
 
   # No benchmark gates on macOS: bench/thresholds/*.json ceilings are
   # calibrated against the Linux ubuntu-24.04 runner family and would

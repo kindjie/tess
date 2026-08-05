@@ -19,7 +19,7 @@ include(FetchContent)
 FetchContent_Declare(
   tess
   GIT_REPOSITORY https://github.com/kindjie/tess.git
-  GIT_TAG v0.4.0
+  GIT_TAG v0.12.0
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(tess)
@@ -80,8 +80,9 @@ before anything is proposed to a central registry:
 - `conanfile.py` — a Conan 2 recipe. tess is declared a `header-library`
   whose package id clears settings, so one package serves every compiler and
   build type.
-- `ports/tess/` — a vcpkg overlay port. Use it with
-  `--overlay-ports=ports` from a checkout.
+- `ports/tess/` — a checkout-based vcpkg overlay port. Use it with
+  `--overlay-ports=ports` from the repository root; it packages that checkout
+  directly, including local commits, without downloading a release archive.
 
 Both configure the same option set as the `consumer` preset — no tests,
 examples, benchmarks, docs, or optional adapters — so what they install is the
@@ -89,9 +90,8 @@ surface `find_package(tess)` installs rather than a second definition free to
 drift. `tests/test_packaging_recipes.py` pins that correspondence, including
 the version, which lives only in `cmake/tess-version.cmake`.
 
-Two honest limitations. The overlay port's `SHA512` is a placeholder: it is
-filled in when a release is tagged, because vcpkg hashes a published archive
-rather than a working tree. And neither recipe is exercised end to end in CI,
-since neither tool is installed there — the tests check the recipes' contents
-and correspondence, not a completed package build. Central submissions should
-follow a public, stable release rather than an unreleased commit.
+Neither recipe is exercised end to end in CI, since neither tool is installed
+there — the tests check the recipes' contents and correspondence, not a
+completed package build. A future central-registry vcpkg recipe should fetch
+and hash this public stable release instead of using the checkout overlay's
+local source path.

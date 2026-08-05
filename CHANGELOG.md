@@ -9,6 +9,8 @@ and their rationale are recorded separately in
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-05
+
 ### Added
 
 - A resolved transition model shared by exact paths, reverse fields,
@@ -35,8 +37,7 @@ and their rationale are recorded separately in
 
 - Path results now report their fixed-point cost scale; provider type and
   revision participate in persistent path-product and cache identity.
-- The source version is now the unreleased `v0.12.0` development API; the
-  latest supported release tag remains `v0.4.0`.
+- The consolidated public surface is versioned and released as `v0.12.0`.
 
 ### Fixed
 

@@ -311,9 +311,11 @@ CI selects explicit OS-family labels — `ubuntu-24.04`, `macos-15`, and
 migrations, but GitHub refreshes each hosted image in place, so its compilers,
 CMake, and preinstalled tools still roll. GitHub currently documents the
 public x64 Ubuntu runner as four CPUs with 16 GB of RAM; the clang-tidy cap
-matches those CPUs. The jobs also install `ccache` and `clang-tidy` from live
-apt or Homebrew repositories; their resolved versions are reported but not
-pinned. Benchmark baseline JSON is uploaded from CI artifacts so timing
+matches those CPUs. The blocking Linux analysis jobs install and invoke
+`clang-tidy-18` explicitly; the weekly advisory job follows the runner's
+rolling unversioned `clang-tidy` package so newer diagnostics surface without
+changing the required baseline. Other preinstalled tools still roll with the
+runner image. Benchmark baseline JSON is uploaded from CI artifacts so timing
 thresholds can be calibrated against the same runner family that will enforce
 them; benchmark gates therefore run only on the Linux runner family they were
 calibrated on. Every checkout disables persisted Git credentials because these
@@ -384,6 +386,10 @@ lock is 30,877 bytes and 16,038 GPT-5 tokens, below the repository file limit.
   https://cmake.org/cmake/help/latest/prop_tgt/LANG_CLANG_TIDY.html
 - Build-tool parallelism:
   https://cmake.org/cmake/help/latest/manual/cmake.1.html#build-a-project
+- Clang-tidy 18 documentation:
+  https://releases.llvm.org/18.1.8/tools/clang/tools/extra/docs/clang-tidy/
+- Clang-tidy 22 release notes:
+  https://releases.llvm.org/22.1.0/tools/clang/tools/extra/docs/ReleaseNotes.html
 
 Used by the opt-in `dev-clang-tidy` preset through the `CXX_CLANG_TIDY` target
 property. The required preset analyzes local example and test targets;
@@ -404,6 +410,12 @@ selects the clang-tidy checks.
 
 The `dev-clang-tidy` preset is a CI quality gate for low-noise
 clang-analyzer, bugprone, performance, and selected readability checks. The
+blocking Linux jobs use the explicit `clang-tidy-18` executable for a stable
+diagnostic baseline. The source remains clean under locally verified
+clang-tidy 22.1.8; that release expanded `bugprone-exception-escape`, which
+requires narrowly documented suppressions where vector capacity is proven
+before a conditionally `noexcept` concurrent callback.
+
 `dev-clang-tidy-advisory` preset uses `.clang-tidy-advisory` for broader noisy
 checks that should be reviewed but are not yet part of the blocking gate. A
 weekly scheduled workflow runs the advisory preset, and maintainers can also
@@ -501,6 +513,10 @@ is adopted yet.
 
 ## vcpkg port helpers
 
+- End-to-end overlay reference: vcpkg registry release `2026.05.25`
+  (`d015e31e90838a4c9dfa3eed45979bc70d9357fc`) with vcpkg tool
+  `2026-04-08-e0612b42ce44e55a0e630f2ee9d3c533a63d8bc1`.
+
 `ports/tess/vcpkg.json` declares host dependencies on `vcpkg-cmake` and
 `vcpkg-cmake-config`. Both are vcpkg's own port-authoring helpers, not
 runtime or link dependencies of tess:
@@ -509,6 +525,17 @@ runtime or link dependencies of tess:
   which the portfile uses instead of hand-rolled CMake invocations.
 - `vcpkg-cmake-config` provides `vcpkg_cmake_config_fixup`, which relocates
   the installed CMake package files into vcpkg's expected layout.
+
+The checked-in port is a filesystem overlay used directly from a tess
+checkout. Its `SOURCE_PATH` resolves the repository root relative to
+`CMAKE_CURRENT_LIST_DIR`; it does not download or hash the release archive.
+A future central-registry port should instead acquire the published tag with
+the registry recipe's independently stored checksum.
+
+- Overlay-port documentation:
+  https://learn.microsoft.com/vcpkg/concepts/overlay-ports
+- `vcpkg_cmake_configure` documentation:
+  https://learn.microsoft.com/vcpkg/maintainers/functions/vcpkg_cmake_configure
 
 They are resolved by vcpkg itself when the overlay port is built, are never
 fetched by this repository's own build, and reach no consumer of
