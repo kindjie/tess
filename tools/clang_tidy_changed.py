@@ -40,7 +40,8 @@ SOURCE_PREFIXES = ("tests/", "examples/")
 EXCLUDED_PREFIXES = ("bench/", "tests/webgpu_stub/")
 # Sources deliberately outside the dev preset's compilation database:
 # standalone consumer-smoke projects and the real-WebGPU example (whole
-# directories) and the bench-preset-only data test.
+# directories), the bench-preset-only data test, and the exception-free-only
+# runtime test (exact files).
 # Anything else missing from the database fails the gate — a new or
 # renamed source must not silently evade the only blocking pull-request
 # clang-tidy job.
@@ -51,6 +52,7 @@ GATED_SOURCE_DIRECTORIES = (
 )
 GATED_SOURCE_FILES = (
   "tests/tess_grid_benchmark_data_test.cc",
+  "tests/tess_no_exceptions_test.cc",
 )
 # Changes that can alter clang-tidy's behavior or the analyzed surface
 # without touching any checkable source; they trigger a representative

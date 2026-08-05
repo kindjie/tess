@@ -73,7 +73,11 @@ auto has_expected_abort_status(int status) -> bool {
 #if defined(_WIN32)
   return status == 3;
 #else
-  return status != -1 && WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
+  if (status == -1) {
+    return false;
+  }
+  return (WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT) ||
+         (WIFEXITED(status) && WEXITSTATUS(status) == 128 + SIGABRT);
 #endif
 }
 

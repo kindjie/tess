@@ -209,6 +209,7 @@ def test_sources_in_the_database_are_checked():
     "tests/fetchcontent_consumer/main.cc",
     "tests/install_consumer/main.cc",
     "tests/tess_grid_benchmark_data_test.cc",
+    "tests/tess_no_exceptions_test.cc",
   ),
 )
 def test_gated_sources_outside_the_database_are_skipped(path):
