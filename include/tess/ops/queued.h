@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/block/block.h>
+#include <tess/core/capacity.h>
 #include <tess/core/shape.h>
 #include <tess/core/tag_identity.h>
 #include <tess/diagnostics/diagnostics.h>
