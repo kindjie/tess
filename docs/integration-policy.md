@@ -82,7 +82,8 @@ Native MSVC's exception-free configuration is supported by construction, not
 as an equivalent to the stronger GCC/Clang compiler mode. An exception that
 nevertheless escapes application or standard-library code remains outside the
 contract. Mixed exception modes within one program are unsupported and are
-diagnosed by MSVC at link time. See
+not reliably diagnosed by MSVC at link time; consumers must enforce one mode
+across every translation unit. See
 [Exception-free builds](architecture/no-exceptions.md) for the complete
 failure contract and standard-library operation inventory.
 

@@ -18,7 +18,6 @@
 #include <vector>
 
 #if defined(_MSC_VER)
-#include <crtdbg.h>
 #include <process.h>
 #endif
 

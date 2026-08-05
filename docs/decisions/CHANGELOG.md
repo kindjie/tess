@@ -18,8 +18,9 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   target.
 - Verified: native MSVC builds standalone headers and macro cells, then runs
   representative library behavior plus installed and FetchContent consumers
-  in the existing Windows CI job. Exception-free developer targets are
-  excluded from ordinary build-all invocations to contain CI cost.
+  in a focused job parallel to the existing Windows CI job. Exception-free
+  developer targets are excluded from ordinary build-all invocations to
+  contain build cost without extending the Windows critical path.
 - Compatibility: MSVC support is exception-free by construction. Unexpected
   exceptions, allocation failure, and thread-creation failure remain outside
   the recovery contract, and mixed modes remain unsupported.

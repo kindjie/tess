@@ -617,49 +617,13 @@ jobs:
         run: cmake --version
 
       - name: Configure
-        run: >-
-          cmake --preset windows-msvc
-          -DTESS_BUILD_NO_EXCEPTIONS_TESTING=ON
+        run: cmake --preset windows-msvc
 
       - name: Build
         run: cmake --build --preset windows-msvc
 
       - name: Test
-        run: ctest --preset windows-msvc -LE config:noexceptions
-
-      - name: Build targeted exception-free contracts
-        run: >-
-          cmake --build build/windows-msvc --config Debug --parallel
-          --target tess_no_exceptions_test
-          tess_no_exceptions_consumer_contract_test
-          tess_no_exceptions_headers_verify_interface_header_sets
-          tess_no_exceptions_contract_cells
-
-      - name: Test exception-free behavior
-        run: >-
-          ctest --test-dir build/windows-msvc -C Debug
-          --output-on-failure --no-tests=error -L config:noexceptions
-
-      - name: Compare exception-mode subsystem manifests
-        run: >-
-          python tools/check_no_exceptions_manifest.py
-          --ctest-dir build/windows-msvc --config Debug
-
-      - name: Exception-free installed consumer
-        shell: bash
-        env:
-          TESS_INSTALL_SMOKE_BUILD_DIR: >-
-            ${{ github.workspace }}/build/windows-msvc
-          TESS_INSTALL_SMOKE_CONFIG: Debug
-          TESS_NO_EXCEPTIONS: 1
-        run: tools/install_smoke.sh
-
-      - name: Exception-free FetchContent consumer
-        shell: bash
-        env:
-          TESS_FETCHCONTENT_SMOKE_CONFIG: Debug
-          TESS_NO_EXCEPTIONS: 1
-        run: tools/fetchcontent_smoke.sh
+        run: ctest --preset windows-msvc
 
       # Checked iterators allocate proxy state inside noexcept STL vector
       # constructors, so process-wide allocation rejection is unsafe in Debug.
@@ -694,6 +658,61 @@ jobs:
             ${{ github.workspace }}/build/windows-msvc
           TESS_INSTALL_SMOKE_CONFIG: Debug
         run: tools/install_smoke.sh
+
+  # Keep focused native MSVC exception-free coverage off the already-long
+  # full Windows critical path. These targets are excluded from build-all.
+  windows-noexceptions:
+    needs: changes
+    if: ${{ needs.changes.outputs.code_required == 'true' }}
+    name: Exception-Free (MSVC)
+    runs-on: windows-2025
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show tool versions
+        run: cmake --version
+
+      - name: Configure validation targets
+        run: >-
+          cmake --preset windows-msvc
+          -DTESS_BUILD_NO_EXCEPTIONS_TESTING=ON
+
+      - name: Build targeted exception-free contracts
+        run: >-
+          cmake --build build/windows-msvc --config Debug --parallel
+          --target tess_no_exceptions_test
+          tess_no_exceptions_consumer_contract_test
+          tess_no_exceptions_headers_verify_interface_header_sets
+          tess_no_exceptions_contract_cells
+
+      - name: Test exception-free behavior
+        run: >-
+          ctest --test-dir build/windows-msvc -C Debug
+          --output-on-failure --no-tests=error -L config:noexceptions
+
+      - name: Compare exception-mode subsystem manifests
+        run: >-
+          python tools/check_no_exceptions_manifest.py
+          --ctest-dir build/windows-msvc --config Debug
+
+      - name: Exception-free installed consumer
+        shell: bash
+        env:
+          TESS_INSTALL_SMOKE_BUILD_DIR: >-
+            ${{ github.workspace }}/build/windows-msvc
+          TESS_INSTALL_SMOKE_CONFIG: Debug
+          TESS_NO_EXCEPTIONS: 1
+        run: tools/install_smoke.sh
+
+      - name: Exception-free FetchContent consumer
+        shell: bash
+        env:
+          TESS_FETCHCONTENT_SMOKE_CONFIG: Debug
+          TESS_NO_EXCEPTIONS: 1
+        run: tools/fetchcontent_smoke.sh
 
   # Pull requests compile the bench tree and run the smoke suite (build
   # and API rot, bench_check hooks); threshold gating and baseline

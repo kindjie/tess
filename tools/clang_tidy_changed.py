@@ -51,6 +51,7 @@ GATED_SOURCE_DIRECTORIES = (
   "tests/install_consumer/",
 )
 GATED_SOURCE_FILES = (
+  "tests/no_exceptions_consumer_contract_main.cc",
   "tests/tess_grid_benchmark_data_test.cc",
   "tests/tess_no_exceptions_test.cc",
 )

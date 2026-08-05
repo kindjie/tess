@@ -87,8 +87,19 @@ configurations, representative runtime behavior, an installed consumer, and
 a FetchContent consumer in each supported compiler family. Complete examples
 are additionally built and run with Clang or GCC.
 
+The exception-free contract targets are opt-in so ordinary developer and CI
+build-all invocations do not compile both language modes. Configure them with
+`-DTESS_BUILD_NO_EXCEPTIONS_TESTING=ON`, build the relevant
+`tess_no_exceptions_*` targets, and run tests labeled
+`config:noexceptions`. CI keeps the focused MSVC contracts in a job parallel
+to the existing full Windows build so this coverage does not extend the
+critical path.
+
 Native MSVC's `/EHs-c-` mode is not identical to `-fno-exceptions`: it does
 not provide the same compile-time enforcement or safe recovery if an
 exception is nevertheless thrown. Tess supports it as an exception-free by
 construction configuration. The no-throw application-operation and resource
 failure preconditions above are therefore especially important on MSVC.
+MSVC does not reliably diagnose translation units built with different
+exception modes at link time, so build-system consistency is required to
+avoid an unsupported mixed-mode program.
