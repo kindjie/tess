@@ -26,7 +26,7 @@ function(tess_target_warning_options target)
     # MSVC 19.51 reports C4702 throughout valid constexpr/template branches,
     # including third-party SYSTEM headers. This suppresses that diagnostic
     # only on MSVC; retry without /wd4702 when the gating toolset changes.
-    list(APPEND warning_options /W4 /wd4702 /permissive- /EHsc)
+    list(APPEND warning_options /W4 /wd4702 /permissive-)
   endif()
 
   if(TESS_WARNINGS_AS_ERRORS)
@@ -38,6 +38,62 @@ function(tess_target_warning_options target)
   endif()
 
   target_compile_options(${target} PRIVATE ${warning_options})
+endfunction()
+
+function(tess_target_msvc_exception_options target)
+  if(NOT MSVC)
+    return()
+  endif()
+
+  get_target_property(exceptions_disabled ${target} TESS_EXCEPTIONS_DISABLED)
+  if(NOT exceptions_disabled)
+    target_compile_options(${target} PRIVATE /EHsc)
+  endif()
+endfunction()
+
+function(tess_target_disable_exceptions target)
+  get_target_property(target_type ${target} TYPE)
+  if(target_type STREQUAL "INTERFACE_LIBRARY")
+    set(scope INTERFACE)
+  else()
+    set(scope PRIVATE)
+  endif()
+
+  set_property(TARGET ${target} PROPERTY TESS_EXCEPTIONS_DISABLED ON)
+  if(MSVC)
+    if(scope STREQUAL "INTERFACE")
+      get_target_property(
+        compile_options ${target} INTERFACE_COMPILE_OPTIONS)
+      if(compile_options)
+        list(REMOVE_ITEM compile_options /EHsc)
+        set_property(
+          TARGET ${target}
+          PROPERTY INTERFACE_COMPILE_OPTIONS "${compile_options}")
+      endif()
+      target_compile_options(${target} INTERFACE /EHs-c-)
+      target_compile_definitions(${target} INTERFACE _HAS_EXCEPTIONS=0)
+    else()
+      get_target_property(compile_options ${target} COMPILE_OPTIONS)
+      if(compile_options)
+        list(REMOVE_ITEM compile_options /EHsc)
+        set_property(
+          TARGET ${target} PROPERTY COMPILE_OPTIONS "${compile_options}")
+      endif()
+      target_compile_options(${target} PRIVATE /EHs-c-)
+      target_compile_definitions(${target} PRIVATE _HAS_EXCEPTIONS=0)
+    endif()
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    if(scope STREQUAL "INTERFACE")
+      target_compile_options(${target} INTERFACE -fno-exceptions)
+    else()
+      target_compile_options(${target} PRIVATE -fno-exceptions)
+    endif()
+  else()
+    message(
+      FATAL_ERROR
+      "Exception-free targets require GCC, Clang-family, or native MSVC"
+    )
+  endif()
 endfunction()
 
 function(tess_target_clang_tidy_options target)
@@ -129,6 +185,7 @@ function(tess_target_sanitizer_options target)
 endfunction()
 
 function(tess_apply_project_options target)
+  tess_target_msvc_exception_options(${target})
   tess_target_warning_options(${target})
   tess_target_clang_tidy_options(${target})
   tess_target_cppcheck_options(${target})

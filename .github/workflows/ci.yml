@@ -255,7 +255,9 @@ jobs:
           ccache --version
 
       - name: Configure validation targets
-        run: cmake --preset "${{ matrix.preset }}"
+        run: >-
+          cmake --preset "${{ matrix.preset }}"
+          -DTESS_BUILD_NO_EXCEPTIONS_TESTING=ON
 
       - name: Build exception-free contracts
         run: |
@@ -657,6 +659,70 @@ jobs:
           TESS_INSTALL_SMOKE_CONFIG: Debug
         run: tools/install_smoke.sh
 
+  # Keep focused native MSVC exception-free coverage off the already-long
+  # full Windows critical path. These targets are excluded from build-all.
+  windows-noexceptions:
+    needs: changes
+    if: ${{ needs.changes.outputs.code_required == 'true' }}
+    name: Exception-Free (MSVC)
+    runs-on: windows-2025
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show tool versions
+        run: cmake --version
+
+      - name: Configure validation targets
+        run: >-
+          cmake --preset windows-msvc
+          -DTESS_BUILD_NO_EXCEPTIONS_TESTING=ON
+
+      - name: Build targeted exception-free contracts
+        run: >-
+          cmake --build build/windows-msvc --config Debug --parallel
+          --target tess_no_exceptions_test
+          tess_no_exceptions_consumer_contract_test
+          tess_no_exceptions_headers_verify_interface_header_sets
+          tess_no_exceptions_contract_cells
+          tess_block_test
+          tess_consumer_contract_test
+          tess_maintenance_test
+          tess_path_cache_test
+          tess_phase_executor_test
+          tess_sim_auto_exec_test
+          tess_sim_schedule_test
+          tess_storage_test
+          tess_topology_test
+
+      - name: Test exception-free behavior
+        run: >-
+          ctest --test-dir build/windows-msvc -C Debug
+          --output-on-failure --no-tests=error -L config:noexceptions
+
+      - name: Compare exception-mode subsystem manifests
+        run: >-
+          python tools/check_no_exceptions_manifest.py
+          --ctest-dir build/windows-msvc --config Debug
+
+      - name: Exception-free installed consumer
+        shell: bash
+        env:
+          TESS_INSTALL_SMOKE_BUILD_DIR: >-
+            ${{ github.workspace }}/build/windows-msvc
+          TESS_INSTALL_SMOKE_CONFIG: Debug
+          TESS_NO_EXCEPTIONS: 1
+        run: tools/install_smoke.sh
+
+      - name: Exception-free FetchContent consumer
+        shell: bash
+        env:
+          TESS_FETCHCONTENT_SMOKE_CONFIG: Debug
+          TESS_NO_EXCEPTIONS: 1
+        run: tools/fetchcontent_smoke.sh
+
   # Pull requests compile the bench tree and run the smoke suite (build
   # and API rot, bench_check hooks); threshold gating and baseline
   # artifact collection run on the full tier, staying authoritative until
@@ -889,6 +955,7 @@ jobs:
       - tidy-diff
       - macos
       - windows
+      - windows-noexceptions
       - bench
     runs-on: ubuntu-24.04
     steps:
@@ -906,6 +973,7 @@ jobs:
             test "${{ needs.no-exceptions.result }}" = success
             test "${{ needs.quality.result }}" = success
             test "${{ needs.windows.result }}" = success
+            test "${{ needs.windows-noexceptions.result }}" = success
             test "${{ needs.bench.result }}" = success
             if [ "$EVENT_NAME" = pull_request ]; then
               test "${{ needs.tidy-diff.result }}" = success
@@ -922,6 +990,7 @@ jobs:
             test "${{ needs.tidy-diff.result }}" = skipped
             test "${{ needs.macos.result }}" = skipped
             test "${{ needs.windows.result }}" = skipped
+            test "${{ needs.windows-noexceptions.result }}" = skipped
             test "${{ needs.bench.result }}" = skipped
           fi
 
@@ -1387,11 +1456,13 @@ jobs:
       - changes
       - dev
       - gcc
+      - no-exceptions
       - hooks-backstop
       - quality
       - tidy-diff
       - macos
       - windows
+      - windows-noexceptions
       - bench
       - coverage
       - long-seed-properties

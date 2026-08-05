@@ -208,8 +208,9 @@ def test_sources_in_the_database_are_checked():
     "examples/webgpu_compute/webgpu_compute.cc",
     "tests/fetchcontent_consumer/main.cc",
     "tests/install_consumer/main.cc",
+    "tests/no_exceptions_consumer_contract_main.cc",
     "tests/tess_grid_benchmark_data_test.cc",
-    "tests/tess_msvc_exception_mode_spike.cc",
+    "tests/tess_no_exceptions_test.cc",
   ),
 )
 def test_gated_sources_outside_the_database_are_skipped(path):

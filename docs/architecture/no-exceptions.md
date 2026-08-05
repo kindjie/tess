@@ -1,8 +1,9 @@
 # Exception-Free Builds
 
 Tess supports Clang-family and GCC consumers compiled with
-`-fno-exceptions`. The installed `tess::tess` target remains neutral: the
-consumer applies the flag consistently to every translation unit in the
+`-fno-exceptions`, and native MSVC consumers compiled with `/EHs-c-` and
+`_HAS_EXCEPTIONS=0`. The installed `tess::tess` target remains neutral: the
+consumer applies the recipe consistently to every translation unit in the
 program. `TESS_HAS_EXCEPTIONS` and `tess::has_exceptions` report the compiler
 mode and cannot be overridden by an application definition.
 
@@ -80,12 +81,25 @@ handling.
 
 ## Toolchains
 
-CI compiles and runs the mode with Clang plus ASan/UBSan and with GCC under
-warnings-as-errors. It also builds standalone headers, macro configurations,
-complete examples, an installed consumer, and a FetchContent consumer.
+CI compiles and runs the mode with Clang plus ASan/UBSan, GCC under
+warnings-as-errors, and native MSVC. It builds standalone headers, macro
+configurations, representative runtime behavior, an installed consumer, and
+a FetchContent consumer in each supported compiler family. Complete examples
+are additionally built and run with Clang or GCC.
 
-Native MSVC is not a supported exception-free configuration. A separate
-portability spike omits all `/EH` options and verifies feature detection plus
-basic vector, mutex, and thread use. That is detection evidence only: MSVC's
-partial behavior without `/EHsc`, `/EHs`, or `/EHa` is not equivalent to the
-Clang/GCC contract.
+The exception-free contract targets are opt-in so ordinary developer and CI
+build-all invocations do not compile both language modes. Configure them with
+`-DTESS_BUILD_NO_EXCEPTIONS_TESTING=ON`, build the relevant
+`tess_no_exceptions_*` targets, and run tests labeled
+`config:noexceptions`. CI keeps the focused MSVC contracts in a job parallel
+to the existing full Windows build so this coverage does not extend the
+critical path.
+
+Native MSVC's `/EHs-c-` mode is not identical to `-fno-exceptions`: it does
+not provide the same compile-time enforcement or safe recovery if an
+exception is nevertheless thrown. Tess supports it as an exception-free by
+construction configuration. The no-throw application-operation and resource
+failure preconditions above are therefore especially important on MSVC.
+MSVC does not reliably diagnose translation units built with different
+exception modes at link time, so build-system consistency is required to
+avoid an unsupported mixed-mode program.

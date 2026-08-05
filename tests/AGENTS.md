@@ -1175,28 +1175,26 @@
   to surface as a duplicate symbol, which is how the diagnostics cell
   covers the `inline thread_local` counter pointers that every other
   probe preprocesses away.
-- `tess_no_exceptions_test`: compiles with the real `-fno-exceptions` flag and
-  runs aggregate-header storage, block, pathfinding, topology, maintenance,
-  queue, schedule, auto-exec, and both threaded executor paths. It asserts
+- `tess_no_exceptions_test`: compiles with the toolchain's real
+  exception-disabled recipe and runs aggregate-header storage, block,
+  pathfinding, topology, maintenance, queue, schedule, auto-exec, and both
+  threaded executor paths. It asserts
   compiler detection, checked capacity results, and the legacy block fail-fast
-  wrapper.
+  wrapper. Its child-process fail-fast checks are portable across Unix and
+  Windows.
   Every discovered case carries the `config:noexceptions` manifest label.
   Companion standalone-header and macro-cell targets apply the same compiler
-  flag across bare, NDEBUG, diagnostics, ImGui, WebGPU, and available optional
-  adapter configurations. Complete example and installed/FetchContent
-  consumer builds are exercised by the dedicated CI job.
+  recipe across bare, NDEBUG, diagnostics, ImGui, WebGPU, and available
+  optional adapter configurations. Complete examples run under GCC/Clang;
+  installed and FetchContent consumers also run under native MSVC.
 - `tess_no_exceptions_consumer_contract_test`: compiles the forward, reverse,
-  and leaf-first public-header consumer contract with `-fno-exceptions`.
+  and leaf-first public-header consumer contract with the exception-disabled
+  compiler recipe.
   `no_exceptions_manifest.json` maps each exception-free runtime case to its
   affected subsystem; `tools/check_no_exceptions_manifest.py` verifies every
   mapped case and its named enabled-mode counterpart.
 - `test_no_exceptions_manifest.py`: unit coverage for the exception-mode
   runtime manifest validator and its checked-in subsystem set.
-- `tess_msvc_exception_mode_spike`: Windows-only portability evidence. It
-  deliberately bypasses project options and clears Visual Studio's default
-  `/EHsc` mode with `/EHs- /EHc-`, asserts `_CPPUNWIND` is absent, and runs
-  basic vector, mutex, and thread use. It does not claim supported native MSVC
-  exception-free operation.
 - `tess_sparse_stream_test`: the S3 sparse-streaming scenario
   (`tests/sparse_stream_harness.h`) searching the S1 terrain in a
   `SparseResidentWorld` under budget fractions of the world's chunks,

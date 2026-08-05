@@ -39,6 +39,11 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 option(TESS_BUILD_TESTING "Build tess tests" ${PROJECT_IS_TOP_LEVEL})
+option(
+  TESS_BUILD_NO_EXCEPTIONS_TESTING
+  "Build exception-free compiler-mode contract targets"
+  OFF
+)
 option(TESS_BUILD_EXAMPLES "Build tess examples" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
 option(TESS_BUILD_DOCS "Build the tess API reference with Doxygen" OFF)
@@ -255,11 +260,11 @@ set_target_properties(
 
 # A build-only mirror of the public header contract under the real compiler
 # exception-disable flag. The installed tess target stays policy-neutral.
-if(TESS_BUILD_TESTING AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+if(TESS_BUILD_TESTING AND TESS_BUILD_NO_EXCEPTIONS_TESTING AND
+   (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU" OR MSVC))
   add_library(tess_no_exceptions_headers INTERFACE)
   target_link_libraries(tess_no_exceptions_headers INTERFACE tess::tess)
-  target_compile_options(
-    tess_no_exceptions_headers INTERFACE -fno-exceptions)
+  tess_target_disable_exceptions(tess_no_exceptions_headers)
   target_sources(
     tess_no_exceptions_headers
     INTERFACE
@@ -276,6 +281,7 @@ if(TESS_BUILD_TESTING AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   set_target_properties(
     tess_no_exceptions_headers
     PROPERTIES
+      EXCLUDE_FROM_ALL TRUE
       VERIFY_INTERFACE_HEADER_SETS ON
       INTERFACE_HEADER_SETS_TO_VERIFY
         "no_exceptions_headers;no_exceptions_generated_headers"

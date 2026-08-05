@@ -28,10 +28,15 @@ target_compile_definitions(
     TESS_EXPECTED_VERSION_PATCH=${version_patch}
 )
 if(TESS_NO_EXCEPTIONS)
-  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    message(FATAL_ERROR "TESS_NO_EXCEPTIONS requires Clang-family or GCC")
+  if(MSVC)
+    target_compile_options(tess_install_consumer PRIVATE /EHs-c-)
+    target_compile_definitions(
+      tess_install_consumer PRIVATE _HAS_EXCEPTIONS=0)
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(tess_install_consumer PRIVATE -fno-exceptions)
+  else()
+    message(FATAL_ERROR "TESS_NO_EXCEPTIONS uses an unsupported compiler")
   endif()
-  target_compile_options(tess_install_consumer PRIVATE -fno-exceptions)
   target_compile_definitions(
     tess_install_consumer PRIVATE TESS_EXPECT_NO_EXCEPTIONS=1)
 endif()

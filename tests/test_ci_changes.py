@@ -24,12 +24,14 @@ def test_no_exceptions_manifest_tests_run_in_hook_backstop():
   assert "tests/test_no_exceptions_manifest.py" in workflow
 
 
-def test_msvc_exception_mode_spike_explicitly_disables_cpp_unwinding():
+def test_msvc_exception_free_targets_use_the_shared_compiler_recipe():
   root = Path(__file__).resolve().parents[1]
   tests_cmake = (root / "tests/CMakeLists.txt").read_text(encoding="utf-8")
 
-  assert "/EHs-" in tests_cmake
-  assert "/EHc-" in tests_cmake
+  assert "tess_target_disable_exceptions(tess_no_exceptions_test)" in (
+    tests_cmake
+  )
+  assert "tess_msvc_exception_mode_spike" not in tests_cmake
 
 
 @pytest.mark.parametrize(
@@ -190,7 +192,6 @@ def test_cli_writes_github_output_and_reason(monkeypatch, capsys):
     "tests/tess_sim_schedule_test.cc",
     "tests/tess_sim_scheduler_test.cc",
     "tests/tess_maintenance_test.cc",
-    "tests/tess_msvc_exception_mode_spike.cc",
     "tests/tess_no_exceptions_test.cc",
     "tests/tess_webgpu_backend_test.cc",
     "tests/tess_sim_auto_exec_test.cc",
