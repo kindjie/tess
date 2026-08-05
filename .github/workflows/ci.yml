@@ -687,6 +687,15 @@ jobs:
           tess_no_exceptions_consumer_contract_test
           tess_no_exceptions_headers_verify_interface_header_sets
           tess_no_exceptions_contract_cells
+          tess_block_test
+          tess_consumer_contract_test
+          tess_maintenance_test
+          tess_path_cache_test
+          tess_phase_executor_test
+          tess_sim_auto_exec_test
+          tess_sim_schedule_test
+          tess_storage_test
+          tess_topology_test
 
       - name: Test exception-free behavior
         run: >-
@@ -946,6 +955,7 @@ jobs:
       - tidy-diff
       - macos
       - windows
+      - windows-noexceptions
       - bench
     runs-on: ubuntu-24.04
     steps:
@@ -963,6 +973,7 @@ jobs:
             test "${{ needs.no-exceptions.result }}" = success
             test "${{ needs.quality.result }}" = success
             test "${{ needs.windows.result }}" = success
+            test "${{ needs.windows-noexceptions.result }}" = success
             test "${{ needs.bench.result }}" = success
             if [ "$EVENT_NAME" = pull_request ]; then
               test "${{ needs.tidy-diff.result }}" = success
@@ -979,6 +990,7 @@ jobs:
             test "${{ needs.tidy-diff.result }}" = skipped
             test "${{ needs.macos.result }}" = skipped
             test "${{ needs.windows.result }}" = skipped
+            test "${{ needs.windows-noexceptions.result }}" = skipped
             test "${{ needs.bench.result }}" = skipped
           fi
 
@@ -1444,11 +1456,13 @@ jobs:
       - changes
       - dev
       - gcc
+      - no-exceptions
       - hooks-backstop
       - quality
       - tidy-diff
       - macos
       - windows
+      - windows-noexceptions
       - bench
       - coverage
       - long-seed-properties

@@ -450,6 +450,7 @@ def test_ci_gate_aggregates_every_required_ci_job():
     "tidy-diff",
     "macos",
     "windows",
+    "windows-noexceptions",
     "bench",
   )
   needs = "    needs:\n" + "".join(
@@ -464,6 +465,10 @@ def test_ci_gate_aggregates_every_required_ci_job():
     result_check = f'test "${{{{ needs.{job_id}.result }}}}" = success'
     assert result_check in ci_gate
 
+  report_failure = workflow.split("  report-failure:\n", 1)[1]
+  for job_id in ("no-exceptions", "windows-noexceptions"):
+    assert f"      - {job_id}\n" in report_failure
+
 
 def test_documentation_only_changes_skip_expensive_ci_fail_closed():
   root = Path(__file__).resolve().parents[1]
@@ -474,6 +479,7 @@ def test_documentation_only_changes_skip_expensive_ci_fail_closed():
     "no-exceptions",
     "quality",
     "windows",
+    "windows-noexceptions",
     "bench",
   )
 
@@ -516,20 +522,45 @@ def test_documentation_only_changes_skip_expensive_ci_fail_closed():
   assert no_exceptions.count("TESS_NO_EXCEPTIONS: 1") == 2
 
   windows = workflow.split("  windows:\n", 1)[1].split(
-    "  bench:\n", 1
+    "  windows-noexceptions:\n", 1
   )[0]
-  assert "Build targeted exception-free contracts" in windows
-  assert "tess_no_exceptions_test" in windows
-  assert "tess_no_exceptions_headers_verify_interface_header_sets" in windows
-  assert "tess_no_exceptions_contract_cells" in windows
-  assert "-L config:noexceptions" in windows
-  assert "TESS_BUILD_NO_EXCEPTIONS_TESTING=ON" in windows
-  assert (
-    "cmake --build build/windows-msvc --config Debug --parallel" in windows
+  assert "TESS_BUILD_NO_EXCEPTIONS_TESTING=ON" not in windows
+  assert "Build targeted exception-free contracts" not in windows
+
+  windows_noexceptions = workflow.split(
+    "  windows-noexceptions:\n", 1
+  )[1].split("  bench:\n", 1)[0]
+  assert "Build targeted exception-free contracts" in windows_noexceptions
+  assert "tess_no_exceptions_test" in windows_noexceptions
+  assert "tess_no_exceptions_headers_verify_interface_header_sets" in (
+    windows_noexceptions
   )
-  assert "ctest --test-dir build/windows-msvc -C Debug" in windows
-  assert "--ctest-dir build/windows-msvc --config Debug" in windows
-  assert windows.count("TESS_NO_EXCEPTIONS: 1") == 2
+  assert "tess_no_exceptions_contract_cells" in windows_noexceptions
+  assert "-L config:noexceptions" in windows_noexceptions
+  assert "TESS_BUILD_NO_EXCEPTIONS_TESTING=ON" in windows_noexceptions
+  assert (
+    "cmake --build build/windows-msvc --config Debug --parallel"
+    in windows_noexceptions
+  )
+  assert (
+    "ctest --test-dir build/windows-msvc -C Debug" in windows_noexceptions
+  )
+  assert (
+    "--ctest-dir build/windows-msvc --config Debug" in windows_noexceptions
+  )
+  assert windows_noexceptions.count("TESS_NO_EXCEPTIONS: 1") == 2
+  for target in (
+    "tess_block_test",
+    "tess_consumer_contract_test",
+    "tess_maintenance_test",
+    "tess_path_cache_test",
+    "tess_phase_executor_test",
+    "tess_sim_auto_exec_test",
+    "tess_sim_schedule_test",
+    "tess_storage_test",
+    "tess_topology_test",
+  ):
+    assert target in windows_noexceptions
 
   # Tier-conditional jobs also require code_required, fail closed.
   assert (
