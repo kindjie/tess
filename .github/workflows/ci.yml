@@ -238,10 +238,21 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install ccache
+        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-noexceptions-${{ matrix.preset }}-${{ github.sha }}
+          restore-keys: ccache-noexceptions-${{ matrix.preset }}-
+
       - name: Show tool versions
         run: |
           cmake --version
           "$CXX" --version
+          ccache --version
 
       - name: Configure validation targets
         run: cmake --preset "${{ matrix.preset }}"
