@@ -351,7 +351,7 @@ TEST(TessQueuedResults, MixedPolicyPhaseRejectsBeforeResultsOrCallbacks) {
     return tess::execute_phase_partitioned_dirty_with_results<
         tess::WritePolicy::UniquePerChunk>(
         executor, world, report.plan(), phase, scratch, channel,
-        [](auto view, Ack& ack) {
+        [](auto view, Ack& ack) noexcept {
           ack.tiles += view.template field_span<TerrainTag>().size();
         });
   };

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "allocation_counter.h"
@@ -15,6 +16,18 @@
 // same-tick dirty propagation to later phases, deterministic trigger
 // consumption, and allocation-free dispatch after seal.
 namespace {
+
+auto run_raw_no_throw_task(void* context,
+                           const tess::ScheduleTaskContext&) noexcept
+    -> tess::ScheduleTaskResult {
+  ++*static_cast<std::size_t*>(context);
+  return {};
+}
+
+static_assert(requires(tess::Schedule& schedule, tess::ScheduleTaskDesc desc,
+                       void* context) {
+  schedule.add_task(desc, context, nullptr);
+});
 
 constexpr std::uint32_t DirtyTerrain = 1u << 0u;
 constexpr std::uint32_t DirtyConstruction = 1u << 1u;
@@ -74,6 +87,46 @@ TEST(TessSchedule, RunsPhasesInOrderThenRegistrationOrder) {
   EXPECT_EQ(log[1], "agents_a");
   EXPECT_EQ(log[2], "agents_b");
   EXPECT_EQ(log[3], "render");
+}
+
+TEST(TessSchedule, ExplicitNoThrowTaskRunsThroughNoThrowErasedThunk) {
+  struct NoThrowTask {
+    std::size_t runs = 0;
+
+    auto operator()(const tess::ScheduleTaskContext&) noexcept
+        -> tess::ScheduleTaskResult {
+      ++runs;
+      return {};
+    }
+  } task;
+  static_assert(
+      std::is_nothrow_invocable_r_v<tess::ScheduleTaskResult, NoThrowTask&,
+                                    const tess::ScheduleTaskContext&>);
+
+  tess::Schedule schedule;
+  (void)schedule.add_task(
+      {"no_throw", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()},
+      task);
+  schedule.seal();
+  tess::SimClock clock;
+
+  EXPECT_EQ(schedule.run_tick(clock).tasks_run, 1u);
+  EXPECT_EQ(task.runs, 1u);
+}
+
+TEST(TessSchedule, RawNoThrowFunctionPointerRunsThroughErasedThunk) {
+  std::size_t runs = 0;
+  tess::Schedule schedule;
+  const tess::ScheduleNoThrowTaskFn task = run_raw_no_throw_task;
+  (void)schedule.add_task(
+      {"raw_no_throw", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()},
+      &runs, task);
+  schedule.seal();
+  tess::SimClock clock;
+
+  (void)schedule.run_tick(clock);
+
+  EXPECT_EQ(runs, 1u);
 }
 
 TEST(TessSchedule, EveryNIsExactAndDisablementKeepsLockstep) {

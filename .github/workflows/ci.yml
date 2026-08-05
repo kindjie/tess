@@ -210,6 +210,108 @@ jobs:
       - name: Build
         run: cmake --build --preset dev-werror
 
+  no-exceptions:
+    needs: changes
+    if: ${{ needs.changes.outputs.code_required == 'true' }}
+    name: Exception-Free (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Clang ASan UBSan
+            cc: clang
+            cxx: clang++
+            preset: dev-asan
+            exclude_test: 'Legacy.*CapacityFailureAborts'
+          - name: GCC Werror
+            cc: gcc
+            cxx: g++
+            preset: dev-werror
+            exclude_test: '^$'
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install ccache
+        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-noexceptions-${{ matrix.preset }}-${{ github.sha }}
+          restore-keys: ccache-noexceptions-${{ matrix.preset }}-
+
+      - name: Show tool versions
+        run: |
+          cmake --version
+          "$CXX" --version
+          ccache --version
+
+      - name: Configure validation targets
+        run: cmake --preset "${{ matrix.preset }}"
+
+      - name: Build exception-free contracts
+        run: |
+          cmake --build "build/${{ matrix.preset }}" --parallel \
+            --target tess_no_exceptions_test \
+              tess_no_exceptions_consumer_contract_test \
+              tess_no_exceptions_headers_verify_interface_header_sets \
+              tess_no_exceptions_contract_cells \
+              tess_block_test \
+              tess_consumer_contract_test \
+              tess_maintenance_test \
+              tess_path_cache_test \
+              tess_phase_executor_test \
+              tess_sim_auto_exec_test \
+              tess_sim_schedule_test \
+              tess_storage_test \
+              tess_topology_test
+
+      - name: Run exception-free behavior
+        run: >-
+          ctest --test-dir "build/${{ matrix.preset }}"
+          --output-on-failure --no-tests=error
+          -L config:noexceptions
+          -E "${{ matrix.exclude_test }}"
+
+      - name: Compare exception-mode subsystem manifests
+        run: >-
+          python3 tools/check_no_exceptions_manifest.py
+          --ctest-dir "build/${{ matrix.preset }}"
+
+      - name: Build exception-free examples
+        run: |
+          cmake --preset examples-no-exceptions
+          cmake --build --preset examples-no-exceptions --parallel
+
+      - name: Run exception-free examples
+        run: |
+          ran=0
+          for example in build/examples-no-exceptions/examples/tess_*; do
+            [ -x "$example" ] || continue
+            "$example" > /dev/null
+            ran=$((ran + 1))
+          done
+          test "$ran" -ge 12
+
+      - name: Exception-free installed consumer
+        env:
+          TESS_INSTALL_SMOKE_BUILD_DIR: build/${{ matrix.preset }}
+          TESS_NO_EXCEPTIONS: 1
+        run: tools/install_smoke.sh
+
+      - name: Exception-free FetchContent consumer
+        env:
+          TESS_NO_EXCEPTIONS: 1
+        run: tools/fetchcontent_smoke.sh
+
   hooks-backstop:
     name: Hook Backstop Checks
     runs-on: ubuntu-24.04
@@ -247,6 +349,7 @@ jobs:
           tests/test_git_hooks.py
           tests/test_ci_changes.py
           tests/test_clang_tidy_changed.py
+          tests/test_no_exceptions_manifest.py
           tests/test_paired_bench.py
           tests/test_check_counter_goldens.py
           tests/test_benchmark_changepoint.py
@@ -780,6 +883,7 @@ jobs:
       - changes
       - dev
       - gcc
+      - no-exceptions
       - hooks-backstop
       - quality
       - tidy-diff
@@ -799,6 +903,7 @@ jobs:
           if [ "$code" = true ]; then
             test "${{ needs.dev.result }}" = success
             test "${{ needs.gcc.result }}" = success
+            test "${{ needs.no-exceptions.result }}" = success
             test "${{ needs.quality.result }}" = success
             test "${{ needs.windows.result }}" = success
             test "${{ needs.bench.result }}" = success
@@ -812,6 +917,7 @@ jobs:
           else
             test "${{ needs.dev.result }}" = skipped
             test "${{ needs.gcc.result }}" = skipped
+            test "${{ needs.no-exceptions.result }}" = skipped
             test "${{ needs.quality.result }}" = skipped
             test "${{ needs.tidy-diff.result }}" = skipped
             test "${{ needs.macos.result }}" = skipped

@@ -254,7 +254,9 @@
   explicit-domain duplicate-key deduplication, empty explicit domains,
   `ScopedThreadPhaseExecutor` worker-count clamping and zero-count early return,
   dirty-before-callback ordering for direct, deferred, and phase execution,
-  and coalescing of overlapping read-only dirty records.
+  coalescing of overlapping read-only dirty records, and compile-time proof
+  that explicit `noexcept` callbacks remain no-throw through partitioned and
+  result-channel adapter layers.
 - `tess_execution_phase_safety_test`: verifies executable phases are
   planner-issued capabilities bound to the exact `ExecutionPlan` that produced
   them. A phase from a disjoint plan cannot be rebound to dispatch same-chunk
@@ -282,6 +284,8 @@
   cancel work that has not started, join callbacks already in flight, and
   rethrow on the dispatching thread; the pool must remain usable for a
   subsequent successful phase.
+  The explicit no-throw aliases are representation-checked and execute a
+  no-throw callback without exception coordination.
 - `tess_queued_results_test`: verifies the S6 result-channel core: a
   default `OpCompletion` is never `ok()` (the `completed` flag gates the
   success triple), `record_plan_completions` copies plan-time rejections
@@ -713,6 +717,8 @@
   throwing callback. The frame driver keeps EveryN exact
   across SimSpeed changes, backlogged multi-tick frames, and paused frames
   (cadences count fixed ticks, never frames).
+  Explicitly `noexcept` task objects are stored through the no-throw erased
+  signature and run successfully.
 - `tess_ecs_adapter_test`: verifies the dependency-free ECS layer (M10):
   `EntityHandle` null/equality semantics; `TileOccupancyIndex`
   insert/erase/move basics, null/structural uniqueness refusal, backward-shift
@@ -1169,6 +1175,28 @@
   to surface as a duplicate symbol, which is how the diagnostics cell
   covers the `inline thread_local` counter pointers that every other
   probe preprocesses away.
+- `tess_no_exceptions_test`: compiles with the real `-fno-exceptions` flag and
+  runs aggregate-header storage, block, pathfinding, topology, maintenance,
+  queue, schedule, auto-exec, and both threaded executor paths. It asserts
+  compiler detection, checked capacity results, and the legacy block fail-fast
+  wrapper.
+  Every discovered case carries the `config:noexceptions` manifest label.
+  Companion standalone-header and macro-cell targets apply the same compiler
+  flag across bare, NDEBUG, diagnostics, ImGui, WebGPU, and available optional
+  adapter configurations. Complete example and installed/FetchContent
+  consumer builds are exercised by the dedicated CI job.
+- `tess_no_exceptions_consumer_contract_test`: compiles the forward, reverse,
+  and leaf-first public-header consumer contract with `-fno-exceptions`.
+  `no_exceptions_manifest.json` maps each exception-free runtime case to its
+  affected subsystem; `tools/check_no_exceptions_manifest.py` verifies every
+  mapped case and its named enabled-mode counterpart.
+- `test_no_exceptions_manifest.py`: unit coverage for the exception-mode
+  runtime manifest validator and its checked-in subsystem set.
+- `tess_msvc_exception_mode_spike`: Windows-only portability evidence. It
+  deliberately bypasses project options and clears Visual Studio's default
+  `/EHsc` mode with `/EHs- /EHc-`, asserts `_CPPUNWIND` is absent, and runs
+  basic vector, mutex, and thread use. It does not claim supported native MSVC
+  exception-free operation.
 - `tess_sparse_stream_test`: the S3 sparse-streaming scenario
   (`tests/sparse_stream_harness.h`) searching the S1 terrain in a
   `SparseResidentWorld` under budget fractions of the world's chunks,

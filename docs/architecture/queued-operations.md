@@ -125,6 +125,9 @@ flowchart TB
   merged chunk count. `collect_planned_dirty` likewise returns
   `PlannedDirtyCollectResult` / `PlannedDirtyCollectStatus`; incompatible
   partitions are rejected without mutating the destination or partitions.
+  Both status enums append `CapacityExceeded`: total record capacity is
+  validated before allocation or source consumption, and caller-owned phase
+  scratch may be reset while the world and source partitions remain intact.
 
 Typed intent envelopes describe and group work; they do not own arbitrary
 callbacks. Chunk execution remains explicit through the planner-issued block
@@ -358,6 +361,13 @@ pool by operation count, with serial == pool results pinned byte-identical
 (policy pre-validation makes runtime aborts unreachable) and the schedule +
 auto-exec test binaries running under the TSan preset. The work_contract
 library remains an unadopted experiment.
+
+The active compiler mode selects a policy-specialized scoped executor and
+pool. Exception-free specializations omit callback exception and cancellation
+state. The explicit `NoThrowScopedThreadPhaseExecutor` and
+`NoThrowWorkerPoolPhaseExecutor` aliases expose that representation in an
+exception-enabled program. Explicitly `noexcept` callbacks also take the
+direct erased-thunk route through the normal enabled pool.
 
 `execute_phase_partitioned_dirty_with<Policy>` uses the same executor contract,
 but stores callback dirty records and execution results in

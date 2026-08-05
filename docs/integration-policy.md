@@ -7,22 +7,24 @@ leaving you to find out.
 
 ## Exceptions
 
-tess **uses exceptions, and its aggregate surfaces cannot be built
-with `-fno-exceptions`.** The executors, schedule, topology, and
-auto-exec task contain unconditional `try`/`catch` rollback and
-join-then-rethrow guards, so including `tess.h`, `pathfinding.h`, or
-`simulation.h` under `-fno-exceptions` is a compile error rather than a
-degraded mode. A consumer including only a narrow exception-free header
-such as `<tess/storage/world.h>` can still build that way — there is no
-tess object library of its own — but that is not a supported
-configuration and nothing tests it.
+tess supports two build-wide compiler modes. Exception-enabled C++20 remains
+the default. Clang-family and GCC consumers may instead compile every
+translation unit with `-fno-exceptions`; aggregate headers and full examples
+are tested in that configuration. The installed `tess::tess` target never
+forces either policy. `TESS_HAS_EXCEPTIONS` and `tess::has_exceptions` report
+the compiler mode and cannot be overridden.
 
 Exceptions tess throws itself:
 
-- `std::length_error` when a bounded structure would exceed its
-  capacity (the portal segment cache, planned dirty records).
-- `std::bad_alloc` from allocation, including implicitly from any
-  container growth.
+- `std::length_error` from legacy portal-segment cache operations when a
+  deterministic capacity limit is exceeded.
+- `std::bad_alloc` from block-scratch capacity overflow and from allocation,
+  including implicitly from container growth.
+
+Checked capacity entry points report pre-allocation size failures in either
+mode. In an exception-free build, legacy wrappers abort for those
+Tess-detected failures. General allocation failure is not converted to a
+status and has no recovery guarantee.
 
 Exceptions you can also receive through tess:
 
@@ -30,6 +32,11 @@ Exceptions you can also receive through tess:
   verbatim; tess neither swallows nor translates them.
 - `std::system_error` if thread construction fails while an executor is
   starting up.
+
+In an exception-free build, application callbacks and all other supplied
+operations must not throw. Allocation failure, thread-creation failure, and a
+throwing callback are outside the supported recovery and state contract. Tess
+does not install a new handler or terminate handler.
 
 What is guaranteed when something throws:
 
@@ -40,6 +47,16 @@ What is guaranteed when something throws:
   nothing executes rather than a partially applied plan.
 - Schedule tasks either side of a throwing task keep their triggers
   coherent.
+
+Those propagation and rollback guarantees apply to exception-enabled builds.
+The exception-free path performs successful work and status-based rollback
+directly, without catch-based recovery.
+
+The explicit `NoThrowWorkerPoolPhaseExecutor` and
+`NoThrowScopedThreadPhaseExecutor` aliases require callbacks typed `noexcept`
+in exception-enabled builds and reject other callback types at compile time.
+Queued and result-channel adapters reserve their internal dispatch storage
+before preserving that no-throw property through the worker boundary.
 
 What is **not** guaranteed:
 
@@ -58,6 +75,11 @@ What is **not** guaranteed:
   (`try_resolve`, `try_field`, plan validation), which validate at
   runtime in every configuration. Define `TESS_ENABLE_ASSERTS=1`
   explicitly if you want the checks in an optimised build.
+
+Native MSVC without `/EH` is tested only as a portability spike and is not a
+supported exception-free mode. Mixed exception modes within one program are
+unsupported. See [Exception-free builds](architecture/no-exceptions.md) for
+the complete failure contract and standard-library operation inventory.
 
 ## RTTI
 

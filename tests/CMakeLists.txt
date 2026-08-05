@@ -10,13 +10,16 @@ tess_require_googletest()
 # checks the mapping). ALWAYS adds prepush:always for tests that run
 # on every selective push.
 function(tess_discover_tests target)
-  cmake_parse_arguments(ARG "ALWAYS" "" "LABELS" ${ARGN})
+  cmake_parse_arguments(ARG "ALWAYS" "PREFIX" "CONFIGS;LABELS" ${ARGN})
   set(labels "target:${target}")
   if(ARG_ALWAYS)
     list(APPEND labels "prepush:always")
   endif()
   foreach(subsystem IN LISTS ARG_LABELS)
     list(APPEND labels "subsystem:${subsystem}")
+  endforeach()
+  foreach(config IN LISTS ARG_CONFIGS)
+    list(APPEND labels "config:${config}")
   endforeach()
   # gtest_discover_tests forwards PROPERTIES through an unquoted
   # expansion: CMake 3.x splices a bare list (LABELS keeps only the
@@ -26,12 +29,31 @@ function(tess_discover_tests target)
   # the pre-push selection regex matches labels delimiter-aware
   # ((^|;)label(;|$)) so both forms select identically.
   string(REPLACE ";" "\\;" labels "${labels}")
+  set(discovery_options)
+  if(ARG_PREFIX)
+    list(APPEND discovery_options TEST_PREFIX "${ARG_PREFIX}")
+  endif()
   gtest_discover_tests(
     ${target}
+    ${discovery_options}
     DISCOVERY_MODE PRE_TEST
     DISCOVERY_TIMEOUT 30
     PROPERTIES TIMEOUT 60 LABELS "${labels}"
   )
+endfunction()
+
+function(tess_add_test test_name target)
+  cmake_parse_arguments(ARG "" "ARGUMENT" "CONFIGS;LABELS" ${ARGN})
+  set(labels "target:${target}")
+  foreach(subsystem IN LISTS ARG_LABELS)
+    list(APPEND labels "subsystem:${subsystem}")
+  endforeach()
+  foreach(config IN LISTS ARG_CONFIGS)
+    list(APPEND labels "config:${config}")
+  endforeach()
+  add_test(NAME "${test_name}" COMMAND "${target}" "${ARG_ARGUMENT}")
+  set_tests_properties(
+    "${test_name}" PROPERTIES TIMEOUT 60 LABELS "${labels}")
 endfunction()
 
 add_executable(
@@ -59,6 +81,104 @@ target_compile_definitions(
 tess_apply_project_options(tess_smoke)
 
 tess_discover_tests(tess_smoke LABELS block core diagnostics ecs experimental gpu ops path persistence query sim spatial storage topology)
+
+if(UNIX AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  add_executable(tess_no_exceptions_test tess_no_exceptions_test.cc)
+  target_link_libraries(tess_no_exceptions_test PRIVATE tess::tess)
+  target_compile_definitions(
+    tess_no_exceptions_test PRIVATE TESS_INTERNAL_CAPACITY_TESTING)
+  target_compile_options(tess_no_exceptions_test PRIVATE -fno-exceptions)
+  tess_apply_project_options(tess_no_exceptions_test)
+  tess_add_test(
+    TessNoExceptions.AggregateHeaderRunsStorageAndBlockOperations
+    tess_no_exceptions_test
+    ARGUMENT AggregateHeaderRunsStorageAndBlockOperations
+    CONFIGS noexceptions
+    LABELS block core storage
+  )
+  tess_add_test(
+    TessNoExceptions.CheckedBlockCapacityFailurePreservesStorage
+    tess_no_exceptions_test
+    ARGUMENT CheckedBlockCapacityFailurePreservesStorage
+    CONFIGS noexceptions
+    LABELS block
+  )
+  tess_add_test(
+    TessNoExceptions.LegacyBlockCapacityFailureAborts
+    tess_no_exceptions_test
+    ARGUMENT LegacyBlockCapacityFailureAborts
+    CONFIGS noexceptions
+    LABELS block
+  )
+  tess_add_test(
+    TessNoExceptions.LegacyPortalCapacityFailureAborts
+    tess_no_exceptions_test
+    ARGUMENT LegacyPortalCapacityFailureAborts
+    CONFIGS noexceptions
+    LABELS path
+  )
+  tess_add_test(
+    TessNoExceptions.OrdinaryCallbacksRunThroughThreadedExecutors
+    tess_no_exceptions_test
+    ARGUMENT OrdinaryCallbacksRunThroughThreadedExecutors
+    CONFIGS noexceptions
+    LABELS ops
+  )
+  tess_add_test(
+    TessNoExceptions.MaintenanceSchedulersRunOrdinaryTasks
+    tess_no_exceptions_test
+    ARGUMENT MaintenanceSchedulersRunOrdinaryTasks
+    CONFIGS noexceptions
+    LABELS experimental
+  )
+  tess_add_test(
+    TessNoExceptions.PathfindingAndTopologyRunThroughAggregateHeaders
+    tess_no_exceptions_test
+    ARGUMENT PathfindingAndTopologyRunThroughAggregateHeaders
+    CONFIGS noexceptions
+    LABELS path topology
+  )
+  tess_add_test(
+    TessNoExceptions.ScheduleRunsOrdinaryTypeErasedCallback
+    tess_no_exceptions_test
+    ARGUMENT ScheduleRunsOrdinaryTypeErasedCallback
+    CONFIGS noexceptions
+    LABELS sim
+  )
+  tess_add_test(
+    TessNoExceptions.AutoExecRunsOrdinaryKernelThroughPool
+    tess_no_exceptions_test
+    ARGUMENT AutoExecRunsOrdinaryKernelThroughPool
+    CONFIGS noexceptions
+    LABELS ops sim storage
+  )
+  tess_add_test(
+    TessNoExceptions.PortalCacheCheckedReservesRejectCapacity
+    tess_no_exceptions_test
+    ARGUMENT PortalCacheCheckedReservesRejectCapacity
+    CONFIGS noexceptions
+    LABELS path
+  )
+endif()
+
+if(MSVC)
+  # Portability evidence only: native MSVC without C++ unwinding is not a
+  # supported exception-free mode. Visual Studio projects enable /EHsc by
+  # default, so explicitly clear both components for this isolated probe.
+  add_executable(
+    tess_msvc_exception_mode_spike
+    tess_msvc_exception_mode_spike.cc
+  )
+  target_link_libraries(tess_msvc_exception_mode_spike PRIVATE tess::tess)
+  target_compile_options(
+    tess_msvc_exception_mode_spike
+    PRIVATE /W4 /WX /permissive- /EHs- /EHc-
+  )
+  add_test(
+    NAME tess_msvc_exception_mode_spike
+    COMMAND tess_msvc_exception_mode_spike
+  )
+endif()
 
 add_executable(tess_shape_test allocation_counter.cc tess_shape_test.cc)
 target_link_libraries(tess_shape_test PRIVATE tess::tess GTest::gtest_main)
@@ -127,6 +247,32 @@ tess_apply_project_options(tess_consumer_contract_test)
 
 tess_discover_tests(tess_consumer_contract_test LABELS block core debug diagnostics ecs experimental gpu ops path persistence query sim spatial storage topology)
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  add_executable(
+    tess_no_exceptions_consumer_contract_test
+    no_exceptions_consumer_contract_main.cc
+    consumer_contract/forward_tu.cc
+    consumer_contract/reverse_tu.cc
+    consumer_contract/leaf_first_tu.cc
+  )
+  target_include_directories(
+    tess_no_exceptions_consumer_contract_test
+    PRIVATE "${TESS_HEADER_SWEEP_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+  target_link_libraries(
+    tess_no_exceptions_consumer_contract_test PRIVATE tess::tess)
+  target_compile_options(
+    tess_no_exceptions_consumer_contract_test PRIVATE -fno-exceptions)
+  tess_apply_project_options(tess_no_exceptions_consumer_contract_test)
+  tess_add_test(
+    TessNoExceptions.ConsumerContract
+    tess_no_exceptions_consumer_contract_test
+    CONFIGS noexceptions
+    LABELS block core debug diagnostics ecs experimental gpu ops
+      path persistence query sim spatial storage topology
+  )
+endif()
+
 add_executable(tess_property_test tess_property_test.cc)
 target_link_libraries(tess_property_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_property_test)
@@ -161,7 +307,8 @@ tess_discover_tests(tess_dirty_property_test LABELS core ops storage)
 # would only compile: it takes a link step for a definition that should
 # be inline and is not to show up as a duplicate symbol.
 function(tess_add_macro_cell name)
-  cmake_parse_arguments(CELL "" "" "DEFINES;INCLUDES;LINKS" ${ARGN})
+  cmake_parse_arguments(
+    CELL "" "" "DEFINES;INCLUDES;LINKS;OPTIONS" ${ARGN})
   add_executable(
     ${name}
     consumer_contract/macro_cell.cc
@@ -172,6 +319,7 @@ function(tess_add_macro_cell name)
     ${name} PRIVATE "${TESS_HEADER_SWEEP_DIR}" ${CELL_INCLUDES})
   target_link_libraries(${name} PRIVATE tess::tess ${CELL_LINKS})
   target_compile_definitions(${name} PRIVATE ${CELL_DEFINES})
+  target_compile_options(${name} PRIVATE ${CELL_OPTIONS})
   tess_apply_project_options(${name})
 endfunction()
 
@@ -230,6 +378,78 @@ if(TESS_ENABLE_ENTT)
 endif()
 if(TESS_ENABLE_FLECS)
   add_dependencies(tess_contract_cells tess_contract_cell_flecs_only)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  tess_add_macro_cell(
+    tess_no_exceptions_cell_bare
+    DEFINES TESS_EXPECT_NO_EXCEPTIONS
+    OPTIONS -fno-exceptions
+  )
+  tess_add_macro_cell(
+    tess_no_exceptions_cell_ndebug
+    DEFINES NDEBUG TESS_EXPECT_NO_EXCEPTIONS
+    OPTIONS -fno-exceptions
+  )
+  tess_add_macro_cell(
+    tess_no_exceptions_cell_diagnostics
+    DEFINES TESS_ENABLE_DIAGNOSTICS TESS_EXPECT_NO_EXCEPTIONS
+    OPTIONS -fno-exceptions
+  )
+  tess_add_macro_cell(
+    tess_no_exceptions_cell_imgui
+    DEFINES
+      TESS_CONTRACT_CELL_IMGUI
+      TESS_ENABLE_IMGUI
+      TESS_ENABLE_DIAGNOSTICS
+      TESS_EXPECT_NO_EXCEPTIONS
+    INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/imgui_stub"
+    OPTIONS -fno-exceptions
+  )
+  tess_add_macro_cell(
+    tess_no_exceptions_cell_webgpu
+    DEFINES
+      TESS_CONTRACT_CELL_WEBGPU
+      TESS_ENABLE_WEBGPU
+      TESS_EXPECT_NO_EXCEPTIONS
+    INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/webgpu_stub"
+    OPTIONS -fno-exceptions
+  )
+  add_custom_target(
+    tess_no_exceptions_contract_cells
+    DEPENDS
+      tess_no_exceptions_cell_bare
+      tess_no_exceptions_cell_ndebug
+      tess_no_exceptions_cell_diagnostics
+      tess_no_exceptions_cell_imgui
+      tess_no_exceptions_cell_webgpu
+  )
+  if(TESS_ENABLE_ENTT)
+    tess_add_macro_cell(
+      tess_no_exceptions_cell_entt
+      DEFINES
+        TESS_CONTRACT_CELL_ENTT_ONLY
+        TESS_ENABLE_ENTT
+        TESS_EXPECT_NO_EXCEPTIONS
+      LINKS EnTT::EnTT
+      OPTIONS -fno-exceptions
+    )
+    add_dependencies(
+      tess_no_exceptions_contract_cells tess_no_exceptions_cell_entt)
+  endif()
+  if(TESS_ENABLE_FLECS)
+    tess_add_macro_cell(
+      tess_no_exceptions_cell_flecs
+      DEFINES
+        TESS_CONTRACT_CELL_FLECS_ONLY
+        TESS_ENABLE_FLECS
+        TESS_EXPECT_NO_EXCEPTIONS
+      LINKS flecs::flecs_static
+      OPTIONS -fno-exceptions
+    )
+    add_dependencies(
+      tess_no_exceptions_contract_cells tess_no_exceptions_cell_flecs)
+  endif()
 endif()
 
 if(TESS_ENABLE_GRID_BENCHMARK_DATA)
@@ -360,6 +580,8 @@ target_link_libraries(
   tess_queued_contract_test
   PRIVATE tess::tess GTest::gtest_main
 )
+target_compile_definitions(
+  tess_queued_contract_test PRIVATE TESS_INTERNAL_CAPACITY_TESTING)
 tess_apply_project_options(tess_queued_contract_test)
 
 tess_discover_tests(tess_queued_contract_test LABELS block core ops path sim storage topology)
@@ -512,6 +734,8 @@ add_executable(
   tess_path_cache_test.cc
 )
 target_link_libraries(tess_path_cache_test PRIVATE tess::tess GTest::gtest_main)
+target_compile_definitions(
+  tess_path_cache_test PRIVATE TESS_INTERNAL_CAPACITY_TESTING)
 tess_apply_project_options(tess_path_cache_test)
 
 tess_discover_tests(tess_path_cache_test LABELS core path storage topology)
@@ -759,6 +983,8 @@ endif()
 add_executable(tess_sim_auto_exec_test tess_sim_auto_exec_test.cc)
 target_link_libraries(
   tess_sim_auto_exec_test PRIVATE tess::tess GTest::gtest_main)
+target_compile_definitions(
+  tess_sim_auto_exec_test PRIVATE TESS_INTERNAL_CAPACITY_TESTING)
 tess_apply_project_options(tess_sim_auto_exec_test)
 
 tess_discover_tests(tess_sim_auto_exec_test LABELS block core ops sim storage)

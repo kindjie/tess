@@ -4,6 +4,7 @@
 // same model (see main below); compiled with Emscripten it becomes the
 // /demo/colony/ interactive page.
 
+#include <tess/core/config.h>
 #include <tess/pathfinding.h>
 #include <tess/simulation.h>
 
@@ -576,10 +577,10 @@ int main() {
   // The browser entry points retain their established exception behavior.
   // The native executable is a self-check, so convert setup/allocation
   // failures into a diagnostic instead of escaping main and terminating.
+#if TESS_HAS_EXCEPTIONS
   try {
 #endif
     tess_colony_reset(8);
-#ifndef __EMSCRIPTEN__
     for (int frame = 0; frame < 5000 && tess_colony_arrived() < 8; ++frame) {
       if (frame == 4) {
         for (int y = 0; y < kHeight - 8; ++y) {
@@ -710,6 +711,7 @@ int main() {
       return 1;
     }
     std::cout << "web colony model: ok\n";
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "web colony model: " << error.what() << '\n';
     return 1;
@@ -717,6 +719,7 @@ int main() {
     std::cerr << "web colony model: unknown failure\n";
     return 1;
   }
+#endif
 #endif
   return 0;
 }

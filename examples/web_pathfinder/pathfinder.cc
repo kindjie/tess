@@ -1,3 +1,4 @@
+#include <tess/core/config.h>
 #include <tess/pathfinding.h>
 
 #include <cstddef>
@@ -103,7 +104,9 @@ TESS_DEMO_EXPORT auto tess_demo_path_y(int index) -> int {
 }  // extern "C"
 
 int main() {
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     tess_demo_reset();
 #ifndef __EMSCRIPTEN__
     const auto open_length = tess_demo_find_path(0, 0, kWidth - 1, kHeight - 1);
@@ -118,9 +121,11 @@ int main() {
     }
     std::cout << "web pathfinder model: ok\n";
 #endif
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "web pathfinder model failed: " << error.what() << "\n";
     return 1;
   }
+#endif
   return 0;
 }

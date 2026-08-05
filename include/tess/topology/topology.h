@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/core/config.h>
 #include <tess/core/shape.h>
 #include <tess/core/tag_identity.h>
 #include <tess/storage/residency.h>
@@ -1200,7 +1201,9 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
   graph.bind_provider(provider);
   auto result = LocalTopologyResult{};
 
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     if constexpr (std::is_same_v<typename World::residency_type,
                                  AlwaysResident>) {
       graph.local_topologies_.resize(
@@ -1263,6 +1266,7 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
     graph.template mark_provider_missing_reaches<Shape>(world, provider);
 
     return result;
+#if TESS_HAS_EXCEPTIONS
   } catch (...) {
     // Full builds publish directly into caller storage for locality. If any
     // allocation fails after clear(), discard all partial labels and derived
@@ -1270,6 +1274,7 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
     graph.clear();
     throw;
   }
+#endif
 }
 
 // Incrementally patches an already-built region graph after passability
@@ -1330,7 +1335,9 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
             });
       }
 
+#if TESS_HAS_EXCEPTIONS
       try {
+#endif
         for (std::size_t raw_chunk = 0; raw_chunk < chunk_count; ++raw_chunk) {
           if (dirty[raw_chunk] == 0) {
             continue;
@@ -1364,6 +1371,7 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
                          });
         graph.rebuild_region_index();
         graph.bump_revision();
+#if TESS_HAS_EXCEPTIONS
       } catch (...) {
         // Incremental locality matters on this performance-sensitive path, so
         // do not copy every unchanged tile label merely for rollback. Clear is
@@ -1372,6 +1380,7 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
         graph.clear();
         throw;
       }
+#endif
     }
   } else {
     // Sparse: any residency change since build forces a full rebuild (the graph
@@ -1430,7 +1439,9 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
             });
       }
 
+#if TESS_HAS_EXCEPTIONS
       try {
+#endif
         for (std::size_t i = 0; i < count; ++i) {
           if (dirty[i] == 0) {
             continue;
@@ -1461,12 +1472,14 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
         graph.rebuild_region_index();
         graph.template mark_provider_missing_reaches<Shape>(world, provider);
         graph.bump_revision();
+#if TESS_HAS_EXCEPTIONS
       } catch (...) {
         // Clear also drops frozen residency and missing-region state, so a
         // retry cannot mistake a partly rebuilt sparse snapshot for fresh.
         graph.clear();
         throw;
       }
+#endif
     }
   }
 

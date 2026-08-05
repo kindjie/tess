@@ -413,7 +413,9 @@ no-hidden-full-world-scans rule holds by
 construction. Type erasure is a function pointer plus a context pointer;
 world-typed work lives in task objects the caller owns and registers by
 reference. `ScheduleTaskFn` is the raw erased function-pointer form for callers
-that do not use the object-reference overload.
+that do not use the object-reference overload. `ScheduleNoThrowTaskFn`
+preserves an explicit `noexcept` contract through erasure; the object overload
+selects it automatically for a statically no-throw task.
 
 ```mermaid
 flowchart TB

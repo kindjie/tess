@@ -173,6 +173,25 @@ def test_examples_preset_is_network_free_and_example_only():
     assert "inherits" not in examples
 
 
+def test_no_exceptions_examples_preset_uses_real_compiler_mode():
+    presets = json.loads(
+        (REPO_ROOT / "CMakePresets.json").read_text(encoding="utf-8")
+    )
+    configure = {p["name"]: p for p in presets["configurePresets"]}
+    build = {p["name"]: p for p in presets["buildPresets"]}
+
+    no_exceptions = configure["examples-no-exceptions"]
+    assert no_exceptions["inherits"] == "examples"
+    assert no_exceptions["cacheVariables"] == {
+        "TESS_EXAMPLES_NO_EXCEPTIONS": "ON",
+        "TESS_ENABLE_WARNINGS": "ON",
+        "TESS_WARNINGS_AS_ERRORS": "ON",
+    }
+    assert build["examples-no-exceptions"]["configurePreset"] == (
+        "examples-no-exceptions"
+    )
+
+
 def test_install_smoke_uses_the_tracked_consumer_fixture():
     script = (REPO_ROOT / "tools" / "install_smoke.sh").read_text(
         encoding="utf-8"
@@ -182,6 +201,10 @@ def test_install_smoke_uses_the_tracked_consumer_fixture():
     assert (fixture / "CMakeLists.txt").is_file()
     assert (fixture / "main.cc").is_file()
     assert 'cmake -S "$root/tests/install_consumer"' in script
+    assert '-DTESS_NO_EXCEPTIONS="$no_exceptions"' in script
+    assert "-fno-exceptions" in (fixture / "CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
     assert "cat >" not in script
 
 
@@ -194,6 +217,10 @@ def test_fetchcontent_smoke_uses_the_tracked_consumer_fixture():
     assert (fixture / "CMakeLists.txt").is_file()
     assert (fixture / "main.cc").is_file()
     assert 'cmake -S "$root/tests/fetchcontent_consumer"' in script
+    assert '-DTESS_NO_EXCEPTIONS="$no_exceptions"' in script
+    assert "-fno-exceptions" in (fixture / "CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
     assert "cat >" not in script
 
 

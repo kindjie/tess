@@ -43,6 +43,11 @@ option(TESS_BUILD_EXAMPLES "Build tess examples" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
 option(TESS_BUILD_DOCS "Build the tess API reference with Doxygen" OFF)
 option(
+  TESS_EXAMPLES_NO_EXCEPTIONS
+  "Compile examples with language exceptions disabled"
+  OFF
+)
+option(
   TESS_ENABLE_COVERAGE
   "Instrument tess consumers with Clang source-based coverage"
   OFF
@@ -130,6 +135,8 @@ set(
   include/tess/block/block.h
   include/tess/block/pipeline.h
   include/tess/core/assert.h
+  include/tess/core/capacity.h
+  include/tess/core/config.h
   include/tess/core/lattice.h
   include/tess/core/shape.h
   include/tess/debug/imgui/panels.h
@@ -200,6 +207,7 @@ set(
 set(
   TESS_IMPLEMENTATION_HEADERS
   include/tess/core/tag_identity.h
+  include/tess/core/fail_fast.h
   include/tess/core/uint128.h
   include/tess/path/detail/astar.h
   include/tess/path/detail/weighted_batch.h
@@ -244,6 +252,35 @@ set_target_properties(
     VERIFY_INTERFACE_HEADER_SETS ON
     INTERFACE_HEADER_SETS_TO_VERIFY "HEADERS;generated_headers"
 )
+
+# A build-only mirror of the public header contract under the real compiler
+# exception-disable flag. The installed tess target stays policy-neutral.
+if(TESS_BUILD_TESTING AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  add_library(tess_no_exceptions_headers INTERFACE)
+  target_link_libraries(tess_no_exceptions_headers INTERFACE tess::tess)
+  target_compile_options(
+    tess_no_exceptions_headers INTERFACE -fno-exceptions)
+  target_sources(
+    tess_no_exceptions_headers
+    INTERFACE
+      FILE_SET no_exceptions_headers
+      TYPE HEADERS
+      BASE_DIRS include
+      FILES ${TESS_PUBLIC_HEADERS}
+    INTERFACE
+      FILE_SET no_exceptions_generated_headers
+      TYPE HEADERS
+      BASE_DIRS "${TESS_GENERATED_INCLUDE_DIR}"
+      FILES "${TESS_GENERATED_INCLUDE_DIR}/tess/version.h"
+  )
+  set_target_properties(
+    tess_no_exceptions_headers
+    PROPERTIES
+      VERIFY_INTERFACE_HEADER_SETS ON
+      INTERFACE_HEADER_SETS_TO_VERIFY
+        "no_exceptions_headers;no_exceptions_generated_headers"
+  )
+endif()
 
 # Generated include sweeps for the consumer-contract probes: one
 # header per line in declaration order and in reverse, regenerated from

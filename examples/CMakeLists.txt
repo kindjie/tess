@@ -67,3 +67,16 @@ if(TESS_ENABLE_FLECS)
   target_compile_definitions(tess_flecs_pawns PRIVATE TESS_ENABLE_FLECS)
   tess_apply_project_options(tess_flecs_pawns)
 endif()
+
+if(TESS_EXAMPLES_NO_EXCEPTIONS)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    message(
+      FATAL_ERROR
+      "TESS_EXAMPLES_NO_EXCEPTIONS requires Clang-family or GCC"
+    )
+  endif()
+  get_property(example_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(target IN LISTS example_targets)
+    target_compile_options(${target} PRIVATE -fno-exceptions)
+  endforeach()
+endif()

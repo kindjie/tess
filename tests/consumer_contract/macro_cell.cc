@@ -41,6 +41,11 @@
 
 #include "tess_all_headers_forward.h"
 
+#if defined(TESS_EXPECT_NO_EXCEPTIONS)
+static_assert(TESS_HAS_EXCEPTIONS == 0);
+static_assert(!tess::has_exceptions);
+#endif
+
 namespace tess_test::contract {
 
 // Shared between the cell's two units so both name the same

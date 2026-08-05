@@ -5,6 +5,7 @@
 // (both provided by the example's build target).
 #include <flecs.h>
 // Flecs first: the adapter header requires the consumer include order.
+#include <tess/core/config.h>
 #include <tess/ecs/flecs/flecs_adapter.h>
 #include <tess/tess.h>
 
@@ -129,13 +130,17 @@ auto run() -> int {
 }  // namespace
 
 auto main() -> int {
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     // The analyzer propagates Flecs' temporary-term false positive through
     // run(), so the external-boundary call needs the same narrow suppression.
     // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
     return run();
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "error: " << error.what() << "\n";
     return 1;
   }
+#endif
 }

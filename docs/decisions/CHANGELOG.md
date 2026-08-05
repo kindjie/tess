@@ -8,6 +8,25 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-04 - Exception-free consumer mode
+
+- Added: Clang-family and GCC consumers can compile all public headers,
+  aggregates, and complete examples with `-fno-exceptions`; installed and
+  FetchContent fixtures verify that the exported target remains policy-neutral.
+- Added: checked block, portal-cache, and planned-dirty capacity results plus
+  one internal abort path for legacy operations that cannot throw.
+- Changed: phase executors use policy-specialized representations. The
+  exception-free pool omits exception and cancellation state, while explicit
+  no-throw callbacks retain that property through queued, result-channel,
+  schedule, and auto-exec adapters in enabled builds.
+- Compatibility: exception-enabled source behavior remains the default.
+  General allocation failure, thread creation failure, and throwing
+  application operations are outside the exception-free recovery contract.
+  Native MSVC remains unsupported beyond a detection/STL/thread spike.
+- Affected docs: integration policy, exception-free architecture note, block,
+  queued operations, path, simulation, public-surface manifest, and the
+  historical exception-free TDD.
+
 ## 2026-08-01 - Long-retention benchmark history (phase 6, slice a)
 
 - Added: `tools/publish_benchmark_data.py` lays out per-main benchmark

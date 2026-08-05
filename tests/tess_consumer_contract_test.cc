@@ -3,6 +3,11 @@
 #include <cstdint>
 
 #include "consumer_contract/contract.h"
+#include "tess/core/config.h"
+
+#if defined(TESS_EXPECT_NO_EXCEPTIONS)
+static_assert(!tess::has_exceptions);
+#endif
 
 namespace {
 

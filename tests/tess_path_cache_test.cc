@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <new>
 #include <span>
 #include <vector>
@@ -352,6 +353,94 @@ TEST(TessPathCache, PortalSegmentCacheStoreHasStrongAllocationGuarantee) {
 
   EXPECT_TRUE(saw_failure);
   EXPECT_TRUE(reached_success);
+}
+
+TEST(TessPathCache, PortalSegmentCacheCheckedReservesRejectCapacity) {
+  tess::WeightedPortalSegmentCache cache;
+  ASSERT_EQ(cache.reserve_segments_checked(8), tess::ReserveStatus::Reserved);
+  ASSERT_EQ(cache.reserve_path_nodes_checked(32),
+            tess::ReserveStatus::Reserved);
+  const auto before = cache.stats();
+
+  EXPECT_EQ(
+      cache.reserve_segments_checked(std::numeric_limits<std::size_t>::max()),
+      tess::ReserveStatus::CapacityExceeded);
+  EXPECT_EQ(
+      cache.reserve_path_nodes_checked(std::numeric_limits<std::size_t>::max()),
+      tess::ReserveStatus::CapacityExceeded);
+  expect_portal_stats_eq(cache.stats(), before);
+}
+
+TEST(TessPathCache, PortalSegmentCacheLegacyReservesPreserveLengthError) {
+  tess::WeightedPortalSegmentCache cache;
+  const auto before = cache.stats();
+
+  EXPECT_THROW(cache.reserve_segments(std::numeric_limits<std::size_t>::max()),
+               std::length_error);
+  EXPECT_THROW(
+      cache.reserve_path_nodes(std::numeric_limits<std::size_t>::max()),
+      std::length_error);
+  expect_portal_stats_eq(cache.stats(), before);
+}
+
+TEST(TessPathCache, PortalSegmentCacheCheckedStoreCompletesNormalAndNoStore) {
+  constexpr auto nodes = std::array{
+      tess::Coord3{0, 0, 0},
+      tess::Coord3{1, 0, 0},
+  };
+  constexpr auto request = tess::PathRequest{nodes.front(), nodes.back()};
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  tess::WeightedPortalSegmentCache cache;
+  auto class_cache = cache.for_class<PortalClass>();
+
+  EXPECT_EQ(class_cache.store_checked(world, request, found_path_result(nodes)),
+            tess::PortalSegmentStoreStatus::Completed);
+  EXPECT_EQ(cache.size(), 1u);
+
+  cache.set_segment_budget(0);
+  EXPECT_EQ(class_cache.store_checked(world, request, found_path_result(nodes)),
+            tess::PortalSegmentStoreStatus::Completed);
+  EXPECT_EQ(cache.size(), 0u);
+}
+
+TEST(TessPathCache, PortalSegmentCacheCheckedStorePreservesStateAtCapacity) {
+  constexpr auto original_nodes = std::array{
+      tess::Coord3{0, 0, 0},
+      tess::Coord3{1, 0, 0},
+  };
+  constexpr auto rejected_nodes = std::array{
+      tess::Coord3{0, 1, 0},
+      tess::Coord3{1, 1, 0},
+  };
+  constexpr auto original_request =
+      tess::PathRequest{original_nodes.front(), original_nodes.back()};
+  constexpr auto rejected_request =
+      tess::PathRequest{rejected_nodes.front(), rejected_nodes.back()};
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  tess::WeightedPortalSegmentCache cache;
+  cache.set_segment_budget(8);
+  auto class_cache = cache.for_class<PortalClass>();
+  ASSERT_EQ(class_cache.store_checked(world, original_request,
+                                      found_path_result(original_nodes)),
+            tess::PortalSegmentStoreStatus::Completed);
+  const auto before = cache.stats();
+
+  {
+    const tess::detail::ScopedCapacityLimitForTesting capacity_limit{3};
+    EXPECT_EQ(class_cache.store_checked(world, rejected_request,
+                                        found_path_result(rejected_nodes)),
+              tess::PortalSegmentStoreStatus::CapacityExceeded);
+  }
+
+  expect_portal_stats_eq(cache.stats(), before);
+  std::vector<tess::Coord3> out;
+  EXPECT_TRUE(class_cache.lookup_append(world, original_request, out).found);
+  const std::vector<tess::Coord3> expected_original(original_nodes.begin(),
+                                                    original_nodes.end());
+  EXPECT_EQ(out, expected_original);
+  out.clear();
+  EXPECT_FALSE(class_cache.lookup_append(world, rejected_request, out).found);
+  EXPECT_TRUE(out.empty());
 }
 
 TEST(TessPathCache, PortalSegmentCacheFailedStoreDefersStaleStats) {

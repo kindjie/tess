@@ -444,6 +444,7 @@ def test_ci_gate_aggregates_every_required_ci_job():
     "changes",
     "dev",
     "gcc",
+    "no-exceptions",
     "hooks-backstop",
     "quality",
     "tidy-diff",
@@ -470,6 +471,7 @@ def test_documentation_only_changes_skip_expensive_ci_fail_closed():
   expensive_jobs = (
     "dev",
     "gcc",
+    "no-exceptions",
     "quality",
     "windows",
     "bench",
@@ -498,6 +500,19 @@ def test_documentation_only_changes_skip_expensive_ci_fail_closed():
       "    if: ${{ needs.changes.outputs.code_required == 'true' }}\n"
       in workflow
     )
+
+  no_exceptions = workflow.split("  no-exceptions:\n", 1)[1].split(
+    "  hooks-backstop:\n", 1
+  )[0]
+  assert "name: Clang ASan UBSan" in no_exceptions
+  assert "name: GCC Werror" in no_exceptions
+  assert "tess_no_exceptions_test" in no_exceptions
+  assert "tess_no_exceptions_headers_verify_interface_header_sets" in (
+    no_exceptions
+  )
+  assert "tess_no_exceptions_contract_cells" in no_exceptions
+  assert "cmake --preset examples-no-exceptions" in no_exceptions
+  assert no_exceptions.count("TESS_NO_EXCEPTIONS: 1") == 2
 
   # Tier-conditional jobs also require code_required, fail closed.
   assert (

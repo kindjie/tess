@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tess/core/config.h>
+#include <tess/core/fail_fast.h>
 #include <tess/ops/phase_executor.h>
 #include <tess/ops/queued.h>
 #include <tess/ops/result_channel.h>
@@ -104,6 +106,7 @@ class AutoExecTask {
     if (ops_->empty()) {
       return ScheduleTaskResult{};
     }
+#if TESS_HAS_EXCEPTIONS
     try {
       return run_nonempty();
     } catch (...) {
@@ -113,6 +116,9 @@ class AutoExecTask {
       channel_.clear();
       throw;
     }
+#else
+    return run_nonempty();
+#endif
   }
 
  private:
@@ -146,18 +152,25 @@ class AutoExecTask {
         const auto use_pool =
             pool_ != nullptr && phase.operation_count() >= parallel_threshold_;
         auto result = PlannedExecutionResult{};
+#if TESS_HAS_EXCEPTIONS
         try {
+#endif
           if (use_pool) {
             ++last_run_.pool_phases;
             result = execute_phase_partitioned_dirty_with_results<Policy>(
                 *pool_, *world_, report.plan(), phase, scratch_, channel_,
-                [this](auto view, Ack& ack) { fn_(view, ack); });
+                [this](auto view, Ack& ack) noexcept(
+                    std::is_nothrow_invocable_v<ChunkFn&, decltype(view)&,
+                                                Ack&>) { fn_(view, ack); });
           } else {
             const SerialPhaseExecutor serial;
             result = execute_phase_partitioned_dirty_with_results<Policy>(
                 serial, *world_, report.plan(), phase, scratch_, channel_,
-                [this](auto view, Ack& ack) { fn_(view, ack); });
+                [this](auto view, Ack& ack) noexcept(
+                    std::is_nothrow_invocable_v<ChunkFn&, decltype(view)&,
+                                                Ack&>) { fn_(view, ack); });
           }
+#if TESS_HAS_EXCEPTIONS
         } catch (...) {
           // Dirty records are written before each callback. Both concurrent
           // executors join before rethrowing, and this allocation-free merge
@@ -169,14 +182,18 @@ class AutoExecTask {
           last_run_.merged_dirty_chunks += merged.merged_chunk_count;
           throw;
         }
+#endif
         TESS_ASSERT(result.status == PlannedExecutionStatus::Executed);
         last_run_.executed_chunks += result.chunk_count;
         // Merge after EACH phase: the partitioned scratch is re-prepared
         // per phase, so a single post-loop merge would drop every phase's
         // dirty records but the last.
         auto merged = PlannedDirtyMergeResult{};
+#if TESS_HAS_EXCEPTIONS
         try {
+#endif
           merged = merge_planned_dirty(*world_, scratch_);
+#if TESS_HAS_EXCEPTIONS
         } catch (...) {
           // Normal coalescing reserves before consuming partitions. If that
           // reserve fails, the no-allocation cold path can still publish every
@@ -186,6 +203,17 @@ class AutoExecTask {
           TESS_ASSERT(fallback.status == PlannedDirtyMergeStatus::Merged);
           last_run_.merged_dirty_chunks += fallback.merged_chunk_count;
           throw;
+        }
+#endif
+        if (merged.status == PlannedDirtyMergeStatus::CapacityExceeded) {
+          // Capacity validation leaves every partition intact. The cold
+          // allocation-free merge therefore preserves completed writes in
+          // exception-free builds just as it does while unwinding above.
+          merged =
+              detail::merge_planned_dirty_after_exception(*world_, scratch_);
+          if (!merged.ok()) {
+            detail::fail_fast("AutoExec dirty fallback validation failed");
+          }
         }
         TESS_ASSERT(merged.status == PlannedDirtyMergeStatus::Merged);
         last_run_.merged_dirty_chunks += merged.merged_chunk_count;

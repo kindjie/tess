@@ -2,6 +2,8 @@
 // example. Keep setup outside regions when it would distract from the concept
 // being documented.
 
+#include <tess/core/config.h>
+
 // [getting-pathfinding-include]
 #include <tess/pathfinding.h>
 // [getting-pathfinding-include]
@@ -284,7 +286,9 @@ auto share_field_product(World& world) -> bool {
 }  // namespace
 
 int main() {
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     World world;  // Allocates every chunk; all fields start zero-initialized.
     const auto ok = find_path(world) && check_topology(world) &&
                     run_schedule() && collect_deltas(world) &&
@@ -297,9 +301,11 @@ int main() {
       return 1;
     }
     write_one_tile(world);
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "documentation example failed: " << error.what() << "\n";
     return 1;
   }
+#endif
   return 0;
 }

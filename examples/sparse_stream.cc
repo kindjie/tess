@@ -2,6 +2,7 @@
 // materialize, and a path query that reports Indeterminate until the missing
 // chunk is streamed in. Self-checking: returns nonzero on any failed check.
 
+#include <tess/core/config.h>
 #include <tess/pathfinding.h>
 
 #include <cstdint>
@@ -78,14 +79,18 @@ auto stream_the_bridge() -> bool {
 }  // namespace
 
 int main() {
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     if (!stay_within_budget() || !stream_the_bridge()) {
       std::cerr << "sparse_stream example failed\n";
       return 1;
     }
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "sparse_stream example failed: " << error.what() << "\n";
     return 1;
   }
+#endif
   return 0;
 }

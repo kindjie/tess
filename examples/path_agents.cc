@@ -1,3 +1,4 @@
+#include <tess/core/config.h>
 #include <tess/tess.h>
 
 #include <array>
@@ -86,10 +87,14 @@ auto run() -> int {
 }  // namespace
 
 int main() {
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     return run();
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& err) {
     std::cerr << "example failed: " << err.what() << "\n";
     return 1;
   }
+#endif
 }

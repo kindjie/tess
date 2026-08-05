@@ -5,6 +5,7 @@
 // unreachable; the same graph built with StairTransitions restores the
 // route, the path-runtime precheck agrees, and an incremental update
 // after demolishing the stair severs it again.
+#include <tess/core/config.h>
 #include <tess/tess.h>
 
 #include <cstdint>
@@ -134,10 +135,14 @@ auto run() -> int {
 }  // namespace
 
 auto main() -> int {
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     return run();
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "error: " << error.what() << "\n";
     return 1;
   }
+#endif
 }
