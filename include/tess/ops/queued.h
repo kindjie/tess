@@ -833,6 +833,7 @@ enum class PlannedDirtyMergeStatus : std::uint8_t {
   Merged,
   InvalidShape,
   InvalidChunk,
+  CapacityExceeded,
 };
 static_assert(sizeof(PlannedDirtyMergeStatus) == sizeof(std::uint8_t));
 
@@ -841,6 +842,7 @@ enum class PlannedDirtyCollectStatus : std::uint8_t {
   Collected,
   InvalidShape,
   InvalidChunk,
+  CapacityExceeded,
 };
 static_assert(sizeof(PlannedDirtyCollectStatus) == sizeof(std::uint8_t));
 
@@ -1095,6 +1097,14 @@ class PlannedDirtyPartitions {
 
 namespace detail {
 
+template <WritePolicy Policy, typename World>
+using PlannedChunkView =
+    ChunkView<typename BlockCtx<World, Policy>::view_world_type>;
+
+template <WritePolicy Policy, typename World, typename Fn>
+inline constexpr bool planned_callback_is_nothrow =
+    std::is_nothrow_invocable_v<Fn&, PlannedChunkView<Policy, World>&>;
+
 // Scratch-owned phase partitions carry no independent world stamp. The
 // enclosing scratch object owns one capability stamp, and this record-only
 // type cannot be passed to the public dirty-merge APIs for another world.
@@ -1106,6 +1116,8 @@ class PhaseDirtyPartition {
 
   void record(ChunkKey chunk, std::uint32_t dirty_mask, Box3 bounds) {
     if (dirty_mask != 0) {
+      // Phase setup reserves one record for every possible chunk visit.
+      TESS_ASSERT(records_.size() < records_.capacity());
       records_.push_back(PlannedDirtyRecord{chunk, dirty_mask, bounds});
     }
   }
@@ -1980,12 +1992,23 @@ inline auto collect_planned_dirty(PlannedDirtyAccumulator& dirty,
     }
   }
 
+  const auto record_limit =
+      detail::effective_capacity_limit(dirty.records_.max_size());
+  if (dirty.records_.size() > record_limit) {
+    return PlannedDirtyCollectResult{
+        PlannedDirtyCollectStatus::CapacityExceeded,
+        0,
+    };
+  }
   auto required_capacity = dirty.records_.size();
   auto record_count = std::size_t{0};
   for (const auto& partition : partitions.partitions_) {
     const auto partition_size = partition.records_.size();
-    if (partition_size > dirty.records_.max_size() - required_capacity) {
-      throw std::length_error{"planned dirty record count exceeds max_size"};
+    if (partition_size > record_limit - required_capacity) {
+      return PlannedDirtyCollectResult{
+          PlannedDirtyCollectStatus::CapacityExceeded,
+          0,
+      };
     }
     required_capacity += partition_size;
     record_count += partition_size;
@@ -2023,6 +2046,12 @@ auto merge_planned_dirty(World& world, PlannedDirtyPartitions& partitions,
   dirty_scratch.clear();
   const auto collected = collect_planned_dirty(dirty_scratch, partitions);
   if (!collected.ok()) {
+    if (collected.status == PlannedDirtyCollectStatus::CapacityExceeded) {
+      return PlannedDirtyMergeResult{
+          PlannedDirtyMergeStatus::CapacityExceeded,
+          0,
+      };
+    }
     return PlannedDirtyMergeResult{
         collected.status == PlannedDirtyCollectStatus::InvalidShape
             ? PlannedDirtyMergeStatus::InvalidShape
@@ -2055,11 +2084,17 @@ auto merge_planned_dirty(World& world, PlannedPhaseExecutionScratch& scratch)
   }
 
   auto& merged = scratch.merged_dirty_;
+  const auto record_limit =
+      detail::effective_capacity_limit(merged.records_.max_size());
   auto record_count = std::size_t{0};
   for (const auto& partition : scratch.dirty_partitions_) {
     const auto partition_size = partition.records().size();
-    if (partition_size > merged.records_.max_size() - record_count) {
-      throw std::length_error{"planned dirty record count exceeds max_size"};
+    if (record_count > record_limit ||
+        partition_size > record_limit - record_count) {
+      return PlannedDirtyMergeResult{
+          PlannedDirtyMergeStatus::CapacityExceeded,
+          0,
+      };
     }
     record_count += partition_size;
   }
@@ -2403,9 +2438,18 @@ auto execute_phase_partitioned_dirty_with(Executor&& executor, World& world,
   TESS_DIAG_EVENT_VALUE(queued_partitioned_phase, phase.operation_count());
   scratch.prepare(world, phase.operation_count());
   auto&& callback = fn;
+  constexpr auto no_throw_callback =
+      detail::planned_callback_is_nothrow<Policy, World, decltype(callback)>;
+  for (std::size_t offset = 0; offset < phase.operation_count(); ++offset) {
+    const auto index = phase.first_operation() + offset;
+    scratch.dirty_for_operation(offset).reserve(
+        operations[index].field_access.dirty_mask == 0
+            ? 0
+            : operations[index].chunks().size());
+  }
   auto result = execute_operation_index_range(
       std::forward<Executor>(executor), executor_phase_range(phase),
-      [&](std::size_t index) {
+      [&](std::size_t index) noexcept(no_throw_callback) {
         const auto offset = index - phase.first_operation();
         auto operation_result =
             detail::execute_validated_phase_operation_deferred_dirty<Policy>(

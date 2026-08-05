@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/core/config.h>
 #include <tess/diagnostics/diagnostics.h>
 
 #include <algorithm>
@@ -132,13 +133,18 @@ concept SerialExecutor =
  * already-running callbacks have joined. If callbacks throw concurrently,
  * which exception is propagated is unspecified.
  */
-class ScopedThreadPhaseExecutor {
+template <bool CaptureExceptions>
+class ScopedThreadPhaseExecutorImpl {
  public:
-  explicit ScopedThreadPhaseExecutor(std::size_t worker_count) noexcept
+  static_assert(!CaptureExceptions || has_exceptions,
+                "exception capture requires compiler exception support");
+  static constexpr bool captures_callback_exceptions = CaptureExceptions;
+
+  explicit ScopedThreadPhaseExecutorImpl(std::size_t worker_count) noexcept
       : worker_count_(worker_count == 0 ? 1 : worker_count) {}
 
-  ScopedThreadPhaseExecutor() noexcept
-      : ScopedThreadPhaseExecutor(std::thread::hardware_concurrency()) {}
+  ScopedThreadPhaseExecutorImpl() noexcept
+      : ScopedThreadPhaseExecutorImpl(std::thread::hardware_concurrency()) {}
 
   [[nodiscard]] auto worker_count() const noexcept -> std::size_t {
     return worker_count_;
@@ -154,54 +160,101 @@ class ScopedThreadPhaseExecutor {
     const auto thread_count = std::min(worker_count_, count);
     TESS_DIAG_EVENT_VALUE(queued_scoped_thread_dispatch, thread_count);
     std::atomic<std::size_t> next_offset = 0;
-    std::atomic<bool> cancelled = false;
-    std::exception_ptr exception;
-    std::mutex exception_mutex;
     std::vector<PlannedExecutionResult> results(count);
     std::vector<std::thread> threads;
     threads.reserve(thread_count);
     auto&& callback = fn;
+    static_assert(
+        !has_exceptions || CaptureExceptions ||
+            std::is_nothrow_invocable_r_v<PlannedExecutionResult,
+                                          decltype(callback)&, std::size_t>,
+        "NoThrow executors require noexcept callbacks when exceptions are "
+        "enabled");
 
-    for (std::size_t worker = 0; worker < thread_count; ++worker) {
-      try {
+    constexpr auto no_throw_callback =
+        !CaptureExceptions ||
+        std::is_nothrow_invocable_r_v<PlannedExecutionResult,
+                                      decltype(callback)&, std::size_t>;
+
+    if constexpr (no_throw_callback) {
+      const auto start_worker = [&] {
         threads.emplace_back([&] {
           while (true) {
             const auto offset = next_offset.fetch_add(1);
-            if (offset >= count || cancelled.load(std::memory_order_acquire)) {
+            if (offset >= count) {
               return;
             }
-            try {
-              results[offset] = callback(first + offset);
-            } catch (...) {
-              {
-                const std::scoped_lock lock{exception_mutex};
-                if (!exception) {
-                  exception = std::current_exception();
-                }
-              }
-              cancelled.store(true, std::memory_order_release);
-              return;
-            }
+            results[offset] = callback(first + offset);
           }
         });
+      };
+#if TESS_HAS_EXCEPTIONS
+      try {
+        for (std::size_t worker = 0; worker < thread_count; ++worker) {
+          start_worker();
+        }
       } catch (...) {
-        // A std::thread constructor threw mid-spawn: join the workers
-        // that did start (they drain the remaining operations, so the
-        // join is bounded) and rethrow instead of letting the vector
-        // unwind over joinable threads, which would std::terminate.
         for (auto& thread : threads) {
           thread.join();
         }
         throw;
       }
+#else
+      for (std::size_t worker = 0; worker < thread_count; ++worker) {
+        start_worker();
+      }
+#endif
+    } else {
+#if TESS_HAS_EXCEPTIONS
+      std::atomic<bool> cancelled = false;
+      std::exception_ptr exception;
+      std::mutex exception_mutex;
+
+      for (std::size_t worker = 0; worker < thread_count; ++worker) {
+        try {
+          threads.emplace_back([&] {
+            while (true) {
+              const auto offset = next_offset.fetch_add(1);
+              if (offset >= count ||
+                  cancelled.load(std::memory_order_acquire)) {
+                return;
+              }
+              try {
+                results[offset] = callback(first + offset);
+              } catch (...) {
+                {
+                  const std::scoped_lock lock{exception_mutex};
+                  if (!exception) {
+                    exception = std::current_exception();
+                  }
+                }
+                cancelled.store(true, std::memory_order_release);
+                return;
+              }
+            }
+          });
+        } catch (...) {
+          for (auto& thread : threads) {
+            thread.join();
+          }
+          throw;
+        }
+      }
+
+      for (auto& thread : threads) {
+        thread.join();
+      }
+
+      if (exception) {
+        std::rethrow_exception(exception);
+      }
+#endif
     }
 
-    for (auto& thread : threads) {
-      thread.join();
-    }
-
-    if (exception) {
-      std::rethrow_exception(exception);
+    if constexpr (no_throw_callback) {
+      for (auto& thread : threads) {
+        thread.join();
+      }
     }
 
     for (const auto result : results) {
@@ -215,6 +268,12 @@ class ScopedThreadPhaseExecutor {
  private:
   std::size_t worker_count_ = 1;
 };
+
+/** Scoped-thread executor selected for the active exception configuration. */
+using ScopedThreadPhaseExecutor = ScopedThreadPhaseExecutorImpl<has_exceptions>;
+
+/** Scoped-thread executor for callbacks whose no-throw contract is explicit. */
+using NoThrowScopedThreadPhaseExecutor = ScopedThreadPhaseExecutorImpl<false>;
 
 // Prototype persistent worker-pool backend behind the PhaseExecutor
 // contract: workers are created once and reused across phases, so phase
@@ -247,17 +306,43 @@ class ScopedThreadPhaseExecutor {
 #pragma warning(disable : 4324)
 #endif
 // NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
+namespace detail {
+
+using PhaseJobInvoke = auto (*)(void*, std::size_t) -> PlannedExecutionResult;
+using NoThrowPhaseJobInvoke = auto (*)(void*, std::size_t) noexcept
+    -> PlannedExecutionResult;
+
+template <bool CaptureExceptions>
+struct WorkerPoolExceptionState {};
+
+template <>
+struct alignas(128) WorkerPoolExceptionState<true> {
+  mutable std::atomic<bool> cancelled = false;
+  mutable std::exception_ptr exception;
+  mutable PhaseJobInvoke invoke = nullptr;
+  mutable bool no_throw_job = false;
+};
+
+}  // namespace detail
+
 /**
  * Persistent prototype worker pool for allocation-free repeated dispatch.
  * Callback exceptions are rethrown after join; callbacks must not re-enter
  * the same pool. If callbacks throw concurrently, which exception is
  * propagated is unspecified.
  */
-class WorkerPoolPhaseExecutor {
+template <bool CaptureExceptions>
+class WorkerPoolPhaseExecutorImpl
+    : private detail::WorkerPoolExceptionState<CaptureExceptions> {
  public:
-  explicit WorkerPoolPhaseExecutor(std::size_t worker_count) {
+  static_assert(!CaptureExceptions || has_exceptions,
+                "exception capture requires compiler exception support");
+  static constexpr bool captures_callback_exceptions = CaptureExceptions;
+
+  explicit WorkerPoolPhaseExecutorImpl(std::size_t worker_count) {
     const auto count = worker_count == 0 ? std::size_t{1} : worker_count;
     workers_.reserve(count);
+#if TESS_HAS_EXCEPTIONS
     try {
       for (std::size_t worker = 0; worker < count; ++worker) {
         workers_.emplace_back([this] { run_worker(); });
@@ -265,8 +350,7 @@ class WorkerPoolPhaseExecutor {
     } catch (...) {
       // A std::thread constructor threw mid-pool-construction: stop and
       // join the workers that did start, then rethrow instead of letting
-      // workers_ unwind over joinable threads, which would
-      // std::terminate.
+      // workers_ unwind over joinable threads, which would terminate.
       {
         const std::scoped_lock lock{mutex_};
         stop_ = true;
@@ -277,19 +361,24 @@ class WorkerPoolPhaseExecutor {
       }
       throw;
     }
+#else
+    for (std::size_t worker = 0; worker < count; ++worker) {
+      workers_.emplace_back([this] { run_worker(); });
+    }
+#endif
   }
 
-  WorkerPoolPhaseExecutor()
-      : WorkerPoolPhaseExecutor(std::thread::hardware_concurrency()) {}
+  WorkerPoolPhaseExecutorImpl()
+      : WorkerPoolPhaseExecutorImpl(std::thread::hardware_concurrency()) {}
 
-  WorkerPoolPhaseExecutor(const WorkerPoolPhaseExecutor&) = delete;
-  auto operator=(const WorkerPoolPhaseExecutor&)
-      -> WorkerPoolPhaseExecutor& = delete;
-  WorkerPoolPhaseExecutor(WorkerPoolPhaseExecutor&&) = delete;
-  auto operator=(WorkerPoolPhaseExecutor&&)
-      -> WorkerPoolPhaseExecutor& = delete;
+  WorkerPoolPhaseExecutorImpl(const WorkerPoolPhaseExecutorImpl&) = delete;
+  auto operator=(const WorkerPoolPhaseExecutorImpl&)
+      -> WorkerPoolPhaseExecutorImpl& = delete;
+  WorkerPoolPhaseExecutorImpl(WorkerPoolPhaseExecutorImpl&&) = delete;
+  auto operator=(WorkerPoolPhaseExecutorImpl&&)
+      -> WorkerPoolPhaseExecutorImpl& = delete;
 
-  ~WorkerPoolPhaseExecutor() {
+  ~WorkerPoolPhaseExecutorImpl() {
     {
       const std::scoped_lock lock{mutex_};
       stop_ = true;
@@ -329,8 +418,20 @@ class WorkerPoolPhaseExecutor {
 
     auto&& callback = fn;
     using Callback = std::remove_reference_t<decltype(callback)>;
+    static_assert(
+        !has_exceptions || CaptureExceptions ||
+            std::is_nothrow_invocable_r_v<PlannedExecutionResult, Callback&,
+                                          std::size_t>,
+        "NoThrow executors require noexcept callbacks when exceptions are "
+        "enabled");
+    constexpr auto no_throw_callback =
+        !CaptureExceptions ||
+        std::is_nothrow_invocable_r_v<PlannedExecutionResult, Callback&,
+                                      std::size_t>;
     std::size_t runs = 0;
+#if TESS_HAS_EXCEPTIONS
     std::exception_ptr exception;
+#endif
     {
       const std::scoped_lock lock{mutex_};
       // Single-dispatch guard; see the class comment. The flag is
@@ -348,10 +449,24 @@ class WorkerPoolPhaseExecutor {
       // any job state.
       dispatch_active_ = true;
       job_context_ = &callback;
-      job_invoke_ = [](void* context,
-                       std::size_t index) -> PlannedExecutionResult {
-        return (*static_cast<Callback*>(context))(index);
-      };
+      if constexpr (no_throw_callback) {
+        job_invoke_nothrow_ =
+            [](void* context,
+               std::size_t index) noexcept -> PlannedExecutionResult {
+          return (*static_cast<Callback*>(context))(index);
+        };
+      }
+#if TESS_HAS_EXCEPTIONS
+      if constexpr (CaptureExceptions) {
+        this->no_throw_job = no_throw_callback;
+        if constexpr (!no_throw_callback) {
+          this->invoke = [](void* context,
+                            std::size_t index) -> PlannedExecutionResult {
+            return (*static_cast<Callback*>(context))(index);
+          };
+        }
+      }
+#endif
       job_first_ = first;
       job_count_ = count;
       // Claim short runs instead of single operations: one contended RMW
@@ -361,8 +476,12 @@ class WorkerPoolPhaseExecutor {
           1, count / (std::max<std::size_t>(1, workers_.size()) * 4));
       next_offset_.store(0, std::memory_order_relaxed);
       finished_operations_.store(0, std::memory_order_relaxed);
-      job_cancelled_.store(false, std::memory_order_relaxed);
-      job_exception_ = std::exception_ptr{};
+#if TESS_HAS_EXCEPTIONS
+      if constexpr (CaptureExceptions) {
+        this->cancelled.store(false, std::memory_order_relaxed);
+        this->exception = std::exception_ptr{};
+      }
+#endif
       ++job_epoch_;
       job_active_ = true;
       // Derived under the lock so the notify count below never reads
@@ -386,18 +505,35 @@ class WorkerPoolPhaseExecutor {
     {
       std::unique_lock lock{mutex_};
       done_cv_.wait(lock, [&] {
-        return active_workers_ == 0 &&
-               (job_exception_ ||
-                finished_operations_.load(std::memory_order_acquire) == count);
+        if constexpr (CaptureExceptions) {
+#if TESS_HAS_EXCEPTIONS
+          return active_workers_ == 0 &&
+                 (this->exception || finished_operations_.load(
+                                         std::memory_order_acquire) == count);
+#else
+          return false;
+#endif
+        } else {
+          return active_workers_ == 0 &&
+                 finished_operations_.load(std::memory_order_acquire) == count;
+        }
       });
-      exception = job_exception_;
+#if TESS_HAS_EXCEPTIONS
+      if constexpr (CaptureExceptions) {
+        exception = this->exception;
+      }
+#endif
       job_active_ = false;
       dispatch_active_ = false;
     }
 
-    if (exception) {
-      std::rethrow_exception(exception);
+#if TESS_HAS_EXCEPTIONS
+    if constexpr (CaptureExceptions) {
+      if (exception) {
+        std::rethrow_exception(exception);
+      }
     }
+#endif
 
     for (std::size_t offset = 0; offset < count; ++offset) {
       if (results_[offset].status != PlannedExecutionStatus::Executed) {
@@ -408,8 +544,6 @@ class WorkerPoolPhaseExecutor {
   }
 
  private:
-  using JobInvoke = auto (*)(void*, std::size_t) -> PlannedExecutionResult;
-
   void run_worker() {
     std::uint64_t seen_epoch = 0;
     while (true) {
@@ -423,60 +557,100 @@ class WorkerPoolPhaseExecutor {
       seen_epoch = job_epoch_;
       ++active_workers_;
       auto* const context = job_context_;
-      const auto invoke = job_invoke_;
+      const auto invoke_nothrow = job_invoke_nothrow_;
+#if TESS_HAS_EXCEPTIONS
+      detail::PhaseJobInvoke invoke = nullptr;
+      auto no_throw_job = true;
+      if constexpr (CaptureExceptions) {
+        invoke = this->invoke;
+        no_throw_job = this->no_throw_job;
+      }
+#endif
       const auto first = job_first_;
       const auto count = job_count_;
       const auto stride = job_stride_;
       lock.unlock();
 
-      auto cancelled = false;
-      while (!job_cancelled_.load(std::memory_order_acquire)) {
-        const auto begin =
-            next_offset_.fetch_add(stride, std::memory_order_relaxed);
-        if (begin >= count) {
-          break;
-        }
-        const auto end = std::min(begin + stride, count);
-        auto finished = std::size_t{0};
-        for (auto offset = begin; offset < end; ++offset) {
-          if (job_cancelled_.load(std::memory_order_acquire)) {
-            cancelled = true;
-            break;
-          }
-          try {
-            results_[offset] = invoke(context, first + offset);
-            ++finished;
-          } catch (...) {
-            job_cancelled_.store(true, std::memory_order_release);
-            {
-              const std::scoped_lock exception_lock{mutex_};
-              if (!job_exception_) {
-                job_exception_ = std::current_exception();
-              }
-            }
-            cancelled = true;
-            break;
-          }
-        }
-        // One release-add per run publishes the whole run's results to
-        // the dispatcher's acquire wait.
-        finished_operations_.fetch_add(finished, std::memory_order_release);
-        if (cancelled) {
-          break;
+      if constexpr (!CaptureExceptions) {
+        run_no_throw_job(context, invoke_nothrow, first, count, stride);
+      }
+#if TESS_HAS_EXCEPTIONS
+      if constexpr (CaptureExceptions) {
+        if (no_throw_job) {
+          run_no_throw_job(context, invoke_nothrow, first, count, stride);
+        } else {
+          run_catching_job(context, invoke, first, count, stride);
         }
       }
+#endif
 
       lock.lock();
       --active_workers_;
-      // Only the last worker out can satisfy the dispatcher's predicate
-      // (finished == count AND active_workers_ == 0), so intermediate
-      // notifies were pure wakeup churn. notify_one: the single-dispatch
-      // contract means done_cv_ has at most one waiter.
       if (active_workers_ == 0) {
         done_cv_.notify_one();
       }
     }
   }
+
+  void run_no_throw_job(void* context, detail::NoThrowPhaseJobInvoke invoke,
+                        std::size_t first, std::size_t count,
+                        std::size_t stride) const noexcept {
+    while (true) {
+      const auto begin =
+          next_offset_.fetch_add(stride, std::memory_order_relaxed);
+      if (begin >= count) {
+        break;
+      }
+      const auto end = std::min(begin + stride, count);
+      for (auto offset = begin; offset < end; ++offset) {
+        results_[offset] = invoke(context, first + offset);
+      }
+      finished_operations_.fetch_add(end - begin, std::memory_order_release);
+    }
+  }
+
+#if TESS_HAS_EXCEPTIONS
+  void run_catching_job(void* context, detail::PhaseJobInvoke invoke,
+                        std::size_t first, std::size_t count,
+                        std::size_t stride) const {
+    auto cancelled = false;
+    while (!this->cancelled.load(std::memory_order_acquire)) {
+      const auto begin =
+          next_offset_.fetch_add(stride, std::memory_order_relaxed);
+      if (begin >= count) {
+        break;
+      }
+      const auto end = std::min(begin + stride, count);
+      auto finished = std::size_t{0};
+      for (auto offset = begin; offset < end; ++offset) {
+        if (this->cancelled.load(std::memory_order_acquire)) {
+          cancelled = true;
+          break;
+        }
+        try {
+          results_[offset] = invoke(context, first + offset);
+          ++finished;
+        } catch (...) {
+          this->cancelled.store(true, std::memory_order_release);
+          {
+            const std::scoped_lock exception_lock{mutex_};
+            if (!this->exception) {
+              this->exception = std::current_exception();
+            }
+          }
+          cancelled = true;
+          break;
+        }
+      }
+      // One release-add per run publishes the whole run's results to
+      // the dispatcher's acquire wait.
+      finished_operations_.fetch_add(finished, std::memory_order_release);
+      if (cancelled) {
+        break;
+      }
+    }
+  }
+#endif
 
   mutable std::mutex mutex_;
   mutable std::condition_variable work_cv_;
@@ -490,20 +664,24 @@ class WorkerPoolPhaseExecutor {
   // could still share one 128-byte line depending on allocation address.
   alignas(128) mutable std::atomic<std::size_t> next_offset_ = 0;
   alignas(128) mutable std::atomic<std::size_t> finished_operations_ = 0;
-  mutable std::atomic<bool> job_cancelled_ = false;
   alignas(128) mutable void* job_context_ = nullptr;
-  mutable JobInvoke job_invoke_ = nullptr;
+  mutable detail::NoThrowPhaseJobInvoke job_invoke_nothrow_ = nullptr;
   mutable std::size_t job_first_ = 0;
   mutable std::size_t job_count_ = 0;
   mutable std::size_t job_stride_ = 1;
   mutable std::uint64_t job_epoch_ = 0;
   mutable std::size_t active_workers_ = 0;
-  mutable std::exception_ptr job_exception_;
   mutable bool job_active_ = false;
   mutable bool dispatch_active_ = false;
   bool stop_ = false;
   std::vector<std::thread> workers_;
 };
+
+/** Persistent pool selected for the active exception configuration. */
+using WorkerPoolPhaseExecutor = WorkerPoolPhaseExecutorImpl<has_exceptions>;
+
+/** Persistent pool with exception-only coordination removed. */
+using NoThrowWorkerPoolPhaseExecutor = WorkerPoolPhaseExecutorImpl<false>;
 // NOLINTEND(clang-analyzer-optin.performance.Padding)
 #if defined(_MSC_VER)
 #pragma warning(pop)

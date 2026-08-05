@@ -17,6 +17,47 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-08-04 - Exception-free execution paths
+
+- Area: compiler exception mode, phase dispatch, and schedule type erasure.
+- Hypothesis: removing exception-only pool state and catch-based paths should
+  primarily reduce generated code and compilation work; runtime improvement
+  should be expected only where the removed coordination is material.
+- Method: one AppleClang 21 C++20 `-O3 -DNDEBUG` consumer instantiated a
+  four-worker pool and one every-tick schedule task in three variants: normal
+  callback, explicitly `noexcept` callback with exceptions enabled, and an
+  ordinary callback compiled with `-fno-exceptions`. Hyperfine ran 8 pool and
+  6 schedule repetitions after warmup. Six clean object compilations measured
+  compile time; macOS `time -l` measured peak RSS; Mach-O section inspection
+  measured executable code and exception metadata.
+- Evidence: compile means were 632 ms enabled, 621 ms explicitly no-throw,
+  and 565 ms exception-free. Peak compiler RSS was 158.0 MB, 157.1 MB, and
+  151.7 MB respectively. Executable `__text` was 8,308 bytes in both enabled
+  variants and 5,376 bytes exception-free; the enabled executables carried
+  540 bytes of `__gcc_except_tab` plus 328 bytes of `__unwind_info`, while the
+  exception-free executable had neither section. The implementation does not
+  add `-fno-unwind-tables`; this section difference is the compiler's result
+  for `-fno-exceptions`, not a Tess policy to discard stack metadata.
+- Runtime evidence: the pool harness means were 173.9 ms enabled, 180.7 ms
+  explicitly no-throw, and 183.0 ms exception-free, with overlapping noise;
+  no pool speedup is claimed. Schedule means were 49.8 ms, 49.3 ms, and
+  34.9 ms respectively. Representative pool peak RSS was identical at
+  1,605,632 bytes in all three variants.
+- Regression control: the repository's 12-sentinel paired base/head run used
+  10 interleaved repetitions and passed. Storage and field sentinels were
+  within -0.1%; the four main path sentinels ranged from -6.6% to +0.3%; the
+  scoped-thread parallel sentinel was +1.4% with a 95% interval of
+  [-0.8%, +5.2%]. No sentinel crossed the 5% regression budget at material
+  scale.
+- Decision: accept the policy-specialized representation and no-throw adapter
+  preservation for code-size and compile-cost value. Treat the schedule result
+  as a promising local measurement, not a general runtime claim. Reject a
+  claim that no-throw pool dispatch is faster; measured differences were noisy
+  and slightly favored the ordinary enabled baseline.
+- Follow-up: profile instruction-level scheduler differences only if schedule
+  dispatch becomes material in a representative application trace. Preserve
+  the existing sentinel names and thread-scaling baselines.
+
 ## 2026-07-31 - Direct Directory For Fully Covered Sparse Worlds
 
 - Area: `SparseResidentWorld` directory lookup and sparse weighted batch path

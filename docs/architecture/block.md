@@ -25,6 +25,10 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
   while `used_bytes()` accounting carries over. `reset()` rewinds the bump
   offset, and `capacity_bytes()`, `used_bytes()`, and `remaining_bytes()`
   expose byte accounting. The class is move-only.
+- `BlockScratch::reserve_bytes_checked(bytes)` returns `ReserveStatus` and
+  leaves the object unchanged when rounded capacity would overflow. The
+  existing `reserve_bytes(bytes)` retains `std::bad_alloc` in enabled builds
+  and fails fast for that deterministic error when exceptions are disabled.
 - `BlockScratch::allocate<T>(count)` returns an aligned `std::span<T>` from
   the current bump offset. It does not allocate when existing capacity is
   sufficient. Zero-count requests, byte-count overflow, and capacity

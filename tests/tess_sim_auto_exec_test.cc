@@ -139,6 +139,28 @@ TEST(TessAutoExec, RunsThePipelineAndFeedsOnDirtyTasks) {
   EXPECT_EQ(probe.fires, 1u);
 }
 
+TEST(TessAutoExec, CapacityFallbackPublishesEveryStartedDirtyRecord) {
+  World world;
+  tess::FrameOps ops;
+  StampTask task{world, ops, StampKernel{}};
+  task.reserve_operations(4);
+  enqueue_stamps(ops, 4);
+
+  tess::ScheduleTaskResult result;
+  {
+    const tess::detail::ScopedCapacityLimitForTesting capacity_limit{0};
+    result = task(tess::ScheduleTaskContext{});
+  }
+
+  EXPECT_EQ(result.dirty_mask, DirtyTerrain);
+  EXPECT_EQ(task.last_run().status, tess::AutoExecStatus::Executed);
+  EXPECT_EQ(task.last_run().executed_chunks, 4u);
+  EXPECT_EQ(task.last_run().merged_dirty_chunks, 4u);
+  for (std::uint64_t chunk = 0; chunk < 4; ++chunk) {
+    EXPECT_NE(world.dirty_flags(tess::ChunkKey{chunk}) & DirtyTerrain, 0u);
+  }
+}
+
 // Golden: the auto-exec pipeline leaves the world (fields + chunk meta)
 // byte-identical to the hand-rolled plan/execute/merge pipeline.
 TEST(TessAutoExec, MatchesTheManualPipelineGolden) {

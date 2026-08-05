@@ -4,6 +4,7 @@
 // route through a movement class that refuses construction sites, and a
 // render consumer applies versioned DeltaFrames into a shadow grid.
 // Everything is driven by one tess::Schedule through run_schedule_frame.
+#include <tess/core/config.h>
 #include <tess/tess.h>
 
 #include <array>
@@ -233,10 +234,14 @@ auto run() -> int {
 }  // namespace
 
 auto main() -> int {
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     return run();
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "error: " << error.what() << "\n";
     return 1;
   }
+#endif
 }

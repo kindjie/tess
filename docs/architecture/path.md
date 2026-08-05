@@ -268,6 +268,11 @@ flowchart TB
   transactionally. If allocation fails, no partial dependency set becomes
   visible, live entries and their path-node offsets remain unchanged,
   observable statistics do not advance, and the operation can be retried.
+  `reserve_segments_checked`, `reserve_path_nodes_checked`, and the class
+  view's `store_checked` report deterministic pre-allocation capacity failure
+  through `ReserveStatus` or `PortalSegmentStoreStatus`. Legacy reserve and
+  store calls preserve `std::length_error` with exceptions enabled and fail
+  fast for the same detected error without exceptions.
 - `WeightedPathBatchScratch` owns reusable search scratch and stable copied
   result paths for weighted batch planning.
 - `PathRequestRuntime` owns a small deterministic request/result lifecycle for

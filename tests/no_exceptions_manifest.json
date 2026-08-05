@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "affected_subsystems": {
+    "block": [
+      "TessNoExceptions.AggregateHeaderRunsStorageAndBlockOperations",
+      "TessNoExceptions.CheckedBlockCapacityFailurePreservesStorage",
+      "TessNoExceptions.LegacyBlockCapacityFailureAborts"
+    ],
+    "core": [
+      "TessNoExceptions.AggregateHeaderRunsStorageAndBlockOperations"
+    ],
+    "experimental": [
+      "TessNoExceptions.MaintenanceSchedulersRunOrdinaryTasks"
+    ],
+    "ops": [
+      "TessNoExceptions.OrdinaryCallbacksRunThroughThreadedExecutors",
+      "TessNoExceptions.AutoExecRunsOrdinaryKernelThroughPool"
+    ],
+    "path": [
+      "TessNoExceptions.PathfindingAndTopologyRunThroughAggregateHeaders",
+      "TessNoExceptions.PortalCacheCheckedReservesRejectCapacity",
+      "TessNoExceptions.LegacyPortalCapacityFailureAborts"
+    ],
+    "sim": [
+      "TessNoExceptions.ScheduleRunsOrdinaryTypeErasedCallback",
+      "TessNoExceptions.AutoExecRunsOrdinaryKernelThroughPool"
+    ],
+    "storage": [
+      "TessNoExceptions.AggregateHeaderRunsStorageAndBlockOperations",
+      "TessNoExceptions.AutoExecRunsOrdinaryKernelThroughPool"
+    ],
+    "topology": [
+      "TessNoExceptions.PathfindingAndTopologyRunThroughAggregateHeaders"
+    ]
+  },
+  "enabled_counterparts": {
+    "block": [
+      "TessBlock.BlockScratchCheckedReserveRejectsOverflowWithoutMutation"
+    ],
+    "core": [
+      "TessConsumerContract.TagIdentityIsStableAcrossTranslationUnits"
+    ],
+    "experimental": [
+      "TessMaintenance.ImmediateSelfScheduleUsesConstantStackDepth"
+    ],
+    "ops": [
+      "TessPhaseExecutor.ExplicitNoThrowPoolsRunNoThrowCallbacks"
+    ],
+    "path": [
+      "TessPathCache.PortalSegmentCacheCheckedStorePreservesStateAtCapacity"
+    ],
+    "sim": [
+      "TessAutoExec.CapacityFallbackPublishesEveryStartedDirtyRecord",
+      "TessSchedule.ExplicitNoThrowTaskRunsThroughNoThrowErasedThunk"
+    ],
+    "storage": [
+      "TessStorage.WorldDirtyFlagsUnionClearAndIncrementVersion"
+    ],
+    "topology": [
+      "TessTopology.BuildsTopDown2DLocalRegions"
+    ]
+  }
+}

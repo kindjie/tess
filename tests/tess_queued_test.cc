@@ -2001,7 +2001,7 @@ TEST(TessQueued, MixedPolicyPhaseRejectsBeforeSerialExecution) {
   const auto result = tess::execute_phase_partitioned_dirty_with<
       tess::WritePolicy::UniquePerChunk>(
       executor, world, report.plan(), phases.phases()[0], scratch,
-      [](auto view) {
+      [](auto view) noexcept {
         auto terrain = view.template field_span<TerrainTag>();
         terrain[0] = static_cast<std::uint16_t>(view.key().value + 130);
       });

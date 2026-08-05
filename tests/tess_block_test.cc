@@ -182,6 +182,25 @@ TEST(TessBlock, BlockScratchReportsCapacityUsedAndRemainingBytes) {
             scratch.capacity_bytes() - scratch.used_bytes());
 }
 
+TEST(TessBlock, BlockScratchCheckedReserveRejectsOverflowWithoutMutation) {
+  tess::BlockScratch scratch;
+  ASSERT_EQ(scratch.reserve_bytes_checked(64), tess::ReserveStatus::Reserved);
+  const auto capacity = scratch.capacity_bytes();
+
+  EXPECT_EQ(
+      scratch.reserve_bytes_checked(std::numeric_limits<std::size_t>::max()),
+      tess::ReserveStatus::CapacityExceeded);
+  EXPECT_EQ(scratch.capacity_bytes(), capacity);
+  EXPECT_EQ(scratch.used_bytes(), 0u);
+}
+
+TEST(TessBlock, BlockScratchLegacyReservePreservesBadAllocContract) {
+  tess::BlockScratch scratch;
+
+  EXPECT_THROW(scratch.reserve_bytes(std::numeric_limits<std::size_t>::max()),
+               std::bad_alloc);
+}
+
 TEST(TessBlock, BlockScratchTypedAllocationsAreSizedAlignedAndWritable) {
   tess::BlockScratch scratch;
   scratch.reserve_bytes(64);

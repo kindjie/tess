@@ -5,6 +5,7 @@
 // (both provided by the example's build target).
 #include <entt/entity/registry.hpp>
 // entt first: the adapter header requires the consumer include order.
+#include <tess/core/config.h>
 #include <tess/ecs/entt/entt_adapter.h>
 #include <tess/tess.h>
 
@@ -118,10 +119,14 @@ auto run() -> int {
 }  // namespace
 
 auto main() -> int {
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     return run();
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "error: " << error.what() << "\n";
     return 1;
   }
+#endif
 }

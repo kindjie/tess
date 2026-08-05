@@ -55,6 +55,8 @@ CONCURRENCY_SENSITIVE_TEST_PREFIXES = (
   "tests/allocation_counter",
   "tests/tess_execution_phase_safety",
   "tests/tess_maintenance",
+  "tests/tess_msvc_exception_mode_spike",
+  "tests/tess_no_exceptions",
   "tests/tess_phase_executor",
   "tests/tess_queued",
   "tests/tess_sim_auto_exec",

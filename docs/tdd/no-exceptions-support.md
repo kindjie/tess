@@ -2,9 +2,9 @@
 
 ## 1. Status
 
-Proposed. This document defines implementation intent only. Until the design
-ships, the maintained integration policy remains authoritative and aggregate
-library surfaces continue to require exception support.
+Implemented. This document records historical design intent. The maintained
+[exception-free architecture note](../architecture/no-exceptions.md) and
+[integration policy](../integration-policy.md) describe the shipped contract.
 
 ## 2. Summary
 

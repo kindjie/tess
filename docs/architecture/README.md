@@ -109,6 +109,7 @@ Maintained notes for implemented areas:
 - [Storage foundation](storage.md)
 - [Persistence and compatibility](persistence.md)
 - [Block foundation](block.md)
+- [Exception-free builds](no-exceptions.md)
 - [Span queries](query.md)
 - [Experimental maintenance scheduling](maintenance.md)
 - [Queued operations foundation](queued-operations.md)
@@ -152,6 +153,7 @@ the code are the source of truth for current behavior.
 - [Tile-layout benchmark takeaways][layout-tdd]
 - [Work contracts addendum][work-contracts-tdd]
 - [Grid benchmark data and scenario oracle][grid-benchmark-tdd]
+- [Exception-free build support][no-exceptions-tdd]
 
 [project-design]: https://github.com/kindjie/tess/blob/main/docs/tdd/project-design.md
 [shape-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/core-shape-coordinate-key-system.md
@@ -172,3 +174,4 @@ the code are the source of truth for current behavior.
 [layout-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_tile_layout_bench_takeaways.md
 [work-contracts-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_work_contracts.md
 [grid-benchmark-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/grid-benchmark-data-and-scenario-oracle.md
+[no-exceptions-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/no-exceptions-support.md

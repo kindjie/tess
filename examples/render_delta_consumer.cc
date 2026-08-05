@@ -4,6 +4,7 @@
 // own shadow grid, deliberately drops one frame mid-run, detects the
 // version gap through delta_frame_applicable, and resyncs with a full
 // baseline. Prints the shadow after every applied frame.
+#include <tess/core/config.h>
 #include <tess/tess.h>
 
 #include <array>
@@ -165,10 +166,14 @@ auto run() -> int {
 }  // namespace
 
 auto main() -> int {
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     return run();
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "error: " << error.what() << "\n";
     return 1;
   }
+#endif
 }

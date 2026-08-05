@@ -1,5 +1,8 @@
 #pragma once
 
+#include <tess/core/capacity.h>
+#include <tess/core/config.h>
+#include <tess/core/fail_fast.h>
 #include <tess/core/tag_identity.h>
 #include <tess/path/path.h>
 
@@ -32,6 +35,12 @@ struct PortalSegmentCacheStats {
   std::size_t class_rebinds = 0;
 };
 
+/// Result of storing a weighted portal segment after capacity validation.
+enum class PortalSegmentStoreStatus : std::uint8_t {
+  Completed,
+  CapacityExceeded,
+};
+
 // Cached segment paths are only handed out by appending into caller-owned
 // storage. The cache never returns pointers or spans into its own path
 // storage, so later `store()` growth cannot invalidate a previous lookup.
@@ -60,9 +69,35 @@ class WeightedPortalSegmentCache {
     return budget_;
   }
 
-  void reserve_segments(std::size_t count) { entries_.reserve(count); }
+  [[nodiscard]] auto reserve_segments_checked(std::size_t count)
+      -> ReserveStatus {
+    if (count > detail::effective_capacity_limit(entries_.max_size())) {
+      return ReserveStatus::CapacityExceeded;
+    }
+    entries_.reserve(count);
+    return ReserveStatus::Reserved;
+  }
 
-  void reserve_path_nodes(std::size_t count) { paths_.reserve(count); }
+  void reserve_segments(std::size_t count) {
+    if (reserve_segments_checked(count) != ReserveStatus::Reserved) {
+      capacity_failure("portal segment cache entry capacity exceeded");
+    }
+  }
+
+  [[nodiscard]] auto reserve_path_nodes_checked(std::size_t count)
+      -> ReserveStatus {
+    if (count > detail::effective_capacity_limit(paths_.max_size())) {
+      return ReserveStatus::CapacityExceeded;
+    }
+    paths_.reserve(count);
+    return ReserveStatus::Reserved;
+  }
+
+  void reserve_path_nodes(std::size_t count) {
+    if (reserve_path_nodes_checked(count) != ReserveStatus::Reserved) {
+      capacity_failure("portal segment cache path capacity exceeded");
+    }
+  }
 
   void clear() noexcept {
     clear_storage();
@@ -100,8 +135,17 @@ class WeightedPortalSegmentCache {
 
     template <typename World>
     void store(const World& world, PathRequest request, PathResult result) {
-      cache_->bind_class(identity_);
-      cache_->store(world, request, result);
+      if (store_checked(world, request, result) !=
+          PortalSegmentStoreStatus::Completed) {
+        capacity_failure("portal segment cache capacity exceeded");
+      }
+    }
+
+    template <typename World>
+    [[nodiscard]] auto store_checked(const World& world, PathRequest request,
+                                     PathResult result)
+        -> PortalSegmentStoreStatus {
+      return cache_->store_checked_for_class(identity_, world, request, result);
     }
 
    private:
@@ -128,8 +172,11 @@ class WeightedPortalSegmentCache {
   // arena so storage held by dropped entries is reclaimed.
   template <typename World>
   void sweep_stale(const World& world) {
-    compact(
-        [&](const Entry& entry) { return entry.dependencies.is_valid(world); });
+    if (compact_checked([&](const Entry& entry) {
+          return entry.dependencies.is_valid(world);
+        }) != PortalSegmentStoreStatus::Completed) {
+      capacity_failure("portal segment cache compaction capacity exceeded");
+    }
     ++sweeps_;
   }
 
@@ -161,15 +208,29 @@ class WeightedPortalSegmentCache {
 
   template <typename World>
   void store(const World& world, PathRequest request, PathResult result) {
+    if (store_checked(world, request, result) !=
+        PortalSegmentStoreStatus::Completed) {
+      capacity_failure("portal segment cache capacity exceeded");
+    }
+  }
+
+  template <typename World>
+  [[nodiscard]] auto store_checked(const World& world, PathRequest request,
+                                   PathResult result)
+      -> PortalSegmentStoreStatus {
     using Shape = World::shape_type;
 
     if (budget_ == 0 || result.status != PathStatus::Found) {
-      return;
+      return PortalSegmentStoreStatus::Completed;
     }
     auto pending_stale_rejections = std::size_t{0};
     if (find(world, request, &pending_stale_rejections) != nullptr) {
       stale_rejections_ += pending_stale_rejections;
-      return;
+      return PortalSegmentStoreStatus::Completed;
+    }
+    if (store_capacity_status(world, result.path.size()) !=
+        PortalSegmentStoreStatus::Completed) {
+      return PortalSegmentStoreStatus::CapacityExceeded;
     }
 
     // Construct every potentially allocating per-entry dependency before
@@ -189,17 +250,23 @@ class WeightedPortalSegmentCache {
       // The transactional compaction reserves room for this entry as part of
       // its temporary representation. Once it commits, eviction and append are
       // allocation-free and cannot strand the cache between states.
-      compact(
+      const auto compacted = compact_checked(
           [&](const Entry& current) {
             return current.dependencies.is_valid(world);
           },
           1, result.path.size());
+      if (compacted != PortalSegmentStoreStatus::Completed) {
+        return compacted;
+      }
       ++sweeps_;
       if (entries_.size() >= budget_) {
         evict_oldest(entries_.size() - budget_ + 1);
       }
     } else {
-      reserve_append_capacity(1, result.path.size());
+      if (reserve_append_capacity_checked(1, result.path.size()) !=
+          PortalSegmentStoreStatus::Completed) {
+        return PortalSegmentStoreStatus::CapacityExceeded;
+      }
     }
 
     entry.path_offset = paths_.size();
@@ -208,6 +275,25 @@ class WeightedPortalSegmentCache {
     }
     entries_.push_back(std::move(entry));
     stale_rejections_ += pending_stale_rejections;
+    return PortalSegmentStoreStatus::Completed;
+  }
+
+  template <typename World>
+  [[nodiscard]] auto store_checked_for_class(std::uintptr_t identity,
+                                             const World& world,
+                                             PathRequest request,
+                                             PathResult result)
+      -> PortalSegmentStoreStatus {
+    const auto entry_limit =
+        detail::effective_capacity_limit(entries_.max_size());
+    const auto path_limit = detail::effective_capacity_limit(paths_.max_size());
+    if (budget_ != 0 && result.status == PathStatus::Found &&
+        bound_class_ != identity &&
+        (entry_limit == 0 || result.path.size() > path_limit)) {
+      return PortalSegmentStoreStatus::CapacityExceeded;
+    }
+    bind_class(identity);
+    return store_checked(world, request, result);
   }
 
   struct Entry {
@@ -288,40 +374,100 @@ class WeightedPortalSegmentCache {
     bound_class_ = identity;
   }
 
-  void reserve_append_capacity(std::size_t additional_entries,
-                               std::size_t additional_path_nodes) {
-    if (additional_entries > entries_.max_size() - entries_.size() ||
-        additional_path_nodes > paths_.max_size() - paths_.size()) {
-      throw std::length_error{"portal segment cache capacity overflow"};
+  [[nodiscard]] auto reserve_append_capacity_checked(
+      std::size_t additional_entries, std::size_t additional_path_nodes)
+      -> PortalSegmentStoreStatus {
+    const auto entry_limit =
+        detail::effective_capacity_limit(entries_.max_size());
+    const auto path_limit = detail::effective_capacity_limit(paths_.max_size());
+    if (entries_.size() > entry_limit || paths_.size() > path_limit ||
+        additional_entries > entry_limit - entries_.size() ||
+        additional_path_nodes > path_limit - paths_.size()) {
+      return PortalSegmentStoreStatus::CapacityExceeded;
     }
     entries_.reserve(entries_.size() + additional_entries);
     paths_.reserve(paths_.size() + additional_path_nodes);
+    return PortalSegmentStoreStatus::Completed;
+  }
+
+  template <typename World>
+  [[nodiscard]] auto store_capacity_status(const World& world,
+                                           std::size_t path_nodes) const
+      -> PortalSegmentStoreStatus {
+    const auto entry_limit =
+        detail::effective_capacity_limit(entries_.max_size());
+    const auto path_limit = detail::effective_capacity_limit(paths_.max_size());
+    const auto compact_entry_limit =
+        detail::effective_capacity_limit(compact_entries_.max_size());
+    const auto compact_index_limit =
+        detail::effective_capacity_limit(compact_indices_.max_size());
+    const auto compact_path_limit =
+        detail::effective_capacity_limit(compact_paths_.max_size());
+    if (entries_.size() < budget_) {
+      if (entries_.size() >= entry_limit || paths_.size() > path_limit ||
+          path_nodes > path_limit - paths_.size()) {
+        return PortalSegmentStoreStatus::CapacityExceeded;
+      }
+      return PortalSegmentStoreStatus::Completed;
+    }
+
+    auto kept_entries = std::size_t{0};
+    auto kept_path_nodes = std::size_t{0};
+    for (const auto& entry : entries_) {
+      if (!entry.dependencies.is_valid(world)) {
+        continue;
+      }
+      if (kept_entries >= compact_entry_limit ||
+          kept_entries >= compact_index_limit ||
+          kept_path_nodes > compact_path_limit ||
+          entry.path_size > compact_path_limit - kept_path_nodes) {
+        return PortalSegmentStoreStatus::CapacityExceeded;
+      }
+      ++kept_entries;
+      kept_path_nodes += entry.path_size;
+    }
+    if (kept_entries >= compact_entry_limit ||
+        kept_path_nodes > compact_path_limit ||
+        path_nodes > compact_path_limit - kept_path_nodes) {
+      return PortalSegmentStoreStatus::CapacityExceeded;
+    }
+    return PortalSegmentStoreStatus::Completed;
   }
 
   template <typename Keep>
-  void compact(Keep keep, std::size_t additional_entries = 0,
-               std::size_t additional_path_nodes = 0) {
+  [[nodiscard]] auto compact_checked(Keep keep,
+                                     std::size_t additional_entries = 0,
+                                     std::size_t additional_path_nodes = 0)
+      -> PortalSegmentStoreStatus {
     compact_entries_.clear();
     compact_paths_.clear();
     compact_indices_.clear();
 
+    const auto entry_limit =
+        detail::effective_capacity_limit(compact_entries_.max_size());
+    const auto index_limit =
+        detail::effective_capacity_limit(compact_indices_.max_size());
+    const auto path_limit =
+        detail::effective_capacity_limit(compact_paths_.max_size());
     auto kept_path_nodes = std::size_t{0};
     for (std::size_t index = 0; index < entries_.size(); ++index) {
       const auto& entry = entries_[index];
       if (!keep(entry)) {
         continue;
       }
-      if (entry.path_size > compact_paths_.max_size() - kept_path_nodes) {
-        throw std::length_error{"portal segment path count exceeds max_size"};
+      if (compact_indices_.size() >= index_limit ||
+          kept_path_nodes > path_limit ||
+          entry.path_size > path_limit - kept_path_nodes) {
+        return PortalSegmentStoreStatus::CapacityExceeded;
       }
       kept_path_nodes += entry.path_size;
       compact_indices_.push_back(index);
     }
 
-    if (additional_entries >
-            compact_entries_.max_size() - compact_indices_.size() ||
-        additional_path_nodes > compact_paths_.max_size() - kept_path_nodes) {
-      throw std::length_error{"portal segment cache capacity overflow"};
+    if (compact_indices_.size() > entry_limit || kept_path_nodes > path_limit ||
+        additional_entries > entry_limit - compact_indices_.size() ||
+        additional_path_nodes > path_limit - kept_path_nodes) {
+      return PortalSegmentStoreStatus::CapacityExceeded;
     }
     compact_entries_.reserve(compact_indices_.size() + additional_entries);
     compact_paths_.reserve(kept_path_nodes + additional_path_nodes);
@@ -341,6 +487,15 @@ class WeightedPortalSegmentCache {
     }
     entries_.swap(compact_entries_);
     paths_.swap(compact_paths_);
+    return PortalSegmentStoreStatus::Completed;
+  }
+
+  [[noreturn]] static void capacity_failure(const char* message) {
+#if TESS_HAS_EXCEPTIONS
+    throw std::length_error{message};
+#else
+    detail::fail_fast(message);
+#endif
   }
 
   std::vector<Entry> entries_;

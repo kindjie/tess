@@ -73,6 +73,12 @@ static_assert(tess::SerialExecutor<tess::SerialPhaseExecutor>);
 static_assert(!tess::SerialExecutor<tess::ScopedThreadPhaseExecutor>);
 static_assert(!tess::SerialExecutor<tess::WorkerPoolPhaseExecutor>);
 static_assert(!tess::SerialExecutor<MinimalPhaseExecutor>);
+static_assert(tess::WorkerPoolPhaseExecutor::captures_callback_exceptions);
+static_assert(
+    !tess::NoThrowWorkerPoolPhaseExecutor::captures_callback_exceptions);
+static_assert(tess::ScopedThreadPhaseExecutor::captures_callback_exceptions);
+static_assert(
+    !tess::NoThrowScopedThreadPhaseExecutor::captures_callback_exceptions);
 
 template <tess::PhaseExecutor Executor>
 auto collect_visited(const Executor& executor, std::size_t first,
@@ -117,6 +123,41 @@ TEST(TessPhaseExecutor, WorkerPoolClampsWorkerCountAndHandlesEmptyRanges) {
         return tess::PlannedExecutionResult{};
       });
   EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+}
+
+TEST(TessPhaseExecutor, ExplicitNoThrowPoolsRunNoThrowCallbacks) {
+  const tess::NoThrowWorkerPoolPhaseExecutor pool{2};
+  const auto result = pool.for_each_operation(
+      0, 8,
+      [](std::size_t) noexcept -> tess::PlannedExecutionResult { return {}; });
+
+  EXPECT_EQ(result.status, tess::PlannedExecutionStatus::Executed);
+
+  const tess::NoThrowScopedThreadPhaseExecutor scoped{2};
+  const auto scoped_result = scoped.for_each_operation(
+      0, 8,
+      [](std::size_t) noexcept -> tess::PlannedExecutionResult { return {}; });
+  EXPECT_EQ(scoped_result.status, tess::PlannedExecutionStatus::Executed);
+}
+
+TEST(TessPhaseExecutor, DefaultPoolSwitchesBetweenNoThrowAndCatchingJobs) {
+  const tess::WorkerPoolPhaseExecutor pool{2};
+  const auto first = pool.for_each_operation(
+      0, 4,
+      [](std::size_t) noexcept -> tess::PlannedExecutionResult { return {}; });
+  EXPECT_EQ(first.status, tess::PlannedExecutionStatus::Executed);
+
+  EXPECT_THROW(
+      pool.for_each_operation(0, 1,
+                              [](std::size_t) -> tess::PlannedExecutionResult {
+                                throw std::runtime_error{"expected"};
+                              }),
+      std::runtime_error);
+
+  const auto last = pool.for_each_operation(
+      0, 4,
+      [](std::size_t) noexcept -> tess::PlannedExecutionResult { return {}; });
+  EXPECT_EQ(last.status, tess::PlannedExecutionStatus::Executed);
 }
 
 TEST(TessPhaseExecutor, WorkerPoolReusesWorkersAcrossManyPhases) {

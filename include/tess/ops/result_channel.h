@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/core/config.h>
 #include <tess/ops/queued.h>
 
 #include <cstddef>
@@ -162,15 +163,27 @@ class ResultChannel {
       // slot so the caller can retry it. Do not retain a slot reference across
       // the visitor because it may reallocate or clear the channel.
       slots_[index].drained = true;
-      try {
+      constexpr auto no_throw_visitor =
+          std::is_nothrow_invocable_v<Visitor&, OpHandle, const OpCompletion&,
+                                      const T*>;
+      const auto visit_slot = [&]() noexcept(no_throw_visitor) {
         visit(OpHandle{static_cast<std::uint64_t>(index)},
               slots_[index].completion,
               has_value ? &slots_[index].value : nullptr);
-      } catch (...) {
-        if (generation_ == drain_generation && index < slots_.size()) {
-          slots_[index].drained = false;
+      };
+      if constexpr (!has_exceptions || no_throw_visitor) {
+        visit_slot();
+      } else {
+#if TESS_HAS_EXCEPTIONS
+        try {
+          visit_slot();
+        } catch (...) {
+          if (generation_ == drain_generation && index < slots_.size()) {
+            slots_[index].drained = false;
+          }
+          throw;
         }
-        throw;
+#endif
       }
       ++visited;
     }
@@ -314,16 +327,28 @@ auto execute_phase_partitioned_dirty_with_results(
   }
   scratch.prepare(world, phase.operation_count());
   auto&& callback = fn;
+  using View = detail::PlannedChunkView<Policy, World>;
+  constexpr auto no_throw_callback =
+      std::is_nothrow_invocable_v<decltype(callback)&, View&, T&>;
+  for (std::size_t offset = 0; offset < phase.operation_count(); ++offset) {
+    const auto index = phase.first_operation() + offset;
+    scratch.dirty_for_operation(offset).reserve(
+        operations[index].field_access.dirty_mask == 0
+            ? 0
+            : operations[index].chunks().size());
+  }
   auto result = execute_operation_index_range(
       std::forward<Executor>(executor), executor_phase_range(phase),
-      [&](std::size_t index) {
+      [&](std::size_t index) noexcept(no_throw_callback) {
         const auto offset = index - phase.first_operation();
         const auto& operation = operations[index];
         auto& value = channel.value_for(operation.handle);
         auto operation_result =
             detail::execute_validated_phase_operation_deferred_dirty<Policy>(
                 world, operation, scratch.dirty_for_operation(offset),
-                [&](auto view) { callback(view, value); });
+                [&](auto view) noexcept(no_throw_callback) {
+                  callback(view, value);
+                });
         channel.complete(operation.handle, operation_result, operation.source);
         scratch.record_result(offset, operation_result);
         return operation_result;

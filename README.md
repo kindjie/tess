@@ -36,6 +36,7 @@ Declare a world shape and field schema, open some tiles, and run A*:
 
 <!-- tess-snippet: quickstart source=examples/quickstart.cc -->
 ```cpp
+#include <tess/core/config.h>
 #include <tess/tess.h>
 
 #include <cstdint>
@@ -49,7 +50,9 @@ using Schema = tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>>;
 using World = tess::AlwaysResidentWorld<Shape, Schema>;
 
 int main() {
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     World world;  // Zero-initialized: every tile starts blocked.
     for (int y = 0; y < 8; ++y) {
       for (int x = 0; x < 8; ++x) {
@@ -68,10 +71,12 @@ int main() {
 
     std::cout << "path cost: " << result.cost << "\n";
     std::cout << "expanded nodes: " << result.expanded_nodes << "\n";
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "quickstart failed: " << error.what() << "\n";
     return 1;
   }
+#endif
   return 0;
 }
 ```

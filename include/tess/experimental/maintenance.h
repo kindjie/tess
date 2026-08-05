@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/core/config.h>
 #include <tess/diagnostics/diagnostics.h>
 
 #include <atomic>
@@ -314,6 +315,7 @@ class QueuedScheduler : public MaintenanceScheduler {
       running_active_ = true;
       running_admitted_tick_ = entry.admitted_tick;
     }
+#if TESS_HAS_EXCEPTIONS
     try {
       task.run(budget);
     } catch (...) {
@@ -328,6 +330,9 @@ class QueuedScheduler : public MaintenanceScheduler {
       account_terminal(entry, before, budget.remaining(), false);
       throw;
     }
+#else
+    task.run(budget);
+#endif
     auto scheduled_follow_up = false;
     {
       const auto lock = std::scoped_lock{queue_mutex_};
@@ -443,6 +448,7 @@ class ImmediateScheduler final : public MaintenanceScheduler {
       --active.pending;
       const auto before = budget.remaining();
       metrics_.record_execution();
+#if TESS_HAS_EXCEPTIONS
       try {
         task.run(budget);
       } catch (...) {
@@ -450,6 +456,9 @@ class ImmediateScheduler final : public MaintenanceScheduler {
         account_run_terminal(consumed_total, true);
         throw;
       }
+#else
+      task.run(budget);
+#endif
       consumed_total += before - budget.remaining();
       if (active.pending != 0 && budget.remaining() == before) {
         completed_ok = false;

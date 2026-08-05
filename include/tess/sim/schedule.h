@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/core/config.h>
 #include <tess/diagnostics/trace.h>
 #include <tess/sim/event_stream.h>
 #include <tess/sim/time.h>
@@ -8,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 // The M5 schedule: ordered phases of type-erased tasks driven by cadences
@@ -144,6 +146,10 @@ struct ScheduleTaskResult {
 using ScheduleTaskFn = ScheduleTaskResult (*)(void* ctx,
                                               const ScheduleTaskContext&);
 
+/// Type-erased callback signature preserving an explicit no-throw contract.
+using ScheduleNoThrowTaskFn =
+    ScheduleTaskResult (*)(void* ctx, const ScheduleTaskContext&) noexcept;
+
 /// Describes a task's static label, phase, and cadence.
 struct ScheduleTaskDesc {
   // Static-storage label (same rule as diagnostics trace labels).
@@ -194,42 +200,40 @@ class Schedule {
 
   auto add_task(const ScheduleTaskDesc& desc, void* ctx, ScheduleTaskFn fn)
       -> TaskId {
-    TESS_ASSERT(!sealed_);
-    TESS_ASSERT(fn != nullptr);
-    TESS_ASSERT(desc.phase != SimPhase::Count);
-    // Cadence is a public aggregate, so hand-built descriptors can bypass
-    // the factory clamps; re-clamp here or a zero EveryN would wrap its
-    // countdown to ~4.29B ticks and a zero background budget would spin
-    // in_progress forever with no progress.
-    TESS_ASSERT(desc.cadence.kind != CadenceKind::EveryN ||
-                desc.cadence.every_n != 0);
-    TESS_ASSERT(desc.cadence.kind != CadenceKind::Background ||
-                desc.cadence.budget.max_items != 0);
-    auto record = TaskRecord{};
-    record.desc = desc;
-    record.ctx = ctx;
-    record.fn = fn;
-    if (record.desc.cadence.every_n == 0) {
-      record.desc.cadence.every_n = 1;
-    }
-    if (record.desc.cadence.budget.max_items == 0) {
-      record.desc.cadence.budget.max_items = 1;
-    }
-    if (desc.cadence.kind == CadenceKind::EveryN) {
-      record.ticks_until_due = record.desc.cadence.every_n;
-    }
-    tasks_.push_back(record);
-    return static_cast<TaskId>(tasks_.size() - 1);
+    return add_task_record(desc, ctx, fn, nullptr);
+  }
+
+  auto add_task(const ScheduleTaskDesc& desc, void* ctx,
+                ScheduleNoThrowTaskFn fn) -> TaskId {
+    return add_task_record(desc, ctx, nullptr, fn);
+  }
+
+  // Preserve the original null-callback assertion path now that two erased
+  // function-pointer overloads exist; a bare nullptr must not be ambiguous.
+  auto add_task(const ScheduleTaskDesc& desc, void* ctx, std::nullptr_t)
+      -> TaskId {
+    return add_task_record(desc, ctx, nullptr, nullptr);
   }
 
   // Registers a task OBJECT the caller owns; `task` must outlive the
   // schedule. T is any callable taking the context and returning a result.
   template <typename T>
   auto add_task(const ScheduleTaskDesc& desc, T& task) -> TaskId {
-    return add_task(
-        desc, static_cast<void*>(&task),
-        [](void* ctx, const ScheduleTaskContext& context)
-            -> ScheduleTaskResult { return (*static_cast<T*>(ctx))(context); });
+    if constexpr (std::is_nothrow_invocable_r_v<ScheduleTaskResult, T&,
+                                                const ScheduleTaskContext&>) {
+      return add_task(desc, static_cast<void*>(&task),
+                      [](void* ctx, const ScheduleTaskContext& context) noexcept
+                          -> ScheduleTaskResult {
+                        return (*static_cast<T*>(ctx))(context);
+                      });
+    } else {
+      return add_task(
+          desc, static_cast<void*>(&task),
+          [](void* ctx,
+             const ScheduleTaskContext& context) -> ScheduleTaskResult {
+            return (*static_cast<T*>(ctx))(context);
+          });
+    }
   }
 
   // Freezes registration and builds the dispatch indexes: phase_order_
@@ -354,6 +358,7 @@ class Schedule {
     stats.tick = advance_sim_tick(clock);
 
     for (std::size_t position = 0; position < phase_order_.size(); ++position) {
+#if TESS_HAS_EXCEPTIONS
       try {
         run_task_if_due(tasks_[phase_order_[position]], clock, stats);
       } catch (...) {
@@ -366,6 +371,9 @@ class Schedule {
         }
         throw;
       }
+#else
+      run_task_if_due(tasks_[phase_order_[position]], clock, stats);
+#endif
     }
     return stats;
   }
@@ -387,6 +395,7 @@ class Schedule {
     ScheduleTaskDesc desc{};
     void* ctx = nullptr;
     ScheduleTaskFn fn = nullptr;
+    ScheduleNoThrowTaskFn no_throw_fn = nullptr;
     std::uint32_t pending_mask = 0;
     std::uint32_t pending_events = 0;
     std::uint32_t ticks_until_due = 0;
@@ -395,6 +404,34 @@ class Schedule {
     bool enabled = true;
     ScheduleTaskStats stats{};
   };
+
+  auto add_task_record(const ScheduleTaskDesc& desc, void* ctx,
+                       ScheduleTaskFn fn, ScheduleNoThrowTaskFn no_throw_fn)
+      -> TaskId {
+    TESS_ASSERT(!sealed_);
+    TESS_ASSERT(fn != nullptr || no_throw_fn != nullptr);
+    TESS_ASSERT(desc.phase != SimPhase::Count);
+    TESS_ASSERT(desc.cadence.kind != CadenceKind::EveryN ||
+                desc.cadence.every_n != 0);
+    TESS_ASSERT(desc.cadence.kind != CadenceKind::Background ||
+                desc.cadence.budget.max_items != 0);
+    auto record = TaskRecord{};
+    record.desc = desc;
+    record.ctx = ctx;
+    record.fn = fn;
+    record.no_throw_fn = no_throw_fn;
+    if (record.desc.cadence.every_n == 0) {
+      record.desc.cadence.every_n = 1;
+    }
+    if (record.desc.cadence.budget.max_items == 0) {
+      record.desc.cadence.budget.max_items = 1;
+    }
+    if (desc.cadence.kind == CadenceKind::EveryN) {
+      record.ticks_until_due = record.desc.cadence.every_n;
+    }
+    tasks_.push_back(record);
+    return static_cast<TaskId>(tasks_.size() - 1);
+  }
 
   static void advance_aborted_tick_cadence(TaskRecord& task) noexcept {
     if (task.desc.cadence.kind != CadenceKind::EveryN) {
@@ -462,7 +499,9 @@ class Schedule {
     // re-arms the task for the next tick instead of being lost.
     task.pending_mask &= ~fired_dirty;
     task.pending_events &= ~fired_events;
+#if TESS_HAS_EXCEPTIONS
     const auto consumed_request = task.run_requested;
+#endif
     task.run_requested = false;
 
     auto context = ScheduleTaskContext{};
@@ -475,17 +514,29 @@ class Schedule {
     diagnostics::ScopedTimer task_timer{diagnostics::TraceCategory::Scheduler,
                                         task.desc.name};
 #endif
-    try {
-      result = task.fn(task.ctx, context);
-    } catch (...) {
-      // A failed callback did not complete the work represented by its
-      // coalesced triggers. Merge rather than assign: the callback may have
-      // raised the same or additional triggers before it threw.
-      task.pending_mask |= fired_dirty;
-      task.pending_events |= fired_events;
-      task.run_requested = task.run_requested || consumed_request;
-      throw;
+#if TESS_HAS_EXCEPTIONS
+    if (task.no_throw_fn != nullptr) {
+      result = task.no_throw_fn(task.ctx, context);
+    } else {
+      try {
+        result = task.fn(task.ctx, context);
+      } catch (...) {
+        // A failed callback did not complete the work represented by its
+        // coalesced triggers. Merge rather than assign: the callback may have
+        // raised the same or additional triggers before it threw.
+        task.pending_mask |= fired_dirty;
+        task.pending_events |= fired_events;
+        task.run_requested = task.run_requested || consumed_request;
+        throw;
+      }
     }
+#else
+    if (task.no_throw_fn != nullptr) {
+      result = task.no_throw_fn(task.ctx, context);
+    } else {
+      result = task.fn(task.ctx, context);
+    }
+#endif
     TESS_ASSERT(task.desc.cadence.kind != CadenceKind::Background ||
                 result.items_done <= budget);
 

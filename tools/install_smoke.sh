@@ -6,6 +6,7 @@ build_dir="${TESS_INSTALL_SMOKE_BUILD_DIR:-$root/build/dev}"
 # Set TESS_INSTALL_SMOKE_CONFIG (e.g. Debug) for multi-config generators
 # such as Visual Studio; single-config builds should leave it unset.
 config="${TESS_INSTALL_SMOKE_CONFIG:-}"
+no_exceptions="${TESS_NO_EXCEPTIONS:-0}"
 
 if [[ ! -d "$build_dir" ]]; then
   echo "error: build directory '$build_dir' does not exist;" \
@@ -41,7 +42,8 @@ fi
 
 cmake -S "$root/tests/install_consumer" -B "$build" \
   -DCMAKE_PREFIX_PATH="$prefix" \
-  -DTESS_EXPECTED_VERSION="$version"
+  -DTESS_EXPECTED_VERSION="$version" \
+  -DTESS_NO_EXCEPTIONS="$no_exceptions"
 if [[ -n "$config" ]]; then
   cmake --build "$build" --config "$config"
   "$build/$config/tess_install_consumer"

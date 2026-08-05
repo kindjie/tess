@@ -3,6 +3,7 @@
 // flooded from every food chamber at once, each ant reads its nearest
 // chamber from it with a single gradient descent, and the byte-budgeted
 // FieldProductCache turns the second wave of ants into pure cache hits.
+#include <tess/core/config.h>
 #include <tess/tess.h>
 
 #include <array>
@@ -136,10 +137,14 @@ auto run() -> int {
 }  // namespace
 
 auto main() -> int {
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     return run();
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "error: " << error.what() << "\n";
     return 1;
   }
+#endif
 }

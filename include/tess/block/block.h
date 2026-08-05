@@ -1,5 +1,8 @@
 #pragma once
 
+#include <tess/core/capacity.h>
+#include <tess/core/config.h>
+#include <tess/core/fail_fast.h>
 #include <tess/core/shape.h>
 #include <tess/storage/world.h>
 
@@ -67,11 +70,11 @@ class BlockScratch {
   // Growth allocates a fresh buffer: previously returned spans are
   // invalidated and scratch contents are not preserved. Only the byte
   // accounting (`used_bytes()`) carries over.
-  void reserve_bytes(std::size_t bytes) {
+  [[nodiscard]] auto reserve_bytes_checked(std::size_t bytes) -> ReserveStatus {
     const auto word_count =
         bytes / word_size + (bytes % word_size == 0 ? 0 : 1);
     if (word_count > std::numeric_limits<std::size_t>::max() / word_size) {
-      throw std::bad_alloc{};
+      return ReserveStatus::CapacityExceeded;
     }
     const auto byte_capacity = word_count * word_size;
     if (byte_capacity > capacity_bytes_) {
@@ -81,6 +84,21 @@ class BlockScratch {
       storage_ = std::make_unique_for_overwrite<std::byte[]>(byte_capacity);
       capacity_bytes_ = byte_capacity;
     }
+    return ReserveStatus::Reserved;
+  }
+
+  // Growth allocates a fresh buffer: previously returned spans are
+  // invalidated and scratch contents are not preserved. Only the byte
+  // accounting (`used_bytes()`) carries over.
+  void reserve_bytes(std::size_t bytes) {
+    if (reserve_bytes_checked(bytes) == ReserveStatus::Reserved) {
+      return;
+    }
+#if TESS_HAS_EXCEPTIONS
+    throw std::bad_alloc{};
+#else
+    detail::fail_fast("BlockScratch capacity exceeded");
+#endif
   }
 
   constexpr void reset() noexcept { used_bytes_ = 0; }

@@ -2,6 +2,7 @@
 // EnTT-shaped by driving the generic tick_ecs_* pipeline from a
 // hand-rolled store -- parallel arrays, generational ids, and the game's
 // own position component. No third-party ECS anywhere.
+#include <tess/core/config.h>
 #include <tess/tess.h>
 
 #include <algorithm>
@@ -218,10 +219,14 @@ auto run() -> int {
 }  // namespace
 
 auto main() -> int {
+#if TESS_HAS_EXCEPTIONS
   try {
+#endif
     return run();
+#if TESS_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     std::cerr << "error: " << error.what() << "\n";
     return 1;
   }
+#endif
 }

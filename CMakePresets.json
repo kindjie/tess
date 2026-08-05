@@ -115,6 +115,18 @@
       }
     },
     {
+      "name": "examples-no-exceptions",
+      "displayName": "Exception-Free Consumer Examples",
+      "description": "Build and run complete examples with -fno-exceptions.",
+      "inherits": "examples",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "TESS_EXAMPLES_NO_EXCEPTIONS": "ON",
+        "TESS_ENABLE_WARNINGS": "ON",
+        "TESS_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Release",
       "binaryDir": "${sourceDir}/build/${presetName}",
@@ -226,6 +238,10 @@
     {
       "name": "examples",
       "configurePreset": "examples"
+    },
+    {
+      "name": "examples-no-exceptions",
+      "configurePreset": "examples-no-exceptions"
     },
     {
       "name": "dev",

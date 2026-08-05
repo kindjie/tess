@@ -6,6 +6,17 @@
     "library_version",
     "version"
   ],
+  "docs/architecture/no-exceptions.md": [
+    "NoThrowScopedThreadPhaseExecutor",
+    "NoThrowWorkerPoolPhaseExecutor",
+    "PortalSegmentStoreStatus",
+    "ReserveStatus",
+    "ScheduleNoThrowTaskFn",
+    "ScopedThreadPhaseExecutorImpl",
+    "TESS_HAS_EXCEPTIONS",
+    "WorkerPoolPhaseExecutorImpl",
+    "has_exceptions"
+  ],
   "docs/architecture/block.md": [
     "BlockCtx",
     "BlockDiagnostics",
