@@ -1193,9 +1193,10 @@
 - `test_no_exceptions_manifest.py`: unit coverage for the exception-mode
   runtime manifest validator and its checked-in subsystem set.
 - `tess_msvc_exception_mode_spike`: Windows-only portability evidence. It
-  deliberately bypasses project options so no `/EH` flag is present, asserts
-  `_CPPUNWIND` is absent, and runs basic vector, mutex, and thread use. It does
-  not claim supported native MSVC exception-free operation.
+  deliberately bypasses project options and clears Visual Studio's default
+  `/EHsc` mode with `/EHs- /EHc-`, asserts `_CPPUNWIND` is absent, and runs
+  basic vector, mutex, and thread use. It does not claim supported native MSVC
+  exception-free operation.
 - `tess_sparse_stream_test`: the S3 sparse-streaming scenario
   (`tests/sparse_stream_harness.h`) searching the S1 terrain in a
   `SparseResidentWorld` under budget fractions of the world's chunks,

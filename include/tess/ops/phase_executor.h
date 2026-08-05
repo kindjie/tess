@@ -479,7 +479,7 @@ class WorkerPoolPhaseExecutorImpl
 #if TESS_HAS_EXCEPTIONS
       if constexpr (CaptureExceptions) {
         this->cancelled_.store(false, std::memory_order_relaxed);
-        this->exception_ = std::exception_ptr{};
+        this->exception_ = nullptr;
       }
 #endif
       ++job_epoch_;

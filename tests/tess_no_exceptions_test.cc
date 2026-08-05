@@ -163,7 +163,7 @@ auto pathfinding_and_topology_run_through_aggregate_headers() -> bool {
   }
 
   tess::PathScratch path_scratch;
-  path_scratch.reserve_nodes(64u * 64u);
+  path_scratch.reserve_nodes(std::size_t{64} * 64);
   const auto path = tess::astar_path<World, PassableTag>(
       world, tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{63, 63, 0}},
       path_scratch);

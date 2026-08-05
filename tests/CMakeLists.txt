@@ -162,9 +162,9 @@ if(UNIX AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 
 if(MSVC)
-  # Portability evidence only: native MSVC without /EH is not a supported
-  # exception-free mode. Keep this target independent of project options,
-  # which intentionally add /EHsc to normal MSVC targets.
+  # Portability evidence only: native MSVC without C++ unwinding is not a
+  # supported exception-free mode. Visual Studio projects enable /EHsc by
+  # default, so explicitly clear both components for this isolated probe.
   add_executable(
     tess_msvc_exception_mode_spike
     tess_msvc_exception_mode_spike.cc
@@ -172,7 +172,7 @@ if(MSVC)
   target_link_libraries(tess_msvc_exception_mode_spike PRIVATE tess::tess)
   target_compile_options(
     tess_msvc_exception_mode_spike
-    PRIVATE /W4 /WX /permissive-
+    PRIVATE /W4 /WX /permissive- /EHs- /EHc-
   )
   add_test(
     NAME tess_msvc_exception_mode_spike

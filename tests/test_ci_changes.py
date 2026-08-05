@@ -24,6 +24,14 @@ def test_no_exceptions_manifest_tests_run_in_hook_backstop():
   assert "tests/test_no_exceptions_manifest.py" in workflow
 
 
+def test_msvc_exception_mode_spike_explicitly_disables_cpp_unwinding():
+  root = Path(__file__).resolve().parents[1]
+  tests_cmake = (root / "tests/CMakeLists.txt").read_text(encoding="utf-8")
+
+  assert "/EHs-" in tests_cmake
+  assert "/EHc-" in tests_cmake
+
+
 @pytest.mark.parametrize(
   "path",
   (
