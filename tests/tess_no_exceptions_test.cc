@@ -19,6 +19,7 @@
 
 #if defined(_MSC_VER)
 #include <crtdbg.h>
+#include <process.h>
 #endif
 
 namespace {
@@ -100,9 +101,18 @@ auto aborts(std::string_view abort_case) -> bool {
   if (std::remove(marker_path.c_str()) != 0 && errno != ENOENT) {
     return false;
   }
+#if defined(_MSC_VER)
+  const auto abort_case_string = std::string{abort_case};
+  const char* const arguments[] = {executable_path.c_str(), "--abort-case",
+                                   abort_case_string.c_str(),
+                                   marker_path.c_str(), nullptr};
+  const auto result =
+      static_cast<int>(_spawnv(_P_WAIT, executable_path.c_str(), arguments));
+#else
   const auto command = '"' + executable_path + "\" --abort-case " +
                        std::string{abort_case} + " \"" + marker_path + '"';
   const auto result = std::system(command.c_str());
+#endif
   const auto started = marker_contents(marker_path) == "started";
   std::remove(marker_path.c_str());
   return started && has_expected_abort_status(result);
