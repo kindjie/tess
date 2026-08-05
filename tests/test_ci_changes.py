@@ -17,6 +17,13 @@ SHA_A = "a" * 40
 SHA_B = "b" * 40
 
 
+def test_no_exceptions_manifest_tests_run_in_hook_backstop():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+  assert "tests/test_no_exceptions_manifest.py" in workflow
+
+
 @pytest.mark.parametrize(
   "path",
   (

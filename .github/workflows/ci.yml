@@ -349,6 +349,7 @@ jobs:
           tests/test_git_hooks.py
           tests/test_ci_changes.py
           tests/test_clang_tidy_changed.py
+          tests/test_no_exceptions_manifest.py
           tests/test_paired_bench.py
           tests/test_check_counter_goldens.py
           tests/test_benchmark_changepoint.py
