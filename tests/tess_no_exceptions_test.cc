@@ -93,18 +93,53 @@ auto has_expected_abort_status(int status) -> bool {
 #endif
 }
 
+auto quote_windows_spawn_argument(std::string_view argument) -> std::string {
+  std::string quoted;
+  quoted.reserve(argument.size() + 2);
+  quoted.push_back('"');
+  std::size_t backslashes = 0;
+  for (const auto character : argument) {
+    if (character == '\\') {
+      ++backslashes;
+      continue;
+    }
+    if (character == '"') {
+      quoted.append(backslashes * 2 + 1, '\\');
+      quoted.push_back(character);
+    } else {
+      quoted.append(backslashes, '\\');
+      quoted.push_back(character);
+    }
+    backslashes = 0;
+  }
+  quoted.append(backslashes * 2, '\\');
+  quoted.push_back('"');
+  return quoted;
+}
+
 auto aborts(std::string_view abort_case) -> bool {
+  if (quote_windows_spawn_argument(R"(path with spaces\test.exe)") !=
+          R"("path with spaces\test.exe")" ||
+      quote_windows_spawn_argument("a\"b") != "\"a\\\"b\"" ||
+      quote_windows_spawn_argument("path\\") != "\"path\\\\\"") {
+    return false;
+  }
+  // The embedded space is intentional regression coverage for Windows spawn
+  // argument quoting. Keep it even when the checkout path contains no spaces.
   const auto marker_path =
-      executable_path + "." + std::string{abort_case} + ".started";
+      executable_path + ".abort marker." + std::string{abort_case} + ".started";
   errno = 0;
   if (std::remove(marker_path.c_str()) != 0 && errno != ENOENT) {
     return false;
   }
 #if defined(_MSC_VER)
-  const auto abort_case_string = std::string{abort_case};
-  const char* const arguments[] = {executable_path.c_str(), "--abort-case",
-                                   abort_case_string.c_str(),
-                                   marker_path.c_str(), nullptr};
+  const auto executable_argument =
+      quote_windows_spawn_argument(executable_path);
+  const auto abort_case_argument = quote_windows_spawn_argument(abort_case);
+  const auto marker_argument = quote_windows_spawn_argument(marker_path);
+  const char* const arguments[] = {executable_argument.c_str(), "--abort-case",
+                                   abort_case_argument.c_str(),
+                                   marker_argument.c_str(), nullptr};
   const auto result =
       static_cast<int>(_spawnv(_P_WAIT, executable_path.c_str(), arguments));
 #else

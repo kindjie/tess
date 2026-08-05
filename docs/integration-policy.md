@@ -10,11 +10,14 @@ leaving you to find out.
 tess supports two build-wide compiler modes. Exception-enabled C++20 remains
 the default. Clang-family and GCC consumers may compile every translation unit
 with `-fno-exceptions`. Native MSVC consumers use `/EHs-c-` together with
-`_HAS_EXCEPTIONS=0`. Aggregate headers, representative runtime behavior,
-installed and FetchContent consumers, and full Clang/GCC examples are tested
-in exception-free configurations. The installed `tess::tess` target never
-forces either policy. `TESS_HAS_EXCEPTIONS` and `tess::has_exceptions` report
-the compiler mode and cannot be overridden.
+`_HAS_EXCEPTIONS=0`. The latter is an undocumented and unsupported MSVC STL
+implementation switch, so this mode is version-sensitive and verified against
+the CI toolset rather than guaranteed by Microsoft. Aggregate headers,
+representative runtime behavior, installed and FetchContent consumers, and
+full Clang/GCC examples are tested in exception-free configurations. The
+installed `tess::tess` target never forces either policy.
+`TESS_HAS_EXCEPTIONS` and `tess::has_exceptions` report the compiler mode and
+cannot be overridden.
 
 Exceptions tess throws itself:
 

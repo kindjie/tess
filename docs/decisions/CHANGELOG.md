@@ -8,6 +8,21 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-05 - Exception-free validation hardening
+
+- Fixed: native MSVC abort-contract tests quote CRT spawn arguments and force
+  a marker path containing a space, so space-bearing checkout paths remain
+  covered without another CI job.
+- Changed: opting into exception-free testing now adds every registered test
+  executable and macro cell to the default build. The standalone-header
+  verifier remains explicit. Ordinary builds remain unchanged because the
+  option is off; focused CI jobs keep their existing targets and runtime.
+- Clarified: AppleClang-specific exception-free CI is intentionally deferred
+  to contain CI time, the historical TDD points to the focused Windows job,
+  and the MSVC STL switch is undocumented and unsupported upstream.
+- Affected docs: integration policy, exception-free architecture note, and
+  the historical exception-free TDD implementation status.
+
 ## 2026-08-04 - Native MSVC exception-free consumer mode
 
 - Added: native MSVC exception-free support using `/EHs-c-` and the matching

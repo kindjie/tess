@@ -87,13 +87,22 @@ configurations, representative runtime behavior, an installed consumer, and
 a FetchContent consumer in each supported compiler family. Complete examples
 are additionally built and run with Clang or GCC.
 
+AppleClang uses the Clang-family `-fno-exceptions` recipe, but CI does not
+duplicate the exception-free contract suite on macOS. Linux Clang supplies
+that language-mode coverage while ordinary macOS CI remains exception-enabled.
+This intentionally contains CI time at the cost of not detecting an
+AppleClang-specific exception-free regression in the repository matrix.
+
 The exception-free contract targets are opt-in so ordinary developer and CI
 build-all invocations do not compile both language modes. Configure them with
-`-DTESS_BUILD_NO_EXCEPTIONS_TESTING=ON`, build the relevant
-`tess_no_exceptions_*` targets, and run tests labeled
-`config:noexceptions`. CI keeps the focused MSVC contracts in a job parallel
-to the existing full Windows build so this coverage does not extend the
-critical path.
+`-DTESS_BUILD_NO_EXCEPTIONS_TESTING=ON`; the normal build then includes the
+exception-free runtime, consumer-contract, and macro-cell executables, so an
+unfiltered `ctest` run has every registered executable. The standalone-header
+verifier remains an explicit target because it registers no test. Focused
+builds may select the relevant `tess_no_exceptions_*` targets before running
+tests labeled `config:noexceptions`. CI keeps the focused MSVC contracts in a
+job parallel to the existing full Windows build so this coverage does not
+extend the critical path.
 
 Native MSVC's `/EHs-c-` mode is not identical to `-fno-exceptions`: it does
 not provide the same compile-time enforcement or safe recovery if an
@@ -103,3 +112,12 @@ failure preconditions above are therefore especially important on MSVC.
 MSVC does not reliably diagnose translation units built with different
 exception modes at link time, so build-system consistency is required to
 avoid an unsupported mixed-mode program.
+
+`_HAS_EXCEPTIONS=0` is an MSVC STL implementation switch rather than a
+supported public compiler mode. Microsoft STL maintainers have described it
+as [largely untested, undocumented, and unsupported][msvc-stl-no-exceptions].
+Tess therefore treats native MSVC support as version-sensitive, pins it with
+CI, and does not promise recovery from standard-library failures.
+
+[msvc-stl-no-exceptions]:
+  <https://github.com/microsoft/STL/issues/2216#issuecomment-930561988>

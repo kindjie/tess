@@ -197,8 +197,8 @@ called supported operation. See the official [MSVC `/EH` documentation][msvc].
 
 > Implementation note (2026-08-04): native MSVC was later promoted using
 > `/EHs-c-` and `_HAS_EXCEPTIONS=0`, with public-header, runtime, installed,
-> and FetchContent coverage in the existing Windows CI job. The maintained
-> contract is in `docs/architecture/no-exceptions.md`.
+> and FetchContent coverage in a focused CI job parallel to the full Windows
+> job. The maintained contract is in `docs/architecture/no-exceptions.md`.
 
 All translation units in a program must use the same Tess exception
 configuration. Exception policy is intentionally encoded in executor policy

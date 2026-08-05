@@ -90,8 +90,6 @@ if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
     tess_no_exceptions_test PRIVATE TESS_INTERNAL_CAPACITY_TESTING)
   tess_apply_project_options(tess_no_exceptions_test)
   tess_target_disable_exceptions(tess_no_exceptions_test)
-  set_target_properties(
-    tess_no_exceptions_test PROPERTIES EXCLUDE_FROM_ALL TRUE)
   tess_add_test(
     TessNoExceptions.AggregateHeaderRunsStorageAndBlockOperations
     tess_no_exceptions_test
@@ -248,9 +246,6 @@ if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
     tess_no_exceptions_consumer_contract_test PRIVATE tess::tess)
   tess_apply_project_options(tess_no_exceptions_consumer_contract_test)
   tess_target_disable_exceptions(tess_no_exceptions_consumer_contract_test)
-  set_target_properties(
-    tess_no_exceptions_consumer_contract_test
-    PROPERTIES EXCLUDE_FROM_ALL TRUE)
   tess_add_test(
     TessNoExceptions.ConsumerContract
     tess_no_exceptions_consumer_contract_test
@@ -374,22 +369,16 @@ if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
     DEFINES TESS_EXPECT_NO_EXCEPTIONS
   )
   tess_target_disable_exceptions(tess_no_exceptions_cell_bare)
-  set_target_properties(
-    tess_no_exceptions_cell_bare PROPERTIES EXCLUDE_FROM_ALL TRUE)
   tess_add_macro_cell(
     tess_no_exceptions_cell_ndebug
     DEFINES NDEBUG TESS_EXPECT_NO_EXCEPTIONS
   )
   tess_target_disable_exceptions(tess_no_exceptions_cell_ndebug)
-  set_target_properties(
-    tess_no_exceptions_cell_ndebug PROPERTIES EXCLUDE_FROM_ALL TRUE)
   tess_add_macro_cell(
     tess_no_exceptions_cell_diagnostics
     DEFINES TESS_ENABLE_DIAGNOSTICS TESS_EXPECT_NO_EXCEPTIONS
   )
   tess_target_disable_exceptions(tess_no_exceptions_cell_diagnostics)
-  set_target_properties(
-    tess_no_exceptions_cell_diagnostics PROPERTIES EXCLUDE_FROM_ALL TRUE)
   tess_add_macro_cell(
     tess_no_exceptions_cell_imgui
     DEFINES
@@ -400,8 +389,6 @@ if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
     INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/imgui_stub"
   )
   tess_target_disable_exceptions(tess_no_exceptions_cell_imgui)
-  set_target_properties(
-    tess_no_exceptions_cell_imgui PROPERTIES EXCLUDE_FROM_ALL TRUE)
   tess_add_macro_cell(
     tess_no_exceptions_cell_webgpu
     DEFINES
@@ -411,8 +398,6 @@ if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
     INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/webgpu_stub"
   )
   tess_target_disable_exceptions(tess_no_exceptions_cell_webgpu)
-  set_target_properties(
-    tess_no_exceptions_cell_webgpu PROPERTIES EXCLUDE_FROM_ALL TRUE)
   add_custom_target(
     tess_no_exceptions_contract_cells
     DEPENDS
@@ -432,8 +417,6 @@ if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
       LINKS EnTT::EnTT
     )
     tess_target_disable_exceptions(tess_no_exceptions_cell_entt)
-    set_target_properties(
-      tess_no_exceptions_cell_entt PROPERTIES EXCLUDE_FROM_ALL TRUE)
     add_dependencies(
       tess_no_exceptions_contract_cells tess_no_exceptions_cell_entt)
   endif()
@@ -447,8 +430,6 @@ if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
       LINKS flecs::flecs_static
     )
     tess_target_disable_exceptions(tess_no_exceptions_cell_flecs)
-    set_target_properties(
-      tess_no_exceptions_cell_flecs PROPERTIES EXCLUDE_FROM_ALL TRUE)
     add_dependencies(
       tess_no_exceptions_contract_cells tess_no_exceptions_cell_flecs)
   endif()
