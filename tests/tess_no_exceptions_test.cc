@@ -48,8 +48,20 @@ static_assert(!tess::WorkerPoolPhaseExecutor::captures_callback_exceptions);
 
 std::string executable_path;
 
+auto open_file(const char* path, const char* mode) -> std::FILE* {
+#if defined(_MSC_VER)
+  std::FILE* file = nullptr;
+  if (fopen_s(&file, path, mode) != 0) {
+    return nullptr;
+  }
+  return file;
+#else
+  return std::fopen(path, mode);
+#endif
+}
+
 auto marker_contents(const std::string& path) -> std::string {
-  auto* file = std::fopen(path.c_str(), "rb");
+  auto* file = open_file(path.c_str(), "rb");
   if (file == nullptr) {
     return {};
   }
@@ -60,7 +72,7 @@ auto marker_contents(const std::string& path) -> std::string {
 }
 
 auto write_marker(std::string_view path, std::string_view contents) -> bool {
-  auto* file = std::fopen(std::string{path}.c_str(), "wb");
+  auto* file = open_file(std::string{path}.c_str(), "wb");
   if (file == nullptr) {
     return false;
   }
