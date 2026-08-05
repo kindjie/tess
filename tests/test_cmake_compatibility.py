@@ -209,6 +209,26 @@ def test_project_options_define_native_msvc_exception_free_mode():
     assert "/EHsc" not in warning_function
 
 
+def test_opted_in_no_exception_executables_join_build_all():
+    tests = (REPO_ROOT / "tests" / "CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
+    normalized = " ".join(tests.split())
+
+    for target in (
+        "tess_no_exceptions_test",
+        "tess_no_exceptions_consumer_contract_test",
+        "tess_no_exceptions_cell_bare",
+        "tess_no_exceptions_cell_ndebug",
+        "tess_no_exceptions_cell_diagnostics",
+        "tess_no_exceptions_cell_imgui",
+        "tess_no_exceptions_cell_webgpu",
+        "tess_no_exceptions_cell_entt",
+        "tess_no_exceptions_cell_flecs",
+    ):
+        assert f"{target} PROPERTIES EXCLUDE_FROM_ALL" not in normalized
+
+
 def test_install_smoke_uses_the_tracked_consumer_fixture():
     script = (REPO_ROOT / "tools" / "install_smoke.sh").read_text(
         encoding="utf-8"

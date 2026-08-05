@@ -1181,7 +1181,8 @@
   threaded executor paths. It asserts
   compiler detection, checked capacity results, and the legacy block fail-fast
   wrapper. Its child-process fail-fast checks are portable across Unix and
-  Windows.
+  Windows; their marker path deliberately contains a space to pin Windows CRT
+  spawn quoting.
   Every discovered case carries the `config:noexceptions` manifest label.
   Companion standalone-header and macro-cell targets apply the same compiler
   recipe across bare, NDEBUG, diagnostics, ImGui, WebGPU, and available
@@ -1412,7 +1413,9 @@
   parent cache choices and reject an incompatible static-target choice. The
   network-free `examples` preset and
   tracked installed-package and `FetchContent` consumer fixtures are covered
-  as adopter-facing build contracts.
+  as adopter-facing build contracts. Opted-in exception-free executables are
+  required to join build-all so registered CTest cases cannot name unbuilt
+  targets; the standalone-header verifier remains explicitly targeted.
 - `tests/test_header_compile_cost.py`: pytest coverage for the repeatable
   syntax-only public-header compile-cost tool. It pins the source and generated
   include paths, compiler command, elapsed-sample collection, compiler-error

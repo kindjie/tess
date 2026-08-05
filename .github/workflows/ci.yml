@@ -660,7 +660,8 @@ jobs:
         run: tools/install_smoke.sh
 
   # Keep focused native MSVC exception-free coverage off the already-long
-  # full Windows critical path. These targets are excluded from build-all.
+  # full Windows critical path. The full job leaves the opt-in mode disabled;
+  # this job names its required targets explicitly.
   windows-noexceptions:
     needs: changes
     if: ${{ needs.changes.outputs.code_required == 'true' }}
