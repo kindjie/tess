@@ -81,8 +81,17 @@ before anything is proposed to a central registry:
   whose package id clears settings, so one package serves every compiler and
   build type.
 - `ports/tess/` — a checkout-based vcpkg overlay port. Use it with
-  `--overlay-ports=ports` from the repository root; it packages that checkout
-  directly, including local commits, without downloading a release archive.
+  this command from the repository root:
+
+  ```console
+  vcpkg install tess --overlay-ports=ports --binarysource=clear
+  ```
+
+  It packages that checkout directly, including local commits, without
+  downloading a release archive. Keep `--binarysource=clear`: vcpkg's ABI hash
+  covers the port directory but not the checkout files referenced from outside
+  it. The default binary cache could otherwise restore stale headers after a
+  local source change.
 
 Both configure the same option set as the `consumer` preset — no tests,
 examples, benchmarks, docs, or optional adapters — so what they install is the

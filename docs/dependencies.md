@@ -529,11 +529,18 @@ runtime or link dependencies of tess:
 The checked-in port is a filesystem overlay used directly from a tess
 checkout. Its `SOURCE_PATH` resolves the repository root relative to
 `CMAKE_CURRENT_LIST_DIR`; it does not download or hash the release archive.
+A checkout's source files are outside the port directory and therefore do not
+participate in vcpkg's ABI hash. The supported installation command disables
+binary caching with `--binarysource=clear` so a prior package cannot mask local
+source changes. This sacrifices cache reuse only for that invocation; a future
+registry port's source checksum will make normal binary caching safe again.
 A future central-registry port should instead acquire the published tag with
 the registry recipe's independently stored checksum.
 
 - Overlay-port documentation:
   https://learn.microsoft.com/vcpkg/concepts/overlay-ports
+- Binary-caching and ABI-hash documentation:
+  https://learn.microsoft.com/vcpkg/reference/binarycaching
 - `vcpkg_cmake_configure` documentation:
   https://learn.microsoft.com/vcpkg/maintainers/functions/vcpkg_cmake_configure
 
