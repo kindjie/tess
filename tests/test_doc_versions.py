@@ -183,7 +183,7 @@ def test_check_repository_rejects_source_older_than_release(tmp_path):
   ) in cdv.check_repository(tmp_path)
 
 
-def test_repository_targets_v012_development_api():
+def test_repository_targets_v012_release():
   source = (cdv.REPO_ROOT / "cmake" / "tess-version.cmake").read_text(
     encoding="utf-8"
   )

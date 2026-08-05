@@ -1362,7 +1362,11 @@
   vcpkg's post-build checks require, and the packaging document no
   longer claims no recipe exists. Neither tool is installed in CI, so
   these check recipe content and correspondence, not a completed
-  package build.
+  package build. The vcpkg recipe is a checkout overlay: it resolves
+  its source tree relative to the port directory and must not
+  reintroduce a release-archive download or self-referential checksum. Because
+  checkout sources are outside vcpkg's ABI-hashed port directory, the
+  documented install command must disable binary caching.
 - `tests/test_coverage_gaps.py`: pytest coverage for the benchmark
   coverage gap-finder (`tools/coverage_gaps.py`). It pins the
   declared-public-header inventory (parsed from

@@ -73,6 +73,29 @@ def test_vcpkg_port_declares_header_only_layout():
   assert "vcpkg_install_copyright" in portfile
 
 
+def test_vcpkg_overlay_builds_the_checkout_without_a_release_archive():
+  portfile = (
+    REPO / "ports" / "tess" / "portfile.cmake"
+  ).read_text(encoding="utf-8")
+
+  # This is a checkout overlay, not a central-registry recipe. Downloading
+  # the release whose archive contains this portfile makes SHA512
+  # self-referential and leaves an unreleased checkout unusable.
+  assert "vcpkg_from_github" not in portfile
+  assert "SHA512" not in portfile
+  assert "CMAKE_CURRENT_LIST_DIR" in portfile
+  assert 'SOURCE_PATH "${SOURCE_PATH}"' in portfile
+
+
+def test_vcpkg_checkout_overlay_disables_binary_cache_in_documented_flow():
+  packaging = (REPO / "docs" / "packaging.md").read_text(encoding="utf-8")
+
+  # Checkout files live outside the port directory and therefore do not
+  # contribute to vcpkg's ABI hash. The supported command must not restore a
+  # stale package after those files change.
+  assert "--binarysource=clear" in packaging
+
+
 def test_conan_recipe_declares_header_library():
   recipe = (REPO / "conanfile.py").read_text(encoding="utf-8")
 

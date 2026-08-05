@@ -1,28 +1,25 @@
-# tess is header-only: the port installs headers and the CMake package
-# files, and installs no libraries. The configure step mirrors the
-# consumer preset so the packaged surface matches what
-# find_package(tess) provides from a plain install -- a second
-# definition here would be free to drift from the real one.
-vcpkg_from_github(
-    OUT_SOURCE_PATH SOURCE_PATH
-    REPO kindjie/tess
-    REF "v${VERSION}"
-    # Placeholder: vcpkg hashes a published release archive, so this is
-    # filled in when a version is tagged. The overlay exists to prove
-    # the packaging shape below, which does not depend on the hash.
-    SHA512 0
-    HEAD_REF main
+# tess is header-only: this checkout overlay installs the enclosing source
+# tree's headers and CMake package files, and installs no libraries. A future
+# central-registry port can acquire a tagged archive after a release exists;
+# this overlay deliberately remains usable before and at the release tag.
+get_filename_component(
+  SOURCE_PATH "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
 )
+if(NOT EXISTS "${SOURCE_PATH}/cmake/tess-version.cmake")
+  message(FATAL_ERROR
+    "The tess overlay must be used from the repository's ports directory"
+  )
+endif()
 
 vcpkg_cmake_configure(
-    SOURCE_PATH "${SOURCE_PATH}"
-    OPTIONS
-        -DTESS_BUILD_TESTING=OFF
-        -DTESS_BUILD_EXAMPLES=OFF
-        -DTESS_BUILD_BENCHMARKS=OFF
-        -DTESS_BUILD_DOCS=OFF
-        -DTESS_ENABLE_ENTT=OFF
-        -DTESS_ENABLE_FLECS=OFF
+  SOURCE_PATH "${SOURCE_PATH}"
+  OPTIONS
+    -DTESS_BUILD_TESTING=OFF
+    -DTESS_BUILD_EXAMPLES=OFF
+    -DTESS_BUILD_BENCHMARKS=OFF
+    -DTESS_BUILD_DOCS=OFF
+    -DTESS_ENABLE_ENTT=OFF
+    -DTESS_ENABLE_FLECS=OFF
 )
 
 vcpkg_cmake_install()

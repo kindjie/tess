@@ -40,8 +40,7 @@ of silently presenting a stationary colony as running normally.
 
 ### v0.12 Completion
 
-The consolidated development surface is versioned as `0.12.0` while the
-latest supported release tag remains `v0.4.0`. Installed-package and
+The consolidated surface is released as `v0.12.0`. Installed-package and
 `FetchContent` consumers, an actual CMake 3.25.2 consumer configure/build,
 dependency-free examples, optional adapters, strict maintained documentation,
 and generated API documentation are release gates. Every literal benchmark in

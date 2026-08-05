@@ -25,8 +25,8 @@ fit for games, colony simulations, robotics prototypes, and headless spatial
 models. It is not a renderer, physics engine, navigation-mesh generator, or
 drop-in ECS.
 
-The latest release is `v0.4.0`; this checkout documents the
-unreleased `v0.12.0` development API. tess is pre-1.0 — see
+The latest release is `v0.12.0`; this checkout documents the
+`v0.12.0` release. tess is pre-1.0 — see
 [support and compatibility](https://tess.owx.dev/support/) for the stability
 policy. Release notes live in [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -113,7 +113,7 @@ include(FetchContent)
 FetchContent_Declare(
   tess
   GIT_REPOSITORY https://github.com/kindjie/tess.git
-  GIT_TAG v0.4.0
+  GIT_TAG v0.12.0
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(tess)

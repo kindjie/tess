@@ -634,6 +634,22 @@ def test_required_clang_tidy_uses_bounded_parallelism():
   )
 
 
+def test_required_clang_tidy_uses_an_explicit_major_version():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  quality = workflow.split("  quality:\n", 1)[1].split("  macos:\n", 1)[0]
+  tidy_diff = workflow.split("  tidy-diff:\n", 1)[1].split(
+    "  macos:\n", 1
+  )[0]
+
+  assert "sudo apt-get install -y clang-tidy-18" in quality
+  assert "clang-tidy-18 --version" in quality
+  assert "-DTESS_CLANG_TIDY_EXE=clang-tidy-18" in quality
+  assert "sudo apt-get install -y ccache clang-tidy-18" in tidy_diff
+  assert "clang-tidy-18 --version" in tidy_diff
+  assert "--clang-tidy clang-tidy-18" in tidy_diff
+
+
 def test_non_gating_benchmark_baselines_run_only_on_main():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text()

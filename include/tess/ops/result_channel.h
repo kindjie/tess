@@ -339,6 +339,10 @@ auto execute_phase_partitioned_dirty_with_results(
   }
   auto result = execute_operation_index_range(
       std::forward<Executor>(executor), executor_phase_range(phase),
+      // Each partition reserved one record per possible chunk visit above;
+      // push_back therefore cannot allocate. Clang-tidy 22 does not carry
+      // that capacity proof through std::vector.
+      // NOLINTNEXTLINE(bugprone-exception-escape)
       [&](std::size_t index) noexcept(no_throw_callback) {
         const auto offset = index - phase.first_operation();
         const auto& operation = operations[index];
