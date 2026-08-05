@@ -317,10 +317,10 @@ struct WorkerPoolExceptionState {};
 
 template <>
 struct alignas(128) WorkerPoolExceptionState<true> {
-  mutable std::atomic<bool> cancelled = false;
-  mutable std::exception_ptr exception;
-  mutable PhaseJobInvoke invoke = nullptr;
-  mutable bool no_throw_job = false;
+  mutable std::atomic<bool> cancelled_ = false;
+  mutable std::exception_ptr exception_;
+  mutable PhaseJobInvoke invoke_ = nullptr;
+  mutable bool no_throw_job_ = false;
 };
 
 }  // namespace detail
@@ -458,10 +458,10 @@ class WorkerPoolPhaseExecutorImpl
       }
 #if TESS_HAS_EXCEPTIONS
       if constexpr (CaptureExceptions) {
-        this->no_throw_job = no_throw_callback;
+        this->no_throw_job_ = no_throw_callback;
         if constexpr (!no_throw_callback) {
-          this->invoke = [](void* context,
-                            std::size_t index) -> PlannedExecutionResult {
+          this->invoke_ = [](void* context,
+                             std::size_t index) -> PlannedExecutionResult {
             return (*static_cast<Callback*>(context))(index);
           };
         }
@@ -478,8 +478,8 @@ class WorkerPoolPhaseExecutorImpl
       finished_operations_.store(0, std::memory_order_relaxed);
 #if TESS_HAS_EXCEPTIONS
       if constexpr (CaptureExceptions) {
-        this->cancelled.store(false, std::memory_order_relaxed);
-        this->exception = std::exception_ptr{};
+        this->cancelled_.store(false, std::memory_order_relaxed);
+        this->exception_ = std::exception_ptr{};
       }
 #endif
       ++job_epoch_;
@@ -508,8 +508,8 @@ class WorkerPoolPhaseExecutorImpl
         if constexpr (CaptureExceptions) {
 #if TESS_HAS_EXCEPTIONS
           return active_workers_ == 0 &&
-                 (this->exception || finished_operations_.load(
-                                         std::memory_order_acquire) == count);
+                 (this->exception_ || finished_operations_.load(
+                                          std::memory_order_acquire) == count);
 #else
           return false;
 #endif
@@ -520,7 +520,7 @@ class WorkerPoolPhaseExecutorImpl
       });
 #if TESS_HAS_EXCEPTIONS
       if constexpr (CaptureExceptions) {
-        exception = this->exception;
+        exception = this->exception_;
       }
 #endif
       job_active_ = false;
@@ -562,8 +562,8 @@ class WorkerPoolPhaseExecutorImpl
       detail::PhaseJobInvoke invoke = nullptr;
       auto no_throw_job = true;
       if constexpr (CaptureExceptions) {
-        invoke = this->invoke;
-        no_throw_job = this->no_throw_job;
+        invoke = this->invoke_;
+        no_throw_job = this->no_throw_job_;
       }
 #endif
       const auto first = job_first_;
@@ -614,7 +614,7 @@ class WorkerPoolPhaseExecutorImpl
                         std::size_t first, std::size_t count,
                         std::size_t stride) const {
     auto cancelled = false;
-    while (!this->cancelled.load(std::memory_order_acquire)) {
+    while (!this->cancelled_.load(std::memory_order_acquire)) {
       const auto begin =
           next_offset_.fetch_add(stride, std::memory_order_relaxed);
       if (begin >= count) {
@@ -623,7 +623,7 @@ class WorkerPoolPhaseExecutorImpl
       const auto end = std::min(begin + stride, count);
       auto finished = std::size_t{0};
       for (auto offset = begin; offset < end; ++offset) {
-        if (this->cancelled.load(std::memory_order_acquire)) {
+        if (this->cancelled_.load(std::memory_order_acquire)) {
           cancelled = true;
           break;
         }
@@ -631,11 +631,11 @@ class WorkerPoolPhaseExecutorImpl
           results_[offset] = invoke(context, first + offset);
           ++finished;
         } catch (...) {
-          this->cancelled.store(true, std::memory_order_release);
+          this->cancelled_.store(true, std::memory_order_release);
           {
             const std::scoped_lock exception_lock{mutex_};
-            if (!this->exception) {
-              this->exception = std::current_exception();
+            if (!this->exception_) {
+              this->exception_ = std::current_exception();
             }
           }
           cancelled = true;
