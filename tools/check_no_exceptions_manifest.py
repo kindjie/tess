@@ -122,6 +122,7 @@ def validate_manifest(manifest: dict, ctest_data: dict) -> list[str]:
 def main() -> int:
   parser = argparse.ArgumentParser()
   parser.add_argument("--ctest-dir", required=True, type=Path)
+  parser.add_argument("--config")
   parser.add_argument(
     "--manifest",
     type=Path,
@@ -134,13 +135,16 @@ def main() -> int:
   args = parser.parse_args()
 
   manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+  command = [
+    "ctest",
+    "--test-dir",
+    str(args.ctest_dir),
+    "--show-only=json-v1",
+  ]
+  if args.config:
+    command.extend(("--build-config", args.config))
   result = subprocess.run(
-    [
-      "ctest",
-      "--test-dir",
-      str(args.ctest_dir),
-      "--show-only=json-v1",
-    ],
+    command,
     check=True,
     capture_output=True,
     text=True,

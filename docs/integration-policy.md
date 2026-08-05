@@ -8,9 +8,11 @@ leaving you to find out.
 ## Exceptions
 
 tess supports two build-wide compiler modes. Exception-enabled C++20 remains
-the default. Clang-family and GCC consumers may instead compile every
-translation unit with `-fno-exceptions`; aggregate headers and full examples
-are tested in that configuration. The installed `tess::tess` target never
+the default. Clang-family and GCC consumers may compile every translation unit
+with `-fno-exceptions`. Native MSVC consumers use `/EHs-c-` together with
+`_HAS_EXCEPTIONS=0`. Aggregate headers, representative runtime behavior,
+installed and FetchContent consumers, and full Clang/GCC examples are tested
+in exception-free configurations. The installed `tess::tess` target never
 forces either policy. `TESS_HAS_EXCEPTIONS` and `tess::has_exceptions` report
 the compiler mode and cannot be overridden.
 
@@ -76,10 +78,13 @@ What is **not** guaranteed:
   runtime in every configuration. Define `TESS_ENABLE_ASSERTS=1`
   explicitly if you want the checks in an optimised build.
 
-Native MSVC without `/EH` is tested only as a portability spike and is not a
-supported exception-free mode. Mixed exception modes within one program are
-unsupported. See [Exception-free builds](architecture/no-exceptions.md) for
-the complete failure contract and standard-library operation inventory.
+Native MSVC's exception-free configuration is supported by construction, not
+as an equivalent to the stronger GCC/Clang compiler mode. An exception that
+nevertheless escapes application or standard-library code remains outside the
+contract. Mixed exception modes within one program are unsupported and are
+diagnosed by MSVC at link time. See
+[Exception-free builds](architecture/no-exceptions.md) for the complete
+failure contract and standard-library operation inventory.
 
 ## RTTI
 

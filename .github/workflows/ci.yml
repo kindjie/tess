@@ -255,7 +255,9 @@ jobs:
           ccache --version
 
       - name: Configure validation targets
-        run: cmake --preset "${{ matrix.preset }}"
+        run: >-
+          cmake --preset "${{ matrix.preset }}"
+          -DTESS_BUILD_NO_EXCEPTIONS_TESTING=ON
 
       - name: Build exception-free contracts
         run: |
@@ -615,13 +617,49 @@ jobs:
         run: cmake --version
 
       - name: Configure
-        run: cmake --preset windows-msvc
+        run: >-
+          cmake --preset windows-msvc
+          -DTESS_BUILD_NO_EXCEPTIONS_TESTING=ON
 
       - name: Build
         run: cmake --build --preset windows-msvc
 
       - name: Test
-        run: ctest --preset windows-msvc
+        run: ctest --preset windows-msvc -LE config:noexceptions
+
+      - name: Build targeted exception-free contracts
+        run: >-
+          cmake --build build/windows-msvc --config Debug --parallel
+          --target tess_no_exceptions_test
+          tess_no_exceptions_consumer_contract_test
+          tess_no_exceptions_headers_verify_interface_header_sets
+          tess_no_exceptions_contract_cells
+
+      - name: Test exception-free behavior
+        run: >-
+          ctest --test-dir build/windows-msvc -C Debug
+          --output-on-failure --no-tests=error -L config:noexceptions
+
+      - name: Compare exception-mode subsystem manifests
+        run: >-
+          python tools/check_no_exceptions_manifest.py
+          --ctest-dir build/windows-msvc --config Debug
+
+      - name: Exception-free installed consumer
+        shell: bash
+        env:
+          TESS_INSTALL_SMOKE_BUILD_DIR: >-
+            ${{ github.workspace }}/build/windows-msvc
+          TESS_INSTALL_SMOKE_CONFIG: Debug
+          TESS_NO_EXCEPTIONS: 1
+        run: tools/install_smoke.sh
+
+      - name: Exception-free FetchContent consumer
+        shell: bash
+        env:
+          TESS_FETCHCONTENT_SMOKE_CONFIG: Debug
+          TESS_NO_EXCEPTIONS: 1
+        run: tools/fetchcontent_smoke.sh
 
       # Checked iterators allocate proxy state inside noexcept STL vector
       # constructors, so process-wide allocation rejection is unsafe in Debug.

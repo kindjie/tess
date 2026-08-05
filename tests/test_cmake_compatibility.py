@@ -192,6 +192,23 @@ def test_no_exceptions_examples_preset_uses_real_compiler_mode():
     )
 
 
+def test_project_options_define_native_msvc_exception_free_mode():
+    options = (
+        REPO_ROOT / "cmake" / "TessProjectOptions.cmake"
+    ).read_text(encoding="utf-8")
+
+    assert "function(tess_target_disable_exceptions target)" in options
+    assert 'target_compile_options(${target} PRIVATE /EHs-c-)' in options
+    assert (
+        'target_compile_definitions(${target} PRIVATE _HAS_EXCEPTIONS=0)'
+        in options
+    )
+    warning_function = options.split(
+        "function(tess_target_warning_options target)", 1
+    )[1].split("endfunction()", 1)[0]
+    assert "/EHsc" not in warning_function
+
+
 def test_install_smoke_uses_the_tracked_consumer_fixture():
     script = (REPO_ROOT / "tools" / "install_smoke.sh").read_text(
         encoding="utf-8"
@@ -202,9 +219,11 @@ def test_install_smoke_uses_the_tracked_consumer_fixture():
     assert (fixture / "main.cc").is_file()
     assert 'cmake -S "$root/tests/install_consumer"' in script
     assert '-DTESS_NO_EXCEPTIONS="$no_exceptions"' in script
-    assert "-fno-exceptions" in (fixture / "CMakeLists.txt").read_text(
-        encoding="utf-8"
-    )
+    fixture_cmake = (fixture / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert "-fno-exceptions" in fixture_cmake
+    assert "/EHs-c-" in fixture_cmake
+    assert "_HAS_EXCEPTIONS=0" in fixture_cmake
+    assert "requires Clang-family or GCC" not in fixture_cmake
     assert "cat >" not in script
 
 
@@ -218,9 +237,14 @@ def test_fetchcontent_smoke_uses_the_tracked_consumer_fixture():
     assert (fixture / "main.cc").is_file()
     assert 'cmake -S "$root/tests/fetchcontent_consumer"' in script
     assert '-DTESS_NO_EXCEPTIONS="$no_exceptions"' in script
-    assert "-fno-exceptions" in (fixture / "CMakeLists.txt").read_text(
-        encoding="utf-8"
-    )
+    assert 'config="${TESS_FETCHCONTENT_SMOKE_CONFIG:-}"' in script
+    assert 'cmake --build "$work" --config "$config"' in script
+    assert '"$work/$config/tess_fetchcontent_consumer"' in script
+    fixture_cmake = (fixture / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert "-fno-exceptions" in fixture_cmake
+    assert "/EHs-c-" in fixture_cmake
+    assert "_HAS_EXCEPTIONS=0" in fixture_cmake
+    assert "requires Clang-family or GCC" not in fixture_cmake
     assert "cat >" not in script
 
 

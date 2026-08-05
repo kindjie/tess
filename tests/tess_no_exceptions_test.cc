@@ -1,16 +1,25 @@
-#include <sys/wait.h>
 #include <tess/core/config.h>
 #include <tess/tess.h>
-#include <unistd.h>
 
+#if !defined(_WIN32)
+#include <sys/wait.h>
+#endif
+
+#include <cerrno>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include <mutex>
+#include <string>
 #include <string_view>
 #include <vector>
+
+#if defined(_MSC_VER)
+#include <crtdbg.h>
+#endif
 
 namespace {
 
@@ -37,22 +46,50 @@ static_assert(!tess::WorkerPoolPhaseExecutor::captures_callback_exceptions);
     }                                                                         \
   } while (false)
 
-template <typename Function>
-auto aborts(Function&& function) -> bool {
-  const auto child = fork();
-  if (child < 0) {
-    return false;
-  }
-  if (child == 0) {
-    function();
-    _exit(0);
-  }
+std::string executable_path;
 
-  int status = 0;
-  if (waitpid(child, &status, 0) != child) {
+auto marker_contents(const std::string& path) -> std::string {
+  auto* file = std::fopen(path.c_str(), "rb");
+  if (file == nullptr) {
+    return {};
+  }
+  char contents[16]{};
+  const auto size = std::fread(contents, 1, sizeof(contents), file);
+  std::fclose(file);
+  return {contents, size};
+}
+
+auto write_marker(std::string_view path, std::string_view contents) -> bool {
+  auto* file = std::fopen(std::string{path}.c_str(), "wb");
+  if (file == nullptr) {
     return false;
   }
-  return WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
+  const auto size = std::fwrite(contents.data(), 1, contents.size(), file);
+  const auto close_result = std::fclose(file);
+  return size == contents.size() && close_result == 0;
+}
+
+auto has_expected_abort_status(int status) -> bool {
+#if defined(_WIN32)
+  return status == 3;
+#else
+  return status != -1 && WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
+#endif
+}
+
+auto aborts(std::string_view abort_case) -> bool {
+  const auto marker_path =
+      executable_path + "." + std::string{abort_case} + ".started";
+  errno = 0;
+  if (std::remove(marker_path.c_str()) != 0 && errno != ENOENT) {
+    return false;
+  }
+  const auto command = '"' + executable_path + "\" --abort-case " +
+                       std::string{abort_case} + " \"" + marker_path + '"';
+  const auto result = std::system(command.c_str());
+  const auto started = marker_contents(marker_path) == "started";
+  std::remove(marker_path.c_str());
+  return started && has_expected_abort_status(result);
 }
 
 auto aggregate_header_runs_storage_and_block_operations() -> bool {
@@ -85,18 +122,12 @@ auto checked_block_capacity_failure_preserves_storage() -> bool {
 }
 
 auto legacy_block_capacity_failure_aborts() -> bool {
-  TESS_CHECK(aborts([] {
-    tess::BlockScratch scratch;
-    scratch.reserve_bytes(std::numeric_limits<std::size_t>::max());
-  }));
+  TESS_CHECK(aborts("block"));
   return true;
 }
 
 auto legacy_portal_capacity_failure_aborts() -> bool {
-  TESS_CHECK(aborts([] {
-    tess::WeightedPortalSegmentCache cache;
-    cache.reserve_segments(std::numeric_limits<std::size_t>::max());
-  }));
+  TESS_CHECK(aborts("portal"));
   return true;
 }
 
@@ -307,10 +338,37 @@ constexpr TestCase cases[] = {
 }  // namespace
 
 auto main(int argc, char** argv) -> int {
+  if (argc == 4 && std::string_view{argv[1]} == "--abort-case") {
+#if defined(_MSC_VER)
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#endif
+    const auto abort_case = std::string_view{argv[2]};
+    if (abort_case == "block") {
+      if (!write_marker(argv[3], "started")) {
+        return 3;
+      }
+      tess::BlockScratch scratch;
+      scratch.reserve_bytes(std::numeric_limits<std::size_t>::max());
+      write_marker(argv[3], "returned");
+      return 0;
+    }
+    if (abort_case == "portal") {
+      if (!write_marker(argv[3], "started")) {
+        return 3;
+      }
+      tess::WeightedPortalSegmentCache cache;
+      cache.reserve_segments(std::numeric_limits<std::size_t>::max());
+      write_marker(argv[3], "returned");
+      return 0;
+    }
+    return 2;
+  }
+
   if (argc != 2) {
     std::fprintf(stderr, "usage: %s TEST_CASE\n", argv[0]);
     return 2;
   }
+  executable_path = argv[0];
   for (const auto& test : cases) {
     if (test.name == argv[1]) {
       return test.function() ? 0 : 1;

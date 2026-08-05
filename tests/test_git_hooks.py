@@ -512,7 +512,24 @@ def test_documentation_only_changes_skip_expensive_ci_fail_closed():
   )
   assert "tess_no_exceptions_contract_cells" in no_exceptions
   assert "cmake --preset examples-no-exceptions" in no_exceptions
+  assert "TESS_BUILD_NO_EXCEPTIONS_TESTING=ON" in no_exceptions
   assert no_exceptions.count("TESS_NO_EXCEPTIONS: 1") == 2
+
+  windows = workflow.split("  windows:\n", 1)[1].split(
+    "  bench:\n", 1
+  )[0]
+  assert "Build targeted exception-free contracts" in windows
+  assert "tess_no_exceptions_test" in windows
+  assert "tess_no_exceptions_headers_verify_interface_header_sets" in windows
+  assert "tess_no_exceptions_contract_cells" in windows
+  assert "-L config:noexceptions" in windows
+  assert "TESS_BUILD_NO_EXCEPTIONS_TESTING=ON" in windows
+  assert (
+    "cmake --build build/windows-msvc --config Debug --parallel" in windows
+  )
+  assert "ctest --test-dir build/windows-msvc -C Debug" in windows
+  assert "--ctest-dir build/windows-msvc --config Debug" in windows
+  assert windows.count("TESS_NO_EXCEPTIONS: 1") == 2
 
   # Tier-conditional jobs also require code_required, fail closed.
   assert (

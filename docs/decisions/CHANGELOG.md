@@ -8,6 +8,24 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-04 - Native MSVC exception-free consumer mode
+
+- Added: native MSVC exception-free support using `/EHs-c-` and the matching
+  MSVC STL `_HAS_EXCEPTIONS=0` configuration. The installed target remains
+  policy-neutral.
+- Changed: exception-mode compiler flags are centralized and independent from
+  warning options, preventing `/EHsc` from silently overriding a disabled
+  target.
+- Verified: native MSVC builds standalone headers and macro cells, then runs
+  representative library behavior plus installed and FetchContent consumers
+  in the existing Windows CI job. Exception-free developer targets are
+  excluded from ordinary build-all invocations to contain CI cost.
+- Compatibility: MSVC support is exception-free by construction. Unexpected
+  exceptions, allocation failure, and thread-creation failure remain outside
+  the recovery contract, and mixed modes remain unsupported.
+- Affected docs: integration policy, exception-free architecture note, and
+  the historical exception-free TDD implementation status.
+
 ## 2026-08-04 - Exception-free consumer mode
 
 - Added: Clang-family and GCC consumers can compile all public headers,

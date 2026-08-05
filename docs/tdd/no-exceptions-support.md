@@ -195,6 +195,11 @@ containers, mutexes, and threads. Native MSVC support requires a later explicit
 decision and documented compiler/STL recipe; detection-only compilation is not
 called supported operation. See the official [MSVC `/EH` documentation][msvc].
 
+> Implementation note (2026-08-04): native MSVC was later promoted using
+> `/EHs-c-` and `_HAS_EXCEPTIONS=0`, with public-header, runtime, installed,
+> and FetchContent coverage in the existing Windows CI job. The maintained
+> contract is in `docs/architecture/no-exceptions.md`.
+
 All translation units in a program must use the same Tess exception
 configuration. Exception policy is intentionally encoded in executor policy
 types. `WorkerPoolPhaseExecutor` becomes an alias for a policy-specialized
