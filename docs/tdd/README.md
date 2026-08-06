@@ -3,9 +3,10 @@
 These technical design documents capture design intent at the time they were
 written. They are useful for rationale and tradeoffs, but they are not the
 authoritative source for current implementation behavior once code exists.
-Historical `v1` scope labels in these documents mean the initial prototype
-milestone, which was released as pre-stable `v0.1.0`; they do not describe a
-stable 1.x compatibility promise.
+Historical `v1` scope labels in TDDs written before v0.1 mean the initial
+prototype milestone, which was released as pre-stable `v0.1.0`; they do not
+describe a stable 1.x compatibility promise. The 1.0 stabilization TDD below
+is explicitly about the later compatibility commitment.
 
 When implementation diverges from a TDD:
 
@@ -16,6 +17,7 @@ When implementation diverges from a TDD:
 
 ## Documents
 
+- [1.0 stabilization](v1-stabilization.md) (proposed)
 - [Project design](project-design.md)
 - [Core shape, coordinate, and key system](core-shape-coordinate-key-system.md)
 - [Core chunk storage](core-chunk-storage.md)
