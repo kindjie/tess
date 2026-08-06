@@ -30,7 +30,8 @@ The minimum blockers are:
 - resolve the worker-pool prototype-versus-production contradiction;
 - make CMake package version selection follow the 1.x compatibility policy;
 - publish a continuously tested toolchain matrix that matches the claims; and
-- pass a feature-frozen `v1.0.0-rc.1` without a breaking correction.
+- pass the latest feature-frozen release candidate without a breaking
+  correction.
 
 Archive fuzzing, end-to-end package-manager validation, and external adoption
 are strong release-candidate evidence. They should be completed where
@@ -188,9 +189,10 @@ the prototype labels from its public comments and maintained documentation.
 Keep its existing explicit contract:
 
 - one dispatch per executor may be in flight;
-- callbacks must not re-enter or reserve their own executor during dispatch;
+- callbacks must not re-enter their own executor during dispatch;
+- no caller may invoke `reserve_operations` while a dispatch is in flight;
 - callback state must be immutable or synchronized; and
-- the executor must outlive its dispatches and joins its owned workers.
+- the executor must outlive its dispatches and join its owned workers.
 
 These are ordinary concurrency preconditions, comparable to requiring callers
 not to race unsynchronized standard-library objects. The 1.0 plan does not add
@@ -266,11 +268,11 @@ network-free.
 
 ### 11.2 Package-manager recipes
 
-Exercise `conan create` and the checkout-overlay vcpkg install end to end in CI.
-The stable vcpkg distribution recipe must fetch and hash a public release
-instead of referring outside its port directory. Central Conan or vcpkg
-registry acceptance is useful distribution work but does not define library
-stability.
+Exercise one package-manager-native end-to-end workflow in CI. The existing
+checkout-overlay vcpkg install is the initial candidate. The stable vcpkg
+distribution recipe must fetch and hash a public release instead of referring
+outside its port directory. Central package-registry acceptance is useful
+distribution work but does not define library stability.
 
 ### 11.3 Downstream and soak evidence
 

@@ -26,14 +26,25 @@ def test_v1_stabilization_tdd_records_the_amended_release_plan():
     "The compatibility umbrella must stop including "
     "`experimental/maintenance.h`.",
     "`WorkerPoolPhaseExecutor` is promoted as stable production machinery.",
+    "no caller may invoke `reserve_operations` while a dispatch is in flight;",
     "uses `SameMajorVersion`",
     "execute the GCC runtime suite",
     "relies on `_HAS_EXCEPTIONS=0`",
     "coverage-guided fuzzing target",
+    "one package-manager-native end-to-end workflow",
     "Recalibrate the five fields bootstrap ceilings",
     "v1.0.0-rc.1",
+    "latest feature-frozen release candidate",
     "No known breaking change is introduced between the final candidate "
     "and 1.0",
   )
   for decision in required_decisions:
     assert decision in tdd
+
+
+def test_v1_stabilization_tdd_guard_runs_in_ci():
+  workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+    encoding="utf-8"
+  )
+
+  assert "tests/test_tdd_index.py" in workflow

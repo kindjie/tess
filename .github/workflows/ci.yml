@@ -367,6 +367,7 @@ jobs:
           tests/test_doc_outputs.py
           tests/test_doc_snippets.py
           tests/test_doc_versions.py
+          tests/test_tdd_index.py
           tests/test_header_compile_cost.py
           tests/test_grid_benchmark_manifest.py
           tests/test_steamdeck_tools.py
