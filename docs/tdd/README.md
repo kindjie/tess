@@ -16,6 +16,7 @@ When implementation diverges from a TDD:
 
 ## Documents
 
+- [1.0 stabilization](v1-stabilization.md) (proposed)
 - [Project design](project-design.md)
 - [Core shape, coordinate, and key system](core-shape-coordinate-key-system.md)
 - [Core chunk storage](core-chunk-storage.md)
