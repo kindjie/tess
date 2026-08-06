@@ -61,6 +61,14 @@ compiler job because the amd64 Steam Runtime is commonly emulated inside a
 memory-limited Docker Desktop VM. Set `TESS_STEAMRT_BUILD_JOBS=N` deliberately
 when the host has enough Docker memory for more parallel compiler processes.
 
+The controlled 2026-08-06 handheld campaign ran the main, diagnostics, and
+thread-scaling binaries built this way. Its adopter-facing results and limits
+are in [`docs/performance.md`](../../docs/performance.md#steam-deck-baseline),
+with the full experimental record in the optimization log. The published
+scaling points additionally use `taskset`: widths through four occupy distinct
+physical cores, while width eight uses all logical CPUs. Do not compare an
+unpinned local run directly with that baseline.
+
 The rest of this document explains what those steps do and why.
 
 ## Why these choices

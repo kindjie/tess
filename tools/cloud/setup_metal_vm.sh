@@ -226,6 +226,24 @@ tar -xzf source.tar.gz
 sysctl -w kernel.perf_event_paranoid=0 \
   || echo "warning: perf_event_paranoid not settable"
 
+# Extract one exact event value from perf's -x output. Depending on access
+# restrictions, perf can qualify a generic event with documented modifiers
+# such as `:u`; keep that valid measurement without letting a prefix collision
+# or an unknown suffix masquerade as the requested event.
+perf_event_value() {
+  local want="$1" source="${2:--}"
+  awk -F';' -v want="$want" '
+    $3 == want { print $1; exit }
+    index($3, want ":") == 1 {
+      suffix = substr($3, length(want) + 2)
+      if (suffix ~ /^[ukhIGHpPSDWebRX]+$/) {
+        print $1
+        exit
+      }
+    }
+  ' "$source"
+}
+
 # Establish NOW whether the PMU actually works. Hardware counters are the
 # entire reason this tier is worth its price; discovering they are
 # unavailable after a 45-minute run means paying for numbers a cheap
@@ -239,8 +257,7 @@ sysctl -w kernel.perf_event_paranoid=0 \
 PERF_OK=0
 if command -v perf >/dev/null 2>&1; then
   probe_out="$(perf stat -x';' -e cycles,instructions -- true 2>&1 || true)"
-  probe_cycles="$(awk -F';' '$3 == "cycles" { print $1; exit }' \
-    <<<"$probe_out")"
+  probe_cycles="$(perf_event_value cycles <<<"$probe_out")"
   if [[ "$probe_cycles" =~ ^[0-9]+$ ]] && (( probe_cycles > 0 )); then
     PERF_OK=1
     echo "PMU: available (probe counted $probe_cycles cycles)"
@@ -792,8 +809,7 @@ fields/build_alloc_gate}"
       # for this invocation (no interval, no per-CPU aggregation);
       # field 1 is the value.
       field_for() {
-        awk -F';' -v want="$1" \
-          '$3 == want { print $1; exit }' "/tmp/perf-$$.csv"
+        perf_event_value "$1" "/tmp/perf-$$.csv"
       }
       cyc=$(field_for cycles)
       ins=$(field_for instructions)

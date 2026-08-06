@@ -1443,6 +1443,10 @@
   Hostile benchmark environment coverage rejects invalid job counts,
   option-like SSH aliases, and unsafe remote directories before any Docker,
   rsync, or SSH command runs.
+- `tests/test_cloud_perf.py`: extracts and executes the cloud startup script's
+  real `perf -x` event parser. It accepts exact event names and documented
+  privilege/modifier suffixes such as `cycles:u`, while rejecting prefix
+  collisions, PMU-qualified names, and unknown suffixes.
 - The benchmark binaries (`tess_bench`, `tess_bench_diagnostics`) enforce
   correctness checks after their timed loops via an aborting `bench_check`
   helper (endpoints, legal unit steps onto passable tiles, expected costs,

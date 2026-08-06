@@ -973,16 +973,15 @@ that introduces this document.
    `paired_bench` on its first run — a truncated benchmark payload
    escaped as a raw traceback naming no file.*
 8. First controlled-hardware campaign (development machine, handheld
-   target, cloud bare metal). *Status: the cloud bare-metal tier is
-   PREPARED but deliberately UNRUN as of 2026-08-01 —
-   `tools/cloud/` plus `docs/planning/cloud-campaign.md`, awaiting a
-   maintainer's go-ahead. Four independent cleanup mechanisms, one more
-   than the reference project: it has the platform duration cap, the
-   self-delete and the driver trap, but no way to find an orphan from a
-   run whose driver died. At roughly $10/hour that blind spot is the
-   entire risk, so `reap_orphans.sh` searches every zone by label. The
-   handheld tier is deferred at the maintainer's direction.* Scaling,
-   latency, world-size; publish and record in the optimization log.
+   target, cloud bare metal). *Status: cloud bare-metal scaling campaigns
+   completed on 2026-08-03 and 2026-08-04, and the Steam Deck campaign
+   completed on 2026-08-06. The handheld run covered both full timing suites,
+   a physical-core-first seven-workload scaling sweep, and per-benchmark PMU
+   attribution; its controlled baseline is published in `docs/performance.md`
+   and recorded in the optimization log. A separate cold-cache/world-size
+   matrix remains deferred because those dedicated benchmark axes have not
+   been implemented. The cloud tier retains four independent cleanup
+   mechanisms, including the cross-zone orphan reaper.*
 9. Comparative repository bootstrap against a pinned release.
 
 ## 11. Risks

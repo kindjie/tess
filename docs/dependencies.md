@@ -254,6 +254,9 @@ goal removal and other structural changes occur only after iteration.
   https://github.com/util-linux/util-linux
 - Linux CPUFreq governors:
   https://www.kernel.org/doc/html/latest/admin-guide/pm/cpufreq.html
+- Linux `perf stat`: https://man7.org/linux/man-pages/man1/perf-stat.1.html
+- Linux `perf` event modifiers:
+  https://man7.org/linux/man-pages/man1/perf-list.1.html
 
 Operator-side, campaign-only, and required by nothing the library, tests,
 benchmarks, or CI build. `tools/cloud/run_metal_bench.sh` and
@@ -272,6 +275,10 @@ install tries the exact kernel first and then the GCE flavour. A missing
 `numactl`, `taskset`, or writable cpufreq governor does not abort the
 run; each is counted as a failure so the sweep is recorded as not
 publishable rather than silently measured under uncontrolled conditions.
+The CSV parser accepts an exact generic event name with or without documented
+privilege modifiers, because access restrictions can make `perf` report
+`cycles:u` even when the requested event was `cycles`. Unknown suffixes and
+prefix collisions remain invalid.
 
 See [planning/cloud-campaign.md](planning/cloud-campaign.md) for the
 runbook and the cleanup mechanisms.
