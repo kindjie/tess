@@ -137,10 +137,10 @@ install file set.
 
 ### 6.2 Deprecation and exceptional corrections
 
-A stable API may be deprecated in a 1.x minor release but should remain
-available for at least the following minor release. Removal normally waits for
-the next major version. Deprecation notes must name the replacement and the
-earliest permitted removal release.
+A stable API may be deprecated in a 1.x minor release. Removal waits for the
+next major version unless the exceptional correction process applies.
+Deprecation notes must name the replacement and the earliest permitted major
+release for removal.
 
 Security fixes, removal of undefined behavior, and corrections to behavior
 that contradicts the documented contract may require an exceptional change.
@@ -280,6 +280,17 @@ persistence, sparse residency, path invalidation, and worker-pool findings.
 External adoption is an objective, not a numerical gate that can postpone 1.0
 indefinitely.
 
+### 11.4 Known benchmark-ceiling follow-up
+
+The hosted runner confirmed the fields regression fix, but five fields-family
+benchmarks still use deliberately broad bootstrap ceilings. A green result
+under those ceilings is not strong evidence against another regression of the
+same scale. Recalibrate the five fields bootstrap ceilings after ten post-fix
+main-run baselines exist, following the maintained benchmark protocol. If the
+required sample window is not available before the release candidate, record
+that limitation as an explicit performance-gate deferral rather than describing
+the broad ceilings as calibrated evidence.
+
 ## 12. Release sequence
 
 ### 12.1 v0.13.0: final breaking-change window
@@ -291,6 +302,8 @@ indefinitely.
 - Establish the formal toolchain matrix and required CI changes.
 - Add the `SameMajorVersion` selection tests while retaining the correct 0.x
   package behavior until the 1.0 version change.
+- Recalibrate the five fields bootstrap ceilings if the ten-artifact post-fix
+  window is available, or record the remaining evidence gap explicitly.
 
 ### 12.2 v1.0.0-rc.1: feature and surface freeze
 
@@ -300,6 +313,8 @@ indefinitely.
 - Add candidate consumer and archive fixtures.
 - Complete or explicitly defer the recommended fuzzing, package-manager, and
   downstream-evidence work.
+- Close or explicitly defer every acknowledged ineffective performance gate,
+  including any remaining fields-family bootstrap ceiling.
 - Run the complete supported matrix on the exact candidate commit.
 
 If a breaking correction is required, publish another release candidate and
@@ -313,8 +328,10 @@ Release only when:
 - every mandatory contract and matrix item is implemented and documented;
 - the latest release candidate needs no breaking correction;
 - required CI, documentation, security analysis, sanitizers, package
-  consumers, and benchmark gates are green on the exact release commit;
-- open correctness, security, and release-process incidents are triaged; and
+  consumers, and calibrated benchmark gates are green on the exact release
+  commit;
+- open correctness, security, performance-gate, and release-process incidents
+  are triaged; and
 - the changelog and upgrade guide describe the stable promise and all
   pre-1.0 migrations.
 
@@ -333,10 +350,11 @@ The stabilization plan is complete when all of the following are true:
 6. The published toolchain matrix is continuously exercised at its claimed
    floors, including GCC runtime execution.
 7. Stable consumer and archive fixtures pass against the release candidate.
-8. No known untriaged correctness, security, or release-process failure
-   remains open for the candidate.
+8. No known untriaged correctness, security, performance-gate, or
+   release-process failure remains open for the candidate.
 9. The exact candidate commit passes every required release workflow.
-10. The candidate reaches 1.0 without an undisclosed breaking change.
+10. No known breaking change is introduced between the final candidate and
+    1.0; discovering one triggers the Section 12.2 restart rule.
 
 ## 14. Documentation and decision updates
 

@@ -4,9 +4,9 @@
 - `test_doc_snippets.py`: verifies named source-region parsing, Markdown drift
   detection, automatic refresh, and repository-wide synchronization between
   adopter-facing excerpts and compiled sources.
-- `test_tdd_index.py`: pins the indexed v1.0 stabilization TDD and its amended
-  compatibility, experimental-surface, toolchain, release-candidate, fuzzing,
-  and packaging decisions.
+- `test_tdd_index.py`: verifies that the indexed v1.0 stabilization TDD retains
+  explicit decision-bearing clauses for compatibility, experimental-surface,
+  toolchain, release-candidate, fuzzing, performance, and packaging policy.
 - `test_check_docs_links.py` and the Pages assertions in `test_git_hooks.py`:
   verify generated-site link and anchor checks, including root-relative
   assets, narrowly scoped Doxygen 1.17.0 quick-index exceptions, WebGPU
