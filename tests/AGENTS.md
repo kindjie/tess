@@ -1438,9 +1438,11 @@
   user SSH configuration; and a non-SteamOS host fails with cleanup guidance.
   Static README assertions keep setup routed through that safe command, while
   a mocked benchmark invocation proves a transferred local image tag reaches
-  the remote `podman run` command. Hostile benchmark environment coverage
-  rejects option-like SSH aliases and unsafe remote directories before any
-  Docker, rsync, or SSH command runs.
+  the remote `podman run` command. Benchmark builds are bounded, target only
+  the selected binary, and carry that selection through the pinned helper.
+  Hostile benchmark environment coverage rejects invalid job counts,
+  option-like SSH aliases, and unsafe remote directories before any Docker,
+  rsync, or SSH command runs.
 - The benchmark binaries (`tess_bench`, `tess_bench_diagnostics`) enforce
   correctness checks after their timed loops via an aborting `bench_check`
   helper (endpoints, legal unit steps onto passable tiles, expected costs,

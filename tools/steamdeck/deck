@@ -51,6 +51,7 @@ Run on the device:
 Env: DECK_HOST (default 'deck'), TESS_STEAMRT_IMAGE,
      TESS_STEAMRT_BUILD_IMAGE (build image, default 'tess-steamrt4:local'),
      TESS_STEAMRT_CONTAINER (container name, default 'tess-rt'),
+     TESS_STEAMRT_BUILD_JOBS (default 1), BENCH_BIN (default tess_bench),
      DECK_SSH_KEY, DECK_PRESET (override the per-command cmake preset).
 EOF
 }

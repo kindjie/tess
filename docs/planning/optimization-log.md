@@ -17,6 +17,42 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-08-06 - Steam Deck controlled baseline
+
+- Area: complete on-device timing, thread scaling, and fields PMU attribution.
+- Method: commit `4a919fbd99a2` was built with Clang 19.1.7 in steamrt4,
+  then run on external power with the `performance` governor. The unrestricted
+  main and diagnostics suites used 10 repetitions and a 0.2 s minimum. Seven
+  scaling workloads used 20 repetitions at widths 1, 2, 4, and 8; widths up
+  to four were pinned to distinct physical cores and width eight used all
+  logical CPUs. Counter runs used a 1 s minimum and were separate from timing.
+- Timing evidence: all 198 main and 192 diagnostics registrations completed
+  without benchmark errors. Main real-time CV was 0.20% at the median and
+  1.58% at p95; diagnostics was 0.17% at the median and 1.27% at p95. The
+  two largest outliers were manual-time cache-maintenance cases at 11.7% and
+  20.3% CV, so they should be repeated before using small differences as
+  evidence. External power remained present and sampled APU temperature stayed
+  at or below 66 C.
+- Scaling evidence: the compute-heavy chunk workload reached 1.96x, 3.42x,
+  and 5.97x at widths 2, 4, and 8. Chunk fill peaked at 1.48x at four physical
+  cores and fell to 1.43x with SMT. Tile touch lost at every width, confirming
+  that dispatch overhead dominates extremely small work. Partial-fill results
+  varied with granularity; the 192-unit serial control reached about 7% CV,
+  so its near-break-even width-two result is not a stable crossover claim.
+- Counter evidence: all eight fields runs produced numeric cycles,
+  instructions, cache misses, branch misses, and task-clock values plus their
+  matching iteration counts. IPC ranged from 3.06 to 4.34. `perf` emitted
+  user-space-qualified event names such as `cycles:u`; a one-off validator
+  that required literal `cycles` falsely marked the otherwise complete PMU
+  artifacts as failed. Raw process totals are retained and must be normalized
+  by each run's own iteration count before comparing benchmarks.
+- Decision: accept this campaign as the first controlled handheld baseline,
+  not as a new cross-machine threshold calibration. For game-like parallel
+  work, retain physical-core-first scheduling and let SMT participate only
+  when tasks are compute-heavy enough; use four workers as the conservative
+  default for mixed work. Repeat the two noisy cache-maintenance cases and any
+  near-crossover partial-fill point before drawing optimization conclusions.
+
 ## 2026-08-04 - Exception-free execution paths
 
 - Area: compiler exception mode, phase dispatch, and schedule type erasure.

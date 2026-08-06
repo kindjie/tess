@@ -16,6 +16,11 @@
 #   USE_CONTAINER=1  run inside the steamrt4 SDK image on the Deck instead of
 #          direct (guaranteed ABI match; needs the image pulled there). Cannot
 #          be combined with --pin.
+#   TESS_STEAMRT_BUILD_JOBS=N  maximum parallel compiler jobs (default: 1).
+#          The amd64 container is commonly emulated on an ARM64 host, where an
+#          unbounded build can exhaust Docker Desktop's memory allocation.
+#   BENCH_BIN=name  benchmark target/binary to build and run (default:
+#          tess_bench). The pinned path honors this selection too.
 #
 # Prereqs: tools/steamdeck/container-up.sh linux-bench   (build container up)
 #          SSH access to the Deck as `deck` (see README).
@@ -26,6 +31,7 @@ set -euo pipefail
 CONTAINER="${TESS_STEAMRT_CONTAINER:-tess-rt}"
 PRESET="${PRESET:-linux-bench}"
 BENCH_BIN="${BENCH_BIN:-tess_bench}"
+BUILD_JOBS="${TESS_STEAMRT_BUILD_JOBS:-1}"
 DECK="${DECK_HOST:-deck}"
 DECK_DIR="${DECK_DIR:-tess-bench}"        # relative to the Deck user's $HOME
 USE_CONTAINER="${USE_CONTAINER:-0}"
@@ -35,6 +41,20 @@ DEFAULT_STEAMRT_IMAGE+="@sha256:584939ebd7d2f1eec719e771fdde4ae3b"
 DEFAULT_STEAMRT_IMAGE+="d469ee741c783abb7fe812ddaaf3ee4"
 RUN_IMAGE="${TESS_STEAMRT_IMAGE:-${DEFAULT_STEAMRT_IMAGE}}"
 CONTAINER_RUNTIME="${DECK_CONTAINER_RUNTIME:-podman}"
+
+case "${BENCH_BIN}" in
+  ''|-*|*[!A-Za-z0-9._-]*)
+    echo "!! invalid BENCH_BIN: use a benchmark target name" >&2
+    exit 1
+    ;;
+esac
+
+case "${BUILD_JOBS}" in
+  ''|0|*[!0-9]*)
+    echo "!! invalid TESS_STEAMRT_BUILD_JOBS: use a positive integer" >&2
+    exit 1
+    ;;
+esac
 
 # DECK is passed to ssh-family commands. Keep it to a simple alias so a value
 # beginning with '-' cannot become an option and config syntax cannot leak in.
@@ -81,7 +101,8 @@ CONTAINER_RUNTIME_Q="$(printf '%q' "${CONTAINER_RUNTIME}")"
 
 # 1. Build the benchmark locally in the container.
 echo ">> building ${PRESET} in container '${CONTAINER}' ..."
-docker exec "${CONTAINER}" cmake --build --preset "${PRESET}" -j
+docker exec "${CONTAINER}" cmake --build --preset "${PRESET}" \
+  --parallel "${BUILD_JOBS}" --target "${BENCH_BIN}"
 
 # 2. Ship the built tree to the Deck (whole tree so bench/ paths resolve).
 echo ">> rsyncing build/${PRESET}/ -> ${DECK}:~/${DECK_DIR}/ ..."
@@ -103,7 +124,8 @@ elif [ "${PIN_GOVERNOR}" = "1" ]; then
   # then run it over a TTY so sudo can prompt for the Deck password.
   echo ">> pinning governor + running ${BENCH_BIN} on ${DECK} (sudo may prompt) ..."
   scp -q "${HERE}/deck-run-pinned.sh" "${DECK}:.tess-deck-run-pinned.sh"
-  ssh -t "${DECK}" "TESS_BENCH_DIR=\"\$HOME/${DECK_DIR}\" \
+  ssh -t "${DECK}" "TESS_BENCH_BIN=${BENCH_BIN_Q} \
+    TESS_BENCH_DIR=\"\$HOME/${DECK_DIR}\" \
     bash .tess-deck-run-pinned.sh ${BENCH_ARGS_Q}"
 else
   echo ">> running ${BENCH_BIN} DIRECTLY on stock SteamOS (no container) ..."
