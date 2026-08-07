@@ -30,6 +30,43 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 - Affected docs: performance, dependency, campaign-plan, optimization-log,
   and Steam Deck workflow documentation.
 
+## 2026-08-06 - Post-v0.12 audit corrections
+
+- Recorded: the 2026-08-04 exception-free entry described the planned-dirty
+  capacity work as purely additive, which understated it. `collect_planned_dirty`
+  and both partition-collecting `merge_planned_dirty` overloads stopped
+  throwing `std::length_error` and now return
+  `PlannedDirtyCollectStatus::CapacityExceeded` /
+  `PlannedDirtyMergeStatus::CapacityExceeded` in exception-enabled builds too,
+  and both enums gained a value that exhaustive `switch` statements must
+  handle. Unlike the block-scratch and portal-cache checks, no throwing
+  wrapper was kept. This shipped in `v0.12.0` unannounced; the release notes
+  and the architecture note now state it.
+- Confirmed: `AutoExecTask` absorbing that status is deliberate, not an
+  oversight. The allocation-free fallback merge publishes every started
+  callback's dirty metadata, so the run's observable result is complete;
+  `TessNoExceptions.AutoExecRunsOrdinaryKernelThroughPool` pins exactly that
+  under a zero capacity limit. Behavior is unchanged; only the contract is now
+  written down.
+- Changed: the at-budget `WeightedPortalSegmentCache` store path validated
+  capacity with a pre-pass that repeated the transactional compaction's
+  dependency-validity sweep, doubling that work in the steady state for any
+  budgeted cache. Both store branches already reject before mutating live
+  state, so the pre-pass is removed. Measured on a 256-entry budget with
+  12-node paths (AppleClang, `-O2`, six interleaved pairs): the pre-pass cost
+  about 9.5% per at-budget store, and removing it returns to within about 1%
+  of the pre-`v0.12` cost. No benchmark sentinel drives the cache to its
+  budget, so the gate did not see either direction.
+- Changed: exception-free subsystem classification is derived from the
+  directories under `include/tess` instead of a list pinned in the checker. A
+  new subsystem now fails validation until the manifest records it as
+  affected, with runtime coverage, or unaffected, with a written reason.
+- Clarified: mixed-exception-mode detection is uneven. GCC and Clang cannot
+  diagnose it at all; MSVC gets a partial `detect_mismatch` check that misses
+  the `_HAS_EXCEPTIONS` axis. `tess/core/capacity.h` now carries the same
+  MSVC check for its internal capacity-testing hook, which is an installed
+  public header whose inline definition that macro changes.
+
 ## 2026-08-05 - Exception-free validation hardening
 
 - Fixed: native MSVC abort-contract tests quote CRT spawn arguments and force

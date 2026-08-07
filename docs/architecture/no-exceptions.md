@@ -13,22 +13,39 @@ worker joining, and operation-specific rollback behavior are unchanged.
 ## Failure Contract
 
 Successful operations and explicit status results behave the same in both
-modes. The following deterministic capacity checks have non-throwing entry
-points:
+modes. Deterministic capacity checks reach non-throwing entry points two
+different ways, and the distinction matters to an exception-enabled caller.
 
-- `BlockScratch::reserve_bytes_checked`;
+A new `_checked` entry point was added beside the existing throwing one,
+whose exception-enabled behavior is unchanged:
+
+- `BlockScratch::reserve_bytes_checked` beside `reserve_bytes`;
 - `WeightedPortalSegmentCache::reserve_segments_checked` and
-  `reserve_path_nodes_checked`;
-- `WeightedPortalSegmentCache::ClassView::store_checked`;
-- `collect_planned_dirty`; and
-- both partition-collecting `merge_planned_dirty` overloads.
+  `reserve_path_nodes_checked` beside `reserve_segments` and
+  `reserve_path_nodes`; and
+- `WeightedPortalSegmentCache::ClassView::store_checked` beside `store`.
+
+The function itself stopped throwing, in **both** modes, and now reports
+through a status. There is no throwing wrapper for these:
+
+- `collect_planned_dirty`, which returned by throwing `std::length_error`
+  and now returns `PlannedDirtyCollectStatus::CapacityExceeded`; and
+- both partition-collecting `merge_planned_dirty` overloads, which likewise
+  now return `PlannedDirtyMergeStatus::CapacityExceeded`.
+
+An exception-enabled caller that upgraded across that change must check the
+returned status rather than rely on `catch`. `AutoExecTask` does this
+internally: it treats `CapacityExceeded` as a signal to run the
+allocation-free fallback merge, which publishes every started callback's
+dirty metadata, so the task's observable result is unchanged and the
+condition does not escape `run()`.
 
 `ReserveStatus`, `PortalSegmentStoreStatus`,
 `PlannedDirtyCollectStatus`, and `PlannedDirtyMergeStatus` report capacity
-failure before the associated allocation or live-state mutation. Existing
-throwing wrappers preserve their exception-enabled behavior and abort through
-one internal fail-fast path when a deterministic capacity error occurs in an
-exception-free build.
+failure before the associated allocation or live-state mutation. The
+throwing entry points in the first list keep their exception-enabled
+behavior and abort through one internal fail-fast path when a deterministic
+capacity error occurs in an exception-free build.
 
 General allocation failure, operating-system thread-creation failure, and an
 application operation that throws across an exception-free boundary are
@@ -58,6 +75,21 @@ entering the no-throw dispatch region, and allocation tests pin that invariant.
 
 All translation units in a program must use the same exception mode. Mixed
 mode programs and cross-mode ABI compatibility are unsupported.
+`tess::has_exceptions` is an `inline constexpr bool` and the public executor
+aliases are derived from it, so a mixed-mode program violates the
+one-definition rule.
+
+Detection of that mistake is uneven, and the build system carries the burden
+on every toolchain:
+
+- GCC and Clang have **no** mechanism to detect it. A mixed-mode program
+  links silently.
+- MSVC gets a partial link-time check: `tess/core/config.h` emits
+  `#pragma detect_mismatch("tess_exception_mode", ...)` keyed on
+  `_CPPUNWIND`, and `tess/core/capacity.h` does the same for the internal
+  capacity-testing hook. Both only stamp translation units that include a
+  Tess header, and neither observes the separate `_HAS_EXCEPTIONS` STL
+  switch, so a `/EHsc` unit built with `_HAS_EXCEPTIONS=0` still passes.
 
 ## Potentially Throwing Standard-Library Operations
 
@@ -109,9 +141,10 @@ not provide the same compile-time enforcement or safe recovery if an
 exception is nevertheless thrown. Tess supports it as an exception-free by
 construction configuration. The no-throw application-operation and resource
 failure preconditions above are therefore especially important on MSVC.
-MSVC does not reliably diagnose translation units built with different
-exception modes at link time, so build-system consistency is required to
-avoid an unsupported mixed-mode program.
+Because `/EHs-c-` and `_HAS_EXCEPTIONS=0` are separate switches, the
+`detect_mismatch` check described above does not cover the STL half of the
+recipe, so build-system consistency is still required to avoid an
+unsupported mixed-mode program.
 
 `_HAS_EXCEPTIONS=0` is an MSVC STL implementation switch rather than a
 supported public compiler mode. Microsoft STL maintainers have described it

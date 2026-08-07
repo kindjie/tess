@@ -5,6 +5,21 @@
 #include <limits>
 #include <utility>
 
+// TESS_INTERNAL_CAPACITY_TESTING is an internal test hook, not a supported
+// consumer switch. It changes the definition of the inline
+// `detail::effective_capacity_limit` below, so a program that defines it for
+// some translation units and not others violates the one-definition rule with
+// no diagnostic on any compiler. Define it for a whole binary or not at all.
+// The pragma below gives MSVC a link-time check; GCC and Clang have no
+// equivalent mechanism, so consistency there is the build system's job.
+#if defined(_MSC_VER)
+#if defined(TESS_INTERNAL_CAPACITY_TESTING)
+#pragma detect_mismatch("tess_capacity_testing", "enabled")
+#else
+#pragma detect_mismatch("tess_capacity_testing", "disabled")
+#endif
+#endif
+
 namespace tess {
 
 /** Result of deterministic capacity validation before allocation. */
