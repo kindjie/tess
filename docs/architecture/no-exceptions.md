@@ -42,18 +42,28 @@ condition does not escape `run()`.
 
 `ReserveStatus`, `PortalSegmentStoreStatus`,
 `PlannedDirtyCollectStatus`, and `PlannedDirtyMergeStatus` report capacity
-failure before the associated storage allocation or live-state mutation. The
-throwing entry points in the first list keep their exception-enabled
-behavior and abort through one internal fail-fast path when a deterministic
-capacity error occurs in an exception-free build.
+failure before the associated storage allocation, before any world mutation,
+and before the source records are consumed — so a rejected operation can
+still be retried or handled from its inputs. The throwing entry points in
+the first list keep their exception-enabled behavior and abort through one
+internal fail-fast path when a deterministic capacity error occurs in an
+exception-free build.
 
-One case reports slightly later than the rest. A portal-segment store that
-is already at its segment budget is bounded by how many entries survive
-compaction, which is only known after a full dependency-validity sweep. That
-store rejects in constant time first where it can, and otherwise captures
-the candidate entry's dependencies — one temporary allocation — before the
-compaction returns the status. Cache storage is still untouched, and general
-allocation failure is outside the contract either way.
+Two details qualify that, and neither costs a caller its inputs:
+
+- Caller-supplied scratch is not preserved. The `PlannedDirtyPartitions`
+  overload of `merge_planned_dirty` clears the accumulator it is handed
+  before collecting, so that accumulator is empty on a `CapacityExceeded`
+  return. The partitions themselves are untouched, which is what lets the
+  allocation-free fallback merge publish them afterwards.
+- A portal-segment store already at its segment budget is bounded by how
+  many entries survive compaction, which is only known after a full
+  dependency-validity sweep. It rejects in constant time where it can, and
+  otherwise captures the candidate entry's dependencies before the
+  compaction returns the status. That capture appends to an unreserved
+  vector, so a path crossing several chunks may reallocate more than once.
+  Cache storage is still untouched, and general allocation failure is
+  outside the contract either way.
 
 General allocation failure, operating-system thread-creation failure, and an
 application operation that throws across an exception-free boundary are
