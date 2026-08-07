@@ -81,7 +81,6 @@ PERF_INSENSITIVE_OVERRIDES = (
   "include/tess/diagnostics/",
   "include/tess/experimental/",
   "include/tess/gpu/",
-  "include/tess/ops/",
 )
 PERF_SENSITIVE_FILES = (
   "CMakeLists.txt",

@@ -37,8 +37,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-dev-clang-tidy-advisory-${{ github.sha }}
-          restore-keys: ccache-dev-clang-tidy-advisory-
+          key: ccache-dev-clang-tidy-advisory--${{ github.sha }}
+          restore-keys: ccache-dev-clang-tidy-advisory--
 
       - name: Show tool versions
         run: |

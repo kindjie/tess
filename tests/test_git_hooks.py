@@ -1535,3 +1535,79 @@ def test_conditional_target_source_runs_full():
 
 def test_workflow_changes_are_not_inert():
   assert _classify([".github/workflows/ci.yml"])[0] == "full"
+
+
+def _ccache_namespaces() -> dict[str, list[str]]:
+  """Every ccache cache namespace declared across the workflows.
+
+  Returns {workflow_path: [namespace, ...]}, where a namespace is the
+  cache-key prefix with the per-run discriminator removed. Parsed as
+  text because the repository carries no YAML dependency.
+  """
+  root = Path(__file__).resolve().parents[1]
+  found: dict[str, list[str]] = {}
+  key_re = re.compile(r"^\s*key: (ccache-\S*?)\$\{\{ github\.\w+ \}\}\s*$")
+  restore_re = re.compile(r"^\s*(?:restore-keys: )?(ccache-\S*)\s*$")
+  for path in sorted((root / ".github" / "workflows").glob("*.yml")):
+    names: list[str] = []
+    for line in path.read_text().splitlines():
+      match = key_re.match(line) or restore_re.match(line)
+      if match:
+        names.append(match.group(1))
+    if names:
+      found[path.name] = names
+  return found
+
+
+def test_no_preset_name_contains_the_namespace_terminator():
+  """The premise the terminator relies on.
+
+  `--` separates a ccache namespace from its discriminator. That only
+  keeps namespaces disjoint while no preset name can contain `--`.
+  """
+  root = Path(__file__).resolve().parents[1]
+  presets = json.loads((root / "CMakePresets.json").read_text())
+  names = [
+    preset["name"]
+    for group in ("configurePresets", "buildPresets", "testPresets")
+    for preset in presets.get(group, [])
+  ]
+
+  assert names, "no presets parsed; the premise below would be vacuous"
+  offenders = [name for name in names if "--" in name]
+  assert offenders == []
+
+
+def test_every_ccache_namespace_is_terminated():
+  """Restore keys match by prefix, so namespaces must not nest.
+
+  `restore-keys: ccache-dev-` also matches `ccache-dev-asan-*` and
+  `ccache-dev-cppcheck-*`, so the dev job restored a sanitizer preset's
+  objects and rebuilt cold. Terminating every namespace with `--` makes
+  the prefix relation impossible, given the preset premise above.
+  """
+  namespaces = _ccache_namespaces()
+
+  assert namespaces, "no ccache cache steps found; the parser is stale"
+  for workflow, names in namespaces.items():
+    for name in names:
+      assert name.endswith("--"), (workflow, name)
+
+
+def test_no_ccache_namespace_is_a_prefix_of_another():
+  """Checks the outcome directly, not merely the `--` convention.
+
+  The terminator is the mechanism; disjointness is the property it buys,
+  and this still holds if a namespace ever adopts another separator.
+  """
+  namespaces = _ccache_namespaces()
+  every = sorted({name for names in namespaces.values() for name in names})
+
+  nested = [
+    (outer, inner)
+    for outer in every
+    for inner in every
+    if outer != inner and inner.startswith(outer)
+  ]
+
+  assert nested == []
