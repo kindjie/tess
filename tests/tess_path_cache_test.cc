@@ -509,6 +509,43 @@ TEST(TessPathCache, PortalSegmentCacheCheckedStorePreservesStateAtBudget) {
   EXPECT_TRUE(out.empty());
 }
 
+// A store that cannot fit must report CapacityExceeded without allocating on
+// the way there. Capturing the entry's chunk-version dependencies allocates,
+// so the constant-time capacity rejection has to run first.
+TEST(TessPathCache, PortalSegmentCacheCheckedStoreRejectsBeforeAllocating) {
+  constexpr auto original_nodes = std::array{
+      tess::Coord3{0, 0, 0},
+      tess::Coord3{1, 0, 0},
+  };
+  constexpr auto rejected_nodes = std::array{
+      tess::Coord3{0, 1, 0},
+      tess::Coord3{1, 1, 0},
+  };
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  tess::WeightedPortalSegmentCache cache;
+  cache.set_segment_budget(8);
+  auto class_cache = cache.for_class<PortalClass>();
+  ASSERT_EQ(class_cache.store_checked(world,
+                                      tess::PathRequest{original_nodes.front(),
+                                                        original_nodes.back()},
+                                      found_path_result(original_nodes)),
+            tess::PortalSegmentStoreStatus::Completed);
+
+  auto status = tess::PortalSegmentStoreStatus::Completed;
+  std::size_t allocations = 0;
+  {
+    const tess::detail::ScopedCapacityLimitForTesting capacity_limit{3};
+    const tess_test::ScopedAllocationCounter counter;
+    status = class_cache.store_checked(
+        world, tess::PathRequest{rejected_nodes.front(), rejected_nodes.back()},
+        found_path_result(rejected_nodes));
+    allocations = counter.count();
+  }
+
+  EXPECT_EQ(status, tess::PortalSegmentStoreStatus::CapacityExceeded);
+  EXPECT_EQ(allocations, 0u);
+}
+
 TEST(TessPathCache, PortalSegmentCacheFailedStoreDefersStaleStats) {
   if (!tess_test::allocation_failure_injection_supported()) {
     GTEST_SKIP() << "allocation failure injection is unavailable with this "

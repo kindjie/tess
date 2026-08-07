@@ -228,16 +228,17 @@ class WeightedPortalSegmentCache {
       stale_rejections_ += pending_stale_rejections;
       return PortalSegmentStoreStatus::Completed;
     }
-    // Both branches below validate capacity transactionally: each returns
-    // CapacityExceeded before touching live storage, so neither needs a
-    // separate validation pre-pass. An earlier pre-pass duplicated the
-    // compaction's dependency sweep on the at-budget path, which is the steady
-    // state for any budgeted cache (audit 2026-08-06).
-    //
+    // Reject what is decidable in constant time before capturing
+    // dependencies, so a store that cannot possibly fit still reports a status
+    // instead of allocating on its way to one.
+    if (store_capacity_precheck(result.path.size()) !=
+        PortalSegmentStoreStatus::Completed) {
+      return PortalSegmentStoreStatus::CapacityExceeded;
+    }
+
     // Construct every potentially allocating per-entry dependency before
     // changing live cache storage. A failed capture therefore cannot publish a
-    // route with only a prefix of its invalidation dependencies. `entry` is a
-    // local, so abandoning it below costs work but strands no state.
+    // route with only a prefix of its invalidation dependencies.
     auto entry = Entry{};
     entry.request = request;
     entry.status = result.status;
@@ -389,6 +390,40 @@ class WeightedPortalSegmentCache {
     }
     entries_.reserve(entries_.size() + additional_entries);
     paths_.reserve(paths_.size() + additional_path_nodes);
+    return PortalSegmentStoreStatus::Completed;
+  }
+
+  // Constant-time capacity rejection, run before the per-entry dependency
+  // capture allocates. Below budget this is the exact bound
+  // reserve_append_capacity_checked will apply, so nothing is lost. At budget
+  // the exact bound depends on how many entries survive compaction, which
+  // costs a full dependency-validity sweep; compact_checked already performs
+  // that sweep, so this only rejects what holds for every possible kept set
+  // and leaves compact_checked as the authority. Deliberately conservative:
+  // never reject a store that compact_checked would have accepted.
+  [[nodiscard]] auto store_capacity_precheck(std::size_t path_nodes) const
+      -> PortalSegmentStoreStatus {
+    if (entries_.size() < budget_) {
+      const auto entry_limit =
+          detail::effective_capacity_limit(entries_.max_size());
+      const auto path_limit =
+          detail::effective_capacity_limit(paths_.max_size());
+      if (entries_.size() >= entry_limit || paths_.size() > path_limit ||
+          path_nodes > path_limit - paths_.size()) {
+        return PortalSegmentStoreStatus::CapacityExceeded;
+      }
+      return PortalSegmentStoreStatus::Completed;
+    }
+    const auto compact_entry_limit =
+        detail::effective_capacity_limit(compact_entries_.max_size());
+    const auto compact_path_limit =
+        detail::effective_capacity_limit(compact_paths_.max_size());
+    // A zero entry ceiling leaves no room for the one appended entry whatever
+    // survives, and a path longer than the whole compaction arena cannot fit
+    // beside any kept set.
+    if (compact_entry_limit == 0 || path_nodes > compact_path_limit) {
+      return PortalSegmentStoreStatus::CapacityExceeded;
+    }
     return PortalSegmentStoreStatus::Completed;
   }
 
