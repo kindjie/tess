@@ -51,6 +51,10 @@ env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_BASEDIR: ${{ github.workspace }}/..
+  # Workflow-level env does not cross workflow boundaries, so ci.yml's cap
+  # does not reach here. This workflow builds two commits' binaries, so
+  # uncapped it is among the larger namespaces competing for the quota.
+  CCACHE_MAXSIZE: 250M
 
 jobs:
   confirm:
