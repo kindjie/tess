@@ -1265,8 +1265,17 @@
   verdicts that drain and post-seal reclassification cannot change,
   completed-to-stale attribution back to the admission window,
   per-class-to-total aggregation on both counting bases, and the
-  section 4.1 service-order tie-break chain. Milliseconds in Debug;
-  no sleeps.
+  section 4.1 service-order tie-break chain. The artifact layer
+  (`tests/budgeted_progress_artifact.h`) is pinned too: nearest-rank
+  percentiles publishing only at the section 11.4 sample minimums
+  with named sample bases, the embedded SHA-256 against FIPS 180-4
+  vectors, and v1 JSON emission omitting inapplicable groups
+  (saturated cells carry no deadline fields; unpaced cells no lag
+  family) with escaped strings and null-suppressed percentiles; the
+  fail-closed reader side lives in
+  `tools/check_budgeted_artifacts.py` under
+  `tests/test_budgeted_artifacts.py`. Milliseconds in Debug; no
+  sleeps.
 - `tess_grid_map_generators_test`: deterministic procedural map
   generators for the S1 scenario layer (`tests/grid_map_generators.h`
   — recursive-division maze and room-and-corridor, SplitMix64 integer

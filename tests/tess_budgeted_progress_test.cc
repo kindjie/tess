@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "budgeted_progress_artifact.h"
 #include "budgeted_progress_clock.h"
 #include "budgeted_progress_controller.h"
 #include "budgeted_progress_records.h"
@@ -668,6 +669,115 @@ TEST(BudgetedRecords, ServiceOrderTieBreakChain) {
   // Readiness restored: the gated Immediate item is now first.
   queue.entry(gated).ready = true;
   EXPECT_EQ(queue.pop_next(), gated);
+}
+
+// --- Summary derivation and artifact emission (sections 11-12) ---
+
+using budgeted::Artifact;
+using budgeted::emit_artifact_json;
+using budgeted::PercentileFamily;
+using budgeted::Sha256;
+using budgeted::summarize_family;
+
+// Percentiles publish only at their section 11.4 sample minimums and
+// name their sample base; nearest-rank is exact.
+TEST(BudgetedArtifact, PercentileMinimumsAndNearestRank) {
+  std::vector<std::uint64_t> small(25);
+  for (std::uint64_t i = 0; i < 25; ++i) {
+    small[static_cast<std::size_t>(i)] = i + 1;
+  }
+  const PercentileFamily few = summarize_family("all_measured_frames", small);
+  EXPECT_EQ(few.sample_base, "all_measured_frames");
+  EXPECT_TRUE(few.p50.sufficient);
+  EXPECT_EQ(few.p50.value, 13u);  // ceil(0.5 * 25) = 13th smallest.
+  EXPECT_FALSE(few.p95.sufficient);
+  EXPECT_FALSE(few.p99.sufficient);
+  EXPECT_FALSE(few.p999.sufficient);
+  EXPECT_TRUE(few.max.sufficient);
+  EXPECT_EQ(few.max.value, 25u);
+
+  const PercentileFamily none = summarize_family("empty", {});
+  EXPECT_FALSE(none.p50.sufficient);
+  EXPECT_FALSE(none.max.sufficient);
+
+  std::vector<std::uint64_t> large(2'000);
+  for (std::uint64_t i = 0; i < 2'000; ++i) {
+    large[static_cast<std::size_t>(i)] = i;
+  }
+  const PercentileFamily many = summarize_family("frames", large);
+  EXPECT_TRUE(many.p99.sufficient);
+  EXPECT_EQ(many.p99.value, 1979u);  // ceil(0.99 * 2000) = 1980th = 1979.
+  EXPECT_FALSE(many.p999.sufficient);
+}
+
+// The embedded SHA-256 matches the FIPS 180-4 test vectors.
+TEST(BudgetedArtifact, Sha256KnownVectors) {
+  Sha256 empty;
+  EXPECT_EQ(empty.hex_digest(),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+  Sha256 abc;
+  abc.update("abc", 3);
+  EXPECT_EQ(abc.hex_digest(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+}
+
+// Saturated artifacts omit the deadline group and paced-only fields
+// entirely; suppressed percentiles emit null; strings are escaped.
+TEST(BudgetedArtifact, SaturatedArtifactOmitsInapplicableGroups) {
+  Artifact artifact;
+  artifact.run.commit = "abc123";
+  artifact.run.compiler = "clang \"21\"";
+  artifact.experiment.kind = "isolated_saturated";
+  artifact.experiment.scenario_id = "astar-unit-roomcorridor-512";
+  artifact.experiment.workload_refs = {"path/astar_unit"};
+  artifact.experiment.budget_ns = 500'000;
+  artifact.trace.sha256 = "deadbeef";
+  artifact.summary.measured_frames = 600;
+  artifact.summary.frame_elapsed_ns =
+      summarize_family("all_measured_frames", {1, 2, 3});
+  artifact.calibration.clock_identity = "scripted";
+
+  const std::string json = emit_artifact_json(artifact);
+
+  EXPECT_NE(json.find("\"schema\": \"tess.budgeted_progress.v1\""),
+            std::string::npos);
+  EXPECT_NE(json.find("\"settlement_ticks\": 0"), std::string::npos);
+  EXPECT_EQ(json.find("deadline_success_rate"), std::string::npos);
+  EXPECT_EQ(json.find("frame_start_lag_ns"), std::string::npos);
+  EXPECT_EQ(json.find("flow_stable"), std::string::npos);
+  EXPECT_NE(json.find("\"capacity_band\": null"), std::string::npos);
+  EXPECT_NE(json.find("\"correctness_hash\": null"), std::string::npos);
+  EXPECT_NE(json.find("\"p50\": null"), std::string::npos);
+  EXPECT_NE(json.find("\"max\": 3"), std::string::npos);
+  EXPECT_NE(json.find("clang \\\"21\\\""), std::string::npos);
+}
+
+// Demand-limited paced artifacts carry the deadline group, the lag
+// family, and the flow-stability verdict.
+TEST(BudgetedArtifact, DemandLimitedArtifactCarriesDeadlineGroup) {
+  Artifact artifact;
+  artifact.experiment.kind = "isolated_arrival_rate";
+  artifact.experiment.pacing = "paced";
+  artifact.summary.frame_start_lag_ns = summarize_family("paced_frames", {});
+  budgeted::DeadlineGroup deadlines;
+  deadlines.deadline_success_rate = 0.995;
+  deadlines.lateness_ticks = summarize_family("completed_cohort_items", {});
+  deadlines.oldest_age_ticks = summarize_family("per_tick_observations", {});
+  deadlines.starved_items = 0;
+  artifact.summary.deadlines = deadlines;
+  artifact.summary.flow_stable_applicable = true;
+  artifact.summary.flow_stable = true;
+  artifact.summary.correctness_hash = "cafef00d";
+
+  const std::string json = emit_artifact_json(artifact);
+
+  EXPECT_NE(json.find("\"deadline_success_rate\": 0.995"), std::string::npos);
+  EXPECT_NE(json.find("\"frame_start_lag_ns\""), std::string::npos);
+  EXPECT_NE(json.find("\"flow_stable\": true"), std::string::npos);
+  EXPECT_NE(json.find("\"correctness_hash\": \"cafef00d\""), std::string::npos);
+  EXPECT_NE(json.find("\"sample_base\": \"completed_cohort_items\""),
+            std::string::npos);
 }
 
 // The accumulator grant pattern is deterministic for the canonical TPS
