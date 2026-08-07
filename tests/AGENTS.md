@@ -1256,7 +1256,17 @@
   frame-start lag with fresh next-frame allowance, zero-tick-frame
   entitlement and last-tick attribution, unsigned no-underflow
   arithmetic, and the canonical 20/30/60/120 TPS grant patterns
-  dropping no simulation time. Milliseconds in Debug; no sleeps.
+  dropping no simulation time. Also pins the per-item record layer
+  (`tests/budgeted_progress_records.h`): a real `ResumableWorkQueue`
+  resuming across frames at `AsyncWorkBudget{1}` without duplicates,
+  tick-released demand and inclusive deadline boundaries, admission
+  and retention identities after every transition, oldest-age
+  tracking, dependency-ready-only starvation, sealed-at-settlement
+  verdicts that drain and post-seal reclassification cannot change,
+  completed-to-stale attribution back to the admission window,
+  per-class-to-total aggregation on both counting bases, and the
+  section 4.1 service-order tie-break chain. Milliseconds in Debug;
+  no sleeps.
 - `tess_grid_map_generators_test`: deterministic procedural map
   generators for the S1 scenario layer (`tests/grid_map_generators.h`
   — recursive-division maze and room-and-corridor, SplitMix64 integer

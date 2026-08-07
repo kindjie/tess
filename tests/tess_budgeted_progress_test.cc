@@ -7,13 +7,18 @@
 // sleeping.
 
 #include <gtest/gtest.h>
+#include <tess/diagnostics/diagnostics.h>
+#include <tess/ops/async_work.h>
+#include <tess/ops/queued.h>
 #include <tess/sim/time.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
 #include "budgeted_progress_clock.h"
 #include "budgeted_progress_controller.h"
+#include "budgeted_progress_records.h"
 
 namespace {
 
@@ -308,6 +313,361 @@ TEST(BudgetedController, ZeroTickFrameReceivesFullAllowance) {
   const FrameRecord frame2 = controller.run_frame(no_mandatory, idle2);
   EXPECT_EQ(frame2.granted_ticks, 1u);
   EXPECT_EQ(frame2.sim_tick, 1u);
+}
+
+// --- Section 13 cases for per-item records and flow accounting ---
+
+using budgeted::DemandClassConfig;
+using budgeted::ItemId;
+using budgeted::ItemTracker;
+using budgeted::Outcome;
+using budgeted::ServiceEntry;
+using budgeted::ServiceQueue;
+
+auto one_class_tracker(std::uint64_t allowance_ticks,
+                       std::uint32_t base_tps = 20) -> ItemTracker {
+  return ItemTracker{{DemandClassConfig{allowance_ticks}}, base_tps};
+}
+
+// Section 13 test 6: resumable items stop only between advance() calls
+// and resume without duplicates. A real ResumableWorkQueue is the
+// quantum source; one advance at AsyncWorkBudget{1} is one quantum.
+TEST(BudgetedRecords, ResumableItemsResumeAcrossFramesWithoutDuplicates) {
+  ScriptedClock clock;
+  FrameBudgetController controller{clock, one_tick_config(kMs)};
+
+  tess::ResumableWorkQueue<std::uint32_t> queue;
+  tess::diagnostics::FlowAccounting accounting;
+  queue.set_flow_accounting(&accounting);
+  queue.reserve_tickets(1);
+
+  struct MultiStepWork {
+    ScriptedClock* clock = nullptr;
+    std::uint32_t total_items = 10;
+    auto operator()(tess::AsyncWorkBudget budget, std::uint32_t& done)
+        -> tess::AsyncWorkStep {
+      const auto step =
+          std::min<std::uint32_t>({budget.max_items, 1, total_items - done});
+      clock->advance(600'000);  // 0.6 ms per item.
+      done += step;
+      const auto state = done >= total_items ? tess::AsyncStepState::Ready
+                                             : tess::AsyncStepState::Pending;
+      return {state, step, tess::AsyncVersion{1}};
+    }
+  };
+  MultiStepWork work{&clock};
+  const tess::AsyncTicket ticket = queue.submit(work);
+  (void)ticket;
+
+  std::uint64_t advances = 0;
+  std::uint64_t items_done = 0;
+  auto quantum = [&]() -> bool {
+    const tess::AsyncAdvanceStats stats =
+        queue.advance(tess::AsyncWorkBudget{1});
+    advances += stats.invoked;
+    items_done += stats.items_done;
+    return stats.invoked > 0;
+  };
+
+  std::uint64_t frames = 0;
+  while (accounting.counters.completed == 0 && frames < 20) {
+    (void)controller.run_frame(no_mandatory, quantum);
+    ++frames;
+  }
+
+  // Ten 0.6 ms items against a 1 ms allowance: two advances per frame,
+  // five frames, every item processed exactly once.
+  EXPECT_EQ(items_done, 10u);
+  EXPECT_EQ(advances, 10u);
+  EXPECT_EQ(frames, 5u);
+  EXPECT_EQ(accounting.counters.completed, 1u);
+  EXPECT_TRUE(accounting.counters.retention_identity_holds());
+
+  // After the terminal state no further quantum reports work.
+  EXPECT_FALSE(quantum());
+}
+
+// Section 13 test 9: 0/1/2+-tick accumulator patterns release demand
+// and deadlines correctly. At 20 TPS / 60 FPS ticks land on every
+// third frame; trace events release at their simulation tick.
+TEST(BudgetedRecords, AccumulatorPatternsReleaseDemandAtTheirTicks) {
+  ScriptedClock clock;
+  FrameBudgetConfig config;
+  config.budget_ns = kMs;
+  config.base_tps = 20;
+  FrameBudgetController controller{clock, config};
+
+  ItemTracker tracker = one_class_tracker(1);
+  struct TraceEvent {
+    std::uint64_t tick;
+    bool admitted = false;
+    std::uint64_t admitted_frame = 0;
+  };
+  std::vector<TraceEvent> trace{{1}, {2}};
+
+  for (std::uint64_t frame = 0; frame < 6; ++frame) {
+    auto mandatory = [&](std::uint64_t tick) {
+      tracker.observe_tick(tick);
+      for (auto& event : trace) {
+        if (event.tick == tick && !event.admitted) {
+          (void)tracker.admit(0, tick);
+          event.admitted = true;
+          event.admitted_frame = frame;
+        }
+      }
+    };
+    ScriptedQuanta idle{&clock, {}};
+    (void)controller.run_frame(mandatory, idle);
+  }
+
+  // Frames 0,1 grant nothing; frame 2 grants tick 1; frame 5 tick 2.
+  EXPECT_TRUE(trace[0].admitted);
+  EXPECT_EQ(trace[0].admitted_frame, 2u);
+  EXPECT_TRUE(trace[1].admitted);
+  EXPECT_EQ(trace[1].admitted_frame, 5u);
+  EXPECT_EQ(tracker.counters().admitted, 2u);
+}
+
+// Section 13 test 10: completion exactly at the simulation deadline
+// succeeds; the next tick misses.
+TEST(BudgetedRecords, InclusiveDeadlineBoundary) {
+  ItemTracker tracker = one_class_tracker(3);
+  tracker.begin_window(0);
+  tracker.observe_tick(5);
+  const ItemId on_time = tracker.admit(0, 5);  // Deadline tick 8.
+  const ItemId late = tracker.admit(0, 5);     // Deadline tick 8.
+  tracker.observe_tick(8);
+  tracker.resolve(on_time, Outcome::Completed, 8);
+  tracker.observe_tick(9);
+  tracker.resolve(late, Outcome::Completed, 9);
+  tracker.end_window(20);
+  tracker.close_settlement();
+
+  const auto summary = tracker.summary();
+  EXPECT_EQ(summary.total.cohort_admitted, 2u);
+  EXPECT_EQ(summary.total.cohort_deadline_met, 1u);
+  ASSERT_EQ(summary.total.lateness_ticks.size(), 1u);
+  EXPECT_EQ(summary.total.lateness_ticks[0], 1u);
+  EXPECT_EQ(summary.total.useful_completions, 2u);
+}
+
+// Section 13 test 11: admission, coalesce, and reject transitions
+// preserve the admission identity after each event.
+TEST(BudgetedRecords, AdmissionIdentityAfterEachEvent) {
+  ItemTracker tracker = one_class_tracker(1);
+  tracker.observe_tick(1);
+  (void)tracker.admit(0, 1);
+  EXPECT_TRUE(tracker.counters().admission_identity_holds());
+  tracker.offer_rejected();
+  EXPECT_TRUE(tracker.counters().admission_identity_holds());
+  tracker.offer_coalesced();
+  EXPECT_TRUE(tracker.counters().admission_identity_holds());
+  (void)tracker.admit(0, 1);
+  EXPECT_TRUE(tracker.counters().admission_identity_holds());
+  EXPECT_EQ(tracker.counters().offered, 4u);
+}
+
+// Section 13 test 12: every terminal transition preserves the
+// retention identity.
+TEST(BudgetedRecords, RetentionIdentityAfterEveryTerminalTransition) {
+  ItemTracker tracker = one_class_tracker(1);
+  tracker.observe_tick(1);
+  const Outcome outcomes[] = {
+      Outcome::Completed, Outcome::Cancelled, Outcome::Superseded,
+      Outcome::Stale,     Outcome::Failed,    Outcome::DroppedAfterAdmission,
+  };
+  std::vector<ItemId> ids;
+  ids.reserve(6);
+  for (int i = 0; i < 6; ++i) {
+    ids.push_back(tracker.admit(0, 1));
+  }
+  std::uint64_t tick = 1;
+  for (int i = 0; i < 6; ++i) {
+    tracker.observe_tick(++tick);
+    tracker.resolve(ids[static_cast<std::size_t>(i)], outcomes[i], tick);
+    EXPECT_TRUE(tracker.counters().retention_identity_holds())
+        << "outcome " << i;
+  }
+  EXPECT_EQ(tracker.counters().terminal(), 6u);
+  EXPECT_EQ(tracker.counters().outstanding_current, 0u);
+}
+
+// Section 13 test 13: oldest outstanding age tracks the earliest
+// pending admission.
+TEST(BudgetedRecords, OldestAgeTracksEarliestPendingAdmission) {
+  ItemTracker tracker = one_class_tracker(1);
+  tracker.observe_tick(1);
+  const ItemId first = tracker.admit(0, 1);
+  tracker.observe_tick(5);
+  (void)tracker.admit(0, 5);
+  tracker.observe_tick(10);
+  EXPECT_EQ(tracker.counters().oldest_outstanding_age_ticks, 9u);
+  tracker.resolve(first, Outcome::Completed, 10);
+  tracker.observe_tick(11);
+  EXPECT_EQ(tracker.counters().oldest_outstanding_age_ticks, 6u);
+}
+
+// Section 13 test 14: starvation time counts only while
+// dependency-ready.
+TEST(BudgetedRecords, StarvationCountsOnlyWhileDependencyReady) {
+  // Allowance 1 at 20 TPS: starvation window = max(4, 20) = 20 ticks.
+  ItemTracker tracker = one_class_tracker(1);
+  tracker.begin_window(0);
+  tracker.observe_tick(0);
+  const ItemId gated = tracker.admit(0, 0);
+  const ItemId starved = tracker.admit(0, 0);
+
+  for (std::uint64_t tick = 1; tick <= 10; ++tick) {
+    tracker.observe_tick(tick);
+  }
+  // `gated` loses dependency-readiness for the middle stretch; its
+  // streak resets and never reaches the 20-tick window.
+  tracker.set_ready(gated, false);
+  for (std::uint64_t tick = 11; tick <= 30; ++tick) {
+    tracker.observe_tick(tick);
+  }
+  tracker.set_ready(gated, true);
+  for (std::uint64_t tick = 31; tick <= 40; ++tick) {
+    tracker.observe_tick(tick);
+  }
+  tracker.end_window(40);
+  tracker.close_settlement();
+
+  const auto summary = tracker.summary();
+  EXPECT_EQ(summary.total.starved_items, 1u);
+  (void)starved;
+}
+
+// Section 13 test 15: a quiescent drain cannot retroactively change
+// the measured stability verdict.
+TEST(BudgetedRecords, DrainAfterSealCannotChangeVerdict) {
+  ItemTracker tracker = one_class_tracker(2);
+  tracker.begin_window(0);
+  tracker.observe_tick(1);
+  const ItemId item = tracker.admit(0, 1);
+  tracker.end_window(10);
+  tracker.close_settlement();
+
+  const auto sealed = tracker.summary();
+  EXPECT_EQ(sealed.total.cohort_deadline_met, 0u);
+  EXPECT_EQ(sealed.total.useful_completions, 0u);
+  EXPECT_TRUE(sealed.retention_identity_ok);
+
+  // Draining the item after settlement close changes live counters but
+  // never the sealed verdict.
+  tracker.observe_tick(11);
+  tracker.resolve(item, Outcome::Completed, 11);
+  const auto after_drain = tracker.summary();
+  EXPECT_EQ(after_drain.total.cohort_deadline_met, 0u);
+  EXPECT_EQ(after_drain.total.useful_completions, 0u);
+}
+
+// Section 13 test 17: a completion reclassified stale during the
+// window or settlement is removed from useful completions and deadline
+// success, and the negative completed delta corrupts nothing.
+TEST(BudgetedRecords, ReclassificationDuringSettlementAttributesBack) {
+  ItemTracker tracker = one_class_tracker(4);
+  tracker.begin_window(0);
+  tracker.observe_tick(1);
+  const ItemId item = tracker.admit(0, 1);
+  tracker.observe_tick(2);
+  tracker.resolve(item, Outcome::Completed, 2);
+  EXPECT_EQ(tracker.counters().completed, 1u);
+  tracker.end_window(10);
+
+  // Settlement: churn invalidates the produced result.
+  tracker.reclassify_stale(item);
+  EXPECT_EQ(tracker.counters().completed, 0u);
+  EXPECT_EQ(tracker.counters().stale, 1u);
+  EXPECT_TRUE(tracker.counters().retention_identity_holds());
+  tracker.close_settlement();
+
+  const auto summary = tracker.summary();
+  EXPECT_EQ(summary.total.useful_completions, 0u);
+  EXPECT_EQ(summary.total.cohort_deadline_met, 0u);
+  EXPECT_TRUE(summary.retention_identity_ok);
+}
+
+// Section 13 test 18: a reclassification after settlement close does
+// not alter the sealed verdict.
+TEST(BudgetedRecords, ReclassificationAfterSealDoesNotAlterVerdict) {
+  ItemTracker tracker = one_class_tracker(4);
+  tracker.begin_window(0);
+  tracker.observe_tick(1);
+  const ItemId item = tracker.admit(0, 1);
+  tracker.observe_tick(2);
+  tracker.resolve(item, Outcome::Completed, 2);
+  tracker.end_window(10);
+  tracker.close_settlement();
+
+  tracker.reclassify_stale(item);
+
+  const auto summary = tracker.summary();
+  EXPECT_EQ(summary.total.useful_completions, 1u);
+  EXPECT_EQ(summary.total.cohort_deadline_met, 1u);
+  // The live counters still swapped buckets under the guarded
+  // decrement; only the sealed verdict is immutable.
+  EXPECT_EQ(tracker.counters().completed, 0u);
+  EXPECT_EQ(tracker.counters().stale, 1u);
+}
+
+// Section 13 test 21: per-class summaries aggregate exactly to the
+// cell totals on both counting bases.
+TEST(BudgetedRecords, PerClassSummariesAggregateToTotals) {
+  ItemTracker tracker{{DemandClassConfig{1}, DemandClassConfig{20}}, 20};
+  tracker.begin_window(0);
+  tracker.observe_tick(1);
+  const ItemId a0 = tracker.admit(0, 1);
+  const ItemId a1 = tracker.admit(0, 1);
+  const ItemId b0 = tracker.admit(1, 1);
+  tracker.observe_tick(2);
+  tracker.resolve(a0, Outcome::Completed, 2);  // Met (deadline 2).
+  tracker.observe_tick(4);
+  tracker.resolve(a1, Outcome::Completed, 4);  // Late by 2.
+  tracker.observe_tick(6);
+  tracker.resolve(b0, Outcome::Completed, 6);  // Met (deadline 21).
+  tracker.end_window(10);
+  tracker.close_settlement();
+
+  const auto summary = tracker.summary();
+  ASSERT_EQ(summary.classes.size(), 2u);
+  const auto& c0 = summary.classes[0];
+  const auto& c1 = summary.classes[1];
+  EXPECT_EQ(c0.useful_completions + c1.useful_completions,
+            summary.total.useful_completions);
+  EXPECT_EQ(c0.cohort_admitted + c1.cohort_admitted,
+            summary.total.cohort_admitted);
+  EXPECT_EQ(c0.cohort_deadline_met + c1.cohort_deadline_met,
+            summary.total.cohort_deadline_met);
+  EXPECT_EQ(c0.lateness_ticks.size() + c1.lateness_ticks.size(),
+            summary.total.lateness_ticks.size());
+  EXPECT_EQ(summary.total.useful_completions, 3u);
+  EXPECT_EQ(summary.total.cohort_deadline_met, 2u);
+}
+
+// Section 13 test 23: the service order exercises the full tie-break
+// chain — dependency-readiness gates, then Priority, then earliest
+// inclusive deadline, then admission sequence.
+TEST(BudgetedRecords, ServiceOrderTieBreakChain) {
+  ServiceQueue queue;
+  const auto gated =
+      queue.push({tess::Priority::Immediate, 1, 0, /*ready=*/false});
+  const auto maintenance = queue.push({tess::Priority::Maintenance, 1, 1});
+  const auto late_deadline = queue.push({tess::Priority::Immediate, 9, 2});
+  const auto tied_second = queue.push({tess::Priority::Immediate, 5, 4});
+  const auto tied_first = queue.push({tess::Priority::Immediate, 5, 3});
+
+  // Priority beats deadline; deadline beats admission sequence;
+  // admission sequence breaks exact ties; not-ready never selected.
+  EXPECT_EQ(queue.pop_next(), tied_first);
+  EXPECT_EQ(queue.pop_next(), tied_second);
+  EXPECT_EQ(queue.pop_next(), late_deadline);
+  EXPECT_EQ(queue.pop_next(), maintenance);
+  EXPECT_EQ(queue.pop_next(), ServiceQueue::npos);
+
+  // Readiness restored: the gated Immediate item is now first.
+  queue.entry(gated).ready = true;
+  EXPECT_EQ(queue.pop_next(), gated);
 }
 
 // The accumulator grant pattern is deterministic for the canonical TPS
