@@ -1243,6 +1243,20 @@
   agents still in flight, and a serial-only outcome golden (steps,
   arrivals, terminal buckets) that catches drift moving every
   configuration equally. About 3 s in Debug and 14 s under ASan.
+- `tess_budgeted_progress_test`: the budgeted-progress benchmark
+  harness's deterministic fake-clock battery
+  (docs/planning/budgeted-progress-benchmarks.md section 13, cases
+  numbered in test comments). Drives `FrameBudgetController`
+  (`tests/budgeted_progress_controller.h`) with the scripted
+  integer-nanosecond clock: zero/positive budget admission, exact-
+  deadline and one-nanosecond overshoot boundaries, indivisible-
+  quantum completion, frame-scope allowance sharing across multi-tick
+  frames versus per-tick reset, mandatory-first ordering with
+  quantum-tail versus mandatory overshoot bucket attribution, paced
+  frame-start lag with fresh next-frame allowance, zero-tick-frame
+  entitlement and last-tick attribution, unsigned no-underflow
+  arithmetic, and the canonical 20/30/60/120 TPS grant patterns
+  dropping no simulation time. Milliseconds in Debug; no sleeps.
 - `tess_grid_map_generators_test`: deterministic procedural map
   generators for the S1 scenario layer (`tests/grid_map_generators.h`
   — recursive-division maze and room-and-corridor, SplitMix64 integer
