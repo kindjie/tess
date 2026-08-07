@@ -1731,3 +1731,23 @@ def test_every_ccache_workflow_caps_its_cache_size():
       uncapped.append(path.name)
 
   assert uncapped == []
+
+
+def test_every_workflow_job_declares_a_timeout():
+  """A job without one inherits GitHub's 360-minute default.
+
+  That default is charged at the runner's multiplier -- two on Windows,
+  ten on macOS -- so a single hung job is expensive. Checking the class
+  rather than the jobs that happened to lack one at the time.
+  """
+  root = Path(__file__).resolve().parents[1]
+  missing = []
+  for path in sorted((root / ".github" / "workflows").glob("*.yml")):
+    body = path.read_text().split("\njobs:\n", 1)[1]
+    # Split on top-level job keys and check each block for a timeout.
+    blocks = re.split(r"^  ([a-z0-9][a-z0-9_-]*):$", body, flags=re.M)
+    for name, block in zip(blocks[1::2], blocks[2::2]):
+      if "timeout-minutes:" not in block:
+        missing.append(f"{path.name}:{name}")
+
+  assert missing == []
