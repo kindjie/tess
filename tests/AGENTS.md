@@ -1194,11 +1194,16 @@
 - `tess_no_exceptions_consumer_contract_test`: compiles the forward, reverse,
   and leaf-first public-header consumer contract with the exception-disabled
   compiler recipe.
-  `no_exceptions_manifest.json` maps each exception-free runtime case to its
-  affected subsystem; `tools/check_no_exceptions_manifest.py` verifies every
-  mapped case and its named enabled-mode counterpart.
+  `no_exceptions_manifest.json` (schema 2) classifies every subsystem exactly
+  once: `affected_subsystems` maps each one to its exception-free runtime
+  cases, and `unaffected_subsystems` records the rest with a written reason.
+  `tools/check_no_exceptions_manifest.py` derives the subsystem set from the
+  directories under `include/tess`, so adding a subsystem fails validation
+  until the manifest classifies it. It also verifies every mapped case and
+  its named enabled-mode counterpart.
 - `test_no_exceptions_manifest.py`: unit coverage for the exception-mode
-  runtime manifest validator and its checked-in subsystem set.
+  runtime manifest validator, its subsystem discovery, and the checked-in
+  manifest's classification of every real subsystem.
 - `tess_sparse_stream_test`: the S3 sparse-streaming scenario
   (`tests/sparse_stream_harness.h`) searching the S1 terrain in a
   `SparseResidentWorld` under budget fractions of the world's chunks,
