@@ -28,6 +28,10 @@ concurrency:
 env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CCACHE_DIR: ${{ github.workspace }}/.ccache
+  # CI3: ccache defaults to a 5 GiB cache. Nine namespaces at that
+  # ceiling overrun the 10 GB repository quota, and every run then
+  # evicts the previous run's caches. Cap each one well inside it.
+  CCACHE_MAXSIZE: 250M
 
 jobs:
   changes:
@@ -81,8 +85,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-dev-${{ github.sha }}
-          restore-keys: ccache-dev-
+          key: ccache-dev--${{ github.sha }}
+          restore-keys: ccache-dev--
 
       - name: Show tool versions
         run: |
@@ -95,6 +99,13 @@ jobs:
 
       - name: Build
         run: cmake --build --preset dev
+
+      # CI14: caching is configured in nine steps; before this it was
+      # measured in one, which is how the restore-key collision above
+      # went unnoticed. A cold build now says so in its own log.
+      - name: Report compiler cache effectiveness
+        if: always()
+        run: ccache --show-stats
 
       - name: Test
         run: ctest --preset dev
@@ -196,8 +207,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-gcc-${{ github.sha }}
-          restore-keys: ccache-gcc-
+          key: ccache-gcc--${{ github.sha }}
+          restore-keys: ccache-gcc--
 
       - name: Show tool versions
         run: |
@@ -209,6 +220,13 @@ jobs:
 
       - name: Build
         run: cmake --build --preset dev-werror
+
+      # CI14: caching is configured in nine steps; before this it was
+      # measured in one, which is how the restore-key collision above
+      # went unnoticed. A cold build now says so in its own log.
+      - name: Report compiler cache effectiveness
+        if: always()
+        run: ccache --show-stats
 
   no-exceptions:
     needs: changes
@@ -245,8 +263,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-noexceptions-${{ matrix.preset }}-${{ github.sha }}
-          restore-keys: ccache-noexceptions-${{ matrix.preset }}-
+          key: ccache-noexceptions-${{ matrix.preset }}--${{ github.sha }}
+          restore-keys: ccache-noexceptions-${{ matrix.preset }}--
 
       - name: Show tool versions
         run: |
@@ -292,6 +310,13 @@ jobs:
         run: |
           cmake --preset examples-no-exceptions
           cmake --build --preset examples-no-exceptions --parallel
+
+      # CI14: caching is configured in nine steps; before this it was
+      # measured in one, which is how the restore-key collision above
+      # went unnoticed. A cold build now says so in its own log.
+      - name: Report compiler cache effectiveness
+        if: always()
+        run: ccache --show-stats
 
       - name: Run exception-free examples
         run: |
@@ -423,8 +448,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-${{ matrix.preset }}-${{ github.sha }}
-          restore-keys: ccache-${{ matrix.preset }}-
+          key: ccache-${{ matrix.preset }}--${{ github.sha }}
+          restore-keys: ccache-${{ matrix.preset }}--
 
       - name: Install clang-tidy
         if: matrix.preset == 'dev-clang-tidy'
@@ -479,6 +504,13 @@ jobs:
       - name: Build clang-tidy with bounded parallelism
         if: matrix.preset == 'dev-clang-tidy'
         run: cmake --build --preset "${{ matrix.preset }}" --parallel 4
+
+      # CI14: caching is configured in nine steps; before this it was
+      # measured in one, which is how the restore-key collision above
+      # went unnoticed. A cold build now says so in its own log.
+      - name: Report compiler cache effectiveness
+        if: always()
+        run: ccache --show-stats
 
       - name: Test
         if: >-
@@ -574,8 +606,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-macos-${{ matrix.preset }}-${{ github.sha }}
-          restore-keys: ccache-macos-${{ matrix.preset }}-
+          key: ccache-macos-${{ matrix.preset }}--${{ github.sha }}
+          restore-keys: ccache-macos-${{ matrix.preset }}--
 
       - name: Install ccache
         run: brew install ccache
@@ -591,6 +623,13 @@ jobs:
 
       - name: Build
         run: cmake --build --preset "${{ matrix.preset }}"
+
+      # CI14: caching is configured in nine steps; before this it was
+      # measured in one, which is how the restore-key collision above
+      # went unnoticed. A cold build now says so in its own log.
+      - name: Report compiler cache effectiveness
+        if: always()
+        run: ccache --show-stats
 
       - name: Test
         run: ctest --preset "${{ matrix.preset }}"
@@ -759,8 +798,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-bench-${{ github.sha }}
-          restore-keys: ccache-bench-
+          key: ccache-bench--${{ github.sha }}
+          restore-keys: ccache-bench--
 
       - name: Show tool versions
         run: |
@@ -772,6 +811,13 @@ jobs:
 
       - name: Build
         run: cmake --build --preset bench
+
+      # CI14: caching is configured in nine steps; before this it was
+      # measured in one, which is how the restore-key collision above
+      # went unnoticed. A cold build now says so in its own log.
+      - name: Report compiler cache effectiveness
+        if: always()
+        run: ccache --show-stats
 
       - name: Test
         run: ctest --preset bench
@@ -892,10 +938,10 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-paired-${{ github.sha }}
+          key: ccache-paired--${{ github.sha }}
           restore-keys: |
-            ccache-paired-
-            ccache-bench-
+            ccache-paired--
+            ccache-bench--
 
       - name: Build head sentinel binary
         run: |
@@ -1264,8 +1310,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-long-seed-${{ github.sha }}
-          restore-keys: ccache-long-seed-
+          key: ccache-long-seed--${{ github.sha }}
+          restore-keys: ccache-long-seed--
 
       - name: Configure
         run: cmake --preset dev
@@ -1275,6 +1321,13 @@ jobs:
           cmake --build build/dev --parallel
           --target tess_property_test tess_queued_property_test
           tess_cache_property_test tess_dirty_property_test
+
+      # CI14: caching is configured in nine steps; before this it was
+      # measured in one, which is how the restore-key collision above
+      # went unnoticed. A cold build now says so in its own log.
+      - name: Report compiler cache effectiveness
+        if: always()
+        run: ccache --show-stats
 
       - name: Confirm the raised budget is in effect
         run: |
@@ -1340,8 +1393,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-coverage-${{ github.sha }}
-          restore-keys: ccache-coverage-
+          key: ccache-coverage--${{ github.sha }}
+          restore-keys: ccache-coverage--
 
       - name: Configure test suite
         run: cmake --preset dev-coverage
@@ -1398,6 +1451,13 @@ jobs:
 
       - name: Build benchmarks
         run: cmake --build --preset bench-coverage
+
+      # CI14: caching is configured in nine steps; before this it was
+      # measured in one, which is how the restore-key collision above
+      # went unnoticed. A cold build now says so in its own log.
+      - name: Report compiler cache effectiveness
+        if: always()
+        run: ccache --show-stats
 
       - name: Benchmark gap-finder
         # Smoke mode runs every registration in both binaries; timing

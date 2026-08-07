@@ -9,6 +9,18 @@ and their rationale are recorded separately in
 
 ## [Unreleased]
 
+### Fixed
+
+- Continuous-integration compiler caches no longer collide. Cache restore
+  keys match by prefix, so the `dev` namespace also matched the sanitizer,
+  cppcheck, and clang-tidy namespaces and restored whichever was written
+  most recently. Every namespace is now terminated, and each cache-using
+  job reports its own hit rate so a cold rebuild is visible in its log.
+- Changes under `include/tess/ops/` select the paired benchmark run again.
+  The directory was excluded as nanosecond-scale, which is true of its
+  queued and scheduler families but not of the pool executor it also owns,
+  whose benchmarks run at millisecond scale.
+
 ## [0.12.0] - 2026-08-05
 
 ### Added

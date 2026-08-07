@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "comment": "Sentinel benchmarks for the paired base-vs-head run (redesign section 4.1) and the section 4.5 source map. Sentinels are composite microsecond-to-millisecond workloads; families offering only nanosecond micro-benches are declared unrepresented rather than mapped to a sentinel that could never clear the materiality floor. tests/test_paired_bench.py enforces completeness.",
+  "comment": "Sentinel benchmarks for the paired base-vs-head run (redesign section 4.1) and the section 4.5 source map. Sentinels are composite microsecond-to-millisecond workloads; families offering only nanosecond micro-benches are declared unrepresented rather than mapped to a sentinel that could never clear the materiality floor. An unrepresented reason must hold for the whole directory, not for its best-known family: include/tess/ops/ was excluded on a queued-and-scheduler rationale while also owning the millisecond-scale pool benchmarks, which left the pool ungated on pull requests. tests/test_paired_bench.py enforces completeness.",
   "sentinels": {
     "path/cached_astar_batch_100_mixed_repeated_room_portals_512x512": {"metric": "cpu_time", "confirmed_catch": "2026-07-23"},
     "path/field_product_cache_hit_replay_room_portals_512x512": {"metric": "cpu_time", "confirmed_catch": "2026-07-23"},
@@ -9,6 +9,7 @@
     "topology/area_index_build_256_areas_512x512": {"metric": "cpu_time"},
     "ecs/tick_raw_span_10k": {"metric": "cpu_time"},
     "parallel/tile_touch_scoped_threads_w4": {"metric": "real_time"},
+    "parallel/chunk_compute_pool_w4": {"metric": "real_time"},
     "fields/goalset_build_256": {"metric": "cpu_time"},
     "spatial/local_coordination_1000x4": {"metric": "cpu_time"},
     "storage/world_dirty_chunks_iteration_16k": {"metric": "cpu_time"},
@@ -24,7 +25,7 @@
     "include/tess/ecs/": ["ecs/tick_raw_span_10k"],
     "include/tess/experimental/": {"unrepresented": "evaluation-only maintenance backends, not integrated into storage"},
     "include/tess/gpu/": {"unrepresented": "no benchmarks exist; the CPU stays authoritative and consumers own GPU pipelines"},
-    "include/tess/ops/": {"unrepresented": "the queued and scheduler benchmark families are nanosecond micro-benches below the paired materiality floor; the threshold gates cover them now and the phase 2b counter goldens gate their admission identities exactly"},
+    "include/tess/ops/": ["parallel/chunk_compute_pool_w4"],
     "include/tess/path/": ["path/cached_astar_batch_100_mixed_repeated_room_portals_512x512", "path/field_product_cache_hit_replay_room_portals_512x512", "path/nearest_target_product_100_starts_room_portals_512x512", "path/weighted_batch_planner_100_neargoal_open_512x512"],
     "include/tess/persistence/": ["persistence/save_dense_512x512_2_fields"],
     "include/tess/query/": ["query/radius/per_tile"],

@@ -1535,3 +1535,136 @@ def test_conditional_target_source_runs_full():
 
 def test_workflow_changes_are_not_inert():
   assert _classify([".github/workflows/ci.yml"])[0] == "full"
+
+
+def _ccache_namespaces() -> dict[str, list[str]]:
+  """Every ccache cache namespace declared across the workflows.
+
+  Returns {workflow_path: [namespace, ...]}, where a namespace is the
+  cache-key prefix with the per-run discriminator removed. Parsed as
+  text because the repository carries no YAML dependency.
+  """
+  root = Path(__file__).resolve().parents[1]
+  presets = _configure_preset_names(root)
+  discriminator_re = re.compile(r"\$\{\{ github\.\w+ \}\}$")
+  found: dict[str, list[str]] = {}
+
+  for path in sorted((root / ".github" / "workflows").glob("*.yml")):
+    text = path.read_text()
+    names: list[str] = []
+    keys_seen = 0
+    for raw_line in text.splitlines():
+      line = raw_line.strip()
+      if line.startswith("key: ccache-"):
+        keys_seen += 1
+        namespace = discriminator_re.sub("", line[len("key: ") :])
+      elif line.startswith("restore-keys: ccache-"):
+        namespace = line[len("restore-keys: ") :]
+      elif line.startswith("ccache-"):
+        namespace = line  # entry in a block-style restore-keys list
+      else:
+        continue
+      # A matrix key is a template. Expand it over every configure preset
+      # so the sibling namespaces it really produces -- ccache-dev-asan--,
+      # ccache-dev-cppcheck-- and the rest -- are the values compared.
+      # Expanding over all presets is a superset of what any matrix can
+      # select, so disjointness here implies disjointness in practice.
+      if "${{ matrix.preset }}" in namespace:
+        names.extend(
+          namespace.replace("${{ matrix.preset }}", preset)
+          for preset in presets
+        )
+      else:
+        names.append(namespace)
+
+    # Fail closed: a cache step whose key this parser cannot read would
+    # otherwise be silently skipped, which is how the first version of
+    # this helper missed every matrix key it was written to cover.
+    cache_steps = text.count("path: .ccache")
+    assert keys_seen == cache_steps, (
+      f"{path.name}: parsed {keys_seen} ccache keys but found "
+      f"{cache_steps} ccache cache steps"
+    )
+    if names:
+      found[path.name] = names
+  return found
+
+
+def _configure_preset_names(root: Path) -> list[str]:
+  presets = json.loads((root / "CMakePresets.json").read_text())
+  names = [
+    preset["name"]
+    for group in ("configurePresets", "buildPresets", "testPresets")
+    for preset in presets.get(group, [])
+  ]
+  assert names
+  return sorted(set(names))
+
+
+def test_no_preset_name_contains_the_namespace_terminator():
+  """The premise the terminator relies on.
+
+  `--` separates a ccache namespace from its discriminator. That only
+  keeps namespaces disjoint while no preset name can contain `--`.
+  """
+  root = Path(__file__).resolve().parents[1]
+  names = _configure_preset_names(root)
+
+  assert names, "no presets parsed; the premise below would be vacuous"
+  offenders = [name for name in names if "--" in name]
+  assert offenders == []
+
+
+def test_every_ccache_namespace_is_terminated():
+  """Restore keys match by prefix, so namespaces must not nest.
+
+  `restore-keys: ccache-dev-` also matches `ccache-dev-asan-*` and
+  `ccache-dev-cppcheck-*`, so the dev job restored a sanitizer preset's
+  objects and rebuilt cold. Terminating every namespace with `--` makes
+  the prefix relation impossible, given the preset premise above.
+  """
+  namespaces = _ccache_namespaces()
+
+  assert namespaces, "no ccache cache steps found; the parser is stale"
+  for workflow, names in namespaces.items():
+    for name in names:
+      assert name.endswith("--"), (workflow, name)
+
+
+def test_no_ccache_namespace_is_a_prefix_of_another():
+  """Checks the outcome directly, not merely the `--` convention.
+
+  The terminator is the mechanism; disjointness is the property it buys,
+  and this still holds if a namespace ever adopts another separator.
+  """
+  namespaces = _ccache_namespaces()
+  every = sorted({name for names in namespaces.values() for name in names})
+
+  nested = [
+    (outer, inner)
+    for outer in every
+    for inner in every
+    if outer != inner and inner.startswith(outer)
+  ]
+
+  assert nested == []
+
+
+def test_every_ccache_workflow_caps_its_cache_size():
+  """Each workflow must cap its own ccache.
+
+  Workflow-level `env` does not cross workflow boundaries, so the cap in
+  ci.yml leaves the schedule-only advisory build and the dispatch-only
+  paired build on ccache's 5 GiB default -- against a 10 GB repository
+  quota that every run already evicts into.
+  """
+  root = Path(__file__).resolve().parents[1]
+  uncapped = []
+  for path in sorted((root / ".github" / "workflows").glob("*.yml")):
+    text = path.read_text()
+    if "path: .ccache" not in text:
+      continue
+    if "CCACHE_MAXSIZE:" not in text:
+      uncapped.append(path.name)
+
+  assert uncapped == []

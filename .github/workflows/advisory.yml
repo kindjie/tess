@@ -15,6 +15,10 @@ concurrency:
 env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CCACHE_DIR: ${{ github.workspace }}/.ccache
+  # Workflow-level env does not cross workflow boundaries, so ci.yml's cap
+  # does not reach here. Uncapped, this namespace grows to ccache's 5 GiB
+  # default against a 10 GB repository quota.
+  CCACHE_MAXSIZE: 250M
   CC: clang
   CXX: clang++
 
@@ -37,8 +41,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-dev-clang-tidy-advisory-${{ github.sha }}
-          restore-keys: ccache-dev-clang-tidy-advisory-
+          key: ccache-dev-clang-tidy-advisory--${{ github.sha }}
+          restore-keys: ccache-dev-clang-tidy-advisory--
 
       - name: Show tool versions
         run: |

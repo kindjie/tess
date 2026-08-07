@@ -368,6 +368,12 @@ def test_cli_fails_closed_for_full_tier_events(monkeypatch, capsys):
     "include/tess/path/astar.h",
     "include/tess/storage/dense.h",
     "include/tess/simulation.h",
+    # The pool executor lives here, and its parallel/*_pool_w4
+    # benchmarks run at millisecond scale — three orders above the
+    # paired materiality floor. Excluding the directory left every
+    # pool regression invisible on pull requests.
+    "include/tess/ops/phase_executor.h",
+    "include/tess/ops/queued.h",
     "bench/tess_path_bench.cc",
     "bench/sentinels.json",
     "cmake/TessProjectOptions.cmake",
@@ -391,7 +397,6 @@ def test_perf_sensitive_paths_select_the_paired_run(path):
     "tools/check_docs_links.py",
     # Directories no sentinel can observe: running the paired job on
     # these would measure nothing. The source map records the gap.
-    "include/tess/ops/queued.h",
     "include/tess/gpu/webgpu_backend.h",
     "include/tess/debug/imgui/panels.h",
     "include/tess/diagnostics/trace.h",

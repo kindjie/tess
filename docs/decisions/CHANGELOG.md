@@ -8,6 +8,34 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-07 - Benchmark and cache gates measure what they claim
+
+- Fixed: every ccache namespace is terminated with `--`. GitHub restore
+  keys match by prefix, so `ccache-dev-` also matched `ccache-dev-asan-`,
+  `ccache-dev-cppcheck-`, and `ccache-dev-clang-tidy-`, and the `dev` job
+  restored whichever sibling preset was written most recently — usually
+  one built with different sanitizer flags, so almost every object missed.
+  The foreign objects were then saved back under the `dev` key, which is
+  why the ambiguous namespaces grew several times larger per entry than
+  the unambiguous ones. Two tests pin the invariant, and a third pins its
+  premise: no preset name may contain `--`.
+- Changed: `include/tess/ops/` is mapped to a sentinel instead of being
+  declared unrepresented. The recorded reason — nanosecond micro-benches
+  below the paired materiality floor — describes the queued and scheduler
+  families, but the directory also owns the pool executor, whose
+  `parallel/*_pool_w4` benchmarks are gated near a millisecond. A pull
+  request touching only the pool therefore skipped the paired run, skipped
+  the threshold gates (which do not run on pull requests), and had no
+  sentinel, so a regression between the paired effect floor and the
+  main-branch ceilings was invisible on both. An unrepresented reason must
+  now hold for the whole directory, not for its best-known family.
+- Changed: `CCACHE_MAXSIZE` is set. Nine namespaces at ccache's 5 GiB
+  default overrun the 10 GB repository cache quota, so each run evicted
+  the previous run's caches.
+- Added: every cache-using job reports its hit rate. Caching was
+  configured in nine steps and measured in one, which is why the restore
+  key collision went unnoticed for as long as it did.
+
 ## 2026-08-06 - Bounded Steam Deck benchmark builds
 
 - Fixed: the Steam Deck benchmark workflow builds only the selected benchmark
