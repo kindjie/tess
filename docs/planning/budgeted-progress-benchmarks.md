@@ -72,7 +72,7 @@ The headline mode is:
 budget_scope = frame
 ```
 
-One rendered frame gets **one** allowance `B_frame`, shared by every simulation tick granted during that frame. If 120 TPS yields two ticks in a 60 FPS frame, the total entitlement is still `B_frame`, not `2 * B_frame`.
+One rendered frame gets **one** allowance `B_frame`, shared by every simulation tick granted during that frame. If 120 TPS yields two ticks in a 60 FPS frame, the total entitlement is still `B_frame`, not `2 * B_frame`. **Every rendered frame receives `B_frame`, including frames that grant zero ticks** (at 20 TPS / 60 FPS, two of three frames): defer-capable work may be serviced in tickless frames, matching the section 4 controller. A completion in a tickless frame is attributed to the current (last-granted) `SimClock` tick for deadline purposes.
 
 A secondary mode may use:
 
@@ -93,7 +93,7 @@ Overshoot is recorded in two attributed buckets, because they are different phen
 - `overshoot_quantum_tail`: the deadline fell inside the last defer-capable quantum, which ran to its normal return. Evidence about cooperative interruption granularity (stage 5 input).
 - `overshoot_mandatory`: mandatory tick-coupled work executed after the allowance was already exhausted. Evidence about mandatory work volume versus budget, not about granularity.
 
-Both buckets carry per-operation-class attribution in the raw sidecar so stage 5 can identify which operations' quanta dominate.
+Both buckets carry per-operation-class attribution in the raw sidecar so stage 5 can identify which operations' quanta dominate. In `mixed_current_fidelity`, where nothing may defer and ticks run whole, all overshoot is by definition `overshoot_mandatory`; the split is informative only where the driver meters defer-capable work.
 
 `BudgetPolicy` is intent metadata, not evidence that a consumer is currently resumable or wall-clock-budgeted. Capability comes from the actual API boundary.
 
@@ -149,7 +149,7 @@ Record a versioned service-policy identifier in every trace/artifact.
 | Region-graph build/update | one fresh consistent graph | dirty/affected chunks, regions, portals | whole transaction | No | no partial graph publication |
 | One queued op per chunk | terminal op/ack after dirty merge | operations, chunks, tiles, dirty records | existing op/phase boundaries | Not a continuation | may slice only where lower-level APIs preserve semantics |
 | `AutoExecTask` | complete planned run/result drain | ops/chunks/phases | whole task | No | indivisible in fidelity mode |
-| `ResumableWorkQueue` | ticket reaches a terminal state (`Ready` for success; `Failed`/`Cancelled`/`Superseded`/`Stale` otherwise) | existing `items_done`, offered/consumed units | one callback / `advance()` | **Yes** | yes; reference continuation model |
+| `ResumableWorkQueue` | ticket reaches a terminal state (`Ready` or `Immediate` for success; `Failed`/`Cancelled`/`Superseded`/`Stale` otherwise) | existing `items_done`, offered/consumed units | one callback / `advance()` | **Yes** | yes; reference continuation model |
 
 Terminal-bucket resolution for `ResumableWorkQueue` must come from its attached `FlowAccounting`, not from `advance()` return values: `AsyncAdvanceStats::failed` aggregates `Failed`, `Cancelled`, and `Superseded` into one count, so the six per-bucket terminal outcomes section 8.1 requires are unrecoverable from step stats alone.
 
@@ -169,15 +169,15 @@ Seven canonical cells. Cells 1-4 and 7 reuse existing workload builders and cata
 2. weighted point path, 512x512 / 32x32, weighted structured/sparse-blocker layout (existing `path/weighted_astar_unit` family);
 3. existing repeated/shared-goal 100-request batch, kept as one current batch call (existing `path/astar_batch` / `path/distance_field_batch` families);
 4. field-product build, 512x512, eight deterministic goals (existing `path/field_product` family);
-5. **new:** colony-derived incremental topology update with four deterministic dirty chunks, patterned on the colony test harness's churn events — the existing topology family covers only `region_graph_update_single_chunk_512x512`;
-6. **new:** queued one-op-per-chunk update path including planning/execution/dirty merge, patterned on the colony test harness ("one queued operation per distinct chunk") — the existing `queued/execute_resident_update` cells enqueue one operation spanning all resident chunks, the opposite granularity;
-7. a real `ResumableWorkQueue` workload to validate actual continuation behavior (existing `scheduler/resumable_work_step` family).
+5. **new:** colony-derived incremental topology update with four deterministic dirty chunks, patterned on the colony test harness's churn events — the existing `topology/region_graph` family's only incremental-update cell is `region_graph_update_single_chunk_512x512`; proposed identity `topology/region_graph_update_colony_4chunk_512x512`;
+6. **new:** queued one-op-per-chunk update path including planning/execution/dirty merge, patterned on the colony test harness ("one queued operation per distinct chunk") — the existing `queued/execute_resident_update` cells enqueue one operation spanning all resident chunks, the opposite granularity; proposed identity `queued/execute_per_chunk_colony_512x512`;
+7. a real `ResumableWorkQueue` workload to validate actual continuation behavior (existing `resumable_work_step` cell of the `scheduler/tick` family).
 
 Generate a large frozen request pool before timing using the existing deterministic generator/oracle machinery and seed `0x5C0107`. For point queries keep at least 10,000 requests available. No random generation, parsing, allocation setup, or oracle work occurs inside the Tess service timer.
 
 ### 6.2 Modes
 
-**Saturated:** eligible inventory never empties. Report useful completions/frame and /second, algorithmic work/second, and overshoot distribution.
+**Saturated:** eligible inventory never empties. The frozen pool is **inventory, not admitted flow**: an item is offered and admitted at the moment the driver selects it for service, so saturated cells carry no meaningful deadlines, ages, or starvation — those metrics are emitted only by arrival-rate and mixed cells (section 9). Report useful completions per frame and per simulation second, algorithmic work per simulation second, and the overshoot distribution.
 
 **Arrival-rate:** release offers from a deterministic rational-rate accumulator (integer/Bresenham-style, not random sampling). Geometrically bracket and then refine the highest flow-stable rate under the boundary search policy of section 9.3. Save every tested point and trace hash.
 
@@ -312,7 +312,7 @@ These are scenario definitions, not public promises.
 
 ## 9. Metrics and capacity definition
 
-Every cell emits:
+Every cell emits the metrics applicable to its mode — saturated cells omit the deadline, age, and starvation groups by construction (section 6.2):
 
 - useful completions total, per frame, per simulation second, and per wall second (measured wall rates from paced cells only, section 3.2);
 - operation-specific algorithmic work units;
@@ -334,7 +334,7 @@ An item is reportably **starved** if it remains continuously eligible but receiv
 max(4 * deadline_allowance_ticks, one_sim_second_ticks)
 ```
 
-where `one_sim_second_ticks = effective_tps(base_tps, speed)` (`include/tess/sim/time.h`) — four deadline windows or one simulation second, whichever is longer, measured in simulation ticks while the item is dependency-ready. Report count/max no-service age by priority/class.
+where `one_sim_second_ticks = base_tps` — one simulation second always contains `base_tps` ticks, since `SimSpeed` scales wall time, not simulation time (`effective_tps(base_tps, speed)` in `include/tess/sim/time.h` is the speed-multiplied *wall*-second rate and equals `base_tps` only at the canonical `Speed1x`). The window is four deadline windows or one simulation second, whichever is longer, measured in simulation ticks while the item is dependency-ready. Report count/max no-service age by priority/class.
 
 For homogeneous multi-producer fairness tests, report Jain's index over producer-normalized useful-completion rates. Do not combine unlike priority classes into one fairness number; mixed workloads report per-class service share and oldest age.
 
@@ -344,7 +344,7 @@ Take `FlowCounters` snapshots at the start/end of the measured window; derive de
 
 1. both conservation identities hold;
 2. positive outstanding growth is at most `max(1, ceil(0.005 * A))` items (0.5% plus one-item integer slack);
-3. final oldest outstanding age does not exceed the scenario starvation window;
+3. final oldest outstanding age does not exceed the starvation window, evaluated **per class** against each class's own window (section 9.1) — any class exceeding its window fails the criterion;
 4. the scenario deadline target is met.
 
 Canonical deadline target: **99%** successful completion by deadline. Raw data must allow 95%/99.9% summaries when sample counts support them.
@@ -359,7 +359,7 @@ A quiescent drain may be used for correctness equivalence but never to erase mea
 
 Flow-stability near the boundary is a noisy binary outcome, not a monotone property of load: criteria 2 and 4 both flip on a handful of items, and observing stable-at-`r` / unstable-at-`r' < r` is expected, not an error. The search therefore has an explicit policy rather than assuming bisection converges:
 
-- **Probe verdict:** each probe point runs 3 warm repetitions; the point's verdict is the majority (2 of 3). Every repetition is persisted regardless of verdict.
+- **Probe verdict:** each probe point runs 3 repetitions of the warm-throughput cell configuration (120 warmup / 600 measured frames, section 11.4); the point's verdict is the majority (2 of 3). Every repetition is persisted regardless of verdict.
 - **Bracket and refine:** geometric bracketing on probe verdicts, then linear refinement down to a terminal resolution — 2% of rate for arrival-rate mode, one population-ladder step for the mixed colony. Refinement below the resolution stops even if verdicts still flap; flapping is reported, not hidden.
 - **Confirmation:** the highest stable probe runs the capacity-boundary confirmation cell (section 11.4: 1800 frames, 5 repetitions, majority verdict). If confirmation **fails**, that point is recorded as unstable and the search steps down one resolution unit and re-confirms; it never re-runs confirmation at the same point hoping for a different answer.
 - **Reported result:** capacity is a **band**, not a point — the highest confirmed-stable load and the lowest observed-unstable load, both with their full evidence. Summaries may headline the confirmed-stable value but must carry the band.
@@ -399,7 +399,7 @@ Follow existing campaign practice:
 2. **counter pass:** identical demand-trace hash, detailed deterministic counters;
 3. optional **PMU pass:** controlled hardware only, never the source of published wall time.
 
-An identical demand trace does **not** make the counter pass execution-identical to the timing pass: which quantum lands in which frame depends on live clock readings, so the two passes realize different service schedules. The counter pass is therefore *statistically comparable, not replayed*: frame-level joins between passes are forbidden, and counter-pass results are compared to timing-pass results only in distribution (per-item terminal outcomes, totals, work units). If exact annotation of a timing run is ever needed, the timing pass must record its quantum schedule (frame -> serviced items) and the counter pass must replay that recording; whether to build schedule recording is an open decision (section 17).
+An identical demand trace does **not** make the counter pass execution-identical to the timing pass: which quantum lands in which frame depends on live clock readings, so the two passes realize different service schedules. The counter pass is therefore *statistically comparable, not replayed*: frame-level joins between passes are forbidden, and counter-pass results are compared to timing-pass results only in distribution. The v1 comparison set and default tolerances, recorded in the artifact and revisitable after the first campaign: useful completions and consumed work units within 5% relative, both conservation identities holding in both passes, and per-class deadline success within 2 percentage points. If exact annotation of a timing run is ever needed, the timing pass must record its quantum schedule (frame -> serviced items) and the counter pass must replay that recording; whether to build schedule recording is an open decision (section 17).
 
 For the same reason `summary.correctness_hash` has a defined expected value only for contiguous references and fake-clock runs, where execution is deterministic; wall-driven cells emit `null` there and rely on the per-item validity checks and conservation identities instead.
 
@@ -443,7 +443,7 @@ p99: 2000
 Otherwise emit `insufficient_samples`. Each published percentile names its sample base explicitly:
 
 - **Frame elapsed and overshoot percentiles** pool all measured frames across repetitions (warm cell: 6000; confirmation cell: 9000), with repetition boundaries preserved in the raw sidecar. Overshoot percentiles are computed over **all** measured frames with non-overshoot frames contributing zero; `overshoot_frame_rate` is reported beside them, and a conditional distribution over overshoot frames only is additionally published when that subset alone meets the sample minimums, else marked `insufficient_samples`. Published p99s are pooled by necessity — a 600-frame repetition cannot support a per-repetition p99 — so per-repetition summaries are limited to p50/p95.
-- **Lateness percentiles** use deadline-carrying items admitted in the measured window as the population; low-budget cells that complete fewer than 2000 items in 600 frames emit `insufficient_samples` at p99 rather than a fabricated figure.
+- **Lateness percentiles** are conditional on completion: the population is deadline-carrying items admitted in the measured window that reach `completed` (and survive settlement). Items that terminate otherwise or remain outstanding are **excluded**, not censored to infinity — they are captured by the deadline success rate, which counts them as misses; the two metrics are always published together so the survivorship restriction is visible. Cells that complete fewer than 2000 such items emit `insufficient_samples` at p99 rather than a fabricated figure.
 - **Repetition-level variability** is reported as the median of per-repetition medians with min/max across repetitions. Ten repetitions support a spread statement, not a confidence interval; no CI is claimed.
 
 During measured frames the driver performs no allocation, logging, or I/O: in-run samples land in preallocated ring buffers sized from the frame count and are flushed outside the timer.
@@ -541,7 +541,7 @@ Use a suite-specific schema rather than forcing a multi-frame queueing experimen
 }
 ```
 
-The top-level `flow` block and `summary` totals aggregate all classes; every multi-class cell also emits one `classes[]` entry per demand class, since a pooled deadline-success rate over classes whose allowances span 1 to 20+ ticks is not interpretable, and the mixed-colony capacity verdict keys off the interactive class specifically (section 9.2). Seeds are recorded in decimal in artifacts; prose may add the hex form. `frame_start_lag_ns_*` fields appear only for `pacing = paced`; `correctness_hash` is non-null only for contiguous references and fake-clock runs (section 11.2); `peak_rss_bytes` is sampled at repetition boundaries outside the timer, because a "flow-stable" verdict beside monotonically growing memory would be misleading.
+The example is **abridged**, not exhaustive: each percentile family (frame elapsed time, overshoot buckets, lateness, ages) emits p50/p95/p99/max variants plus a `sample_base` discriminator naming its population (section 11.4); flow snapshots are recorded at both window start and end; per-frame series and per-item records live in the sidecars. The top-level `flow` block and `summary` totals aggregate all classes; every multi-class cell also emits one `classes[]` entry per demand class, since a pooled deadline-success rate over classes whose allowances span 1 to 20+ ticks is not interpretable, and the mixed-colony capacity verdict keys off the interactive class specifically (section 9.2). Seeds are recorded in decimal in artifacts; prose may add the hex form. `frame_start_lag_ns_*` fields appear only for `pacing = paced`; `correctness_hash` is non-null only for contiguous references and fake-clock runs (section 11.2); `peak_rss_bytes` is sampled at repetition boundaries outside the timer, because a "flow-stable" verdict beside monotonically growing memory would be misleading.
 
 Additive fields may remain v1; semantic changes require v2. Raw frame/request samples — including per-frame overshoot attribution by operation class (section 3.4) and per-repetition boundaries — live in compressed sidecars keyed by the same run/cell/trace identity.
 
@@ -581,7 +581,8 @@ Required boundaries:
 18. a reclassification after settlement close does not alter the sealed verdict;
 19. paced mode records `frame_start_lag_ns` when a frame overruns its edge, and the next frame's allowance is unreduced; unpaced mode emits no measured per-wall-second rates;
 20. with multiple granted ticks, all ticks' mandatory work runs before any defer-capable quantum, and overshoot lands in the correct attribution bucket (`quantum_tail` versus `mandatory`);
-21. per-class summaries aggregate exactly to the cell totals for flow counts, useful completions, and starvation.
+21. per-class summaries aggregate exactly to the cell totals for flow counts, useful completions, and starvation;
+22. a frame granting zero ticks still receives the full frame allowance and may service defer-capable work; its completions are attributed to the last-granted tick.
 
 These tests belong in normal deterministic CI even though hardware timing curves do not.
 
@@ -601,7 +602,7 @@ Share workload support; separate execution, not definitions.
 
 ### 14.2 Controlled campaign artifacts first
 
-Initial real-time results should be **controlled campaign artifacts, not CI gates**. To be explicit about current repo policy: production benchmark families **are** gated in CI today with calibrated per-benchmark ceilings (`docs/performance.md`, `bench/thresholds/*.json`); only the paired sentinel run (shadow mode), `lab/` families, and controlled campaigns are non-gating. This suite therefore proposes a deliberate **exception** to that policy, not a continuation of it, justified on three grounds: a multi-frame queueing experiment has no single-number ceiling to calibrate; its results are wall-clock- and machine-dependent in ways the existing runner-specific ceilings do not model; and capacity search is far too expensive for per-PR execution. If the suite later yields a stable, cheap, single-cell smoke number, promoting that one number into the existing threshold machinery is a separate decision.
+Initial real-time results should be **controlled campaign artifacts, not CI gates**. To be explicit about current repo policy: production benchmark families **are** gated in CI today with calibrated per-benchmark ceilings (`docs/performance.md`, `bench/thresholds/*.json`) on the full-tier Linux runners; the paired sentinel run (shadow mode), counter-golden drift checks, `lab/` families, PR-tier and macOS jobs, and controlled campaigns are non-gating. This suite therefore proposes a deliberate **exception** to that policy, not a continuation of it, justified on three grounds: a multi-frame queueing experiment has no single-number ceiling to calibrate; its results are wall-clock- and machine-dependent in ways the existing runner-specific ceilings do not model; and capacity search is far too expensive for per-PR execution. If the suite later yields a stable, cheap, single-cell smoke number, promoting that one number into the existing threshold machinery is a separate decision.
 
 CI initially does only compile/smoke, fake-clock tests, schema validation, flow identities, small sliced-vs-contiguous correctness fixtures, and workload-catalog drift checks. No PR/main job fails because a hardware budget completed fewer operations than a timing threshold. The existing sentinel/threshold machinery is intentionally out of scope for this suite's artifacts.
 
@@ -627,7 +628,9 @@ Implement benchmark-only frame budget configuration, pacing modes, trace/flow/de
 
 Add `tess_bench_budgeted_progress`, canonical isolated cells, saturated/rate modes, and contiguous references.
 
-**Accept when:** each cell validates correctness before timing; each result maps to the workload/scenario catalog (including the two new cells added to the matrix, section 6.1); synchronous operations only stop between whole calls; real `ResumableWorkQueue` work resumes across frames; every declared sliceable operation passes equivalence; non-resumable operations remain explicit; measured timer/controller overhead is emitted and stays below 5% of the smallest canonical budget on the reference machine; timing and counter passes consume the identical demand trace and agree in distribution (section 11.2); no timing threshold gate is added.
+**Accept when:** each cell validates correctness before timing; each result maps to the workload/scenario catalog (including the two new cells added to the matrix, section 6.1); synchronous operations only stop between whole calls; real `ResumableWorkQueue` work resumes across frames; every declared sliceable operation passes equivalence; non-resumable operations remain explicit; controller overhead is bounded and reported with the measurand named: the **empty controller-loop cost per frame** (section 11.1 calibration: service selection plus one clock read, no Tess work) stays below 5% of the smallest canonical budget on the reference machine, while the **aggregate clock-read share** under load is emitted per cell but not bounded — for `AsyncWorkBudget{1}` cells section 4 accepts it as material, and open decision 9 is the remedy if it dominates; timing and counter passes consume the identical demand trace and agree in distribution within the section 11.2 tolerances; no timing threshold gate is added.
+
+The two new colony-derived cells (section 6.1 items 5-6) depend on colony-support extraction that stage 3 otherwise owns; full stage 2 pulls that extraction forward for those two cells only, and the first implementation iteration avoids the dependency entirely by starting with cells 1, 4, and 7.
 
 ### Stage 3 — 60 Hz mixed colony
 
