@@ -20,6 +20,18 @@ and their rationale are recorded separately in
   The directory was excluded as nanosecond-scale, which is true of its
   queued and scheduler families but not of the pool executor it also owns,
   whose benchmarks run at millisecond scale.
+- The gated benchmark family list has one home. It was maintained by hand
+  in the workflow, in CMake, in the contributor guide, and in a test that
+  covered five of eighteen families, so a new family could ship a manifest
+  and a target and still never gate. CMake now derives the set from the
+  threshold targets it defines.
+- The advisory clang-tidy profile pins its major version, matching the
+  required gate. It installed the unversioned package, so the runner image
+  decided which analyser ran and no pull request would have noticed a
+  change.
+- Every continuous-integration job declares a timeout. They inherited the
+  360-minute default, which a hung job would spend at up to ten times the
+  base billing rate on the macOS runners.
 
 ## [0.12.0] - 2026-08-05
 

@@ -205,12 +205,14 @@ CI runs primarily on `ubuntu-24.04` with Clang and covers:
   GCC
 - Benchmark build and smoke tests: preset `bench`
 - Benchmark threshold gates, one per suite (CPU time except parallel wall
-  time):
-  `cmake --build --preset bench --target tess_bench_<suite>_thresholds`
-  for `key`, `storage`, `block`, `block_pipeline`, `queued`, `path`,
-  `topology`, `scheduler`, `residency`, `maintenance`, `persistence`,
-  `query`, `spatial`, `parallel`, `ecs`, `render_delta`, `fields`, and
-  `diagnostics`
+  time). Run one suite with
+  `cmake --build --preset bench --target tess_bench_<suite>_thresholds`,
+  or every suite the way CI does:
+  `cmake --build --preset bench --parallel 1 --target
+  tess_bench_all_thresholds`. The gated set is derived in
+  `bench/CMakeLists.txt` from the threshold targets defined there, so a
+  new suite gates itself and no list needs updating here. `--parallel 1`
+  is load-bearing: these are timing gates and must not run concurrently
 - Non-gating CI benchmark baseline collection:
   `cmake --build --preset bench --target tess_bench_ci_baselines`
 

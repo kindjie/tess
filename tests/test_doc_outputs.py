@@ -177,3 +177,28 @@ def test_parse_mappings_reads_source_binary_pairs():
 def test_parse_mappings_rejects_malformed_pair():
   with pytest.raises(ValueError, match="expected source=binary mapping"):
     cdo.parse_mappings(["examples/quickstart.cc"])
+
+
+def test_ci_output_doc_list_matches_the_documents_that_have_output_blocks():
+  """The classifier's list must track the scanner's actual findings.
+
+  `ci_changes.EXECUTABLE_OUTPUT_DOCS` decides which documents are
+  code-like enough to run the `dev` job, and `check_doc_outputs.py` —
+  which only runs inside that job — decides which documents actually
+  carry output blocks. The two were maintained by hand against different
+  scopes: the scanner reads `CONTRIBUTING.md` and all of `docs/**`, the
+  classifier knew three files. Adding a `tess-output` block to any other
+  page would classify it documentation-only, skip `dev`, and never check
+  the block against the compiled binary.
+  """
+  sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+  import ci_changes
+
+  root = Path(__file__).resolve().parents[1]
+  blocks, failures = cdo.collect_output_blocks(root)
+
+  assert failures == []
+  assert blocks, "no output blocks found; the comparison would be vacuous"
+  documented = {block.document for block in blocks}
+
+  assert documented == set(ci_changes.EXECUTABLE_OUTPUT_DOCS)

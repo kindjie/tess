@@ -390,30 +390,56 @@ def test_literal_gated_benchmarks_have_threshold_entries():
   assert not uncovered, sorted(uncovered)
 
 
-def test_new_threshold_families_are_gated_and_collected_in_ci():
+def test_every_threshold_manifest_has_a_gate_target():
+  """No manifest may exist without a target that runs it.
+
+  Previously this checked five hardcoded families, so a sixth could ship
+  a manifest and a target and be gated nowhere. The manifests on disk are
+  the authority now.
+  """
+  root = Path(__file__).resolve().parents[1]
+  cmake = (root / "bench" / "CMakeLists.txt").read_text(encoding="utf-8")
+  # bench/thresholds/<stem>.json <-> tess_bench_<family>_thresholds, with
+  # hyphenated stems mapping to underscored target names.
+  manifests = sorted(
+    path.stem for path in (root / "bench" / "thresholds").glob("*.json")
+  )
+
+  assert manifests, "no threshold manifests found; the check is vacuous"
+  missing = []
+  for stem in manifests:
+    family = "key" if stem == "key-conversions" else stem.replace("-", "_")
+    if f"tess_bench_{family}_thresholds" not in cmake:
+      missing.append(stem)
+
+  assert missing == []
+
+
+def test_ci_gates_thresholds_through_the_derived_aggregate():
+  """CI must not re-list the families it gates.
+
+  A hand-maintained loop in the workflow let a new family ship a
+  manifest and a target and still never gate, with every test green.
+  The aggregate target derives the set from the targets CMake defines.
+  """
   root = Path(__file__).resolve().parents[1]
   cmake = (root / "bench" / "CMakeLists.txt").read_text(encoding="utf-8")
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text(
     encoding="utf-8"
   )
-  families = {
-    "block_pipeline": ("block-pipeline", "block_pipeline"),
-    "maintenance": ("maintenance", "maintenance"),
-    "persistence": ("persistence", "persistence"),
-    "query": ("query", "query"),
-    "spatial": ("spatial", "spatial"),
-  }
+
+  assert "BUILDSYSTEM_TARGETS" in cmake
+  assert "add_custom_target(\n    tess_bench_all_thresholds" in cmake
 
   threshold_step = workflow.split("      - name: Benchmark thresholds\n", 1)
   assert len(threshold_step) == 2
-  family_loop = threshold_step[1].split("      - name:", 1)[0]
+  step = threshold_step[1].split("      - name:", 1)[0]
 
-  for target_suffix, (file_stem, benchmark_prefix) in families.items():
-    target = f"tess_bench_{target_suffix}_thresholds"
-    assert target in cmake
-    assert re.search(rf"\b{target_suffix}\b", family_loop)
-    assert cmake.count(f"--benchmark_filter={benchmark_prefix}/.*") == 2
-    assert f"ci-baselines/{file_stem}.json" in cmake
+  assert "--target tess_bench_all_thresholds" in step
+  # Timing gates must not run concurrently with one another.
+  assert "--parallel 1" in step
+  # The old shape: a `for family in ...` loop enumerating the set here.
+  assert "for family in" not in step
 
 
 def test_literal_benchmark_names_accept_multiline_adjacent_literals():
