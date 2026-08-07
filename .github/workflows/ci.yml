@@ -240,16 +240,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # cache_fallback names a sibling namespace built by the SAME
+        # compiler. ccache keys on compiler identity, so a mismatched
+        # fallback cannot produce a single hit — it would only download a
+        # large irrelevant cache and re-save it. The quality job is Clang
+        # throughout, so only the Clang cell may borrow from it; the GCC
+        # cell borrows from the gcc job, which builds this same preset.
         include:
           - name: Clang ASan UBSan
             cc: clang
             cxx: clang++
             preset: dev-asan
+            cache_fallback: ccache-dev-asan--
             exclude_test: 'Legacy.*CapacityFailureAborts'
           - name: GCC Werror
             cc: gcc
             cxx: g++
             preset: dev-werror
+            cache_fallback: ccache-gcc--
             exclude_test: '^$'
     env:
       CC: ${{ matrix.cc }}
@@ -268,14 +276,14 @@ jobs:
         with:
           path: .ccache
           key: ccache-noexceptions-${{ matrix.preset }}--${{ github.sha }}
-          # Falls back to the quality job's cache for the same preset.
-          # This job adds exception-free targets but does not change the
-          # flags of the objects it shares with that preset, and ccache
-          # keys on flags, so a stale hit is not possible — only a warm
-          # start that avoids a second copy of the same objects.
+          # Falls back to a sibling namespace built by the same compiler
+          # (see the matrix note). This job adds exception-free targets but
+          # does not change the flags of the objects it shares, and ccache
+          # keys on both flags and compiler, so a stale hit is impossible —
+          # only a warm start that avoids a second copy of the same objects.
           restore-keys: |
             ccache-noexceptions-${{ matrix.preset }}--
-            ccache-${{ matrix.preset }}--
+            ${{ matrix.cache_fallback }}
 
       - name: Show tool versions
         run: |

@@ -1625,6 +1625,10 @@ def _ccache_namespaces() -> dict[str, list[str]]:
         namespace = line[len("restore-keys: ") :]
       elif line.startswith("ccache-"):
         namespace = line  # entry in a block-style restore-keys list
+      elif line.startswith("cache_fallback: ccache-"):
+        # A matrix-supplied fallback namespace. It reaches restore-keys
+        # through an expression, so it would otherwise be invisible here.
+        namespace = line[len("cache_fallback: ") :]
       else:
         continue
       # A matrix key is a template. Expand it over every configure preset
@@ -1751,3 +1755,31 @@ def test_every_workflow_job_declares_a_timeout():
         missing.append(f"{path.name}:{name}")
 
   assert missing == []
+
+
+def test_cache_fallbacks_are_compiler_matched():
+  """A fallback from a different compiler cannot hit.
+
+  ccache keys on compiler identity, so borrowing the Clang `quality`
+  cache for the GCC exception-free cell would download a large
+  irrelevant cache and re-save it -- strictly worse than no fallback.
+  Each cell's fallback must name a namespace built by its own compiler.
+  """
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  block = workflow.split("  no-exceptions:\n", 1)[1].split("\n    env:", 1)[0]
+
+  cells = re.findall(
+    r"- name: [^\n]*\n\s+cc: (\S+)\n(?:\s+\S+: [^\n]*\n)*?"
+    r"\s+cache_fallback: (\S+)",
+    block,
+  )
+
+  assert len(cells) == 2, cells
+  # ccache-gcc-- is written by the gcc job (CC=gcc); every other namespace
+  # in this workflow is written by a Clang job.
+  for compiler, fallback in cells:
+    if compiler == "gcc":
+      assert fallback == "ccache-gcc--", (compiler, fallback)
+    else:
+      assert fallback != "ccache-gcc--", (compiler, fallback)
