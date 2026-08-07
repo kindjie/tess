@@ -32,7 +32,11 @@ and their rationale are recorded separately in
 - A Conan recipe and a vcpkg checkout overlay alongside the existing
   `FetchContent` and installed-package paths. See
   [packaging](docs/packaging.md).
-- Per-tick diagnostics attribution for queued execution.
+- Per-tick timing and allocation attribution. Diagnostics-enabled schedules
+  time the complete tick and each executed task under its static label,
+  duration records carry inclusive allocation and deallocation byte deltas,
+  and snapshots retain the newest trace records with a dropped count.
+  Diagnostics-off builds retain no timer or attribution code.
 - A resolved transition model shared by exact paths, reverse fields,
   multi-goal products, topology, caches, path agents, and movement commit,
   including clearance-preserving diagonal steps, axial-hex adjacency, and
@@ -101,7 +105,9 @@ and their rationale are recorded separately in
   per-neighbor loop.
 - Fully covered sparse worlds bypass residency hashing on the storage read
   path.
-- Field-product dependency capture regained its pre-regression cost.
+- Default orthogonal distance-field products capture dependencies at
+  chunk-frontier level again instead of enumerating exact transitions per
+  reached tile, undoing a v0.12 build/store regression.
 - The serial-versus-pool dispatch crossover is measured and published rather
   than estimated; the pool's dispatcher no longer shares a CPU with a worker.
 
