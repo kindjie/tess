@@ -37,6 +37,7 @@ jobs:
   changes:
     name: Classify Changes
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       code_required: ${{ steps.classify.outputs.code_required }}
       tsan_required: ${{ steps.classify.outputs.tsan_required }}
@@ -69,6 +70,7 @@ jobs:
     if: ${{ needs.changes.outputs.code_required == 'true' }}
     name: Dev Build And Tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     env:
       CC: clang
       CXX: clang++
@@ -191,6 +193,7 @@ jobs:
     if: ${{ needs.changes.outputs.code_required == 'true' }}
     name: GCC Compile
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     env:
       CC: gcc
       CXX: g++
@@ -233,6 +236,7 @@ jobs:
     if: ${{ needs.changes.outputs.code_required == 'true' }}
     name: Exception-Free (${{ matrix.name }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -264,7 +268,14 @@ jobs:
         with:
           path: .ccache
           key: ccache-noexceptions-${{ matrix.preset }}--${{ github.sha }}
-          restore-keys: ccache-noexceptions-${{ matrix.preset }}--
+          # Falls back to the quality job's cache for the same preset.
+          # This job adds exception-free targets but does not change the
+          # flags of the objects it shares with that preset, and ccache
+          # keys on flags, so a stale hit is not possible — only a warm
+          # start that avoids a second copy of the same objects.
+          restore-keys: |
+            ccache-noexceptions-${{ matrix.preset }}--
+            ccache-${{ matrix.preset }}--
 
       - name: Show tool versions
         run: |
@@ -342,6 +353,7 @@ jobs:
   hooks-backstop:
     name: Hook Backstop Checks
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -428,6 +440,7 @@ jobs:
     if: ${{ needs.changes.outputs.code_required == 'true' }}
     name: Quality Gates (${{ matrix.preset }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -541,6 +554,7 @@ jobs:
           needs.changes.outputs.code_required == 'true' }}
     name: Diff Clang-Tidy
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     env:
       CC: clang
       CXX: clang++
@@ -587,6 +601,7 @@ jobs:
           needs.changes.outputs.code_required == 'true' }}
     name: macOS Build And Tests (${{ matrix.preset }})
     runs-on: macos-15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -656,6 +671,7 @@ jobs:
     # Required gate; the windows-msvc preset treats project warnings as errors.
     name: Windows MSVC
     runs-on: windows-2025
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -716,6 +732,7 @@ jobs:
     if: ${{ needs.changes.outputs.code_required == 'true' }}
     name: Exception-Free (MSVC)
     runs-on: windows-2025
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -782,6 +799,7 @@ jobs:
     if: ${{ needs.changes.outputs.code_required == 'true' }}
     name: Benchmark Gates
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     env:
       CC: clang
       CXX: clang++
@@ -863,17 +881,16 @@ jobs:
               >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # The gated family list lives in bench/CMakeLists.txt, which derives
+      # it from the threshold targets it actually defines. Hand-maintaining
+      # it here meant a new family could ship a manifest and a target and
+      # still never gate, with every test passing. --parallel 1 is
+      # load-bearing: these are timing gates and must not run concurrently.
       - name: Benchmark thresholds
         if: github.event_name != 'pull_request'
-        run: |
-          for family in key storage block block_pipeline queued path \
-              topology scheduler residency maintenance persistence query \
-              spatial parallel ecs render_delta fields diagnostics; do
-            echo "::group::${family}"
-            cmake --build --preset bench \
-              --target "tess_bench_${family}_thresholds"
-            echo "::endgroup::"
-          done
+        run: >-
+          cmake --build --preset bench --parallel 1
+          --target tess_bench_all_thresholds
 
       - name: Collect non-gating benchmark baselines
         if: >-
@@ -1015,6 +1032,7 @@ jobs:
       - windows-noexceptions
       - bench
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Require successful CI jobs
         env:
@@ -1543,6 +1561,7 @@ jobs:
       contents: read
       issues: write
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: File or update the ci-failure issue
         env:

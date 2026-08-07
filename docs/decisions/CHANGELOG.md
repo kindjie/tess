@@ -8,6 +8,40 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-07 - Gate lists derive from the tree, not from hand-kept copies
+
+- Changed: `bench/CMakeLists.txt` derives the gated family set from its own
+  `BUILDSYSTEM_TARGETS` and exposes `tess_bench_all_thresholds`; the
+  workflow builds that one target. The eighteen family names previously
+  lived in a workflow loop, in CMake, in `CONTRIBUTING.md`, and in a test
+  that checked five of them, so a nineteenth family could ship a manifest
+  and a target and gate nowhere with every test green. The aggregate is
+  built with `--parallel 1`: dependency edges do not order custom targets,
+  and timing gates must not run concurrently with one another.
+- Changed: the gate-integrity test enumerates the workflow's job keys
+  instead of restating them. `CI Gate` is one of two required checks, so a
+  job added later was non-blocking by default and nothing said so. Jobs
+  must now be gated or listed in an explicit advisory waiver carrying a
+  reason, which also records why each advisory job is advisory.
+- Changed: the advisory clang-tidy profile pins `clang-tidy-18` through
+  `TESS_CLANG_TIDY_EXE`, the same mechanism the required gate uses. It
+  installed the unversioned package, so its meaning tracked the runner
+  image; being schedule-only, no pull request would have surfaced a drift.
+- Added: a test tying `ci_changes.EXECUTABLE_OUTPUT_DOCS` to the documents
+  `check_doc_outputs.py` actually finds output blocks in. The two were
+  hand-maintained against different scopes — the scanner reads
+  `CONTRIBUTING.md` and all of `docs/**`, the classifier knew three files —
+  so an output block added anywhere else would classify its page as
+  documentation-only, skip the `dev` job, and never be checked against the
+  compiled binary.
+- Added: `timeout-minutes` on every job, at roughly two to three times the
+  measured median. The 360-minute default is charged at the runner's
+  multiplier, which is two on Windows and ten on macOS.
+- Changed: the exception-free job falls back to the matching quality
+  preset's cache. It compiled a second copy of objects the sibling job
+  already had; ccache keys on flags, so the fallback cannot yield a stale
+  hit.
+
 ## 2026-08-07 - Benchmark and cache gates measure what they claim
 
 - Fixed: every ccache namespace is terminated with `--`. GitHub restore

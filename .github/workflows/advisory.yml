@@ -32,10 +32,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # Pinned to the same major as ci.yml's required gate. Installing the
+      # unversioned package let the runner image decide which clang-tidy
+      # ran, so this profile could change meaning without a commit — and
+      # being schedule-only, nothing would have flagged it.
       - name: Install analysis tools
         run: |
           sudo apt-get update || true
-          sudo apt-get install -y ccache clang-tidy
+          sudo apt-get install -y ccache clang-tidy-18
 
       - name: Restore compiler cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -48,11 +52,13 @@ jobs:
         run: |
           cmake --version
           clang++ --version
-          clang-tidy --version
+          clang-tidy-18 --version
           ccache --version
 
       - name: Configure
-        run: cmake --preset dev-clang-tidy-advisory
+        run: >-
+          cmake --preset dev-clang-tidy-advisory
+          -DTESS_CLANG_TIDY_EXE=clang-tidy-18
 
       - name: Build
         run: cmake --build --preset dev-clang-tidy-advisory

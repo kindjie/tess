@@ -470,6 +470,61 @@ def test_ci_gate_aggregates_every_required_ci_job():
     assert f"      - {job_id}\n" in report_failure
 
 
+# Jobs deliberately outside the merge gate, each with the reason it is
+# advisory. `CI Gate` is one of only two required checks, so a job absent
+# from both this waiver and the gate's `needs` is non-blocking by
+# accident — which the previous hardcoded job tuple could not detect.
+ADVISORY_CI_JOBS = {
+  "ci-gate": "the gate itself",
+  "paired-bench": "shadow mode; the section 4.3 promotion criteria are unmet",
+  "change-point": "post-merge drift detection on main, not a pull-request gate",
+  "publish-benchmark-history": "publishes baselines after a main push",
+  "long-seed-properties": "scheduled deep sweep, far longer than a gate allows",
+  "coverage": "weekly advisory gap-finder, not a threshold",
+  "report-failure": "reports other jobs' failures; gating on it is circular",
+}
+
+
+def test_every_ci_job_is_gated_or_explicitly_waived():
+  """Derives the job set from the workflow instead of restating it.
+
+  The gate-integrity check used to assert against a hardcoded tuple, so
+  any job added later was non-blocking by default and no test said so.
+  """
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  body = workflow.split("\njobs:\n", 1)[1]
+  jobs = re.findall(r"^  ([a-z0-9][a-z0-9_-]*):$", body, flags=re.M)
+
+  assert len(jobs) >= 15, jobs
+  ci_gate = workflow.split("  ci-gate:\n", 1)[1]
+  gated = set()
+  for line in ci_gate.split("    needs:\n", 1)[1].split("\n"):
+    entry = re.match(r"^      - ([a-z0-9][a-z0-9_-]*)$", line)
+    if not entry:
+      break  # first line that is not a needs item ends the block
+    gated.add(entry.group(1))
+
+  ungoverned = [
+    job for job in jobs if job not in gated and job not in ADVISORY_CI_JOBS
+  ]
+  assert ungoverned == [], (
+    f"jobs neither gated nor waived: {ungoverned}. Add them to ci-gate's "
+    "needs with a result check, or to ADVISORY_CI_JOBS with a reason."
+  )
+
+  # A waiver must not silently cover a job that is in fact gated.
+  contradictory = [job for job in gated if job in ADVISORY_CI_JOBS]
+  assert contradictory == []
+
+  for job in gated:
+    assert f'test "${{{{ needs.{job}.result }}}}" = success' in ci_gate
+    assert job in jobs, f"ci-gate needs {job}, which is not a job"
+
+  for reason in ADVISORY_CI_JOBS.values():
+    assert reason.strip()
+
+
 def test_documentation_only_changes_skip_expensive_ci_fail_closed():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
@@ -648,6 +703,14 @@ def test_required_clang_tidy_uses_an_explicit_major_version():
   assert "sudo apt-get install -y ccache clang-tidy-18" in tidy_diff
   assert "clang-tidy-18 --version" in tidy_diff
   assert "--clang-tidy clang-tidy-18" in tidy_diff
+
+  # The advisory profile is schedule-only, so an unpinned install there
+  # changes meaning with the runner image and no pull request would flag
+  # it. It ran `apt-get install -y ccache clang-tidy` until 2026-08-07.
+  advisory = (root / ".github" / "workflows" / "advisory.yml").read_text()
+  assert "sudo apt-get install -y ccache clang-tidy-18" in advisory
+  assert "clang-tidy-18 --version" in advisory
+  assert "-DTESS_CLANG_TIDY_EXE=clang-tidy-18" in advisory
 
 
 def test_non_gating_benchmark_baselines_run_only_on_main():

@@ -601,6 +601,39 @@ if(Python3_Interpreter_FOUND)
     COMMENT "Running diagnostics benchmark threshold checks"
     VERBATIM
   )
+
+  # One home for the gated family list. CI used to loop over eighteen
+  # hand-written family names, so a new family with a manifest and a
+  # target but no workflow edit simply never gated, and every test still
+  # passed. Deriving the set from the targets actually defined here means
+  # a new family joins the gate by existing.
+  #
+  # BUILDSYSTEM_TARGETS is read after every threshold target is declared;
+  # it does not see targets added later in this file.
+  get_property(tess_directory_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+  set(tess_threshold_targets)
+  foreach(tess_candidate_target IN LISTS tess_directory_targets)
+    if(tess_candidate_target MATCHES "^tess_bench_.+_thresholds$")
+      list(APPEND tess_threshold_targets ${tess_candidate_target})
+    endif()
+  endforeach()
+
+  if(NOT tess_threshold_targets)
+    message(
+      FATAL_ERROR
+      "No tess_bench_*_thresholds targets were discovered. The aggregate "
+      "gate would silently check nothing."
+    )
+  endif()
+
+  # Timing gates must not run concurrently with each other. Callers build
+  # this target with --parallel 1; the dependency edges alone do not
+  # constrain ordering.
+  add_custom_target(
+    tess_bench_all_thresholds
+    COMMENT "Running every benchmark threshold gate"
+  )
+  add_dependencies(tess_bench_all_thresholds ${tess_threshold_targets})
 endif()
 
 set(TESS_ECS_BASELINE_COMMAND)
