@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "affected_subsystems": {
     "block": [
       "TessNoExceptions.AggregateHeaderRunsStorageAndBlockOperations",
@@ -32,6 +32,15 @@
     "topology": [
       "TessNoExceptions.PathfindingAndTopologyRunThroughAggregateHeaders"
     ]
+  },
+  "unaffected_subsystems": {
+    "debug": "Optional Dear ImGui inspection helpers; exception-free coverage is the tess_no_exceptions_cell_imgui macro cell plus the consumer contract.",
+    "diagnostics": "Header-only counters and trace scopes; exception-free coverage is the tess_no_exceptions_cell_diagnostics macro cell plus the consumer contract.",
+    "ecs": "Optional EnTT and Flecs adapters; exception-free coverage is the tess_no_exceptions_cell_entt and tess_no_exceptions_cell_flecs macro cells plus the consumer contract.",
+    "gpu": "Optional WebGPU transport behind a stable C API; exception-free coverage is the tess_no_exceptions_cell_webgpu macro cell plus the consumer contract.",
+    "persistence": "No exception-free code change; compile and link coverage comes from the exception-free consumer-contract binary.",
+    "query": "No exception-free code change; compile and link coverage comes from the exception-free consumer-contract binary.",
+    "spatial": "No exception-free code change; compile and link coverage comes from the exception-free consumer-contract binary."
   },
   "enabled_counterparts": {
     "block": [

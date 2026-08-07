@@ -228,7 +228,10 @@ class WeightedPortalSegmentCache {
       stale_rejections_ += pending_stale_rejections;
       return PortalSegmentStoreStatus::Completed;
     }
-    if (store_capacity_status(world, result.path.size()) !=
+    // Reject what is decidable in constant time before capturing
+    // dependencies, so a store that cannot possibly fit still reports a status
+    // instead of allocating on its way to one.
+    if (store_capacity_precheck(result.path.size()) !=
         PortalSegmentStoreStatus::Completed) {
       return PortalSegmentStoreStatus::CapacityExceeded;
     }
@@ -390,45 +393,35 @@ class WeightedPortalSegmentCache {
     return PortalSegmentStoreStatus::Completed;
   }
 
-  template <typename World>
-  [[nodiscard]] auto store_capacity_status(const World& world,
-                                           std::size_t path_nodes) const
+  // Constant-time capacity rejection, run before the per-entry dependency
+  // capture allocates. Below budget this is the exact bound
+  // reserve_append_capacity_checked will apply, so nothing is lost. At budget
+  // the exact bound depends on how many entries survive compaction, which
+  // costs a full dependency-validity sweep; compact_checked already performs
+  // that sweep, so this only rejects what holds for every possible kept set
+  // and leaves compact_checked as the authority. Deliberately conservative:
+  // never reject a store that compact_checked would have accepted.
+  [[nodiscard]] auto store_capacity_precheck(std::size_t path_nodes) const
       -> PortalSegmentStoreStatus {
-    const auto entry_limit =
-        detail::effective_capacity_limit(entries_.max_size());
-    const auto path_limit = detail::effective_capacity_limit(paths_.max_size());
-    const auto compact_entry_limit =
-        detail::effective_capacity_limit(compact_entries_.max_size());
-    const auto compact_index_limit =
-        detail::effective_capacity_limit(compact_indices_.max_size());
-    const auto compact_path_limit =
-        detail::effective_capacity_limit(compact_paths_.max_size());
     if (entries_.size() < budget_) {
+      const auto entry_limit =
+          detail::effective_capacity_limit(entries_.max_size());
+      const auto path_limit =
+          detail::effective_capacity_limit(paths_.max_size());
       if (entries_.size() >= entry_limit || paths_.size() > path_limit ||
           path_nodes > path_limit - paths_.size()) {
         return PortalSegmentStoreStatus::CapacityExceeded;
       }
       return PortalSegmentStoreStatus::Completed;
     }
-
-    auto kept_entries = std::size_t{0};
-    auto kept_path_nodes = std::size_t{0};
-    for (const auto& entry : entries_) {
-      if (!entry.dependencies.is_valid(world)) {
-        continue;
-      }
-      if (kept_entries >= compact_entry_limit ||
-          kept_entries >= compact_index_limit ||
-          kept_path_nodes > compact_path_limit ||
-          entry.path_size > compact_path_limit - kept_path_nodes) {
-        return PortalSegmentStoreStatus::CapacityExceeded;
-      }
-      ++kept_entries;
-      kept_path_nodes += entry.path_size;
-    }
-    if (kept_entries >= compact_entry_limit ||
-        kept_path_nodes > compact_path_limit ||
-        path_nodes > compact_path_limit - kept_path_nodes) {
+    const auto compact_entry_limit =
+        detail::effective_capacity_limit(compact_entries_.max_size());
+    const auto compact_path_limit =
+        detail::effective_capacity_limit(compact_paths_.max_size());
+    // A zero entry ceiling leaves no room for the one appended entry whatever
+    // survives, and a path longer than the whole compaction arena cannot fit
+    // beside any kept set.
+    if (compact_entry_limit == 0 || path_nodes > compact_path_limit) {
       return PortalSegmentStoreStatus::CapacityExceeded;
     }
     return PortalSegmentStoreStatus::Completed;

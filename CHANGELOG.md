@@ -13,6 +13,30 @@ and their rationale are recorded separately in
 
 ### Added
 
+- Exception-free consumer builds. Clang-family and GCC consumers may compile
+  every public header, aggregate, and example with `-fno-exceptions`, and
+  native MSVC consumers with `/EHs-c-` and `_HAS_EXCEPTIONS=0`. The installed
+  `tess::tess` target stays neutral; `TESS_HAS_EXCEPTIONS` and
+  `tess::has_exceptions` report the compiler mode and cannot be overridden.
+  Every translation unit in a program must use the same mode. See
+  [exception-free builds](docs/architecture/no-exceptions.md).
+- Non-throwing capacity entry points for exception-free callers:
+  `BlockScratch::reserve_bytes_checked`,
+  `WeightedPortalSegmentCache::reserve_segments_checked`,
+  `reserve_path_nodes_checked`, and `ClassView::store_checked`, reporting
+  through `ReserveStatus` and `PortalSegmentStoreStatus`.
+- Explicit no-throw execution aliases `NoThrowWorkerPoolPhaseExecutor` and
+  `NoThrowScopedThreadPhaseExecutor`, plus the `ScheduleNoThrowTaskFn` erased
+  signature, so an explicitly `noexcept` callback keeps that property through
+  the queued, result-channel, schedule, and auto-exec adapters.
+- A Conan recipe and a vcpkg checkout overlay alongside the existing
+  `FetchContent` and installed-package paths. See
+  [packaging](docs/packaging.md).
+- Per-tick timing and allocation attribution. Diagnostics-enabled schedules
+  time the complete tick and each executed task under its static label,
+  duration records carry inclusive allocation and deallocation byte deltas,
+  and snapshots retain the newest trace records with a dropped count.
+  Diagnostics-off builds retain no timer or attribution code.
 - A resolved transition model shared by exact paths, reverse fields,
   multi-goal products, topology, caches, path agents, and movement commit,
   including clearance-preserving diagonal steps, axial-hex adjacency, and
@@ -37,6 +61,17 @@ and their rationale are recorded separately in
 
 - Path results now report their fixed-point cost scale; provider type and
   revision participate in persistent path-product and cache identity.
+- **Behavior change:** `collect_planned_dirty` and both partition-collecting
+  `merge_planned_dirty` overloads no longer throw `std::length_error` on a
+  record-count overflow. They now return the new
+  `PlannedDirtyCollectStatus::CapacityExceeded` and
+  `PlannedDirtyMergeStatus::CapacityExceeded` values instead, in
+  exception-enabled builds as well as exception-free ones. Callers that
+  relied on the exception must check the returned status; exhaustive
+  `switch` statements over either enum need the new value. `AutoExecTask`
+  absorbs the status internally and still publishes every started
+  callback's dirty metadata through its allocation-free fallback merge, so
+  its observable result is unchanged.
 - The consolidated public surface is versioned and released as `v0.12.0`.
 
 ### Fixed
@@ -68,6 +103,13 @@ and their rationale are recorded separately in
 - Indexed axis-neighbor iteration remains inline in hot reconstruction loops,
   and bounded weighted floods hoist per-node bucket work out of their
   per-neighbor loop.
+- Fully covered sparse worlds bypass residency hashing on the storage read
+  path.
+- Default orthogonal distance-field products capture dependencies at
+  chunk-frontier level again instead of enumerating exact transitions per
+  reached tile, undoing a v0.12 build/store regression.
+- The serial-versus-pool dispatch crossover is measured and published rather
+  than estimated; the pool's dispatcher no longer shares a CPU with a worker.
 
 ## [0.4.0] - 2026-07-20
 
