@@ -289,6 +289,17 @@ struct BridgeTransitions {
   }
 };
 
+// Violates the documented ownership contract: enumerated for any chunk, it
+// emits a transition whose SOURCE lives in the south-west chunk. The
+// incremental erase keys removal on `portal.from.chunk`, so such a portal is
+// never removed while every update touching its chunk appends it again.
+struct MisownedTransitions {
+  template <typename WorldT, typename Sink>
+  void for_each_transition(const WorldT&, tess::ChunkKey, Sink&& sink) const {
+    sink(tess::Coord3{1, 4, 0}, tess::Coord3{3, 4, 0});
+  }
+};
+
 struct RevisionedBridgeTransitions {
   bool enabled = false;
   std::uint64_t revision = 0;
@@ -424,6 +435,38 @@ TEST(TessTopologyMovement, ProviderIncrementalUpdateEqualsFullRebuild) {
   tess::RegionGraph reference;
   tess::build_region_graph<World, Walker>(world, scratch, reference,
                                           BridgeTransitions{});
+  expect_graphs_equal(graph, reference);
+}
+
+// A provider that ignores the chunk it was asked about must not be able to
+// grow the portal set without bound, and incremental output must still match
+// a full rebuild. Enforced rather than asserted: an assertion would leave the
+// divergence live in exactly the builds where assertions are compiled out.
+TEST(TessTopologyMovement, MisownedProviderTransitionsNeverAccumulate) {
+  World world;
+  fill_passable(world, 1);
+  tess::LocalTopologyScratch scratch;
+  tess::RegionGraph graph;
+  tess::build_region_graph<World, Walker>(world, scratch, graph,
+                                          MisownedTransitions{});
+  const auto after_build = graph.portals().size();
+
+  // Update every chunk repeatedly. Each pass enumerates the bad provider for
+  // chunks that do not own the emitted source.
+  for (int pass = 0; pass < 5; ++pass) {
+    for (std::uint64_t key = 0; key < World::chunk_count; ++key) {
+      const auto dirty = std::vector<tess::ChunkKey>{tess::ChunkKey{key}};
+      const auto updated = tess::update_region_graph<World, Walker>(
+          world, scratch, graph, dirty, MisownedTransitions{});
+      ASSERT_EQ(updated.status, tess::TopologyStatus::Built);
+    }
+  }
+
+  EXPECT_EQ(graph.portals().size(), after_build);
+
+  tess::RegionGraph reference;
+  tess::build_region_graph<World, Walker>(world, scratch, reference,
+                                          MisownedTransitions{});
   expect_graphs_equal(graph, reference);
 }
 

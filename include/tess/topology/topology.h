@@ -1041,9 +1041,21 @@ void append_provider_portals(const World& world,
                              std::vector<RegionPortal>& portals) {
   provider.for_each_transition(
       world, topology.chunk(), [&](Coord3 from, Coord3 to) {
-        TESS_ASSERT(contains<Shape>(from));
-        TESS_ASSERT(chunk_key<Shape>(chunk_coord<Shape>(from)).value ==
-                    topology.chunk().value);
+        // Enforced, not asserted. The incremental erase keys removal on
+        // `portal.from.chunk`, so a portal whose source lies outside the
+        // enumerated chunk is never erased, while every update touching that
+        // chunk appends it again. A provider violating the documented
+        // ownership contract would therefore grow `portals_` without bound
+        // and make incremental output diverge from a full rebuild -- and
+        // only in builds with assertions compiled out, which is where it is
+        // hardest to notice. Dropping the transition keeps the graph
+        // well-formed in every build, and makes the behaviour testable
+        // rather than an abort.
+        if (!contains<Shape>(from) ||
+            chunk_key<Shape>(chunk_coord<Shape>(from)).value !=
+                topology.chunk().value) {
+          return;
+        }
         if (!contains<Shape>(to)) {
           return;
         }

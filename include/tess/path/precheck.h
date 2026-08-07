@@ -44,12 +44,26 @@ enum class PrecheckStatus : std::uint8_t {
 
 // Cheap pre-A* topology gate. Consults `graph` (built over `world`) for whether
 // `start` can reach `goal` through region connectivity, WITHOUT expanding the
-// grid. Staleness is resolved first and conservatively: an empty graph is
-// NoGraph and a graph that no longer matches the world is GraphStale -- both
-// BEFORE calling reachable(), because a stale graph can otherwise return a
-// definitive but wrong Unreachable from an outdated snapshot. `scratch` is
-// caller-owned and reused across queries (allocation-free once warm); it must
-// not be shared across concurrent queries.
+// grid. Detectable staleness is resolved first and conservatively: an empty
+// graph is NoGraph, and a graph whose recorded stamps no longer match the
+// world is GraphStale -- both BEFORE calling reachable(), because a stale
+// graph can otherwise return a definitive but wrong Unreachable from an
+// outdated snapshot. `scratch` is caller-owned and reused across queries
+// (allocation-free once warm); it must not be shared across concurrent
+// queries.
+//
+// STALENESS IS DETECTED, NOT INFERRED. The freshness check compares recorded
+// chunk topology versions, residency generations, the shape, and the class
+// and provider stamps. A raw field write bumps none of those: only
+// `mark_topology_dirty` and `mark_topology_rebuilt` advance
+// `topology_version`. So editing a field that a movement class or its
+// provider reads -- opening a wall, placing a stair -- leaves this reporting
+// a fresh graph, and a caller acting on `precheck_rules_out_path` skips a
+// search that would have succeeded. Mark the owning chunk topology-dirty
+// after such an edit; see `docs/architecture/topology.md`. The built-in
+// `StairTransitions` cannot compensate through provider stamps either: it is
+// an empty type, so its instance identity is always null and its revision
+// always zero.
 //
 // `ClassOrTag` (explicit first template argument; `World` stays deduced) is
 // the movement class the SEARCH uses -- a raw passable tag normalizes to its

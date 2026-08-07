@@ -166,6 +166,17 @@ enum class StairDirection : std::uint8_t {
 // two chunk boundaries at once -- sideways off the chunk's x/y edge AND up
 // off its top z layer -- contributes nothing; place the foot so the landing
 // stays within face-neighbor range.
+//
+// CALLER OBLIGATION: writing this field does NOT make a built region graph
+// stale. Freshness compares chunk topology versions, and only
+// `mark_topology_dirty`/`mark_topology_rebuilt` advance one -- a raw field
+// write bumps nothing. A graph built before the edit keeps reporting fresh,
+// so `precheck_path` can return a definitive, wrong `Unreachable` for a
+// route the new stair just opened. After editing any field a movement class
+// or provider reads, mark the owning chunk topology-dirty and rebuild. This
+// provider cannot detect the edit for you: it is an empty type, so its
+// instance identity is always null and its revision always zero, and both
+// stamps compare equal across any edit.
 /// Emits bidirectional stair transitions encoded by an integral world field.
 template <typename StairTag>
 struct StairTransitions {

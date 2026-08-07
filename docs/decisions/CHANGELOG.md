@@ -8,6 +8,43 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-07 - Graph freshness detects stamps, not field edits
+
+- Recorded: `precheck.h` claimed that "a graph that no longer matches the
+  world is GraphStale". Freshness compares recorded chunk topology
+  versions, residency generations, the shape, and the class and provider
+  stamps — and a raw field write advances none of them, since only
+  `mark_topology_dirty` and `mark_topology_rebuilt` move a topology
+  version. Editing a field a movement class or its provider reads leaves a
+  built graph reporting fresh, and the failure is not conservative:
+  `precheck_path` returns a definitive `Unreachable`,
+  `precheck_rules_out_path` is true, and `precheck_prepass` records
+  `NoPath` and marks the request processed, so the search never runs. The
+  built-in `StairTransitions` cannot compensate — it is an empty type, so
+  its instance identity is permanently null and its revision permanently
+  zero, and both stamps compare equal across any edit.
+- Decided: this stays a caller obligation rather than becoming automatic.
+  Bumping a topology version on every field write would put that cost on
+  the hot write path, and the explicit dirty set is already the contract
+  for incremental rebuilding. The obligation is now stated where an edit
+  is written (`StairTransitions`), where the answer is consumed
+  (`precheck_path`), and in the topology architecture note, instead of
+  being implied by a claim that overstated the check.
+- Changed: `append_provider_portals` drops a transition whose source lies
+  outside the enumerated chunk instead of only asserting it. Incremental
+  removal keys on `portal.from.chunk`, so such a portal was never erased
+  while every update touching that chunk appended it again — unbounded
+  growth and divergence from a full rebuild, live only where assertions
+  are compiled out. Measured on a release build with a deliberately
+  misowning provider: the portal set grew 35 to 36 over repeated updates
+  and stopped matching a full rebuild; with the drop it is stable. The
+  face-neighbor assertion is unchanged.
+- Changed: `for_each_dependency_chunk` rejects an out-of-world origin, as
+  the forward and reverse probes already did. `chunk_coord` casts a
+  negative component to unsigned, so the sink received an arbitrary key —
+  measured at 4611686018427387903 against a chunk count of 4 — which
+  `capture_field_product_dependencies` uses to index an unchecked array.
+  Latent, since the only in-tree caller passes in-world tiles.
 ## 2026-08-07 - Terminal agents are immovable under priority inheritance
 
 - Fixed: `start_deciding` refuses an agent with no goal or a phase of

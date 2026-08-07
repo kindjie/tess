@@ -401,3 +401,26 @@ paths instead of depending on speculative traits.
 This slice does not implement a dirty rebuild queue. The portal graph stores directed
 portals only; incremental updates require the caller to supply the dirty
 chunk set, and provider transitions must stay within face-neighbor range.
+
+### Field edits do not make a graph stale
+
+Freshness compares recorded chunk topology versions, residency generations,
+the shape, and the class and provider stamps. **A raw field write advances
+none of them** — only `mark_topology_dirty` and `mark_topology_rebuilt` move
+a chunk's `topology_version`. Editing a field that a movement class or its
+provider reads, such as opening a wall or placing a stair, therefore leaves
+a previously built graph reporting fresh.
+
+The consequence is not a stale-but-conservative answer. `precheck_path`
+returns a *definitive* `Unreachable`, `precheck_rules_out_path` is true, and
+the runtime's precheck pass records `NoPath` and skips the search — so a
+route the edit just opened is never found. Provider stamps cannot cover this
+in general: an empty provider such as `StairTransitions` has a null instance
+identity and a zero revision, and both compare equal across any edit.
+
+**After editing any field a movement class or provider reads, mark the
+owning chunk topology-dirty and rebuild** before relying on the graph. This
+is the same explicit-dirty-set contract as the rest of incremental
+rebuilding, and it is a caller obligation by design rather than an oversight:
+bumping a topology version on every field write would put that cost on the
+hot write path.
