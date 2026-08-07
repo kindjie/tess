@@ -228,14 +228,16 @@ class WeightedPortalSegmentCache {
       stale_rejections_ += pending_stale_rejections;
       return PortalSegmentStoreStatus::Completed;
     }
-    if (store_capacity_status(world, result.path.size()) !=
-        PortalSegmentStoreStatus::Completed) {
-      return PortalSegmentStoreStatus::CapacityExceeded;
-    }
-
+    // Both branches below validate capacity transactionally: each returns
+    // CapacityExceeded before touching live storage, so neither needs a
+    // separate validation pre-pass. An earlier pre-pass duplicated the
+    // compaction's dependency sweep on the at-budget path, which is the steady
+    // state for any budgeted cache (audit 2026-08-06).
+    //
     // Construct every potentially allocating per-entry dependency before
     // changing live cache storage. A failed capture therefore cannot publish a
-    // route with only a prefix of its invalidation dependencies.
+    // route with only a prefix of its invalidation dependencies. `entry` is a
+    // local, so abandoning it below costs work but strands no state.
     auto entry = Entry{};
     entry.request = request;
     entry.status = result.status;
@@ -387,50 +389,6 @@ class WeightedPortalSegmentCache {
     }
     entries_.reserve(entries_.size() + additional_entries);
     paths_.reserve(paths_.size() + additional_path_nodes);
-    return PortalSegmentStoreStatus::Completed;
-  }
-
-  template <typename World>
-  [[nodiscard]] auto store_capacity_status(const World& world,
-                                           std::size_t path_nodes) const
-      -> PortalSegmentStoreStatus {
-    const auto entry_limit =
-        detail::effective_capacity_limit(entries_.max_size());
-    const auto path_limit = detail::effective_capacity_limit(paths_.max_size());
-    const auto compact_entry_limit =
-        detail::effective_capacity_limit(compact_entries_.max_size());
-    const auto compact_index_limit =
-        detail::effective_capacity_limit(compact_indices_.max_size());
-    const auto compact_path_limit =
-        detail::effective_capacity_limit(compact_paths_.max_size());
-    if (entries_.size() < budget_) {
-      if (entries_.size() >= entry_limit || paths_.size() > path_limit ||
-          path_nodes > path_limit - paths_.size()) {
-        return PortalSegmentStoreStatus::CapacityExceeded;
-      }
-      return PortalSegmentStoreStatus::Completed;
-    }
-
-    auto kept_entries = std::size_t{0};
-    auto kept_path_nodes = std::size_t{0};
-    for (const auto& entry : entries_) {
-      if (!entry.dependencies.is_valid(world)) {
-        continue;
-      }
-      if (kept_entries >= compact_entry_limit ||
-          kept_entries >= compact_index_limit ||
-          kept_path_nodes > compact_path_limit ||
-          entry.path_size > compact_path_limit - kept_path_nodes) {
-        return PortalSegmentStoreStatus::CapacityExceeded;
-      }
-      ++kept_entries;
-      kept_path_nodes += entry.path_size;
-    }
-    if (kept_entries >= compact_entry_limit ||
-        kept_path_nodes > compact_path_limit ||
-        path_nodes > compact_path_limit - kept_path_nodes) {
-      return PortalSegmentStoreStatus::CapacityExceeded;
-    }
     return PortalSegmentStoreStatus::Completed;
   }
 

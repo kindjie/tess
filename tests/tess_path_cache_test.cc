@@ -443,6 +443,72 @@ TEST(TessPathCache, PortalSegmentCacheCheckedStorePreservesStateAtCapacity) {
   EXPECT_TRUE(out.empty());
 }
 
+// The at-budget store path validates capacity through the transactional
+// compaction rather than a separate pre-pass. Rejection must still happen
+// before any live-state mutation: entries, path storage, and every counter
+// (including the sweep counter) stay exactly as they were.
+TEST(TessPathCache, PortalSegmentCacheCheckedStorePreservesStateAtBudget) {
+  constexpr auto first_nodes = std::array{
+      tess::Coord3{0, 0, 0},
+      tess::Coord3{1, 0, 0},
+  };
+  constexpr auto second_nodes = std::array{
+      tess::Coord3{0, 1, 0},
+      tess::Coord3{1, 1, 0},
+  };
+  constexpr auto rejected_nodes = std::array{
+      tess::Coord3{0, 2, 0},
+      tess::Coord3{1, 2, 0},
+  };
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  tess::WeightedPortalSegmentCache cache;
+  cache.set_segment_budget(2);
+  auto class_cache = cache.for_class<PortalClass>();
+
+  ASSERT_EQ(
+      class_cache.store_checked(
+          world, tess::PathRequest{first_nodes.front(), first_nodes.back()},
+          found_path_result(first_nodes)),
+      tess::PortalSegmentStoreStatus::Completed);
+  ASSERT_EQ(
+      class_cache.store_checked(
+          world, tess::PathRequest{second_nodes.front(), second_nodes.back()},
+          found_path_result(second_nodes)),
+      tess::PortalSegmentStoreStatus::Completed);
+  // Sitting exactly at budget is what routes the next store through the
+  // compaction branch instead of the plain append branch.
+  ASSERT_EQ(cache.size(), 2u);
+  const auto before = cache.stats();
+
+  {
+    // Two live entries hold four path nodes; a five-node ceiling leaves room
+    // for one more, so appending this two-node path must be refused.
+    const tess::detail::ScopedCapacityLimitForTesting capacity_limit{5};
+    EXPECT_EQ(
+        class_cache.store_checked(
+            world,
+            tess::PathRequest{rejected_nodes.front(), rejected_nodes.back()},
+            found_path_result(rejected_nodes)),
+        tess::PortalSegmentStoreStatus::CapacityExceeded);
+  }
+
+  expect_portal_stats_eq(cache.stats(), before);
+  expect_segment(class_cache, world,
+                 tess::PathRequest{first_nodes.front(), first_nodes.back()},
+                 first_nodes);
+  expect_segment(class_cache, world,
+                 tess::PathRequest{second_nodes.front(), second_nodes.back()},
+                 second_nodes);
+  std::vector<tess::Coord3> out;
+  EXPECT_FALSE(class_cache
+                   .lookup_append(world,
+                                  tess::PathRequest{rejected_nodes.front(),
+                                                    rejected_nodes.back()},
+                                  out)
+                   .found);
+  EXPECT_TRUE(out.empty());
+}
+
 TEST(TessPathCache, PortalSegmentCacheFailedStoreDefersStaleStats) {
   if (!tess_test::allocation_failure_injection_supported()) {
     GTEST_SKIP() << "allocation failure injection is unavailable with this "
