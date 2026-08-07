@@ -17,6 +17,36 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-08-06 - At-budget portal-segment store swept dependencies twice
+
+- Area: `WeightedPortalSegmentCache::store_checked`, the at-budget branch.
+- Hypothesis: the `store_capacity_status` pre-pass added in #100 walks every
+  entry calling `dependencies.is_valid`, then `compact_checked` walks them
+  again with the same predicate. If the pre-pass is redundant, removing it
+  should recover the difference, and the at-budget branch is the steady state
+  for any cache with a segment budget, so the cost is not exceptional.
+- Method: a standalone harness storing 20,000 distinct 12-node segments into a
+  256-entry budget after warming to budget, with every timed store confirmed on
+  the compaction branch (`sweeps` equal to store count). Compiled from one
+  source against three header trees — `a63371e` (pre-#100), `4a919fb` (v0.12),
+  and this branch — with AppleClang, `-O2 -DNDEBUG`, interleaved A/B/C runs on
+  an otherwise idle machine.
+- Evidence: medians of roughly 9,590 ns/store pre-#100, 10,480 ns/store on
+  v0.12 (+9.4%), and 9,740 ns/store here (+1.6% over pre-#100, -7.1% against
+  v0.12). Direction was consistent across every interleaved pair; an occasional
+  high first-run sample was warm-up and did not shift the median.
+- Decision: accepted. Both store branches already validate transactionally —
+  `compact_checked` builds its kept set in scratch and returns before the
+  `entries_`/`paths_` swap, and `reserve_append_capacity_checked` returns
+  before its reserve — so the pre-pass caught nothing the remaining checks
+  miss. A constant-time `store_capacity_precheck` preserves the one thing the
+  pre-pass did provide: rejecting an impossible store before the candidate
+  entry's dependency capture allocates.
+- Follow-up: no benchmark sentinel drives this cache to its budget, so the
+  gate saw neither the original regression nor this recovery. Adding an
+  at-budget store sentinel needs ceiling calibration under the existing
+  benchmark rules and is not a quiet addition; it remains open.
+
 ## 2026-08-06 - Steam Deck controlled baseline
 
 - Area: complete on-device timing, thread scaling, and fields PMU attribution.

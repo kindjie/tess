@@ -52,11 +52,10 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   capacity with a pre-pass that repeated the transactional compaction's
   dependency-validity sweep, doubling that work in the steady state for any
   budgeted cache. Both store branches already reject before mutating live
-  state, so the pre-pass is removed. Measured on a 256-entry budget with
-  12-node paths (AppleClang, `-O2`, six interleaved pairs): the pre-pass cost
-  about 9.5% per at-budget store, and removing it returns to within about 1%
-  of the pre-`v0.12` cost. No benchmark sentinel drives the cache to its
-  budget, so the gate did not see either direction.
+  state, so the pre-pass is replaced by a constant-time precheck that keeps
+  rejecting impossible stores before dependency capture allocates. Benchmark
+  evidence and the follow-up condition are in
+  [`optimization-log.md`](../planning/optimization-log.md).
 - Changed: exception-free subsystem classification is derived from the
   directories under `include/tess` instead of a list pinned in the checker. A
   new subsystem now fails validation until the manifest records it as
