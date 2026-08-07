@@ -29,9 +29,8 @@ and their rationale are recorded separately in
   order, which depends on load and eviction history rather than on world
   content, so identical content could iterate differently between runs and
   a non-commutative block kernel could produce different results. The
-  underlying `dirty_chunks()` and `active_chunks()` scans stay unordered
-  and allocation-free; only the domain builders, which already allocate,
-  sort.
+  underlying scans stay unordered; only the domain builders, which already
+  allocate a vector, sort.
 - Continuous-integration compiler caches no longer collide. Cache restore
   keys match by prefix, so the `dev` namespace also matched the sanitizer,
   cppcheck, and clang-tidy namespaces and restored whichever was written

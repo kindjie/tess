@@ -271,8 +271,10 @@ namespace detail {
 // A sparse world enumerates its matches in residency order, which is a
 // function of load and eviction history rather than of world content, so
 // the same content can yield different orders across runs. The domain
-// builders promise deterministic iteration and already allocate, so they
-// sort; `World::dirty_chunks()` itself stays unordered and allocation-free.
+// builders promise deterministic iteration and already allocate a vector,
+// so they absorb the sort. The underlying scans stay unordered: only
+// `collect_dirty_chunks`/`collect_active_chunks` can avoid allocating,
+// and only when the caller's output vector already has capacity.
 inline auto sorted_domain(std::vector<ChunkKey> keys) -> OwnedChunkDomain {
   std::sort(keys.begin(), keys.end(),
             [](ChunkKey lhs, ChunkKey rhs) { return lhs.value < rhs.value; });

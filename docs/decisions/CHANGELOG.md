@@ -41,9 +41,12 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   same resident set visited chunks in different orders — while
   `block.h` calls a `ChunkDomain` an "ordered view" and the block
   architecture note guarantees deterministic iteration for domains from the
-  provided builders. The builders already allocate, so they sort; the
-  `dirty_chunks`/`active_chunks` scans keep their unordered,
-  allocation-free contract.
+  provided builders. The builders already allocate a vector, so they absorb
+  the sort; the scans stay unordered. Note that `dirty_chunks()` and
+  `active_chunks()` allocate too -- only the caller-owned
+  `collect_dirty_chunks()`/`collect_active_chunks()` can avoid it, and only
+  with a pre-sized output vector.
+
 ## 2026-08-07 - Gate lists derive from the tree, not from hand-kept copies
 
 - Changed: `bench/CMakeLists.txt` derives the gated family set from its own
