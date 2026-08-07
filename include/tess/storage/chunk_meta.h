@@ -37,11 +37,18 @@ struct ChunkMeta {
  * Pass it to `World::clear_dirty_observed()` after rebuilding derived state.
  * The clear succeeds only if no later dirty mark changed the version, so a
  * maintenance pass cannot erase intervening marks.
+ *
+ * `residency` scopes the observation to a single residency interval. A
+ * sparse world restarts a reloaded chunk's `version` at zero, so version
+ * equality alone would let an observation taken before an eviction match a
+ * mark made after the reload and clear work it never saw. Always-resident
+ * worlds never evict and leave this zero on both sides.
  */
 struct DirtyObservation {
   std::uint32_t flags = 0;
   Box3 bounds{};
   std::uint32_t version = 0;
+  std::uint64_t residency = 0;
 };
 
 namespace detail {
@@ -130,17 +137,25 @@ inline void meta_clear_dirty(std::uint32_t& dirty_flags, Box3& dirty_bounds,
 
 [[nodiscard]] inline DirtyObservation meta_observe_dirty(
     std::uint32_t dirty_flags, Box3 dirty_bounds, const ChunkMeta& meta,
-    std::uint32_t flags) noexcept {
+    std::uint32_t flags, std::uint64_t residency = 0) noexcept {
   return DirtyObservation{
       dirty_flags & flags,
       dirty_bounds,
       meta.version,
+      residency,
   };
 }
 
 inline bool meta_clear_dirty_observed(std::uint32_t& dirty_flags,
                                       Box3& dirty_bounds, const ChunkMeta& meta,
-                                      DirtyObservation observed) noexcept {
+                                      DirtyObservation observed,
+                                      std::uint64_t residency = 0) noexcept {
+  // A reloaded sparse chunk restarts `version` at zero, so an observation
+  // from an earlier residency interval can compare equal to a mark made
+  // after the reload. Reject it before the version check.
+  if (residency != observed.residency) {
+    return false;
+  }
   if (meta.version != observed.version) {
     return false;
   }

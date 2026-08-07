@@ -8,6 +8,42 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-07 - Residency intervals scope dirty observations
+
+- Fixed: `DirtyObservation` carries the residency generation it was taken
+  in, and `clear_dirty_observed` refuses one from an earlier interval.
+  Reloading a sparse chunk assigns a fresh `ChunkMeta`, restarting `version`
+  at zero while the slot generation stays monotonic, so an observation taken
+  before an eviction could compare equal to a mark made after the reload and
+  clear a dirty flag it never saw. `chunk_meta.h` states that a clear
+  "succeeds only if no later dirty mark changed the version, so a
+  maintenance pass cannot erase intervening marks"; across an eviction that
+  did not hold, and the consequence was silent — derived state stayed stale
+  with no error anywhere. The dense world reaches the same shape only
+  through 2^32 version wraparound; sparse needed one eviction.
+  `route_cache.h` already folded the residency generation into its
+  fingerprint for exactly this reason, so the precedent set the approach.
+  The observation gains a trailing defaulted member, which keeps existing
+  aggregate initialization valid; always-resident worlds pass zero on both
+  sides and are unaffected.
+- Changed: `ensure_resident` is total rather than asserted. It is the only
+  residency entry point with no checked counterpart, and `ChunkDirectory`'s
+  direct-slot mode indexes its slot table by the key itself, so an
+  out-of-range key wrote one past the end in any build with assertions
+  compiled out — while `find` deliberately bounds-checked the read path.
+  It now returns an invalid handle, matching `try_chunk`, `try_meta`, and
+  `residency_generation`. The assertion was removed rather than kept
+  alongside the check: a debug abort would have made the defined behaviour
+  untestable, and the read paths set the precedent of refusing quietly.
+- Changed: `dirty_chunk_domain` and `active_chunk_domain` sort. A sparse
+  world enumerates matches in residency order, a function of load and
+  eviction history rather than of content, so two histories reaching the
+  same resident set visited chunks in different orders — while
+  `block.h` calls a `ChunkDomain` an "ordered view" and the block
+  architecture note guarantees deterministic iteration for domains from the
+  provided builders. The builders already allocate, so they sort; the
+  `dirty_chunks`/`active_chunks` scans keep their unordered,
+  allocation-free contract.
 ## 2026-08-07 - Gate lists derive from the tree, not from hand-kept copies
 
 - Changed: `bench/CMakeLists.txt` derives the gated family set from its own

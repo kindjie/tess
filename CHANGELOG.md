@@ -11,6 +11,27 @@ and their rationale are recorded separately in
 
 ### Fixed
 
+- A `DirtyObservation` taken before a sparse chunk was evicted can no longer
+  clear a dirty mark made after it was reloaded. Reloading restarts a
+  chunk's `version` at zero, so version equality alone could match across
+  two different residency intervals and erase work the observation never
+  saw — the one thing the observation protocol promises cannot happen. The
+  observation now carries the residency generation and a stale one is
+  refused. Always-resident worlds are unaffected.
+- `SparseWorld::ensure_resident()` returns an invalid handle for a key
+  outside the bounded shape instead of writing past its slot table. It is
+  the only residency entry point with no checked counterpart, and the
+  directory's direct-slot mode indexes by key, so an out-of-range key wrote
+  out of bounds wherever assertions were compiled out. It now behaves like
+  `try_chunk()` and `try_meta()`, which already refused such keys.
+- `dirty_chunk_domain()` and `active_chunk_domain()` yield chunk keys in
+  ascending order on sparse worlds. They previously inherited residency
+  order, which depends on load and eviction history rather than on world
+  content, so identical content could iterate differently between runs and
+  a non-commutative block kernel could produce different results. The
+  underlying `dirty_chunks()` and `active_chunks()` scans stay unordered
+  and allocation-free; only the domain builders, which already allocate,
+  sort.
 - Continuous-integration compiler caches no longer collide. Cache restore
   keys match by prefix, so the `dev` namespace also matched the sanitizer,
   cppcheck, and clang-tidy namespaces and restored whichever was written

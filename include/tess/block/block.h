@@ -266,18 +266,33 @@ auto chunk_domain(OwnedChunkDomain&& keys) noexcept -> ChunkDomain = delete;
   return OwnedChunkDomain{std::move(domain)};
 }
 
+namespace detail {
+
+// A sparse world enumerates its matches in residency order, which is a
+// function of load and eviction history rather than of world content, so
+// the same content can yield different orders across runs. The domain
+// builders promise deterministic iteration and already allocate, so they
+// sort; `World::dirty_chunks()` itself stays unordered and allocation-free.
+inline auto sorted_domain(std::vector<ChunkKey> keys) -> OwnedChunkDomain {
+  std::sort(keys.begin(), keys.end(),
+            [](ChunkKey lhs, ChunkKey rhs) { return lhs.value < rhs.value; });
+  return OwnedChunkDomain{std::move(keys)};
+}
+
+}  // namespace detail
+
 template <typename World>
 /** Captures the chunks currently carrying any requested dirty flag. */
 [[nodiscard]] auto dirty_chunk_domain(const World& world, std::uint32_t flags)
     -> OwnedChunkDomain {
-  return OwnedChunkDomain{world.dirty_chunks(flags)};
+  return detail::sorted_domain(world.dirty_chunks(flags));
 }
 
 template <typename World>
 /** Captures the chunks currently carrying any requested active flag. */
 [[nodiscard]] auto active_chunk_domain(const World& world, std::uint32_t flags)
     -> OwnedChunkDomain {
-  return OwnedChunkDomain{world.active_chunks(flags)};
+  return detail::sorted_domain(world.active_chunks(flags));
 }
 
 template <typename World>

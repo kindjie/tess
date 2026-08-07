@@ -222,14 +222,21 @@ topology version so topology products can observe rebuild/replacement events.
 
 Maintenance passes that rebuild derived state use the generation-stamped
 observe/clear pair instead of raw `clear_dirty`. `observe_dirty(key, flags)`
-snapshots the requested dirty subset, the dirty bounds, and the chunk version
-into a `DirtyObservation`. `clear_dirty_observed(key, observation)` clears
-exactly the observed flags only while the chunk version still matches the
-observation; any `mark_dirty` that lands after the observation advances the
-generation, so a stale clear leaves every flag and bound in place and returns
-`false`, and the caller re-observes before clearing. This is the dirty
-metadata protocol required before concurrent or budgeted maintenance may
-clear flags it did not fully rebuild.
+snapshots the requested dirty subset, the dirty bounds, the chunk version, and
+the residency generation into a `DirtyObservation`.
+`clear_dirty_observed(key, observation)` clears exactly the observed flags
+only while both stamps still match; any `mark_dirty` that lands after the
+observation advances the version, so a stale clear leaves every flag and
+bound in place and returns `false`, and the caller re-observes before
+clearing. This is the dirty metadata protocol required before concurrent or
+budgeted maintenance may clear flags it did not fully rebuild.
+
+The residency generation scopes an observation to a single residency
+interval. A sparse world assigns a fresh `ChunkMeta` when it reloads a chunk,
+restarting `version` at zero, so version equality alone would let an
+observation taken before an eviction match a mark made after the reload and
+clear work it never saw. An always-resident world never evicts and carries
+zero on both sides.
 
 ```mermaid
 sequenceDiagram
