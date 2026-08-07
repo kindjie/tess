@@ -8,6 +8,32 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-07 - Terminal agents are immovable under priority inheritance
+
+- Fixed: `start_deciding` refuses an agent with no goal or a phase of
+  `Unreachable`, the way it already refuses one standing on impassable
+  terrain — it claims the tile so later deciders are vertex-rejected, and
+  returns failure so the inheriting agent backtracks. The exclusion existed
+  in two of the three places that needed it: the priority loop skips such
+  agents, and the apply pass tests `has_goal && phase != Unreachable`
+  before touching a stay-put agent. Only inheritance omitted it, and
+  ordering made that reachable rather than theoretical — inactive agents
+  are forced to `elapsed = 0`, so the descending sort always leaves them
+  undecided when an active neighbour decides. The consequences were an
+  `Unreachable` agent resurrected into `Blocked` and re-entering the retry
+  budget, a second `fail_path_agent_flow` for a single admission (which
+  breaks `FlowCounters::retention_identity_holds` permanently, since
+  `failed` increments twice against one `record_left_outstanding`), and
+  arrived agents being shoved around by passing traffic while counted in
+  `stats.frame.advanced`.
+- Fixed: the arrival check is gated on `has_goal`. `clear_path_agent_goal`
+  zeroes `goal`, so a goalless agent on the origin tile compared equal to
+  it and registered an arrival for a journey that was never admitted.
+  Every other arrival site in the library reaches its check behind that
+  gate. With the inheritance fix a goalless agent no longer moves, so this
+  path is no longer reachable through PIBT; the guard is kept because the
+  invariant belongs at the check, not in an argument about which callers
+  can reach it, and the test pins the invariant rather than the path.
 ## 2026-08-07 - Residency intervals scope dirty observations
 
 - Fixed: `DirtyObservation` carries the residency generation it was taken

@@ -115,6 +115,15 @@ anywhere backtracks the chooser to its next candidate. It is an opt-in
 sibling of the joint advance, selected per population where contention
 justifies its cost, not a replacement.
 
+Agents outside an active goal lifecycle are immovable. One that has arrived
+(no goal) or ended at `Unreachable` is never asked to yield — not by the
+priority loop, the apply pass, or inheritance. Its tile is claimed so later
+deciders are turned away, and an agent that wanted that tile backtracks to
+its next candidate, exactly as it would for a peer standing on impassable
+terrain. Without this, passing traffic would restart a terminal lifecycle
+as `Blocked`, and a second failure against one admitted goal would break
+the flow-accounting retention identity.
+
 - `PibtPriorities` is caller-owned adaptive priority state, index-paired
   with the agent span exactly like `PathAgentRoutes`: `elapsed` increments
   each tick an agent is unarrived and resets on arrival, and higher elapsed

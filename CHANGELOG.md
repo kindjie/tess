@@ -11,6 +11,19 @@ and their rationale are recorded separately in
 
 ### Fixed
 
+- PIBT priority inheritance no longer displaces an agent that has arrived
+  or ended at `Unreachable`. The priority loop skips such agents and the
+  apply pass checks the same condition before touching a stay-put agent,
+  but inheritance reached them through the occupant path: passing traffic
+  shoved them off their tile and rewrote them to `Blocked`, restarting a
+  lifecycle documented as terminal. A second failure for one admission
+  then broke the flow-accounting retention identity permanently. They are
+  now treated like an agent standing on impassable terrain — the tile is
+  claimed so later deciders are turned away, and the inheriting agent
+  backtracks to its next candidate.
+- A goalless agent standing on the origin tile no longer registers an
+  arrival. `clear_path_agent_goal` zeroes `goal`, so the comparison could
+  succeed for a journey that was never admitted, inflating `completed`.
 - A `DirtyObservation` taken before a sparse chunk was evicted can no longer
   clear a dirty mark made after it was reloaded. Reloading restarts a
   chunk's `version` at zero, so version equality alone could match across
