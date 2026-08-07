@@ -51,7 +51,23 @@ tools/steamdeck/deck watch        # rebuild + ctest on every save   (or: deck te
 **3. Benchmark on the device:**
 ```sh
 tools/steamdeck/deck bench --pin  # ship to the Deck, run on real Zen 2 hardware
+
+# Select another benchmark binary; --pin applies to it too.
+BENCH_BIN=tess_bench_diagnostics tools/steamdeck/deck bench --pin
 ```
+
+The benchmark command builds only the selected binary and defaults to one
+compiler job because the amd64 Steam Runtime is commonly emulated inside a
+memory-limited Docker Desktop VM. Set `TESS_STEAMRT_BUILD_JOBS=N` deliberately
+when the host has enough Docker memory for more parallel compiler processes.
+
+The controlled 2026-08-06 handheld campaign ran the main, diagnostics, and
+thread-scaling binaries built this way. Its adopter-facing results and limits
+are in [`docs/performance.md`](../../docs/performance.md#steam-deck-baseline),
+with the full experimental record in the optimization log. The published
+scaling points additionally use `taskset`: widths through four occupy distinct
+physical cores, while width eight uses all logical CPUs. Do not compare an
+unpinned local run directly with that baseline.
 
 The rest of this document explains what those steps do and why.
 
@@ -161,8 +177,9 @@ builds are too slow.
   `DECK_PRESET=<preset>`.
 - `Dockerfile` — immutable steamrt4 SDK wrapper using its bundled Clang 19.
 - `container-up.sh` — start/refresh the local build container.
-- `deck-bench.sh` — build locally, ship, run on the Deck (direct by default;
-  `--pin` for governor-pinned accurate numbers; `USE_CONTAINER=1` for the SDK
-  image path).
+- `deck-bench.sh` — build the `BENCH_BIN` target locally with bounded
+  parallelism, ship, and run on the Deck (direct by default; `--pin` for
+  governor-pinned accurate numbers; `USE_CONTAINER=1` for the SDK image path).
 - `deck-run-pinned.sh` — on-Deck helper for `--pin`: pins the CPU governor to
-  `performance`, runs `tess_bench`, restores the governor on exit.
+  `performance`, runs the selected benchmark binary, and restores the governor
+  on exit.

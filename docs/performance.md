@@ -1,8 +1,9 @@
 # Performance
 
-tess is performance-first: every benchmark suite is gated in CI with
-calibrated per-benchmark ceilings, so the numbers below are enforced, not
-aspirational.
+tess is performance-first: production benchmark families are gated in CI with
+calibrated per-benchmark ceilings. Exploratory `lab/` families and controlled
+hardware campaigns are recorded separately and do not become portable gates
+without machine-specific calibration.
 
 Representative medians from the benchmark suite on an Apple M3 Max
 (single-threaded):
@@ -69,6 +70,59 @@ conditions to state. Beyond about 24 workers the measurements are too
 noisy to publish at all — see
 the [optimization log][optimization-log] for the full campaign record,
 including what these numbers do not show.
+
+## Steam Deck baseline
+
+A controlled campaign on a Steam Deck established a handheld baseline at
+commit `4a919fbd99a2`. It is a platform characterization, not a comparison
+against another revision and not a new CI threshold calibration.
+
+Representative main-suite medians:
+
+| Workload | Median wall time |
+| --- | ---: |
+| Clean tick, 100 unit-path agents | 0.78 us |
+| World-edit tick, 100 unit-path agents | 1.33 ms |
+| Dirty shared state, 100 weighted agents | 8.63 ms |
+| Goal churn, 100 weighted agents | 44.28 ms |
+| Chunk compute, serial | 1.86 ms |
+| Chunk compute, four-worker pool | 0.49 ms |
+
+The isolated goal-churn case exceeds a 16.7 ms frame budget; the shared-dirty
+case does not. These are library workloads, not complete game-frame times.
+
+The pinned scaling sweep shows why worker count must follow granularity:
+
+| Workload | 2 workers | 4 workers | 8 logical CPUs |
+| --- | ---: | ---: | ---: |
+| Tile touch | 0.58x | 0.70x | 0.86x |
+| Chunk fill | 1.36x | 1.48x | 1.43x |
+| Chunk compute | 1.96x | 3.42x | 5.97x |
+
+Four workers, one per physical core, are the conservative starting point for
+mixed game work. Using all eight SMT threads helps the compute-heavy case but
+slightly regresses chunk fill after its four-core peak. Trivial tile-touch work
+does not amortize dispatch at any measured width.
+
+| | |
+| --- | --- |
+| CPU | AMD Custom APU 0932, 4 cores x 2 threads |
+| Toolchain | Clang 19.1.7 in the pinned steamrt4 SDK |
+| Power | External power, `performance` governor |
+| Pinning | Distinct physical cores through width 4; all logical CPUs at 8 |
+| Method | 10 repetitions for full suites; 20 per scaling point |
+| Quality | Main CV 0.20% median, 1.58% p95; no benchmark errors |
+| Thermal | Reported thermal readings at or below 66 C |
+| Measured | 2026-08-06, one campaign |
+
+All eight fields PMU runs produced numeric cycles, instructions, cache misses,
+branch misses, and matching iteration records. Their IPC ranged from 3.06 to
+4.34. Raw `perf stat` process totals include startup and must be normalized by
+the paired iteration count; they are attribution evidence, not portable
+per-operation thresholds. Two manual-time cache-maintenance cases reached
+11.7% and 20.3% CV and need repetition before supporting small-difference
+claims. The [optimization log][optimization-log] contains the complete
+campaign record and scaling caveats.
 
 ## Trend snapshot
 

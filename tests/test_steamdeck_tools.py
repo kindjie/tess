@@ -451,7 +451,7 @@ def run_deck_bench(
   bin_dir.mkdir()
   log = tmp_path / "commands.log"
   log.touch()
-  for command in ("docker", "rsync", "ssh"):
+  for command in ("docker", "rsync", "scp", "ssh"):
     write_executable(
         bin_dir / command,
         f"""#!/usr/bin/env bash
@@ -488,6 +488,45 @@ def test_transferred_image_tag_reaches_remote_podman(tmp_path):
   assert "ssh deck" in commands
   assert "podman\\ run" in commands
   assert "tess-steamrt4:local" in commands
+
+
+def test_deck_bench_builds_only_selected_binary_with_bounded_jobs(tmp_path):
+  result, commands = run_deck_bench(
+      tmp_path,
+      BENCH_BIN="tess_bench_diagnostics",
+      TESS_STEAMRT_BUILD_JOBS="2",
+  )
+
+  assert result.returncode == 0, result.stderr
+  assert (
+      "cmake --build --preset linux-bench --parallel 2 --target "
+      "tess_bench_diagnostics"
+  ) in commands.replace("\\ ", " ")
+
+
+def test_pinned_run_passes_selected_binary_to_deck_helper(tmp_path):
+  result, commands = run_deck_bench(
+      tmp_path,
+      BENCH_BIN="tess_bench_thread_scaling",
+      PIN_GOVERNOR="1",
+      USE_CONTAINER="0",
+  )
+
+  assert result.returncode == 0, result.stderr
+  assert "scp " in commands
+  assert "TESS_BENCH_BIN=" in commands
+  assert "tess_bench_thread_scaling" in commands
+
+
+def test_deck_bench_rejects_invalid_build_jobs_before_commands(tmp_path):
+  result, commands = run_deck_bench(
+      tmp_path,
+      TESS_STEAMRT_BUILD_JOBS="unbounded",
+  )
+
+  assert result.returncode != 0
+  assert "invalid TESS_STEAMRT_BUILD_JOBS" in result.stderr
+  assert commands == ""
 
 
 def test_deck_bench_rejects_option_like_host_before_commands(tmp_path):

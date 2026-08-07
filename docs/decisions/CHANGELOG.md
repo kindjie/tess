@@ -8,6 +8,28 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-06 - Bounded Steam Deck benchmark builds
+
+- Fixed: the Steam Deck benchmark workflow builds only the selected benchmark
+  target with a configurable positive job bound, defaulting to one for the
+  memory-limited emulated amd64 Docker path instead of invoking an unbounded
+  build that can be OOM-killed.
+- Fixed: governor-pinned runs now honor `BENCH_BIN`, so the main, diagnostics,
+  and thread-scaling binaries share the same accurate on-device path.
+- Affected docs: Steam Deck workflow and test guarantees.
+
+## 2026-08-06 - Handheld baseline and qualified PMU events
+
+- Published: the controlled Steam Deck timing, scaling, and PMU baseline with
+  its power, topology, variance, and interpretation limits.
+- Corrected: the redesign status no longer says that the already-completed
+  cloud and handheld campaigns are unrun or deferred.
+- Fixed: PMU parsing accepts documented `perf` event modifiers such as the
+  `:u` suffix observed under SteamOS access restrictions, without accepting
+  prefix collisions or unknown modifiers.
+- Affected docs: performance, dependency, campaign-plan, optimization-log,
+  and Steam Deck workflow documentation.
+
 ## 2026-08-05 - Exception-free validation hardening
 
 - Fixed: native MSVC abort-contract tests quote CRT spawn arguments and force
