@@ -496,12 +496,20 @@ TEST(TessWeightedFieldProduct, EvictingStoreLeavesCallerWithValidWrongProduct) {
   ASSERT_TRUE((cache.store<World, PassableTag>(std::move(product))));
   ASSERT_GT(cache.stats().evictions, 0u);
 
-  // Documented: moved-from, empty but reusable. Actual: the evicted
-  // goal_a product, fully populated and passing every validity gate.
+  // Inspecting the argument after the move is the POINT of this test: the
+  // store documents the state it leaves behind, so that state is part of
+  // the contract and something a caller may rely on. clang-tidy cannot
+  // know that, and flags the read generically.
+  //
+  // Documented: left empty. Before the fix: the evicted goal_a product,
+  // fully populated and passing every validity gate.
+  // NOLINTNEXTLINE(bugprone-use-after-move)
   EXPECT_NE(product.status(), tess::PathStatus::Found)
       << "argument still claims Found after the store";
+  // NOLINTNEXTLINE(bugprone-use-after-move)
   EXPECT_TRUE(product.goals().empty())
       << "argument still carries the evicted entry's goals";
+  // NOLINTNEXTLINE(bugprone-use-after-move)
   EXPECT_FALSE(product.is_valid(world))
       << "argument passes is_valid with the WRONG goal set: distance_at "
       << "now serves goal_a distances to a caller that stored goal_b";
