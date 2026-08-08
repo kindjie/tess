@@ -98,15 +98,18 @@ Entries from 2026-07-12 and earlier are in
   plans outside its measured loop (`parallel_phase_support.h:117-119`,
   `tess_bench.cc:760`, `:787`), and the single in-loop planner call
   (`tess_scheduler_bench.cc:191`) plans exactly one operation. Separately,
-  `FieldProductCache::evict_to_budget` runs a linear least-recently-used
-  scan per eviction, while the only benchmark named for eviction holds
-  about two entries.
+  `FieldProductCache` walks `entries_` linearly three times per
+  miss-and-store — `lookup`, the existing-key scan inside `store_with_key`,
+  and `evict_to_budget` — while the only benchmark exercising that path
+  holds about two entries.
 - Instruments added: `queued/plan_frame_256` and `queued/plan_frame_4096`
   time planning plus phase grouping over disjoint per-chunk operations —
   the worst case for grouping, since the phase never closes, and the
-  ordinary case for one edit per dirty chunk. `fields/cache_eviction_
-  entries_8` and `_128` do identical per-store work and differ only in
-  resident entry count, so their delta isolates the scan.
+  ordinary case for one edit per dirty chunk. `fields/cache_scan_entries_8`
+  and `_128` hold per-store work identical and differ only in resident
+  entry count, so their delta is the aggregate of those three scans. It is
+  NOT attributable to eviction alone, and the benchmark does not claim to
+  be: all three are linear, so a complexity change in any of them shows.
 - First readings (Apple M3 Max, `bench` preset, three repetitions,
   coefficient of variation under 0.4%):
 
@@ -114,8 +117,8 @@ Entries from 2026-07-12 and earlier are in
 | --- | ---: |
 | `queued/plan_frame_256` | 59.6 us |
 | `queued/plan_frame_4096` | 23.4 ms |
-| `fields/cache_eviction_entries_8` | 95.2 us |
-| `fields/cache_eviction_entries_128` | 99.9 us |
+| `fields/cache_scan_entries_8` | 85.7 us |
+| `fields/cache_scan_entries_128` | 93.2 us |
 
 - Reading: 16x the operations costs **392x** the time. Pure quadratic
   scaling predicts 256x, so the excess is consistent with quadratic work
@@ -123,10 +126,17 @@ Entries from 2026-07-12 and earlier are in
   4096-chunk frame spends 23 ms in planning alone, which exceeds a 16.7 ms
   frame budget before any execution happens. The audit predicted the shape
   from source; the magnitude is what the instrument adds.
-- Eviction delta is 4.7 us between roughly 7 and roughly 110 resident
-  entries — real and reproducible, but small against the ~94 us product
-  build that dominates each store. Read the pair as a complexity check,
-  not as a claim that eviction dominates.
+- Scan delta is 7.5 us between roughly 7 and roughly 110 resident
+  entries — real and reproducible, but small against the ~85 us product
+  build that dominates each store. Read the pair as a complexity check on
+  the cache's linear scans, not as a claim that they dominate.
+- The first version of this pair varied goal COUNT across keys (2-10
+  against 2-130) while claiming identical work. Goal count changes flood
+  seeding, key comparison length, stored byte size and therefore the
+  resident count, so the two sizes ran different workloads. Holding
+  cardinality constant and varying only goal positions both fixed the
+  claim and produced a cleaner signal: the delta grew from 4.7 us to
+  7.5 us once the confound was removed.
 - Ceilings: **bootstrap, deliberately loose**, at 4x these readings. They
   were taken on an M3 Max while the gates run on Linux runners, so a 2x
   ceiling would flake rather than gate. Recalibrate at 2x the maximum over

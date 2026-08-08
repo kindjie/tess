@@ -57,6 +57,22 @@ void fill_goals(tess::GoalSet& goals, std::size_t count) {
   }
 }
 
+// Distinct goal sets with a CONSTANT cardinality: each `block` occupies
+// its own run of tile indices, so two blocks share no goal while every
+// set seeds the same number of floods. Varying the count instead would
+// change flood seeding, key comparison length, stored byte size and
+// therefore the resident entry count, confounding a comparison meant to
+// isolate entry count alone.
+void fill_goals_block(tess::GoalSet& goals, std::size_t count,
+                      std::size_t block) {
+  goals.clear();
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto index = (block * count + i) % (64 * 64);
+    goals.add(tess::Coord3{static_cast<std::int64_t>(index % 64),
+                           static_cast<std::int64_t>(index / 64), 0});
+  }
+}
+
 // Reverse flood from N goals over the open 64x64 world.
 //
 // NOT a goal-count scaling curve, despite the family naming. The flood
@@ -249,24 +265,31 @@ void BM_fields_cache_eviction(benchmark::State& state) {
   }
 }
 
-// Eviction cost against RESIDENT ENTRY COUNT, which nothing measured
-// before: the family's only eviction benchmark holds about two products,
-// so the linear scan `evict_to_budget` runs to find the least-recently
-// used entry never had more than two candidates to compare.
+// Cache SCAN cost against resident entry count, which nothing measured
+// before: the family's other cache benchmarks hold about two entries, so
+// every linear scan over `entries_` had at most two candidates.
 //
-// Both sizes do identical per-store work -- same world, same goal count,
-// same product build -- and differ only in how many entries sit in the
-// cache when the eviction scan runs. A change in the scan's complexity
-// separates the two; a constant-factor change in the build moves them
-// together.
+// This measures the AGGREGATE of the three scans a miss-and-store walks,
+// not eviction alone: `lookup` scans every resident entry, then
+// `store_with_key` scans them again for an existing key, and only then
+// does `evict_to_budget` scan to find the least-recently-used entry. All
+// three are linear in the entry count, so a complexity change in any of
+// them separates the two sizes -- but the delta cannot be attributed to
+// eviction specifically, and this deliberately does not claim to.
+//
+// Per-store work is held identical: same world, same goal CARDINALITY
+// (only the goal positions differ, so keys are distinct), same product
+// build. The sizes differ only in how many entries are resident when
+// those scans run.
 template <std::size_t Entries>
-void BM_fields_cache_eviction_at(benchmark::State& state) {
+void BM_fields_cache_scan_at(benchmark::State& state) {
   static auto* world = make_world();
   // One more key than the cache can hold, so every store evicts.
   constexpr auto kKeys = Entries + 1;
+  constexpr auto kGoalsPerKey = std::size_t{8};
   std::vector<tess::GoalSet> goals(kKeys);
   for (std::size_t i = 0; i < kKeys; ++i) {
-    fill_goals(goals[i], std::size_t{2} + i);
+    fill_goals_block(goals[i], kGoalsPerKey, i);
   }
   tess::DistanceFieldScratch scratch;
   scratch.reserve_nodes(kTileCount);
@@ -359,9 +382,7 @@ BENCHMARK(BM_fields_nearest_target)->Name("fields/nearest_target");
 BENCHMARK(BM_fields_cache_hit)->Name("fields/cache_hit");
 BENCHMARK(BM_fields_cache_miss_store)->Name("fields/cache_miss_store");
 BENCHMARK(BM_fields_cache_eviction)->Name("fields/cache_eviction");
-BENCHMARK(BM_fields_cache_eviction_at<8>)
-    ->Name("fields/cache_eviction_entries_8");
-BENCHMARK(BM_fields_cache_eviction_at<128>)
-    ->Name("fields/cache_eviction_entries_128");
+BENCHMARK(BM_fields_cache_scan_at<8>)->Name("fields/cache_scan_entries_8");
+BENCHMARK(BM_fields_cache_scan_at<128>)->Name("fields/cache_scan_entries_128");
 
 }  // namespace

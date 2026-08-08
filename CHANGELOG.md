@@ -20,12 +20,15 @@ and their rationale are recorded separately in
   Apple M3 Max: **59.6 us at 256 operations and 23.4 ms at 4096** — 16x the
   operations for 392x the time. No fix is in this change; the measurement
   comes first so the fix has before-and-after evidence.
-- Field-product cache eviction is measured against resident entry count.
-  `fields/cache_eviction_entries_8` and `_128` do identical per-store work
-  and differ only in how many entries the eviction scan walks, so their
-  delta is the scan. The existing `fields/cache_eviction` holds about two
-  entries, so the linear search for the least-recently-used entry never
-  had more than two candidates to compare.
+- Field-product cache scanning is measured against resident entry count.
+  `fields/cache_scan_entries_8` and `_128` hold per-store work identical —
+  same world, same goal cardinality, same product build — and differ only
+  in how many entries are resident when the cache's linear scans run. A
+  miss-and-store walks three of them (lookup, the store's existing-key
+  scan, then eviction), all linear in entry count, so the delta is their
+  aggregate rather than eviction alone. The family's other cache
+  benchmarks hold about two entries, so those scans never had more than
+  two candidates to compare.
 
 ### Fixed
 
