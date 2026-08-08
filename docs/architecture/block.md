@@ -128,7 +128,16 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
   emitted, explicit materializations, and bounded-capacity failures. It is
   optional and caller-owned.
 
-Iteration is deterministic when domains are produced by the provided builders.
+Iteration is deterministic when domains are produced by the provided builders:
+each sorts by ascending `ChunkKey`. That matters on sparse worlds, where the
+underlying scans enumerate in residency order — a function of load and
+eviction history rather than of world content — so a domain built from a raw
+scan is not reproducible across runs and a non-commutative kernel would not
+be either. The builders already allocate a vector and absorb the sort; the
+scans stay unordered. `dirty_chunks()`/`active_chunks()` return a newly
+allocated vector, so only the caller-owned
+`collect_dirty_chunks()`/`collect_active_chunks()` avoid allocating, and
+only when the output vector already has capacity.
 The hot executor path does not allocate when passed a prebuilt `ChunkDomain`.
 Policy-typed `ReadOnly` contexts enforce const page, metadata, and field span
 access at compile time. Prebuilt `BlockCtx` iteration is also allocation-free,

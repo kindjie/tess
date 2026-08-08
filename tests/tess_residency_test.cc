@@ -210,6 +210,32 @@ TEST(TessResidency, OutOfBoundsKeysAreNeverResidentAndYieldNullptr) {
   EXPECT_EQ(world.residency_generation(oob), 0u);
 }
 
+// ensure_resident is the only residency entry point with no checked
+// counterpart. The read paths above already refuse an out-of-range key;
+// the load path used to accept one and, in the directory's direct-slot
+// mode, index its slot table by the key itself -- a write past the end
+// in any build with assertions compiled out.
+TEST(TessResidency, EnsureResidentRefusesOutOfBoundsKeysWithoutWriting) {
+  // A budget equal to the chunk count selects direct-slot mode, where the
+  // key indexes the slot table directly.
+  Sparse<Small> world{
+      tess::ResidencyConfig{Sparse<Small>::chunk_count * page_bytes<Small>()}};
+  const auto oob = tess::ChunkKey{Sparse<Small>::chunk_count};
+  const auto valid_key = tess::ChunkKey{3};
+
+  world.ensure_resident(valid_key);
+  const auto before = world.resident_count();
+
+  const auto handle = world.ensure_resident(oob);
+
+  EXPECT_FALSE(world.valid(handle));
+  EXPECT_EQ(handle.generation, 0u);
+  EXPECT_FALSE(world.is_resident(oob));
+  EXPECT_EQ(world.resident_count(), before);
+  // The in-bounds neighbour is untouched.
+  EXPECT_TRUE(world.is_resident(valid_key));
+}
+
 TEST(TessResidency, EnsureResidentIsIdempotentAndPreservesData) {
   Sparse<Small> world{tess::ResidencyConfig{4 * page_bytes<Small>()}};
   constexpr auto key = tess::ChunkKey{2};
@@ -291,6 +317,113 @@ TEST(TessResidency, EvictedChunkReloadsWithFreshGenerationAndData) {
   EXPECT_TRUE(world.valid(reloaded));
   // Reloaded chunk is a fresh, zeroed page; the old write is gone.
   EXPECT_EQ(world.chunk(key).field<TerrainTag>(tess::LocalTileId{1}), 0u);
+}
+
+// A DirtyObservation is only safe to honor while it describes the same
+// residency interval it was taken in. Reloading a chunk used to restart
+// its version at zero, so an observation taken before an eviction could
+// compare equal to a mark made after the reload and clear work it never
+// saw -- exactly what the ChunkMeta contract promises cannot happen.
+TEST(TessResidency, DirtyObservationDoesNotSurviveAnEvictionAndReload) {
+  Sparse<Small> world{tess::ResidencyConfig{1 * page_bytes<Small>()}};
+  ASSERT_EQ(world.capacity(), 1u);
+  constexpr auto key = tess::ChunkKey{4};
+  constexpr auto other = tess::ChunkKey{5};
+  const auto bounds = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{2, 2, 1}};
+
+  world.ensure_resident(key);
+  world.mark_dirty(key, DirtyTerrain, bounds);
+  const auto observed = world.observe_dirty(key, DirtyTerrain);
+  ASSERT_EQ(observed.flags, DirtyTerrain);
+
+  // Evict and reload. The rebuild the observation belonged to is gone.
+  world.ensure_resident(other);
+  ASSERT_FALSE(world.is_resident(key));
+  world.ensure_resident(key);
+
+  // New residency interval, new work, marked dirty again.
+  world.mark_dirty(key, DirtyTerrain, bounds);
+  ASSERT_EQ(world.dirty_flags(key), DirtyTerrain);
+
+  // The stale observation must be refused, and the new mark must stand.
+  EXPECT_FALSE(world.clear_dirty_observed(key, observed));
+  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain);
+
+  // An observation taken in the current interval still works.
+  const auto fresh = world.observe_dirty(key, DirtyTerrain);
+  EXPECT_TRUE(world.clear_dirty_observed(key, fresh));
+  EXPECT_EQ(world.dirty_flags(key), 0u);
+}
+
+// The same hazard one step removed: a slot reused by a *different* key
+// and then handed back must not make an old observation honorable.
+TEST(TessResidency, DirtyObservationDoesNotSurviveSlotReuseByAnotherChunk) {
+  Sparse<Small> world{tess::ResidencyConfig{1 * page_bytes<Small>()}};
+  constexpr auto key = tess::ChunkKey{6};
+  constexpr auto other = tess::ChunkKey{7};
+  const auto bounds = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+
+  world.ensure_resident(key);
+  world.mark_dirty(key, DirtyTerrain, bounds);
+  const auto observed = world.observe_dirty(key, DirtyTerrain);
+
+  // The other chunk takes the slot and dirties it, then gives it back.
+  world.ensure_resident(other);
+  world.mark_dirty(other, DirtyTerrain, bounds);
+  world.ensure_resident(key);
+  world.mark_dirty(key, DirtyCost, bounds);
+
+  EXPECT_FALSE(world.clear_dirty_observed(key, observed));
+  EXPECT_EQ(world.dirty_flags(key), DirtyCost);
+}
+
+// Block iteration is documented as deterministic when the domain comes
+// from a provided builder. A sparse world enumerates matches in residency
+// order, which depends on load and eviction history rather than content,
+// so two histories reaching the same resident set used to yield different
+// visit orders -- and a non-commutative kernel a different result.
+TEST(TessResidency, DirtyChunkDomainIsOrderedRegardlessOfResidencyHistory) {
+  const auto bounds = tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}};
+  const auto keys = std::vector<tess::ChunkKey>{
+      tess::ChunkKey{1}, tess::ChunkKey{2}, tess::ChunkKey{3}};
+
+  const auto domain_after = [&](std::span<const tess::ChunkKey> load_order) {
+    Sparse<Small> world{tess::ResidencyConfig{3 * page_bytes<Small>()}};
+    for (const auto key : load_order) {
+      world.ensure_resident(key);
+    }
+    for (const auto key : keys) {
+      world.ensure_resident(key);
+      world.mark_dirty(key, DirtyTerrain, bounds);
+    }
+    const auto domain = tess::dirty_chunk_domain(world, DirtyTerrain);
+    return std::vector<tess::ChunkKey>{domain.keys().begin(),
+                                       domain.keys().end()};
+  };
+
+  // Second history churns the slots so residency order differs.
+  const auto churn = std::vector<tess::ChunkKey>{
+      tess::ChunkKey{3}, tess::ChunkKey{9}, tess::ChunkKey{1},
+      tess::ChunkKey{8}, tess::ChunkKey{2}};
+
+  const auto plain = domain_after(std::span{keys});
+  const auto churned = domain_after(std::span{churn});
+
+  ASSERT_EQ(plain.size(), keys.size());
+  EXPECT_TRUE(std::is_sorted(
+      plain.begin(), plain.end(),
+      [](tess::ChunkKey a, tess::ChunkKey b) { return a.value < b.value; }));
+  std::vector<std::uint64_t> plain_values;
+  std::vector<std::uint64_t> churned_values;
+  plain_values.reserve(plain.size());
+  churned_values.reserve(churned.size());
+  for (const auto key : plain) {
+    plain_values.push_back(key.value);
+  }
+  for (const auto key : churned) {
+    churned_values.push_back(key.value);
+  }
+  EXPECT_EQ(plain_values, churned_values);
 }
 
 TEST(TessResidency, ExplicitEvictReleasesResidencyAndBytes) {

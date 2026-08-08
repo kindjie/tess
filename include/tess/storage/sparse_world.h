@@ -344,10 +344,17 @@ class World<Shape, Schema, SparseResident> {
    * idempotent for data and generation. This operation does not allocate after
    * construction.
    *
-   * @pre `key` is inside the bounded shape; debug builds assert otherwise.
+   * Returns an invalid handle for a key outside the bounded shape, matching
+   * `try_chunk()`, `try_meta()` and `residency_generation()`. This is the
+   * only residency entry point with no checked counterpart, so it is total
+   * rather than asserted: the directory's direct-slot mode indexes its slot
+   * table by the key, and an out-of-range key previously wrote past the end
+   * wherever assertions were compiled out.
    */
   ResidencyHandle ensure_resident(ChunkKey key) {
-    TESS_ASSERT(contains(key));
+    if (!contains(key)) {
+      return ResidencyHandle{};
+    }
     auto slot = directory_.find(key);
     if (slot != detail::ChunkDirectory::npos) {
       lru_move_to_mru(slot);
@@ -519,13 +526,22 @@ class World<Shape, Schema, SparseResident> {
       -> DirtyObservation {
     const auto slot = resident_slot_checked(key);
     return detail::meta_observe_dirty(dirty_flags_[slot], dirty_bounds_[slot],
-                                      metadata_[slot], flags);
+                                      metadata_[slot], flags,
+                                      slot_generation_[slot]);
   }
 
+  /**
+   * Clears the observed flags when the observation is still current.
+   *
+   * Refuses an observation from an earlier residency interval: reloading a
+   * chunk restarts its `version`, so the version alone cannot distinguish a
+   * mark this observation saw from one made after an eviction.
+   */
   bool clear_dirty_observed(ChunkKey key, DirtyObservation observed) noexcept {
     const auto slot = resident_slot_checked(key);
     return detail::meta_clear_dirty_observed(
-        dirty_flags_[slot], dirty_bounds_[slot], metadata_[slot], observed);
+        dirty_flags_[slot], dirty_bounds_[slot], metadata_[slot], observed,
+        slot_generation_[slot]);
   }
 
   void mark_active(ChunkKey key, std::uint32_t flags) noexcept {
