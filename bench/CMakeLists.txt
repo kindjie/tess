@@ -73,6 +73,26 @@ target_link_libraries(
 )
 tess_apply_project_options(tess_bench_thread_scaling)
 
+# The budgeted-progress runner is likewise its own binary (design
+# docs/planning/budgeted-progress-benchmarks.md section 14.1): a
+# multi-frame queueing experiment with its own clock, controller, and
+# artifact schema, not a Google Benchmark suite. It registers no
+# benchmark names, so the threshold literal gate and workload-matrix
+# scan do not apply; cell identities live in artifact workload_refs.
+# It quote-includes the deterministic harness headers from tests/
+# (grid generators/oracle and the budgeted controller), which are
+# harness support, never public headers.
+add_executable(tess_bench_budgeted_progress tess_budgeted_progress_bench.cc)
+target_link_libraries(
+  tess_bench_budgeted_progress
+  PRIVATE tess::tess
+)
+target_include_directories(
+  tess_bench_budgeted_progress
+  PRIVATE "${PROJECT_SOURCE_DIR}/tests"
+)
+tess_apply_project_options(tess_bench_budgeted_progress)
+
 if(TESS_ENABLE_ENTT)
   include(TessEnttDeps)
   tess_require_entt()
@@ -769,6 +789,18 @@ add_custom_target(
 )
 
 if(BUILD_TESTING)
+  # Compile-and-run smoke for the budgeted-progress runner (design
+  # section 14.2 CI scope: compile/smoke, correctness validation, and
+  # artifact emission — never a timing gate). Smoke mode still runs
+  # every cell's pre-timing oracle/determinism validation.
+  add_test(
+    NAME tess_bench_budgeted_progress_smoke
+    COMMAND
+      tess_bench_budgeted_progress
+      --smoke
+      --out-dir ${CMAKE_CURRENT_BINARY_DIR}
+  )
+
   add_test(
     NAME tess_bench_key_smoke
     COMMAND
