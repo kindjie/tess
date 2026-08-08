@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime
 import re
 import sys
 from pathlib import Path
@@ -84,17 +85,28 @@ def validate_release_fragment(path: Path) -> str:
   body = path.read_text(encoding="utf-8")
   if not body.strip():
     raise FragmentError(f"{path.name}: empty fragment")
+  seen_item = False
   for line in body.splitlines():
     if not line.strip():
       continue
     # A fragment holds complete list items so assembly stays a
     # concatenation; anything else would need reformatting here and would
     # render differently than it reads in review.
-    if not (line.startswith("- ") or line.startswith("  ")):
-      raise FragmentError(
-        f"{path.name}: every line must start a list item ('- ') or "
-        f"continue one (two spaces); found: {line[:40]!r}"
-      )
+    if line.startswith("- "):
+      seen_item = True
+      continue
+    if line.startswith("  "):
+      if not seen_item:
+        # Nonempty, and every line "continues" -- but the assembled
+        # category would hold no list item at all.
+        raise FragmentError(
+          f"{path.name}: indented line before any list item ('- ')"
+        )
+      continue
+    raise FragmentError(
+      f"{path.name}: every line must start a list item ('- ') or "
+      f"continue one already begun (two spaces); found: {line[:40]!r}"
+    )
   return match.group("category")
 
 
@@ -198,8 +210,37 @@ def render_decision_sections() -> str:
   )
 
 
+DATED_HEADING_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}) - ", re.M)
+
+
+def split_dated_sections(text: str) -> list[tuple[str, str]]:
+  """Split a decision changelog body into [(date, section-text), ...]."""
+  matches = list(DATED_HEADING_RE.finditer(text))
+  sections: list[tuple[str, str]] = []
+  for position, match in enumerate(matches):
+    start = match.start()
+    end = matches[position + 1].start() if position + 1 < len(matches) else len(text)
+    sections.append((match.group(1), text[start:end].strip("\n")))
+  return sections
+
+
 def release(version: str, date: str, *, dry_run: bool) -> int:
   """Fold pending fragments into both changelogs under `version`."""
+  # Checked before any write or delete: a mistyped date would otherwise
+  # land verbatim in the release heading AND consume every fragment,
+  # reporting success.
+  # Not date.fromisoformat: since 3.11 it also accepts basic forms such
+  # as "20260901", which would reach the release heading verbatim.
+  try:
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+      raise ValueError(date)
+    datetime.date.fromisoformat(date)
+  except ValueError:
+    print(
+      f"changelog: --date {date!r} is not a YYYY-MM-DD calendar date",
+      file=sys.stderr,
+    )
+    return 1
   problems = check()
   if problems:
     for problem in problems:
@@ -239,7 +280,17 @@ def release(version: str, date: str, *, dry_run: bool) -> int:
     text = DECISION_CHANGELOG.read_text(encoding="utf-8")
     marker = "\n## "
     index = text.index(marker)
-    new = f"{text[:index].rstrip()}\n\n{decision_body}\n{text[index:]}"
+    preamble, existing = text[:index], text[index:]
+    # Merge pending fragments with the sections already in the file and
+    # sort the union. Prepending would put a backdated fragment above
+    # decisions that predate it, since sorting the pending set alone says
+    # nothing about where it belongs relative to history.
+    sections = split_dated_sections(existing) + split_dated_sections(
+      "\n" + decision_body
+    )
+    sections.sort(key=lambda item: item[0], reverse=True)
+    merged = "\n\n".join(body for _, body in sections)
+    new = f"{preamble.rstrip()}\n\n{merged}\n"
     if dry_run:
       print(decision_body)
     else:

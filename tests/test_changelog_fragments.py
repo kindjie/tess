@@ -294,3 +294,76 @@ def test_parse_sections_keeps_an_unknown_category_rather_than_dropping_it():
   sections = ac.parse_sections("### Curiosities\n\n- An entry.\n")
 
   assert sections["curiosities"] == ["- An entry."]
+
+
+def test_release_fragment_rejects_indented_only_content(tmp_path):
+  """Every line "continues" a list item that was never started.
+
+  Nonempty and all-indented passes a naive line check, but the assembled
+  category would contain no markdown list item at all.
+  """
+  path = _write(tmp_path, "thing.fixed.md", "  orphan text\n")
+
+  with pytest.raises(ac.FragmentError, match="before any list item"):
+    ac.validate_release_fragment(path)
+
+
+def test_release_rejects_a_date_that_is_not_a_calendar_date(
+  tmp_path, monkeypatch
+):
+  """A mistyped date must not reach the heading or consume fragments."""
+  release_dir = tmp_path / "changelog.d"
+  release_dir.mkdir()
+  changelog = tmp_path / "CHANGELOG.md"
+  original = "# Changelog\n\n## [Unreleased]\n"
+  changelog.write_text(original, encoding="utf-8")
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", release_dir)
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", tmp_path / "absent")
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
+  _write(release_dir, "a.fixed.md", "- A fix.\n")
+
+  for bad in ("not-a-date", "2026-13-01", "2026-02-30", "20260901"):
+    assert ac.release("0.13.0", bad, dry_run=False) == 1
+    assert changelog.read_text(encoding="utf-8") == original
+    assert len(ac._fragment_files(release_dir)) == 1
+
+
+def test_backdated_decision_fragment_sorts_against_existing_history(
+  tmp_path, monkeypatch
+):
+  """Pending fragments must be ordered against the file, not just each other.
+
+  Prepending would place a backdated fragment above decisions that
+  predate it, because sorting the pending set alone says nothing about
+  where it belongs in history.
+  """
+  decision_dir = tmp_path / "decisions.d"
+  decision_dir.mkdir()
+  decisions = tmp_path / "decisions.md"
+  decisions.write_text(
+    "# Design Changelog\n\nPreamble.\n\n"
+    "## 2026-08-09 - Newest already recorded\n\n- One.\n\n"
+    "## 2026-08-01 - Oldest already recorded\n\n- Two.\n",
+    encoding="utf-8",
+  )
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", tmp_path / "absent")
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", decision_dir)
+  monkeypatch.setattr(ac, "DECISION_CHANGELOG", decisions)
+  # Dated BETWEEN the two sections already in the file.
+  _write(
+    decision_dir,
+    "2026-08-05-backdated.md",
+    "## 2026-08-05 - Backdated\n\n- Three.\n",
+  )
+
+  assert ac.release("0.13.0", "2026-09-01", dry_run=False) == 0
+
+  text = decisions.read_text(encoding="utf-8")
+  order = [
+    text.index("## 2026-08-09"),
+    text.index("## 2026-08-05"),
+    text.index("## 2026-08-01"),
+  ]
+  assert order == sorted(order), "sections must stay newest-first"
+  assert text.startswith("# Design Changelog")
+  assert "Preamble." in text
