@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -254,9 +255,30 @@ def check_artifact(document: dict) -> None:
   if pacing == "unpaced":
     _require("frame_start_lag_ns" not in summary,
              "unpaced cells must omit frame_start_lag_ns")
+    for key in ("measured_wall_ns", "useful_per_wall_second"):
+      _require(key not in summary,
+               f"unpaced cells must omit {key}: measured wall rates come "
+               "from paced cells only")
   else:
     check_percentile_family("summary.frame_start_lag_ns",
                             summary["frame_start_lag_ns"])
+    wall_ns = summary.get("measured_wall_ns")
+    _require(isinstance(wall_ns, int) and not isinstance(wall_ns, bool)
+             and wall_ns > 0,
+             "paced cells must carry a positive measured_wall_ns")
+    wall_rate = summary.get("useful_per_wall_second")
+    _require(isinstance(wall_rate, (int, float))
+             and not isinstance(wall_rate, bool)
+             and math.isfinite(wall_rate) and wall_rate >= 0,
+             "paced cells must carry a finite non-negative "
+             "useful_per_wall_second")
+    # The rate must be derivable from its source fields, not asserted.
+    useful = summary.get("useful_completions")
+    if isinstance(useful, int) and not isinstance(useful, bool):
+      expected = useful / (wall_ns / 1e9)
+      _require(abs(wall_rate - expected) <= max(1e-6, expected * 1e-3),
+               f"useful_per_wall_second {wall_rate!r} does not match "
+               f"useful_completions / measured_wall_ns ({expected!r})")
 
   saturated = kind == "isolated_saturated"
   deadline_keys = ("deadline_success_rate", "lateness_ticks",

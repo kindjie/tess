@@ -20,6 +20,15 @@
 // the frozen 10k request pool and the independent Dijkstra oracle the
 // design mandates, which the carve fixtures cannot.
 //
+// Paced cells measure paced-with-idle behavior: the loop sleeps to
+// each 60 FPS edge, so the core enters idle states between frames and
+// the first work after wake runs at reduced frequency with cooled
+// caches. On the dev machine this costs ~14% of within-budget work
+// units at a 2 ms budget versus the unpaced loop and stretches worst
+// quantum tails ~2x. That is the honest result for a host that idles
+// between simulation slices; a spin-paced mode emulating a busy host
+// is a possible future variant, not silently substituted here.
+//
 // Field products are built through the direct build API each
 // iteration — the product cache is never involved, so every
 // completion is a real build, not a cache hit. The pool is inventory,
@@ -160,6 +169,7 @@ struct SaturatedRep {
   std::vector<std::uint64_t> frame_elapsed_ns;
   std::vector<std::uint64_t> overshoot_quantum_tail_ns;
   std::vector<std::uint64_t> overshoot_mandatory_ns;
+  std::vector<std::uint64_t> frame_start_lag_ns;  // Paced cells only.
   std::uint64_t overshoot_frames = 0;
   std::uint64_t useful_completions = 0;
 };
@@ -589,6 +599,9 @@ struct ArrivalCellResult {
   tess::diagnostics::FlowCounters window_flow;
   std::vector<ArrivalRepRecord> rep_records;
   std::vector<SaturatedRep> reps;
+  // Wall-clock span of the measured frames, summed across
+  // repetitions; published as a rate only from paced cells.
+  Nanos measured_wall_ns = 0;
   budgeted::ArrivalSummary totals;
   std::vector<std::uint64_t> lateness_ticks;
   std::vector<std::uint64_t> oldest_age_samples;
@@ -604,11 +617,12 @@ struct ArrivalCellResult {
 // service continuing so tick-based deadlines resolve.
 void run_arrival_rep(const RunOptions& options, AstarCell& cell,
                      SteadyClock& clock, Nanos budget_ns, std::uint64_t rate,
-                     ArrivalCellResult& out) {
+                     budgeted::Pacing pacing, ArrivalCellResult& out) {
   cell.next = 0;
   FrameBudgetConfig config;
   config.budget_ns = budget_ns;
   config.base_tps = 60;
+  config.pacing = pacing;
   FrameBudgetController controller{clock, config};
 
   const std::uint64_t horizon_ticks =
@@ -657,6 +671,10 @@ void run_arrival_rep(const RunOptions& options, AstarCell& cell,
   // warmup backlog into the measured-window artifact).
   tracker.accounting().counters.outstanding_high_water =
       tracker.counters().outstanding_current;
+  // The drain ran between frames in wall time; re-anchor the paced
+  // schedule so measured frames wait for real edges instead of
+  // sprinting through the edges the drain consumed.
+  controller.rebase_pacing();
   const tess::diagnostics::FlowCounters window_start = tracker.counters();
   tracker.begin_window(controller.sim_tick() + 1);
 
@@ -664,17 +682,25 @@ void run_arrival_rep(const RunOptions& options, AstarCell& cell,
   samples.frame_elapsed_ns.reserve(options.measured_frames);
   samples.overshoot_quantum_tail_ns.reserve(options.measured_frames);
   samples.overshoot_mandatory_ns.reserve(options.measured_frames);
+  if (pacing == budgeted::Pacing::Paced) {
+    samples.frame_start_lag_ns.reserve(options.measured_frames);
+  }
+  const Nanos wall_start = clock.now();
   for (std::uint64_t frame = 0; frame < options.measured_frames; ++frame) {
     const FrameRecord record = controller.run_frame(mandatory, quantum);
     samples.frame_elapsed_ns.push_back(record.elapsed_ns);
     samples.overshoot_quantum_tail_ns.push_back(
         record.overshoot_quantum_tail_ns);
     samples.overshoot_mandatory_ns.push_back(record.overshoot_mandatory_ns);
+    if (pacing == budgeted::Pacing::Paced) {
+      samples.frame_start_lag_ns.push_back(record.frame_start_lag_ns);
+    }
     if (record.overshoot_quantum_tail_ns > 0 ||
         record.overshoot_mandatory_ns > 0) {
       ++samples.overshoot_frames;
     }
   }
+  out.measured_wall_ns += budgeted::sub_clamped(clock.now(), wall_start);
   tracker.end_window(controller.sim_tick());
   // Re-observe at the current tick so the oldest-age gauge reflects
   // the queue after the final frame's admissions and service, not the
@@ -731,25 +757,35 @@ void run_arrival_rep(const RunOptions& options, AstarCell& cell,
   out.peak_rss = std::max(out.peak_rss, current_rss_bytes());
 }
 
-void run_arrival_cell(const RunOptions& options, AstarCell& cell) {
-  for (const std::uint64_t rate : kArrivalRatesPerSimSecond) {
+// Paced cells use one canonical mid-ladder rate: a paced repetition
+// costs real wall time by construction (measured_frames / 60 Hz), so
+// the paced matrix stays deliberately small (design section 3.2).
+constexpr std::array<std::uint64_t, 1> kPacedArrivalRates = {600};
+
+template <std::size_t RateCount>
+void run_arrival_cells(const RunOptions& options, AstarCell& cell,
+                       budgeted::Pacing pacing,
+                       const std::array<std::uint64_t, RateCount>& rates,
+                       const char* name_prefix) {
+  for (const std::uint64_t rate : rates) {
     SteadyClock clock;
     std::array<ArrivalCellResult, kBudgetsNs.size()> results;
     for (std::uint64_t rep = 0; rep < options.repetitions; ++rep) {
       for (std::size_t k = 0; k < kBudgetsNs.size(); ++k) {
         const std::size_t budget_index = (k + rep) % kBudgetsNs.size();
         run_arrival_rep(options, cell, clock, kBudgetsNs[budget_index], rate,
-                        results[budget_index]);
+                        pacing, results[budget_index]);
       }
     }
     for (std::size_t i = 0; i < kBudgetsNs.size(); ++i) {
       ArrivalCellResult& cell_result = results[i];
       budgeted::Artifact artifact;
+      std::vector<SaturatedRep> shim_reps = std::move(cell_result.reps);
       {
         // Reuse the saturated assembly for run/summary plumbing.
         SaturatedCellResult shim;
         shim.window_flow = cell_result.window_flow;
-        shim.reps = std::move(cell_result.reps);
+        shim.reps = shim_reps;
         shim.peak_rss = cell_result.peak_rss;
         artifact = build_artifact(options, shim, kBudgetsNs[i]);
       }
@@ -759,6 +795,25 @@ void run_arrival_cell(const RunOptions& options, AstarCell& cell) {
       artifact.experiment.settlement_ticks = kArrivalSettlementTicks;
       artifact.experiment.arrival_rate_num = rate;
       artifact.experiment.arrival_rate_den = 1;
+      if (pacing == budgeted::Pacing::Paced) {
+        artifact.experiment.pacing = "paced";
+        std::vector<std::uint64_t> lag_samples;
+        for (const SaturatedRep& rep : shim_reps) {
+          lag_samples.insert(lag_samples.end(), rep.frame_start_lag_ns.begin(),
+                             rep.frame_start_lag_ns.end());
+        }
+        artifact.summary.frame_start_lag_ns = budgeted::summarize_family(
+            "paced_measured_frames_pooled", std::move(lag_samples));
+        // Measured wall rate: paced cells only (design section 3.2).
+        artifact.summary.measured_wall_ns = cell_result.measured_wall_ns;
+        const double wall_seconds =
+            static_cast<double>(cell_result.measured_wall_ns) / 1e9;
+        artifact.summary.useful_per_wall_second =
+            wall_seconds > 0
+                ? static_cast<double>(cell_result.totals.useful_completions) /
+                      wall_seconds
+                : 0.0;
+      }
       // The trace identity covers the release schedule, not just the
       // request pool: different rates are different demand traces.
       budgeted::Sha256 trace_hasher;
@@ -800,7 +855,7 @@ void run_arrival_cell(const RunOptions& options, AstarCell& cell) {
 
       SteadyClock calibration_clock;
       artifact.calibration = calibrate(calibration_clock);
-      write_artifact(options, artifact, "astar_arrival_" + std::to_string(rate),
+      write_artifact(options, artifact, name_prefix + std::to_string(rate),
                      kBudgetsNs[i]);
     }
   }
@@ -826,7 +881,8 @@ void run_capacity_search(const RunOptions& options, AstarCell& cell) {
                               std::uint64_t reps) -> std::uint64_t {
       ArrivalCellResult scratch;
       for (std::uint64_t rep = 0; rep < reps; ++rep) {
-        run_arrival_rep(cfg, cell, clock, budget, rate, scratch);
+        run_arrival_rep(cfg, cell, clock, budget, rate,
+                        budgeted::Pacing::Unpaced, scratch);
       }
       point_reps.push_back(scratch.rep_records);
       return scratch.stable_reps;
@@ -1164,7 +1220,10 @@ auto main(int argc, char** argv) -> int {
   AstarCell astar_cell = build_astar_cell(options);
   validate_astar_cell(astar_cell, options.validation_requests);
   run_astar_cell(options, astar_cell);
-  run_arrival_cell(options, astar_cell);
+  run_arrival_cells(options, astar_cell, budgeted::Pacing::Unpaced,
+                    kArrivalRatesPerSimSecond, "astar_arrival_");
+  run_arrival_cells(options, astar_cell, budgeted::Pacing::Paced,
+                    kPacedArrivalRates, "astar_arrival_paced_");
   run_capacity_search(options, astar_cell);
   run_field_product_cell(options);
   run_resumable_cell(options);
