@@ -9,5 +9,10 @@
   stored and hands the caller the displaced entry's storage, cleared. The
   rvalue `store` overloads keep their `bool` contract; their argument is
   still left empty, though on a displacing store it now owns the displaced
-  buffers rather than its own. Measured on a 64-tile world: rebuilding
-  after a store went from five allocations to zero.
+  buffers rather than its own. The reuse covers stores that displace
+  something — a same-key replacement, or an admission the byte budget makes
+  evict. An admission into a cache still under budget displaces nothing, so
+  that rebuild allocates as before; a runtime only stops reallocating once
+  its product cache is full. Measured on a 64-tile world: rebuilding after
+  a displacing store went from five allocations to zero. The removed
+  relookup, by contrast, is saved on every build.

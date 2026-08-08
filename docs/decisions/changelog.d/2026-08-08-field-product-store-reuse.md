@@ -17,6 +17,17 @@
   product and leave the caller holding whatever storage the cache
   displaced (the replaced entry's buffers, or an evicted one's). The
   rvalue `store` overloads keep their `bool` contract as thin wrappers.
+- Scope, recorded because the first draft did not state it: a store only
+  hands storage back when it displaces something. A same-key replacement
+  always does, and an admission does once the byte budget forces an
+  eviction, but an admission into a cache still under budget displaces
+  nothing. A world edit or provider revision change produces a new key, so
+  it is an admission -- meaning a runtime keeps reallocating the
+  world-sized array until its product cache reaches budget, and only then
+  stops. The removed relookup is saved on every build regardless. Review
+  raised this against a draft that read as though every rebuild was
+  covered; the allocation test exercises the displacing path only, which
+  is what the claim is now limited to.
 - Recorded: "existing callers are unaffected" was too strong, and a review
   pass proved why. The displaced product is handed back with its CONTENTS,
   not just its storage, so before the follow-up fix an evicting store left
