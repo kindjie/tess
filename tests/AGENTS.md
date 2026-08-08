@@ -216,6 +216,16 @@
   `ExecutionReport` recycles report rows, planned operations, and pooled
   chunk lists, so warm steady-state planning performs zero allocations
   (counter-backed).
+- `tess_queued_planning_index_test`: holds the audit-2026-08-07 P1 chunk
+  index indistinguishable from the linear scans it replaced. Differential:
+  randomized plans run through both `find_hazard` and `find_hazard_indexed`
+  and must blame the identical operation, and through both phase-grouping
+  branches (the index above `phase_index_min_operations`, all-pairs below)
+  and must produce the identical phase layout. Also pins the index itself --
+  `clear` leaves no stale entry, and growth relinks every node. The
+  `{A}, {B}, {B}, {A}` case is constructed rather than sampled: it is the
+  shortest plan where an operation overlaps a CLOSED phase but not the open
+  one, and randomized plans reach it too rarely to rely on.
 - `tess_queued_test`: verifies the M4 queued-operations scaffold, including
   empty-frame planning, stable handles and enqueue-order ids, explicit/dirty/
   active/resident chunk-domain expansion, enqueue-order plan preservation,
