@@ -1279,7 +1279,13 @@
   Bresenham rate accumulator's exact release pattern and the
   single-class FIFO tracker's O(1) oldest-age bookkeeping, inclusive
   deadlines, window scoping, and seal-time starvation/lateness
-  derivation. Milliseconds in Debug; no sleeps.
+  derivation. The capacity-search layer
+  (`tests/budgeted_progress_search.h`) pins the section 9.3 policy
+  against scripted boundaries: monotone convergence within the
+  terminal resolution, confirmation-failure step-down with failed
+  points retained, non-inverting bands under deterministic flapping,
+  unstable-seed halving, and the hopeless-workload case. Milliseconds
+  in Debug; no sleeps.
 - `tess_grid_map_generators_test`: deterministic procedural map
   generators for the S1 scenario layer (`tests/grid_map_generators.h`
   — recursive-division maze and room-and-corridor, SplitMix64 integer

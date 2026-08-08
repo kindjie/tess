@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 SCHEMA = "tess.budgeted_progress.v1"
+SEARCH_SCHEMA = "tess.budgeted_progress.search.v1"
 SUITE_VERSION = 1
 
 PERCENTILE_MINIMUMS = {"p50": 20, "p95": 200, "p99": 2000, "p999": 20000}
@@ -110,8 +111,114 @@ def check_flow(flow: dict) -> None:
            "flow: retention_identity_ok flag must be true")
 
 
+SEARCH_REQUIRED_KEYS = ("scenario_id", "workload_refs", "budget_ns",
+                        "sim_tps", "pacing", "seed_rate",
+                        "resolution_percent")
+
+POINT_REP_KEYS = ("useful_completions", "cohort_admitted",
+                  "cohort_deadline_met", "outstanding_growth",
+                  "oldest_age_end_ticks")
+
+
+def _positive_int(value: object) -> bool:
+  return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def check_search_artifact(document: dict) -> None:
+  """Validate one capacity-search summary document."""
+  _require(document.get("suite_version") == SUITE_VERSION,
+           f"unknown suite_version {document.get('suite_version')!r}: "
+           "failing closed")
+  for block in ("run", "search", "capacity_band"):
+    _require(isinstance(document.get(block), dict), f"missing block {block!r}")
+
+  run = document["run"]
+  for key in ("commit", "machine_fingerprint", "compiler"):
+    _require(isinstance(run.get(key), str) and run[key],
+             f"run.{key} must be a non-empty string")
+
+  search = document["search"]
+  for key in SEARCH_REQUIRED_KEYS:
+    _require(key in search, f"search missing {key}")
+  _require(isinstance(search["scenario_id"], str) and search["scenario_id"],
+           "search.scenario_id must be a non-empty string")
+  refs = search["workload_refs"]
+  _require(isinstance(refs, list) and refs
+           and all(isinstance(ref, str) and ref for ref in refs),
+           "search.workload_refs must be a non-empty list of identities")
+  for key in ("budget_ns", "sim_tps", "seed_rate", "resolution_percent"):
+    _require(_positive_int(search[key]),
+             f"search.{key} must be a positive integer")
+  _require(search["pacing"] in ("paced", "unpaced"),
+           f"invalid search pacing {search['pacing']!r}")
+  flapping = document.get("flapping")
+  _require(isinstance(flapping, int) and not isinstance(flapping, bool)
+           and flapping >= 0,
+           "flapping must be a non-negative integer")
+
+  points = document.get("points")
+  _require(isinstance(points, list) and points,
+           "search summaries must retain every tested point")
+  assert isinstance(points, list)
+  stable_confirmed_rates = []
+  unstable_rates = []
+  for index, point in enumerate(points):
+    _require(isinstance(point, dict), f"points[{index}] must be an object")
+    rate = point.get("rate")
+    _require(_positive_int(rate),
+             f"points[{index}].rate must be a positive integer")
+    for key in ("confirmation", "stable"):
+      _require(isinstance(point.get(key), bool),
+               f"points[{index}].{key} must be a boolean")
+    reps = point.get("reps")
+    _require(isinstance(reps, list) and reps,
+             f"points[{index}].reps must retain every repetition")
+    assert isinstance(reps, list)
+    for rep_index, rep in enumerate(reps):
+      _require(isinstance(rep, dict),
+               f"points[{index}].reps[{rep_index}] must be an object")
+      _require(isinstance(rep.get("stable"), bool),
+               f"points[{index}].reps[{rep_index}].stable must be boolean")
+      for key in POINT_REP_KEYS:
+        value = rep.get(key)
+        _require(isinstance(value, int) and not isinstance(value, bool)
+                 and value >= 0,
+                 f"points[{index}].reps[{rep_index}].{key} must be a "
+                 "non-negative integer")
+    if point["confirmation"] and point["stable"]:
+      stable_confirmed_rates.append(rate)
+    if not point["stable"]:
+      unstable_rates.append(rate)
+
+  band = document["capacity_band"]
+  confirmed = band.get("confirmed_stable")
+  lowest = band.get("lowest_unstable")
+  for name, value in (("confirmed_stable", confirmed),
+                      ("lowest_unstable", lowest)):
+    _require(value is None or _positive_int(value),
+             f"capacity_band.{name} must be null or a positive integer")
+  # Verdict-consistent edges: the confirmed edge must be a point that
+  # actually confirmed stable, and the unstable edge a point that
+  # actually tested unstable — membership alone is not enough.
+  if isinstance(confirmed, int):
+    _require(confirmed in stable_confirmed_rates,
+             "capacity_band.confirmed_stable must be a tested point that "
+             "confirmed stable")
+  if isinstance(lowest, int):
+    _require(lowest in unstable_rates,
+             "capacity_band.lowest_unstable must be a tested point that "
+             "tested unstable")
+  if isinstance(confirmed, int) and isinstance(lowest, int):
+    _require(lowest > confirmed,
+             "capacity band inverted: lowest_unstable must exceed "
+             "confirmed_stable")
+
+
 def check_artifact(document: dict) -> None:
   """Validate one parsed artifact document, raising on violation."""
+  if document.get("schema") == SEARCH_SCHEMA:
+    check_search_artifact(document)
+    return
   _require(document.get("schema") == SCHEMA,
            f"unknown schema {document.get('schema')!r}: failing closed")
   _require(document.get("suite_version") == SUITE_VERSION,
