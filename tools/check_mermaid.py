@@ -8,6 +8,9 @@ so this check extracts each ```mermaid fence, loads the self-hosted
 bundle fetched by tools/fetch_mermaid.py into headless Chrome, and calls
 `mermaid.parse()` on every diagram. Excluded documentation under docs/
 is checked too: diagrams stay valid wherever they live.
+
+Known limit: fences indented four or more spaces (for example inside
+list items) are not recognized and are silently skipped.
 """
 
 from __future__ import annotations
