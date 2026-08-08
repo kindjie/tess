@@ -199,6 +199,16 @@ tess_apply_project_options(tess_colony_harness_test)
 tess_discover_tests(tess_colony_harness_test LABELS block core diagnostics ops path sim storage topology)
 
 add_executable(
+  tess_budgeted_progress_test
+  tess_budgeted_progress_test.cc
+)
+target_link_libraries(
+  tess_budgeted_progress_test PRIVATE tess::tess GTest::gtest_main)
+tess_apply_project_options(tess_budgeted_progress_test)
+
+tess_discover_tests(tess_budgeted_progress_test LABELS diagnostics ops sim)
+
+add_executable(
   tess_sparse_stream_test
   tess_sparse_stream_test.cc
 )

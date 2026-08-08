@@ -419,6 +419,7 @@ jobs:
           tests/test_thread_scaling_report.py
           tests/test_thread_scaling_chart.py
           tests/test_sweep_cpu_plan.py
+          tests/test_budgeted_artifacts.py
 
       # Failing gate (promoted 2026-07-07 after a clean shake-out):
       # public symbols must be documented in a maintained architecture
