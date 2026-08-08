@@ -38,9 +38,10 @@ Contributor and operations pages (in-repo only; excluded from the site):
 - `favicon.ico`: site-root fallback icon (rasterized from
   `assets/tess-symbol.svg` at 16/32/48 px) so `/api/` pages resolve a
   favicon; MkDocs pages keep the SVG favicon from `mkdocs.yml`.
-- `assets/tess-social-preview.png`: 2560x1280 GitHub social-preview card
-  (dark wordmark + tagline); uploaded manually in the repository
-  settings, excluded from the published site.
+- `assets/tess-social-preview.png`: 2560x1280 social-preview card (dark
+  wordmark + tagline); uploaded manually in the repository settings for
+  GitHub, and published with the site as the `og:image`/`twitter:image`
+  card referenced from `overrides/main.html`.
 
 ## Internal Records
 

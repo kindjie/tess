@@ -39,11 +39,21 @@ is intentionally not tracked.
 python3.12 -m venv .venv-docs
 .venv-docs/bin/python -m pip install \
   --require-hashes --requirement requirements-docs.txt
+python3 tools/fetch_mermaid.py
 .venv-docs/bin/mkdocs serve
 ```
 
+`tools/fetch_mermaid.py` places the pinned, SHA-256-verified Mermaid runtime
+in `docs/assets/javascripts/` (gitignored — it exceeds the tracked-file token
+budget) so diagram pages serve Mermaid from the site's own origin instead of
+Material's unpkg.com fallback. Without it, local previews fall back to the
+CDN fetch.
+
 CI runs `mkdocs build --strict`, builds the `tess_docs` target with the pinned
-Doxygen release, checks authored-site links, and loads the WebAssembly demo in
-headless Chrome. It then copies the generated API HTML into `build/site/api`.
-Doxygen warnings, broken authored-site links, or a demo that does not reach its
+Doxygen release, checks authored-site links, validates every Mermaid fence
+against the self-hosted runtime (`tools/check_mermaid.py` — parse failures
+are invisible to `--strict` and would otherwise ship as raw diagram source),
+and loads the WebAssembly demo in headless Chrome. It then copies the
+generated API HTML into `build/site/api`. Doxygen warnings, broken
+authored-site links, an invalid diagram, or a demo that does not reach its
 ready state block deployment.
