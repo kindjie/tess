@@ -26,7 +26,11 @@
 // not admitted flow: items are offered and admitted at selection, and
 // pool wrap-around re-services are new admissions.
 
-#include <sys/resource.h>
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#else
+#include <unistd.h>
+#endif
 #include <tess/tess.h>
 
 #include <algorithm>
@@ -89,15 +93,28 @@ struct RunOptions {
   std::size_t validation_requests = 64;
 };
 
-[[nodiscard]] auto peak_rss_bytes() -> std::uint64_t {
-  rusage usage{};
-  if (getrusage(RUSAGE_SELF, &usage) != 0) {
+// Current resident set size, sampled at repetition boundaries; the
+// per-cell peak is the maximum of these samples (the design's
+// "sampled at repetition boundaries" contract). Deliberately NOT
+// ru_maxrss: that is a process-lifetime high-water mark, so later
+// cells would inherit earlier cells' peaks in one sequential run.
+[[nodiscard]] auto current_rss_bytes() -> std::uint64_t {
+#if defined(__APPLE__)
+  mach_task_basic_info info{};
+  mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+  if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                reinterpret_cast<task_info_t>(&info), &count) != KERN_SUCCESS) {
     return 0;
   }
-#if defined(__APPLE__)
-  return static_cast<std::uint64_t>(usage.ru_maxrss);  // Bytes on macOS.
+  return static_cast<std::uint64_t>(info.resident_size);
 #else
-  return static_cast<std::uint64_t>(usage.ru_maxrss) * 1024;  // KiB on Linux.
+  std::ifstream statm{"/proc/self/statm"};
+  std::uint64_t total_pages = 0;
+  std::uint64_t resident_pages = 0;
+  if (!(statm >> total_pages >> resident_pages)) {
+    return 0;
+  }
+  return resident_pages * static_cast<std::uint64_t>(sysconf(_SC_PAGESIZE));
 #endif
 }
 
@@ -180,19 +197,25 @@ void accumulate_window(tess::diagnostics::FlowCounters& window,
       end.inventory_tick_weighted - start.inventory_tick_weighted;
   window.residence_ticks_accumulated +=
       end.residence_ticks_accumulated - start.residence_ticks_accumulated;
-  window.outstanding_current = end.outstanding_current;
+  // Delta gauge: the pre-window drain guarantees a quiescent start
+  // boundary, so summing end-of-window outstanding across repetitions
+  // keeps the retention identity exact on the summed deltas (the
+  // value counts repetitions that ended with an in-flight item).
+  window.outstanding_current +=
+      end.outstanding_current - start.outstanding_current;
   window.outstanding_high_water =
       std::max(window.outstanding_high_water, end.outstanding_high_water);
   window.oldest_outstanding_age_ticks = end.oldest_outstanding_age_ticks;
 }
 
 // One repetition of one budget cell: warmup frames, a quiescing
-// drain, the window-start snapshot, measured frames, a second drain,
-// the window-end snapshot. Drains run outside measured frames and
-// retire at most one in-flight item in saturated cells, so they
-// cannot erase outstanding growth (design section 9.2); with both
-// boundaries quiescent the conservation identities hold exactly on
-// the window deltas.
+// drain, the window-start snapshot, measured frames, and the
+// window-end snapshot taken immediately — before any further work —
+// so nothing outside the measured frames can leak into the window
+// flow. The single pre-window drain retires at most one in-flight
+// item, outside measured frames, so it cannot erase outstanding
+// growth (design section 9.2); in-flight items at window end appear
+// in the outstanding delta gauge and the identities hold exactly.
 template <typename ResetFn, typename TickFn, typename QuantumFn,
           typename DrainFn>
 void run_one_rep(const RunOptions& options, Nanos budget_ns, SteadyClock& clock,
@@ -239,11 +262,14 @@ void run_one_rep(const RunOptions& options, Nanos budget_ns, SteadyClock& clock,
     }
     samples.useful_completions += completions;
   }
-  drain();
+  // Window-end snapshot happens before anything else runs: a drained
+  // ticket must not leak post-window work into the measured flow.
+  // The identities still hold on the deltas because outstanding is
+  // accumulated as a delta gauge (start boundary is quiescent).
   accumulate_window(out.window_flow, window_start, accounting.counters);
   out.reps.push_back(std::move(samples));
   // Sampled at repetition boundaries, outside any timed frame.
-  out.peak_rss = std::max(out.peak_rss, peak_rss_bytes());
+  out.peak_rss = std::max(out.peak_rss, current_rss_bytes());
 }
 
 // Repetition-outer, budget-inner with the starting offset rotated by
@@ -363,10 +389,21 @@ struct AstarCell {
   PathScaleWorld world;
   grid::BenchmarkMap scaled_map;  // 512x512 raster for the honest oracle.
   std::vector<tess::PathRequest> pool;
+  // Contiguous-reference expectation per pool entry (status | cost),
+  // precomputed untimed; every timed completion is checked against it
+  // so no invalid result can ever count as useful (design section 10).
+  std::vector<std::uint64_t> expected;
   std::string pool_sha256;
+  std::string expected_sha256;
   tess::PathScratch scratch;
   std::size_t next = 0;
 };
+
+[[nodiscard]] auto pack_path_outcome(const tess::PathResult& result)
+    -> std::uint64_t {
+  return (static_cast<std::uint64_t>(result.status) << 32) |
+         static_cast<std::uint64_t>(result.cost);
+}
 
 [[nodiscard]] auto build_astar_cell(const RunOptions& options) -> AstarCell {
   AstarCell cell;
@@ -423,39 +460,54 @@ struct AstarCell {
   return cell;
 }
 
-// Pre-timing correctness: the first K pool requests against the
-// independent Dijkstra oracle on the scaled map, and a repeated
-// contiguous pass to pin determinism.
-void validate_astar_cell(AstarCell& cell, std::size_t count) {
-  budgeted::Sha256 first_pass;
-  budgeted::Sha256 second_pass;
-  for (int pass = 0; pass < 2; ++pass) {
-    budgeted::Sha256& hasher = pass == 0 ? first_pass : second_pass;
-    for (std::size_t i = 0; i < count && i < cell.pool.size(); ++i) {
-      const tess::PathRequest& request = cell.pool[i];
-      const tess::PathResult result =
-          tess::astar_path<PathScaleWorld, PassableTag>(cell.world, request,
-                                                        cell.scratch);
-      const auto reference =
-          grid::reference_cost(cell.scaled_map, request.start, request.goal,
-                               grid::ReferenceMovement::Orthogonal);
-      if (pass == 0) {
-        if (reference.has_value()) {
-          check(result.status == tess::PathStatus::Found,
-                "oracle found a path the search missed");
-          check(result.cost == *reference, "path cost diverges from oracle");
-        } else {
-          check(result.status != tess::PathStatus::Found,
-                "search found a path the oracle rejects");
-        }
-      }
-      const std::uint64_t words[2] = {static_cast<std::uint64_t>(result.status),
-                                      result.cost};
-      hasher.update(words, sizeof(words));
+// Pre-timing correctness (design section 10): the first K pool
+// requests against the independent Dijkstra oracle on the scaled map,
+// then a full-pool contiguous reference pass repeated twice to pin
+// determinism. The reference outcomes are stored so the timed loop
+// can check every completion it counts, not just the oracle subset.
+void validate_astar_cell(AstarCell& cell, std::size_t oracle_count) {
+  for (std::size_t i = 0; i < oracle_count && i < cell.pool.size(); ++i) {
+    const tess::PathRequest& request = cell.pool[i];
+    const tess::PathResult result =
+        tess::astar_path<PathScaleWorld, PassableTag>(cell.world, request,
+                                                      cell.scratch);
+    const auto reference =
+        grid::reference_cost(cell.scaled_map, request.start, request.goal,
+                             grid::ReferenceMovement::Orthogonal);
+    if (reference.has_value()) {
+      check(result.status == tess::PathStatus::Found,
+            "oracle found a path the search missed");
+      check(result.cost == *reference, "path cost diverges from oracle");
+    } else {
+      check(result.status != tess::PathStatus::Found,
+            "search found a path the oracle rejects");
     }
   }
-  check(first_pass.hex_digest() == second_pass.hex_digest(),
-        "contiguous reference not deterministic");
+
+  cell.expected.reserve(cell.pool.size());
+  budgeted::Sha256 first_pass;
+  for (const tess::PathRequest& request : cell.pool) {
+    const tess::PathResult result =
+        tess::astar_path<PathScaleWorld, PassableTag>(cell.world, request,
+                                                      cell.scratch);
+    const std::uint64_t packed = pack_path_outcome(result);
+    cell.expected.push_back(packed);
+    first_pass.update(&packed, sizeof(packed));
+  }
+  budgeted::Sha256 second_pass;
+  for (std::size_t i = 0; i < cell.pool.size(); ++i) {
+    const tess::PathResult result =
+        tess::astar_path<PathScaleWorld, PassableTag>(cell.world, cell.pool[i],
+                                                      cell.scratch);
+    const std::uint64_t packed = pack_path_outcome(result);
+    check(packed == cell.expected[i], "contiguous reference not deterministic");
+    second_pass.update(&packed, sizeof(packed));
+  }
+  cell.expected_sha256 = first_pass.hex_digest();
+  check(cell.expected_sha256 == second_pass.hex_digest(),
+        "contiguous reference hash mismatch");
+  std::printf("astar contiguous reference sha256 %s\n",
+              cell.expected_sha256.c_str());
 }
 
 void run_astar_cell(const RunOptions& options) {
@@ -466,7 +518,8 @@ void run_astar_cell(const RunOptions& options) {
   auto reset = [&cell](std::uint64_t) { cell.next = 0; };
   auto on_tick = [](std::uint64_t) {};
   auto quantum = [&cell, &accounting]() -> std::uint64_t {
-    const tess::PathRequest& request = cell.pool[cell.next];
+    const std::size_t index = cell.next;
+    const tess::PathRequest& request = cell.pool[index];
     cell.next = (cell.next + 1) % cell.pool.size();
     // Admit-on-selection: offer, admit, and resolve around one call.
     ++accounting.counters.offered;
@@ -474,6 +527,10 @@ void run_astar_cell(const RunOptions& options) {
     const tess::PathResult result =
         tess::astar_path<PathScaleWorld, PassableTag>(cell.world, request,
                                                       cell.scratch);
+    // Two loads and a compare: every completion counted as useful is
+    // checked against the precomputed contiguous reference.
+    check(pack_path_outcome(result) == cell.expected[index],
+          "timed result diverges from contiguous reference");
     const auto work = static_cast<std::uint64_t>(result.expanded_nodes);
     ++accounting.counters.completed;
     accounting.record_left_outstanding();
@@ -646,7 +703,37 @@ struct ResumableWork {
   }
 };
 
+// Design section 10 equivalence for the exact resumable workload: a
+// contiguous run (large budget) and a run sliced at AsyncWorkBudget{1}
+// must process the same 64 items exactly once and land in the same
+// deterministic generator state.
+void validate_resumable_workload() {
+  auto run_workload = [](std::uint32_t budget_items) -> ResumableWork {
+    tess::ResumableWorkQueue<std::uint64_t> queue;
+    tess::diagnostics::FlowAccounting accounting;
+    queue.set_flow_accounting(&accounting);
+    queue.reserve_tickets(1);
+    ResumableWork work;
+    (void)queue.submit(work);
+    while (queue.advance(tess::AsyncWorkBudget{budget_items}).invoked > 0) {
+    }
+    check(accounting.counters.completed == 1,
+          "resumable workload did not complete exactly once");
+    check(accounting.counters.retention_identity_holds(),
+          "resumable workload violates the retention identity");
+    return work;
+  };
+  const ResumableWork contiguous = run_workload(64);
+  const ResumableWork sliced = run_workload(1);
+  check(contiguous.items_done == 64 && sliced.items_done == 64,
+        "resumable equivalence: item counts diverge");
+  check(contiguous.state == sliced.state,
+        "resumable equivalence: sliced state diverges from contiguous");
+}
+
 void run_resumable_cell(const RunOptions& options) {
+  validate_resumable_workload();
+
   tess::ResumableWorkQueue<std::uint64_t> queue;
   tess::diagnostics::FlowAccounting accounting;
   ResumableWork work;

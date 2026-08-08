@@ -279,11 +279,28 @@ struct SummaryBlock {
   std::optional<std::string> correctness_hash;  // Deterministic runs only.
 };
 
+// One demand class's artifact record (design section 12 classes[]).
+// Per-class flow attribution beyond these counts arrives with the
+// mixed-colony stage; the block carries what the tracker derives
+// today so multi-class results are representable, not discarded.
+struct ClassArtifact {
+  std::string class_id;
+  std::uint64_t deadline_allowance_ticks = 0;
+  std::uint64_t useful_completions = 0;
+  std::uint64_t cohort_admitted = 0;
+  double deadline_success_rate = 0.0;
+  PercentileFamily lateness_ticks;
+  std::uint64_t starved_items = 0;
+};
+
 struct Artifact {
   RunBlock run;
   ExperimentBlock experiment;
   TraceBlock trace;
   tess::diagnostics::FlowCounters flow;
+  // Demand-limited cells carry one entry per demand class; saturated
+  // cells leave this empty and the emitter omits the array.
+  std::vector<ClassArtifact> classes;
   SummaryBlock summary;
   CalibrationBlock calibration;
 };
@@ -471,6 +488,28 @@ inline void append_family(std::string& out, const char* key,
   detail::append_bool(out, "retention_identity_ok",
                       flow.retention_identity_holds(), false);
   out += "}, ";
+
+  if (!artifact.classes.empty()) {
+    out += "\"classes\": [";
+    for (std::size_t i = 0; i < artifact.classes.size(); ++i) {
+      const ClassArtifact& entry = artifact.classes[i];
+      out += "{";
+      detail::append_string(out, "class_id", entry.class_id);
+      detail::append_u64(out, "deadline_allowance_ticks",
+                         entry.deadline_allowance_ticks);
+      detail::append_u64(out, "useful_completions", entry.useful_completions);
+      detail::append_u64(out, "cohort_admitted", entry.cohort_admitted);
+      detail::append_double(out, "deadline_success_rate",
+                            entry.deadline_success_rate);
+      detail::append_family(out, "lateness_ticks", entry.lateness_ticks);
+      detail::append_u64(out, "starved_items", entry.starved_items, false);
+      out += "}";
+      if (i + 1 < artifact.classes.size()) {
+        out += ", ";
+      }
+    }
+    out += "], ";
+  }
 
   const auto& summary = artifact.summary;
   out += "\"summary\": {";

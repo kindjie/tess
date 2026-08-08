@@ -6,9 +6,13 @@ section 12): unknown or malformed semantic schema versions fail
 closed; the two flow conservation identities are recomputed from the
 counters rather than trusted from the flags; suppressed percentiles
 must be null exactly when their sample base is below the section 11.4
-minimums; and mode rules hold (saturated cells omit the deadline
-group and settle at zero, unpaced cells carry no frame-start lag,
-cell artifacts carry a null capacity band).
+minimums; flow counters must be non-negative integers before any
+identity arithmetic; the experiment kind must be a known v1 kind; and
+mode rules hold (saturated cells omit the deadline group, classes,
+and stability verdict and settle at zero; demand-limited cells carry
+the deadline group, a boolean flow_stable, and a non-empty classes
+array; unpaced cells carry no frame-start lag; cell artifacts carry a
+null capacity band).
 """
 
 from __future__ import annotations
@@ -28,6 +32,23 @@ REQUIRED_BLOCKS = ("run", "experiment", "trace", "flow", "summary",
 
 TERMINAL_BUCKETS = ("completed", "cancelled", "superseded", "stale", "failed",
                     "dropped_after_admission")
+
+EXPERIMENT_KINDS = ("isolated_saturated", "isolated_arrival_rate",
+                    "mixed_current_fidelity", "mixed_existing_quanta")
+
+FLOW_COUNTER_KEYS = ("offered", "admitted", "rejected",
+                     "coalesced_into_pending", "completed", "cancelled",
+                     "superseded", "stale", "failed",
+                     "dropped_after_admission", "offered_work_units",
+                     "consumed_work_units", "outstanding_current",
+                     "outstanding_high_water", "inventory_tick_weighted",
+                     "residence_ticks_accumulated",
+                     "oldest_outstanding_age_ticks")
+
+CLASS_REQUIRED_KEYS = ("class_id", "deadline_allowance_ticks",
+                       "useful_completions", "cohort_admitted",
+                       "deadline_success_rate", "lateness_ticks",
+                       "starved_items")
 
 
 class ValidationError(Exception):
@@ -68,6 +89,13 @@ def check_percentile_family(name: str, family: object) -> None:
 
 def check_flow(flow: dict) -> None:
   """Recompute and enforce both flow conservation identities."""
+  # Domain first: negative or non-integer counters could otherwise
+  # satisfy the identity arithmetic while being meaningless.
+  for key in FLOW_COUNTER_KEYS:
+    value = flow.get(key)
+    _require(isinstance(value, int) and not isinstance(value, bool)
+             and value >= 0,
+             f"flow.{key}: must be a non-negative integer (saw {value!r})")
   offered = flow["offered"]
   admitted = flow["admitted"]
   _require(
@@ -96,7 +124,9 @@ def check_artifact(document: dict) -> None:
   summary = document["summary"]
   pacing = experiment.get("pacing")
   _require(pacing in ("paced", "unpaced"), f"invalid pacing {pacing!r}")
-  kind = experiment.get("kind", "")
+  kind = experiment.get("kind")
+  _require(kind in EXPERIMENT_KINDS,
+           f"unknown experiment kind {kind!r}: failing closed")
 
   check_flow(document["flow"])
 
@@ -121,6 +151,8 @@ def check_artifact(document: dict) -> None:
                f"saturated cells must omit {key} (omit, never zero)")
     _require("flow_stable" not in summary,
              "saturated cells carry no flow-stability verdict")
+    _require("classes" not in document,
+             "saturated cells carry no demand classes")
     _require(experiment.get("settlement_ticks") == 0,
              "saturated cells settle at zero ticks")
   else:
@@ -130,6 +162,19 @@ def check_artifact(document: dict) -> None:
                             summary["lateness_ticks"])
     check_percentile_family("summary.oldest_age_ticks",
                             summary["oldest_age_ticks"])
+    _require(isinstance(summary.get("flow_stable"), bool),
+             "demand-limited cells must carry a boolean flow_stable "
+             "verdict")
+    classes = document.get("classes")
+    _require(isinstance(classes, list) and classes,
+             "demand-limited cells must carry a non-empty classes array")
+    assert isinstance(classes, list)
+    for index, entry in enumerate(classes):
+      _require(isinstance(entry, dict), f"classes[{index}] must be an object")
+      for key in CLASS_REQUIRED_KEYS:
+        _require(key in entry, f"classes[{index}] missing {key}")
+      check_percentile_family(f"classes[{index}].lateness_ticks",
+                              entry["lateness_ticks"])
 
   _require(summary.get("capacity_band") is None,
            "cell artifacts must carry a null capacity_band")

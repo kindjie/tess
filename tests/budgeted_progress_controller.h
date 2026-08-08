@@ -141,12 +141,18 @@ class FrameBudgetController {
 
  private:
   // Integer frame-edge math so paced schedules cannot drift: edge k is
-  // epoch + floor(k * 1e9 * den / num) nanoseconds.
+  // epoch + floor(k * 1e9 * den / num) nanoseconds, computed without
+  // 128-bit arithmetic (GCC -pedantic and MSVC reject __int128): with
+  // K = 1e9 * den = q * num + r, floor(k * K / num) = k * q +
+  // floor(k * r / num), and k * r stays far inside 64 bits for any
+  // realistic frame count and rate.
   [[nodiscard]] auto frame_edge_offset(std::uint64_t frame_index) const noexcept
       -> Nanos {
-    const auto numerator = static_cast<unsigned __int128>(frame_index) *
-                           1'000'000'000ULL * config_.frame_hz_den;
-    return static_cast<Nanos>(numerator / config_.frame_hz_num);
+    const std::uint64_t scaled_period = 1'000'000'000ULL * config_.frame_hz_den;
+    const std::uint64_t quotient = scaled_period / config_.frame_hz_num;
+    const std::uint64_t remainder = scaled_period % config_.frame_hz_num;
+    return frame_index * quotient +
+           (frame_index * remainder) / config_.frame_hz_num;
   }
 
   // Design section 3.4: all granted ticks' mandatory work first, then

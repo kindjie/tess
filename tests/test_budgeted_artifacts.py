@@ -94,6 +94,15 @@ def demand_limited_artifact() -> dict:
       "starved_items": 0,
       "flow_stable": True,
   })
+  artifact["classes"] = [{
+      "class_id": "interactive_path",
+      "deadline_allowance_ticks": 1,
+      "useful_completions": 9,
+      "cohort_admitted": 9,
+      "deadline_success_rate": 0.995,
+      "lateness_ticks": family(0, base="completed_cohort_items"),
+      "starved_items": 0,
+  }]
   return artifact
 
 
@@ -232,6 +241,57 @@ def test_cli_accepts_valid(tmp_path):
   """The CLI exits zero for valid artifacts."""
   path = write(tmp_path, saturated_artifact())
   assert cba.main([str(path)]) == 0
+
+
+def test_unknown_experiment_kind_fails_closed(tmp_path):
+  """An unknown or missing experiment kind fails closed."""
+  document = saturated_artifact()
+  document["experiment"]["kind"] = "isolated_saturated_v2"
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "unknown experiment kind" in failures[0]
+
+
+def test_negative_flow_counter_rejected(tmp_path):
+  """Negative counters are rejected before identity arithmetic."""
+  document = saturated_artifact()
+  document["flow"]["offered"] = -1
+  document["flow"]["admitted"] = -1
+  document["flow"]["completed"] = -1
+  document["flow"]["rejected"] = 0
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "non-negative" in failures[0]
+
+
+def test_demand_limited_requires_flow_stable(tmp_path):
+  """Demand-limited cells must carry a boolean stability verdict."""
+  document = demand_limited_artifact()
+  del document["summary"]["flow_stable"]
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "flow_stable" in failures[0]
+
+
+def test_demand_limited_requires_classes(tmp_path):
+  """Demand-limited cells must carry a non-empty classes array."""
+  document = demand_limited_artifact()
+  del document["classes"]
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "classes" in failures[0]
+
+
+def test_class_entry_requires_fields(tmp_path):
+  """Each class entry must carry every required field."""
+  document = demand_limited_artifact()
+  del document["classes"][0]["starved_items"]
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "classes[0] missing starved_items" in failures[0]
+
+
+def test_saturated_must_omit_classes(tmp_path):
+  """Saturated cells carry no demand classes."""
+  document = saturated_artifact()
+  document["classes"] = []
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "no demand classes" in failures[0]
 
 
 def test_deep_copy_fixture_isolated():

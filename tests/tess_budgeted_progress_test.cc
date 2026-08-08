@@ -780,6 +780,14 @@ TEST(BudgetedArtifact, DemandLimitedArtifactCarriesDeadlineGroup) {
   artifact.summary.flow_stable_applicable = true;
   artifact.summary.flow_stable = true;
   artifact.summary.correctness_hash = "cafef00d";
+  budgeted::ClassArtifact interactive;
+  interactive.class_id = "interactive_path";
+  interactive.deadline_allowance_ticks = 1;
+  interactive.useful_completions = 9;
+  interactive.cohort_admitted = 9;
+  interactive.deadline_success_rate = 0.995;
+  interactive.lateness_ticks = summarize_family("completed_cohort_items", {});
+  artifact.classes.push_back(interactive);
 
   const std::string json = emit_artifact_json(artifact);
 
@@ -788,6 +796,8 @@ TEST(BudgetedArtifact, DemandLimitedArtifactCarriesDeadlineGroup) {
   EXPECT_NE(json.find("\"flow_stable\": true"), std::string::npos);
   EXPECT_NE(json.find("\"correctness_hash\": \"cafef00d\""), std::string::npos);
   EXPECT_NE(json.find("\"sample_base\": \"completed_cohort_items\""),
+            std::string::npos);
+  EXPECT_NE(json.find("\"classes\": [{\"class_id\": \"interactive_path\""),
             std::string::npos);
 }
 
