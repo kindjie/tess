@@ -90,6 +90,8 @@ def demand_limited_artifact() -> dict:
   artifact["experiment"]["arrival_rate_den"] = 1
   artifact["summary"].update({
       "frame_start_lag_ns": family(6000, base="paced_frames"),
+      "measured_wall_ns": 100_000_000_000,
+      "useful_per_wall_second": 599.5,
       "deadline_success_rate": 0.995,
       "lateness_ticks": family(0, base="completed_cohort_items"),
       "oldest_age_ticks": family(6000, base="per_tick_observations"),
@@ -302,6 +304,22 @@ def test_arrival_rate_cell_requires_rate(tmp_path):
   del document["experiment"]["arrival_rate_num"]
   failures = cba.validate_file(write(tmp_path, document))
   assert failures and "arrival_rate_num" in failures[0]
+
+
+def test_paced_requires_wall_fields(tmp_path):
+  """Paced cells must carry the measured wall span and rate."""
+  document = demand_limited_artifact()
+  del document["summary"]["measured_wall_ns"]
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "measured_wall_ns" in failures[0]
+
+
+def test_unpaced_must_omit_wall_rate(tmp_path):
+  """Measured wall rates come from paced cells only."""
+  document = saturated_artifact()
+  document["summary"]["useful_per_wall_second"] = 100.0
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "paced cells only" in failures[0]
 
 
 def test_boolean_arrival_rate_rejected(tmp_path):

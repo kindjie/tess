@@ -935,6 +935,8 @@ TEST(BudgetedArtifact, SaturatedArtifactOmitsInapplicableGroups) {
   EXPECT_NE(json.find("\"correctness_hash\": null"), std::string::npos);
   EXPECT_NE(json.find("\"p50\": null"), std::string::npos);
   EXPECT_NE(json.find("\"max\": 3"), std::string::npos);
+  EXPECT_EQ(json.find("useful_per_wall_second"), std::string::npos);
+  EXPECT_EQ(json.find("measured_wall_ns"), std::string::npos);
   EXPECT_NE(json.find("clang \\\"21\\\""), std::string::npos);
 }
 
@@ -953,6 +955,8 @@ TEST(BudgetedArtifact, DemandLimitedArtifactCarriesDeadlineGroup) {
   artifact.summary.deadlines = deadlines;
   artifact.summary.flow_stable_applicable = true;
   artifact.summary.flow_stable = true;
+  artifact.summary.measured_wall_ns = 1'000'000'000;
+  artifact.summary.useful_per_wall_second = 599.5;
   artifact.summary.correctness_hash = "cafef00d";
   budgeted::ClassArtifact interactive;
   interactive.class_id = "interactive_path";
@@ -973,6 +977,8 @@ TEST(BudgetedArtifact, DemandLimitedArtifactCarriesDeadlineGroup) {
             std::string::npos);
   EXPECT_NE(json.find("\"classes\": [{\"class_id\": \"interactive_path\""),
             std::string::npos);
+  EXPECT_NE(json.find("\"measured_wall_ns\": 1000000000"), std::string::npos);
+  EXPECT_NE(json.find("\"useful_per_wall_second\": 599.5"), std::string::npos);
 }
 
 // The accumulator grant pattern is deterministic for the canonical TPS
