@@ -17,6 +17,41 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-08-08 - Scoped route-cache staleness (accepted)
+
+- Area: unit route cache invalidation; the first optimization from the
+  2026-08-07 hotspot campaign's decision list.
+- Hypothesis: the campaign attributed ~90% of the world-edit agent tick
+  to the invalidate/repopulate/serve cycle behind whole-cache
+  invalidation. Retiring only entries whose crossed chunks changed
+  should remove repopulation from the steady state where edits land off
+  most routes, without touching default-mode behavior.
+- Method: opt-in `UnitRouteStaleness::ScopedFeasible` — per-entry
+  `(chunk, version)` footprints validated lazily at serve time against
+  an exact per-chunk version snapshot. Design reviewed adversarially
+  (two Codex rounds, Fable final GO) before implementation; the
+  implementation reviewed again (6 P2 / 4 P3, all addressed).
+- Evidence (M3 Max, `bench` preset): the new survival-steady-state cell
+  `path/agent_tick_100_unit_dirty_offpath_edit_scoped` runs ~130 us
+  against the 415 us whole-drop baseline cell — with postcondition
+  asserts proving zero retirements and pure revalidation. The forced
+  worst case (`..._onpath_edit_scoped`, every route through the edited
+  goal chunk, zero survivals) runs ~205 us: per-entry validation plus
+  targeted re-store undercuts fingerprint-plus-wholesale-repopulation
+  even when every entry retires. The default-policy cell is the
+  unchanged no-regression guard. An earlier draft of the worst-case
+  cell edited a mid-corridor chunk and measured ~160 us — replans
+  learned detours around the edited chunk and survived (their
+  footprints exclude it), so the cell was pinned to the goal chunk no
+  route can avoid; the self-healing observation is worth keeping.
+- Decision: accepted as opt-in policy with the semantics stated where
+  it is enabled (legal, truthful cost, previously optimal;
+  blocking-only edits concede nothing). Bootstrap ceilings at 4x the M3
+  readings per the standing protocol; recalibrate from CI baselines.
+- Follow-up: on-device before/after re-profile when the Steam Deck
+  returns (the archived campaign perf.data is the "before");
+  sparse-world scoped validation is a separate design if a workload
+  demands it.
 ## 2026-08-08 - Paced-with-idle wake penalty in budgeted-progress cells
 
 - Area: budgeted-progress paced arrival cells (`tess_bench_budgeted_progress`,

@@ -228,7 +228,18 @@ class RouteCacheScratch {
         for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
           version_snapshot_[i] = world.meta(ChunkKey{i}).version;
         }
-        return false;
+        // Entries stored before the first refresh were stamped with the
+        // current epoch, but edits between their store and this baseline
+        // capture are invisible to the snapshot. Their per-entry
+        // dependency versions ARE store-time-accurate, so forcing them
+        // through one validation walk (by bumping the epoch) catches any
+        // such edit; an empty cache skips the bump, so the common
+        // refresh-before-first-use sequence is unaffected.
+        if (entries_.empty()) {
+          return false;
+        }
+        ++change_epoch_;
+        return true;
       }
       // Versions live inside per-chunk meta, not contiguously: compare and
       // update in one loop rather than gathering for a memcmp.

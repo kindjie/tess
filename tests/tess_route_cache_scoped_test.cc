@@ -384,6 +384,34 @@ TEST(TessRouteCacheScoped, AggregateDependencyBudgetInvalidates) {
   EXPECT_EQ(cache.stats().entries, 1u);
 }
 
+// A direct caller who stores entries BEFORE the first refresh must not be
+// served a stale route: the baseline snapshot is captured after the edit,
+// so the first refresh arms validation for the pre-existing entries (their
+// store-time dependency versions catch the edit).
+TEST(TessRouteCacheScoped, EditBeforeFirstRefreshStillRetires) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::PathScratch scratch;
+  tess::RouteCacheScratch cache;
+  cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
+
+  // Store with NO prior refresh (the documented direct-caller hazard).
+  const auto first = route(world, {3, 0, 0}, {3, 7, 0}, scratch, cache);
+  ASSERT_EQ(first.status, tess::PathStatus::Found);
+
+  // Edit ON the route, then run the first-ever refresh: the snapshot is
+  // captured post-edit, so it cannot see the change — the pre-existing
+  // entry must be forced through validation anyway.
+  set_passable_marked(world, {3, 4, 0}, false);
+  EXPECT_TRUE(cache.refresh_if_world_changed(world));
+
+  const auto served = route(world, {3, 0, 0}, {3, 7, 0}, scratch, cache);
+  expect_legal(world, served);
+  EXPECT_EQ(served.cost, 9u);  // The detour, never the stale column.
+  EXPECT_EQ(cache.stats().retired_entries, 1u);
+}
+
 // Flipping the staleness mode invalidates the whole cache: entries stored
 // under one mode's semantics are never served under the other's.
 TEST(TessRouteCacheScoped, ModeFlipDropsEntries) {
