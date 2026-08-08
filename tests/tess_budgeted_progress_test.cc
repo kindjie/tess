@@ -226,6 +226,32 @@ TEST(BudgetedController, PacedModeRecordsLagAndKeepsAllowanceFresh) {
   EXPECT_EQ(frame2.scheduled_start_ns, 33'333'333u);
 }
 
+// After untimed maintenance between frames (a drain), rebase_pacing
+// re-anchors the schedule: the next frame waits for a fresh edge with
+// zero lag instead of sprinting through the overdue edges.
+TEST(BudgetedController, RebasePacingReanchorsAfterUntimedMaintenance) {
+  ScriptedClock clock;
+  FrameBudgetConfig config = one_tick_config(kMs);
+  config.pacing = Pacing::Paced;
+  FrameBudgetController controller{clock, config};
+
+  ScriptedQuanta idle0{&clock, {}};
+  (void)controller.run_frame(no_mandatory, idle0);
+  // Untimed maintenance consumes several frame periods of wall time.
+  clock.advance(100 * kMs);
+
+  // Without re-anchoring this frame would start ~83 ms overdue.
+  controller.rebase_pacing();
+  ScriptedQuanta idle1{&clock, {}};
+  const FrameRecord frame1 = controller.run_frame(no_mandatory, idle1);
+  EXPECT_EQ(frame1.frame_start_lag_ns, 0u);
+  // And the following edge is one full period after the re-anchor.
+  ScriptedQuanta idle2{&clock, {}};
+  const FrameRecord frame2 = controller.run_frame(no_mandatory, idle2);
+  EXPECT_EQ(frame2.frame_start_lag_ns, 0u);
+  EXPECT_EQ(frame2.scheduled_start_ns - frame1.scheduled_start_ns, 16'666'667u);
+}
+
 // Unpaced frames run back to back and never report a start lag.
 TEST(BudgetedController, UnpacedModeReportsNoLag) {
   ScriptedClock clock;
@@ -935,6 +961,8 @@ TEST(BudgetedArtifact, SaturatedArtifactOmitsInapplicableGroups) {
   EXPECT_NE(json.find("\"correctness_hash\": null"), std::string::npos);
   EXPECT_NE(json.find("\"p50\": null"), std::string::npos);
   EXPECT_NE(json.find("\"max\": 3"), std::string::npos);
+  EXPECT_EQ(json.find("useful_per_wall_second"), std::string::npos);
+  EXPECT_EQ(json.find("measured_wall_ns"), std::string::npos);
   EXPECT_NE(json.find("clang \\\"21\\\""), std::string::npos);
 }
 
@@ -953,6 +981,8 @@ TEST(BudgetedArtifact, DemandLimitedArtifactCarriesDeadlineGroup) {
   artifact.summary.deadlines = deadlines;
   artifact.summary.flow_stable_applicable = true;
   artifact.summary.flow_stable = true;
+  artifact.summary.measured_wall_ns = 1'000'000'000;
+  artifact.summary.useful_per_wall_second = 599.5;
   artifact.summary.correctness_hash = "cafef00d";
   budgeted::ClassArtifact interactive;
   interactive.class_id = "interactive_path";
@@ -973,6 +1003,8 @@ TEST(BudgetedArtifact, DemandLimitedArtifactCarriesDeadlineGroup) {
             std::string::npos);
   EXPECT_NE(json.find("\"classes\": [{\"class_id\": \"interactive_path\""),
             std::string::npos);
+  EXPECT_NE(json.find("\"measured_wall_ns\": 1000000000"), std::string::npos);
+  EXPECT_NE(json.find("\"useful_per_wall_second\": 599.5"), std::string::npos);
 }
 
 // The accumulator grant pattern is deterministic for the canonical TPS

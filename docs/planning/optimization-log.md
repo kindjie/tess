@@ -17,6 +17,28 @@ deferred for scope reasons. Keep entries short and concrete:
 Entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-08-08 - Paced-with-idle wake penalty in budgeted-progress cells
+
+- Area: budgeted-progress paced arrival cells (`tess_bench_budgeted_progress`,
+  design section 3.2); dev machine (Apple M3 Max), smoke configuration.
+- Hypothesis: pacing frames to 60 FPS edges only changes when work runs,
+  not how fast it runs inside the budget window.
+- Evidence: rejected. Sleeping ~14.7 ms to each edge lets the core enter
+  idle states; the first work after wake runs at reduced frequency with
+  cooled caches. At a 2 ms budget the paced loop consumed ~14% fewer
+  within-budget work units than the unpaced loop (4.11M vs 4.77M over
+  the same frame count; frames honored their budget — elapsed p50
+  2.26 ms) and worst quantum tails stretched ~2x (1.87 ms vs 0.80 ms).
+  The 600 events/sim-second cell is stable unpaced and unstable paced
+  at 2 ms; 8 ms absorbs the penalty entirely.
+- Decision: accepted as the honest paced-with-idle measurement and
+  documented in the binary header; artifacts stamp their pacing mode so
+  the two loops are never mixed in one curve.
+- Follow-up: a spin-paced busy-host variant (spin to the edge instead
+  of sleeping, emulating a host that renders between simulation slices)
+  is deferred; revisit alongside the controlled-hardware campaign,
+  where DVFS behavior differs (Steam Deck).
+
 ## 2026-08-07 - Steam Deck hotspot campaign
 
 - Area: on-device CPU hotspot attribution for the highest-cost published
