@@ -30,8 +30,21 @@ struct PathTicket {
 
 /** Controls cache sizing, reuse, and invalidation for one processing call. */
 struct PathRuntimeCachePolicy {
+  // In ScopedFeasible staleness mode world changes do not advance this
+  // deep-clear counter: its rationale — bounding staleness accumulated
+  // behind the 64-bit fingerprint — is superseded by exact per-chunk
+  // validation. Note the periodic clear it would have fired sweeps ALL
+  // runtime caches (clear_caches), so scoped mode also retains
+  // field-product and portal entries longer; both self-validate their
+  // dependencies and stay budget-bounded.
   std::size_t clear_every_world_change = 0;
   bool invalidate_unit_route_cache_on_world_change = true;
+  // Opt-in scoped staleness for the unit route cache (see
+  // UnitRouteStaleness): surviving routes are legal with truthful cost and
+  // were optimal when stored; an edit elsewhere can leave them suboptimal
+  // until retired. Default preserves exact whole-world invalidation.
+  UnitRouteStaleness unit_route_staleness =
+      UnitRouteStaleness::WholeWorldExact;
   bool use_unit_field_product_cache = false;
   std::size_t unit_field_product_min_goal_reuse = 2;
   std::size_t unit_field_product_min_start_chunks = 2;
@@ -613,8 +626,9 @@ class PathRequestRuntime {
     }
   }
 
-  // The unit route cache keys entries on (start, goal) plus a world-version
-  // fingerprint and nothing on the movement class, so a runtime reused
+  // The unit route cache keys entries on (start, goal) — staleness carried
+  // by the world fingerprint or, in scoped mode, per-chunk dependency
+  // records — and nothing on the movement class, so a runtime reused
   // across classes would serve one class's route for another. Each unit
   // process call binds the runtime to its (normalized) class; a rebind
   // clears the unit caches -- correct even on misuse -- and counts in
@@ -650,14 +664,24 @@ class PathRequestRuntime {
   void prepare_process(const World& world, PathRuntimeCachePolicy policy) {
     unit_route_cache_.set_caps(policy.max_route_entries,
                                policy.max_route_path_nodes);
+    // A staleness-mode flip clears the unit caches unconditionally (entries
+    // stored under one mode's semantics are never served under the
+    // other's), independent of the world-change flag below.
+    unit_route_cache_.set_staleness(policy.unit_route_staleness);
     portal_segment_cache_.set_segment_budget(policy.portal_segment_budget);
     if (!policy.invalidate_unit_route_cache_on_world_change) {
       return;
     }
-    if (!unit_route_cache_.invalidate_if_world_changed(world)) {
+    if (!unit_route_cache_.refresh_if_world_changed(world)) {
       return;
     }
     ++stats_.world_cache_invalidations;
+    if (policy.unit_route_staleness == UnitRouteStaleness::ScopedFeasible) {
+      // Scoped mode: the change armed per-entry validation instead of
+      // dropping entries; the deep-clear counter stays put (see the policy
+      // field's comment).
+      return;
+    }
     ++world_changes_since_clear_;
     if (policy.clear_every_world_change != 0 &&
         world_changes_since_clear_ >= policy.clear_every_world_change) {

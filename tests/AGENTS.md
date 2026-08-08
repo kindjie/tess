@@ -535,6 +535,15 @@
   route products, the weighted batch (astar-fallback and shared-field
   branches), `PathRequestRuntime` unit and weighted processing, and agent
   ticks arriving immediately when the goal equals the position.
+- `tess_route_cache_scoped_test`: verifies the unit route cache's opt-in
+  `ScopedFeasible` staleness mode — off-footprint edits keep entries serving
+  (survival and revalidation stats), crossed-chunk edits retire entries with
+  the recomputed replacement reachable past the tombstone, dead suffix-slot
+  occupants overwritten by the next covering store, non-Found results cached
+  per epoch and retired on any world change, blocking-only edit sequences
+  serving fresh-optimal costs, oversized dependency footprints skipped
+  without evicting residents, mode flips dropping all entries, and identical
+  (call, edit) sequences producing identical hit/miss/serve traces.
 - `tess_path_cache_test`: verifies path-cache eviction and indexing, including
   the portal segment-cache budget (stale-entry sweeps that compact both the
   entry list and the path-node arena across repeated world edits, sweep

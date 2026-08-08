@@ -733,6 +733,15 @@ tess_apply_project_options(tess_path_cache_test)
 
 tess_discover_tests(tess_path_cache_test LABELS core path storage topology)
 
+add_executable(tess_route_cache_scoped_test tess_route_cache_scoped_test.cc)
+target_link_libraries(
+  tess_route_cache_scoped_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_route_cache_scoped_test)
+
+tess_discover_tests(tess_route_cache_scoped_test LABELS core path storage)
+
 add_executable(tess_path_product_test tess_path_product_test.cc)
 target_link_libraries(
   tess_path_product_test

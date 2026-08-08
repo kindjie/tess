@@ -319,6 +319,18 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1966278
     },
+    "path/agent_tick_100_unit_dirty_offpath_edit_scoped_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 522000,
+      "note":
+          "BOOTSTRAP 4x M3 Max reading (130,338 ns), not a calibrated CI value: ScopedFeasible survival steady state; recalibrate at 2x the max over ten CI baselines"
+    },
+    "path/agent_tick_100_unit_dirty_onpath_edit_scoped_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 819000,
+      "note":
+          "BOOTSTRAP 4x M3 Max reading (204,750 ns), not a calibrated CI value: ScopedFeasible forced retire-every-tick worst case; recalibrate at 2x the max over ten CI baselines"
+    },
     "path/agent_runtime_100_weighted_shared_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 17223965
