@@ -27,7 +27,15 @@ struct SpecialTransitionCandidate {
 // - `for_each_transition(world, chunk, sink)` invokes `sink(from, to)` once
 //   per directed transition ORIGINATING in `chunk` (`from` must lie in that
 //   chunk). Bidirectional passages emit both directions, each from its own
-//   chunk's enumeration.
+//   chunk's enumeration. A transition whose `from` lies outside `chunk` is
+//   SILENTLY DROPPED, in every build. Dropped rather than honored because
+//   incremental removal keys on the source's chunk, so keeping one would
+//   grow the portal set without bound and make incremental output diverge
+//   from a full rebuild; silent rather than reported because a counter for
+//   a caller bug would be public diagnostics surface. If a provider's edges
+//   go missing and routes come back unexpectedly `Unreachable`, check this
+//   first: enumerate the provider directly and confirm every `from`
+//   resolves to the chunk it was asked about.
 // - `to` must lie in the same chunk or a regular-step neighbor chunk (the six
 //   orthogonal faces, plus the two diagonal seams of an axial-hex lattice).
 //   Incremental updates re-derive portals only for dirty chunks and those

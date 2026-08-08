@@ -124,6 +124,16 @@ terrain. Without this, passing traffic would restart a terminal lifecycle
 as `Blocked`, and a second failure against one admitted goal would break
 the flow-accounting retention identity.
 
+**This is a throughput trade, and on some maps a visible one.** A terminal
+agent is now a wall: a one-wide corridor that used to clear because a
+passing agent shoved an arrived agent aside stays blocked until the caller
+does something about it. That is deliberate — the shove corrupted a
+lifecycle the library documents as terminal — and it matches how an
+occupant outside the agent span is already treated. A caller that wants
+arrived agents to move again must give them a new goal, drop them from the
+span, or make their tile impassable to the movement class, which is the
+`SettledTag` recipe the tier's own tests use.
+
 - `PibtPriorities` is caller-owned adaptive priority state, index-paired
   with the agent span exactly like `PathAgentRoutes`: `elapsed` increments
   each tick an agent is unarrived and resets on arrival, and higher elapsed

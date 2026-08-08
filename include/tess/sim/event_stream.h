@@ -3,6 +3,7 @@
 #include <tess/core/assert.h>
 #include <tess/diagnostics/diagnostics.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -181,7 +182,13 @@ class EventStream {
       const auto count = static_cast<std::uint64_t>(events_.size());
       (consumed ? counters.completed : counters.dropped_after_admission) +=
           count;
-      counters.outstanding_current -= count;
+      // Clamped, matching `FlowAccounting::record_left_outstanding` and
+      // every other terminalization site. A shared accountant whose other
+      // flow terminalized first, or a `counters.reset()` between publish
+      // and retire, would otherwise wrap this unsigned counter and take
+      // `inventory_tick_weighted` and the retention identity with it.
+      counters.outstanding_current -=
+          std::min(counters.outstanding_current, count);
       counters.residence_ticks_accumulated +=
           accounting_->last_observed_tick * count - published_tick_total_;
       published_tick_total_ = 0;

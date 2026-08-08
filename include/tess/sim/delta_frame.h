@@ -246,8 +246,17 @@ class DeltaCollector {
     published_overlays_.reserve(overlay_capacity);
     pending_overlay_nodes_.reserve(overlay_node_capacity);
     published_overlay_nodes_.reserve(overlay_node_capacity);
+    // Sized from the REALIZED capacity, not the requested one. Both probe
+    // loops rely on a null slot terminating them, and `append_entity`
+    // admits while `size() != capacity()`. `reserve(n)` only guarantees
+    // `capacity() >= n`, so an implementation that rounds up past
+    // `2 * entity_capacity` would let the table fill and both loops spin
+    // forever. No shipped standard library over-allocates here, which is
+    // exactly why this would not be found by testing.
+    const auto entity_slots =
+        std::max(pending_entities_.capacity(), published_entities_.capacity());
     auto slots = std::size_t{8};
-    while (slots < entity_capacity * 2) {
+    while (slots < entity_slots * 2) {
       slots *= 2;
     }
     if (slots > coalesce_slots_.size()) {

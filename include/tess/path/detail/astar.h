@@ -257,8 +257,9 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                   world, detail::tile_index<Shape>(gap))) {
             continue;
           }
-          const auto cost = detail::manhattan(request.start, gap) +
-                            detail::manhattan(gap, request.goal);
+          const auto cost =
+              detail::saturating_add(detail::manhattan(request.start, gap),
+                                     detail::manhattan(gap, request.goal));
           if (cost < best_cost) {
             best_cost = cost;
             best_gap = gap;
@@ -365,8 +366,9 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
                     world, detail::tile_index<Shape>(gap))) {
               continue;
             }
-            const auto cost = detail::manhattan(request.start, gap) +
-                              detail::manhattan(gap, request.goal);
+            const auto cost =
+                detail::saturating_add(detail::manhattan(request.start, gap),
+                                       detail::manhattan(gap, request.goal));
             if (cost < best_cost) {
               best_cost = cost;
               best_gap = gap;
@@ -580,7 +582,8 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
       TESS_DIAG_EVENT(path_reconstruct_node);
       return true;
     };
-    const auto detour_cost = detail::manhattan(request.start, request.goal) + 2;
+    const auto detour_cost = detail::saturating_add(
+        detail::manhattan(request.start, request.goal), 2);
     if (request.start.y == request.goal.y &&
         request.start.z == request.goal.z &&
         (try_axis_aligned_detour(&Coord3::x, &Coord3::y, 1) ||
@@ -966,7 +969,8 @@ auto weighted_astar_path(const World& world, PathRequest request,
       }
       return true;
     };
-    const auto detour_cost = detail::manhattan(request.start, request.goal) + 2;
+    const auto detour_cost = detail::saturating_add(
+        detail::manhattan(request.start, request.goal), 2);
     if (request.start.y == request.goal.y &&
         request.start.z == request.goal.z &&
         (append_unit_detour_axis(&Coord3::x, &Coord3::y, 1) ||
