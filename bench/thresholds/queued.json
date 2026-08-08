@@ -19,8 +19,8 @@
     },
     "queued/plan_frame_dense_64": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 610000
+      "max_cpu_time_ns": 1100000
     }
   },
-  "bootstrap_comment": "queued/plan_frame_* carry BOOTSTRAP ceilings at 4x an M3 Max reading (59.6 us and 23.4 ms), not calibrated CI values. They exist to catch a complexity change in per-frame planning, which nothing measured before; recalibrate at 2x the maximum over ten CI baselines per the protocol. queued/plan_frame_dense_64 is the same bootstrap rule at 4x a 152 us M3 Max reading. Unlike the others it guards a KNOWN regression: indexing whole-domain operations cost 168 ms against the scan's 152 us, which any ceiling catches. It does NOT catch the smaller one -- dropping only the wide-candidate fallback costs about 2.6x, under this 4x ceiling by construction -- so the benchmark is also registered in sentinels.json, whose paired run has a relative effect floor rather than a multiplier. The ceiling watches for the catastrophic case; the sentinel watches for the merely bad one."
+  "bootstrap_comment": "queued/plan_frame_* carry BOOTSTRAP ceilings at 4x an M3 Max reading (59.6 us and 23.4 ms), not calibrated CI values. They exist to catch a complexity change in per-frame planning, which nothing measured before; recalibrate at 2x the maximum over ten CI baselines per the protocol. queued/plan_frame_dense_64 is the same bootstrap rule at 4x a 275 us M3 Max reading -- the post-change number, since this workload is 10% SLOWER than the scan it replaced and the ceiling has to sit above where the code actually runs. Unlike the others it guards a KNOWN regression: indexing whole-domain operations cost 168 ms against the scan's 152 us, which any ceiling catches. It does NOT catch the smaller one -- dropping only the wide-candidate fallback costs about 2.6x, under this 4x ceiling by construction -- so the benchmark is also registered in sentinels.json, whose paired run has a relative effect floor rather than a multiplier. The ceiling watches for the catastrophic case; the sentinel watches for the merely bad one."
 }

@@ -91,7 +91,7 @@ Entries from 2026-07-12 and earlier are in
   `clear()` the argument, which is noexcept and retains capacity. A second
   pre-merge fix corrected a read of `entries_[i]` after eviction had
   already shifted the vector.
-## 2026-08-08 - Planning indexed by chunk; both quadratic scans retired
+## 2026-08-08 - Planning indexed by chunk, bounded by chunk count
 
 - Area: `plan_operations` hazard detection and
   `plan_parallel_execution_phases` grouping. The follow-up the 2026-08-07
@@ -105,46 +105,62 @@ Entries from 2026-07-12 and earlier are in
   actually conflict.
 - Method: open-addressed table over chunk keys with intrusive per-slot
   chains, each node carrying its key so growth relinks without consulting
-  the operations. `ExecutionReport` owns one and clears rather than frees
-  it, so planning into a caller-owned report stays allocation-free in the
-  steady state.
+  the operations, and slots generation-stamped so `clear` is O(1) rather
+  than proportional to the high-water size a reused report retains.
+  Operations wider than `index_max_chunks_per_operation` (64) are kept out
+  of the index and scanned linearly; a candidate that wide skips the index
+  and scans everything, exactly as the planner used to.
 - Evidence: accepted. Apple M3 Max, `bench` preset, seven repetitions,
-  `--benchmark_min_time=0.4s`. The before column is a fresh baseline taken
-  from the same build directory rather than the 2026-08-07 readings, so
-  the pair is measured the same way:
+  `--benchmark_min_time=0.4s`. Both binaries were run back-to-back in one
+  session, which matters: an earlier attempt compared runs taken an hour
+  apart and disagreed with itself by 21% on a benchmark the change cannot
+  affect.
 
 | Benchmark | Before | After | Change |
 | --- | ---: | ---: | ---: |
-| `queued/plan_frame_256` | 61.2 us | 10.5 us | 5.8x faster |
-| `queued/plan_frame_4096` | 24.27 ms | 0.176 ms | 138x faster |
+| `queued/plan_frame_256` | 58.4 us | 12.0 us | 4.9x faster |
+| `queued/plan_frame_4096` | 22.99 ms | 208 us | 110.6x faster |
+| `queued/plan_frame_dense_64` | 249 us | 275 us | **10% slower** |
 
-- Reading: the speedups are the weaker half of the evidence. The stronger
-  half is the scaling. Before, 16x the operations cost 392x the time;
-  after, 16x the operations cost 16.8x the time. That is the complexity
-  change the index was for, and unlike the speedup it is immune to machine
-  state, because both points come from one run. Coefficient of variation
-  was 0.80% and 0.68% (baseline 1.04% and 1.36%).
-- Recorded because it cuts against the result: the "after" run sat at load
-  average 3.5 where the baseline sat at 1.86. A busier machine makes the
-  after-numbers slower, not faster, so the measured gain is if anything
-  understated -- but the two readings are not load-matched and the raw
-  ratios should not be quoted to three figures.
-- Scope: `plan_parallel_execution_phases` takes a plan rather than a
-  report, so it must build its index per call -- two allocations a short
-  plan never repays. Plans under sixteen operations keep the all-pairs
-  comparison. Nothing benchmarks small-plan grouping, so that cutoff is
-  reasoned rather than tuned; it is stated here so a later measurement can
-  overturn it.
-- Risk, and the part worth carrying forward: the differential test written
-  to guard this change was at first unable to detect the bug it existed
-  for. Deleting the open-phase filter outright survived several thousand
-  randomized plans, because the generator drew dense chunk sets with
-  mostly-mutating policies -- so every pair of operations conflicted, every
-  phase was a singleton, and grouping had no decision to make. Sparser
-  chunk sets and a read-only majority fixed the generator; the layout that
-  actually separates "conflicts with the open phase" from "conflicts with
-  any earlier operation" is now constructed rather than sampled. Six
-  mutations each fail exactly their target test.
+- Reading: the speedups are the weaker half of the evidence; the scaling
+  is the stronger. Before, 16x the operations cost 394x the time; after,
+  17.4x. That ratio comes from within a single run, so machine state
+  cannot flatter it.
+- The dense row is a real cost, not noise, and is the honest price of the
+  bound: a whole-domain workload gets no benefit from the index and still
+  pays for the indexability check and the second list the planner now
+  maintains. The before-side CV was 4.3% against the after-side 1.0%, so
+  treat 10% as approximate; it is not within the noise, but it is not a
+  three-figure number either. Reducing it -- deferring the phase index's
+  allocation until something is actually indexed -- is a follow-up, not a
+  blocker, because the workload it costs is the one the old planner was
+  already good at.
+- Recorded because it is the finding, not a footnote: the first version of
+  this change made that dense case **834x slower** -- 168 ms against
+  201 us -- by indexing whole-domain operations. `resident_chunks()` is the
+  default domain selector, so that was the supported shape most likely to
+  be hit, and the two benchmarks above could not see it because both use
+  one private chunk per operation. Review caught it; a benchmark confirmed
+  it; `queued/plan_frame_dense_64` exists so it cannot recur silently.
+- Gating, because a ceiling alone does not cover it: the threshold at 4x
+  the post-change reading catches the catastrophic case, but a 4x ceiling
+  cannot catch a 2.6x one, and dropping just the wide-candidate fallback
+  costs about that. The benchmark is therefore also a paired sentinel,
+  whose floor is a relative effect size. The sentinel source map had
+  `include/tess/ops/` pointing only at a thread-pool benchmark, so the
+  planner in that directory had no sentinel at all.
+- Risk, and the part worth carrying forward: the differential tests
+  guarding this change twice could not detect the bug they existed for.
+  Deleting the open-phase filter survived several thousand randomized
+  plans, because the generator drew dense chunk sets with mostly-mutating
+  policies -- so every pair conflicted, every phase was a singleton, and
+  grouping had nothing to decide. Separately, no generated operation was
+  ever wide enough to leave the index, because the test world had 16
+  chunks against a 64-chunk bound. Both are fixed, the discriminating
+  phase layout is now constructed rather than sampled, and eight
+  mutations each fail their target test. A ninth -- removing the
+  wide-candidate fallback -- still plans correctly and is caught only by
+  the benchmark, which was verified to move.
 - Decision: Accepted.
 
 ## 2026-08-08 - Paced-with-idle wake penalty in budgeted-progress cells

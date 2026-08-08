@@ -225,7 +225,13 @@
   `clear` leaves no stale entry, and growth relinks every node. The
   `{A}, {B}, {B}, {A}` case is constructed rather than sampled: it is the
   shortest plan where an operation overlaps a CLOSED phase but not the open
-  one, and randomized plans reach it too rarely to rely on.
+  one, and randomized plans reach it too rarely to rely on. Both generators
+  emit whole-domain operations, which the planner keeps OUT of the index
+  and compares separately; the world is sized so such an operation exceeds
+  `index_max_chunks_per_operation`, without which that path never runs.
+  What the bound does for COST rather than for answers is not testable
+  here -- removing it still plans correctly -- and is gated by
+  `queued/plan_frame_dense_64` instead.
 - `tess_queued_test`: verifies the M4 queued-operations scaffold, including
   empty-frame planning, stable handles and enqueue-order ids, explicit/dirty/
   active/resident chunk-domain expansion, enqueue-order plan preservation,
