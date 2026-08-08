@@ -128,7 +128,10 @@ TEST(TessPathRuntime, UnitFieldProductsReuseRepeatedGoalsWhenEnabled) {
   EXPECT_EQ(stats.found, 4u);
   EXPECT_EQ(stats.field_product_cache.entries, 1u);
   EXPECT_EQ(stats.field_product_cache.misses, 1u);
-  EXPECT_GE(stats.field_product_cache.hits, 1u);
+  // A build is not a hit. This asserted >= 1 while the store performed a
+  // second lookup purely to recover the pointer it had just stored, which
+  // counted a hit for work the cache had done rather than reused.
+  EXPECT_EQ(stats.field_product_cache.hits, 0u);
   EXPECT_EQ(stats.field_product_candidate_groups, 1u);
   EXPECT_EQ(stats.field_product_used_groups, 1u);
   EXPECT_EQ(stats.field_product_skipped_groups, 0u);
@@ -139,7 +142,10 @@ TEST(TessPathRuntime, UnitFieldProductsReuseRepeatedGoalsWhenEnabled) {
   stats = runtime.stats();
   EXPECT_EQ(stats.found, 4u);
   EXPECT_EQ(stats.field_product_cache.entries, 1u);
-  EXPECT_GE(stats.field_product_cache.hits, 2u);
+  // The second pass reuses the stored product: exactly one real hit, and
+  // no second build, so misses do not move.
+  EXPECT_EQ(stats.field_product_cache.hits, 1u);
+  EXPECT_EQ(stats.field_product_cache.misses, 1u);
   EXPECT_EQ(stats.field_product_candidate_groups, 1u);
   EXPECT_EQ(stats.field_product_used_groups, 1u);
   EXPECT_EQ(stats.field_product_skipped_groups, 0u);
@@ -474,7 +480,8 @@ TEST(TessPathRuntime, WeightedFieldProductsReuseAcrossProcessingCalls) {
   auto stats = runtime.stats();
   EXPECT_EQ(stats.field_product_cache.entries, 1u);
   EXPECT_EQ(stats.field_product_cache.misses, 1u);
-  EXPECT_GE(stats.field_product_cache.hits, 1u);
+  // A build is not a hit; see the unit-product test above.
+  EXPECT_EQ(stats.field_product_cache.hits, 0u);
   EXPECT_EQ(stats.field_product_candidate_groups, 1u);
   EXPECT_EQ(stats.field_product_used_groups, 1u);
   EXPECT_EQ(stats.weighted_batch.requests, 0u);
@@ -483,7 +490,9 @@ TEST(TessPathRuntime, WeightedFieldProductsReuseAcrossProcessingCalls) {
       world, policy);
   ASSERT_EQ(results.size(), 3u);
   stats = runtime.stats();
-  EXPECT_GE(stats.field_product_cache.hits, 2u);
+  // The second pass reuses the stored product: one real hit, no rebuild.
+  EXPECT_EQ(stats.field_product_cache.hits, 1u);
+  EXPECT_EQ(stats.field_product_cache.misses, 1u);
   EXPECT_EQ(stats.field_product_used_groups, 1u);
   EXPECT_EQ(stats.weighted_batch.requests, 0u);
 }

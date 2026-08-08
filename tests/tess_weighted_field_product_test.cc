@@ -210,6 +210,70 @@ TEST(TessWeightedFieldProduct, UnitProductHonorsSpecialTransitionCost) {
   EXPECT_EQ(path.path.back(), (tess::Coord3{7, 7, 0}));
 }
 
+// A store that displaces an entry hands its storage back to the caller, so
+// a caller rebuilding into the same product reuses that capacity instead
+// of allocating a world-sized distance array every build.
+//
+// Before this, `store` took the product by move and left the member empty,
+// so the next `build_distance_field_product` ran `distance_.assign(...)`
+// against a zero-capacity vector. The header comment argued only that the
+// moved-from state was never observed, which was true and beside the
+// point: the capacity was gone.
+TEST(TessWeightedFieldProduct, StoreHandsBackStorageSoRebuildsDoNotAllocate) {
+  World world;
+  fill_open(world);
+  tess::DistanceFieldScratch scratch;
+  tess::DistanceFieldProduct product;
+
+  tess::GoalSet goals_a;
+  goals_a.add({7, 7, 0});
+  tess::GoalSet goals_b;
+  goals_b.add({0, 7, 0});
+
+  // Size the budget from a MEASURED product: a product carries goals,
+  // dependencies and metadata beyond its distance array, so a computed
+  // budget silently rejects the store instead of holding one entry.
+  const auto product_bytes = [&] {
+    tess::FieldProductCache probe(std::size_t{1} << 40U);
+    tess::DistanceFieldProduct one;
+    tess::DistanceFieldScratch probe_scratch;
+    (void)tess::build_distance_field_product<World, PassableTag>(
+        world, goals_a, probe_scratch, one);
+    (void)probe.store_reusing<World, PassableTag>(one);
+    return probe.stats().bytes;
+  }();
+  ASSERT_GT(product_bytes, 0u);
+
+  // Holds one product, so the second store evicts the first and the caller
+  // receives the evicted storage.
+  tess::FieldProductCache cache(product_bytes);
+  cache.reserve_entries(2);
+
+  ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
+                 world, goals_a, scratch, product))
+                .status,
+            tess::PathStatus::Found);
+  ASSERT_NE((cache.store_reusing<World, PassableTag>(product)), nullptr);
+
+  ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
+                 world, goals_b, scratch, product))
+                .status,
+            tess::PathStatus::Found);
+  ASSERT_NE((cache.store_reusing<World, PassableTag>(product)), nullptr);
+  ASSERT_GT(cache.stats().evictions, 0u)
+      << "the second store must evict for storage to be handed back";
+
+  // The product now holds the evicted entry's buffers. Rebuilding into it
+  // must not reach the allocator.
+  {
+    tess_test::ScopedAllocationCounter counter;
+    const auto rebuilt = tess::build_distance_field_product<World, PassableTag>(
+        world, goals_a, scratch, product);
+    EXPECT_EQ(rebuilt.status, tess::PathStatus::Found);
+    EXPECT_EQ(counter.count(), 0u);
+  }
+}
+
 TEST(TessWeightedFieldProduct, SupportsVerticalDegenerateLayout) {
   using VerticalShape =
       tess::Shape<tess::Extent3{1, 4, 4}, tess::Extent3{1, 2, 2}>;
