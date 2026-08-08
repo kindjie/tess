@@ -232,6 +232,19 @@ def check_artifact(document: dict) -> None:
   summary = document["summary"]
   pacing = experiment.get("pacing")
   _require(pacing in ("paced", "unpaced"), f"invalid pacing {pacing!r}")
+  bench_pass = experiment.get("pass", "timing")
+  _require(bench_pass in ("timing", "counter"),
+           f"unknown pass {bench_pass!r}: failing closed")
+  counters = document.get("counters")
+  if counters is not None:
+    _require(bench_pass == "counter",
+             "detailed counters may only appear in counter-pass artifacts")
+    _require(isinstance(counters, dict) and isinstance(
+        counters.get("path"), dict), "counters.path must be an object")
+    for key, value in counters["path"].items():
+      _require(isinstance(value, int) and not isinstance(value, bool)
+               and value >= 0,
+               f"counters.path.{key} must be a non-negative integer")
   kind = experiment.get("kind")
   _require(kind in EXPERIMENT_KINDS,
            f"unknown experiment kind {kind!r}: failing closed")

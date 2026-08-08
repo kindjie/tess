@@ -232,6 +232,10 @@ struct RunBlock {
 
 struct ExperimentBlock {
   std::string kind;         // e.g. "isolated_saturated"
+  // Which section 11.2 pass produced this artifact: the timing pass
+  // publishes wall numbers; the counter pass explains them and is
+  // never a source of published time.
+  std::string pass = "timing";
   std::string scenario_id;  // catalog-anchored cell identity
   std::vector<std::string> workload_refs;
   std::uint64_t seed = 0;
@@ -249,8 +253,24 @@ struct ExperimentBlock {
   // omitted from the artifact.
   std::uint64_t arrival_rate_num = 0;
   std::uint64_t arrival_rate_den = 1;
+  // Frozen-pool size for pool-serviced cells (0 = not pool-based);
+  // lets the cross-pass comparator detect full pool wraps.
+  std::uint64_t pool_size = 0;
   std::string executor_kind = "serial";
   std::uint32_t executor_workers = 1;
+};
+
+// Detailed deterministic counters collected by the counter pass,
+// aggregated over the measured windows only. Build-independent shape:
+// the diagnostics themselves exist only under TESS_ENABLE_DIAGNOSTICS
+// and the bench populates this struct behind that gate.
+struct PathCountersBlock {
+  bool present = false;
+  std::uint64_t heap_pushes = 0;
+  std::uint64_t heap_pops = 0;
+  std::uint64_t neighbor_candidates = 0;
+  std::uint64_t relax_attempts = 0;
+  std::uint64_t touched_nodes = 0;
 };
 
 struct TraceBlock {
@@ -307,6 +327,7 @@ struct Artifact {
   RunBlock run;
   ExperimentBlock experiment;
   TraceBlock trace;
+  PathCountersBlock path_counters;  // Counter pass only.
   tess::diagnostics::FlowCounters flow;
   // Demand-limited cells carry one entry per demand class; saturated
   // cells leave this empty and the emitter omits the array.
@@ -438,6 +459,7 @@ inline void append_family(std::string& out, const char* key,
   const auto& experiment = artifact.experiment;
   out += "\"experiment\": {";
   detail::append_string(out, "kind", experiment.kind);
+  detail::append_string(out, "pass", experiment.pass);
   detail::append_string(out, "scenario_id", experiment.scenario_id);
   out += "\"workload_refs\": [";
   for (std::size_t i = 0; i < experiment.workload_refs.size(); ++i) {
@@ -462,11 +484,25 @@ inline void append_family(std::string& out, const char* key,
     detail::append_u64(out, "arrival_rate_num", experiment.arrival_rate_num);
     detail::append_u64(out, "arrival_rate_den", experiment.arrival_rate_den);
   }
+  if (experiment.pool_size > 0) {
+    detail::append_u64(out, "pool_size", experiment.pool_size);
+  }
   out += "\"executor\": {";
   detail::append_string(out, "kind", experiment.executor_kind);
   detail::append_u64(out, "workers", experiment.executor_workers, false);
   out += "}}, ";
 
+  if (artifact.path_counters.present) {
+    const PathCountersBlock& counters = artifact.path_counters;
+    out += "\"counters\": {\"path\": {";
+    detail::append_u64(out, "heap_pushes", counters.heap_pushes);
+    detail::append_u64(out, "heap_pops", counters.heap_pops);
+    detail::append_u64(out, "neighbor_candidates",
+                       counters.neighbor_candidates);
+    detail::append_u64(out, "relax_attempts", counters.relax_attempts);
+    detail::append_u64(out, "touched_nodes", counters.touched_nodes, false);
+    out += "}}, ";
+  }
   out += "\"trace\": {";
   detail::append_u64(out, "version", artifact.trace.version);
   detail::append_string(out, "sha256", artifact.trace.sha256, false);

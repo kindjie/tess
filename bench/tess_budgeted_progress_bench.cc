@@ -98,6 +98,10 @@ void check(bool condition, const char* message) {
 
 struct RunOptions {
   std::string out_dir;
+  // Counter pass (design section 11.2): runs only the comparable
+  // cells over the identical demand traces and stamps artifacts
+  // pass:"counter"; wall numbers from this build are never published.
+  bool counter_pass = false;
   std::uint64_t warmup_frames = 120;
   std::uint64_t measured_frames = 600;
   std::uint64_t repetitions = 10;
@@ -173,6 +177,9 @@ struct SaturatedRep {
   std::vector<std::uint64_t> frame_start_lag_ns;  // Paced cells only.
   std::uint64_t overshoot_frames = 0;
   std::uint64_t useful_completions = 0;
+  // Completions during warmup frames: pool-serviced cells need the
+  // window's exact pool offset for the prefix-sum work identity.
+  std::uint64_t warmup_completions = 0;
 };
 
 // One budget cell's accumulated repetitions. `window_flow` sums the
@@ -230,11 +237,13 @@ void accumulate_window(tess::diagnostics::FlowCounters& window,
 // growth (design section 9.2); in-flight items at window end appear
 // in the outstanding delta gauge and the identities hold exactly.
 template <typename ResetFn, typename TickFn, typename QuantumFn,
-          typename DrainFn>
+          typename DrainFn, typename WindowBeginFn, typename WindowEndFn>
 void run_one_rep(const RunOptions& options, Nanos budget_ns, SteadyClock& clock,
                  tess::diagnostics::FlowAccounting& accounting,
-                 std::uint64_t rep, ResetFn& reset, TickFn& on_tick,
-                 QuantumFn& quantum, DrainFn& drain, SaturatedCellResult& out) {
+                 std::uint64_t rep, std::size_t budget_index, ResetFn& reset,
+                 TickFn& on_tick, QuantumFn& quantum, DrainFn& drain,
+                 WindowBeginFn& window_begin, WindowEndFn& window_end,
+                 SaturatedCellResult& out) {
   reset(rep);
   FrameBudgetConfig config;
   config.budget_ns = budget_ns;
@@ -259,12 +268,16 @@ void run_one_rep(const RunOptions& options, Nanos budget_ns, SteadyClock& clock,
   for (std::uint64_t frame = 0; frame < options.warmup_frames; ++frame) {
     (void)controller.run_frame(mandatory, quantum_fn);
   }
+  samples.warmup_completions = completions;
   drain();
   // Window-scope the high-water gauge: it is otherwise a lifetime
   // maximum and would carry warmup backlog into the artifact.
   accounting.counters.outstanding_high_water =
       accounting.counters.outstanding_current;
   const tess::diagnostics::FlowCounters window_start = accounting.counters;
+  // Counter-pass sinks install for measured frames only, so untimed
+  // validation and warmup never pollute the aggregates.
+  window_begin(budget_index);
 
   for (std::uint64_t frame = 0; frame < options.measured_frames; ++frame) {
     completions = 0;
@@ -279,6 +292,7 @@ void run_one_rep(const RunOptions& options, Nanos budget_ns, SteadyClock& clock,
     }
     samples.useful_completions += completions;
   }
+  window_end(budget_index);
   // Window-end snapshot happens before anything else runs: a drained
   // ticket must not leak post-window work into the measured flow.
   // The identities still hold on the deltas because outstanding is
@@ -292,11 +306,16 @@ void run_one_rep(const RunOptions& options, Nanos budget_ns, SteadyClock& clock,
 // Repetition-outer, budget-inner with the starting offset rotated by
 // repetition (design section 11.4): budget order decorrelates from
 // thermal drift while staying fully deterministic.
+inline void no_window_hook(std::size_t) {}
+
 template <typename ResetFn, typename TickFn, typename QuantumFn,
-          typename DrainFn>
+          typename DrainFn, typename WindowBeginFn = decltype(no_window_hook)&,
+          typename WindowEndFn = decltype(no_window_hook)&>
 [[nodiscard]] auto run_saturated_budgets(
     const RunOptions& options, tess::diagnostics::FlowAccounting& accounting,
-    ResetFn&& reset, TickFn&& on_tick, QuantumFn&& quantum, DrainFn&& drain)
+    ResetFn&& reset, TickFn&& on_tick, QuantumFn&& quantum, DrainFn&& drain,
+    WindowBeginFn&& window_begin = no_window_hook,
+    WindowEndFn&& window_end = no_window_hook)
     -> std::array<SaturatedCellResult, kBudgetsNs.size()> {
   std::array<SaturatedCellResult, kBudgetsNs.size()> results;
   SteadyClock clock;
@@ -304,7 +323,8 @@ template <typename ResetFn, typename TickFn, typename QuantumFn,
     for (std::size_t k = 0; k < kBudgetsNs.size(); ++k) {
       const std::size_t budget_index = (k + rep) % kBudgetsNs.size();
       run_one_rep(options, kBudgetsNs[budget_index], clock, accounting, rep,
-                  reset, on_tick, quantum, drain, results[budget_index]);
+                  budget_index, reset, on_tick, quantum, drain, window_begin,
+                  window_end, results[budget_index]);
     }
   }
   return results;
@@ -331,6 +351,7 @@ template <typename ResetFn, typename TickFn, typename QuantumFn,
   artifact.run.bench_flags = "";
 
   artifact.experiment.kind = "isolated_saturated";
+  artifact.experiment.pass = options.counter_pass ? "counter" : "timing";
   artifact.experiment.seed = kSeed;
   artifact.experiment.sim_tps = 60;
   artifact.experiment.pacing = "unpaced";
@@ -413,6 +434,12 @@ struct AstarCell {
   // precomputed untimed; every timed completion is checked against it
   // so no invalid result can ever count as useful (design section 10).
   std::vector<std::uint64_t> expected;
+  // Per-item work units (max(1, expanded_nodes)) from the contiguous
+  // reference, with prefix sums, for the exact per-repetition work
+  // identity: window consumed work equals the prefix-sum over the
+  // serviced pool range, zero tolerance (section 11.2 amendment).
+  std::vector<std::uint64_t> expected_work;
+  std::vector<std::uint64_t> work_prefix;  // size pool+1
   std::string pool_sha256;
   std::string expected_sha256;
   tess::PathScratch scratch;
@@ -505,6 +532,7 @@ void validate_astar_cell(AstarCell& cell, std::size_t oracle_count) {
   }
 
   cell.expected.reserve(cell.pool.size());
+  cell.expected_work.reserve(cell.pool.size());
   budgeted::Sha256 first_pass;
   for (const tess::PathRequest& request : cell.pool) {
     const tess::PathResult result =
@@ -512,7 +540,14 @@ void validate_astar_cell(AstarCell& cell, std::size_t oracle_count) {
                                                       cell.scratch);
     const std::uint64_t packed = pack_path_outcome(result);
     cell.expected.push_back(packed);
+    const auto work = static_cast<std::uint64_t>(result.expanded_nodes);
+    cell.expected_work.push_back(work > 0 ? work : 1);
     first_pass.update(&packed, sizeof(packed));
+  }
+  cell.work_prefix.assign(1, 0);
+  cell.work_prefix.reserve(cell.pool.size() + 1);
+  for (const std::uint64_t work : cell.expected_work) {
+    cell.work_prefix.push_back(cell.work_prefix.back() + work);
   }
   budgeted::Sha256 second_pass;
   for (std::size_t i = 0; i < cell.pool.size(); ++i) {
@@ -557,13 +592,61 @@ void run_astar_cell(const RunOptions& options, AstarCell& cell) {
   };
   auto drain = []() {};  // Quiescent between quanta by construction.
 
+  std::array<budgeted::PathCountersBlock, kBudgetsNs.size()> counter_blocks;
+#if TESS_DIAGNOSTICS_ENABLED
+  tess::diagnostics::PathCounters live_counters;
+  std::optional<tess::diagnostics::ScopedPathCounters> scoped;
+  auto window_begin = [&](std::size_t) {
+    live_counters = tess::diagnostics::PathCounters{};
+    scoped.emplace(live_counters);
+  };
+  auto window_end = [&](std::size_t budget_index) {
+    scoped.reset();
+    budgeted::PathCountersBlock& block = counter_blocks[budget_index];
+    block.present = true;
+    block.heap_pushes += live_counters.heap_pushes;
+    block.heap_pops += live_counters.heap_pops;
+    block.neighbor_candidates += live_counters.neighbor_candidates;
+    block.relax_attempts += live_counters.relax_attempts;
+    block.touched_nodes += live_counters.touched_nodes;
+  };
+  const auto results =
+      run_saturated_budgets(options, accounting, reset, on_tick, quantum, drain,
+                            window_begin, window_end);
+#else
   const auto results = run_saturated_budgets(options, accounting, reset,
                                              on_tick, quantum, drain);
+#endif
+
+  // Exact work identity (zero tolerance): each repetition services the
+  // pool sequentially from index zero, so the measured window covers
+  // the pool range from warmup to warmup+completions with wrap-around,
+  // and window consumed work must equal the reference prefix sum over
+  // exactly that range.
+  const std::uint64_t pool_total = cell.work_prefix.back();
+  auto prefix_wrapped = [&](std::uint64_t services) -> std::uint64_t {
+    const std::uint64_t wraps = services / cell.pool.size();
+    const std::uint64_t partial = services % cell.pool.size();
+    return wraps * pool_total + cell.work_prefix[partial];
+  };
+  for (std::size_t i = 0; i < kBudgetsNs.size(); ++i) {
+    std::uint64_t expected_window_work = 0;
+    for (const SaturatedRep& rep : results[i].reps) {
+      const std::uint64_t warmup = rep.warmup_completions;
+      expected_window_work += prefix_wrapped(warmup + rep.useful_completions) -
+                              prefix_wrapped(warmup);
+    }
+    check(expected_window_work == results[i].window_flow.consumed_work_units,
+          "astar window work diverges from the reference prefix sum");
+  }
+
   for (std::size_t i = 0; i < kBudgetsNs.size(); ++i) {
     budgeted::Artifact artifact =
         build_artifact(options, results[i], kBudgetsNs[i]);
     check(frame_counted_completions(results[i]) == artifact.flow.completed,
           "astar completion bases diverge");
+    artifact.path_counters = counter_blocks[i];
+    artifact.experiment.pool_size = cell.pool.size();
     artifact.experiment.scenario_id = "astar-unit-roomcorridor-512-v1";
     artifact.experiment.workload_refs = {"path/astar_unit"};
     artifact.trace.sha256 = cell.pool_sha256;
@@ -579,8 +662,12 @@ void run_astar_cell(const RunOptions& options, AstarCell& cell) {
 // admission + 1 tick, section 8.3), released by the deterministic
 // rational-rate accumulator, serviced FIFO. No capacity search yet:
 // a small fixed rate ladder exercises stable and unstable points.
-constexpr std::array<std::uint64_t, 3> kArrivalRatesPerSimSecond = {600, 2400,
-                                                                    9600};
+constexpr std::array<std::uint64_t, 4> kArrivalRatesPerSimSecond = {60, 600,
+                                                                    2400, 9600};
+// Counter-pass arrival subset: the low rate gives demand-limited
+// comparisons real margin; overloaded rates compare under saturated
+// rules and add nothing here.
+constexpr std::array<std::uint64_t, 2> kCounterArrivalRates = {60, 600};
 constexpr std::uint64_t kInteractiveAllowanceTicks = 1;
 constexpr std::uint64_t kArrivalSettlementTicks =
     2 * kInteractiveAllowanceTicks;
@@ -791,6 +878,7 @@ void run_arrival_cells(const RunOptions& options, AstarCell& cell,
         artifact = build_artifact(options, shim, kBudgetsNs[i]);
       }
       artifact.experiment.kind = "isolated_arrival_rate";
+      artifact.experiment.pool_size = cell.pool.size();
       artifact.experiment.scenario_id = "astar-arrival-roomcorridor-512-v1";
       artifact.experiment.workload_refs = {"path/astar_unit"};
       artifact.experiment.settlement_ticks = kArrivalSettlementTicks;
@@ -1466,13 +1554,42 @@ void run_field_product_cell(const RunOptions& options) {
   };
   auto drain = []() {};  // Quiescent between quanta by construction.
 
+  std::array<budgeted::PathCountersBlock, kBudgetsNs.size()> counter_blocks;
+#if TESS_DIAGNOSTICS_ENABLED
+  tess::diagnostics::PathCounters live_counters;
+  std::optional<tess::diagnostics::ScopedPathCounters> scoped;
+  auto window_begin = [&](std::size_t) {
+    live_counters = tess::diagnostics::PathCounters{};
+    scoped.emplace(live_counters);
+  };
+  auto window_end = [&](std::size_t budget_index) {
+    scoped.reset();
+    budgeted::PathCountersBlock& block = counter_blocks[budget_index];
+    block.present = true;
+    block.heap_pushes += live_counters.heap_pushes;
+    block.heap_pops += live_counters.heap_pops;
+    block.neighbor_candidates += live_counters.neighbor_candidates;
+    block.relax_attempts += live_counters.relax_attempts;
+    block.touched_nodes += live_counters.touched_nodes;
+  };
+  const auto results =
+      run_saturated_budgets(options, accounting, reset, on_tick, quantum, drain,
+                            window_begin, window_end);
+#else
   const auto results = run_saturated_budgets(options, accounting, reset,
                                              on_tick, quantum, drain);
+#endif
   for (std::size_t i = 0; i < kBudgetsNs.size(); ++i) {
+    // Constant-work identity: every completion is the identical
+    // deterministic build.
+    check(results[i].window_flow.consumed_work_units ==
+              results[i].window_flow.completed * reference_reached,
+          "field-product window work diverges from the reference build");
     budgeted::Artifact artifact =
         build_artifact(options, results[i], kBudgetsNs[i]);
     check(frame_counted_completions(results[i]) == artifact.flow.completed,
           "field-product completion bases diverge");
+    artifact.path_counters = counter_blocks[i];
     artifact.experiment.scenario_id = "field-product-8goal-roomportals-512-v1";
     artifact.experiment.workload_refs = {"path/field_product"};
     artifact.trace.sha256 = trace_hash;
@@ -1620,6 +1737,13 @@ auto main(int argc, char** argv) -> int {
       options.validation_requests = 16;
     } else if (argument == "--out-dir" && i + 1 < argc) {
       options.out_dir = argv[++i];
+    } else if (argument == "--pass" && i + 1 < argc) {
+      const std::string pass = argv[++i];
+      if (pass == "counter") {
+        options.counter_pass = true;
+      } else if (pass != "timing") {
+        fail("--pass must be timing or counter");
+      }
     } else if (argument == "--reps" && i + 1 < argc) {
       options.repetitions =
           static_cast<std::uint64_t>(std::strtoull(argv[++i], nullptr, 10));
@@ -1635,6 +1759,18 @@ auto main(int argc, char** argv) -> int {
 
   AstarCell astar_cell = build_astar_cell(options);
   validate_astar_cell(astar_cell, options.validation_requests);
+  if (options.counter_pass) {
+    // Counter pass: only the comparable cells over the identical
+    // demand traces. Capacity search, paced cells, overloaded rates,
+    // and the diagnostics-free colony cells produce nothing the
+    // section 11.2 comparison can use.
+    run_astar_cell(options, astar_cell);
+    run_arrival_cells(options, astar_cell, budgeted::Pacing::Unpaced,
+                      kCounterArrivalRates, "astar_arrival_");
+    run_field_product_cell(options);
+    run_resumable_cell(options);
+    return 0;
+  }
   run_astar_cell(options, astar_cell);
   run_arrival_cells(options, astar_cell, budgeted::Pacing::Unpaced,
                     kArrivalRatesPerSimSecond, "astar_arrival_");
