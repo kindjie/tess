@@ -19,6 +19,10 @@
 - `test_doc_outputs.py`: verifies documented example-output fences stay
   synchronized with the stdout of their compiled binaries, including drift,
   missing/unused `source=binary` mappings, and failing binaries.
+- `test_changelog_fragments.py`: verifies changelog fragment naming and
+  shape, category grouping, newest-first decision ordering, and that
+  assembly consumes fragments, preserves prior releases, and writes
+  nothing at all when any fragment is invalid.
 - `allocation_counter.{h,cc}` is shared only by allocation-sensitive test
   binaries that need global `new`/`delete` counters. Do not link it into more
   than one translation unit inside the same executable.
