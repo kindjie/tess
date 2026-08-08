@@ -43,6 +43,7 @@
 #include <string>
 #include <vector>
 
+#include "budgeted_progress_arrival.h"
 #include "budgeted_progress_artifact.h"
 #include "budgeted_progress_clock.h"
 #include "budgeted_progress_controller.h"
@@ -510,10 +511,7 @@ void validate_astar_cell(AstarCell& cell, std::size_t oracle_count) {
               cell.expected_sha256.c_str());
 }
 
-void run_astar_cell(const RunOptions& options) {
-  AstarCell cell = build_astar_cell(options);
-  validate_astar_cell(cell, options.validation_requests);
-
+void run_astar_cell(const RunOptions& options, AstarCell& cell) {
   tess::diagnostics::FlowAccounting accounting;
   auto reset = [&cell](std::uint64_t) { cell.next = 0; };
   auto on_tick = [](std::uint64_t) {};
@@ -553,6 +551,215 @@ void run_astar_cell(const RunOptions& options) {
     SteadyClock clock;
     artifact.calibration = calibrate(clock);
     write_artifact(options, artifact, "astar_unit", kBudgetsNs[i]);
+  }
+}
+
+// --- Arrival-rate cells for the unit A* workload (section 6.2) ---------
+
+// Open-loop demand: the interactive point-path class (allowance
+// admission + 1 tick, section 8.3), released by the deterministic
+// rational-rate accumulator, serviced FIFO. No capacity search yet:
+// a small fixed rate ladder exercises stable and unstable points.
+constexpr std::array<std::uint64_t, 3> kArrivalRatesPerSimSecond = {600, 2400,
+                                                                    9600};
+constexpr std::uint64_t kInteractiveAllowanceTicks = 1;
+constexpr std::uint64_t kArrivalSettlementTicks =
+    2 * kInteractiveAllowanceTicks;
+
+struct ArrivalCellResult {
+  tess::diagnostics::FlowCounters window_flow;
+  std::vector<SaturatedRep> reps;
+  budgeted::ArrivalSummary totals;
+  std::vector<std::uint64_t> lateness_ticks;
+  std::vector<std::uint64_t> oldest_age_samples;
+  std::uint64_t stable_reps = 0;
+  std::uint64_t peak_rss = 0;
+};
+
+// One arrival repetition: warmup with demand flowing, an untimed
+// pre-window drain so the measured window starts with zero backlog
+// (draining outside the window never erases in-window growth, design
+// section 9.2), measured frames, the window-end snapshot before any
+// settlement work, then settlement ticks with admissions stopped but
+// service continuing so tick-based deadlines resolve.
+void run_arrival_rep(const RunOptions& options, AstarCell& cell,
+                     SteadyClock& clock, Nanos budget_ns, std::uint64_t rate,
+                     ArrivalCellResult& out) {
+  cell.next = 0;
+  FrameBudgetConfig config;
+  config.budget_ns = budget_ns;
+  config.base_tps = 60;
+  FrameBudgetController controller{clock, config};
+
+  const std::uint64_t horizon_ticks =
+      options.warmup_frames + options.measured_frames + 8;
+  const auto expected_items =
+      static_cast<std::size_t>((rate * horizon_ticks) / 60 + 64);
+  budgeted::ArrivalTracker tracker{kInteractiveAllowanceTicks, 60,
+                                   expected_items};
+  budgeted::RationalRate release{rate, 1, 60};
+
+  bool admitting = true;
+  auto mandatory = [&](std::uint64_t tick) {
+    tracker.observe_tick(tick);
+    if (!admitting) {
+      return;
+    }
+    const std::uint64_t events = release.release_at_tick();
+    for (std::uint64_t i = 0; i < events; ++i) {
+      tracker.admit(tick);
+    }
+  };
+  auto service_one = [&]() -> std::uint64_t {
+    const std::size_t item = tracker.next();
+    if (item == budgeted::ArrivalTracker::npos) {
+      return 0;
+    }
+    const std::size_t pool_index = item % cell.pool.size();
+    const tess::PathResult result =
+        tess::astar_path<PathScaleWorld, PassableTag>(
+            cell.world, cell.pool[pool_index], cell.scratch);
+    check(pack_path_outcome(result) == cell.expected[pool_index],
+          "timed arrival result diverges from contiguous reference");
+    const auto work = static_cast<std::uint64_t>(result.expanded_nodes);
+    tracker.complete(item, controller.sim_tick(), work > 0 ? work : 1);
+    return work > 0 ? work : 1;
+  };
+  auto quantum = [&]() -> bool { return service_one() > 0; };
+
+  for (std::uint64_t frame = 0; frame < options.warmup_frames; ++frame) {
+    (void)controller.run_frame(mandatory, quantum);
+  }
+  // Untimed pre-window drain: window starts with zero backlog.
+  while (service_one() > 0) {
+  }
+  const tess::diagnostics::FlowCounters window_start = tracker.counters();
+  tracker.begin_window(controller.sim_tick() + 1);
+
+  SaturatedRep samples;
+  samples.frame_elapsed_ns.reserve(options.measured_frames);
+  samples.overshoot_quantum_tail_ns.reserve(options.measured_frames);
+  samples.overshoot_mandatory_ns.reserve(options.measured_frames);
+  for (std::uint64_t frame = 0; frame < options.measured_frames; ++frame) {
+    const FrameRecord record = controller.run_frame(mandatory, quantum);
+    samples.frame_elapsed_ns.push_back(record.elapsed_ns);
+    samples.overshoot_quantum_tail_ns.push_back(
+        record.overshoot_quantum_tail_ns);
+    samples.overshoot_mandatory_ns.push_back(record.overshoot_mandatory_ns);
+    if (record.overshoot_quantum_tail_ns > 0 ||
+        record.overshoot_mandatory_ns > 0) {
+      ++samples.overshoot_frames;
+    }
+  }
+  tracker.end_window(controller.sim_tick());
+  const tess::diagnostics::FlowCounters window_end = tracker.counters();
+  accumulate_window(out.window_flow, window_start, window_end);
+
+  // Settlement: admissions stop, service continues, tick clock runs.
+  admitting = false;
+  const std::uint64_t settle_until =
+      controller.sim_tick() + kArrivalSettlementTicks;
+  while (controller.sim_tick() < settle_until) {
+    (void)controller.run_frame(mandatory, quantum);
+  }
+  const budgeted::ArrivalSummary summary =
+      tracker.summarize(controller.sim_tick());
+
+  // Section 9.2 flow-stability criteria on this repetition.
+  const std::uint64_t admitted_window =
+      window_end.admitted - window_start.admitted;
+  const std::uint64_t growth = window_end.outstanding_current;
+  const std::uint64_t growth_allowance =
+      std::max<std::uint64_t>(1, (admitted_window * 5 + 999) / 1000);
+  const bool identities = window_end.admission_identity_holds() &&
+                          window_end.retention_identity_holds();
+  const bool age_ok = window_end.oldest_outstanding_age_ticks <=
+                      tracker.starvation_window_ticks();
+  const bool deadline_ok =
+      summary.cohort_admitted == 0 ||
+      summary.cohort_deadline_met * 100 >= summary.cohort_admitted * 99;
+  if (identities && growth <= growth_allowance && age_ok && deadline_ok) {
+    ++out.stable_reps;
+  }
+
+  out.totals.useful_completions += summary.useful_completions;
+  out.totals.cohort_admitted += summary.cohort_admitted;
+  out.totals.cohort_deadline_met += summary.cohort_deadline_met;
+  out.totals.starved_items += summary.starved_items;
+  out.lateness_ticks.insert(out.lateness_ticks.end(),
+                            summary.lateness_ticks.begin(),
+                            summary.lateness_ticks.end());
+  out.oldest_age_samples.insert(out.oldest_age_samples.end(),
+                                tracker.oldest_age_samples().begin(),
+                                tracker.oldest_age_samples().end());
+  out.reps.push_back(std::move(samples));
+  out.peak_rss = std::max(out.peak_rss, current_rss_bytes());
+}
+
+void run_arrival_cell(const RunOptions& options, AstarCell& cell) {
+  for (const std::uint64_t rate : kArrivalRatesPerSimSecond) {
+    SteadyClock clock;
+    std::array<ArrivalCellResult, kBudgetsNs.size()> results;
+    for (std::uint64_t rep = 0; rep < options.repetitions; ++rep) {
+      for (std::size_t k = 0; k < kBudgetsNs.size(); ++k) {
+        const std::size_t budget_index = (k + rep) % kBudgetsNs.size();
+        run_arrival_rep(options, cell, clock, kBudgetsNs[budget_index], rate,
+                        results[budget_index]);
+      }
+    }
+    for (std::size_t i = 0; i < kBudgetsNs.size(); ++i) {
+      ArrivalCellResult& cell_result = results[i];
+      budgeted::Artifact artifact;
+      {
+        // Reuse the saturated assembly for run/summary plumbing.
+        SaturatedCellResult shim;
+        shim.window_flow = cell_result.window_flow;
+        shim.reps = std::move(cell_result.reps);
+        shim.peak_rss = cell_result.peak_rss;
+        artifact = build_artifact(options, shim, kBudgetsNs[i]);
+      }
+      artifact.experiment.kind = "isolated_arrival_rate";
+      artifact.experiment.scenario_id = "astar-arrival-roomcorridor-512-v1";
+      artifact.experiment.workload_refs = {"path/astar_unit"};
+      artifact.experiment.settlement_ticks = kArrivalSettlementTicks;
+      artifact.experiment.arrival_rate_num = rate;
+      artifact.experiment.arrival_rate_den = 1;
+      artifact.trace.sha256 = cell.pool_sha256;
+
+      // Section 9 headline: window completions from per-item records.
+      artifact.summary.useful_completions =
+          cell_result.totals.useful_completions;
+      budgeted::DeadlineGroup deadlines;
+      deadlines.deadline_success_rate =
+          cell_result.totals.cohort_admitted > 0
+              ? static_cast<double>(cell_result.totals.cohort_deadline_met) /
+                    static_cast<double>(cell_result.totals.cohort_admitted)
+              : 1.0;
+      deadlines.lateness_ticks = budgeted::summarize_family(
+          "completed_cohort_items", cell_result.lateness_ticks);
+      deadlines.oldest_age_ticks = budgeted::summarize_family(
+          "per_tick_window_observations", cell_result.oldest_age_samples);
+      deadlines.starved_items = cell_result.totals.starved_items;
+      artifact.summary.deadlines = deadlines;
+      artifact.summary.flow_stable_applicable = true;
+      artifact.summary.flow_stable =
+          cell_result.stable_reps * 2 > options.repetitions;
+
+      budgeted::ClassArtifact interactive;
+      interactive.class_id = "interactive_path";
+      interactive.deadline_allowance_ticks = kInteractiveAllowanceTicks;
+      interactive.useful_completions = cell_result.totals.useful_completions;
+      interactive.cohort_admitted = cell_result.totals.cohort_admitted;
+      interactive.deadline_success_rate = deadlines.deadline_success_rate;
+      interactive.lateness_ticks = deadlines.lateness_ticks;
+      interactive.starved_items = cell_result.totals.starved_items;
+      artifact.classes.push_back(interactive);
+
+      SteadyClock calibration_clock;
+      artifact.calibration = calibrate(calibration_clock);
+      write_artifact(options, artifact, "astar_arrival_" + std::to_string(rate),
+                     kBudgetsNs[i]);
+    }
   }
 }
 
@@ -823,7 +1030,10 @@ auto main(int argc, char** argv) -> int {
     fail("--out-dir is required");
   }
 
-  run_astar_cell(options);
+  AstarCell astar_cell = build_astar_cell(options);
+  validate_astar_cell(astar_cell, options.validation_requests);
+  run_astar_cell(options, astar_cell);
+  run_arrival_cell(options, astar_cell);
   run_field_product_cell(options);
   run_resumable_cell(options);
   return 0;

@@ -86,6 +86,8 @@ def demand_limited_artifact() -> dict:
   artifact["experiment"]["kind"] = "isolated_arrival_rate"
   artifact["experiment"]["pacing"] = "paced"
   artifact["experiment"]["settlement_ticks"] = 64
+  artifact["experiment"]["arrival_rate_num"] = 600
+  artifact["experiment"]["arrival_rate_den"] = 1
   artifact["summary"].update({
       "frame_start_lag_ns": family(6000, base="paced_frames"),
       "deadline_success_rate": 0.995,
@@ -292,6 +294,14 @@ def test_saturated_must_omit_classes(tmp_path):
   document["classes"] = []
   failures = cba.validate_file(write(tmp_path, document))
   assert failures and "no demand classes" in failures[0]
+
+
+def test_arrival_rate_cell_requires_rate(tmp_path):
+  """Arrival-rate cells must carry a positive rational rate."""
+  document = demand_limited_artifact()
+  del document["experiment"]["arrival_rate_num"]
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "arrival_rate_num" in failures[0]
 
 
 def test_deep_copy_fixture_isolated():

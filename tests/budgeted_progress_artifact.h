@@ -244,6 +244,11 @@ struct ExperimentBlock {
   std::string budget_scope = "frame";
   std::uint64_t budget_ns = 0;
   std::uint64_t settlement_ticks = 0;
+  // Arrival-rate cells only: events per simulation second as a
+  // rational; zero num means not an arrival cell and the fields are
+  // omitted from the artifact.
+  std::uint64_t arrival_rate_num = 0;
+  std::uint64_t arrival_rate_den = 1;
   std::string executor_kind = "serial";
   std::uint32_t executor_workers = 1;
 };
@@ -448,6 +453,10 @@ inline void append_family(std::string& out, const char* key,
   detail::append_string(out, "budget_scope", experiment.budget_scope);
   detail::append_u64(out, "budget_ns", experiment.budget_ns);
   detail::append_u64(out, "settlement_ticks", experiment.settlement_ticks);
+  if (experiment.arrival_rate_num > 0) {
+    detail::append_u64(out, "arrival_rate_num", experiment.arrival_rate_num);
+    detail::append_u64(out, "arrival_rate_den", experiment.arrival_rate_den);
+  }
   out += "\"executor\": {";
   detail::append_string(out, "kind", experiment.executor_kind);
   detail::append_u64(out, "workers", experiment.executor_workers, false);

@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "budgeted_progress_arrival.h"
 #include "budgeted_progress_artifact.h"
 #include "budgeted_progress_clock.h"
 #include "budgeted_progress_controller.h"
@@ -678,6 +679,83 @@ TEST(BudgetedRecords, ServiceOrderTieBreakChain) {
   // Readiness restored: the gated Immediate item is now first.
   queue.entry(gated).ready = true;
   EXPECT_EQ(queue.pop_next(), gated);
+}
+
+// --- Arrival-rate machinery (section 6.2) ---
+
+using budgeted::ArrivalTracker;
+using budgeted::RationalRate;
+
+// The Bresenham release accumulator is exact: after T ticks exactly
+// floor(T * num / (den * base_tps)) events have been released, with
+// no drift and no randomness.
+TEST(BudgetedArrival, RationalRateReleasesExactIntegerPattern) {
+  // 90 events per sim second at 60 TPS: 1.5 per tick -> 1,2,1,2,...
+  RationalRate rate{90, 1, 60};
+  std::uint64_t total = 0;
+  for (std::uint64_t tick = 1; tick <= 120; ++tick) {
+    const std::uint64_t events = rate.release_at_tick();
+    EXPECT_EQ(events, tick % 2 == 1 ? 1u : 2u) << "tick " << tick;
+    total += events;
+    EXPECT_EQ(total, (tick * 90) / 60) << "tick " << tick;
+  }
+
+  // One event per sim second at 60 TPS: exactly at every 60th tick.
+  RationalRate slow{1, 1, 60};
+  std::uint64_t slow_total = 0;
+  for (std::uint64_t tick = 1; tick <= 180; ++tick) {
+    const std::uint64_t events = slow.release_at_tick();
+    EXPECT_EQ(events, tick % 60 == 0 ? 1u : 0u) << "tick " << tick;
+    slow_total += events;
+  }
+  EXPECT_EQ(slow_total, 3u);
+}
+
+// FIFO arrival tracking: oldest age follows the next unserviced
+// admission, cohort/deadline/lateness/starvation derive from the
+// per-item records at seal, and both identities hold throughout.
+TEST(BudgetedArrival, ArrivalTrackerFifoWindowAndSeal) {
+  ArrivalTracker tracker{/*allowance=*/2, /*base_tps=*/20,
+                         /*expected_items=*/16};
+  tracker.begin_window(1);
+  tracker.observe_tick(1);
+  tracker.admit(1);  // Deadline 3.
+  tracker.admit(1);  // Deadline 3.
+  tracker.observe_tick(2);
+  EXPECT_EQ(tracker.counters().oldest_outstanding_age_ticks, 1u);
+
+  const std::size_t first = tracker.next();
+  ASSERT_NE(first, ArrivalTracker::npos);
+  tracker.complete(first, 2, 10);  // Met (2 <= 3).
+  tracker.observe_tick(5);
+  EXPECT_EQ(tracker.counters().oldest_outstanding_age_ticks, 4u);
+
+  const std::size_t second = tracker.next();
+  ASSERT_NE(second, ArrivalTracker::npos);
+  tracker.complete(second, 5, 10);  // Late by 2 (deadline 3).
+  EXPECT_EQ(tracker.next(), ArrivalTracker::npos);
+
+  // Third admission never serviced: starved once its wait crosses
+  // max(4 * 2, 20) = 20 ticks.
+  tracker.observe_tick(6);
+  tracker.admit(6);
+  tracker.end_window(10);
+  for (std::uint64_t tick = 7; tick <= 30; ++tick) {
+    tracker.observe_tick(tick);
+  }
+
+  const budgeted::ArrivalSummary summary = tracker.summarize(30);
+  EXPECT_EQ(summary.useful_completions, 2u);
+  EXPECT_EQ(summary.cohort_admitted, 3u);
+  EXPECT_EQ(summary.cohort_deadline_met, 1u);
+  ASSERT_EQ(summary.lateness_ticks.size(), 1u);
+  EXPECT_EQ(summary.lateness_ticks[0], 2u);
+  EXPECT_EQ(summary.starved_items, 1u);
+  EXPECT_TRUE(tracker.counters().admission_identity_holds());
+  EXPECT_TRUE(tracker.counters().retention_identity_holds());
+  EXPECT_EQ(tracker.counters().outstanding_current, 1u);
+  // Window-scoped oldest-age samples were collected each observation.
+  EXPECT_FALSE(tracker.oldest_age_samples().empty());
 }
 
 // --- Summary derivation and artifact emission (sections 11-12) ---
