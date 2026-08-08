@@ -32,6 +32,15 @@
     "fields/build_alloc_gate": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000
+    },
+    "fields/cache_eviction_entries_8": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 400000
+    },
+    "fields/cache_eviction_entries_128": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 400000
     }
-  }
+  },
+  "bootstrap_comment": "fields/cache_eviction_entries_* carry BOOTSTRAP ceilings at 4x an M3 Max reading (95.2 us and 99.9 us). The pair exists to expose eviction cost against resident entry count: identical per-store work, different entry counts, so their DELTA is the scan. Recalibrate with the family."
 }

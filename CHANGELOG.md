@@ -9,6 +9,24 @@ and their rationale are recorded separately in
 
 ## [Unreleased]
 
+### Performance
+
+- Per-frame queued planning is measured. `queued/plan_frame_256` and
+  `queued/plan_frame_4096` time `plan_operations` plus
+  `plan_parallel_execution_phases`, which nothing timed before: every
+  other queued benchmark plans outside its measured loop, and the one
+  in-loop planner call plans a single operation. Two sizes are registered
+  so growth reads as a shape rather than a point. First readings, on an
+  Apple M3 Max: **59.6 us at 256 operations and 23.4 ms at 4096** — 16x the
+  operations for 392x the time. No fix is in this change; the measurement
+  comes first so the fix has before-and-after evidence.
+- Field-product cache eviction is measured against resident entry count.
+  `fields/cache_eviction_entries_8` and `_128` do identical per-store work
+  and differ only in how many entries the eviction scan walks, so their
+  delta is the scan. The existing `fields/cache_eviction` holds about two
+  entries, so the linear search for the least-recently-used entry never
+  had more than two candidates to compare.
+
 ### Fixed
 
 - `EventStream` retirement no longer wraps a flow accountant's outstanding
