@@ -254,9 +254,21 @@ def check_artifact(document: dict) -> None:
   if pacing == "unpaced":
     _require("frame_start_lag_ns" not in summary,
              "unpaced cells must omit frame_start_lag_ns")
+    for key in ("measured_wall_ns", "useful_per_wall_second"):
+      _require(key not in summary,
+               f"unpaced cells must omit {key}: measured wall rates come "
+               "from paced cells only")
   else:
     check_percentile_family("summary.frame_start_lag_ns",
                             summary["frame_start_lag_ns"])
+    wall_ns = summary.get("measured_wall_ns")
+    _require(isinstance(wall_ns, int) and not isinstance(wall_ns, bool)
+             and wall_ns > 0,
+             "paced cells must carry a positive measured_wall_ns")
+    wall_rate = summary.get("useful_per_wall_second")
+    _require(isinstance(wall_rate, (int, float))
+             and not isinstance(wall_rate, bool) and wall_rate >= 0,
+             "paced cells must carry a non-negative useful_per_wall_second")
 
   saturated = kind == "isolated_saturated"
   deadline_keys = ("deadline_success_rate", "lateness_ticks",
