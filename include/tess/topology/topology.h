@@ -336,6 +336,18 @@ struct RegionGraphSparseData {
 template <>
 struct RegionGraphSparseData<AlwaysResident> {};
 
+// Whether a provider transition emitted for `chunk` really originates there,
+// as the TransitionProvider contract requires. Shared so every enumeration
+// of a provider rejects a contract violation identically: the portal pass
+// dropping a misowned edge while the sparse missing-reach pass still honored
+// it would report Indeterminate where the other reports Unreachable.
+template <typename Shape>
+[[nodiscard]] constexpr bool provider_source_is_owned(Coord3 from,
+                                                      ChunkKey chunk) noexcept {
+  return contains<Shape>(from) &&
+         chunk_key<Shape>(chunk_coord<Shape>(from)).value == chunk.value;
+}
+
 }  // namespace detail
 
 template <typename Residency>
@@ -646,6 +658,15 @@ class RegionGraphT {
       for (const auto& topology : local_topologies_) {
         provider.for_each_transition(
             world, topology.chunk(), [&](Coord3 from, Coord3 to) {
+              // Same ownership rejection the portal pass applies. Without
+              // it a misowned edge creates no portal yet still marks its
+              // source region as reaching missing topology, so reachable()
+              // answers Indeterminate where the portal pass implies
+              // Unreachable.
+              if (!detail::provider_source_is_owned<Shape>(from,
+                                                           topology.chunk())) {
+                return;
+              }
               if (!contains<Shape>(to) ||
                   has_chunk(chunk_key<Shape>(chunk_coord<Shape>(to)))) {
                 return;
@@ -1041,9 +1062,19 @@ void append_provider_portals(const World& world,
                              std::vector<RegionPortal>& portals) {
   provider.for_each_transition(
       world, topology.chunk(), [&](Coord3 from, Coord3 to) {
-        TESS_ASSERT(contains<Shape>(from));
-        TESS_ASSERT(chunk_key<Shape>(chunk_coord<Shape>(from)).value ==
-                    topology.chunk().value);
+        // Enforced, not asserted. The incremental erase keys removal on
+        // `portal.from.chunk`, so a portal whose source lies outside the
+        // enumerated chunk is never erased, while every update touching that
+        // chunk appends it again. A provider violating the documented
+        // ownership contract would therefore grow `portals_` without bound
+        // and make incremental output diverge from a full rebuild -- and
+        // only in builds with assertions compiled out, which is where it is
+        // hardest to notice. Dropping the transition keeps the graph
+        // well-formed in every build, and makes the behaviour testable
+        // rather than an abort.
+        if (!detail::provider_source_is_owned<Shape>(from, topology.chunk())) {
+          return;
+        }
         if (!contains<Shape>(to)) {
           return;
         }

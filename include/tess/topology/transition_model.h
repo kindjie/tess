@@ -439,6 +439,14 @@ class ResolvedTransitionModel {
   template <typename Sink>
   constexpr void for_each_dependency_chunk(const World& world, Coord3 from,
                                            Sink&& sink) const {
+    // Symmetric with the forward and reverse probes, which both reject an
+    // out-of-world coordinate. Without this, `chunk_coord` casts a negative
+    // component to unsigned and the sink receives an arbitrary out-of-range
+    // key -- which `capture_field_product_dependencies` uses to index an
+    // unchecked `seen` array.
+    if (!contains<shape_type>(from)) {
+      return;
+    }
     sink(chunk_key<shape_type>(chunk_coord<shape_type>(from)));
     detail::for_each_regular_candidate<shape_type, step_policy>(
         from, [&](detail::RegularTransitionCandidate candidate) {

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -128,6 +129,43 @@ TEST(TessTransitionModel, ModelsSatisfyForwardAndReverseContracts) {
   static_assert(Diagonal::cost_scale == 128);
   static_assert(Axial::cost_scale == 1);
   SUCCEED();
+}
+
+// The forward and reverse probes both reject an out-of-world coordinate.
+// The dependency probe did not, and `chunk_coord` casts a negative
+// component to unsigned, so the sink received an arbitrary out-of-range key
+// -- which capture_field_product_dependencies uses to index an unchecked
+// `seen` array.
+TEST(TessTransitionModel, DependencyChunksRejectOutOfWorldOrigins) {
+  SquareWorld world;
+  const auto model = tess::ResolvedTransitionModel<SquareWorld, DefaultClass>{};
+
+  const auto collect = [&](tess::Coord3 from) {
+    std::vector<std::uint64_t> keys;
+    model.for_each_dependency_chunk(
+        world, from, [&](tess::ChunkKey key) { keys.push_back(key.value); });
+    return keys;
+  };
+
+  // Sanity: an in-world origin still reports its own chunk at minimum.
+  EXPECT_FALSE(collect(tess::Coord3{1, 1, 0}).empty());
+
+  for (const auto outside :
+       {tess::Coord3{-1, 0, 0}, tess::Coord3{0, -1, 0}, tess::Coord3{0, 0, -1},
+        tess::Coord3{8, 0, 0}, tess::Coord3{0, 8, 0}}) {
+    const auto keys = collect(outside);
+    EXPECT_TRUE(keys.empty()) << "origin outside the world emitted a key";
+    // Whatever is emitted must at least be indexable.
+    for (const auto value : keys) {
+      EXPECT_LT(value, SquareWorld::chunk_count);
+    }
+  }
+
+  // The forward probe, whose behaviour this now matches, emits nothing.
+  std::size_t forward = 0;
+  model.for_each_forward(world, tess::Coord3{-1, 0, 0}, 0,
+                         [&](auto) { ++forward; });
+  EXPECT_EQ(forward, 0u);
 }
 
 TEST(TessTransitionModel, AssessesCompactCostRangeConservatively) {

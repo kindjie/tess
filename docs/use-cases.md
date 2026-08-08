@@ -12,14 +12,23 @@ dirty-driven loop is a replanner. `examples/stairs_3d.cc` demonstrates the
 full cycle in under two hundred lines: build a two-level world joined by a
 stair transition, verify reachability with the
 [topology precheck](architecture/topology.md), then demolish the stair —
-a queued edit marks the region dirty, `tess::update_region_graph`
-refreshes only the affected chunks, and the next query correctly reports
-the goal unreachable.
+a direct field write, followed by handing that tile's chunk key to
+`tess::update_region_graph`, which refreshes only the affected chunks, so
+the next query correctly reports the goal unreachable.
+
+Supplying that chunk key is the caller's job, and the example is showing
+the discipline rather than boilerplate: a field write does not make a
+region graph stale by itself, so a graph that is not told about the edit
+keeps answering from the pre-edit snapshot. See
+[field edits do not make a graph stale](architecture/topology.md).
+
+For the queued-operations and cadence machinery named below, see
+`examples/colony_2d.cc`, which composes them in a `tess::Schedule` loop.
 
 Mapped to robotics vocabulary:
 
-- **Occupancy update** — a queued field edit with a dirty mask, not a
-  full-map rewrite.
+- **Occupancy update** — a field edit paired with the chunks it dirtied,
+  not a full-map rewrite.
 - **Replan trigger** — `Cadence::on_dirty(mask)` runs the planner exactly
   when the map changed.
 - **Feasibility gate** — the precheck rejects definitively unreachable

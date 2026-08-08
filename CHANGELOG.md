@@ -11,6 +11,16 @@ and their rationale are recorded separately in
 
 ### Fixed
 
+- A transition provider that emits a transition whose source lies outside
+  the chunk it was asked about no longer grows the portal set without
+  bound. Incremental removal keys on the source's chunk, so such a portal
+  was never erased while every update touching that chunk appended it
+  again, and incremental output diverged from a full rebuild. Previously
+  only asserted, so the divergence was live precisely in builds with
+  assertions compiled out; the transition is now dropped in every build.
+- `ResolvedTransitionModel::for_each_dependency_chunk` rejects an
+  out-of-world origin instead of emitting an out-of-range `ChunkKey`,
+  matching the forward and reverse probes.
 - PIBT priority inheritance no longer displaces an agent that has arrived
   or ended at `Unreachable`. The priority loop skips such agents and the
   apply pass checks the same condition before touching a stay-put agent,
@@ -65,6 +75,23 @@ and their rationale are recorded separately in
 - Every continuous-integration job declares a timeout. They inherited the
   360-minute default, which a hung job would spend at up to ten times the
   base billing rate on the macOS runners.
+
+### Documentation
+
+- Documented that a raw field write does not make a region graph stale.
+  Only `mark_topology_dirty` and `mark_topology_rebuilt` advance the
+  topology version that freshness compares, so editing a field a movement
+  class or its provider reads — opening a wall, placing a stair — leaves a
+  built graph reporting fresh, and `precheck_path` can then return a
+  definitive, wrong `Unreachable` that makes a caller skip a search which
+  would have succeeded. The obligation is now stated on `precheck_path`,
+  on `StairTransitions`, and in the topology architecture note.
+  `precheck.h` previously said a graph that no longer matches the world
+  reports `GraphStale`, which overstated what the check can detect.
+- Corrected the robotics use case: `examples/stairs_3d.cc` demolishes its
+  stair with a direct field write and hands the affected chunk key to
+  `update_region_graph`. It was described as a queued edit that marks the
+  region dirty, which is machinery that example does not use.
 
 ## [0.12.0] - 2026-08-05
 
