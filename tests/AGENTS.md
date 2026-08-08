@@ -1274,8 +1274,12 @@
   family) with escaped strings and null-suppressed percentiles; the
   fail-closed reader side lives in
   `tools/check_budgeted_artifacts.py` under
-  `tests/test_budgeted_artifacts.py`. Milliseconds in Debug; no
-  sleeps.
+  `tests/test_budgeted_artifacts.py`. The arrival layer
+  (`tests/budgeted_progress_arrival.h`) pins the deterministic
+  Bresenham rate accumulator's exact release pattern and the
+  single-class FIFO tracker's O(1) oldest-age bookkeeping, inclusive
+  deadlines, window scoping, and seal-time starvation/lateness
+  derivation. Milliseconds in Debug; no sleeps.
 - `tess_grid_map_generators_test`: deterministic procedural map
   generators for the S1 scenario layer (`tests/grid_map_generators.h`
   — recursive-division maze and room-and-corridor, SplitMix64 integer

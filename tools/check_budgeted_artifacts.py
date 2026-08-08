@@ -127,6 +127,15 @@ def check_artifact(document: dict) -> None:
   kind = experiment.get("kind")
   _require(kind in EXPERIMENT_KINDS,
            f"unknown experiment kind {kind!r}: failing closed")
+  if kind == "isolated_arrival_rate":
+    rate_num = experiment.get("arrival_rate_num")
+    rate_den = experiment.get("arrival_rate_den")
+    _require(isinstance(rate_num, int) and not isinstance(rate_num, bool)
+             and rate_num > 0,
+             "arrival-rate cells must carry a positive arrival_rate_num")
+    _require(isinstance(rate_den, int) and not isinstance(rate_den, bool)
+             and rate_den > 0,
+             "arrival-rate cells must carry a positive arrival_rate_den")
 
   check_flow(document["flow"])
 
