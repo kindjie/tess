@@ -47,6 +47,10 @@
     },
     "fields/cache_scan_entries_128": {
       "metric": "cpu_time"
+    },
+    "queued/plan_frame_dense_64": {
+      "metric": "cpu_time",
+      "confirmed_catch": "2026-08-08"
     }
   },
   "source_map": {
@@ -77,7 +81,8 @@
       "unrepresented": "no benchmarks exist; the CPU stays authoritative and consumers own GPU pipelines"
     },
     "include/tess/ops/": [
-      "parallel/chunk_compute_pool_w4"
+      "parallel/chunk_compute_pool_w4",
+      "queued/plan_frame_dense_64"
     ],
     "include/tess/path/": [
       "path/cached_astar_batch_100_mixed_repeated_room_portals_512x512",

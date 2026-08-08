@@ -1200,7 +1200,12 @@ class ChunkOperationIndex {
       return;
     }
     // Wrapped: stale slots would read as live under the new generation.
-    slots_.assign(slots_.size(), Slot{});
+    // Reset in place rather than `assign`, which is not noexcept -- and
+    // `clear` runs on the report-reuse path, where throwing would leave a
+    // half-cleared index behind a plan that reported success.
+    for (auto& slot : slots_) {
+      slot = Slot{};
+    }
     generation_ = 1;
   }
 
