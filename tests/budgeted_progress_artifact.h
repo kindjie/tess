@@ -117,7 +117,12 @@ class Sha256 {
     }
   }
 
+  // Finalizes on first call; subsequent calls return the cached
+  // digest rather than re-padding already-finalized state.
   [[nodiscard]] auto hex_digest() noexcept -> std::string {
+    if (!digest_.empty()) {
+      return digest_;
+    }
     const std::uint64_t bit_length = total_bytes_ * 8;
     const unsigned char pad_byte = 0x80;
     update(&pad_byte, 1);
@@ -132,14 +137,13 @@ class Sha256 {
           static_cast<unsigned char>(bit_length >> (56 - 8 * i));
     }
     update(length_bytes.data(), 8);
-    std::string out;
-    out.reserve(64);
+    digest_.reserve(64);
     for (const std::uint32_t word : state_) {
       std::array<char, 9> hex{};
       (void)std::snprintf(hex.data(), hex.size(), "%08x", word);
-      out += hex.data();
+      digest_ += hex.data();
     }
-    return out;
+    return digest_;
   }
 
  private:
@@ -214,6 +218,7 @@ class Sha256 {
   std::array<unsigned char, 64> buffer_{};
   std::size_t buffer_used_ = 0;
   std::uint64_t total_bytes_ = 0;
+  std::string digest_;
 };
 
 // --- Artifact document -------------------------------------------------
@@ -290,6 +295,13 @@ namespace detail {
 inline void append_escaped(std::string& out, const std::string& text) {
   out += '"';
   for (const char character : text) {
+    const auto code = static_cast<unsigned char>(character);
+    if (code < 0x20) {
+      std::array<char, 8> escape{};
+      (void)std::snprintf(escape.data(), escape.size(), "\\u%04x", code);
+      out += escape.data();
+      continue;
+    }
     if (character == '"' || character == '\\') {
       out += '\\';
     }

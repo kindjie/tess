@@ -800,6 +800,31 @@ if(BUILD_TESTING)
       --smoke
       --out-dir ${CMAKE_CURRENT_BINARY_DIR}
   )
+  set_tests_properties(tess_bench_budgeted_progress_smoke PROPERTIES
+    FIXTURES_SETUP budgeted_smoke_artifacts)
+
+  # The emitted smoke artifacts must pass the fail-closed schema
+  # validator (design section 14.2 puts schema validation in CI
+  # scope), not just the validator's synthetic-fixture unit tests.
+  find_package(Python3 QUIET COMPONENTS Interpreter)
+  if(Python3_Interpreter_FOUND)
+    set(budgeted_smoke_artifact_paths "")
+    foreach(budgeted_cell astar_unit field_product resumable_work)
+      foreach(budgeted_ns 125000 500000 2000000 8000000)
+        list(APPEND budgeted_smoke_artifact_paths
+          "${CMAKE_CURRENT_BINARY_DIR}/${budgeted_cell}_${budgeted_ns}ns.json")
+      endforeach()
+    endforeach()
+    add_test(
+      NAME tess_bench_budgeted_progress_smoke_artifacts_valid
+      COMMAND
+        Python3::Interpreter
+        ${PROJECT_SOURCE_DIR}/tools/check_budgeted_artifacts.py
+        ${budgeted_smoke_artifact_paths}
+    )
+    set_tests_properties(tess_bench_budgeted_progress_smoke_artifacts_valid
+      PROPERTIES FIXTURES_REQUIRED budgeted_smoke_artifacts)
+  endif()
 
   add_test(
     NAME tess_bench_key_smoke

@@ -621,12 +621,18 @@ TEST(BudgetedRecords, PerClassSummariesAggregateToTotals) {
   const ItemId a0 = tracker.admit(0, 1);
   const ItemId a1 = tracker.admit(0, 1);
   const ItemId b0 = tracker.admit(1, 1);
+  // Admitted in-window, dependency-ready, never serviced: crosses the
+  // 20-tick class-0 starvation window during settlement observations.
+  (void)tracker.admit(0, 1);
   tracker.observe_tick(2);
   tracker.resolve(a0, Outcome::Completed, 2);  // Met (deadline 2).
   tracker.observe_tick(4);
   tracker.resolve(a1, Outcome::Completed, 4);  // Late by 2.
   tracker.observe_tick(6);
   tracker.resolve(b0, Outcome::Completed, 6);  // Met (deadline 21).
+  for (std::uint64_t tick = 7; tick <= 25; ++tick) {
+    tracker.observe_tick(tick);
+  }
   tracker.end_window(10);
   tracker.close_settlement();
 
@@ -642,8 +648,11 @@ TEST(BudgetedRecords, PerClassSummariesAggregateToTotals) {
             summary.total.cohort_deadline_met);
   EXPECT_EQ(c0.lateness_ticks.size() + c1.lateness_ticks.size(),
             summary.total.lateness_ticks.size());
+  EXPECT_EQ(c0.starved_items + c1.starved_items, summary.total.starved_items);
   EXPECT_EQ(summary.total.useful_completions, 3u);
   EXPECT_EQ(summary.total.cohort_deadline_met, 2u);
+  EXPECT_EQ(summary.total.starved_items, 1u);
+  EXPECT_EQ(c0.starved_items, 1u);
 }
 
 // Section 13 test 23: the service order exercises the full tie-break
@@ -720,6 +729,8 @@ TEST(BudgetedArtifact, Sha256KnownVectors) {
   abc.update("abc", 3);
   EXPECT_EQ(abc.hex_digest(),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  // Finalization is idempotent: a second call returns the same digest.
+  EXPECT_EQ(abc.hex_digest(), abc.hex_digest());
 }
 
 // Saturated artifacts omit the deadline group and paced-only fields

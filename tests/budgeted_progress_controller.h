@@ -50,10 +50,12 @@ struct FrameBudgetConfig {
   std::size_t max_ticks_per_frame = 8;
 };
 
-// Everything the controller observed about one rendered frame. At most
-// one overshoot bucket is nonzero per frame: mandatory overshoot means
-// no defer-capable quantum started, and a quantum tail requires the
-// mandatory phase to have finished inside the allowance.
+// Everything the controller observed about one rendered frame. Under
+// frame scope at most one overshoot bucket is nonzero per frame:
+// mandatory overshoot means no defer-capable quantum started, and a
+// quantum tail requires the mandatory phase to have finished inside
+// the allowance. Tick scope can accumulate both buckets in one frame
+// (tick 1 mandatory overshoot, tick 2 quantum tail).
 struct FrameRecord {
   std::uint64_t frame_index = 0;
   std::size_t granted_ticks = 0;

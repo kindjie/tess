@@ -112,7 +112,7 @@ def check_artifact(document: dict) -> None:
     check_percentile_family("summary.frame_start_lag_ns",
                             summary["frame_start_lag_ns"])
 
-  saturated = "saturated" in kind
+  saturated = kind == "isolated_saturated"
   deadline_keys = ("deadline_success_rate", "lateness_ticks",
                    "oldest_age_ticks", "starved_items")
   if saturated:
