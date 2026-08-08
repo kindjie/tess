@@ -21,6 +21,7 @@
 #include "budgeted_progress_clock.h"
 #include "budgeted_progress_controller.h"
 #include "budgeted_progress_records.h"
+#include "budgeted_progress_search.h"
 
 namespace {
 
@@ -756,6 +757,101 @@ TEST(BudgetedArrival, ArrivalTrackerFifoWindowAndSeal) {
   EXPECT_EQ(tracker.counters().outstanding_current, 1u);
   // Window-scoped oldest-age samples were collected each observation.
   EXPECT_FALSE(tracker.oldest_age_samples().empty());
+}
+
+// --- Capacity boundary search (section 9.3) ---
+
+using budgeted::CapacityBand;
+using budgeted::PointKind;
+using budgeted::SearchPolicy;
+using budgeted::SearchResult;
+
+// A clean monotone boundary converges to within the terminal
+// resolution, confirms, and reports a non-inverted band with every
+// tested point retained and zero flapping.
+TEST(BudgetedSearch, MonotoneBoundaryConvergesWithinResolution) {
+  const std::uint64_t capacity = 1000;
+  auto probe = [&](std::uint64_t rate) { return rate <= capacity; };
+  auto confirm = probe;
+  const SearchResult result =
+      budgeted::search_capacity(SearchPolicy{60, 2, 24}, probe, confirm);
+
+  ASSERT_TRUE(result.band.confirmed_stable.has_value());
+  ASSERT_TRUE(result.band.lowest_unstable.has_value());
+  const std::uint64_t confirmed = *result.band.confirmed_stable;
+  EXPECT_LE(confirmed, capacity);
+  EXPECT_GE(confirmed, capacity - std::max<std::uint64_t>(1, capacity / 50));
+  EXPECT_GT(*result.band.lowest_unstable, confirmed);
+  EXPECT_EQ(result.flapping, 0u);
+  EXPECT_FALSE(result.points.empty());
+  for (const auto& point : result.points) {
+    EXPECT_EQ(point.stable, point.kind == PointKind::Confirmation
+                                ? point.rate <= capacity
+                                : point.rate <= capacity);
+  }
+}
+
+// A confirmation that fails at the search's candidate records the
+// point as unstable and steps down one resolution unit at a time; the
+// failed points become band-edge evidence, never a re-roll.
+TEST(BudgetedSearch, ConfirmationFailureStepsDown) {
+  auto probe = [](std::uint64_t rate) { return rate <= 1000; };
+  auto confirm = [](std::uint64_t rate) { return rate <= 950; };
+  const SearchResult result =
+      budgeted::search_capacity(SearchPolicy{60, 2, 24}, probe, confirm);
+
+  ASSERT_TRUE(result.band.confirmed_stable.has_value());
+  EXPECT_LE(*result.band.confirmed_stable, 950u);
+  ASSERT_TRUE(result.band.lowest_unstable.has_value());
+  EXPECT_GT(*result.band.lowest_unstable, *result.band.confirmed_stable);
+  std::uint64_t failed_confirmations = 0;
+  for (const auto& point : result.points) {
+    if (point.kind == PointKind::Confirmation && !point.stable) {
+      ++failed_confirmations;
+    }
+  }
+  EXPECT_GE(failed_confirmations, 1u);
+}
+
+// A noisy boundary (deterministically flapping verdicts inside a
+// band) is reported as flapping and the band still cannot invert.
+TEST(BudgetedSearch, FlappingBoundaryNeverInvertsTheBand) {
+  auto probe = [](std::uint64_t rate) {
+    if (rate <= 950) {
+      return true;
+    }
+    if (rate >= 1050) {
+      return false;
+    }
+    return rate % 2 == 0;  // Deterministic flapping zone.
+  };
+  auto confirm = [](std::uint64_t rate) { return rate <= 980; };
+  const SearchResult result =
+      budgeted::search_capacity(SearchPolicy{60, 2, 24}, probe, confirm);
+
+  ASSERT_TRUE(result.band.confirmed_stable.has_value());
+  if (result.band.lowest_unstable.has_value()) {
+    EXPECT_GT(*result.band.lowest_unstable, *result.band.confirmed_stable);
+  }
+}
+
+// A seed above capacity halves down before bracketing; a workload
+// that sustains nothing confirms nothing and reports only the lowest
+// unstable observation.
+TEST(BudgetedSearch, UnstableSeedAndHopelessWorkload) {
+  auto low_probe = [](std::uint64_t rate) { return rate <= 10; };
+  const SearchResult low =
+      budgeted::search_capacity(SearchPolicy{60, 2, 24}, low_probe, low_probe);
+  ASSERT_TRUE(low.band.confirmed_stable.has_value());
+  EXPECT_LE(*low.band.confirmed_stable, 10u);
+  EXPECT_GE(*low.band.confirmed_stable, 9u);
+
+  auto never = [](std::uint64_t) { return false; };
+  const SearchResult hopeless =
+      budgeted::search_capacity(SearchPolicy{60, 2, 24}, never, never);
+  EXPECT_FALSE(hopeless.band.confirmed_stable.has_value());
+  ASSERT_TRUE(hopeless.band.lowest_unstable.has_value());
+  EXPECT_EQ(*hopeless.band.lowest_unstable, 1u);
 }
 
 // --- Summary derivation and artifact emission (sections 11-12) ---

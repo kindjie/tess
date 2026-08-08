@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 SCHEMA = "tess.budgeted_progress.v1"
+SEARCH_SCHEMA = "tess.budgeted_progress.search.v1"
 SUITE_VERSION = 1
 
 PERCENTILE_MINIMUMS = {"p50": 20, "p95": 200, "p99": 2000, "p999": 20000}
@@ -110,8 +111,49 @@ def check_flow(flow: dict) -> None:
            "flow: retention_identity_ok flag must be true")
 
 
+def check_search_artifact(document: dict) -> None:
+  """Validate one capacity-search summary document."""
+  _require(document.get("suite_version") == SUITE_VERSION,
+           f"unknown suite_version {document.get('suite_version')!r}: "
+           "failing closed")
+  for block in ("run", "search", "capacity_band"):
+    _require(isinstance(document.get(block), dict), f"missing block {block!r}")
+  points = document.get("points")
+  _require(isinstance(points, list) and points,
+           "search summaries must retain every tested point")
+  assert isinstance(points, list)
+  rates = []
+  for index, point in enumerate(points):
+    _require(isinstance(point, dict), f"points[{index}] must be an object")
+    rate = point.get("rate")
+    _require(isinstance(rate, int) and not isinstance(rate, bool)
+             and rate > 0, f"points[{index}].rate must be a positive integer")
+    for key in ("confirmation", "stable"):
+      _require(isinstance(point.get(key), bool),
+               f"points[{index}].{key} must be a boolean")
+    rates.append(rate)
+  band = document["capacity_band"]
+  confirmed = band.get("confirmed_stable")
+  lowest = band.get("lowest_unstable")
+  for name, value in (("confirmed_stable", confirmed),
+                      ("lowest_unstable", lowest)):
+    _require(value is None or (isinstance(value, int)
+                               and not isinstance(value, bool) and value > 0),
+             f"capacity_band.{name} must be null or a positive integer")
+    if isinstance(value, int):
+      _require(value in rates,
+               f"capacity_band.{name} must be a tested point")
+  if isinstance(confirmed, int) and isinstance(lowest, int):
+    _require(lowest > confirmed,
+             "capacity band inverted: lowest_unstable must exceed "
+             "confirmed_stable")
+
+
 def check_artifact(document: dict) -> None:
   """Validate one parsed artifact document, raising on violation."""
+  if document.get("schema") == SEARCH_SCHEMA:
+    check_search_artifact(document)
+    return
   _require(document.get("schema") == SCHEMA,
            f"unknown schema {document.get('schema')!r}: failing closed")
   _require(document.get("suite_version") == SUITE_VERSION,

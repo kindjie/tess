@@ -47,6 +47,7 @@
 #include "budgeted_progress_artifact.h"
 #include "budgeted_progress_clock.h"
 #include "budgeted_progress_controller.h"
+#include "budgeted_progress_search.h"
 #include "grid_benchmark_harness.h"
 #include "grid_map_generators.h"
 
@@ -784,6 +785,73 @@ void run_arrival_cell(const RunOptions& options, AstarCell& cell) {
   }
 }
 
+// --- Capacity boundary search (section 9.3) ----------------------------
+
+// Probe: 3 warm-configuration repetitions, majority verdict.
+// Confirmation: 5 repetitions at 2.5x warmup / 3x measured frames,
+// majority verdict. Both reuse the arrival repetition exactly.
+void run_capacity_search(const RunOptions& options, AstarCell& cell) {
+  for (const Nanos budget : kBudgetsNs) {
+    SteadyClock clock;
+    auto stable_reps_at = [&](std::uint64_t rate, const RunOptions& cfg,
+                              std::uint64_t reps) -> std::uint64_t {
+      ArrivalCellResult scratch;
+      for (std::uint64_t rep = 0; rep < reps; ++rep) {
+        run_arrival_rep(cfg, cell, clock, budget, rate, scratch);
+      }
+      return scratch.stable_reps;
+    };
+    auto probe = [&](std::uint64_t rate) -> bool {
+      return stable_reps_at(rate, options, 3) >= 2;
+    };
+    auto confirm = [&](std::uint64_t rate) -> bool {
+      RunOptions confirmation = options;
+      confirmation.warmup_frames = options.warmup_frames * 5 / 2;
+      confirmation.measured_frames = options.measured_frames * 3;
+      return stable_reps_at(rate, confirmation, 5) >= 3;
+    };
+
+    const budgeted::SearchPolicy policy{60, 2, 24};
+    const budgeted::SearchResult found =
+        budgeted::search_capacity(policy, probe, confirm);
+
+    budgeted::SearchArtifact artifact;
+    const char* commit = std::getenv("GITHUB_SHA");
+    artifact.run.commit = commit != nullptr ? commit : "local";
+    artifact.run.machine_fingerprint = "local-uncontrolled";
+    artifact.scenario_id = "astar-arrival-roomcorridor-512-v1";
+    artifact.workload_refs = {"path/astar_unit"};
+    artifact.budget_ns = budget;
+    artifact.sim_tps = 60;
+    artifact.seed_rate = policy.seed_rate;
+    artifact.resolution_percent = policy.resolution_percent;
+    artifact.points.reserve(found.points.size());
+    for (const budgeted::SearchPoint& point : found.points) {
+      artifact.points.push_back(
+          {point.rate, point.kind == budgeted::PointKind::Confirmation,
+           point.stable});
+    }
+    artifact.has_confirmed_stable = found.band.confirmed_stable.has_value();
+    artifact.confirmed_stable = found.band.confirmed_stable.value_or(0);
+    artifact.has_lowest_unstable = found.band.lowest_unstable.has_value();
+    artifact.lowest_unstable = found.band.lowest_unstable.value_or(0);
+    artifact.flapping = found.flapping;
+
+    const std::string json = budgeted::emit_search_artifact_json(artifact);
+    const std::string path = options.out_dir + "/astar_capacity_" +
+                             std::to_string(budget) + "ns.json";
+    std::ofstream out{path, std::ios::binary};
+    out << json;
+    out.close();
+    check(!out.fail(), "failed to write search artifact");
+    std::printf("wrote %s (confirmed %llu, lowest unstable %llu, points %zu)\n",
+                path.c_str(),
+                static_cast<unsigned long long>(artifact.confirmed_stable),
+                static_cast<unsigned long long>(artifact.lowest_unstable),
+                artifact.points.size());
+  }
+}
+
 // --- Cell 4: eight-goal field-product builds ---------------------------
 
 // TU-local copy of the product bench's room-portal carving (bench
@@ -1055,6 +1123,7 @@ auto main(int argc, char** argv) -> int {
   validate_astar_cell(astar_cell, options.validation_requests);
   run_astar_cell(options, astar_cell);
   run_arrival_cell(options, astar_cell);
+  run_capacity_search(options, astar_cell);
   run_field_product_cell(options);
   run_resumable_cell(options);
   return 0;

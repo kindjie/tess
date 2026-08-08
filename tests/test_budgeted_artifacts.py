@@ -312,6 +312,63 @@ def test_boolean_arrival_rate_rejected(tmp_path):
   assert failures and "arrival_rate_num" in failures[0]
 
 
+def search_artifact() -> dict:
+  """Build a valid capacity-search summary document."""
+  return {
+      "schema": cba.SEARCH_SCHEMA,
+      "suite_version": cba.SUITE_VERSION,
+      "run": {"commit": "c", "machine_fingerprint": "m", "compiler": "cc",
+              "bench_flags": ""},
+      "search": {
+          "scenario_id": "astar-arrival-roomcorridor-512-v1",
+          "workload_refs": ["path/astar_unit"],
+          "budget_ns": 500000,
+          "sim_tps": 60,
+          "pacing": "unpaced",
+          "seed_rate": 60,
+          "resolution_percent": 2,
+      },
+      "points": [
+          {"rate": 60, "confirmation": False, "stable": True},
+          {"rate": 240, "confirmation": False, "stable": False},
+          {"rate": 120, "confirmation": False, "stable": True},
+          {"rate": 120, "confirmation": True, "stable": True},
+      ],
+      "capacity_band": {"confirmed_stable": 120, "lowest_unstable": 240},
+      "flapping": 0,
+  }
+
+
+def test_valid_search_artifact_passes(tmp_path):
+  """A well-formed search summary validates cleanly."""
+  assert cba.validate_file(write(tmp_path, search_artifact())) == []
+
+
+def test_search_band_inversion_rejected(tmp_path):
+  """The band cannot invert: lowest_unstable must exceed confirmed."""
+  document = search_artifact()
+  document["capacity_band"] = {"confirmed_stable": 240,
+                               "lowest_unstable": 120}
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "inverted" in failures[0]
+
+
+def test_search_band_must_be_tested_point(tmp_path):
+  """Band edges must reference points that were actually tested."""
+  document = search_artifact()
+  document["capacity_band"]["confirmed_stable"] = 119
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "tested point" in failures[0]
+
+
+def test_search_requires_points(tmp_path):
+  """Search summaries must retain every tested point."""
+  document = search_artifact()
+  document["points"] = []
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "tested point" in failures[0]
+
+
 def test_deep_copy_fixture_isolated():
   """Fixture builders return fresh documents per call."""
   # Guard: fixtures are rebuilt per test, not shared mutable state.

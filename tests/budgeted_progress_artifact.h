@@ -569,4 +569,91 @@ inline void append_family(std::string& out, const char* key,
   return out;
 }
 
+// --- Capacity-search summary artifact (sections 9.3, 12) ---------------
+//
+// The search summary is a distinct document (`capacity_band` is null
+// in every individual cell artifact and populated only here, where it
+// spans the tested cells). Every tested point is retained.
+
+struct SearchArtifactPoint {
+  std::uint64_t rate = 0;
+  bool confirmation = false;
+  bool stable = false;
+};
+
+struct SearchArtifact {
+  RunBlock run;
+  std::string scenario_id;
+  std::vector<std::string> workload_refs;
+  std::uint64_t budget_ns = 0;
+  std::uint32_t sim_tps = 0;
+  std::string pacing = "unpaced";
+  std::uint64_t seed_rate = 0;
+  std::uint64_t resolution_percent = 0;
+  std::vector<SearchArtifactPoint> points;
+  std::uint64_t confirmed_stable = 0;  // 0 = nothing confirmed.
+  bool has_confirmed_stable = false;
+  std::uint64_t lowest_unstable = 0;
+  bool has_lowest_unstable = false;
+  std::uint64_t flapping = 0;
+};
+
+[[nodiscard]] inline auto emit_search_artifact_json(
+    const SearchArtifact& artifact) -> std::string {
+  std::string out;
+  out.reserve(2048);
+  out += "{";
+  detail::append_string(out, "schema", "tess.budgeted_progress.search.v1");
+  detail::append_u64(out, "suite_version", 1);
+  out += "\"run\": {";
+  detail::append_string(out, "commit", artifact.run.commit);
+  detail::append_string(out, "machine_fingerprint",
+                        artifact.run.machine_fingerprint);
+  detail::append_string(out, "compiler", artifact.run.compiler);
+  detail::append_string(out, "bench_flags", artifact.run.bench_flags, false);
+  out += "}, ";
+  out += "\"search\": {";
+  detail::append_string(out, "scenario_id", artifact.scenario_id);
+  out += "\"workload_refs\": [";
+  for (std::size_t i = 0; i < artifact.workload_refs.size(); ++i) {
+    detail::append_escaped(out, artifact.workload_refs[i]);
+    if (i + 1 < artifact.workload_refs.size()) {
+      out += ", ";
+    }
+  }
+  out += "], ";
+  detail::append_u64(out, "budget_ns", artifact.budget_ns);
+  detail::append_u64(out, "sim_tps", artifact.sim_tps);
+  detail::append_string(out, "pacing", artifact.pacing);
+  detail::append_u64(out, "seed_rate", artifact.seed_rate);
+  detail::append_u64(out, "resolution_percent", artifact.resolution_percent,
+                     false);
+  out += "}, ";
+  out += "\"points\": [";
+  for (std::size_t i = 0; i < artifact.points.size(); ++i) {
+    const SearchArtifactPoint& point = artifact.points[i];
+    out += "{";
+    detail::append_u64(out, "rate", point.rate);
+    detail::append_bool(out, "confirmation", point.confirmation);
+    detail::append_bool(out, "stable", point.stable, false);
+    out += "}";
+    if (i + 1 < artifact.points.size()) {
+      out += ", ";
+    }
+  }
+  out += "], ";
+  out += "\"capacity_band\": {";
+  out += "\"confirmed_stable\": ";
+  out += artifact.has_confirmed_stable
+             ? std::to_string(artifact.confirmed_stable)
+             : "null";
+  out += ", \"lowest_unstable\": ";
+  out += artifact.has_lowest_unstable ? std::to_string(artifact.lowest_unstable)
+                                      : "null";
+  out += "}, ";
+  detail::append_u64(out, "flapping", artifact.flapping, false);
+  out += "}";
+  return out;
+}
+
 }  // namespace tess_test::budgeted
