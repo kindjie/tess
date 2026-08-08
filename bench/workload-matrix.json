@@ -562,7 +562,7 @@
     },
     {
       "family": "queued/planning",
-      "pattern": "^queued/plan_frame_(256|4096)$",
+      "pattern": "^queued/plan_frame_(?:256|4096|dense_64)$",
       "captures": {},
       "defaults": {
         "world_extent": "512x512",
@@ -579,6 +579,9 @@
         },
         "queued/plan_frame_4096": {
           "payload": "4096 disjoint per-chunk ops: plan + phase grouping"
+        },
+        "queued/plan_frame_dense_64": {
+          "payload": "64 read-only ops over the whole resident domain: the opposite shape, where every op covers all 4096 chunks"
         }
       }
     },
