@@ -671,6 +671,10 @@ void run_arrival_rep(const RunOptions& options, AstarCell& cell,
   // warmup backlog into the measured-window artifact).
   tracker.accounting().counters.outstanding_high_water =
       tracker.counters().outstanding_current;
+  // The drain ran between frames in wall time; re-anchor the paced
+  // schedule so measured frames wait for real edges instead of
+  // sprinting through the edges the drain consumed.
+  controller.rebase_pacing();
   const tess::diagnostics::FlowCounters window_start = tracker.counters();
   tracker.begin_window(controller.sim_tick() + 1);
 

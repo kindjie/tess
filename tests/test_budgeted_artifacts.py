@@ -90,8 +90,8 @@ def demand_limited_artifact() -> dict:
   artifact["experiment"]["arrival_rate_den"] = 1
   artifact["summary"].update({
       "frame_start_lag_ns": family(6000, base="paced_frames"),
-      "measured_wall_ns": 100_000_000_000,
-      "useful_per_wall_second": 599.5,
+      "measured_wall_ns": 15_000_000,
+      "useful_per_wall_second": 600.0,
       "deadline_success_rate": 0.995,
       "lateness_ticks": family(0, base="completed_cohort_items"),
       "oldest_age_ticks": family(6000, base="per_tick_observations"),
@@ -320,6 +320,22 @@ def test_unpaced_must_omit_wall_rate(tmp_path):
   document["summary"]["useful_per_wall_second"] = 100.0
   failures = cba.validate_file(write(tmp_path, document))
   assert failures and "paced cells only" in failures[0]
+
+
+def test_wall_rate_must_match_source_fields(tmp_path):
+  """The published wall rate must be derivable from its sources."""
+  document = demand_limited_artifact()
+  document["summary"]["useful_per_wall_second"] = 0.0
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "does not match" in failures[0]
+
+
+def test_wall_rate_must_be_finite(tmp_path):
+  """Infinity and NaN fail closed."""
+  document = demand_limited_artifact()
+  document["summary"]["useful_per_wall_second"] = float("inf")
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "finite" in failures[0]
 
 
 def test_boolean_arrival_rate_rejected(tmp_path):
