@@ -304,6 +304,14 @@ def test_arrival_rate_cell_requires_rate(tmp_path):
   assert failures and "arrival_rate_num" in failures[0]
 
 
+def test_boolean_arrival_rate_rejected(tmp_path):
+  """Booleans are not integers for the rate fields (fail closed)."""
+  document = demand_limited_artifact()
+  document["experiment"]["arrival_rate_num"] = True
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "arrival_rate_num" in failures[0]
+
+
 def test_deep_copy_fixture_isolated():
   """Fixture builders return fresh documents per call."""
   # Guard: fixtures are rebuilt per test, not shared mutable state.

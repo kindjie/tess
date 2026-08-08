@@ -248,6 +248,10 @@ void run_one_rep(const RunOptions& options, Nanos budget_ns, SteadyClock& clock,
     (void)controller.run_frame(mandatory, quantum_fn);
   }
   drain();
+  // Window-scope the high-water gauge: it is otherwise a lifetime
+  // maximum and would carry warmup backlog into the artifact.
+  accounting.counters.outstanding_high_water =
+      accounting.counters.outstanding_current;
   const tess::diagnostics::FlowCounters window_start = accounting.counters;
 
   for (std::uint64_t frame = 0; frame < options.measured_frames; ++frame) {
@@ -633,6 +637,10 @@ void run_arrival_rep(const RunOptions& options, AstarCell& cell,
   // Untimed pre-window drain: window starts with zero backlog.
   while (service_one() > 0) {
   }
+  // Window-scope the high-water gauge (lifetime max would carry the
+  // warmup backlog into the measured-window artifact).
+  tracker.accounting().counters.outstanding_high_water =
+      tracker.counters().outstanding_current;
   const tess::diagnostics::FlowCounters window_start = tracker.counters();
   tracker.begin_window(controller.sim_tick() + 1);
 
@@ -652,6 +660,11 @@ void run_arrival_rep(const RunOptions& options, AstarCell& cell,
     }
   }
   tracker.end_window(controller.sim_tick());
+  // Re-observe at the current tick so the oldest-age gauge reflects
+  // the queue after the final frame's admissions and service, not the
+  // pre-frame state (same tick: inventory weighting is unchanged, and
+  // the window is closed so no extra sample is recorded).
+  tracker.observe_tick(controller.sim_tick());
   const tess::diagnostics::FlowCounters window_end = tracker.counters();
   accumulate_window(out.window_flow, window_start, window_end);
 
@@ -724,7 +737,15 @@ void run_arrival_cell(const RunOptions& options, AstarCell& cell) {
       artifact.experiment.settlement_ticks = kArrivalSettlementTicks;
       artifact.experiment.arrival_rate_num = rate;
       artifact.experiment.arrival_rate_den = 1;
-      artifact.trace.sha256 = cell.pool_sha256;
+      // The trace identity covers the release schedule, not just the
+      // request pool: different rates are different demand traces.
+      budgeted::Sha256 trace_hasher;
+      const char* release_tag = "arrival_bresenham_v1";
+      trace_hasher.update(release_tag, std::strlen(release_tag));
+      const std::uint64_t rate_words[2] = {rate, 1};
+      trace_hasher.update(rate_words, sizeof(rate_words));
+      trace_hasher.update(cell.pool_sha256.data(), cell.pool_sha256.size());
+      artifact.trace.sha256 = trace_hasher.hex_digest();
 
       // Section 9 headline: window completions from per-item records.
       artifact.summary.useful_completions =
