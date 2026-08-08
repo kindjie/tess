@@ -29,10 +29,12 @@ Entries from 2026-07-12 and earlier are in
   larger mover was the contaminated field-rebuild share retracted below)
   plus paired counter runs. `perf_event_paranoid=2` hides kernel time;
   for world edit — the workload where transient allocation was the
-  suspect — page-fault counts bound that blind spot near 1%. Governor
-  unpinned: per-iteration medians matched the
-  2026-08-06 pinned baseline within ~2%, so shares are representative,
-  and no absolute number here supersedes the published baseline. An
+  suspect — page-fault counts put the allocation-driven share of that
+  hidden time near 1% (other kernel time stays unmeasured). Governor
+  unpinned: per-iteration medians of the workloads reported here matched
+  the 2026-08-06 pinned baseline within ~2%, so shares are
+  representative, and no absolute number here supersedes the published
+  baseline. An
   adversarial review of methods and conclusions against source retracted
   two initial findings, kept below because the traps generalize.
 - Evidence, goal churn (44.5 ms/tick, the frame-budget breaker): the
@@ -40,9 +42,11 @@ Entries from 2026-07-12 and earlier are in
   `weighted_astar_path` is >77% inclusive. Reference singles put
   open-map cost at ~5.7 ns/expansion against ~210 ns/expansion under
   real frontiers (`weighted_astar_room_portals`: 138.6k expansions,
-  29.7 ms), so the ~34 ms replan implies roughly 160k expansions —
-  plateau behavior of the Manhattan heuristic on weighted 512x512
-  terrain. DWARF srcline attribution places ~37% of samples in
+  29.7 ms), so the ~34 ms replan is consistent with a rough estimate of
+  160k expansions; the leading hypothesis is plateau behavior of the
+  Manhattan heuristic on weighted 512x512 terrain, to be confirmed from
+  the benchmark's own expansion counters during the design work.
+  DWARF srcline attribution places ~37% of samples in
   open-list heap machinery (`stl_heap.h` push/pop plus the tie-break
   comparator at `path.h:1554`).
 - Evidence, world edit (1.37 ms/tick): ~90% is the route-cache
@@ -50,15 +54,17 @@ Entries from 2026-07-12 and earlier are in
   43-45% self (hash mix plus linear probe), `vector::_M_range_insert`
   14-18%, and ~17-20% in an unsymbolized libc cluster identified from
   instruction bytes as the AVX2 bulk-copy loop. IPC 1.25 at 10.9% L1d
-  miss: memory-bound. `prepare_process` invalidates the whole route
+  miss is consistent with a memory-bound cycle (no stall or bandwidth
+  counters were captured). `prepare_process` invalidates the whole route
   cache on every edited tick, so a one-tile edit forces full
   repopulation of the suffix index.
-- Evidence, parallel backend: chunk compute scales 1.92x/3.76x at
-  widths 2/4 with a ~98%-payload profile — healthy. Chunk fill is
-  bandwidth-bound (IPC 1.05, 22.5% L1d miss); its 1.29x at width 4 is a
-  memory wall, not dispatch overhead. Tile touch at 18.5 us pooled
-  against 3.1 us serial puts the per-phase dispatch floor near 15 us on
-  this device.
+- Evidence, parallel backend (main-suite pool benchmarks; ratios are
+  not comparable to the pinned scaling-sweep protocol): chunk compute
+  scales 1.92x/3.76x at widths 2/4 with a ~98%-payload profile —
+  healthy. Chunk fill at IPC 1.05 and 22.5% L1d miss is consistent with
+  a bandwidth limit rather than dispatch overhead as the cause of its
+  1.29x at width 4. Tile touch at 18.5 us pooled against 3.1 us serial
+  puts the per-phase dispatch floor near 15 us on this device.
 - Retracted, with the traps recorded: a 12.9% "distance-field rebuild"
   share in goal churn was warm-up and setup contamination — the timed
   loop performs no field builds, and the share fell to 7.9% under
@@ -76,9 +82,8 @@ Entries from 2026-07-12 and earlier are in
   open-list mechanics second) and gets a design review before code.
   Planning-path coverage is not addressed here; those measurements land
   separately with their own instruments.
-- Artifacts: raw perf.data, benchmark logs, and counter output remain
-  on the device under `~/tess-profile/prof/`; they are not repository
-  artifacts.
+- Artifacts: raw perf.data, benchmark logs, and counter output are
+  retained off-repository on the profiling device.
 
 ## 2026-08-06 - At-budget portal-segment store swept dependencies twice
 
