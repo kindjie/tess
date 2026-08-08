@@ -43,8 +43,7 @@ struct PathRuntimeCachePolicy {
   // UnitRouteStaleness): surviving routes are legal with truthful cost and
   // were optimal when stored; an edit elsewhere can leave them suboptimal
   // until retired. Default preserves exact whole-world invalidation.
-  UnitRouteStaleness unit_route_staleness =
-      UnitRouteStaleness::WholeWorldExact;
+  UnitRouteStaleness unit_route_staleness = UnitRouteStaleness::WholeWorldExact;
   bool use_unit_field_product_cache = false;
   std::size_t unit_field_product_min_goal_reuse = 2;
   std::size_t unit_field_product_min_start_chunks = 2;
@@ -62,6 +61,11 @@ struct PathRuntimeCachePolicy {
       std::numeric_limits<std::size_t>::max();
   std::size_t max_route_entries = RouteCacheScratch::default_max_entries;
   std::size_t max_route_path_nodes = RouteCacheScratch::default_max_path_nodes;
+  // Scoped staleness only: total budget for stored (chunk, version)
+  // dependency pairs, with the same oversized-skip / cap-invalidate
+  // lifecycle as the path-node cap.
+  std::size_t max_route_dependency_pairs =
+      RouteCacheScratch::default_max_path_nodes / 8u;
   std::size_t portal_segment_budget =
       WeightedPortalSegmentCache::default_segment_budget;
 };
@@ -664,6 +668,7 @@ class PathRequestRuntime {
   void prepare_process(const World& world, PathRuntimeCachePolicy policy) {
     unit_route_cache_.set_caps(policy.max_route_entries,
                                policy.max_route_path_nodes);
+    unit_route_cache_.set_dependency_cap(policy.max_route_dependency_pairs);
     // A staleness-mode flip clears the unit caches unconditionally (entries
     // stored under one mode's semantics are never served under the
     // other's), independent of the world-change flag below.
@@ -676,11 +681,18 @@ class PathRequestRuntime {
       return;
     }
     ++stats_.world_cache_invalidations;
-    if (policy.unit_route_staleness == UnitRouteStaleness::ScopedFeasible) {
-      // Scoped mode: the change armed per-entry validation instead of
-      // dropping entries; the deep-clear counter stays put (see the policy
-      // field's comment).
-      return;
+    // The deep-clear counter pauses only when scoped validation is
+    // actually in effect: sparse worlds fall back to the exact fingerprint
+    // lifecycle regardless of the requested policy, so they keep the
+    // periodic collision backstop and cache sweep.
+    if constexpr (std::is_same_v<typename World::residency_type,
+                                 AlwaysResident>) {
+      if (policy.unit_route_staleness == UnitRouteStaleness::ScopedFeasible) {
+        // Scoped mode: the change armed per-entry validation instead of
+        // dropping entries; the deep-clear counter stays put (see the
+        // policy field's comment).
+        return;
+      }
     }
     ++world_changes_since_clear_;
     if (policy.clear_every_world_change != 0 &&

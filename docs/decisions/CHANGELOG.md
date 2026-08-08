@@ -99,6 +99,7 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   MSVC, all of which allocate exactly -- which is precisely why the
   invariant is now enforced structurally instead of resting on an
   allocator's behaviour.
+
 ## 2026-08-07 - Graph freshness detects stamps, not field edits
 
 - Recorded: `precheck.h` claimed that "a graph that no longer matches the

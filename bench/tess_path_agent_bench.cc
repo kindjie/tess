@@ -317,18 +317,22 @@ void scoped_world_edit_tick(benchmark::State& state) {
   tick_stats = tess::tick_unit_path_agents<PathWorld, PassableTag>(
       tick_state, world, agents, runtime, options);
   check_all_agents_found(tick_stats.pathing, agents.size());
-  auto edit_chunk_touched = false;
+  auto routes_touching_edit_chunk = std::size_t{0};
+  auto route_count = std::size_t{0};
   for (const auto& result : runtime.results()) {
+    ++route_count;
     for (const auto node : result.path) {
       if (tess::chunk_key<PathScaleShape>(
               tess::tile_key<PathScaleShape>(node)) == edit_chunk) {
-        edit_chunk_touched = true;
+        ++routes_touching_edit_chunk;
+        break;
       }
     }
   }
-  bench_check(edit_chunk_touched != OffPath,
+  bench_check(OffPath ? routes_touching_edit_chunk == 0
+                      : routes_touching_edit_chunk == route_count,
               OffPath ? "off-path edit chunk intersects a served route"
-                      : "on-path edit chunk missed every served route");
+                      : "on-path edit chunk missed a served route");
 
   std::uint64_t edits = 0;
   for (auto _ : state) {
@@ -351,6 +355,15 @@ void scoped_world_edit_tick(benchmark::State& state) {
   check_all_agents_found(tick_stats.pathing, agents.size());
   record_agent_counters(state, tick_stats.pathing);
   const auto stats = runtime.stats();
+  // Postconditions turn the premise into evidence: the off-path cell must
+  // have retired nothing (pure survival), the on-path cell must have
+  // survived nothing (every revalidation retired).
+  bench_check(OffPath ? (stats.route_cache.retired_entries == 0 &&
+                         stats.route_cache.scoped_survivals > 0)
+                      : (stats.route_cache.scoped_survivals == 0 &&
+                         stats.route_cache.retired_entries > 0),
+              OffPath ? "off-path cell retired entries or never revalidated"
+                      : "on-path cell let entries survive an epoch change");
   record_route_cache_counters(state, stats.route_cache);
   state.counters["cache.revalidations"] =
       static_cast<double>(stats.route_cache.revalidations);
