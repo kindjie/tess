@@ -1807,6 +1807,10 @@ template <typename World>
   return policy != WritePolicy::ReadOnly;
 }
 
+// Plan length at or above which parallel-phase grouping builds an index
+// instead of comparing every candidate against every open-phase member.
+inline constexpr std::size_t phase_index_min_operations = 16;
+
 // Tail of `parallel_phase_conflict` for callers that already established
 // the chunk overlap -- an index lookup does, so re-walking both chunk lists
 // would repeat work the lookup just did.
@@ -2041,8 +2045,16 @@ template <typename World>
   phases.reserve(operations.size());
   // Same index as hazard detection, rebuilt locally: this entry point takes
   // a plan rather than a report, so there is no long-lived one to reuse.
+  // That rebuild costs two allocations, which a short plan never repays --
+  // a handful of chunk-overlap checks is cheaper than the table they would
+  // avoid -- so small plans keep the all-pairs comparison. No benchmark
+  // covers small-plan grouping, so the cutoff is reasoned rather than
+  // tuned; both paths are held to the same answer by a differential test.
+  const auto indexed = operations.size() >= detail::phase_index_min_operations;
   auto index = detail::ChunkOperationIndex{};
-  index.reserve(operations.size());
+  if (indexed) {
+    index.reserve(operations.size());
+  }
 
   for (std::size_t i = 0; i < operations.size(); ++i) {
     const auto& operation = operations[i];
@@ -2060,16 +2072,24 @@ template <typename World>
     // `>= phase_first` is the same set the inner loop used to walk.
     auto conflicts = true;
     if (!phases.phases_.empty()) {
-      const auto phase_first =
-          static_cast<std::uint32_t>(phases.phases_.back().first_operation());
+      const auto phase_first = phases.phases_.back().first_operation();
       conflicts = false;
-      index.for_each_sharing(operation.chunks(), [&](std::uint32_t j) {
-        if (conflicts || j < phase_first) {
-          return;
+      if (indexed) {
+        index.for_each_sharing(operation.chunks(), [&](std::uint32_t j) {
+          if (conflicts || j < phase_first) {
+            return;
+          }
+          conflicts = detail::parallel_phase_conflict_given_overlap(
+              operations[j], operation);
+        });
+      } else {
+        for (std::size_t j = phase_first; j < i; ++j) {
+          if (detail::parallel_phase_conflict(operations[j], operation)) {
+            conflicts = true;
+            break;
+          }
         }
-        conflicts = detail::parallel_phase_conflict_given_overlap(operations[j],
-                                                                  operation);
-      });
+      }
     }
 
     if (conflicts) {
@@ -2080,7 +2100,9 @@ template <typename World>
       TESS_DIAG_TRACE_VALUE(diagnostics::TraceCategory::Planner, "merged", i);
       phases.extend_last_phase(operation);
     }
-    index.insert(operation.chunks(), static_cast<std::uint32_t>(i));
+    if (indexed) {
+      index.insert(operation.chunks(), static_cast<std::uint32_t>(i));
+    }
   }
 
   return phases;

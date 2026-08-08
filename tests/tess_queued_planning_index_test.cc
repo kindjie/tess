@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <array>
 #include <cstdint>
 #include <random>
 #include <vector>
@@ -32,6 +33,26 @@ using Schema = tess::FieldSchema<tess::Field<TerrainTag, std::uint16_t>,
 using World = tess::AlwaysResidentWorld<TopDown2D, Schema>;
 
 constexpr std::size_t ChunkCount = 16;
+
+// Sparse chunk sets, for the phase test. Dense ones make almost every pair
+// of mutating operations overlap, every phase a singleton, and the whole
+// grouping question trivial -- which is exactly how an earlier revision of
+// this file stopped detecting a dropped open-phase filter.
+[[nodiscard]] auto sparse_chunks(std::mt19937& rng)
+    -> std::vector<tess::ChunkKey> {
+  // A deliberately tiny chunk universe. The layout that separates "conflicts
+  // with the open phase" from "conflicts with any earlier operation" needs
+  // one chunk to reappear across a closed phase -- {A}, {B}, {B}, {A} is the
+  // shortest such plan -- and over sixteen chunks that pattern is too rare
+  // to turn up. Over four it is routine.
+  auto count = std::uniform_int_distribution<std::size_t>{1, 2};
+  auto pick = std::uniform_int_distribution<std::uint64_t>{0, 3};
+  auto chunks = std::vector<tess::ChunkKey>{};
+  for (std::size_t i = 0, wanted = count(rng); i < wanted; ++i) {
+    chunks.push_back(tess::ChunkKey{pick(rng)});
+  }
+  return chunks;
+}
 
 [[nodiscard]] auto random_chunks(std::mt19937& rng)
     -> std::vector<tess::ChunkKey> {
@@ -150,64 +171,168 @@ TEST(TessQueuedPlanningIndex, LookupsSurviveRehash) {
 // Phase grouping is a second consumer of the index. Its answer is a phase
 // layout rather than a pointer, so compare the whole layout against the
 // original all-pairs algorithm.
+//
+// The operation counts straddle `phase_index_min_operations`: grouping keeps
+// the all-pairs comparison below the cutoff, so both branches have to be
+// held to the same layout, and a plan that lands exactly on the boundary
+// has to pick the indexed one.
+//
+// Each count runs many plans, not one. An earlier revision ran a single
+// plan per count and stopped detecting a dropped open-phase filter: the
+// case that separates "conflicts with the open phase" from "conflicts with
+// any earlier operation" needs a closed phase behind it, which only turns
+// up across enough randomized layouts.
 TEST(TessQueuedPlanningIndex, PhaseGroupingMatchesAllPairsScan) {
+  static_assert(tess::detail::phase_index_min_operations == 16,
+                "the operation counts below are chosen to straddle the "
+                "cutoff; update them together with it");
   for (const auto seed : {13u, 31u, 53u, 103u}) {
     auto rng = std::mt19937{seed};
-    for (int trial = 0; trial < 16; ++trial) {
-      World world;
-      tess::FrameOps ops;
-      for (std::uint32_t op = 0; op < 24; ++op) {
-        const auto chunks = random_chunks(rng);
-        const auto access = random_field_access(rng);
-        // Parallel phase planning rejects any policy outside these two, and
-        // a rejected plan would exercise none of the grouping loop.
-        const auto policy = access.write_mask == 0
-                                ? tess::WritePolicy::ReadOnly
-                                : tess::WritePolicy::UniquePerChunk;
-        (void)ops.update_field(tess::DomainDesc::explicit_chunks(chunks),
-                               access, policy);
-      }
+    for (const std::uint32_t op_count : {2u, 8u, 15u, 16u, 17u, 24u, 40u}) {
+      for (int trial = 0; trial < 16; ++trial) {
+        World world;
+        tess::FrameOps ops;
+        auto read_only = std::bernoulli_distribution{0.6};
+        for (std::uint32_t op = 0; op < op_count; ++op) {
+          const auto chunks = sparse_chunks(rng);
+          // Read-only operations never conflict with each other, so a
+          // majority of them is what lets a phase hold more than one
+          // operation. With dense chunk sets and mostly-mutating policies
+          // every phase is a singleton and grouping has nothing to decide.
+          auto access = random_field_access(rng);
+          if (read_only(rng)) {
+            access = tess::FieldAccessDesc{access.read_mask, 0, 0};
+          }
+          // Parallel phase planning rejects any policy outside these two, and
+          // a rejected plan would exercise none of the grouping loop.
+          const auto policy = access.write_mask == 0
+                                  ? tess::WritePolicy::ReadOnly
+                                  : tess::WritePolicy::UniquePerChunk;
+          (void)ops.update_field(tess::DomainDesc::explicit_chunks(chunks),
+                                 access, policy);
+        }
 
-      const auto report = tess::plan_operations(world, ops.operations());
-      const auto& plan = report.plan();
-      const auto operations = plan.operations();
+        const auto report = tess::plan_operations(world, ops.operations());
+        const auto& plan = report.plan();
+        const auto operations = plan.operations();
 
-      // Reference: the pre-index algorithm, comparing each operation against
-      // every member of the open phase.
-      auto expected_first = std::vector<std::size_t>{};
-      auto expected_count = std::vector<std::size_t>{};
-      for (std::size_t i = 0; i < operations.size(); ++i) {
-        auto conflicts = expected_first.empty();
-        if (!conflicts) {
-          const auto first = expected_first.back();
-          const auto end = first + expected_count.back();
-          for (std::size_t j = first; j < end; ++j) {
-            if (tess::detail::parallel_phase_conflict(operations[j],
-                                                      operations[i])) {
-              conflicts = true;
-              break;
+        // Reference: the pre-index algorithm, comparing each operation against
+        // every member of the open phase.
+        auto expected_first = std::vector<std::size_t>{};
+        auto expected_count = std::vector<std::size_t>{};
+        for (std::size_t i = 0; i < operations.size(); ++i) {
+          auto conflicts = expected_first.empty();
+          if (!conflicts) {
+            const auto first = expected_first.back();
+            const auto end = first + expected_count.back();
+            for (std::size_t j = first; j < end; ++j) {
+              if (tess::detail::parallel_phase_conflict(operations[j],
+                                                        operations[i])) {
+                conflicts = true;
+                break;
+              }
             }
           }
+          if (conflicts) {
+            expected_first.push_back(i);
+            expected_count.push_back(1);
+          } else {
+            ++expected_count.back();
+          }
         }
-        if (conflicts) {
-          expected_first.push_back(i);
-          expected_count.push_back(1);
-        } else {
-          ++expected_count.back();
-        }
-      }
 
-      const auto phases = tess::plan_parallel_execution_phases(plan);
-      ASSERT_TRUE(phases.ok());
-      ASSERT_EQ(phases.phases().size(), expected_first.size())
-          << "seed " << seed << " trial " << trial << ": phase count diverged";
-      for (std::size_t p = 0; p < expected_first.size(); ++p) {
-        EXPECT_EQ(phases.phases()[p].first_operation(), expected_first[p])
-            << "seed " << seed << " trial " << trial << " phase " << p;
-        EXPECT_EQ(phases.phases()[p].operation_count(), expected_count[p])
-            << "seed " << seed << " trial " << trial << " phase " << p;
+        const auto phases = tess::plan_parallel_execution_phases(plan);
+        ASSERT_TRUE(phases.ok());
+        ASSERT_EQ(phases.phases().size(), expected_first.size())
+            << "seed " << seed << " ops " << op_count << " trial " << trial
+            << ": phase count diverged";
+        for (std::size_t p = 0; p < expected_first.size(); ++p) {
+          EXPECT_EQ(phases.phases()[p].first_operation(), expected_first[p])
+              << "seed " << seed << " ops " << op_count << " trial " << trial
+              << " phase " << p;
+          EXPECT_EQ(phases.phases()[p].operation_count(), expected_count[p])
+              << "seed " << seed << " ops " << op_count << " trial " << trial
+              << " phase " << p;
+        }
       }
     }
+  }
+}
+
+// The one layout that separates "conflicts with the open phase" from
+// "conflicts with any earlier operation", constructed rather than sampled.
+// Randomized plans do not reach it often enough to be relied on: dropping
+// the open-phase filter survived several thousand random plans.
+//
+// Chunks {A}, {B}, {B}, {A}, all mutating and pairwise hazard-free so the
+// planner accepts every one:
+//
+//   op0 {A}          opens phase 0
+//   op1 {B}          no overlap with op0        -> merges, phase 0 = [0,2)
+//   op2 {B}          overlaps op1               -> opens phase 1
+//   op3 {A}          no overlap with op2, the only open-phase member
+//                    -> merges, phase 1 = [2,4)
+//
+// op3 does overlap op0, which is in the CLOSED phase 0. A grouping pass
+// that consults every earlier operation instead of the open phase alone
+// would split op3 into a third phase and serialize work that can run
+// together.
+TEST(TessQueuedPlanningIndex, ClosedPhaseOverlapDoesNotSplitAPhase) {
+  // Two field masks and two chunks give four mutually hazard-free
+  // operations; a fifth on either chunk would collide on write masks and be
+  // rejected before grouping ever saw it.
+  struct Op {
+    std::uint64_t chunk;
+    std::uint32_t write;
+  };
+  constexpr auto Pattern = std::array{
+      Op{0, DirtyTerrain},
+      Op{1, DirtyTerrain},
+      Op{1, DirtyCost},
+      Op{0, DirtyCost},
+  };
+
+  // Run the pattern at both sides of the index cutoff. Below it grouping
+  // compares all pairs; at or above it consults the index. The layout must
+  // be identical either way, so the pattern is replicated onto disjoint
+  // chunk pairs, which never conflict across pairs.
+  for (const std::size_t pairs : {std::size_t{1}, std::size_t{8}}) {
+    World world;
+    tess::FrameOps ops;
+    // Interleaved: every pair's step 0, then every pair's step 1, and so
+    // on. Emitting the pairs one after another instead would let a pair's
+    // step 2 close a phase that a later pair's step 0 then reopens, and the
+    // layout would depend on the pair count.
+    for (const auto entry : Pattern) {
+      for (std::size_t pair = 0; pair < pairs; ++pair) {
+        const auto chunks = std::vector<tess::ChunkKey>{
+            tess::ChunkKey{entry.chunk + (2 * pair)}};
+        (void)ops.update_field(
+            tess::DomainDesc::explicit_chunks(chunks),
+            tess::FieldAccessDesc{0, entry.write, entry.write},
+            tess::WritePolicy::UniquePerChunk);
+      }
+    }
+
+    const auto report = tess::plan_operations(world, ops.operations());
+    const auto& plan = report.plan();
+    ASSERT_EQ(plan.operations().size(), pairs * Pattern.size())
+        << "pairs " << pairs << ": the planner rejected part of the pattern, "
+        << "so grouping never saw the layout under test";
+
+    const auto phases = tess::plan_parallel_execution_phases(plan);
+    ASSERT_TRUE(phases.ok());
+    // One pair produces exactly the two phases traced above. Eight pairs
+    // interleave onto disjoint chunks, which cannot add conflicts, so the
+    // count stays at two.
+    ASSERT_EQ(phases.phases().size(), 2u)
+        << "pairs " << pairs
+        << ": an operation overlapping a CLOSED phase split a phase that "
+           "should have stayed merged";
+    EXPECT_EQ(phases.phases()[0].first_operation(), 0u);
+    EXPECT_EQ(phases.phases()[0].operation_count(), 2u * pairs);
+    EXPECT_EQ(phases.phases()[1].first_operation(), 2u * pairs);
+    EXPECT_EQ(phases.phases()[1].operation_count(), 2u * pairs);
   }
 }
 

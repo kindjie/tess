@@ -8,3 +8,8 @@
   which operation a hazard blames; `plan_operations` into a caller-owned
   report stays allocation-free in the steady state, because the index is
   cleared rather than freed on reuse.
+  `plan_parallel_execution_phases` takes a plan rather than a report, so
+  it has to build its index per call — two allocations a short plan would
+  never repay. Plans under sixteen operations therefore keep the
+  all-pairs comparison, and a differential test holds both paths to the
+  same phase layout.
