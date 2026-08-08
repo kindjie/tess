@@ -331,8 +331,8 @@ void BM_fields_cache_scan_at(benchmark::State& state) {
   }
   // The cache must FILL before it can evict, so the guard has to clear
   // the fill threshold, not a fixed count. Checking at 8 iterations
-  // aborted the 128-entry variant, which needs about 110 stores before
-  // its first eviction.
+  // aborted the 128-entry variant, which needs 129 stores before its
+  // first eviction.
   if (state.iterations() > static_cast<std::int64_t>(Entries) * 2) {
     fields_bench_check(cache.stats().evictions > 0,
                        "entry-count cycling never evicted");

@@ -706,10 +706,10 @@
           "payload": "16 goals, allocation gate"
         },
         "fields/cache_scan_entries_8": {
-          "payload": "9 keys x 8 goals, budget 8 products: scans at 7 entries"
+          "payload": "9 keys x 8 goals, budget 8 products: scans at 8 entries"
         },
         "fields/cache_scan_entries_128": {
-          "payload": "129 keys x 8 goals, budget 128 products: scans at ~110 entries"
+          "payload": "129 keys x 8 goals, budget 128 products: scans at 128 entries"
         }
       }
     },

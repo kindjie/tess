@@ -28,7 +28,11 @@ and their rationale are recorded separately in
   scan, then eviction), all linear in entry count, so the delta is their
   aggregate rather than eviction alone. The family's other cache
   benchmarks hold about two entries, so those scans never had more than
-  two candidates to compare.
+  two candidates to compare. The 128-entry variant is registered as a
+  paired sentinel: the scans are only about 7% of each reading, so the
+  bootstrap ceiling gives trend visibility rather than a complexity gate,
+  and the paired run's relative effect floor is what can actually see a
+  scan regression.
 
 ### Fixed
 

@@ -126,8 +126,7 @@ Entries from 2026-07-12 and earlier are in
   4096-chunk frame spends 23 ms in planning alone, which exceeds a 16.7 ms
   frame budget before any execution happens. The audit predicted the shape
   from source; the magnitude is what the instrument adds.
-- Scan delta is 7.5 us between roughly 7 and roughly 110 resident
-  entries — real and reproducible, but small against the ~85 us product
+- Scan delta is 7.5 us between 8 and 128 resident entries — real and reproducible, but small against the ~85 us product
   build that dominates each store. Read the pair as a complexity check on
   the cache's linear scans, not as a claim that they dominate.
 - The first version of this pair varied goal COUNT across keys (2-10
@@ -137,6 +136,13 @@ Entries from 2026-07-12 and earlier are in
   cardinality constant and varying only goal positions both fixed the
   claim and produced a cleaner signal: the delta grew from 4.7 us to
   7.5 us once the confound was removed.
+- Gate sensitivity, recorded because it is easy to over-read: the scans
+  are about 7% of each `cache_scan` reading, so a ceiling set at 4x cannot
+  fire for a scan regression — one scan going quadratic at 128 entries
+  still passes. The ceilings give trend visibility. Complexity is watched
+  by the paired sentinel run instead, whose floor is a relative effect
+  size, so `fields/cache_scan_entries_128` is registered in
+  `bench/sentinels.json`.
 - Ceilings: **bootstrap, deliberately loose**, at 4x these readings. They
   were taken on an M3 Max while the gates run on Linux runners, so a 2x
   ceiling would flake rather than gate. Recalibrate at 2x the maximum over
