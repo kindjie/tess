@@ -17,6 +17,7 @@ theme:
   features:
     - content.code.copy
     - navigation.footer
+    - navigation.indexes
     - navigation.instant
     - navigation.sections
     - navigation.tabs
@@ -59,9 +60,12 @@ extra_css:
 
 nav:
   - Home: index.md
-  - Getting started: getting-started.md
+  - Getting started:
+      - Getting started: getting-started.md
+      - Installation: packaging.md
+      - Examples: examples.md
   - Decision guide:
-      - Overview: guide/README.md
+      - guide/README.md
       - Residency: guide/residency.md
       - Writes: guide/writes.md
       - Pathfinding strategy: guide/pathfinding.md
@@ -69,13 +73,8 @@ nav:
       - Entities and ECS: guide/entities.md
       - Presentation: guide/presentation.md
       - Diagnostics: guide/diagnostics.md
-  - Installation: packaging.md
-  - Integration policy: integration-policy.md
-  - Examples: examples.md
-  - Use cases: use-cases.md
-  - API reference: https://tess.owx.dev/api/
   - Concepts:
-      - Overview: architecture/README.md
+      - architecture/README.md
       - Shapes: architecture/shape.md
       - Storage: architecture/storage.md
       - Persistence: architecture/persistence.md
@@ -91,10 +90,14 @@ nav:
       - ECS integration: architecture/ecs.md
       - Diagnostics: architecture/diagnostics.md
       - GPU interface: architecture/gpu.md
+  - API reference: https://tess.owx.dev/api/
   - Performance: performance.md
-  - Roadmap: roadmap.md
-  - Support: support.md
-  - For agents: for-agents.md
+  - Use cases: use-cases.md
+  - Project:
+      - Integration policy: integration-policy.md
+      - Roadmap: roadmap.md
+      - Support: support.md
+      - For agents: for-agents.md
 
 exclude_docs: |
   /README.md
