@@ -8,6 +8,38 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-08 - Route-cache staleness becomes a two-mode policy
+
+- Recorded: the unit route cache treated any chunk-version change as
+  total staleness — one edited tile dropped every cached route and forced
+  full suffix-index repopulation, which the Steam Deck hotspot campaign
+  measured at ~90% of the world-edit agent tick. Exactness was the only
+  offered semantics, and it is stronger than feasibility requires: for
+  unit-cost models without special transitions, every tile an accepted
+  step reads lies on the stored path, so a route's chunk footprint is its
+  exact feasibility dependency set.
+- Decided: staleness is now an explicit policy (`UnitRouteStaleness`):
+  `WholeWorldExact` (default, unchanged) or opt-in `ScopedFeasible`,
+  which records per-entry `(chunk, version)` dependencies and validates
+  them lazily at serve time against an exact per-chunk version snapshot
+  (no hashing in the staleness decision). Failed validation retires the
+  entry — tombstones do not terminate hash probes and a dead suffix-slot
+  claim is overwritten by the next covering store, so retirement can
+  never shadow a replacement or suppress suffix reuse permanently. What
+  scoped mode concedes is stated, not implied: a cost-lowering edit
+  outside a route's footprint can leave a served route suboptimal until
+  retirement, and blocking-only edit sequences concede nothing.
+  Non-Found results and scope-ineligible models carry an explicit
+  whole-world flag retired on any epoch change — an empty dependency
+  list must never read as "depends on nothing". Sparse worlds are
+  excluded in this version and keep the exact fingerprint lifecycle;
+  their evict/reload version resets make scoped validation a separate
+  design.
+- The eligibility condition is the suffix-reuse condition
+  (`cost_scale == 1 && !has_special_transitions`), which is closed under
+  the step-policy surface: diagonal clearance reads off-path tiles and
+  providers declare no read footprint, so both fall back per entry.
+
 ## 2026-08-07 - Counter, format, and cost-arithmetic hardening
 
 - Fixed: `EventStream::retire_batch` clamps its outstanding decrement.
@@ -67,6 +99,7 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   MSVC, all of which allocate exactly -- which is precisely why the
   invariant is now enforced structurally instead of resting on an
   allocator's behaviour.
+
 ## 2026-08-07 - Graph freshness detects stamps, not field edits
 
 - Recorded: `precheck.h` claimed that "a graph that no longer matches the

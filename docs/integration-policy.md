@@ -150,6 +150,14 @@ Scope limits:
   not claimed**. Counter goldens run in shadow mode and report drift;
   they do not gate.
 - No floating-point reduction-order guarantee is made.
+- Route-cache results depend on the configured staleness policy. The
+  default (`UnitRouteStaleness::WholeWorldExact`) serves routes
+  identical to fresh recomputation after any world change. The opt-in
+  `ScopedFeasible` mode is deterministic but weaker: served routes are
+  legal at their stated cost and were optimal when stored, and a
+  cost-lowering edit outside a route's chunk footprint can leave it
+  suboptimal until retirement. Enabling it is a semantics choice, not a
+  tuning knob.
 
 ## Thread-pool ownership
 

@@ -5,13 +5,39 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 namespace tess {
 
+// How the unit route cache treats world edits between batches.
+//
+// WholeWorldExact: any chunk-version change anywhere drops every entry
+// (today's behavior); served routes are always identical to fresh
+// recomputation.
+//
+// ScopedFeasible: entries record the chunks their route crosses and are
+// retired only when one of those chunks changes. Surviving routes are
+// guaranteed LEGAL (every step walkable under the current world) with a
+// truthful served cost, and they were optimal when stored — but an edit
+// elsewhere that OPENS a shortcut can leave a served route suboptimal
+// until it is naturally retired. Under blocking-only (graph-monotone)
+// edits surviving routes remain optimal. Only unit-cost models without
+// special transitions qualify for scoped footprints; other models' entries
+// carry whole-world sensitivity and behave as in exact mode. Dense
+// (AlwaysResident) worlds only; sparse worlds fall back to exact behavior.
+/// Staleness policy for RouteCacheScratch (see enumerator comments).
+enum class UnitRouteStaleness : std::uint8_t {
+  WholeWorldExact,
+  ScopedFeasible,
+};
+
 /// Snapshot of unit-route cache occupancy, hits, misses, and invalidations.
 struct RouteCacheStats {
+  // Resident entries INCLUDING scoped-mode tombstones awaiting compaction;
+  // live_entries excludes them.
   std::size_t entries = 0;
   std::size_t hits = 0;
   std::size_t suffix_hits = 0;
@@ -24,15 +50,23 @@ struct RouteCacheStats {
   // (world, class) to stay at zero.
   std::size_t class_rebinds = 0;
   std::size_t provider_rebinds = 0;
+  std::size_t live_entries = 0;
+  // Scoped mode: dependency walks performed on first serve after an epoch
+  // change, entries that survived one, and entries retired by one.
+  std::size_t revalidations = 0;
+  std::size_t scoped_survivals = 0;
+  std::size_t retired_entries = 0;
 };
 
 // Exact (start, goal) lookups and same-goal suffix lookups are served by two
 // open-addressed flat hash indexes (power-of-two capacity, linear probing)
 // instead of linear scans. The suffix index is populated per stored
-// Found-path node with first-write-wins, which preserves the earlier
-// linear-scan determinism: the earliest stored entry containing a queried
-// suffix node keeps winning. Both indexes are rebuilt from scratch on
-// `invalidate()`/`clear()`. Storage is bounded by entry and path-node caps;
+// Found-path node with first-LIVE-write-wins, which preserves the earlier
+// linear-scan determinism: the earliest stored live entry containing a
+// queried suffix node keeps winning (scoped-mode retirement frees a slot's
+// claim; the next store covering that node re-owns it in place). Both
+// indexes are rebuilt from scratch on `invalidate()`/`clear()`.
+// Storage is bounded by entry and path-node caps;
 // an insert that would exceed either cap invalidates the whole cache first
 // (matching the world-change invalidation lifecycle) and counts a cap
 // invalidation in the stats, except a single route larger than the node cap,
@@ -86,13 +120,17 @@ class RouteCacheScratch {
     oversized_skips_ = 0;
     class_rebinds_ = 0;
     provider_rebinds_ = 0;
+    revalidations_ = 0;
+    scoped_survivals_ = 0;
+    retired_entries_ = 0;
   }
 
-  // Entries are keyed on (start, goal) plus the world fingerprint and
-  // nothing on the movement class, so the cache binds itself to the class
-  // of each cached_astar_path call: a rebind drops every entry (correct
-  // even on misuse) and counts in stats().class_rebinds. One cache per
-  // (world, class) is the PERF contract, not a correctness precondition.
+  // Entries are keyed on (start, goal) — with staleness carried by the
+  // world fingerprint (exact mode) or per-chunk dependency records (scoped
+  // mode) — and nothing on the movement class, so the cache binds itself to
+  // the class of each cached_astar_path call: a rebind drops every entry
+  // (correct even on misuse) and counts in stats().class_rebinds. One cache
+  // per (world, class) is the PERF contract, not a correctness precondition.
   void bind_class(std::uintptr_t identity) noexcept {
     if (bound_class_ == identity) {
       return;
@@ -124,9 +162,94 @@ class RouteCacheScratch {
   void invalidate() noexcept {
     entries_.clear();
     paths_.clear();
+    deps_.clear();
     exact_slots_.clear();
     suffix_slots_.clear();
     suffix_count_ = 0;
+    dead_count_ = 0;
+  }
+
+  // Selects the staleness policy. Switching modes drops every entry
+  // unconditionally — entries stored under one mode's semantics are never
+  // served under the other's — independent of any runtime policy flag, and
+  // resets BOTH staleness detectors to uncaptured: a stale fingerprint (or
+  // snapshot) surviving a flip would re-report the other mode's edits on
+  // the first refresh, spuriously advancing invalidation stats and the
+  // deep-clear cadence.
+  void set_staleness(UnitRouteStaleness staleness) noexcept {
+    if (staleness_ == staleness) {
+      return;
+    }
+    invalidate();
+    staleness_ = staleness;
+    has_world_fingerprint_ = false;
+    world_fingerprint_ = 0;
+    version_snapshot_.clear();
+  }
+
+  [[nodiscard]] auto staleness() const noexcept -> UnitRouteStaleness {
+    return staleness_;
+  }
+
+  // Total budget for stored dependency pairs (scoped mode), with the same
+  // two-rule lifecycle as the path-node cap: a single route whose collapsed
+  // footprint alone exceeds the budget is skipped without evicting
+  // residents (oversized-skip), and a store whose footprint no longer fits
+  // beside the resident blob invalidates the whole cache first (cap
+  // invalidation). Lowering the budget below the resident blob applies the
+  // same policy immediately, matching set_caps.
+  void set_dependency_cap(std::size_t max_dependency_pairs) noexcept {
+    max_dependency_pairs_ = max_dependency_pairs;
+    if (deps_.size() > max_dependency_pairs_) {
+      invalidate();
+      ++cap_invalidations_;
+    }
+  }
+
+  // Scoped-mode analog of invalidate_if_world_changed, and the single
+  // staleness entry point for both modes: exact mode (and sparse worlds,
+  // which scoped V1 excludes) delegates to the fingerprint drop; scoped
+  // dense mode compares an exact per-chunk version snapshot — no hashing
+  // in the staleness decision — and on any difference bumps the epoch that
+  // lazy per-entry validation checks against. Returns true when a world
+  // change was detected (entries dropped in exact mode; revalidation armed
+  // in scoped mode).
+  template <typename World>
+  [[nodiscard]] auto refresh_if_world_changed(const World& world) -> bool {
+    if constexpr (!std::is_same_v<typename World::residency_type,
+                                  AlwaysResident>) {
+      return invalidate_if_world_changed(world);
+    } else {
+      if (staleness_ != UnitRouteStaleness::ScopedFeasible) {
+        return invalidate_if_world_changed(world);
+      }
+      if (version_snapshot_.size() != World::chunk_count) {
+        version_snapshot_.resize(World::chunk_count);
+        for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
+          version_snapshot_[i] = world.meta(ChunkKey{i}).version;
+        }
+        return false;
+      }
+      // Versions live inside per-chunk meta, not contiguously: compare and
+      // update in one loop rather than gathering for a memcmp.
+      auto changed = false;
+      for (std::uint64_t i = 0; i < World::chunk_count; ++i) {
+        const auto version = world.meta(ChunkKey{i}).version;
+        if (version_snapshot_[i] != version) {
+          version_snapshot_[i] = version;
+          changed = true;
+        }
+      }
+      if (!changed) {
+        return false;
+      }
+      ++change_epoch_;
+      if (change_epoch_ == 0) {
+        invalidate();  // Epoch wrap: practically unreachable; clear anyway.
+        ++change_epoch_;
+      }
+      return true;
+    }
   }
 
   void reset_stats() noexcept {
@@ -135,6 +258,9 @@ class RouteCacheScratch {
     misses_ = 0;
     cap_invalidations_ = 0;
     oversized_skips_ = 0;
+    revalidations_ = 0;
+    scoped_survivals_ = 0;
+    retired_entries_ = 0;
   }
 
   // The fingerprint identifies world CONTENT VERSIONS, not a world
@@ -168,9 +294,13 @@ class RouteCacheScratch {
 
   [[nodiscard]] auto stats() const noexcept -> RouteCacheStats {
     return RouteCacheStats{
-        entries_.size(),  hits_,          suffix_hits_,
-        misses_,          paths_.size(),  cap_invalidations_,
-        oversized_skips_, class_rebinds_, provider_rebinds_,
+        entries_.size(),   hits_,
+        suffix_hits_,      misses_,
+        paths_.size(),     cap_invalidations_,
+        oversized_skips_,  class_rebinds_,
+        provider_rebinds_, entries_.size() - dead_count_,
+        revalidations_,    scoped_survivals_,
+        retired_entries_,
     };
   }
 
@@ -185,6 +315,22 @@ class RouteCacheScratch {
     std::size_t reached_nodes = 0;
     std::size_t path_offset = 0;
     std::size_t path_size = 0;
+    // Scoped mode only. whole_world marks entries with no sound chunk
+    // footprint (non-Found results, ineligible transition models): they
+    // fail validation on ANY epoch change — an empty dep list must never
+    // read as "depends on nothing".
+    std::size_t dep_offset = 0;
+    std::size_t dep_count = 0;
+    std::uint64_t validated_epoch = 0;
+    bool alive = true;
+    bool whole_world = false;
+  };
+
+  // One collapsed (chunk, captured content version) dependency of a stored
+  // route; validation compares against the chunk's current version.
+  struct DepPair {
+    std::uint64_t key = 0;
+    std::uint32_t version = 0;
   };
 
   struct SuffixSlot {
@@ -218,7 +364,9 @@ class RouteCacheScratch {
     return hash ^ (hash >> 31u);
   }
 
-  [[nodiscard]] auto find(PathRequest request) const noexcept -> const Entry* {
+  // Dead (retired) occupants do not terminate the probe: at most one LIVE
+  // entry exists per exact key, so skipping tombstones cannot skip a match.
+  [[nodiscard]] auto find(PathRequest request) noexcept -> Entry* {
     if (exact_slots_.empty()) {
       return nullptr;
     }
@@ -226,8 +374,9 @@ class RouteCacheScratch {
     auto slot =
         static_cast<std::size_t>(hash_pair(request.start, request.goal)) & mask;
     while (exact_slots_[slot] != 0) {
-      const auto& entry = entries_[exact_slots_[slot] - 1u];
-      if (entry.start == request.start && entry.goal == request.goal) {
+      auto& entry = entries_[exact_slots_[slot] - 1u];
+      if (entry.alive && entry.start == request.start &&
+          entry.goal == request.goal) {
         return &entry;
       }
       slot = (slot + 1u) & mask;
@@ -236,8 +385,8 @@ class RouteCacheScratch {
   }
 
   [[nodiscard]] auto find_suffix(PathRequest request,
-                                 std::size_t& suffix_offset) const noexcept
-      -> const Entry* {
+                                 std::size_t& suffix_offset) noexcept
+      -> Entry* {
     if (suffix_slots_.empty()) {
       return nullptr;
     }
@@ -246,8 +395,8 @@ class RouteCacheScratch {
         static_cast<std::size_t>(hash_pair(request.start, request.goal)) & mask;
     while (suffix_slots_[slot].entry_plus_one != 0) {
       const auto& candidate = suffix_slots_[slot];
-      const auto& entry = entries_[candidate.entry_plus_one - 1u];
-      if (entry.goal == request.goal &&
+      auto& entry = entries_[candidate.entry_plus_one - 1u];
+      if (entry.alive && entry.goal == request.goal &&
           paths_[entry.path_offset + candidate.offset] == request.start) {
         suffix_offset = candidate.offset;
         return &entry;
@@ -257,7 +406,74 @@ class RouteCacheScratch {
     return nullptr;
   }
 
-  void store(PathRequest request, const PathResult& result) {
+  // Scope-ineligible models take the approved exact lifecycle under scoped
+  // mode: a whole-cache invalidation on the first lookup after each epoch
+  // change, instead of accumulating per-entry tombstones. (Their entries
+  // also carry whole_world as a second line of defense for mixed use.)
+  void sync_ineligible_epoch() noexcept {
+    if (staleness_ != UnitRouteStaleness::ScopedFeasible) {
+      return;
+    }
+    if (ineligible_synced_epoch_ == change_epoch_) {
+      return;
+    }
+    if (!entries_.empty()) {
+      invalidate();
+    }
+    ineligible_synced_epoch_ = change_epoch_;
+  }
+
+  void retire(Entry& entry) noexcept {
+    entry.alive = false;
+    ++dead_count_;
+    ++retired_entries_;
+    // Tombstones hold entries_/paths_ footprint until compaction; past
+    // half-dead the whole cache is dropped (the same deterministic
+    // lifecycle as a cap invalidation). NOTE: invalidate() empties
+    // entries_, so the caller must not touch the entry afterward.
+    if (dead_count_ * 2u > max_entries_ && max_entries_ != 0) {
+      invalidate();
+    }
+  }
+
+  // Scoped-mode serve gate: exact mode always serves; a scoped entry
+  // already validated this epoch serves on one compare; otherwise its
+  // dependency pairs are walked against current chunk versions —
+  // whole-world entries fail unconditionally — and the entry is either
+  // stamped or retired. Retiring here cannot orphan a better match: store
+  // only runs after a live-match miss, so the retired entry was the only
+  // live occupant for its key. On a false return the entry reference is
+  // dead (and possibly dangling after compaction) — do not touch it.
+  template <typename World>
+  [[nodiscard]] auto validate_for_serve(const World& world,
+                                        Entry& entry) noexcept -> bool {
+    if (staleness_ != UnitRouteStaleness::ScopedFeasible) {
+      return true;
+    }
+    if (entry.validated_epoch == change_epoch_) {
+      return true;
+    }
+    if (entry.whole_world) {
+      retire(entry);
+      return false;
+    }
+    ++revalidations_;
+    for (std::size_t i = 0; i < entry.dep_count; ++i) {
+      const auto& dep = deps_[entry.dep_offset + i];
+      if (world.meta(ChunkKey{dep.key}).version != dep.version) {
+        retire(entry);
+        return false;
+      }
+    }
+    entry.validated_epoch = change_epoch_;
+    ++scoped_survivals_;
+    return true;
+  }
+
+  template <typename World, bool ScopeEligible>
+  void store(const World& world, PathRequest request,
+             const PathResult& result) {
+    using Shape = typename World::shape_type;
     // Cap value 0 disables storage entirely, matching the portal segment
     // cache's budget semantics; it does not mean "unlimited".
     if (max_entries_ == 0 || max_path_nodes_ == 0) {
@@ -269,14 +485,45 @@ class RouteCacheScratch {
       ++oversized_skips_;
       return;
     }
+    // Scoped mode: collapse the route's chunk footprint before touching
+    // storage, so a footprint over the dependency cap is skipped without
+    // evicting residents (the oversized-path rule, applied to deps).
+    // Non-Found results and scope-ineligible models get no footprint —
+    // they carry whole-world sensitivity instead (an empty dep list must
+    // never mean "depends on nothing").
+    const auto scoped =
+        staleness_ == UnitRouteStaleness::ScopedFeasible &&
+        std::is_same_v<typename World::residency_type, AlwaysResident>;
+    const auto scoped_footprint =
+        scoped && ScopeEligible && result.status == PathStatus::Found;
+    dep_scratch_.clear();
+    if (scoped_footprint) {
+      auto previous = std::numeric_limits<std::uint64_t>::max();
+      for (const auto node : result.path) {
+        const auto key = chunk_key<Shape>(tile_key<Shape>(node)).value;
+        if (key != previous) {
+          dep_scratch_.push_back(key);
+          previous = key;
+        }
+      }
+      if (dep_scratch_.size() > max_dependency_pairs_) {
+        ++oversized_skips_;
+        return;
+      }
+    }
     if (entries_.size() + 1u > max_entries_ ||
-        paths_.size() + result.path.size() > max_path_nodes_) {
+        paths_.size() + result.path.size() > max_path_nodes_ ||
+        deps_.size() + dep_scratch_.size() > max_dependency_pairs_) {
       invalidate();
       ++cap_invalidations_;
     }
     const auto entry_index = entries_.size();
     const auto path_offset = paths_.size();
+    const auto dep_offset = deps_.size();
     paths_.insert(paths_.end(), result.path.begin(), result.path.end());
+    for (const auto key : dep_scratch_) {
+      deps_.push_back(DepPair{key, world.meta(ChunkKey{key}).version});
+    }
     entries_.push_back(Entry{
         request.start,
         request.goal,
@@ -287,6 +534,11 @@ class RouteCacheScratch {
         result.reached_nodes,
         path_offset,
         result.path.size(),
+        dep_offset,
+        dep_scratch_.size(),
+        change_epoch_,
+        true,
+        scoped && !scoped_footprint,
     });
     exact_insert(entry_index);
     if (result.status == PathStatus::Found) {
@@ -313,6 +565,9 @@ class RouteCacheScratch {
     exact_slots_[slot] = static_cast<std::uint32_t>(entry_index + 1u);
   }
 
+  // Index rebuilds drop tombstoned entries' slots (the natural compaction
+  // point); the dead entries themselves stay in entries_ until a full
+  // invalidation reclaims their footprint.
   void grow_exact_index() {
     auto capacity = std::size_t{16};
     while (capacity < (entries_.size() + 1u) * 2u) {
@@ -320,13 +575,16 @@ class RouteCacheScratch {
     }
     exact_slots_.assign(capacity, 0u);
     for (std::size_t i = 0; i < entries_.size(); ++i) {
-      exact_place(i);
+      if (entries_[i].alive) {
+        exact_place(i);
+      }
     }
   }
 
-  // First-write-wins per (node, goal): the earliest stored entry containing
-  // a node keeps serving suffix queries for it, matching the pre-index
-  // linear-scan order.
+  // First-LIVE-write-wins per (node, goal): the earliest stored live entry
+  // containing a node keeps serving suffix queries for it, matching the
+  // pre-index linear-scan order. A dead occupant's claim is overwritten in
+  // place so retirement can never suppress suffix reuse permanently.
   void suffix_insert(std::size_t entry_index) {
     const auto& entry = entries_[entry_index];
     if (suffix_slots_.size() < (suffix_count_ + entry.path_size + 1u) * 2u) {
@@ -347,7 +605,16 @@ class RouteCacheScratch {
       const auto& occupant_entry = entries_[occupant.entry_plus_one - 1u];
       if (occupant_entry.goal == entry.goal &&
           paths_[occupant_entry.path_offset + occupant.offset] == node) {
-        return;  // First write wins.
+        if (occupant_entry.alive) {
+          return;  // First live write wins.
+        }
+        // Dead occupant for this (node, goal): reuse its slot in place,
+        // preserving one-slot-per-(node, goal) with no chain growth.
+        suffix_slots_[slot] = SuffixSlot{
+            static_cast<std::uint32_t>(entry_index + 1u),
+            static_cast<std::uint32_t>(offset),
+        };
+        return;
       }
       slot = (slot + 1u) & mask;
     }
@@ -367,7 +634,8 @@ class RouteCacheScratch {
     suffix_slots_.assign(capacity, SuffixSlot{});
     suffix_count_ = 0;
     for (const auto slot : old_slots) {
-      if (slot.entry_plus_one != 0) {
+      if (slot.entry_plus_one != 0 &&
+          entries_[slot.entry_plus_one - 1u].alive) {
         suffix_place(slot.entry_plus_one - 1u, slot.offset);
       }
     }
@@ -385,11 +653,24 @@ class RouteCacheScratch {
 
   std::vector<Entry> entries_;
   std::vector<Coord3> paths_;
+  std::vector<DepPair> deps_;
+  std::vector<std::uint64_t> dep_scratch_;
   std::vector<std::uint32_t> exact_slots_;
   std::vector<SuffixSlot> suffix_slots_;
+  // Scoped mode: exact per-chunk content versions as of the last refresh
+  // (never hashed), and the epoch lazy validation stamps against.
+  std::vector<std::uint32_t> version_snapshot_;
+  std::uint64_t change_epoch_ = 1;
+  std::uint64_t ineligible_synced_epoch_ = 0;
+  std::size_t dead_count_ = 0;
+  std::size_t revalidations_ = 0;
+  std::size_t scoped_survivals_ = 0;
+  std::size_t retired_entries_ = 0;
+  UnitRouteStaleness staleness_ = UnitRouteStaleness::WholeWorldExact;
   std::size_t suffix_count_ = 0;
   std::size_t max_entries_ = default_max_entries;
   std::size_t max_path_nodes_ = default_max_path_nodes;
+  std::size_t max_dependency_pairs_ = default_max_path_nodes / 8u;
   std::size_t hits_ = 0;
   std::size_t suffix_hits_ = 0;
   std::size_t misses_ = 0;
@@ -458,13 +739,15 @@ class RouteCacheScratch {
 // reallocate on any later miss without invalidating previously returned
 // spans backed by other scratches.
 //
-// STALENESS IS THE CALLER'S JOB, on dense and sparse alike: this function
-// never checks the world fingerprint (that costs O(chunk_count) per call by
-// design), so after any world edit the caller must run
-// cache.invalidate_if_world_changed(world) -- or invalidate()/clear() --
-// before the next lookup, or a stale route can be served. PathRequestRuntime
-// does this once per batch in prepare_process; direct callers own the same
-// obligation.
+// STALENESS DETECTION IS THE CALLER'S JOB, on dense and sparse alike: this
+// function never scans the world's versions itself (that costs
+// O(chunk_count) per call by design), so after any world edit the caller
+// must run cache.refresh_if_world_changed(world) — or the exact-mode
+// invalidate_if_world_changed / invalidate()/clear() — before the next
+// lookup, or a stale route can be served. PathRequestRuntime does this once
+// per batch in prepare_process; direct callers own the same obligation. In
+// ScopedFeasible mode the refresh arms per-entry dependency validation
+// (performed inside this call at serve time) instead of dropping entries.
 /// Runs unit A* with exact and same-goal suffix reuse from caller-owned cache.
 template <typename World, typename Tag, typename Provider>
 auto cached_astar_path(const World& world, PathRequest request,
@@ -484,37 +767,54 @@ auto cached_astar_path(const World& world, PathRequest request,
                       model.revision());
   // The cache stores absolute Coord3 keys and routes only (no residency-slot
   // state). Correctness on sparse rests entirely on the residency-aware
-  // world_version_fingerprint plus prepare_process invalidating the whole cache
-  // before any serve: any evict, reload, or in-place edit changes the
-  // fingerprint and drops the cache, so a stale route can never be served. A
-  // miss runs sparse-native astar_path.
-  if (const auto* entry = cache.find(request); entry != nullptr) {
-    ++cache.hits_;
-    const auto cached = cache.path_span(*entry);
-    scratch.path_.assign(cached.begin(), cached.end());
-    return PathResult{
-        entry->status,
-        entry->cost,
-        0,
-        0,
-        std::span<const Coord3>{scratch.path_},
-        entry->cost_scale,
-    };
+  // world_version_fingerprint plus prepare_process invalidating the whole
+  // cache before any serve — sparse worlds are excluded from ScopedFeasible
+  // mode in V1 and always take the exact-fingerprint lifecycle: any evict,
+  // reload, or in-place edit changes the fingerprint and drops the cache, so
+  // a stale route can never be served. A miss runs sparse-native astar_path.
+  //
+  // Scope eligibility mirrors the suffix-reuse condition: with unit step
+  // cost and no special transitions, every tile an accepted step reads lies
+  // on the stored path, so the path's chunk footprint is the exact
+  // feasibility dependency set. Other models' entries carry whole-world
+  // sensitivity (retired on any epoch change), preserving exact-mode
+  // behavior per entry.
+  constexpr auto scope_eligible =
+      Model::cost_scale == 1 && !Model::has_special_transitions;
+  if constexpr (!scope_eligible) {
+    cache.sync_ineligible_epoch();
   }
-  if constexpr (Model::cost_scale == 1 && !Model::has_special_transitions) {
-    auto suffix_offset = std::size_t{0};
-    if (const auto* entry = cache.find_suffix(request, suffix_offset);
-        entry != nullptr) {
-      ++cache.suffix_hits_;
-      const auto suffix = cache.path_span(*entry, suffix_offset);
-      scratch.path_.assign(suffix.begin(), suffix.end());
+  if (auto* entry = cache.find(request); entry != nullptr) {
+    if (cache.validate_for_serve(world, *entry)) {
+      ++cache.hits_;
+      const auto cached = cache.path_span(*entry);
+      scratch.path_.assign(cached.begin(), cached.end());
       return PathResult{
-          PathStatus::Found,
-          static_cast<std::uint32_t>(scratch.path_.size() - 1u),
+          entry->status,
+          entry->cost,
           0,
           0,
           std::span<const Coord3>{scratch.path_},
+          entry->cost_scale,
       };
+    }
+  }
+  if constexpr (scope_eligible) {
+    auto suffix_offset = std::size_t{0};
+    if (auto* entry = cache.find_suffix(request, suffix_offset);
+        entry != nullptr) {
+      if (cache.validate_for_serve(world, *entry)) {
+        ++cache.suffix_hits_;
+        const auto suffix = cache.path_span(*entry, suffix_offset);
+        scratch.path_.assign(suffix.begin(), suffix.end());
+        return PathResult{
+            PathStatus::Found,
+            static_cast<std::uint32_t>(scratch.path_.size() - 1u),
+            0,
+            0,
+            std::span<const Coord3>{scratch.path_},
+        };
+      }
     }
   }
 
@@ -529,7 +829,7 @@ auto cached_astar_path(const World& world, PathRequest request,
           provider);
     }
   }();
-  cache.store(request, result);
+  cache.template store<World, scope_eligible>(world, request, result);
   return result;
 }
 
