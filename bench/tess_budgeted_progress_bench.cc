@@ -906,6 +906,19 @@ struct ColonyTerrain {
     return event;
   }
 
+  // Restores every event tile to its pristine passable state so each
+  // repetition starts from the identical frozen workload rather than
+  // inheriting the previous repetition's toggle parity.
+  void restore_pristine() {
+    for (const ChurnEvent& event : events) {
+      for (std::size_t i = 0; i < event.tiles.size(); ++i) {
+        world->field<PassableTag>(event.tiles[i]) = 1;
+        world->field<ColonyCostTag>(event.tiles[i]) = event.original_cost[i];
+      }
+    }
+    next_event = 0;
+  }
+
   // Toggle the event's tiles: passable centre tiles block; blocked
   // ones restore their original cost. Either direction changes the
   // terrain of exactly the event's four chunks.
@@ -923,6 +936,21 @@ struct ColonyTerrain {
     }
   }
 };
+
+[[nodiscard]] auto hash_churn_pool(const ColonyTerrain& terrain,
+                                   const char* tag) -> std::string {
+  budgeted::Sha256 hasher;
+  hasher.update(tag, std::strlen(tag));
+  for (const ChurnEvent& event : terrain.events) {
+    for (std::size_t i = 0; i < event.tiles.size(); ++i) {
+      const std::int64_t words[3] = {
+          event.tiles[i].x, event.tiles[i].y,
+          static_cast<std::int64_t>(event.original_cost[i])};
+      hasher.update(words, sizeof(words));
+    }
+  }
+  return hasher.hex_digest();
+}
 
 [[nodiscard]] auto build_colony_terrain(std::size_t event_count)
     -> ColonyTerrain {
@@ -1033,24 +1061,61 @@ void run_colony_topology_cell(const RunOptions& options) {
     tess::RegionGraph fresh_graph;
     tess::build_region_graph<ColonyWorld, ColonyWalker>(
         *terrain.world, fresh_scratch, fresh_graph);
+
+    // Structural comparison on exactly the rewritten chunks: the
+    // incremental graph's per-chunk topology must match a fresh
+    // rebuild region-for-region, not merely answer sampled
+    // reachability the same way.
+    for (std::size_t event_index = 0; event_index < 8; ++event_index) {
+      for (const tess::ChunkKey& key : terrain.events[event_index].chunks) {
+        const auto* incremental_local = graph.local_topology(key);
+        const auto* fresh_local = fresh_graph.local_topology(key);
+        check(incremental_local != nullptr && fresh_local != nullptr,
+              "rewritten chunk missing from a topology graph");
+        check(incremental_local->regions().size() ==
+                  fresh_local->regions().size(),
+              "incremental chunk region count diverges from fresh rebuild");
+      }
+    }
+
     tess::RegionGraphScratch reach_a;
     tess::RegionGraphScratch reach_b;
-    for (const auto& [from, to] : probes) {
-      const auto scaled_from = tess::Coord3{from.x * kScale + kScale / 2,
-                                            from.y * kScale + kScale / 2, 0};
-      const auto scaled_to = tess::Coord3{to.x * kScale + kScale / 2,
-                                          to.y * kScale + kScale / 2, 0};
-      const auto incremental = tess::reachable<PathScaleShape>(
-          graph, scaled_from, scaled_to, reach_a);
-      const auto fresh = tess::reachable<PathScaleShape>(
-          fresh_graph, scaled_from, scaled_to, reach_b);
+    auto check_probe = [&](tess::Coord3 from, tess::Coord3 to) {
+      const auto incremental =
+          tess::reachable<PathScaleShape>(graph, from, to, reach_a);
+      const auto fresh =
+          tess::reachable<PathScaleShape>(fresh_graph, from, to, reach_b);
       check(incremental.status == fresh.status,
             "incremental topology diverges from a fresh rebuild");
+    };
+    const auto anchor =
+        tess::Coord3{probes.front().first.x * kScale + kScale / 2,
+                     probes.front().first.y * kScale + kScale / 2, 0};
+    for (const auto& [from, to] : probes) {
+      check_probe(tess::Coord3{from.x * kScale + kScale / 2,
+                               from.y * kScale + kScale / 2, 0},
+                  tess::Coord3{to.x * kScale + kScale / 2,
+                               to.y * kScale + kScale / 2, 0});
+    }
+    // Edit-adjacent probes: neighbours of every toggled tile exercise
+    // exactly the regions and portals the updates rewrote.
+    for (std::size_t event_index = 0; event_index < 8; ++event_index) {
+      for (const tess::Coord3 tile : terrain.events[event_index].tiles) {
+        check_probe(tess::Coord3{tile.x + 1, tile.y, 0}, anchor);
+        check_probe(tess::Coord3{tile.x, tile.y + 1, 0}, anchor);
+      }
     }
   }
 
   tess::diagnostics::FlowAccounting accounting;
-  auto reset = [&terrain](std::uint64_t) { terrain.next_event = 0; };
+  // Every repetition starts from the identical frozen workload:
+  // pristine terrain and a graph rebuilt from it (untimed).
+  auto reset = [&](std::uint64_t) {
+    terrain.restore_pristine();
+    graph = tess::RegionGraph{};
+    tess::build_region_graph<ColonyWorld, ColonyWalker>(*terrain.world,
+                                                        topo_scratch, graph);
+  };
   auto on_tick = [](std::uint64_t) {};
   auto quantum = [&]() -> std::uint64_t {
     const ChurnEvent& event = terrain.take_event();
@@ -1078,12 +1143,8 @@ void run_colony_topology_cell(const RunOptions& options) {
           "colony topology completion bases diverge");
     artifact.experiment.scenario_id = "topology-colony-4chunk-512-v1";
     artifact.experiment.workload_refs = {"topology/region_graph"};
-    budgeted::Sha256 hasher;
-    const char* tag = "colony_topology_toggle_4chunk_v1";
-    hasher.update(tag, std::strlen(tag));
-    const std::uint64_t words[2] = {kSeed, terrain.events.size()};
-    hasher.update(words, sizeof(words));
-    artifact.trace.sha256 = hasher.hex_digest();
+    artifact.trace.sha256 =
+        hash_churn_pool(terrain, "colony_topology_toggle_4chunk_v1");
     SteadyClock clock;
     artifact.calibration = calibrate(clock);
     write_artifact(options, artifact, "colony_topology", kBudgetsNs[i]);
@@ -1179,8 +1240,10 @@ void run_queued_per_chunk_cell(const RunOptions& options) {
   }
 
   tess::diagnostics::FlowAccounting accounting;
+  // Pristine terrain per repetition: the frozen workload, not the
+  // previous repetition's toggle parity.
   auto reset = [&](std::uint64_t) {
-    terrain.next_event = 0;
+    terrain.restore_pristine();
     state.acked_tiles = 0;
   };
   auto on_tick = [](std::uint64_t) {};
@@ -1206,12 +1269,8 @@ void run_queued_per_chunk_cell(const RunOptions& options) {
           "queued per-chunk completion bases diverge");
     artifact.experiment.scenario_id = "queued-per-chunk-colony-512-v1";
     artifact.experiment.workload_refs = {"queued/execute"};
-    budgeted::Sha256 hasher;
-    const char* tag = "queued_per_chunk_toggle_4op_v1";
-    hasher.update(tag, std::strlen(tag));
-    const std::uint64_t words[2] = {kSeed, terrain.events.size()};
-    hasher.update(words, sizeof(words));
-    artifact.trace.sha256 = hasher.hex_digest();
+    artifact.trace.sha256 =
+        hash_churn_pool(terrain, "queued_per_chunk_toggle_4op_v1");
     SteadyClock clock;
     artifact.calibration = calibrate(clock);
     write_artifact(options, artifact, "queued_per_chunk", kBudgetsNs[i]);
