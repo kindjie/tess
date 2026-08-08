@@ -239,9 +239,27 @@ auto advance_path_agents_with_pibt(
     // immediately. An impassable source cannot be vacated, exactly as
     // `commit_movement_intent` fails `BlockedFrom`; the agent keeps its tile
     // and an inheriting caller must backtrack.
+    //
+    // An agent with no goal, or one whose lifecycle already ended at
+    // `Unreachable`, cannot be vacated either. Only inheritance reaches such
+    // an agent: the priority loop skips them, and the apply pass tests the
+    // same condition before touching a stay-put agent. Reached through
+    // inheritance they would be shoved off their tile by passing traffic and
+    // rewritten to `Blocked`, restarting a terminal lifecycle. Treat them the
+    // way an impassable source is treated -- claim the tile so later deciders
+    // are vertex-rejected rather than stacking on it, and make the inheriting
+    // parent backtrack.
     const auto start_deciding = [&](std::size_t i) -> bool {
       scratch.state[i] = deciding;
       const auto position = agents[i].position;
+      if (!agents[i].has_goal ||
+          agents[i].phase == PathAgentPhase::Unreachable) {
+        (void)claim(position);
+        scratch.failure[i] =
+            static_cast<std::uint8_t>(MovementStatus::Occupied);
+        scratch.state[i] = decided;
+        return false;
+      }
       if (!detail::is_passable<World, ClassOrTag>(world, position)) {
         (void)claim(position);
         scratch.failure[i] =
@@ -446,7 +464,12 @@ auto advance_path_agents_with_pibt(
       scratch.committed.push_back(static_cast<std::uint32_t>(i));
       scratch.committed_from.push_back(from);
       ++stats.frame.advanced;
-      if (agent.position == agent.goal) {
+      // `has_goal` gates the comparison because `clear_path_agent_goal`
+      // zeroes `goal`, so a goalless agent standing on the origin tile would
+      // otherwise register an arrival for a journey that was never admitted
+      // -- inflating `completed` and breaking the retention identity. Every
+      // other arrival site reaches this check behind the same gate.
+      if (agent.has_goal && agent.position == agent.goal) {
         arrive_path_agent(agent, accounting);
         agent.status = PathStatus::Found;
         // Reset priority at the commit itself: a caller may assign a new

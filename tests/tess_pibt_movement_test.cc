@@ -888,4 +888,133 @@ TEST(TessPibtMovement, DistanceAtReadsTheProductAndGuardsShape) {
             tess::DistanceFieldProduct::unreachable_distance);
 }
 
+// An agent that has arrived (`has_goal` cleared) or ended at `Unreachable`
+// is immovable. The priority loop skips such agents and the apply pass tests
+// the same condition before touching a stay-put agent, but priority
+// inheritance reached them through the occupant path and shoved them aside,
+// rewriting a terminal lifecycle back to `Blocked`.
+TEST(TessPibtMovement, InheritanceDoesNotDisplaceAnArrivedAgent) {
+  World world;
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  fill_world(world, false);
+  // Corridor (1,1)-(3,1) with a free pocket at (2,2) the settled agent
+  // could be pushed into if inheritance were allowed to move it.
+  for (const auto c : {tess::Coord3{1, 1, 0}, tess::Coord3{2, 1, 0},
+                       tess::Coord3{3, 1, 0}, tess::Coord3{2, 2, 0}}) {
+    world.field<PassableTag>(c) = true;
+  }
+  add_agent(world, agents, routes, {{1, 1, 0}, {3, 1, 0}});  // mover
+  add_agent(world, agents, routes, {{2, 1, 0}, {2, 1, 0}});  // settled
+
+  // The settled agent arrived: the library's own goal-clearing helper
+  // leaves it goalless and Idle, which is the state a real arrival reaches.
+  tess::clear_path_agent_goal(agents[1]);
+
+  tess::PibtPriorities priorities;
+  priorities.elapsed = {100, 0};  // the mover decides first
+  tess::JointMoveScratch scratch;
+  const auto rank = [&](std::size_t agent, tess::Coord3 c) -> std::uint32_t {
+    const auto goal =
+        agents[agent].has_goal ? agents[agent].goal : agents[agent].position;
+    return static_cast<std::uint32_t>(std::abs(c.x - goal.x) +
+                                      std::abs(c.y - goal.y));
+  };
+
+  const auto stats =
+      tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
+                                          ReservationTag>(
+          world, std::span<tess::PathAgentState>(agents), routes, priorities,
+          scratch, rank);
+
+  // The settled agent keeps its tile and its terminal lifecycle.
+  EXPECT_EQ(agents[1].position, (tess::Coord3{2, 1, 0}));
+  EXPECT_FALSE(agents[1].has_goal);
+  EXPECT_EQ(agents[1].phase, tess::PathAgentPhase::Idle);
+  EXPECT_EQ(agents[1].blocked_retries, 0u);
+  // And the mover never lands on the tile it could not clear.
+  EXPECT_FALSE(agents[0].position == (tess::Coord3{2, 1, 0}));
+  EXPECT_EQ(stats.frame.arrived, 0u);
+}
+
+TEST(TessPibtMovement, InheritanceDoesNotDisplaceAnUnreachableAgent) {
+  World world;
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  fill_world(world, false);
+  for (const auto c : {tess::Coord3{1, 1, 0}, tess::Coord3{2, 1, 0},
+                       tess::Coord3{3, 1, 0}, tess::Coord3{2, 2, 0}}) {
+    world.field<PassableTag>(c) = true;
+  }
+  add_agent(world, agents, routes, {{1, 1, 0}, {3, 1, 0}});
+  add_agent(world, agents, routes, {{2, 1, 0}, {3, 1, 0}});
+
+  // Terminal until a new goal is assigned, per the path-agent contract.
+  agents[1].status = tess::PathStatus::NoPath;
+  agents[1].phase = tess::PathAgentPhase::Unreachable;
+
+  tess::PibtPriorities priorities;
+  priorities.elapsed = {100, 0};
+  tess::JointMoveScratch scratch;
+  const auto rank = [&](std::size_t agent, tess::Coord3 c) -> std::uint32_t {
+    const auto goal =
+        agents[agent].has_goal ? agents[agent].goal : agents[agent].position;
+    return static_cast<std::uint32_t>(std::abs(c.x - goal.x) +
+                                      std::abs(c.y - goal.y));
+  };
+
+  (void)tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
+                                            ReservationTag>(
+      world, std::span<tess::PathAgentState>(agents), routes, priorities,
+      scratch, rank);
+
+  EXPECT_EQ(agents[1].position, (tess::Coord3{2, 1, 0}));
+  EXPECT_EQ(agents[1].phase, tess::PathAgentPhase::Unreachable);
+  EXPECT_EQ(agents[1].blocked_retries, 0u);
+  EXPECT_FALSE(agents[0].position == (tess::Coord3{2, 1, 0}));
+}
+
+// `clear_path_agent_goal` zeroes `goal`, so a goalless agent standing on the
+// origin compares equal to it. Nothing may register an arrival for a journey
+// that was never admitted: it would inflate `completed` and break the
+// flow-accounting retention identity.
+TEST(TessPibtMovement, GoallessAgentOnTheOriginNeverRegistersAnArrival) {
+  World world;
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  fill_world(world, false);
+  for (const auto c : {tess::Coord3{0, 0, 0}, tess::Coord3{1, 0, 0},
+                       tess::Coord3{2, 0, 0}, tess::Coord3{0, 1, 0}}) {
+    world.field<PassableTag>(c) = true;
+  }
+  add_agent(world, agents, routes, {{1, 0, 0}, {0, 0, 0}});  // heads to origin
+  add_agent(world, agents, routes, {{0, 0, 0}, {0, 0, 0}});  // sits on origin
+
+  // clear_path_agent_goal zeroes `goal`, so this agent's goal compares
+  // equal to the origin tile it happens to be standing on.
+  tess::clear_path_agent_goal(agents[1]);
+  ASSERT_EQ(agents[1].goal, (tess::Coord3{0, 0, 0}));
+
+  tess::PibtPriorities priorities;
+  priorities.elapsed = {100, 0};
+  tess::JointMoveScratch scratch;
+  const auto rank = [&](std::size_t agent, tess::Coord3 c) -> std::uint32_t {
+    const auto goal =
+        agents[agent].has_goal ? agents[agent].goal : agents[agent].position;
+    return static_cast<std::uint32_t>(std::abs(c.x - goal.x) +
+                                      std::abs(c.y - goal.y));
+  };
+
+  const auto stats =
+      tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
+                                          ReservationTag>(
+          world, std::span<tess::PathAgentState>(agents), routes, priorities,
+          scratch, rank);
+
+  // The goalless agent is neither moved nor counted as having arrived.
+  EXPECT_EQ(agents[1].position, (tess::Coord3{0, 0, 0}));
+  EXPECT_FALSE(agents[1].has_goal);
+  EXPECT_EQ(stats.frame.arrived, 0u);
+}
+
 }  // namespace
