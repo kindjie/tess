@@ -91,6 +91,60 @@ Entries from 2026-07-12 and earlier are in
   `clear()` the argument, which is noexcept and retains capacity. A second
   pre-merge fix corrected a read of `entries_[i]` after eviction had
   already shifted the vector.
+## 2026-08-08 - Planning indexed by chunk; both quadratic scans retired
+
+- Area: `plan_operations` hazard detection and
+  `plan_parallel_execution_phases` grouping. The follow-up the 2026-08-07
+  instrument entry below said would "land next and must show their
+  before-and-after against these numbers".
+- Hypothesis: both scans compare a candidate against every operation
+  accepted so far, and per-chunk edits -- one operation per dirty chunk,
+  the ordinary consumer shape -- are pairwise disjoint, so every
+  comparison pays for a chunk-overlap check only to fail it. A chunk-keyed
+  index over accepted operations should visit only the operations that can
+  actually conflict.
+- Method: open-addressed table over chunk keys with intrusive per-slot
+  chains, each node carrying its key so growth relinks without consulting
+  the operations. `ExecutionReport` owns one and clears rather than frees
+  it, so planning into a caller-owned report stays allocation-free in the
+  steady state.
+- Evidence: accepted. Apple M3 Max, `bench` preset, seven repetitions,
+  `--benchmark_min_time=0.4s`. The before column is a fresh baseline taken
+  from the same build directory rather than the 2026-08-07 readings, so
+  the pair is measured the same way:
+
+| Benchmark | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| `queued/plan_frame_256` | 61.2 us | 10.5 us | 5.8x faster |
+| `queued/plan_frame_4096` | 24.27 ms | 0.176 ms | 138x faster |
+
+- Reading: the speedups are the weaker half of the evidence. The stronger
+  half is the scaling. Before, 16x the operations cost 392x the time;
+  after, 16x the operations cost 16.8x the time. That is the complexity
+  change the index was for, and unlike the speedup it is immune to machine
+  state, because both points come from one run. Coefficient of variation
+  was 0.80% and 0.68% (baseline 1.04% and 1.36%).
+- Recorded because it cuts against the result: the "after" run sat at load
+  average 3.5 where the baseline sat at 1.86. A busier machine makes the
+  after-numbers slower, not faster, so the measured gain is if anything
+  understated -- but the two readings are not load-matched and the raw
+  ratios should not be quoted to three figures.
+- Scope: `plan_parallel_execution_phases` takes a plan rather than a
+  report, so it must build its index per call -- two allocations a short
+  plan never repays. Plans under sixteen operations keep the all-pairs
+  comparison. Nothing benchmarks small-plan grouping, so that cutoff is
+  reasoned rather than tuned; it is stated here so a later measurement can
+  overturn it.
+- Risk, and the part worth carrying forward: the differential test written
+  to guard this change was at first unable to detect the bug it existed
+  for. Deleting the open-phase filter outright survived several thousand
+  randomized plans, because the generator drew dense chunk sets with
+  mostly-mutating policies -- so every pair of operations conflicted, every
+  phase was a singleton, and grouping had no decision to make. Sparser
+  chunk sets and a read-only majority fixed the generator; the layout that
+  actually separates "conflicts with the open phase" from "conflicts with
+  any earlier operation" is now constructed rather than sampled. Six
+  mutations each fail exactly their target test.
 - Decision: Accepted.
 
 ## 2026-08-08 - Paced-with-idle wake penalty in budgeted-progress cells
