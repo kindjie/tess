@@ -383,13 +383,35 @@ class FieldProductCache {
   }
 
   // Takes ownership of `product` by move; world-sized field data is never
-  // copied. The argument is left moved-from (empty but reusable). A product
+  // copied. The argument is left EMPTY, but not necessarily with its own
+  // storage: where the store displaced an entry, the argument keeps that
+  // entry's buffers with the contents cleared, so a rebuild into it reuses
+  // the capacity. It is never left holding another key's data. A product
   // whose entry exceeds the byte budget cannot be cached at all; that store
-  // preserves existing entries and returns false.
+  // preserves existing entries, leaves the argument untouched, and returns
+  // false.
   template <typename World, typename Tag>
   auto store(DistanceFieldProduct&& product) -> bool {
     return store<World, Tag, AdjacentTransitions>(std::move(product),
                                                   AdjacentTransitions{});
+  }
+
+  // Shared by every store entry point: the product must have been built
+  // for exactly the model this key describes.
+  [[nodiscard]] static auto key_matches_product(
+      const Key& key, const DistanceFieldProduct& product) noexcept -> bool {
+    return product.model_class_identity_ == key.movement_class &&
+           product.tile_count_ == key.tile_count &&
+           product.chunk_count_ == key.chunk_count &&
+           product.local_tile_count_ == key.local_tile_count &&
+           product.model_lattice_identity_ == key.lattice_identity &&
+           product.model_lattice_version_ == key.lattice_version &&
+           product.model_step_identity_ == key.step_identity &&
+           product.model_cost_scale_ == key.cost_scale &&
+           product.model_provider_identity_ == key.provider_identity &&
+           product.model_provider_instance_identity_ ==
+               key.provider_instance_identity &&
+           product.model_provider_revision_ == key.provider_revision;
   }
 
   /// Stores a product under the exact provider type and revision.
@@ -400,21 +422,33 @@ class FieldProductCache {
     }
 
     auto key = make_key<World, Tag, Provider>(product.goals(), provider);
-    if (product.model_class_identity_ != key.movement_class ||
-        product.tile_count_ != key.tile_count ||
-        product.chunk_count_ != key.chunk_count ||
-        product.local_tile_count_ != key.local_tile_count ||
-        product.model_lattice_identity_ != key.lattice_identity ||
-        product.model_lattice_version_ != key.lattice_version ||
-        product.model_step_identity_ != key.step_identity ||
-        product.model_cost_scale_ != key.cost_scale ||
-        product.model_provider_identity_ != key.provider_identity ||
-        product.model_provider_instance_identity_ !=
-            key.provider_instance_identity ||
-        product.model_provider_revision_ != key.provider_revision) {
+    if (!key_matches_product(key, product)) {
       return false;
     }
-    return store_with_key(std::move(product), std::move(key));
+    return store_with_key(product, std::move(key)) != nullptr;
+  }
+
+  /// Stores a product and returns it, leaving `product` holding reusable
+  /// storage the cache displaced. Prefer this when rebuilding in place.
+  template <typename World, typename Tag, typename Provider>
+  auto store_reusing(DistanceFieldProduct& product, const Provider& provider)
+      -> const DistanceFieldProduct* {
+    if (product.status() != PathStatus::Found) {
+      return nullptr;
+    }
+    auto key = make_key<World, Tag, Provider>(product.goals(), provider);
+    if (!key_matches_product(key, product)) {
+      return nullptr;
+    }
+    return store_with_key(product, std::move(key));
+  }
+
+  /// Stores a product built for ordinary adjacent transitions.
+  template <typename World, typename Tag>
+  auto store_reusing(DistanceFieldProduct& product)
+      -> const DistanceFieldProduct* {
+    return store_reusing<World, Tag, AdjacentTransitions>(
+        product, AdjacentTransitions{});
   }
 
   /// Stores a weighted product under its movement class and provider.
@@ -427,21 +461,28 @@ class FieldProductCache {
     }
     auto key =
         make_key_for_class<World, Class, Provider>(product.goals(), provider);
-    if (product.model_class_identity_ != key.movement_class ||
-        product.tile_count_ != key.tile_count ||
-        product.chunk_count_ != key.chunk_count ||
-        product.local_tile_count_ != key.local_tile_count ||
-        product.model_lattice_identity_ != key.lattice_identity ||
-        product.model_lattice_version_ != key.lattice_version ||
-        product.model_step_identity_ != key.step_identity ||
-        product.model_cost_scale_ != key.cost_scale ||
-        product.model_provider_identity_ != key.provider_identity ||
-        product.model_provider_instance_identity_ !=
-            key.provider_instance_identity ||
-        product.model_provider_revision_ != key.provider_revision) {
+    if (!key_matches_product(key, product)) {
       return false;
     }
-    return store_with_key(std::move(product), std::move(key));
+    return store_with_key(product, std::move(key)) != nullptr;
+  }
+
+  /// Stores a weighted product and returns it, leaving `product` holding
+  /// reusable storage the cache displaced.
+  template <typename World, typename Class, typename Provider>
+  auto store_weighted_reusing(DistanceFieldProduct& product,
+                              const Provider& provider)
+      -> const DistanceFieldProduct* {
+    static_assert(std::derived_from<Class, movement::movement_class_tag>);
+    if (product.status() != PathStatus::Found) {
+      return nullptr;
+    }
+    auto key =
+        make_key_for_class<World, Class, Provider>(product.goals(), provider);
+    if (!key_matches_product(key, product)) {
+      return nullptr;
+    }
+    return store_with_key(product, std::move(key));
   }
 
   /// Stores a weighted product using regular adjacent transitions.
@@ -452,21 +493,40 @@ class FieldProductCache {
   }
 
  private:
-  auto store_with_key(DistanceFieldProduct&& product, Key key) -> bool {
+  // Takes `product` by reference and leaves it holding whatever storage
+  // the cache displaced -- the replaced entry's buffers, or an evicted
+  // one's. A caller that rebuilds into the same member therefore reuses
+  // capacity instead of reallocating a world-sized distance array on every
+  // build, and gets the stored pointer back without a second lookup (which
+  // would rescan every entry and count a spurious hit).
+  auto store_with_key(DistanceFieldProduct& product, Key key)
+      -> const DistanceFieldProduct* {
     const auto bytes = entry_byte_size(key, product);
     if (bytes > byte_budget_) {
-      return false;
+      return nullptr;
     }
 
     for (std::size_t i = 0; i < entries_.size(); ++i) {
       if (keys_equal(entries_[i].key, key)) {
         bytes_ -= entries_[i].bytes;
-        *entries_[i].product = std::move(product);
+        // Swap, not move-assign: the caller keeps the replaced buffers.
+        std::swap(*entries_[i].product, product);
         entries_[i].last_used = ++clock_;
         entries_[i].bytes = bytes;
         bytes_ += bytes;
-        evict_to_budget();
-        return true;
+        // Read the pointer BEFORE evicting. `evict_to_budget` erases from
+        // `entries_`, and erasing anything at an index below `i` shifts the
+        // vector, so `entries_[i]` afterwards is a different entry -- or
+        // past the end when `i` was last. The pointee itself is heap-stable
+        // through the unique_ptr, so capturing it first is sufficient.
+        const auto* stored = entries_[i].product.get();
+        (void)evict_to_budget();
+        // The caller keeps the replaced entry's buffers, not its contents:
+        // clear() is noexcept and retains capacity in all three vectors, so
+        // reuse costs nothing while a stale wrong-goal product can never be
+        // observed as valid.
+        product.clear();
+        return stored;
       }
     }
 
@@ -480,8 +540,19 @@ class FieldProductCache {
     entries_.push_back(std::move(candidate));
     ++clock_;
     bytes_ += bytes;
-    evict_to_budget();
-    return true;
+    const auto* stored = entries_.back().product.get();
+    // The entry just appended cannot itself be evicted here: a store larger
+    // than the whole budget was rejected above, and this entry carries the
+    // newest `last_used`, so it is the last candidate the loop would pick --
+    // and by the time it is the only survivor, `bytes_ == bytes` is within
+    // budget and the loop has already stopped.
+    if (auto recycled = evict_to_budget(); recycled != nullptr) {
+      // `product` was moved from, so it is empty; give it the evicted
+      // buffers and clear the contents that came with them.
+      product = std::move(*recycled);
+      product.clear();
+    }
+    return stored;
   }
   // Each product lives behind a `unique_ptr` so `entries_` growth and
   // eviction of other entries never relocate a product that a caller still
@@ -593,7 +664,13 @@ class FieldProductCache {
     entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(index));
   }
 
-  void evict_to_budget() noexcept {
+  // Returns the storage of one evicted product, if any, so a caller can
+  // take it back instead of allocating a fresh world-sized buffer on its
+  // next build. Whichever eviction happens to be last is fine: every
+  // evicted product carries usable capacity, and the caller only needs
+  // one.
+  auto evict_to_budget() noexcept -> std::unique_ptr<DistanceFieldProduct> {
+    std::unique_ptr<DistanceFieldProduct> recycled;
     while (bytes_ > byte_budget_ && !entries_.empty()) {
       auto oldest = std::size_t{0};
       for (std::size_t i = 1; i < entries_.size(); ++i) {
@@ -601,9 +678,11 @@ class FieldProductCache {
           oldest = i;
         }
       }
+      recycled = std::move(entries_[oldest].product);
       erase_entry(oldest);
       ++evictions_;
     }
+    return recycled;
   }
 
   std::vector<Entry> entries_;
