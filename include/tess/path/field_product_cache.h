@@ -383,9 +383,13 @@ class FieldProductCache {
   }
 
   // Takes ownership of `product` by move; world-sized field data is never
-  // copied. The argument is left moved-from (empty but reusable). A product
+  // copied. The argument is left EMPTY, but not necessarily with its own
+  // storage: where the store displaced an entry, the argument keeps that
+  // entry's buffers with the contents cleared, so a rebuild into it reuses
+  // the capacity. It is never left holding another key's data. A product
   // whose entry exceeds the byte budget cannot be cached at all; that store
-  // preserves existing entries and returns false.
+  // preserves existing entries, leaves the argument untouched, and returns
+  // false.
   template <typename World, typename Tag>
   auto store(DistanceFieldProduct&& product) -> bool {
     return store<World, Tag, AdjacentTransitions>(std::move(product),
@@ -510,8 +514,19 @@ class FieldProductCache {
         entries_[i].last_used = ++clock_;
         entries_[i].bytes = bytes;
         bytes_ += bytes;
+        // Read the pointer BEFORE evicting. `evict_to_budget` erases from
+        // `entries_`, and erasing anything at an index below `i` shifts the
+        // vector, so `entries_[i]` afterwards is a different entry -- or
+        // past the end when `i` was last. The pointee itself is heap-stable
+        // through the unique_ptr, so capturing it first is sufficient.
+        const auto* stored = entries_[i].product.get();
         (void)evict_to_budget();
-        return entries_[i].product.get();
+        // The caller keeps the replaced entry's buffers, not its contents:
+        // clear() is noexcept and retains capacity in all three vectors, so
+        // reuse costs nothing while a stale wrong-goal product can never be
+        // observed as valid.
+        product.clear();
+        return stored;
       }
     }
 
@@ -526,15 +541,16 @@ class FieldProductCache {
     ++clock_;
     bytes_ += bytes;
     const auto* stored = entries_.back().product.get();
+    // The entry just appended cannot itself be evicted here: a store larger
+    // than the whole budget was rejected above, and this entry carries the
+    // newest `last_used`, so it is the last candidate the loop would pick --
+    // and by the time it is the only survivor, `bytes_ == bytes` is within
+    // budget and the loop has already stopped.
     if (auto recycled = evict_to_budget(); recycled != nullptr) {
-      // The moved-from `product` is empty; hand it an evicted buffer so the
-      // next build reuses that capacity. Guard against recycling the entry
-      // just stored, which eviction may pick when the budget is tight.
-      if (recycled.get() != stored) {
-        product = std::move(*recycled);
-      } else {
-        stored = nullptr;
-      }
+      // `product` was moved from, so it is empty; give it the evicted
+      // buffers and clear the contents that came with them.
+      product = std::move(*recycled);
+      product.clear();
     }
     return stored;
   }

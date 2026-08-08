@@ -373,4 +373,199 @@ TEST(TessWeightedFieldProduct, ReservedWarmRebuildDoesNotAllocate) {
   }
 }
 
+TEST(TessWeightedFieldProduct, ReplaceStoreThatEvictsReturnsTheStoredEntry) {
+  World world;
+  fill_open(world);
+  // Wall off everything outside chunk (0,0) so the first build for goal_b
+  // captures only 3 dependency chunks (reached + face neighbors).
+  for (std::int64_t y = 0; y < 8; ++y) {
+    for (std::int64_t x = 0; x < 8; ++x) {
+      if (x >= 4 || y >= 4) {
+        world.template field<PassableTag>({x, y, 0}) = false;
+      }
+    }
+  }
+
+  const auto goal_a = tess::Coord3{0, 0, 0};
+  const auto goal_b = tess::Coord3{1, 1, 0};
+  const auto goal_c = tess::Coord3{2, 2, 0};
+  tess::DistanceFieldScratch scratch;
+
+  const auto measure = [&](tess::Coord3 goal) {
+    tess::FieldProductCache probe(std::size_t{1} << 40U);
+    tess::GoalSet goals;
+    goals.add(goal);
+    tess::DistanceFieldProduct one;
+    tess::DistanceFieldScratch probe_scratch;
+    EXPECT_EQ((tess::build_distance_field_product<World, PassableTag>(
+                   world, goals, probe_scratch, one))
+                  .status,
+              tess::PathStatus::Found);
+    EXPECT_NE((probe.store_reusing<World, PassableTag>(one)), nullptr);
+    return probe.stats().bytes;
+  };
+  const auto size_a = measure(goal_a);
+  const auto size_b_small = measure(goal_b);
+  const auto size_c = measure(goal_c);
+
+  // Exactly enough for the three walled products; the larger open-world
+  // rebuild of goal_b must evict the LRU entry (goal_a, at index 0).
+  tess::FieldProductCache cache(size_a + size_b_small + size_c);
+  cache.reserve_entries(4);
+  const auto build_and_store = [&](tess::Coord3 goal) {
+    tess::GoalSet goals;
+    goals.add(goal);
+    tess::DistanceFieldProduct built;
+    EXPECT_EQ((tess::build_distance_field_product<World, PassableTag>(
+                   world, goals, scratch, built))
+                  .status,
+              tess::PathStatus::Found);
+    return cache.store_reusing<World, PassableTag>(built);
+  };
+  ASSERT_NE(build_and_store(goal_a), nullptr);
+  ASSERT_NE(build_and_store(goal_b), nullptr);
+  ASSERT_NE(build_and_store(goal_c), nullptr);
+  ASSERT_EQ(cache.stats().entries, 3u);
+  ASSERT_EQ(cache.stats().evictions, 0u);
+
+  // Open the world: the rebuild for goal_b now reaches all 4 chunks, so
+  // its dependency list (and byte size) grows and the replace store must
+  // evict goal_a's entry.
+  fill_open(world);
+  tess::GoalSet goals_b;
+  goals_b.add(goal_b);
+  tess::DistanceFieldProduct rebuilt;
+  ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
+                 world, goals_b, scratch, rebuilt))
+                .status,
+            tess::PathStatus::Found);
+  const auto* stored = cache.store_reusing<World, PassableTag>(rebuilt);
+
+  ASSERT_EQ(cache.stats().evictions, 1u);
+  ASSERT_EQ(cache.stats().entries, 2u);
+  ASSERT_NE(stored, nullptr);
+  ASSERT_EQ(stored->goals().size(), 1u);
+  // The store must return the entry it stored (goal_b), not whichever
+  // entry the post-eviction shift left at the stale index (goal_c).
+  EXPECT_EQ(stored->goals()[0], goal_b);
+}
+
+// after an evicting store, the caller's product is not
+// "displaced storage" but the evicted entry's complete contents: status
+// Found, the other key's goals, and dependencies that pass is_valid. The
+// rvalue store() wrapper documents its argument as "left moved-from
+// (empty but reusable)", which this violates.
+TEST(TessWeightedFieldProduct, EvictingStoreLeavesCallerWithValidWrongProduct) {
+  World world;
+  fill_open(world);
+  tess::DistanceFieldScratch scratch;
+  tess::DistanceFieldProduct product;
+
+  const auto goal_a = tess::Coord3{7, 7, 0};
+  const auto goal_b = tess::Coord3{0, 7, 0};
+
+  const auto product_bytes = [&] {
+    tess::FieldProductCache probe(std::size_t{1} << 40U);
+    tess::GoalSet goals;
+    goals.add(goal_a);
+    tess::DistanceFieldProduct one;
+    tess::DistanceFieldScratch probe_scratch;
+    (void)tess::build_distance_field_product<World, PassableTag>(
+        world, goals, probe_scratch, one);
+    (void)probe.store_reusing<World, PassableTag>(one);
+    return probe.stats().bytes;
+  }();
+  tess::FieldProductCache cache(product_bytes);
+
+  tess::GoalSet goals;
+  goals.add(goal_a);
+  ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
+                 world, goals, scratch, product))
+                .status,
+            tess::PathStatus::Found);
+  ASSERT_NE((cache.store_reusing<World, PassableTag>(product)), nullptr);
+
+  goals.clear();
+  goals.add(goal_b);
+  ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
+                 world, goals, scratch, product))
+                .status,
+            tess::PathStatus::Found);
+  // The rvalue wrapper shares store_with_key with store_reusing; use it to
+  // show existing callers observe the same state.
+  ASSERT_TRUE((cache.store<World, PassableTag>(std::move(product))));
+  ASSERT_GT(cache.stats().evictions, 0u);
+
+  // Documented: moved-from, empty but reusable. Actual: the evicted
+  // goal_a product, fully populated and passing every validity gate.
+  EXPECT_NE(product.status(), tess::PathStatus::Found)
+      << "argument still claims Found after the store";
+  EXPECT_TRUE(product.goals().empty())
+      << "argument still carries the evicted entry's goals";
+  EXPECT_FALSE(product.is_valid(world))
+      << "argument passes is_valid with the WRONG goal set: distance_at "
+      << "now serves goal_a distances to a caller that stored goal_b";
+}
+
+// REVIEW PROOF TEST (OOB variant): with only TWO entries, the evicting
+// replace store leaves the replaced entry at index 0 of a size-1 vector,
+// but store_with_key still reads entries_[1] -- past the end. ASan
+// container annotations flag this; without them it is silent UB.
+TEST(TessWeightedFieldProduct, ReplaceStoreThatEvictsIndexesOutOfBounds) {
+  World world;
+  fill_open(world);
+  for (std::int64_t y = 0; y < 8; ++y) {
+    for (std::int64_t x = 0; x < 8; ++x) {
+      if (x >= 4 || y >= 4) {
+        world.template field<PassableTag>({x, y, 0}) = false;
+      }
+    }
+  }
+  const auto goal_a = tess::Coord3{0, 0, 0};
+  const auto goal_b = tess::Coord3{1, 1, 0};
+  tess::DistanceFieldScratch scratch;
+
+  const auto measure = [&](tess::Coord3 goal) {
+    tess::FieldProductCache probe(std::size_t{1} << 40U);
+    tess::GoalSet goals;
+    goals.add(goal);
+    tess::DistanceFieldProduct one;
+    tess::DistanceFieldScratch probe_scratch;
+    EXPECT_EQ((tess::build_distance_field_product<World, PassableTag>(
+                   world, goals, probe_scratch, one))
+                  .status,
+              tess::PathStatus::Found);
+    EXPECT_NE((probe.store_reusing<World, PassableTag>(one)), nullptr);
+    return probe.stats().bytes;
+  };
+  tess::FieldProductCache cache(measure(goal_a) + measure(goal_b));
+  cache.reserve_entries(4);
+  const auto build_and_store = [&](tess::Coord3 goal) {
+    tess::GoalSet goals;
+    goals.add(goal);
+    tess::DistanceFieldProduct built;
+    EXPECT_EQ((tess::build_distance_field_product<World, PassableTag>(
+                   world, goals, scratch, built))
+                  .status,
+              tess::PathStatus::Found);
+    return cache.store_reusing<World, PassableTag>(built);
+  };
+  ASSERT_NE(build_and_store(goal_a), nullptr);
+  ASSERT_NE(build_and_store(goal_b), nullptr);
+
+  fill_open(world);
+  tess::GoalSet goals_b;
+  goals_b.add(goal_b);
+  tess::DistanceFieldProduct rebuilt;
+  ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
+                 world, goals_b, scratch, rebuilt))
+                .status,
+            tess::PathStatus::Found);
+  // Evicts goal_a's entry (index 0) and then reads entries_[1] of a
+  // vector whose size is now 1.
+  const auto* stored = cache.store_reusing<World, PassableTag>(rebuilt);
+  EXPECT_EQ(cache.stats().entries, 1u);
+  (void)stored;
+}
+
 }  // namespace

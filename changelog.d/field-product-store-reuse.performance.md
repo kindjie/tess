@@ -6,6 +6,8 @@
   had to `lookup` the product back, which rescanned every entry and
   recorded a cache HIT for work the cache had not reused, inflating the
   published hit rate by one on every build. `store_reusing` returns what it
-  stored and hands the caller the displaced entry's storage. Measured on a
-  64-tile world: rebuilding after a store went from five allocations to
-  zero.
+  stored and hands the caller the displaced entry's storage, cleared. The
+  rvalue `store` overloads keep their `bool` contract; their argument is
+  still left empty, though on a displacing store it now owns the displaced
+  buffers rather than its own. Measured on a 64-tile world: rebuilding
+  after a store went from five allocations to zero.
