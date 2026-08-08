@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <random>
@@ -25,14 +26,20 @@ struct CostTag {};
 constexpr std::uint32_t DirtyTerrain = 1u << 0u;
 constexpr std::uint32_t DirtyCost = 1u << 1u;
 
-// 4 x 4 chunks: small enough that random chunk sets overlap often.
+// 16 x 16 chunks. Wider than `index_max_chunks_per_operation`, so a
+// whole-domain operation here is one the planner keeps OUT of the index --
+// the case that made the index 834x slower than the scan it replaced
+// before that bound existed.
 using TopDown2D =
-    tess::Shape<tess::Extent3{128, 64, 1}, tess::Extent3{32, 16, 1}>;
+    tess::Shape<tess::Extent3{128, 128, 1}, tess::Extent3{8, 8, 1}>;
 using Schema = tess::FieldSchema<tess::Field<TerrainTag, std::uint16_t>,
                                  tess::Field<CostTag, float>>;
 using World = tess::AlwaysResidentWorld<TopDown2D, Schema>;
 
-constexpr std::size_t ChunkCount = 16;
+constexpr std::size_t ChunkCount = 256;
+static_assert(ChunkCount > tess::detail::index_max_chunks_per_operation,
+              "the wide-operation cases below need a domain the index "
+              "refuses; raise the world size with the bound");
 
 // Sparse chunk sets, for the phase test. Dense ones make almost every pair
 // of mutating operations overlap, every phase a singleton, and the whole
@@ -54,17 +61,33 @@ constexpr std::size_t ChunkCount = 16;
   return chunks;
 }
 
+// Narrow enough to be indexed, drawn from a small corner of the world so
+// that sets still collide often. Sizes straddle the index bound so both
+// sides of `operation_is_indexable` appear among the sparse operations.
 [[nodiscard]] auto random_chunks(std::mt19937& rng)
     -> std::vector<tess::ChunkKey> {
-  auto chunks = std::vector<tess::ChunkKey>{};
-  auto pick = std::uniform_int_distribution<int>{0, 3};
-  for (std::size_t chunk = 0; chunk < ChunkCount; ++chunk) {
-    if (pick(rng) == 0) {
-      chunks.push_back(tess::ChunkKey{static_cast<std::uint64_t>(chunk)});
-    }
+  auto size = std::uniform_int_distribution<std::size_t>{
+      1, tess::detail::index_max_chunks_per_operation + 2};
+  auto pick = std::uniform_int_distribution<std::uint64_t>{0, 95};
+  auto keys = std::vector<std::uint64_t>{};
+  for (std::size_t i = 0, wanted = size(rng); i < wanted; ++i) {
+    keys.push_back(pick(rng));
   }
-  if (chunks.empty()) {
-    chunks.push_back(tess::ChunkKey{0});
+  std::sort(keys.begin(), keys.end());
+  keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+  auto chunks = std::vector<tess::ChunkKey>{};
+  for (const auto key : keys) {
+    chunks.push_back(tess::ChunkKey{key});
+  }
+  return chunks;
+}
+
+// Wider than `index_max_chunks_per_operation`, so the planner keeps it out
+// of the index -- the shape a whole-domain selector produces.
+[[nodiscard]] auto all_chunks() -> std::vector<tess::ChunkKey> {
+  auto chunks = std::vector<tess::ChunkKey>{};
+  for (std::size_t chunk = 0; chunk < ChunkCount; ++chunk) {
+    chunks.push_back(tess::ChunkKey{static_cast<std::uint64_t>(chunk)});
   }
   return chunks;
 }
@@ -91,6 +114,11 @@ TEST(TessQueuedPlanningIndex, IndexedHazardMatchesLinearScan) {
       auto accepted = std::vector<tess::PlannedOperation>{};
       accepted.reserve(48);
       auto index = tess::detail::ChunkOperationIndex{};
+      auto wide = std::vector<std::uint32_t>{};
+      // Some operations are deliberately wider than the index bound, so the
+      // mixed case is covered: an indexed candidate must still find a wide
+      // conflict, and a wide candidate must fall back to the full scan.
+      auto make_wide = std::bernoulli_distribution{0.25};
 
       for (std::uint32_t op = 0; op < 48; ++op) {
         auto queued = tess::QueuedOperation{};
@@ -99,7 +127,7 @@ TEST(TessQueuedPlanningIndex, IndexedHazardMatchesLinearScan) {
         queued.field_access = random_field_access(rng);
         queued.write_policy = tess::WritePolicy::UniquePerChunk;
 
-        const auto chunks = random_chunks(rng);
+        const auto chunks = make_wide(rng) ? all_chunks() : random_chunks(rng);
         auto created = tess::PlannedOperation::create(world, queued, chunks);
         ASSERT_EQ(created.status, tess::PlannedOperationCreateStatus::Created);
         if (!created.operation.has_value()) {
@@ -111,7 +139,8 @@ TEST(TessQueuedPlanningIndex, IndexedHazardMatchesLinearScan) {
         const auto* linear = tess::detail::find_hazard(
             {accepted.data(), accepted.size()}, candidate);
         const auto* indexed = tess::detail::find_hazard_indexed(
-            index, {accepted.data(), accepted.size()}, candidate);
+            index, {wide.data(), wide.size()},
+            {accepted.data(), accepted.size()}, candidate);
         ASSERT_EQ(linear, indexed)
             << "seed " << seed << " trial " << trial << " op " << op
             << ": indexed lookup blamed a different operation";
@@ -119,8 +148,12 @@ TEST(TessQueuedPlanningIndex, IndexedHazardMatchesLinearScan) {
         if (linear != nullptr) {
           continue;
         }
-        index.insert(candidate.chunks(),
-                     static_cast<std::uint32_t>(accepted.size()));
+        const auto op_index = static_cast<std::uint32_t>(accepted.size());
+        if (tess::detail::operation_is_indexable(candidate.chunks())) {
+          index.insert(candidate.chunks(), op_index);
+        } else {
+          wide.push_back(op_index);
+        }
         accepted.push_back(std::move(candidate));
       }
     }
@@ -193,8 +226,14 @@ TEST(TessQueuedPlanningIndex, PhaseGroupingMatchesAllPairsScan) {
         World world;
         tess::FrameOps ops;
         auto read_only = std::bernoulli_distribution{0.6};
+        // A minority of whole-domain operations, so the wide path through
+        // grouping is exercised: those are kept out of the index and
+        // compared separately, and an indexed candidate must still see
+        // them. Without any, that branch is never executed.
+        auto make_wide = std::bernoulli_distribution{0.2};
         for (std::uint32_t op = 0; op < op_count; ++op) {
-          const auto chunks = sparse_chunks(rng);
+          const auto chunks =
+              make_wide(rng) ? all_chunks() : sparse_chunks(rng);
           // Read-only operations never conflict with each other, so a
           // majority of them is what lets a phase hold more than one
           // operation. With dense chunk sets and mostly-mutating policies

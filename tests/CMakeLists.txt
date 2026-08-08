@@ -560,7 +560,6 @@ tess_discover_tests(tess_queued_planning_test LABELS block core ops storage)
 
 add_executable(
   tess_queued_planning_index_test
-  allocation_counter.cc
   tess_queued_planning_index_test.cc
 )
 target_link_libraries(

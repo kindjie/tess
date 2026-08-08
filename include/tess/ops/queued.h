@@ -1163,6 +1163,26 @@ auto execute_validated_phase_operation_deferred_dirty(
 // pairwise disjoint, so every one of those comparisons failed on chunk
 // overlap only after paying for the check.
 //
+// An index only pays for itself when operations touch FEW chunks each.
+// An operation over a whole domain -- `resident_chunks()`, the default
+// selector -- would store one node per chunk and make every later lookup
+// walk one chain per chunk, turning an O(n^2) scan into O(n^2 * chunks).
+// Worse, that scan was the cheap case: read-only operations have a zero
+// hazard mask, so it rejected each pair on the mask alone and never
+// touched a chunk list. Measured at 64 read-only resident operations, the
+// index cost 168 ms against the scan's 201 us before this bound existed.
+//
+// So operations wider than `index_max_chunks_per_operation` are kept OUT
+// of the index and scanned linearly, and a candidate that wide skips the
+// index and scans everything, exactly as the planner used to. Every
+// lookup is then at worst the old cost and at best the indexed one.
+inline constexpr std::size_t index_max_chunks_per_operation = 64;
+
+[[nodiscard]] constexpr bool operation_is_indexable(
+    std::span<const ChunkKey> chunks) noexcept {
+  return chunks.size() <= index_max_chunks_per_operation;
+}
+
 // Open-addressed chunk key -> intrusive chain of nodes, power-of-two
 // capacity, linear probing. No erase: a plan only grows, and the index is
 // cleared wholesale per plan. Each node carries its key so a rehash can
@@ -1171,11 +1191,17 @@ class ChunkOperationIndex {
  public:
   static constexpr auto npos = std::numeric_limits<std::uint32_t>::max();
 
+  // Stamped, not rewritten: `slots_` keeps its high-water size across the
+  // report reuse this index exists to serve, so clearing it per plan would
+  // charge every small frame for the largest frame that came before.
   void clear() noexcept {
-    for (auto& slot : slots_) {
-      slot = Slot{};
-    }
     nodes_.clear();
+    if (++generation_ != 0) {
+      return;
+    }
+    // Wrapped: stale slots would read as live under the new generation.
+    slots_.assign(slots_.size(), Slot{});
+    generation_ = 1;
   }
 
   void reserve(std::size_t nodes) {
@@ -1217,6 +1243,7 @@ class ChunkOperationIndex {
  private:
   struct Slot {
     std::uint32_t head = npos;
+    std::uint32_t generation = 0;
   };
   struct Node {
     std::uint64_t key = 0;
@@ -1249,11 +1276,16 @@ class ChunkOperationIndex {
 
   [[nodiscard]] auto head_for(std::uint64_t key) const noexcept
       -> std::uint32_t {
-    return slots_[bucket(key)].head;
+    const auto& slot = slots_[bucket(key)];
+    return slot.generation == generation_ ? slot.head : npos;
   }
 
   void link(std::uint32_t node) noexcept {
     auto& slot = slots_[bucket(nodes_[node].key)];
+    if (slot.generation != generation_) {
+      slot.generation = generation_;
+      slot.head = npos;
+    }
     nodes_[node].next = slot.head;
     slot.head = node;
   }
@@ -1271,6 +1303,7 @@ class ChunkOperationIndex {
 
   std::vector<Slot> slots_;
   std::vector<Node> nodes_;
+  std::uint32_t generation_ = 1;
 };
 
 }  // namespace detail
@@ -1442,6 +1475,7 @@ class ExecutionReport {
     plan_.operations_.clear();
     operations_.clear();
     chunk_index_.clear();
+    wide_operations_.clear();
   }
 
  private:
@@ -1460,14 +1494,23 @@ class ExecutionReport {
   void push_report(OperationReport report) { operations_.push_back(report); }
 
   void push_planned(PlannedOperation planned) {
-    chunk_index_.insert(planned.chunks(),
-                        static_cast<std::uint32_t>(plan_.operations_.size()));
+    const auto op_index = static_cast<std::uint32_t>(plan_.operations_.size());
+    if (detail::operation_is_indexable(planned.chunks())) {
+      chunk_index_.insert(planned.chunks(), op_index);
+    } else {
+      wide_operations_.push_back(op_index);
+    }
     plan_.operations_.push_back(std::move(planned));
   }
 
   [[nodiscard]] auto chunk_index() const noexcept
       -> const detail::ChunkOperationIndex& {
     return chunk_index_;
+  }
+
+  [[nodiscard]] auto wide_operations() const noexcept
+      -> std::span<const std::uint32_t> {
+    return {wide_operations_.data(), wide_operations_.size()};
   }
 
   template <typename World>
@@ -1506,6 +1549,9 @@ class ExecutionReport {
   // the operations that share a chunk rather than in the whole plan
   // (audit 2026-08-07 P1). Cleared, not freed, by `reset`.
   detail::ChunkOperationIndex chunk_index_;
+  // Accepted operations too wide to index, in plan order. Scanned the way
+  // the planner always scanned, which for these is the cheaper path.
+  std::vector<std::uint32_t> wide_operations_;
 };
 
 /** Collects one frame's operations while assigning stable handles and IDs. */
@@ -1777,9 +1823,16 @@ template <typename World>
 // and `conflict_id` are observable, so picking any other match would be a
 // behaviour change, not just a faster one.
 [[nodiscard]] inline auto find_hazard_indexed(
-    const ChunkOperationIndex& index,
+    const ChunkOperationIndex& index, std::span<const std::uint32_t> wide_ops,
     std::span<const PlannedOperation> earlier_ops,
     const PlannedOperation& later) -> const PlannedOperation* {
+  // A candidate this wide would walk one chain per chunk. The linear scan
+  // it replaces rejects a non-hazarding pair on the mask alone, so for
+  // these the scan is strictly cheaper and is what the planner uses.
+  if (!operation_is_indexable(later.chunks())) {
+    return find_hazard(earlier_ops, later);
+  }
+
   auto earliest = ChunkOperationIndex::npos;
   index.for_each_sharing(later.chunks(), [&](std::uint32_t op_index) {
     if (op_index >= earliest) {
@@ -1791,6 +1844,22 @@ template <typename World>
     }
     earliest = op_index;
   });
+  // Wide operations are not in the index, so they are scanned -- mask
+  // first, exactly as `find_hazard` orders it. They are in plan order, so
+  // the first match is the earliest among them.
+  for (const auto op_index : wide_ops) {
+    if (op_index >= earliest) {
+      break;
+    }
+    const auto& earlier = earlier_ops[op_index];
+    if (hazard_mask(earlier.field_access, later.field_access) == 0) {
+      continue;
+    }
+    if (chunks_overlap(earlier.chunks(), later.chunks())) {
+      earliest = op_index;
+      break;
+    }
+  }
   if (earliest == ChunkOperationIndex::npos) {
     return nullptr;
   }
@@ -1980,7 +2049,8 @@ auto plan_operations(const World& world,
         report.template make_planned<World>(op, std::move(planned_chunks));
 
     if (const auto* conflict = detail::find_hazard_indexed(
-            report.chunk_index(), report.plan().operations(), planned);
+            report.chunk_index(), report.wide_operations(),
+            report.plan().operations(), planned);
         conflict != nullptr) {
       op_report.status = OperationStatus::HazardConflict;
       op_report.failure = OperationFailure::FieldHazardConflict;
@@ -2052,6 +2122,10 @@ template <typename World>
   // tuned; both paths are held to the same answer by a differential test.
   const auto indexed = operations.size() >= detail::phase_index_min_operations;
   auto index = detail::ChunkOperationIndex{};
+  // Operations too wide to index are compared the way they always were.
+  // See `index_max_chunks_per_operation`: a whole-domain operation would
+  // otherwise cost one chain per chunk on every later comparison.
+  auto wide_operations = std::vector<std::uint32_t>{};
   if (indexed) {
     index.reserve(operations.size());
   }
@@ -2074,7 +2148,14 @@ template <typename World>
     if (!phases.phases_.empty()) {
       const auto phase_first = phases.phases_.back().first_operation();
       conflicts = false;
-      if (indexed) {
+      if (!indexed || !detail::operation_is_indexable(operation.chunks())) {
+        for (std::size_t j = phase_first; j < i; ++j) {
+          if (detail::parallel_phase_conflict(operations[j], operation)) {
+            conflicts = true;
+            break;
+          }
+        }
+      } else {
         index.for_each_sharing(operation.chunks(), [&](std::uint32_t j) {
           if (conflicts || j < phase_first) {
             return;
@@ -2082,12 +2163,14 @@ template <typename World>
           conflicts = detail::parallel_phase_conflict_given_overlap(
               operations[j], operation);
         });
-      } else {
-        for (std::size_t j = phase_first; j < i; ++j) {
-          if (detail::parallel_phase_conflict(operations[j], operation)) {
-            conflicts = true;
+        for (const auto j : wide_operations) {
+          if (conflicts) {
             break;
           }
+          if (j < phase_first) {
+            continue;
+          }
+          conflicts = detail::parallel_phase_conflict(operations[j], operation);
         }
       }
     }
@@ -2101,7 +2184,11 @@ template <typename World>
       phases.extend_last_phase(operation);
     }
     if (indexed) {
-      index.insert(operation.chunks(), static_cast<std::uint32_t>(i));
+      if (detail::operation_is_indexable(operation.chunks())) {
+        index.insert(operation.chunks(), static_cast<std::uint32_t>(i));
+      } else {
+        wide_operations.push_back(static_cast<std::uint32_t>(i));
+      }
     }
   }
 

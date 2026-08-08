@@ -78,7 +78,45 @@ void BM_queued_plan_frame(benchmark::State& state) {
                        "disjoint per-chunk operations must plan to one phase");
 }
 
+// The opposite shape, and the one the pair above cannot see: every
+// operation covers the SAME whole domain rather than one private chunk.
+// Read-only operations over `resident_chunks()` are the default selector,
+// they never hazard against each other, and they all merge into one phase
+// -- so a planner pays its per-chunk cost across every accepted operation.
+//
+// This is the workload where a chunk-keyed index is at its worst and a
+// mask-first linear scan is at its best: read-only pairs have a zero
+// hazard mask, so the scan rejects them without looking at chunks at all,
+// while an index must walk one chain per chunk. Registered so that the
+// planner's cost on dense domains is measured rather than assumed.
+template <std::size_t Operations>
+void BM_queued_plan_frame_dense(benchmark::State& state) {
+  PlanningWorld world;
+  tess::FrameOps ops;
+  for (std::size_t i = 0; i < Operations; ++i) {
+    (void)ops.update_field(tess::DomainDesc::resident_chunks(),
+                           tess::FieldAccessDesc{kDirtyTerrain, 0, 0},
+                           tess::WritePolicy::ReadOnly);
+  }
+
+  std::size_t last_phase_count = 0;
+  std::size_t last_planned = 0;
+  for (auto _ : state) {
+    auto report = tess::plan_operations(world, ops);
+    const auto phases = tess::plan_parallel_execution_phases(report.plan());
+    last_phase_count = phases.phases().size();
+    last_planned = report.plan().operations().size();
+    benchmark::DoNotOptimize(last_phase_count);
+    benchmark::ClobberMemory();
+  }
+  planning_bench_check(last_planned == Operations,
+                       "read-only resident operations must all be accepted");
+  planning_bench_check(last_phase_count == 1,
+                       "read-only operations must merge into one phase");
+}
+
 BENCHMARK(BM_queued_plan_frame<256>)->Name("queued/plan_frame_256");
 BENCHMARK(BM_queued_plan_frame<4096>)->Name("queued/plan_frame_4096");
+BENCHMARK(BM_queued_plan_frame_dense<64>)->Name("queued/plan_frame_dense_64");
 
 }  // namespace
