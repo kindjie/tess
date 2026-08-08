@@ -586,12 +586,13 @@ class PathRequestRuntime {
                 world, unit_field_goals_, unit_field_scratch_,
                 unit_field_product_, provider);
         if (field.status == PathStatus::Found) {
-          (void)unit_field_product_cache_
-              .template store_weighted<World, Class, Provider>(
-                  std::move(unit_field_product_), provider);
-          product = unit_field_product_cache_
-                        .template lookup_weighted<World, Class, Provider>(
-                            world, unit_field_goals_, provider);
+          // See the unit path below: the store returns what it stored, so
+          // the second lookup (a full rescan that also counted a spurious
+          // hit) is gone, and the product keeps reusable storage.
+          product =
+              unit_field_product_cache_
+                  .template store_weighted_reusing<World, Class, Provider>(
+                      unit_field_product_, provider);
         }
       }
       if (product == nullptr) {
@@ -796,14 +797,15 @@ class PathRequestRuntime {
         const auto field = build_distance_field_product<World, PassableTag>(
             world, unit_field_goals_, unit_field_scratch_, unit_field_product_);
         if (field.status == PathStatus::Found) {
-          // The cache takes the product by move; the next rebuild through
-          // build_distance_field_product() clears and reassigns
-          // unit_field_product_, so the moved-from state is never observed.
-          (void)unit_field_product_cache_.template store<World, PassableTag>(
-              std::move(unit_field_product_));
-          product =
-              unit_field_product_cache_.template lookup<World, PassableTag>(
-                  world, unit_field_goals_);
+          // The store returns what it stored, so no second lookup is
+          // needed. That lookup rescanned every entry AND recorded a hit,
+          // inflating the published cache-hit rate by one on every build.
+          // It also leaves `unit_field_product_` holding storage the cache
+          // displaced, so the next rebuild reuses that capacity instead of
+          // reallocating a world-sized distance array.
+          product = unit_field_product_cache_
+                        .template store_reusing<World, PassableTag>(
+                            unit_field_product_);
         }
       }
 
