@@ -10,12 +10,69 @@ Participation in the project is covered by the
 
 - New or modified functionality lands with tests, and the full suite
   passes before merge - no exceptions.
-- Meaningful design changes get an entry in
-  [`docs/decisions/CHANGELOG.md`](docs/decisions/CHANGELOG.md); the
-  top-level [`CHANGELOG.md`](CHANGELOG.md) records release-facing
-  changes under `Unreleased`.
+- Changelog entries are written as **fragments**, not by editing either
+  changelog directly. See [Changelog fragments](#changelog-fragments).
 - Markdown stays near 80 columns; docs separate maintained material
   from the historical TDD archive (see [`docs/README.md`](docs/README.md)).
+
+## Changelog fragments
+
+Both changelogs are assembled from per-change fragment files. Do not edit
+`CHANGELOG.md` or `docs/decisions/CHANGELOG.md` by hand except when
+cutting a release.
+
+The reason is mechanical: every branch that edits a shared changelog
+conflicts with every other such branch, so a stack of N pull requests
+costs on the order of N² conflict resolutions — in a file where a
+mis-resolution silently deletes someone's entry rather than failing.
+Fragments give each change its own path, so branches merge cleanly.
+
+Release-facing change:
+
+```sh
+cat > changelog.d/sparse-residency-observations.fixed.md <<'EOF'
+- A `DirtyObservation` taken before a sparse chunk was evicted can no
+  longer clear a dirty mark made after it was reloaded.
+EOF
+```
+
+The name is `<slug>.<category>.md`, where category is one of `added`,
+`changed`, `deprecated`, `removed`, `fixed`, `security`, `performance`,
+or `documentation`. The body is complete markdown list items — assembly
+concatenates them under a `### Category` heading, so what you write in
+review is what ships.
+
+Design decision:
+
+```sh
+cat > docs/decisions/changelog.d/2026-08-07-residency-intervals.md <<'EOF'
+## 2026-08-07 - Residency intervals scope dirty observations
+
+- Fixed: ...
+EOF
+```
+
+The name is `<YYYY-MM-DD>-<slug>.md` and the body opens with a matching
+`## <date> - <title>` heading. Assembly orders these newest first.
+
+Check and preview:
+
+```sh
+python3 tools/assemble_changelog.py --check
+python3 tools/assemble_changelog.py --preview
+```
+
+`--check` runs in CI, so a malformed fragment fails on its own pull
+request rather than at release time, when it would block the release.
+
+At release, fold everything in and delete the fragments in one step:
+
+```sh
+python3 tools/assemble_changelog.py --release 0.13.0 --date 2026-09-01
+```
+
+Assembly is all-or-nothing: if any fragment is invalid, nothing is
+written and nothing is deleted.
 
 ## Development setup
 

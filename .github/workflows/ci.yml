@@ -420,6 +420,7 @@ jobs:
           tests/test_thread_scaling_chart.py
           tests/test_sweep_cpu_plan.py
           tests/test_budgeted_artifacts.py
+          tests/test_changelog_fragments.py
 
       # Failing gate (promoted 2026-07-07 after a clean shake-out):
       # public symbols must be documented in a maintained architecture
@@ -435,6 +436,12 @@ jobs:
       # Markdown examples are copied from named regions in compiled sources.
       - name: Documentation snippets
         run: python tools/check_doc_snippets.py
+
+      # Changelog entries live in per-change fragments so concurrent
+      # branches touch disjoint files; a malformed fragment must fail here
+      # rather than at release, when it would block the release itself.
+      - name: Changelog fragments
+        run: python tools/assemble_changelog.py --check
 
       # Main documents unreleased development APIs while install examples may
       # also pin the latest release. Keep those two versions explicit.
