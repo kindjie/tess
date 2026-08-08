@@ -20,7 +20,10 @@ C++ code follows the
   project `.clangd` and `.clang-tidy` files.
 - Use `.h` for C++ headers.
 - Use `.cc` for C++ implementation, test, and benchmark files.
-- Keep lines at 80 columns where practical.
+- Keep lines at 80 columns where practical. Exception: never wrap a Mermaid
+  `accTitle:` or `accDescr:` line in documentation diagrams — Mermaid treats
+  them as single-line directives, and a wrapped continuation makes the whole
+  diagram fail to parse and render as raw text.
 - Follow the public repository safety rules in the root `AGENTS.md`.
 
 ## Exception Specifications

@@ -10,8 +10,7 @@ page names a default, pick it until measurement says otherwise.
 ```mermaid
 flowchart TB
   accTitle: Decision-guide route map
-  accDescr: Routes a project from memory budget through write path, path
-    strategy, topology, entities, and presentation decisions.
+  accDescr: Routes a project from memory budget through write path, path strategy, topology, entities, and presentation decisions.
 
   Start["What are you building?"] --> Mem{"Full world resident
 within memory budget?"}
