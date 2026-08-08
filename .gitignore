@@ -64,3 +64,7 @@ graph_info.json
 
 # Playwright MCP writes page snapshots here during live verification.
 .playwright-mcp/
+
+# Pinned Mermaid runtime fetched at docs build time (tools/fetch_mermaid.py);
+# far over the tracked-file token budget, so never committed.
+docs/assets/javascripts/mermaid.min.js

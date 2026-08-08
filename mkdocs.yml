@@ -9,6 +9,7 @@ site_dir: build/site
 
 theme:
   name: material
+  custom_dir: overrides
   logo: assets/tess-symbol-header.svg
   favicon: assets/tess-symbol.svg
   # No web-font fetch: headings load a vendored face via extra.css; body
@@ -103,7 +104,6 @@ exclude_docs: |
   /README.md
   /api-main.md
   /assets/fonts/README.md
-  /assets/tess-social-preview.png
   /dependencies.md
   /git-hooks.md
   /history.md

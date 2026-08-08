@@ -421,6 +421,7 @@ jobs:
           tests/test_sweep_cpu_plan.py
           tests/test_budgeted_artifacts.py
           tests/test_changelog_fragments.py
+          tests/test_check_mermaid.py
 
       # Failing gate (promoted 2026-07-07 after a clean shake-out):
       # public symbols must be documented in a maintained architecture

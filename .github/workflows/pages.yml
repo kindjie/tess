@@ -64,10 +64,14 @@ jobs:
           test "${installed_version%% *}" = "$DOXYGEN_VERSION"
           echo "$install_dir/bin" >>"$GITHUB_PATH"
 
+      - name: Fetch pinned Mermaid runtime
+        run: python3 tools/fetch_mermaid.py
+
       - name: Verify source-backed documentation
         run: |
           python3 tools/check_doc_snippets.py
           python3 tools/check_doc_versions.py
+          python3 tools/check_mermaid.py --browser google-chrome
 
       - name: Build site
         run: .venv-docs/bin/mkdocs build --strict

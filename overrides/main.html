@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{#
+  Social-card metadata: every page advertises the repository's social
+  preview card. og:image must be an absolute URL, so it is built from
+  site_url.
+#}
+{% block extrahead %}
+  {#- page is undefined for generated templates such as 404.html. -#}
+  {%- set social_title = config.site_name -%}
+  {%- if page and page.title and not page.is_homepage -%}
+    {%- set social_title = page.title ~ " - " ~ config.site_name -%}
+  {%- endif -%}
+  {%- set social_description = config.site_description -%}
+  {%- if page and page.meta and page.meta.get("description") -%}
+    {%- set social_description = page.meta["description"] -%}
+  {%- endif -%}
+  {%- set social_image =
+    config.site_url ~ "assets/tess-social-preview.png" -%}
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{ social_title }}">
+  <meta property="og:description" content="{{ social_description }}">
+  {%- if page and page.canonical_url %}
+  <meta property="og:url" content="{{ page.canonical_url }}">
+  {%- endif %}
+  <meta property="og:image" content="{{ social_image }}">
+  <meta property="og:image:width" content="2560">
+  <meta property="og:image:height" content="1280">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ social_title }}">
+  <meta name="twitter:description" content="{{ social_description }}">
+  <meta name="twitter:image" content="{{ social_image }}">
+{% endblock %}
+
+{#
+  Self-hosted Mermaid: tools/fetch_mermaid.py places the pinned runtime
+  in docs/assets/javascripts/ at build time. The script tag must come
+  before Material's bundle so the theme finds window.mermaid and skips
+  its unpkg.com CDN fallback; it loads on every page so instant
+  navigation always has the global regardless of entry page.
+#}
+{% block scripts %}
+  <script src="{{ 'assets/javascripts/mermaid.min.js' | url }}"></script>
+  {{ super() }}
+{% endblock %}
