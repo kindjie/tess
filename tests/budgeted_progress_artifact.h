@@ -277,6 +277,11 @@ struct SummaryBlock {
   PercentileFamily overshoot_quantum_tail_ns;
   PercentileFamily overshoot_mandatory_ns;
   std::optional<PercentileFamily> frame_start_lag_ns;  // Paced only.
+  // Paced only: wall-clock span of the measured frames and the
+  // measured completions-per-wall-second rate (design section 3.2:
+  // measured wall rates come from paced cells exclusively).
+  std::optional<std::uint64_t> measured_wall_ns;
+  std::optional<double> useful_per_wall_second;
   std::optional<DeadlineGroup> deadlines;  // Demand-limited cells only.
   bool flow_stable_applicable = false;
   bool flow_stable = false;
@@ -536,6 +541,13 @@ inline void append_family(std::string& out, const char* key,
   if (summary.frame_start_lag_ns.has_value()) {
     detail::append_family(out, "frame_start_lag_ns",
                           *summary.frame_start_lag_ns);
+  }
+  if (summary.measured_wall_ns.has_value()) {
+    detail::append_u64(out, "measured_wall_ns", *summary.measured_wall_ns);
+  }
+  if (summary.useful_per_wall_second.has_value()) {
+    detail::append_double(out, "useful_per_wall_second",
+                          *summary.useful_per_wall_second);
   }
   if (summary.deadlines.has_value()) {
     const auto& deadlines = *summary.deadlines;

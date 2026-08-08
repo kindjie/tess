@@ -98,6 +98,18 @@ class FrameBudgetController {
     return frame_index_;
   }
 
+  // Re-anchors the paced schedule so the next frame's edge is now.
+  // For benchmark drivers that run untimed maintenance (for example a
+  // quiescing drain) between frames: without re-anchoring, every edge
+  // that passed during the maintenance would be overdue and the
+  // following frames would run back to back, silently unpaced, with
+  // the lost time booked as frame-start lag. No-op when unpaced.
+  void rebase_pacing() noexcept {
+    if (config_.pacing == Pacing::Paced && frame_index_ > 0) {
+      epoch_ns_ = clock_.now() - frame_edge_offset(frame_index_);
+    }
+  }
+
   template <typename MandatoryFn, typename QuantumFn>
   auto run_frame(MandatoryFn&& mandatory, QuantumFn&& quantum) -> FrameRecord {
     FrameRecord record;
