@@ -231,6 +231,53 @@ jobs:
         if: always()
         run: ccache --show-stats
 
+  # CI10: on a pull request the library was never COMPILED against libc++.
+  # macOS covers it, but macOS is main-only, so a libc++-specific failure
+  # reached main before anyone saw it. Compile-only, mirroring the gcc
+  # portability cell's cost profile rather than adding a second test run.
+  libcxx:
+    needs: changes
+    if: ${{ needs.changes.outputs.code_required == 'true' }}
+    name: libc++ Compile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CC: clang
+      CXX: clang++
+      CXXFLAGS: -stdlib=libc++
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install libc++ and ccache
+        run: >-
+          (sudo apt-get update || true) &&
+          sudo apt-get install -y ccache libc++-dev libc++abi-dev
+
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-libcxx--${{ github.sha }}
+          restore-keys: ccache-libcxx--
+
+      - name: Show tool versions
+        run: |
+          cmake --version
+          clang++ --version
+
+      - name: Configure
+        run: cmake --preset dev-werror
+
+      - name: Build
+        run: cmake --build --preset dev-werror
+
+      - name: Report compiler cache effectiveness
+        if: always()
+        run: ccache --show-stats
+
   no-exceptions:
     needs: changes
     if: ${{ needs.changes.outputs.code_required == 'true' }}
@@ -1040,6 +1087,7 @@ jobs:
       - changes
       - dev
       - gcc
+      - libcxx
       - no-exceptions
       - hooks-backstop
       - quality
@@ -1062,6 +1110,7 @@ jobs:
           if [ "$code" = true ]; then
             test "${{ needs.dev.result }}" = success
             test "${{ needs.gcc.result }}" = success
+            test "${{ needs.libcxx.result }}" = success
             test "${{ needs.no-exceptions.result }}" = success
             test "${{ needs.quality.result }}" = success
             test "${{ needs.windows.result }}" = success
@@ -1077,6 +1126,7 @@ jobs:
           else
             test "${{ needs.dev.result }}" = skipped
             test "${{ needs.gcc.result }}" = skipped
+            test "${{ needs.libcxx.result }}" = skipped
             test "${{ needs.no-exceptions.result }}" = skipped
             test "${{ needs.quality.result }}" = skipped
             test "${{ needs.tidy-diff.result }}" = skipped
