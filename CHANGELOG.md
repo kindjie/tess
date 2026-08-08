@@ -11,6 +11,28 @@ and their rationale are recorded separately in
 
 ### Fixed
 
+- `EventStream` retirement no longer wraps a flow accountant's outstanding
+  count. It subtracted its batch size directly where every other
+  terminalization site routes through the zero-floored
+  `record_left_outstanding`, so a shared accountant whose other flow
+  terminalized first, or a `reset()` between publish and retire, drove the
+  unsigned counter to about 2^64 and took the inventory and retention
+  identities with it. Diagnostics only; simulation results were unaffected.
+- `save_world_archive` writes `lattice_version` at a fixed width. The
+  constant's own type decided the field width, and `LatticeType` requires
+  only convertibility to `uint32`, so a custom lattice declaring a
+  `uint64` version produced a header four bytes too long: a file that
+  saved `Ok` and could never be loaded. Both shipped lattices are
+  unaffected.
+- The A* fast paths saturate their route-cost arithmetic instead of
+  wrapping, matching `best_chunk_portal`. Reaching the wrap needs distances
+  beyond 2^32 tiles, so this is symmetry rather than a live defect.
+- `DeltaCollector` sizes its coalescing table from the realized entity
+  capacity rather than the requested one. Both probe loops rely on a null
+  slot to terminate, and `reserve(n)` only guarantees `capacity() >= n`, so
+  an implementation that over-allocated could fill the table and spin
+  forever. No shipped standard library does; the guard is unconditional now
+  rather than resting on that.
 - A transition provider that emits a transition whose source lies outside
   the chunk it was asked about no longer grows the portal set without
   bound. Incremental removal keys on the source's chunk, so such a portal

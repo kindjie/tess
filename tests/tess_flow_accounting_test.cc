@@ -227,6 +227,32 @@ TEST(TessEventFlow, CopiesStartUnattachedAndCannotDoubleRetire) {
   EXPECT_TRUE(accounting.counters.retention_identity_holds());
 }
 
+// Every other terminalization site routes through
+// FlowAccounting::record_left_outstanding, which floors at zero.
+// EventStream subtracted its batch size directly, so any state where the
+// accountant reports fewer outstanding than the batch holds -- a shared
+// accountant whose other flow terminalized first, or a reset between
+// publish and retire -- wrapped the unsigned counter to about 2^64 and
+// took inventory_tick_weighted and the retention identity with it.
+TEST(TessEventFlow, RetireDoesNotWrapOutstandingWhenTheCounterWasReset) {
+  tess::EventStream<int> stream;
+  stream.reserve_events(4);
+  FlowAccounting accounting;
+  stream.set_flow_accounting(&accounting);
+  ASSERT_TRUE(stream.publish(1, 1));
+  ASSERT_TRUE(stream.publish(2, 1));
+  ASSERT_EQ(accounting.counters.outstanding_current, 2u);
+
+  // The accountant is reset while the stream still holds its batch.
+  accounting.counters.reset();
+  ASSERT_EQ(accounting.counters.outstanding_current, 0u);
+
+  stream.consume_all();
+
+  EXPECT_EQ(accounting.counters.outstanding_current, 0u);
+  EXPECT_LT(accounting.counters.outstanding_current, 1000u);
+}
+
 TEST(TessEventFlow, PublishRejectConsumeAndDiscardKeepIdentities) {
   tess::EventStream<int> stream;
   stream.reserve_events(2);

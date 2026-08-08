@@ -805,8 +805,15 @@ auto save_world_archive(const World& world, std::vector<std::byte>& out)
   detail::append_unsigned_le(
       out, static_cast<std::uint32_t>(
                ShapeTraits<typename World::shape_type>::lattice_identity));
+  // Explicitly widened like the identity above. `append_unsigned_le` emits
+  // sizeof(UInt) bytes and `lattice_version` is `static constexpr auto`,
+  // while `LatticeType` only requires convertibility to uint32. A custom
+  // lattice declaring a uint64 version would otherwise write a 125-byte
+  // header against the fixed-width reader, producing a file that saves Ok
+  // and can never be loaded.
   detail::append_unsigned_le(
-      out, ShapeTraits<typename World::shape_type>::lattice_version);
+      out, static_cast<std::uint32_t>(
+               ShapeTraits<typename World::shape_type>::lattice_version));
   detail::append_unsigned_le(out, detail::world_archive_key_layout_version);
   detail::append_unsigned_le(out, Archive::id);
   detail::append_unsigned_le(out, Archive::version);

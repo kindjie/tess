@@ -8,6 +8,43 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-07 - Counter, format, and cost-arithmetic hardening
+
+- Fixed: `EventStream::retire_batch` clamps its outstanding decrement.
+  Every other terminalization site routes through
+  `FlowAccounting::record_left_outstanding`, which floors at zero;
+  `EventStream` subtracted its batch size directly, so any state where the
+  accountant reports fewer outstanding than the batch holds wrapped the
+  counter. Measured with a `reset()` between publish and retire:
+  `outstanding_current` became 18446744073709551614, which
+  `inventory_tick_weighted` then multiplies by. Diagnostics corruption
+  only, but the corrupted values are exactly the ones a health view
+  reports.
+- Fixed: the archive writes `lattice_version` through an explicit
+  `uint32_t` cast, as the identity beside it already did.
+  `append_unsigned_le` emits `sizeof(UInt)` bytes and `lattice_version` is
+  `static constexpr auto`, while `LatticeType` requires only convertibility
+  to `uint32`. A custom lattice -- a documented extension point -- with a
+  `uint64` version wrote a 125-byte header against the fixed-width reader.
+  Verified by adding such a lattice: without the cast both
+  `inspect_world_archive` and `load_world_archive` reject the file the
+  writer had just reported `Ok` for.
+- Changed: the A* plane-gap and axis-detour fast paths use
+  `detail::saturating_add`. `detail::manhattan` clamps each term at
+  `uint32` max and the sums then wrapped, asymmetric with
+  `best_chunk_portal`, which already saturated the identical expression.
+  Not constructible today -- it needs a span beyond 2^32 tiles, which
+  cannot be allocated -- so this is consistency, not a live defect, and it
+  carries no test for that reason.
+- Changed: `DeltaCollector` derives its coalesce slot count from
+  `pending_entities_.capacity()` rather than the requested
+  `entity_capacity`. `append_entity` admits while `size() != capacity()`
+  and `reserve(n)` guarantees only `capacity() >= n`, so an implementation
+  rounding past `2 * entity_capacity` could fill every slot and leave both
+  unbounded probe loops spinning. Not reproducible on libstdc++, libc++, or
+  MSVC, all of which allocate exactly -- which is precisely why the
+  invariant is now enforced structurally instead of resting on an
+  allocator's behaviour.
 ## 2026-08-07 - Graph freshness detects stamps, not field edits
 
 - Recorded: `precheck.h` claimed that "a graph that no longer matches the

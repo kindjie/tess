@@ -169,6 +169,48 @@ void expect_chunk(const auto& world, tess::ChunkKey key, std::uint16_t base) {
   }
 }
 
+// A custom lattice is a documented extension point, and `LatticeType` only
+// requires `version` to be convertible to uint32 -- not to be uint32. The
+// writer deduced its width from the constant, so a uint64 version emitted
+// four extra bytes into a fixed-width header: a file that saved Ok and
+// could never be loaded.
+struct WideVersionLattice {
+  static constexpr tess::lattice::Identity identity =
+      tess::lattice::Identity::Orthogonal;
+  static constexpr std::uint64_t version = 1;
+
+  template <auto Size, auto Chunk>
+  static constexpr bool valid_shape = true;
+};
+static_assert(tess::lattice::LatticeType<WideVersionLattice>);
+
+using WideShape = tess::Shape<tess::Extent3{1, 1, 1}, tess::Extent3{1, 1, 1},
+                              WideVersionLattice>;
+using WideWorld = tess::AlwaysResidentWorld<WideShape, TinyFields>;
+using WideArchive = tess::PersistenceSchema<
+    0x0102030405060708ULL, 9,
+    tess::PersistedField<TinyTag, 0x1112131415161718ULL, 3>>;
+
+TEST(TessPersistence, WideLatticeVersionStillWritesAFixedWidthHeader) {
+  WideWorld source;
+  source.field<TinyTag>({0, 0, 0}) = 0x5a;
+
+  std::vector<std::byte> bytes;
+  ASSERT_EQ(tess::save_world_archive<WideArchive>(source, bytes).status,
+            tess::WorldArchiveStatus::Ok);
+
+  // The header must stay the size the reader expects, whatever width the
+  // lattice declared its version at.
+  const auto inspected = tess::inspect_world_archive(bytes);
+  EXPECT_EQ(inspected.status, tess::WorldArchiveStatus::Ok);
+
+  // And the round trip must actually work, not merely report Ok on save.
+  WideWorld restored;
+  const auto loaded = tess::load_world_archive<WideArchive>(restored, bytes);
+  EXPECT_EQ(loaded.status, tess::WorldArchiveStatus::Ok);
+  EXPECT_EQ(restored.field<TinyTag>({0, 0, 0}), 0x5a);
+}
+
 TEST(TessPersistence, CanonicalFormatMatchesGoldenBytes) {
   TinyWorld source;
   source.field<TinyTag>({0, 0, 0}) = 0xab;
