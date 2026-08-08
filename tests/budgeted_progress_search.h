@@ -14,6 +14,14 @@
 // deterministic tests can script monotone, flapping, and
 // confirmation-failing boundaries without running benchmarks.
 //
+// Band semantics: `confirmed_stable` is the highest rate the section
+// 9.3 policy confirms — bracket, bisect, confirm — not a global
+// maximum over a non-monotone response. Stable pockets above the
+// first unstable bracket are deliberately out of scope for v1: the
+// policy trades island discovery for deterministic convergence, and
+// verdict noise near the boundary surfaces as `flapping`, never as a
+// wider claim.
+//
 // Harness support only, never a public header.
 
 #pragma once

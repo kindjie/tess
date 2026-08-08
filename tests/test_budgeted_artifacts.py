@@ -312,6 +312,16 @@ def test_boolean_arrival_rate_rejected(tmp_path):
   assert failures and "arrival_rate_num" in failures[0]
 
 
+def point(rate: int, stable: bool, confirmation: bool = False) -> dict:
+  """Build one tested search point with three repetition records."""
+  rep = {"stable": stable, "useful_completions": 100, "cohort_admitted": 100,
+         "cohort_deadline_met": 100 if stable else 3,
+         "outstanding_growth": 0 if stable else 97,
+         "oldest_age_end_ticks": 0 if stable else 40}
+  return {"rate": rate, "confirmation": confirmation, "stable": stable,
+          "reps": [dict(rep) for _ in range(3)]}
+
+
 def search_artifact() -> dict:
   """Build a valid capacity-search summary document."""
   return {
@@ -329,10 +339,10 @@ def search_artifact() -> dict:
           "resolution_percent": 2,
       },
       "points": [
-          {"rate": 60, "confirmation": False, "stable": True},
-          {"rate": 240, "confirmation": False, "stable": False},
-          {"rate": 120, "confirmation": False, "stable": True},
-          {"rate": 120, "confirmation": True, "stable": True},
+          point(60, stable=True),
+          point(240, stable=False),
+          point(120, stable=True),
+          point(120, stable=True, confirmation=True),
       ],
       "capacity_band": {"confirmed_stable": 120, "lowest_unstable": 240},
       "flapping": 0,
@@ -347,6 +357,9 @@ def test_valid_search_artifact_passes(tmp_path):
 def test_search_band_inversion_rejected(tmp_path):
   """The band cannot invert: lowest_unstable must exceed confirmed."""
   document = search_artifact()
+  # Verdict-consistent edges that nevertheless invert.
+  document["points"].append(point(240, stable=True, confirmation=True))
+  document["points"].append(point(120, stable=False))
   document["capacity_band"] = {"confirmed_stable": 240,
                                "lowest_unstable": 120}
   failures = cba.validate_file(write(tmp_path, document))
@@ -367,6 +380,32 @@ def test_search_requires_points(tmp_path):
   document["points"] = []
   failures = cba.validate_file(write(tmp_path, document))
   assert failures and "tested point" in failures[0]
+
+
+def test_search_band_edges_must_match_verdicts(tmp_path):
+  """Membership is not enough: edges must match point verdicts."""
+  document = search_artifact()
+  # 120 confirmed stable; naming it lowest_unstable must fail.
+  document["capacity_band"] = {"confirmed_stable": None,
+                               "lowest_unstable": 120}
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "tested unstable" in failures[0]
+
+
+def test_search_points_require_repetitions(tmp_path):
+  """Every tested point must retain its repetition evidence."""
+  document = search_artifact()
+  document["points"][0]["reps"] = []
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "every repetition" in failures[0]
+
+
+def test_search_requires_run_provenance(tmp_path):
+  """Search summaries must carry non-empty run provenance."""
+  document = search_artifact()
+  document["run"]["compiler"] = ""
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "run.compiler" in failures[0]
 
 
 def test_deep_copy_fixture_isolated():

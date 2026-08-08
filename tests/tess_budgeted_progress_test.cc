@@ -778,16 +778,14 @@ TEST(BudgetedSearch, MonotoneBoundaryConvergesWithinResolution) {
 
   ASSERT_TRUE(result.band.confirmed_stable.has_value());
   ASSERT_TRUE(result.band.lowest_unstable.has_value());
-  const std::uint64_t confirmed = *result.band.confirmed_stable;
+  const std::uint64_t confirmed = result.band.confirmed_stable.value_or(0);
   EXPECT_LE(confirmed, capacity);
   EXPECT_GE(confirmed, capacity - std::max<std::uint64_t>(1, capacity / 50));
-  EXPECT_GT(*result.band.lowest_unstable, confirmed);
+  EXPECT_GT(result.band.lowest_unstable.value_or(0), confirmed);
   EXPECT_EQ(result.flapping, 0u);
   EXPECT_FALSE(result.points.empty());
   for (const auto& point : result.points) {
-    EXPECT_EQ(point.stable, point.kind == PointKind::Confirmation
-                                ? point.rate <= capacity
-                                : point.rate <= capacity);
+    EXPECT_EQ(point.stable, point.rate <= capacity);
   }
 }
 
@@ -801,9 +799,10 @@ TEST(BudgetedSearch, ConfirmationFailureStepsDown) {
       budgeted::search_capacity(SearchPolicy{60, 2, 24}, probe, confirm);
 
   ASSERT_TRUE(result.band.confirmed_stable.has_value());
-  EXPECT_LE(*result.band.confirmed_stable, 950u);
+  EXPECT_LE(result.band.confirmed_stable.value_or(0), 950u);
   ASSERT_TRUE(result.band.lowest_unstable.has_value());
-  EXPECT_GT(*result.band.lowest_unstable, *result.band.confirmed_stable);
+  EXPECT_GT(result.band.lowest_unstable.value_or(0),
+            result.band.confirmed_stable.value_or(0));
   std::uint64_t failed_confirmations = 0;
   for (const auto& point : result.points) {
     if (point.kind == PointKind::Confirmation && !point.stable) {
@@ -831,7 +830,8 @@ TEST(BudgetedSearch, FlappingBoundaryNeverInvertsTheBand) {
 
   ASSERT_TRUE(result.band.confirmed_stable.has_value());
   if (result.band.lowest_unstable.has_value()) {
-    EXPECT_GT(*result.band.lowest_unstable, *result.band.confirmed_stable);
+    EXPECT_GT(result.band.lowest_unstable.value_or(0),
+              result.band.confirmed_stable.value_or(0));
   }
 }
 
@@ -843,15 +843,15 @@ TEST(BudgetedSearch, UnstableSeedAndHopelessWorkload) {
   const SearchResult low =
       budgeted::search_capacity(SearchPolicy{60, 2, 24}, low_probe, low_probe);
   ASSERT_TRUE(low.band.confirmed_stable.has_value());
-  EXPECT_LE(*low.band.confirmed_stable, 10u);
-  EXPECT_GE(*low.band.confirmed_stable, 9u);
+  EXPECT_LE(low.band.confirmed_stable.value_or(0), 10u);
+  EXPECT_GE(low.band.confirmed_stable.value_or(0), 9u);
 
   auto never = [](std::uint64_t) { return false; };
   const SearchResult hopeless =
       budgeted::search_capacity(SearchPolicy{60, 2, 24}, never, never);
   EXPECT_FALSE(hopeless.band.confirmed_stable.has_value());
   ASSERT_TRUE(hopeless.band.lowest_unstable.has_value());
-  EXPECT_EQ(*hopeless.band.lowest_unstable, 1u);
+  EXPECT_EQ(hopeless.band.lowest_unstable.value_or(0), 1u);
 }
 
 // --- Summary derivation and artifact emission (sections 11-12) ---

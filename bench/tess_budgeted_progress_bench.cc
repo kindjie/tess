@@ -299,6 +299,16 @@ template <typename ResetFn, typename TickFn, typename QuantumFn,
   return results;
 }
 
+[[nodiscard]] auto compiler_identity() -> std::string {
+#if defined(__clang__)
+  return std::string{"clang "} + __clang_version__;
+#elif defined(__GNUC__)
+  return "gcc";
+#else
+  return "unknown";
+#endif
+}
+
 [[nodiscard]] auto build_artifact(const RunOptions& options,
                                   const SaturatedCellResult& cell,
                                   Nanos budget_ns) -> budgeted::Artifact {
@@ -306,14 +316,7 @@ template <typename ResetFn, typename TickFn, typename QuantumFn,
   const char* commit = std::getenv("GITHUB_SHA");
   artifact.run.commit = commit != nullptr ? commit : "local";
   artifact.run.machine_fingerprint = "local-uncontrolled";
-  artifact.run.compiler =
-#if defined(__clang__)
-      "clang " __clang_version__;
-#elif defined(__GNUC__)
-      "gcc";
-#else
-      "unknown";
-#endif
+  artifact.run.compiler = compiler_identity();
   artifact.run.bench_flags = "";
 
   artifact.experiment.kind = "isolated_saturated";
@@ -571,8 +574,20 @@ constexpr std::uint64_t kInteractiveAllowanceTicks = 1;
 constexpr std::uint64_t kArrivalSettlementTicks =
     2 * kInteractiveAllowanceTicks;
 
+// One repetition's auditable evidence (design section 9.3: every
+// repetition is persisted regardless of verdict).
+struct ArrivalRepRecord {
+  bool stable = false;
+  std::uint64_t useful_completions = 0;
+  std::uint64_t cohort_admitted = 0;
+  std::uint64_t cohort_deadline_met = 0;
+  std::uint64_t outstanding_growth = 0;
+  std::uint64_t oldest_age_end_ticks = 0;
+};
+
 struct ArrivalCellResult {
   tess::diagnostics::FlowCounters window_flow;
+  std::vector<ArrivalRepRecord> rep_records;
   std::vector<SaturatedRep> reps;
   budgeted::ArrivalSummary totals;
   std::vector<std::uint64_t> lateness_ticks;
@@ -692,9 +707,15 @@ void run_arrival_rep(const RunOptions& options, AstarCell& cell,
   const bool deadline_ok =
       summary.cohort_admitted == 0 ||
       summary.cohort_deadline_met * 100 >= summary.cohort_admitted * 99;
-  if (identities && growth <= growth_allowance && age_ok && deadline_ok) {
+  const bool rep_stable =
+      identities && growth <= growth_allowance && age_ok && deadline_ok;
+  if (rep_stable) {
     ++out.stable_reps;
   }
+  out.rep_records.push_back({rep_stable, summary.useful_completions,
+                             summary.cohort_admitted,
+                             summary.cohort_deadline_met, growth,
+                             window_end.oldest_outstanding_age_ticks});
 
   out.totals.useful_completions += summary.useful_completions;
   out.totals.cohort_admitted += summary.cohort_admitted;
@@ -791,14 +812,23 @@ void run_arrival_cell(const RunOptions& options, AstarCell& cell) {
 // Confirmation: 5 repetitions at 2.5x warmup / 3x measured frames,
 // majority verdict. Both reuse the arrival repetition exactly.
 void run_capacity_search(const RunOptions& options, AstarCell& cell) {
-  for (const Nanos budget : kBudgetsNs) {
+  // Fixed non-monotone budget order: a single adaptive search per
+  // budget cannot rotate across repetitions the way fixed cells do
+  // (section 11.4), so decorrelate elapsed time and thermal drift
+  // from budget size by ordering deterministically out of size order.
+  constexpr std::array<std::size_t, kBudgetsNs.size()> kSearchOrder = {2, 0, 3,
+                                                                       1};
+  for (const std::size_t budget_index : kSearchOrder) {
+    const Nanos budget = kBudgetsNs[budget_index];
     SteadyClock clock;
+    std::vector<std::vector<ArrivalRepRecord>> point_reps;
     auto stable_reps_at = [&](std::uint64_t rate, const RunOptions& cfg,
                               std::uint64_t reps) -> std::uint64_t {
       ArrivalCellResult scratch;
       for (std::uint64_t rep = 0; rep < reps; ++rep) {
         run_arrival_rep(cfg, cell, clock, budget, rate, scratch);
       }
+      point_reps.push_back(scratch.rep_records);
       return scratch.stable_reps;
     };
     auto probe = [&](std::uint64_t rate) -> bool {
@@ -819,6 +849,7 @@ void run_capacity_search(const RunOptions& options, AstarCell& cell) {
     const char* commit = std::getenv("GITHUB_SHA");
     artifact.run.commit = commit != nullptr ? commit : "local";
     artifact.run.machine_fingerprint = "local-uncontrolled";
+    artifact.run.compiler = compiler_identity();
     artifact.scenario_id = "astar-arrival-roomcorridor-512-v1";
     artifact.workload_refs = {"path/astar_unit"};
     artifact.budget_ns = budget;
@@ -826,10 +857,21 @@ void run_capacity_search(const RunOptions& options, AstarCell& cell) {
     artifact.seed_rate = policy.seed_rate;
     artifact.resolution_percent = policy.resolution_percent;
     artifact.points.reserve(found.points.size());
-    for (const budgeted::SearchPoint& point : found.points) {
-      artifact.points.push_back(
-          {point.rate, point.kind == budgeted::PointKind::Confirmation,
-           point.stable});
+    check(point_reps.size() == found.points.size(),
+          "search point evidence out of sync");
+    for (std::size_t i = 0; i < found.points.size(); ++i) {
+      const budgeted::SearchPoint& point = found.points[i];
+      budgeted::SearchArtifactPoint out_point;
+      out_point.rate = point.rate;
+      out_point.confirmation = point.kind == budgeted::PointKind::Confirmation;
+      out_point.stable = point.stable;
+      for (const ArrivalRepRecord& rep : point_reps[i]) {
+        out_point.reps.push_back({rep.stable, rep.useful_completions,
+                                  rep.cohort_admitted, rep.cohort_deadline_met,
+                                  rep.outstanding_growth,
+                                  rep.oldest_age_end_ticks});
+      }
+      artifact.points.push_back(out_point);
     }
     artifact.has_confirmed_stable = found.band.confirmed_stable.has_value();
     artifact.confirmed_stable = found.band.confirmed_stable.value_or(0);

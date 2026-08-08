@@ -575,10 +575,22 @@ inline void append_family(std::string& out, const char* key,
 // in every individual cell artifact and populated only here, where it
 // spans the tested cells). Every tested point is retained.
 
+// Per-repetition evidence for one tested point (design section 9.3:
+// every repetition is persisted regardless of verdict).
+struct SearchPointRep {
+  bool stable = false;
+  std::uint64_t useful_completions = 0;
+  std::uint64_t cohort_admitted = 0;
+  std::uint64_t cohort_deadline_met = 0;
+  std::uint64_t outstanding_growth = 0;
+  std::uint64_t oldest_age_end_ticks = 0;
+};
+
 struct SearchArtifactPoint {
   std::uint64_t rate = 0;
   bool confirmation = false;
   bool stable = false;
+  std::vector<SearchPointRep> reps;
 };
 
 struct SearchArtifact {
@@ -635,8 +647,24 @@ struct SearchArtifact {
     out += "{";
     detail::append_u64(out, "rate", point.rate);
     detail::append_bool(out, "confirmation", point.confirmation);
-    detail::append_bool(out, "stable", point.stable, false);
-    out += "}";
+    detail::append_bool(out, "stable", point.stable);
+    out += "\"reps\": [";
+    for (std::size_t r = 0; r < point.reps.size(); ++r) {
+      const SearchPointRep& rep = point.reps[r];
+      out += "{";
+      detail::append_bool(out, "stable", rep.stable);
+      detail::append_u64(out, "useful_completions", rep.useful_completions);
+      detail::append_u64(out, "cohort_admitted", rep.cohort_admitted);
+      detail::append_u64(out, "cohort_deadline_met", rep.cohort_deadline_met);
+      detail::append_u64(out, "outstanding_growth", rep.outstanding_growth);
+      detail::append_u64(out, "oldest_age_end_ticks", rep.oldest_age_end_ticks,
+                         false);
+      out += "}";
+      if (r + 1 < point.reps.size()) {
+        out += ", ";
+      }
+    }
+    out += "]}";
     if (i + 1 < artifact.points.size()) {
       out += ", ";
     }
