@@ -24,7 +24,19 @@
   `Unreleased` body is empty and the merge is a no-op. An end-to-end dry
   run against the real changelogs is what surfaced both that and a stray
   blank line; neither was visible from the unit tests alone.
-- Assembly is all-or-nothing: an invalid fragment aborts before anything
-  is written or deleted, so a bad fragment cannot half-apply a release.
+- Assembly is all-or-nothing: both documents are rendered and validated
+  before either is written. The first version wrote `CHANGELOG.md` before
+  the decisions file was even read, so a failure there left a half-applied
+  release with the fragments still present, and re-running duplicated the
+  release section -- the "all-or-nothing" claim held only for the
+  invalid-fragment path. A review pass proved that by execution. Assembly
+  now also refuses a version already present, refuses content under
+  `[Unreleased]` that belongs to no category rather than dropping it, and
+  folds the `Unreleased` body even when only decision fragments are
+  pending.
+- Heading detection skips fenced blocks. The decisions file ships a
+  Template that quotes a dated heading inside a fence; matching it split
+  the owning section in half and relocated its body to the bottom of the
+  file, silently and with green CI.
   `--check` runs in the hook-backstop tier so that failure lands on the
   pull request that introduced it rather than on the release.

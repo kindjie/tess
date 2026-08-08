@@ -346,9 +346,12 @@ def test_backdated_decision_fragment_sorts_against_existing_history(
     "## 2026-08-01 - Oldest already recorded\n\n- Two.\n",
     encoding="utf-8",
   )
+  changelog = tmp_path / "CHANGELOG.md"
+  changelog.write_text("# Changelog\n\n## [Unreleased]\n", encoding="utf-8")
   monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", tmp_path / "absent")
   monkeypatch.setattr(ac, "DECISION_FRAGMENTS", decision_dir)
   monkeypatch.setattr(ac, "DECISION_CHANGELOG", decisions)
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
   # Dated BETWEEN the two sections already in the file.
   _write(
     decision_dir,
@@ -367,3 +370,143 @@ def test_backdated_decision_fragment_sorts_against_existing_history(
   assert order == sorted(order), "sections must stay newest-first"
   assert text.startswith("# Design Changelog")
   assert "Preamble." in text
+
+
+def test_decision_fragment_accepts_a_heading_quoted_inside_a_fence(tmp_path):
+  """The decisions file ships a Template block that does exactly this.
+
+  Heading detection skips fenced blocks, so a quoted heading stays part of
+  the section that owns it instead of splitting the fragment at release.
+  """
+  path = _write(
+    tmp_path,
+    "2026-08-07-thing.md",
+    "## 2026-08-07 - Thing\n\n- Why.\n\n```\n## 2026-01-15 - Quoted\n```\n",
+  )
+
+  assert ac.validate_decision_fragment(path) == "2026-08-07"
+
+
+def test_decision_fragment_rejects_a_second_unfenced_heading(tmp_path):
+  """Two real sections in one file would be split and reordered apart."""
+  path = _write(
+    tmp_path,
+    "2026-08-07-thing.md",
+    "## 2026-08-07 - Thing\n\n- Why.\n\n## 2026-01-15 - Another\n\n- Two.\n",
+  )
+
+  with pytest.raises(ac.FragmentError, match="section headings"):
+    ac.validate_decision_fragment(path)
+
+
+def test_split_ignores_headings_inside_fences(tmp_path):
+  text = (
+    "## 2026-08-09 - Real\n\n- One.\n\n```\n## 2026-01-15 - Quoted\n```\n\n"
+    "## 2026-08-01 - Also real\n\n- Two.\n"
+  )
+
+  sections = ac.split_dated_sections(text)
+
+  assert [date for date, _ in sections] == ["2026-08-09", "2026-08-01"]
+  # The quoted heading stays inside the section that owns it.
+  assert "## 2026-01-15 - Quoted" in sections[0][1]
+
+
+def test_release_refuses_unclassified_unreleased_content(tmp_path, monkeypatch):
+  """Silently dropping a hand-written entry is the failure to prevent."""
+  release_dir = tmp_path / "changelog.d"
+  release_dir.mkdir()
+  changelog = tmp_path / "CHANGELOG.md"
+  original = (
+    "# Changelog\n\n## [Unreleased]\n\n- A hand-written entry with no "
+    "category.\n\n## [0.12.0] - 2026-08-05\n\n- Old.\n"
+  )
+  changelog.write_text(original, encoding="utf-8")
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", release_dir)
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", tmp_path / "absent")
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
+  _write(release_dir, "a.fixed.md", "- A fix.\n")
+
+  assert ac.release("0.13.0", "2026-09-01", dry_run=False) == 1
+  assert changelog.read_text(encoding="utf-8") == original
+  assert len(ac._fragment_files(release_dir)) == 1
+
+
+def test_release_refuses_a_version_already_present(tmp_path, monkeypatch):
+  release_dir = tmp_path / "changelog.d"
+  release_dir.mkdir()
+  changelog = tmp_path / "CHANGELOG.md"
+  original = (
+    "# Changelog\n\n## [Unreleased]\n\n## [0.13.0] - 2026-09-01\n\n- Old.\n"
+  )
+  changelog.write_text(original, encoding="utf-8")
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", release_dir)
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", tmp_path / "absent")
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
+  _write(release_dir, "a.fixed.md", "- A fix.\n")
+
+  assert ac.release("0.13.0", "2026-09-01", dry_run=False) == 1
+  assert changelog.read_text(encoding="utf-8") == original
+
+
+def test_decisions_only_release_still_folds_the_unreleased_body(
+  tmp_path, monkeypatch
+):
+  """Otherwise release notes stay unreleased while the run reports success."""
+  decision_dir = tmp_path / "decisions.d"
+  decision_dir.mkdir()
+  changelog = tmp_path / "CHANGELOG.md"
+  changelog.write_text(
+    "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- Already written.\n\n"
+    "## [0.12.0] - 2026-08-05\n\n- Old.\n",
+    encoding="utf-8",
+  )
+  decisions = tmp_path / "decisions.md"
+  decisions.write_text(
+    "# Design Changelog\n\nPreamble.\n\n## 2026-08-01 - Earlier\n\n- Old.\n",
+    encoding="utf-8",
+  )
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", tmp_path / "absent")
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", decision_dir)
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
+  monkeypatch.setattr(ac, "DECISION_CHANGELOG", decisions)
+  _write(decision_dir, "2026-08-07-why.md", "## 2026-08-07 - Why\n\n- Because.\n")
+
+  assert ac.release("0.13.0", "2026-09-01", dry_run=False) == 0
+
+  text = changelog.read_text(encoding="utf-8")
+  assert "## [0.13.0] - 2026-09-01" in text
+  assert "- Already written." in text[text.index("## [0.13.0]") :]
+
+
+def test_release_writes_nothing_when_the_decisions_file_is_unusable(
+  tmp_path, monkeypatch
+):
+  """Rendering both documents must precede writing either.
+
+  The first version wrote CHANGELOG.md before the decisions file was read,
+  so a failure there left a half-applied release with the fragments still
+  present -- and re-running duplicated the release section.
+  """
+  release_dir = tmp_path / "changelog.d"
+  release_dir.mkdir()
+  decision_dir = tmp_path / "decisions.d"
+  decision_dir.mkdir()
+  changelog = tmp_path / "CHANGELOG.md"
+  original = "# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- Entry.\n"
+  changelog.write_text(original, encoding="utf-8")
+  decisions = tmp_path / "decisions.md"
+  decisions.write_text("# Design Changelog\n\nNo dated sections here.\n",
+                       encoding="utf-8")
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", release_dir)
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", decision_dir)
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
+  monkeypatch.setattr(ac, "DECISION_CHANGELOG", decisions)
+  _write(release_dir, "a.fixed.md", "- A fix.\n")
+  _write(decision_dir, "2026-08-07-why.md", "## 2026-08-07 - Why\n\n- Because.\n")
+
+  assert ac.release("0.13.0", "2026-09-01", dry_run=False) == 1
+
+  assert changelog.read_text(encoding="utf-8") == original
+  assert len(ac._fragment_files(release_dir)) == 1
+  assert len(ac._fragment_files(decision_dir)) == 1

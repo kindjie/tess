@@ -128,6 +128,15 @@ def validate_decision_fragment(path: Path) -> str:
       f"{path.name}: must open with {expected!r} so the assembled file "
       f"keeps one heading style and the date matches the filename"
     )
+  headings = heading_lines(body)
+  if len(headings) != 1:
+    # A second heading -- including one quoted at column 0 inside a fence
+    # that this parser skips, or an unfenced one -- would split the
+    # fragment into two sections at release and relocate half of it.
+    raise FragmentError(
+      f"{path.name}: contains {len(headings)} section headings; a fragment "
+      f"must hold exactly one. Indent a quoted heading, or split the file."
+    )
   return date
 
 
@@ -166,15 +175,26 @@ def parse_sections(body: str) -> dict[str, list[str]]:
       if text:
         sections.setdefault(current, []).append(text)
 
+  stray: list[str] = []
   for line in body.splitlines():
     if line.startswith("### "):
       flush()
       buffer = []
       current = line[4:].strip().lower()
       continue
-    if current is not None:
-      buffer.append(line)
+    if current is None:
+      if line.strip():
+        stray.append(line)
+      continue
+    buffer.append(line)
   flush()
+  if stray:
+    # Dropping this silently is the failure this whole mechanism exists to
+    # prevent, so refuse rather than lose it.
+    raise FragmentError(
+      "CHANGELOG.md has content under [Unreleased] that belongs to no "
+      f"'### Category' heading and would be lost: {stray[0][:60]!r}"
+    )
   return sections
 
 
@@ -210,17 +230,41 @@ def render_decision_sections() -> str:
   )
 
 
-DATED_HEADING_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}) - ", re.M)
+DATED_HEADING_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}) - ")
+FENCE_RE = re.compile(r"^\s*(```|~~~)")
+
+
+def heading_lines(text: str) -> list[tuple[int, str | None]]:
+  """Line indices that open a section, skipping fenced blocks.
+
+  A changelog quotes headings inside fences -- the decisions file ships a
+  Template block that does exactly that. Matching them as real headings
+  splits a section in half and relocates its body.
+  """
+  found: list[tuple[int, str | None]] = []
+  in_fence = False
+  for index, line in enumerate(text.splitlines()):
+    if FENCE_RE.match(line):
+      in_fence = not in_fence
+      continue
+    if in_fence:
+      continue
+    match = DATED_HEADING_RE.match(line)
+    if match:
+      found.append((index, match.group(1)))
+    elif line.startswith("## "):
+      found.append((index, None))
+  return found
 
 
 def split_dated_sections(text: str) -> list[tuple[str, str]]:
   """Split a decision changelog body into [(date, section-text), ...]."""
-  matches = list(DATED_HEADING_RE.finditer(text))
+  lines = text.splitlines()
+  starts = [(index, date) for index, date in heading_lines(text) if date]
   sections: list[tuple[str, str]] = []
-  for position, match in enumerate(matches):
-    start = match.start()
-    end = matches[position + 1].start() if position + 1 < len(matches) else len(text)
-    sections.append((match.group(1), text[start:end].strip("\n")))
+  for position, (start, date) in enumerate(starts):
+    end = starts[position + 1][0] if position + 1 < len(starts) else len(lines)
+    sections.append((date, "\n".join(lines[start:end]).strip("\n")))
   return sections
 
 
@@ -253,48 +297,66 @@ def release(version: str, date: str, *, dry_run: bool) -> int:
     print("changelog: no fragments to assemble", file=sys.stderr)
     return 1
 
-  if release_body:
-    text = RELEASE_CHANGELOG.read_text(encoding="utf-8")
-    if UNRELEASED_HEADING not in text:
+  # Compute both documents in full before touching either. A failure while
+  # rendering the second one must not leave the first already released.
+  pending: list[tuple[Path, str]] = []
+  heading = f"## [{version}] - {date}"
+
+  text = RELEASE_CHANGELOG.read_text(encoding="utf-8")
+  if UNRELEASED_HEADING not in text:
+    print(
+      f"changelog: {RELEASE_CHANGELOG.name} has no {UNRELEASED_HEADING}",
+      file=sys.stderr,
+    )
+    return 1
+  if heading in text:
+    print(f"changelog: {heading!r} already exists", file=sys.stderr)
+    return 1
+  head, _, tail = text.partition(UNRELEASED_HEADING)
+  next_release = tail.find("\n## ")
+  if next_release == -1:
+    unreleased_body, remainder = tail, ""
+  else:
+    unreleased_body, remainder = tail[:next_release], tail[next_release + 1 :]
+  try:
+    merged = render_release_sections(parse_sections(unreleased_body))
+  except FragmentError as error:
+    print(f"changelog: {error}", file=sys.stderr)
+    return 1
+  # A decisions-only release must still fold the Unreleased body, or those
+  # entries silently stay unreleased while the run reports success.
+  section = f"{heading}\n\n{merged}\n" if merged else ""
+  if section:
+    pending.append(
+      (RELEASE_CHANGELOG,
+       f"{head}{UNRELEASED_HEADING}\n\n{section}\n{remainder}")
+    )
+
+  if decision_body:
+    decision_text = DECISION_CHANGELOG.read_text(encoding="utf-8")
+    existing = split_dated_sections(decision_text)
+    if not existing:
       print(
-        f"changelog: {RELEASE_CHANGELOG.name} has no {UNRELEASED_HEADING}",
+        f"changelog: {DECISION_CHANGELOG.name} has no dated sections",
         file=sys.stderr,
       )
       return 1
-    head, _, tail = text.partition(UNRELEASED_HEADING)
-    # Everything up to the next release heading is the Unreleased body.
-    next_release = tail.find("\n## ")
-    if next_release == -1:
-      unreleased_body, remainder = tail, ""
-    else:
-      unreleased_body, remainder = tail[:next_release], tail[next_release + 1 :]
-    merged = render_release_sections(parse_sections(unreleased_body))
-    section = f"## [{version}] - {date}\n\n{merged}\n"
-    new = f"{head}{UNRELEASED_HEADING}\n\n{section}\n{remainder}"
-    if dry_run:
-      print(section)
-    else:
-      RELEASE_CHANGELOG.write_text(new, encoding="utf-8")
-
-  if decision_body:
-    text = DECISION_CHANGELOG.read_text(encoding="utf-8")
-    marker = "\n## "
-    index = text.index(marker)
-    preamble, existing = text[:index], text[index:]
-    # Merge pending fragments with the sections already in the file and
-    # sort the union. Prepending would put a backdated fragment above
-    # decisions that predate it, since sorting the pending set alone says
-    # nothing about where it belongs relative to history.
-    sections = split_dated_sections(existing) + split_dated_sections(
-      "\n" + decision_body
-    )
+    first = decision_text.index(f"## {existing[0][0]} - ")
+    sections = existing + split_dated_sections(decision_body)
     sections.sort(key=lambda item: item[0], reverse=True)
-    merged = "\n\n".join(body for _, body in sections)
-    new = f"{preamble.rstrip()}\n\n{merged}\n"
-    if dry_run:
-      print(decision_body)
-    else:
-      DECISION_CHANGELOG.write_text(new, encoding="utf-8")
+    merged_decisions = "\n\n".join(body for _, body in sections)
+    pending.append(
+      (DECISION_CHANGELOG,
+       f"{decision_text[:first].rstrip()}\n\n{merged_decisions}\n")
+    )
+
+  if dry_run:
+    for _, body in pending:
+      print(body[:2000])
+    return 0
+
+  for path, body in pending:
+    path.write_text(body, encoding="utf-8")
 
   if not dry_run:
     for path in _fragment_files(RELEASE_FRAGMENTS):
