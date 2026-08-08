@@ -120,6 +120,9 @@ class RouteCacheScratch {
     oversized_skips_ = 0;
     class_rebinds_ = 0;
     provider_rebinds_ = 0;
+    revalidations_ = 0;
+    scoped_survivals_ = 0;
+    retired_entries_ = 0;
   }
 
   // Entries are keyed on (start, goal) — with staleness carried by the
@@ -168,25 +171,39 @@ class RouteCacheScratch {
 
   // Selects the staleness policy. Switching modes drops every entry
   // unconditionally — entries stored under one mode's semantics are never
-  // served under the other's — independent of any runtime policy flag.
+  // served under the other's — independent of any runtime policy flag, and
+  // resets BOTH staleness detectors to uncaptured: a stale fingerprint (or
+  // snapshot) surviving a flip would re-report the other mode's edits on
+  // the first refresh, spuriously advancing invalidation stats and the
+  // deep-clear cadence.
   void set_staleness(UnitRouteStaleness staleness) noexcept {
     if (staleness_ == staleness) {
       return;
     }
     invalidate();
     staleness_ = staleness;
+    has_world_fingerprint_ = false;
+    world_fingerprint_ = 0;
+    version_snapshot_.clear();
   }
 
   [[nodiscard]] auto staleness() const noexcept -> UnitRouteStaleness {
     return staleness_;
   }
 
-  // Per-route cap on stored dependency pairs (scoped mode). A single route
-  // whose collapsed footprint alone exceeds the cap is skipped without
-  // evicting residents, mirroring the oversized-path rule. Applies to
-  // future stores; previously admitted footprints stay resident.
+  // Total budget for stored dependency pairs (scoped mode), with the same
+  // two-rule lifecycle as the path-node cap: a single route whose collapsed
+  // footprint alone exceeds the budget is skipped without evicting
+  // residents (oversized-skip), and a store whose footprint no longer fits
+  // beside the resident blob invalidates the whole cache first (cap
+  // invalidation). Lowering the budget below the resident blob applies the
+  // same policy immediately, matching set_caps.
   void set_dependency_cap(std::size_t max_dependency_pairs) noexcept {
     max_dependency_pairs_ = max_dependency_pairs;
+    if (deps_.size() > max_dependency_pairs_) {
+      invalidate();
+      ++cap_invalidations_;
+    }
   }
 
   // Scoped-mode analog of invalidate_if_world_changed, and the single
@@ -277,18 +294,12 @@ class RouteCacheScratch {
 
   [[nodiscard]] auto stats() const noexcept -> RouteCacheStats {
     return RouteCacheStats{
-        entries_.size(),
-        hits_,
-        suffix_hits_,
-        misses_,
-        paths_.size(),
-        cap_invalidations_,
-        oversized_skips_,
-        class_rebinds_,
-        provider_rebinds_,
-        entries_.size() - dead_count_,
-        revalidations_,
-        scoped_survivals_,
+        entries_.size(),   hits_,
+        suffix_hits_,      misses_,
+        paths_.size(),     cap_invalidations_,
+        oversized_skips_,  class_rebinds_,
+        provider_rebinds_, entries_.size() - dead_count_,
+        revalidations_,    scoped_survivals_,
         retired_entries_,
     };
   }
@@ -395,6 +406,23 @@ class RouteCacheScratch {
     return nullptr;
   }
 
+  // Scope-ineligible models take the approved exact lifecycle under scoped
+  // mode: a whole-cache invalidation on the first lookup after each epoch
+  // change, instead of accumulating per-entry tombstones. (Their entries
+  // also carry whole_world as a second line of defense for mixed use.)
+  void sync_ineligible_epoch() noexcept {
+    if (staleness_ != UnitRouteStaleness::ScopedFeasible) {
+      return;
+    }
+    if (ineligible_synced_epoch_ == change_epoch_) {
+      return;
+    }
+    if (!entries_.empty()) {
+      invalidate();
+    }
+    ineligible_synced_epoch_ = change_epoch_;
+  }
+
   void retire(Entry& entry) noexcept {
     entry.alive = false;
     ++dead_count_;
@@ -484,7 +512,8 @@ class RouteCacheScratch {
       }
     }
     if (entries_.size() + 1u > max_entries_ ||
-        paths_.size() + result.path.size() > max_path_nodes_) {
+        paths_.size() + result.path.size() > max_path_nodes_ ||
+        deps_.size() + dep_scratch_.size() > max_dependency_pairs_) {
       invalidate();
       ++cap_invalidations_;
     }
@@ -632,6 +661,7 @@ class RouteCacheScratch {
   // (never hashed), and the epoch lazy validation stamps against.
   std::vector<std::uint32_t> version_snapshot_;
   std::uint64_t change_epoch_ = 1;
+  std::uint64_t ineligible_synced_epoch_ = 0;
   std::size_t dead_count_ = 0;
   std::size_t revalidations_ = 0;
   std::size_t scoped_survivals_ = 0;
@@ -751,6 +781,9 @@ auto cached_astar_path(const World& world, PathRequest request,
   // behavior per entry.
   constexpr auto scope_eligible =
       Model::cost_scale == 1 && !Model::has_special_transitions;
+  if constexpr (!scope_eligible) {
+    cache.sync_ineligible_epoch();
+  }
   if (auto* entry = cache.find(request); entry != nullptr) {
     if (cache.validate_for_serve(world, *entry)) {
       ++cache.hits_;

@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <vector>
 
 namespace {
@@ -126,9 +127,13 @@ TEST(TessRouteCacheScoped, CrossedChunkEditRetiresAndFreshEntryServes) {
   EXPECT_EQ(cache.stats().hits, 1u);
 }
 
-// Suffix slots owned by a retired entry must be overwritten by the next
-// store covering the same (node, goal): a dead occupant must not suppress
-// suffix reuse forever.
+// Suffix slots owned by a retired entry must be overwritten IN PLACE by the
+// next store covering the same (node, goal): a dead occupant must not
+// suppress suffix reuse forever. The sizes below keep the suffix table from
+// growing between the two stores (growth would drop dead slots and bypass
+// the overwrite branch this test pins): entry A (8 nodes) sizes the table
+// to 32, entry B (11 nodes, same goal) grows it to 64 with 10 occupied
+// slots, and B's 11-node re-store needs (10+11+1)*2 = 44 <= 64 — no growth.
 TEST(TessRouteCacheScoped, DeadSuffixOccupantIsReplacedByFreshStore) {
   tess::AlwaysResidentWorld<TopDown2D, Schema> world;
   fill_passable(world, true);
@@ -138,22 +143,115 @@ TEST(TessRouteCacheScoped, DeadSuffixOccupantIsReplacedByFreshStore) {
   cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
   ASSERT_FALSE(cache.refresh_if_world_changed(world));
 
+  // A: column x=3, footprint chunks (0,0)+(0,1). B: (5,0) joins A's column
+  // at (3,0), footprint adds chunk (1,0); its exclusive suffix slots are
+  // (5,0) and (4,0).
+  const auto entry_a = route(world, {3, 0, 0}, {3, 7, 0}, scratch, cache);
+  ASSERT_EQ(entry_a.status, tess::PathStatus::Found);
+  const auto entry_b = route(world, {5, 0, 0}, {3, 7, 0}, scratch, cache);
+  ASSERT_EQ(entry_b.status, tess::PathStatus::Found);
+  ASSERT_EQ(cache.stats().entries, 2u);
+
+  // Edit inside chunk (1,0), off B's tiles but inside its footprint: B
+  // retires; A survives (its footprint excludes that chunk).
+  set_passable_marked(world, {5, 1, 0}, false);
+  EXPECT_TRUE(cache.refresh_if_world_changed(world));
+
+  // Re-plan B: the same route re-stores, and its (5,0)/(4,0) suffix slots
+  // find their DEAD former owner in the canonical slot — the in-place
+  // overwrite branch, since no growth occurs at these sizes.
+  const auto fresh_b = route(world, {5, 0, 0}, {3, 7, 0}, scratch, cache);
+  expect_legal(world, fresh_b);
+  EXPECT_EQ(cache.stats().retired_entries, 1u);
+
+  // A suffix query at B's exclusive node must hit the LIVE fresh entry,
+  // not miss forever behind the dead slot.
+  const auto suffix = route(world, {4, 0, 0}, {3, 7, 0}, scratch, cache);
+  expect_legal(world, suffix);
+  EXPECT_EQ(cache.stats().suffix_hits, 1u);
+}
+
+// A cap of one entry makes the first retirement cross the half-dead
+// threshold and compact (invalidate) from inside retire() while the serve
+// path still holds the entry reference: the reference must never be touched
+// after a failed validation. ASan pins the boundary.
+TEST(TessRouteCacheScoped, RetireCompactionDuringServeIsSafe) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::PathScratch scratch;
+  tess::RouteCacheScratch cache;
+  cache.set_caps(1, tess::RouteCacheScratch::default_max_path_nodes);
+  cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
+  ASSERT_FALSE(cache.refresh_if_world_changed(world));
+
   const auto first = route(world, {3, 0, 0}, {3, 7, 0}, scratch, cache);
   ASSERT_EQ(first.status, tess::PathStatus::Found);
 
-  // Retire it via an on-route edit, then re-plan: the fresh detour route
-  // re-covers suffix nodes the dead entry owned (e.g. its tail at (3,6)).
   set_passable_marked(world, {3, 4, 0}, false);
   EXPECT_TRUE(cache.refresh_if_world_changed(world));
-  const auto detour = route(world, {3, 0, 0}, {3, 7, 0}, scratch, cache);
-  expect_legal(world, detour);
 
-  // A suffix query at a node on the fresh route's tail must be a suffix
-  // hit against the LIVE entry, not a permanent miss behind the dead slot.
-  const auto tail = detour.path[detour.path.size() - 2u];
-  const auto suffix = route(world, tail, {3, 7, 0}, scratch, cache);
-  expect_legal(world, suffix);
-  EXPECT_EQ(cache.stats().suffix_hits, 1u);
+  const auto after = route(world, {3, 0, 0}, {3, 7, 0}, scratch, cache);
+  expect_legal(world, after);
+  EXPECT_EQ(cache.stats().retired_entries, 1u);
+}
+
+// Seeded arbitrary-edit property: across toggling (blocking AND unblocking)
+// edit sequences, every served Found route is legal under the current world
+// with a truthful cost. This is the test that catches incomplete dependency
+// capture — a route surviving an edit inside a chunk it crosses would serve
+// an illegal step here.
+TEST(TessRouteCacheScoped, ToggledEditsAlwaysServeLegalRoutes) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::PathScratch scratch;
+  tess::RouteCacheScratch cache;
+  cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
+  ASSERT_FALSE(cache.refresh_if_world_changed(world));
+
+  const std::array<tess::PathRequest, 4> requests = {
+      tess::PathRequest{{0, 0, 0}, {7, 7, 0}},
+      tess::PathRequest{{3, 0, 0}, {3, 7, 0}},
+      tess::PathRequest{{7, 0, 0}, {0, 7, 0}},
+      tess::PathRequest{{0, 3, 0}, {7, 4, 0}},
+  };
+
+  auto rng = std::uint64_t{0x9e3779b97f4a7c15ull};
+  const auto next = [&rng] {
+    rng ^= rng << 13u;
+    rng ^= rng >> 7u;
+    rng ^= rng << 17u;
+    return rng;
+  };
+  for (int step = 0; step < 200; ++step) {
+    // Toggle a tile that is never a request endpoint.
+    const auto pick = next();
+    const auto x = static_cast<std::int64_t>(pick % 8u);
+    const auto y = static_cast<std::int64_t>((pick >> 8u) % 8u);
+    const auto endpoint = [&] {
+      for (const auto& request : requests) {
+        if ((request.start.x == x && request.start.y == y) ||
+            (request.goal.x == x && request.goal.y == y)) {
+          return true;
+        }
+      }
+      return false;
+    }();
+    if (!endpoint) {
+      const auto coord = tess::Coord3{x, y, 0};
+      const auto current = world.template field<PassableTag>(coord);
+      set_passable_marked(world, coord, !current);
+    }
+    (void)cache.refresh_if_world_changed(world);
+    for (const auto& request : requests) {
+      const auto result =
+          route(world, request.start, request.goal, scratch, cache);
+      if (result.status == tess::PathStatus::Found) {
+        expect_legal(world, result);
+      }
+    }
+  }
 }
 
 // Non-Found results are cached within an epoch (repeat requests hit) and
@@ -180,8 +278,19 @@ TEST(TessRouteCacheScoped, NoPathCachedPerEpochAndRetiredOnAnyChange) {
   EXPECT_EQ(repeat.status, tess::PathStatus::NoPath);
   EXPECT_EQ(cache.stats().hits, 1u);
 
-  // Unblock the corner: chunk (1,1) changes, epoch bumps, and the stale
-  // NoPath must NOT be served -- the fresh search finds the opened route.
+  // An edit in a chunk UNRELATED to the failure (top-left corner, chunk
+  // (0,0) tile far from the walls) must still retire it: non-Found entries
+  // carry whole-world sensitivity, not endpoint sensitivity. The next
+  // request misses and recomputes — still NoPath, the walls are intact.
+  set_passable_marked(world, {1, 1, 0}, false);
+  EXPECT_TRUE(cache.refresh_if_world_changed(world));
+  const auto recomputed = route(world, {0, 0, 0}, {7, 7, 0}, scratch, cache);
+  EXPECT_EQ(recomputed.status, tess::PathStatus::NoPath);
+  EXPECT_EQ(cache.stats().retired_entries, 1u);
+  EXPECT_EQ(cache.stats().misses, 2u);
+
+  // Unblock the corner: the stale NoPath must NOT be served -- the fresh
+  // search finds the opened route.
   set_passable_marked(world, {6, 7, 0}, true);
   EXPECT_TRUE(cache.refresh_if_world_changed(world));
   const auto opened = route(world, {0, 0, 0}, {7, 7, 0}, scratch, cache);
@@ -246,6 +355,35 @@ TEST(TessRouteCacheScoped, OversizedDependencyFootprintIsSkipped) {
   EXPECT_EQ(cache.stats().hits, 1u);
 }
 
+// The dependency budget is a TOTAL: a store whose footprint fits alone but
+// not beside the resident blob invalidates the whole cache first, the same
+// lifecycle as the entry and path-node caps.
+TEST(TessRouteCacheScoped, AggregateDependencyBudgetInvalidates) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+
+  tess::PathScratch scratch;
+  tess::RouteCacheScratch cache;
+  cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
+  cache.set_dependency_cap(2);
+  ASSERT_FALSE(cache.refresh_if_world_changed(world));
+
+  // Two single-chunk routes fill the budget exactly.
+  ASSERT_EQ(route(world, {0, 0, 0}, {2, 0, 0}, scratch, cache).status,
+            tess::PathStatus::Found);
+  ASSERT_EQ(route(world, {4, 0, 0}, {6, 0, 0}, scratch, cache).status,
+            tess::PathStatus::Found);
+  ASSERT_EQ(cache.stats().entries, 2u);
+  ASSERT_EQ(cache.stats().cap_invalidations, 0u);
+
+  // A third single-chunk route fits alone but not beside the residents:
+  // whole-cache invalidation, then the fresh store.
+  ASSERT_EQ(route(world, {0, 4, 0}, {2, 4, 0}, scratch, cache).status,
+            tess::PathStatus::Found);
+  EXPECT_EQ(cache.stats().cap_invalidations, 1u);
+  EXPECT_EQ(cache.stats().entries, 1u);
+}
+
 // Flipping the staleness mode invalidates the whole cache: entries stored
 // under one mode's semantics are never served under the other's.
 TEST(TessRouteCacheScoped, ModeFlipDropsEntries) {
@@ -265,8 +403,10 @@ TEST(TessRouteCacheScoped, ModeFlipDropsEntries) {
   EXPECT_EQ(cache.stats().entries, 0u);
 }
 
-// Identical (call, edit) sequences produce identical hit/miss/serve traces:
-// the scoped machinery is deterministic.
+// Identical (call, edit) sequences produce identical PER-CALL traces: after
+// every serve the full (status, cost, stats-delta) tuple is recorded, so
+// two runs that reach the same totals through different hit/miss orders
+// would still differ.
 TEST(TessRouteCacheScoped, IdenticalSequencesProduceIdenticalTraces) {
   const auto run = [] {
     tess::AlwaysResidentWorld<TopDown2D, Schema> world;
@@ -276,7 +416,24 @@ TEST(TessRouteCacheScoped, IdenticalSequencesProduceIdenticalTraces) {
     cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
     (void)cache.refresh_if_world_changed(world);
 
-    std::vector<std::uint32_t> costs;
+    std::vector<std::uint32_t> trace;
+    auto previous = cache.stats();
+    const auto record = [&](const tess::PathResult& result) {
+      const auto now = cache.stats();
+      trace.push_back(static_cast<std::uint32_t>(result.status));
+      trace.push_back(result.status == tess::PathStatus::Found ? result.cost
+                                                               : 0xffffu);
+      trace.push_back(static_cast<std::uint32_t>(now.hits - previous.hits));
+      trace.push_back(
+          static_cast<std::uint32_t>(now.suffix_hits - previous.suffix_hits));
+      trace.push_back(static_cast<std::uint32_t>(now.misses - previous.misses));
+      trace.push_back(static_cast<std::uint32_t>(now.retired_entries -
+                                                 previous.retired_entries));
+      trace.push_back(static_cast<std::uint32_t>(now.revalidations -
+                                                 previous.revalidations));
+      previous = now;
+    };
+
     const std::array<tess::Coord3, 4> edits = {
         tess::Coord3{6, 1, 0}, tess::Coord3{3, 4, 0}, tess::Coord3{1, 6, 0},
         tess::Coord3{5, 2, 0}};
@@ -284,19 +441,10 @@ TEST(TessRouteCacheScoped, IdenticalSequencesProduceIdenticalTraces) {
       set_passable_marked(world, edit, false);
       (void)cache.refresh_if_world_changed(world);
       for (std::int64_t x = 0; x < 8; x += 2) {
-        const auto result =
-            route(world, {x, 0, 0}, {3, 7, 0}, scratch, cache);
-        costs.push_back(result.status == tess::PathStatus::Found ? result.cost
-                                                                 : 0xffffu);
+        record(route(world, {x, 0, 0}, {3, 7, 0}, scratch, cache));
       }
     }
-    const auto stats = cache.stats();
-    costs.push_back(static_cast<std::uint32_t>(stats.hits));
-    costs.push_back(static_cast<std::uint32_t>(stats.suffix_hits));
-    costs.push_back(static_cast<std::uint32_t>(stats.misses));
-    costs.push_back(static_cast<std::uint32_t>(stats.retired_entries));
-    costs.push_back(static_cast<std::uint32_t>(stats.revalidations));
-    return costs;
+    return trace;
   };
 
   EXPECT_EQ(run(), run());
