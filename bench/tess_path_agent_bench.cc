@@ -261,6 +261,116 @@ void BM_path_agent_tick_100_unit_dirty_world_edit_512x512(
   state.counters["runtime.path_nodes"] = static_cast<double>(stats.path_nodes);
 }
 
+// Scoped-staleness variants of the dirty world-edit tick. Both run the same
+// 100-agent replan-every-tick workload under
+// UnitRouteStaleness::ScopedFeasible; they differ only in where the toggled
+// edit lands. The off-path cell edits chunk (8,15), which the X-first routes
+// from row-0 starts to (511,511) provably never enter (checked outside the
+// timed region), so surviving entries serve every tick — the scoped win. The
+// on-path cell toggles tiles beside the goal inside chunk (15,15): every
+// route terminates there, no replan can route around it (an edit elsewhere
+// in a corridor just teaches replans to avoid that chunk — measured before
+// this cell was pinned to the goal chunk), so every entry retires and
+// repopulates each tick — scoped mode's honest cost when invalidation is
+// genuinely unavoidable. The goal tile itself is never toggled.
+template <bool OffPath>
+void scoped_world_edit_tick(benchmark::State& state) {
+  PathWorld world;
+  fill_passable(world, 1);
+
+  std::array<tess::PathAgentState, 100> agents{};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    agents[i].position = tess::Coord3{offset % 16, offset / 16, 0};
+    tess::set_path_agent_goal(agents[i], tess::Coord3{511, 511, 0});
+  }
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  const auto options = tess::PathAgentTickOptions{
+      .max_steps = 0,
+      .cache_policy =
+          {
+              .clear_every_world_change = 4,
+              .invalidate_unit_route_cache_on_world_change = true,
+              .unit_route_staleness = tess::UnitRouteStaleness::ScopedFeasible,
+          },
+  };
+
+  const auto edit_coord = [](std::uint64_t edits) {
+    return OffPath
+               ? tess::Coord3{256, 480 + static_cast<std::int64_t>(edits % 32),
+                              0}
+               : tess::Coord3{480 + static_cast<std::int64_t>(edits % 31), 511,
+                              0};
+  };
+  const auto edit_chunk = tess::chunk_key<PathScaleShape>(
+      tess::tile_key<PathScaleShape>(edit_coord(0)));
+
+  // Warm outside the timed region: plan every agent once so entries exist,
+  // then hold the off-path cell to its premise — no served route may enter
+  // the edited chunk, or the "off-path" label lies (chunk-level, not tile-
+  // level, disjointness; the on-path cell asserts the opposite).
+  tess::PathAgentTickStats tick_stats;
+  tess::mark_pathing_dirty(tick_state);
+  tick_stats = tess::tick_unit_path_agents<PathWorld, PassableTag>(
+      tick_state, world, agents, runtime, options);
+  check_all_agents_found(tick_stats.pathing, agents.size());
+  auto edit_chunk_touched = false;
+  for (const auto& result : runtime.results()) {
+    for (const auto node : result.path) {
+      if (tess::chunk_key<PathScaleShape>(
+              tess::tile_key<PathScaleShape>(node)) == edit_chunk) {
+        edit_chunk_touched = true;
+      }
+    }
+  }
+  bench_check(edit_chunk_touched != OffPath,
+              OffPath ? "off-path edit chunk intersects a served route"
+                      : "on-path edit chunk missed every served route");
+
+  std::uint64_t edits = 0;
+  for (auto _ : state) {
+    const auto coord = edit_coord(edits);
+    const auto passable = edits % 2 == 0;
+    world.template field<PassableTag>(coord) = passable ? 1 : 0;
+    world.mark_dirty(
+        tess::chunk_key<PathScaleShape>(tess::tile_key<PathScaleShape>(coord)),
+        1u, tess::Box3{coord, tess::Extent3{1, 1, 1}});
+    ++edits;
+
+    tess::mark_pathing_dirty(tick_state);
+    tick_stats = tess::tick_unit_path_agents<PathWorld, PassableTag>(
+        tick_state, world, agents, runtime, options);
+    benchmark::DoNotOptimize(tick_stats.pathing.found);
+    benchmark::DoNotOptimize(runtime.results().data());
+  }
+
+  record_tick_counters(state, tick_stats);
+  check_all_agents_found(tick_stats.pathing, agents.size());
+  record_agent_counters(state, tick_stats.pathing);
+  const auto stats = runtime.stats();
+  record_route_cache_counters(state, stats.route_cache);
+  state.counters["cache.revalidations"] =
+      static_cast<double>(stats.route_cache.revalidations);
+  state.counters["cache.scoped_survivals"] =
+      static_cast<double>(stats.route_cache.scoped_survivals);
+  state.counters["cache.retired_entries"] =
+      static_cast<double>(stats.route_cache.retired_entries);
+  state.counters["runtime.path_nodes"] = static_cast<double>(stats.path_nodes);
+}
+
+void BM_path_agent_tick_100_unit_dirty_offpath_edit_scoped_512x512(
+    benchmark::State& state) {
+  scoped_world_edit_tick<true>(state);
+}
+
+void BM_path_agent_tick_100_unit_dirty_onpath_edit_scoped_512x512(
+    benchmark::State& state) {
+  scoped_world_edit_tick<false>(state);
+}
+
 void BM_path_agent_runtime_100_weighted_shared_512x512(
     benchmark::State& state) {
   WeightedPathWorld world;
@@ -620,6 +730,10 @@ BENCHMARK(BM_path_agent_tick_100_unit_clean_512x512)
     ->Name("path/agent_tick_100_unit_clean_512x512");
 BENCHMARK(BM_path_agent_tick_100_unit_dirty_world_edit_512x512)
     ->Name("path/agent_tick_100_unit_dirty_world_edit_512x512");
+BENCHMARK(BM_path_agent_tick_100_unit_dirty_offpath_edit_scoped_512x512)
+    ->Name("path/agent_tick_100_unit_dirty_offpath_edit_scoped_512x512");
+BENCHMARK(BM_path_agent_tick_100_unit_dirty_onpath_edit_scoped_512x512)
+    ->Name("path/agent_tick_100_unit_dirty_onpath_edit_scoped_512x512");
 BENCHMARK(BM_path_agent_runtime_100_weighted_shared_512x512)
     ->Name("path/agent_runtime_100_weighted_shared_512x512");
 BENCHMARK(BM_path_agent_tick_100_weighted_shared_dirty_512x512)
