@@ -63,39 +63,45 @@ constexpr std::size_t ChunkCount = 16;
 // would change `conflict_handle` for callers that pin it.
 TEST(TessQueuedPlanningIndex, IndexedHazardMatchesLinearScan) {
   World world;
-  auto rng = std::mt19937{20260807};
 
-  for (int trial = 0; trial < 64; ++trial) {
-    auto accepted = std::vector<tess::PlannedOperation>{};
-    accepted.reserve(48);
-    auto index = tess::detail::ChunkOperationIndex{};
+  for (const auto seed : {11u, 29u, 47u, 101u}) {
+    auto rng = std::mt19937{seed};
+    for (int trial = 0; trial < 16; ++trial) {
+      auto accepted = std::vector<tess::PlannedOperation>{};
+      accepted.reserve(48);
+      auto index = tess::detail::ChunkOperationIndex{};
 
-    for (std::uint32_t op = 0; op < 48; ++op) {
-      auto queued = tess::QueuedOperation{};
-      queued.handle = tess::OpHandle{op};
-      queued.id = tess::OpId{op};
-      queued.field_access = random_field_access(rng);
-      queued.write_policy = tess::WritePolicy::UniquePerChunk;
+      for (std::uint32_t op = 0; op < 48; ++op) {
+        auto queued = tess::QueuedOperation{};
+        queued.handle = tess::OpHandle{op};
+        queued.id = tess::OpId{op};
+        queued.field_access = random_field_access(rng);
+        queued.write_policy = tess::WritePolicy::UniquePerChunk;
 
-      const auto chunks = random_chunks(rng);
-      auto created = tess::PlannedOperation::create(world, queued, chunks);
-      ASSERT_EQ(created.status, tess::PlannedOperationCreateStatus::Created);
-      auto& candidate = *created.operation;
+        const auto chunks = random_chunks(rng);
+        auto created = tess::PlannedOperation::create(world, queued, chunks);
+        ASSERT_EQ(created.status, tess::PlannedOperationCreateStatus::Created);
+        if (!created.operation.has_value()) {
+          FAIL() << "creation reported Created without an operation";
+          return;
+        }
+        auto& candidate = *created.operation;
 
-      const auto* linear = tess::detail::find_hazard(
-          {accepted.data(), accepted.size()}, candidate);
-      const auto* indexed = tess::detail::find_hazard_indexed(
-          index, {accepted.data(), accepted.size()}, candidate);
-      ASSERT_EQ(linear, indexed)
-          << "trial " << trial << " op " << op
-          << ": indexed lookup blamed a different operation";
+        const auto* linear = tess::detail::find_hazard(
+            {accepted.data(), accepted.size()}, candidate);
+        const auto* indexed = tess::detail::find_hazard_indexed(
+            index, {accepted.data(), accepted.size()}, candidate);
+        ASSERT_EQ(linear, indexed)
+            << "seed " << seed << " trial " << trial << " op " << op
+            << ": indexed lookup blamed a different operation";
 
-      if (linear != nullptr) {
-        continue;
+        if (linear != nullptr) {
+          continue;
+        }
+        index.insert(candidate.chunks(),
+                     static_cast<std::uint32_t>(accepted.size()));
+        accepted.push_back(std::move(candidate));
       }
-      index.insert(candidate.chunks(),
-                   static_cast<std::uint32_t>(accepted.size()));
-      accepted.push_back(std::move(candidate));
     }
   }
 }
@@ -145,61 +151,62 @@ TEST(TessQueuedPlanningIndex, LookupsSurviveRehash) {
 // layout rather than a pointer, so compare the whole layout against the
 // original all-pairs algorithm.
 TEST(TessQueuedPlanningIndex, PhaseGroupingMatchesAllPairsScan) {
-  auto rng = std::mt19937{20260808};
+  for (const auto seed : {13u, 31u, 53u, 103u}) {
+    auto rng = std::mt19937{seed};
+    for (int trial = 0; trial < 16; ++trial) {
+      World world;
+      tess::FrameOps ops;
+      for (std::uint32_t op = 0; op < 24; ++op) {
+        const auto chunks = random_chunks(rng);
+        const auto access = random_field_access(rng);
+        // Parallel phase planning rejects any policy outside these two, and
+        // a rejected plan would exercise none of the grouping loop.
+        const auto policy = access.write_mask == 0
+                                ? tess::WritePolicy::ReadOnly
+                                : tess::WritePolicy::UniquePerChunk;
+        (void)ops.update_field(tess::DomainDesc::explicit_chunks(chunks),
+                               access, policy);
+      }
 
-  for (int trial = 0; trial < 64; ++trial) {
-    World world;
-    tess::FrameOps ops;
-    for (std::uint32_t op = 0; op < 24; ++op) {
-      const auto chunks = random_chunks(rng);
-      const auto access = random_field_access(rng);
-      // Parallel phase planning rejects any policy outside these two, and
-      // a rejected plan would exercise none of the grouping loop.
-      const auto policy = access.write_mask == 0
-                              ? tess::WritePolicy::ReadOnly
-                              : tess::WritePolicy::UniquePerChunk;
-      (void)ops.update_field(tess::DomainDesc::explicit_chunks(chunks), access,
-                             policy);
-    }
+      const auto report = tess::plan_operations(world, ops.operations());
+      const auto& plan = report.plan();
+      const auto operations = plan.operations();
 
-    const auto report = tess::plan_operations(world, ops.operations());
-    const auto& plan = report.plan();
-    const auto operations = plan.operations();
-
-    // Reference: the pre-index algorithm, comparing each operation against
-    // every member of the open phase.
-    auto expected_first = std::vector<std::size_t>{};
-    auto expected_count = std::vector<std::size_t>{};
-    for (std::size_t i = 0; i < operations.size(); ++i) {
-      auto conflicts = expected_first.empty();
-      if (!conflicts) {
-        const auto first = expected_first.back();
-        const auto end = first + expected_count.back();
-        for (std::size_t j = first; j < end; ++j) {
-          if (tess::detail::parallel_phase_conflict(operations[j],
-                                                    operations[i])) {
-            conflicts = true;
-            break;
+      // Reference: the pre-index algorithm, comparing each operation against
+      // every member of the open phase.
+      auto expected_first = std::vector<std::size_t>{};
+      auto expected_count = std::vector<std::size_t>{};
+      for (std::size_t i = 0; i < operations.size(); ++i) {
+        auto conflicts = expected_first.empty();
+        if (!conflicts) {
+          const auto first = expected_first.back();
+          const auto end = first + expected_count.back();
+          for (std::size_t j = first; j < end; ++j) {
+            if (tess::detail::parallel_phase_conflict(operations[j],
+                                                      operations[i])) {
+              conflicts = true;
+              break;
+            }
           }
         }
+        if (conflicts) {
+          expected_first.push_back(i);
+          expected_count.push_back(1);
+        } else {
+          ++expected_count.back();
+        }
       }
-      if (conflicts) {
-        expected_first.push_back(i);
-        expected_count.push_back(1);
-      } else {
-        ++expected_count.back();
-      }
-    }
 
-    const auto phases = tess::plan_parallel_execution_phases(plan);
-    ASSERT_TRUE(phases.ok());
-    ASSERT_EQ(phases.phases().size(), expected_first.size())
-        << "trial " << trial << ": phase count diverged";
-    for (std::size_t p = 0; p < expected_first.size(); ++p) {
-      EXPECT_EQ(phases.phases()[p].first_operation(), expected_first[p])
-          << "trial " << trial << " phase " << p;
-      EXPECT_EQ(phases.phases()[p].operation_count(), expected_count[p])
-          << "trial " << trial << " phase " << p;
+      const auto phases = tess::plan_parallel_execution_phases(plan);
+      ASSERT_TRUE(phases.ok());
+      ASSERT_EQ(phases.phases().size(), expected_first.size())
+          << "seed " << seed << " trial " << trial << ": phase count diverged";
+      for (std::size_t p = 0; p < expected_first.size(); ++p) {
+        EXPECT_EQ(phases.phases()[p].first_operation(), expected_first[p])
+            << "seed " << seed << " trial " << trial << " phase " << p;
+        EXPECT_EQ(phases.phases()[p].operation_count(), expected_count[p])
+            << "seed " << seed << " trial " << trial << " phase " << p;
+      }
     }
   }
 }
