@@ -48,10 +48,23 @@ Entries from 2026-07-12 and earlier are in
   it is enabled (legal, truthful cost, previously optimal;
   blocking-only edits concede nothing). Bootstrap ceilings at 4x the M3
   readings per the standing protocol; recalibrate from CI baselines.
-- Follow-up: on-device before/after re-profile when the Steam Deck
-  returns (the archived campaign perf.data is the "before");
-  sparse-world scoped validation is a separate design if a workload
-  demands it.
+- Follow-up, CLOSED 2026-08-08 — on-device verification: the Deck
+  returned and the before/after ran at merged main (`20b280d`, same
+  unpinned protocol as the campaign). Timings: scoped steady state
+  394 us against the 1.313 ms default cell (3.3x, matching the 3.2x
+  M3 ratio); forced worst case 648 us; default cell and clean tick
+  unchanged against the campaign (1.31 vs 1.37 ms, 793 vs 778 ns).
+  Profiles: `suffix_place` — 41-45% of the before profile and of the
+  after-binary's default-mode control — is absent from the scoped
+  steady state entirely; the scoped tick is ~80% route copies
+  (`_M_range_insert` plus the libc bulk-copy loop, IPC 0.98 at 24.7%
+  L1d miss), which is the design's predicted hit-serving floor. The
+  control's unchanged shape and the scoped cell's vanished hotspot
+  are the two halves of the claim, both observed on target hardware.
+  Raw perf.data archived off-repository beside the campaign data.
+- Follow-up, open: sparse-world scoped validation is a separate design
+  if a workload demands it.
+
 ## 2026-08-08 - Field-product stores hand their displaced buffers back
 
 - Area: `FieldProductCache::store` and the two `PathRequestRuntime` call
