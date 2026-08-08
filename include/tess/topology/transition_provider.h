@@ -173,10 +173,14 @@ enum class StairDirection : std::uint8_t {
 // write bumps nothing. A graph built before the edit keeps reporting fresh,
 // so `precheck_path` can return a definitive, wrong `Unreachable` for a
 // route the new stair just opened. After editing any field a movement class
-// or provider reads, mark the owning chunk topology-dirty and rebuild. This
-// provider cannot detect the edit for you: it is an empty type, so its
-// instance identity is always null and its revision always zero, and both
-// stamps compare equal across any edit.
+// or provider reads, mark the affected chunks topology-dirty and rebuild.
+// This provider reads only the emitting chunk's own field, so the owning
+// chunk plus its face neighbours suffices here; a provider that reads
+// outside the chunk it emits for must dirty every chunk whose transitions
+// the edit can change, carry a revision, or force a full rebuild (see
+// docs/architecture/topology.md). This provider cannot detect the edit for
+// you: it is an empty type, so its instance identity is always null and its
+// revision always zero, and both stamps compare equal across any edit.
 /// Emits bidirectional stair transitions encoded by an integral world field.
 template <typename StairTag>
 struct StairTransitions {

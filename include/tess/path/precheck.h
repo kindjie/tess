@@ -59,8 +59,10 @@ enum class PrecheckStatus : std::uint8_t {
 // `topology_version`. So editing a field that a movement class or its
 // provider reads -- opening a wall, placing a stair -- leaves this reporting
 // a fresh graph, and a caller acting on `precheck_rules_out_path` skips a
-// search that would have succeeded. Mark the owning chunk topology-dirty
-// after such an edit; see `docs/architecture/topology.md`. The built-in
+// search that would have succeeded. Mark every chunk whose transitions the
+// edit can change topology-dirty afterwards -- for an arbitrary provider
+// that is not necessarily just the edited tile's chunk; see
+// `docs/architecture/topology.md`. The built-in
 // `StairTransitions` cannot compensate through provider stamps either: it is
 // an empty type, so its instance identity is always null and its revision
 // always zero.

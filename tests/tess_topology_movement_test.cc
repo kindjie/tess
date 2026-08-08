@@ -371,6 +371,23 @@ struct EastwardHop {
   }
 };
 
+// Like EastwardHop, but emitted ONLY for a chunk that does not own its
+// source: enumerated for the east chunk, it emits an edge out of the west
+// chunk. The portal pass drops it as a contract violation; the sparse
+// missing-reach pass must drop it identically, or the two disagree about
+// the same edge -- no portal, yet the source region still flagged as
+// reaching missing topology.
+struct MisownedEastwardHop {
+  template <typename WorldT, typename Sink>
+  void for_each_transition(const WorldT&, tess::ChunkKey chunk,
+                           Sink&& sink) const {
+    if (chunk.value != 2) {
+      return;
+    }
+    sink(tess::Coord3{30, 0, 0}, tess::Coord3{33, 0, 0});
+  }
+};
+
 TEST(TessTopologyMovement, DefaultProviderBuildIsIdenticalToProviderless) {
   World world;
   fill_passable(world, 1);
@@ -442,6 +459,44 @@ TEST(TessTopologyMovement, ProviderIncrementalUpdateEqualsFullRebuild) {
 // grow the portal set without bound, and incremental output must still match
 // a full rebuild. Enforced rather than asserted: an assertion would leave the
 // divergence live in exactly the builds where assertions are compiled out.
+// Ownership rejection must be consistent across every enumeration of a
+// provider. Dropping a misowned edge from the portal pass while the sparse
+// missing-reach pass still honored it reported Indeterminate -- "a route
+// might exist through unloaded chunks" -- for an edge the graph had already
+// refused to build a portal for.
+TEST(TessTopologyMovement, MisownedProviderEdgeDoesNotMarkMissingReach) {
+  using ThreeChunk =
+      tess::Shape<tess::Extent3{96, 32, 1}, tess::Extent3{32, 32, 1}>;
+  using Sparse = tess::SparseResidentWorld<ThreeChunk, Schema>;
+
+  Sparse world{tess::ResidencyConfig{3 * Sparse::page_byte_size}};
+  for (const auto key : {tess::ChunkKey{0}, tess::ChunkKey{2}}) {
+    world.ensure_resident(key);
+    auto& page = world.chunk(key);
+    auto span = page.template field_span<PassableTag>();
+    std::fill(span.begin(), span.end(), std::uint8_t{1});
+  }
+  auto& west = world.chunk(tess::ChunkKey{0});
+  for (std::uint64_t y = 0; y < 32; ++y) {
+    west.field<PassableTag>(
+        tess::local_tile_id<ThreeChunk>(tess::LocalCoord3{31, y, 0})) = 0;
+  }
+
+  tess::LocalTopologyScratch scratch;
+  const auto start = tess::Coord3{0, 0, 0};
+  const auto goal = tess::Coord3{70, 0, 0};
+  tess::RegionGraphScratch reach;
+
+  tess::SparseRegionGraph graph;
+  tess::build_region_graph<Sparse, Walker>(world, scratch, graph,
+                                           MisownedEastwardHop{});
+
+  // The contract-violating edge contributes nothing, in either pass, so the
+  // answer matches the providerless build rather than degrading.
+  EXPECT_EQ(tess::reachable<ThreeChunk>(graph, start, goal, reach).status,
+            tess::ReachabilityStatus::Unreachable);
+}
+
 TEST(TessTopologyMovement, MisownedProviderTransitionsNeverAccumulate) {
   World world;
   fill_passable(world, 1);
