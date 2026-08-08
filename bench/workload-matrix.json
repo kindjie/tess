@@ -561,6 +561,28 @@
       }
     },
     {
+      "family": "queued/planning",
+      "pattern": "^queued/plan_frame_(256|4096)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "512x512",
+        "chunk_extent": "8x8",
+        "layout": "not_applicable",
+        "storage": "always_resident",
+        "executor_kind": "serial",
+        "worker_count": "1",
+        "payload": "per-chunk update operations, planned per frame"
+      },
+      "overrides": {
+        "queued/plan_frame_256": {
+          "payload": "256 disjoint per-chunk ops: plan + phase grouping"
+        },
+        "queued/plan_frame_4096": {
+          "payload": "4096 disjoint per-chunk ops: plan + phase grouping"
+        }
+      }
+    },
+    {
       "family": "parallel/ops",
       "pattern": "^parallel/(?:chunk_fill|chunk_compute|tile_touch)_(?:(serial)|(pool|scoped_threads)_w(\\d+))$",
       "captures": {
@@ -647,7 +669,7 @@
     },
     {
       "family": "fields/products",
-      "pattern": "^fields/(?:goalset_build_(?:1|16|256)|nearest_target|cache_hit|cache_miss_store|cache_eviction|build_alloc_gate)$",
+      "pattern": "^fields/(?:goalset_build_(?:1|16|256)|nearest_target|cache_hit|cache_miss_store|cache_eviction|cache_scan_entries_(?:8|128)|build_alloc_gate)$",
       "captures": {},
       "defaults": {
         "world_extent": "64x64",
@@ -682,6 +704,12 @@
         },
         "fields/build_alloc_gate": {
           "payload": "16 goals, allocation gate"
+        },
+        "fields/cache_scan_entries_8": {
+          "payload": "9 keys x 8 goals, budget 8 products: scans at 8 entries"
+        },
+        "fields/cache_scan_entries_128": {
+          "payload": "129 keys x 8 goals, budget 128 products: scans at 128 entries"
         }
       }
     },

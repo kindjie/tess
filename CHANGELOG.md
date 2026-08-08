@@ -9,6 +9,31 @@ and their rationale are recorded separately in
 
 ## [Unreleased]
 
+### Performance
+
+- Per-frame queued planning is measured. `queued/plan_frame_256` and
+  `queued/plan_frame_4096` time `plan_operations` plus
+  `plan_parallel_execution_phases`, which nothing timed before: every
+  other queued benchmark plans outside its measured loop, and the one
+  in-loop planner call plans a single operation. Two sizes are registered
+  so growth reads as a shape rather than a point. First readings, on an
+  Apple M3 Max: **59.6 us at 256 operations and 23.4 ms at 4096** — 16x the
+  operations for 392x the time. No fix is in this change; the measurement
+  comes first so the fix has before-and-after evidence.
+- Field-product cache scanning is measured against resident entry count.
+  `fields/cache_scan_entries_8` and `_128` hold per-store work identical —
+  same world, same goal cardinality, same product build — and differ only
+  in how many entries are resident when the cache's linear scans run. A
+  miss-and-store walks three of them (lookup, the store's existing-key
+  scan, then eviction), all linear in entry count, so the delta is their
+  aggregate rather than eviction alone. The family's other cache
+  benchmarks hold about two entries, so those scans never had more than
+  two candidates to compare. The 128-entry variant is registered as a
+  paired sentinel: the scans are only about 7% of each reading, so the
+  bootstrap ceiling gives trend visibility rather than a complexity gate,
+  and the paired run's relative effect floor is what can actually see a
+  scan regression.
+
 ### Fixed
 
 - `EventStream` retirement no longer wraps a flow accountant's outstanding

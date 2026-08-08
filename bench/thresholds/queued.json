@@ -8,6 +8,15 @@
     "queued/execute_resident_update_with_results": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 557
+    },
+    "queued/plan_frame_256": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 240000
+    },
+    "queued/plan_frame_4096": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 94000000
     }
-  }
+  },
+  "bootstrap_comment": "queued/plan_frame_* carry BOOTSTRAP ceilings at 4x an M3 Max reading (59.6 us and 23.4 ms), not calibrated CI values. They exist to catch a complexity change in per-frame planning, which nothing measured before; recalibrate at 2x the maximum over ten CI baselines per the protocol."
 }

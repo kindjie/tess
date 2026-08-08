@@ -12,6 +12,7 @@ add_executable(
   tess_persistence_bench.cc
   tess_pipeline_query_bench.cc
   tess_path_agent_bench.cc
+  tess_queued_planning_bench.cc
   tess_path_product_bench.cc
   tess_path_scan_bench.cc
   tess_path_weighted_bench.cc
@@ -35,6 +36,7 @@ add_executable(
   tess_parallel_bench.cc
   tess_pipeline_query_bench.cc
   tess_path_agent_bench.cc
+  tess_queued_planning_bench.cc
   tess_path_product_bench.cc
   tess_path_scan_bench.cc
   tess_path_weighted_bench.cc

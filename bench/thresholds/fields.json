@@ -32,6 +32,15 @@
     "fields/build_alloc_gate": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000
+    },
+    "fields/cache_scan_entries_8": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 400000
+    },
+    "fields/cache_scan_entries_128": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 400000
     }
-  }
+  },
+  "bootstrap_comment": "fields/cache_scan_entries_* carry BOOTSTRAP ceilings at 4x an M3 Max reading. READ THESE AS TREND VISIBILITY, NOT AS A COMPLEXITY GATE: the linear scans are only about 7% of each reading, so a scan regression must be enormous before a ceiling this loose trips, and one scan going quadratic at 128 entries would still pass. The paired sentinel run, whose effect floor is 8% of the reading rather than a multiple of it, is what actually watches this pair -- fields/cache_scan_entries_128 is registered in bench/sentinels.json for that reason. Recalibrate the ceilings with the family."
 }

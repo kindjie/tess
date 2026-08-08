@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <utility>
+#include <vector>
 
 // M9 fields bench family (the milestone was code-complete without its
 // own gated family): distance-field product builds scaling with the
@@ -53,6 +54,22 @@ void fill_goals(tess::GoalSet& goals, std::size_t count) {
     goals.add(tess::Coord3{static_cast<std::int64_t>(i % 64),
                            static_cast<std::int64_t>((i * 29 + i / 64) % 64),
                            0});
+  }
+}
+
+// Distinct goal sets with a CONSTANT cardinality: each `block` occupies
+// its own run of tile indices, so two blocks share no goal while every
+// set seeds the same number of floods. Varying the count instead would
+// change flood seeding, key comparison length, stored byte size and
+// therefore the resident entry count, confounding a comparison meant to
+// isolate entry count alone.
+void fill_goals_block(tess::GoalSet& goals, std::size_t count,
+                      std::size_t block) {
+  goals.clear();
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto index = (block * count + i) % (64 * 64);
+    goals.add(tess::Coord3{static_cast<std::int64_t>(index % 64),
+                           static_cast<std::int64_t>(index / 64), 0});
   }
 }
 
@@ -248,6 +265,83 @@ void BM_fields_cache_eviction(benchmark::State& state) {
   }
 }
 
+// Cache SCAN cost against resident entry count, which nothing measured
+// before: the family's other cache benchmarks hold about two entries, so
+// every linear scan over `entries_` had at most two candidates.
+//
+// This measures the AGGREGATE of the three scans a miss-and-store walks,
+// not eviction alone: `lookup` scans every resident entry, then
+// `store_with_key` scans them again for an existing key, and only then
+// does `evict_to_budget` scan to find the least-recently-used entry. All
+// three are linear in the entry count, so a complexity change in any of
+// them separates the two sizes -- but the delta cannot be attributed to
+// eviction specifically, and this deliberately does not claim to.
+//
+// Per-store work is held identical: same world, same goal CARDINALITY
+// (only the goal positions differ, so keys are distinct), same product
+// build. The sizes differ only in how many entries are resident when
+// those scans run.
+template <std::size_t Entries>
+void BM_fields_cache_scan_at(benchmark::State& state) {
+  static auto* world = make_world();
+  // One more key than the cache can hold, so every store evicts.
+  constexpr auto kKeys = Entries + 1;
+  constexpr auto kGoalsPerKey = std::size_t{8};
+  std::vector<tess::GoalSet> goals(kKeys);
+  for (std::size_t i = 0; i < kKeys; ++i) {
+    fill_goals_block(goals[i], kGoalsPerKey, i);
+  }
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(kTileCount);
+
+  // Size the budget from a MEASURED product rather than arithmetic: a
+  // product carries goals, dependencies and metadata beyond its distance
+  // array, so a computed budget silently held a different number of
+  // entries than intended and the cache never reached its limit.
+  const auto product_bytes = [&] {
+    tess::FieldProductCache probe(std::size_t{1} << 40U);
+    tess::DistanceFieldProduct one;
+    one.reserve_nodes(kTileCount);
+    one.reserve_dependencies(FieldWorld::chunk_count);
+    (void)tess::build_distance_field_product<FieldWorld, PassableTag>(
+        *world, goals[0], scratch, one);
+    (void)probe.store<FieldWorld, PassableTag>(std::move(one));
+    return probe.stats().bytes;
+  }();
+  fields_bench_check(product_bytes > 0, "probe store reported no bytes");
+
+  // Holds exactly `Entries` products, so the next store must evict and
+  // scan every resident entry to find the oldest.
+  tess::FieldProductCache cache(product_bytes * Entries);
+  cache.reserve_entries(Entries + 1);
+
+  std::size_t index = 0;
+  for (auto _ : state) {
+    const auto& set = goals[index];
+    index = (index + 1) % kKeys;
+    if (cache.lookup<FieldWorld, PassableTag>(*world, set) == nullptr) {
+      tess::DistanceFieldProduct product;
+      product.reserve_nodes(kTileCount);
+      product.reserve_dependencies(FieldWorld::chunk_count);
+      (void)tess::build_distance_field_product<FieldWorld, PassableTag>(
+          *world, set, scratch, product);
+      benchmark::DoNotOptimize(
+          (cache.store<FieldWorld, PassableTag>(std::move(product))));
+    }
+  }
+  // The cache must FILL before it can evict, so the guard has to clear
+  // the fill threshold, not a fixed count. Checking at 8 iterations
+  // aborted the 128-entry variant, which needs 129 stores before its
+  // first eviction.
+  if (state.iterations() > static_cast<std::int64_t>(Entries) * 2) {
+    fields_bench_check(cache.stats().evictions > 0,
+                       "entry-count cycling never evicted");
+    fields_bench_check(cache.stats().hits == 0,
+                       "every lookup must miss for this to stay on the "
+                       "store-and-evict path");
+  }
+}
+
 #if TESS_DIAGNOSTICS_ENABLED
 // Warm-path allocation gate (benchmark-plan.md section 14): a rebuild
 // into reserved product/scratch storage must not allocate.
@@ -288,5 +382,7 @@ BENCHMARK(BM_fields_nearest_target)->Name("fields/nearest_target");
 BENCHMARK(BM_fields_cache_hit)->Name("fields/cache_hit");
 BENCHMARK(BM_fields_cache_miss_store)->Name("fields/cache_miss_store");
 BENCHMARK(BM_fields_cache_eviction)->Name("fields/cache_eviction");
+BENCHMARK(BM_fields_cache_scan_at<8>)->Name("fields/cache_scan_entries_8");
+BENCHMARK(BM_fields_cache_scan_at<128>)->Name("fields/cache_scan_entries_128");
 
 }  // namespace
