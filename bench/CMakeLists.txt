@@ -813,7 +813,8 @@ if(BUILD_TESTING)
     set(budgeted_smoke_artifact_paths "")
     foreach(budgeted_cell astar_unit field_product resumable_work
             astar_arrival_600 astar_arrival_2400 astar_arrival_9600
-            astar_arrival_paced_600 astar_capacity)
+            astar_arrival_paced_600 astar_capacity colony_topology
+            queued_per_chunk)
       foreach(budgeted_ns 125000 500000 2000000 8000000)
         list(APPEND budgeted_smoke_artifact_paths
           "${CMAKE_CURRENT_BINARY_DIR}/${budgeted_cell}_${budgeted_ns}ns.json")

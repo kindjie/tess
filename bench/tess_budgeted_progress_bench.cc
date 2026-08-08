@@ -57,6 +57,7 @@
 #include "budgeted_progress_clock.h"
 #include "budgeted_progress_controller.h"
 #include "budgeted_progress_search.h"
+#include "colony_harness.h"
 #include "grid_benchmark_harness.h"
 #include "grid_map_generators.h"
 
@@ -861,6 +862,421 @@ void run_arrival_cells(const RunOptions& options, AstarCell& cell,
   }
 }
 
+// --- Colony-derived cells 5 and 6 (design section 6.1) -----------------
+//
+// Both cells reuse the colony harness's deterministic machinery
+// (tests/colony_harness.h): the 64x64 room-and-corridor logical map
+// raster-scaled x8, the per-tile cost stream, interior-cell churn
+// candidates whose centre tiles can never disconnect the world, and
+// the terrain dirty mask. Their workload_refs use the family
+// identities (topology/region_graph, queued/execute) the same way the
+// A* cells reference path/astar_unit: the cell shapes are new — the
+// registered topology family has no multi-chunk incremental update
+// and the registered queued cells span all resident chunks — and
+// matrix extensions wait until Google-Benchmark-registered cells
+// exist to be classified.
+
+struct ColonyCostTag {};
+using ColonySchema =
+    tess::FieldSchema<tess::Field<PassableTag, std::uint8_t>,
+                      tess::Field<ColonyCostTag, std::uint32_t>>;
+using ColonyWorld = tess::AlwaysResidentWorld<PathScaleShape, ColonySchema>;
+using ColonyWalker =
+    tess::movement::MovementClass<tess::movement::Field<PassableTag>,
+                                  tess::movement::FieldCost<ColonyCostTag>>;
+namespace colony = tess_test::colony;
+
+// One churn event: four centre tiles in four distinct chunks. Events
+// toggle (block then restore), so the pool is a renewable supply and
+// every application dirties exactly its four chunks.
+struct ChurnEvent {
+  std::array<tess::Coord3, 4> tiles{};
+  std::array<tess::ChunkKey, 4> chunks{};
+  std::array<std::uint32_t, 4> original_cost{};
+};
+
+struct ColonyTerrain {
+  std::unique_ptr<ColonyWorld> world;
+  std::vector<ChurnEvent> events;
+  std::size_t next_event = 0;
+
+  [[nodiscard]] auto take_event() -> const ChurnEvent& {
+    const ChurnEvent& event = events[next_event];
+    next_event = (next_event + 1) % events.size();
+    return event;
+  }
+
+  // Restores every event tile to its pristine passable state so each
+  // repetition starts from the identical frozen workload rather than
+  // inheriting the previous repetition's toggle parity.
+  void restore_pristine() {
+    for (const ChurnEvent& event : events) {
+      for (std::size_t i = 0; i < event.tiles.size(); ++i) {
+        world->field<PassableTag>(event.tiles[i]) = 1;
+        world->field<ColonyCostTag>(event.tiles[i]) = event.original_cost[i];
+      }
+    }
+    next_event = 0;
+  }
+
+  // Toggle the event's tiles: passable centre tiles block; blocked
+  // ones restore their original cost. Either direction changes the
+  // terrain of exactly the event's four chunks.
+  void apply(const ChurnEvent& event) {
+    for (std::size_t i = 0; i < event.tiles.size(); ++i) {
+      auto& passable = world->field<PassableTag>(event.tiles[i]);
+      auto& cost = world->field<ColonyCostTag>(event.tiles[i]);
+      if (passable != 0) {
+        passable = 0;
+        cost = 0;
+      } else {
+        passable = 1;
+        cost = event.original_cost[i];
+      }
+    }
+  }
+};
+
+[[nodiscard]] auto hash_churn_pool(const ColonyTerrain& terrain,
+                                   const char* tag) -> std::string {
+  budgeted::Sha256 hasher;
+  hasher.update(tag, std::strlen(tag));
+  for (const ChurnEvent& event : terrain.events) {
+    for (std::size_t i = 0; i < event.tiles.size(); ++i) {
+      const std::int64_t words[3] = {
+          event.tiles[i].x, event.tiles[i].y,
+          static_cast<std::int64_t>(event.original_cost[i])};
+      hasher.update(words, sizeof(words));
+    }
+  }
+  return hasher.hex_digest();
+}
+
+[[nodiscard]] auto build_colony_terrain(std::size_t event_count)
+    -> ColonyTerrain {
+  ColonyTerrain terrain;
+  const auto logical = gen::room_and_corridor(kLogicalExtent, kLogicalExtent,
+                                              kSeed, {24, 6, 12});
+  check(logical.has_value(), "colony logical map generation failed");
+  const auto parsed = grid::parse_map("budgeted-colony", logical->text);
+  check(static_cast<bool>(parsed), "colony logical map parse failed");
+  const grid::BenchmarkMap& map = parsed.value;
+
+  terrain.world = std::make_unique<ColonyWorld>();
+  for (std::int64_t y = 0; y < 512; ++y) {
+    for (std::int64_t x = 0; x < 512; ++x) {
+      const auto logical_index =
+          static_cast<std::size_t>(y / kScale) * map.width +
+          static_cast<std::size_t>(x / kScale);
+      const bool passable = map.passability[logical_index] != 0;
+      const auto coord = tess::Coord3{x, y, 0};
+      terrain.world->field<PassableTag>(coord) = passable ? 1 : 0;
+      terrain.world->field<ColonyCostTag>(coord) =
+          passable ? colony::detail::tile_cost(kSeed ^ 0xC057U, x, y) : 0U;
+    }
+  }
+
+  // Colony churn candidates: interior logical cells whose centre tile
+  // can never disconnect the world; grouped into events of four tiles
+  // in four distinct chunks (colony seed stream kSeed ^ 0xC17).
+  const auto interior = colony::detail::interior_logical_cells(map);
+  check(!interior.empty(), "no interior churn candidates");
+  grid::SplitMix64 rng(kSeed ^ 0xC17U);
+  std::vector<char> used(512 * 512, 0);
+  ChurnEvent pending;
+  std::size_t pending_count = 0;
+  for (std::size_t attempt = 0;
+       attempt < interior.size() * 8 && terrain.events.size() < event_count;
+       ++attempt) {
+    const auto logical_cell = interior[rng.below(interior.size())];
+    const auto lx = static_cast<std::int64_t>(logical_cell % map.width);
+    const auto ly = static_cast<std::int64_t>(logical_cell / map.width);
+    const auto coord =
+        tess::Coord3{lx * kScale + kScale / 2, ly * kScale + kScale / 2, 0};
+    const auto flat = static_cast<std::size_t>(coord.y * 512 + coord.x);
+    if (used[flat] != 0) {
+      continue;
+    }
+    const auto key = tess::chunk_key<PathScaleShape>(
+        tess::chunk_coord<PathScaleShape>(coord));
+    bool duplicate_chunk = false;
+    for (std::size_t i = 0; i < pending_count; ++i) {
+      if (pending.chunks[i] == key) {
+        duplicate_chunk = true;
+        break;
+      }
+    }
+    if (duplicate_chunk) {
+      continue;
+    }
+    used[flat] = 1;
+    pending.tiles[pending_count] = coord;
+    pending.chunks[pending_count] = key;
+    pending.original_cost[pending_count] =
+        terrain.world->field<ColonyCostTag>(coord);
+    ++pending_count;
+    if (pending_count == pending.tiles.size()) {
+      terrain.events.push_back(pending);
+      pending_count = 0;
+    }
+  }
+  check(terrain.events.size() == event_count,
+        "could not assemble the churn event pool");
+  return terrain;
+}
+
+// Cell 5: colony-derived incremental region-graph update, four dirty
+// chunks per event. The quantum is one whole update transaction; the
+// four toggling field writes that create the demand are microseconds
+// against the transaction and live inside it so admit-on-selection
+// pairs each event with its update.
+void run_colony_topology_cell(const RunOptions& options) {
+  ColonyTerrain terrain =
+      build_colony_terrain(options.pool_size >= 10'000 ? 128 : 32);
+  tess::LocalTopologyScratch topo_scratch;
+  tess::RegionGraph graph;
+  tess::build_region_graph<ColonyWorld, ColonyWalker>(*terrain.world,
+                                                      topo_scratch, graph);
+
+  // Pre-timing validation: after a burst of toggles and incremental
+  // updates, deterministic reachability probes agree with a fresh
+  // rebuild (the colony harness's own equivalence check, design
+  // section 10 frozen-fixture rule).
+  const auto probes = gen::deterministic_endpoints(
+      grid::parse_map("budgeted-colony",
+                      gen::room_and_corridor(kLogicalExtent, kLogicalExtent,
+                                             kSeed, {24, 6, 12})
+                          ->text)
+          .value,
+      kSeed ^ 0x9E0BE5ULL, 16);
+  for (int i = 0; i < 8; ++i) {
+    const ChurnEvent& event = terrain.take_event();
+    terrain.apply(event);
+    (void)tess::update_region_graph<ColonyWorld, ColonyWalker>(
+        *terrain.world, topo_scratch, graph,
+        std::span<const tess::ChunkKey>{event.chunks});
+  }
+  {
+    tess::LocalTopologyScratch fresh_scratch;
+    tess::RegionGraph fresh_graph;
+    tess::build_region_graph<ColonyWorld, ColonyWalker>(
+        *terrain.world, fresh_scratch, fresh_graph);
+
+    // Structural comparison on exactly the rewritten chunks: the
+    // incremental graph's per-chunk topology must match a fresh
+    // rebuild region-for-region, not merely answer sampled
+    // reachability the same way.
+    for (std::size_t event_index = 0; event_index < 8; ++event_index) {
+      for (const tess::ChunkKey& key : terrain.events[event_index].chunks) {
+        const auto* incremental_local = graph.local_topology(key);
+        const auto* fresh_local = fresh_graph.local_topology(key);
+        check(incremental_local != nullptr && fresh_local != nullptr,
+              "rewritten chunk missing from a topology graph");
+        check(incremental_local->regions().size() ==
+                  fresh_local->regions().size(),
+              "incremental chunk region count diverges from fresh rebuild");
+      }
+    }
+
+    tess::RegionGraphScratch reach_a;
+    tess::RegionGraphScratch reach_b;
+    auto check_probe = [&](tess::Coord3 from, tess::Coord3 to) {
+      const auto incremental =
+          tess::reachable<PathScaleShape>(graph, from, to, reach_a);
+      const auto fresh =
+          tess::reachable<PathScaleShape>(fresh_graph, from, to, reach_b);
+      check(incremental.status == fresh.status,
+            "incremental topology diverges from a fresh rebuild");
+    };
+    const auto anchor =
+        tess::Coord3{probes.front().first.x * kScale + kScale / 2,
+                     probes.front().first.y * kScale + kScale / 2, 0};
+    for (const auto& [from, to] : probes) {
+      check_probe(tess::Coord3{from.x * kScale + kScale / 2,
+                               from.y * kScale + kScale / 2, 0},
+                  tess::Coord3{to.x * kScale + kScale / 2,
+                               to.y * kScale + kScale / 2, 0});
+    }
+    // Edit-adjacent probes: neighbours of every toggled tile exercise
+    // exactly the regions and portals the updates rewrote.
+    for (std::size_t event_index = 0; event_index < 8; ++event_index) {
+      for (const tess::Coord3 tile : terrain.events[event_index].tiles) {
+        check_probe(tess::Coord3{tile.x + 1, tile.y, 0}, anchor);
+        check_probe(tess::Coord3{tile.x, tile.y + 1, 0}, anchor);
+      }
+    }
+  }
+
+  tess::diagnostics::FlowAccounting accounting;
+  // Every repetition starts from the identical frozen workload:
+  // pristine terrain and a graph rebuilt from it (untimed).
+  auto reset = [&](std::uint64_t) {
+    terrain.restore_pristine();
+    graph = tess::RegionGraph{};
+    tess::build_region_graph<ColonyWorld, ColonyWalker>(*terrain.world,
+                                                        topo_scratch, graph);
+  };
+  auto on_tick = [](std::uint64_t) {};
+  auto quantum = [&]() -> std::uint64_t {
+    const ChurnEvent& event = terrain.take_event();
+    ++accounting.counters.offered;
+    accounting.record_admitted();
+    terrain.apply(event);
+    (void)tess::update_region_graph<ColonyWorld, ColonyWalker>(
+        *terrain.world, topo_scratch, graph,
+        std::span<const tess::ChunkKey>{event.chunks});
+    const std::uint64_t work = event.chunks.size();
+    ++accounting.counters.completed;
+    accounting.record_left_outstanding();
+    accounting.counters.offered_work_units += work;
+    accounting.counters.consumed_work_units += work;
+    return work;
+  };
+  auto drain = []() {};
+
+  const auto results = run_saturated_budgets(options, accounting, reset,
+                                             on_tick, quantum, drain);
+  for (std::size_t i = 0; i < kBudgetsNs.size(); ++i) {
+    budgeted::Artifact artifact =
+        build_artifact(options, results[i], kBudgetsNs[i]);
+    check(frame_counted_completions(results[i]) == artifact.flow.completed,
+          "colony topology completion bases diverge");
+    artifact.experiment.scenario_id = "topology-colony-4chunk-512-v1";
+    artifact.experiment.workload_refs = {"topology/region_graph"};
+    artifact.trace.sha256 =
+        hash_churn_pool(terrain, "colony_topology_toggle_4chunk_v1");
+    SteadyClock clock;
+    artifact.calibration = calibrate(clock);
+    write_artifact(options, artifact, "colony_topology", kBudgetsNs[i]);
+  }
+}
+
+// Cell 6: the queued one-op-per-chunk update path — planning,
+// execution, and dirty merge through AutoExecTask, one operation per
+// distinct chunk exactly as the colony harness enqueues churn.
+void run_queued_per_chunk_cell(const RunOptions& options) {
+  ColonyTerrain terrain =
+      build_colony_terrain(options.pool_size >= 10'000 ? 128 : 32);
+
+  struct QueuedState {
+    ColonyTerrain* terrain = nullptr;
+    const ChurnEvent* current = nullptr;
+    std::uint64_t acked_tiles = 0;
+  };
+  QueuedState state;
+  state.terrain = &terrain;
+
+  auto build_fn = [&state](auto view, colony::BuildAck& ack) {
+    const ChurnEvent& event = *state.current;
+    auto passable = view.template field_span<PassableTag>();
+    auto cost = view.template field_span<ColonyCostTag>();
+    for (std::size_t i = 0; i < event.tiles.size(); ++i) {
+      const auto coord = event.tiles[i];
+      if (tess::chunk_key<PathScaleShape>(
+              tess::chunk_coord<PathScaleShape>(coord)) != view.key()) {
+        continue;
+      }
+      const auto local = tess::local_tile_id<PathScaleShape>(
+          tess::local_coord<PathScaleShape>(coord));
+      if (passable[local.value] != 0) {
+        passable[local.value] = 0;
+        cost[local.value] = 0U;
+      } else {
+        passable[local.value] = 1;
+        cost[local.value] = event.original_cost[i];
+      }
+      ++ack.tiles;
+    }
+  };
+
+  tess::FrameOps ops;
+  ops.reserve_operations(8);
+  tess::AutoExecTask<ColonyWorld, tess::WritePolicy::UniquePerChunk,
+                     colony::BuildAck, decltype(build_fn)>
+      build_task(*terrain.world, ops, build_fn);
+  build_task.reserve_operations(8);
+  build_task.set_result_hook(
+      &state, [](void* ctx, tess::OpHandle, const tess::OpCompletion& done,
+                 const colony::BuildAck* ack) noexcept {
+        if (done.ok() && ack != nullptr) {
+          static_cast<QueuedState*>(ctx)->acked_tiles += ack->tiles;
+        }
+      });
+
+  tess::SimClock queued_clock;
+  auto run_event = [&]() -> std::uint64_t {
+    const ChurnEvent& event = terrain.take_event();
+    state.current = &event;
+    const std::uint64_t before = state.acked_tiles;
+    for (const tess::ChunkKey& key : event.chunks) {
+      (void)ops.update_field(tess::DomainDesc::explicit_chunks(
+                                 std::span<const tess::ChunkKey>{&key, 1}),
+                             tess::FieldAccessDesc{0, colony::kTerrainDirty,
+                                                   colony::kTerrainDirty},
+                             tess::WritePolicy::UniquePerChunk);
+    }
+    build_task(tess::ScheduleTaskContext{queued_clock});
+    return state.acked_tiles - before;
+  };
+
+  // Pre-timing validation: every event acks exactly its four tiles
+  // and toggling twice restores the terrain byte-for-byte.
+  {
+    const ChurnEvent probe = terrain.events.front();
+    std::array<std::uint8_t, 4> before_passable{};
+    for (std::size_t i = 0; i < probe.tiles.size(); ++i) {
+      before_passable[i] = terrain.world->field<PassableTag>(probe.tiles[i]);
+    }
+    check(run_event() == 4, "queued event did not ack four tiles");
+    terrain.next_event = 0;
+    check(run_event() == 4, "queued restore did not ack four tiles");
+    terrain.next_event = 0;
+    for (std::size_t i = 0; i < probe.tiles.size(); ++i) {
+      check(terrain.world->field<PassableTag>(probe.tiles[i]) ==
+                before_passable[i],
+            "queued toggle pair did not restore the terrain");
+    }
+    state.acked_tiles = 0;
+  }
+
+  tess::diagnostics::FlowAccounting accounting;
+  // Pristine terrain per repetition: the frozen workload, not the
+  // previous repetition's toggle parity.
+  auto reset = [&](std::uint64_t) {
+    terrain.restore_pristine();
+    state.acked_tiles = 0;
+  };
+  auto on_tick = [](std::uint64_t) {};
+  auto quantum = [&]() -> std::uint64_t {
+    ++accounting.counters.offered;
+    accounting.record_admitted();
+    const std::uint64_t tiles = run_event();
+    check(tiles == 4, "timed queued event did not ack four tiles");
+    ++accounting.counters.completed;
+    accounting.record_left_outstanding();
+    accounting.counters.offered_work_units += tiles;
+    accounting.counters.consumed_work_units += tiles;
+    return tiles;
+  };
+  auto drain = []() {};
+
+  const auto results = run_saturated_budgets(options, accounting, reset,
+                                             on_tick, quantum, drain);
+  for (std::size_t i = 0; i < kBudgetsNs.size(); ++i) {
+    budgeted::Artifact artifact =
+        build_artifact(options, results[i], kBudgetsNs[i]);
+    check(frame_counted_completions(results[i]) == artifact.flow.completed,
+          "queued per-chunk completion bases diverge");
+    artifact.experiment.scenario_id = "queued-per-chunk-colony-512-v1";
+    artifact.experiment.workload_refs = {"queued/execute"};
+    artifact.trace.sha256 =
+        hash_churn_pool(terrain, "queued_per_chunk_toggle_4op_v1");
+    SteadyClock clock;
+    artifact.calibration = calibrate(clock);
+    write_artifact(options, artifact, "queued_per_chunk", kBudgetsNs[i]);
+  }
+}
+
 // --- Capacity boundary search (section 9.3) ----------------------------
 
 // Probe: 3 warm-configuration repetitions, majority verdict.
@@ -1227,5 +1643,7 @@ auto main(int argc, char** argv) -> int {
   run_capacity_search(options, astar_cell);
   run_field_product_cell(options);
   run_resumable_cell(options);
+  run_colony_topology_cell(options);
+  run_queued_per_chunk_cell(options);
   return 0;
 }
