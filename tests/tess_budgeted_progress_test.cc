@@ -715,7 +715,7 @@ TEST(BudgetedArrival, RationalRateReleasesExactIntegerPattern) {
 // admission, cohort/deadline/lateness/starvation derive from the
 // per-item records at seal, and both identities hold throughout.
 TEST(BudgetedArrival, ArrivalTrackerFifoWindowAndSeal) {
-  ArrivalTracker tracker{/*allowance=*/2, /*base_tps=*/20,
+  ArrivalTracker tracker{/*allowance_ticks=*/2, /*base_tps=*/20,
                          /*expected_items=*/16};
   tracker.begin_window(1);
   tracker.observe_tick(1);
