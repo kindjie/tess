@@ -28,8 +28,15 @@ import fetch_mermaid
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCS_ROOT = REPO_ROOT / "docs"
 
-FENCE_OPEN = re.compile(r"^```mermaid\s*$")
-FENCE_CLOSE = re.compile(r"^```\s*$")
+# Superfences grammar: three-plus backticks or tildes, up to three
+# leading spaces, and an info string that names the fence either bare
+# ("mermaid") or as an attribute list ("{.mermaid #id}").
+FENCE_OPEN = re.compile(
+  r"^(?P<indent> {0,3})(?P<fence>`{3,}|~{3,})\s*(?P<info>.*?)\s*$"
+)
+MERMAID_INFO = re.compile(
+  r"^(mermaid(\s.*)?|\{[^}]*\.mermaid[^}]*\})$"
+)
 RESULTS_RE = re.compile(
   r'<pre id="tess-mermaid-results">(.*?)</pre>', re.DOTALL
 )
@@ -82,23 +89,49 @@ class Fence:
   source: str
 
 
+def _closes(line: str, fence: str) -> bool:
+  match = FENCE_OPEN.match(line)
+  return (
+    match is not None
+    and not match.group("info")
+    and match.group("fence")[0] == fence[0]
+    and len(match.group("fence")) >= len(fence)
+  )
+
+
 def extract_fences(text: str, path: Path) -> tuple[list[Fence], list[str]]:
-  """Return the Mermaid fences in one document plus scan failures."""
+  """Return the Mermaid fences in one document plus scan failures.
+
+  Every fence is tracked so a literal ```mermaid inside a longer
+  enclosing fence (a Markdown example) is not mistaken for a diagram.
+  """
   fences: list[Fence] = []
   failures: list[str] = []
   lines = text.splitlines()
   index = 0
   while index < len(lines):
-    if FENCE_OPEN.match(lines[index]):
-      start = index + 1
-      body: list[str] = []
+    opened = FENCE_OPEN.match(lines[index])
+    if opened is None:
       index += 1
-      while index < len(lines) and not FENCE_CLOSE.match(lines[index]):
-        body.append(lines[index])
-        index += 1
-      if index >= len(lines):
+      continue
+    is_mermaid = MERMAID_INFO.match(opened.group("info")) is not None
+    start = index + 1
+    indent = len(opened.group("indent"))
+    body: list[str] = []
+    index += 1
+    while index < len(lines) and not _closes(
+      lines[index], opened.group("fence")
+    ):
+      stripped = lines[index]
+      if stripped[:indent].isspace() or not stripped[:indent]:
+        stripped = stripped[indent:]
+      body.append(stripped)
+      index += 1
+    if index >= len(lines):
+      if is_mermaid:
         failures.append(f"{path}:{start}: unterminated mermaid fence")
-        break
+      break
+    if is_mermaid:
       fences.append(Fence(path, start, "\n".join(body)))
     index += 1
   return fences, failures

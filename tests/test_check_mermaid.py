@@ -55,8 +55,53 @@ def test_extract_fences_reports_unterminated_fence() -> None:
   assert failures == ["doc.md:1: unterminated mermaid fence"]
 
 
-def test_extract_fences_ignores_indented_fences() -> None:
-  text = "  ```mermaid\n  flowchart TB\n  ```\n"
+def test_extract_fences_accepts_superfences_variants() -> None:
+  text = "\n".join(
+    [
+      "  ```mermaid",  # up to three leading spaces, indent stripped
+      "  flowchart TB",
+      "  ```",
+      "~~~mermaid",  # tilde fences
+      "flowchart LR",
+      "~~~",
+      "````mermaid",  # four-plus delimiters
+      "flowchart BT",
+      "````",
+      "``` {.mermaid #route-map}",  # attribute-list opener
+      "flowchart RL",
+      "```",
+    ]
+  )
+  fences, failures = cm.extract_fences(text, Path("doc.md"))
+  assert failures == []
+  assert [fence.source for fence in fences] == [
+    "flowchart TB",
+    "flowchart LR",
+    "flowchart BT",
+    "flowchart RL",
+  ]
+
+
+def test_extract_fences_skips_examples_inside_enclosing_fences() -> None:
+  text = "\n".join(
+    [
+      "````markdown",
+      "```mermaid",
+      "not a live diagram",
+      "```",
+      "````",
+      "```mermaid",
+      "flowchart TB",
+      "```",
+    ]
+  )
+  fences, failures = cm.extract_fences(text, Path("doc.md"))
+  assert failures == []
+  assert [fence.source for fence in fences] == ["flowchart TB"]
+
+
+def test_extract_fences_ignores_other_languages() -> None:
+  text = "```python\nprint('mermaid')\n```\n"
   fences, failures = cm.extract_fences(text, Path("doc.md"))
   assert fences == []
   assert failures == []
