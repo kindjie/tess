@@ -582,11 +582,25 @@ when the new start already appears inside a cached optimal path; with unit
 positive edge costs, that suffix is also optimal. Both hit forms copy the
 cached route into the supplied `PathScratch` before returning, so a returned
 span never points into cache-owned storage that a later miss could
-reallocate; warm hits stay allocation-free when the scratch is pre-reserved. The cache assumes the caller
-invalidates it when passability or movement rules change. The optional world
-version fingerprint support is deliberately conservative: when any chunk
-version changes, `invalidate_if_world_changed(world)` drops the whole cache and
-preserves hit/miss counters. It does not attempt region-selective validation.
+reallocate; warm hits stay allocation-free when the scratch is pre-reserved.
+The cache assumes the caller runs its staleness entry point
+(`refresh_if_world_changed`, or the exact-mode
+`invalidate_if_world_changed`) when passability or movement rules change.
+
+Staleness has two modes (`UnitRouteStaleness`). The default,
+`WholeWorldExact`, is deliberately conservative: when any chunk version
+changes the whole cache drops, and every served route is identical to fresh
+recomputation. The opt-in `ScopedFeasible` mode records each stored route's
+chunk footprint with captured versions and validates it lazily at serve
+time: entries whose crossed chunks are unchanged survive edits elsewhere.
+Surviving routes are guaranteed legal with a truthful cost and were optimal
+when stored, but an edit that opens a shortcut elsewhere can leave a served
+route suboptimal until it is retired; under blocking-only edit sequences
+survivors remain optimal. The mode applies to unit-cost models without
+special transitions on dense worlds (the same condition as suffix reuse —
+those are the models whose accepted steps read only tiles on the path);
+other models' entries, and all sparse-world entries, keep whole-world
+sensitivity.
 
 Weighted route products are narrower than the route cache: they store one
 weighted path and the chunk versions for chunks touched by that path. They are

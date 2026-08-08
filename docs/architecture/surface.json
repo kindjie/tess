@@ -223,6 +223,7 @@
     "RouteCacheScratch",
     "RouteCacheStats",
     "SegmentHit",
+    "UnitRouteStaleness",
     "WeightedPathBatchScratch",
     "WeightedPathBatchStats",
     "WeightedPortalRouteProduct",
