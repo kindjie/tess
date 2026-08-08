@@ -18,11 +18,15 @@ and their rationale are recorded separately in
   terminalized first, or a `reset()` between publish and retire, drove the
   unsigned counter to about 2^64 and took the inventory and retention
   identities with it. Diagnostics only; simulation results were unaffected.
-- `save_world_archive` writes `lattice_version` at a fixed width. The
+- `save_world_archive` writes `lattice_version` at a fixed width, and a
+  lattice whose version cannot fit the header's 32-bit field is now a
+  compile error rather than a file that saves `Ok` and never loads. The
   constant's own type decided the field width, and `LatticeType` requires
   only convertibility to `uint32`, so a custom lattice declaring a
-  `uint64` version produced a header four bytes too long: a file that
-  saved `Ok` and could never be loaded. Both shipped lattices are
+  `uint64` version produced a header four bytes too long. Casting the
+  write alone was not enough: a version above the 32-bit range would still
+  have saved, because the truncated stored value can never equal the
+  full-width trait the load compares it against. Both shipped lattices are
   unaffected.
 - The A* fast paths saturate their route-cost arithmetic instead of
   wrapping, matching `best_chunk_portal`. Reaching the wrap needs distances

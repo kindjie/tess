@@ -120,6 +120,7 @@ inline constexpr std::array<std::byte, 8> world_archive_magic{
 };
 inline constexpr std::uint32_t world_archive_format_version = 1;
 inline constexpr std::uint32_t world_archive_key_layout_version = 1;
+
 inline constexpr std::size_t world_archive_header_size = 121;
 inline constexpr std::size_t world_archive_checksum_offset = 20;
 inline constexpr std::size_t world_archive_checksum_size =
@@ -127,6 +128,22 @@ inline constexpr std::size_t world_archive_checksum_size =
 inline constexpr std::size_t world_archive_field_desc_size = 17;
 inline constexpr std::size_t world_archive_chunk_prefix_size = 17;
 inline constexpr std::uint32_t world_archive_max_fields = 1024;
+
+// The header stores the lattice version in a fixed 32-bit field, while
+// `LatticeType` only requires convertibility to uint32. Casting on the
+// write alone is not enough: a version above the 32-bit range would still
+// save `Ok` and then fail to load, because the truncated stored value can
+// never equal the full-width trait the load compares it against. A lattice
+// whose version cannot be represented simply cannot be persisted in
+// format v1, so both paths reject it at compile time instead.
+template <typename Shape>
+constexpr void assert_lattice_version_is_representable() noexcept {
+  static_assert(
+      static_cast<std::uint64_t>(ShapeTraits<Shape>::lattice_version) <=
+          std::numeric_limits<std::uint32_t>::max(),
+      "lattice_version exceeds the 32-bit archive header field; a world "
+      "using this lattice cannot be persisted in archive format v1");
+}
 
 enum class ArchiveScalarKind : std::uint8_t {
   Unsigned = 1,
@@ -807,10 +824,12 @@ auto save_world_archive(const World& world, std::vector<std::byte>& out)
                ShapeTraits<typename World::shape_type>::lattice_identity));
   // Explicitly widened like the identity above. `append_unsigned_le` emits
   // sizeof(UInt) bytes and `lattice_version` is `static constexpr auto`,
-  // while `LatticeType` only requires convertibility to uint32. A custom
-  // lattice declaring a uint64 version would otherwise write a 125-byte
-  // header against the fixed-width reader, producing a file that saves Ok
-  // and can never be loaded.
+  // while `LatticeType` only requires convertibility to uint32. Without the
+  // cast a wide version wrote a 125-byte header against the fixed-width
+  // reader; without the static assert beside it, a version ABOVE the
+  // 32-bit range would still save Ok and never load, since the truncated
+  // stored value can never equal the trait the load compares against.
+  detail::assert_lattice_version_is_representable<typename World::shape_type>();
   detail::append_unsigned_le(
       out, static_cast<std::uint32_t>(
                ShapeTraits<typename World::shape_type>::lattice_version));
@@ -840,8 +859,8 @@ auto save_world_archive(const World& world, std::vector<std::byte>& out)
   result.info.chunk = World::shape_type::chunk;
   result.info.lattice_identity =
       ShapeTraits<typename World::shape_type>::lattice_identity;
-  result.info.lattice_version =
-      ShapeTraits<typename World::shape_type>::lattice_version;
+  result.info.lattice_version = static_cast<std::uint32_t>(
+      ShapeTraits<typename World::shape_type>::lattice_version);
   result.info.key_layout_version = detail::world_archive_key_layout_version;
   result.info.schema_id = Archive::id;
   result.info.schema_version = Archive::version;
@@ -889,7 +908,8 @@ auto load_world_archive(World& world, std::span<const std::byte> bytes,
   if (info.lattice_identity !=
           ShapeTraits<typename World::shape_type>::lattice_identity ||
       info.lattice_version !=
-          ShapeTraits<typename World::shape_type>::lattice_version) {
+          static_cast<std::uint32_t>(
+              ShapeTraits<typename World::shape_type>::lattice_version)) {
     return fail(WorldArchiveStatus::LatticeMismatch);
   }
   if (info.key_layout_version != detail::world_archive_key_layout_version) {

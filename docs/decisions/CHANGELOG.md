@@ -21,14 +21,36 @@ older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
   only, but the corrupted values are exactly the ones a health view
   reports.
 - Fixed: the archive writes `lattice_version` through an explicit
-  `uint32_t` cast, as the identity beside it already did.
-  `append_unsigned_le` emits `sizeof(UInt)` bytes and `lattice_version` is
-  `static constexpr auto`, while `LatticeType` requires only convertibility
-  to `uint32`. A custom lattice -- a documented extension point -- with a
-  `uint64` version wrote a 125-byte header against the fixed-width reader.
-  Verified by adding such a lattice: without the cast both
-  `inspect_world_archive` and `load_world_archive` reject the file the
-  writer had just reported `Ok` for.
+  `uint32_t` cast, and both save and load static_assert that the value
+  fits the header's 32-bit field. `append_unsigned_le` emits
+  `sizeof(UInt)` bytes and `lattice_version` is `static constexpr auto`,
+  while `LatticeType` requires only convertibility to `uint32`, so a
+  custom lattice -- a documented extension point -- with a `uint64`
+  version wrote a 125-byte header against the fixed-width reader.
+- Recorded: the cast alone closed only half of that, which a review pass
+  proved by execution. With a version ABOVE the 32-bit range, save still
+  returned `Ok` and load returned `LatticeMismatch`, because the truncated
+  stored value can never equal the full-width trait the load compares it
+  against -- the same "saves Ok, never loads" class the cast was meant to
+  remove. A lattice that cannot be represented simply cannot be persisted
+  in format v1, so rejecting it at compile time is both honest and cheaper
+  than a runtime status a caller cannot act on. The `WorldArchiveInfo`
+  assignment and the load comparison are narrowed explicitly too, so a
+  `-Werror` build does not trip on the conversion.
+- Recorded: a provider transition whose source lies outside the enumerated
+  chunk is dropped silently in every build. A debug assertion would abort
+  the tests that deliberately violate the contract to pin the drop, and a
+  diagnostics counter for a caller bug would be public surface, so the
+  contract now states the silence and tells a provider author what to
+  check when edges go missing. Revisit if third-party providers become
+  common.
+- Recorded: making terminal agents immovable is a throughput trade. A
+  one-wide corridor that used to clear because a passing agent shoved an
+  arrived agent aside now stays blocked. That is the intended behavior --
+  the shove corrupted a documented-terminal lifecycle -- but it is a real
+  change on corridor maps, so the simulation note now says so and lists
+  what a caller can do about it.
+
 - Changed: the A* plane-gap and axis-detour fast paths use
   `detail::saturating_add`. `detail::manhattan` clamps each term at
   `uint32` max and the sums then wrapped, asymmetric with
