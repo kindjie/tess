@@ -350,7 +350,7 @@ flowchart TB
   optimized unit-cost deterministic pathfinding. The passability field is
   treated as boolean-like. It runs natively on sparse worlds, honoring
   `MissingChunkPolicy` (the pre-A* fast-path scan is compiled out there).
-  The tag parameter also accepts a `tess::movement` class (M6): a raw tag
+  The tag parameter also accepts a `tess::movement` class: a raw tag
   normalizes to the byte-identical `WalkableField` identity class, and a
   composed class contributes its passability predicate (unit search ignores
   entry cost).

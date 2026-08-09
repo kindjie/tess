@@ -284,11 +284,11 @@ marker used by compile-time validation and normalization.
   `HasPassableSpan<Class>` identifies the single-field fast path used by
   compatible topology and path builders.
 
-Per-class region labeling and the graph class stamp are wired (S5.3): the
+Per-class region labeling and the graph class stamp are wired: the
 labeling builders take a class or tag, and `RegionGraphT` records the
-normalized class identity it was built for. Precheck agreement (S5.4), commit
-validation (S5.5), and the class-aware agent tick plus runtime class binding
-(S5.6) thread the same vocabulary through the path layer.
+normalized class identity it was built for. Precheck agreement, commit
+validation, and the class-aware agent tick plus runtime class binding
+thread the same vocabulary through the path layer.
 
 ## Resolved Transitions
 

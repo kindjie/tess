@@ -32,3 +32,6 @@
   the `dev` preset builds 14, under a comment claiming every example runs.
   An example could stop building and the gate would still pass. It is now
   an exact count.
+- Internal milestone labels (`M5`, `M10`, `M11`, `S5.3`…) no longer appear
+  in the Concepts pages, which `for-agents.md` designates normative. They
+  were planning vocabulary that resolved to nothing a reader could look up.
