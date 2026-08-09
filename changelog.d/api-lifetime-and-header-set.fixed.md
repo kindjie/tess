@@ -11,3 +11,8 @@
   mapping "lands in a later slice"; that specialization is in the same
   file, so the message now describes the real condition — a custom
   residency policy needs its own specialization.
+- `save_world_archive` and `load_world_archive` are now `[[nodiscard]]`,
+  matching `inspect_world_archive`. In an exception-free library their
+  returned `WorldArchiveResult` is the only failure channel, so
+  `save_world_archive(world, out);` previously compiled and silently
+  discarded a failed save.

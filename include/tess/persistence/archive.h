@@ -778,7 +778,8 @@ void restore_chunk_metadata(World& world, ChunkKey key, ChunkState state,
  * dirty history, topology versions, and residency generations are omitted.
  */
 template <typename Archive, typename World>
-auto save_world_archive(const World& world, std::vector<std::byte>& out)
+[[nodiscard]] auto save_world_archive(const World& world,
+                                      std::vector<std::byte>& out)
     -> WorldArchiveResult {
   static_assert(detail::archive_fields_supported<Archive, World>(),
                 "Archive fields must exist in the world and use supported "
@@ -884,9 +885,9 @@ auto save_world_archive(const World& world, std::vector<std::byte>& out)
  * `invalidation_flags` and never restore caches or generation counters.
  */
 template <typename Archive, typename World>
-auto load_world_archive(World& world, std::span<const std::byte> bytes,
-                        std::uint32_t invalidation_flags = 0xffffffffU)
-    -> WorldArchiveResult {
+[[nodiscard]] auto load_world_archive(
+    World& world, std::span<const std::byte> bytes,
+    std::uint32_t invalidation_flags = 0xffffffffU) -> WorldArchiveResult {
   static_assert(detail::archive_fields_supported<Archive, World>(),
                 "Archive fields must exist in the world and use supported "
                 "scalar value types.");
