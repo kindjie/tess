@@ -117,9 +117,11 @@ struct Demo {
   tess::JointMoveScratch joint_scratch;
   tess::RegionGraphScratch graph_scratch;
   tess::RegionGraph graph;
-  // False once any region-graph build or update reports a status other than
-  // Built. The demo has no way to recover, so it stops replanning rather
-  // than route against connectivity it knows is wrong.
+  // False once a region-graph UPDATE reports a status other than Built.
+  // update_region_graph can return InvalidChunk for an out-of-range dirty
+  // chunk; build_region_graph has no reachable failure, so it is not
+  // checked. The demo cannot recover, so it stops replanning rather than
+  // route against connectivity it knows is stale.
   bool topology_ok = true;
   tess::FrameOps ops;
   tess::DeltaCollector deltas;
@@ -182,12 +184,7 @@ struct Demo {
     runtime.reserve_search_nodes(65536);
     runtime.reserve_path_nodes(262144);
     deltas.reserve(World::chunk_count, 8192, 16);
-    // A constructor has no status channel, so record it. Every later
-    // topology update ANDs into this flag, and the demo reports it rather
-    // than pathing against a graph that failed to build.
-    topology_ok =
-        tess::build_region_graph<World, Walker>(world, topo_scratch, graph)
-            .status == tess::TopologyStatus::Built;
+    tess::build_region_graph<World, Walker>(world, topo_scratch, graph);
 
     agents.resize(static_cast<std::size_t>(agent_count));
     agent_xy.resize(agents.size() * 2);

@@ -237,9 +237,8 @@ struct MixedStack {
   stack->runtime.reserve_unit_routes(stack->agents.size());
   stack->tick_state.flow_accounting = &stack->agent_flow;
 
-  colony::require_built(tess::build_region_graph<MixedWorld, colony::Walker>(
-                            *stack->world, stack->topo_scratch, stack->graph),
-                        "mixed-colony setup");
+  tess::build_region_graph<MixedWorld, colony::Walker>(
+      *stack->world, stack->topo_scratch, stack->graph);
   for (std::size_t i = 0; i < stack->agents.size(); ++i) {
     tess::set_path_agent_goal(stack->tick_state, stack->agents[i],
                               stack->assigned_goals[i]);

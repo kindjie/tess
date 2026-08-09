@@ -19,8 +19,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <iostream>
 #include <memory>
 #include <optional>
 #include <span>
@@ -34,19 +32,6 @@
 namespace tess_test::colony {
 
 namespace grid = tess_test::grid_benchmark;
-
-// The harness is shared with the benchmarks, so gtest's EXPECT_ macros are
-// not available here. A region graph that failed to build would leave every
-// downstream reachability answer meaningless while the run still reported a
-// result, so this fails loudly instead of returning one.
-inline void require_built(tess::LocalTopologyResult result, const char* where) {
-  if (result.status == tess::TopologyStatus::Built) {
-    return;
-  }
-  std::cerr << "colony harness: region graph not built at " << where << " ("
-            << static_cast<int>(result.status) << ")\n";
-  std::abort();
-}
 
 struct PassableTag {};
 struct CostTag {};
@@ -294,9 +279,7 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
 
   tess::LocalTopologyScratch topo_scratch;
   tess::RegionGraph graph;
-  require_built(
-      tess::build_region_graph<WorldType, Walker>(*world, topo_scratch, graph),
-      "initial build");
+  tess::build_region_graph<WorldType, Walker>(*world, topo_scratch, graph);
 
   for (std::size_t i = 0; i < agents.size(); ++i) {
     tess::set_path_agent_goal(tick_state, agents[i], assigned_goals[i]);
@@ -420,9 +403,8 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
           // of the run would miss it.
           tess::LocalTopologyScratch fresh_scratch;
           tess::RegionGraph fresh_graph;
-          require_built(tess::build_region_graph<WorldType, Walker>(
-                            *world, fresh_scratch, fresh_graph),
-                        "per-tick differential rebuild");
+          tess::build_region_graph<WorldType, Walker>(*world, fresh_scratch,
+                                                      fresh_graph);
           tess::RegionGraphScratch reach_scratch;
           for (const auto& probe : *probes) {
             const auto live = tess::reachable<Shape>(
@@ -595,9 +577,7 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
   // selected, so the test compares the two runs.
   if (config_.rebuild_graph_before_sampling) {
     graph = tess::RegionGraph{};
-    require_built(tess::build_region_graph<WorldType, Walker>(
-                      *world, topo_scratch, graph),
-                  "rebuild before sampling");
+    tess::build_region_graph<WorldType, Walker>(*world, topo_scratch, graph);
   }
   result.sampled_reachability.reserve(agents.size() * 2);
   {

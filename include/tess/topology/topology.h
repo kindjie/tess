@@ -1217,10 +1217,18 @@ template <typename World, typename ClassOrTag>
 template <typename World, typename ClassOrTag,
           typename Provider = AdjacentTransitions>
 /// Rebuilds a complete region graph for the world's current resident set.
-[[nodiscard]] auto build_region_graph(
-    const World& world, LocalTopologyScratch& scratch,
-    RegionGraphT<typename World::residency_type>& graph,
-    const Provider& provider = {}) -> LocalTopologyResult {
+///
+/// Deliberately NOT [[nodiscard]], unlike update_region_graph. The returned
+/// status is invariantly Built: the dense branch iterates keys
+/// 0..chunk_count, so InvalidChunk cannot arise and MissingChunk does not
+/// exist under AlwaysResident; the sparse branch builds from
+/// resident_chunk_keys(), which are in-world and resident by construction.
+/// What remains in the result is statistics, and the graph itself is the
+/// output. update_region_graph does have a reachable failure -- InvalidChunk
+/// for an out-of-range dirty chunk -- and is marked accordingly.
+auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
+                        RegionGraphT<typename World::residency_type>& graph,
+                        const Provider& provider = {}) -> LocalTopologyResult {
   static_assert(TransitionProviderFor<Provider, World>,
                 "build_region_graph's provider must satisfy "
                 "TransitionProviderFor (see transition_provider.h).");

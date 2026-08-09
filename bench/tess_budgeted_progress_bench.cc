@@ -772,10 +772,8 @@ void run_colony_topology_cell(const RunOptions& options) {
       build_colony_terrain(options.pool_size >= 10'000 ? 128 : 32);
   tess::LocalTopologyScratch topo_scratch;
   tess::RegionGraph graph;
-  tess_test::colony::require_built(
-      tess::build_region_graph<ColonyWorld, ColonyWalker>(*terrain.world,
-                                                          topo_scratch, graph),
-      "budgeted-progress setup");
+  tess::build_region_graph<ColonyWorld, ColonyWalker>(*terrain.world,
+                                                      topo_scratch, graph);
 
   // Pre-timing validation: after a burst of toggles and incremental
   // updates, deterministic reachability probes agree with a fresh
@@ -798,10 +796,8 @@ void run_colony_topology_cell(const RunOptions& options) {
   {
     tess::LocalTopologyScratch fresh_scratch;
     tess::RegionGraph fresh_graph;
-    tess_test::colony::require_built(
-        tess::build_region_graph<ColonyWorld, ColonyWalker>(
-            *terrain.world, fresh_scratch, fresh_graph),
-        "budgeted-progress differential rebuild");
+    tess::build_region_graph<ColonyWorld, ColonyWalker>(
+        *terrain.world, fresh_scratch, fresh_graph);
 
     // Structural comparison on exactly the rewritten chunks: the
     // incremental graph's per-chunk topology must match a fresh
@@ -854,10 +850,8 @@ void run_colony_topology_cell(const RunOptions& options) {
   auto reset = [&](std::uint64_t) {
     terrain.restore_pristine();
     graph = tess::RegionGraph{};
-    tess_test::colony::require_built(
-        tess::build_region_graph<ColonyWorld, ColonyWalker>(
-            *terrain.world, topo_scratch, graph),
-        "budgeted-progress restore");
+    tess::build_region_graph<ColonyWorld, ColonyWalker>(*terrain.world,
+                                                        topo_scratch, graph);
   };
   auto on_tick = [](std::uint64_t) {};
   auto quantum = [&]() -> std::uint64_t {

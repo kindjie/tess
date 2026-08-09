@@ -215,9 +215,7 @@ TEST(TessTopologyMovement, ClassStampMismatchForcesFullRebuildOnUpdate) {
   EXPECT_EQ(updated.status, tess::TopologyStatus::Built);
 
   tess::RegionGraph reference;
-  EXPECT_EQ((tess::build_region_graph<World, Builder>(world, scratch, reference)
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Builder>(world, scratch, reference);
   expect_graphs_equal(graph, reference);
   EXPECT_TRUE(graph.matches_class<Builder>());
   EXPECT_FALSE(graph.matches_class<Walker>());
@@ -229,9 +227,7 @@ TEST(TessTopologyMovement, FreshnessIsPerClass) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  EXPECT_EQ((tess::build_region_graph<World, PassableTag>(world, scratch, graph)
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<World, PassableTag>(world, scratch, graph);
 
   // The class-agnostic freshness is unchanged; the class-aware form demands
   // a stamp match, and a raw tag shares its identity class's stamp.
@@ -400,13 +396,9 @@ TEST(TessTopologyMovement, DefaultProviderBuildIsIdenticalToProviderless) {
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph plain;
   tess::RegionGraph with_default;
-  EXPECT_EQ(
-      (tess::build_region_graph<World, Walker>(world, scratch, plain).status),
-      tess::TopologyStatus::Built);
-  EXPECT_EQ((tess::build_region_graph<World, Walker>(
-                 world, scratch, with_default, tess::AdjacentTransitions{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, plain);
+  tess::build_region_graph<World, Walker>(world, scratch, with_default,
+                                          tess::AdjacentTransitions{});
   expect_graphs_equal(with_default, plain);
   EXPECT_TRUE(plain.matches_provider<tess::AdjacentTransitions>());
   EXPECT_FALSE(plain.matches_provider<BridgeTransitions>());
@@ -421,14 +413,10 @@ TEST(TessTopologyMovement, ProviderTransitionsBridgeWalledRegions) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph plain;
-  EXPECT_EQ(
-      (tess::build_region_graph<World, Walker>(world, scratch, plain).status),
-      tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, plain);
   tess::RegionGraph bridged;
-  EXPECT_EQ((tess::build_region_graph<World, Walker>(world, scratch, bridged,
-                                                     BridgeTransitions{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, bridged,
+                                          BridgeTransitions{});
 
   ASSERT_EQ(bridged.portals().size(), plain.portals().size() + 2);
   const auto start = tess::Coord3{1, 4, 0};
@@ -449,10 +437,8 @@ TEST(TessTopologyMovement, ProviderIncrementalUpdateEqualsFullRebuild) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  EXPECT_EQ((tess::build_region_graph<World, Walker>(world, scratch, graph,
-                                                     BridgeTransitions{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, graph,
+                                          BridgeTransitions{});
 
   // Edit passability around one bridge endpoint, in the bridge's chunk.
   world.field<PassableTag>(tess::Coord3{1, 5, 0}) = 0;
@@ -464,10 +450,8 @@ TEST(TessTopologyMovement, ProviderIncrementalUpdateEqualsFullRebuild) {
   EXPECT_EQ(updated.status, tess::TopologyStatus::Built);
 
   tess::RegionGraph reference;
-  EXPECT_EQ((tess::build_region_graph<World, Walker>(world, scratch, reference,
-                                                     BridgeTransitions{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, reference,
+                                          BridgeTransitions{});
   expect_graphs_equal(graph, reference);
 }
 
@@ -504,10 +488,8 @@ TEST(TessTopologyMovement, MisownedProviderEdgeDoesNotMarkMissingReach) {
   tess::RegionGraphScratch reach;
 
   tess::SparseRegionGraph graph;
-  EXPECT_EQ((tess::build_region_graph<Sparse, Walker>(world, scratch, graph,
-                                                      MisownedEastwardHop{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<Sparse, Walker>(world, scratch, graph,
+                                           MisownedEastwardHop{});
 
   // The contract-violating edge contributes nothing, in either pass, so the
   // answer matches the providerless build rather than degrading.
@@ -520,10 +502,8 @@ TEST(TessTopologyMovement, MisownedProviderTransitionsNeverAccumulate) {
   fill_passable(world, 1);
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  EXPECT_EQ((tess::build_region_graph<World, Walker>(world, scratch, graph,
-                                                     MisownedTransitions{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, graph,
+                                          MisownedTransitions{});
   const auto after_build = graph.portals().size();
 
   // Update every chunk repeatedly. Each pass enumerates the bad provider for
@@ -540,10 +520,8 @@ TEST(TessTopologyMovement, MisownedProviderTransitionsNeverAccumulate) {
   EXPECT_EQ(graph.portals().size(), after_build);
 
   tess::RegionGraph reference;
-  EXPECT_EQ((tess::build_region_graph<World, Walker>(world, scratch, reference,
-                                                     MisownedTransitions{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, reference,
+                                          MisownedTransitions{});
   expect_graphs_equal(graph, reference);
 }
 
@@ -554,9 +532,7 @@ TEST(TessTopologyMovement, ProviderMismatchForcesFullRebuildOnUpdate) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  EXPECT_EQ(
-      (tess::build_region_graph<World, Walker>(world, scratch, graph).status),
-      tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, graph);
   ASSERT_TRUE(graph.matches_provider<tess::AdjacentTransitions>());
 
   // Empty dirty set, different provider type: must be a full rebuild that
@@ -567,10 +543,8 @@ TEST(TessTopologyMovement, ProviderMismatchForcesFullRebuildOnUpdate) {
   EXPECT_TRUE(graph.matches_provider<BridgeTransitions>());
 
   tess::RegionGraph reference;
-  EXPECT_EQ((tess::build_region_graph<World, Walker>(world, scratch, reference,
-                                                     BridgeTransitions{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, reference,
+                                          BridgeTransitions{});
   expect_graphs_equal(graph, reference);
 }
 
@@ -583,10 +557,7 @@ TEST(TessTopologyMovement, ProviderRevisionChangeForcesFullRebuildOnUpdate) {
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
   auto provider = RevisionedBridgeTransitions{false, 1};
-  EXPECT_EQ(
-      (tess::build_region_graph<World, Walker>(world, scratch, graph, provider)
-           .status),
-      tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, graph, provider);
   ASSERT_TRUE(graph.matches_provider(provider));
 
   const auto start = tess::Coord3{1, 4, 0};
@@ -605,10 +576,7 @@ TEST(TessTopologyMovement, ProviderRevisionChangeForcesFullRebuildOnUpdate) {
             tess::ReachabilityStatus::Reachable);
 
   tess::RegionGraph reference;
-  EXPECT_EQ((tess::build_region_graph<World, Walker>(world, scratch, reference,
-                                                     provider)
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, reference, provider);
   expect_graphs_equal(graph, reference);
 }
 
@@ -623,10 +591,7 @@ TEST(TessTopologyMovement,
   const auto enabled = RevisionedBridgeTransitions{true, 7};
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  EXPECT_EQ(
-      (tess::build_region_graph<World, Walker>(world, scratch, graph, disabled)
-           .status),
-      tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, graph, disabled);
   ASSERT_TRUE(graph.matches_provider(disabled));
   ASSERT_FALSE(graph.matches_provider(enabled));
 
@@ -653,10 +618,7 @@ TEST(TessTopologyMovement,
   const auto enabled = RevisionedBridgeTransitions{true, 11};
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  EXPECT_EQ(
-      (tess::build_region_graph<World, Walker>(world, scratch, graph, disabled)
-           .status),
-      tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, graph, disabled);
 
   tess::PathRequestRuntime runtime;
   runtime.reserve_requests(1);
@@ -698,17 +660,13 @@ TEST(TessTopologyMovement, SparseProviderIntoMissingChunkIsIndeterminate) {
   tess::RegionGraphScratch reach;
 
   tess::SparseRegionGraph plain;
-  EXPECT_EQ(
-      (tess::build_region_graph<Sparse, Walker>(world, scratch, plain).status),
-      tess::TopologyStatus::Built);
+  tess::build_region_graph<Sparse, Walker>(world, scratch, plain);
   EXPECT_EQ(tess::reachable<ThreeChunk>(plain, start, goal, reach).status,
             tess::ReachabilityStatus::Unreachable);
 
   tess::SparseRegionGraph hopped;
-  EXPECT_EQ((tess::build_region_graph<Sparse, Walker>(world, scratch, hopped,
-                                                      EastwardHop{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<Sparse, Walker>(world, scratch, hopped,
+                                           EastwardHop{});
   EXPECT_EQ(tess::reachable<ThreeChunk>(hopped, start, goal, reach).status,
             tess::ReachabilityStatus::Indeterminate);
 }
@@ -755,18 +713,13 @@ TEST(TessTopologyMovement, StairConnectsLevelsInBothDirections) {
   const auto platform = tess::Coord3{1, 2, 1};
 
   tess::RegionGraph plain;
-  EXPECT_EQ(
-      (tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, plain)
-           .status),
-      tess::TopologyStatus::Built);
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, plain);
   EXPECT_EQ(tess::reachable<TwoLevel>(plain, ground, platform, reach).status,
             tess::ReachabilityStatus::Unreachable);
 
   tess::RegionGraph stairs;
-  EXPECT_EQ((tess::build_region_graph<LevelWorld, PassableTag>(world, scratch,
-                                                               stairs, Stairs{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, stairs,
+                                                    Stairs{});
   EXPECT_EQ(tess::reachable<TwoLevel>(stairs, ground, platform, reach).status,
             tess::ReachabilityStatus::Reachable);
   EXPECT_EQ(tess::reachable<TwoLevel>(stairs, platform, ground, reach).status,
@@ -787,19 +740,15 @@ TEST(TessTopologyMovement, StairEdgesAreFilteredPerClass) {
   const auto platform = tess::Coord3{1, 2, 1};
 
   tess::RegionGraph walker_graph;
-  EXPECT_EQ((tess::build_region_graph<LevelWorld, StairWalker>(
-                 world, scratch, walker_graph, Stairs{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<LevelWorld, StairWalker>(world, scratch,
+                                                    walker_graph, Stairs{});
   EXPECT_NE(
       tess::reachable<TwoLevel>(walker_graph, ground, platform, reach).status,
       tess::ReachabilityStatus::Reachable);
 
   tess::RegionGraph builder_graph;
-  EXPECT_EQ((tess::build_region_graph<LevelWorld, StairBuilder>(
-                 world, scratch, builder_graph, Stairs{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<LevelWorld, StairBuilder>(world, scratch,
+                                                     builder_graph, Stairs{});
   EXPECT_EQ(
       tess::reachable<TwoLevel>(builder_graph, ground, platform, reach).status,
       tess::ReachabilityStatus::Reachable);
@@ -811,10 +760,8 @@ TEST(TessTopologyMovement, StairIncrementalUpdateEqualsFullRebuild) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  EXPECT_EQ((tess::build_region_graph<LevelWorld, PassableTag>(world, scratch,
-                                                               graph, Stairs{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, graph,
+                                                    Stairs{});
 
   // Remove the stair and open a second one elsewhere; dirty the foot chunk.
   world.field<StairTag>(tess::Coord3{2, 1, 0}) =
@@ -828,10 +775,8 @@ TEST(TessTopologyMovement, StairIncrementalUpdateEqualsFullRebuild) {
   EXPECT_EQ(updated.status, tess::TopologyStatus::Built);
 
   tess::RegionGraph reference;
-  EXPECT_EQ((tess::build_region_graph<LevelWorld, PassableTag>(
-                 world, scratch, reference, Stairs{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, reference,
+                                                    Stairs{});
   expect_graphs_equal(graph, reference);
 
   // The new stair (landing {0,2,1} on the platform) restores the link.
@@ -859,15 +804,10 @@ TEST(TessTopologyMovement, DiagonalChunkCrossingStairContributesNothing) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  EXPECT_EQ((tess::build_region_graph<LevelWorld, PassableTag>(world, scratch,
-                                                               graph, Stairs{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, graph,
+                                                    Stairs{});
   tess::RegionGraph plain;
-  EXPECT_EQ(
-      (tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, plain)
-           .status),
-      tess::TopologyStatus::Built);
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, plain);
   EXPECT_EQ(graph.portals().size(), plain.portals().size());
 }
 
@@ -893,10 +833,8 @@ TEST(TessTopologyMovement, SameChunkStairConnectsItsOwnLevels) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  EXPECT_EQ((tess::build_region_graph<OneChunkWorld, PassableTag>(
-                 world, scratch, graph, tess::StairTransitions<StairTag>{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<OneChunkWorld, PassableTag>(
+      world, scratch, graph, tess::StairTransitions<StairTag>{});
   tess::RegionGraphScratch reach;
   EXPECT_EQ(tess::reachable<OneChunk>(graph, tess::Coord3{0, 0, 0},
                                       tess::Coord3{3, 3, 1}, reach)
@@ -931,15 +869,10 @@ TEST(TessTopologyMovement, SidewaysCrossingStairConnectsBothDirections) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph plain;
-  EXPECT_EQ(
-      (tess::build_region_graph<WideWorld, PassableTag>(world, scratch, plain)
-           .status),
-      tess::TopologyStatus::Built);
+  tess::build_region_graph<WideWorld, PassableTag>(world, scratch, plain);
   tess::RegionGraph stairs;
-  EXPECT_EQ((tess::build_region_graph<WideWorld, PassableTag>(
-                 world, scratch, stairs, tess::StairTransitions<StairTag>{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<WideWorld, PassableTag>(
+      world, scratch, stairs, tess::StairTransitions<StairTag>{});
   EXPECT_EQ(stairs.portals().size(), plain.portals().size() + 2);
 
   tess::RegionGraphScratch reach;
@@ -960,10 +893,8 @@ TEST(TessTopologyMovement, SidewaysCrossingStairConnectsBothDirections) {
       world, scratch, stairs, dirty, tess::StairTransitions<StairTag>{});
   EXPECT_EQ(updated.status, tess::TopologyStatus::Built);
   tess::RegionGraph reference;
-  EXPECT_EQ((tess::build_region_graph<WideWorld, PassableTag>(
-                 world, scratch, reference, tess::StairTransitions<StairTag>{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<WideWorld, PassableTag>(
+      world, scratch, reference, tess::StairTransitions<StairTag>{});
   expect_graphs_equal(stairs, reference);
 }
 
@@ -977,15 +908,10 @@ TEST(TessTopologyMovement, OutOfRangeStairValueReadsAsNone) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  EXPECT_EQ((tess::build_region_graph<LevelWorld, PassableTag>(
-                 world, scratch, graph, tess::StairTransitions<StairTag>{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<LevelWorld, PassableTag>(
+      world, scratch, graph, tess::StairTransitions<StairTag>{});
   tess::RegionGraph plain;
-  EXPECT_EQ(
-      (tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, plain)
-           .status),
-      tess::TopologyStatus::Built);
+  tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, plain);
   expect_graphs_equal(graph, plain);
 }
 
@@ -1040,15 +966,10 @@ TEST(TessTopologyMovement, WideStairFieldValueDoesNotWrapIntoRange) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  EXPECT_EQ((tess::build_region_graph<WideWorld, PassableTag>(
-                 world, scratch, graph, tess::StairTransitions<WideStairTag>{})
-                 .status),
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<WideWorld, PassableTag>(
+      world, scratch, graph, tess::StairTransitions<WideStairTag>{});
   tess::RegionGraph plain;
-  EXPECT_EQ(
-      (tess::build_region_graph<WideWorld, PassableTag>(world, scratch, plain)
-           .status),
-      tess::TopologyStatus::Built);
+  tess::build_region_graph<WideWorld, PassableTag>(world, scratch, plain);
   EXPECT_EQ(graph.portals().size(), plain.portals().size());
 }
 
