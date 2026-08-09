@@ -84,7 +84,8 @@ tess_apply_project_options(tess_bench_thread_scaling)
 # It quote-includes the deterministic harness headers from tests/
 # (grid generators/oracle and the budgeted controller), which are
 # harness support, never public headers.
-add_executable(tess_bench_budgeted_progress tess_budgeted_progress_bench.cc)
+add_executable(tess_bench_budgeted_progress tess_budgeted_progress_bench.cc
+               tess_budgeted_progress_mixed.cc)
 target_link_libraries(
   tess_bench_budgeted_progress
   PRIVATE tess::tess
@@ -103,7 +104,8 @@ tess_apply_project_options(tess_bench_budgeted_progress)
 # new/delete replacement is the documented 12-21% distortion source
 # and this increment's counters block does not use allocation counts.
 add_executable(tess_bench_budgeted_progress_diagnostics
-               tess_budgeted_progress_bench.cc)
+               tess_budgeted_progress_bench.cc
+               tess_budgeted_progress_mixed.cc)
 target_link_libraries(
   tess_bench_budgeted_progress_diagnostics
   PRIVATE tess::tess
@@ -837,7 +839,7 @@ if(BUILD_TESTING)
     foreach(budgeted_cell astar_unit field_product resumable_work
             astar_arrival_60 astar_arrival_600 astar_arrival_2400
             astar_arrival_9600 astar_arrival_paced_600 astar_capacity
-            colony_topology queued_per_chunk)
+            colony_topology queued_per_chunk mixed_fidelity mixed_quanta)
       foreach(budgeted_ns 125000 500000 2000000 8000000)
         list(APPEND budgeted_smoke_artifact_paths
           "${CMAKE_CURRENT_BINARY_DIR}/${budgeted_cell}_${budgeted_ns}ns.json")
