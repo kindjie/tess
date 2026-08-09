@@ -363,6 +363,30 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1355993
     },
+    "path/agent_tick_100_weighted_goal_churn_portal_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 96000,
+      "note":
+          "BOOTSTRAP 4x M3 Max reading (23,921 ns), not a calibrated CI value: PortalFirst repeated-churn steady state (cap 4/3 pinned in the cell, every tick accepted, warm segment cache); recalibrate at 2x the max over ten CI baselines"
+    },
+    "path/agent_tick_100_weighted_fresh_churn_portal_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 8722000,
+      "note":
+          "BOOTSTRAP 4x M3 Max reading (2,180,372 ns), not a calibrated CI value: PortalFirst fresh non-repeating band goals, mixed accept/premium-reject under the pinned 4/3 cap; recalibrate at 2x the max over ten CI baselines"
+    },
+    "path/agent_tick_100_weighted_fresh_churn_exact_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 8400000,
+      "note":
+          "BOOTSTRAP 4x M3 Max reading (2,100,020 ns), not a calibrated CI value: exact-strategy twin of the fresh cell separating the fresh-vs-repeat and portal-vs-exact axes; recalibrate at 2x the max over ten CI baselines"
+    },
+    "path/agent_tick_100_weighted_goal_churn_rejected_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 76900000,
+      "note":
+          "BOOTSTRAP 4x M3 Max reading (19,208,273 ns), not a calibrated CI value: forced premium-rejection worst case (cap 21/20) paying candidates + stitching + rejection + full exact A* every tick; recalibrate at 2x the max over ten CI baselines"
+    },
     "path/agent_tick_100_weighted_goal_churn_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 104000000,

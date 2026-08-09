@@ -703,6 +703,20 @@ singleton goals use normal weighted A*. Returned paths are copied into batch
 scratch so all result spans remain valid until the next batch call or scratch
 clear.
 
+The runtime adds an opt-in strategy on top of that fallback
+(`WeightedReplanStrategy`). The default, `ExactAStar`, leaves singleton
+goals on normal weighted A* and is optimal. `PortalFirst` first tries a
+chunk-portal route stitched through the runtime's segment cache for
+eligible singletons (dense worlds, default adjacent transitions, legacy
+weighted tag classes): accepted routes are verified and legal but may
+exceed the optimal cost, bounded by a premium cap relative to the
+Manhattan lower bound, and every other outcome — no candidate, a failed
+segment, a cap rejection, or an ineligible request — leaves the request
+to the untouched exact fallback with byte-identical results. The cap is
+a route-quality contract, not a latency bound: a rejection pays the
+portal work and then the exact search. Per-outcome counters are reported
+in the runtime stats.
+
 The path-agent tick wrapper is intentionally small and synchronous. The
 simulation scheduler MVP in `include/tess/sim/scheduler.h` layers queued
 operation execution and render deltas around it, but the path tick itself only

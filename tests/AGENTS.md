@@ -694,6 +694,18 @@
   a blocked-seam layout where only the greedy interleaved candidate finds a
   route (axis-order candidates all fail), and a multi-seam L-shaped route
   crossing several chunk boundaries with a contiguous stitched path.
+- `tess_portal_first_replan_test`: verifies the opt-in `PortalFirst`
+  weighted replan strategy — the cache-aware chunk builder matching the
+  uncached builder cold and serving every segment from cache warm (zero
+  fresh expansions), an accepted singleton staying legal within the
+  pinned premium cap with attempt/accept stats, a cap of 1/1 forcing
+  premium rejection with byte-identical exact-A* fallback (status, cost,
+  cost_scale, expansions, and path), two distinct-goal singletons in one
+  batch not aliasing through the shared product workspace, a mixed batch
+  conserving the stats identity (attempts == accepted + no_candidates +
+  verification_failures + premium_rejections) with multi-goal groups
+  bypassed, and the default strategy remaining exact with zero portal
+  stats.
 - `tess_path_agent_test`: verifies the public path-agent wrapper, including
   goal assignment, runtime-backed request/result processing, tile-by-tile
   advancement and arrival that resets a preserved blocked streak,

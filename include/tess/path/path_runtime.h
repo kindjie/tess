@@ -3,6 +3,7 @@
 #include <tess/core/assert.h>
 #include <tess/path/field_product_cache.h>
 #include <tess/path/path.h>
+#include <tess/path/portal_route.h>
 #include <tess/path/portal_segment_cache.h>
 #include <tess/path/precheck.h>
 
@@ -28,6 +29,49 @@ struct PathTicket {
   std::uint64_t generation = 0;
 };
 
+namespace detail {
+
+// Portal-first eligibility and tag extraction: true exactly for the
+// legacy weighted shape MovementClass<Field<P>, FieldCost<C>> with default
+// steps — the class family the chunk-portal product builders accept. The
+// pinned DefaultSteps parameter is itself the step-policy eligibility
+// gate.
+template <typename Class>
+struct portal_replan_tags {
+  static constexpr bool eligible = false;
+};
+
+template <typename PassableTagT, typename CostTagT>
+struct portal_replan_tags<movement::MovementClass<movement::Field<PassableTagT>,
+                                                  movement::FieldCost<CostTagT>,
+                                                  movement::DefaultSteps>> {
+  static constexpr bool eligible = true;
+  using passable_tag = PassableTagT;
+  using cost_tag = CostTagT;
+};
+
+}  // namespace detail
+
+// How single-goal weighted replans are served.
+//
+// ExactAStar: today's behavior — the batch's singleton fallback runs raw
+// weighted A*; results are optimal.
+//
+// PortalFirst: eligible singletons (dense worlds, default adjacent
+// transitions, legacy weighted tag classes) first try a chunk-portal route
+// stitched through the runtime's segment cache. Accepted routes are legal
+// and verified but may exceed the optimal cost, bounded by the premium
+// cap below; every other outcome — no candidate, a failed segment, a cap
+// rejection, or an ineligible request — falls back to exact A* with
+// byte-identical results. A rejection costs the portal work PLUS the
+// exact search, so the cap is a route-quality contract, not a latency
+// bound; the stats record every outcome.
+/// Strategy for single-goal weighted replans (see enumerator comments).
+enum class WeightedReplanStrategy : std::uint8_t {
+  ExactAStar,
+  PortalFirst,
+};
+
 /** Controls cache sizing, reuse, and invalidation for one processing call. */
 struct PathRuntimeCachePolicy {
   // In ScopedFeasible staleness mode world changes do not advance this
@@ -44,6 +88,16 @@ struct PathRuntimeCachePolicy {
   // were optimal when stored; an edit elsewhere can leave them suboptimal
   // until retired. Default preserves exact whole-world invalidation.
   UnitRouteStaleness unit_route_staleness = UnitRouteStaleness::WholeWorldExact;
+  // Opt-in portal-first serving for single-goal weighted replans (see
+  // WeightedReplanStrategy). The premium cap alpha = num/den accepts a
+  // portal route only when its cost is at most alpha times the request's
+  // Manhattan distance — an admissible lower bound on the optimal cost for
+  // the eligible model class, so acceptance guarantees cost <= alpha x
+  // optimal. num == 0 disables the cap (accept every verified route).
+  WeightedReplanStrategy weighted_replan_strategy =
+      WeightedReplanStrategy::ExactAStar;
+  std::uint32_t portal_premium_limit_num = 4;
+  std::uint32_t portal_premium_limit_den = 3;
   bool use_unit_field_product_cache = false;
   std::size_t unit_field_product_min_goal_reuse = 2;
   std::size_t unit_field_product_min_start_chunks = 2;
@@ -68,6 +122,21 @@ struct PathRuntimeCachePolicy {
       RouteCacheScratch::default_max_path_nodes / 8u;
   std::size_t portal_segment_budget =
       WeightedPortalSegmentCache::default_segment_budget;
+};
+
+// Portal-first single-goal replan accounting (see
+// PathRuntimeCachePolicy::weighted_replan_strategy). The identity
+// attempts == accepted + no_candidates + verification_failures +
+// premium_rejections holds; exact_fallbacks counts every attempt that was
+// ultimately served by exact A* (all non-accepted attempts).
+/// Counters for the portal-first weighted replan pass.
+struct WeightedPortalReplanStats {
+  std::size_t attempts = 0;
+  std::size_t accepted = 0;
+  std::size_t no_candidates = 0;
+  std::size_t verification_failures = 0;
+  std::size_t premium_rejections = 0;
+  std::size_t exact_fallbacks = 0;
 };
 
 /** Snapshot of request, result, search, and cache counters. */
@@ -102,6 +171,7 @@ struct PathRuntimeStats {
   std::size_t field_product_skipped_groups = 0;
   WeightedPathBatchStats weighted_batch{};
   PortalSegmentCacheStats portal_segment_cache{};
+  WeightedPortalReplanStats portal_replan{};
 };
 
 /**
@@ -457,6 +527,21 @@ class PathRequestRuntime {
       if (policy.use_weighted_field_product_cache) {
         process_repeated_goal_weighted_fields<World, BatchClass>(world, policy,
                                                                  provider);
+      }
+    }
+
+    // Portal-first pass over eligible single-goal survivors: an accepted
+    // portal route is copied into result storage immediately (the returned
+    // path borrows the shared product workspace) and marks the request
+    // processed; every other outcome leaves the request untouched so it
+    // flows into the exact batch below — fallback parity by construction.
+    if constexpr (std::is_same_v<typename World::residency_type,
+                                 AlwaysResident> &&
+                  std::is_same_v<Provider, AdjacentTransitions> &&
+                  detail::portal_replan_tags<BatchClass>::eligible) {
+      if (policy.weighted_replan_strategy ==
+          WeightedReplanStrategy::PortalFirst) {
+        process_portal_first_singletons<World, BatchClass>(world, policy);
       }
     }
 
@@ -893,6 +978,110 @@ class PathRequestRuntime {
     }
   }
 
+  // Serves eligible single-goal weighted requests through the chunk-portal
+  // product path (see WeightedReplanStrategy::PortalFirst). Runs only under
+  // the compile-time eligibility gate at the call site. Requests whose
+  // endpoints are out of shape are skipped without counting an attempt —
+  // the batch classifies them — and a goal shared by two unprocessed
+  // requests is never a singleton.
+  template <typename World, typename BatchClass>
+  void process_portal_first_singletons(const World& world,
+                                       const PathRuntimeCachePolicy& policy) {
+    using Shape = typename World::shape_type;
+    using Tags = detail::portal_replan_tags<BatchClass>;
+    using PassableTagT = typename Tags::passable_tag;
+    using CostTagT = typename Tags::cost_tag;
+
+    // O(n) goal-occurrence counts over unprocessed requests, reusing the
+    // grouping scratch (any earlier fields pass has finished with it).
+    constexpr auto no_group = std::numeric_limits<std::uint32_t>::max();
+    group_goals_.clear();
+    group_counts_.clear();
+    auto slot_capacity = goal_group_slots_.size() < 16u
+                             ? std::size_t{16}
+                             : goal_group_slots_.size();
+    while (slot_capacity < (requests_.size() + 1u) * 2u) {
+      slot_capacity *= 2u;
+    }
+    goal_group_slots_.assign(slot_capacity, 0u);
+    const auto slot_mask = slot_capacity - 1u;
+    const auto group_of = [&](Coord3 goal, bool insert) {
+      auto slot =
+          static_cast<std::size_t>(detail::coord_hash(goal)) & slot_mask;
+      while (goal_group_slots_[slot] != 0u) {
+        const auto candidate = goal_group_slots_[slot] - 1u;
+        if (group_goals_[candidate] == goal) {
+          return candidate;
+        }
+        slot = (slot + 1u) & slot_mask;
+      }
+      if (!insert) {
+        return no_group;
+      }
+      const auto group = static_cast<std::uint32_t>(group_goals_.size());
+      goal_group_slots_[slot] = group + 1u;
+      group_goals_.push_back(goal);
+      group_counts_.push_back(0u);
+      return group;
+    };
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (processed_[i] != 0) {
+        continue;
+      }
+      ++group_counts_[group_of(requests_[i].goal, true)];
+    }
+
+    auto& replan_stats = stats_.portal_replan;
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (processed_[i] != 0) {
+        continue;
+      }
+      const auto request = requests_[i];
+      if (!contains<Shape>(request.start) || !contains<Shape>(request.goal)) {
+        continue;
+      }
+      if (group_counts_[group_of(request.goal, false)] != 1u) {
+        continue;
+      }
+      ++replan_stats.attempts;
+      const auto result =
+          build_weighted_chunk_portal_route_product_cached<World, PassableTagT,
+                                                           CostTagT>(
+              world, request, unit_scratch_, portal_segment_cache_,
+              portal_replan_product_);
+      if (result.status != PathStatus::Found) {
+        if (portal_replan_product_.waypoints().empty()) {
+          ++replan_stats.no_candidates;
+        } else {
+          ++replan_stats.verification_failures;
+        }
+        ++replan_stats.exact_fallbacks;
+        continue;
+      }
+      // Premium cap: Manhattan is an admissible lower bound for the
+      // eligible scale-1 model class, so cost * den <= manhattan * num
+      // implies cost <= (num/den) x optimal. num == 0 means no cap.
+      const auto lower_bound = static_cast<std::uint64_t>(
+          detail::manhattan(request.start, request.goal));
+      const auto accept = policy.portal_premium_limit_num == 0 ||
+                          static_cast<std::uint64_t>(result.cost) *
+                                  policy.portal_premium_limit_den <=
+                              lower_bound * policy.portal_premium_limit_num;
+      if (!accept) {
+        ++replan_stats.premium_rejections;
+        ++replan_stats.exact_fallbacks;
+        continue;
+      }
+      // The result's path borrows the shared product; copy_result copies
+      // it into runtime storage before the next singleton rebuilds. The
+      // eligible model class is scale-1, matching the result's default.
+      copy_result(i, result);
+      record_status(result.status);
+      processed_[i] = 1;
+      ++replan_stats.accepted;
+    }
+  }
+
   void copy_result(std::size_t index, PathResult result) {
     offsets_[index] = paths_.size();
     sizes_[index] = result.path.size();
@@ -969,6 +1158,10 @@ class PathRequestRuntime {
   FieldProductCache unit_field_product_cache_;
   WeightedPathBatchScratch weighted_batch_;
   WeightedPortalSegmentCache portal_segment_cache_;
+  // Portal-first replan workspace, reused across singletons in a batch;
+  // every accepted route is copied out via copy_result before the next
+  // request rebuilds it (the returned path borrows this product).
+  WeightedPortalRouteProduct portal_replan_product_;
   PathRuntimeStats stats_;
   std::size_t world_changes_since_clear_ = 0;
   std::size_t cache_clears_ = 0;

@@ -8,6 +8,42 @@ entries from 2026-07-11 through 2026-07-28 are in
 older entries are in [`CHANGELOG-archive.md`](CHANGELOG-archive.md) and
 [`CHANGELOG-archive-2026-06.md`](CHANGELOG-archive-2026-06.md).
 
+## 2026-08-09 - Single-goal weighted replans become a two-strategy policy
+
+- Recorded: the weighted batch's single-goal fallback ran raw exact A*
+  cross-map, which the Steam Deck campaigns measured at ~43 ms per
+  goal-churn replan (~174-184k expansions) — on weighted terrain the
+  Manhattan heuristic is only a unit-cost lower bound, so f-plateaus
+  span huge frontiers, and the existing higher-g tie-break orders only
+  exact f-ties. The library already owned a faster tier — chunk-portal
+  candidates, segment A*s, and a budgeted segment cache — measured at
+  ~1 ms cold and microseconds warm on the same map and requests, but the
+  runtime never routed single-goal replans through it.
+- Decided: serving strategy is now an explicit policy
+  (`WeightedReplanStrategy`): `ExactAStar` (default, unchanged) or
+  opt-in `PortalFirst`, a runtime-level pass over eligible unprocessed
+  singletons ahead of the untouched batch fallback — any non-accepted
+  outcome simply leaves the request unprocessed, so exact-fallback
+  parity is structural rather than replicated. Eligibility is
+  compile-time (dense, `AdjacentTransitions`, `DefaultSteps`, legacy
+  weighted tag classes; the trait pins the step policy). Accepted routes
+  are verified and legal but may exceed optimal; the premium cap
+  `cost <= (num/den) x Manhattan` is a route-quality bound (Manhattan is
+  admissible for the eligible class, so acceptance bounds the true
+  premium) and deliberately NOT a latency bound — a rejection pays the
+  portal work plus the exact search, measured at about 2% over exact in
+  the forced worst case. Every accepted product path is copied into
+  runtime result storage immediately, because the builder's returned
+  path borrows a shared workspace that the next singleton rebuilds —
+  the multi-singleton aliasing hazard the design review caught.
+- Recorded honestly: repeated churn gains ~785x from warm segments;
+  fresh non-repeating goals are net-neutral under the default 4/3 cap
+  on the benchmark map (rejections offset acceptances), so the three
+  workload shapes carry separate cells rather than one blended claim.
+  The goal-churn benchmark's repetition of its two goals every 100
+  iterations is likewise recorded: the fresh-goal cells exist so route
+  reuse can never masquerade as a fresh-churn win.
+
 ## 2026-08-08 - Route-cache staleness becomes a two-mode policy
 
 - Recorded: the unit route cache treated any chunk-version change as
