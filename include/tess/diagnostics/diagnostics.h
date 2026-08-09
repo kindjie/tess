@@ -4,6 +4,26 @@
 #include <cstdint>
 #include <limits>
 
+// TESS_ENABLE_DIAGNOSTICS changes public TYPES, not just statements:
+// PathCounters, TraceBuffer, WarningSink and six more exist only when it is
+// defined, and the diagnostics accessors change signature with them. A
+// program that defines it for some translation units and not others
+// violates the one-definition rule with no diagnostic on any compiler --
+// the layouts simply disagree at link time. Define it for a whole binary
+// or not at all.
+//
+// The pragma gives MSVC a link-time check; GCC and Clang have no equivalent
+// mechanism, so consistency there is the build system's job. This mirrors
+// what core/config.h does for the exception mode and core/capacity.h for
+// the internal capacity hook.
+#if defined(_MSC_VER)
+#if defined(TESS_ENABLE_DIAGNOSTICS)
+#pragma detect_mismatch("tess_diagnostics_mode", "enabled")
+#else
+#pragma detect_mismatch("tess_diagnostics_mode", "disabled")
+#endif
+#endif
+
 #if defined(TESS_ENABLE_DIAGNOSTICS)
 /** Expands to 1 when diagnostic instrumentation is compiled in. */
 #define TESS_DIAGNOSTICS_ENABLED 1
