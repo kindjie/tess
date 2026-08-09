@@ -1373,9 +1373,17 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
           if (dirty[raw_chunk] == 0) {
             continue;
           }
-          build_local_chunk_topology<World, Class>(
+          // Discarded deliberately. Neither failure status is reachable
+          // here: we are inside `if constexpr (AlwaysResident)`, where
+          // build_local_chunk_topology never reports MissingChunk -- that
+          // status is returned only under SparseResident -- and
+          // InvalidChunk is ruled out by the dirty-chunk bounds check
+          // above. The incremental sparse branch discards it too, on a
+          // different argument (see the matching comment there); the two
+          // full rebuilds do propagate it.
+          static_cast<void>(build_local_chunk_topology<World, Class>(
               world, ChunkKey{raw_chunk}, scratch,
-              graph.local_topologies_[raw_chunk]);
+              graph.local_topologies_[raw_chunk]));
         }
 
         // Every invalidated portal originates from an affected chunk, because

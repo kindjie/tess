@@ -164,7 +164,6 @@ set(
   include/tess/ops/result_channel.h
   include/tess/path/distance_field_box.h
   include/tess/path/field_product_cache.h
-  include/tess/path/node_index_space.h
   include/tess/path/path.h
   include/tess/path/path_runtime.h
   include/tess/path/path_view.h
@@ -214,6 +213,7 @@ set(
   include/tess/core/tag_identity.h
   include/tess/core/fail_fast.h
   include/tess/core/uint128.h
+  include/tess/path/node_index_space.h
   include/tess/path/detail/astar.h
   include/tess/path/detail/weighted_batch.h
 )

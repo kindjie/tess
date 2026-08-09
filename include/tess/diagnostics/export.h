@@ -38,7 +38,13 @@ struct TimingSnapshot {
 /**
  * Value snapshot of the counters and timings commonly rendered together.
  *
- * All members are copies and therefore outlive the corresponding sinks.
+ * Every counter and timing is a copy and outlives the corresponding sinks.
+ * `TraceRecord::label` is the exception: it is a `std::string_view`, so a
+ * snapshot only outlives its sink to the extent the labels do. The trace
+ * API already requires a label to outlive every reader of the buffer (see
+ * `diagnostics/trace.h`), which a string literal satisfies -- but a
+ * dynamically built label handed to another thread through this snapshot
+ * is a dangling read, and this comment previously promised it was not.
  */
 struct DiagnosticsSnapshot {
   PathCounters path;
