@@ -144,6 +144,7 @@ set(
   include/tess/core/config.h
   include/tess/core/lattice.h
   include/tess/core/shape.h
+  include/tess/core/uint128.h
   include/tess/debug/imgui/panels.h
   include/tess/debug/imgui/tools.h
   include/tess/diagnostics/diagnostics.h
@@ -212,7 +213,6 @@ set(
   TESS_IMPLEMENTATION_HEADERS
   include/tess/core/tag_identity.h
   include/tess/core/fail_fast.h
-  include/tess/core/uint128.h
   include/tess/path/node_index_space.h
   include/tess/path/detail/astar.h
   include/tess/path/detail/weighted_batch.h

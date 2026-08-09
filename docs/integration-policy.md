@@ -250,6 +250,20 @@ The conditions are the contract:
 - First touch and growth allocate. There is no global "never allocates
   after warmup" property, and claiming one would be false.
 
+## The experimental namespace
+
+`include/tess/experimental/` holds work whose shape is still being
+validated. Names there may change or be removed in any release, including
+a patch release, and they are excluded from whatever compatibility promise
+a future 1.0 makes. Today that is the maintenance-scheduler layer.
+
+Within it, the supported spellings are the documented aliases —
+`FifoScheduler` and `CoalescingScheduler`. The template they alias,
+`detail::QueuedScheduler<Coalescing>`, is not a supported name: it lives in
+`detail`, which `docs/style.md` excludes from source compatibility, and it
+is spelled that way deliberately so the alias can be repointed without
+breaking callers who used the documented name.
+
 ## Residency coverage
 
 Four families are dense-only. They `static_assert` on `AlwaysResident`

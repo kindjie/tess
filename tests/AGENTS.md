@@ -74,12 +74,20 @@
   deterministic collection under table churn, goal reconciliation, safe
   two-phase write-back, synchronized spawn/move/park/place/despawn lifecycle
   operations, render deltas, and allocation-free warm ticks.
+- `tess_uint128_surface_test`: pins `UInt128`'s operator set in both
+  directions. The supported operations must compile (implicit construction
+  from an unsigned integer, comparison, multiply/subtract/bitwise/shift,
+  explicit narrowing) and the unsupported ones must not (addition,
+  division, modulo, increment, implicit narrowing). The type is a bit
+  carrier for packed tile keys, not a general 128-bit integer, and a
+  comment saying so does not stop the surface growing one convenience
+  operator at a time — this makes widening it an edit to this file.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
   default and explicit lattice typing with stable lattice identifiers,
   axial hex coordinate conversion and overflow-safe saturated distance,
   degenerate-axis handling, containment helpers, key width inference,
   coordinate/chunk/local/tile key conversion helpers, the portable
-  `tess::detail::UInt128` operations (carrying multiply, borrow subtract,
+  `tess::UInt128` operations (carrying multiply, borrow subtract,
   boundary shifts including counts of 64/127/>=128, comparisons, narrowing,
   non-negative int construction, a death test for the negative-int
   constructor precondition when asserts are enabled,

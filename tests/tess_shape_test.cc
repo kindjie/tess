@@ -224,7 +224,7 @@ TEST(TessShape, InfersHugeBoundedShapeKeyWidth) {
   static_assert(Traits::local_bits == 12);
   static_assert(Traits::chunk_bits == 63);
   static_assert(Traits::tile_key_bits == 75);
-  static_assert(std::is_same_v<Traits::TileKeyStorage, tess::detail::UInt128>);
+  static_assert(std::is_same_v<Traits::TileKeyStorage, tess::UInt128>);
 
   EXPECT_EQ(Traits::local_bits, 12);
   EXPECT_EQ(Traits::tile_key_bits, 75);
@@ -355,7 +355,7 @@ TEST(TessShape, KeyConversionsDoNotAllocate) {
 }
 
 TEST(TessUInt128, MultipliesWithCarriesAcrossThe64BitBoundary) {
-  using tess::detail::UInt128;
+  using tess::UInt128;
   constexpr auto max64 = std::numeric_limits<std::uint64_t>::max();
 
   static_assert(UInt128{max64} * UInt128{max64} ==
@@ -373,7 +373,7 @@ TEST(TessUInt128, MultipliesWithCarriesAcrossThe64BitBoundary) {
 }
 
 TEST(TessUInt128, NonNegativeIntConstructionMatchesUnsigned) {
-  using tess::detail::UInt128;
+  using tess::UInt128;
   static_assert(UInt128{0} == UInt128{0u});
   static_assert(UInt128{42} == UInt128{42u});
 }
@@ -383,13 +383,13 @@ TEST(TessUInt128DeathTest, NegativeIntConstructionAsserts) {
   // The implicit int constructor documents a non-negative precondition
   // (a negative count is always a caller bug, not a wrapped huge value).
   int value = -1;
-  EXPECT_DEATH(static_cast<void>(tess::detail::UInt128{value}),
+  EXPECT_DEATH(static_cast<void>(tess::UInt128{value}),
                "tess assertion failed");
 }
 #endif  // TESS_ENABLE_ASSERTS
 
 TEST(TessUInt128, ShiftsAcrossThe64BitBoundary) {
-  using tess::detail::UInt128;
+  using tess::UInt128;
 
   static_assert((UInt128{1} << 0) == UInt128{1});
   static_assert((UInt128{1} << 63) == UInt128{1ull << 63});
@@ -416,7 +416,7 @@ TEST(TessUInt128, ShiftsAcrossThe64BitBoundary) {
 }
 
 TEST(TessUInt128, SubtractsBorrowsComparesAndNarrows) {
-  using tess::detail::UInt128;
+  using tess::UInt128;
   constexpr auto max64 = std::numeric_limits<std::uint64_t>::max();
 
   static_assert(UInt128::from_parts(1, 0) - UInt128{1} ==
@@ -447,7 +447,7 @@ TEST(TessUInt128, SubtractsBorrowsComparesAndNarrows) {
 }
 
 TEST(TessUInt128, MeasuresBitWidthAtThe64BitBoundary) {
-  using tess::detail::UInt128;
+  using tess::UInt128;
 
   static_assert(tess::detail::bit_width(UInt128{0}) == 0);
   static_assert(tess::detail::bit_width(UInt128{1}) == 1);
@@ -505,8 +505,7 @@ TEST(TessShape, RoundTripsMaxSingleChunkTileKeysWithoutWideShifts) {
   static_assert(Traits::local_bits == 63);
   static_assert(Traits::tile_key_bits == 63);
   static_assert(std::is_same_v<Traits::TileKeyStorage, std::uint64_t>);
-  static_assert(Traits::precise_local_tile_count ==
-                tess::detail::UInt128{1ull << 63});
+  static_assert(Traits::precise_local_tile_count == tess::UInt128{1ull << 63});
 
   constexpr auto max = tess::Coord3{(1ll << 31) - 1, (1ll << 31) - 1, 1};
   constexpr tess::Coord3 corners[] = {

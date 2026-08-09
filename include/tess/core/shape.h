@@ -272,7 +272,7 @@ struct SignedMagnitude {
   const auto dq = detail::signed_delta(lhs.q, rhs.q);
   const auto dr = detail::signed_delta(lhs.r, rhs.r);
   auto twice_distance =
-      detail::add(detail::UInt128{dq.magnitude}, detail::UInt128{dr.magnitude});
+      detail::add(UInt128{dq.magnitude}, UInt128{dr.magnitude});
   twice_distance =
       detail::add(twice_distance, detail::signed_sum_magnitude(dq, dr));
   const auto distance = twice_distance >> 1U;
@@ -341,14 +341,14 @@ struct ShapeTraits {
                         std::numeric_limits<std::int64_t>::max()),
       "Shape size axes must fit std::int64_t so coordinates cannot wrap.");
 
-  static_assert(precise_chunk_count <=
-                    static_cast<detail::UInt128>(
-                        std::numeric_limits<std::uint64_t>::max()),
-                "Shape chunk count must fit std::uint64_t.");
-  static_assert(precise_local_tile_count <=
-                    static_cast<detail::UInt128>(
-                        std::numeric_limits<std::uint64_t>::max()),
-                "Shape local tile count must fit LocalTileId.");
+  static_assert(
+      precise_chunk_count <=
+          static_cast<UInt128>(std::numeric_limits<std::uint64_t>::max()),
+      "Shape chunk count must fit std::uint64_t.");
+  static_assert(
+      precise_local_tile_count <=
+          static_cast<UInt128>(std::numeric_limits<std::uint64_t>::max()),
+      "Shape local tile count must fit LocalTileId.");
 
   static constexpr std::uint64_t chunk_count =
       static_cast<std::uint64_t>(precise_chunk_count);

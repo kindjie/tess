@@ -41,7 +41,7 @@ using StairWorld = tess::AlwaysResidentWorld<StairShape, StairSchema>;
 struct WideAssessmentWorld {
   using schema_type = Schema;
   static constexpr auto chunk_count =
-      tess::detail::UInt128::from_parts(std::uint64_t{1} << 63u, 1);
+      tess::UInt128::from_parts(std::uint64_t{1} << 63u, 1);
   static constexpr std::uint64_t local_tile_count = 1;
 };
 
@@ -192,12 +192,12 @@ TEST(TessTransitionModel, AssessesCompactCostRangeConservatively) {
     return true;
   }();
   static_assert(proof_compiles);
-  constexpr auto widest = tess::detail::UInt128::from_parts(
-      std::numeric_limits<std::uint64_t>::max(),
-      std::numeric_limits<std::uint64_t>::max());
+  constexpr auto widest =
+      tess::UInt128::from_parts(std::numeric_limits<std::uint64_t>::max(),
+                                std::numeric_limits<std::uint64_t>::max());
   static_assert(tess::detail::compact_cost_bound_overflows(widest, 2, 1));
-  static_assert(!tess::detail::compact_cost_bound_overflows(
-      tess::detail::UInt128{1}, 1, 1));
+  static_assert(
+      !tess::detail::compact_cost_bound_overflows(tess::UInt128{1}, 1, 1));
   SUCCEED();
 }
 
