@@ -55,7 +55,11 @@ compile cost.
 Use Doxygen-style comments for public API contracts. Prioritize ownership and
 borrowing, invalidation, allocation behavior, thread safety, checked versus
 unchecked entry points, and sparse-residency behavior over restating names or
-types. `tools/check_public_docs.py` gates namespace-scope symbols in an explicit
-first slice of headers; add a header to its `DEFAULT_HEADERS` only after every
-namespace-scope public type and free function in that header is documented.
-The lightweight checker does not validate members or claim full API coverage.
+types. `tools/check_public_docs.py` gates namespace-scope symbols across every
+installed header: its list is derived from the CMake header sets, so a header
+added to the install set is gated automatically and there is no opt-in list to
+edit. Document a new namespace-scope symbol when you add it: the gate requires
+every namespace-scope public type and free function in an installed header to
+carry a Doxygen comment. It does not validate members, and it accepts an
+undocumented declaration when another declaration with the same normalized
+signature is documented, so it is a floor rather than full API coverage.

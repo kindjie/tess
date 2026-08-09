@@ -134,44 +134,7 @@ The TDD archive preserves the original design intent behind each area.
 These documents are non-authoritative: the maintained notes above and
 the code are the source of truth for current behavior.
 
-- [Project design][project-design]
-- [Shape, coordinate, and key system][shape-tdd]
-- [Chunk storage][storage-tdd]
-- [Queued operations and planner][queued-tdd]
-- [Simulation scheduler][simulation-tdd]
-- [Topology and region graph][topology-tdd]
-- [Pathfinding core][path-tdd]
-- [Flow and distance fields][fields-tdd]
-- [ECS integration][ecs-tdd]
-- [Render delta bridge][render-tdd]
-- [Block kernel pipeline][block-tdd]
-- [GPU backend interface][gpu-tdd]
-- [Diagnostics and tooling][diagnostics-tdd]
-- [Modern C++ safety][safety-tdd]
-- [Lattice and transition model][transition-tdd]
-- [Concurrent tile world addendum][concurrency-tdd]
-- [Tile-layout benchmark takeaways][layout-tdd]
-- [Work contracts addendum][work-contracts-tdd]
-- [Grid benchmark data and scenario oracle][grid-benchmark-tdd]
-- [Exception-free build support][no-exceptions-tdd]
-
-[project-design]: https://github.com/kindjie/tess/blob/main/docs/tdd/project-design.md
-[shape-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/core-shape-coordinate-key-system.md
-[storage-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/core-chunk-storage.md
-[queued-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/queued-operations-and-planner.md
-[simulation-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/simulation-scheduler.md
-[topology-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/topology-and-region-graph.md
-[path-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/pathfinding-core.md
-[fields-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/flow-distance-fields.md
-[ecs-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/ecs-integration.md
-[render-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/render-delta-presentation-bridge.md
-[block-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/block-kernel-pipeline.md
-[gpu-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/gpu-backend-interface.md
-[diagnostics-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/diagnostics-and-tooling.md
-[safety-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/modern-cpp-compile-time-safety.md
-[transition-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/lattice-and-transition-model.md
-[concurrency-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_concurrent_tile_world.md
-[layout-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_tile_layout_bench_takeaways.md
-[work-contracts-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/tdd_addendum_work_contracts.md
-[grid-benchmark-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/grid-benchmark-data-and-scenario-oracle.md
-[no-exceptions-tdd]: https://github.com/kindjie/tess/blob/main/docs/tdd/no-exceptions-support.md
+The archive is indexed in
+[`docs/tdd/README.md`](https://github.com/kindjie/tess/blob/main/docs/tdd/README.md),
+which is the single maintained list -- a second copy here drifted one entry
+behind it, and only the real index is covered by `tests/test_tdd_index.py`.

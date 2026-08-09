@@ -169,7 +169,11 @@ jobs:
             echo "::endgroup::"
             ran=$((ran + 1))
           done
-          test "$ran" -ge 13  # every example runs; bump when adding one
+          # EXACT, not a floor: the dev preset builds 14 examples, and a
+          # floor of 13 passed while one of them silently stopped building.
+          # Bump this when adding an example -- a failure here means either
+          # a new example or a missing one, and both want a human.
+          test "$ran" -eq 14
 
       # Documented example output is copied from real program runs; drift
       # between the docs and the compiled quickstart fails the build.
