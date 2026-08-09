@@ -1393,6 +1393,7 @@ auto main(int argc, char** argv) -> int {
   for (int i = 1; i < argc; ++i) {
     const std::string argument = argv[i];
     if (argument == "--smoke") {
+      options.smoke = true;
       options.warmup_frames = 5;
       options.measured_frames = 30;
       options.repetitions = 2;
@@ -1410,6 +1411,30 @@ auto main(int argc, char** argv) -> int {
         fail("--pass must be timing or counter");
       }
       pass_explicit = true;
+    } else if (argument == "--mixed-tps" && i + 1 < argc) {
+      options.mixed_tps.clear();
+      for (const char* cursor = argv[++i]; *cursor != 0;) {
+        options.mixed_tps.push_back(
+            static_cast<std::uint32_t>(std::strtoul(cursor, nullptr, 10)));
+        while (*cursor != 0 && *cursor != ',') {
+          ++cursor;
+        }
+        if (*cursor == ',') {
+          ++cursor;
+        }
+      }
+    } else if (argument == "--mixed-populations" && i + 1 < argc) {
+      options.mixed_populations.clear();
+      for (const char* cursor = argv[++i]; *cursor != 0;) {
+        options.mixed_populations.push_back(
+            static_cast<std::size_t>(std::strtoul(cursor, nullptr, 10)));
+        while (*cursor != 0 && *cursor != ',') {
+          ++cursor;
+        }
+        if (*cursor == ',') {
+          ++cursor;
+        }
+      }
     } else if (argument == "--reps" && i + 1 < argc) {
       options.repetitions =
           static_cast<std::uint64_t>(std::strtoull(argv[++i], nullptr, 10));

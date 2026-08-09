@@ -76,6 +76,13 @@ struct RunOptions {
   // cells over the identical demand traces and stamps artifacts
   // pass:"counter"; wall numbers from this build are never published.
   bool counter_pass = false;
+  // Set by --smoke: shrinks every cell's frame counts and matrices.
+  bool smoke = false;
+  // Mixed-colony matrix (design section 7): defaults keep an
+  // uninvoked full run tractable; campaigns widen via --mixed-tps and
+  // --mixed-populations.
+  std::vector<std::uint32_t> mixed_tps = {20};
+  std::vector<std::size_t> mixed_populations = {100};
   std::uint64_t warmup_frames = 120;
   std::uint64_t measured_frames = 600;
   std::uint64_t repetitions = 10;

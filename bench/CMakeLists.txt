@@ -828,7 +828,7 @@ if(BUILD_TESTING)
       --out-dir ${CMAKE_CURRENT_BINARY_DIR}
   )
   set_tests_properties(tess_bench_budgeted_progress_smoke PROPERTIES
-    FIXTURES_SETUP budgeted_smoke_artifacts)
+    FIXTURES_SETUP budgeted_smoke_artifacts TIMEOUT 600)
 
   # The emitted smoke artifacts must pass the fail-closed schema
   # validator (design section 14.2 puts schema validation in CI
@@ -839,8 +839,16 @@ if(BUILD_TESTING)
     foreach(budgeted_cell astar_unit field_product resumable_work
             astar_arrival_60 astar_arrival_600 astar_arrival_2400
             astar_arrival_9600 astar_arrival_paced_600 astar_capacity
-            colony_topology queued_per_chunk mixed_fidelity mixed_quanta)
+            colony_topology queued_per_chunk)
       foreach(budgeted_ns 125000 500000 2000000 8000000)
+        list(APPEND budgeted_smoke_artifact_paths
+          "${CMAKE_CURRENT_BINARY_DIR}/${budgeted_cell}_${budgeted_ns}ns.json")
+      endforeach()
+    endforeach()
+    # Mixed smoke cells run two budgets at 60 TPS (design section 7);
+    # the full matrix is campaign-scale and CLI-configured.
+    foreach(budgeted_cell mixed_fidelity_p100_60tps mixed_quanta_p100_60tps)
+      foreach(budgeted_ns 125000 8000000)
         list(APPEND budgeted_smoke_artifact_paths
           "${CMAKE_CURRENT_BINARY_DIR}/${budgeted_cell}_${budgeted_ns}ns.json")
       endforeach()
@@ -856,7 +864,7 @@ if(BUILD_TESTING)
         --out-dir ${budgeted_counter_dir}
     )
     set_tests_properties(tess_bench_budgeted_progress_counter_smoke
-      PROPERTIES FIXTURES_SETUP budgeted_counter_artifacts)
+      PROPERTIES FIXTURES_SETUP budgeted_counter_artifacts TIMEOUT 600)
     set(budgeted_counter_artifact_paths "")
     foreach(budgeted_cell astar_unit field_product resumable_work
             astar_arrival_60 astar_arrival_600)
