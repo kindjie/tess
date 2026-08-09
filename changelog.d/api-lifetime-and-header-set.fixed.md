@@ -18,7 +18,10 @@
   file, so the message now describes the real condition — a custom
   residency policy needs its own specialization.
 - `save_world_archive` and `load_world_archive` are now `[[nodiscard]]`,
-  matching `inspect_world_archive`. In an exception-free library their
-  returned `WorldArchiveResult` is the only failure channel, so
-  `save_world_archive(world, out);` previously compiled and silently
-  discarded a failed save.
+  matching `inspect_world_archive`. In an exception-free library a
+  returned result is the only failure channel, so
+  `load_world_archive(world, bytes);` previously compiled and silently
+  discarded `Corrupt`. Saving turned out to have no failure channel at
+  all — see the `WorldArchiveSaveResult` entry — but its result still
+  carries the written metadata and byte count, which no caller should
+  drop by accident.

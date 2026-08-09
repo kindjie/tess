@@ -196,8 +196,8 @@ TEST(TessPersistence, WideLatticeVersionStillWritesAFixedWidthHeader) {
   source.field<TinyTag>({0, 0, 0}) = 0x5a;
 
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<WideArchive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<WideArchive>(source, bytes).bytes_written,
+            0U);
 
   // The header must stay the size the reader expects, whatever width the
   // lattice declared its version at.
@@ -219,8 +219,8 @@ TEST(TessPersistence, CanonicalFormatMatchesGoldenBytes) {
   source.meta(tess::ChunkKey{0}).entity_count = 0x05060708U;
 
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<TinyArchive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<TinyArchive>(source, bytes).bytes_written,
+            0U);
   // This literal is intentionally independent of the archive writer: it locks
   // the complete v1 envelope, metadata, scalar encoding, and CRC byte order.
   const auto golden = decode_hex(
@@ -250,11 +250,11 @@ TEST(TessPersistence, DenseArchiveRoundTripsAuthoritativeFieldsAndMetadata) {
 
   std::vector<std::byte> bytes;
   const auto saved = tess::save_world_archive<Archive>(source, bytes);
-  ASSERT_EQ(saved.status, tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(saved.bytes_written, 0U);
   EXPECT_EQ(saved.info.schema_id, Archive::id);
   EXPECT_EQ(saved.info.schema_version, Archive::version);
   EXPECT_EQ(saved.info.chunk_count, DenseWorld::chunk_count);
-  EXPECT_EQ(saved.bytes_processed, bytes.size());
+  EXPECT_EQ(saved.bytes_written, bytes.size());
 
   const auto inspected = tess::inspect_world_archive(bytes);
   ASSERT_EQ(inspected.status, tess::WorldArchiveStatus::Ok);
@@ -292,8 +292,7 @@ TEST(TessPersistence, FloatingScalarBitPatternsRoundTripExactly) {
   costs[1] = std::bit_cast<float>(negative_zero_bits);
 
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, bytes).bytes_written, 0U);
   DenseWorld restored;
   ASSERT_EQ(tess::load_world_archive<Archive>(restored, bytes).status,
             tess::WorldArchiveStatus::Ok);
@@ -310,8 +309,8 @@ TEST(TessPersistence,
   source.field<ModeTag>({0, 0, 0}) = ScopedMode::Known;
   source.field<EnabledTag>({0, 0, 0}) = true;
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<EnumArchive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<EnumArchive>(source, bytes).bytes_written,
+            0U);
 
   constexpr auto kFirstFieldOffset =
       kHeaderSize + EnumArchive::field_count * kFieldDescriptorSize +
@@ -368,8 +367,7 @@ TEST(TessPersistence, DenseLoadInvalidatesWarmDerivedProducts) {
               static_cast<std::uint16_t>(key + 2));
   }
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, bytes).bytes_written, 0U);
   ASSERT_EQ(tess::load_world_archive<Archive>(target, bytes, kLoadDirty).status,
             tess::WorldArchiveStatus::Ok);
 
@@ -392,10 +390,11 @@ TEST(TessPersistence, CanonicalBytesDoNotDependOnMutationOrder) {
 
   std::vector<std::byte> first_bytes;
   std::vector<std::byte> second_bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(first, first_bytes).status,
-            tess::WorldArchiveStatus::Ok);
-  ASSERT_EQ(tess::save_world_archive<Archive>(second, second_bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(first, first_bytes).bytes_written,
+            0U);
+  ASSERT_GT(
+      tess::save_world_archive<Archive>(second, second_bytes).bytes_written,
+      0U);
   EXPECT_EQ(first_bytes, second_bytes);
 
   constexpr auto kChunkRecordSize =
@@ -414,8 +413,7 @@ TEST(TessPersistence, RejectsDamageWithoutMutatingTarget) {
   DenseWorld source;
   fill_chunk(source, tess::ChunkKey{0}, 20);
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, bytes).bytes_written, 0U);
 
   DenseWorld target;
   target.field<TerrainTag>({0, 0, 0}) = 777;
@@ -435,8 +433,7 @@ TEST(TessPersistence, RejectsDamageWithoutMutatingTarget) {
 TEST(TessPersistence, DistinguishesShortAndMalformedEnvelopeLengths) {
   DenseWorld source;
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, bytes).bytes_written, 0U);
 
   EXPECT_EQ(tess::inspect_world_archive(
                 std::span<const std::byte>{bytes}.first(kHeaderSize - 1))
@@ -462,8 +459,7 @@ TEST(TessPersistence, RejectsMetadataDamageWithoutMutatingTarget) {
   DenseWorld source;
   fill_chunk(source, tess::ChunkKey{0}, 20);
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, bytes).bytes_written, 0U);
 
   DenseWorld target;
   target.field<TerrainTag>({0, 0, 0}) = 777;
@@ -490,8 +486,7 @@ TEST(TessPersistence, ChunkFieldDecodeStopsAtFirstInvalidScalar) {
 TEST(TessPersistence, ClassifiesCompatibilityBeforeMutation) {
   DenseWorld source;
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, bytes).bytes_written, 0U);
 
   tess::AlwaysResidentWorld<OtherShape, Fields> other_shape;
   EXPECT_EQ(tess::load_world_archive<Archive>(other_shape, bytes).status,
@@ -517,8 +512,7 @@ TEST(TessPersistence, ClassifiesCompatibilityBeforeMutation) {
 TEST(TessPersistence, ClassifiesEnvelopeAndChunkCompatibilityStatuses) {
   DenseWorld source;
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, bytes).bytes_written, 0U);
   DenseWorld target;
 
   auto changed = bytes;
@@ -574,8 +568,7 @@ TEST(TessPersistence, ClassifiesMagicBeforeVersionSpecificEnvelopeLength) {
 TEST(TessPersistence, DuplicateFieldIdsAreCorruptDuringInspection) {
   DenseWorld source;
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, bytes).bytes_written, 0U);
   static_assert(Archive::field_count >= 2);
 
   const auto first_id = read_unsigned_le<std::uint64_t>(bytes, kHeaderSize);
@@ -588,8 +581,7 @@ TEST(TessPersistence, DuplicateFieldIdsAreCorruptDuringInspection) {
 TEST(TessPersistence, CompleteEnvelopeWithImpossibleFieldTableIsCorrupt) {
   DenseWorld source;
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, bytes).bytes_written, 0U);
 
   const auto descriptor_bytes = Archive::field_count * kFieldDescriptorSize;
   bytes.resize(kHeaderSize + descriptor_bytes);
@@ -605,8 +597,8 @@ TEST(TessPersistence, CompleteEnvelopeWithImpossibleFieldTableIsCorrupt) {
 TEST(TessPersistence, InspectionRejectsInvalidDescriptorDomains) {
   DenseWorld source;
   std::vector<std::byte> canonical;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, canonical).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, canonical).bytes_written,
+            0U);
   constexpr auto kKindOffset = std::size_t{12};
   constexpr auto kWidthOffset = std::size_t{13};
 
@@ -633,9 +625,9 @@ TEST(TessPersistence, InspectionRejectsInvalidDescriptorDomains) {
 
   EnumWorld enum_source;
   std::vector<std::byte> enum_bytes;
-  ASSERT_EQ(
-      tess::save_world_archive<EnumArchive>(enum_source, enum_bytes).status,
-      tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<EnumArchive>(enum_source, enum_bytes)
+                .bytes_written,
+            0U);
   write_unsigned_le(enum_bytes,
                     kHeaderSize + kFieldDescriptorSize + kWidthOffset,
                     std::uint32_t{2});
@@ -647,8 +639,8 @@ TEST(TessPersistence, InspectionRejectsInvalidDescriptorDomains) {
 TEST(TessPersistence, InspectionRejectsExcessFieldsAndOutOfRangeChunkKey) {
   DenseWorld source;
   std::vector<std::byte> canonical;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, canonical).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, canonical).bytes_written,
+            0U);
 
   auto excess_fields = canonical;
   write_unsigned_le(
@@ -671,8 +663,7 @@ TEST(TessPersistence, InspectionRejectsExcessFieldsAndOutOfRangeChunkKey) {
 TEST(TessPersistence, DenseInspectionRequiresEveryLogicalChunk) {
   DenseWorld source;
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, bytes).bytes_written, 0U);
 
   constexpr auto kChunkRecordSize =
       sizeof(std::uint64_t) + sizeof(std::uint8_t) + sizeof(std::uint32_t) * 2 +
@@ -703,10 +694,11 @@ TEST(TessPersistence, SparseArchiveIsCanonicalAndCapacityChecked) {
 
   std::vector<std::byte> first_bytes;
   std::vector<std::byte> second_bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(first, first_bytes).status,
-            tess::WorldArchiveStatus::Ok);
-  ASSERT_EQ(tess::save_world_archive<Archive>(second, second_bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(first, first_bytes).bytes_written,
+            0U);
+  ASSERT_GT(
+      tess::save_world_archive<Archive>(second, second_bytes).bytes_written,
+      0U);
   EXPECT_EQ(first_bytes, second_bytes);
 
   constexpr auto kChunkRecordSize =
@@ -777,8 +769,7 @@ TEST(TessPersistence, SparseLoadRematerializesPagesWithNewGenerations) {
   ASSERT_TRUE(tess::is_region_graph_fresh(target, graph));
 
   std::vector<std::byte> bytes;
-  ASSERT_EQ(tess::save_world_archive<Archive>(source, bytes).status,
-            tess::WorldArchiveStatus::Ok);
+  ASSERT_GT(tess::save_world_archive<Archive>(source, bytes).bytes_written, 0U);
   ASSERT_EQ(tess::load_world_archive<Archive>(target, bytes, kLoadDirty).status,
             tess::WorldArchiveStatus::Ok);
 

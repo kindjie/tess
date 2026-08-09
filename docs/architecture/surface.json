@@ -264,6 +264,7 @@
     "WorldArchiveInfo",
     "WorldArchiveResidency",
     "WorldArchiveResult",
+    "WorldArchiveSaveResult",
     "WorldArchiveStatus",
     "inspect_world_archive",
     "load_world_archive",

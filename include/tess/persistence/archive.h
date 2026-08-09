@@ -105,11 +105,33 @@ struct WorldArchiveInfo {
   std::uint64_t chunk_count = 0;
 };
 
-/// Result shared by archive inspection, saving, and loading.
+/// Result shared by archive inspection and loading, both of which can fail.
 struct WorldArchiveResult {
   WorldArchiveStatus status = WorldArchiveStatus::Ok;
   WorldArchiveInfo info{};
   std::size_t bytes_processed = 0;
+};
+
+/**
+ * Result of writing a world archive.
+ *
+ * Deliberately carries no status. Saving has no runtime failure it can
+ * report: every precondition is a `static_assert`, and the one way the
+ * write can fail -- the output vector running out of memory -- is not
+ * representable as a returned value. In a build with exceptions that
+ * surfaces as `std::bad_alloc` from `out`; in an `-fno-exceptions` build
+ * it terminates, as the allocation contract in
+ * `docs/architecture/no-exceptions.md` describes.
+ *
+ * This type exists because the shared `WorldArchiveResult` advertised the
+ * full 14-value `WorldArchiveStatus` enum on a call that only ever
+ * returned `Ok`. Symmetric error handling written against it was dead
+ * code, and -- worse -- it implied save had a failure channel, so callers
+ * did not guard the failure mode it actually has.
+ */
+struct WorldArchiveSaveResult {
+  WorldArchiveInfo info{};
+  std::size_t bytes_written = 0;
 };
 
 namespace detail {
@@ -780,7 +802,7 @@ void restore_chunk_metadata(World& world, ChunkKey key, ChunkState state,
 template <typename Archive, typename World>
 [[nodiscard]] auto save_world_archive(const World& world,
                                       std::vector<std::byte>& out)
-    -> WorldArchiveResult {
+    -> WorldArchiveSaveResult {
   static_assert(detail::archive_fields_supported<Archive, World>(),
                 "Archive fields must exist in the world and use supported "
                 "scalar value types.");
@@ -854,7 +876,7 @@ template <typename Archive, typename World>
     out[detail::world_archive_checksum_offset + i] =
         static_cast<std::byte>((checksum >> (i * 8U)) & std::uint32_t{0xff});
   }
-  WorldArchiveResult result;
+  WorldArchiveSaveResult result;
   result.info.format_version = detail::world_archive_format_version;
   result.info.size = World::shape_type::size;
   result.info.chunk = World::shape_type::chunk;
@@ -871,7 +893,7 @@ template <typename Archive, typename World>
   result.info.residency = detail::world_archive_residency<World>();
   result.info.field_count = static_cast<std::uint32_t>(Archive::field_count);
   result.info.chunk_count = static_cast<std::uint64_t>(keys.size());
-  result.bytes_processed = out.size();
+  result.bytes_written = out.size();
   return result;
 }
 
