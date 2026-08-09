@@ -49,9 +49,15 @@ struct UInt128 {
   // NOLINTNEXTLINE(google-explicit-constructor)
   constexpr UInt128(T value) noexcept : lo(value) {}
 
-  // Implicit, so integer literals in existing code keep working.
+  // Implicit, so integer literals in existing code keep working. Templated
+  // over signed integral types rather than taking a plain `int`: an `int`
+  // parameter accepted any wider signed value through a silent narrowing
+  // conversion, so `UInt128 v = std::int64_t{1} << 32` was zero. Negative
+  // values remain a precondition violation rather than a wrap.
+  template <typename T>
+    requires std::signed_integral<T>
   // NOLINTNEXTLINE(google-explicit-constructor)
-  constexpr UInt128(int value) noexcept
+  constexpr UInt128(T value) noexcept
       : lo((TESS_ASSERT(value >= 0), static_cast<std::uint64_t>(value))) {}
 
   [[nodiscard]] static constexpr auto from_parts(std::uint64_t high,

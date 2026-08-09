@@ -13,6 +13,12 @@
   - `PibtRanking` — it constrains public PIBT entry points, so a caller
     whose ranking callable was rejected could not name the concept
     deciding it.
+- `UInt128`'s implicit constructor from a signed integer is templated over
+  `std::signed_integral` rather than taking a plain `int`. An `int`
+  parameter accepted any wider signed value through a silent narrowing
+  conversion, so `UInt128 v = std::int64_t{1} << 32` was **zero**. That
+  was a latent defect while the type was internal; promoting it would have
+  made it a public one.
 - `UInt128`'s operator set stays deliberately partial and is now pinned by
   `tess_uint128_surface_test`, which asserts both that the supported
   operations compile and that addition, division, modulo, increment and

@@ -53,7 +53,7 @@ headers) and is exported by
   `degenerate_x` / `degenerate_y` / `degenerate_z` flags.
 - `TileKey<Shape>` is the packed global tile key. Its storage type is
   chosen per shape: `std::uint64_t` when `tile_key_bits <= 64`, otherwise
-  the portable 128-bit `detail::UInt128`.
+  the portable 128-bit `UInt128`.
 - Conversion helpers are all `constexpr` and shape-templated:
   `chunk_coord(Coord3)`, `local_coord(Coord3)`,
   `local_tile_id(LocalCoord3)`, `coord(ChunkCoord3, LocalTileId)`,
@@ -77,14 +77,14 @@ chunk_key     = cx + cy * chunk_count_x + cz * chunk_count_x * chunk_count_y
 tile_key      = (chunk_key << local_bits) | local_tile_id
 ```
 
-`ShapeTraits` computes tile and chunk counts in `detail::UInt128`
+`ShapeTraits` computes tile and chunk counts in `UInt128`
 (`precise_chunk_count`, `precise_local_tile_count`) so the intermediate
 products cannot overflow before validation, then enforces the 64-bit
 boundaries with `static_assert`: the chunk count and local tile count must
 each fit `std::uint64_t`, `chunk_bits` must be at most 64 (`ChunkKey` is a
 `std::uint64_t`), and `tile_key_bits` must be at most 128.
 
-`detail::UInt128` is a portable 128-bit unsigned integer used
+`UInt128` is a portable 128-bit unsigned integer used
 unconditionally on every compiler, so Clang and GCC CI exercise exactly the
 code MSVC compiles (MSVC has no unsigned `__int128`). It provides only the
 operations shape.h needs; arithmetic wraps modulo 2^128 like the builtin,

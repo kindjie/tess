@@ -2,6 +2,7 @@
 #include <tess/core/uint128.h>
 
 #include <cstdint>
+#include <limits>
 #include <type_traits>
 
 // `UInt128` is public because `TileKey::value` is spelled with it, and its
@@ -68,6 +69,28 @@ TEST(TessUInt128Surface, SupportedOperationsCompile) {
   static_assert((b << 1u) == UInt128{6u});
   static_assert((a >> 1u) == UInt128{3u});
   static_assert(static_cast<std::uint64_t>(a) == 6u);
+
+  SUCCEED();
+}
+
+TEST(TessUInt128Surface, WideSignedInputsKeepTheirValue) {
+  // A plain `int` parameter accepted any wider signed value through a
+  // silent narrowing conversion, so this was zero: 2^32 does not fit an
+  // int, and copy-initialization permits the narrowing.
+  constexpr std::int64_t wide = std::int64_t{1} << 32;
+  constexpr UInt128 value = wide;
+
+  static_assert(value.hi == 0u);
+  static_assert(value.lo == (std::uint64_t{1} << 32));
+  static_assert(static_cast<std::uint64_t>(value) == (std::uint64_t{1} << 32));
+
+  // The full 64-bit range survives too, from every signed width.
+  constexpr std::int64_t big = std::numeric_limits<std::int64_t>::max();
+  static_assert(
+      UInt128{big}.lo ==
+      static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()));
+  static_assert(UInt128{std::int32_t{7}}.lo == 7u);
+  static_assert(UInt128{7}.lo == 7u);
 
   SUCCEED();
 }
