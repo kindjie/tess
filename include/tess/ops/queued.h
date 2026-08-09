@@ -1455,6 +1455,8 @@ class ExecutionReport {
   }
   auto plan() const&& -> const ExecutionPlan& = delete;
 
+  auto find(OpHandle handle) const&& -> const OperationReport* = delete;
+
   [[nodiscard]] constexpr auto find(OpHandle handle) const& noexcept
       -> const OperationReport* {
     for (const auto& op : operations_) {

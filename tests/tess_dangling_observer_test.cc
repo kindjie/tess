@@ -41,6 +41,19 @@ struct BeginOnRvalue<T, std::void_t<decltype(std::declval<T&&>().begin())>>
     : std::true_type {};
 
 template <typename T, typename = void>
+struct EndOnRvalue : std::false_type {};
+template <typename T>
+struct EndOnRvalue<T, std::void_t<decltype(std::declval<T&&>().end())>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct FindOnRvalue : std::false_type {};
+template <typename T>
+struct FindOnRvalue<T, std::void_t<decltype(std::declval<T&&>().find(
+                           std::declval<tess::OpHandle>()))>> : std::true_type {
+};
+
+template <typename T, typename = void>
 struct PlanOnRvalue : std::false_type {};
 template <typename T>
 struct PlanOnRvalue<T, std::void_t<decltype(std::declval<T&&>().plan())>>
@@ -57,11 +70,13 @@ TEST(TessDanglingObserver, OwnedChunkDomainObserversRejectTemporaries) {
   static_assert(!ViewOnRvalue<tess::OwnedChunkDomain>::value);
   static_assert(!KeysOnRvalue<tess::OwnedChunkDomain>::value);
   static_assert(!BeginOnRvalue<tess::OwnedChunkDomain>::value);
+  static_assert(!EndOnRvalue<tess::OwnedChunkDomain>::value);
 
   // Still available on an lvalue, which is the supported use.
   static_assert(ViewOnRvalue<tess::OwnedChunkDomain&>::value);
   static_assert(KeysOnRvalue<tess::OwnedChunkDomain&>::value);
   static_assert(BeginOnRvalue<tess::OwnedChunkDomain&>::value);
+  static_assert(EndOnRvalue<tess::OwnedChunkDomain&>::value);
 
   SUCCEED();
 }
@@ -79,10 +94,14 @@ TEST(TessDanglingObserver, ExecutionReportObserversRejectTemporaries) {
   static_assert(!PlanOnRvalue<tess::ExecutionReport>::value);
   static_assert(!OperationsOnRvalue<tess::ExecutionReport>::value);
   static_assert(!OperationsOnRvalue<tess::ExecutionPlan>::value);
+  // find() returns a pointer into operations_, so it needs the same
+  // treatment. A const& qualifier alone still binds to a temporary.
+  static_assert(!FindOnRvalue<tess::ExecutionReport>::value);
 
   static_assert(PlanOnRvalue<tess::ExecutionReport&>::value);
   static_assert(OperationsOnRvalue<tess::ExecutionReport&>::value);
   static_assert(OperationsOnRvalue<tess::ExecutionPlan&>::value);
+  static_assert(FindOnRvalue<tess::ExecutionReport&>::value);
 
   SUCCEED();
 }

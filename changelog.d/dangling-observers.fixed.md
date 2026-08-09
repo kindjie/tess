@@ -7,14 +7,22 @@
     `chunk_domain(OwnedChunkDomain&&)` overload made this worse rather
     than better: a caller who hit its error would "fix" it by adding
     `.view()`, trading a compile error for undefined behaviour.
-  - `ExecutionReport::plan/operations` and `ExecutionPlan::operations` —
+  - `ExecutionReport::plan/operations/find` and
+    `ExecutionPlan::operations` —
     `plan_operations` returns by value, so the idiomatic-looking
     `for (const auto& op : plan_operations(world, ops).plan().operations())`
     iterated freed memory. `ExecutionPhase` already had a generation
     check, which made these unprotected accessors read as safe by
     comparison.
-  Source-breaking only for code that was already dangling. `size()` and
-  `empty()` return values and stay callable on a temporary.
+  The ban is conservative, and the release note should say so rather than
+  claim only unsafe callers are affected: an observer cannot tell whether
+  the span it returns will be consumed inside the same full expression or
+  outlive it, so `explicit_chunk_domain(keys).view().size()` and
+  `plan_operations(world, ops).plan().empty()` are rejected too even
+  though both are safe. Binding the factory result to a named value fixes
+  every rejected case, and it is the spelling that stays correct if the
+  expression later grows. Observers that return a value rather than a
+  borrow — `size()`, `empty()` — remain callable on a temporary.
 - `explicit_chunk_domain`'s Doxygen claimed it "Copies, sorts, and
   deduplicates". It sorts and stops. `architecture/block.md` was always
   right, and the queued-operation layer deduplicates its own domains
