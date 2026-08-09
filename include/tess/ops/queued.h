@@ -562,10 +562,14 @@ auto PlannedOperation::create(const World& /*world*/,
 /** Immutable ordered view of the operations accepted by one planning pass. */
 class ExecutionPlan {
  public:
-  [[nodiscard]] constexpr auto operations() const noexcept
+  // Lvalue-only for the same reason as ExecutionReport's: the span points
+  // into operations_, and a plan reached through a temporary report would
+  // outlive it.
+  [[nodiscard]] constexpr auto operations() const& noexcept
       -> std::span<const PlannedOperation> {
     return {operations_.data(), operations_.size()};
   }
+  auto operations() const&& -> std::span<const PlannedOperation> = delete;
 
   [[nodiscard]] constexpr bool empty() const noexcept {
     return operations_.empty();
@@ -1432,16 +1436,28 @@ class PlannedPhaseExecutionScratch {
 /** Owns ordered planning diagnostics and the corresponding accepted plan. */
 class ExecutionReport {
  public:
-  [[nodiscard]] constexpr auto operations() const noexcept
+  // plan_operations returns an ExecutionReport BY VALUE, so every accessor
+  // handing out a reference or a span into it is lvalue-only. The
+  // idiomatic-looking `for (const auto& op :
+  // plan_operations(world, ops).plan().operations())` iterated freed
+  // memory: the report died at the end of the full expression while the
+  // range-for held a span into its member vector. ExecutionPhase already
+  // carried a generation check, which made these unprotected accessors
+  // read as safe by comparison.
+  [[nodiscard]] constexpr auto operations() const& noexcept
       -> std::span<const OperationReport> {
     return {operations_.data(), operations_.size()};
   }
+  auto operations() const&& -> std::span<const OperationReport> = delete;
 
-  [[nodiscard]] constexpr auto plan() const noexcept -> const ExecutionPlan& {
+  [[nodiscard]] constexpr auto plan() const& noexcept -> const ExecutionPlan& {
     return plan_;
   }
+  auto plan() const&& -> const ExecutionPlan& = delete;
 
-  [[nodiscard]] constexpr auto find(OpHandle handle) const noexcept
+  auto find(OpHandle handle) const&& -> const OperationReport* = delete;
+
+  [[nodiscard]] constexpr auto find(OpHandle handle) const& noexcept
       -> const OperationReport* {
     for (const auto& op : operations_) {
       if (op.handle == handle) {
