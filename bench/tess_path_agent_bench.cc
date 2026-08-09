@@ -570,6 +570,237 @@ void BM_path_agent_tick_100_weighted_goal_churn_512x512(
   record_tick_counters(state, tick_stats);
 }
 
+// PortalFirst variants of the goal-churn tick. All three pin the premium
+// cap explicitly rather than inheriting the policy default, so a later
+// default change cannot silently flip a postcondition. The repeated cell
+// keeps the base cell's two-goal churn; the fresh cell re-arms into the
+// map's always-passable band right of the last barrier column (x = 476),
+// never repeating a goal within a run; the rejected cell's cap of 21/20
+// sits below every portal route's premium on this map, so every attempt
+// pays candidates + stitching + rejection + the full exact search — the
+// measured worst case.
+enum class ChurnGoalMode : std::uint8_t { Repeated, Fresh, Sealed };
+
+template <ChurnGoalMode Mode, std::uint32_t CapNum, std::uint32_t CapDen,
+          bool ExpectAccepts>
+void portal_first_goal_churn_tick(benchmark::State& state) {
+  WeightedPathWorld world;
+  fill_passable(world, 1);
+  fill_cost(world, 1);
+  carve_sparse_blockers(world);
+
+  std::array<tess::PathAgentState, 100> agents{};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    const auto goal = i % 2 == 0 ? tess::Coord3{510, 510, 0}
+                                 : tess::Coord3{480, 510 - offset % 32, 0};
+    agents[i].position = tess::Coord3{1 + offset % 16, 1 + offset / 16, 0};
+    world.template field<PassableTag>(agents[i].position) = 1;
+    world.template field<CostTag>(agents[i].position) = 1;
+    world.template field<PassableTag>(goal) = 1;
+    world.template field<CostTag>(goal) = 1;
+    tess::set_path_agent_goal(agents[i], goal);
+  }
+  const auto churn_goals =
+      std::array{tess::Coord3{479, 500, 0}, tess::Coord3{500, 479, 0}};
+  for (const auto goal : churn_goals) {
+    world.template field<PassableTag>(goal) = 1;
+    world.template field<CostTag>(goal) = 1;
+  }
+  // Open ground between the x=439 and x=476 barrier columns, away from
+  // every agent start and goal, so sealing it perturbs nothing else.
+  const auto sealed_goal = tess::Coord3{450, 450, 0};
+  if (Mode == ChurnGoalMode::Sealed) {
+    // Ring the sealed goal with blockers: candidates still select (chunk
+    // seams stay passable) but the final segment cannot enter the pocket,
+    // so every attempt is a verification failure followed by the full
+    // exact search proving NoPath — the no-portal-route worst case.
+    world.template field<PassableTag>(sealed_goal) = 1;
+    world.template field<CostTag>(sealed_goal) = 1;
+    for (std::int64_t dx = -1; dx <= 1; ++dx) {
+      for (std::int64_t dy = -1; dy <= 1; ++dy) {
+        if (dx != 0 || dy != 0) {
+          world.template field<PassableTag>(
+              tess::Coord3{sealed_goal.x + dx, sealed_goal.y + dy, 0}) = 0;
+        }
+      }
+    }
+  }
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  auto options = tess::PathAgentTickOptions{.max_steps = 0};
+  options.cache_policy.weighted_replan_strategy =
+      tess::WeightedReplanStrategy::PortalFirst;
+  options.cache_policy.portal_premium_limit_num = CapNum;
+  options.cache_policy.portal_premium_limit_den = CapDen;
+
+  (void)tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag, CostTag,
+                                        8>(tick_state, world, agents, runtime,
+                                           options);
+
+  // Fresh goals walk the always-passable band x in [477, 511]: the last
+  // barrier column is 476, so the band's tiles are cost-1 passable by
+  // construction and the map stays byte-identical to the guard cell.
+  const auto fresh_goal = [](std::size_t index) {
+    return tess::Coord3{477 + static_cast<std::int64_t>(index % 35u),
+                        static_cast<std::int64_t>((index / 35u) % 512u), 0};
+  };
+
+  // Runtime stats reset per process call, so aggregate claims need
+  // per-tick accumulation. The stats read costs a small constant per tick
+  // and is identical across the portal cells, so their relative numbers
+  // are unaffected; the recorded bootstrap ceilings were measured with it
+  // in place.
+  tess::WeightedPortalReplanStats sums{};
+  tess::PathAgentTickStats tick_stats;
+  std::size_t churn = 0;
+  for (auto _ : state) {
+    // Sealed mode re-arms the SAME agent every tick: a NoPath agent
+    // retries its goal on the next tick, so rotating agents would stack
+    // one more retrying submitter per tick and break the one-replan
+    // shape every other mode measures.
+    auto& agent = Mode == ChurnGoalMode::Sealed ? agents[0]
+                                                : agents[churn % agents.size()];
+    const auto goal = Mode == ChurnGoalMode::Fresh ? fresh_goal(churn)
+                      : Mode == ChurnGoalMode::Sealed
+                          ? sealed_goal
+                          : churn_goals[churn % churn_goals.size()];
+    tess::set_path_agent_goal(tick_state, agent, goal);
+    tick_stats = tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag,
+                                                 CostTag, 8>(
+        tick_state, world, agents, runtime, options);
+    benchmark::DoNotOptimize(tick_stats.tick);
+    const auto tick_replan = runtime.stats().portal_replan;
+    sums.attempts += tick_replan.attempts;
+    sums.accepted += tick_replan.accepted;
+    sums.no_candidates += tick_replan.no_candidates;
+    sums.verification_failures += tick_replan.verification_failures;
+    sums.premium_rejections += tick_replan.premium_rejections;
+    sums.exact_fallbacks += tick_replan.exact_fallbacks;
+    ++churn;
+  }
+
+  bench_check(tick_stats.processed_paths && tick_stats.pathing.submitted == 1,
+              "goal churn tick replanned more than the re-armed agent");
+  if (Mode == ChurnGoalMode::Fresh) {
+    bench_check(churn < 512u * 35u,
+                "fresh-goal cell exhausted the non-repeating band");
+  }
+  bench_check(sums.attempts == churn,
+              "portal pass missed a tick's singleton attempt");
+  if (Mode == ChurnGoalMode::Sealed) {
+    // Every attempt selects candidates, fails stitching into the sealed
+    // pocket, and pays the full exact NoPath search.
+    bench_check(sums.verification_failures == churn && sums.accepted == 0,
+                "sealed cell did not fail verification on every tick");
+  } else {
+    bench_check(sums.no_candidates == 0 && sums.verification_failures == 0,
+                "portal pass structure failed");
+  }
+  if (ExpectAccepts && Mode == ChurnGoalMode::Repeated) {
+    bench_check(sums.accepted == churn && sums.exact_fallbacks == 0,
+                "portal-first cell fell back to exact A*");
+  } else if (ExpectAccepts && Mode == ChurnGoalMode::Fresh) {
+    // Fresh band goals carry premiums between 4/3 and 2 on this map
+    // (measured: all rejected at 4/3, all accepted at 2/1), so this cell
+    // pins the 2/1 cap and requires every fresh goal accepted — the
+    // fresh-goal portal win with mixed cold and warm segments. The
+    // default-cap rejection economics live in the rejected cell.
+    bench_check(sums.accepted == churn && sums.exact_fallbacks == 0,
+                "fresh cell rejected a fresh-band goal at cap 2/1");
+  } else if (!ExpectAccepts && Mode == ChurnGoalMode::Repeated) {
+    bench_check(sums.accepted == 0 && sums.premium_rejections == churn,
+                "rejection cell accepted a portal route");
+  }
+  record_tick_counters(state, tick_stats);
+  state.counters["portal.attempts"] = static_cast<double>(sums.attempts);
+  state.counters["portal.accepted"] = static_cast<double>(sums.accepted);
+  state.counters["portal.premium_rejections"] =
+      static_cast<double>(sums.premium_rejections);
+  state.counters["portal.verification_failures"] =
+      static_cast<double>(sums.verification_failures);
+  const auto segments = runtime.stats().portal_segment_cache;
+  state.counters["segments.sweeps"] = static_cast<double>(segments.sweeps);
+  state.counters["segments.evictions"] =
+      static_cast<double>(segments.evictions);
+  state.counters["segments.stale_rejections"] =
+      static_cast<double>(segments.stale_rejections);
+}
+
+void BM_path_agent_tick_100_weighted_goal_churn_portal_512x512(
+    benchmark::State& state) {
+  portal_first_goal_churn_tick<ChurnGoalMode::Repeated, 4, 3, true>(state);
+}
+
+void BM_path_agent_tick_100_weighted_fresh_churn_portal_512x512(
+    benchmark::State& state) {
+  portal_first_goal_churn_tick<ChurnGoalMode::Fresh, 2, 1, true>(state);
+}
+
+void BM_path_agent_tick_100_weighted_fresh_churn_exact_512x512(
+    benchmark::State& state) {
+  // The exact-strategy twin of the fresh cell: same workload, default
+  // strategy, so the fresh-vs-repeat and portal-vs-exact axes separate.
+  WeightedPathWorld world;
+  fill_passable(world, 1);
+  fill_cost(world, 1);
+  carve_sparse_blockers(world);
+
+  std::array<tess::PathAgentState, 100> agents{};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    const auto offset = static_cast<std::int64_t>(i);
+    const auto goal = i % 2 == 0 ? tess::Coord3{510, 510, 0}
+                                 : tess::Coord3{480, 510 - offset % 32, 0};
+    agents[i].position = tess::Coord3{1 + offset % 16, 1 + offset / 16, 0};
+    world.template field<PassableTag>(agents[i].position) = 1;
+    world.template field<CostTag>(agents[i].position) = 1;
+    world.template field<PassableTag>(goal) = 1;
+    world.template field<CostTag>(goal) = 1;
+    tess::set_path_agent_goal(agents[i], goal);
+  }
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  const auto options = tess::PathAgentTickOptions{.max_steps = 0};
+  (void)tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag, CostTag,
+                                        8>(tick_state, world, agents, runtime,
+                                           options);
+
+  const auto fresh_goal = [](std::size_t index) {
+    return tess::Coord3{477 + static_cast<std::int64_t>(index % 35u),
+                        static_cast<std::int64_t>((index / 35u) % 512u), 0};
+  };
+  tess::PathAgentTickStats tick_stats;
+  std::size_t churn = 0;
+  for (auto _ : state) {
+    auto& agent = agents[churn % agents.size()];
+    tess::set_path_agent_goal(tick_state, agent, fresh_goal(churn));
+    tick_stats = tess::tick_weighted_path_agents<WeightedPathWorld, PassableTag,
+                                                 CostTag, 8>(
+        tick_state, world, agents, runtime, options);
+    benchmark::DoNotOptimize(tick_stats.tick);
+    ++churn;
+  }
+  bench_check(tick_stats.processed_paths && tick_stats.pathing.submitted == 1,
+              "fresh churn tick replanned more than the re-armed agent");
+  bench_check(churn < 512u * 35u,
+              "fresh-goal cell exhausted the non-repeating band");
+  record_tick_counters(state, tick_stats);
+}
+
+void BM_path_agent_tick_100_weighted_goal_churn_rejected_512x512(
+    benchmark::State& state) {
+  portal_first_goal_churn_tick<ChurnGoalMode::Repeated, 21, 20, false>(state);
+}
+
+void BM_path_agent_tick_100_weighted_sealed_churn_portal_512x512(
+    benchmark::State& state) {
+  portal_first_goal_churn_tick<ChurnGoalMode::Sealed, 4, 3, false>(state);
+}
+
 void BM_path_agent_runtime_100_unit_world_edit_512x512(
     benchmark::State& state) {
   PathWorld world;
@@ -755,6 +986,16 @@ BENCHMARK(BM_path_agent_runtime_100_weighted_mixed_512x512)
     ->Name("path/agent_runtime_100_weighted_mixed_512x512");
 BENCHMARK(BM_path_agent_tick_100_weighted_goal_churn_512x512)
     ->Name("path/agent_tick_100_weighted_goal_churn_512x512");
+BENCHMARK(BM_path_agent_tick_100_weighted_goal_churn_portal_512x512)
+    ->Name("path/agent_tick_100_weighted_goal_churn_portal_512x512");
+BENCHMARK(BM_path_agent_tick_100_weighted_fresh_churn_portal_512x512)
+    ->Name("path/agent_tick_100_weighted_fresh_churn_portal_512x512");
+BENCHMARK(BM_path_agent_tick_100_weighted_fresh_churn_exact_512x512)
+    ->Name("path/agent_tick_100_weighted_fresh_churn_exact_512x512");
+BENCHMARK(BM_path_agent_tick_100_weighted_goal_churn_rejected_512x512)
+    ->Name("path/agent_tick_100_weighted_goal_churn_rejected_512x512");
+BENCHMARK(BM_path_agent_tick_100_weighted_sealed_churn_portal_512x512)
+    ->Name("path/agent_tick_100_weighted_sealed_churn_portal_512x512");
 BENCHMARK(BM_path_agent_runtime_100_unit_world_edit_512x512)
     ->Name("path/agent_runtime_100_unit_world_edit_512x512");
 BENCHMARK(BM_path_agent_runtime_100_unit_shared_wall_gap_route_cache_512x512)

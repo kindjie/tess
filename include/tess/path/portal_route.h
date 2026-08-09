@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/path/path.h>
+#include <tess/path/portal_segment_cache.h>
 
 #include <array>
 #include <cstddef>
@@ -93,6 +94,58 @@ template <typename World, typename PassableTag>
   return result;
 }
 
+// Runs the chunk-portal candidate scan (six axis orders plus the greedy
+// walk) and leaves the best-scoring waypoint sequence in
+// `product.best_waypoints_`, with candidate/scan statistics accumulated on
+// the product. Returns false when no goal-monotone candidate exists — the
+// heuristic-tier limitation documented on the public builder below.
+template <typename World, typename PassableTag>
+[[nodiscard]] auto select_chunk_portal_waypoints(
+    const World& world, PathRequest request,
+    WeightedPortalRouteProduct& product) -> bool {
+  constexpr auto orders = std::array{
+      std::array{Axis::X, Axis::Y, Axis::Z},
+      std::array{Axis::X, Axis::Z, Axis::Y},
+      std::array{Axis::Y, Axis::X, Axis::Z},
+      std::array{Axis::Y, Axis::Z, Axis::X},
+      std::array{Axis::Z, Axis::X, Axis::Y},
+      std::array{Axis::Z, Axis::Y, Axis::X},
+  };
+
+  auto found_route = false;
+  auto best_score = std::numeric_limits<std::uint32_t>::max();
+  product.best_waypoints_.clear();
+  for (const auto& order : orders) {
+    const auto candidate = build_chunk_portal_candidate<World, PassableTag>(
+        world, request, order, product.candidate_waypoints_);
+    ++product.route_candidates_;
+    product.portal_scan_tiles_ += candidate.scan_tiles;
+    if (!candidate.found) {
+      continue;
+    }
+    if (!found_route || candidate.score < best_score) {
+      found_route = true;
+      best_score = candidate.score;
+      product.best_waypoints_.assign(product.candidate_waypoints_.begin(),
+                                     product.candidate_waypoints_.end());
+    }
+  }
+  {
+    const auto candidate =
+        build_greedy_chunk_portal_candidate<World, PassableTag>(
+            world, request, product.candidate_waypoints_);
+    ++product.route_candidates_;
+    product.portal_scan_tiles_ += candidate.scan_tiles;
+    if (candidate.found && (!found_route || candidate.score < best_score)) {
+      found_route = true;
+      best_score = candidate.score;
+      product.best_waypoints_.assign(product.candidate_waypoints_.begin(),
+                                     product.candidate_waypoints_.end());
+    }
+  }
+  return found_route;
+}
+
 }  // namespace detail
 
 // HEURISTIC TIER: candidates walk only goal-monotone chunk staircases (each
@@ -134,47 +187,9 @@ auto build_weighted_chunk_portal_route_product(
     return PathResult{product.status_, 0, 0, 0, product.path_};
   }
 
-  constexpr auto orders = std::array{
-      std::array{detail::Axis::X, detail::Axis::Y, detail::Axis::Z},
-      std::array{detail::Axis::X, detail::Axis::Z, detail::Axis::Y},
-      std::array{detail::Axis::Y, detail::Axis::X, detail::Axis::Z},
-      std::array{detail::Axis::Y, detail::Axis::Z, detail::Axis::X},
-      std::array{detail::Axis::Z, detail::Axis::X, detail::Axis::Y},
-      std::array{detail::Axis::Z, detail::Axis::Y, detail::Axis::X},
-  };
-
-  auto found_route = false;
-  auto best_score = std::numeric_limits<std::uint32_t>::max();
-  product.best_waypoints_.clear();
-  for (const auto& order : orders) {
-    const auto candidate =
-        detail::build_chunk_portal_candidate<World, PassableTag>(
-            world, request, order, product.candidate_waypoints_);
-    ++product.route_candidates_;
-    product.portal_scan_tiles_ += candidate.scan_tiles;
-    if (!candidate.found) {
-      continue;
-    }
-    if (!found_route || candidate.score < best_score) {
-      found_route = true;
-      best_score = candidate.score;
-      product.best_waypoints_.assign(product.candidate_waypoints_.begin(),
-                                     product.candidate_waypoints_.end());
-    }
-  }
-  {
-    const auto candidate =
-        detail::build_greedy_chunk_portal_candidate<World, PassableTag>(
-            world, request, product.candidate_waypoints_);
-    ++product.route_candidates_;
-    product.portal_scan_tiles_ += candidate.scan_tiles;
-    if (candidate.found && (!found_route || candidate.score < best_score)) {
-      found_route = true;
-      best_score = candidate.score;
-      product.best_waypoints_.assign(product.candidate_waypoints_.begin(),
-                                     product.candidate_waypoints_.end());
-    }
-  }
+  const auto found_route =
+      detail::select_chunk_portal_waypoints<World, PassableTag>(world, request,
+                                                                product);
   if (!found_route) {
     product.status_ = PathStatus::NoPath;
     // Failure results depend on world content the portal scans sampled;
@@ -234,6 +249,112 @@ auto build_weighted_chunk_portal_route_product(
     const auto key = tile_key<Shape>(coord);
     product.dependencies_.add_chunk(world, chunk_key<Shape>(key));
   }
+  return PathResult{product.status_, product.cost_, product.expanded_nodes_,
+                    product.reached_nodes_, product.path_};
+}
+
+// Same heuristic tier and NoPath semantics as the uncached builder above:
+// chunk-portal candidates select the waypoints, and stitching runs through
+// the class-bound segment cache so repeated corridors serve without fresh
+// searches. Unlike the uncached builder, the product records segment-level
+// dependencies only (inside the cache); it is a serving product, not a
+// replay product, and its returned path borrows the product exactly like
+// the other builders.
+/// Builds a chunk-portal weighted route through the segment cache.
+template <typename World, typename PassableTag, typename CostTag>
+auto build_weighted_chunk_portal_route_product_cached(
+    const World& world, PathRequest request, PathScratch& scratch,
+    WeightedPortalSegmentCache& cache, WeightedPortalRouteProduct& product)
+    -> PathResult {
+  using Shape = typename World::shape_type;
+  static_assert(
+      std::is_same_v<typename World::residency_type, AlwaysResident>,
+      "build_weighted_chunk_portal_route_product_cached is dense-only; it "
+      "needs sparse topology and route-cache support from a later slice.");
+
+  product.clear();
+  product.request_ = request;
+
+  if (!contains<Shape>(request.start)) {
+    product.status_ = PathStatus::InvalidStart;
+    return PathResult{product.status_, 0, 0, 0, product.path_};
+  }
+  if (!contains<Shape>(request.goal)) {
+    product.status_ = PathStatus::InvalidGoal;
+    return PathResult{product.status_, 0, 0, 0, product.path_};
+  }
+
+  if (!detail::select_chunk_portal_waypoints<World, PassableTag>(world, request,
+                                                                 product)) {
+    product.status_ = PathStatus::NoPath;
+    return PathResult{product.status_, 0, 0, 0, product.path_};
+  }
+  product.waypoints_.assign(product.best_waypoints_.begin(),
+                            product.best_waypoints_.end());
+
+  auto class_cache =
+      cache
+          .template for_class<movement::LegacyWeighted<PassableTag, CostTag>>();
+  auto from = request.start;
+  // Segment costs accumulate in 64 bits: each segment cost is
+  // representable, but a stitched total at or above the uint32 infinity
+  // sentinel must report CostOverflow exactly as the exact search would —
+  // never a Found route carrying an unrepresentable cost.
+  auto total_cost = std::uint64_t{0};
+  auto total_expanded = std::size_t{0};
+  auto total_reached = std::size_t{0};
+  auto append_segment = [&](PathRequest segment_request) {
+    if (const auto hit =
+            class_cache.lookup_append(world, segment_request, product.path_);
+        hit.found) {
+      total_cost += hit.cost;
+      return true;
+    }
+    const auto result = weighted_astar_path<World, PassableTag, CostTag>(
+        world, segment_request, scratch);
+    class_cache.store(world, segment_request, result);
+    total_expanded += result.expanded_nodes;
+    total_reached += result.reached_nodes;
+    if (result.status != PathStatus::Found) {
+      product.path_.clear();
+      product.status_ = result.status;
+      product.expanded_nodes_ = total_expanded;
+      product.reached_nodes_ = total_reached;
+      return false;
+    }
+    total_cost += result.cost;
+    for (std::size_t i = product.path_.empty() ? 0u : 1u;
+         i < result.path.size(); ++i) {
+      product.path_.push_back(result.path[i]);
+    }
+    return true;
+  };
+
+  for (const auto waypoint : product.waypoints_) {
+    if (!append_segment(PathRequest{from, waypoint})) {
+      return PathResult{product.status_, 0, total_expanded, total_reached,
+                        product.path_};
+    }
+    from = waypoint;
+  }
+  if (!append_segment(PathRequest{from, request.goal})) {
+    return PathResult{product.status_, 0, total_expanded, total_reached,
+                      product.path_};
+  }
+
+  if (total_cost >= std::numeric_limits<std::uint32_t>::max()) {
+    product.path_.clear();
+    product.status_ = PathStatus::CostOverflow;
+    product.expanded_nodes_ = total_expanded;
+    product.reached_nodes_ = total_reached;
+    return PathResult{product.status_, 0, total_expanded, total_reached,
+                      product.path_};
+  }
+
+  product.status_ = PathStatus::Found;
+  product.cost_ = static_cast<std::uint32_t>(total_cost);
+  product.expanded_nodes_ = total_expanded;
+  product.reached_nodes_ = total_reached;
   return PathResult{product.status_, product.cost_, product.expanded_nodes_,
                     product.reached_nodes_, product.path_};
 }

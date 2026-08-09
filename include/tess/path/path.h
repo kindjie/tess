@@ -474,6 +474,17 @@ class WeightedRouteProduct {
 /// Caches weighted A* segments used to assemble portal-route products.
 class WeightedPortalSegmentCache;
 
+class WeightedPortalRouteProduct;
+
+namespace detail {
+
+template <typename World, typename PassableTag>
+[[nodiscard]] auto select_chunk_portal_waypoints(
+    const World& world, PathRequest request,
+    WeightedPortalRouteProduct& product) -> bool;
+
+}  // namespace detail
+
 /// Owns a segmented weighted route, waypoints, and replay dependencies.
 ///
 /// Returned path and waypoint views borrow this product until its next
@@ -558,6 +569,17 @@ class WeightedPortalRouteProduct {
   friend auto build_weighted_chunk_portal_route_product(
       const World& world, PathRequest request, PathScratch& scratch,
       WeightedPortalRouteProduct& product) -> PathResult;
+
+  template <typename World, typename PassableTag, typename CostTag>
+  friend auto build_weighted_chunk_portal_route_product_cached(
+      const World& world, PathRequest request, PathScratch& scratch,
+      WeightedPortalSegmentCache& cache, WeightedPortalRouteProduct& product)
+      -> PathResult;
+
+  template <typename World, typename PassableTag>
+  friend auto detail::select_chunk_portal_waypoints(
+      const World& world, PathRequest request,
+      WeightedPortalRouteProduct& product) -> bool;
 
   template <typename World>
   friend auto weighted_portal_route_product_path(
