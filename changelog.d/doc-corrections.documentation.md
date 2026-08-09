@@ -35,3 +35,11 @@
 - Internal milestone labels (`M5`, `M10`, `M11`, `S5.3`…) no longer appear
   in the Concepts pages, which `for-agents.md` designates normative. They
   were planning vocabulary that resolved to nothing a reader could look up.
+- A new `tools/check_doc_commands.py` gate validates the build commands the
+  docs quote. The snippet checker byte-synchronizes C++ fences with compiled
+  sources, but shell and CMake fences had no equivalent, so a renamed preset
+  or a removed target would leave a command that fails for the reader with
+  nothing failing in CI. It resolves every `--preset` against
+  `CMakePresets.json` and every `--target` against the declared CMake
+  targets — statically, because executing them would just rebuild what CI
+  already builds.
