@@ -330,4 +330,93 @@ TEST(TessSparsePathRuntime, RenderDeltasScanOnlyResidentChunks) {
   EXPECT_TRUE(tess::render_tile_deltas(world, mask).empty());
 }
 
+// Audit finding API8: MissingChunkPolicy was unreachable from the cached
+// and batched entry points, which hardcoded TreatAsBlocked. Adding a route
+// cache for performance therefore changed correctness semantics -- the same
+// query answered NoPath cached and Indeterminate uncached. PathStatus::
+// Indeterminate exists specifically so a caller never mistakes "not
+// searched" for "no route exists".
+TEST(TessSparsePathRuntime, CachedPathHonoursIndeterminatePolicy) {
+  // Chunk 1 stays non-resident, so the route to chunk 2 must cross it.
+  Sparse world{tess::ResidencyConfig{3 * Sparse::page_byte_size}};
+  fill_chunk(world, tess::ChunkKey{0});
+  fill_chunk(world, tess::ChunkKey{2});
+
+  const auto request =
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{80, 1, 0}};
+  tess::PathScratch scratch;
+  tess::RouteCacheScratch cache;
+
+  const auto uncached = tess::astar_path<Sparse, PassableTag>(
+      world, request, scratch, tess::MissingChunkPolicy::Indeterminate);
+  ASSERT_EQ(uncached.status, tess::PathStatus::Indeterminate);
+
+  const auto cached = tess::cached_astar_path<Sparse, PassableTag>(
+      world, request, scratch, cache, tess::MissingChunkPolicy::Indeterminate);
+  EXPECT_EQ(cached.status, uncached.status);
+}
+
+TEST(TessSparsePathRuntime, CachedPathDefaultsToTreatAsBlocked) {
+  Sparse world{tess::ResidencyConfig{3 * Sparse::page_byte_size}};
+  fill_chunk(world, tess::ChunkKey{0});
+  fill_chunk(world, tess::ChunkKey{2});
+
+  const auto request =
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{80, 1, 0}};
+  tess::PathScratch scratch;
+  tess::RouteCacheScratch cache;
+
+  // Omitting the policy preserves the previous behaviour exactly, so this
+  // change is additive for every existing caller.
+  const auto cached = tess::cached_astar_path<Sparse, PassableTag>(
+      world, request, scratch, cache);
+  EXPECT_EQ(cached.status, tess::PathStatus::NoPath);
+}
+
+TEST(TessSparsePathRuntime, PolicyRebindDropsTheCache) {
+  Sparse world{tess::ResidencyConfig{3 * Sparse::page_byte_size}};
+  fill_chunk(world, tess::ChunkKey{0});
+  fill_chunk(world, tess::ChunkKey{2});
+
+  const auto request =
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{80, 1, 0}};
+  tess::PathScratch scratch;
+  tess::RouteCacheScratch cache;
+
+  // An entry stored under one policy must never be served to a caller who
+  // asked for the other: the two disagree precisely on this status.
+  const auto blocked = tess::cached_astar_path<Sparse, PassableTag>(
+      world, request, scratch, cache, tess::MissingChunkPolicy::TreatAsBlocked);
+  ASSERT_EQ(blocked.status, tess::PathStatus::NoPath);
+  ASSERT_EQ(cache.stats().policy_rebinds, 0u);
+
+  const auto indeterminate = tess::cached_astar_path<Sparse, PassableTag>(
+      world, request, scratch, cache, tess::MissingChunkPolicy::Indeterminate);
+  EXPECT_EQ(indeterminate.status, tess::PathStatus::Indeterminate);
+  EXPECT_EQ(cache.stats().policy_rebinds, 1u);
+}
+
+TEST(TessSparsePathRuntime, BatchHonoursIndeterminatePolicy) {
+  Sparse world{tess::ResidencyConfig{3 * Sparse::page_byte_size}};
+  fill_chunk(world, tess::ChunkKey{0});
+  fill_chunk(world, tess::ChunkKey{2});
+
+  const auto requests = std::array{
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{80, 1, 0}},
+  };
+  tess::WeightedPathBatchScratch scratch;
+
+  const auto blocked =
+      tess::weighted_path_batch<Sparse, PassableTag, CostTag, 8>(
+          world, requests, scratch);
+  ASSERT_EQ(blocked.size(), 1u);
+  EXPECT_EQ(blocked[0].status, tess::PathStatus::NoPath);
+
+  const auto indeterminate =
+      tess::weighted_path_batch<Sparse, PassableTag, CostTag, 8>(
+          world, requests, scratch, tess::MissingChunkPolicy::Indeterminate);
+  ASSERT_EQ(indeterminate.size(), 1u);
+  EXPECT_EQ(indeterminate[0].status, tess::PathStatus::Indeterminate);
+}
+
 }  // namespace

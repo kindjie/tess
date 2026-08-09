@@ -622,6 +622,47 @@ class WeightedPortalRouteProduct {
   ChunkVersionDependencies dependencies_;
 };
 
+template <typename World, typename PassableTag, typename CostTag,
+          std::uint32_t MaxCost>
+[[nodiscard]] auto weighted_path_batch(
+    const World& world, std::span<const PathRequest> requests,
+    WeightedPathBatchScratch& scratch,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> std::span<const PathResult>;
+
+template <typename World, typename Class, std::uint32_t MaxCost>
+[[nodiscard]] auto weighted_path_batch(
+    const World& world, std::span<const PathRequest> requests,
+    WeightedPathBatchScratch& scratch,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> std::span<const PathResult>;
+
+template <typename World, typename Class, std::uint32_t MaxCost,
+          typename Provider>
+[[nodiscard]] auto weighted_path_batch(
+    const World& world, std::span<const PathRequest> requests,
+    WeightedPathBatchScratch& scratch, const Provider& provider,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> std::span<const PathResult>;
+
+// Declared here, ahead of the PathScratch friend declarations below, so the
+// default MissingChunkPolicy has exactly one home: defaults may only appear
+// on a template's first declaration, and a friend declaration may not
+// introduce them.
+template <typename World, typename Tag>
+[[nodiscard]] auto cached_astar_path(
+    const World& world, PathRequest request, PathScratch& scratch,
+    RouteCacheScratch& cache,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> PathResult;
+
+template <typename World, typename Tag, typename Provider>
+[[nodiscard]] auto cached_astar_path(
+    const World& world, PathRequest request, PathScratch& scratch,
+    RouteCacheScratch& cache, const Provider& provider,
+    MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
+    -> PathResult;
+
 /// Owns reusable A* frontier, node state, and returned path storage.
 ///
 /// Instances are caller-owned and require external synchronization. Reserving
@@ -685,13 +726,14 @@ class PathScratch {
 
   template <typename World, typename Tag>
   friend auto cached_astar_path(const World& world, PathRequest request,
-                                PathScratch& scratch, RouteCacheScratch& cache)
-      -> PathResult;
+                                PathScratch& scratch, RouteCacheScratch& cache,
+                                MissingChunkPolicy policy) -> PathResult;
 
   template <typename World, typename Tag, typename Provider>
   friend auto cached_astar_path(const World& world, PathRequest request,
                                 PathScratch& scratch, RouteCacheScratch& cache,
-                                const Provider& provider) -> PathResult;
+                                const Provider& provider,
+                                MissingChunkPolicy policy) -> PathResult;
 
   void advance_epoch() noexcept {
     ++epoch_;
@@ -831,7 +873,8 @@ class DistanceFieldScratch {
   template <typename World, typename Class, std::uint32_t MaxCost>
   friend auto weighted_path_batch(const World& world,
                                   std::span<const PathRequest> requests,
-                                  WeightedPathBatchScratch& scratch)
+                                  WeightedPathBatchScratch& scratch,
+                                  MissingChunkPolicy policy)
       -> std::span<const PathResult>;
 
   template <typename World, typename Class, std::uint32_t MaxCost,
@@ -839,7 +882,8 @@ class DistanceFieldScratch {
   friend auto weighted_path_batch(const World& world,
                                   std::span<const PathRequest> requests,
                                   WeightedPathBatchScratch& scratch,
-                                  const Provider& provider)
+                                  const Provider& provider,
+                                  MissingChunkPolicy policy)
       -> std::span<const PathResult>;
 
   template <typename World, typename Tag>
@@ -1101,7 +1145,8 @@ class WeightedPathBatchScratch {
   template <typename World, typename Class, std::uint32_t MaxCost>
   friend auto weighted_path_batch(const World& world,
                                   std::span<const PathRequest> requests,
-                                  WeightedPathBatchScratch& scratch)
+                                  WeightedPathBatchScratch& scratch,
+                                  MissingChunkPolicy policy)
       -> std::span<const PathResult>;
 
   template <typename World, typename Class, std::uint32_t MaxCost,
@@ -1109,7 +1154,8 @@ class WeightedPathBatchScratch {
   friend auto weighted_path_batch(const World& world,
                                   std::span<const PathRequest> requests,
                                   WeightedPathBatchScratch& scratch,
-                                  const Provider& provider)
+                                  const Provider& provider,
+                                  MissingChunkPolicy policy)
       -> std::span<const PathResult>;
 
   DistanceFieldScratch field_scratch_;

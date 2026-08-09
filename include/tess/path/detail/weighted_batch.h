@@ -479,7 +479,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 [[nodiscard]] auto weighted_path_batch(const World& world,
                                        std::span<const PathRequest> requests,
                                        WeightedPathBatchScratch& scratch,
-                                       const Provider& provider)
+                                       const Provider& provider,
+                                       MissingChunkPolicy policy)
     -> std::span<const PathResult> {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_path_batch<World, Class, MaxCost> requires a "
@@ -490,10 +491,11 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   // cost overflow), weighted_distance_field_path, and
   // detail::weighted_group_member_failure, all sparse-native. Grouping is
   // Coord3/request-index space; node arrays live in the callees' scratch sized
-  // by NodeIndexSpace::capacity_hint. With the default
-  // MissingChunkPolicy::TreatAsBlocked a non-resident chunk reads as a wall, so
-  // the batch yields NoPath (not Indeterminate) across a missing chunk; policy
-  // threading is deferred.
+  // by NodeIndexSpace::capacity_hint. The MissingChunkPolicy reaches every
+  // one of them: with the default TreatAsBlocked a non-resident chunk reads
+  // as a wall and the batch yields NoPath across a missing chunk, while
+  // Indeterminate distinguishes "not searched" from "no route exists" exactly
+  // as the single-request entry points do.
   scratch.clear();
   scratch.results_.resize(requests.size());
   scratch.offsets_.assign(requests.size(), 0);
@@ -568,8 +570,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     if (goal_count == 1) {
       ++scratch.stats_.astar_fallbacks;
       const auto result = weighted_astar_path<World, Class, Provider>(
-          world, requests[i], scratch.astar_scratch_,
-          MissingChunkPolicy::TreatAsBlocked, provider);
+          world, requests[i], scratch.astar_scratch_, policy, provider);
       scratch.offsets_[i] = scratch.paths_.size();
       scratch.sizes_[i] = result.path.size();
       scratch.paths_.insert(scratch.paths_.end(), result.path.begin(),
@@ -616,12 +617,11 @@ template <typename World, typename Class, std::uint32_t MaxCost,
       if constexpr (std::is_same_v<Provider, AdjacentTransitions>) {
         return detail::build_bounded_weighted_distance_field_core<World, Class,
                                                                   MaxCost>(
-            world, requests[i].goal, scratch.field_scratch_,
-            MissingChunkPolicy::TreatAsBlocked, scratch.settle_targets_);
+            world, requests[i].goal, scratch.field_scratch_, policy,
+            scratch.settle_targets_);
       } else {
         return build_weighted_distance_field<World, Class, Provider>(
-            world, requests[i].goal, scratch.field_scratch_,
-            MissingChunkPolicy::TreatAsBlocked, provider);
+            world, requests[i].goal, scratch.field_scratch_, policy, provider);
       }
     }();
     // The field was just built from this same const world, so the stamp
@@ -645,8 +645,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
           // Found and only requests that realize overflow report it.
           ++scratch.stats_.astar_fallbacks;
           return weighted_astar_path<World, Class, Provider>(
-              world, requests[j], scratch.astar_scratch_,
-              MissingChunkPolicy::TreatAsBlocked, provider);
+              world, requests[j], scratch.astar_scratch_, policy, provider);
         }
         return detail::weighted_group_member_failure<World, Class, Provider>(
             world, requests[j], field);
@@ -678,10 +677,11 @@ template <typename World, typename Class, std::uint32_t MaxCost>
 /// Solves a bounded weighted batch without special transitions.
 [[nodiscard]] auto weighted_path_batch(const World& world,
                                        std::span<const PathRequest> requests,
-                                       WeightedPathBatchScratch& scratch)
+                                       WeightedPathBatchScratch& scratch,
+                                       MissingChunkPolicy policy)
     -> std::span<const PathResult> {
   return weighted_path_batch<World, Class, MaxCost, AdjacentTransitions>(
-      world, requests, scratch, AdjacentTransitions{});
+      world, requests, scratch, AdjacentTransitions{}, policy);
 }
 
 // --- legacy <PassableTag, CostTag> forwarders
@@ -716,9 +716,10 @@ template <typename World, typename PassableTag, typename CostTag,
 /// Solves a weighted batch using separate legacy passability and cost tags.
 [[nodiscard]] auto weighted_path_batch(const World& world,
                                        std::span<const PathRequest> requests,
-                                       WeightedPathBatchScratch& scratch)
+                                       WeightedPathBatchScratch& scratch,
+                                       MissingChunkPolicy policy)
     -> std::span<const PathResult> {
   return weighted_path_batch<
       World, movement::LegacyWeighted<PassableTag, CostTag>, MaxCost>(
-      world, requests, scratch);
+      world, requests, scratch, policy);
 }
