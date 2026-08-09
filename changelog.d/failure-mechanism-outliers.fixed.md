@@ -12,9 +12,13 @@
   `ResultChannel::value_for` asserted and then indexed anyway, which is
   undefined behaviour precisely where the assert was compiled out.
 - `block.h`'s policy-view dispatch fails through `fail_fast` with a
-  message instead of `assert(false)` plus a bare `std::abort()`. The old
-  form honoured `NDEBUG` but not `TESS_ENABLE_ASSERTS`, so a consumer
-  following `integration-policy.md` got no check at all. It stays a
+  message instead of `assert(false)` plus a bare `std::abort()`. The
+  program still terminated either way — the `std::abort()` was a separate
+  unconditional statement, so `NDEBUG` removed the *diagnostic*, not the
+  failure. What it removed mattered: under `NDEBUG` the consumer got a
+  bare abort naming nothing, and the assertion honoured `NDEBUG` rather
+  than `TESS_ENABLE_ASSERTS`, so it disagreed with every other check in
+  the library about when it was live. It stays a
   runtime failure rather than becoming a `static_assert`, despite the
   condition being compile-time: the runtime-dispatching `for_each_chunk`
   instantiates this template for all four write policies whichever one the
