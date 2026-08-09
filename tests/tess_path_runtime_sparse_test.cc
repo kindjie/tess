@@ -396,27 +396,4 @@ TEST(TessSparsePathRuntime, PolicyRebindDropsTheCache) {
   EXPECT_EQ(cache.stats().policy_rebinds, 1u);
 }
 
-TEST(TessSparsePathRuntime, BatchHonoursIndeterminatePolicy) {
-  Sparse world{tess::ResidencyConfig{3 * Sparse::page_byte_size}};
-  fill_chunk(world, tess::ChunkKey{0});
-  fill_chunk(world, tess::ChunkKey{2});
-
-  const auto requests = std::array{
-      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{80, 1, 0}},
-  };
-  tess::WeightedPathBatchScratch scratch;
-
-  const auto blocked =
-      tess::weighted_path_batch<Sparse, PassableTag, CostTag, 8>(
-          world, requests, scratch);
-  ASSERT_EQ(blocked.size(), 1u);
-  EXPECT_EQ(blocked[0].status, tess::PathStatus::NoPath);
-
-  const auto indeterminate =
-      tess::weighted_path_batch<Sparse, PassableTag, CostTag, 8>(
-          world, requests, scratch, tess::MissingChunkPolicy::Indeterminate);
-  ASSERT_EQ(indeterminate.size(), 1u);
-  EXPECT_EQ(indeterminate[0].status, tess::PathStatus::Indeterminate);
-}
-
 }  // namespace

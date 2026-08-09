@@ -118,6 +118,11 @@ class RouteCacheScratch {
     bound_provider_type_ = 0;
     bound_provider_instance_ = nullptr;
     bound_provider_revision_ = 0;
+    // Reset with the other bindings, not just the counter: leaving the
+    // policy bound across a clear() makes the next lookup under the other
+    // policy count a rebind and invalidate an already-empty cache.
+    policy_bound_ = false;
+    bound_policy_ = MissingChunkPolicy::TreatAsBlocked;
     hits_ = 0;
     suffix_hits_ = 0;
     misses_ = 0;
