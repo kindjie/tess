@@ -894,6 +894,18 @@ tess_apply_project_options(tess_portal_first_replan_test)
 tess_discover_tests(tess_portal_first_replan_test LABELS core path topology)
 
 add_executable(
+  tess_seam_scan_equivalence_test
+  tess_seam_scan_equivalence_test.cc
+)
+target_link_libraries(
+  tess_seam_scan_equivalence_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_seam_scan_equivalence_test)
+
+tess_discover_tests(tess_seam_scan_equivalence_test LABELS core path)
+
+add_executable(
   tess_path_agent_test
   allocation_counter.cc
   tess_path_agent_test.cc

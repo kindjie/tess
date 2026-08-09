@@ -290,6 +290,51 @@ TEST(TessDiagnostics, ScopedAllocationCountersRecordGlobalNewAndDelete) {
   EXPECT_GE(counters.deallocations, 1u);
 }
 
+TEST(TessDiagnostics, SeamScanPassabilityEventsFollowShortCircuitAccounting) {
+  // detail::best_chunk_portal's page-hoisted fast path (the only path an
+  // in-grid dense pair takes) must emit path_passability_check with the
+  // generic loop's short-circuit rule: one event per scanned pair, plus
+  // a second only when the source side passes. The x-seam between
+  // chunks (0,0,0) and (1,0,0) scans 16 pairs.
+  const auto scan_events = [](DiagWorld& world) {
+    tess::diagnostics::PathCounters counters;
+    auto portal = tess::Coord3{};
+    std::size_t scan_tiles = 0;
+    {
+      tess::diagnostics::ScopedPathCounters scope{counters};
+      (void)tess::detail::best_chunk_portal<DiagWorld, DiagTerrainTag>(
+          world, tess::ChunkCoord3{0, 0, 0}, tess::ChunkCoord3{1, 0, 0},
+          tess::Coord3{0, 0, 0}, tess::Coord3{63, 31, 0}, portal, &scan_tiles);
+    }
+    EXPECT_EQ(scan_tiles, 16u);
+    return counters.passability_checks;
+  };
+
+  const auto fill = [](DiagWorld& world, std::uint16_t source,
+                       std::uint16_t target) {
+    for (std::int64_t y = 0; y < 32; ++y) {
+      for (std::int64_t x = 0; x < 64; ++x) {
+        const auto coord = tess::Coord3{x, y, 0};
+        world.field<DiagTerrainTag>(coord) = x == 31   ? source
+                                             : x == 32 ? target
+                                                       : std::uint16_t{0};
+      }
+    }
+  };
+
+  DiagWorld blocked;
+  fill(blocked, 0, 0);
+  EXPECT_EQ(scan_events(blocked), 16u);
+
+  DiagWorld open;
+  fill(open, 1, 1);
+  EXPECT_EQ(scan_events(open), 32u);
+
+  DiagWorld target_blocked;
+  fill(target_blocked, 1, 0);
+  EXPECT_EQ(scan_events(target_blocked), 32u);
+}
+
 TEST(TessDiagnostics, AllocationCountersTrackLiveAndPeakBytes) {
   tess::diagnostics::AllocationCounters counters;
   {
