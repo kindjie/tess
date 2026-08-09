@@ -5,6 +5,11 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 2100000,
       "note": "2026-07-24 local arm64 median: 347 us; bootstrap 6x ceiling"
+    },
+    "spatial/local_coordination_4000x4": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 11500000,
+      "note": "2026-08-08 M3 Max median: 2.867 ms; bootstrap 4x ceiling. Paired with the 1000x cell so the growth in RESERVATION count is a shape rather than a point: 4x the requests cost 8.2x the time, between linear and the quadratic sorted-vector insert (audit 2026-08-07 P8). A ceiling cannot see that ratio; the pair is what makes an exponent change legible."
     }
   }
 }

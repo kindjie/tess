@@ -7,8 +7,19 @@
 
 namespace {
 
-void BM_spatial_local_coordination_1000x4(benchmark::State& state) {
-  constexpr auto request_count = std::size_t{1000};
+// Sized by request count, because the cost under scrutiny is quadratic in
+// the RESERVATION count, not the option count (audit 2026-08-07 P8): each
+// accepted reservation is inserted into a sorted vector, so R reservations
+// cost O(R^2) element moves. With a single fixed size a constant-factor
+// regression and an exponent change are indistinguishable; two sizes make
+// the growth read as a shape. Every request here reserves, so reservations
+// track requests exactly.
+//
+// The optimization log's recorded retry condition for this area is keyed
+// on OPTION counts, which is why it never covered this term.
+template <std::size_t Requests>
+void BM_spatial_local_coordination(benchmark::State& state) {
+  constexpr auto request_count = Requests;
   constexpr auto options_per_request = std::size_t{4};
   auto requests = std::vector<tess::LocalMoveRequest>{};
   auto options = std::vector<tess::LocalMoveOption>{};
@@ -50,7 +61,9 @@ void BM_spatial_local_coordination_1000x4(benchmark::State& state) {
   state.counters["options"] = static_cast<double>(options.size());
 }
 
-BENCHMARK(BM_spatial_local_coordination_1000x4)
+BENCHMARK(BM_spatial_local_coordination<1000>)
     ->Name("spatial/local_coordination_1000x4");
+BENCHMARK(BM_spatial_local_coordination<4000>)
+    ->Name("spatial/local_coordination_4000x4");
 
 }  // namespace

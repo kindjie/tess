@@ -8,6 +8,7 @@
 #include <limits>
 #include <span>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace tess {
@@ -641,7 +642,10 @@ class RouteCacheScratch {
     while (capacity < (suffix_count_ + additional + 1u) * 2u) {
       capacity *= 2u;
     }
-    const auto old_slots = suffix_slots_;
+    // Moved, not copied: the old table is only read below, and `assign`
+    // reallocates regardless because `capacity` only ever grows here, so
+    // the copy bought nothing.
+    const auto old_slots = std::move(suffix_slots_);
     suffix_slots_.assign(capacity, SuffixSlot{});
     suffix_count_ = 0;
     for (const auto slot : old_slots) {

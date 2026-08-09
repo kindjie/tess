@@ -672,7 +672,7 @@
     },
     {
       "family": "fields/products",
-      "pattern": "^fields/(?:goalset_build_(?:1|16|256)|nearest_target|cache_hit|cache_miss_store|cache_store_reusing|cache_eviction|cache_scan_entries_(?:8|128)|build_alloc_gate)$",
+      "pattern": "^fields/(?:goalset_build_(?:1|16|256)|goalset_build_16_512x512|nearest_target|cache_hit|cache_miss_store|cache_store_reusing|cache_eviction|cache_scan_entries_(?:8|128)|build_alloc_gate)$",
       "captures": {},
       "defaults": {
         "world_extent": "64x64",
@@ -684,6 +684,10 @@
         "payload": "goal-set field products and cache operations"
       },
       "overrides": {
+        "fields/goalset_build_16_512x512": {
+          "world_extent": "512x512",
+          "payload": "16 goals, full-map flood on a memory-bound world"
+        },
         "fields/goalset_build_1": {
           "payload": "1 goal, full-map flood"
         },
@@ -821,7 +825,7 @@
     },
     {
       "family": "render_delta/collect",
-      "pattern": "^render_delta/(?:collect_sparse_64|collect_box_64|entity_moves_1k_coalesced|entity_moves_1k_per_step|baseline_4096|collect_alloc_gate)$",
+      "pattern": "^render_delta/(?:collect_sparse_64|collect_box_64|collect_scan_(?:1|256)_dirty_4096_chunks|entity_moves_1k_coalesced|entity_moves_1k_per_step|baseline_4096|collect_alloc_gate)$",
       "captures": {},
       "defaults": {
         "world_extent": "512x512",
@@ -838,6 +842,12 @@
         },
         "render_delta/collect_box_64": {
           "payload": "64 whole-chunk dirty boxes per iteration"
+        },
+        "render_delta/collect_scan_1_dirty_4096_chunks": {
+          "payload": "collect_render_tile_deltas: 1 dirty chunk, 4096 scanned"
+        },
+        "render_delta/collect_scan_256_dirty_4096_chunks": {
+          "payload": "collect_render_tile_deltas: 256 dirty chunks, 4096 scanned"
         },
         "render_delta/entity_moves_1k_coalesced": {
           "payload": "1000 entities x 8 steps, coalesced"
@@ -885,7 +895,7 @@
     },
     {
       "family": "spatial/local_coordination",
-      "pattern": "^spatial/local_coordination_(1000x4)$",
+      "pattern": "^spatial/local_coordination_((?:1000|4000)x4)$",
       "captures": {
         "payload": 1
       },
@@ -897,6 +907,11 @@
         "executor_kind": "serial",
         "worker_count": "1",
         "payload": "1000 move requests x 4 options"
+      },
+      "overrides": {
+        "spatial/local_coordination_4000x4": {
+          "payload": "4000x4 move requests x options"
+        }
       }
     },
     {
