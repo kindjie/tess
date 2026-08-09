@@ -436,14 +436,29 @@ def test_hook_backstop_uses_first_party_python_and_requires_hashes():
   assert "--requirement requirements-dev.txt" in workflow
 
 
+def _job_body(workflow: str, job_id: str) -> str:
+  """Return one job's block, bounded by the next job header.
+
+  Splitting on the job header alone returns the rest of the FILE, so an
+  assertion meant for this job can be satisfied by a later one -- which
+  is what happened here: the required-jobs block below was matching
+  `report-failure`'s identical `needs:` list, so `ci-gate` could have
+  dropped a job without failing this test.
+  """
+  body = workflow.split(f"  {job_id}:\n", 1)[1]
+  following = re.search(r"^  [a-z0-9][a-z0-9_-]*:$", body, flags=re.M)
+  return body[: following.start()] if following else body
+
+
 def test_ci_gate_aggregates_every_required_ci_job():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
-  ci_gate = workflow.split("  ci-gate:\n", 1)[1]
+  ci_gate = _job_body(workflow, "ci-gate")
   required_jobs = (
     "changes",
     "dev",
     "gcc",
+    "libcxx",
     "no-exceptions",
     "hooks-backstop",
     "quality",
@@ -465,7 +480,7 @@ def test_ci_gate_aggregates_every_required_ci_job():
     result_check = f'test "${{{{ needs.{job_id}.result }}}}" = success'
     assert result_check in ci_gate
 
-  report_failure = workflow.split("  report-failure:\n", 1)[1]
+  report_failure = _job_body(workflow, "report-failure")
   for job_id in ("no-exceptions", "windows-noexceptions"):
     assert f"      - {job_id}\n" in report_failure
 
@@ -497,7 +512,7 @@ def test_every_ci_job_is_gated_or_explicitly_waived():
   jobs = re.findall(r"^  ([a-z0-9][a-z0-9_-]*):$", body, flags=re.M)
 
   assert len(jobs) >= 15, jobs
-  ci_gate = workflow.split("  ci-gate:\n", 1)[1]
+  ci_gate = _job_body(workflow, "ci-gate")
   gated = set()
   for line in ci_gate.split("    needs:\n", 1)[1].split("\n"):
     entry = re.match(r"^      - ([a-z0-9][a-z0-9_-]*)$", line)

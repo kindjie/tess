@@ -462,6 +462,21 @@ non-type template parameter constants. The queued-operation planner uses an
 inline `returnDanglingLifetime` suppression where cppcheck reports a false
 positive for a pointer to an element inside a caller-provided span.
 
+## LLVM libc++
+
+- Documentation: https://libcxx.llvm.org/
+- Ubuntu packages: `libc++-dev`, `libc++abi-dev`
+
+Used by the pull-request libc++ portability cell, which configures the
+`dev-werror` preset with `CXXFLAGS=-stdlib=libc++` and builds without running
+tests. It is a compile-only check: the library is header-only, so what this
+guards is that the headers compile against a second standard library
+implementation, not that behavior differs. macOS also builds against libc++,
+but those jobs are main-only, so before this cell a libc++-specific failure
+could reach main before anyone saw it. The packages are installed from the
+runner's apt repositories rather than pinned, matching how the runner's Clang
+and GCC toolchains are already treated.
+
 ## Clang Sanitizers
 
 - AddressSanitizer documentation:

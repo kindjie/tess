@@ -238,34 +238,61 @@ tools/coverage_gaps.py \
   --known-gaps tools/coverage_known_gaps.json
 ```
 
-CI runs primarily on `ubuntu-24.04` with Clang and covers:
+CI runs primarily on `ubuntu-24.04` with Clang and covers the following.
+Each entry carries the tier that actually runs it, because the list is
+otherwise easy to read as "my pull request was checked by all of this":
 
-- Dev build and unit tests: `cmake --build --preset dev`,
+- **[PR]** runs on every code-affecting pull request, and blocks the merge.
+- **[PR when triggered]** runs on a pull request only when the change
+  classifier selects it (`tools/ci_changes.py`).
+- **[main]** runs on pushes to `main`, the weekly schedule, and manual
+  dispatches — *not* on pull requests.
+- **[advisory]** runs but never blocks a merge.
+
+- **[PR]** Dev build and unit tests: `cmake --build --preset dev`,
   `ctest --preset dev`
-- Installed header file-set drift check: `tess_installed_headers_file_set`
-- Installed package smoke test: `tools/install_smoke.sh`
-- Hook backstop checks: `tools/git_hooks.py ci` repository hygiene plus
+- **[PR]** Installed header file-set drift check: `tess_installed_headers_file_set`
+- **[PR]** Installed package smoke test: `tools/install_smoke.sh`
+- **[PR]** Hook backstop checks: `tools/git_hooks.py ci` repository hygiene plus
   pytest for the repo tools (`tests/test_git_hooks.py`,
   `tests/test_benchmark_tools.py`, `tests/test_check_public_surface.py`)
   and the bidirectional public-surface manifest gate
   (`tools/check_public_surface.py` against
   `docs/architecture/surface.json`; required since 2026-07-07)
-- Installed-header namespace-scope Doxygen gate: `tools/check_public_docs.py`
-- Warnings-as-errors build and tests: preset `dev-werror`
-- ASan/UBSan build and tests (UBSan findings are fatal): preset `dev-asan`
-- TSan build and tests (`TSAN_OPTIONS=halt_on_error=1`): preset `dev-tsan`
-- Release build and tests: preset `release`
-- macOS build, tests, and install smoke on `macos-15`: presets `dev` and
+- **[PR]** Installed-header namespace-scope Doxygen gate: `tools/check_public_docs.py`
+- **[main]** Warnings-as-errors build and tests: preset `dev-werror`
+- **[PR]** ASan/UBSan build and tests (UBSan findings are fatal): preset
+  `dev-asan`
+- **[PR when triggered]** **[main]** TSan build and tests
+  (`TSAN_OPTIONS=halt_on_error=1`): preset `dev-tsan`. On a pull request
+  this runs only when `tools/ci_changes.py` classifies the diff as
+  concurrency-sensitive; on main it always runs
+- **[main]** Release build and tests: preset `release`
+- **[main]** macOS build, tests, and install smoke on `macos-15`: presets `dev` and
   `dev-asan` (no benchmark gates there; thresholds are Linux-calibrated)
-- Windows MSVC build, tests, and install smoke on `windows-2025`:
+- **[PR]** Windows MSVC build, tests, and install smoke on `windows-2025`:
   preset `windows-msvc` (required gate since 2026-07-07)
-- Strict clang-tidy gate: `cmake --build --preset dev-clang-tidy`
-- cppcheck gate: `cmake --build --preset dev-cppcheck`
-- Advisory (non-gating) clang-tidy profile: preset `dev-clang-tidy-advisory`
-- Required GCC compile-only portability check: preset `dev-werror` built with
-  GCC
-- Benchmark build and smoke tests: preset `bench`
-- Benchmark threshold gates, one per suite (CPU time except parallel wall
+- **[main]** Strict full-tree clang-tidy gate: `cmake --build --preset
+  dev-clang-tidy`. Pull requests instead run a diff-scoped clang-tidy job
+  (`tools/clang_tidy_changed.py`), which checks only changed lines
+- **[PR]** cppcheck gate: `cmake --build --preset dev-cppcheck`
+- **[PR]** Exception-free compiler-mode contracts, built and tested with
+  exceptions disabled on three toolchains: Clang (ASan/UBSan), GCC
+  (warnings-as-errors), and MSVC. Enabled by
+  `-DTESS_BUILD_NO_EXCEPTIONS_TESTING=ON`, which only adds targets;
+  `tools/check_no_exceptions_manifest.py` compares the exception-mode
+  subsystem manifests, and installed-consumer and FetchContent smokes run
+  in exception-free mode
+- **[advisory]** Weekly clang-tidy profile: preset
+  `dev-clang-tidy-advisory`
+- **[PR]** Required GCC compile-only portability check: preset
+  `dev-werror` built with GCC
+- **[PR]** Required libc++ compile-only portability check: preset
+  `dev-werror` built with Clang and `-stdlib=libc++`. macOS also builds
+  against libc++, but macOS is main-only, so before this cell a
+  libc++-specific failure reached main before anyone saw it
+- **[PR]** Benchmark build and smoke tests: preset `bench`
+- **[main]** Benchmark threshold gates, one per suite (CPU time except parallel wall
   time). Run one suite with
   `cmake --build --preset bench --target tess_bench_<suite>_thresholds`,
   or every suite the way CI does:
@@ -274,8 +301,17 @@ CI runs primarily on `ubuntu-24.04` with Clang and covers:
   `bench/CMakeLists.txt` from the threshold targets defined there, so a
   new suite gates itself and no list needs updating here. `--parallel 1`
   is load-bearing: these are timing gates and must not run concurrently
-- Non-gating CI benchmark baseline collection:
+- **[main]** **[advisory]** CI benchmark baseline collection:
   `cmake --build --preset bench --target tess_bench_ci_baselines`
+- **[PR]** **[advisory]** CodeQL static analysis for `actions`, `c-cpp`,
+  and `python`, plus a weekly scan. It runs on pull requests and pushes
+  but is deliberately **not** a required check: it is configured through
+  GitHub's default setup, whose query suites update on GitHub's schedule,
+  so gating on it would let an upstream suite update block an unrelated
+  pull request. Findings surface on the pull request and in the
+  repository's Security tab either way, which is the value; making it
+  required would add none. Configuration lives in repository settings,
+  not in `.github/workflows/`
 
 ## Documentation
 
