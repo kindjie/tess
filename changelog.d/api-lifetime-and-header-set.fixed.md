@@ -6,7 +6,13 @@
   contract now states the exception, and what satisfies it.
 - `path/node_index_space.h` moves from the public header set to the
   implementation set, where its detail siblings already are. Its entire
-  body is `namespace tess::detail`, and it has no public-surface entry. Its
+  body is `namespace tess::detail`, so it declares nothing a consumer can
+  name — but `tess.h` and `path/path.h` do include it, and both header
+  sets install to the same paths, so the file still ships and every
+  existing include of it still resolves. The one behavioural consequence
+  is inside the build: `INTERFACE_HEADER_SETS_TO_VERIFY` covers the public
+  set only, so the header is no longer standalone-compiled on its own. It
+  stays covered transitively through `tess.h`, which is swept. Its
   primary-template assertion also told callers that the `SparseResident`
   mapping "lands in a later slice"; that specialization is in the same
   file, so the message now describes the real condition — a custom
