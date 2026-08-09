@@ -169,7 +169,11 @@ jobs:
             echo "::endgroup::"
             ran=$((ran + 1))
           done
-          test "$ran" -ge 13  # every example runs; bump when adding one
+          # EXACT, not a floor: the dev preset builds 14 examples, and a
+          # floor of 13 passed while one of them silently stopped building.
+          # Bump this when adding an example -- a failure here means either
+          # a new example or a missing one, and both want a human.
+          test "$ran" -eq 14
 
       # Documented example output is copied from real program runs; drift
       # between the docs and the compiled quickstart fails the build.
@@ -456,6 +460,7 @@ jobs:
           tests/test_check_public_docs.py
           tests/test_check_docs_links.py
           tests/test_cmake_compatibility.py
+          tests/test_doc_commands.py
           tests/test_doc_outputs.py
           tests/test_doc_snippets.py
           tests/test_doc_versions.py
@@ -485,6 +490,12 @@ jobs:
       # Markdown examples are copied from named regions in compiled sources.
       - name: Documentation snippets
         run: python tools/check_doc_snippets.py
+
+      # D13: the snippet checker covers C++ fences only, so a renamed
+      # preset or a removed target in a shell fence broke for readers with
+      # nothing failing here.
+      - name: Documented build commands
+        run: python tools/check_doc_commands.py
 
       # Changelog entries live in per-change fragments so concurrent
       # branches touch disjoint files; a malformed fragment must fail here

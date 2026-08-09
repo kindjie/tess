@@ -355,7 +355,7 @@ Like the scoped-thread prototype it invokes callbacks concurrently, does not
 declare `serial_execution_tag`, and pairs only with the partitioned dirty
 variant. It is non-copyable and non-movable, stops its workers via RAII, and
 propagates callback exceptions only after every adopted worker has left the
-claim loop. As of the M5 scheduler stage it is the PRODUCTION
+claim loop. Since the schedule loop shipped it is the PRODUCTION
 parallel backend: the auto-exec schedule task routes phases to an attached
 pool by operation count, with serial == pool results pinned byte-identical
 (policy pre-validation makes runtime aborts unreachable) and the schedule +
@@ -414,7 +414,7 @@ lists own their storage.
 
 ## Result Channels
 
-`include/tess/ops/result_channel.h` closes M4's result gap with a
+`include/tess/ops/result_channel.h` closes the result-reporting gap with a
 deliberately drain-only, synchronous design:
 
 - `OpCompletion` is the per-operation completion record, carrying both

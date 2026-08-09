@@ -41,10 +41,15 @@ and installed-package consumption is verified separately — see
   `tess-snippet` region byte-matched against a compiled, self-checking
   source file by `tools/check_doc_snippets.py`. Copying a documented
   snippet cannot copy drifted code.
-- **The include surface is contracted.** Consume only
-  `<tess/pathfinding.h>`, `<tess/simulation.h>`, or the `<tess/tess.h>`
-  umbrella; [installation](packaging.md) documents the supported
-  surface, and `tools/check_public_surface.py` enforces it.
+- **Every installed header is public and supported.** Include the
+  `<tess/tess.h>` umbrella, one of the aggregates such as
+  `<tess/pathfinding.h>` or `<tess/simulation.h>`, or the narrowest header
+  that owns the API -- the last is preferable in compile-sensitive code,
+  and is what the quickstart does. See
+  [installation](packaging.md). What
+  `tools/check_public_surface.py` gates is the symbol MANIFEST, not an
+  include policy: every namespace-scope public name must appear in
+  `docs/architecture/surface.json`, so a symbol cannot ship undocumented.
 - **Determinism enables self-checks.** Fixed-step ticks with identical
   inputs reproduce identical outputs, so generated integration tests can
   assert exact costs, orders, and versions rather than tolerances.

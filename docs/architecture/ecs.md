@@ -1,6 +1,6 @@
 # ECS Integration
 
-The ECS layer (M10) binds path agents to entity-component stores without
+The ECS layer binds path agents to entity-component stores without
 tying the core to any ECS library. `include/tess/ecs/adapter.h` is the
 dependency-free, always-on layer exported by `tess/tess.h`; concrete
 adapters (EnTT under `include/tess/ecs/entt/`, Flecs under
@@ -137,7 +137,7 @@ two-gate build policy.
   pipeline, not two. The context's `tick_state` owns the sim clock:
   drive these from at most one place per frame.
 - Every tick driver and lifecycle intent accepts a trailing optional
-  `DeltaCollector*` (M11): ticks stamp the collector with `begin_tick`
+  `DeltaCollector*`: ticks stamp the collector with `begin_tick`
   and record each committed step through the same observer that keeps
   the occupancy index synchronized; intents record their kind exactly
   when they succeed (refusals mutate nothing and record nothing; a

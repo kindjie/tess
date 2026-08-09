@@ -27,6 +27,8 @@ https://tess.owx.dev/for-agents/
   CI-enforced serial and worker-pool ceilings
 - [Roadmap](https://tess.owx.dev/roadmap/): shipped vs planned extensions vs
   out-of-scope
+- [Integration policy](https://tess.owx.dev/integration-policy/): exceptions,
+  RTTI, determinism, allocation, and threading guarantees
 - [Support](https://tess.owx.dev/support/): stability policy and channels
 - [API reference](https://tess.owx.dev/api/): generated reference for the
   supported surface

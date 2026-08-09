@@ -245,11 +245,14 @@ tess::run_schedule_frame(schedule, clock, accumulator, 1.0 / 20.0,
 
 Schedule tasks themselves run serially; the selectable parallel phase
 executor (see `tess/ops/phase_executor.h`) parallelizes the planned,
-write-policy-compatible queued operations a task submits. The parallel
-executors are documented prototypes rather than the production backend,
-and every published performance median is single-threaded. Declaring an
-honest `WritePolicy` on each operation today is what licenses parallel
-execution later, with no changes to operation code.
+write-policy-compatible queued operations a task submits. The worker pool
+is the production parallel backend; the scoped-thread executor is a
+comparison prototype. Whether the pool pays off depends on how much work
+each chunk does — see
+[performance](performance.md#when-the-worker-pool-is-worth-it), which
+publishes measured four-worker figures and the crossover below which the
+pool loses. Declaring an honest `WritePolicy` on each operation is what
+licenses parallel execution, with no changes to operation code.
 
 - Architecture: [`architecture/simulation.md`](architecture/simulation.md)
 - Example: `examples/colony_2d.cc` (the flagship composition: queued

@@ -268,9 +268,17 @@ flowchart TB
   transactionally. If allocation fails, no partial dependency set becomes
   visible, live entries and their path-node offsets remain unchanged,
   observable statistics do not advance, and the operation can be retried.
-  `reserve_segments_checked`, `reserve_path_nodes_checked`, and the class
-  view's `store_checked` report deterministic pre-allocation capacity failure
-  through `ReserveStatus` or `PortalSegmentStoreStatus`. Legacy reserve and
+  `reserve_segments_checked` and `reserve_path_nodes_checked` report
+  deterministic pre-allocation capacity failure through `ReserveStatus`. The
+  class view's `store_checked` reports capacity failure through
+  `PortalSegmentStoreStatus`, but not before allocating: a store already at
+  its segment budget is bounded by how many entries survive compaction, which
+  is only known after a full dependency-validity sweep, so it rejects in
+  constant time where it can and otherwise captures the candidate entry's
+  dependencies first. That capture appends to an unreserved vector, so a path
+  crossing several chunks may reallocate more than once before the status
+  comes back. Cache storage is untouched either way. See the
+  [exception-free note](no-exceptions.md), which is authoritative here. Legacy reserve and
   store calls preserve `std::length_error` with exceptions enabled and fail
   fast for the same detected error without exceptions.
 - `WeightedPathBatchScratch` owns reusable search scratch and stable copied
@@ -342,7 +350,7 @@ flowchart TB
   optimized unit-cost deterministic pathfinding. The passability field is
   treated as boolean-like. It runs natively on sparse worlds, honoring
   `MissingChunkPolicy` (the pre-A* fast-path scan is compiled out there).
-  The tag parameter also accepts a `tess::movement` class (M6): a raw tag
+  The tag parameter also accepts a `tess::movement` class: a raw tag
   normalizes to the byte-identical `WalkableField` identity class, and a
   composed class contributes its passability predicate (unit search ignores
   entry cost).

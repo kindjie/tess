@@ -208,7 +208,7 @@ in a PIBT ranking oracle parks agents permanently beside obstructions.
 The `RenderTileDelta` family above is the legacy per-tile seam; new
 consumers should use the versioned DeltaFrame bridge below.
 
-### DeltaFrame Render Bridge (M11)
+### DeltaFrame Render Bridge
 
 The versioned frame protocol in `sim/delta_frame.h`. Tile deltas are
 invalidation records, not value payloads: the consumer re-reads the
@@ -367,7 +367,7 @@ stateDiagram-v2
   successful commit (after position/occupancy update, before arrival handling)
   and never on a failed validation, so external tile-to-entity mirrors updated
   inside the callback stay synchronized with the occupancy field by
-  construction (the M10 ECS adapter's hook point).
+  construction (the ECS adapter's hook point).
 - `process_unit_path_agents<World, ClassOrTag>(...)` and
   `process_weighted_path_agents<World, Class, MaxCost>(...)` (plus the legacy
   `<World, PassableTag, CostTag, MaxCost>` overload)
@@ -424,7 +424,7 @@ stateDiagram-v2
 
 ### Schedule
 
-`include/tess/sim/schedule.h` is the M5 schedule: ordered phases of
+`include/tess/sim/schedule.h` is the schedule: ordered phases of
 type-erased tasks driven by cadences that are pure functions of the fixed
 `SimClock` tick counter and per-task pending dirty/event masks. The schedule
 never touches a world -- trigger bits are fed to it explicitly -- so the
@@ -472,7 +472,10 @@ flowchart TB
   same-tick marks re-arm it for the next tick), `on_event(mask)` with the same
   phase-aware coalescing rules, `background(budget)`, and `manual()`.
 - `CadenceKind` is the stored discriminator for those six cadence forms.
-  `ScheduleTaskDesc` combines a phase and cadence; `ScheduleTaskContext`
+  `ScheduleTaskDesc` combines a name, a phase, and a cadence -- the name is
+  required and must have static storage, the same rule diagnostics trace
+  labels follow, because the schedule stores the view rather than the
+  characters; `ScheduleTaskContext`
   supplies the current clock, consumed dirty/event masks, and background
   budget to `ScheduleTaskFn`; `ScheduleTaskResult` returns produced dirty/event
   masks, completed items, and backlog state;
@@ -532,7 +535,7 @@ flowchart TB
 
 ### Auto-Exec
 
-`include/tess/sim/auto_exec.h` closes M5's auto-exec gap: `AutoExecTask
+`include/tess/sim/auto_exec.h` closes the auto-exec gap: `AutoExecTask
 <World, Policy, Ack, ChunkFn>` is one schedule task running the whole
 queued-ops pipeline -- plan, parallel phase planning, execution (serial or
 worker pool, chosen per phase by an operation-count threshold), per-phase
