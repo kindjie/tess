@@ -3,8 +3,18 @@
 The library is header-only. A consumer needs a C++20 compiler and CMake 3.25
 or newer; tess itself adds no runtime or link dependency. Installing it needs
 no network access and builds no code. GoogleTest, Google Benchmark, EnTT, and
-Flecs are development or optional integration dependencies fetched only by
-developer presets; ordinary consumers do not link them through `tess::tess`.
+Flecs are development or optional integration dependencies, and ordinary
+consumers do not link them through `tess::tess`.
+
+They are fetched by the OPTIONS that enable them, not by any preset. That
+matters when you evaluate the repository directly: `TESS_BUILD_TESTING`
+defaults to on for a top-level build, so a bare `cmake -B build` in a clone
+configures the tests and fetches GoogleTest at configure time. On an offline
+or restricted network that fails in a clone you did not ask for. To look
+around without any fetch, use the `examples` preset, or configure with
+`-DTESS_BUILD_TESTING=OFF`. Consuming tess through `add_subdirectory` or
+FetchContent is unaffected: `TESS_BUILD_TESTING` defaults to off when tess
+is not the top-level project.
 
 What tess guarantees once integrated — exceptions, RTTI, determinism
 across thread counts, thread ownership, and steady-state allocations —
@@ -66,8 +76,10 @@ umbrella. All three are dependency-free. The independently gated EnTT and
 Flecs adapters and the Dear ImGui panels are opt-in headers that consumers
 include after their corresponding third-party header; see
 [ECS integration](architecture/ecs.md) and
-[Diagnostics](architecture/diagnostics.md). In compile-sensitive code, prefer
-the narrowest public header that owns the API.
+[Diagnostics](architecture/diagnostics.md). Every installed header is public and
+supported: include the `<tess/tess.h>` umbrella, an aggregate such as
+`<tess/pathfinding.h>`, or the narrowest header that owns the API. In
+compile-sensitive code, prefer the narrowest one.
 
 ## Package-manager status
 

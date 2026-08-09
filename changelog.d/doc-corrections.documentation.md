@@ -49,3 +49,16 @@
   and its fix — while the page described it as possibly "stale by a few
   commits". The page now names the run and commit the data comes from and
   says plainly that it lags main between regenerations.
+- The installation page said the development dependencies are "fetched only
+  by developer presets". They are fetched by the options that enable them:
+  `TESS_BUILD_TESTING` defaults to on for a top-level build, so a bare
+  `cmake -B build` in a clone fetches GoogleTest at configure time — which
+  fails on a restricted network, for an evaluator who has just read that it
+  would not happen. The page now says so and gives the two fetch-free
+  routes.
+- Three documents stated three different include-surface policies, and the
+  tool cited as enforcing one of them enforces neither. There is now one
+  policy: every installed header is public and supported, with the narrowest
+  owning header preferred in compile-sensitive code.
+  `tools/check_public_surface.py` is described as what it is — a symbol
+  manifest gate, not an include policy.
