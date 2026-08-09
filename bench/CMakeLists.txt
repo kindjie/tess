@@ -855,6 +855,23 @@ if(BUILD_TESTING)
     )
     set_tests_properties(tess_bench_budgeted_progress_counter_smoke
       PROPERTIES FIXTURES_SETUP budgeted_counter_artifacts)
+    set(budgeted_counter_artifact_paths "")
+    foreach(budgeted_cell astar_unit field_product resumable_work
+            astar_arrival_60 astar_arrival_600)
+      foreach(budgeted_ns 125000 500000 2000000 8000000)
+        list(APPEND budgeted_counter_artifact_paths
+          "${budgeted_counter_dir}/${budgeted_cell}_${budgeted_ns}ns.json")
+      endforeach()
+    endforeach()
+    add_test(
+      NAME tess_bench_budgeted_progress_counter_artifacts_valid
+      COMMAND
+        Python3::Interpreter
+        ${PROJECT_SOURCE_DIR}/tools/check_budgeted_artifacts.py
+        ${budgeted_counter_artifact_paths}
+    )
+    set_tests_properties(tess_bench_budgeted_progress_counter_artifacts_valid
+      PROPERTIES FIXTURES_REQUIRED budgeted_counter_artifacts)
     add_test(
       NAME tess_bench_budgeted_progress_pass_comparison
       COMMAND

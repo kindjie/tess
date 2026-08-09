@@ -94,12 +94,14 @@ def compare_pair(timing: dict, counter: dict, findings: list[str],
 
   if saturated:
     pool = timing["experiment"].get("pool_size", 0)
-    repetitions = max(1, timing["summary"].get("repetitions", 1))
     if pool > 0:
-      timing_wrapped = timing["summary"]["useful_completions"] >= (
-          pool * repetitions)
-      counter_wrapped = counter["summary"]["useful_completions"] >= (
-          pool * repetitions)
+      # Every repetition of both passes must individually wrap the
+      # pool: an aggregate threshold would let one long repetition
+      # mask several that never wrapped.
+      timing_wrapped = timing["summary"].get(
+          "min_repetition_completions", 0) >= pool
+      counter_wrapped = counter["summary"].get(
+          "min_repetition_completions", 0) >= pool
       if not (timing_wrapped and counter_wrapped):
         return  # Below a full wrap the ratio is composition noise.
     timing_wpc = (timing["summary"]["consumed_work_units"] /
@@ -141,6 +143,25 @@ def compare_pair(timing: dict, counter: dict, findings: list[str],
     findings.append(
         f"{label}: deadline success diverges beyond 2 points "
         f"({timing_success:.3f} vs {counter_success:.3f})")
+  # The two-point tolerance applies per demand class, not only to the
+  # aggregate: multi-class cells retain classes[].deadline_success_rate.
+  timing_classes = {entry.get("class_id"): entry
+                    for entry in timing.get("classes", [])}
+  for entry in counter.get("classes", []):
+    partner = timing_classes.get(entry.get("class_id"))
+    if partner is None:
+      findings.append(f"{label}: class {entry.get('class_id')!r} has no "
+                      "timing-pass counterpart")
+      continue
+    timing_rate = partner.get("deadline_success_rate")
+    counter_rate = entry.get("deadline_success_rate")
+    if (isinstance(timing_rate, (int, float))
+        and isinstance(counter_rate, (int, float))
+        and abs(timing_rate - counter_rate) > DEADLINE_SUCCESS_TOLERANCE):
+      findings.append(
+          f"{label}: class {entry.get('class_id')!r} deadline success "
+          f"diverges beyond 2 points ({timing_rate:.3f} vs "
+          f"{counter_rate:.3f})")
 
 
 def run_comparison(timing_dir: Path, counter_dir: Path) -> tuple[int, list]:

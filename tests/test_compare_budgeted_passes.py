@@ -29,7 +29,8 @@ def cell(kind: str, pass_name: str, useful: int, work: int,
                "dropped_after_admission": 0, "outstanding_current": 0,
                "consumed_work_units": work},
       "summary": {"useful_completions": useful,
-                  "consumed_work_units": work, "repetitions": 1},
+                  "consumed_work_units": work, "repetitions": 1,
+                  "min_repetition_completions": useful},
   }
   if rate:
     document["experiment"]["arrival_rate_num"] = rate
@@ -80,6 +81,31 @@ def test_saturated_below_wrap_is_exempt(tmp_path):
                  pool=100)
   _, findings = cbp.run_comparison(*write_pair(tmp_path, timing, counter))
   assert findings == []
+
+
+def test_wrap_requires_every_repetition(tmp_path):
+  """One long repetition cannot mask unwrapped ones."""
+  timing = cell("isolated_saturated", "timing", useful=200, work=48000,
+                pool=100)
+  timing["summary"]["min_repetition_completions"] = 50  # One rep short.
+  counter = cell("isolated_saturated", "counter", useful=200, work=20000,
+                 pool=100)
+  _, findings = cbp.run_comparison(*write_pair(tmp_path, timing, counter))
+  assert findings == []  # Exempt: not every repetition wrapped.
+
+
+def test_per_class_deadline_comparison(tmp_path):
+  """The two-point tolerance applies per demand class."""
+  timing = cell("isolated_arrival_rate", "timing", useful=600, work=60000,
+                stable=True, success=1.0, rate=60)
+  counter = cell("isolated_arrival_rate", "counter", useful=600, work=60000,
+                 stable=True, success=1.0, rate=60)
+  timing["classes"] = [{"class_id": "interactive_path",
+                        "deadline_success_rate": 1.0}]
+  counter["classes"] = [{"class_id": "interactive_path",
+                         "deadline_success_rate": 0.9}]
+  _, findings = cbp.run_comparison(*write_pair(tmp_path, timing, counter))
+  assert findings and "class 'interactive_path'" in findings[0]
 
 
 def test_trace_mismatch_is_hard_failure(tmp_path):

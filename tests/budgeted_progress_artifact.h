@@ -231,7 +231,7 @@ struct RunBlock {
 };
 
 struct ExperimentBlock {
-  std::string kind;         // e.g. "isolated_saturated"
+  std::string kind;  // e.g. "isolated_saturated"
   // Which section 11.2 pass produced this artifact: the timing pass
   // publishes wall numbers; the counter pass explains them and is
   // never a source of published time.
@@ -292,6 +292,10 @@ struct SummaryBlock {
   std::uint64_t repetitions = 0;
   std::uint64_t useful_completions = 0;
   std::uint64_t consumed_work_units = 0;
+  // The smallest single-repetition completion count: lets the
+  // cross-pass comparator require that every repetition, not just the
+  // aggregate, wrapped the frozen pool.
+  std::uint64_t min_repetition_completions = 0;
   double overshoot_frame_rate = 0.0;
   PercentileFamily frame_elapsed_ns;
   PercentileFamily overshoot_quantum_tail_ns;
@@ -567,6 +571,8 @@ inline void append_family(std::string& out, const char* key,
   detail::append_u64(out, "repetitions", summary.repetitions);
   detail::append_u64(out, "useful_completions", summary.useful_completions);
   detail::append_u64(out, "consumed_work_units", summary.consumed_work_units);
+  detail::append_u64(out, "min_repetition_completions",
+                     summary.min_repetition_completions);
   detail::append_double(out, "overshoot_frame_rate",
                         summary.overshoot_frame_rate);
   detail::append_family(out, "frame_elapsed_ns", summary.frame_elapsed_ns);
