@@ -3,7 +3,7 @@
   tick — had none at all, and the existing `render_delta/*` family
   exercises a different collector; the new pair holds the chunk count
   fixed and varies only the dirty count, showing that 256x the dirty work
-  costs 2.2x the time because the full chunk sweep dominates.
+  costs 1.66x the time because the full chunk sweep dominates.
   `spatial/local_coordination` gains a second size, because its cost is
   quadratic in the reservation count and one fixed size cannot separate a
   constant-factor regression from an exponent change; 4x the requests cost

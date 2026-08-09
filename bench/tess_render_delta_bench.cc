@@ -194,15 +194,19 @@ void BM_render_delta_collect_scan(benchmark::State& state) {
   std::vector<tess::RenderTileDelta> out;
   out.reserve(static_cast<std::size_t>(DirtyTiles));
 
+  // Marked ONCE, before the loop. The collector observes without consuming,
+  // so the marks persist and every iteration re-scans the same fixed dirty
+  // set. Marking inside the loop would have timed 1 versus 256 `mark_dirty`
+  // calls alongside the collection, and the ratio between the two cells
+  // would have measured setup rather than the scan it exists to
+  // characterize.
+  for (std::int64_t i = 0; i < DirtyTiles; ++i) {
+    mark_tile(*world, tess::Coord3{(i * 61) % 512, (i * 127) % 512, 0});
+  }
+
   std::size_t last_size = 0;
   for (auto _ : state) {
-    for (std::int64_t i = 0; i < DirtyTiles; ++i) {
-      mark_tile(*world, tess::Coord3{(i * 61) % 512, (i * 127) % 512, 0});
-    }
     out.clear();
-    // The collector observes without consuming, so the marks above persist
-    // and each iteration re-scans the same fixed dirty set -- which is the
-    // steady state a scheduler tick sees.
     tess::collect_render_tile_deltas(*world, kTerrainBit, out);
     last_size = out.size();
     benchmark::DoNotOptimize(last_size);
