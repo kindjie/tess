@@ -237,6 +237,35 @@ The conditions are the contract:
 - First touch and growth allocate. There is no global "never allocates
   after warmup" property, and claiming one would be false.
 
+## Residency coverage
+
+Three families are dense-only. They `static_assert` on `AlwaysResident`
+and do not compile against a `SparseResidentWorld`:
+
+- the queued-operations layer (`ops/queued.h`)
+- the weighted distance-field product family
+  (`path/field_product_cache.h`)
+- the PIBT tier (`sim/pibt_movement.h`)
+
+This is a coverage boundary, not an experimental marker. Those families
+are production-promoted, tested and shipped; what is missing is the
+sparse dimension, not stability on the dense one. They stay in the
+ordinary public namespace rather than moving to
+`include/tess/experimental/`, because relocating them would churn every
+consumer include to signal an instability that does not exist.
+
+What is **not** guaranteed, and is carved out of the stability promise
+deliberately: absorbing sparse residency will need the
+`MissingChunkPolicy` parameter that every sparse-aware path function
+already carries. When these families gain sparse support, expect that
+parameter to appear on their entry points. It will be defaulted the way
+`cached_astar_path`'s is — `TreatAsBlocked`, preserving existing
+behaviour — but the signatures will change.
+
+Everything else in the public surface is residency-generic: it either
+works on both world kinds, or names the difference in its own
+documentation.
+
 ## Platforms and compilers
 
 tess requires a C++20 compiler and CMake 3.25 or newer. Beyond that,
