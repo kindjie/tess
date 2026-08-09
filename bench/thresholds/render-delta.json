@@ -5,6 +5,16 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 25000
     },
+    "render_delta/collect_scan_1_dirty_4096_chunks": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 4900,
+      "note": "2026-08-08 M3 Max median: 1.218 us; bootstrap 4x ceiling. Covers collect_render_tile_deltas, which the rest of this family does not touch (audit 2026-08-07 P9)."
+    },
+    "render_delta/collect_scan_256_dirty_4096_chunks": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 10800,
+      "note": "2026-08-08 M3 Max median: 2.695 us; bootstrap 4x ceiling. 256x the dirty work costs 2.2x the time, so the fixed 4096-chunk sweep dominates -- the O(chunk_count) floor recorded as M5 backlog, now measured."
+    },
     "render_delta/collect_box_64": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 25000

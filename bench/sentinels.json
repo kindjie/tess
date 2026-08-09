@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "comment": "Sentinel benchmarks for the paired base-vs-head run (redesign section 4.1) and the section 4.5 source map. Sentinels are composite microsecond-to-millisecond workloads; families offering only nanosecond micro-benches are declared unrepresented rather than mapped to a sentinel that could never clear the materiality floor. An unrepresented reason must hold for the whole directory, not for its best-known family: include/tess/ops/ was excluded on a queued-and-scheduler rationale while also owning the millisecond-scale pool benchmarks, which left the pool ungated on pull requests. tests/test_paired_bench.py enforces completeness.",
+  "comment": "Sentinel benchmarks for the paired base-vs-head run (redesign section 4.1) and the section 4.5 source map. Sentinels are composite microsecond-to-millisecond workloads; families offering only nanosecond micro-benches are declared unrepresented rather than mapped to a sentinel that could never clear the materiality floor. An unrepresented reason must hold for the whole directory, not for its best-known family: include/tess/ops/ was excluded on a queued-and-scheduler rationale while also owning the millisecond-scale pool benchmarks, which left the pool ungated on pull requests. tests/test_paired_bench.py enforces completeness. A sentinel earns its slot in every paired run only if it measures the code its mapped directory owns: parallel/tile_touch_scoped_threads_w4 measured thread CREATION -- 45x its serial control, and the widest interval of the twelve sentinels in the 2026-08-04 paired run -- so include/tess/sim/ now maps to the compute-bound parallel/chunk_compute_pool_w4 and the thread-creation cell keeps only its threshold ceiling (audit 2026-08-07 P10).",
   "sentinels": {
     "path/cached_astar_batch_100_mixed_repeated_room_portals_512x512": {
       "metric": "cpu_time",
@@ -23,9 +23,6 @@
     },
     "ecs/tick_raw_span_10k": {
       "metric": "cpu_time"
-    },
-    "parallel/tile_touch_scoped_threads_w4": {
-      "metric": "real_time"
     },
     "parallel/chunk_compute_pool_w4": {
       "metric": "real_time"
@@ -99,7 +96,7 @@
     ],
     "include/tess/sim/": [
       "ecs/tick_raw_span_10k",
-      "parallel/tile_touch_scoped_threads_w4"
+      "parallel/chunk_compute_pool_w4"
     ],
     "include/tess/spatial/": [
       "spatial/local_coordination_1000x4",

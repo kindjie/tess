@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 // M11 render_delta bench family: sparse-tile collection scaling with the
 // dirty count (not the world size), box-granular emission, entity
@@ -175,8 +176,46 @@ BENCHMARK(BM_render_delta_collect_alloc_gate)
     ->Name("render_delta/collect_alloc_gate");
 #endif
 
+// A DIFFERENT collector from everything above: `collect_render_tile_deltas`
+// in sim/render_delta.h, which the scheduler calls once per tick and which
+// nothing measured (audit 2026-08-07 P9). The family above exercises
+// sim/delta_frame.h's DeltaCollector instead, so a change to this entry
+// point moved no number.
+//
+// The pair holds the chunk count fixed at 4096 and varies only the dirty
+// count, because the cost being characterized is the part that does NOT
+// vary with it: the collector scans every chunk each tick regardless. Two
+// points that far apart in dirty work but close in time say the floor
+// dominates; that floor is the recorded M5 backlog item, and this is the
+// instrument that would show it moving.
+template <std::int64_t DirtyTiles>
+void BM_render_delta_collect_scan(benchmark::State& state) {
+  static auto* world = new DeltaWorld();
+  std::vector<tess::RenderTileDelta> out;
+  out.reserve(static_cast<std::size_t>(DirtyTiles));
+
+  std::size_t last_size = 0;
+  for (auto _ : state) {
+    for (std::int64_t i = 0; i < DirtyTiles; ++i) {
+      mark_tile(*world, tess::Coord3{(i * 61) % 512, (i * 127) % 512, 0});
+    }
+    out.clear();
+    // The collector observes without consuming, so the marks above persist
+    // and each iteration re-scans the same fixed dirty set -- which is the
+    // steady state a scheduler tick sees.
+    tess::collect_render_tile_deltas(*world, kTerrainBit, out);
+    last_size = out.size();
+    benchmark::DoNotOptimize(last_size);
+  }
+  render_bench_check(last_size > 0, "render-delta scan emitted no deltas");
+}
+
 BENCHMARK(BM_render_delta_collect_sparse)
     ->Name("render_delta/collect_sparse_64");
+BENCHMARK(BM_render_delta_collect_scan<1>)
+    ->Name("render_delta/collect_scan_1_dirty_4096_chunks");
+BENCHMARK(BM_render_delta_collect_scan<256>)
+    ->Name("render_delta/collect_scan_256_dirty_4096_chunks");
 BENCHMARK(BM_render_delta_collect_box)->Name("render_delta/collect_box_64");
 BENCHMARK(BM_render_delta_entity_moves_coalesced)
     ->Name("render_delta/entity_moves_1k_coalesced");

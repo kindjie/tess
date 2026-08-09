@@ -32,8 +32,25 @@ using FieldWorld = tess::AlwaysResidentWorld<FieldShape, FieldSchemaT>;
 constexpr auto kTileCount =
     FieldShape::size.x * FieldShape::size.y * FieldShape::size.z;
 
-auto make_world() -> FieldWorld* {
-  auto* world = new FieldWorld();
+// The same workload on a world too large to sit in cache (audit
+// 2026-08-07 P5). At 64x64 the generation array and the product copy are
+// 16 KiB each, so the whole working set is L1/L2 resident and the
+// 2026-08-02 bare-metal campaign measured this family at 0.001-0.007 LLC
+// MPKI. Every product-layout, per-build `assign`, and dependency-capture
+// change was therefore measured only where memory traffic is free. At
+// 512x512 each array is 1 MiB. The precedent is exact: the 256-chunk
+// `storage/world_dirty_chunks_iteration` was flat at 125 ns both ways
+// until the `_16k` variant existed.
+using LargeFieldShape =
+    tess::Shape<tess::Extent3{512, 512, 1}, tess::Extent3{8, 8, 1}>;
+using LargeFieldWorld =
+    tess::AlwaysResidentWorld<LargeFieldShape, FieldSchemaT>;
+constexpr auto kLargeTileCount =
+    LargeFieldShape::size.x * LargeFieldShape::size.y * LargeFieldShape::size.z;
+
+template <typename World>
+auto make_world_of() -> World* {
+  auto* world = new World();
   for (auto& page : world->chunks()) {
     auto passable = page.template field_span<PassableTag>();
     auto cost = page.template field_span<CostTag>();
@@ -44,6 +61,8 @@ auto make_world() -> FieldWorld* {
   }
   return world;
 }
+
+auto make_world() -> FieldWorld* { return make_world_of<FieldWorld>(); }
 
 // Distinct scattered goals for any count up to the tile count: x walks
 // the row range, y scatters with a full-period stride plus a lap term,
@@ -122,6 +141,42 @@ void BM_fields_goalset_build_16(benchmark::State& state) {
 
 void BM_fields_goalset_build_256(benchmark::State& state) {
   run_goalset_build_bench(state, 256);
+}
+
+// The memory-bound counterpart to the three cells above. Goal count is
+// held at 16 -- the flood visits every tile regardless, so goal count is
+// not the cost driver -- and only the world size changes, which is the
+// one dimension the family never varied.
+void BM_fields_goalset_build_large(benchmark::State& state) {
+  static auto* world = make_world_of<LargeFieldWorld>();
+  constexpr auto goal_count = std::size_t{16};
+  tess::GoalSet goals;
+  goals.reserve(goal_count);
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(kLargeTileCount);
+  tess::DistanceFieldProduct product;
+  product.reserve_goals(goal_count);
+  product.reserve_nodes(kLargeTileCount);
+  product.reserve_dependencies(LargeFieldWorld::chunk_count);
+
+  auto reached = std::size_t{0};
+  for (auto _ : state) {
+    goals.clear();
+    for (std::size_t i = 0; i < goal_count; ++i) {
+      goals.add(tess::Coord3{static_cast<std::int64_t>((i * 31) % 512),
+                             static_cast<std::int64_t>((i * 97) % 512), 0});
+    }
+    const auto result =
+        tess::build_distance_field_product<LargeFieldWorld, PassableTag>(
+            *world, goals, scratch, product);
+    reached = product.reached_nodes();
+    auto status = result.status;
+    benchmark::DoNotOptimize(status);
+  }
+  state.counters["reached_nodes"] = static_cast<double>(reached);
+  state.counters["goal_count"] = static_cast<double>(goal_count);
+  fields_bench_check(reached == kLargeTileCount,
+                     "open-world flood did not reach every tile");
 }
 
 // Gradient descent over a built product: the per-agent query cost.
@@ -430,6 +485,8 @@ BENCHMARK(BM_fields_build_alloc_gate)->Name("fields/build_alloc_gate");
 BENCHMARK(BM_fields_goalset_build_1)->Name("fields/goalset_build_1");
 BENCHMARK(BM_fields_goalset_build_16)->Name("fields/goalset_build_16");
 BENCHMARK(BM_fields_goalset_build_256)->Name("fields/goalset_build_256");
+BENCHMARK(BM_fields_goalset_build_large)
+    ->Name("fields/goalset_build_16_512x512");
 BENCHMARK(BM_fields_nearest_target)->Name("fields/nearest_target");
 BENCHMARK(BM_fields_cache_hit)->Name("fields/cache_hit");
 BENCHMARK(BM_fields_cache_miss_store)->Name("fields/cache_miss_store");

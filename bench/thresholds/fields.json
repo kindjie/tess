@@ -9,6 +9,11 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000
     },
+    "fields/goalset_build_16_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 52800000,
+      "note": "2026-08-08 M3 Max median: 13.211 ms; bootstrap 4x ceiling. The family's memory-bound point: every other cell runs a 64x64 world whose 16 KiB arrays are L1/L2 resident (0.001-0.007 LLC MPKI in the 2026-08-02 campaign), so product-layout and per-build assign changes were measured only where memory traffic is free (audit 2026-08-07 P5). 64x the tiles costs 160x the time."
+    },
     "fields/goalset_build_256": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1100000
