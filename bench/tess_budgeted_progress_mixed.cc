@@ -1,0 +1,784 @@
+// Stage 3 of the budgeted-progress suite: the 60 Hz mixed colony
+// (design section 7). Split into its own translation unit to keep
+// each source under the repository's per-file token budget; shared
+// plumbing lives in budgeted_progress_bench_common.h.
+
+#include <span>
+
+#include "budgeted_progress_bench_common.h"
+
+namespace bpb_bench {
+
+namespace {
+
+using namespace bpb_bench;  // NOLINT(google-build-using-namespace)
+namespace budgeted = tess_test::budgeted;
+namespace colony = tess_test::colony;
+
+// --- Stage 3: the 60 Hz mixed colony (design section 7) ----------------
+//
+// The production colony stack — schedule loop, queued churn ops with
+// auto-exec, incremental region-graph topology, weighted path agents
+// with movement, render deltas — driven from a paced 60 FPS frame
+// loop with one wall-clock allowance per frame. The stack setup and
+// per-tick body mirror tests/colony_harness.h's Colony::run() exactly,
+// and the mirror is PROVEN equivalent before any budgeted cell runs:
+// an unbudgeted 40-tick pass through this driver must reproduce
+// Colony::run()'s final positions, step count, and arrivals on the
+// reference configuration (stage-3 acceptance).
+//
+// Steady demand is the design's ping-pong extension: each agent owns
+// a home/away endpoint pair and re-arms the opposite endpoint on the
+// tick after arrival, making the cell a closed-loop system whose
+// capacity axis is population; flow-stability rests on the deadline
+// and age criteria (design section 7.2). The interactive navigation
+// class carries the canonical admission + 32 tick deadline and a
+// 64-tick settlement.
+//
+// Both section 7.3 views are emitted. In this stack every scheduled
+// task is tick-coupled and none exposes an existing safe defer/resume
+// boundary, so mixed_existing_quanta's defer-capable set is empty and
+// the two views are identical by construction — the design names that
+// outcome explicitly valid; the artifacts differ only in kind.
+
+using MixedSchema =
+    tess::FieldSchema<tess::Field<colony::PassableTag, bool>,
+                      tess::Field<colony::CostTag, std::uint32_t>,
+                      tess::Field<colony::OccupancyTag, bool>,
+                      tess::Field<colony::ReservationTag, bool>>;
+using MixedWorld = tess::AlwaysResidentWorld<PathScaleShape, MixedSchema>;
+using MixedColony = colony::Colony<PathScaleShape, MixedSchema>;
+
+constexpr std::size_t kMixedAgents = 100;
+constexpr std::uint32_t kMixedChurnPeriod = 8;
+constexpr std::uint32_t kMixedChurnChunks = 4;
+constexpr std::int64_t kMixedGoalDistance = 24;
+constexpr std::uint64_t kMixedAllowanceTicks = 32;
+constexpr std::uint64_t kMixedSettlementTicks = 2 * kMixedAllowanceTicks;
+
+struct MixedBuildFn {
+  std::vector<colony::TileEdit>* pending = nullptr;
+  auto operator()(auto view, colony::BuildAck& ack) -> void {
+    auto passable = view.template field_span<colony::PassableTag>();
+    auto cost = view.template field_span<colony::CostTag>();
+    for (const auto& edit : *pending) {
+      if (tess::chunk_key<PathScaleShape>(
+              tess::chunk_coord<PathScaleShape>(edit.coord)) != view.key()) {
+        continue;
+      }
+      const auto local = tess::local_tile_id<PathScaleShape>(
+          tess::local_coord<PathScaleShape>(edit.coord));
+      passable[local.value] = false;
+      cost[local.value] = 0U;
+      ++ack.tiles;
+    }
+  }
+};
+
+struct MixedStack {
+  std::unique_ptr<MixedWorld> world;
+  std::vector<tess::PathAgentState> agents;
+  std::vector<tess::Coord3> assigned_goals;
+  std::vector<tess::Coord3> homes;
+  tess::PathRequestRuntime runtime;
+  tess::diagnostics::FlowAccounting agent_flow;
+  tess::PathAgentTickState tick_state;
+  tess::LocalTopologyScratch topo_scratch;
+  tess::RegionGraph graph;
+  std::vector<colony::TileEdit> churn_pool;
+  std::size_t churn_cursor = 0;
+  std::vector<colony::TileEdit> pending_edits;
+  tess::FrameOps ops;
+  MixedBuildFn build_fn;
+  std::optional<
+      tess::AutoExecTask<MixedWorld, tess::WritePolicy::UniquePerChunk,
+                         colony::BuildAck, MixedBuildFn>>
+      build_task;
+  tess::Schedule schedule;
+  tess::SimClock sim_clock;
+  tess::DeltaCollector deltas;
+  std::vector<tess::Coord3> previous;
+  std::uint64_t total_steps = 0;
+
+  struct TopologyTask {
+    MixedWorld* world = nullptr;
+    tess::LocalTopologyScratch* scratch = nullptr;
+    tess::RegionGraph* graph = nullptr;
+    tess::PathAgentTickState* tick_state = nullptr;
+    std::vector<tess::ChunkKey> dirty_scratch;
+    auto operator()(const tess::ScheduleTaskContext&)
+        -> tess::ScheduleTaskResult {
+      dirty_scratch.clear();
+      world->collect_dirty_chunks(colony::kTerrainDirty, dirty_scratch);
+      if (!dirty_scratch.empty()) {
+        (void)tess::update_region_graph<MixedWorld, colony::Walker>(
+            *world, *scratch, *graph, dirty_scratch);
+        tess::mark_pathing_dirty(*tick_state);
+      }
+      return {};
+    }
+  };
+  struct AgentTask {
+    MixedWorld* world = nullptr;
+    std::span<tess::PathAgentState> agents;
+    tess::PathRequestRuntime* runtime = nullptr;
+    tess::PathAgentTickState* tick_state = nullptr;
+    const tess::RegionGraph* graph = nullptr;
+    auto operator()(const tess::ScheduleTaskContext&)
+        -> tess::ScheduleTaskResult {
+      (void)tess::tick_weighted_path_agents_with_movement<
+          MixedWorld, colony::Walker, colony::kMaxCost, colony::OccupancyTag,
+          colony::ReservationTag>(*tick_state, *world, agents, *runtime, {},
+                                  colony::kOccupancyDirty, graph);
+      return {};
+    }
+  };
+  TopologyTask topology_task;
+  AgentTask agent_task;
+
+  // One simulation tick, exactly the Colony::run() loop body. `tick`
+  // is the controller's one-based tick; the harness tests churn
+  // against its zero-based pre-advance loop index, so the harness
+  // index is tick - 1 (verified by the equivalence check, which also
+  // compares the production agent-flow counters that a one-tick churn
+  // shift perturbs).
+  void tick_body(std::uint64_t tick, bool churn_enabled) {
+    const std::uint64_t harness_index = tick - 1;
+    tess::observe_path_agent_flow_tick(tick_state, agents, tick);
+    pending_edits.clear();
+    if (churn_enabled && kMixedChurnPeriod > 0 && harness_index > 0 &&
+        harness_index % kMixedChurnPeriod == 0 &&
+        churn_cursor < churn_pool.size()) {
+      for (std::uint32_t taken = 0;
+           taken < kMixedChurnChunks && churn_cursor < churn_pool.size();
+           ++churn_cursor) {
+        const auto& edit = churn_pool[churn_cursor];
+        if (world->field<colony::OccupancyTag>(edit.coord)) {
+          continue;
+        }
+        pending_edits.push_back(edit);
+        ++taken;
+      }
+      std::vector<tess::ChunkKey> keys;
+      for (const auto& edit : pending_edits) {
+        const auto key = tess::chunk_key<PathScaleShape>(
+            tess::chunk_coord<PathScaleShape>(edit.coord));
+        if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+          keys.push_back(key);
+        }
+      }
+      for (const auto& key : keys) {
+        (void)ops.update_field(tess::DomainDesc::explicit_chunks(
+                                   std::span<const tess::ChunkKey>{&key, 1}),
+                               tess::FieldAccessDesc{0, colony::kTerrainDirty,
+                                                     colony::kTerrainDirty},
+                               tess::WritePolicy::UniquePerChunk);
+      }
+    }
+    (void)schedule.run_tick(sim_clock);
+    for (std::size_t i = 0; i < agents.size(); ++i) {
+      if (agents[i].position != previous[i]) {
+        ++total_steps;
+        previous[i] = agents[i].position;
+      }
+    }
+    tess::collect_tile_deltas(deltas, *world, colony::kTerrainDirty);
+    (void)deltas.publish();
+  }
+};
+
+[[nodiscard]] auto build_mixed_stack(std::size_t population)
+    -> std::unique_ptr<MixedStack> {
+  auto stack = std::make_unique<MixedStack>();
+  const auto map = MixedColony::logical_map(kSeed);
+  stack->world = std::make_unique<MixedWorld>();
+  for (std::int64_t y = 0; y < 512; ++y) {
+    for (std::int64_t x = 0; x < 512; ++x) {
+      const auto logical_index =
+          static_cast<std::size_t>(y / kScale) * map.width +
+          static_cast<std::size_t>(x / kScale);
+      const bool passable = map.passability[logical_index] != 0;
+      const auto coord = tess::Coord3{x, y, 0};
+      stack->world->field<colony::PassableTag>(coord) = passable;
+      stack->world->field<colony::CostTag>(coord) =
+          passable ? colony::detail::tile_cost(kSeed ^ 0xC057U, x, y) : 0U;
+      stack->world->field<colony::OccupancyTag>(coord) = false;
+      stack->world->field<colony::ReservationTag>(coord) = false;
+    }
+  }
+
+  // Agents: the harness's scan-order placement, verbatim.
+  const std::int64_t stride = std::max<std::int64_t>(1, 512 / 64);
+  for (std::int64_t y = 1; y < 512 && stack->agents.size() < population;
+       y += stride) {
+    for (std::int64_t x = 1;
+         x + kMixedGoalDistance < 512 && stack->agents.size() < population;
+         x += kMixedGoalDistance + 2) {
+      const auto start = tess::Coord3{x, y, 0};
+      const auto goal = tess::Coord3{x + kMixedGoalDistance, y, 0};
+      if (!stack->world->field<colony::PassableTag>(start) ||
+          !stack->world->field<colony::PassableTag>(goal) ||
+          stack->world->field<colony::OccupancyTag>(start)) {
+        continue;
+      }
+      tess::PathAgentState agent;
+      agent.position = start;
+      stack->world->field<colony::OccupancyTag>(start) = true;
+      stack->agents.push_back(agent);
+      stack->assigned_goals.push_back(goal);
+      stack->homes.push_back(start);
+    }
+  }
+  check(stack->agents.size() == population, "mixed colony under-placed agents");
+
+  stack->runtime.reserve_requests(stack->agents.size());
+  stack->runtime.reserve_search_nodes(512 * 512);
+  stack->runtime.reserve_path_nodes(stack->agents.size() * 64);
+  stack->runtime.reserve_unit_routes(stack->agents.size());
+  stack->tick_state.flow_accounting = &stack->agent_flow;
+
+  tess::build_region_graph<MixedWorld, colony::Walker>(
+      *stack->world, stack->topo_scratch, stack->graph);
+  for (std::size_t i = 0; i < stack->agents.size(); ++i) {
+    tess::set_path_agent_goal(stack->tick_state, stack->agents[i],
+                              stack->assigned_goals[i]);
+  }
+
+  stack->ops.reserve_operations(kMixedChurnChunks + 4);
+  const auto interior = colony::detail::interior_logical_cells(map);
+  {
+    grid::SplitMix64 rng(kSeed ^ 0xC17U);
+    std::vector<char> reserved(512 * 512, 0);
+    const auto mark = [&](tess::Coord3 coord) {
+      reserved[static_cast<std::size_t>(coord.y * 512 + coord.x)] = 1;
+    };
+    for (const auto& agent : stack->agents) {
+      mark(agent.position);
+    }
+    for (const auto& goal : stack->assigned_goals) {
+      mark(goal);
+    }
+    // Enough candidates for the longest budgeted run.
+    const std::size_t wanted =
+        (4096 / kMixedChurnPeriod + 1) * kMixedChurnChunks;
+    for (std::size_t attempt = 0;
+         attempt < interior.size() && stack->churn_pool.size() < wanted;
+         ++attempt) {
+      const auto logical_cell = interior[rng.below(interior.size())];
+      const auto lx = static_cast<std::int64_t>(logical_cell % map.width);
+      const auto ly = static_cast<std::int64_t>(logical_cell / map.width);
+      const auto coord =
+          tess::Coord3{lx * kScale + kScale / 2, ly * kScale + kScale / 2, 0};
+      const auto flat = static_cast<std::size_t>(coord.y * 512 + coord.x);
+      if (reserved[flat] != 0) {
+        continue;
+      }
+      reserved[flat] = 1;
+      stack->churn_pool.push_back(colony::TileEdit{coord});
+    }
+  }
+
+  stack->build_fn.pending = &stack->pending_edits;
+  stack->build_task.emplace(*stack->world, stack->ops, stack->build_fn);
+  stack->build_task->reserve_operations(kMixedChurnChunks + 4);
+  stack->topology_task = MixedStack::TopologyTask{stack->world.get(),
+                                                  &stack->topo_scratch,
+                                                  &stack->graph,
+                                                  &stack->tick_state,
+                                                  {}};
+  stack->agent_task = MixedStack::AgentTask{
+      stack->world.get(), std::span<tess::PathAgentState>{stack->agents},
+      &stack->runtime, &stack->tick_state, &stack->graph};
+
+  stack->schedule.reserve_tasks(3);
+  (void)stack->schedule.add_task(
+      {"build", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()},
+      *stack->build_task);
+  (void)stack->schedule.add_task(
+      {"topology", tess::SimPhase::Pathing,
+       tess::Cadence::on_dirty(colony::kTerrainDirty)},
+      stack->topology_task);
+  (void)stack->schedule.add_task(
+      {"agents", tess::SimPhase::Movement, tess::Cadence::every_tick()},
+      stack->agent_task);
+  stack->schedule.seal();
+  stack->deltas.reserve(MixedWorld::chunk_count, 4096, 64);
+  stack->previous.reserve(stack->agents.size());
+  for (const auto& agent : stack->agents) {
+    stack->previous.push_back(agent.position);
+  }
+  return stack;
+}
+
+// Stage-3 acceptance: before any budgeted cell runs, the mirrored
+// stack must reproduce the harness's reference run exactly.
+void validate_mixed_stack() {
+  auto stack = build_mixed_stack(kMixedAgents);
+  for (std::uint64_t tick = 1; tick <= 40; ++tick) {
+    stack->tick_body(tick, true);
+  }
+
+  colony::ColonyConfig config;
+  config.agents = kMixedAgents;
+  config.ticks = 40;
+  config.churn_period = kMixedChurnPeriod;
+  config.churn_chunks = kMixedChurnChunks;
+  MixedColony reference(config);
+  const colony::ColonyRun reference_run = reference.run();
+
+  check(reference_run.agents_unplaced == 0,
+        "reference colony under-placed agents");
+  check(reference_run.final_positions.size() == stack->agents.size(),
+        "mixed stack population diverges from the harness");
+  for (std::size_t i = 0; i < stack->agents.size(); ++i) {
+    check(stack->agents[i].position == reference_run.final_positions[i],
+          "mixed stack final positions diverge from Colony::run()");
+  }
+  check(stack->total_steps == reference_run.total_steps,
+        "mixed stack step count diverges from Colony::run()");
+  // The production path-agent flow counters are sensitive to churn and
+  // replan timing: a one-tick shift anywhere in the loop perturbs them
+  // even when final positions happen to coincide.
+  const auto& mine = stack->agent_flow.counters;
+  const auto& reference_flow = reference_run.agent_flow;
+  check(mine.offered == reference_flow.offered &&
+            mine.admitted == reference_flow.admitted &&
+            mine.completed == reference_flow.completed &&
+            mine.failed == reference_flow.failed &&
+            mine.superseded == reference_flow.superseded &&
+            mine.consumed_work_units == reference_flow.consumed_work_units,
+        "mixed stack agent-flow counters diverge from Colony::run()");
+}
+
+// Per-agent ping-pong navigation items (design section 7.2).
+struct MixedDemand {
+  struct Item {
+    std::uint64_t admitted_tick = 0;
+    std::uint64_t completed_tick = 0;
+    bool completed = false;
+    bool failed = false;
+  };
+  std::vector<Item> items;
+  std::vector<std::size_t> open_item;  // Per agent; npos when idle.
+  std::vector<tess::Coord3> current_goal;
+  std::vector<std::uint8_t> heading_away;
+  std::vector<std::size_t> rearm_queue;  // Agents to re-arm this tick.
+  std::size_t oldest_pointer = 0;
+  tess::diagnostics::FlowAccounting accounting;
+  static constexpr std::size_t npos = static_cast<std::size_t>(-1);
+
+  void admit(MixedStack& stack, std::size_t agent, tess::Coord3 goal,
+             std::uint64_t tick) {
+    tess::set_path_agent_goal(stack.tick_state, stack.agents[agent], goal);
+    current_goal[agent] = goal;
+    ++accounting.counters.offered;
+    accounting.record_admitted();
+    open_item[agent] = items.size();
+    items.push_back({tick, 0, false});
+  }
+
+  void observe(std::uint64_t tick) {
+    accounting.observe_tick(tick);
+    while (oldest_pointer < items.size() &&
+           (items[oldest_pointer].completed || items[oldest_pointer].failed)) {
+      ++oldest_pointer;
+    }
+    accounting.counters.oldest_outstanding_age_ticks =
+        oldest_pointer < items.size()
+            ? tick - items[oldest_pointer].admitted_tick
+            : 0;
+  }
+
+  void fail(std::size_t agent, std::uint64_t tick) {
+    Item& item = items[open_item[agent]];
+    item.failed = true;
+    item.completed_tick = tick;
+    open_item[agent] = npos;
+    ++accounting.counters.failed;
+    accounting.record_left_outstanding();
+    accounting.counters.residence_ticks_accumulated +=
+        tick - item.admitted_tick;
+  }
+
+  void complete(std::size_t agent, std::uint64_t tick) {
+    Item& item = items[open_item[agent]];
+    item.completed = true;
+    item.completed_tick = tick;
+    open_item[agent] = npos;
+    ++accounting.counters.completed;
+    accounting.record_left_outstanding();
+    accounting.counters.residence_ticks_accumulated +=
+        tick - item.admitted_tick;
+    accounting.counters.offered_work_units += 1;
+    accounting.counters.consumed_work_units += 1;
+  }
+};
+
+struct MixedCellSummary {
+  std::uint64_t useful = 0;
+  std::uint64_t cohort_admitted = 0;
+  std::uint64_t cohort_met = 0;
+  std::uint64_t starved = 0;
+  std::vector<std::uint64_t> lateness;
+};
+
+[[nodiscard]] auto summarize_mixed(const MixedDemand& demand,
+                                   std::uint64_t window_start,
+                                   std::uint64_t window_end,
+                                   std::uint64_t final_tick,
+                                   std::uint64_t base_tps) -> MixedCellSummary {
+  MixedCellSummary out;
+  const std::uint64_t starvation =
+      std::max<std::uint64_t>(4 * kMixedAllowanceTicks, base_tps);
+  for (const MixedDemand::Item& item : demand.items) {
+    const std::uint64_t deadline = item.admitted_tick + kMixedAllowanceTicks;
+    if (item.completed && item.completed_tick >= window_start &&
+        item.completed_tick <= window_end) {
+      ++out.useful;
+    }
+    if (item.admitted_tick < window_start || item.admitted_tick > window_end) {
+      continue;
+    }
+    ++out.cohort_admitted;
+    if (item.completed && item.completed_tick <= deadline) {
+      ++out.cohort_met;
+    }
+    if (item.completed && item.completed_tick > deadline) {
+      out.lateness.push_back(item.completed_tick - deadline);
+    }
+    const std::uint64_t served_or_now =
+        (item.completed || item.failed) ? item.completed_tick : final_tick;
+    if (served_or_now - item.admitted_tick >= starvation) {
+      ++out.starved;
+    }
+  }
+  return out;
+}
+
+}  // namespace
+
+void run_mixed_colony_cells(const RunOptions& base_options) {
+  namespace budgeted = tess_test::budgeted;
+  validate_mixed_stack();
+
+  // A 24-tile goal needs ~25 simulation ticks before the first
+  // arrival; the smoke configuration widens the mixed window (and
+  // runs 60 TPS so ticks land every frame) so the completion and
+  // re-arm paths are genuinely exercised rather than vacuously green.
+  RunOptions options = base_options;
+  if (options.measured_frames < 90) {
+    options.measured_frames = 90;
+  }
+
+  // The full canonical matrix (design section 3.1): all seven budgets;
+  // TPS and population axes come from --mixed-tps and
+  // --mixed-populations. Smoke restricts to two budgets at 60 TPS.
+  static constexpr std::array<Nanos, 7> kAllMixedBudgets = {
+      125'000, 250'000, 500'000, 1'000'000, 2'000'000, 4'000'000, 8'000'000};
+  static constexpr std::array<Nanos, 2> kSmokeMixedBudgets = {125'000,
+                                                              8'000'000};
+  const std::span<const Nanos> budgets =
+      options.smoke ? std::span<const Nanos>{kSmokeMixedBudgets}
+                    : std::span<const Nanos>{kAllMixedBudgets};
+  const std::vector<std::uint32_t> tps_axis =
+      options.smoke ? std::vector<std::uint32_t>{60} : options.mixed_tps;
+  const std::vector<std::size_t> population_axis =
+      options.smoke ? std::vector<std::size_t>{100} : options.mixed_populations;
+
+  struct MixedCellAccumulator {
+    tess::diagnostics::FlowCounters window_flow{};
+    std::vector<SaturatedRep> reps;
+    MixedCellSummary totals;
+    std::vector<std::uint64_t> lateness_pool;
+    std::vector<std::uint64_t> oldest_samples;
+    Nanos measured_wall = 0;
+    std::uint64_t stable_reps = 0;
+    std::uint64_t peak_rss = 0;
+  };
+
+  const std::array<const char*, 2> kViews = {"mixed_current_fidelity",
+                                             "mixed_existing_quanta"};
+  for (const char* view : kViews) {
+    for (const std::uint32_t tps : tps_axis) {
+      for (const std::size_t population : population_axis) {
+        SteadyClock clock;
+        std::vector<MixedCellAccumulator> cells(budgets.size());
+        // Repetition-outer with the budget start offset rotated by
+        // repetition (design section 11.4): paced mixed cells occupy
+        // long real-time spans, so budget order must decorrelate from
+        // elapsed-time and thermal drift.
+        for (std::uint64_t rep = 0; rep < options.repetitions; ++rep) {
+          for (std::size_t k = 0; k < budgets.size(); ++k) {
+            const std::size_t budget_index = (k + rep) % budgets.size();
+            const Nanos budget = budgets[budget_index];
+            MixedCellAccumulator& cell = cells[budget_index];
+
+            auto stack = build_mixed_stack(population);
+            MixedDemand demand;
+            demand.open_item.assign(population, MixedDemand::npos);
+            demand.current_goal = stack->assigned_goals;
+            demand.heading_away.assign(population, 1);
+            demand.items.reserve(8192);
+            demand.rearm_queue.reserve(population);
+            for (std::size_t agent = 0; agent < population; ++agent) {
+              ++demand.accounting.counters.offered;
+              demand.accounting.record_admitted();
+              demand.open_item[agent] = demand.items.size();
+              demand.items.push_back({0, 0, false, false});
+            }
+
+            FrameBudgetConfig config;
+            config.budget_ns = budget;
+            config.base_tps = tps;
+            config.pacing = budgeted::Pacing::Paced;
+            FrameBudgetController controller{clock, config};
+            bool admitting = true;
+            auto mandatory = [&](std::uint64_t tick) {
+              demand.observe(tick);
+              if (admitting) {
+                for (const std::size_t agent : demand.rearm_queue) {
+                  const bool away = demand.heading_away[agent] != 0;
+                  const tess::Coord3 next_goal =
+                      away ? stack->homes[agent] : stack->assigned_goals[agent];
+                  demand.heading_away[agent] = away ? 0 : 1;
+                  demand.admit(*stack, agent, next_goal, tick);
+                }
+              }
+              demand.rearm_queue.clear();
+              stack->tick_body(tick, true);
+              for (std::size_t agent = 0; agent < population; ++agent) {
+                if (demand.open_item[agent] == MixedDemand::npos) {
+                  continue;
+                }
+                if (!stack->agents[agent].has_goal &&
+                    stack->agents[agent].position ==
+                        demand.current_goal[agent]) {
+                  demand.complete(agent, tick);
+                  demand.rearm_queue.push_back(agent);
+                } else if (stack->agents[agent].phase ==
+                           tess::PathAgentPhase::Unreachable) {
+                  demand.fail(agent, tick);
+                  demand.heading_away[agent] =
+                      demand.heading_away[agent] != 0 ? 0 : 1;
+                  demand.rearm_queue.push_back(agent);
+                }
+              }
+            };
+            auto quantum = [&]() -> bool { return false; };
+
+            for (std::uint64_t frame = 0; frame < options.warmup_frames;
+                 ++frame) {
+              (void)controller.run_frame(mandatory, quantum);
+            }
+            const tess::diagnostics::FlowCounters window_start_flow =
+                demand.accounting.counters;
+            const std::uint64_t window_start_tick = controller.sim_tick() + 1;
+            SaturatedRep samples;
+            samples.frame_elapsed_ns.reserve(options.measured_frames);
+            samples.overshoot_quantum_tail_ns.reserve(options.measured_frames);
+            samples.overshoot_mandatory_ns.reserve(options.measured_frames);
+            samples.frame_start_lag_ns.reserve(options.measured_frames);
+            const Nanos wall_start = clock.now();
+            for (std::uint64_t frame = 0; frame < options.measured_frames;
+                 ++frame) {
+              const FrameRecord record =
+                  controller.run_frame(mandatory, quantum);
+              samples.frame_elapsed_ns.push_back(record.elapsed_ns);
+              samples.overshoot_quantum_tail_ns.push_back(
+                  record.overshoot_quantum_tail_ns);
+              samples.overshoot_mandatory_ns.push_back(
+                  record.overshoot_mandatory_ns);
+              samples.frame_start_lag_ns.push_back(record.frame_start_lag_ns);
+              if (record.overshoot_quantum_tail_ns > 0 ||
+                  record.overshoot_mandatory_ns > 0) {
+                ++samples.overshoot_frames;
+              }
+              cell.oldest_samples.push_back(
+                  demand.accounting.counters.oldest_outstanding_age_ticks);
+            }
+            cell.measured_wall +=
+                budgeted::sub_clamped(clock.now(), wall_start);
+            const std::uint64_t window_end_tick = controller.sim_tick();
+            demand.observe(window_end_tick);
+            const tess::diagnostics::FlowCounters window_end_flow =
+                demand.accounting.counters;
+
+            // Closed-loop window flow with carried inventory: items
+            // open at window start count as window admissions, so the
+            // artifact's conservation identities hold exactly without
+            // unsigned underflow across the live boundary (the window
+            // never starts quiescent in a ping-pong colony).
+            {
+              tess::diagnostics::FlowCounters delta{};
+              delta.offered = window_end_flow.offered -
+                              window_start_flow.offered +
+                              window_start_flow.outstanding_current;
+              delta.admitted = window_end_flow.admitted -
+                               window_start_flow.admitted +
+                               window_start_flow.outstanding_current;
+              delta.completed =
+                  window_end_flow.completed - window_start_flow.completed;
+              delta.failed = window_end_flow.failed - window_start_flow.failed;
+              delta.consumed_work_units = window_end_flow.consumed_work_units -
+                                          window_start_flow.consumed_work_units;
+              delta.offered_work_units = window_end_flow.offered_work_units -
+                                         window_start_flow.offered_work_units;
+              delta.residence_ticks_accumulated =
+                  window_end_flow.residence_ticks_accumulated -
+                  window_start_flow.residence_ticks_accumulated;
+              delta.inventory_tick_weighted =
+                  window_end_flow.inventory_tick_weighted -
+                  window_start_flow.inventory_tick_weighted;
+              delta.outstanding_current = window_end_flow.outstanding_current;
+              delta.outstanding_high_water =
+                  window_end_flow.outstanding_current >
+                          window_start_flow.outstanding_current
+                      ? window_end_flow.outstanding_current
+                      : window_start_flow.outstanding_current;
+              delta.oldest_outstanding_age_ticks =
+                  window_end_flow.oldest_outstanding_age_ticks;
+              accumulate_window(cell.window_flow,
+                                tess::diagnostics::FlowCounters{}, delta);
+            }
+
+            admitting = false;
+            const std::uint64_t settle_until =
+                window_end_tick + kMixedSettlementTicks;
+            while (controller.sim_tick() < settle_until) {
+              (void)controller.run_frame(mandatory, quantum);
+            }
+            const MixedCellSummary rep_summary =
+                summarize_mixed(demand, window_start_tick, window_end_tick,
+                                controller.sim_tick(), tps);
+            samples.useful_completions = rep_summary.useful;
+
+            const bool identities =
+                window_end_flow.admission_identity_holds() &&
+                window_end_flow.retention_identity_holds();
+            const bool age_ok =
+                window_end_flow.oldest_outstanding_age_ticks <=
+                std::max<std::uint64_t>(4 * kMixedAllowanceTicks, tps);
+            const bool deadline_ok = rep_summary.cohort_admitted == 0 ||
+                                     rep_summary.cohort_met * 100 >=
+                                         rep_summary.cohort_admitted * 99;
+            if (identities && age_ok && deadline_ok) {
+              ++cell.stable_reps;
+            }
+            cell.totals.useful += rep_summary.useful;
+            cell.totals.cohort_admitted += rep_summary.cohort_admitted;
+            cell.totals.cohort_met += rep_summary.cohort_met;
+            cell.totals.starved += rep_summary.starved;
+            cell.lateness_pool.insert(cell.lateness_pool.end(),
+                                      rep_summary.lateness.begin(),
+                                      rep_summary.lateness.end());
+            cell.reps.push_back(std::move(samples));
+            cell.peak_rss = std::max(cell.peak_rss, current_rss_bytes());
+          }
+        }
+
+        for (std::size_t i = 0; i < budgets.size(); ++i) {
+          MixedCellAccumulator& cell = cells[i];
+          budgeted::Artifact artifact;
+          {
+            SaturatedCellResult shim;
+            shim.window_flow = cell.window_flow;
+            shim.reps = cell.reps;
+            shim.peak_rss = cell.peak_rss;
+            artifact = build_artifact(options, shim, budgets[i]);
+          }
+          artifact.experiment.kind = view;
+          artifact.experiment.scenario_id = "colony-roomcorridor-pingpong-v1";
+          artifact.experiment.workload_refs = {
+              "path/agent", "topology/region_graph", "queued/execute"};
+          artifact.experiment.sim_tps = tps;
+          artifact.experiment.population = population;
+          artifact.experiment.pacing = "paced";
+          artifact.experiment.settlement_ticks = kMixedSettlementTicks;
+          artifact.summary.useful_completions = cell.totals.useful;
+
+          std::vector<std::uint64_t> lag_pool;
+          for (const SaturatedRep& rep : cell.reps) {
+            lag_pool.insert(lag_pool.end(), rep.frame_start_lag_ns.begin(),
+                            rep.frame_start_lag_ns.end());
+          }
+          artifact.summary.frame_start_lag_ns = budgeted::summarize_family(
+              "paced_measured_frames_pooled", std::move(lag_pool));
+          artifact.summary.measured_wall_ns = cell.measured_wall;
+          const double wall_seconds =
+              static_cast<double>(cell.measured_wall) / 1e9;
+          artifact.summary.useful_per_wall_second =
+              wall_seconds > 0
+                  ? static_cast<double>(cell.totals.useful) / wall_seconds
+                  : 0.0;
+
+          budgeted::DeadlineGroup deadlines;
+          deadlines.deadline_success_rate =
+              cell.totals.cohort_admitted > 0
+                  ? static_cast<double>(cell.totals.cohort_met) /
+                        static_cast<double>(cell.totals.cohort_admitted)
+                  : 1.0;
+          deadlines.lateness_ticks = budgeted::summarize_family(
+              "completed_cohort_items", cell.lateness_pool);
+          deadlines.oldest_age_ticks = budgeted::summarize_family(
+              "per_tick_window_observations", cell.oldest_samples);
+          deadlines.starved_items = cell.totals.starved;
+          artifact.summary.deadlines = deadlines;
+          artifact.summary.flow_stable_applicable = true;
+          artifact.summary.flow_stable =
+              cell.stable_reps * 2 > options.repetitions;
+
+          budgeted::ClassArtifact interactive;
+          interactive.class_id = "interactive_path";
+          interactive.deadline_allowance_ticks = kMixedAllowanceTicks;
+          interactive.useful_completions = cell.totals.useful;
+          interactive.cohort_admitted = cell.totals.cohort_admitted;
+          interactive.deadline_success_rate = deadlines.deadline_success_rate;
+          interactive.lateness_ticks = deadlines.lateness_ticks;
+          interactive.starved_items = cell.totals.starved;
+          artifact.classes.push_back(interactive);
+
+          // The trace identity covers the materialized workload: the
+          // logical map text, every agent's endpoints, and the full
+          // churn candidate pool.
+          {
+            auto reference = build_mixed_stack(population);
+            budgeted::Sha256 hasher;
+            const char* tag = "colony_pingpong_v2";
+            hasher.update(tag, std::strlen(tag));
+            const std::string map_text =
+                gen::room_and_corridor(kLogicalExtent, kLogicalExtent, kSeed,
+                                       {24, 6, 12})
+                    ->text;
+            hasher.update(map_text.data(), map_text.size());
+            for (std::size_t agent = 0; agent < population; ++agent) {
+              const std::int64_t words[4] = {
+                  reference->homes[agent].x, reference->homes[agent].y,
+                  reference->assigned_goals[agent].x,
+                  reference->assigned_goals[agent].y};
+              hasher.update(words, sizeof(words));
+            }
+            for (const colony::TileEdit& edit : reference->churn_pool) {
+              const std::int64_t words[2] = {edit.coord.x, edit.coord.y};
+              hasher.update(words, sizeof(words));
+            }
+            const std::uint64_t params[4] = {
+                kSeed, population, kMixedChurnPeriod, kMixedAllowanceTicks};
+            hasher.update(params, sizeof(params));
+            artifact.trace.sha256 = hasher.hex_digest();
+          }
+          SteadyClock calibration_clock;
+          artifact.calibration = calibrate(calibration_clock);
+          const std::string name =
+              std::string{"mixed_"} +
+              (std::string{view} == "mixed_current_fidelity" ? "fidelity"
+                                                             : "quanta") +
+              "_p" + std::to_string(population) + "_" + std::to_string(tps) +
+              "tps";
+          write_artifact(options, artifact, name, budgets[i]);
+        }
+      }
+    }
+  }
+}
+
+}  // namespace bpb_bench

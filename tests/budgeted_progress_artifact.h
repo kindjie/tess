@@ -256,6 +256,8 @@ struct ExperimentBlock {
   // Frozen-pool size for pool-serviced cells (0 = not pool-based);
   // lets the cross-pass comparator detect full pool wraps.
   std::uint64_t pool_size = 0;
+  // Mixed-colony cells: the closed-loop population (0 = not mixed).
+  std::uint64_t population = 0;
   std::string executor_kind = "serial";
   std::uint32_t executor_workers = 1;
 };
@@ -490,6 +492,9 @@ inline void append_family(std::string& out, const char* key,
   }
   if (experiment.pool_size > 0) {
     detail::append_u64(out, "pool_size", experiment.pool_size);
+  }
+  if (experiment.population > 0) {
+    detail::append_u64(out, "population", experiment.population);
   }
   out += "\"executor\": {";
   detail::append_string(out, "kind", experiment.executor_kind);

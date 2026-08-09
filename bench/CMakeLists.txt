@@ -84,7 +84,8 @@ tess_apply_project_options(tess_bench_thread_scaling)
 # It quote-includes the deterministic harness headers from tests/
 # (grid generators/oracle and the budgeted controller), which are
 # harness support, never public headers.
-add_executable(tess_bench_budgeted_progress tess_budgeted_progress_bench.cc)
+add_executable(tess_bench_budgeted_progress tess_budgeted_progress_bench.cc
+               tess_budgeted_progress_mixed.cc)
 target_link_libraries(
   tess_bench_budgeted_progress
   PRIVATE tess::tess
@@ -103,7 +104,8 @@ tess_apply_project_options(tess_bench_budgeted_progress)
 # new/delete replacement is the documented 12-21% distortion source
 # and this increment's counters block does not use allocation counts.
 add_executable(tess_bench_budgeted_progress_diagnostics
-               tess_budgeted_progress_bench.cc)
+               tess_budgeted_progress_bench.cc
+               tess_budgeted_progress_mixed.cc)
 target_link_libraries(
   tess_bench_budgeted_progress_diagnostics
   PRIVATE tess::tess
@@ -826,7 +828,7 @@ if(BUILD_TESTING)
       --out-dir ${CMAKE_CURRENT_BINARY_DIR}
   )
   set_tests_properties(tess_bench_budgeted_progress_smoke PROPERTIES
-    FIXTURES_SETUP budgeted_smoke_artifacts)
+    FIXTURES_SETUP budgeted_smoke_artifacts TIMEOUT 600)
 
   # The emitted smoke artifacts must pass the fail-closed schema
   # validator (design section 14.2 puts schema validation in CI
@@ -843,6 +845,14 @@ if(BUILD_TESTING)
           "${CMAKE_CURRENT_BINARY_DIR}/${budgeted_cell}_${budgeted_ns}ns.json")
       endforeach()
     endforeach()
+    # Mixed smoke cells run two budgets at 60 TPS (design section 7);
+    # the full matrix is campaign-scale and CLI-configured.
+    foreach(budgeted_cell mixed_fidelity_p100_60tps mixed_quanta_p100_60tps)
+      foreach(budgeted_ns 125000 8000000)
+        list(APPEND budgeted_smoke_artifact_paths
+          "${CMAKE_CURRENT_BINARY_DIR}/${budgeted_cell}_${budgeted_ns}ns.json")
+      endforeach()
+    endforeach()
     set(budgeted_counter_dir "${CMAKE_CURRENT_BINARY_DIR}/counter-pass")
     file(MAKE_DIRECTORY "${budgeted_counter_dir}")
     add_test(
@@ -854,7 +864,7 @@ if(BUILD_TESTING)
         --out-dir ${budgeted_counter_dir}
     )
     set_tests_properties(tess_bench_budgeted_progress_counter_smoke
-      PROPERTIES FIXTURES_SETUP budgeted_counter_artifacts)
+      PROPERTIES FIXTURES_SETUP budgeted_counter_artifacts TIMEOUT 600)
     set(budgeted_counter_artifact_paths "")
     foreach(budgeted_cell astar_unit field_product resumable_work
             astar_arrival_60 astar_arrival_600)
