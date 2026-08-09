@@ -1343,7 +1343,9 @@ template <typename World, typename PassableTag>
                                      std::size_t* scan_tiles = nullptr) noexcept
     -> bool {
   using Shape = typename World::shape_type;
-  constexpr auto chunk = ShapeTraits<Shape>::chunk;
+  using Class = movement::movement_class_of<PassableTag>;
+  using Traits = ShapeTraits<Shape>;
+  constexpr auto chunk = Traits::chunk;
   const auto origin = chunk_origin<Shape>(from);
 
   if (!adjacent_chunk<Shape>(from, to)) {
@@ -1352,6 +1354,117 @@ template <typename World, typename PassableTag>
 
   auto found = false;
   auto best_score = std::numeric_limits<std::uint32_t>::max();
+  const auto score_target = [&](Coord3 target) {
+    const auto score =
+        saturating_add(manhattan(current, target), manhattan(target, goal));
+    if (!found || score < best_score) {
+      found = true;
+      best_score = score;
+      portal = target;
+    }
+  };
+
+  // Fast path: when both chunk coordinates lie inside the chunk grid and
+  // both pages are acquirable, per-tile coordinate resolution hoists to
+  // two page lookups and the seam walks local tile ids directly — the
+  // same predicate, iteration order, scoring, tie-breaking, and
+  // scan/diagnostic accounting as the generic loop below, which remains
+  // the authority for out-of-shape or non-resident chunks.
+  const auto in_grid = [](ChunkCoord3 coord) {
+    return coord.x < Traits::chunk_count_x && coord.y < Traits::chunk_count_y &&
+           coord.z < Traits::chunk_count_z;
+  };
+  if (in_grid(from) && in_grid(to)) {
+    const auto acquire = [&](ChunkCoord3 coord) {
+      if constexpr (std::is_same_v<typename World::residency_type,
+                                   SparseResident>) {
+        return world.try_chunk(chunk_key<Shape>(coord));
+      } else {
+        return &world.chunk(chunk_key<Shape>(coord));
+      }
+    };
+    const auto* from_page = acquire(from);
+    const auto* to_page = acquire(to);
+    if (from_page != nullptr && to_page != nullptr) {
+      const auto consider_local = [&](LocalCoord3 source_local,
+                                      LocalCoord3 target_local, Coord3 target) {
+        if (scan_tiles != nullptr) {
+          ++(*scan_tiles);
+        }
+        TESS_DIAG_EVENT(path_passability_check);
+        if (!Class::passable(*from_page, local_tile_id<Shape>(source_local))) {
+          return;
+        }
+        TESS_DIAG_EVENT(path_passability_check);
+        if (!Class::passable(*to_page, local_tile_id<Shape>(target_local))) {
+          return;
+        }
+        score_target(target);
+      };
+
+      if (from.x != to.x) {
+        const auto step = from.x < to.x ? std::int64_t{1} : std::int64_t{-1};
+        const auto source_x =
+            step > 0 ? static_cast<std::int64_t>(chunk.x) - 1 : std::int64_t{0};
+        const auto target_x =
+            step > 0 ? std::int64_t{0} : static_cast<std::int64_t>(chunk.x) - 1;
+        const auto world_target_x = origin.x + source_x + step;
+        for (std::int64_t z = 0; z < static_cast<std::int64_t>(chunk.z); ++z) {
+          for (std::int64_t y = 0; y < static_cast<std::int64_t>(chunk.y);
+               ++y) {
+            consider_local(LocalCoord3{static_cast<std::uint64_t>(source_x),
+                                       static_cast<std::uint64_t>(y),
+                                       static_cast<std::uint64_t>(z)},
+                           LocalCoord3{static_cast<std::uint64_t>(target_x),
+                                       static_cast<std::uint64_t>(y),
+                                       static_cast<std::uint64_t>(z)},
+                           Coord3{world_target_x, origin.y + y, origin.z + z});
+          }
+        }
+        return found;
+      }
+      if (from.y != to.y) {
+        const auto step = from.y < to.y ? std::int64_t{1} : std::int64_t{-1};
+        const auto source_y =
+            step > 0 ? static_cast<std::int64_t>(chunk.y) - 1 : std::int64_t{0};
+        const auto target_y =
+            step > 0 ? std::int64_t{0} : static_cast<std::int64_t>(chunk.y) - 1;
+        const auto world_target_y = origin.y + source_y + step;
+        for (std::int64_t z = 0; z < static_cast<std::int64_t>(chunk.z); ++z) {
+          for (std::int64_t x = 0; x < static_cast<std::int64_t>(chunk.x);
+               ++x) {
+            consider_local(LocalCoord3{static_cast<std::uint64_t>(x),
+                                       static_cast<std::uint64_t>(source_y),
+                                       static_cast<std::uint64_t>(z)},
+                           LocalCoord3{static_cast<std::uint64_t>(x),
+                                       static_cast<std::uint64_t>(target_y),
+                                       static_cast<std::uint64_t>(z)},
+                           Coord3{origin.x + x, world_target_y, origin.z + z});
+          }
+        }
+        return found;
+      }
+      const auto step = from.z < to.z ? std::int64_t{1} : std::int64_t{-1};
+      const auto source_z =
+          step > 0 ? static_cast<std::int64_t>(chunk.z) - 1 : std::int64_t{0};
+      const auto target_z =
+          step > 0 ? std::int64_t{0} : static_cast<std::int64_t>(chunk.z) - 1;
+      const auto world_target_z = origin.z + source_z + step;
+      for (std::int64_t y = 0; y < static_cast<std::int64_t>(chunk.y); ++y) {
+        for (std::int64_t x = 0; x < static_cast<std::int64_t>(chunk.x); ++x) {
+          consider_local(LocalCoord3{static_cast<std::uint64_t>(x),
+                                     static_cast<std::uint64_t>(y),
+                                     static_cast<std::uint64_t>(source_z)},
+                         LocalCoord3{static_cast<std::uint64_t>(x),
+                                     static_cast<std::uint64_t>(y),
+                                     static_cast<std::uint64_t>(target_z)},
+                         Coord3{origin.x + x, origin.y + y, world_target_z});
+        }
+      }
+      return found;
+    }
+  }
+
   const auto consider = [&](Coord3 source, Coord3 target) {
     if (scan_tiles != nullptr) {
       ++(*scan_tiles);
@@ -1364,13 +1477,7 @@ template <typename World, typename PassableTag>
     if (!is_passable<World, PassableTag>(world, target)) {
       return;
     }
-    const auto score =
-        saturating_add(manhattan(current, target), manhattan(target, goal));
-    if (!found || score < best_score) {
-      found = true;
-      best_score = score;
-      portal = target;
-    }
+    score_target(target);
   };
 
   if (from.x != to.x) {
