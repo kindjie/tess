@@ -704,8 +704,14 @@
   batch not aliasing through the shared product workspace, a mixed batch
   conserving the stats identity (attempts == accepted + no_candidates +
   verification_failures + premium_rejections) with multi-goal groups
-  bypassed, and the default strategy remaining exact with zero portal
-  stats.
+  bypassed, the default strategy remaining exact with zero portal
+  stats, an aggregate segment-cost overflow reported as CostOverflow and
+  served by the exact fallback (never Found with an unrepresentable
+  cost), a zero premium denominator normalizing to 1 rather than
+  silently disabling the cap, out-of-shape endpoints counting no
+  attempt, a compile-time-ineligible movement class taking the exact
+  path with the ineligible_fallbacks counter visible, and identical
+  batch sequences producing identical results and portal stats.
 - `tess_path_agent_test`: verifies the public path-agent wrapper, including
   goal assignment, runtime-backed request/result processing, tile-by-tile
   advancement and arrival that resets a preserved blocked streak,

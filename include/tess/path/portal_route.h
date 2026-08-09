@@ -296,14 +296,18 @@ auto build_weighted_chunk_portal_route_product_cached(
       cache
           .template for_class<movement::LegacyWeighted<PassableTag, CostTag>>();
   auto from = request.start;
-  auto total_cost = std::uint32_t{0};
+  // Segment costs accumulate in 64 bits: each segment cost is
+  // representable, but a stitched total at or above the uint32 infinity
+  // sentinel must report CostOverflow exactly as the exact search would —
+  // never a Found route carrying an unrepresentable cost.
+  auto total_cost = std::uint64_t{0};
   auto total_expanded = std::size_t{0};
   auto total_reached = std::size_t{0};
   auto append_segment = [&](PathRequest segment_request) {
     if (const auto hit =
             class_cache.lookup_append(world, segment_request, product.path_);
         hit.found) {
-      total_cost = detail::saturating_add(total_cost, hit.cost);
+      total_cost += hit.cost;
       return true;
     }
     const auto result = weighted_astar_path<World, PassableTag, CostTag>(
@@ -318,7 +322,7 @@ auto build_weighted_chunk_portal_route_product_cached(
       product.reached_nodes_ = total_reached;
       return false;
     }
-    total_cost = detail::saturating_add(total_cost, result.cost);
+    total_cost += result.cost;
     for (std::size_t i = product.path_.empty() ? 0u : 1u;
          i < result.path.size(); ++i) {
       product.path_.push_back(result.path[i]);
@@ -338,8 +342,17 @@ auto build_weighted_chunk_portal_route_product_cached(
                       product.path_};
   }
 
+  if (total_cost >= std::numeric_limits<std::uint32_t>::max()) {
+    product.path_.clear();
+    product.status_ = PathStatus::CostOverflow;
+    product.expanded_nodes_ = total_expanded;
+    product.reached_nodes_ = total_reached;
+    return PathResult{product.status_, 0, total_expanded, total_reached,
+                      product.path_};
+  }
+
   product.status_ = PathStatus::Found;
-  product.cost_ = total_cost;
+  product.cost_ = static_cast<std::uint32_t>(total_cost);
   product.expanded_nodes_ = total_expanded;
   product.reached_nodes_ = total_reached;
   return PathResult{product.status_, product.cost_, product.expanded_nodes_,

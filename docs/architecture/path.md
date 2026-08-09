@@ -715,7 +715,10 @@ segment, a cap rejection, or an ineligible request — leaves the request
 to the untouched exact fallback with byte-identical results. The cap is
 a route-quality contract, not a latency bound: a rejection pays the
 portal work and then the exact search. Per-outcome counters are reported
-in the runtime stats.
+in the runtime stats as `WeightedPortalReplanStats`, and a new
+cache-aware builder, `build_weighted_chunk_portal_route_product_cached`,
+exposes the same waypoint-selection-plus-segment-cache composition to
+direct callers.
 
 The path-agent tick wrapper is intentionally small and synchronous. The
 simulation scheduler MVP in `include/tess/sim/scheduler.h` layers queued

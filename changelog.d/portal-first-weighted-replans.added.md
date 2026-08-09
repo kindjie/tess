@@ -13,6 +13,10 @@
   `build_weighted_chunk_portal_route_product_cached`, exposes the same
   composition to direct callers. On the goal-churn benchmark map the
   repeated-churn tick drops from ~18.8 ms to ~24 us on the calibration
-  machine; fresh non-repeating goals measure net-neutral under the
-  default cap, and the forced worst case (every attempt rejected) costs
-  about 2% over exact — all three shapes carry their own cells.
+  machine, and genuinely fresh cross-map goals drop from ~2.0 ms to
+  ~67 us under a 2/1 cap (the same goals all reject under the default
+  4/3 cap on this map — the cap dials the quality/latency trade);
+  the forced all-rejected case costs about 2% over exact, and the
+  no-portal-route worst case (candidates select, stitching fails, the
+  exact NoPath flood follows) about 2x — every shape carries its own
+  cell with premise-and-outcome asserts.

@@ -70,6 +70,7 @@ struct ExactReference {
   std::uint32_t cost = 0;
   std::uint32_t cost_scale = 1;
   std::size_t expanded_nodes = 0;
+  std::size_t reached_nodes = 0;
   std::vector<tess::Coord3> path;
 };
 
@@ -80,11 +81,9 @@ auto exact_reference(MidWorld& world, tess::PathRequest request)
   const auto result = tess::weighted_astar_path<MidWorld, PassableTag, CostTag>(
       world, request, scratch);
   return ExactReference{
-      result.status,
-      result.cost,
-      result.cost_scale,
-      result.expanded_nodes,
-      {result.path.begin(), result.path.end()},
+      result.status,        result.cost,
+      result.cost_scale,    result.expanded_nodes,
+      result.reached_nodes, {result.path.begin(), result.path.end()},
   };
 }
 
@@ -189,6 +188,7 @@ TEST(TessPortalFirstReplan, PremiumRejectionFallsBackToExactParity) {
   EXPECT_EQ(results[0].cost, reference.cost);
   EXPECT_EQ(results[0].cost_scale, reference.cost_scale);
   EXPECT_EQ(results[0].expanded_nodes, reference.expanded_nodes);
+  EXPECT_EQ(results[0].reached_nodes, reference.reached_nodes);
   ASSERT_EQ(results[0].path.size(), reference.path.size());
   for (std::size_t i = 0; i < results[0].path.size(); ++i) {
     EXPECT_EQ(results[0].path[i], reference.path[i]);
@@ -313,11 +313,154 @@ TEST(TessPortalFirstReplan, DefaultStrategyIsExactWithZeroPortalStats) {
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].status, reference.status);
   EXPECT_EQ(results[0].cost, reference.cost);
+  EXPECT_EQ(results[0].cost_scale, reference.cost_scale);
   EXPECT_EQ(results[0].expanded_nodes, reference.expanded_nodes);
+  EXPECT_EQ(results[0].reached_nodes, reference.reached_nodes);
+  ASSERT_EQ(results[0].path.size(), reference.path.size());
+  for (std::size_t i = 0; i < results[0].path.size(); ++i) {
+    EXPECT_EQ(results[0].path[i], reference.path[i]);
+  }
 
   const auto stats = runtime.stats().portal_replan;
   EXPECT_EQ(stats.attempts, 0u);
   EXPECT_EQ(stats.accepted, 0u);
+  EXPECT_EQ(stats.ineligible_fallbacks, 0u);
+}
+
+// A stitched total at or above the uint32 sentinel must never be served
+// as Found: the builder reports CostOverflow, the pass counts a
+// verification failure, and the exact fallback's own CostOverflow is
+// what the caller sees.
+TEST(TessPortalFirstReplan, AggregateCostOverflowFallsBackToExact) {
+  MidWorld world;
+  fill_world(world, true, 150000000u);
+
+  const auto request =
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{30, 28, 0}};
+  tess::PathRequestRuntime runtime;
+  (void)runtime.submit(request);
+  auto policy = tess::PathRuntimeCachePolicy{};
+  policy.weighted_replan_strategy = tess::WeightedReplanStrategy::PortalFirst;
+  policy.portal_premium_limit_num = 0;  // No cap: only the sentinel guards.
+  const auto results =
+      runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
+          world, policy);
+  ASSERT_EQ(results.size(), 1u);
+  EXPECT_EQ(results[0].status, tess::PathStatus::CostOverflow);
+
+  const auto stats = runtime.stats().portal_replan;
+  EXPECT_EQ(stats.attempts, 1u);
+  EXPECT_EQ(stats.accepted, 0u);
+  EXPECT_EQ(stats.verification_failures, 1u);
+}
+
+// A zero denominator is a misconfiguration, not a no-cap sentinel: it
+// normalizes to 1, so the cap still rejects the barrier map's premium
+// routes instead of silently accepting everything.
+TEST(TessPortalFirstReplan, ZeroDenominatorDoesNotDisableTheCap) {
+  MidWorld world;
+  fill_world(world, true, 1);
+  carve_barriers(world);
+
+  const auto request =
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{30, 28, 0}};
+  tess::PathRequestRuntime runtime;
+  (void)runtime.submit(request);
+  auto policy = tess::PathRuntimeCachePolicy{};
+  policy.weighted_replan_strategy = tess::WeightedReplanStrategy::PortalFirst;
+  policy.portal_premium_limit_num = 1;
+  policy.portal_premium_limit_den = 0;
+  const auto results =
+      runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
+          world, policy);
+  ASSERT_EQ(results.size(), 1u);
+  EXPECT_EQ(results[0].status, tess::PathStatus::Found);
+
+  const auto stats = runtime.stats().portal_replan;
+  EXPECT_EQ(stats.premium_rejections, 1u);
+  EXPECT_EQ(stats.accepted, 0u);
+}
+
+// Out-of-shape endpoints are the batch's to classify: the portal pass
+// skips them without counting an attempt.
+TEST(TessPortalFirstReplan, InvalidEndpointsCountNoAttempt) {
+  MidWorld world;
+  fill_world(world, true, 1);
+
+  tess::PathRequestRuntime runtime;
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{99, 99, 0}});
+  auto policy = tess::PathRuntimeCachePolicy{};
+  policy.weighted_replan_strategy = tess::WeightedReplanStrategy::PortalFirst;
+  const auto results =
+      runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
+          world, policy);
+  ASSERT_EQ(results.size(), 1u);
+  EXPECT_EQ(results[0].status, tess::PathStatus::InvalidGoal);
+
+  const auto stats = runtime.stats().portal_replan;
+  EXPECT_EQ(stats.attempts, 0u);
+  EXPECT_EQ(stats.ineligible_fallbacks, 0u);
+}
+
+// A non-legacy movement class is compile-time ineligible: PortalFirst
+// requests take the exact path and the ineligible counter — not silence —
+// records the misconfiguration.
+TEST(TessPortalFirstReplan, IneligibleClassBypassesWithVisibleStats) {
+  MidWorld world;
+  fill_world(world, true, 1);
+
+  using Walkable = tess::movement::WalkableCostField<PassableTag, CostTag>;
+  tess::PathRequestRuntime runtime;
+  (void)runtime.submit(
+      tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{30, 28, 0}});
+  auto policy = tess::PathRuntimeCachePolicy{};
+  policy.weighted_replan_strategy = tess::WeightedReplanStrategy::PortalFirst;
+  const auto results =
+      runtime.process_weighted_batch<MidWorld, Walkable, 16>(world, policy);
+  ASSERT_EQ(results.size(), 1u);
+  EXPECT_EQ(results[0].status, tess::PathStatus::Found);
+
+  const auto stats = runtime.stats().portal_replan;
+  EXPECT_EQ(stats.attempts, 0u);
+  EXPECT_EQ(stats.ineligible_fallbacks, 1u);
+}
+
+// Identical batch sequences produce identical results and portal stats:
+// the strategy's decisions are deterministic.
+TEST(TessPortalFirstReplan, IdenticalBatchesAreDeterministic) {
+  const auto run = [] {
+    MidWorld world;
+    fill_world(world, true, 1);
+    carve_barriers(world);
+    tess::PathRequestRuntime runtime;
+    std::vector<std::uint64_t> trace;
+    for (int round = 0; round < 3; ++round) {
+      (void)runtime.submit(
+          tess::PathRequest{tess::Coord3{1, 1, 0}, tess::Coord3{30, 28, 0}});
+      (void)runtime.submit(tess::PathRequest{
+          tess::Coord3{2, 3, 0},
+          tess::Coord3{28, static_cast<std::int64_t>(20 + round), 0}});
+      auto policy = tess::PathRuntimeCachePolicy{};
+      policy.weighted_replan_strategy =
+          tess::WeightedReplanStrategy::PortalFirst;
+      policy.portal_premium_limit_num = 4;
+      policy.portal_premium_limit_den = 3;
+      const auto results =
+          runtime.process_weighted_batch<MidWorld, PassableTag, CostTag, 16>(
+              world, policy);
+      for (const auto& result : results) {
+        trace.push_back(static_cast<std::uint64_t>(result.status));
+        trace.push_back(result.cost);
+      }
+      const auto stats = runtime.stats().portal_replan;
+      trace.push_back(stats.attempts);
+      trace.push_back(stats.accepted);
+      trace.push_back(stats.premium_rejections);
+    }
+    return trace;
+  };
+  EXPECT_EQ(run(), run());
 }
 
 }  // namespace

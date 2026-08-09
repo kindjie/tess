@@ -371,15 +371,21 @@
     },
     "path/agent_tick_100_weighted_fresh_churn_portal_512x512": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 8722000,
+      "max_cpu_time_ns": 270000,
       "note":
-          "BOOTSTRAP 4x M3 Max reading (2,180,372 ns), not a calibrated CI value: PortalFirst fresh non-repeating band goals, mixed accept/premium-reject under the pinned 4/3 cap; recalibrate at 2x the max over ten CI baselines"
+          "BOOTSTRAP 4x M3 Max reading (67,335 ns), not a calibrated CI value: PortalFirst fresh non-repeating band goals, every goal accepted under the pinned 2/1 cap (the same goals all reject at 4/3 — the cap is the dial); recalibrate at 2x the max over ten CI baselines"
     },
     "path/agent_tick_100_weighted_fresh_churn_exact_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 8400000,
       "note":
           "BOOTSTRAP 4x M3 Max reading (2,100,020 ns), not a calibrated CI value: exact-strategy twin of the fresh cell separating the fresh-vs-repeat and portal-vs-exact axes; recalibrate at 2x the max over ten CI baselines"
+    },
+    "path/agent_tick_100_weighted_sealed_churn_portal_512x512": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 144600000,
+      "note":
+          "BOOTSTRAP 4x M3 Max reading (36,125,909 ns), not a calibrated CI value: no-portal-route worst case — candidates select, stitching fails into a sealed pocket, and the full exact NoPath flood follows every tick; recalibrate at 2x the max over ten CI baselines"
     },
     "path/agent_tick_100_weighted_goal_churn_rejected_512x512": {
       "max_real_time_ns": null,

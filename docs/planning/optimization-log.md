@@ -19,6 +19,42 @@ Entries from 2026-07-13 through 2026-07-31 are in
 entries from 2026-07-12 and earlier are in
 [`optimization-log-archive-2026-06-07.md`](optimization-log-archive-2026-06-07.md).
 
+## 2026-08-09 - Portal-first single-goal weighted replans (accepted)
+
+- Area: the weighted batch's singleton fallback; the goal-churn A*
+  target from the 2026-08-07 campaign, implemented per the reviewed
+  design (two Codex rounds, target-map probe, Fable GO with four
+  should-fixes bound into V1).
+- Hypothesis: the library's chunk-portal tier (candidates + segment
+  cache), measured on the actual goal-churn map at ~1 ms cold against
+  41.7-46.4 ms exact, could serve single-goal replans behind an opt-in
+  policy with exact fallback on every other outcome.
+- Evidence (M3 Max, `bench` preset, per-tick outcome accumulation in
+  every cell): repeated churn 23.3 us against the 18.7 ms exact guard
+  (~800x, warm segments); genuinely fresh non-repeating band goals
+  67.3 us against their 2.03 ms exact twin (~30x) under a pinned 2/1
+  cap — the same goals ALL reject under the default 4/3 cap on this
+  map (probed 60/60 both ways), so the cap is a measured dial, not a
+  free parameter; the forced all-rejected case costs ~2% over exact;
+  the no-portal-route worst case (candidates select, stitching fails
+  into a sealed pocket, full exact NoPath flood follows) ~2x. Review
+  hardening during implementation: a stitched cost total at the uint32
+  sentinel now reports CostOverflow rather than Found (found by two
+  independent reviews), a zero premium denominator normalizes instead
+  of silently disabling the cap, same-chunk failures classify as
+  verification failures, ineligible instantiations surface a counter,
+  and the eligibility gate pins the orthogonal lattice because the
+  cap's admissibility argument rests on Manhattan being a lower bound.
+- Decision: accepted as opt-in `WeightedReplanStrategy::PortalFirst`
+  with the quality contract stated at the policy (cap bounds premium
+  vs optimal; rejections pay portal work plus the exact search).
+  Bootstrap ceilings at 4x the M3 readings per protocol.
+- Follow-ups: bounded segment search (structural cold-cost bound),
+  keyed product replay for repeated goals (the fresh/repeat bench
+  split keeps it honest), Option B coarse-heuristic prototype with
+  the corrected admissibility form, multi-candidate verification,
+  hex/diagonal generalization with a lattice-aware lower bound.
+
 ## 2026-08-08 - Deck re-pass: repetitions, an ABAB, and a withdrawn attribution
 
 - Area: on-device confirmation that intervening merges did not move the

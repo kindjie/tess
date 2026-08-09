@@ -57,8 +57,10 @@ struct portal_replan_tags<movement::MovementClass<movement::Field<PassableTagT>,
 // ExactAStar: today's behavior — the batch's singleton fallback runs raw
 // weighted A*; results are optimal.
 //
-// PortalFirst: eligible singletons (dense worlds, default adjacent
-// transitions, legacy weighted tag classes) first try a chunk-portal route
+// PortalFirst: eligible singletons (dense orthogonal-lattice worlds,
+// default adjacent transitions, legacy weighted tag classes — Manhattan
+// is only an admissible lower bound on that lattice, and the premium
+// cap's guarantee rests on it) first try a chunk-portal route
 // stitched through the runtime's segment cache. Accepted routes are legal
 // and verified but may exceed the optimal cost, bounded by the premium
 // cap below; every other outcome — no candidate, a failed segment, a cap
@@ -137,6 +139,12 @@ struct WeightedPortalReplanStats {
   std::size_t verification_failures = 0;
   std::size_t premium_rejections = 0;
   std::size_t exact_fallbacks = 0;
+  // Requests processed while PortalFirst was requested but the batch's
+  // instantiation is ineligible (sparse world, custom provider, non-legacy
+  // or non-default-step class): they take the exact path without an
+  // attempt, and this counter is what distinguishes a misconfigured policy
+  // from a disabled one. Not part of the attempts identity above.
+  std::size_t ineligible_fallbacks = 0;
 };
 
 /** Snapshot of request, result, search, and cache counters. */
@@ -213,6 +221,7 @@ class PathRequestRuntime {
     unit_field_product_.reserve_nodes(count);
     weighted_batch_.reserve_path_nodes(count);
     portal_segment_cache_.reserve_path_nodes(count);
+    portal_replan_product_.reserve_path_nodes(count);
   }
 
   /** Reserves node-search scratch across unit and weighted searches. */
@@ -260,6 +269,7 @@ class PathRequestRuntime {
   /** Reserves weighted portal-segment cache entries. */
   void reserve_portal_segments(std::size_t count) {
     portal_segment_cache_.reserve_segments(count);
+    portal_replan_product_.reserve_waypoints(count);
   }
 
   /**
@@ -537,11 +547,26 @@ class PathRequestRuntime {
     // flows into the exact batch below — fallback parity by construction.
     if constexpr (std::is_same_v<typename World::residency_type,
                                  AlwaysResident> &&
+                  std::is_same_v<typename ShapeTraits<
+                                     typename World::shape_type>::lattice_type,
+                                 lattice::Orthogonal> &&
                   std::is_same_v<Provider, AdjacentTransitions> &&
                   detail::portal_replan_tags<BatchClass>::eligible) {
       if (policy.weighted_replan_strategy ==
           WeightedReplanStrategy::PortalFirst) {
         process_portal_first_singletons<World, BatchClass>(world, policy);
+      }
+    } else {
+      // PortalFirst requested on an ineligible instantiation: everything
+      // takes the exact path, and the counter is what separates a
+      // misconfigured policy from a disabled one.
+      if (policy.weighted_replan_strategy ==
+          WeightedReplanStrategy::PortalFirst) {
+        for (std::size_t i = 0; i < requests_.size(); ++i) {
+          if (processed_[i] == 0) {
+            ++stats_.portal_replan.ineligible_fallbacks;
+          }
+        }
       }
     }
 
@@ -1050,7 +1075,13 @@ class PathRequestRuntime {
               world, request, unit_scratch_, portal_segment_cache_,
               portal_replan_product_);
       if (result.status != PathStatus::Found) {
-        if (portal_replan_product_.waypoints().empty()) {
+        // Same-chunk requests always select a (waypoint-free) candidate,
+        // so an empty waypoint list marks a selection failure only when
+        // the endpoints sit in different chunks; a same-chunk failure is
+        // a failed direct segment, i.e. a verification failure.
+        const auto same_chunk = chunk_coord<Shape>(request.start) ==
+                                chunk_coord<Shape>(request.goal);
+        if (!same_chunk && portal_replan_product_.waypoints().empty()) {
           ++replan_stats.no_candidates;
         } else {
           ++replan_stats.verification_failures;
@@ -1060,13 +1091,18 @@ class PathRequestRuntime {
       }
       // Premium cap: Manhattan is an admissible lower bound for the
       // eligible scale-1 model class, so cost * den <= manhattan * num
-      // implies cost <= (num/den) x optimal. num == 0 means no cap.
+      // implies cost <= (num/den) x optimal. num == 0 means no cap; a
+      // zero denominator normalizes to 1 so a misconfigured policy can
+      // never silently accept every route through cost * 0 <= bound.
+      const auto premium_den = policy.portal_premium_limit_den == 0
+                                   ? std::uint32_t{1}
+                                   : policy.portal_premium_limit_den;
       const auto lower_bound = static_cast<std::uint64_t>(
           detail::manhattan(request.start, request.goal));
-      const auto accept = policy.portal_premium_limit_num == 0 ||
-                          static_cast<std::uint64_t>(result.cost) *
-                                  policy.portal_premium_limit_den <=
-                              lower_bound * policy.portal_premium_limit_num;
+      const auto accept =
+          policy.portal_premium_limit_num == 0 ||
+          static_cast<std::uint64_t>(result.cost) * premium_den <=
+              lower_bound * policy.portal_premium_limit_num;
       if (!accept) {
         ++replan_stats.premium_rejections;
         ++replan_stats.exact_fallbacks;
