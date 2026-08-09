@@ -772,8 +772,10 @@ void run_colony_topology_cell(const RunOptions& options) {
       build_colony_terrain(options.pool_size >= 10'000 ? 128 : 32);
   tess::LocalTopologyScratch topo_scratch;
   tess::RegionGraph graph;
-  tess::build_region_graph<ColonyWorld, ColonyWalker>(*terrain.world,
-                                                      topo_scratch, graph);
+  tess_test::colony::require_built(
+      tess::build_region_graph<ColonyWorld, ColonyWalker>(*terrain.world,
+                                                          topo_scratch, graph),
+      "budgeted-progress setup");
 
   // Pre-timing validation: after a burst of toggles and incremental
   // updates, deterministic reachability probes agree with a fresh
@@ -796,8 +798,10 @@ void run_colony_topology_cell(const RunOptions& options) {
   {
     tess::LocalTopologyScratch fresh_scratch;
     tess::RegionGraph fresh_graph;
-    tess::build_region_graph<ColonyWorld, ColonyWalker>(
-        *terrain.world, fresh_scratch, fresh_graph);
+    tess_test::colony::require_built(
+        tess::build_region_graph<ColonyWorld, ColonyWalker>(
+            *terrain.world, fresh_scratch, fresh_graph),
+        "budgeted-progress differential rebuild");
 
     // Structural comparison on exactly the rewritten chunks: the
     // incremental graph's per-chunk topology must match a fresh
@@ -850,8 +854,10 @@ void run_colony_topology_cell(const RunOptions& options) {
   auto reset = [&](std::uint64_t) {
     terrain.restore_pristine();
     graph = tess::RegionGraph{};
-    tess::build_region_graph<ColonyWorld, ColonyWalker>(*terrain.world,
-                                                        topo_scratch, graph);
+    tess_test::colony::require_built(
+        tess::build_region_graph<ColonyWorld, ColonyWalker>(
+            *terrain.world, topo_scratch, graph),
+        "budgeted-progress restore");
   };
   auto on_tick = [](std::uint64_t) {};
   auto quantum = [&]() -> std::uint64_t {
@@ -952,7 +958,7 @@ void run_queued_per_chunk_cell(const RunOptions& options) {
                                                    colony::kTerrainDirty},
                              tess::WritePolicy::UniquePerChunk);
     }
-    build_task(tess::ScheduleTaskContext{queued_clock});
+    static_cast<void>(build_task(tess::ScheduleTaskContext{queued_clock}));
     return state.acked_tiles - before;
   };
 
