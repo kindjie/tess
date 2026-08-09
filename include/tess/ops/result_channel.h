@@ -2,6 +2,7 @@
 
 #include <tess/core/assert.h>
 #include <tess/core/config.h>
+#include <tess/core/fail_fast.h>
 #include <tess/ops/queued.h>
 
 #include <cstddef>
@@ -218,8 +219,18 @@ class ResultChannel {
     slot.drained = false;
   }
 
+  // Unlike state() and completion(), this returns a reference and so has
+  // no value that can mean "absent" -- the caller is required to have
+  // established the slot exists, typically by checking state() first.
+  // Asserting and then indexing anyway made a violated precondition
+  // undefined behaviour in exactly the builds where asserts are off. The
+  // check is now unconditional: one predictable compare against a bound
+  // already in cache, in exchange for never reading past the slots.
   [[nodiscard]] auto value_for(OpHandle handle) noexcept -> T& {
-    TESS_ASSERT(handle.value < slots_.size());
+    if (handle.value >= slots_.size()) {
+      detail::fail_fast(
+          "ResultChannel::value_for called with a handle that has no slot");
+    }
     return slots_[static_cast<std::size_t>(handle.value)].value;
   }
 

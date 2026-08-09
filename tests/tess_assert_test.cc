@@ -143,4 +143,31 @@ TEST(TessAssertDeathTest, RuntimeResultRejectsStaleTicketGeneration) {
 
 #endif  // TESS_ENABLE_ASSERTS
 
+// Deliberately outside the TESS_ENABLE_ASSERTS guard above. These three
+// preconditions used to be TESS_ASSERT, so they were checked only in builds
+// that opted in -- and in the builds that did not, one silently returned a
+// wrong answer and one was undefined behaviour. They are unconditional now,
+// and these tests run in every configuration, so an accidental regression
+// back to an assert-gated check fails here rather than passing quietly.
+using TessFailFastDeathTest = ::testing::Test;
+
+TEST(TessFailFastDeathTest, ScheduleTaskStatsRejectsUnknownId) {
+  tess::Schedule schedule;
+  // Empty schedule: id 0 names no task. The old form returned a
+  // default-constructed ScheduleTaskStats -- all zeroes, which is exactly
+  // what a registered task that has never run reports.
+  EXPECT_DEATH(static_cast<void>(schedule.task_stats(0)), "unknown TaskId");
+}
+
+TEST(TessFailFastDeathTest, ScheduleSetEnabledRejectsUnknownId) {
+  tess::Schedule schedule;
+  EXPECT_DEATH(schedule.set_enabled(0, false), "unknown TaskId");
+}
+
+// ResultChannel::value_for is hardened the same way but has no test here:
+// it is a private producer hook reachable only from the friended execute
+// wrappers, so no test can call it without becoming a friend itself, and a
+// friendship declared for a test would be a larger change to the contract
+// than the hardening it verifies.
+
 }  // namespace

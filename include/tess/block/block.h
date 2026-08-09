@@ -593,8 +593,18 @@ constexpr void for_each_chunk_policy_view(World& world, ChunkDomain domain,
       std::invoke(fn, ChunkView<view_world_type>{world, key});
     }
   } else {
-    assert(false && "callback cannot accept the selected block policy view");
-    std::abort();
+    // Deliberately a runtime failure and not a static_assert, even though
+    // the condition is fully compile-time here. The runtime-dispatching
+    // for_each_chunk instantiates this template for all four policies
+    // whichever one the caller passes, so a static_assert would reject a
+    // callback that only accepts ReadOnly -- code that is correct today
+    // and never reaches this branch at runtime.
+    //
+    // It was `assert(false)` plus a bare std::abort(). That honoured
+    // NDEBUG but not TESS_ENABLE_ASSERTS, so a consumer following
+    // docs/integration-policy.md got no check at all, and the abort
+    // carried no message. fail_fast always checks and always says why.
+    fail_fast("callback cannot accept the selected block policy view");
   }
 }
 

@@ -2,6 +2,7 @@
 
 #include <tess/core/assert.h>
 #include <tess/core/config.h>
+#include <tess/core/fail_fast.h>
 #include <tess/diagnostics/trace.h>
 #include <tess/sim/event_stream.h>
 #include <tess/sim/time.h>
@@ -277,11 +278,16 @@ class Schedule {
 
   [[nodiscard]] auto sealed() const noexcept -> bool { return sealed_; }
 
+  // A TaskId only ever comes from add_task, so an out-of-range one is a
+  // caller bug, not a runtime condition. Asserting and then silently
+  // succeeding meant a release build accepted the bug and left the task in
+  // whatever state it already had, so the symptom surfaced later as a task
+  // that inexplicably would not turn off.
   void set_enabled(TaskId id, bool enabled) noexcept {
-    TESS_ASSERT(id < tasks_.size());
-    if (id < tasks_.size()) {
-      tasks_[id].enabled = enabled;
+    if (id >= tasks_.size()) {
+      detail::fail_fast("Schedule::set_enabled called with an unknown TaskId");
     }
+    tasks_[id].enabled = enabled;
   }
 
   // Arms the task to be due on the next run_tick regardless of cadence --
@@ -378,10 +384,13 @@ class Schedule {
     return stats;
   }
 
+  // Same precondition as set_enabled, and the silent fallback was worse
+  // here: a default-constructed ScheduleTaskStats is all zeroes, which is
+  // exactly what a real, registered task that has never run reports. The
+  // caller could not tell "you passed a bad id" from "this task is idle".
   [[nodiscard]] auto task_stats(TaskId id) const noexcept -> ScheduleTaskStats {
-    TESS_ASSERT(id < tasks_.size());
     if (id >= tasks_.size()) {
-      return ScheduleTaskStats{};
+      detail::fail_fast("Schedule::task_stats called with an unknown TaskId");
     }
     return tasks_[id].stats;
   }
