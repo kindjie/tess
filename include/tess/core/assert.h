@@ -15,6 +15,30 @@
 //   define NDEBUG, so asserts have zero cost there.
 // - A failed assert aborts; it never throws, so noexcept functions stay
 //   noexcept.
+// TESS_ENABLE_ASSERTS changes the bodies of inline functions -- 14 in
+// storage/world.h alone -- so a program that enables it for some
+// translation units and not others violates the one-definition rule with
+// no diagnostic: the linker keeps one arbitrary definition and the checks
+// silently vanish from the others. docs/integration-policy.md tells
+// consumers to set this, which makes the mismatch easy to reach by
+// building the library's TUs and the consumer's with different flags.
+//
+// The pragma gives MSVC a link-time check; GCC and Clang have no
+// equivalent mechanism, so consistency there is the build system's job.
+// Placed before the default derivation below so it reports the value the
+// translation unit actually compiled with.
+#if defined(_MSC_VER)
+#if defined(TESS_ENABLE_ASSERTS) && TESS_ENABLE_ASSERTS
+#pragma detect_mismatch("tess_assert_mode", "enabled")
+#elif defined(TESS_ENABLE_ASSERTS)
+#pragma detect_mismatch("tess_assert_mode", "disabled")
+#elif defined(NDEBUG)
+#pragma detect_mismatch("tess_assert_mode", "disabled")
+#else
+#pragma detect_mismatch("tess_assert_mode", "enabled")
+#endif
+#endif
+
 #if !defined(TESS_ENABLE_ASSERTS)
 #if defined(NDEBUG)
 /** Compile-time switch controlling tess fast-path assertion checks. */

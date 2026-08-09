@@ -81,6 +81,19 @@ What is **not** guaranteed:
   runtime in every configuration. Define `TESS_ENABLE_ASSERTS=1`
   explicitly if you want the checks in an optimised build.
 
+**Build-wide macros must be build-wide.** `TESS_ENABLE_ASSERTS` changes the
+bodies of inline functions — 14 in `storage/world.h` alone — and
+`TESS_ENABLE_DIAGNOSTICS` changes public *types*: `PathCounters`,
+`TraceBuffer`, `WarningSink` and six more exist only when it is defined.
+Defining either for some translation units and not others violates the
+one-definition rule. No compiler diagnoses it; the linker keeps one
+arbitrary definition, so the checks or the members silently vanish from the
+other half of your program. Set them for a whole binary or not at all.
+
+On MSVC each is stamped with `#pragma detect_mismatch`, which turns the
+mismatch into a link error. GCC and Clang have no equivalent mechanism, so
+consistency there is your build system's job.
+
 Native MSVC's exception-free configuration is supported by construction, not
 as an equivalent to the stronger GCC/Clang compiler mode. An exception that
 nevertheless escapes application or standard-library code remains outside the
