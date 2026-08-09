@@ -712,6 +712,18 @@
   attempt, a compile-time-ineligible movement class taking the exact
   path with the ineligible_fallbacks counter visible, and identical
   batch sequences producing identical results and portal stats.
+- `tess_seam_scan_equivalence_test`: differential oracle for
+  `detail::best_chunk_portal`'s page-hoisted seam fast path — compares
+  found/portal/scan_tiles against a per-tile-resolve reference on a 3D
+  asymmetric shape (4x8x2-tile chunks, 2x2x2 grid) across all 24 adjacent
+  chunk pairs with all-pass, all-blocked, and seeded-random patterns;
+  exact single portals asserted at both scan extremes of every pair;
+  sparse worlds with a missing chunk taking the generic fallback;
+  past-the-top out-of-shape neighbors scanning the full seam and finding
+  nothing; and wrapped (below-zero) unsigned chunk coordinates reading as
+  non-adjacent. Diagnostics parity for the fast path lives in
+  `tess_diagnostics_enabled_test` (passability events: one per scanned
+  pair, a second when the source passes).
 - `tess_path_agent_test`: verifies the public path-agent wrapper, including
   goal assignment, runtime-backed request/result processing, tile-by-tile
   advancement and arrival that resets a preserved blocked streak,

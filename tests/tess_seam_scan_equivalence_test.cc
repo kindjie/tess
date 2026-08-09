@@ -217,22 +217,66 @@ TEST(TessSeamScanEquivalence, SeededRandomMapsMatch) {
   }
 }
 
-TEST(TessSeamScanEquivalence, FirstAndLastTileOnlyPortalsMatch) {
-  // Passable only at each chunk's first and last local tile, so a seam
-  // either has exactly one crossing at an iteration-order extreme or
-  // none — pinning both iteration order and the source/target pairing.
-  Dense world;
-  fill_pattern(world, [](tess::Coord3 coord) {
-    const auto lx = coord.x % static_cast<std::int64_t>(kChunk.x);
-    const auto ly = coord.y % static_cast<std::int64_t>(kChunk.y);
-    const auto lz = coord.z % static_cast<std::int64_t>(kChunk.z);
-    const auto first = lx == 0 && ly == 0 && lz == 0;
-    const auto last = lx == static_cast<std::int64_t>(kChunk.x) - 1 &&
-                      ly == static_cast<std::int64_t>(kChunk.y) - 1 &&
-                      lz == static_cast<std::int64_t>(kChunk.z) - 1;
-    return first || last;
+TEST(TessSeamScanEquivalence, ExactSinglePortalAtScanExtremes) {
+  // For every adjacent pair: block everything, then open exactly one
+  // source/target crossing at the first scan position (both seam-plane
+  // axes at 0) and, separately, at the last (both at their maxima).
+  // Asserting the exact portal pins the source/target pairing and the
+  // scan extremes independently of the reference oracle.
+  for_each_adjacent_pair([](tess::ChunkCoord3 from, tess::ChunkCoord3 to) {
+    const auto origin = tess::detail::chunk_origin<Shape3D>(from);
+    for (const bool last : {false, true}) {
+      auto source = origin;
+      auto target = origin;
+      const auto plane = [&](std::int64_t extent) {
+        return last ? extent - 1 : std::int64_t{0};
+      };
+      if (from.x != to.x) {
+        const auto step = to.x > from.x ? std::int64_t{1} : std::int64_t{-1};
+        source.x = step > 0 ? origin.x + static_cast<std::int64_t>(kChunk.x) - 1
+                            : origin.x;
+        target.x = source.x + step;
+        source.y = target.y =
+            origin.y + plane(static_cast<std::int64_t>(kChunk.y));
+        source.z = target.z =
+            origin.z + plane(static_cast<std::int64_t>(kChunk.z));
+      } else if (from.y != to.y) {
+        const auto step = to.y > from.y ? std::int64_t{1} : std::int64_t{-1};
+        source.y = step > 0 ? origin.y + static_cast<std::int64_t>(kChunk.y) - 1
+                            : origin.y;
+        target.y = source.y + step;
+        source.x = target.x =
+            origin.x + plane(static_cast<std::int64_t>(kChunk.x));
+        source.z = target.z =
+            origin.z + plane(static_cast<std::int64_t>(kChunk.z));
+      } else {
+        const auto step = to.z > from.z ? std::int64_t{1} : std::int64_t{-1};
+        source.z = step > 0 ? origin.z + static_cast<std::int64_t>(kChunk.z) - 1
+                            : origin.z;
+        target.z = source.z + step;
+        source.x = target.x =
+            origin.x + plane(static_cast<std::int64_t>(kChunk.x));
+        source.y = target.y =
+            origin.y + plane(static_cast<std::int64_t>(kChunk.y));
+      }
+
+      Dense world;
+      fill_pattern(world, [](tess::Coord3) { return false; });
+      world.template field<PassableTag>(source) = true;
+      world.template field<PassableTag>(target) = true;
+
+      const auto current = tess::Coord3{0, 0, 0};
+      const auto goal = tess::Coord3{7, 15, 3};
+      const auto fast = fast_scan(world, from, to, current, goal);
+      EXPECT_TRUE(fast.found)
+          << "from=(" << from.x << "," << from.y << "," << from.z << ") to=("
+          << to.x << "," << to.y << "," << to.z << ") last=" << last;
+      EXPECT_EQ(fast.portal.x, target.x);
+      EXPECT_EQ(fast.portal.y, target.y);
+      EXPECT_EQ(fast.portal.z, target.z);
+      expect_equivalent(world, from, to, current, goal);
+    }
   });
-  expect_all_pairs_equivalent(world);
 }
 
 TEST(TessSeamScanEquivalence, SparseMissingChunksMatch) {
