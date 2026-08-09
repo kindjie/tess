@@ -22,7 +22,9 @@ template <typename World, typename Residency = typename World::residency_type>
 struct NodeIndexSpace {
   static_assert(sizeof(World) == 0,
                 "NodeIndexSpace has no specialization for this residency "
-                "policy; the SparseResident mapping lands in a later slice.");
+                "policy. AlwaysResident and SparseResident are both "
+                "specialized below; a custom residency policy needs its "
+                "own specialization.");
 };
 
 template <typename World>
