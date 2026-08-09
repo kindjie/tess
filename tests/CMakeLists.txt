@@ -1052,7 +1052,30 @@ add_executable(tess_assert_test tess_assert_test.cc)
 target_link_libraries(tess_assert_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_assert_test)
 
-tess_discover_tests(tess_assert_test LABELS core path storage)
+tess_discover_tests(tess_assert_test LABELS core path sim storage)
+
+# The same source with assertions compiled out. Three preconditions in this
+# file were TESS_ASSERT and are now unconditional fail_fast checks; with
+# asserts on, their death tests pass either way, so only this cell can tell
+# the two apart. The existing NDEBUG contract cell compiles but never runs,
+# so it cannot serve here.
+add_executable(tess_assert_ndebug_test tess_assert_test.cc)
+target_link_libraries(
+  tess_assert_ndebug_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+target_compile_definitions(tess_assert_ndebug_test PRIVATE NDEBUG)
+tess_apply_project_options(tess_assert_ndebug_test)
+
+# Prefixed: this target compiles the same source as tess_assert_test, so
+# without one both cells register identical gtest names and a failure
+# report cannot say which configuration failed -- which is the only
+# thing this cell exists to tell you.
+tess_discover_tests(
+  tess_assert_ndebug_test
+  PREFIX ndebug.
+  LABELS core path sim storage
+)
 
 add_executable(tess_diagnostics_default_test tess_diagnostics_default_test.cc)
 target_link_libraries(

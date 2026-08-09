@@ -752,7 +752,17 @@
   `World::chunk`, `World::meta`, `tile_key`, `PathRequestRuntime::result`),
   `TESS_ASSERT_MSG` aborting with the caller's custom message and passing
   silently when the condition holds, that the disabled forms do not evaluate
-  their conditions, and that guarded accessors stay `noexcept`.
+  their conditions, and that guarded accessors stay `noexcept`. It also
+  covers the two `Schedule` preconditions that are checked unconditionally
+  rather than under `TESS_ASSERT` (`task_stats` and `set_enabled`).
+  `ResultChannel::value_for` is hardened the same way but is NOT covered
+  here: it is a private producer hook reachable only from the friended
+  execute wrappers, so no test can call it without becoming a friend.
+- `tess_assert_ndebug_test`: the same source compiled with `NDEBUG`. The
+  unconditional-precondition death tests above pass against either the old
+  assert-gated form or the new one when asserts are enabled, so only this
+  cell distinguishes them; it is where those tests actually have teeth. The
+  `TESS_ENABLE_ASSERTS` half of the file compiles out here.
 - `tess_sim_schedule_test`: verifies the S7 Schedule core: phase-major then
   registration-order execution, `every_ticks(n)` exactness with disablement
   keeping lockstep (the countdown advances while disabled; the due tick is
