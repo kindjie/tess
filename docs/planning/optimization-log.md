@@ -56,6 +56,32 @@ entries from 2026-07-12 and earlier are in
   with the quality contract stated at the policy (cap bounds premium
   vs optimal; rejections pay portal work plus the exact search).
   Bootstrap ceilings at 4x the M3 readings per protocol.
+- Follow-up, CLOSED 2026-08-09 — on-device verification: the six cells
+  ran on the Steam Deck at merged main (`2ac7868`, governor
+  `performance` on external power, 5 repetitions, CVs <= 0.16%).
+  Repeated churn 40.1 us against the 43.46 ms exact guard (~1083x);
+  fresh goals 147.8 us against their 5.85 ms exact twin (~39.6x) — the
+  Deck WIN ratios exceed the M3 ratios because exact A* costs
+  relatively more there, while the worst cases split (rejected milder
+  at +0.5%, sealed slightly worse at 2.3x); the guard cell sits inside
+  the prior three passes' band, so the default path is unmoved. The
+  profile claim closed two-sidedly on one binary and survived two
+  review rounds demanding direct evidence: the control keeps the
+  triple-confirmed A* shape (50.2% self) while the portal steady state
+  is A*-free by three independent legs — temporal confinement (the
+  last A*-containing sample sits at the calibration/measurement
+  boundary; the measured region has zero), dilution scaling (0.96% at
+  a 1 s window to 0.17% at 10 s), and cache-counter structure (no
+  sweeps, evictions, or stale rejections over 35,412 accepted serves —
+  no persistent steady-state misses). The sub-1% share is fixture
+  re-execution during benchmark calibration, a property of
+  whole-process profiling, not of the mechanism. The portal cells pay
+  a per-tick O(1) stats read their exact twins do not, so the ratios
+  are marginally conservative. Steady state's dominant self-share is
+  now candidate seam scanning (`best_chunk_portal`, 52.5% of the
+  profiled window) — the next surface if the tier ever needs to be
+  faster. Raw perf.data archived off-repository beside the campaign
+  data.
 - Follow-ups: bounded segment search (structural cold-cost bound),
   keyed product replay for repeated goals (the fresh/repeat bench
   split keeps it honest), Option B coarse-heuristic prototype with
