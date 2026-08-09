@@ -101,7 +101,8 @@ class AutoExecTask {
     return last_run_;
   }
 
-  auto operator()(const ScheduleTaskContext&) -> ScheduleTaskResult {
+  [[nodiscard]] auto operator()(const ScheduleTaskContext&)
+      -> ScheduleTaskResult {
     last_run_ = AutoExecRunStats{};
     if (ops_->empty()) {
       return ScheduleTaskResult{};
@@ -122,7 +123,7 @@ class AutoExecTask {
   }
 
  private:
-  auto run_nonempty() -> ScheduleTaskResult {
+  [[nodiscard]] auto run_nonempty() -> ScheduleTaskResult {
     // Pre-validate policy uniformity BEFORE planning so a mismatch executes
     // nothing at all (deterministic under any executor).
     for (const auto& operation : ops_->operations()) {

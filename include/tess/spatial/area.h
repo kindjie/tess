@@ -191,8 +191,9 @@ class AreaIndex {
 
 /// Groups graph regions by a caller-supplied nonzero 64-bit semantic key.
 template <typename Residency, typename Grouper>
-auto build_area_index(const RegionGraphT<Residency>& graph, Grouper&& grouper,
-                      AreaIndexScratch& scratch, AreaIndex& index)
+[[nodiscard]] auto build_area_index(const RegionGraphT<Residency>& graph,
+                                    Grouper&& grouper,
+                                    AreaIndexScratch& scratch, AreaIndex& index)
     -> AreaBuildResult {
   const auto region_count = static_cast<std::size_t>(graph.region_count());
   index.clear();

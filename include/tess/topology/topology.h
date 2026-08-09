@@ -1119,9 +1119,10 @@ void append_chunk_portals(const RegionGraphT<Residency>& graph,
 
 /// Builds connected-region labels for one valid, resident world chunk.
 template <typename World, typename ClassOrTag>
-auto build_local_chunk_topology(const World& world, ChunkKey chunk,
-                                LocalTopologyScratch& scratch,
-                                LocalChunkTopology& topology)
+[[nodiscard]] auto build_local_chunk_topology(const World& world,
+                                              ChunkKey chunk,
+                                              LocalTopologyScratch& scratch,
+                                              LocalChunkTopology& topology)
     -> LocalTopologyResult {
   using Shape = typename World::shape_type;
   using Traits = ShapeTraits<Shape>;
@@ -1216,6 +1217,15 @@ auto build_local_chunk_topology(const World& world, ChunkKey chunk,
 template <typename World, typename ClassOrTag,
           typename Provider = AdjacentTransitions>
 /// Rebuilds a complete region graph for the world's current resident set.
+///
+/// Deliberately NOT [[nodiscard]], unlike update_region_graph. The returned
+/// status is invariantly Built: the dense branch iterates keys
+/// 0..chunk_count, so InvalidChunk cannot arise and MissingChunk does not
+/// exist under AlwaysResident; the sparse branch builds from
+/// resident_chunk_keys(), which are in-world and resident by construction.
+/// What remains in the result is statistics, and the graph itself is the
+/// output. update_region_graph does have a reachable failure -- InvalidChunk
+/// for an out-of-range dirty chunk -- and is marked accordingly.
 auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
                         RegionGraphT<typename World::residency_type>& graph,
                         const Provider& provider = {}) -> LocalTopologyResult {
@@ -1319,10 +1329,11 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
 template <typename World, typename ClassOrTag,
           typename Provider = AdjacentTransitions>
 /// Incrementally updates dirty chunks, rebuilding fully when stamps differ.
-auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
-                         RegionGraphT<typename World::residency_type>& graph,
-                         std::span<const ChunkKey> dirty_chunks,
-                         const Provider& provider = {}) -> LocalTopologyResult {
+[[nodiscard]] auto update_region_graph(
+    const World& world, LocalTopologyScratch& scratch,
+    RegionGraphT<typename World::residency_type>& graph,
+    std::span<const ChunkKey> dirty_chunks, const Provider& provider = {})
+    -> LocalTopologyResult {
   static_assert(TransitionProviderFor<Provider, World>,
                 "update_region_graph's provider must satisfy "
                 "TransitionProviderFor (see transition_provider.h).");
@@ -1485,9 +1496,18 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
           if (dirty[i] == 0) {
             continue;
           }
-          build_local_chunk_topology<World, Class>(
+          // Discarded deliberately, and sound for a different reason than
+          // the dense branch above. MissingChunk would mean a frozen key
+          // is no longer resident, but the generation loop at the top of
+          // this branch already returned to a full rebuild in that case:
+          // an absent key reads residency_generation 0, every frozen
+          // generation is non-zero because the keys were resident when
+          // frozen, so any eviction fails the equality check. InvalidChunk
+          // is ruled out by the dirty-chunk bounds check above. Built is
+          // therefore the only reachable status.
+          static_cast<void>(build_local_chunk_topology<World, Class>(
               world, graph.sparse_.topology_keys_[i], scratch,
-              graph.local_topologies_[i]);
+              graph.local_topologies_[i]));
         }
 
         std::erase_if(graph.portals_, [&](const RegionPortal& portal) {
@@ -1536,8 +1556,9 @@ auto update_region_graph(const World& world, LocalTopologyScratch& scratch,
 
 /// Queries graph reachability between two world coordinates.
 template <typename Shape, typename Residency>
-auto reachable(const RegionGraphT<Residency>& graph, Coord3 start, Coord3 goal,
-               RegionGraphScratch& scratch) -> ReachabilityResult {
+[[nodiscard]] auto reachable(const RegionGraphT<Residency>& graph, Coord3 start,
+                             Coord3 goal, RegionGraphScratch& scratch)
+    -> ReachabilityResult {
   if (!contains<Shape>(start)) {
     return ReachabilityResult{ReachabilityStatus::InvalidStart, 0};
   }
@@ -1637,8 +1658,10 @@ auto reachable(const RegionGraphT<Residency>& graph, Coord3 start, Coord3 goal,
 /// Returned spans borrow `scratch` and expire on its next traversal. The
 /// corridor bounds cover the complete chunks on the selected region path.
 template <typename Shape, typename Residency>
-auto coarse_path(const RegionGraphT<Residency>& graph, Coord3 start,
-                 Coord3 goal, RegionGraphScratch& scratch) -> CoarsePathResult {
+[[nodiscard]] auto coarse_path(const RegionGraphT<Residency>& graph,
+                               Coord3 start, Coord3 goal,
+                               RegionGraphScratch& scratch)
+    -> CoarsePathResult {
   const auto region_count = static_cast<std::size_t>(graph.region_count());
   scratch.begin_traversal(region_count);
   const auto result = [&](ReachabilityStatus status,

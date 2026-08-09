@@ -301,7 +301,7 @@ auto record_plan_completions(const ExecutionReport& report,
 template <WritePolicy Policy, typename Executor, typename World, typename T,
           typename Fn>
 /// Executes one phase while publishing per-operation payloads and completions.
-auto execute_phase_partitioned_dirty_with_results(
+[[nodiscard]] auto execute_phase_partitioned_dirty_with_results(
     Executor&& executor, World& world, const ExecutionPlan& plan,
     const ExecutionPhase& phase, PlannedPhaseExecutionScratch& scratch,
     ResultChannel<T>& channel, Fn&& fn) -> PlannedExecutionResult {
@@ -390,12 +390,9 @@ auto execute_phase_partitioned_dirty_with_results(
 // prepared upfront, so the aborted tail reads Pending through the channel.
 /// Executes a serial plan while publishing per-operation results.
 template <WritePolicy Policy, typename World, typename T, typename Fn>
-auto execute_plan_deferred_dirty_with_results(World& world,
-                                              const ExecutionPlan& plan,
-                                              PlannedDirtyAccumulator& dirty,
-                                              ResultChannel<T>& channel,
-                                              Fn&& fn)
-    -> PlannedExecutionResult {
+[[nodiscard]] auto execute_plan_deferred_dirty_with_results(
+    World& world, const ExecutionPlan& plan, PlannedDirtyAccumulator& dirty,
+    ResultChannel<T>& channel, Fn&& fn) -> PlannedExecutionResult {
   for (const auto& operation : plan.operations()) {
     channel.prepare_operation(operation.handle, operation.source);
   }

@@ -952,7 +952,7 @@ void run_queued_per_chunk_cell(const RunOptions& options) {
                                                    colony::kTerrainDirty},
                              tess::WritePolicy::UniquePerChunk);
     }
-    build_task(tess::ScheduleTaskContext{queued_clock});
+    static_cast<void>(build_task(tess::ScheduleTaskContext{queued_clock}));
     return state.acked_tiles - before;
   };
 

@@ -181,8 +181,10 @@ TEST(TessSparseTopology, IncrementalUpdateEqualsFreshBuild) {
   }
   tess::LocalTopologyScratch scratch;
   const std::array<tess::ChunkKey, 1> dirty{tess::ChunkKey{1}};
-  tess::update_region_graph<SparseSmall, PassableTag>(world, scratch, updated,
-                                                      dirty);
+  EXPECT_EQ((tess::update_region_graph<SparseSmall, PassableTag>(world, scratch,
+                                                                 updated, dirty)
+                 .status),
+            tess::TopologyStatus::Built);
 
   tess::SparseRegionGraph fresh;
   build(world, fresh);
@@ -278,8 +280,10 @@ TEST(TessSparseTopology, StaleGraphAfterResidencyChangeFallsBackToFullBuild) {
   // over the new resident set rather than trust the stale snapshot.
   make_chunk_passable(world, tess::ChunkKey{2});
   const std::array<tess::ChunkKey, 0> dirty{};
-  tess::update_region_graph<SparseSmall, PassableTag>(world, scratch, graph,
-                                                      dirty);
+  EXPECT_EQ((tess::update_region_graph<SparseSmall, PassableTag>(world, scratch,
+                                                                 graph, dirty)
+                 .status),
+            tess::TopologyStatus::Built);
   EXPECT_EQ(graph.local_topologies().size(), 3u);
 }
 

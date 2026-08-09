@@ -665,9 +665,10 @@ TEST(TessQueuedContract, ThrowingImmediateCallbackMarksDirtyBeforePropagation) {
   ASSERT_TRUE(report.ok());
 
   EXPECT_THROW(
-      (tess::execute_planned_operation<tess::WritePolicy::UniquePerChunk>(
-          world, report.plan().operations()[0],
-          [](auto) { throw std::runtime_error{"callback failed"}; })),
+      static_cast<void>(
+          tess::execute_planned_operation<tess::WritePolicy::UniquePerChunk>(
+              world, report.plan().operations()[0],
+              [](auto) { throw std::runtime_error{"callback failed"}; })),
       std::runtime_error);
 
   EXPECT_EQ(world.dirty_flags(key), DirtyTerrain);
@@ -825,8 +826,8 @@ TEST(TessQueuedContract,
   const auto report = tess::plan_operations(world, ops);
   ASSERT_TRUE(report.ok());
 
-  EXPECT_THROW((tess::execute_planned_operation_deferred_dirty<
-                   tess::WritePolicy::UniquePerChunk>(
+  EXPECT_THROW(static_cast<void>(tess::execute_planned_operation_deferred_dirty<
+                                 tess::WritePolicy::UniquePerChunk>(
                    world, report.plan().operations()[0], dirty,
                    [](auto) { throw std::runtime_error{"callback failed"}; })),
                std::runtime_error);
@@ -862,8 +863,8 @@ TEST(TessQueuedContract,
   ASSERT_EQ(phases.phases().size(), 1u);
 
   EXPECT_THROW(
-      (tess::execute_phase_partitioned_dirty_with<
-          tess::WritePolicy::UniquePerChunk>(
+      static_cast<void>(tess::execute_phase_partitioned_dirty_with<
+                        tess::WritePolicy::UniquePerChunk>(
           tess::SerialPhaseExecutor{}, world, report.plan(), phases.phases()[0],
           scratch, [](auto) { throw std::runtime_error{"callback failed"}; })),
       std::runtime_error);

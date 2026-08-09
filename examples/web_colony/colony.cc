@@ -117,6 +117,12 @@ struct Demo {
   tess::JointMoveScratch joint_scratch;
   tess::RegionGraphScratch graph_scratch;
   tess::RegionGraph graph;
+  // False once a region-graph UPDATE reports a status other than Built.
+  // update_region_graph can return InvalidChunk for an out-of-range dirty
+  // chunk; build_region_graph has no reachable failure, so it is not
+  // checked. The demo cannot recover, so it stops replanning rather than
+  // route against connectivity it knows is stale.
+  bool topology_ok = true;
   tess::FrameOps ops;
   tess::DeltaCollector deltas;
   std::vector<tess::Coord3> pending_walls;
@@ -232,9 +238,16 @@ struct Demo {
       demo->dirty_scratch.clear();
       demo->world.collect_dirty_chunks(kTerrainDirty, demo->dirty_scratch);
       if (!demo->dirty_scratch.empty()) {
-        tess::update_region_graph<World, Walker>(
+        // Only mark pathing dirty if the graph actually refreshed. Replanning
+        // against a graph whose update failed would route agents using stale
+        // connectivity, which is harder to notice than not replanning at all.
+        const auto updated = tess::update_region_graph<World, Walker>(
             demo->world, demo->topo_scratch, demo->graph, demo->dirty_scratch);
-        tess::mark_pathing_dirty(demo->tick_state);
+        demo->topology_ok =
+            demo->topology_ok && updated.status == tess::TopologyStatus::Built;
+        if (demo->topology_ok) {
+          tess::mark_pathing_dirty(demo->tick_state);
+        }
       }
       return {};
     }

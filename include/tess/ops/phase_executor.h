@@ -71,7 +71,7 @@ namespace detail {
 // Probe callback used only to state the PhaseExecutor concept without
 // evaluating a lambda in an unevaluated context.
 struct PhaseExecutorProbeCallback {
-  auto operator()(std::size_t /*operation_index*/) const
+  [[nodiscard]] auto operator()(std::size_t /*operation_index*/) const
       -> PlannedExecutionResult {
     return PlannedExecutionResult{};
   }
@@ -98,14 +98,15 @@ struct SerialPhaseExecutor {
   using serial_execution_tag = void;
 
   template <typename Fn>
-  auto for_each_operation(ExecutorPhaseRange range, Fn&& fn) const
+  [[nodiscard]] auto for_each_operation(ExecutorPhaseRange range, Fn&& fn) const
       -> PlannedExecutionResult {
     return for_each_operation(range.first_operation, range.operation_count,
                               std::forward<Fn>(fn));
   }
 
   template <typename Fn>
-  auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn) const
+  [[nodiscard]] auto for_each_operation(std::size_t first, std::size_t count,
+                                        Fn&& fn) const
       -> PlannedExecutionResult {
     auto&& callback = fn;
     const auto end = first + count;
@@ -151,7 +152,8 @@ class ScopedThreadPhaseExecutorImpl {
   }
 
   template <typename Fn>
-  auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn) const
+  [[nodiscard]] auto for_each_operation(std::size_t first, std::size_t count,
+                                        Fn&& fn) const
       -> PlannedExecutionResult {
     if (count == 0) {
       return PlannedExecutionResult{};
@@ -408,7 +410,8 @@ class WorkerPoolPhaseExecutorImpl
   }
 
   template <typename Fn>
-  auto for_each_operation(std::size_t first, std::size_t count, Fn&& fn) const
+  [[nodiscard]] auto for_each_operation(std::size_t first, std::size_t count,
+                                        Fn&& fn) const
       -> PlannedExecutionResult {
     if (count == 0) {
       return PlannedExecutionResult{};
@@ -689,8 +692,9 @@ using NoThrowWorkerPoolPhaseExecutor = WorkerPoolPhaseExecutorImpl<false>;
 
 /** Dispatches one explicit index range through a compatible executor. */
 template <typename Executor, typename Fn>
-auto execute_operation_index_range(Executor&& executor,
-                                   ExecutorPhaseRange range, Fn&& fn)
+[[nodiscard]] auto execute_operation_index_range(Executor&& executor,
+                                                 ExecutorPhaseRange range,
+                                                 Fn&& fn)
     -> PlannedExecutionResult {
   return executor.for_each_operation(
       range.first_operation, range.operation_count, std::forward<Fn>(fn));

@@ -369,8 +369,8 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 ///
 /// On failure the world is unchanged. Success updates occupancy and, when
 /// requested, the dirty metadata maintained by the world.
-auto commit_movement_intent(World& world, MovementIntent intent,
-                            std::uint32_t dirty_mask = 0) noexcept
+[[nodiscard]] auto commit_movement_intent(World& world, MovementIntent intent,
+                                          std::uint32_t dirty_mask = 0) noexcept
     -> MovementResult {
   const auto validated = detail::validate_movement_intent_resolved<
       World, ClassOrTag, OccupancyTag, ReservationTag, AdjacentTransitions>(
@@ -398,8 +398,9 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 /// Validates and commits movement through a provider-supplied edge.
 ///
 /// Exceptions from `provider` propagate before any occupancy is mutated.
-auto commit_movement_intent(World& world, MovementIntent intent,
-                            std::uint32_t dirty_mask, const Provider& provider)
+[[nodiscard]] auto commit_movement_intent(World& world, MovementIntent intent,
+                                          std::uint32_t dirty_mask,
+                                          const Provider& provider)
     -> MovementResult {
   const auto validated =
       detail::validate_movement_intent_resolved<World, ClassOrTag, OccupancyTag,

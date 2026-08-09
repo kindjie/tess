@@ -162,7 +162,7 @@ template <typename World, typename PassableTag>
 /// The returned path borrows `product`; subsequent product mutation invalidates
 /// it. Building reuses caller-owned `scratch` and product capacities.
 template <typename World, typename PassableTag, typename CostTag>
-auto build_weighted_chunk_portal_route_product(
+[[nodiscard]] auto build_weighted_chunk_portal_route_product(
     const World& world, PathRequest request, PathScratch& scratch,
     WeightedPortalRouteProduct& product) -> PathResult {
   using Shape = typename World::shape_type;
@@ -262,7 +262,7 @@ auto build_weighted_chunk_portal_route_product(
 // the other builders.
 /// Builds a chunk-portal weighted route through the segment cache.
 template <typename World, typename PassableTag, typename CostTag>
-auto build_weighted_chunk_portal_route_product_cached(
+[[nodiscard]] auto build_weighted_chunk_portal_route_product_cached(
     const World& world, PathRequest request, PathScratch& scratch,
     WeightedPortalSegmentCache& cache, WeightedPortalRouteProduct& product)
     -> PathResult {
