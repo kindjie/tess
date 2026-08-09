@@ -472,7 +472,10 @@ flowchart TB
   same-tick marks re-arm it for the next tick), `on_event(mask)` with the same
   phase-aware coalescing rules, `background(budget)`, and `manual()`.
 - `CadenceKind` is the stored discriminator for those six cadence forms.
-  `ScheduleTaskDesc` combines a phase and cadence; `ScheduleTaskContext`
+  `ScheduleTaskDesc` combines a name, a phase, and a cadence -- the name is
+  required and must have static storage, the same rule diagnostics trace
+  labels follow, because the schedule stores the view rather than the
+  characters; `ScheduleTaskContext`
   supplies the current clock, consumed dirty/event masks, and background
   budget to `ScheduleTaskFn`; `ScheduleTaskResult` returns produced dirty/event
   masks, completed items, and backlog state;

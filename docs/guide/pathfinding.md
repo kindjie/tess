@@ -92,6 +92,14 @@ const auto nearest = tess::nearest_target<World, PassableTag>(
 !!! note "Planned"
     Congestion, flow, and influence fields are designed but not shipped
     (see the [roadmap](../roadmap.md), which includes the interim
-    cost-field fallback). All shipped routing is optimal per agent: it
-    will not spread or queue a crowd. Do not build agent code that
-    assumes a congestion API.
+    cost-field fallback). Do not build agent code that assumes a
+    congestion API.
+
+    Routing itself is optimal per agent — a route is planned without
+    reference to where other agents are. Contention is resolved at *move*
+    time instead, by two shipped tiers: joint movement admits a tick's
+    moves together so agents do not trade places or stack, and the opt-in
+    PIBT tier additionally lets a blocked agent yield off its route so a
+    head-on in a dead-end corridor resolves. Neither spreads a crowd
+    across alternative routes, which is what a congestion field would do.
+    See [simulation](../architecture/simulation.md).

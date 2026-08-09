@@ -33,6 +33,12 @@ Caller-keyed area indexes derive stable area summaries and adjacency from
 region graphs. Deterministic tactical assignment and local move coordination
 provide capacity-aware claims, caller-ranked destination reservations, and
 coordinate congestion summaries without owning game semantics or steering.
+Two movement-commit tiers resolve contention between agents whose routes
+were planned independently: joint movement admits a tick's moves together,
+so agents neither trade places nor stack, and the opt-in PIBT tier
+(priority inheritance with backtracking) additionally lets a blocked agent
+yield off its route, which resolves a head-on in a dead-end corridor that
+joint movement alone wedges.
 Versioned world archives persist caller-selected authoritative scalar fields,
 stable chunk metadata, and compatibility identities in canonical
 little-endian form. Exact loads preflight corruption and compatibility,
