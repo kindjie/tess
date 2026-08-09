@@ -36,7 +36,7 @@ void BM_persistence_save_dense_512x512(benchmark::State& state) {
   std::vector<std::byte> bytes;
   for (auto _ : state) {
     auto result = tess::save_world_archive<Archive>(world, bytes);
-    benchmark::DoNotOptimize(result.bytes_processed);
+    benchmark::DoNotOptimize(result.bytes_written);
     benchmark::ClobberMemory();
   }
   state.SetBytesProcessed(static_cast<std::int64_t>(state.iterations()) *
@@ -47,8 +47,10 @@ void BM_persistence_load_dense_512x512(benchmark::State& state) {
   World source;
   populate(source);
   std::vector<std::byte> bytes;
+  // This checked saved.status against Ok, which save could not return
+  // anything but. bytes_written is the condition that can actually fail.
   const auto saved = tess::save_world_archive<Archive>(source, bytes);
-  if (saved.status != tess::WorldArchiveStatus::Ok) {
+  if (saved.bytes_written == 0) {
     state.SkipWithError("failed to prepare persistence archive");
     return;
   }
