@@ -765,9 +765,10 @@ class RouteCacheScratch {
 // (performed inside this call at serve time) instead of dropping entries.
 /// Runs unit A* with exact and same-goal suffix reuse from caller-owned cache.
 template <typename World, typename Tag, typename Provider>
-auto cached_astar_path(const World& world, PathRequest request,
-                       PathScratch& scratch, RouteCacheScratch& cache,
-                       const Provider& provider) -> PathResult {
+[[nodiscard]] auto cached_astar_path(const World& world, PathRequest request,
+                                     PathScratch& scratch,
+                                     RouteCacheScratch& cache,
+                                     const Provider& provider) -> PathResult {
   using Class = movement::movement_class_of<Tag>;
   using UnitClass = movement::detail::UnitMovementClass<Class>;
   using Model = ResolvedTransitionModel<World, UnitClass, Provider>;
@@ -850,9 +851,9 @@ auto cached_astar_path(const World& world, PathRequest request,
 
 template <typename World, typename Tag>
 /// Finds a cached empty-provider route or computes and stores one.
-auto cached_astar_path(const World& world, PathRequest request,
-                       PathScratch& scratch, RouteCacheScratch& cache)
-    -> PathResult {
+[[nodiscard]] auto cached_astar_path(const World& world, PathRequest request,
+                                     PathScratch& scratch,
+                                     RouteCacheScratch& cache) -> PathResult {
   return cached_astar_path<World, Tag, AdjacentTransitions>(
       world, request, scratch, cache, AdjacentTransitions{});
 }

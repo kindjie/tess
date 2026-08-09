@@ -97,7 +97,10 @@ TEST(TessSparseTopology, ReachableAcrossResidentChunks) {
   make_chunk_passable(world, tess::ChunkKey{1});
   tess::LocalTopologyScratch scratch;
   tess::SparseRegionGraph graph;
-  tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
+  EXPECT_EQ(
+      (tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph)
+           .status),
+      tess::TopologyStatus::Built);
 
   tess::RegionGraphScratch reach;
   const auto result =
@@ -114,7 +117,10 @@ TEST(TessSparseTopology, IndeterminateAcrossNonResidentBoundary) {
   ASSERT_FALSE(world.is_resident(tess::ChunkKey{1}));
   tess::LocalTopologyScratch scratch;
   tess::SparseRegionGraph graph;
-  tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
+  EXPECT_EQ(
+      (tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph)
+           .status),
+      tess::TopologyStatus::Built);
 
   tess::RegionGraphScratch reach;
   // start in chunk 0, goal in chunk 2. No portal bridges them (chunk 1 is
@@ -136,7 +142,10 @@ TEST(TessSparseTopology, UnreachableWithinFullyResidentEnclosedComponent) {
   }
   tess::LocalTopologyScratch scratch;
   tess::SparseRegionGraph graph;
-  tess::build_region_graph<SparseSolo, PassableTag>(world, scratch, graph);
+  EXPECT_EQ(
+      (tess::build_region_graph<SparseSolo, PassableTag>(world, scratch, graph)
+           .status),
+      tess::TopologyStatus::Built);
 
   tess::RegionGraphScratch reach;
   const auto result =
@@ -150,7 +159,10 @@ TEST(TessSparseTopology, NonResidentEndpointIsIndeterminate) {
   ASSERT_FALSE(world.is_resident(tess::ChunkKey{1}));
   tess::LocalTopologyScratch scratch;
   tess::SparseRegionGraph graph;
-  tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
+  EXPECT_EQ(
+      (tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph)
+           .status),
+      tess::TopologyStatus::Built);
 
   tess::RegionGraphScratch reach;
   const auto from_missing =
@@ -181,8 +193,10 @@ TEST(TessSparseTopology, IncrementalUpdateEqualsFreshBuild) {
   }
   tess::LocalTopologyScratch scratch;
   const std::array<tess::ChunkKey, 1> dirty{tess::ChunkKey{1}};
-  tess::update_region_graph<SparseSmall, PassableTag>(world, scratch, updated,
-                                                      dirty);
+  EXPECT_EQ((tess::update_region_graph<SparseSmall, PassableTag>(world, scratch,
+                                                                 updated, dirty)
+                 .status),
+            tess::TopologyStatus::Built);
 
   tess::SparseRegionGraph fresh;
   build(world, fresh);
@@ -270,7 +284,10 @@ TEST(TessSparseTopology, StaleGraphAfterResidencyChangeFallsBackToFullBuild) {
   make_chunk_passable(world, tess::ChunkKey{1});
   tess::LocalTopologyScratch scratch;
   tess::SparseRegionGraph graph;
-  tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
+  EXPECT_EQ(
+      (tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph)
+           .status),
+      tess::TopologyStatus::Built);
   ASSERT_EQ(graph.local_topologies().size(), 2u);
 
   // Load a third chunk after the graph was frozen, then update with no dirty
@@ -278,8 +295,10 @@ TEST(TessSparseTopology, StaleGraphAfterResidencyChangeFallsBackToFullBuild) {
   // over the new resident set rather than trust the stale snapshot.
   make_chunk_passable(world, tess::ChunkKey{2});
   const std::array<tess::ChunkKey, 0> dirty{};
-  tess::update_region_graph<SparseSmall, PassableTag>(world, scratch, graph,
-                                                      dirty);
+  EXPECT_EQ((tess::update_region_graph<SparseSmall, PassableTag>(world, scratch,
+                                                                 graph, dirty)
+                 .status),
+            tess::TopologyStatus::Built);
   EXPECT_EQ(graph.local_topologies().size(), 3u);
 }
 

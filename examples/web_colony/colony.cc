@@ -117,6 +117,10 @@ struct Demo {
   tess::JointMoveScratch joint_scratch;
   tess::RegionGraphScratch graph_scratch;
   tess::RegionGraph graph;
+  // False once any region-graph build or update reports a status other than
+  // Built. The demo has no way to recover, so it stops replanning rather
+  // than route against connectivity it knows is wrong.
+  bool topology_ok = true;
   tess::FrameOps ops;
   tess::DeltaCollector deltas;
   std::vector<tess::Coord3> pending_walls;
@@ -178,7 +182,12 @@ struct Demo {
     runtime.reserve_search_nodes(65536);
     runtime.reserve_path_nodes(262144);
     deltas.reserve(World::chunk_count, 8192, 16);
-    tess::build_region_graph<World, Walker>(world, topo_scratch, graph);
+    // A constructor has no status channel, so record it. Every later
+    // topology update ANDs into this flag, and the demo reports it rather
+    // than pathing against a graph that failed to build.
+    topology_ok =
+        tess::build_region_graph<World, Walker>(world, topo_scratch, graph)
+            .status == tess::TopologyStatus::Built;
 
     agents.resize(static_cast<std::size_t>(agent_count));
     agent_xy.resize(agents.size() * 2);
@@ -232,9 +241,16 @@ struct Demo {
       demo->dirty_scratch.clear();
       demo->world.collect_dirty_chunks(kTerrainDirty, demo->dirty_scratch);
       if (!demo->dirty_scratch.empty()) {
-        tess::update_region_graph<World, Walker>(
+        // Only mark pathing dirty if the graph actually refreshed. Replanning
+        // against a graph whose update failed would route agents using stale
+        // connectivity, which is harder to notice than not replanning at all.
+        const auto updated = tess::update_region_graph<World, Walker>(
             demo->world, demo->topo_scratch, demo->graph, demo->dirty_scratch);
-        tess::mark_pathing_dirty(demo->tick_state);
+        demo->topology_ok =
+            demo->topology_ok && updated.status == tess::TopologyStatus::Built;
+        if (demo->topology_ok) {
+          tess::mark_pathing_dirty(demo->tick_state);
+        }
       }
       return {};
     }

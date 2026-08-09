@@ -15,7 +15,7 @@ namespace tess {
 /// Returns `InvalidGoal` when the goal is outside the world, domain, or
 /// movement class. The caller owns `scratch`; reuse it to avoid allocations.
 template <typename World, typename Class, typename Provider>
-auto build_weighted_distance_field_in_box(
+[[nodiscard]] auto build_weighted_distance_field_in_box(
     const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
     [[maybe_unused]] MissingChunkPolicy policy, const Provider& provider)
     -> DistanceFieldResult {
@@ -165,11 +165,9 @@ auto build_weighted_distance_field_in_box(
 }
 
 template <typename World, typename Class>
-auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
-                                          Box3 domain,
-                                          DistanceFieldScratch& scratch,
-                                          MissingChunkPolicy policy)
-    -> DistanceFieldResult {
+[[nodiscard]] auto build_weighted_distance_field_in_box(
+    const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
+    MissingChunkPolicy policy) -> DistanceFieldResult {
   return build_weighted_distance_field_in_box<World, Class,
                                               AdjacentTransitions>(
       world, goal, domain, scratch, policy, AdjacentTransitions{});
@@ -178,11 +176,9 @@ auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
 // Legacy <PassableTag, CostTag> forwarder: one movement class replaces the
 // tag pair; LegacyWeighted preserves the historical semantics exactly.
 template <typename World, typename PassableTag, typename CostTag>
-auto build_weighted_distance_field_in_box(const World& world, Coord3 goal,
-                                          Box3 domain,
-                                          DistanceFieldScratch& scratch,
-                                          MissingChunkPolicy policy)
-    -> DistanceFieldResult {
+[[nodiscard]] auto build_weighted_distance_field_in_box(
+    const World& world, Coord3 goal, Box3 domain, DistanceFieldScratch& scratch,
+    MissingChunkPolicy policy) -> DistanceFieldResult {
   return build_weighted_distance_field_in_box<
       World, movement::LegacyWeighted<PassableTag, CostTag>>(
       world, goal, domain, scratch, policy);

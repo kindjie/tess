@@ -115,8 +115,12 @@ auto run() -> int {
   colony.runtime.reserve_path_nodes(4096);
   colony.runtime.reserve_unit_routes(colony.agents.size());
   colony.deltas.reserve(World::chunk_count, 2048, 16);
-  tess::build_region_graph<World, Walker>(colony.world, colony.topo_scratch,
-                                          colony.graph);
+  const auto built = tess::build_region_graph<World, Walker>(
+      colony.world, colony.topo_scratch, colony.graph);
+  if (built.status != tess::TopologyStatus::Built) {
+    std::cerr << "region graph did not build\n";
+    return 1;
+  }
 
   // Colonists set out across the map; the wall will land in their way.
   for (std::size_t i = 0; i < colony.agents.size(); ++i) {

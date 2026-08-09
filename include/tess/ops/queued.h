@@ -873,12 +873,12 @@ class PlannedPhaseExecutionScratch;
 namespace detail {
 
 template <bool BindWorld, WritePolicy Policy, typename World, typename Fn>
-auto execute_validated_planned_operation_deferred_dirty(
+[[nodiscard]] auto execute_validated_planned_operation_deferred_dirty(
     World& world, const PlannedOperation& operation,
     PlannedDirtyAccumulator& dirty, Fn&& fn) -> PlannedExecutionResult;
 
 template <typename World>
-auto merge_planned_dirty_after_exception(
+[[nodiscard]] auto merge_planned_dirty_after_exception(
     World& world, PlannedPhaseExecutionScratch& scratch) noexcept
     -> PlannedDirtyMergeResult;
 
@@ -898,8 +898,9 @@ class PlannedDirtyAccumulator {
 
   /** Records a dirty chunk only when it belongs to `world`'s shape. */
   template <typename World>
-  auto record(const World& /*world*/, ChunkKey chunk, std::uint32_t dirty_mask,
-              Box3 bounds) -> PlannedDirtyRecordStatus {
+  [[nodiscard]] auto record(const World& /*world*/, ChunkKey chunk,
+                            std::uint32_t dirty_mask, Box3 bounds)
+      -> PlannedDirtyRecordStatus {
     static_assert(
         std::is_same_v<typename World::residency_type, AlwaysResident>,
         "Queued-op dirty recording requires an AlwaysResidentWorld; sparse "
@@ -1133,7 +1134,7 @@ class PhaseDirtyPartition {
 };
 
 template <WritePolicy Policy, typename World, typename Fn>
-auto execute_validated_phase_operation_deferred_dirty(
+[[nodiscard]] auto execute_validated_phase_operation_deferred_dirty(
     World& world, const PlannedOperation& operation, PhaseDirtyPartition& dirty,
     Fn&& fn) -> PlannedExecutionResult {
   auto ctx = block_ctx<Policy>(world, chunk_domain(operation.chunks()));
@@ -2205,7 +2206,8 @@ template <typename World>
  * stamp. Rejected merges leave both the world and accumulator unchanged.
  */
 template <typename World>
-auto merge_planned_dirty(World& world, PlannedDirtyAccumulator& dirty) noexcept
+[[nodiscard]] auto merge_planned_dirty(World& world,
+                                       PlannedDirtyAccumulator& dirty) noexcept
     -> PlannedDirtyMergeResult {
   static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
                 "Queued-op dirty merge requires an AlwaysResidentWorld; sparse "
@@ -2254,8 +2256,8 @@ auto merge_planned_dirty(World& world, PlannedDirtyAccumulator& dirty) noexcept
 }
 
 /** Moves compatible operation partitions into one reusable accumulator. */
-inline auto collect_planned_dirty(PlannedDirtyAccumulator& dirty,
-                                  PlannedDirtyPartitions& partitions)
+[[nodiscard]] inline auto collect_planned_dirty(
+    PlannedDirtyAccumulator& dirty, PlannedDirtyPartitions& partitions)
     -> PlannedDirtyCollectResult {
   auto* world_stamp = dirty.world_stamp_;
   for (const auto& partition : partitions.partitions_) {
@@ -2323,8 +2325,9 @@ inline auto collect_planned_dirty(PlannedDirtyAccumulator& dirty,
 
 template <typename World>
 /** Collects partitioned dirty records and applies their merged bounds. */
-auto merge_planned_dirty(World& world, PlannedDirtyPartitions& partitions,
-                         PlannedDirtyAccumulator& dirty_scratch)
+[[nodiscard]] auto merge_planned_dirty(World& world,
+                                       PlannedDirtyPartitions& partitions,
+                                       PlannedDirtyAccumulator& dirty_scratch)
     -> PlannedDirtyMergeResult {
   for (const auto& partition : partitions.partitions()) {
     const auto validation = partition.validation_status(world);
@@ -2353,7 +2356,8 @@ auto merge_planned_dirty(World& world, PlannedDirtyPartitions& partitions,
 
 template <typename World>
 /** Applies phase dirty records through the scratch object's accumulator. */
-auto merge_planned_dirty(World& world, PlannedPhaseExecutionScratch& scratch)
+[[nodiscard]] auto merge_planned_dirty(World& world,
+                                       PlannedPhaseExecutionScratch& scratch)
     -> PlannedDirtyMergeResult {
   if (scratch.world_stamp_ == nullptr) {
     return PlannedDirtyMergeResult{
@@ -2542,8 +2546,10 @@ template <WritePolicy Policy, typename World>
 
 /** Executes one validated operation and applies dirty metadata immediately. */
 template <WritePolicy Policy, typename World, typename Fn>
-auto execute_planned_operation(World& world, const PlannedOperation& operation,
-                               Fn&& fn) -> PlannedExecutionResult {
+[[nodiscard]] auto execute_planned_operation(World& world,
+                                             const PlannedOperation& operation,
+                                             Fn&& fn)
+    -> PlannedExecutionResult {
   const auto validation = validate_planned_operation<Policy>(world, operation);
   if (validation != PlannedExecutionStatus::Executed) {
     return PlannedExecutionResult{
@@ -2572,11 +2578,9 @@ auto execute_planned_operation(World& world, const PlannedOperation& operation,
 
 /** Executes one validated operation while deferring dirty metadata. */
 template <WritePolicy Policy, typename World, typename Fn>
-auto execute_planned_operation_deferred_dirty(World& world,
-                                              const PlannedOperation& operation,
-                                              PlannedDirtyAccumulator& dirty,
-                                              Fn&& fn)
-    -> PlannedExecutionResult {
+[[nodiscard]] auto execute_planned_operation_deferred_dirty(
+    World& world, const PlannedOperation& operation,
+    PlannedDirtyAccumulator& dirty, Fn&& fn) -> PlannedExecutionResult {
   const auto validation = validate_planned_operation<Policy>(world, operation);
   if (validation != PlannedExecutionStatus::Executed) {
     return PlannedExecutionResult{
@@ -2605,8 +2609,8 @@ auto execute_planned_operation_deferred_dirty(World& world,
  * Earlier writes remain applied and are included in the returned chunk count.
  */
 template <WritePolicy Policy, typename World, typename Fn>
-auto execute_plan(World& world, const ExecutionPlan& plan, Fn&& fn)
-    -> PlannedExecutionResult {
+[[nodiscard]] auto execute_plan(World& world, const ExecutionPlan& plan,
+                                Fn&& fn) -> PlannedExecutionResult {
   std::size_t chunk_count = 0;
   auto&& callback = fn;
   for (const auto& operation : plan.operations()) {
@@ -2627,8 +2631,10 @@ auto execute_plan(World& world, const ExecutionPlan& plan, Fn&& fn)
 
 /** Executes a plan in order while accumulating dirty metadata for later. */
 template <WritePolicy Policy, typename World, typename Fn>
-auto execute_plan_deferred_dirty(World& world, const ExecutionPlan& plan,
-                                 PlannedDirtyAccumulator& dirty, Fn&& fn)
+[[nodiscard]] auto execute_plan_deferred_dirty(World& world,
+                                               const ExecutionPlan& plan,
+                                               PlannedDirtyAccumulator& dirty,
+                                               Fn&& fn)
     -> PlannedExecutionResult {
   std::size_t chunk_count = 0;
   auto&& callback = fn;
@@ -2652,10 +2658,9 @@ auto execute_plan_deferred_dirty(World& world, const ExecutionPlan& plan,
 template <WritePolicy Policy, typename Executor, typename World, typename Fn>
   requires SerialExecutor<Executor>
 /** Executes a serial phase without per-operation dirty partitions. */
-auto execute_phase_deferred_dirty_with(Executor&& executor, World& world,
-                                       const ExecutionPlan& plan,
-                                       const ExecutionPhase& phase,
-                                       PlannedDirtyAccumulator& dirty, Fn&& fn)
+[[nodiscard]] auto execute_phase_deferred_dirty_with(
+    Executor&& executor, World& world, const ExecutionPlan& plan,
+    const ExecutionPhase& phase, PlannedDirtyAccumulator& dirty, Fn&& fn)
     -> PlannedExecutionResult {
   const auto operations = plan.operations();
   const auto phase_validation =
@@ -2707,11 +2712,10 @@ auto execute_phase_deferred_dirty_with(Executor&& executor, World& world,
 
 /** Executes a phase with operation-local dirty partitions for concurrency. */
 template <WritePolicy Policy, typename Executor, typename World, typename Fn>
-auto execute_phase_partitioned_dirty_with(Executor&& executor, World& world,
-                                          const ExecutionPlan& plan,
-                                          const ExecutionPhase& phase,
-                                          PlannedPhaseExecutionScratch& scratch,
-                                          Fn&& fn) -> PlannedExecutionResult {
+[[nodiscard]] auto execute_phase_partitioned_dirty_with(
+    Executor&& executor, World& world, const ExecutionPlan& plan,
+    const ExecutionPhase& phase, PlannedPhaseExecutionScratch& scratch, Fn&& fn)
+    -> PlannedExecutionResult {
   const auto operations = plan.operations();
   const auto phase_validation =
       detail::execution_phase_validation_status<Policy>(world, plan, phase);
@@ -2780,9 +2784,11 @@ auto execute_phase_partitioned_dirty_with(Executor&& executor, World& world,
 
 /** Executes a phase serially while deferring dirty metadata. */
 template <WritePolicy Policy, typename World, typename Fn>
-auto execute_phase_deferred_dirty(World& world, const ExecutionPlan& plan,
-                                  const ExecutionPhase& phase,
-                                  PlannedDirtyAccumulator& dirty, Fn&& fn)
+[[nodiscard]] auto execute_phase_deferred_dirty(World& world,
+                                                const ExecutionPlan& plan,
+                                                const ExecutionPhase& phase,
+                                                PlannedDirtyAccumulator& dirty,
+                                                Fn&& fn)
     -> PlannedExecutionResult {
   const SerialPhaseExecutor executor;
   return execute_phase_deferred_dirty_with<Policy>(executor, world, plan, phase,

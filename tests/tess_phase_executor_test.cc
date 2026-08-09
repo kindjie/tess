@@ -147,12 +147,12 @@ TEST(TessPhaseExecutor, DefaultPoolSwitchesBetweenNoThrowAndCatchingJobs) {
       [](std::size_t) noexcept -> tess::PlannedExecutionResult { return {}; });
   EXPECT_EQ(first.status, tess::PlannedExecutionStatus::Executed);
 
-  EXPECT_THROW(
-      pool.for_each_operation(0, 1,
-                              [](std::size_t) -> tess::PlannedExecutionResult {
-                                throw std::runtime_error{"expected"};
-                              }),
-      std::runtime_error);
+  EXPECT_THROW(static_cast<void>(pool.for_each_operation(
+                   0, 1,
+                   [](std::size_t) -> tess::PlannedExecutionResult {
+                     throw std::runtime_error{"expected"};
+                   })),
+               std::runtime_error);
 
   const auto last = pool.for_each_operation(
       0, 4,

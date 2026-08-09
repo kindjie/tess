@@ -778,10 +778,11 @@ void capture_field_product_dependencies(const World& world,
 /// Invalid goals return `InvalidGoal`. Reusing reserved product and scratch
 /// capacity avoids steady-state allocation.
 template <typename World, typename Tag, typename Provider>
-auto build_distance_field_product(const World& world, const GoalSet& goals,
-                                  DistanceFieldScratch& scratch,
-                                  DistanceFieldProduct& product,
-                                  const Provider& provider)
+[[nodiscard]] auto build_distance_field_product(const World& world,
+                                                const GoalSet& goals,
+                                                DistanceFieldScratch& scratch,
+                                                DistanceFieldProduct& product,
+                                                const Provider& provider)
     -> DistanceFieldResult {
   using Shape = typename World::shape_type;
   using Class = movement::movement_class_of<Tag>;
@@ -989,9 +990,10 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
 }
 
 template <typename World, typename Tag>
-auto build_distance_field_product(const World& world, const GoalSet& goals,
-                                  DistanceFieldScratch& scratch,
-                                  DistanceFieldProduct& product)
+[[nodiscard]] auto build_distance_field_product(const World& world,
+                                                const GoalSet& goals,
+                                                DistanceFieldScratch& scratch,
+                                                DistanceFieldProduct& product)
     -> DistanceFieldResult {
   return build_distance_field_product<World, Tag, AdjacentTransitions>(
       world, goals, scratch, product, AdjacentTransitions{});
@@ -999,11 +1001,9 @@ auto build_distance_field_product(const World& world, const GoalSet& goals,
 
 /// Builds a dense multi-goal weighted field into a reusable product.
 template <typename World, typename Class, typename Provider>
-auto build_weighted_distance_field_product(const World& world,
-                                           const GoalSet& goals,
-                                           DistanceFieldScratch& scratch,
-                                           DistanceFieldProduct& product,
-                                           const Provider& provider)
+[[nodiscard]] auto build_weighted_distance_field_product(
+    const World& world, const GoalSet& goals, DistanceFieldScratch& scratch,
+    DistanceFieldProduct& product, const Provider& provider)
     -> DistanceFieldResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>);
   static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
@@ -1131,11 +1131,9 @@ auto build_weighted_distance_field_product(const World& world,
 
 /// Builds a weighted product using regular adjacent transitions.
 template <typename World, typename Class>
-auto build_weighted_distance_field_product(const World& world,
-                                           const GoalSet& goals,
-                                           DistanceFieldScratch& scratch,
-                                           DistanceFieldProduct& product)
-    -> DistanceFieldResult {
+[[nodiscard]] auto build_weighted_distance_field_product(
+    const World& world, const GoalSet& goals, DistanceFieldScratch& scratch,
+    DistanceFieldProduct& product) -> DistanceFieldResult {
   return build_weighted_distance_field_product<World, Class,
                                                AdjacentTransitions>(
       world, goals, scratch, product, AdjacentTransitions{});
@@ -1145,10 +1143,9 @@ auto build_weighted_distance_field_product(const World& world,
 ///
 /// The returned path borrows `scratch` storage until its next mutation.
 template <typename World, typename Tag, typename Provider>
-auto distance_field_product_path(const World& world, Coord3 start,
-                                 const DistanceFieldProduct& product,
-                                 DistanceFieldScratch& scratch,
-                                 const Provider& provider) -> PathResult {
+[[nodiscard]] auto distance_field_product_path(
+    const World& world, Coord3 start, const DistanceFieldProduct& product,
+    DistanceFieldScratch& scratch, const Provider& provider) -> PathResult {
   using Shape = typename World::shape_type;
   using Class = movement::movement_class_of<Tag>;
   using UnitClass = movement::detail::UnitMovementClass<Class>;
@@ -1264,20 +1261,18 @@ auto distance_field_product_path(const World& world, Coord3 start,
 }
 
 template <typename World, typename Tag>
-auto distance_field_product_path(const World& world, Coord3 start,
-                                 const DistanceFieldProduct& product,
-                                 DistanceFieldScratch& scratch) -> PathResult {
+[[nodiscard]] auto distance_field_product_path(
+    const World& world, Coord3 start, const DistanceFieldProduct& product,
+    DistanceFieldScratch& scratch) -> PathResult {
   return distance_field_product_path<World, Tag, AdjacentTransitions>(
       world, start, product, scratch, AdjacentTransitions{});
 }
 
 /// Reconstructs an exact weighted path through a valid reusable product.
 template <typename World, typename Class, typename Provider>
-auto weighted_distance_field_product_path(const World& world, Coord3 start,
-                                          const DistanceFieldProduct& product,
-                                          DistanceFieldScratch& scratch,
-                                          const Provider& provider)
-    -> PathResult {
+[[nodiscard]] auto weighted_distance_field_product_path(
+    const World& world, Coord3 start, const DistanceFieldProduct& product,
+    DistanceFieldScratch& scratch, const Provider& provider) -> PathResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>);
   static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
                 "weighted distance-field products are dense-only");
@@ -1360,10 +1355,9 @@ auto weighted_distance_field_product_path(const World& world, Coord3 start,
 
 /// Reconstructs a weighted product path using regular adjacent transitions.
 template <typename World, typename Class>
-auto weighted_distance_field_product_path(const World& world, Coord3 start,
-                                          const DistanceFieldProduct& product,
-                                          DistanceFieldScratch& scratch)
-    -> PathResult {
+[[nodiscard]] auto weighted_distance_field_product_path(
+    const World& world, Coord3 start, const DistanceFieldProduct& product,
+    DistanceFieldScratch& scratch) -> PathResult {
   return weighted_distance_field_product_path<World, Class,
                                               AdjacentTransitions>(
       world, start, product, scratch, AdjacentTransitions{});
@@ -1373,9 +1367,10 @@ auto weighted_distance_field_product_path(const World& world, Coord3 start,
 ///
 /// The returned path borrows `scratch` storage until its next mutation.
 template <typename World, typename Tag, typename Provider>
-auto nearest_target(const World& world, Coord3 start,
-                    const DistanceFieldProduct& product,
-                    DistanceFieldScratch& scratch, const Provider& provider)
+[[nodiscard]] auto nearest_target(const World& world, Coord3 start,
+                                  const DistanceFieldProduct& product,
+                                  DistanceFieldScratch& scratch,
+                                  const Provider& provider)
     -> NearestTargetResult {
   // Consumes a dense-only distance-field product; guarded directly rather than
   // only transitively through distance_field_product_path below.
@@ -1396,19 +1391,21 @@ auto nearest_target(const World& world, Coord3 start,
 }
 
 template <typename World, typename Tag>
-auto nearest_target(const World& world, Coord3 start,
-                    const DistanceFieldProduct& product,
-                    DistanceFieldScratch& scratch) -> NearestTargetResult {
+[[nodiscard]] auto nearest_target(const World& world, Coord3 start,
+                                  const DistanceFieldProduct& product,
+                                  DistanceFieldScratch& scratch)
+    -> NearestTargetResult {
   return nearest_target<World, Tag, AdjacentTransitions>(
       world, start, product, scratch, AdjacentTransitions{});
 }
 
 /// Finds the lowest-cost goal represented by a weighted product.
 template <typename World, typename Class, typename Provider>
-auto weighted_nearest_target(const World& world, Coord3 start,
-                             const DistanceFieldProduct& product,
-                             DistanceFieldScratch& scratch,
-                             const Provider& provider) -> NearestTargetResult {
+[[nodiscard]] auto weighted_nearest_target(const World& world, Coord3 start,
+                                           const DistanceFieldProduct& product,
+                                           DistanceFieldScratch& scratch,
+                                           const Provider& provider)
+    -> NearestTargetResult {
   const auto path = weighted_distance_field_product_path<World, Class>(
       world, start, product, scratch, provider);
   const auto target = path.status == PathStatus::Found && !path.path.empty()
@@ -1420,9 +1417,9 @@ auto weighted_nearest_target(const World& world, Coord3 start,
 
 /// Finds the lowest-cost weighted goal using regular adjacent transitions.
 template <typename World, typename Class>
-auto weighted_nearest_target(const World& world, Coord3 start,
-                             const DistanceFieldProduct& product,
-                             DistanceFieldScratch& scratch)
+[[nodiscard]] auto weighted_nearest_target(const World& world, Coord3 start,
+                                           const DistanceFieldProduct& product,
+                                           DistanceFieldScratch& scratch)
     -> NearestTargetResult {
   return weighted_nearest_target<World, Class, AdjacentTransitions>(
       world, start, product, scratch, AdjacentTransitions{});

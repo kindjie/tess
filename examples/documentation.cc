@@ -77,7 +77,11 @@ auto check_topology(World& world) -> bool {
   // [getting-topology]
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  tess::build_region_graph<World, Walker>(world, scratch, graph);
+  const auto built =
+      tess::build_region_graph<World, Walker>(world, scratch, graph);
+  if (built.status != tess::TopologyStatus::Built) {
+    return false;  // The graph is unusable; do not precheck against it.
+  }
 
   const auto verdict =
       tess::precheck_path<Walker>(graph, world, start, goal, precheck_scratch);

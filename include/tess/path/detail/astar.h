@@ -13,8 +13,10 @@
 /// The returned path borrows `scratch` until its next mutation. Sparse-world
 /// resident boundaries follow `policy`.
 template <typename World, typename Tag>
-auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
-                [[maybe_unused]] MissingChunkPolicy policy) -> PathResult {
+[[nodiscard]] auto astar_path(const World& world, PathRequest request,
+                              PathScratch& scratch,
+                              [[maybe_unused]] MissingChunkPolicy policy)
+    -> PathResult {
   using Shape = typename World::shape_type;
   using Space = detail::NodeIndexSpace<World>;
   using Class = movement::movement_class_of<Tag>;
@@ -751,9 +753,9 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
 
 /// Finds a provider-aware minimum-step path through a passability class/tag.
 template <typename World, typename Tag, typename Provider>
-auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
-                MissingChunkPolicy policy, const Provider& provider)
-    -> PathResult {
+[[nodiscard]] auto astar_path(const World& world, PathRequest request,
+                              PathScratch& scratch, MissingChunkPolicy policy,
+                              const Provider& provider) -> PathResult {
   using Class = movement::movement_class_of<Tag>;
   using UnitClass = movement::detail::UnitMovementClass<Class>;
   return weighted_astar_path<World, UnitClass, Provider>(
@@ -765,10 +767,10 @@ auto astar_path(const World& world, PathRequest request, PathScratch& scratch,
 /// Zero entry cost is impassable. The returned path borrows `scratch` until
 /// mutation, and sparse-world resident boundaries follow `policy`.
 template <typename World, typename Class, typename Provider>
-auto weighted_astar_path(const World& world, PathRequest request,
-                         PathScratch& scratch,
-                         [[maybe_unused]] MissingChunkPolicy policy,
-                         const Provider& provider) -> PathResult {
+[[nodiscard]] auto weighted_astar_path(
+    const World& world, PathRequest request, PathScratch& scratch,
+    [[maybe_unused]] MissingChunkPolicy policy, const Provider& provider)
+    -> PathResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_astar_path<World, Class> requires a MovementClass; "
                 "legacy tag pairs go through the <World, PassableTag, CostTag> "
@@ -1137,8 +1139,9 @@ auto weighted_astar_path(const World& world, PathRequest request,
 }
 
 template <typename World, typename Class>
-auto weighted_astar_path(const World& world, PathRequest request,
-                         PathScratch& scratch, MissingChunkPolicy policy)
+[[nodiscard]] auto weighted_astar_path(const World& world, PathRequest request,
+                                       PathScratch& scratch,
+                                       MissingChunkPolicy policy)
     -> PathResult {
   return weighted_astar_path<World, Class, AdjacentTransitions>(
       world, request, scratch, policy, AdjacentTransitions{});
@@ -1148,8 +1151,9 @@ auto weighted_astar_path(const World& world, PathRequest request,
 // tag pair; LegacyWeighted preserves the historical semantics exactly,
 // including the cost-agnostic passability asymmetry.
 template <typename World, typename PassableTag, typename CostTag>
-auto weighted_astar_path(const World& world, PathRequest request,
-                         PathScratch& scratch, MissingChunkPolicy policy)
+[[nodiscard]] auto weighted_astar_path(const World& world, PathRequest request,
+                                       PathScratch& scratch,
+                                       MissingChunkPolicy policy)
     -> PathResult {
   return weighted_astar_path<World,
                              movement::LegacyWeighted<PassableTag, CostTag>>(

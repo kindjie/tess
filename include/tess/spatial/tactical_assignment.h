@@ -80,7 +80,7 @@ class TacticalAssignmentScratch {
 
 /// Greedily assigns scarce candidates in priority and stable-ID order.
 template <typename ScoreFn>
-auto assign_tactical_candidates_greedy(
+[[nodiscard]] auto assign_tactical_candidates_greedy(
     std::span<const TacticalRequest> requests,
     std::span<const TacticalCandidate> candidates, ScoreFn&& score,
     TacticalAssignmentScratch& scratch) -> TacticalAssignmentResult {

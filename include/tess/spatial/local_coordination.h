@@ -116,11 +116,10 @@ namespace detail {
 /// scratch vector; the worst case is quadratic in the largest per-request
 /// option count and in the request count.
 template <typename CanEnterFn>
-auto resolve_local_moves(std::span<const LocalMoveRequest> requests,
-                         std::span<const LocalMoveOption> options,
-                         CanEnterFn&& can_enter,
-                         LocalCoordinationScratch& scratch)
-    -> LocalCoordinationResult {
+[[nodiscard]] auto resolve_local_moves(
+    std::span<const LocalMoveRequest> requests,
+    std::span<const LocalMoveOption> options, CanEnterFn&& can_enter,
+    LocalCoordinationScratch& scratch) -> LocalCoordinationResult {
   scratch.request_order_.clear();
   scratch.option_owned_.assign(options.size(), 0);
   scratch.option_feasible_.assign(options.size(), 0);

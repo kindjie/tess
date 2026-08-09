@@ -506,13 +506,10 @@ class WeightedPortalSegmentCache {
 
 template <typename World, typename PassableTag, typename CostTag>
 /// Builds a weighted portal route while reusing class-bound cached segments.
-auto build_weighted_portal_route_product(const World& world,
-                                         PathRequest request,
-                                         std::span<const Coord3> waypoints,
-                                         PathScratch& scratch,
-                                         WeightedPortalSegmentCache& cache,
-                                         WeightedPortalRouteProduct& product)
-    -> PathResult {
+[[nodiscard]] auto build_weighted_portal_route_product(
+    const World& world, PathRequest request, std::span<const Coord3> waypoints,
+    PathScratch& scratch, WeightedPortalSegmentCache& cache,
+    WeightedPortalRouteProduct& product) -> PathResult {
   using Shape = World::shape_type;
   // Caches weighted portal segments keyed by chunk topology and tracks
   // chunk-version dependencies; dense-only until sparse topology (Slice 4) and

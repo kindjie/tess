@@ -7,7 +7,7 @@
 namespace detail {
 
 template <typename World, typename Class, std::uint32_t MaxCost>
-auto build_bounded_weighted_distance_field_core(
+[[nodiscard]] auto build_bounded_weighted_distance_field_core(
     const World& world, Coord3 goal, DistanceFieldScratch& scratch,
     [[maybe_unused]] MissingChunkPolicy policy,
     std::span<const std::uint64_t> settle_targets) -> DistanceFieldResult {
@@ -245,10 +245,9 @@ auto build_bounded_weighted_distance_field_core(
 /// Costs above `MaxCost` fall back to the unbounded builder. The result remains
 /// in caller-owned `scratch` and may allocate unless capacity was reserved.
 template <typename World, typename Class, std::uint32_t MaxCost>
-auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
-                                           DistanceFieldScratch& scratch,
-                                           MissingChunkPolicy policy)
-    -> DistanceFieldResult {
+[[nodiscard]] auto build_bounded_weighted_distance_field(
+    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
+    MissingChunkPolicy policy) -> DistanceFieldResult {
   return detail::build_bounded_weighted_distance_field_core<World, Class,
                                                             MaxCost>(
       world, goal, scratch, policy, {});
@@ -257,10 +256,9 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
 /// Builds a provider-aware field, conservatively using the unbounded queue.
 template <typename World, typename Class, std::uint32_t MaxCost,
           typename Provider>
-auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
-                                           DistanceFieldScratch& scratch,
-                                           MissingChunkPolicy policy,
-                                           const Provider& provider)
+[[nodiscard]] auto build_bounded_weighted_distance_field(
+    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
+    MissingChunkPolicy policy, const Provider& provider)
     -> DistanceFieldResult {
   (void)MaxCost;
   return build_weighted_distance_field<World, Class, Provider>(
@@ -276,11 +274,10 @@ namespace detail {
 // it verifies once per group and skips the per-member recompute
 // (audit 2026-07-11 M2).
 template <typename World, typename Class, typename Provider>
-auto weighted_distance_field_path_core(const World& world, Coord3 start,
-                                       Coord3 goal,
-                                       DistanceFieldScratch& scratch,
-                                       bool verify_residency,
-                                       const Provider& provider) -> PathResult {
+[[nodiscard]] auto weighted_distance_field_path_core(
+    const World& world, Coord3 start, Coord3 goal,
+    DistanceFieldScratch& scratch, bool verify_residency,
+    const Provider& provider) -> PathResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_distance_field_path<World, Class> requires a "
                 "MovementClass; legacy tag pairs go through the "
@@ -410,10 +407,9 @@ auto weighted_distance_field_path_core(const World& world, Coord3 start,
 }
 
 template <typename World, typename Class>
-auto weighted_distance_field_path_core(const World& world, Coord3 start,
-                                       Coord3 goal,
-                                       DistanceFieldScratch& scratch,
-                                       bool verify_residency) -> PathResult {
+[[nodiscard]] auto weighted_distance_field_path_core(
+    const World& world, Coord3 start, Coord3 goal,
+    DistanceFieldScratch& scratch, bool verify_residency) -> PathResult {
   return weighted_distance_field_path_core<World, Class, AdjacentTransitions>(
       world, start, goal, scratch, verify_residency, AdjacentTransitions{});
 }
@@ -425,17 +421,21 @@ auto weighted_distance_field_path_core(const World& world, Coord3 start,
 /// The returned path borrows `scratch` until its next mutation. A mismatched
 /// goal or sparse residency snapshot returns `NoPath`.
 template <typename World, typename Class>
-auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
-                                  DistanceFieldScratch& scratch) -> PathResult {
+[[nodiscard]] auto weighted_distance_field_path(const World& world,
+                                                Coord3 start, Coord3 goal,
+                                                DistanceFieldScratch& scratch)
+    -> PathResult {
   return detail::weighted_distance_field_path_core<World, Class>(
       world, start, goal, scratch, /*verify_residency=*/true);
 }
 
 /// Reconstructs a weighted field path using the matching special provider.
 template <typename World, typename Class, typename Provider>
-auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
-                                  DistanceFieldScratch& scratch,
-                                  const Provider& provider) -> PathResult {
+[[nodiscard]] auto weighted_distance_field_path(const World& world,
+                                                Coord3 start, Coord3 goal,
+                                                DistanceFieldScratch& scratch,
+                                                const Provider& provider)
+    -> PathResult {
   return detail::weighted_distance_field_path_core<World, Class, Provider>(
       world, start, goal, scratch, /*verify_residency=*/true, provider);
 }
@@ -476,10 +476,10 @@ template <typename World, typename Class, typename Provider>
 /// search, and path storage to avoid allocation once warm.
 template <typename World, typename Class, std::uint32_t MaxCost,
           typename Provider>
-auto weighted_path_batch(const World& world,
-                         std::span<const PathRequest> requests,
-                         WeightedPathBatchScratch& scratch,
-                         const Provider& provider)
+[[nodiscard]] auto weighted_path_batch(const World& world,
+                                       std::span<const PathRequest> requests,
+                                       WeightedPathBatchScratch& scratch,
+                                       const Provider& provider)
     -> std::span<const PathResult> {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_path_batch<World, Class, MaxCost> requires a "
@@ -676,9 +676,9 @@ auto weighted_path_batch(const World& world,
 
 template <typename World, typename Class, std::uint32_t MaxCost>
 /// Solves a bounded weighted batch without special transitions.
-auto weighted_path_batch(const World& world,
-                         std::span<const PathRequest> requests,
-                         WeightedPathBatchScratch& scratch)
+[[nodiscard]] auto weighted_path_batch(const World& world,
+                                       std::span<const PathRequest> requests,
+                                       WeightedPathBatchScratch& scratch)
     -> std::span<const PathResult> {
   return weighted_path_batch<World, Class, MaxCost, AdjacentTransitions>(
       world, requests, scratch, AdjacentTransitions{});
@@ -692,10 +692,9 @@ auto weighted_path_batch(const World& world,
 
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost>
-auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
-                                           DistanceFieldScratch& scratch,
-                                           MissingChunkPolicy policy)
-    -> DistanceFieldResult {
+[[nodiscard]] auto build_bounded_weighted_distance_field(
+    const World& world, Coord3 goal, DistanceFieldScratch& scratch,
+    MissingChunkPolicy policy) -> DistanceFieldResult {
   return build_bounded_weighted_distance_field<
       World, movement::LegacyWeighted<PassableTag, CostTag>, MaxCost>(
       world, goal, scratch, policy);
@@ -703,8 +702,10 @@ auto build_bounded_weighted_distance_field(const World& world, Coord3 goal,
 
 template <typename World, typename PassableTag, typename CostTag>
 /// Reconstructs a weighted path using separate legacy field tags.
-auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
-                                  DistanceFieldScratch& scratch) -> PathResult {
+[[nodiscard]] auto weighted_distance_field_path(const World& world,
+                                                Coord3 start, Coord3 goal,
+                                                DistanceFieldScratch& scratch)
+    -> PathResult {
   return weighted_distance_field_path<
       World, movement::LegacyWeighted<PassableTag, CostTag>>(world, start, goal,
                                                              scratch);
@@ -713,9 +714,9 @@ auto weighted_distance_field_path(const World& world, Coord3 start, Coord3 goal,
 template <typename World, typename PassableTag, typename CostTag,
           std::uint32_t MaxCost>
 /// Solves a weighted batch using separate legacy passability and cost tags.
-auto weighted_path_batch(const World& world,
-                         std::span<const PathRequest> requests,
-                         WeightedPathBatchScratch& scratch)
+[[nodiscard]] auto weighted_path_batch(const World& world,
+                                       std::span<const PathRequest> requests,
+                                       WeightedPathBatchScratch& scratch)
     -> std::span<const PathResult> {
   return weighted_path_batch<
       World, movement::LegacyWeighted<PassableTag, CostTag>, MaxCost>(
