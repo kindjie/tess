@@ -25,6 +25,12 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000
     },
+    "fields/cache_store_reusing": {
+      "max_real_time_ns": null,
+      "max_cpu_time_ns": 323000,
+      "note":
+          "BOOTSTRAP 4x M3 Max reading (80,749 ns), not a calibrated CI value: member-product hand-back store path (#122), previously unmeasured; recalibrate at 2x the max over ten CI baselines"
+    },
     "fields/cache_eviction": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 1000000

@@ -771,6 +771,7 @@ fields/goalset_build_16|\
 fields/goalset_build_256|\
 fields/cache_hit|\
 fields/cache_miss_store|\
+fields/cache_store_reusing|\
 fields/cache_eviction|\
 fields/nearest_target|\
 fields/build_alloc_gate}"

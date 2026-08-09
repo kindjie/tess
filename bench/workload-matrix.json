@@ -672,7 +672,7 @@
     },
     {
       "family": "fields/products",
-      "pattern": "^fields/(?:goalset_build_(?:1|16|256)|nearest_target|cache_hit|cache_miss_store|cache_eviction|cache_scan_entries_(?:8|128)|build_alloc_gate)$",
+      "pattern": "^fields/(?:goalset_build_(?:1|16|256)|nearest_target|cache_hit|cache_miss_store|cache_store_reusing|cache_eviction|cache_scan_entries_(?:8|128)|build_alloc_gate)$",
       "captures": {},
       "defaults": {
         "world_extent": "64x64",
@@ -701,6 +701,9 @@
         },
         "fields/cache_miss_store": {
           "payload": "2 goal sets, budget 1.5 products: miss+build+store"
+        },
+        "fields/cache_store_reusing": {
+          "payload": "2 goal sets, budget 1.5 products: member hand-back store"
         },
         "fields/cache_eviction": {
           "payload": "3 goal sets, budget 2.5 products: LRU eviction"

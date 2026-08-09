@@ -230,6 +230,58 @@ void BM_fields_cache_miss_store(benchmark::State& state) {
   }
 }
 
+// Member-product rebuild through store_reusing: one product object is
+// held across iterations, rebuilt on every miss, and stored with the
+// hand-back overload, so the displaced entry's storage returns to the
+// caller and the next build reuses its capacity. This is the runtime
+// call-site pattern #122 changed; no other cell exercises it — the
+// fresh-product cells above use the rvalue store overload that #122
+// deliberately kept as a thin wrapper, which is how a binary-level
+// fields improvement was once misattributed to #122 (optimization log,
+// 2026-08-08). Contrast with cache_miss_store: same two-key cycle and
+// budget, differing only in product lifetime and store overload, so
+// the pair's delta isolates the hand-back path's steady-state cost.
+void BM_fields_cache_store_reusing(benchmark::State& state) {
+  static auto* world = make_world();
+  tess::GoalSet goals_a;
+  tess::GoalSet goals_b;
+  fill_goals(goals_a, 4);
+  fill_goals(goals_b, 8);
+  tess::DistanceFieldScratch scratch;
+  scratch.reserve_nodes(kTileCount);
+  // One product is ~kTileCount * 4 bytes of distances plus metadata.
+  tess::FieldProductCache cache(kTileCount * 4 * 3 / 2);
+  cache.reserve_entries(4);
+  tess::DistanceFieldProduct product;
+  product.reserve_nodes(kTileCount);
+  product.reserve_dependencies(FieldWorld::chunk_count);
+
+  auto flip = false;
+  const tess::DistanceFieldProduct* stored = nullptr;
+  for (auto _ : state) {
+    const auto& goals = flip ? goals_a : goals_b;
+    flip = !flip;
+    if (cache.lookup<FieldWorld, PassableTag>(*world, goals) == nullptr) {
+      (void)tess::build_distance_field_product<FieldWorld, PassableTag>(
+          *world, goals, scratch, product);
+      stored = cache.store_reusing<FieldWorld, PassableTag>(product);
+      benchmark::DoNotOptimize(stored);
+    }
+  }
+  // Guarded by iteration count: the harness's 1-iteration calibration
+  // pass has only seen the first miss. The stored pointer and the
+  // resident entry prove the hand-back store path actually ran — a
+  // rejecting store would keep every lookup missing and silently turn
+  // this cell into a build-only loop.
+  if (state.iterations() >= 8) {
+    fields_bench_check(
+        cache.stats().misses >= static_cast<std::size_t>(state.iterations()),
+        "cache_store_reusing left the miss path");
+    fields_bench_check(stored != nullptr && cache.stats().entries >= 1,
+                       "store_reusing rejected its stores");
+  }
+}
+
 // Byte-budgeted eviction: a budget that holds ~2 products with 3 keys
 // cycling forces LRU eviction on every store.
 void BM_fields_cache_eviction(benchmark::State& state) {
@@ -381,6 +433,7 @@ BENCHMARK(BM_fields_goalset_build_256)->Name("fields/goalset_build_256");
 BENCHMARK(BM_fields_nearest_target)->Name("fields/nearest_target");
 BENCHMARK(BM_fields_cache_hit)->Name("fields/cache_hit");
 BENCHMARK(BM_fields_cache_miss_store)->Name("fields/cache_miss_store");
+BENCHMARK(BM_fields_cache_store_reusing)->Name("fields/cache_store_reusing");
 BENCHMARK(BM_fields_cache_eviction)->Name("fields/cache_eviction");
 BENCHMARK(BM_fields_cache_scan_at<8>)->Name("fields/cache_scan_entries_8");
 BENCHMARK(BM_fields_cache_scan_at<128>)->Name("fields/cache_scan_entries_128");
