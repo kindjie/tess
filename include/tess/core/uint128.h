@@ -6,8 +6,23 @@
 #include <concepts>
 #include <cstdint>
 
-namespace tess::detail {
+namespace tess {
 
+// Public because TileKey::value is spelled with it: any shape needing more
+// than 64 tile-key bits gets a TileKey whose `value` is this type, and a
+// consumer reading that member must be able to name it. Smaller shapes get
+// a plain std::uint64_t, so most consumers never see this at all.
+//
+// It is a BIT CARRIER, not a general 128-bit integer, and the operator set
+// is deliberately partial: implicit construction from an unsigned integer,
+// comparison, the multiply/subtract/bitwise/shift operations key packing
+// needs, and EXPLICIT narrowing to std::uint64_t. Widening is implicit so
+// integer literals keep working as counts; narrowing is not, because an
+// implicit one would silently drop the high half at any call taking a
+// std::uint64_t. There is no addition, division, modulo or increment, and
+// none is coming as a side effect -- tests/tess_uint128_surface_test.cc
+// pins the set in both directions, so widening it means editing that file.
+//
 // Portable 128-bit unsigned integer used unconditionally on every compiler,
 // so Clang and GCC CI exercise exactly the code MSVC compiles (MSVC has no
 // unsigned __int128). It provides only the operations shape.h needs:
@@ -15,6 +30,7 @@ namespace tess::detail {
 // explicit narrowing to std::uint64_t. Arithmetic wraps modulo 2^128 like
 // the builtin. Shifts define counts >= 128 as zero and never shift a
 // std::uint64_t by 64, so no operation has undefined behavior.
+/// Packed 128-bit key storage with a deliberately partial operator set.
 struct UInt128 {
   // hi is declared first so the defaulted comparisons order lexicographically
   // by (hi, lo), which matches numeric order.
@@ -33,9 +49,15 @@ struct UInt128 {
   // NOLINTNEXTLINE(google-explicit-constructor)
   constexpr UInt128(T value) noexcept : lo(value) {}
 
-  // Implicit, so integer literals in existing code keep working.
+  // Implicit, so integer literals in existing code keep working. Templated
+  // over signed integral types rather than taking a plain `int`: an `int`
+  // parameter accepted any wider signed value through a silent narrowing
+  // conversion, so `UInt128 v = std::int64_t{1} << 32` was zero. Negative
+  // values remain a precondition violation rather than a wrap.
+  template <typename T>
+    requires std::signed_integral<T>
   // NOLINTNEXTLINE(google-explicit-constructor)
-  constexpr UInt128(int value) noexcept
+  constexpr UInt128(T value) noexcept
       : lo((TESS_ASSERT(value >= 0), static_cast<std::uint64_t>(value))) {}
 
   [[nodiscard]] static constexpr auto from_parts(std::uint64_t high,
@@ -138,4 +160,4 @@ struct UInt128 {
   }
 };
 
-}  // namespace tess::detail
+}  // namespace tess

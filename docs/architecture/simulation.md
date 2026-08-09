@@ -151,6 +151,11 @@ span, or make their tile impassable to the movement class, which is the
   Edge conflicts follow the shared `SwapPolicy` from `JointMoveOptions`;
   vertex conflicts backtrack. The advance is dense-only (like the
   distance-field product family) and reuses `JointMoveScratch`.
+- The oracle's requirements are the `PibtRanking` concept: callable as
+  `rank(agent_index, coord)` returning something convertible to
+  `std::uint32_t`. It constrains the public entry points, so a caller whose
+  lambda is rejected sees the constraint named in the diagnostic — which
+  is why it is public rather than a `detail` name they could not spell.
 - **The ranking oracle is the caller's, and it MUST share the agent's
   movement-class passability.** `rank(agent_index, coord)` returns lower
   values for better tiles; a terrain-only oracle under a settled-aware

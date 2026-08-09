@@ -323,10 +323,10 @@ inline constexpr CostRangeAssessment path_cost_range_assessment = [] {
   using Class = movement::movement_class_of<MovementClass>;
   using Maximum =
       detail::MovementClassMaximum<Class, typename World::schema_type>;
-  const auto tile_count = detail::UInt128{World::chunk_count} *
-                          detail::UInt128{World::local_tile_count};
-  const auto edges = tile_count - detail::UInt128{1};
-  if (edges == detail::UInt128{0}) {
+  const auto tile_count =
+      UInt128{World::chunk_count} * UInt128{World::local_tile_count};
+  const auto edges = tile_count - UInt128{1};
+  if (edges == UInt128{0}) {
     return CostRangeAssessment::ProvenSafe;
   }
   if constexpr (!Maximum::known || !detail::provider_maximum_known<Provider>) {
@@ -610,7 +610,7 @@ class ResolvedTransitionModel {
       return;
     }
     const auto precise_cost =
-        detail::UInt128{entry_cost} * detail::UInt128{candidate.multiplier};
+        UInt128{entry_cost} * UInt128{candidate.multiplier};
     constexpr auto infinite = std::numeric_limits<std::uint32_t>::max();
     sink(TransitionProbe<>{
         .to = candidate.to,
@@ -667,8 +667,7 @@ class ResolvedTransitionModel {
     if (candidate.cost == 0) {
       return;
     }
-    const auto precise_cost =
-        detail::UInt128{candidate.cost} * detail::UInt128{cost_scale};
+    const auto precise_cost = UInt128{candidate.cost} * UInt128{cost_scale};
     constexpr auto infinite = std::numeric_limits<std::uint32_t>::max();
     sink(TransitionProbe<>{
         .to = candidate.to,
@@ -699,11 +698,9 @@ class ResolvedTransitionModel {
     }
     const auto minor = std::min(a, b);
     const auto major = std::max(a, b);
-    const auto ticks =
-        detail::add(detail::UInt128{minor} *
-                        detail::UInt128{step_policy::diagonal_step_multiplier},
-                    detail::UInt128{major - minor} *
-                        detail::UInt128{step_policy::cost_scale});
+    const auto ticks = detail::add(
+        UInt128{minor} * UInt128{step_policy::diagonal_step_multiplier},
+        UInt128{major - minor} * UInt128{step_policy::cost_scale});
     return detail::saturating_u32(ticks);
   }
 

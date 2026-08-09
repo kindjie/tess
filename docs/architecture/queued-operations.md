@@ -245,6 +245,14 @@ buffer instead of sharing one `PlannedDirtyAccumulator` across callbacks. The
 phase partitions contain only record vectors; one shape/chunk stamp on the
 enclosing scratch object protects every partition without widening the hot
 per-operation record-vector stride.
+
+`PhaseDirtyPartition` is the partition type itself, returned as a span by
+`dirty_partitions()`. It is public because that accessor is: a caller
+reading per-operation dirty records has to name what it received, and until
+recently the name lived in `detail`, which carries no source-compatibility
+guarantee. Its own surface is small on purpose — `reserve`, `clear`,
+`record`, and `records()` — because it deliberately carries no world stamp
+of its own.
 `collect_planned_dirty(...)` appends partition records into a caller-owned
 accumulator and clears the partitions. `merge_planned_dirty(world, partitions,
 scratch)` and `merge_planned_dirty(world, phase_scratch)` collect those records,

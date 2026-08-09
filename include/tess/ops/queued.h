@@ -1097,19 +1097,14 @@ class PlannedDirtyPartitions {
   std::size_t records_per_partition_reserve_ = 0;
 };
 
-namespace detail {
-
-template <WritePolicy Policy, typename World>
-using PlannedChunkView =
-    ChunkView<typename BlockCtx<World, Policy>::view_world_type>;
-
-template <WritePolicy Policy, typename World, typename Fn>
-inline constexpr bool planned_callback_is_nothrow =
-    std::is_nothrow_invocable_v<Fn&, PlannedChunkView<Policy, World>&>;
-
+// Public because a public accessor returns a span of it:
+// PhaseExecutionScratch::dirty_partitions() hands these out, so a caller
+// reading per-operation dirty records had to name a `detail` type that
+// docs/style.md says carries no source-compatibility guarantee.
 // Scratch-owned phase partitions carry no independent world stamp. The
 // enclosing scratch object owns one capability stamp, and this record-only
 // type cannot be passed to the public dirty-merge APIs for another world.
+/// Per-operation dirty-record buffer owned by a phase execution scratch.
 class PhaseDirtyPartition {
  public:
   void reserve(std::size_t count) { records_.reserve(count); }
@@ -1132,6 +1127,16 @@ class PhaseDirtyPartition {
  private:
   std::vector<PlannedDirtyRecord> records_;
 };
+
+namespace detail {
+
+template <WritePolicy Policy, typename World>
+using PlannedChunkView =
+    ChunkView<typename BlockCtx<World, Policy>::view_world_type>;
+
+template <WritePolicy Policy, typename World, typename Fn>
+inline constexpr bool planned_callback_is_nothrow =
+    std::is_nothrow_invocable_v<Fn&, PlannedChunkView<Policy, World>&>;
 
 template <WritePolicy Policy, typename World, typename Fn>
 [[nodiscard]] auto execute_validated_phase_operation_deferred_dirty(
@@ -1353,7 +1358,7 @@ class PlannedPhaseExecutionScratch {
   }
 
   [[nodiscard]] auto dirty_partitions() const noexcept
-      -> std::span<const detail::PhaseDirtyPartition> {
+      -> std::span<const PhaseDirtyPartition> {
     return dirty_partitions_;
   }
 
@@ -1396,7 +1401,7 @@ class PlannedPhaseExecutionScratch {
   }
 
   [[nodiscard]] auto dirty_for_operation(std::size_t index) noexcept
-      -> detail::PhaseDirtyPartition& {
+      -> PhaseDirtyPartition& {
     return dirty_partitions_[index];
   }
 
@@ -1417,7 +1422,7 @@ class PlannedPhaseExecutionScratch {
     return results_;
   }
 
-  std::vector<detail::PhaseDirtyPartition> dirty_partitions_;
+  std::vector<PhaseDirtyPartition> dirty_partitions_;
   std::vector<PlannedExecutionResult> results_;
   PlannedDirtyAccumulator merged_dirty_;
   std::size_t records_per_partition_reserve_ = 0;

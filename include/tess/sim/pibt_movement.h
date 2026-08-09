@@ -69,12 +69,18 @@ struct PibtFrame {
   Candidate candidates[kPibtMaxCandidates] = {};
 };
 
+}  // namespace detail
+
+// Public because it constrains public entry points. A caller whose ranking
+// callable does not satisfy this gets the constraint named in the error,
+// and previously could not name the thing it had to satisfy: the concept
+// deciding whether their lambda is accepted lived in `detail`, which
+// docs/style.md says carries no source-compatibility guarantee.
+/// Requirements on a ranking callable supplied to the PIBT movement tier.
 template <typename Ranking>
 concept PibtRanking = requires(Ranking& rank, std::size_t agent, Coord3 coord) {
   { rank(agent, coord) } -> std::convertible_to<std::uint32_t>;
 };
-
-}  // namespace detail
 
 // Index-paired with the agent span handed to the advance, exactly like
 // `PathAgentRoutes`: a caller that reorders, removes, or compacts its agents
@@ -130,7 +136,7 @@ struct PibtPriorities {
 /// Advances agents one step with PIBT decisions and joint-commit application.
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag, typename Ranking, typename OnCommit>
-  requires detail::PibtRanking<Ranking> &&
+  requires PibtRanking<Ranking> &&
            std::invocable<OnCommit&, std::size_t, Coord3, Coord3>
 auto advance_path_agents_with_pibt(
     World& world, std::span<PathAgentState> agents,
@@ -497,7 +503,7 @@ auto advance_path_agents_with_pibt(
 /// Advances agents with PIBT decisions and no commit observer.
 template <typename World, typename ClassOrTag, typename OccupancyTag,
           typename ReservationTag, typename Ranking>
-  requires detail::PibtRanking<Ranking>
+  requires PibtRanking<Ranking>
 auto advance_path_agents_with_pibt(
     World& world, std::span<PathAgentState> agents,
     const PathAgentRoutes& routes, PibtPriorities& priorities,
@@ -516,7 +522,7 @@ auto advance_path_agents_with_pibt(
 /// Advances one weighted path-agent tick with PIBT movement decisions.
 template <typename World, typename Class, std::uint32_t MaxCost,
           typename OccupancyTag, typename ReservationTag, typename Ranking>
-  requires detail::PibtRanking<Ranking>
+  requires PibtRanking<Ranking>
 [[nodiscard]] auto tick_weighted_path_agents_with_pibt(
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PibtPriorities& priorities,

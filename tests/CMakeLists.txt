@@ -162,6 +162,15 @@ if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
   )
 endif()
 
+add_executable(tess_uint128_surface_test tess_uint128_surface_test.cc)
+target_link_libraries(
+  tess_uint128_surface_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_uint128_surface_test)
+
+tess_discover_tests(tess_uint128_surface_test LABELS core)
+
 add_executable(tess_shape_test allocation_counter.cc tess_shape_test.cc)
 target_link_libraries(tess_shape_test PRIVATE tess::tess GTest::gtest_main)
 tess_apply_project_options(tess_shape_test)
