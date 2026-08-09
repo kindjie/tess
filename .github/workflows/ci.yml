@@ -420,6 +420,7 @@ jobs:
           tests/test_thread_scaling_chart.py
           tests/test_sweep_cpu_plan.py
           tests/test_budgeted_artifacts.py
+          tests/test_compare_budgeted_passes.py
           tests/test_changelog_fragments.py
           tests/test_check_mermaid.py
 

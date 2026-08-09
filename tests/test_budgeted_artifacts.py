@@ -442,6 +442,24 @@ def test_search_requires_run_provenance(tmp_path):
   assert failures and "run.compiler" in failures[0]
 
 
+def test_counters_only_in_counter_pass(tmp_path):
+  """Detailed counters belong to counter-pass artifacts only."""
+  document = saturated_artifact()
+  document["counters"] = {"path": {"heap_pops": 1}}
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "counter-pass" in failures[0]
+  document["experiment"]["pass"] = "counter"
+  assert cba.validate_file(write(tmp_path, document)) == []
+
+
+def test_unknown_pass_fails_closed(tmp_path):
+  """An unknown pass marker fails closed."""
+  document = saturated_artifact()
+  document["experiment"]["pass"] = "pmu"
+  failures = cba.validate_file(write(tmp_path, document))
+  assert failures and "unknown pass" in failures[0]
+
+
 def test_deep_copy_fixture_isolated():
   """Fixture builders return fresh documents per call."""
   # Guard: fixtures are rebuilt per test, not shared mutable state.

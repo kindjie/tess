@@ -95,6 +95,29 @@ target_include_directories(
 )
 tess_apply_project_options(tess_bench_budgeted_progress)
 
+# The counter-pass twin (design section 11.2): identical sources with
+# the compile-gated diagnostics enabled. Its wall numbers are never
+# published — it exists to explain the timing pass's numbers, compared
+# under the section 11.2 tolerances by tools/compare_budgeted_passes.py.
+# Deliberately excludes tess_diagnostics_alloc_hooks.cc: global
+# new/delete replacement is the documented 12-21% distortion source
+# and this increment's counters block does not use allocation counts.
+add_executable(tess_bench_budgeted_progress_diagnostics
+               tess_budgeted_progress_bench.cc)
+target_link_libraries(
+  tess_bench_budgeted_progress_diagnostics
+  PRIVATE tess::tess
+)
+target_include_directories(
+  tess_bench_budgeted_progress_diagnostics
+  PRIVATE "${PROJECT_SOURCE_DIR}/tests"
+)
+target_compile_definitions(
+  tess_bench_budgeted_progress_diagnostics
+  PRIVATE TESS_ENABLE_DIAGNOSTICS
+)
+tess_apply_project_options(tess_bench_budgeted_progress_diagnostics)
+
 if(TESS_ENABLE_ENTT)
   include(TessEnttDeps)
   tess_require_entt()
@@ -812,14 +835,55 @@ if(BUILD_TESTING)
   if(Python3_Interpreter_FOUND)
     set(budgeted_smoke_artifact_paths "")
     foreach(budgeted_cell astar_unit field_product resumable_work
-            astar_arrival_600 astar_arrival_2400 astar_arrival_9600
-            astar_arrival_paced_600 astar_capacity colony_topology
-            queued_per_chunk)
+            astar_arrival_60 astar_arrival_600 astar_arrival_2400
+            astar_arrival_9600 astar_arrival_paced_600 astar_capacity
+            colony_topology queued_per_chunk)
       foreach(budgeted_ns 125000 500000 2000000 8000000)
         list(APPEND budgeted_smoke_artifact_paths
           "${CMAKE_CURRENT_BINARY_DIR}/${budgeted_cell}_${budgeted_ns}ns.json")
       endforeach()
     endforeach()
+    set(budgeted_counter_dir "${CMAKE_CURRENT_BINARY_DIR}/counter-pass")
+    file(MAKE_DIRECTORY "${budgeted_counter_dir}")
+    add_test(
+      NAME tess_bench_budgeted_progress_counter_smoke
+      COMMAND
+        tess_bench_budgeted_progress_diagnostics
+        --smoke
+        --pass counter
+        --out-dir ${budgeted_counter_dir}
+    )
+    set_tests_properties(tess_bench_budgeted_progress_counter_smoke
+      PROPERTIES FIXTURES_SETUP budgeted_counter_artifacts)
+    set(budgeted_counter_artifact_paths "")
+    foreach(budgeted_cell astar_unit field_product resumable_work
+            astar_arrival_60 astar_arrival_600)
+      foreach(budgeted_ns 125000 500000 2000000 8000000)
+        list(APPEND budgeted_counter_artifact_paths
+          "${budgeted_counter_dir}/${budgeted_cell}_${budgeted_ns}ns.json")
+      endforeach()
+    endforeach()
+    add_test(
+      NAME tess_bench_budgeted_progress_counter_artifacts_valid
+      COMMAND
+        Python3::Interpreter
+        ${PROJECT_SOURCE_DIR}/tools/check_budgeted_artifacts.py
+        ${budgeted_counter_artifact_paths}
+    )
+    set_tests_properties(tess_bench_budgeted_progress_counter_artifacts_valid
+      PROPERTIES FIXTURES_REQUIRED budgeted_counter_artifacts)
+    add_test(
+      NAME tess_bench_budgeted_progress_pass_comparison
+      COMMAND
+        Python3::Interpreter
+        ${PROJECT_SOURCE_DIR}/tools/compare_budgeted_passes.py
+        --timing-dir ${CMAKE_CURRENT_BINARY_DIR}
+        --counter-dir ${budgeted_counter_dir}
+        --smoke-report-only
+    )
+    set_tests_properties(tess_bench_budgeted_progress_pass_comparison
+      PROPERTIES FIXTURES_REQUIRED
+      "budgeted_smoke_artifacts;budgeted_counter_artifacts")
     add_test(
       NAME tess_bench_budgeted_progress_smoke_artifacts_valid
       COMMAND
