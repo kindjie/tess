@@ -97,9 +97,12 @@ const auto nearest = tess::nearest_target<World, PassableTag>(
 
     Routing itself is optimal per agent — a route is planned without
     reference to where other agents are. Contention is resolved at *move*
-    time instead, by two shipped tiers: joint movement admits a tick's
-    moves together so agents do not trade places or stack, and the opt-in
-    PIBT tier additionally lets a blocked agent yield off its route so a
-    head-on in a dead-end corridor resolves. Neither spreads a crowd
-    across alternative routes, which is what a congestion field would do.
-    See [simulation](../architecture/simulation.md).
+    time instead, by two shipped tiers. Joint movement admits a tick's
+    moves together so agents never stack, and by default (`SwapPolicy::
+    Forbid`) a mutually blocked pair stays blocked rather than exchanging
+    tiles; `Permit` and `PermitOnDeadlock` relax that deliberately. The
+    opt-in PIBT tier additionally lets a blocked agent yield *off* its
+    route, which resolves a head-on that `Forbid` alone leaves blocked.
+    Neither tier spreads a crowd across alternative routes, which is what
+    a congestion field would do. See
+    [simulation](../architecture/simulation.md).

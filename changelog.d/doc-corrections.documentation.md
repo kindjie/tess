@@ -9,8 +9,10 @@
   dependencies — which allocates — before the status comes back, as the
   exception-free note already recorded. The pathfinding guide said all
   shipped routing "will not spread or queue a crowd" without mentioning the
-  two shipped movement-commit tiers that resolve contention, which are in
-  the public umbrella header but appeared on no reader-facing page; the
-  roadmap's shipped list now names them. And `ScheduleTaskDesc` was
+  two shipped movement-commit tiers that resolve contention. Both are
+  documented in the simulation architecture note, but neither appeared in
+  the pathfinding guide nor in the roadmap's shipped list, which
+  `guide/README.md` designates authoritative; both now name them, with the
+  swap policy stated rather than assumed. And `ScheduleTaskDesc` was
   described as a phase and cadence, omitting the required static-storage
   name.
