@@ -126,18 +126,21 @@ campaign record and scaling caveats.
 
 ## Trend snapshot
 
-Data from CI run 29211536546, collected 2026-07-12 16:09 PDT; the snapshot
-may be stale by a few commits.
+Data from CI run 31147152368 at commit `bd304e7`, collected 2026-08-06
+22:13 PDT. It is a point-in-time snapshot, not a live view: it is
+regenerated on the triggers listed in [`CONTRIBUTING.md`][contributing],
+so between regenerations it lags main by however many commits have landed
+since.
 
 ![Benchmark trend snapshot](assets/benchmark-trends.svg)
 
 | Benchmark | Latest median CPU ns |
 | --- | ---: |
-| `block/context_iteration_2d` | 277.272 |
-| `block/chunk_tile_iteration_2d` | 1484.974 |
-| `block/chunk_boundary_scan_2d` | 11004.955 |
-| `storage/world_chunks_iteration` | 165.552 |
-| `storage/world_dirty_chunks_iteration` | 199.969 |
+| `block/context_iteration_2d` | 260.125 |
+| `block/chunk_tile_iteration_2d` | 1708.794 |
+| `block/chunk_boundary_scan_2d` | 12244.667 |
+| `storage/world_chunks_iteration` | 118.928 |
+| `storage/world_dirty_chunks_iteration` | 144.609 |
 
 CI collects baseline artifacts on every main run; these medians come from
 those artifacts. Individual optimization experiments, rejected ideas, and

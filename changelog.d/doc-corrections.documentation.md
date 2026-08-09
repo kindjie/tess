@@ -43,3 +43,9 @@
   `CMakePresets.json` and every `--target` against the declared CMake
   targets — statically, because executing them would just rebuild what CI
   already builds.
+- The benchmark trend snapshot is regenerated from the ten baseline
+  snapshots on the `benchmark-data` branch. It had been pinned to a
+  2026-07-12 CI run — 138 commits behind, spanning a confirmed regression
+  and its fix — while the page described it as possibly "stale by a few
+  commits". The page now names the run and commit the data comes from and
+  says plainly that it lags main between regenerations.
