@@ -237,6 +237,46 @@ The conditions are the contract:
 - First touch and growth allocate. There is no global "never allocates
   after warmup" property, and claiming one would be false.
 
+## Residency coverage
+
+Four families are dense-only. They `static_assert` on `AlwaysResident`
+and do not compile against a `SparseResidentWorld`:
+
+- the queued-operations layer (`ops/queued.h`)
+- the weighted distance-field product family
+  (`path/field_product_cache.h`)
+- the portal-route product family (`path/portal_route.h`,
+  `path/portal_segment_cache.h`)
+- the PIBT tier (`sim/pibt_movement.h`)
+
+This is a residency coverage boundary, not an experimental marker. These
+families are production-promoted and tested on dense worlds; what is
+missing is the sparse dimension. They stay in the ordinary public
+namespace rather than moving to `include/tess/experimental/`, because
+relocating them would churn every consumer include to signal a maturity
+difference that is not the actual distinction.
+
+Being outside `experimental/` is not a stability promise. Every `0.x`
+release is pre-stable — see [support](support.md) — and that applies to
+these families on dense worlds exactly as it does to the rest of the
+surface.
+
+One concrete change to expect: absorbing sparse residency will need the
+`MissingChunkPolicy` parameter that the sparse-aware path entry points
+already carry (`astar_path` and, as of the route-cache work,
+`cached_astar_path`). When these families gain sparse support, expect
+that parameter on their entry points, defaulted to `TreatAsBlocked` so
+existing behaviour is preserved — but the signatures will change.
+
+Note that `weighted_path_batch` is residency-generic and *does* compile
+against a sparse world, but currently hardcodes `TreatAsBlocked`: it
+answers `NoPath` across a missing chunk rather than `Indeterminate`.
+Threading the policy there is open work.
+
+Everything else in the public surface is residency-generic: it either
+works on both world kinds, or names the difference in its own
+documentation.
+
 ## Platforms and compilers
 
 tess requires a C++20 compiler and CMake 3.25 or newer. Beyond that,
