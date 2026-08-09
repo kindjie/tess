@@ -51,6 +51,10 @@ struct RouteCacheStats {
   // (world, class) to stay at zero.
   std::size_t class_rebinds = 0;
   std::size_t provider_rebinds = 0;
+  // Whole-cache drops forced by a lookup with a different MissingChunkPolicy.
+  // Always zero on a dense world, where the policy cannot change any answer
+  // and the binding is normalized away.
+  std::size_t policy_rebinds = 0;
   std::size_t live_entries = 0;
   // Scoped mode: dependency walks performed on first serve after an epoch
   // change, entries that survived one, and entries retired by one.
@@ -114,6 +118,11 @@ class RouteCacheScratch {
     bound_provider_type_ = 0;
     bound_provider_instance_ = nullptr;
     bound_provider_revision_ = 0;
+    // Reset with the other bindings, not just the counter: leaving the
+    // policy bound across a clear() makes the next lookup under the other
+    // policy count a rebind and invalidate an already-empty cache.
+    policy_bound_ = false;
+    bound_policy_ = MissingChunkPolicy::TreatAsBlocked;
     hits_ = 0;
     suffix_hits_ = 0;
     misses_ = 0;
@@ -121,6 +130,7 @@ class RouteCacheScratch {
     oversized_skips_ = 0;
     class_rebinds_ = 0;
     provider_rebinds_ = 0;
+    policy_rebinds_ = 0;
     revalidations_ = 0;
     scoped_survivals_ = 0;
     retired_entries_ = 0;
@@ -158,6 +168,31 @@ class RouteCacheScratch {
     bound_provider_type_ = type_identity;
     bound_provider_instance_ = instance_identity;
     bound_provider_revision_ = revision;
+  }
+
+  // Entries key on (start, goal) and carry no policy, so an entry computed
+  // under one MissingChunkPolicy must never be served to a caller who asked
+  // for the other: the two disagree precisely on the terminal status when a
+  // search exhausted the resident set having skipped a non-resident
+  // neighbour -- NoPath under TreatAsBlocked, Indeterminate under
+  // Indeterminate. Binding at whole-cache granularity rather than widening
+  // the key keeps Found entries, which are policy-invariant and are the
+  // entire suffix-index substrate, from being duplicated per policy.
+  //
+  // Callers pass the normalized policy: it cannot change any answer on a
+  // dense world, where no chunk can be missing, so cached_astar_path binds
+  // a constant there and a generic caller alternating policies does not
+  // pointlessly drop the cache.
+  void bind_missing_chunk_policy(MissingChunkPolicy policy) noexcept {
+    if (policy_bound_ && bound_policy_ == policy) {
+      return;
+    }
+    if (policy_bound_) {
+      invalidate();
+      ++policy_rebinds_;
+    }
+    policy_bound_ = true;
+    bound_policy_ = policy;
   }
 
   void invalidate() noexcept {
@@ -306,12 +341,19 @@ class RouteCacheScratch {
 
   [[nodiscard]] auto stats() const noexcept -> RouteCacheStats {
     return RouteCacheStats{
-        entries_.size(),   hits_,
-        suffix_hits_,      misses_,
-        paths_.size(),     cap_invalidations_,
-        oversized_skips_,  class_rebinds_,
-        provider_rebinds_, entries_.size() - dead_count_,
-        revalidations_,    scoped_survivals_,
+        entries_.size(),
+        hits_,
+        suffix_hits_,
+        misses_,
+        paths_.size(),
+        cap_invalidations_,
+        oversized_skips_,
+        class_rebinds_,
+        provider_rebinds_,
+        policy_rebinds_,
+        entries_.size() - dead_count_,
+        revalidations_,
+        scoped_survivals_,
         retired_entries_,
     };
   }
@@ -352,13 +394,14 @@ class RouteCacheScratch {
 
   template <typename World, typename Tag>
   friend auto cached_astar_path(const World& world, PathRequest request,
-                                PathScratch& scratch, RouteCacheScratch& cache)
-      -> PathResult;
+                                PathScratch& scratch, RouteCacheScratch& cache,
+                                MissingChunkPolicy policy) -> PathResult;
 
   template <typename World, typename Tag, typename Provider>
   friend auto cached_astar_path(const World& world, PathRequest request,
                                 PathScratch& scratch, RouteCacheScratch& cache,
-                                const Provider& provider) -> PathResult;
+                                const Provider& provider,
+                                MissingChunkPolicy policy) -> PathResult;
 
   // FNV-style lane combine with one final avalanche: cheap per stored path
   // node, well distributed for power-of-two linear probing.
@@ -693,6 +736,11 @@ class RouteCacheScratch {
   std::size_t oversized_skips_ = 0;
   std::size_t class_rebinds_ = 0;
   std::size_t provider_rebinds_ = 0;
+  std::size_t policy_rebinds_ = 0;
+  // MissingChunkPolicy the entries were computed under. Unset until the
+  // first lookup binds it; see bind_missing_chunk_policy.
+  bool policy_bound_ = false;
+  MissingChunkPolicy bound_policy_ = MissingChunkPolicy::TreatAsBlocked;
   // Movement-class identity the entries are bound to (0 = unbound); see
   // bind_class.
   std::uintptr_t bound_class_ = 0;
@@ -768,7 +816,8 @@ template <typename World, typename Tag, typename Provider>
 [[nodiscard]] auto cached_astar_path(const World& world, PathRequest request,
                                      PathScratch& scratch,
                                      RouteCacheScratch& cache,
-                                     const Provider& provider) -> PathResult {
+                                     const Provider& provider,
+                                     MissingChunkPolicy policy) -> PathResult {
   using Class = movement::movement_class_of<Tag>;
   using UnitClass = movement::detail::UnitMovementClass<Class>;
   using Model = ResolvedTransitionModel<World, UnitClass, Provider>;
@@ -781,6 +830,13 @@ template <typename World, typename Tag, typename Provider>
   cache.bind_provider(detail::tag_identity<Provider>(),
                       detail::transition_provider_instance_identity(provider),
                       model.revision());
+  // Normalize on dense worlds: no chunk can be missing there, so the policy
+  // cannot change any answer and binding the caller's value would drop the
+  // cache for a generic caller that alternates policies across world types.
+  constexpr bool dense =
+      std::is_same_v<typename World::residency_type, AlwaysResident>;
+  cache.bind_missing_chunk_policy(dense ? MissingChunkPolicy::TreatAsBlocked
+                                        : policy);
   // The cache stores absolute Coord3 keys and routes only (no residency-slot
   // state). Correctness on sparse rests entirely on the residency-aware
   // world_version_fingerprint plus prepare_process invalidating the whole
@@ -837,12 +893,10 @@ template <typename World, typename Tag, typename Provider>
   ++cache.misses_;
   const auto result = [&] {
     if constexpr (std::is_same_v<Provider, AdjacentTransitions>) {
-      return astar_path<World, Tag>(world, request, scratch,
-                                    MissingChunkPolicy::TreatAsBlocked);
+      return astar_path<World, Tag>(world, request, scratch, policy);
     } else {
-      return astar_path<World, Tag, Provider>(
-          world, request, scratch, MissingChunkPolicy::TreatAsBlocked,
-          provider);
+      return astar_path<World, Tag, Provider>(world, request, scratch, policy,
+                                              provider);
     }
   }();
   cache.template store<World, scope_eligible>(world, request, result);
@@ -853,9 +907,10 @@ template <typename World, typename Tag>
 /// Finds a cached empty-provider route or computes and stores one.
 [[nodiscard]] auto cached_astar_path(const World& world, PathRequest request,
                                      PathScratch& scratch,
-                                     RouteCacheScratch& cache) -> PathResult {
+                                     RouteCacheScratch& cache,
+                                     MissingChunkPolicy policy) -> PathResult {
   return cached_astar_path<World, Tag, AdjacentTransitions>(
-      world, request, scratch, cache, AdjacentTransitions{});
+      world, request, scratch, cache, AdjacentTransitions{}, policy);
 }
 
 }  // namespace tess
