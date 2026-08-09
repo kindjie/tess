@@ -61,7 +61,13 @@ entries from 2026-07-12 and earlier are in
   binary layout).
 - Follow-ups recorded: a `store_reusing` member-reuse bench cell so
   #122's actual claim is measured (and this misattribution class is
-  fenced); bisect the fields improvement only if its magnitude comes
+  fenced) — CLOSED 2026-08-09: `fields/cache_store_reusing` holds one
+  member product across iterations and stores through the hand-back
+  overload, guarded so a rejecting store cannot pass silently; first
+  M3 readings 80.7 us against `cache_miss_store`'s 79.9 us (CV <=
+  0.6%), consistent with #122's accepted evidence being an allocation
+  count rather than a timing, and the cell joins the metal campaign's
+  fields counter pass; bisect the fields improvement only if its magnitude comes
   to matter, first probe #120 versus the later tail; randomized ABBA
   blocks next time a binary A/B is run; first handheld
   budgeted-progress artifacts (24 files) and a 205-row 10-rep

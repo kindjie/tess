@@ -257,22 +257,28 @@ void BM_fields_cache_store_reusing(benchmark::State& state) {
   product.reserve_dependencies(FieldWorld::chunk_count);
 
   auto flip = false;
+  const tess::DistanceFieldProduct* stored = nullptr;
   for (auto _ : state) {
     const auto& goals = flip ? goals_a : goals_b;
     flip = !flip;
     if (cache.lookup<FieldWorld, PassableTag>(*world, goals) == nullptr) {
       (void)tess::build_distance_field_product<FieldWorld, PassableTag>(
           *world, goals, scratch, product);
-      benchmark::DoNotOptimize(
-          (cache.store_reusing<FieldWorld, PassableTag>(product)));
+      stored = cache.store_reusing<FieldWorld, PassableTag>(product);
+      benchmark::DoNotOptimize(stored);
     }
   }
   // Guarded by iteration count: the harness's 1-iteration calibration
-  // pass has only seen the first miss.
+  // pass has only seen the first miss. The stored pointer and the
+  // resident entry prove the hand-back store path actually ran — a
+  // rejecting store would keep every lookup missing and silently turn
+  // this cell into a build-only loop.
   if (state.iterations() >= 8) {
     fields_bench_check(
         cache.stats().misses >= static_cast<std::size_t>(state.iterations()),
         "cache_store_reusing left the miss path");
+    fields_bench_check(stored != nullptr && cache.stats().entries >= 1,
+                       "store_reusing rejected its stores");
   }
 }
 
