@@ -12,7 +12,10 @@ namespace {
 // reference scan that resolves each tile through detail::is_passable —
 // the generic loop's exact semantics. The shape is genuinely 3D and
 // asymmetric (4x8x2-tile chunks in a 2x2x2 chunk grid) so a mixed-up
-// stride or axis order cannot cancel out.
+// stride cannot cancel out; loop-nesting order is pinned separately by
+// the equal-score incomparable-crossing cases below (tie sets after
+// passability filtering are not rectangles, so pattern tests alone do
+// not constrain nesting).
 
 struct PassableTag {};
 
@@ -276,6 +279,83 @@ TEST(TessSeamScanEquivalence, ExactSinglePortalAtScanExtremes) {
       EXPECT_EQ(fast.portal.z, target.z);
       expect_equivalent(world, from, to, current, goal);
     }
+  });
+}
+
+TEST(TessSeamScanEquivalence,
+     EqualScoreIncomparableCrossingsPickAuthoritativeOrder) {
+  // Two open crossings per seam, tied on score but incomparable in the
+  // two loop-nesting orders: T1 sits earlier in the authoritative
+  // nesting (outer seam-plane axis 0, inner axis 1) and T2 earlier in
+  // the swapped nesting (outer 1, inner 0). With current at the world
+  // minimum and goal at the maximum every seam tile ties, so selection
+  // is decided purely by visit order and the test fails if the nesting
+  // ever flips. This is the case the pattern suites cannot pin: tie
+  // sets after passability filtering are not rectangles.
+  for_each_adjacent_pair([](tess::ChunkCoord3 from, tess::ChunkCoord3 to) {
+    const auto origin = tess::detail::chunk_origin<Shape3D>(from);
+    auto t1 = origin;
+    auto t2 = origin;
+    if (from.x != to.x) {
+      const auto step = to.x > from.x ? std::int64_t{1} : std::int64_t{-1};
+      const auto source_x =
+          step > 0 ? origin.x + static_cast<std::int64_t>(kChunk.x) - 1
+                   : origin.x;
+      t1.x = t2.x = source_x + step;
+      t1.y = origin.y + 1;  // z outer, y inner: (y=1,z=0) before (y=0,z=1)
+      t1.z = origin.z;
+      t2.y = origin.y;
+      t2.z = origin.z + 1;
+    } else if (from.y != to.y) {
+      const auto step = to.y > from.y ? std::int64_t{1} : std::int64_t{-1};
+      const auto source_y =
+          step > 0 ? origin.y + static_cast<std::int64_t>(kChunk.y) - 1
+                   : origin.y;
+      t1.y = t2.y = source_y + step;
+      t1.x = origin.x + 1;  // z outer, x inner
+      t1.z = origin.z;
+      t2.x = origin.x;
+      t2.z = origin.z + 1;
+    } else {
+      const auto step = to.z > from.z ? std::int64_t{1} : std::int64_t{-1};
+      const auto source_z =
+          step > 0 ? origin.z + static_cast<std::int64_t>(kChunk.z) - 1
+                   : origin.z;
+      t1.z = t2.z = source_z + step;
+      t1.x = origin.x + 1;  // y outer, x inner
+      t1.y = origin.y;
+      t2.x = origin.x;
+      t2.y = origin.y + 1;
+    }
+    const auto source_of = [&](tess::Coord3 target) {
+      auto source = target;
+      if (from.x != to.x) {
+        source.x = target.x + (to.x > from.x ? -1 : 1);
+      } else if (from.y != to.y) {
+        source.y = target.y + (to.y > from.y ? -1 : 1);
+      } else {
+        source.z = target.z + (to.z > from.z ? -1 : 1);
+      }
+      return source;
+    };
+
+    Dense world;
+    fill_pattern(world, [](tess::Coord3) { return false; });
+    for (const auto target : {t1, t2}) {
+      world.template field<PassableTag>(source_of(target)) = true;
+      world.template field<PassableTag>(target) = true;
+    }
+
+    const auto current = tess::Coord3{0, 0, 0};
+    const auto goal = tess::Coord3{7, 15, 3};
+    const auto fast = fast_scan(world, from, to, current, goal);
+    EXPECT_TRUE(fast.found);
+    EXPECT_EQ(fast.portal.x, t1.x)
+        << "from=(" << from.x << "," << from.y << "," << from.z << ") to=("
+        << to.x << "," << to.y << "," << to.z << ")";
+    EXPECT_EQ(fast.portal.y, t1.y);
+    EXPECT_EQ(fast.portal.z, t1.z);
+    expect_equivalent(world, from, to, current, goal);
   });
 }
 

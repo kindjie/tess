@@ -25,23 +25,30 @@
   31.2 us (-21%), `path/weighted_chunk_portal_candidates_room_portals_512x512`
   21.3 us to 19.0 us (-11%), fresh-churn -2%, sealed-churn within noise
   (its cost is exact-fallback A*, not seam scans). M3 is flat on all four
-  cells — the wide core hides the resolve arithmetic behind the seam-tile
-  loads, so the win is device-specific and was only visible on target
-  hardware.
+  cells: the win is device-specific and was only visible on target
+  hardware. A plausible mechanism — the wider core hiding the resolve
+  arithmetic behind the seam-tile loads — is a hypothesis consistent
+  with the flat A/B, not established by it.
 - Equivalence: a differential test pins found/portal/scan_tiles against a
   per-tile-resolve oracle on a genuinely 3D asymmetric shape (4x8x2-tile
   chunks, 2x2x2 grid) across all 24 adjacent chunk pairs,
   all-pass/all-blocked/seeded-random patterns, exact single portals at
   both scan extremes, sparse missing chunks, and past-the-top
   out-of-shape neighbors (chunk coordinates are unsigned; stepping below
-  zero wraps and fails adjacency instead). Three behavioral mutants
-  verified caught (reversed loop direction, dropped source check,
-  in-grid off-by-one). A loop-nesting-swap mutant survives and is proven
-  equivalent: Manhattan tie sets on a seam plane are rectangles, and both
-  ascending nestings visit the rectangle's minimum corner first. A
-  diagnostics-enabled test asserts `path_passability_check` parity
-  (one event per pair, a second when the source passes).
+  zero wraps and fails adjacency instead). Six mutants verified caught
+  fail-before: reversed loop direction, dropped source check, in-grid
+  off-by-one, wrong forward source column, dropped second diagnostics
+  event, and swapped loop nesting. The nesting swap initially survived
+  the pattern suites and was wrongly recorded as provably equivalent
+  (the rectangle argument only holds for unfiltered tie sets); a
+  reviewer counterexample — two equal-score incomparable crossings —
+  became a dedicated test that pins the authoritative nesting per axis.
+  A diagnostics-enabled test asserts the fast path's
+  `path_passability_check` short-circuit accounting (one event per
+  pair, a second only when the source passes); it exercises the fast
+  path only, matching the generic loop's emission rule by construction
+  rather than by differential comparison.
 - Follow-ups: none scheduled. Cross-candidate seam memoization remains
   the recorded fallback if seam scanning is still dominant in the next
-  on-device profile; the remaining portal-tick cost is now mostly cache
-  stitching and movement.
+  on-device profile; where the remaining portal-tick cost sits now is a
+  question for that profile, not something these timings establish.

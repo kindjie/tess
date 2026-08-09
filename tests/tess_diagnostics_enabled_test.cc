@@ -290,11 +290,12 @@ TEST(TessDiagnostics, ScopedAllocationCountersRecordGlobalNewAndDelete) {
   EXPECT_GE(counters.deallocations, 1u);
 }
 
-TEST(TessDiagnostics, SeamScanPassabilityEventsMatchGenericAccounting) {
-  // The seam fast path in detail::best_chunk_portal must emit
-  // path_passability_check events exactly like the generic loop: one per
-  // scanned pair, plus a second when the source side passes. The x-seam
-  // between chunks (0,0,0) and (1,0,0) scans 16 pairs.
+TEST(TessDiagnostics, SeamScanPassabilityEventsFollowShortCircuitAccounting) {
+  // detail::best_chunk_portal's page-hoisted fast path (the only path an
+  // in-grid dense pair takes) must emit path_passability_check with the
+  // generic loop's short-circuit rule: one event per scanned pair, plus
+  // a second only when the source side passes. The x-seam between
+  // chunks (0,0,0) and (1,0,0) scans 16 pairs.
   const auto scan_events = [](DiagWorld& world) {
     tess::diagnostics::PathCounters counters;
     auto portal = tess::Coord3{};
