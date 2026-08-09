@@ -37,6 +37,8 @@ RELEASE_FRAGMENTS = REPO_ROOT / "changelog.d"
 DECISION_FRAGMENTS = REPO_ROOT / "docs" / "decisions" / "changelog.d"
 RELEASE_CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 DECISION_CHANGELOG = REPO_ROOT / "docs" / "decisions" / "CHANGELOG.md"
+OPTLOG_FRAGMENTS = REPO_ROOT / "docs" / "planning" / "optimization-log.d"
+OPTIMIZATION_LOG = REPO_ROOT / "docs" / "planning" / "optimization-log.md"
 
 # Rendered in this order, which is the order the existing changelog uses.
 CATEGORIES = (
@@ -110,8 +112,13 @@ def validate_release_fragment(path: Path) -> str:
   return match.group("category")
 
 
-def validate_decision_fragment(path: Path) -> str:
-  """Return the date for `path`, or raise FragmentError."""
+def validate_dated_fragment(path: Path) -> str:
+  """Return the date for `path`, or raise FragmentError.
+
+  Shared by the decision changelog and the optimization log: both are
+  newest-first sequences of `## YYYY-MM-DD - Title` sections, so both want
+  one dated section per fragment and nothing else.
+  """
   match = DECISION_NAME_RE.match(path.name)
   if match is None:
     raise FragmentError(
@@ -122,6 +129,15 @@ def validate_decision_fragment(path: Path) -> str:
   if not stripped:
     raise FragmentError(f"{path.name}: empty fragment")
   date = match.group("date")
+  # Shape is not enough: 2026-02-30 matches the pattern, passes --check,
+  # and release would merge it permanently into a maintained chronology
+  # that is sorted by these strings.
+  try:
+    datetime.date.fromisoformat(date)
+  except ValueError:
+    raise FragmentError(
+      f"{path.name}: {date} is not a calendar date"
+    ) from None
   expected = f"## {date} - "
   if not stripped.startswith(expected):
     raise FragmentError(
@@ -140,6 +156,12 @@ def validate_decision_fragment(path: Path) -> str:
   return date
 
 
+# The optimization log's fragments obey the same rules; kept as a name so
+# call sites read for what they validate rather than which file they share.
+validate_decision_fragment = validate_dated_fragment
+validate_optlog_fragment = validate_dated_fragment
+
+
 def check() -> list[str]:
   """Validate every fragment; return the problems found."""
   problems: list[str] = []
@@ -151,6 +173,11 @@ def check() -> list[str]:
   for path in _fragment_files(DECISION_FRAGMENTS):
     try:
       validate_decision_fragment(path)
+    except FragmentError as error:
+      problems.append(str(error))
+  for path in _fragment_files(OPTLOG_FRAGMENTS):
+    try:
+      validate_optlog_fragment(path)
     except FragmentError as error:
       problems.append(str(error))
   return problems
@@ -219,15 +246,25 @@ def render_release_sections(existing: dict[str, list[str]] | None = None) -> str
   return "\n\n".join(chunks)
 
 
-def render_decision_sections() -> str:
-  """Render pending decision fragments, newest first."""
-  paths = _fragment_files(DECISION_FRAGMENTS)
+def render_dated_sections(directory: Path) -> str:
+  """Render pending dated fragments from `directory`, newest first."""
+  paths = _fragment_files(directory)
   for path in paths:
-    validate_decision_fragment(path)
+    validate_dated_fragment(path)
   ordered = sorted(paths, key=lambda path: path.name, reverse=True)
   return "\n\n".join(
     path.read_text(encoding="utf-8").strip() for path in ordered
   )
+
+
+def render_decision_sections() -> str:
+  """Render pending decision fragments, newest first."""
+  return render_dated_sections(DECISION_FRAGMENTS)
+
+
+def render_optlog_sections() -> str:
+  """Render pending optimization-log fragments, newest first."""
+  return render_dated_sections(OPTLOG_FRAGMENTS)
 
 
 DATED_HEADING_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}) - ")
@@ -268,6 +305,29 @@ def split_dated_sections(text: str) -> list[tuple[str, str]]:
   return sections
 
 
+def merge_dated_document(document: Path, fragment_body: str) -> str | None:
+  """Fold `fragment_body` into a newest-first dated document.
+
+  Returns the new text, or None after reporting why it cannot be built.
+  Sorting the combined list rather than prepending keeps the file ordered
+  even when a fragment is dated earlier than the newest entry already in
+  it -- which happens whenever a branch sits unmerged across a day.
+  """
+  text = document.read_text(encoding="utf-8")
+  existing = split_dated_sections(text)
+  if not existing:
+    print(
+      f"changelog: {document.name} has no dated sections",
+      file=sys.stderr,
+    )
+    return None
+  first = text.index(f"## {existing[0][0]} - ")
+  sections = existing + split_dated_sections(fragment_body)
+  sections.sort(key=lambda item: item[0], reverse=True)
+  merged = "\n\n".join(body for _, body in sections)
+  return f"{text[:first].rstrip()}\n\n{merged}\n"
+
+
 def release(version: str, date: str, *, dry_run: bool) -> int:
   """Fold pending fragments into both changelogs under `version`."""
   # Checked before any write or delete: a mistyped date would otherwise
@@ -293,7 +353,8 @@ def release(version: str, date: str, *, dry_run: bool) -> int:
 
   release_body = render_release_sections()
   decision_body = render_decision_sections()
-  if not release_body and not decision_body:
+  optlog_body = render_optlog_sections()
+  if not release_body and not decision_body and not optlog_body:
     print("changelog: no fragments to assemble", file=sys.stderr)
     return 1
 
@@ -332,23 +393,16 @@ def release(version: str, date: str, *, dry_run: bool) -> int:
        f"{head}{UNRELEASED_HEADING}\n\n{section}\n{remainder}")
     )
 
-  if decision_body:
-    decision_text = DECISION_CHANGELOG.read_text(encoding="utf-8")
-    existing = split_dated_sections(decision_text)
-    if not existing:
-      print(
-        f"changelog: {DECISION_CHANGELOG.name} has no dated sections",
-        file=sys.stderr,
-      )
+  for document, body in (
+    (DECISION_CHANGELOG, decision_body),
+    (OPTIMIZATION_LOG, optlog_body),
+  ):
+    if not body:
+      continue
+    merged_document = merge_dated_document(document, body)
+    if merged_document is None:
       return 1
-    first = decision_text.index(f"## {existing[0][0]} - ")
-    sections = existing + split_dated_sections(decision_body)
-    sections.sort(key=lambda item: item[0], reverse=True)
-    merged_decisions = "\n\n".join(body for _, body in sections)
-    pending.append(
-      (DECISION_CHANGELOG,
-       f"{decision_text[:first].rstrip()}\n\n{merged_decisions}\n")
-    )
+    pending.append((document, merged_document))
 
   if dry_run:
     for _, body in pending:
@@ -362,6 +416,8 @@ def release(version: str, date: str, *, dry_run: bool) -> int:
     for path in _fragment_files(RELEASE_FRAGMENTS):
       path.unlink()
     for path in _fragment_files(DECISION_FRAGMENTS):
+      path.unlink()
+    for path in _fragment_files(OPTLOG_FRAGMENTS):
       path.unlink()
     print(f"changelog: assembled {version} and removed its fragments")
   return 0
@@ -390,8 +446,10 @@ def main(argv: list[str] | None = None) -> int:
       print(f"changelog: {problem}", file=sys.stderr)
     if problems:
       return 1
-    pending = len(_fragment_files(RELEASE_FRAGMENTS)) + len(
-      _fragment_files(DECISION_FRAGMENTS)
+    pending = sum(
+      len(_fragment_files(directory))
+      for directory in (RELEASE_FRAGMENTS, DECISION_FRAGMENTS,
+                        OPTLOG_FRAGMENTS)
     )
     print(f"changelog: {pending} fragments valid")
     return 0
@@ -402,14 +460,17 @@ def main(argv: list[str] | None = None) -> int:
       print(f"changelog: {problem}", file=sys.stderr)
     if problems:
       return 1
-    release_body = render_release_sections()
-    decision_body = render_decision_sections()
-    if release_body:
-      print("=== CHANGELOG.md ===\n")
-      print(release_body)
-    if decision_body:
-      print("\n=== docs/decisions/CHANGELOG.md ===\n")
-      print(decision_body)
+    # Every document release writes, or a preview reports success while
+    # showing nothing for the one that is actually pending.
+    for heading, body in (
+      ("=== CHANGELOG.md ===", render_release_sections()),
+      ("=== docs/decisions/CHANGELOG.md ===", render_decision_sections()),
+      ("=== docs/planning/optimization-log.md ===",
+       render_optlog_sections()),
+    ):
+      if body:
+        print(f"\n{heading}\n")
+        print(body)
     return 0
 
   if not args.date:

@@ -15,6 +15,24 @@ import assemble_changelog as ac  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def _isolate_optimization_log(tmp_path_factory, monkeypatch):
+  """Keep every test off the real optimization log.
+
+  `release` writes each dated document it has fragments for. A test that
+  patches only the changelog paths would otherwise assemble into the
+  repository's own `optimization-log.md` and delete its fragments -- and
+  would do so silently, because the assertions are about the changelog.
+  """
+  directory = tmp_path_factory.mktemp("optlog.d")
+  document = tmp_path_factory.mktemp("optlog") / "optimization-log.md"
+  document.write_text("# Optimization Log\n\n## 2026-01-01 - Seed\n\n- Old.\n",
+                      encoding="utf-8")
+  monkeypatch.setattr(ac, "OPTLOG_FRAGMENTS", directory)
+  monkeypatch.setattr(ac, "OPTIMIZATION_LOG", document)
+  return directory, document
+
+
 def _write(directory: Path, name: str, body: str) -> Path:
   path = directory / name
   path.write_text(body, encoding="utf-8")
@@ -510,3 +528,122 @@ def test_release_writes_nothing_when_the_decisions_file_is_unusable(
   assert changelog.read_text(encoding="utf-8") == original
   assert len(ac._fragment_files(release_dir)) == 1
   assert len(ac._fragment_files(decision_dir)) == 1
+
+
+# --- Optimization log ---
+
+
+def test_optlog_fragment_shares_the_dated_rules(tmp_path):
+  path = _write(
+    tmp_path, "2026-08-08-planning-index.md",
+    "## 2026-08-08 - Planning index\n\n- Area: planning.\n"
+  )
+
+  assert ac.validate_optlog_fragment(path) == "2026-08-08"
+
+
+def test_optlog_fragment_rejects_a_second_heading(tmp_path):
+  path = _write(
+    tmp_path, "2026-08-08-two.md",
+    "## 2026-08-08 - One\n\n- A.\n\n## 2026-08-08 - Two\n\n- B.\n"
+  )
+
+  with pytest.raises(ac.FragmentError) as error:
+    ac.validate_optlog_fragment(path)
+  assert "exactly one" in str(error.value)
+
+
+def test_check_reports_a_malformed_optlog_fragment(_isolate_optimization_log):
+  directory, _ = _isolate_optimization_log
+  _write(directory, "no-date-here.md", "## 2026-08-08 - Thing\n\n- A.\n")
+
+  problems = ac.check()
+
+  assert any("no-date-here.md" in problem for problem in problems)
+
+
+def test_release_assembles_optlog_fragments_newest_first(
+  tmp_path, monkeypatch, _isolate_optimization_log
+):
+  directory, document = _isolate_optimization_log
+  release_dir = tmp_path / "changelog.d"
+  release_dir.mkdir()
+  decision_dir = tmp_path / "decisions.d"
+  decision_dir.mkdir()
+  changelog = tmp_path / "CHANGELOG.md"
+  changelog.write_text("# Changelog\n\n## [Unreleased]\n", encoding="utf-8")
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", release_dir)
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", decision_dir)
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
+  # Written out of order on purpose: a branch that sits unmerged across a
+  # day produces a fragment older than the newest entry already in the log,
+  # and prepending rather than sorting would leave the file misordered.
+  _write(directory, "2026-08-05-older.md", "## 2026-08-05 - Older\n\n- A.\n")
+  _write(directory, "2026-08-09-newer.md", "## 2026-08-09 - Newer\n\n- B.\n")
+
+  assert ac.release("0.13.0", "2026-09-01", dry_run=False) == 0
+
+  text = document.read_text(encoding="utf-8")
+  dates = [date for date, _ in ac.split_dated_sections(text)]
+  assert dates == ["2026-08-09", "2026-08-05", "2026-01-01"]
+  assert "# Optimization Log" in text
+  assert ac._fragment_files(directory) == []
+
+
+def test_release_leaves_the_optimization_log_alone_without_fragments(
+  tmp_path, monkeypatch, _isolate_optimization_log
+):
+  _, document = _isolate_optimization_log
+  original = document.read_text(encoding="utf-8")
+  release_dir = tmp_path / "changelog.d"
+  release_dir.mkdir()
+  changelog = tmp_path / "CHANGELOG.md"
+  changelog.write_text("# Changelog\n\n## [Unreleased]\n", encoding="utf-8")
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", release_dir)
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", tmp_path / "absent")
+  monkeypatch.setattr(ac, "RELEASE_CHANGELOG", changelog)
+  _write(release_dir, "a.fixed.md", "- A fix.\n")
+
+  assert ac.release("0.13.0", "2026-09-01", dry_run=False) == 0
+
+  assert document.read_text(encoding="utf-8") == original
+
+
+def test_dated_fragment_rejects_an_impossible_calendar_date(tmp_path):
+  # The shape matches and the heading agrees with the name, so only a
+  # calendar check catches it -- and release sorts on these strings.
+  path = _write(
+    tmp_path, "2026-02-30-a-decision.md", "## 2026-02-30 - A decision\n"
+  )
+
+  with pytest.raises(ac.FragmentError) as error:
+    ac.validate_dated_fragment(path)
+  assert "not a calendar date" in str(error.value)
+
+
+def test_preview_shows_the_optimization_log(
+  capsys, tmp_path, monkeypatch, _isolate_optimization_log
+):
+  directory, _ = _isolate_optimization_log
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", tmp_path / "none")
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", tmp_path / "none")
+  _write(directory, "2026-08-08-thing.md", "## 2026-08-08 - Thing\n\n- A.\n")
+
+  assert ac.main(["--preview"]) == 0
+
+  out = capsys.readouterr().out
+  assert "optimization-log.md" in out
+  assert "2026-08-08 - Thing" in out
+
+
+def test_check_counts_optimization_log_fragments(
+  capsys, tmp_path, monkeypatch, _isolate_optimization_log
+):
+  directory, _ = _isolate_optimization_log
+  monkeypatch.setattr(ac, "RELEASE_FRAGMENTS", tmp_path / "none")
+  monkeypatch.setattr(ac, "DECISION_FRAGMENTS", tmp_path / "none")
+  _write(directory, "2026-08-08-thing.md", "## 2026-08-08 - Thing\n\n- A.\n")
+
+  assert ac.main(["--check"]) == 0
+
+  assert "1 fragments valid" in capsys.readouterr().out
