@@ -219,18 +219,30 @@ class OwnedChunkDomain {
   explicit OwnedChunkDomain(std::vector<ChunkKey> keys)
       : keys_(std::move(keys)) {}
 
-  [[nodiscard]] constexpr auto view() const noexcept -> ChunkDomain {
+  // Every observer below hands out a span or iterator into keys_, so each
+  // is lvalue-only. The factories return by value, which made
+  // `explicit_chunk_domain(keys).view()` compile and yield a span into a
+  // vector destroyed at the end of the full expression. The deleted
+  // `chunk_domain(OwnedChunkDomain&&)` overload made that worse rather
+  // than better: a caller who hit its error would "fix" it by adding
+  // `.view()`, trading a compile error for undefined behaviour. size() and
+  // empty() return values and stay callable on a temporary.
+  [[nodiscard]] constexpr auto view() const& noexcept -> ChunkDomain {
     return ChunkDomain{keys_};
   }
+  auto view() const&& -> ChunkDomain = delete;
 
-  [[nodiscard]] constexpr auto keys() const noexcept
+  [[nodiscard]] constexpr auto keys() const& noexcept
       -> std::span<const ChunkKey> {
     return keys_;
   }
+  auto keys() const&& -> std::span<const ChunkKey> = delete;
 
-  [[nodiscard]] constexpr auto begin() const noexcept { return keys_.begin(); }
+  [[nodiscard]] constexpr auto begin() const& noexcept { return keys_.begin(); }
+  auto begin() const&& = delete;
 
-  [[nodiscard]] constexpr auto end() const noexcept { return keys_.end(); }
+  [[nodiscard]] constexpr auto end() const& noexcept { return keys_.end(); }
+  auto end() const&& = delete;
 
   [[nodiscard]] constexpr auto size() const noexcept -> std::size_t {
     return keys_.size();
@@ -257,7 +269,15 @@ class OwnedChunkDomain {
 /** Rejects a borrowed domain whose owner would be a temporary. */
 auto chunk_domain(OwnedChunkDomain&& keys) noexcept -> ChunkDomain = delete;
 
-/** Copies, sorts, and deduplicates an explicit chunk-key selection. */
+/**
+ * Copies and sorts an explicit chunk-key selection.
+ *
+ * Does NOT deduplicate, despite what this comment claimed until the
+ * 2026-08-07 audit: the body sorts and stops. `architecture/block.md` was
+ * always right about this, and the queued-operation layer deduplicates its
+ * own domains independently, so nothing depended on the promise -- but a
+ * caller who believed it would have passed duplicates and got them back.
+ */
 [[nodiscard]] inline auto explicit_chunk_domain(std::span<const ChunkKey> keys)
     -> OwnedChunkDomain {
   std::vector<ChunkKey> domain{keys.begin(), keys.end()};

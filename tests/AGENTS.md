@@ -82,6 +82,14 @@
   carrier for packed tile keys, not a general 128-bit integer, and a
   comment saying so does not stop the surface growing one convenience
   operator at a time — this makes widening it an edit to this file.
+- `tess_dangling_observer_test`: pins the lvalue-only observers on
+  `OwnedChunkDomain`, `ExecutionReport` and `ExecutionPlan`. Detection
+  traits assert the rvalue forms do NOT compile, because a runtime test
+  cannot express that and the deleted overloads would otherwise be
+  silently removable; value-returning observers (`size`, `empty`) are
+  asserted to stay callable on a temporary, so the fix cannot
+  over-restrict. Also pins that `explicit_chunk_domain` sorts without
+  deduplicating.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
   default and explicit lattice typing with stable lattice identifiers,
   axial hex coordinate conversion and overflow-safe saturated distance,
