@@ -193,10 +193,14 @@ sentinel run returns `advisory` or `regression`, or a
    workflow). Attribute the delta to a symbol or call path before
    concluding anything.
 4. **Record.** Accepted, rejected, deferred, and inconclusive
-   outcomes all go to `docs/planning/optimization-log.md` per its
+   outcomes all go to the optimization log per its
    existing convention — deferred entries carry their follow-up
    condition, and inconclusive entries stop the next contributor
-   from repeating the dead end.
+   from repeating the dead end. Write a fragment under
+   `docs/planning/optimization-log.d/` named `<YYYY-MM-DD>-<slug>.md`
+   rather than editing `docs/planning/optimization-log.md`, which is
+   assembled from those fragments at release; branches that edit it
+   directly conflict with each other.
 
 **Workload matrix**: `bench/workload-matrix.json` declares which
 workload cells (world extent x chunk extent x layout x storage x

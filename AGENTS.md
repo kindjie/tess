@@ -23,8 +23,14 @@ named. This keeps private sibling or downstream project names out of this
 public-intended repository.
 
 For performance work, use an iterative optimize/test/benchmark cycle. Record
-accepted, rejected, and deferred experiments in
-`docs/planning/optimization-log.md` instead of architecture docs.
+accepted, rejected, and deferred experiments in the optimization log instead
+of architecture docs. Write one fragment per experiment under
+`docs/planning/optimization-log.d/`, named `<YYYY-MM-DD>-<slug>.md` and
+holding exactly one `## <YYYY-MM-DD> - Title` section;
+`tools/assemble_changelog.py` folds them into
+`docs/planning/optimization-log.md` at release. Do not append to that file
+directly -- concurrent branches conflict on it, and it is subject to the
+24,000-token file limit.
 
 TDDs in `docs/tdd/` are historical design intent. When implementation diverges
 from them, update maintained docs under `docs/architecture/`, add an entry to

@@ -9,7 +9,9 @@
 - [CI failure classification, 2026-07-28](ci-failure-classification-2026-07-28.md)
 - [Local movement resolution screening study](local-movement-resolution.md)
 - [Cloud bare-metal campaign runbook](cloud-campaign.md)
-- [Optimization log](optimization-log.md)
+- [Optimization log](optimization-log.md) — assembled at release from
+  per-experiment fragments in [`optimization-log.d/`](optimization-log.d/)
+- [Optimization log archive, 2026-07-13 through 2026-07-31](optimization-log-archive-2026-07-31.md)
 - [Optimization log archive, 2026-06 through 2026-07-12](optimization-log-archive-2026-06-07.md)
 
 Planning docs should be updated when scope, sequencing, or acceptance criteria
