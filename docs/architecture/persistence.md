@@ -39,6 +39,14 @@ covers the complete canonical archive except the checksum's own four-byte
 slot, so accidental damage to compatibility metadata is detected before that
 metadata drives a compatibility decision.
 
+Saving returns `WorldArchiveSaveResult`, which carries the written metadata
+and byte count and deliberately has no status. Every precondition on a save
+is a `static_assert`, so nothing is left for a runtime status to report; the
+one way the write can fail is the output vector exhausting memory, which is
+not representable as a returned value and follows the allocation contract in
+[`no-exceptions.md`](no-exceptions.md) instead. Inspection and loading do
+have runtime failures, and keep the shared `WorldArchiveResult`.
+
 Format v1 freezes an eight-byte magic followed by its 113-byte fixed header:
 the format version begins at byte 8, the declared body size at byte 12, the
 four-byte checksum slot at byte 20, and the descriptor/body region at byte
