@@ -586,3 +586,13 @@ sees them.
 - Fraunces (variable, latin subset) — OFL-licensed heading font for the
   MkDocs site, vendored in [`docs/assets/fonts/`](assets/fonts/README.md).
   Upstream: https://github.com/undercasetype/Fraunces
+
+## Claude Code (agent tooling)
+
+- Documentation: https://code.claude.com/docs/en/memory
+- Declared for the `CLAUDE.md` shim files: Claude Code loads only
+  `CLAUDE.md` (root plus nested, on demand), never `AGENTS.md`, so each
+  shim holds a one-line `@AGENTS.md` import. Other agent CLIs read
+  `AGENTS.md` directly and ignore the shims. No build or runtime
+  dependency; removing the shims only stops Claude Code sessions from
+  loading the agent instructions.
