@@ -274,6 +274,10 @@ const auto frame = deltas.publish();
 
 Frame versions let a consumer detect gaps and request resynchronization.
 
+The frame borrows collector storage: its spans are valid until the next
+`publish()` or `reserve()`, so apply it or copy what you need before
+publishing again. The `header` is a value and stays valid regardless.
+
 - Architecture: [`architecture/simulation.md`](architecture/simulation.md)
 - Archived design:
   [render delta presentation bridge TDD][render-tdd]

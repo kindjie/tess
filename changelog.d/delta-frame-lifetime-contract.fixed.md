@@ -15,6 +15,14 @@
   `architecture/simulation.md` — the maintained page `surface.json` maps
   `DeltaFrame` to, so the one a consumer is actually sent to. All three are
   corrected.
+- The two consumer-facing pages that teach the render bridge —
+  `guide/presentation.md` and `getting-started.md` — now state the
+  borrowing contract at all. Neither did. The guide recommends this branch
+  for "different cadence, thread, or process" and for network mirrors,
+  which is exactly the reader who would hold a frame across a publish, so
+  it now says plainly that what crosses a thread or socket is applied
+  shadow state or a copy of the records, never the `DeltaFrame`, whose
+  spans point into memory the simulation thread is about to refill.
 - The comment now also states the hazard it only implied: holding a frame
   across a `publish()` is outside the contract, and the resulting stale
   spans carry `first_tile`/`first_node` indices that can run past the

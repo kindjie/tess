@@ -27,6 +27,21 @@ const auto frame = deltas.publish();
 ```
 <!-- /tess-snippet -->
 
+The frame **borrows** the collector's storage; it does not own it. Its
+spans stay valid until the next `publish()` or `reserve()` on that
+collector — apply the frame, or copy what you need out of it, before
+publishing again. Its `header` is a value and outlives all of that, which
+is why version and gap checks are safe to keep.
+
+That matters most for the branch this page recommends. "Different
+cadence, thread, or process" describes the *consumer*, not the frame: a
+`DeltaCollector` is externally synchronized like every other tess
+scratch, so what crosses a thread or socket is applied shadow state or a
+copy of the records — never the `DeltaFrame` itself, whose spans point
+into memory the simulation thread is about to refill. Holding a frame
+across a publish reads records that are being overwritten, and because
+that storage stays live and owned throughout, no sanitizer will flag it.
+
 ## Learn and specify
 
 - Teach: [getting-started §8](../getting-started.md), rung 8;
