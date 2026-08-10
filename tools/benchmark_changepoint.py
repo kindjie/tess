@@ -23,6 +23,7 @@ import statistics
 from pathlib import Path
 from typing import Any
 
+from benchmark_thresholds import ToolError as _ThresholdsError
 from benchmark_thresholds import load_threshold_metrics
 
 CANDIDATES = 3
@@ -295,7 +296,11 @@ def main(argv: list[str] | None = None) -> int:
     # real-time-gated families' history without saying so.
     print(f"error: {args.thresholds_dir} is not a directory")
     return 1
-  metrics = load_threshold_metrics(args.thresholds_dir)
+  try:
+    metrics = load_threshold_metrics(args.thresholds_dir)
+  except _ThresholdsError as error:
+    print(f"error: {error}")
+    return 1
   artifacts = load_history(
       args.artifacts, allow_legacy=args.allow_legacy, metrics=metrics
   )

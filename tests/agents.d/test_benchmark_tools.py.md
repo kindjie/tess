@@ -27,3 +27,9 @@
   than coincidentally agreeing. The `entry` helper still defaults
   `real_time` to `cpu_time`, which is why every other case here is
   indifferent to the change.
+- The renderer's two fail-closed cases assert the specific message,
+  not just the exit code. A missing directory and a directory naming
+  no benchmarks both exit 1, but only the message distinguishes them:
+  asserting the code alone let a mutant that deleted the missing
+  directory check survive, because the shared loader then failed for
+  the other reason and the test still passed.

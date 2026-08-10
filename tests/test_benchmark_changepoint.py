@@ -404,3 +404,46 @@ def test_cli_refuses_a_missing_thresholds_directory(tmp_path):
   )
 
   assert code == 1
+
+
+def test_thresholds_directory_without_manifests_is_an_error(tmp_path):
+  # Fail closed: an empty or misshapen manifest set would otherwise
+  # yield an empty map and silently default the whole suite to CPU
+  # time — the exact defect this change exists to remove.
+  empty = tmp_path / "thresholds"
+  empty.mkdir()
+
+  try:
+    benchmark_changepoint.load_threshold_metrics(empty)
+  except Exception as error:  # noqa: BLE001 - the type is the assertion
+    assert "no benchmark" in str(error).lower()
+  else:
+    raise AssertionError("an empty thresholds directory must not be accepted")
+
+
+def test_manifest_without_benchmarks_is_an_error(tmp_path):
+  directory = tmp_path / "thresholds"
+  directory.mkdir()
+  (directory / "family.json").write_text(
+    json.dumps({"version": 1, "benchmarks": {}}), encoding="utf-8"
+  )
+
+  try:
+    benchmark_changepoint.load_threshold_metrics(directory)
+  except Exception as error:  # noqa: BLE001 - the type is the assertion
+    assert "no benchmark" in str(error).lower()
+  else:
+    raise AssertionError("a manifest set naming no benchmarks is broken input")
+
+
+def test_cli_reports_an_empty_manifest_set_without_a_traceback(tmp_path):
+  for run in range(12):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
+  empty = tmp_path / "thresholds"
+  empty.mkdir()
+
+  code = benchmark_changepoint.main(
+    ["--artifacts", str(tmp_path), "--thresholds-dir", str(empty)]
+  )
+
+  assert code == 1

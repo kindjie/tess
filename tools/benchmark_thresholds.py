@@ -142,6 +142,11 @@ def load_threshold_metrics(thresholds_dir: Path) -> dict[str, str]:
   change-point detector and the trend renderer — so an alert, its
   confirmation command and the published series cannot disagree about
   which number they mean.
+
+  Fails closed on an input that names nothing. An empty or misshapen
+  manifest set would otherwise return an empty map, and every caller
+  would silently fall back to CPU time for the whole suite — the
+  defect this function exists to remove, reintroduced quietly.
   """
   metrics: dict[str, str] = {}
   for manifest in sorted(thresholds_dir.glob("*.json")):
@@ -153,6 +158,11 @@ def load_threshold_metrics(thresholds_dir: Path) -> dict[str, str]:
         metrics[str(name)] = "real_time"
       else:
         metrics[str(name)] = "cpu_time"
+  if not metrics:
+    raise ToolError(
+        f"{thresholds_dir} names no benchmark thresholds; refusing to "
+        "default the suite to CPU time"
+    )
   return metrics
 
 

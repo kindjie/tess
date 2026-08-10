@@ -18,6 +18,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 
+from benchmark_thresholds import ToolError as _ThresholdsError
 from benchmark_thresholds import load_threshold_metrics
 
 DEFAULT_BENCHMARKS = (
@@ -60,11 +61,19 @@ def main(argv: list[str] | None = None) -> int:
   args = parser.parse_args(argv)
 
   benchmarks = tuple(args.benchmarks or DEFAULT_BENCHMARKS)
-  metrics = (
-      load_threshold_metrics(args.thresholds_dir)
-      if args.thresholds_dir.is_dir()
-      else {}
-  )
+  if not args.thresholds_dir.is_dir():
+    # Fail closed: plotting a real-time-gated benchmark's CPU time
+    # would publish a series the gate does not use.
+    print(
+        f"benchmark_trends: {args.thresholds_dir} is not a directory",
+        file=sys.stderr,
+    )
+    return 1
+  try:
+    metrics = load_threshold_metrics(args.thresholds_dir)
+  except _ThresholdsError as error:
+    print(f"benchmark_trends: {error}", file=sys.stderr)
+    return 1
   runs = sorted(
       (
           load_run(

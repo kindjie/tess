@@ -18,3 +18,10 @@
   `--thresholds-dir` resolves to the repository manifests (the CI job
   passes none), and that a missing directory exits non-zero instead of
   silently defaulting the suite to CPU time.
+- Two cases pin fail-closed loading, both from a reviewer probe: a
+  thresholds directory with no manifests, and a manifest naming no
+  benchmarks. Either would otherwise produce an empty metric map,
+  which reads as "every benchmark defaults to CPU time" and would
+  reinstate the defect this change removes while every test still
+  passed. The CLI case additionally pins that the failure is reported
+  rather than raised as a traceback.

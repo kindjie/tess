@@ -871,3 +871,44 @@ def test_trends_keeps_cpu_time_for_everything_else(tmp_path):
   )
 
   assert values == {"path/sample": 100.0}
+
+
+def test_trends_refuses_a_missing_thresholds_directory(tmp_path, capsys):
+  # Fail closed rather than silently plotting CPU time for a
+  # real-time-gated benchmark.
+  directory = tmp_path / "artifact"
+  directory.mkdir()
+  write_json(
+      directory / "path.json",
+      {"benchmarks": [entry("path/sample", 100.0)]},
+  )
+  write_json(directory / "metadata.json", {"commit": "a" * 40})
+
+  code = benchmark_trends.main(
+      [str(directory), "--thresholds-dir", str(tmp_path / "absent")]
+  )
+
+  assert code == 1
+  # The distinct message is the point: a directory that does not exist
+  # and one that names no benchmarks are different mistakes, and the
+  # shared loader would otherwise report both as the latter.
+  assert "is not a directory" in capsys.readouterr().err
+
+
+def test_trends_reports_an_empty_manifest_set_without_a_traceback(
+    tmp_path, capsys
+):
+  directory = tmp_path / "artifact"
+  directory.mkdir()
+  write_json(
+      directory / "path.json",
+      {"benchmarks": [entry("path/sample", 100.0)]},
+  )
+  write_json(directory / "metadata.json", {"commit": "a" * 40})
+  empty = tmp_path / "thresholds"
+  empty.mkdir()
+
+  code = benchmark_trends.main([str(directory), "--thresholds-dir", str(empty)])
+
+  assert code == 1
+  assert "no benchmark thresholds" in capsys.readouterr().err
