@@ -14,7 +14,10 @@
   initialized either type, decomposed one in a structured binding, or relied
   on `PibtPriorities` being standard-layout — it mixes a public `elapsed`
   with a private member now, so `offsetof` and the trait no longer apply.
-  (`JointMoveScratch` stays standard-layout.) No in-repo consumer, example,
+  That last one only changes anything on a standard library whose
+  `std::vector` is itself standard-layout: under MSVC's STL neither type was
+  standard-layout to begin with, and `JointMoveScratch` keeps whatever it
+  had, since all of its members are private. No in-repo consumer, example,
   or benchmark did any of those. Default construction, `{}` value
   initialization, copy and move all still compile.
 - `PibtPriorities::frames` was also the last public member typed with a

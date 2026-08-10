@@ -1065,7 +1065,10 @@ TEST(TessPibtMovement, OnlyElapsedIsPartOfThePrioritiesSurface) {
   // Mixing a public `elapsed` with a private member costs standard layout,
   // so `offsetof` and the trait no longer apply. That is a real break beyond
   // the member names, and it is the price of keeping the caller's knob
-  // public rather than hiding it behind an accessor pair.
+  // public rather than hiding it behind an accessor pair. It only *changes*
+  // anything where `std::vector` is itself standard-layout: under MSVC's STL
+  // this assertion already held before the change, for that unrelated
+  // reason.
   static_assert(!std::is_standard_layout_v<Priorities>);
 
   SUCCEED();
