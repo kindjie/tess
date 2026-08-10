@@ -55,8 +55,14 @@
   showed that consumer routes to the bucket implementation and never
   touches the packed node. Scratch-reuse pins across
   weighted/unit/weighted searches and warm allocation-freedom close
-  the lifecycle. Fail-before mutant: dropping the packed index
-  tie-break fails 6 tests.
+  the lifecycle. Fail-before mutants against the final suite: an
+  inverted key order fails all four consumer goldens plus the
+  comparator and differential tests (8 total — every golden provably
+  exercises the packed comparator); dropping the index tie-break fails
+  the 3 order-sensitive tests (isomorphism x2, differential heap) —
+  flood expanded/reached literals are order-insensitive under lazy
+  deletion, so pop order is carried by those three and the identical
+  bench counters.
 - Follow-ups: a d-ary sift over the same packed element, only if the
   next profile still shows the heap hot; Deck on-device verification
   when access returns.
