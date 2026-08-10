@@ -640,6 +640,46 @@ template <typename World, typename Tag, typename Provider>
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> PathResult;
 
+namespace detail {
+
+// Packed open-list node: the sort key concatenates the ordering's two
+// lexicographic fields so one compare decides whenever (f, g) differ.
+// Order-isomorphic to open_node_less over (f asc, g desc, index asc);
+// UINT32_MAX - g is defined and invertible for every g, so the mapping
+// is injective over the full field range. f is retained in the high
+// word solely for the unit search's two-bucket dial test.
+struct PackedOpenNode {
+  std::uint64_t key = 0;
+  std::uint64_t index = 0;
+
+  [[nodiscard]] static constexpr auto make(std::uint64_t index, std::uint32_t g,
+                                           std::uint32_t f) noexcept
+      -> PackedOpenNode {
+    return PackedOpenNode{(static_cast<std::uint64_t>(f) << 32u) |
+                              (std::numeric_limits<std::uint32_t>::max() - g),
+                          index};
+  }
+
+  [[nodiscard]] constexpr auto g() const noexcept -> std::uint32_t {
+    return std::numeric_limits<std::uint32_t>::max() -
+           static_cast<std::uint32_t>(key);
+  }
+
+  [[nodiscard]] constexpr auto f() const noexcept -> std::uint32_t {
+    return static_cast<std::uint32_t>(key >> 32u);
+  }
+};
+
+[[nodiscard]] constexpr bool packed_open_node_less(
+    PackedOpenNode lhs, PackedOpenNode rhs) noexcept {
+  if (lhs.key != rhs.key) {
+    return lhs.key > rhs.key;
+  }
+  return lhs.index > rhs.index;
+}
+
+}  // namespace detail
+
 /// Owns reusable A* frontier, node state, and returned path storage.
 ///
 /// Instances are caller-owned and require external synchronization. Reserving
@@ -744,8 +784,8 @@ class PathScratch {
     ++touched_count_;
   }
 
-  std::vector<OpenNode> open_;
-  std::vector<OpenNode> open_next_;
+  std::vector<detail::PackedOpenNode> open_;
+  std::vector<detail::PackedOpenNode> open_next_;
   // Parallel arrays deliberately: an interleaved {generation, g, state}
   // record was tried (audit 2026-07-11 M9) and measured 3-9% SLOWER --
   // partial-field visits (closed checks read generation+state only) waste
@@ -989,7 +1029,7 @@ class DistanceFieldScratch {
   }
 
   std::vector<std::uint64_t> frontier_;
-  std::vector<PathScratch::OpenNode> weighted_frontier_;
+  std::vector<detail::PackedOpenNode> weighted_frontier_;
   std::vector<std::vector<std::uint64_t>> weighted_buckets_;
   std::size_t weighted_bucket_capacity_ = 0;
   std::vector<std::uint32_t> generation_;
@@ -2191,9 +2231,11 @@ template <typename WorldType, typename Class, typename Provider>
   scratch.distance_[goal_offset] = 0;
   scratch.touch_node(goal_offset, goal_index);
   TESS_DIAG_EVENT(path_touch_node);
-  scratch.weighted_frontier_.push_back(PathScratch::OpenNode{goal_index, 0, 0});
+  scratch.weighted_frontier_.push_back(
+      detail::PackedOpenNode::make(goal_index, 0, 0));
   std::push_heap(scratch.weighted_frontier_.begin(),
-                 scratch.weighted_frontier_.end(), detail::open_node_less);
+                 scratch.weighted_frontier_.end(),
+                 detail::packed_open_node_less);
   TESS_DIAG_EVENT(path_heap_push);
 
   std::size_t expanded_nodes = 0;
@@ -2202,14 +2244,15 @@ template <typename WorldType, typename Class, typename Provider>
   while (!scratch.weighted_frontier_.empty()) {
     TESS_DIAG_EVENT(path_heap_pop);
     std::pop_heap(scratch.weighted_frontier_.begin(),
-                  scratch.weighted_frontier_.end(), detail::open_node_less);
+                  scratch.weighted_frontier_.end(),
+                  detail::packed_open_node_less);
     const auto current = scratch.weighted_frontier_.back();
     scratch.weighted_frontier_.pop_back();
 
     const auto current_offset = space.offset(current.index);
     const auto current_distance =
         scratch.distance_at(current_offset, infinite_distance);
-    if (current.g != current_distance) {
+    if (current.g() != current_distance) {
       TESS_DIAG_EVENT_VALUE(path_skip_pop, false);
       continue;
     }
@@ -2252,14 +2295,11 @@ template <typename WorldType, typename Class, typename Provider>
               scratch.distance_at(neighbor_offset, infinite_distance)) {
             TESS_DIAG_EVENT(path_relax_success);
             scratch.distance_[neighbor_offset] = next_distance;
-            scratch.weighted_frontier_.push_back(PathScratch::OpenNode{
-                neighbor_index,
-                next_distance,
-                next_distance,
-            });
+            scratch.weighted_frontier_.push_back(detail::PackedOpenNode::make(
+                neighbor_index, next_distance, next_distance));
             std::push_heap(scratch.weighted_frontier_.begin(),
                            scratch.weighted_frontier_.end(),
-                           detail::open_node_less);
+                           detail::packed_open_node_less);
             TESS_DIAG_EVENT(path_heap_push);
           }
         });

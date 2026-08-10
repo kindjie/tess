@@ -923,6 +923,19 @@ tess_apply_project_options(tess_seam_scan_equivalence_test)
 tess_discover_tests(tess_seam_scan_equivalence_test LABELS core path)
 
 add_executable(
+  tess_packed_open_node_test
+  allocation_counter.cc
+  tess_packed_open_node_test.cc
+)
+target_link_libraries(
+  tess_packed_open_node_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_packed_open_node_test)
+
+tess_discover_tests(tess_packed_open_node_test LABELS core path)
+
+add_executable(
   tess_path_agent_test
   allocation_counter.cc
   tess_path_agent_test.cc
