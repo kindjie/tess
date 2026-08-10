@@ -91,26 +91,21 @@
   over-restrict. Also pins that `explicit_chunk_domain` sorts without
   deduplicating.
 - `tess_delta_frame_lifetime_test`: pins the `DeltaFrame` lifetime
-  contract, which its header comment previously stated incorrectly, and
-  `DeltaCollector`'s move-only contract. Three tests. A published frame
-  survives `begin_tick`, `record_*` and
-  `collect_*`, and it survives `clear()` — all of which touch only the
-  pending buffers. Every published record carries distinct values and the
-  entity record is checked too, so a record replaced by its neighbour
-  fails.
-  What it does NOT cover, deliberately: a bare `published_chunks_.clear()`
-  leaves the bytes of trivially destructible elements in place, so reads
-  through the span keep returning the old values — undefined behaviour that
-  still produces the expected numbers, and no assertion available outside
-  the collector distinguishes it. There is likewise no `reserve()` test
-  (reallocation is not observable through a span) and no `header` test (it
-  is a value member of the caller's own frame, so an assertion about it
-  compares a copy against itself and cannot fail).
-  The third test asserts all four special-member traits: copy construction
-  and assignment deleted, move construction and assignment present.
-  Both halves matter — declaring the copy operations even as deleted
-  suppresses the implicit moves, so a version that only deleted copies
-  would break every factory returning a collector by value.
+  contract (its header comment stated it incorrectly) and
+  `DeltaCollector`'s move semantics. A published frame survives
+  `begin_tick`, `record_*`, `collect_*` and `clear()`, all of which touch
+  only the pending buffers; records carry distinct values and the entity
+  is checked, so a record replaced by its neighbour fails. The collector
+  asserts all four special-member traits, that a moved-from collector's
+  next publish is forced truncated so its consumer resyncs, that the move
+  destination is NOT poisoned, and that assigning a fresh collector clears
+  the poison.
+  Deliberately uncovered: a bare `published_chunks_.clear()` leaves the
+  bytes of trivial elements in place, so reads through the span still
+  return the old values and no outside assertion distinguishes it. Also no
+  `reserve()` test (reallocation is not observable through a span) and no
+  `header` test (a value member of the caller's own frame, so an assertion
+  compares a copy against itself).
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
   default and explicit lattice typing with stable lattice identifiers,
   axial hex coordinate conversion and overflow-safe saturated distance,

@@ -245,6 +245,13 @@ struct DeltaCollectorStats {
 /// narrow; see the note on `DeltaFrame`. After `reserve`, steady-state
 /// recording does not allocate; overflow truncates the frame and requires a
 /// baseline resynchronization.
+///
+/// Not copyable; movable. A moved-from collector behaves as if `clear()`
+/// had been called on it: its next publish is forced truncated, so a
+/// consumer on its chain resyncs from a baseline rather than accepting an
+/// empty frame as an applicable no-op. Reuse it by assigning a fresh
+/// collector to it, or by `clear()` followed by a baseline collection --
+/// `reserve()` looks like a reset and is not one.
 class DeltaCollector {
  public:
   DeltaCollector() = default;
@@ -263,18 +270,10 @@ class DeltaCollector {
   // silently absent. Moving still invalidates any live frame: the spans
   // then point into buffers the destination owns.
   //
-  // A moved-from collector must be destroyed or assigned to, NOT reused.
-  // That is narrower than the standard's valid-but-unspecified, and it is
-  // narrower on purpose: the defaulted move transfers the buffers but
-  // COPIES the protocol scalars, so a moved-from collector keeps its
-  // version_ and its needs_baseline_. Re-reserving it and collecting
-  // against the same world after the destination has collected would find
-  // the dirty bits already consumed and publish an applicable, untruncated,
-  // empty frame whose version chain still looks continuous -- the same
-  // silent-loss shape the deleted copy operations caused, reached a
-  // different way. Enforcing this instead of documenting it means
-  // hand-writing a 20-member move so the source can be poisoned with
-  // needs_baseline_, which would silently drop any member added later.
+  // A moved-from collector behaves as if cleared: its next publish is
+  // forced truncated, so a consumer on its chain resyncs instead of
+  // silently accepting an empty frame. See MovedFromFlag below for how
+  // that survives the defaulted moves.
   DeltaCollector(const DeltaCollector&) = delete;
   auto operator=(const DeltaCollector&) -> DeltaCollector& = delete;
   DeltaCollector(DeltaCollector&&) = default;
@@ -466,7 +465,7 @@ class DeltaCollector {
     const auto state_carrying =
         !pending_chunks_.empty() || !pending_tiles_.empty() ||
         !pending_entities_.empty() || baseline_pending_ || pending_truncated_ ||
-        needs_baseline_;
+        needs_baseline_ || moved_from_.value;
     auto header = DeltaFrameHeader{};
     header.from_version = version_;
     if (state_carrying) {
@@ -479,9 +478,11 @@ class DeltaCollector {
     header.dirty_mask = pending_dirty_mask_;
     header.baseline = baseline_pending_;
     header.truncated =
-        pending_truncated_ || (needs_baseline_ && !baseline_pending_);
+        pending_truncated_ ||
+        ((needs_baseline_ || moved_from_.value) && !baseline_pending_);
     if (baseline_pending_) {
       needs_baseline_ = false;
+      moved_from_.value = false;
     }
 
     clear_coalesce_slots();
@@ -700,6 +701,41 @@ class DeltaCollector {
   bool pending_truncated_ = false;
   bool baseline_pending_ = false;
   bool needs_baseline_ = false;
+  // Poisons the SOURCE of a move, so a moved-from collector's next publish
+  // is forced truncated and its consumer resyncs rather than silently
+  // accepting an applicable empty frame on a chain that still looks
+  // continuous.
+  //
+  // The poison lives in the member's own move operations rather than in a
+  // hand-written DeltaCollector move. That keeps both enclosing moves
+  // `= default`, so every member -- including any added later --
+  // participates memberwise as usual. Hand-writing the enclosing move
+  // instead would silently drop a future member, which is the same class
+  // of silent failure as the bug being fixed.
+  //
+  // Bounds of what this fixes: it closes the moved-from chain-continuity
+  // hole only. Two live collectors clearing one world's dirty bits remains
+  // the sole-clearing-owner contract above, and no type-level check can
+  // enforce that.
+  struct MovedFromFlag {
+    bool value = false;
+
+    MovedFromFlag() = default;
+    MovedFromFlag(const MovedFromFlag&) = default;
+    auto operator=(const MovedFromFlag&) -> MovedFromFlag& = default;
+    ~MovedFromFlag() = default;
+
+    MovedFromFlag(MovedFromFlag&& other) noexcept { other.value = true; }
+
+    auto operator=(MovedFromFlag&& other) noexcept -> MovedFromFlag& {
+      if (this != &other) {
+        value = false;
+        other.value = true;
+      }
+      return *this;
+    }
+  };
+  MovedFromFlag moved_from_{};
   DeltaCollectorStats stats_{};
 };
 
