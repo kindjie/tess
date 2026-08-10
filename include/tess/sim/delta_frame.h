@@ -144,11 +144,9 @@ struct DeltaFrameHeader {
 // was missing from the list and does belong on it: it re-reserves the
 // published vectors too, so it can reallocate a live frame's storage.
 //
-// Assignment and move also invalidate: DeltaCollector keeps its
-// compiler-generated copy/move operations, and either replaces or empties
-// the published vectors. Deleting them is deliberately not done here --
-// factories that return a collector by value rely on the move -- and is
-// tracked with the enforcement work below.
+// Move-assignment and move-construction also invalidate: they replace or
+// empty the published vectors. The collector is not copyable, so there is
+// no copy to reason about.
 //
 // `header` is a value copy and outlives all of that.
 //
@@ -242,7 +240,7 @@ struct DeltaCollectorStats {
 ///
 /// The collector owns every returned frame view. A view's spans stay valid
 /// until the next `publish()` or `reserve()`, and until the collector is
-/// assigned to or moved from -- NOT until "its next mutation", which this
+/// move-assigned to or moved from -- NOT until "its next mutation", which this
 /// comment said until 2026-08-09 and which is both too broad and too
 /// narrow; see the note on `DeltaFrame`. After `reserve`, steady-state
 /// recording does not allocate; overflow truncates the frame and requires a
@@ -251,6 +249,23 @@ class DeltaCollector {
  public:
   DeltaCollector() = default;
   explicit DeltaCollector(DeltaCollectorOptions options) : options_(options) {}
+
+  // Non-copyable. A copy duplicates all five published and pending vectors
+  // silently, and leaves two collectors each believing they are the sole
+  // owner clearing the dirty bits they collected -- collection consumes
+  // those bits, so a second collector over the same world observes nothing
+  // and publishes an empty frame that still advances its own version.
+  // Nothing in the tree copies one.
+  //
+  // Movable, because factories return a collector by value. Declaring the
+  // copy operations (even as deleted) suppresses the implicit move
+  // operations, so they are defaulted explicitly rather than left to be
+  // silently absent. Moving still invalidates any live frame: the spans
+  // then point into buffers the destination owns.
+  DeltaCollector(const DeltaCollector&) = delete;
+  auto operator=(const DeltaCollector&) -> DeltaCollector& = delete;
+  DeltaCollector(DeltaCollector&&) = default;
+  auto operator=(DeltaCollector&&) -> DeltaCollector& = default;
 
   // Setup-time capacities; entity_capacity also sizes the coalescing
   // map (kept at load factor <= 0.5). Consumers publishing baselines

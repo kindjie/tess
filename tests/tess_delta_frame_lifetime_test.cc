@@ -3,6 +3,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
+#include <utility>
 
 // The DeltaFrame lifetime contract, pinned rather than merely stated.
 //
@@ -149,5 +151,29 @@ TEST(TessDeltaFrameLifetime, ClearLeavesAPublishedFrameIntact) {
 // copy of itself cannot fail -- the first draft here contained exactly
 // that. Its durability is a property of the type's layout, which
 // tess_render_delta_frame_test already exercises throughout.
+
+// A copy would duplicate all five buffer pairs silently and leave two
+// collectors each believing they alone clear the dirty bits they collect.
+// Collection consumes those bits, so the second collector over the same
+// world observes nothing and publishes an empty frame that still advances
+// its own version -- a consumer on that chain silently misses everything.
+TEST(TessDeltaFrameLifetime, CollectorIsMoveOnly) {
+  static_assert(!std::is_copy_constructible_v<tess::DeltaCollector>);
+  static_assert(!std::is_copy_assignable_v<tess::DeltaCollector>);
+
+  // Movable on purpose: factories return one by value. Declaring the copy
+  // operations as deleted suppresses the implicit moves, so this fails if
+  // they are ever dropped rather than defaulted.
+  static_assert(std::is_move_constructible_v<tess::DeltaCollector>);
+  static_assert(std::is_move_assignable_v<tess::DeltaCollector>);
+
+  // And the move actually works end to end, not just on paper.
+  World world;
+  auto collector = make_collector();
+  auto moved = std::move(collector);
+  mark_sized(world, tess::Coord3{1, 1, 0}, 1);
+  tess::collect_tile_deltas(moved, world, kTerrainBit);
+  EXPECT_FALSE(moved.publish().chunks.empty());
+}
 
 }  // namespace
