@@ -6,7 +6,9 @@ name: CI
 # compile+smoke, diff-scoped clang-tidy, path-filtered TSan); pushes to
 # main, the weekly schedule, and manual dispatches additionally run the
 # full matrix (werror, TSan, full-tree clang-tidy, release, macOS) and
-# the benchmark threshold gates with baseline artifact collection.
+# the benchmark threshold gates; baseline artifact collection runs on
+# main pushes only, in its own non-gating job, so change-point sees
+# exactly one artifact set per merged commit's run.
 on:
   pull_request:
   push:
@@ -28,7 +30,7 @@ concurrency:
 env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CCACHE_DIR: ${{ github.workspace }}/.ccache
-  # CI3: ccache defaults to a 5 GiB cache. Nine namespaces at that
+  # CI3: ccache defaults to a 5 GiB cache. Ten namespaces at that
   # ceiling overrun the 10 GB repository quota, and every run then
   # evicts the previous run's caches. Cap each one well inside it.
   CCACHE_MAXSIZE: 250M
@@ -867,9 +869,9 @@ jobs:
         run: tools/fetchcontent_smoke.sh
 
   # Pull requests compile the bench tree and run the smoke suite (build
-  # and API rot, bench_check hooks); threshold gating and baseline
-  # artifact collection run on the full tier, staying authoritative until
-  # the redesign's phase 4 shadow-mode criteria retire them.
+  # and API rot, bench_check hooks); threshold gating runs on the full
+  # tier, staying authoritative until the redesign's phase 4 shadow-mode
+  # criteria retire it. Baseline collection lives in bench-baselines.
   bench:
     needs: changes
     if: ${{ needs.changes.outputs.code_required == 'true' }}
@@ -986,7 +988,13 @@ jobs:
           github.ref == 'refs/heads/main' &&
           needs.changes.outputs.code_required == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # A pure backstop: the step-level timeouts below (30 + 35 minutes)
+    # trip first and conclude as step FAILURES, which report-failure
+    # recognizes. A job-ceiling kill concludes as cancelled — the same
+    # verdict as a benign concurrency supersede — and would silence the
+    # ci-failure issue for exactly the overrun this job was split to
+    # contain.
+    timeout-minutes: 75
     env:
       CC: clang
       CXX: clang++
@@ -1014,14 +1022,18 @@ jobs:
       - name: Configure
         run: cmake --preset bench
 
+      # Observed 13-21 minutes depending on cache warmth.
       - name: Build
+        timeout-minutes: 30
         run: cmake --build --preset bench
 
       - name: Report compiler cache effectiveness
         if: always()
         run: ccache --show-stats
 
+      # Observed ~27 minutes on the last completed collection.
       - name: Collect non-gating benchmark baselines
+        timeout-minutes: 35
         run: cmake --build --preset bench --target tess_bench_ci_baselines
 
       - name: Write benchmark artifact metadata
@@ -1307,7 +1319,7 @@ jobs:
   # missing.
   #
   # KNOWN GAP: the workflow-level concurrency group cancels a superseded
-  # main run, and this job waits on bench, so a commit merged while an
+  # main run, and this job waits on bench-baselines, so a commit merged while an
   # earlier run is still building publishes nothing. The history is
   # therefore per-completed-main-RUN, not per-commit, and rapid merges
   # leave holes. Acceptable for bisection, which reads the nearest

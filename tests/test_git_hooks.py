@@ -750,9 +750,16 @@ def test_non_gating_benchmark_baselines_run_only_on_main():
     "Upload benchmark baseline artifact",
   )
 
-  assert "github.event_name == 'push' &&" in baselines
-  assert "github.ref == 'refs/heads/main' &&" in baselines
-  assert "needs.changes.outputs.code_required == 'true'" in baselines
+  # Anchored: the guard must be the JOB-level if, not a comment or a
+  # step condition.
+  job_guard = (
+    "    if: >-\n"
+    "      ${{ github.event_name == 'push' &&\n"
+    "          github.ref == 'refs/heads/main' &&\n"
+    "          needs.changes.outputs.code_required == 'true' }}\n"
+  )
+  assert job_guard in baselines
+  assert "    needs: changes\n" in baselines
   for name in moved_steps:
     assert f"      - name: {name}\n" in baselines
     assert f"      - name: {name}\n" not in bench
@@ -761,6 +768,53 @@ def test_non_gating_benchmark_baselines_run_only_on_main():
   assert thresholds.startswith(
     "        if: github.event_name != 'pull_request'\n"
   )
+
+
+def test_baseline_overruns_conclude_as_failures_report_files_them():
+  """A job-ceiling kill concludes `cancelled` — indistinguishable from a
+  benign concurrency supersede, and invisible to report-failure, which
+  matches only `failure`. The step-level timeouts are what convert an
+  overrun into a reportable failure, so they must cover every long step
+  and sum below the job ceiling; report-failure must observe the job.
+  """
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  baselines = _job_body(workflow, "bench-baselines")
+
+  assert "    timeout-minutes: 75\n" in baselines
+  build = baselines.split("      - name: Build\n", 1)[1]
+  assert build.startswith("        timeout-minutes: 30\n")
+  collect = baselines.split(
+    "      - name: Collect non-gating benchmark baselines\n", 1
+  )[1]
+  assert collect.startswith("        timeout-minutes: 35\n")
+  # 30 + 35 + setup fits under 75: the ceiling is a backstop that never
+  # fires first.
+  assert 30 + 35 < 75
+
+  report_failure = _job_body(workflow, "report-failure")
+  assert "      - bench-baselines\n" in report_failure
+
+
+def test_baseline_artifact_wiring_survives_the_job_split():
+  """Both consumers must wait on bench-baselines (not the gates job),
+  the publisher must gate on its success, and the artifact name must
+  match between the one upload and both downloads."""
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  baselines = _job_body(workflow, "bench-baselines")
+  change_point = _job_body(workflow, "change-point")
+  publisher = _job_body(workflow, "publish-benchmark-history")
+
+  assert "    needs: bench-baselines\n" in change_point
+  assert "    needs: bench-baselines\n" in publisher
+  assert "needs.bench-baselines.result == 'success' }}" in publisher
+
+  artifact = "benchmark-baselines-${{ github.run_id }}"
+  assert f"          name: {artifact}\n" in baselines
+  assert f"          name: {artifact}\n" in publisher
+  # change-point lists artifacts by prefix instead of exact name.
+  assert 'startswith("benchmark-baselines-")' in change_point
 
 
 def test_pages_build_has_only_the_permissions_needed_to_configure_pages():
