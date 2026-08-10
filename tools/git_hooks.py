@@ -86,7 +86,6 @@ TOKEN_LIMIT = 24_000
 ZERO_SHA_RE = re.compile(r"^0+$")
 PUSH_SHA_RE = re.compile(r"^[0-9a-f]{40,64}$")
 CMAKE_TEST_TARGET_RE = re.compile(r"add_executable\(\s*(tess_[A-Za-z0-9_]+)")
-AGENTS_TEST_TARGET_RE = re.compile(r"`(tess_[A-Za-z0-9_]+)`")
 
 ByteReader = Callable[[str], bytes]
 
@@ -683,32 +682,68 @@ def extract_cmake_test_targets(text: str) -> list[str]:
   return CMAKE_TEST_TARGET_RE.findall(text)
 
 
-def extract_agents_test_targets(text: str) -> list[str]:
-  return AGENTS_TEST_TARGET_RE.findall(text)
-
-
-def missing_agents_targets(
+def agents_fragment_issues(
   cmake_text: str,
-  agents_text: str,
+  pytest_names: Iterable[str],
+  fragments: dict[str, str],
 ) -> list[str]:
-  documented = set(extract_agents_test_targets(agents_text))
-  return sorted(
-    target
-    for target in set(extract_cmake_test_targets(cmake_text))
-    if target not in documented
-  )
+  """Issues keeping tests/agents.d/ an exact mirror of the test set.
+
+  Every add_executable(tess_*) target and every tests/test_*.py file must
+  have a fragment named `<name>.md` whose first line is `# <name>` and
+  whose body is nonempty; a fragment matching neither is an orphan, so a
+  renamed or removed test cannot leave stale documentation behind.
+  """
+  expected = set(extract_cmake_test_targets(cmake_text))
+  expected.update(pytest_names)
+  issues: list[str] = []
+  seen: set[str] = set()
+  for filename in sorted(fragments):
+    name = filename.removesuffix(".md")
+    seen.add(name)
+    if name not in expected:
+      issues.append(
+        f"tests/agents.d/{filename}: no matching test target or"
+        " tests/test_*.py file"
+      )
+      continue
+    lines = fragments[filename].splitlines()
+    if not lines or lines[0] != f"# {name}":
+      issues.append(
+        f"tests/agents.d/{filename}: first line must be '# {name}'"
+      )
+      continue
+    if not any(line.strip() for line in lines[1:]):
+      issues.append(f"tests/agents.d/{filename}: fragment body is empty")
+  for name in sorted(expected - seen):
+    issues.append(
+      f"tests/agents.d/{name}.md: missing fragment for {name}"
+    )
+  return issues
 
 
 def check_agents_drift() -> int:
-  cmake_path = REPO_ROOT / "tests" / "CMakeLists.txt"
-  agents_path = REPO_ROOT / "tests" / "AGENTS.md"
-  missing = missing_agents_targets(
-    cmake_path.read_text(encoding="utf-8", errors="ignore"),
-    agents_path.read_text(encoding="utf-8", errors="ignore"),
+  # Non-recursive on purpose: only top-level tests/test_*.py files and
+  # tests/agents.d/*.md fragments participate in the mirror; other files
+  # and subdirectories are outside the contract.
+  tests_dir = REPO_ROOT / "tests"
+  fragments_dir = tests_dir / "agents.d"
+  # errors="replace", not "ignore": a malformed byte inside a heading must
+  # surface as a heading mismatch, not be silently dropped into a pass.
+  fragments = {
+    path.name: path.read_text(encoding="utf-8", errors="replace")
+    for path in sorted(fragments_dir.glob("*.md"))
+  }
+  issues = agents_fragment_issues(
+    (tests_dir / "CMakeLists.txt").read_text(
+      encoding="utf-8", errors="ignore"
+    ),
+    sorted(path.name for path in tests_dir.glob("test_*.py")),
+    fragments,
   )
-  if missing:
-    print("\n".join(missing), file=sys.stderr)
-    return fail("tests/AGENTS.md is missing entries for the test targets above")
+  if issues:
+    print("\n".join(issues), file=sys.stderr)
+    return fail("tests/agents.d is out of sync with the test set above")
   return 0
 
 

@@ -7,7 +7,10 @@ resolutions in a file where a mis-resolution silently drops an entry.
 Fragments move each entry into its own file, so branches touch disjoint
 paths and merge cleanly; assembly happens once, at release.
 
-Two fragment sets, matching the two maintained changelogs:
+Three fragment sets, matching the three maintained logs (the third,
+`docs/planning/optimization-log.d/` feeding
+`docs/planning/optimization-log.md`, shares the decision fragments'
+dated naming and single-section shape):
 
   changelog.d/<slug>.<category>.md
       Release-facing entries. `<category>` is one of the Keep a Changelog

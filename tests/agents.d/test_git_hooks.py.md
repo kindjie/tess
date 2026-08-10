@@ -18,4 +18,11 @@
   and Python 3.10 dependency markers, WebGPU smoke callback lifetimes and
   terminal-state precedence, uncaptured-device-error forwarding, and
   synchronization between documented dependency versions and their workflow
-  or direct-input pins.
+  or direct-input pins. It also pins the `tests/agents.d/` mirror gate
+  (`agents_fragment_issues`): missing target and pytest fragments, orphan
+  fragments, empty bodies, and byte-exact heading mismatches (including
+  trailing whitespace) each fail, with a repo-level test over the real
+  tree; and the CI hook-backstop pytest invocation is pinned to the
+  `tests/test_*.py` glob in both directions, so a new suite left out of
+  the hand-enumerated file list fails here instead of silently never
+  running.

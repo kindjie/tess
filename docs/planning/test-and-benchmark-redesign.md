@@ -423,7 +423,7 @@ runs".
 
 No code coverage is currently collected anywhere in the project; the only
 measured coverage is Doxygen documentation coverage, and the only test
-coverage map is the curated `tests/AGENTS.md` catalog. Add a coverage
+coverage map is the curated per-test catalog in `tests/agents.d/`. Add a coverage
 configuration (clang `-fprofile-instr-generate -fcoverage-mapping`) and a
 scheduled-tier job that publishes an llvm-cov report as an artifact,
 optionally surfaced in the generated documentation. Explicitly non-gating:
@@ -564,7 +564,7 @@ be unrepresentative of code breadth — but three specific guarantees:
 - **A declarative workload matrix.** The meaningful coverage axis is the
   workload space: which cells of (family x world size x chunk configuration
   x density x dense/sparse x executor) are measured and which are known to
-  be unmeasured. Record it the way `tests/AGENTS.md` records test
+  be unmeasured. Record it the way `tests/agents.d/` records test
   guarantees — a curated catalog with a CI drift check — so gaps are
   reviewable statements instead of audit-time discoveries, and silent caps
   are visible. The scenario parameter matrix of section 3.1 is effectively
@@ -701,8 +701,9 @@ The hook-backstop CI job is unchanged.
   commands — instead of eighteen threshold JSON files to decode, one per
   `tess_bench_*_thresholds` gating target, delivered
   fork-safely through check output and the step summary rather than a
-  token-privileged comment. The `tests/AGENTS.md` catalog and the
-  pre-commit hygiene flow are unchanged (pre-push slims per section 6).
+  token-privileged comment. The per-test catalog (now `tests/agents.d/`)
+  and the pre-commit hygiene flow are unchanged (pre-push slims per
+  section 6).
 
 ## 8. Ecosystem and packaging
 

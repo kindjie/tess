@@ -1407,11 +1407,12 @@ target_link_libraries(tess_beta_test PRIVATE tess::tess)
 add_executable(other_tool tool.cc)
 """
 
-AGENTS_FIXTURE = """
-# Tests
-
-- `tess_alpha_test`: covers alpha.
-"""
+FRAGMENTS_FIXTURE = {
+  "tess_alpha_test.md": "# tess_alpha_test\n\n- `tess_alpha_test`: covers alpha.\n",
+  "tess_beta_test.md": "# tess_beta_test\n\n- `tess_beta_test`: covers beta.\n",
+  "test_tool.py.md": "# test_tool.py\n\n- `tests/test_tool.py`: covers a tool.\n",
+}
+PYTEST_FIXTURE = ["test_tool.py"]
 
 
 def test_extract_cmake_test_targets_handles_multiline_forms():
@@ -1419,23 +1420,129 @@ def test_extract_cmake_test_targets_handles_multiline_forms():
   assert targets == ["tess_alpha_test", "tess_beta_test"]
 
 
-def test_missing_agents_targets_reports_undocumented_targets():
-  missing = git_hooks.missing_agents_targets(CMAKE_FIXTURE, AGENTS_FIXTURE)
-  assert missing == ["tess_beta_test"]
-
-
-def test_missing_agents_targets_empty_when_documented():
-  agents = AGENTS_FIXTURE + "- `tess_beta_test`: covers beta.\n"
-  assert git_hooks.missing_agents_targets(CMAKE_FIXTURE, agents) == []
-
-
-def test_repo_agents_md_documents_all_cmake_test_targets():
-  root = Path(__file__).resolve().parents[1]
-  missing = git_hooks.missing_agents_targets(
-    (root / "tests" / "CMakeLists.txt").read_text(),
-    (root / "tests" / "AGENTS.md").read_text(),
+def test_agents_fragment_issues_empty_when_synchronized():
+  issues = git_hooks.agents_fragment_issues(
+    CMAKE_FIXTURE, PYTEST_FIXTURE, FRAGMENTS_FIXTURE
   )
-  assert missing == []
+  assert issues == []
+
+
+def test_agents_fragment_issues_reports_missing_target_fragment():
+  fragments = dict(FRAGMENTS_FIXTURE)
+  del fragments["tess_beta_test.md"]
+  issues = git_hooks.agents_fragment_issues(
+    CMAKE_FIXTURE, PYTEST_FIXTURE, fragments
+  )
+  assert issues == [
+    "tests/agents.d/tess_beta_test.md: missing fragment for tess_beta_test"
+  ]
+
+
+def test_agents_fragment_issues_reports_missing_pytest_fragment():
+  fragments = dict(FRAGMENTS_FIXTURE)
+  del fragments["test_tool.py.md"]
+  issues = git_hooks.agents_fragment_issues(
+    CMAKE_FIXTURE, PYTEST_FIXTURE, fragments
+  )
+  assert issues == [
+    "tests/agents.d/test_tool.py.md: missing fragment for test_tool.py"
+  ]
+
+
+def test_agents_fragment_issues_reports_orphan_fragment():
+  fragments = dict(FRAGMENTS_FIXTURE)
+  fragments["tess_gone_test.md"] = "# tess_gone_test\n\n- gone.\n"
+  issues = git_hooks.agents_fragment_issues(
+    CMAKE_FIXTURE, PYTEST_FIXTURE, fragments
+  )
+  assert issues == [
+    "tests/agents.d/tess_gone_test.md: no matching test target or"
+    " tests/test_*.py file"
+  ]
+
+
+def test_agents_fragment_issues_reports_empty_fragment_body():
+  fragments = dict(FRAGMENTS_FIXTURE)
+  fragments["tess_beta_test.md"] = "# tess_beta_test\n\n   \n"
+  issues = git_hooks.agents_fragment_issues(
+    CMAKE_FIXTURE, PYTEST_FIXTURE, fragments
+  )
+  assert issues == [
+    "tests/agents.d/tess_beta_test.md: fragment body is empty"
+  ]
+
+
+def test_agents_fragment_issues_reports_heading_mismatch():
+  fragments = dict(FRAGMENTS_FIXTURE)
+  fragments["tess_beta_test.md"] = (
+    "# tess_alpha_test\n\n- `tess_beta_test`: covers beta.\n"
+  )
+  issues = git_hooks.agents_fragment_issues(
+    CMAKE_FIXTURE, PYTEST_FIXTURE, fragments
+  )
+  assert issues == [
+    "tests/agents.d/tess_beta_test.md: first line must be"
+    " '# tess_beta_test'"
+  ]
+
+
+def test_agents_fragment_issues_rejects_trailing_heading_whitespace():
+  fragments = dict(FRAGMENTS_FIXTURE)
+  fragments["tess_beta_test.md"] = (
+    "# tess_beta_test \n\n- `tess_beta_test`: covers beta.\n"
+  )
+  issues = git_hooks.agents_fragment_issues(
+    CMAKE_FIXTURE, PYTEST_FIXTURE, fragments
+  )
+  assert issues == [
+    "tests/agents.d/tess_beta_test.md: first line must be"
+    " '# tess_beta_test'"
+  ]
+
+
+def test_ci_hook_unit_tests_enumerate_every_pytest_file():
+  """The CI pytest invocation lists files explicitly, so a new suite that
+  is not added there silently never runs (it has happened four times).
+  Pin the enumeration to the tests/test_*.py glob, both directions."""
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  lines = workflow.splitlines()
+  try:
+    start = lines.index("          pytest")
+  except ValueError:
+    raise AssertionError(
+      "ci.yml no longer contains the expected 'pytest' invocation line"
+    ) from None
+  enumerated = set()
+  for line in lines[start + 1 :]:
+    stripped = line.strip()
+    if not stripped.startswith("tests/test_") or not stripped.endswith(
+      ".py"
+    ):
+      break
+    enumerated.add(stripped.removeprefix("tests/"))
+  present = {path.name for path in (root / "tests").glob("test_*.py")}
+  assert enumerated == present, (
+    f"missing from ci.yml pytest invocation: {sorted(present - enumerated)}; "
+    f"listed but absent on disk: {sorted(enumerated - present)}"
+  )
+
+
+def test_repo_agents_fragments_match_targets_and_pytest_files():
+  root = Path(__file__).resolve().parents[1]
+  fragments_dir = root / "tests" / "agents.d"
+  fragments = {
+    path.name: path.read_text() for path in fragments_dir.glob("*.md")
+  }
+  pytest_names = sorted(
+    path.name for path in (root / "tests").glob("test_*.py")
+  )
+  issues = git_hooks.agents_fragment_issues(
+    (root / "tests" / "CMakeLists.txt").read_text(),
+    pytest_names,
+    fragments,
+  )
+  assert issues == []
 
 
 def test_compiled_dev_requirements_include_exact_direct_pins():

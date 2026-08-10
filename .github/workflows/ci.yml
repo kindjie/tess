@@ -477,6 +477,10 @@ jobs:
           tests/test_compare_budgeted_passes.py
           tests/test_changelog_fragments.py
           tests/test_check_mermaid.py
+          tests/test_cloud_perf.py
+          tests/test_macro_odr_guards.py
+          tests/test_parser_fuzz.py
+          tests/test_publish_benchmark_data.py
 
       # Failing gate (promoted 2026-07-07 after a clean shake-out):
       # public symbols must be documented in a maintained architecture
