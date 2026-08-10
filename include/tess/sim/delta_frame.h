@@ -135,10 +135,24 @@ struct DeltaFrameHeader {
   bool truncated = false;
 };
 
-// Immutable view into collector-owned storage. Valid until the next
-// mutating call on the collector (begin_tick / record_* / collect_* /
-// publish / clear). Single-buffered by design: renderers own their
-// persistent presentation memory.
+// Immutable view into collector-owned storage. The spans stay valid until
+// the next publish() or reserve() on the collector, and NOT until "the next
+// mutating call" as this comment claimed until 2026-08-09: begin_tick,
+// record_* and collect_* fill the PENDING buffers and never touch the
+// published ones, which is the point of the swap in publish() -- recording
+// the next frame proceeds while the current one is being applied. reserve()
+// was missing from the list and does belong on it: it re-reserves the
+// published vectors too, so it can reallocate a live frame's storage.
+//
+// `header` is a value copy and outlives all of that.
+//
+// Single-buffered by design: renderers own their persistent presentation
+// memory. Holding a frame across a publish() is therefore outside the
+// contract -- the buffers it points into become the pending accumulator,
+// are cleared, and are refilled, so the spans go stale and their
+// first_tile/first_node indices can run past the tiles/overlay_nodes they
+// index. This is documented rather than enforced; enforcing it is tracked
+// as the remaining half of audit finding API3.
 /// Views collector-owned invalidation records for one published frame.
 struct DeltaFrame {
   DeltaFrameHeader header{};

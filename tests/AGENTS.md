@@ -90,6 +90,16 @@
   asserted to stay callable on a temporary, so the fix cannot
   over-restrict. Also pins that `explicit_chunk_domain` sorts without
   deduplicating.
+- `tess_delta_frame_lifetime_test`: pins the `DeltaFrame` lifetime
+  contract, which its header comment previously stated incorrectly. A
+  published frame survives `begin_tick`, `record_*`, `collect_*` and
+  `clear()` — all of which touch only the pending buffers — and its
+  `header` survives everything because it is a value copy. The assertions
+  read THROUGH the spans: comparing `span.data()`/`size()` compares the
+  span's own fields, which no collector call can change, and a first draft
+  of these tests passed a mutation that wiped the published storage. There
+  is deliberately no `reserve()` test; reallocation is not observable
+  through a span.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
   default and explicit lattice typing with stable lattice identifiers,
   axial hex coordinate conversion and overflow-safe saturated distance,
