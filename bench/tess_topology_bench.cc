@@ -82,9 +82,10 @@ void BM_topology_region_graph_build_open_512x512(benchmark::State& state) {
     benchmark::DoNotOptimize(built.region_count);
     benchmark::DoNotOptimize(graph.region_count());
   }
-  bench_check(built.region_count > 0, "region graph build produced no regions");
+  bench_check(built.region_count > 0,
+              "region graph build RESULT reported no regions");
   bench_check(graph.region_count() > 0,
-              "region graph build produced no regions");
+              "region GRAPH holds no regions after the build");
   state.counters["regions"] = static_cast<double>(graph.region_count());
 }
 
@@ -112,9 +113,9 @@ void BM_topology_region_graph_build_composed_class_512x512(
     benchmark::DoNotOptimize(graph.region_count());
   }
   bench_check(built.region_count > 0,
-              "composed-class region graph build produced no regions");
+              "composed-class build RESULT reported no regions");
   bench_check(graph.region_count() > 0,
-              "composed-class region graph build produced no regions");
+              "composed-class GRAPH holds no regions after the build");
   state.counters["regions"] = static_cast<double>(graph.region_count());
 }
 
