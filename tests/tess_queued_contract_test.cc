@@ -921,4 +921,31 @@ TEST(TessQueuedContract, OverlappingReadOnlyDirtyRecordsCoalesceOnce) {
             (tess::Box3{tess::Coord3{32, 0, 0}, tess::Extent3{32, 16, 1}}));
 }
 
+// The three merge_planned_dirty overloads disagree on noexcept, and the
+// disagreement is the contract rather than an oversight: an overload is
+// noexcept exactly when it does not allocate. The accumulator overload
+// merges already-populated records into the world; the other two reserve
+// their destination first and can therefore throw std::bad_alloc.
+//
+// Pinned because "make them consistent" is the tempting wrong fix --
+// marking the allocating ones noexcept would convert a bad_alloc into
+// std::terminate -- and because an -fno-exceptions consumer reads these
+// signatures to decide whether a call can throw.
+TEST(TessQueuedContract,
+     MergePlannedDirtyIsNoexceptExactlyWhenItCannotAllocate) {
+  World world;
+  tess::PlannedDirtyAccumulator dirty;
+  tess::PlannedDirtyPartitions partitions;
+  tess::PlannedPhaseExecutionScratch scratch;
+
+  static_assert(noexcept(tess::merge_planned_dirty(world, dirty)),
+                "the non-allocating overload must stay noexcept");
+  static_assert(!noexcept(tess::merge_planned_dirty(world, partitions, dirty)),
+                "collect_planned_dirty reserves, so this can throw bad_alloc");
+  static_assert(!noexcept(tess::merge_planned_dirty(world, scratch)),
+                "this reserves the merged accumulator, so it can throw");
+
+  SUCCEED();
+}
+
 }  // namespace
