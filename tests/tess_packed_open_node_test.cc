@@ -40,6 +40,7 @@ TEST(TessPackedOpenNode, ComparatorIsomorphicOnCornerTriples) {
   const std::uint64_t indexes[] = {0, 1,
                                    std::numeric_limits<std::uint64_t>::max()};
   std::vector<Legacy> nodes;
+  nodes.reserve(48);
   for (const auto f : words) {
     for (const auto g : words) {
       for (const auto index : indexes) {
@@ -66,6 +67,7 @@ TEST(TessPackedOpenNode, ComparatorIsomorphicOnSeededRandomTriples) {
     return state;
   };
   std::vector<Legacy> nodes;
+  nodes.reserve(512);
   for (int i = 0; i < 512; ++i) {
     // Narrow ranges force frequent f/g collisions so every tie level of
     // the comparator is exercised, not just the first compare.
@@ -97,6 +99,7 @@ TEST(TessPackedOpenNode, DifferentialHeapsPopIdenticalSequences) {
   // decreasing g (the relax pattern), equal-(f,g) ties broken by index,
   // and boundary words. Both heaps must pop the same node at every step.
   std::vector<Legacy> sequence;
+  sequence.reserve(218);
   for (std::uint32_t g = 8; g > 0; --g) {
     sequence.push_back(Legacy{7, g, 10});  // stale chain on one index
   }
