@@ -262,7 +262,7 @@ stateDiagram-v2
   gap: entity loss is unrecoverable by the version chain.
 - `DeltaFrame` is an immutable view into collector-owned storage. Its
   spans are valid until the next `publish()` or `reserve()`, and until the
-  collector is assigned to or moved from — not "until the next mutating
+  collector is move-assigned to or moved from (it is not copyable) — not "until the next mutating
   collector call", which this page said until 2026-08-09: `begin_tick`,
   `record_*`, `collect_*` and `clear()` touch only the pending buffers, so
   the next frame is recorded while the current one is applied, and

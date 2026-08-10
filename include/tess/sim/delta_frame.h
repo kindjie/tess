@@ -144,11 +144,9 @@ struct DeltaFrameHeader {
 // was missing from the list and does belong on it: it re-reserves the
 // published vectors too, so it can reallocate a live frame's storage.
 //
-// Assignment and move also invalidate: DeltaCollector keeps its
-// compiler-generated copy/move operations, and either replaces or empties
-// the published vectors. Deleting them is deliberately not done here --
-// factories that return a collector by value rely on the move -- and is
-// tracked with the enforcement work below.
+// Move-assignment and move-construction also invalidate: they replace or
+// empty the published vectors. The collector is not copyable, so there is
+// no copy to reason about.
 //
 // `header` is a value copy and outlives all of that.
 //
@@ -242,15 +240,44 @@ struct DeltaCollectorStats {
 ///
 /// The collector owns every returned frame view. A view's spans stay valid
 /// until the next `publish()` or `reserve()`, and until the collector is
-/// assigned to or moved from -- NOT until "its next mutation", which this
+/// move-assigned to or moved from -- NOT until "its next mutation", which this
 /// comment said until 2026-08-09 and which is both too broad and too
 /// narrow; see the note on `DeltaFrame`. After `reserve`, steady-state
 /// recording does not allocate; overflow truncates the frame and requires a
 /// baseline resynchronization.
+///
+/// Not copyable; movable. A moved-from collector behaves as if `clear()`
+/// had been called on it: its next publish is forced truncated, so a
+/// consumer on its chain resyncs from a baseline rather than accepting an
+/// empty frame as an applicable no-op. Reuse it by assigning a fresh
+/// collector to it, or by `clear()` followed by a baseline collection --
+/// `reserve()` looks like a reset and is not one.
 class DeltaCollector {
  public:
   DeltaCollector() = default;
   explicit DeltaCollector(DeltaCollectorOptions options) : options_(options) {}
+
+  // Non-copyable. A copy duplicates all five published and pending vectors
+  // silently, and leaves two collectors each believing they are the sole
+  // owner clearing the dirty bits they collected -- collection consumes
+  // those bits, so a second collector over the same world observes nothing
+  // and publishes an empty frame that still advances its own version.
+  // Nothing in the tree copies one.
+  //
+  // Movable, because factories return a collector by value. Declaring the
+  // copy operations (even as deleted) suppresses the implicit move
+  // operations, so they are defaulted explicitly rather than left to be
+  // silently absent. Moving still invalidates any live frame: the spans
+  // then point into buffers the destination owns.
+  //
+  // A moved-from collector behaves as if cleared: its next publish is
+  // forced truncated, so a consumer on its chain resyncs instead of
+  // silently accepting an empty frame. See MovedFromFlag below for how
+  // that survives the defaulted moves.
+  DeltaCollector(const DeltaCollector&) = delete;
+  auto operator=(const DeltaCollector&) -> DeltaCollector& = delete;
+  DeltaCollector(DeltaCollector&&) = default;
+  auto operator=(DeltaCollector&&) -> DeltaCollector& = default;
 
   // Setup-time capacities; entity_capacity also sizes the coalescing
   // map (kept at load factor <= 0.5). Consumers publishing baselines
@@ -438,7 +465,7 @@ class DeltaCollector {
     const auto state_carrying =
         !pending_chunks_.empty() || !pending_tiles_.empty() ||
         !pending_entities_.empty() || baseline_pending_ || pending_truncated_ ||
-        needs_baseline_;
+        needs_baseline_ || moved_from_.value;
     auto header = DeltaFrameHeader{};
     header.from_version = version_;
     if (state_carrying) {
@@ -451,9 +478,11 @@ class DeltaCollector {
     header.dirty_mask = pending_dirty_mask_;
     header.baseline = baseline_pending_;
     header.truncated =
-        pending_truncated_ || (needs_baseline_ && !baseline_pending_);
+        pending_truncated_ ||
+        ((needs_baseline_ || moved_from_.value) && !baseline_pending_);
     if (baseline_pending_) {
       needs_baseline_ = false;
+      moved_from_.value = false;
     }
 
     clear_coalesce_slots();
@@ -672,6 +701,41 @@ class DeltaCollector {
   bool pending_truncated_ = false;
   bool baseline_pending_ = false;
   bool needs_baseline_ = false;
+  // Poisons the SOURCE of a move, so a moved-from collector's next publish
+  // is forced truncated and its consumer resyncs rather than silently
+  // accepting an applicable empty frame on a chain that still looks
+  // continuous.
+  //
+  // The poison lives in the member's own move operations rather than in a
+  // hand-written DeltaCollector move. That keeps both enclosing moves
+  // `= default`, so every member -- including any added later --
+  // participates memberwise as usual. Hand-writing the enclosing move
+  // instead would silently drop a future member, which is the same class
+  // of silent failure as the bug being fixed.
+  //
+  // Bounds of what this fixes: it closes the moved-from chain-continuity
+  // hole only. Two live collectors clearing one world's dirty bits remains
+  // the sole-clearing-owner contract above, and no type-level check can
+  // enforce that.
+  struct MovedFromFlag {
+    bool value = false;
+
+    MovedFromFlag() = default;
+    MovedFromFlag(const MovedFromFlag&) = default;
+    auto operator=(const MovedFromFlag&) -> MovedFromFlag& = default;
+    ~MovedFromFlag() = default;
+
+    MovedFromFlag(MovedFromFlag&& other) noexcept { other.value = true; }
+
+    auto operator=(MovedFromFlag&& other) noexcept -> MovedFromFlag& {
+      if (this != &other) {
+        value = false;
+        other.value = true;
+      }
+      return *this;
+    }
+  };
+  MovedFromFlag moved_from_{};
   DeltaCollectorStats stats_{};
 };
 

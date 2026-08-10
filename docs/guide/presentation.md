@@ -33,6 +33,11 @@ collector — apply the frame, or copy what you need out of it, before
 publishing again. Its `header` is a value and outlives all of that, which
 is why version and gap checks are safe to keep.
 
+A `DeltaCollector` is also not copyable, and a moved-from one behaves as
+if cleared: its next frame is truncated so your consumer resyncs rather
+than silently accepting an empty one. Reuse it by assigning a fresh
+collector, or by `clear()` and a baseline.
+
 That matters most for the branch this page recommends. "Different
 cadence, thread, or process" describes the *consumer*, not the frame: a
 `DeltaCollector` is externally synchronized like every other tess

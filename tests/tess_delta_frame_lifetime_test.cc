@@ -3,6 +3,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
+#include <utility>
 
 // The DeltaFrame lifetime contract, pinned rather than merely stated.
 //
@@ -149,5 +151,104 @@ TEST(TessDeltaFrameLifetime, ClearLeavesAPublishedFrameIntact) {
 // copy of itself cannot fail -- the first draft here contained exactly
 // that. Its durability is a property of the type's layout, which
 // tess_render_delta_frame_test already exercises throughout.
+
+// A copy would duplicate all five buffer pairs silently and leave two
+// collectors each believing they alone clear the dirty bits they collect.
+// Collection consumes those bits, so the second collector over the same
+// world observes nothing and publishes an empty frame that still advances
+// its own version -- a consumer on that chain silently misses everything.
+TEST(TessDeltaFrameLifetime, CollectorIsMoveOnly) {
+  static_assert(!std::is_copy_constructible_v<tess::DeltaCollector>);
+  static_assert(!std::is_copy_assignable_v<tess::DeltaCollector>);
+
+  // Movable on purpose: factories return one by value. Declaring the copy
+  // operations as deleted suppresses the implicit moves, so this fails if
+  // they are ever dropped rather than defaulted.
+  static_assert(std::is_move_constructible_v<tess::DeltaCollector>);
+  static_assert(std::is_move_assignable_v<tess::DeltaCollector>);
+
+  // And the move actually works end to end, not just on paper.
+  World world;
+  auto collector = make_collector();
+  auto moved = std::move(collector);
+  mark_sized(world, tess::Coord3{1, 1, 0}, 1);
+  tess::collect_tile_deltas(moved, world, kTerrainBit);
+  EXPECT_FALSE(moved.publish().chunks.empty());
+}
+
+// Deleting the copy operations relocated the shared-ownership hazard
+// rather than removing it. The defaulted move transfers the buffers but
+// COPIES the protocol scalars, so a moved-from collector kept its version
+// and its baseline flag. Review reproduced the consequence: re-reserve the
+// source, let the destination collect first, and the source publishes an
+// applicable, untruncated, empty frame on a chain that still looks
+// continuous -- a consumer accepts it and misses a real change.
+//
+// A moved-from collector now behaves as if cleared.
+TEST(TessDeltaFrameLifetime, MovedFromCollectorForcesAResync) {
+  World world;
+  auto source = make_collector();
+  auto destination = std::move(source);
+
+  // The source is moved-from. Reusing it is outside the contract, but it
+  // must fail loudly rather than silently: reserve() looks like a reset.
+  //
+  // The use-after-move is the point of the test, so the analyzers that
+  // flag it are suppressed here rather than the test being reshaped to
+  // avoid them -- reshaping it would stop it exercising the hazard.
+  // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+  source.reserve(World::chunk_count, 64, 8);
+  mark_sized(world, tess::Coord3{1, 1, 0}, 1);
+
+  // The destination collects first and consumes the dirty bits.
+  tess::collect_tile_deltas(destination, world, kTerrainBit);
+
+  // The source now sees nothing. Its frame must not read as an applicable
+  // no-op: truncated forces the consumer to resync from a baseline.
+  // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+  tess::collect_tile_deltas(source, world, kTerrainBit);
+  // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+  const auto starved = source.publish();
+
+  EXPECT_TRUE(starved.chunks.empty());
+  EXPECT_TRUE(starved.header.truncated);
+  EXPECT_FALSE(
+      tess::delta_frame_applicable(starved.header, tess::RenderVersion{1}));
+}
+
+TEST(TessDeltaFrameLifetime, MoveDestinationIsNotPoisoned) {
+  World world;
+  auto source = make_collector();
+  auto destination = std::move(source);
+
+  // Only the source is poisoned; the destination is the live collector and
+  // must publish ordinary applicable frames.
+  mark_sized(world, tess::Coord3{2, 2, 0}, 1);
+  tess::collect_tile_deltas(destination, world, kTerrainBit);
+  const auto frame = destination.publish();
+
+  EXPECT_FALSE(frame.chunks.empty());
+  EXPECT_FALSE(frame.header.truncated);
+}
+
+TEST(TessDeltaFrameLifetime, AssigningAFreshCollectorClearsThePoison) {
+  World world;
+  auto source = make_collector();
+  auto destination = std::move(source);
+
+  // "Assign to it" is a sanctioned way to reuse a moved-from collector, so
+  // the poison must not survive the assignment.
+  // Assigning to a moved-from object is well defined and is the sanctioned
+  // reuse path, so only the analyzer's blanket rule needs quieting.
+  // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+  source = make_collector();
+  mark_sized(world, tess::Coord3{3, 3, 0}, 1);
+  tess::collect_tile_deltas(source, world, kTerrainBit);
+  const auto frame = source.publish();
+
+  EXPECT_FALSE(frame.chunks.empty());
+  EXPECT_FALSE(frame.header.truncated);
+  static_cast<void>(destination);
+}
 
 }  // namespace
