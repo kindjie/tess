@@ -635,11 +635,9 @@
   resubmission, shared free destinations resolve by span order, dirty-mask
   marking covers both chunks, `max_steps` zero/multi-step semantics match the
   per-agent advance, outcomes are deterministic across identical runs, the
-  warm pass allocates nothing after `JointMoveScratch::reserve`, each of the
-  eleven round buffers is unreachable through the type (each probe paired
-  with a public-member control), and the weighted joint tick driver resolves a
-  one-wide corridor head-on under `Permit` while deliberately keeping the
-  wedge under `Forbid`;
+  warm pass allocates nothing after `JointMoveScratch::reserve`, and the
+  weighted joint tick driver resolves a one-wide corridor head-on under
+  `Permit` while deliberately keeping the wedge under `Forbid`;
 - `tess_pibt_movement_test`: PIBT movement tier coverage — the width-3 ring
   gate cell (64x64, n=48, pinned seed) through the real weighted tick driver
   with the full settled recipe, where the joint commit's congestion lets
@@ -660,8 +658,7 @@
   loses its vertex claim counts nothing); head-on pairs
   follow `SwapPolicy` with swap/denial counters; outcomes are deterministic
   across identical runs; the warm pass allocates nothing after
-  `PibtPriorities::reserve` plus `JointMoveScratch::reserve`; `elapsed` is
-  reachable while `order` and `frames` are not; and
+  `PibtPriorities::reserve` plus `JointMoveScratch::reserve`; and
   `DistanceFieldProduct::distance_at` returns exact distances in-shape and
   the `unreachable_distance` sentinel for unreached tiles, out-of-shape
   coordinates, and shape-identity mismatches;

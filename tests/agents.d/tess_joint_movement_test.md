@@ -10,6 +10,10 @@
   resubmission, shared free destinations resolve by span order, dirty-mask
   marking covers both chunks, `max_steps` zero/multi-step semantics match the
   per-agent advance, outcomes are deterministic across identical runs, the
-  warm pass allocates nothing after `JointMoveScratch::reserve`, and the
-  weighted joint tick driver resolves a one-wide corridor head-on under
-  `Permit` while deliberately keeping the wedge under `Forbid`;
+  warm pass allocates nothing after `JointMoveScratch::reserve`, each of the
+  eleven round buffers is unreachable through the type (each probe paired
+  with a public-member control, so a mistyped name cannot make a negative
+  assertion unfalsifiable) while standard layout survives where
+  `std::vector` has it, and the weighted joint tick driver resolves a
+  one-wide corridor head-on under `Permit` while deliberately keeping the
+  wedge under `Forbid`;
