@@ -104,7 +104,6 @@ TEST(TessTopologyMovement, IdentityLabelsMatchTheLegacyTagBuild) {
       tess::build_region_graph<World, mv::WalkableField<PassableTag>>(
           world, scratch, by_class);
 
-  EXPECT_EQ(tag_result.status, tess::TopologyStatus::Built);
   EXPECT_EQ(tag_result.region_count, class_result.region_count);
   EXPECT_EQ(tag_result.passable_tile_count, class_result.passable_tile_count);
   expect_graphs_equal(by_class, by_tag);
@@ -119,12 +118,8 @@ TEST(TessTopologyMovement, WalkerAndBuilderDivergeExactlyOnConstruction) {
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph walker_graph;
   tess::RegionGraph builder_graph;
-  const auto walker_built =
-      tess::build_region_graph<World, Walker>(world, scratch, walker_graph);
-  ASSERT_EQ(walker_built.status, tess::TopologyStatus::Built);
-  const auto builder_built =
-      tess::build_region_graph<World, Builder>(world, scratch, builder_graph);
-  ASSERT_EQ(builder_built.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, walker_graph);
+  tess::build_region_graph<World, Builder>(world, scratch, builder_graph);
 
   // Tile-level: labels are valid for exactly the class's passable set, so the
   // graphs differ precisely on the construction tiles.
@@ -168,9 +163,7 @@ TEST(TessTopologyMovement, PerClassIncrementalUpdateEqualsFullRebuild) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  const auto built =
-      tess::build_region_graph<World, Builder>(world, scratch, graph);
-  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Builder>(world, scratch, graph);
 
   // Construction edits change Builder passability only; both dirty chunks
   // sit on a seam so portal re-derivation is exercised.
@@ -204,9 +197,7 @@ TEST(TessTopologyMovement, ClassStampMismatchForcesFullRebuildOnUpdate) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  const auto built =
-      tess::build_region_graph<World, Walker>(world, scratch, graph);
-  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<World, Walker>(world, scratch, graph);
 
   // An empty dirty set is a no-op when the class matches; under a class
   // mismatch it must instead be a full rebuild with the new class's labels.
@@ -938,9 +929,7 @@ TEST(TessTopologyMovement, WalkableCostFieldLabelsExcludeZeroCostTiles) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  const auto built =
-      tess::build_region_graph<CostWorld, CostWalker>(world, scratch, graph);
-  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<CostWorld, CostWalker>(world, scratch, graph);
   EXPECT_EQ(graph.region_of<TopDown2D>(tess::Coord3{4, 4, 0}).region,
             tess::invalid_local_region);
   EXPECT_NE(graph.region_of<TopDown2D>(tess::Coord3{3, 4, 0}).region,

@@ -83,7 +83,7 @@ void make_chunk_passable(WorldType& world, tess::ChunkKey key) {
 // column (x=7) is walled, so no portal bridges chunk 0 and chunk 1.
 auto build_disconnected_split(DenseWorld<Split>& world,
                               tess::RegionGraph& graph)
-    -> tess::LocalTopologyResult {
+    -> tess::RegionGraphBuildResult {
   fill_passable(world, 1);
   for (std::int64_t y = 0; y < 8; ++y) {
     world.field<PassableTag>(tess::Coord3{7, y, 0}) = 0;
@@ -98,8 +98,7 @@ auto build_disconnected_split(DenseWorld<Split>& world,
 TEST(TessPrecheck, ReachableWithinConnectedRegion) {
   DenseWorld<Split> world;
   tess::RegionGraph graph;
-  ASSERT_EQ(build_disconnected_split(world, graph).status,
-            tess::TopologyStatus::Built);
+  build_disconnected_split(world, graph);
   tess::RegionGraphScratch scratch;
   EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0}, {6, 7, 0},
                                              scratch),
@@ -109,8 +108,7 @@ TEST(TessPrecheck, ReachableWithinConnectedRegion) {
 TEST(TessPrecheck, UnreachableAcrossWalledChunkSkipsAStar) {
   DenseWorld<Split> world;
   tess::RegionGraph graph;
-  ASSERT_EQ(build_disconnected_split(world, graph).status,
-            tess::TopologyStatus::Built);
+  build_disconnected_split(world, graph);
   tess::RegionGraphScratch scratch;
   const auto status = tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
                                                        {15, 7, 0}, scratch);
@@ -127,8 +125,7 @@ TEST(TessPrecheck, UnreachableAcrossWalledChunkSkipsAStar) {
 TEST(TessPrecheck, OutOfBoundsStartIsInvalidStart) {
   DenseWorld<Split> world;
   tess::RegionGraph graph;
-  ASSERT_EQ(build_disconnected_split(world, graph).status,
-            tess::TopologyStatus::Built);
+  build_disconnected_split(world, graph);
   tess::RegionGraphScratch scratch;
   EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {-1, 0, 0},
                                              {6, 7, 0}, scratch),
@@ -144,8 +141,7 @@ TEST(TessPrecheck, OutOfBoundsStartIsInvalidStart) {
 TEST(TessPrecheck, OutOfBoundsGoalIsInvalidGoal) {
   DenseWorld<Split> world;
   tess::RegionGraph graph;
-  ASSERT_EQ(build_disconnected_split(world, graph).status,
-            tess::TopologyStatus::Built);
+  build_disconnected_split(world, graph);
   tess::RegionGraphScratch scratch;
   EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
                                              {16, 0, 0}, scratch),
@@ -165,8 +161,7 @@ TEST(TessPrecheck, EmptyGraphIsNoGraph) {
 TEST(TessPrecheck, StaleGraphIsGraphStaleNotWrongUnreachable) {
   DenseWorld<Split> world;
   tess::RegionGraph graph;
-  ASSERT_EQ(build_disconnected_split(world, graph).status,
-            tess::TopologyStatus::Built);
+  build_disconnected_split(world, graph);
   tess::RegionGraphScratch scratch;
   // A topology edit after the build must degrade to A*, never a stale verdict.
   world.mark_topology_rebuilt(tess::ChunkKey{0});
@@ -183,9 +178,8 @@ TEST(TessPrecheck, SparseNonResidentBoundaryIsMissingChunk) {
   make_chunk_passable(world, tess::ChunkKey{1});  // x in [32,64)
   tess::LocalTopologyScratch local_scratch;
   tess::SparseRegionGraph graph;
-  const auto built = tess::build_region_graph<SparseWide, PassableTag>(
-      world, local_scratch, graph);
-  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<SparseWide, PassableTag>(world, local_scratch,
+                                                    graph);
 
   tess::RegionGraphScratch scratch;
   // Within the resident corridor: reachable.
@@ -202,8 +196,7 @@ TEST(TessPrecheck, SparseNonResidentBoundaryIsMissingChunk) {
 TEST(TessPrecheck, WarmPrecheckIsAllocationFree) {
   DenseWorld<Split> world;
   tess::RegionGraph graph;
-  ASSERT_EQ(build_disconnected_split(world, graph).status,
-            tess::TopologyStatus::Built);
+  build_disconnected_split(world, graph);
   tess::RegionGraphScratch scratch;
   // Warm the scratch (its visited-epoch vector) with one query first.
   (void)tess::precheck_path<PassableTag>(graph, world, {0, 0, 0}, {15, 7, 0},
@@ -221,8 +214,7 @@ TEST(TessPrecheck, WarmPrecheckIsAllocationFree) {
 TEST(TessPrecheck, WrongClassGraphIsGraphStaleNotWrongUnreachable) {
   DenseWorld<Split> world;
   tess::RegionGraph graph;
-  ASSERT_EQ(build_disconnected_split(world, graph).status,
-            tess::TopologyStatus::Built);
+  build_disconnected_split(world, graph);
   // A construction site bridges the wall: the Builder can cross where the
   // plain walker cannot, so the walker-labeled graph MUST NOT answer for the
   // Builder -- its definitive Unreachable would prune a route the Builder's
@@ -247,10 +239,8 @@ TEST(TessPrecheck, ProviderRevisionMismatchIsGraphStale) {
   auto provider = RevisionProvider{};
   tess::LocalTopologyScratch local_scratch;
   tess::RegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<DenseWorld<Split>, PassableTag>(
-                 world, local_scratch, graph, provider))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<DenseWorld<Split>, PassableTag>(world, local_scratch,
+                                                           graph, provider);
   tess::RegionGraphScratch scratch;
   EXPECT_EQ(tess::precheck_path<PassableTag>(graph, world, {0, 0, 0},
                                              {15, 7, 0}, scratch, provider),
@@ -266,14 +256,12 @@ TEST(TessPrecheck, ProviderRevisionMismatchIsGraphStale) {
 TEST(TessPrecheck, MatchedClassGraphRulesOutPerClass) {
   DenseWorld<Split> world;
   tess::RegionGraph graph;
-  ASSERT_EQ(build_disconnected_split(world, graph).status,
-            tess::TopologyStatus::Built);
+  build_disconnected_split(world, graph);
   // Rebuild FOR the Builder with a bridge site: reachable for the Builder.
   world.field<ConstructionTag>(tess::Coord3{7, 3, 0}) = 1;
   tess::LocalTopologyScratch local_scratch;
-  const auto rebuilt = tess::build_region_graph<DenseWorld<Split>, Builder>(
-      world, local_scratch, graph);
-  ASSERT_EQ(rebuilt.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<DenseWorld<Split>, Builder>(world, local_scratch,
+                                                       graph);
 
   tess::RegionGraphScratch scratch;
   EXPECT_EQ(tess::precheck_path<Builder>(graph, world, {0, 0, 0}, {15, 7, 0},
@@ -281,9 +269,8 @@ TEST(TessPrecheck, MatchedClassGraphRulesOutPerClass) {
             tess::PrecheckStatus::Reachable);
   // Remove the bridge and rebuild: now definitively unreachable per class.
   world.field<ConstructionTag>(tess::Coord3{7, 3, 0}) = 0;
-  const auto sealed = tess::build_region_graph<DenseWorld<Split>, Builder>(
-      world, local_scratch, graph);
-  ASSERT_EQ(sealed.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<DenseWorld<Split>, Builder>(world, local_scratch,
+                                                       graph);
   EXPECT_EQ(tess::precheck_path<Builder>(graph, world, {0, 0, 0}, {15, 7, 0},
                                          scratch),
             tess::PrecheckStatus::Unreachable);

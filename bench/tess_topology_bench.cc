@@ -75,17 +75,17 @@ void BM_topology_region_graph_build_open_512x512(benchmark::State& state) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  tess::LocalTopologyResult built{};
+  tess::RegionGraphBuildResult built{};
   for (auto _ : state) {
     built =
         tess::build_region_graph<TopoWorld, PassableTag>(world, scratch, graph);
     benchmark::DoNotOptimize(built.region_count);
     benchmark::DoNotOptimize(graph.region_count());
   }
-  bench_check(built.status == tess::TopologyStatus::Built,
-              "region graph build did not report Built");
+  bench_check(built.region_count > 0,
+              "region graph build RESULT reported no regions");
   bench_check(graph.region_count() > 0,
-              "region graph build produced no regions");
+              "region GRAPH holds no regions after the build");
   state.counters["regions"] = static_cast<double>(graph.region_count());
 }
 
@@ -105,17 +105,17 @@ void BM_topology_region_graph_build_composed_class_512x512(
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  tess::LocalTopologyResult built{};
+  tess::RegionGraphBuildResult built{};
   for (auto _ : state) {
     built = tess::build_region_graph<ClassWorld, BenchWalker>(world, scratch,
                                                               graph);
     benchmark::DoNotOptimize(built.region_count);
     benchmark::DoNotOptimize(graph.region_count());
   }
-  bench_check(built.status == tess::TopologyStatus::Built,
-              "composed-class region graph build did not report Built");
+  bench_check(built.region_count > 0,
+              "composed-class build RESULT reported no regions");
   bench_check(graph.region_count() > 0,
-              "composed-class region graph build produced no regions");
+              "composed-class GRAPH holds no regions after the build");
   state.counters["regions"] = static_cast<double>(graph.region_count());
 }
 
@@ -128,8 +128,7 @@ void BM_topology_region_graph_update_single_chunk_512x512(
   tess::RegionGraph graph;
   const auto built =
       tess::build_region_graph<TopoWorld, PassableTag>(world, scratch, graph);
-  bench_check(built.status == tess::TopologyStatus::Built,
-              "region graph build did not report Built");
+  bench_check(built.region_count > 0, "region graph build produced no regions");
 
   const auto dirty = std::array{tess::ChunkKey{0}};
   tess::LocalTopologyResult updated{};
@@ -151,8 +150,7 @@ void BM_topology_reachable_far_512x512(benchmark::State& state) {
   tess::RegionGraph graph;
   const auto built =
       tess::build_region_graph<TopoWorld, PassableTag>(world, scratch, graph);
-  bench_check(built.status == tess::TopologyStatus::Built,
-              "region graph build did not report Built");
+  bench_check(built.region_count > 0, "region graph build produced no regions");
 
   tess::RegionGraphScratch reach_scratch;
   // Warm the scratch so the timed loop is allocation-free.
@@ -175,8 +173,7 @@ void BM_topology_coarse_path_far_512x512(benchmark::State& state) {
   tess::RegionGraph graph;
   const auto built =
       tess::build_region_graph<TopoWorld, PassableTag>(world, scratch, graph);
-  bench_check(built.status == tess::TopologyStatus::Built,
-              "region graph build did not report Built");
+  bench_check(built.region_count > 0, "region graph build produced no regions");
 
   tess::RegionGraphScratch path_scratch;
   (void)tess::coarse_path<TopoShape>(graph, kFarStart, kFarGoal, path_scratch);
@@ -201,8 +198,7 @@ void BM_topology_area_index_build_256_areas_512x512(benchmark::State& state) {
   tess::RegionGraph graph;
   const auto built = tess::build_region_graph<TopoWorld, PassableTag>(
       world, topology_scratch, graph);
-  bench_check(built.status == tess::TopologyStatus::Built,
-              "region graph build did not report Built");
+  bench_check(built.region_count > 0, "region graph build produced no regions");
   tess::AreaIndexScratch scratch;
   scratch.reserve(graph.region_count(), graph.portals().size());
   tess::AreaIndex index;
@@ -234,8 +230,7 @@ void BM_topology_area_lookup_256_areas_512x512(benchmark::State& state) {
   tess::RegionGraph graph;
   const auto built = tess::build_region_graph<TopoWorld, PassableTag>(
       world, topology_scratch, graph);
-  bench_check(built.status == tess::TopologyStatus::Built,
-              "region graph build did not report Built");
+  bench_check(built.region_count > 0, "region graph build produced no regions");
   tess::AreaIndexScratch scratch;
   tess::AreaIndex index;
   const auto area_result = tess::build_area_index(
@@ -264,8 +259,7 @@ void BM_topology_precheck_reachable_512x512(benchmark::State& state) {
   tess::RegionGraph graph;
   const auto built =
       tess::build_region_graph<TopoWorld, PassableTag>(world, scratch, graph);
-  bench_check(built.status == tess::TopologyStatus::Built,
-              "region graph build did not report Built");
+  bench_check(built.region_count > 0, "region graph build produced no regions");
 
   tess::RegionGraphScratch precheck_scratch;
   (void)tess::precheck_path<PassableTag>(graph, world, kFarStart, kFarGoal,
@@ -289,8 +283,7 @@ void BM_topology_precheck_unreachable_512x512(benchmark::State& state) {
   tess::RegionGraph graph;
   const auto built =
       tess::build_region_graph<TopoWorld, PassableTag>(world, scratch, graph);
-  bench_check(built.status == tess::TopologyStatus::Built,
-              "region graph build did not report Built");
+  bench_check(built.region_count > 0, "region graph build produced no regions");
 
   tess::RegionGraphScratch precheck_scratch;
   (void)tess::precheck_path<PassableTag>(graph, world, kFarStart, kSealedGoal,
