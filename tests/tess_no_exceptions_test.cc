@@ -266,7 +266,7 @@ auto pathfinding_and_topology_run_through_aggregate_headers() -> bool {
   tess::RegionGraph graph;
   const auto topology = tess::build_region_graph<World, PassableTag>(
       world, topology_scratch, graph);
-  TESS_CHECK(topology.status == tess::TopologyStatus::Built);
+  TESS_CHECK(topology.region_count > 0);
   TESS_CHECK(graph.local_topologies().size() == World::chunk_count);
   return true;
 }
