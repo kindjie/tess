@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <cstddef>
 #include <cstdint>
 
 // The DeltaFrame lifetime contract, pinned rather than merely stated.
@@ -36,53 +37,106 @@ void mark(World& world, tess::Coord3 at) {
                    kTerrainBit, tess::Box3{at, tess::Extent3{1, 1, 1}});
 }
 
+// Every published record carries DISTINCT values. A first draft marked two
+// chunks identically, so swapping or shifting the published records would
+// have passed; and it observed only `chunks`, so corruption of
+// `published_entities_` by record_move would have gone unnoticed.
+void mark_sized(World& world, tess::Coord3 at, std::uint32_t extent) {
+  world.field<TerrainTag>(at) = 1;
+  world.mark_dirty(tess::chunk_key<Shape>(tess::tile_key<Shape>(at)),
+                   kTerrainBit,
+                   tess::Box3{at, tess::Extent3{extent, extent, 1}});
+}
+
+struct PublishedSnapshot {
+  std::size_t chunk_count = 0;
+  std::uint32_t first_extent = 0;
+  std::uint32_t second_extent = 0;
+  std::size_t entity_count = 0;
+  tess::Coord3 entity_from{};
+  tess::Coord3 entity_to{};
+};
+
+[[nodiscard]] auto snapshot(const tess::DeltaFrame& frame)
+    -> PublishedSnapshot {
+  PublishedSnapshot s;
+  s.chunk_count = frame.chunks.size();
+  s.first_extent = frame.chunks[0].bounds.extent.x;
+  s.second_extent = frame.chunks[1].bounds.extent.x;
+  s.entity_count = frame.entities.size();
+  s.entity_from = frame.entities[0].from;
+  s.entity_to = frame.entities[0].to;
+  return s;
+}
+
+[[nodiscard]] auto publish_two_distinct_chunks(World& world,
+                                               tess::DeltaCollector& collector)
+    -> tess::DeltaFrame {
+  collector.begin_tick(1);
+  mark_sized(world, tess::Coord3{1, 1, 0}, 1);
+  mark_sized(world, tess::Coord3{9, 9, 0}, 4);
+  collector.record_move(tess::EntityHandle{11}, tess::Coord3{0, 0, 0},
+                        tess::Coord3{1, 0, 0});
+  tess::collect_tile_deltas(collector, world, kTerrainBit);
+  return collector.publish();
+}
+
 TEST(TessDeltaFrameLifetime, RecordingTheNextFrameLeavesAPublishedOneIntact) {
   World world;
   auto collector = make_collector();
 
-  mark(world, tess::Coord3{1, 1, 0});
-  tess::collect_tile_deltas(collector, world, kTerrainBit);
-  const auto frame = collector.publish();
-
-  ASSERT_FALSE(frame.chunks.empty());
-  const auto first_flags = frame.chunks[0].dirty_flags;
-  const auto first_bounds_x = frame.chunks[0].bounds.extent.x;
+  const auto frame = publish_two_distinct_chunks(world, collector);
+  ASSERT_GE(frame.chunks.size(), 2u);
+  ASSERT_GE(frame.entities.size(), 1u);
+  const auto before = snapshot(frame);
+  ASSERT_NE(before.first_extent, before.second_extent);
 
   // Everything the old comment listed as invalidating, short of publish.
-  // If any of these touched published storage, the frame would move or
-  // change underneath us here.
+  // These fill the PENDING buffers; if any touched published storage the
+  // snapshot below would differ.
   collector.begin_tick(2);
-  mark(world, tess::Coord3{9, 9, 0});
+  mark_sized(world, tess::Coord3{2, 2, 0}, 8);
   tess::collect_tile_deltas(collector, world, kTerrainBit);
-  collector.record_move(tess::EntityHandle{1}, tess::Coord3{0, 0, 0},
-                        tess::Coord3{1, 0, 0});
+  collector.record_move(tess::EntityHandle{22}, tess::Coord3{5, 5, 0},
+                        tess::Coord3{6, 5, 0});
 
-  EXPECT_EQ(frame.chunks[0].dirty_flags, first_flags);
-  EXPECT_EQ(frame.chunks[0].bounds.extent.x, first_bounds_x);
+  const auto after = snapshot(frame);
+  EXPECT_EQ(after.chunk_count, before.chunk_count);
+  EXPECT_EQ(after.first_extent, before.first_extent);
+  EXPECT_EQ(after.second_extent, before.second_extent);
+  EXPECT_EQ(after.entity_count, before.entity_count);
+  EXPECT_EQ(after.entity_from, before.entity_from);
+  EXPECT_EQ(after.entity_to, before.entity_to);
 }
 
 TEST(TessDeltaFrameLifetime, ClearLeavesAPublishedFrameIntact) {
   World world;
   auto collector = make_collector();
 
-  mark(world, tess::Coord3{2, 2, 0});
-  tess::collect_tile_deltas(collector, world, kTerrainBit);
-  const auto frame = collector.publish();
-
-  ASSERT_FALSE(frame.chunks.empty());
-  const auto flags = frame.chunks[0].dirty_flags;
-  const auto bounds_x = frame.chunks[0].bounds.extent.x;
+  const auto frame = publish_two_distinct_chunks(world, collector);
+  ASSERT_GE(frame.chunks.size(), 2u);
+  ASSERT_GE(frame.entities.size(), 1u);
+  const auto before = snapshot(frame);
 
   // clear() resets the pending side only, so a published frame survives it.
   // The old comment listed clear() as invalidating; it is not.
   collector.clear();
 
-  // Read THROUGH the span. Comparing frame.chunks.data() would compare the
-  // span's own pointer, which no collector call can change -- an assertion
-  // that cannot fail.
-  EXPECT_EQ(frame.chunks[0].dirty_flags, flags);
-  EXPECT_EQ(frame.chunks[0].bounds.extent.x, bounds_x);
+  const auto after = snapshot(frame);
+  EXPECT_EQ(after.chunk_count, before.chunk_count);
+  EXPECT_EQ(after.first_extent, before.first_extent);
+  EXPECT_EQ(after.second_extent, before.second_extent);
+  EXPECT_EQ(after.entity_count, before.entity_count);
+  EXPECT_EQ(after.entity_from, before.entity_from);
 }
+
+// What these tests can and cannot catch, stated so the next reader does not
+// over-trust them: they detect published records being REPLACED or shifted.
+// They cannot detect a bare `published_chunks_.clear()`, because clearing a
+// vector of trivial elements leaves the bytes in place, so reads through
+// the span keep returning the old values -- undefined behaviour that
+// nonetheless produces the expected numbers. No assertion available from
+// outside the collector distinguishes that case.
 
 // There is deliberately no test that reserve() relocates published
 // storage. Reallocation is not observable through a DeltaFrame: the span
@@ -92,23 +146,10 @@ TEST(TessDeltaFrameLifetime, ClearLeavesAPublishedFrameIntact) {
 // on the strength of the code -- it calls published_*.reserve() on all
 // five vectors -- and that is what the header comment cites.
 
-TEST(TessDeltaFrameLifetime, HeaderIsAValueAndSurvivesEverything) {
-  World world;
-  auto collector = make_collector();
-
-  mark(world, tess::Coord3{4, 4, 0});
-  tess::collect_tile_deltas(collector, world, kTerrainBit);
-  const auto frame = collector.publish();
-  const auto header = frame.header;
-
-  // The spans go stale across a publish; the header never does, which is
-  // what every existing consumer in this repo relies on.
-  tess::collect_tile_deltas(collector, world, kTerrainBit);
-  (void)collector.publish();
-
-  EXPECT_EQ(frame.header.to_version.value, header.to_version.value);
-  EXPECT_EQ(frame.header.baseline, header.baseline);
-  EXPECT_EQ(frame.header.truncated, header.truncated);
-}
+// There is no test that `header` survives a publish. It is a value member
+// of the caller's own DeltaFrame, so an assertion comparing it against a
+// copy of itself cannot fail -- the first draft here contained exactly
+// that. Its durability is a property of the type's layout, which
+// tess_render_delta_frame_test already exercises throughout.
 
 }  // namespace

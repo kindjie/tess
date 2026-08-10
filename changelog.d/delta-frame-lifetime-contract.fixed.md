@@ -7,7 +7,11 @@
   recorded while the current one is applied — and `reserve()`, which
   re-reserves the published vectors and can reallocate them, was missing
   from the list entirely. The spans are valid until the next `publish()`
-  or `reserve()`; `header` is a value copy and outlives both.
+  or `reserve()`, and until the collector is assigned to or moved from —
+  `DeltaCollector` keeps its compiler-generated copy and move operations,
+  which replace or empty the published vectors. `header` is a value copy
+  and outlives all of it. The same stale contract appeared a second time on
+  `DeltaCollector`'s own Doxygen and is corrected there too.
 - The comment now also states the hazard it only implied: holding a frame
   across a `publish()` is outside the contract, and the resulting stale
   spans carry `first_tile`/`first_node` indices that can run past the
