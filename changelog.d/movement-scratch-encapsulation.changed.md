@@ -5,11 +5,18 @@
   buffer a consumer had sized, read, or overwritten, and 1.0 would have
   frozen the layout regardless. `reserve` remains the whole surface of the
   scratch; `elapsed` and `reserve` remain the whole surface of the
-  priorities, since adaptive priorities are the caller's knob. Source-
-  breaking for code that named a buffer, aggregate- or designated-initialized
-  either type, or decomposed one in a structured binding; no in-repo
-  consumer, example, or benchmark did any of those. Default construction,
-  `{}` value initialization, copy and move all still compile.
+  priorities, since adaptive priorities are the caller's knob. The buffers
+  are no longer reachable through either type; like every internal in a
+  header-only library they stay spellable through `tess::detail`, which
+  `docs/style.md` excludes from source-compatibility, so what moved is what
+  the promise covers rather than what a determined consumer can name.
+- Source-breaking for code that named a buffer, aggregate- or designated-
+  initialized either type, decomposed one in a structured binding, or relied
+  on `PibtPriorities` being standard-layout — it mixes a public `elapsed`
+  with a private member now, so `offsetof` and the trait no longer apply.
+  (`JointMoveScratch` stays standard-layout.) No in-repo consumer, example,
+  or benchmark did any of those. Default construction, `{}` value
+  initialization, copy and move all still compile.
 - `PibtPriorities::frames` was also the last public member typed with a
   `detail` struct. Privatizing it closes that leak without promoting
   `PibtFrame`, which would have frozen an implementation layout — the

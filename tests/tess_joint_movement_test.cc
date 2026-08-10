@@ -569,8 +569,11 @@ TEST(TessJointMovement, ScratchRoundBuffersAreNotPartOfTheSurface) {
   static_assert(std::is_move_assignable_v<Scratch>);
 
   // Deliberate: aggregate and designated initialization of the buffers is
-  // exactly the surface being withdrawn.
+  // exactly the surface being withdrawn. Standard layout survives, because
+  // every member is private — unlike `PibtPriorities`, which keeps a public
+  // `elapsed` and loses it.
   static_assert(!std::is_aggregate_v<Scratch>);
+  static_assert(std::is_standard_layout_v<Scratch>);
 
   SUCCEED();
 }

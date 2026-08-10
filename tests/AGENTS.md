@@ -636,8 +636,8 @@
   marking covers both chunks, `max_steps` zero/multi-step semantics match the
   per-agent advance, outcomes are deterministic across identical runs, the
   warm pass allocates nothing after `JointMoveScratch::reserve`, each of the
-  eleven round buffers is unreachable from outside (each probe paired with a
-  public-member control), and the weighted joint tick driver resolves a
+  eleven round buffers is unreachable through the type (each probe paired
+  with a public-member control), and the weighted joint tick driver resolves a
   one-wide corridor head-on under `Permit` while deliberately keeping the
   wedge under `Forbid`;
 - `tess_pibt_movement_test`: PIBT movement tier coverage — the width-3 ring

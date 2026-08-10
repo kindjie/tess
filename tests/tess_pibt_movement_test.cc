@@ -1062,6 +1062,12 @@ TEST(TessPibtMovement, OnlyElapsedIsPartOfThePrioritiesSurface) {
   static_assert(std::is_move_assignable_v<Priorities>);
   static_assert(!std::is_aggregate_v<Priorities>);
 
+  // Mixing a public `elapsed` with a private member costs standard layout,
+  // so `offsetof` and the trait no longer apply. That is a real break beyond
+  // the member names, and it is the price of keeping the caller's knob
+  // public rather than hiding it behind an accessor pair.
+  static_assert(!std::is_standard_layout_v<Priorities>);
+
   SUCCEED();
 }
 

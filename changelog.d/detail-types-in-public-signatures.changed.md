@@ -33,7 +33,9 @@
   is not — that indirection exists so the alias can be repointed without
   breaking callers. Promoting the template would have frozen an
   implementation detail of the layer explicitly labelled unstable.
-- `PibtFrame` stays in `detail` and is no longer exposed at all: its one
-  public appearance was `PibtPriorities::frames`, and that member is now
-  private. Promoting the frame type would have frozen an implementation
-  struct instead.
+- `PibtFrame` stays in `detail` and no longer appears in any supported
+  declaration: its one public appearance was `PibtPriorities::frames`, and
+  that member is now private. The type is still defined in the installed
+  header, as every `detail` name in a header-only library is; what changed is
+  that naming it is no longer something the promise requires. Promoting it
+  would have frozen an implementation struct instead.
