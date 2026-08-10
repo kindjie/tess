@@ -63,9 +63,7 @@ void build_split(World& world, tess::RegionGraph& graph) {
   fill_world(world);
   enclose(world, kUnreachableGoal);
   tess::LocalTopologyScratch scratch;
-  const auto built =
-      tess::build_region_graph<World, PassableTag>(world, scratch, graph);
-  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<World, PassableTag>(world, scratch, graph);
 }
 
 void reserve_runtime(tess::PathRequestRuntime& runtime, std::size_t requests) {
@@ -326,9 +324,8 @@ TEST(TessPrecheckRuntime, UnitWrongClassGraphFallsBackToAStar) {
 
   tess::LocalTopologyScratch local_scratch;
   tess::RegionGraph graph;
-  const auto built = tess::build_region_graph<ClassWorld, PassableTag>(
-      world, local_scratch, graph);
-  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<ClassWorld, PassableTag>(world, local_scratch,
+                                                    graph);
 
   tess::PathRequestRuntime runtime;
   reserve_runtime(runtime, 1);
@@ -343,9 +340,8 @@ TEST(TessPrecheckRuntime, UnitWrongClassGraphFallsBackToAStar) {
   // A graph stamped FOR the Builder does rule out a genuinely sealed goal.
   world.field<RuntimeConstructionTag>(gap) = 0;
   world.mark_topology_rebuilt(tess::chunk_key<Grid>(tess::tile_key<Grid>(gap)));
-  const auto rebuilt = tess::build_region_graph<ClassWorld, RuntimeBuilder>(
-      world, local_scratch, graph);
-  ASSERT_EQ(rebuilt.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<ClassWorld, RuntimeBuilder>(world, local_scratch,
+                                                       graph);
   const auto sealed_ticket = runtime.submit({kStart, kUnreachableGoal});
   (void)runtime.process_unit_cached<ClassWorld, RuntimeBuilder>(world, {},
                                                                 &graph);

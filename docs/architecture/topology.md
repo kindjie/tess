@@ -101,11 +101,22 @@ stateDiagram-v2
   `if constexpr`; the sparse-only state is empty for a dense graph).
 - `RegionGraphScratch` owns reusable reachability traversal storage with
   epoch-stamped visited marks.
-- `LocalTopologyResult` summarizes one build: a `TopologyStatus` (`Built`,
-  `InvalidChunk` for an out-of-range chunk key, or `MissingChunk` when a
-  sparse local build names a valid non-resident chunk), region count, passable
-  tile count, boundary exit count, and the captured topology version. The
-  chunk and graph builders below all return it.
+- `LocalTopologyResult` summarizes an operation that can fail: a
+  `TopologyStatus` (`Built`, `InvalidChunk` for an out-of-range chunk key,
+  or `MissingChunk` when a sparse local build names a valid non-resident
+  chunk), region count, passable tile count, boundary exit count, and the
+  captured topology version. `build_local_chunk_topology` and
+  `update_region_graph` return it.
+- `RegionGraphBuildResult` is the same counts **without** a status, and
+  `build_region_graph` returns it. That build cannot fail: the dense
+  branch iterates keys `0..chunk_count`, so `InvalidChunk` cannot arise
+  and `MissingChunk` does not exist under `AlwaysResident`; the sparse
+  branch builds from `resident_chunk_keys()`, which are in-world and
+  resident by construction. Sharing a status-bearing type with the
+  operations that can fail invited callers to branch on a value that is
+  invariantly `Built`, and 45 assertions across six test files did
+  exactly that. An update that falls back to a full rebuild converts the
+  result, reporting `Built`.
 - `build_local_chunk_topology<World, ClassOrTag>(world, chunk, scratch,
   topology)` labels passable connected components for one chunk and records
   boundary exits. A sparse build rejects a non-resident chunk before accessing

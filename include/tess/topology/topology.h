@@ -2,6 +2,7 @@
 
 #include <tess/core/assert.h>
 #include <tess/core/config.h>
+#include <tess/core/fail_fast.h>
 #include <tess/core/shape.h>
 #include <tess/core/tag_identity.h>
 #include <tess/storage/residency.h>
@@ -92,7 +93,27 @@ struct LocalBoundaryExit {
       default;
 };
 
-/// Counts and status returned by local or whole-graph topology builds.
+/**
+ * Counts returned by a whole-graph build.
+ *
+ * Deliberately carries no status, unlike `LocalTopologyResult`.
+ * `build_region_graph` cannot fail: the dense branch iterates keys
+ * 0..chunk_count so `InvalidChunk` cannot arise and `MissingChunk` does
+ * not exist under `AlwaysResident`, and the sparse branch builds from
+ * `resident_chunk_keys()`, which are in-world and resident by
+ * construction. Sharing a status-bearing type with the operations that
+ * CAN fail invited callers to write `if (result.status != Built)` against
+ * a value that is invariantly `Built` -- and they did, across six test
+ * files.
+ */
+struct RegionGraphBuildResult {
+  std::size_t region_count = 0;
+  std::size_t passable_tile_count = 0;
+  std::size_t boundary_exit_count = 0;
+  std::uint32_t version = 0;
+};
+
+/// Counts and status returned by a local chunk build or an incremental update.
 struct LocalTopologyResult {
   TopologyStatus status = TopologyStatus::Built;
   std::size_t region_count = 0;
@@ -511,7 +532,7 @@ class RegionGraphT {
   friend auto build_region_graph(
       const World& world, LocalTopologyScratch& scratch,
       RegionGraphT<typename World::residency_type>& graph,
-      const Provider& provider) -> LocalTopologyResult;
+      const Provider& provider) -> RegionGraphBuildResult;
 
   template <typename World, typename ClassOrTag, typename Provider>
   friend auto update_region_graph(
@@ -1214,6 +1235,20 @@ template <typename World, typename ClassOrTag>
   };
 }
 
+namespace detail {
+// A full rebuild cannot fail, so an update that falls back to one always
+// reports Built. Spelled once here rather than at each of the three
+// fallback sites.
+[[nodiscard]] constexpr auto as_local_topology_result(
+    RegionGraphBuildResult built) noexcept -> LocalTopologyResult {
+  return LocalTopologyResult{
+      TopologyStatus::Built,     built.region_count, built.passable_tile_count,
+      built.boundary_exit_count, built.version,
+  };
+}
+
+}  // namespace detail
+
 template <typename World, typename ClassOrTag,
           typename Provider = AdjacentTransitions>
 /// Rebuilds a complete region graph for the world's current resident set.
@@ -1228,7 +1263,8 @@ template <typename World, typename ClassOrTag,
 /// for an out-of-range dirty chunk -- and is marked accordingly.
 auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
                         RegionGraphT<typename World::residency_type>& graph,
-                        const Provider& provider = {}) -> LocalTopologyResult {
+                        const Provider& provider = {})
+    -> RegionGraphBuildResult {
   static_assert(TransitionProviderFor<Provider, World>,
                 "build_region_graph's provider must satisfy "
                 "TransitionProviderFor (see transition_provider.h).");
@@ -1240,7 +1276,7 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
   graph.template bind_shape<Shape>();
   graph.template bind_class<Class>();
   graph.bind_provider(provider);
-  auto result = LocalTopologyResult{};
+  auto result = RegionGraphBuildResult{};
 
 #if TESS_HAS_EXCEPTIONS
   try {
@@ -1256,9 +1292,12 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
         const auto local_result = build_local_chunk_topology<World, Class>(
             world, ChunkKey{raw_chunk}, scratch, topology);
         if (local_result.status != TopologyStatus::Built) {
-          result.status = local_result.status;
-          graph.rebuild_region_index();
-          return result;
+          // Unreachable: raw_chunk < chunk_count rules out InvalidChunk and
+          // MissingChunk does not exist under AlwaysResident. If it ever
+          // fires, the residency assumptions this function rests on have
+          // changed, and continuing would publish a half-built graph.
+          detail::fail_fast(
+              "build_region_graph: dense local build reported a failure");
         }
         result.region_count += local_result.region_count;
         result.passable_tile_count += local_result.passable_tile_count;
@@ -1282,12 +1321,11 @@ auto build_region_graph(const World& world, LocalTopologyScratch& scratch,
       for (std::size_t i = 0; i < count; ++i) {
         const auto local_result = build_local_chunk_topology<World, Class>(
             world, keys[i], scratch, graph.local_topologies_[i]);
-        // Resident keys are always in-world, so InvalidChunk cannot arise; keep
-        // the status propagation for symmetry with the dense build.
+        // Unreachable: resident keys are in-world and resident by
+        // construction, so neither InvalidChunk nor MissingChunk can arise.
         if (local_result.status != TopologyStatus::Built) {
-          result.status = local_result.status;
-          graph.rebuild_region_index();
-          return result;
+          detail::fail_fast(
+              "build_region_graph: sparse local build reported a failure");
         }
         result.region_count += local_result.region_count;
         result.passable_tile_count += local_result.passable_tile_count;
@@ -1348,7 +1386,8 @@ template <typename World, typename ClassOrTag,
         !graph.template matches_shape<Shape>() ||
         !graph.template matches_class<Class>() ||
         !graph.matches_provider(provider)) {
-      return build_region_graph<World, Class>(world, scratch, graph, provider);
+      return detail::as_local_topology_result(
+          build_region_graph<World, Class>(world, scratch, graph, provider));
     }
     for (const auto chunk : dirty_chunks) {
       if (chunk.value >= Traits::chunk_count) {
@@ -1446,13 +1485,14 @@ template <typename World, typename ClassOrTag,
         !graph.template matches_shape<Shape>() ||
         !graph.template matches_class<Class>() ||
         !graph.matches_provider(provider)) {
-      return build_region_graph<World, Class>(world, scratch, graph, provider);
+      return detail::as_local_topology_result(
+          build_region_graph<World, Class>(world, scratch, graph, provider));
     }
     for (std::size_t i = 0; i < count; ++i) {
       if (world.residency_generation(graph.sparse_.topology_keys_[i]) !=
           graph.sparse_.frozen_generations_[i]) {
-        return build_region_graph<World, Class>(world, scratch, graph,
-                                                provider);
+        return detail::as_local_topology_result(
+            build_region_graph<World, Class>(world, scratch, graph, provider));
       }
     }
     for (const auto chunk : dirty_chunks) {

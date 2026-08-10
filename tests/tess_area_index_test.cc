@@ -25,10 +25,7 @@ void fill_open(WorldType& world) {
 auto graph_for(World& world) -> tess::RegionGraph {
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  EXPECT_EQ(
-      (tess::build_region_graph<World, PassableTag>(world, scratch, graph))
-          .status,
-      tess::TopologyStatus::Built);
+  tess::build_region_graph<World, PassableTag>(world, scratch, graph);
   return graph;
 }
 
@@ -169,10 +166,7 @@ TEST(TessAreaIndex, SupportsSparseResidentRegionGraphs) {
   }
   tess::LocalTopologyScratch local_scratch;
   tess::SparseRegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<Sparse, PassableTag>(world, local_scratch,
-                                                           graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<Sparse, PassableTag>(world, local_scratch, graph);
   tess::AreaIndexScratch area_scratch;
   tess::AreaIndex index;
 

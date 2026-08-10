@@ -29,9 +29,7 @@ template <typename Shape>
 auto build_graph(World<Shape>& world) -> tess::RegionGraph {
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  const auto result = tess::build_region_graph<World<Shape>, PassableTag>(
-      world, scratch, graph);
-  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<World<Shape>, PassableTag>(world, scratch, graph);
   return graph;
 }
 
@@ -155,9 +153,7 @@ TEST(TessTopologyCoarsePath, SparseResidentCorridorIsReconstructed) {
   }
   tess::LocalTopologyScratch local;
   tess::SparseRegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<Sparse, PassableTag>(world, local, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<Sparse, PassableTag>(world, local, graph);
   tess::RegionGraphScratch scratch;
 
   const auto result =
@@ -180,9 +176,7 @@ TEST(TessTopologyCoarsePath, SparseMissingCorridorIsIndeterminate) {
   }
   tess::LocalTopologyScratch local;
   tess::SparseRegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<Sparse, PassableTag>(world, local, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<Sparse, PassableTag>(world, local, graph);
   tess::RegionGraphScratch scratch;
 
   const auto result =

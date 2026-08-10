@@ -299,7 +299,6 @@ TEST(TessTopology, RegionGraphPairsBoundaryExitsAndFindsReachability) {
   const auto result = tess::build_region_graph<decltype(world), PassableTag>(
       world, local_scratch, graph);
 
-  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
   EXPECT_EQ(result.region_count, 2u);
   EXPECT_EQ(graph.local_topologies().size(), 2u);
   EXPECT_EQ(graph.portals().size(), 16u);
@@ -322,7 +321,6 @@ TEST(TessTopology, RegionGraphSameRegionReachabilityReturnsImmediately) {
   const auto result = tess::build_region_graph<decltype(world), PassableTag>(
       world, local_scratch, graph);
 
-  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
   EXPECT_EQ(result.region_count, 1u);
 
   tess::RegionGraphScratch graph_scratch;
@@ -343,7 +341,6 @@ TEST(TessTopology, RegionGraphFindsMultiHopReachability) {
   const auto result = tess::build_region_graph<decltype(world), PassableTag>(
       world, local_scratch, graph);
 
-  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
   EXPECT_EQ(result.region_count, 3u);
   EXPECT_EQ(graph.local_topologies().size(), 3u);
   EXPECT_EQ(graph.portals().size(), 32u);
@@ -369,7 +366,6 @@ TEST(TessTopology, RegionGraphRejectsBlockedSeamReachability) {
   const auto result = tess::build_region_graph<decltype(world), PassableTag>(
       world, local_scratch, graph);
 
-  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
   EXPECT_EQ(result.region_count, 2u);
   EXPECT_EQ(graph.portals().size(), 0u);
 
@@ -394,7 +390,6 @@ TEST(TessTopology, RegionGraphRejectsDisconnectedSameChunkRegions) {
   const auto result = tess::build_region_graph<decltype(world), PassableTag>(
       world, local_scratch, graph);
 
-  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
   EXPECT_EQ(result.region_count, 2u);
   EXPECT_EQ(graph.portals().size(), 0u);
 
@@ -423,7 +418,6 @@ TEST(TessTopology, RegionGraphRejectsEnclosedRegionReachability) {
   const auto result = tess::build_region_graph<decltype(world), PassableTag>(
       world, local_scratch, graph);
 
-  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
   EXPECT_EQ(result.region_count, 2u);
   EXPECT_EQ(graph.portals().size(), 0u);
 
@@ -445,7 +439,6 @@ TEST(TessTopology, RegionGraphSupportsVertical2DChunkReachability) {
   const auto result = tess::build_region_graph<decltype(world), PassableTag>(
       world, local_scratch, graph);
 
-  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
   EXPECT_EQ(result.region_count, 2u);
   EXPECT_EQ(graph.portals().size(), 16u);
 
@@ -465,10 +458,8 @@ TEST(TessTopology, ReachabilityReportsInvalidEndpoints) {
 
   tess::LocalTopologyScratch local_scratch;
   tess::RegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, local_scratch, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, local_scratch,
+                                                         graph);
 
   tess::RegionGraphScratch graph_scratch;
   EXPECT_EQ(tess::reachable<Shape>(graph, tess::Coord3{-1, 0, 0},
@@ -557,7 +548,6 @@ TEST(TessTopology, RegionGraphPairsZFacePortalsAcrossStackedChunks) {
   const auto result = tess::build_region_graph<decltype(world), PassableTag>(
       world, local_scratch, graph);
 
-  ASSERT_EQ(result.status, tess::TopologyStatus::Built);
   EXPECT_EQ(result.region_count, 2u);
   ASSERT_EQ(graph.portals().size(), 32u);
 
@@ -596,7 +586,6 @@ TEST(TessTopology, RegionGraphPairsMultipleRegionsAcrossOneSeam) {
   const auto result = tess::build_region_graph<decltype(world), PassableTag>(
       world, local_scratch, graph);
 
-  ASSERT_EQ(result.status, tess::TopologyStatus::Built);
   EXPECT_EQ(result.region_count, 4u);
   ASSERT_EQ(graph.portals().size(), 14u);
 
@@ -636,10 +625,8 @@ TEST(TessTopology, ReachableMatchesReferenceBfsOnMultiChunkMaze) {
 
   tess::LocalTopologyScratch local_scratch;
   tess::RegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, local_scratch, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, local_scratch,
+                                                         graph);
 
   std::vector<tess::Coord3> probes;
   for (std::int64_t y = 1; y < 32 && probes.size() < 24; y += 3) {
@@ -716,10 +703,8 @@ TEST(TessTopology, RegionGraphExposesDenseRegionIndex) {
 
   tess::LocalTopologyScratch local_scratch;
   tess::RegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, local_scratch, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, local_scratch,
+                                                         graph);
 
   EXPECT_EQ(graph.region_count(), 4u);
   std::set<std::uint32_t> seen;
@@ -753,10 +738,7 @@ TEST(TessTopology, RegionIndexRejectsWraparoundReferences) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, scratch, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, scratch, graph);
   ASSERT_EQ(graph.region_count(), 4u);
 
   // region_of returns this sentinel chunk for out-of-world coordinates; a
@@ -784,13 +766,10 @@ TEST(TessTopology, UpdateRegionGraphEmptyDirtySetIsNoOp) {
   tess::RegionGraph graph;
   const auto built = tess::build_region_graph<decltype(world), PassableTag>(
       world, scratch, graph);
-  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
 
   tess::RegionGraph reference;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, scratch, reference))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, scratch,
+                                                         reference);
 
   const auto updated = tess::update_region_graph<decltype(world), PassableTag>(
       world, scratch, graph, {});
@@ -809,16 +788,11 @@ TEST(TessTopology, UpdateRegionGraphRejectsInvalidDirtyChunk) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, scratch, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, scratch, graph);
 
   tess::RegionGraph reference;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, scratch, reference))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, scratch,
+                                                         reference);
 
   const auto dirty = std::array{tess::ChunkKey{2}};
   const auto updated = tess::update_region_graph<decltype(world), PassableTag>(
@@ -843,10 +817,8 @@ TEST(TessTopology, UpdateRegionGraphAllocationFailureInvalidatesTornState) {
     fill_passable(world, 1);
     tess::LocalTopologyScratch scratch;
     tess::RegionGraph graph;
-    ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                   world, scratch, graph))
-                  .status,
-              tess::TopologyStatus::Built);
+    tess::build_region_graph<decltype(world), PassableTag>(world, scratch,
+                                                           graph);
     const auto before = graph;
     const auto before_revision = graph.revision();
 
@@ -885,10 +857,8 @@ TEST(TessTopology, UpdateRegionGraphAllocationFailureInvalidatesTornState) {
 
     reached_success = true;
     tess::RegionGraph fresh;
-    ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                   world, scratch, fresh))
-                  .status,
-              tess::TopologyStatus::Built);
+    tess::build_region_graph<decltype(world), PassableTag>(world, scratch,
+                                                           fresh);
     expect_graphs_equal(graph, fresh);
     break;
   }
@@ -911,10 +881,8 @@ TEST(TessTopology, FullBuildAllocationFailureInvalidatesTornState) {
     fill_passable(world, 1);
     tess::LocalTopologyScratch scratch;
     tess::RegionGraph graph;
-    ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                   world, scratch, graph))
-                  .status,
-              tess::TopologyStatus::Built);
+    tess::build_region_graph<decltype(world), PassableTag>(world, scratch,
+                                                           graph);
     ASSERT_TRUE(tess::is_region_graph_fresh(world, graph));
 
     auto threw = false;
@@ -952,10 +920,7 @@ TEST(TessTopology, UpdateRegionGraphSingleChunkEditMatchesFullRebuild) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, scratch, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, scratch, graph);
 
   // Split the second chunk in half with an interior wall.
   for (std::int64_t y = 0; y < 8; ++y) {
@@ -970,7 +935,6 @@ TEST(TessTopology, UpdateRegionGraphSingleChunkEditMatchesFullRebuild) {
   tess::RegionGraph reference;
   const auto rebuilt = tess::build_region_graph<decltype(world), PassableTag>(
       world, scratch, reference);
-  ASSERT_EQ(rebuilt.status, tess::TopologyStatus::Built);
   EXPECT_EQ(updated.region_count, rebuilt.region_count);
   EXPECT_EQ(updated.passable_tile_count, rebuilt.passable_tile_count);
   EXPECT_EQ(updated.boundary_exit_count, rebuilt.boundary_exit_count);
@@ -996,10 +960,7 @@ TEST(TessTopology, UpdateRegionGraphSeamEditWithTwoDirtyChunks) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, scratch, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, scratch, graph);
 
   world.field<PassableTag>(tess::Coord3{7, 4, 0}) = 1;
   world.field<PassableTag>(tess::Coord3{8, 4, 0}) = 1;
@@ -1010,10 +971,8 @@ TEST(TessTopology, UpdateRegionGraphSeamEditWithTwoDirtyChunks) {
   ASSERT_EQ(updated.status, tess::TopologyStatus::Built);
 
   tess::RegionGraph reference;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, scratch, reference))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, scratch,
+                                                         reference);
   expect_graphs_equal(graph, reference);
 
   tess::RegionGraphScratch graph_scratch;
@@ -1029,10 +988,7 @@ TEST(TessTopology, UpdateRegionGraphAllChunksDirtyMatchesFullBuild) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, scratch, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, scratch, graph);
 
   std::uint64_t rng = 0x51ED2701FULL;
   for (std::int64_t y = 0; y < 16; ++y) {
@@ -1052,7 +1008,6 @@ TEST(TessTopology, UpdateRegionGraphAllChunksDirtyMatchesFullBuild) {
   tess::RegionGraph reference;
   const auto rebuilt = tess::build_region_graph<decltype(world), PassableTag>(
       world, scratch, reference);
-  ASSERT_EQ(rebuilt.status, tess::TopologyStatus::Built);
   EXPECT_EQ(updated.region_count, rebuilt.region_count);
   EXPECT_EQ(updated.passable_tile_count, rebuilt.passable_tile_count);
   EXPECT_EQ(updated.boundary_exit_count, rebuilt.boundary_exit_count);
@@ -1076,10 +1031,7 @@ TEST(TessTopology, UpdateRegionGraphScriptedEditsMatchFullRebuild) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, scratch, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, scratch, graph);
 
   std::vector<tess::Coord3> probes;
   for (std::int64_t y = 2; y < 32; y += 9) {
@@ -1105,7 +1057,6 @@ TEST(TessTopology, UpdateRegionGraphScriptedEditsMatchFullRebuild) {
     tess::RegionGraph reference;
     const auto rebuilt = tess::build_region_graph<decltype(world), PassableTag>(
         world, scratch, reference);
-    ASSERT_EQ(rebuilt.status, tess::TopologyStatus::Built) << "edit " << edit;
     ASSERT_EQ(updated.region_count, rebuilt.region_count) << "edit " << edit;
     ASSERT_EQ(updated.passable_tile_count, rebuilt.passable_tile_count)
         << "edit " << edit;
@@ -1145,10 +1096,8 @@ TEST(TessTopology, UpdateRegionGraphRebuildsAcrossEqualChunkCountShapes) {
 
   tess::LocalTopologyScratch scratch;
   tess::RegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<decltype(grid_world), PassableTag>(
-                 grid_world, scratch, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(grid_world), PassableTag>(grid_world,
+                                                              scratch, graph);
   // A graph built for another shape is never fresh, even with equal chunk
   // counts and untouched topology versions.
   EXPECT_FALSE(tess::is_region_graph_fresh(row_world, graph));
@@ -1160,10 +1109,8 @@ TEST(TessTopology, UpdateRegionGraphRebuildsAcrossEqualChunkCountShapes) {
   EXPECT_EQ(updated.status, tess::TopologyStatus::Built);
 
   tess::RegionGraph reference;
-  ASSERT_EQ((tess::build_region_graph<decltype(row_world), PassableTag>(
-                 row_world, scratch, reference))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(row_world), PassableTag>(row_world, scratch,
+                                                             reference);
   expect_graphs_equal(graph, reference);
   EXPECT_TRUE(tess::is_region_graph_fresh(row_world, graph));
 
@@ -1183,9 +1130,8 @@ TEST(TessTopology, RegionGraphFreshnessTracksTopologyVersion) {
 
   tess::LocalTopologyScratch local_scratch;
   tess::RegionGraph graph;
-  const auto built = tess::build_region_graph<decltype(world), PassableTag>(
-      world, local_scratch, graph);
-  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, local_scratch,
+                                                         graph);
   EXPECT_TRUE(tess::is_region_graph_fresh(world, graph));
 
   // A topology-version bump on any chunk makes the graph stale.
@@ -1193,9 +1139,8 @@ TEST(TessTopology, RegionGraphFreshnessTracksTopologyVersion) {
   EXPECT_FALSE(tess::is_region_graph_fresh(world, graph));
 
   // Rebuilding against the current world restores freshness.
-  const auto rebuilt = tess::build_region_graph<decltype(world), PassableTag>(
-      world, local_scratch, graph);
-  ASSERT_EQ(rebuilt.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, local_scratch,
+                                                         graph);
   EXPECT_TRUE(tess::is_region_graph_fresh(world, graph));
 
   // A never-built graph is never fresh.
@@ -1218,7 +1163,6 @@ TEST(TessTopology, AxialHexConnectivityCrossesDiagonalChunkCorner) {
   const auto built = tess::build_region_graph<decltype(world), PassableTag>(
       world, local_scratch, graph);
 
-  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
   using OrthogonalShape =
       tess::Shape<tess::Extent3{8, 8, 1}, tess::Extent3{4, 4, 1}>;
   World<OrthogonalShape> orthogonal_world;
@@ -1240,10 +1184,8 @@ TEST(TessTopology, AxialHexProviderMayCrossDiagonalChunkSeam) {
   tess::RegionGraph graph;
   const auto provider = HexSeamProvider{};
 
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, scratch, graph, provider))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, scratch, graph,
+                                                         provider);
 
   world.field<PassableTag>(tess::Coord3{4, 3, 0}) = 0;
   world.mark_topology_rebuilt(tess::ChunkKey{1});
@@ -1254,9 +1196,7 @@ TEST(TessTopology, AxialHexProviderMayCrossDiagonalChunkSeam) {
             tess::TopologyStatus::Built);
 
   tess::RegionGraph fresh;
-  ASSERT_EQ((tess::build_region_graph<decltype(world), PassableTag>(
-                 world, scratch, fresh, provider))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<decltype(world), PassableTag>(world, scratch, fresh,
+                                                         provider);
   expect_graphs_equal(graph, fresh);
 }

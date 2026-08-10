@@ -66,7 +66,6 @@ TEST(TessSparseTopology, BuildsGraphOverResidentSetOnly) {
 
   const auto result =
       tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
-  EXPECT_EQ(result.status, tess::TopologyStatus::Built);
   // Only the two resident chunks are in the graph -- never chunk_count.
   EXPECT_EQ(graph.local_topologies().size(), 2u);
   EXPECT_EQ(result.region_count, 2u);
@@ -216,10 +215,7 @@ TEST(TessSparseTopology, IncrementalAllocationFailureInvalidatesTornState) {
     make_chunk_passable(world, tess::ChunkKey{2});
     tess::LocalTopologyScratch scratch;
     tess::SparseRegionGraph graph;
-    ASSERT_EQ((tess::build_region_graph<SparseSmall, PassableTag>(
-                   world, scratch, graph))
-                  .status,
-              tess::TopologyStatus::Built);
+    tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
     const auto before = graph;
     const auto before_revision = graph.revision();
 
@@ -254,10 +250,7 @@ TEST(TessSparseTopology, IncrementalAllocationFailureInvalidatesTornState) {
 
     reached_success = true;
     tess::SparseRegionGraph fresh;
-    ASSERT_EQ((tess::build_region_graph<SparseSmall, PassableTag>(
-                   world, scratch, fresh))
-                  .status,
-              tess::TopologyStatus::Built);
+    tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, fresh);
     expect_graphs_equal(graph, fresh);
     break;
   }
@@ -296,18 +289,14 @@ TEST(TessSparseTopology, RegionGraphFreshnessTracksResidencyAndVersion) {
   make_chunk_passable(world, tess::ChunkKey{1});
   tess::LocalTopologyScratch scratch;
   tess::SparseRegionGraph graph;
-  const auto built =
-      tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
-  ASSERT_EQ(built.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
   EXPECT_TRUE(tess::is_region_graph_fresh(world, graph));
 
   // In-place topology edit on a still-resident chunk -> stale (version).
   world.mark_topology_rebuilt(tess::ChunkKey{0});
   EXPECT_FALSE(tess::is_region_graph_fresh(world, graph));
 
-  const auto rebuilt =
-      tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
-  ASSERT_EQ(rebuilt.status, tess::TopologyStatus::Built);
+  tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
   EXPECT_TRUE(tess::is_region_graph_fresh(world, graph));
 
   // Residency change (evict a frozen chunk) -> stale (count/generation).
@@ -335,10 +324,8 @@ TEST(TessSparseTopology, FreshnessRejectsGraphBuiltForAnotherShape) {
 
   tess::LocalTopologyScratch scratch;
   tess::SparseRegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<SparseSmall, PassableTag>(small_world,
-                                                                scratch, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<SparseSmall, PassableTag>(small_world, scratch,
+                                                     graph);
   EXPECT_TRUE(tess::is_region_graph_fresh(small_world, graph));
   EXPECT_FALSE(tess::is_region_graph_fresh(wide_world, graph));
 }
@@ -350,10 +337,7 @@ TEST(TessSparseTopology, RegionIndexRejectsWraparoundReferences) {
   make_chunk_passable(world, tess::ChunkKey{2});
   tess::LocalTopologyScratch scratch;
   tess::SparseRegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<SparseSmall, PassableTag>(world, scratch,
-                                                                graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<SparseSmall, PassableTag>(world, scratch, graph);
   ASSERT_EQ(graph.region_count(), 3u);
 
   // The sentinel chunk region_of returns for out-of-world coordinates is

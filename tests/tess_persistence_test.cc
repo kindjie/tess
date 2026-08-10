@@ -762,10 +762,8 @@ TEST(TessPersistence, SparseLoadRematerializesPagesWithNewGenerations) {
   const auto old_generation = target.residency_generation(tess::ChunkKey{1});
   tess::LocalTopologyScratch topology_scratch;
   tess::SparseRegionGraph graph;
-  ASSERT_EQ((tess::build_region_graph<SparseWorld, TerrainTag>(
-                 target, topology_scratch, graph))
-                .status,
-            tess::TopologyStatus::Built);
+  tess::build_region_graph<SparseWorld, TerrainTag>(target, topology_scratch,
+                                                    graph);
   ASSERT_TRUE(tess::is_region_graph_fresh(target, graph));
 
   std::vector<std::byte> bytes;
