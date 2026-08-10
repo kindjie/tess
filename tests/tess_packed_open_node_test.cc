@@ -212,21 +212,70 @@ TEST(TessPackedOpenNode, WeightedFloodSerpentineGolden) {
   EXPECT_EQ(replay.cost, 24u);
 }
 
-TEST(TessPackedOpenNode, BoundedFloodMatchesUnboundedGolden) {
+TEST(TessPackedOpenNode, BoxedFloodSerpentineGolden) {
   auto fx = make_fixture();
-  tess::DistanceFieldScratch bounded_scratch;
-  tess::DistanceFieldScratch unbounded_scratch;
-  const auto bounded = tess::build_bounded_weighted_distance_field<
-      decltype(fx.world), SerpPassableTag, SerpCostTag, 1024>(fx.world, fx.goal,
-                                                              bounded_scratch);
-  const auto unbounded =
-      tess::build_weighted_distance_field<decltype(fx.world), SerpPassableTag,
-                                          SerpCostTag>(fx.world, fx.goal,
-                                                       unbounded_scratch);
-  ASSERT_EQ(bounded.status, tess::PathStatus::Found);
-  EXPECT_EQ(bounded.status, unbounded.status);
-  EXPECT_EQ(bounded.expanded_nodes, unbounded.expanded_nodes);
-  EXPECT_EQ(bounded.reached_nodes, unbounded.reached_nodes);
+  tess::DistanceFieldScratch scratch;
+  const auto result =
+      tess::build_weighted_distance_field_in_box<decltype(fx.world),
+                                                 SerpPassableTag, SerpCostTag>(
+          fx.world, fx.goal,
+          tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{8, 8, 1}}, scratch,
+          tess::MissingChunkPolicy::TreatAsBlocked);
+  ASSERT_EQ(result.status, tess::PathStatus::Found);
+  EXPECT_EQ(result.expanded_nodes, 52u);
+  EXPECT_EQ(result.reached_nodes, 52u);
+}
+
+TEST(TessPackedOpenNode, WeightedGoalSetProductGolden) {
+  auto fx = make_fixture();
+  tess::GoalSet goals;
+  goals.reserve(2);
+  goals.add(fx.goal);
+  goals.add(tess::Coord3{0, 7, 0});
+  tess::DistanceFieldScratch scratch;
+  tess::DistanceFieldProduct product;
+  const auto built = tess::build_weighted_distance_field_product<
+      decltype(fx.world),
+      tess::movement::LegacyWeighted<SerpPassableTag, SerpCostTag>>(
+      fx.world, goals, scratch, product);
+  ASSERT_EQ(built.status, tess::PathStatus::Found);
+  EXPECT_EQ(built.expanded_nodes, 52u);
+  EXPECT_EQ(built.reached_nodes, 52u);
+}
+
+TEST(TessPackedOpenNode, StairProviderProductGolden) {
+  // A special-transitions provider forces build_distance_field_product's
+  // weighted-heap branch even under a unit movement class — the one
+  // packed consumer no plain fixture reaches.
+  struct StairTag {};
+  using StairSchema = tess::FieldSchema<tess::Field<SerpPassableTag, bool>,
+                                        tess::Field<SerpCostTag, std::uint32_t>,
+                                        tess::Field<StairTag, std::uint8_t>>;
+  using StairShape =
+      tess::Shape<tess::Extent3{4, 4, 2}, tess::Extent3{4, 4, 2}>;
+  using StairWorld = tess::AlwaysResidentWorld<StairShape, StairSchema>;
+  StairWorld world;
+  for (auto& page : world.chunks()) {
+    std::fill(page.field_span<SerpPassableTag>().begin(),
+              page.field_span<SerpPassableTag>().end(), true);
+    std::fill(page.field_span<SerpCostTag>().begin(),
+              page.field_span<SerpCostTag>().end(), 1u);
+  }
+  world.field<StairTag>(tess::Coord3{1, 1, 0}) =
+      static_cast<std::uint8_t>(tess::StairDirection::PositiveX);
+  const auto provider = tess::StairTransitions<StairTag>{};
+
+  tess::GoalSet goals;
+  goals.reserve(1);
+  goals.add(tess::Coord3{2, 1, 1});
+  tess::DistanceFieldScratch scratch;
+  tess::DistanceFieldProduct product;
+  const auto built =
+      tess::build_distance_field_product<StairWorld, SerpPassableTag>(
+          world, goals, scratch, product, provider);
+  ASSERT_EQ(built.status, tess::PathStatus::Found);
+  EXPECT_EQ(built.expanded_nodes, 32u);
+  EXPECT_EQ(built.reached_nodes, 32u);
 }
 
 TEST(TessPackedOpenNode, WeightedEarlyExitLeavesScratchReusable) {

@@ -45,11 +45,18 @@
   triples, pack round trips at all corner values, a differential heap
   test pinning identical pop sequences on adversarial insertions
   (same-index stale chains, equal-(f,g) index ties, boundary words),
-  tie-heavy weighted A*/flood goldens captured from the pre-change
-  loops (cost/path/expanded/reached literals), scratch-reuse pins
-  across weighted/unit/weighted searches, and warm allocation-freedom.
-  Fail-before mutant: dropping the packed index tie-break fails 6
-  tests.
+  and tie-heavy goldens captured from the pre-change loops for every
+  packed consumer: weighted A* (cost, path length and walk validity,
+  expanded/reached literals), the general flood (expanded/reached and
+  replay-cost literals), the boxed flood, the weighted goal-set
+  product, and the unit-product weighted branch forced by a
+  stair-transitions provider (expanded/reached literals each). The
+  originally drafted bounded-flood case was dropped after review
+  showed that consumer routes to the bucket implementation and never
+  touches the packed node. Scratch-reuse pins across
+  weighted/unit/weighted searches and warm allocation-freedom close
+  the lifecycle. Fail-before mutant: dropping the packed index
+  tie-break fails 6 tests.
 - Follow-ups: a d-ary sift over the same packed element, only if the
   next profile still shows the heap hot; Deck on-device verification
   when access returns.
