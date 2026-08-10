@@ -1,6 +1,7 @@
 # Tests
 
-- Tests use GoogleTest.
+- C++ test targets use GoogleTest. The `test_*.py` files are pytest suites
+  for the repository tooling; they are not registered with CTest.
 - `test_doc_snippets.py`: verifies named source-region parsing, Markdown drift
   detection, automatic refresh, and repository-wide synchronization between
   adopter-facing excerpts and compiled sources.
@@ -425,7 +426,13 @@
   rejection when a product is read through another model, plus normalized
   raw-tag/class cache identity. Provider products follow stair edges and both
   product readers, cache stores, and cache lookups reject a providerless model
-  or changed stateful-provider revision.
+  or changed stateful-provider revision. It also verifies the replay-product
+  invalidation contracts: products with empty dependency sets are never
+  valid, failure (NoPath) route and portal-route products capture every
+  chunk version so any world edit invalidates the replayed failure,
+  distance-field products depend on the blocked frontier (face neighbors of
+  touched chunks) so opening a fully-sealed chunk invalidates them, and
+  rebuilding a portal route product from its own `waypoints()` span is safe.
 - `tess_path_movement_class_test`: verifies movement classes threaded through
   the A* leaves and weighted cores (S5.2): the `WalkableField` identity class
   matches the raw-tag unit search node-for-node on a serpentine maze,
@@ -618,13 +625,6 @@
   `cap_invalidations` stat, single oversized routes
   skipped without eviction via `oversized_skips`, and cap 0 disabling
   storage).
-- `tess_path_product_test`: verifies the replay-product invalidation
-  contracts: products with empty dependency sets are never valid, failure
-  (NoPath) route and portal-route products capture every chunk version so
-  any world edit invalidates the replayed failure, distance-field products
-  depend on the blocked frontier (face neighbors of touched chunks) so
-  opening a fully-sealed chunk invalidates them, and rebuilding a portal
-  route product from its own `waypoints()` span is safe.
 - `tess_joint_movement_test`: joint movement commit coverage — a
   chain drains in one tick and a four-cycle rotates where the per-agent
   commit provably cannot (the legacy advance is asserted to move one and zero
@@ -1088,8 +1088,10 @@
   invariant, so a shrink cannot drift onto a different, easier
   violation. Bounded to 24 seeds x 64 steps on the pull-request tier;
   the weekly `Long-Seed Property Sweeps` job raises both through
-  `TESS_PROPERTY_SEEDS` and `TESS_PROPERTY_STEPS` (400 x 192, ~85s for
-  all four suites). A malformed or zero value is an ERROR, not a silent
+  `TESS_PROPERTY_SEEDS` and `TESS_PROPERTY_STEPS` (400 x 192, exported
+  job-wide so every property suite runs at that budget there; the
+  per-suite step defaults, 64 here, apply only on the pull-request
+  tier). A malformed or zero value is an ERROR, not a silent
   fallback — a weekly run that quietly executed the pull-request
   workload would report a long-seed pass it never performed. The job
   proves the override took effect by checking that a zero budget is
