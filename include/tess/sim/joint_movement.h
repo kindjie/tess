@@ -134,9 +134,15 @@ struct JointMoveScratch {
 
 namespace detail {
 
-// The single door onto the buffers. One friend rather than a friend per
-// algorithm function: the pass, the PIBT tier and their helpers all reach the
-// state through here, so adding an internal helper does not edit the type.
+// The single door onto the buffers. `RegionGraphT` befriends its algorithms
+// directly, and that pattern does not reach here: the PIBT tier lives in a
+// header above this one and its advance is a constrained template, so a
+// matching friend declaration would have to name `PibtRanking` — declared in
+// the higher header — and dropping the constraint would befriend a different
+// template. So the door is a `detail` name instead. Being in `detail` is the
+// boundary (`docs/style.md`: no source-compatibility guarantee), not being
+// unreachable: a consumer who spells this out can still reach the buffers,
+// exactly as it can reach any other internal in a header-only library.
 struct JointMoveScratchAccess {
   [[nodiscard]] static auto state(JointMoveScratch& scratch) noexcept
       -> JointMoveScratchState& {

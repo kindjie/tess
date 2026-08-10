@@ -121,6 +121,11 @@ struct PibtPriorities {
 
 namespace detail {
 
+// Matches the joint scratch's door, deliberately: this type could befriend
+// the advance below directly, since both live in this header, but then two
+// adjacent scratch types would hide their state by two different mechanisms
+// and a caller reading one would learn nothing about the other. The same
+// caveat applies — `detail` is the boundary, not unreachability.
 struct PibtPrioritiesAccess {
   [[nodiscard]] static auto scratch(PibtPriorities& priorities) noexcept
       -> PibtScratchState& {
