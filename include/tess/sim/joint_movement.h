@@ -75,14 +75,19 @@ struct JointMoveStats {
   std::size_t swaps_denied = 0;
 };
 
-// Contents are an implementation detail of
-// `advance_path_agents_with_joint_movement`; callers reserve once and reuse
-// the object across ticks so the warm path performs no allocation. The same
-// index-pairing caveat as `PathAgentRoutes` applies: the scratch carries no
-// per-agent state between calls, so reordering agents between ticks is safe
-// with respect to this object.
-/// Caller-owned workspace for the joint movement pass.
-struct JointMoveScratch {
+struct JointMoveScratch;
+
+namespace detail {
+
+struct JointMoveScratchAccess;
+
+// The round buffers themselves. They were public members of
+// `JointMoveScratch` under a comment calling them an implementation detail,
+// which left the layout inside the 1.0 promise anyway: a consumer could size,
+// read or overwrite any of them, and nothing but that comment said what the
+// pass would then do. They live here so the promise covers what the type is
+// for — reserving storage — and not how a round is bookkept.
+struct JointMoveScratchState {
   std::vector<std::uint64_t> occupant_key;
   std::vector<std::uint32_t> occupant_agent;
   std::vector<std::uint64_t> claimed;
@@ -95,7 +100,6 @@ struct JointMoveScratch {
   std::vector<std::uint32_t> committed;
   std::vector<Coord3> committed_from;
 
-  /// Pre-sizes every internal container for `agent_count` agents.
   void reserve(std::size_t agent_count) {
     occupant_key.reserve(agent_count);
     occupant_agent.reserve(agent_count);
@@ -111,7 +115,38 @@ struct JointMoveScratch {
   }
 };
 
+}  // namespace detail
+
+// Callers reserve once and reuse the object across ticks so the warm path
+// performs no allocation. The same index-pairing caveat as `PathAgentRoutes`
+// applies: the scratch carries no per-agent state between calls, so
+// reordering agents between ticks is safe with respect to this object.
+/// Caller-owned workspace for the joint movement pass.
+struct JointMoveScratch {
+  /// Pre-sizes every internal container for `agent_count` agents.
+  void reserve(std::size_t agent_count) { state_.reserve(agent_count); }
+
+ private:
+  friend struct detail::JointMoveScratchAccess;
+
+  detail::JointMoveScratchState state_;
+};
+
 namespace detail {
+
+// The single door onto the buffers. One friend rather than a friend per
+// algorithm function: the pass, the PIBT tier and their helpers all reach the
+// state through here, so adding an internal helper does not edit the type.
+struct JointMoveScratchAccess {
+  [[nodiscard]] static auto state(JointMoveScratch& scratch) noexcept
+      -> JointMoveScratchState& {
+    return scratch.state_;
+  }
+  [[nodiscard]] static auto state(const JointMoveScratch& scratch) noexcept
+      -> const JointMoveScratchState& {
+    return scratch.state_;
+  }
+};
 
 // Round-local agent classification. Values are ordered so that "settled this
 // round" states compare greater than Pending.
@@ -122,8 +157,8 @@ enum class JointState : std::uint8_t {
   Failed,    // recorded a movement failure this round
 };
 
-[[nodiscard]] inline auto joint_find_occupant(const JointMoveScratch& scratch,
-                                              std::uint64_t key) noexcept
+[[nodiscard]] inline auto joint_find_occupant(
+    const JointMoveScratchState& scratch, std::uint64_t key) noexcept
     -> std::uint32_t {
   const auto begin = scratch.occupant_key.begin();
   const auto end = scratch.occupant_key.end();
@@ -134,7 +169,7 @@ enum class JointState : std::uint8_t {
   return scratch.occupant_agent[static_cast<std::size_t>(it - begin)];
 }
 
-[[nodiscard]] inline auto joint_claim(JointMoveScratch& scratch,
+[[nodiscard]] inline auto joint_claim(JointMoveScratchState& scratch,
                                       std::uint64_t key) -> bool {
   const auto it =
       std::lower_bound(scratch.claimed.begin(), scratch.claimed.end(), key);
@@ -170,12 +205,13 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   requires std::invocable<OnCommit&, std::size_t, Coord3, Coord3>
 auto advance_path_agents_with_joint_movement(
     World& world, std::span<PathAgentState> agents,
-    const PathAgentRoutes& routes, JointMoveScratch& scratch,
+    const PathAgentRoutes& routes, JointMoveScratch& scratch_storage,
     JointMoveOptions options, std::size_t max_steps,
     std::uint32_t movement_dirty_mask, OnCommit&& on_commit,
     diagnostics::FlowAccounting* accounting = nullptr) -> JointMoveStats {
   using Shape = typename World::shape_type;
   TESS_ASSERT(routes.routes.size() >= agents.size());
+  auto& scratch = detail::JointMoveScratchAccess::state(scratch_storage);
   JointMoveStats stats;
   if (max_steps == 0) {
     return stats;

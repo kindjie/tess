@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <limits>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 #include "allocation_counter.h"
@@ -1015,6 +1016,53 @@ TEST(TessPibtMovement, GoallessAgentOnTheOriginNeverRegistersAnArrival) {
   EXPECT_EQ(agents[1].position, (tess::Coord3{0, 0, 0}));
   EXPECT_FALSE(agents[1].has_goal);
   EXPECT_EQ(stats.frame.arrived, 0u);
+}
+
+// `elapsed` is the caller's adaptive-priority knob and stays public; the
+// decision order and the inheritance stack are rebuilt every pass and are
+// not. `PrioritiesProbeControl` spells all three names in public, so a
+// mistyped name cannot turn a negative assertion into one that no type could
+// ever satisfy.
+struct PrioritiesProbeControl {
+  int elapsed = 0;
+  int order = 0;
+  int frames = 0;
+};
+
+template <typename T>
+concept HasMemberElapsed = requires(T& value) { value.elapsed; };
+template <typename T>
+concept HasMemberOrder = requires(T& value) { value.order; };
+template <typename T>
+concept HasMemberFrames = requires(T& value) { value.frames; };
+
+TEST(TessPibtMovement, OnlyElapsedIsPartOfThePrioritiesSurface) {
+  using Priorities = tess::PibtPriorities;
+  using Control = PrioritiesProbeControl;
+
+  // The probes are satisfiable, so a mistyped name cannot make the negative
+  // assertions below pass for the wrong reason.
+  static_assert(HasMemberElapsed<Control>);
+  static_assert(HasMemberOrder<Control>);
+  static_assert(HasMemberFrames<Control>);
+
+  static_assert(HasMemberElapsed<Priorities>);
+  static_assert(!HasMemberOrder<Priorities>);
+  static_assert(!HasMemberFrames<Priorities>);
+
+  // `frames` was also the last public member typed with a `detail` struct,
+  // so privatizing it is what closes the leak rather than promoting
+  // `PibtFrame` and freezing an implementation layout.
+  static_assert(
+      requires(Priorities& priorities) { priorities.reserve(std::size_t{4}); });
+  static_assert(std::is_default_constructible_v<Priorities>);
+  static_assert(std::is_copy_constructible_v<Priorities>);
+  static_assert(std::is_copy_assignable_v<Priorities>);
+  static_assert(std::is_move_constructible_v<Priorities>);
+  static_assert(std::is_move_assignable_v<Priorities>);
+  static_assert(!std::is_aggregate_v<Priorities>);
+
+  SUCCEED();
 }
 
 }  // namespace

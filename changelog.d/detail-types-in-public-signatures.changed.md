@@ -33,8 +33,7 @@
   is not — that indirection exists so the alias can be repointed without
   breaking callers. Promoting the template would have frozen an
   implementation detail of the layer explicitly labelled unstable.
-- Not changed here: `PibtFrame` still lives in `detail`, and its only
-  public exposure is `PibtPriorities::frames`, a vector documented as "an
-  implementation detail" while public. Promoting the frame type would
-  freeze an implementation struct; the fix is privatizing the member,
-  which is the outstanding half of the scratch-encapsulation finding.
+- `PibtFrame` stays in `detail` and is no longer exposed at all: its one
+  public appearance was `PibtPriorities::frames`, and that member is now
+  private. Promoting the frame type would have frozen an implementation
+  struct instead.
