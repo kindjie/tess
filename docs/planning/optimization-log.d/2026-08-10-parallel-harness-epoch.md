@@ -40,24 +40,30 @@
   epochs in the series instead of two. Preserving an accidental
   optimizer decision would make the cell a test of compiler
   heuristics.
-- Epoch rule, enforced rather than asserted: pre-#98 and post-#98
-  `parallel/` observations measure different harness codegen around an
-  unchanged library call and must not be pooled for baselines,
-  change-point analysis, or threshold calibration. Recording that only
-  in prose would have left the detector free to seed a post-#98
-  baseline with pre-#98 readings and re-raise this settled
-  investigation as a fresh suspicion, so the boundary is data:
-  `bench/benchmark-epochs.json` names the two `tile_touch` cells and
-  the first post-#98 artifact run, and the detector drops older
-  readings for them. That defers alerting on those two until the new
-  epoch has its own eight baselines, which is the honest state. The
-  entry is scoped to the cells the scan measured rather than to the
-  whole family, because an epoch costs alerting coverage on every
-  benchmark it matches: the other eight shifted by 6.1% or less,
-  which is far under the detector's 10% relative floor, so only
-  `tile_touch_pool_w4` could have produced a false re-alert at all
-  (`tile_touch_serial`'s 1,260 ns absolute delta is under the 2,000 ns
-  materiality floor, so it cannot flag in either direction).
+- Epoch rule: pre-#98 and post-#98 `parallel/` observations measure
+  different harness codegen around an unchanged library call and must
+  not be pooled for baselines, change-point analysis, or threshold
+  calibration. This is recorded, not enforced, and the consequence is
+  predictable: once the detector's rolling window holds readings from
+  both sides, `parallel/tile_touch_pool_w4` will be flagged again. This
+  entry is the answer when that happens. It is the only cell that can
+  do so — the other nine either shift under the 10% relative floor
+  (6.1% at most) or, in `tile_touch_serial`'s case, cannot clear the
+  2,000 ns absolute floor with a 1,260 ns delta.
+- Why it is not enforced: a mechanism that drops pre-boundary readings
+  was built and then withdrawn on review. Suppression is the wrong
+  default for an advisory signal. Its failure mode is a silently
+  missed regression — a mistyped boundary mutes a benchmark entirely
+  while the run still reports `clean`, provenance fields are prose the
+  loader discards rather than enforced, per-benchmark "not evaluated"
+  is indistinguishable from "clean" in the verdict, and the ordering
+  depends on run identifiers whose chronological comparison GitHub
+  does not actually guarantee. Weighed against it, the cost of not
+  enforcing is one duplicate advisory issue that a reader closes by
+  citing this entry. A duplicate alert is cheaper than a missed
+  regression, so the alert stays. If this is worth automating later,
+  the design should annotate an alert with the recorded epoch rather
+  than suppress it, which cannot hide anything.
   Boundary: last old-harness commit
   `6e67d3843b8d9ab5a8c51c593f7a7dc1c077f352` (#97), first
   shared-harness commit `73cf59ca93144dd2b6091d31748091fa14573730`

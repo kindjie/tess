@@ -37,31 +37,6 @@ class ToolError(RuntimeError):
   """Unreadable input that must fail the run."""
 
 
-def load_epochs(path: Path) -> list[tuple[str, int]]:
-  """Load recorded measurement-epoch boundaries.
-
-  An epoch marks a run before which a benchmark's numbers measured
-  something else — a harness change rather than a library change, for
-  instance. Pooling the two sides would let a documented, investigated
-  non-regression be re-raised as a fresh suspicion forever, so the
-  older samples are dropped for the benchmarks the entry names.
-  """
-  try:
-    data = json.loads(path.read_text(encoding="utf-8"))
-  except (OSError, json.JSONDecodeError) as error:
-    raise ToolError(f"unreadable epoch manifest {path}: {error}") from error
-  epochs: list[tuple[str, int]] = []
-  for entry in data.get("epochs", []):
-    prefix = entry.get("prefix")
-    min_run_id = entry.get("min_run_id")
-    if not prefix or min_run_id is None:
-      raise ToolError(
-          f"{path}: every epoch needs a prefix and a min_run_id"
-      )
-    epochs.append((str(prefix), int(min_run_id)))
-  return epochs
-
-
 def load_artifact(
     directory: Path,
     *,
@@ -141,7 +116,6 @@ def load_history(
     *,
     allow_legacy: bool = False,
     metrics: dict[str, str] | None = None,
-    epochs: list[tuple[str, int]] | None = None,
 ) -> list[dict[str, Any]]:
   """Load every artifact under root, ordered oldest to newest."""
   artifacts = []
@@ -151,16 +125,7 @@ def load_history(
     artifact = load_artifact(
         directory, allow_legacy=allow_legacy, metrics=metrics
     )
-    if artifact is None:
-      continue
-    for prefix, min_run_id in epochs or ():
-      if artifact["run_id"] >= min_run_id:
-        continue
-      # Older than this benchmark's epoch: the reading exists but does
-      # not describe the same measurement, so it cannot be history.
-      for name in [n for n in artifact["medians"] if n.startswith(prefix)]:
-        del artifact["medians"][name]
-    if artifact["medians"]:
+    if artifact is not None and artifact["medians"]:
       artifacts.append(artifact)
   artifacts.sort(key=lambda a: (a["run_id"], a["run_attempt"]))
   return artifacts
@@ -321,17 +286,6 @@ def main(argv: list[str] | None = None) -> int:
           "(default: the repository's bench/thresholds)"
       ),
   )
-  parser.add_argument(
-      "--epochs",
-      type=Path,
-      default=Path(__file__).resolve().parent.parent / "bench"
-      / "benchmark-epochs.json",
-      help=(
-          "recorded measurement-epoch boundaries, before which a "
-          "benchmark's readings are not history (default: the "
-          "repository's bench/benchmark-epochs.json)"
-      ),
-  )
   args = parser.parse_args(argv)
 
   if not args.artifacts.is_dir():
@@ -347,18 +301,8 @@ def main(argv: list[str] | None = None) -> int:
   except _ThresholdsError as error:
     print(f"error: {error}")
     return 1
-  try:
-    # A missing default file means a broken checkout, not "no epochs":
-    # silently ignoring it would re-raise settled investigations.
-    epochs = load_epochs(args.epochs)
-  except ToolError as error:
-    print(f"error: {error}")
-    return 1
   artifacts = load_history(
-      args.artifacts,
-      allow_legacy=args.allow_legacy,
-      metrics=metrics,
-      epochs=epochs,
+      args.artifacts, allow_legacy=args.allow_legacy, metrics=metrics
   )
   downloaded = sum(1 for d in args.artifacts.iterdir() if d.is_dir())
   result = detect(
