@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "comment": "Measurement-epoch boundaries for the change-point detector. An entry says that before min_run_id, the named benchmarks measured something else, so their older readings are not history and must not seed a baseline. This is for investigated, documented changes in what a benchmark measures — never for silencing a suspected regression, which is what the paired sentinel confirmation is for. Each entry cites the optimization-log fragment that established it.",
+  "epochs": [
+    {
+      "prefix": "parallel/",
+      "min_run_id": 30791782847,
+      "reason": "PR #98 moved the workload bodies into the shared bench/parallel_phase_support.h so the thread-scaling sweep could reuse them, turning internal-linkage locals into weak templates. A paired scan of all ten gated cells measured +26.1% on tile_touch_pool_w4 and +31.5% on tile_touch_serial with the library untouched, so readings either side of this run measure different harness codegen around the same call.",
+      "recorded_in": "docs/planning/optimization-log.d/2026-08-10-parallel-harness-epoch.md",
+      "boundary_commit": "73cf59ca93144dd2b6091d31748091fa14573730"
+    }
+  ]
+}

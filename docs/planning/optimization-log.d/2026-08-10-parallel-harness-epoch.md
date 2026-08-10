@@ -25,8 +25,8 @@
   measured difference is the benchmark's own codegen. The library's
   pool is innocent; the cell is simply not comparable across #98.
 - Decision: accepted as a measurement epoch, not fixed. Two
-  independent reviews (codex, and a Fable review of the same brief)
-  reached this verdict separately. Restoring the old number was
+  independent reviews of the same brief reached this verdict
+  separately. Restoring the old number was
   rejected on three grounds: `[[gnu::flatten]]` promises recursive
   inlining, not the previous code shape, and would restage both
   families' codegen including the published sweep curves; an
@@ -40,10 +40,18 @@
   epochs in the series instead of two. Preserving an accidental
   optimizer decision would make the cell a test of compiler
   heuristics.
-- Epoch rule: pre-#98 and post-#98 `parallel/` observations measure
-  different harness codegen around an unchanged library call and must
-  not be pooled for baselines, change-point analysis, or threshold
-  calibration. Boundary: last old-harness commit
+- Epoch rule, enforced rather than asserted: pre-#98 and post-#98
+  `parallel/` observations measure different harness codegen around an
+  unchanged library call and must not be pooled for baselines,
+  change-point analysis, or threshold calibration. Recording that only
+  in prose would have left the detector free to seed a post-#98
+  baseline with pre-#98 readings and re-raise this settled
+  investigation as a fresh suspicion, so the boundary is data:
+  `bench/benchmark-epochs.json` names the `parallel/` prefix and the
+  first post-#98 artifact run, and the detector drops older readings
+  for those benchmarks. That defers alerting on them until the new
+  epoch has its own eight baselines, which is the honest state.
+  Boundary: last old-harness commit
   `6e67d3843b8d9ab5a8c51c593f7a7dc1c077f352` (#97), first
   shared-harness commit `73cf59ca93144dd2b6091d31748091fa14573730`
   (#98), both dated 2026-08-02. The retained comparison binary is

@@ -69,7 +69,7 @@ def _thresholds_dir(root, entries):
 
 def _detect(root, **kwargs):
   artifacts = benchmark_changepoint.load_history(
-    root, metrics=kwargs.get("metrics")
+    root, metrics=kwargs.get("metrics"), epochs=kwargs.get("epochs")
   )
   return benchmark_changepoint.detect(
     artifacts,
@@ -447,3 +447,115 @@ def test_cli_reports_an_empty_manifest_set_without_a_traceback(tmp_path):
   )
 
   assert code == 1
+
+
+def _epochs_file(root, entries):
+  path = root / "epochs.json"
+  path.write_text(
+    json.dumps({"version": 1, "epochs": entries}), encoding="utf-8"
+  )
+  return path
+
+
+def test_pre_epoch_artifacts_do_not_seed_a_post_epoch_baseline(tmp_path):
+  # A documented measurement epoch (the harness change in #98) means
+  # the two sides measure different things. Pooling them would make the
+  # detector re-raise the very issue whose investigation recorded the
+  # epoch.
+  # A real artifact carries every family, so the stratum stays full
+  # even when one family's pre-epoch readings are dropped.
+  for run in range(9):
+    _artifact(tmp_path, 100 + run, {"parallel/x": 27_000.0,
+                                    "path/steady": 10_000.0})
+  for run in range(9, 12):
+    _artifact(tmp_path, 100 + run, {"parallel/x": 34_000.0,
+                                    "path/steady": 10_000.0})
+  epochs = _epochs_file(
+    tmp_path, [{"prefix": "parallel/", "min_run_id": 109, "reason": "harness"}]
+  )
+
+  result = _detect(
+    tmp_path, epochs=benchmark_changepoint.load_epochs(epochs)
+  )
+
+  # Without the epoch this is a textbook sustained shift; with it, the
+  # pre-epoch readings are not history for this benchmark and the
+  # post-epoch side is too short to judge.
+  assert result["verdict"] == "clean"
+  assert result["stratum_size"] == 12
+
+
+def test_an_epoch_only_masks_the_benchmarks_it_names(tmp_path):
+  for run in range(9):
+    _artifact(tmp_path, 100 + run, {"parallel/x": 27_000.0,
+                                    "path/y": 10_000.0})
+  for run in range(9, 12):
+    _artifact(tmp_path, 100 + run, {"parallel/x": 34_000.0,
+                                    "path/y": 14_000.0})
+  epochs = _epochs_file(
+    tmp_path, [{"prefix": "parallel/", "min_run_id": 109, "reason": "harness"}]
+  )
+
+  result = _detect(
+    tmp_path, epochs=benchmark_changepoint.load_epochs(epochs)
+  )
+
+  assert result["verdict"] == "suspects"
+  assert [s["benchmark"] for s in result["suspects"]] == ["path/y"]
+
+
+def test_a_shift_after_the_epoch_still_flags(tmp_path):
+  # The epoch must not mute the benchmark permanently: once enough
+  # post-epoch history exists, a real shift flags as usual.
+  for run in range(9):
+    _artifact(tmp_path, 100 + run, {"parallel/x": 34_000.0})
+  for run in range(9, 12):
+    _artifact(tmp_path, 100 + run, {"parallel/x": 44_000.0})
+  epochs = _epochs_file(
+    tmp_path, [{"prefix": "parallel/", "min_run_id": 100, "reason": "harness"}]
+  )
+
+  result = _detect(
+    tmp_path, epochs=benchmark_changepoint.load_epochs(epochs)
+  )
+
+  assert result["verdict"] == "suspects"
+  assert result["suspects"][0]["benchmark"] == "parallel/x"
+
+
+def test_cli_defaults_to_the_repository_epoch_manifest(tmp_path):
+  # The CI job passes no --epochs, so the default must resolve to the
+  # checked-in manifest; a missing file is a broken checkout, not an
+  # instruction to pool across a recorded epoch.
+  for run in range(12):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
+
+  code = benchmark_changepoint.main(["--artifacts", str(tmp_path)])
+
+  assert code == 0
+  epochs = benchmark_changepoint.load_epochs(
+    Path(__file__).resolve().parents[1] / "bench" / "benchmark-epochs.json"
+  )
+  assert ("parallel/", 30791782847) in epochs
+
+
+def test_cli_refuses_a_missing_epoch_manifest(tmp_path):
+  for run in range(12):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
+
+  code = benchmark_changepoint.main(
+    ["--artifacts", str(tmp_path), "--epochs", str(tmp_path / "absent.json")]
+  )
+
+  assert code == 1
+
+
+def test_an_epoch_entry_without_a_boundary_is_an_error(tmp_path):
+  path = _epochs_file(tmp_path, [{"prefix": "parallel/"}])
+
+  try:
+    benchmark_changepoint.load_epochs(path)
+  except benchmark_changepoint.ToolError as error:
+    assert "min_run_id" in str(error)
+  else:
+    raise AssertionError("an epoch without a boundary must not be accepted")

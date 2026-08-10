@@ -284,9 +284,12 @@ td:first-child, th:first-child {{ text-align: left; }}
 <main>
 <h1>Tess Benchmark Trends</h1>
 <p>{html.escape(stale_label(runs))}</p>
+<p>Each benchmark is shown on the metric its family gates: real time
+where the thresholds set no CPU ceiling (the parallel pool cells and
+the manually timed cache cells), CPU time otherwise.</p>
 {svg}
 <table>
-<thead><tr><th>Benchmark</th><th>Latest median CPU ns</th></tr></thead>
+<thead><tr><th>Benchmark</th><th>Latest median ns</th></tr></thead>
 <tbody>
 {rows}
 </tbody>
@@ -319,7 +322,11 @@ def render_markdown(runs: list[Run], benchmarks: tuple[str, ...]) -> str:
       "",
       "![Benchmark trend snapshot](assets/benchmark-trends.svg)",
       "",
-      "| Benchmark | Latest median CPU ns |",
+      "Each benchmark is shown on the metric its family gates: real"
+      " time where the thresholds set no CPU ceiling, CPU time"
+      " otherwise.",
+      "",
+      "| Benchmark | Latest median ns |",
       "| --- | ---: |",
   ]
   latest = runs[-1] if runs else None

@@ -15,3 +15,13 @@
   because the detector rebuilds its whole window from the raw
   artifacts on every run and so re-reads the history on one metric
   rather than splicing two together.
+- The change-point detector honours recorded measurement epochs
+  (`bench/benchmark-epochs.json`). When an investigation establishes
+  that a benchmark's older readings measured something else — a
+  change to the benchmark harness rather than to the library — the
+  entry names the affected benchmarks and the first run of the new
+  epoch, and the detector stops treating the older readings as history
+  for them. Without it, a documented and settled non-regression is
+  re-raised as a fresh suspicion as soon as both sides share a window.
+  It is deliberately not a way to silence a suspected regression; that
+  is what the paired sentinel confirmation is for.
