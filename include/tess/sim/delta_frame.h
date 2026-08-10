@@ -262,6 +262,19 @@ class DeltaCollector {
   // operations, so they are defaulted explicitly rather than left to be
   // silently absent. Moving still invalidates any live frame: the spans
   // then point into buffers the destination owns.
+  //
+  // A moved-from collector must be destroyed or assigned to, NOT reused.
+  // That is narrower than the standard's valid-but-unspecified, and it is
+  // narrower on purpose: the defaulted move transfers the buffers but
+  // COPIES the protocol scalars, so a moved-from collector keeps its
+  // version_ and its needs_baseline_. Re-reserving it and collecting
+  // against the same world after the destination has collected would find
+  // the dirty bits already consumed and publish an applicable, untruncated,
+  // empty frame whose version chain still looks continuous -- the same
+  // silent-loss shape the deleted copy operations caused, reached a
+  // different way. Enforcing this instead of documenting it means
+  // hand-writing a 20-member move so the source can be poisoned with
+  // needs_baseline_, which would silently drop any member added later.
   DeltaCollector(const DeltaCollector&) = delete;
   auto operator=(const DeltaCollector&) -> DeltaCollector& = delete;
   DeltaCollector(DeltaCollector&&) = default;

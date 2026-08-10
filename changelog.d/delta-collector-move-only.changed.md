@@ -12,3 +12,15 @@
   left silently absent; a test pins both halves. Moving still invalidates
   a live `DeltaFrame`, whose spans then point into buffers the destination
   owns, and the lifetime contract says so.
+- A moved-from collector must be destroyed or assigned to, not reused.
+  That is narrower than the standard's valid-but-unspecified and narrower
+  on purpose: the defaulted move transfers the buffers but copies the
+  protocol scalars, so a moved-from collector keeps its version and its
+  baseline flag. Re-reserving it and collecting against the same world
+  after the destination has collected would find the dirty bits already
+  consumed and publish an applicable, untruncated, empty frame whose
+  version chain still looks continuous — the same silent-loss shape the
+  deleted copy operations caused, reached a different way. It is
+  documented rather than enforced because enforcing it means hand-writing
+  a twenty-member move so the source can be poisoned, which would silently
+  drop any member added later.

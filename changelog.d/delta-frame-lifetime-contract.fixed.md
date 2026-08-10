@@ -7,9 +7,9 @@
   recorded while the current one is applied — and `reserve()`, which
   re-reserves the published vectors and can reallocate them, was missing
   from the list entirely. The spans are valid until the next `publish()`
-  or `reserve()`, and until the collector is assigned to or moved from —
-  `DeltaCollector` keeps its compiler-generated copy and move operations,
-  which replace or empty the published vectors. `header` is a value copy
+  or `reserve()`, and until the collector is move-assigned to or moved
+  from, either of which replaces or empties the published vectors. (The
+  collector became non-copyable in the same release; see that entry.) `header` is a value copy
   and outlives all of it. The same stale contract appeared a second time on
   `DeltaCollector`'s own Doxygen and a third time in
   `architecture/simulation.md` — the maintained page `surface.json` maps

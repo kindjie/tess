@@ -91,8 +91,9 @@
   over-restrict. Also pins that `explicit_chunk_domain` sorts without
   deduplicating.
 - `tess_delta_frame_lifetime_test`: pins the `DeltaFrame` lifetime
-  contract, which its header comment previously stated incorrectly. Two
-  tests: a published frame survives `begin_tick`, `record_*` and
+  contract, which its header comment previously stated incorrectly, and
+  `DeltaCollector`'s move-only contract. Three tests. A published frame
+  survives `begin_tick`, `record_*` and
   `collect_*`, and it survives `clear()` — all of which touch only the
   pending buffers. Every published record carries distinct values and the
   entity record is checked too, so a record replaced by its neighbour
@@ -105,6 +106,11 @@
   (reallocation is not observable through a span) and no `header` test (it
   is a value member of the caller's own frame, so an assertion about it
   compares a copy against itself and cannot fail).
+  The third test asserts all four special-member traits: copy construction
+  and assignment deleted, move construction and assignment present.
+  Both halves matter — declaring the copy operations even as deleted
+  suppresses the implicit moves, so a version that only deleted copies
+  would break every factory returning a collector by value.
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
   default and explicit lattice typing with stable lattice identifiers,
   axial hex coordinate conversion and overflow-safe saturated distance,
