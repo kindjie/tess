@@ -64,9 +64,11 @@ Contributor and operations pages (in-repo only; excluded from the site):
 - [Design Changelog](decisions/CHANGELOG.md): records meaningful changes from
   the original TDDs.
 
-When implementation diverges from a TDD, update the maintained architecture
-docs, add a design changelog entry, and optionally add a short note at the top
-of the affected TDD pointing to the newer source of truth.
+When implementation diverges from a TDD, follow the divergence procedure in
+the root `AGENTS.md`: update the maintained architecture docs, add a
+design-decision fragment under `decisions/changelog.d/`, and optionally add a
+short note at the top of the affected TDD pointing to the newer source of
+truth.
 
 ## Generated documentation
 
