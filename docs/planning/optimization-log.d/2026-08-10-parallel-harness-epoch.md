@@ -47,10 +47,17 @@
   in prose would have left the detector free to seed a post-#98
   baseline with pre-#98 readings and re-raise this settled
   investigation as a fresh suspicion, so the boundary is data:
-  `bench/benchmark-epochs.json` names the `parallel/` prefix and the
-  first post-#98 artifact run, and the detector drops older readings
-  for those benchmarks. That defers alerting on them until the new
-  epoch has its own eight baselines, which is the honest state.
+  `bench/benchmark-epochs.json` names the two `tile_touch` cells and
+  the first post-#98 artifact run, and the detector drops older
+  readings for them. That defers alerting on those two until the new
+  epoch has its own eight baselines, which is the honest state. The
+  entry is scoped to the cells the scan measured rather than to the
+  whole family, because an epoch costs alerting coverage on every
+  benchmark it matches: the other eight shifted by 6.1% or less,
+  which is far under the detector's 10% relative floor, so only
+  `tile_touch_pool_w4` could have produced a false re-alert at all
+  (`tile_touch_serial`'s 1,260 ns absolute delta is under the 2,000 ns
+  materiality floor, so it cannot flag in either direction).
   Boundary: last old-harness commit
   `6e67d3843b8d9ab5a8c51c593f7a7dc1c077f352` (#97), first
   shared-harness commit `73cf59ca93144dd2b6091d31748091fa14573730`

@@ -536,7 +536,11 @@ def test_cli_defaults_to_the_repository_epoch_manifest(tmp_path):
   epochs = benchmark_changepoint.load_epochs(
     Path(__file__).resolve().parents[1] / "bench" / "benchmark-epochs.json"
   )
-  assert ("parallel/", 30791782847) in epochs
+  assert ("parallel/tile_touch_pool_w4", 30791782847) in epochs
+  # Scoped to the cells the paired scan measured, not the whole family:
+  # the other eight shifted by 6.1% or less, far under the detector's
+  # floors, so masking them would cost alerting for nothing.
+  assert not any(prefix == "parallel/" for prefix, _ in epochs)
 
 
 def test_cli_refuses_a_missing_epoch_manifest(tmp_path):

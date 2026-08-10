@@ -1,11 +1,18 @@
 {
   "version": 1,
-  "comment": "Measurement-epoch boundaries for the change-point detector. An entry says that before min_run_id, the named benchmarks measured something else, so their older readings are not history and must not seed a baseline. This is for investigated, documented changes in what a benchmark measures — never for silencing a suspected regression, which is what the paired sentinel confirmation is for. Each entry cites the optimization-log fragment that established it.",
+  "comment": "Measurement-epoch boundaries for the change-point detector. An entry says that before min_run_id, the named benchmarks measured something else, so their older readings are not history and must not seed a baseline. This is for investigated, documented changes in what a benchmark measures - never for silencing a suspected regression, which is what the paired sentinel confirmation is for. Each entry cites the optimization-log fragment that established it. Name benchmarks as narrowly as the evidence supports: an epoch costs change-point coverage on every benchmark it matches until that benchmark accumulates a fresh baseline, so a prefix broader than the measured effect trades away real alerting for nothing.",
   "epochs": [
     {
-      "prefix": "parallel/",
+      "prefix": "parallel/tile_touch_pool_w4",
       "min_run_id": 30791782847,
-      "reason": "PR #98 moved the workload bodies into the shared bench/parallel_phase_support.h so the thread-scaling sweep could reuse them, turning internal-linkage locals into weak templates. A paired scan of all ten gated cells measured +26.1% on tile_touch_pool_w4 and +31.5% on tile_touch_serial with the library untouched, so readings either side of this run measure different harness codegen around the same call.",
+      "reason": "PR #98 moved the workload bodies into the shared bench/parallel_phase_support.h so the thread-scaling sweep could reuse them, turning internal-linkage locals into weak templates. A paired scan of all ten gated cells measured +26.1% [+22.3, +27.0] here with the library untouched, so readings either side of this run measure different harness codegen around the same call. This is the only cell whose shift clears both detector floors, so it is the only one that would otherwise be re-raised.",
+      "recorded_in": "docs/planning/optimization-log.d/2026-08-10-parallel-harness-epoch.md",
+      "boundary_commit": "73cf59ca93144dd2b6091d31748091fa14573730"
+    },
+    {
+      "prefix": "parallel/tile_touch_serial",
+      "min_run_id": 30791782847,
+      "reason": "The same #98 harness change, measured at +31.5% [+0.3, +85.2] (2,023 to 3,283 ns). Its 1,260 ns absolute delta sits under the detector's 2,000 ns materiality floor, so it cannot flag either way; the entry exists so the series is not silently compared across the boundary. The other eight gated parallel cells are deliberately absent: they do real work per chunk, their measured shifts are 6.1% or less, and masking them would remove alerting they still need.",
       "recorded_in": "docs/planning/optimization-log.d/2026-08-10-parallel-harness-epoch.md",
       "boundary_commit": "73cf59ca93144dd2b6091d31748091fa14573730"
     }
