@@ -260,8 +260,17 @@ stateDiagram-v2
   the union `dirty_mask`, and the `baseline`/`truncated` flags.
   Truncation (capacity overflow or a hard `clear()`) is a structural
   gap: entity loss is unrecoverable by the version chain.
-- `DeltaFrame` is an immutable view into collector-owned storage, valid
-  until the next mutating collector call; `empty()` ignores overlays.
+- `DeltaFrame` is an immutable view into collector-owned storage. Its
+  spans are valid until the next `publish()` or `reserve()`, and until the
+  collector is assigned to or moved from — not "until the next mutating
+  collector call", which this page said until 2026-08-09: `begin_tick`,
+  `record_*`, `collect_*` and `clear()` touch only the pending buffers, so
+  the next frame is recorded while the current one is applied, and
+  `reserve()` re-reserves the published vectors and was missing. `header`
+  is a value copy and outlives all of it. Holding a frame across a
+  `publish()` is outside the contract: the buffers it views become the
+  pending accumulator and are cleared and refilled. `empty()` ignores
+  overlays.
 - `delta_frame_applicable(header, consumer)` is the consumer's apply
   gate: truncated frames never apply -- not even baselines, because a
   baseline that overflowed chunk storage covers only part of the world

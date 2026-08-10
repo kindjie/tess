@@ -11,7 +11,10 @@
   `DeltaCollector` keeps its compiler-generated copy and move operations,
   which replace or empty the published vectors. `header` is a value copy
   and outlives all of it. The same stale contract appeared a second time on
-  `DeltaCollector`'s own Doxygen and is corrected there too.
+  `DeltaCollector`'s own Doxygen and a third time in
+  `architecture/simulation.md` — the maintained page `surface.json` maps
+  `DeltaFrame` to, so the one a consumer is actually sent to. All three are
+  corrected.
 - The comment now also states the hazard it only implied: holding a frame
   across a `publish()` is outside the contract, and the resulting stale
   spans carry `first_tile`/`first_node` indices that can run past the
