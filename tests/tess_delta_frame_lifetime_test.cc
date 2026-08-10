@@ -192,6 +192,11 @@ TEST(TessDeltaFrameLifetime, MovedFromCollectorForcesAResync) {
 
   // The source is moved-from. Reusing it is outside the contract, but it
   // must fail loudly rather than silently: reserve() looks like a reset.
+  //
+  // The use-after-move is the point of the test, so the analyzers that
+  // flag it are suppressed here rather than the test being reshaped to
+  // avoid them -- reshaping it would stop it exercising the hazard.
+  // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
   source.reserve(World::chunk_count, 64, 8);
   mark_sized(world, tess::Coord3{1, 1, 0}, 1);
 
@@ -200,7 +205,9 @@ TEST(TessDeltaFrameLifetime, MovedFromCollectorForcesAResync) {
 
   // The source now sees nothing. Its frame must not read as an applicable
   // no-op: truncated forces the consumer to resync from a baseline.
+  // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
   tess::collect_tile_deltas(source, world, kTerrainBit);
+  // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
   const auto starved = source.publish();
 
   EXPECT_TRUE(starved.chunks.empty());
@@ -231,6 +238,9 @@ TEST(TessDeltaFrameLifetime, AssigningAFreshCollectorClearsThePoison) {
 
   // "Assign to it" is a sanctioned way to reuse a moved-from collector, so
   // the poison must not survive the assignment.
+  // Assigning to a moved-from object is well defined and is the sanctioned
+  // reuse path, so only the analyzer's blanket rule needs quieting.
+  // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
   source = make_collector();
   mark_sized(world, tess::Coord3{3, 3, 0}, 1);
   tess::collect_tile_deltas(source, world, kTerrainBit);
