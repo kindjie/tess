@@ -129,8 +129,9 @@
   ~3,000 ns as its +31.5% predicts — but they step one artifact later
   than the source boundary, which cannot be reconciled from what is
   archived. The published baselines are therefore recorded here as
-  context rather than as corroboration. This entry rests on the controlled interleaved paired
-  runs, which are designed for exactly this comparison. Whether the
+  context rather than as corroboration. This entry rests on the
+  controlled interleaved paired runs, which are designed for exactly
+  this comparison. Whether the
   alerting series is stable enough for a cell with this much
   run-to-run spread is a live question for the alerting leg, and is
   left open rather than settled here.
