@@ -129,8 +129,12 @@ It runs, using the same pattern lists and limits as the pre-commit hook:
   the pinned `clang-format` from the development requirements;
 - the strict under-24000-token limit over indexed text blobs, using GPT-5's
   `o200k_base` tokenizer;
-- tests/AGENTS.md drift: every `add_executable(tess_...)` test target in
-  `tests/CMakeLists.txt` must be documented in `tests/AGENTS.md`.
+- tests/agents.d drift: `tests/agents.d/` must mirror the test set
+  exactly. Every `add_executable(tess_...)` target in
+  `tests/CMakeLists.txt` and every `tests/test_*.py` file needs a
+  fragment named `<name>.md` whose first line is `# <name>` and whose
+  body is nonempty, and a fragment matching neither is rejected as an
+  orphan, so a renamed or removed test cannot leave stale documentation.
 
 The repository-wide formatter reads the checked-out C++ files after obtaining
 their path list from the index. CI uses a clean checkout; before a local `ci`
