@@ -50,6 +50,12 @@
   do so — the other nine either shift under the 10% relative floor
   (6.1% at most) or, in `tile_touch_serial`'s case, cannot clear the
   2,000 ns absolute floor with a 1,260 ns delta.
+  Boundary: last old-harness commit
+  `6e67d3843b8d9ab5a8c51c593f7a7dc1c077f352` (#97), first
+  shared-harness commit `73cf59ca93144dd2b6091d31748091fa14573730`
+  (#98), both dated 2026-08-02. The retained comparison binary is
+  `c92accd48ca5aff10f96e3cfdbba5b83c80b8b33` (#96); it precedes the
+  boundary only by #97's documentation.
 - Why it is not enforced: a mechanism that drops pre-boundary readings
   was built and then withdrawn on review. Suppression is the wrong
   default for an advisory signal. Its failure mode is a silently
@@ -63,13 +69,7 @@
   citing this entry. A duplicate alert is cheaper than a missed
   regression, so the alert stays. If this is worth automating later,
   the design should annotate an alert with the recorded epoch rather
-  than suppress it, which cannot hide anything.
-  Boundary: last old-harness commit
-  `6e67d3843b8d9ab5a8c51c593f7a7dc1c077f352` (#97), first
-  shared-harness commit `73cf59ca93144dd2b6091d31748091fa14573730`
-  (#98), both dated 2026-08-02. The retained comparison binary is
-  `c92accd48ca5aff10f96e3cfdbba5b83c80b8b33` (#96); it precedes the
-  boundary only by #97's documentation.
+  than suppress it, which cannot hide anything. Recorded as #164.
 - Scope, measured rather than assumed (paired run 31438907252,
   6e67d38 -> 73cf59c, all ten gated registrations, real time, 99.5%
   intervals). Only the two `tile_touch` cells moved:
