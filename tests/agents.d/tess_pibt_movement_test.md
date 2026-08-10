@@ -20,7 +20,9 @@
   loses its vertex claim counts nothing); head-on pairs
   follow `SwapPolicy` with swap/denial counters; outcomes are deterministic
   across identical runs; the warm pass allocates nothing after
-  `PibtPriorities::reserve` plus `JointMoveScratch::reserve`; and
+  `PibtPriorities::reserve` plus `JointMoveScratch::reserve`; `elapsed` is
+  reachable while `order` and `frames` are not, and mixing that public
+  member with a private one costs standard layout; and
   `DistanceFieldProduct::distance_at` returns exact distances in-shape and
   the `unreachable_distance` sentinel for unreached tiles, out-of-shape
   coordinates, and shape-identity mismatches;

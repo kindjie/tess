@@ -81,6 +81,11 @@ of agents shifts one place), and swaps (the two-agent cycle) all fail
   `JointMoveStats` reports the standard movement frame stats plus chained
   admissions, rotations, swaps, and denied swaps; `JointMoveScratch` is the
   caller-owned workspace whose `reserve` keeps the warm path allocation-free.
+  `reserve` is its whole surface: the round buffers behind it are private and
+  no longer reachable through the type. Like every other internal in a
+  header-only library they remain spellable through `tess::detail`, which
+  `docs/style.md` excludes from source-compatibility — the change is what the
+  1.0 promise covers, not what a determined consumer can name.
 - `advance_path_agents_with_joint_movement<World, ClassOrTag, OccupancyTag,
   ReservationTag>(world, agents, routes, scratch, options, max_steps,
   dirty_mask)` validates every eligible agent's next route step exactly as
@@ -137,7 +142,9 @@ span, or make their tile impassable to the movement class, which is the
 - `PibtPriorities` is caller-owned adaptive priority state, index-paired
   with the agent span exactly like `PathAgentRoutes`: `elapsed` increments
   each tick an agent is unarrived and resets on arrival, and higher elapsed
-  decides earlier (span index breaks ties). Adaptive priorities are load-
+  decides earlier (span index breaks ties). `elapsed` and `reserve` are the
+  whole surface; the decision order and inheritance stack are rebuilt every
+  pass and are private. Adaptive priorities are load-
   bearing: PIBT's reachability guarantee (every agent reaches its goal in
   finite time on graphs whose adjacent vertices share a cycle of length
   three or more) depends on them.

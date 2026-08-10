@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 #include "allocation_counter.h"
@@ -481,6 +482,106 @@ TEST(TessJointMovement, WarmPassAllocatesNothingAfterReserve) {
   EXPECT_EQ(counter.count(), 0u);
   EXPECT_EQ(counter.bytes(), 0u);
   EXPECT_EQ(stats.frame.advanced, 8u);
+}
+
+// `reserve` is the whole documented surface of the scratch; the round
+// buffers behind it are not. Asserting only that `reserve` still compiles
+// would pass just as well with every buffer public again, so each buffer
+// name gets its own probe, and `BufferProbeControl` carries all eleven names
+// in public: without it, a mistyped member name would make a probe
+// unsatisfiable for every type and the negative assertion could not fail.
+struct BufferProbeControl {
+  int occupant_key = 0;
+  int occupant_agent = 0;
+  int claimed = 0;
+  int desired = 0;
+  int state = 0;
+  int failure = 0;
+  int cycle_walk = 0;
+  int on_walk = 0;
+  int walked = 0;
+  int committed = 0;
+  int committed_from = 0;
+};
+
+template <typename T>
+concept HasMemberOccupantKey = requires(T& value) { value.occupant_key; };
+template <typename T>
+concept HasMemberOccupantAgent = requires(T& value) { value.occupant_agent; };
+template <typename T>
+concept HasMemberClaimed = requires(T& value) { value.claimed; };
+template <typename T>
+concept HasMemberDesired = requires(T& value) { value.desired; };
+template <typename T>
+concept HasMemberState = requires(T& value) { value.state; };
+template <typename T>
+concept HasMemberFailure = requires(T& value) { value.failure; };
+template <typename T>
+concept HasMemberCycleWalk = requires(T& value) { value.cycle_walk; };
+template <typename T>
+concept HasMemberOnWalk = requires(T& value) { value.on_walk; };
+template <typename T>
+concept HasMemberWalked = requires(T& value) { value.walked; };
+template <typename T>
+concept HasMemberCommitted = requires(T& value) { value.committed; };
+template <typename T>
+concept HasMemberCommittedFrom = requires(T& value) { value.committed_from; };
+
+TEST(TessJointMovement, ScratchRoundBuffersAreNotPartOfTheSurface) {
+  using Scratch = tess::JointMoveScratch;
+  using Control = BufferProbeControl;
+
+  // Every probe is satisfiable, so none of the negative assertions below can
+  // pass merely because a member name was mistyped.
+  static_assert(HasMemberOccupantKey<Control>);
+  static_assert(HasMemberOccupantAgent<Control>);
+  static_assert(HasMemberClaimed<Control>);
+  static_assert(HasMemberDesired<Control>);
+  static_assert(HasMemberState<Control>);
+  static_assert(HasMemberFailure<Control>);
+  static_assert(HasMemberCycleWalk<Control>);
+  static_assert(HasMemberOnWalk<Control>);
+  static_assert(HasMemberWalked<Control>);
+  static_assert(HasMemberCommitted<Control>);
+  static_assert(HasMemberCommittedFrom<Control>);
+
+  static_assert(!HasMemberOccupantKey<Scratch>);
+  static_assert(!HasMemberOccupantAgent<Scratch>);
+  static_assert(!HasMemberClaimed<Scratch>);
+  static_assert(!HasMemberDesired<Scratch>);
+  static_assert(!HasMemberState<Scratch>);
+  static_assert(!HasMemberFailure<Scratch>);
+  static_assert(!HasMemberCycleWalk<Scratch>);
+  static_assert(!HasMemberOnWalk<Scratch>);
+  static_assert(!HasMemberWalked<Scratch>);
+  static_assert(!HasMemberCommitted<Scratch>);
+  static_assert(!HasMemberCommittedFrom<Scratch>);
+
+  // What the type does promise: pre-sizing, and the value semantics it had
+  // as an aggregate of vectors. A private section removes neither, but it
+  // removes them silently if a future edit adds a member that does.
+  static_assert(
+      requires(Scratch& scratch) { scratch.reserve(std::size_t{4}); });
+  static_assert(std::is_default_constructible_v<Scratch>);
+  static_assert(std::is_copy_constructible_v<Scratch>);
+  static_assert(std::is_copy_assignable_v<Scratch>);
+  static_assert(std::is_move_constructible_v<Scratch>);
+  static_assert(std::is_move_assignable_v<Scratch>);
+
+  // Deliberate: aggregate and designated initialization of the buffers is
+  // exactly the surface being withdrawn.
+  static_assert(!std::is_aggregate_v<Scratch>);
+
+  // Making every member private costs nothing in layout, unlike
+  // `PibtPriorities`, which keeps a public `elapsed` and loses standard
+  // layout for it. The property is only observable where the buffers
+  // themselves are standard-layout: MSVC's `std::vector` is not, so this
+  // pins the implication rather than the absolute an earlier revision
+  // asserted and Windows CI rejected.
+  static_assert(!std::is_standard_layout_v<std::vector<std::uint64_t>> ||
+                std::is_standard_layout_v<Scratch>);
+
+  SUCCEED();
 }
 
 TEST(TessJointMovement, WeightedTickDriverResolvesACorridorHeadOn) {

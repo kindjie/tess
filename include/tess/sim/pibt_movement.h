@@ -69,6 +69,23 @@ struct PibtFrame {
   Candidate candidates[kPibtMaxCandidates] = {};
 };
 
+struct PibtPrioritiesAccess;
+
+// The round-local half of `PibtPriorities`. `elapsed` is the caller's knob
+// and stays public; the decision order and the inheritance stack are rebuilt
+// from scratch every pass, and `frames` was also the last public member typed
+// with a `detail` struct — promoting `PibtFrame` would have frozen an
+// implementation layout, so the member moves out of sight instead.
+struct PibtScratchState {
+  std::vector<std::uint32_t> order;
+  std::vector<PibtFrame> frames;
+
+  void reserve(std::size_t agent_count) {
+    order.reserve(agent_count);
+    frames.reserve(agent_count);
+  }
+};
+
 }  // namespace detail
 
 // Public because it constrains public entry points. A caller whose ranking
@@ -89,19 +106,34 @@ concept PibtRanking = requires(Ranking& rank, std::size_t agent, Coord3 coord) {
 struct PibtPriorities {
   /// Ticks each agent has spent unarrived; higher decides earlier.
   std::vector<std::uint32_t> elapsed;
-  /// Scratch decision order; contents are an implementation detail.
-  std::vector<std::uint32_t> order;
-  /// Scratch decision stack for inheritance chains; contents are an
-  /// implementation detail.
-  std::vector<detail::PibtFrame> frames;
 
   /// Pre-sizes the containers for `agent_count` agents.
   void reserve(std::size_t agent_count) {
     elapsed.reserve(agent_count);
-    order.reserve(agent_count);
-    frames.reserve(agent_count);
+    scratch_.reserve(agent_count);
+  }
+
+ private:
+  friend struct detail::PibtPrioritiesAccess;
+
+  detail::PibtScratchState scratch_;
+};
+
+namespace detail {
+
+// Matches the joint scratch's door, deliberately: this type could befriend
+// the advance below directly, since both live in this header, but then two
+// adjacent scratch types would hide their state by two different mechanisms
+// and a caller reading one would learn nothing about the other. The same
+// caveat applies — `detail` is the boundary, not unreachability.
+struct PibtPrioritiesAccess {
+  [[nodiscard]] static auto scratch(PibtPriorities& priorities) noexcept
+      -> PibtScratchState& {
+    return priorities.scratch_;
   }
 };
+
+}  // namespace detail
 
 // One decision pass per step (`max_steps` passes, zero meaning paused as in
 // the joint advance; a pass that moves nobody ends the call early since it
@@ -141,7 +173,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 auto advance_path_agents_with_pibt(
     World& world, std::span<PathAgentState> agents,
     const PathAgentRoutes& routes, PibtPriorities& priorities,
-    JointMoveScratch& scratch, Ranking&& rank, JointMoveOptions options,
+    JointMoveScratch& scratch_storage, Ranking&& rank, JointMoveOptions options,
     std::size_t max_steps, std::uint32_t movement_dirty_mask,
     OnCommit&& on_commit, diagnostics::FlowAccounting* accounting = nullptr)
     -> JointMoveStats {
@@ -153,6 +185,8 @@ auto advance_path_agents_with_pibt(
       "advance_path_agents_with_pibt is dense-only; the sparse slice lands "
       "with the distance-field product NodeIndexSpace port.");
   TESS_ASSERT(routes.routes.size() >= agents.size());
+  auto& scratch = detail::JointMoveScratchAccess::state(scratch_storage);
+  auto& decision = detail::PibtPrioritiesAccess::scratch(priorities);
   const auto model = Model{AdjacentTransitions{}};
   JointMoveStats stats;
   if (max_steps == 0) {
@@ -178,21 +212,21 @@ auto advance_path_agents_with_pibt(
                               : elapsed + 1)
                        : 0;
     }
-    priorities.order.resize(n);
+    decision.order.resize(n);
     for (std::size_t i = 0; i < n; ++i) {
-      priorities.order[i] = static_cast<std::uint32_t>(i);
+      decision.order[i] = static_cast<std::uint32_t>(i);
     }
     // Insertion sort keeps the warm path allocation-free (std::stable_sort may
     // allocate a temporary buffer) and is stable, so span index breaks ties.
     for (std::size_t i = 1; i < n; ++i) {
-      const auto value = priorities.order[i];
+      const auto value = decision.order[i];
       std::size_t j = i;
-      while (j > 0 && priorities.elapsed[priorities.order[j - 1]] <
+      while (j > 0 && priorities.elapsed[decision.order[j - 1]] <
                           priorities.elapsed[value]) {
-        priorities.order[j] = priorities.order[j - 1];
+        decision.order[j] = decision.order[j - 1];
         --j;
       }
-      priorities.order[j] = value;
+      decision.order[j] = value;
     }
 
     // Occupant index over every agent (movers or not), as in the joint pass.
@@ -237,8 +271,8 @@ auto advance_path_agents_with_pibt(
     // buffer (an inheritance chain holds every participant's ranked
     // candidates at once), and chain length is bounded only by the agent
     // count, so each participant gets a fixed-size frame on the caller-owned
-    // `priorities.frames` stack — never the process stack.
-    auto& frames = priorities.frames;
+    // `PibtPriorities` stack — never the process stack.
+    auto& frames = decision.frames;
     frames.clear();
 
     // Starts agent `i` deciding: either pushes its frame or fails
@@ -407,7 +441,7 @@ auto advance_path_agents_with_pibt(
       }
     };
 
-    for (const auto i : priorities.order) {
+    for (const auto i : decision.order) {
       const auto agent_index = static_cast<std::size_t>(i);
       if (scratch.state[agent_index] != undecided) {
         continue;
