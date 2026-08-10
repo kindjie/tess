@@ -91,15 +91,20 @@
   over-restrict. Also pins that `explicit_chunk_domain` sorts without
   deduplicating.
 - `tess_delta_frame_lifetime_test`: pins the `DeltaFrame` lifetime
-  contract, which its header comment previously stated incorrectly. A
-  published frame survives `begin_tick`, `record_*`, `collect_*` and
-  `clear()` — all of which touch only the pending buffers — and its
-  `header` survives everything because it is a value copy. The assertions
-  read THROUGH the spans: comparing `span.data()`/`size()` compares the
-  span's own fields, which no collector call can change, and a first draft
-  of these tests passed a mutation that wiped the published storage. There
-  is deliberately no `reserve()` test; reallocation is not observable
-  through a span.
+  contract, which its header comment previously stated incorrectly. Two
+  tests: a published frame survives `begin_tick`, `record_*` and
+  `collect_*`, and it survives `clear()` — all of which touch only the
+  pending buffers. Every published record carries distinct values and the
+  entity record is checked too, so a record replaced by its neighbour
+  fails.
+  What it does NOT cover, deliberately: a bare `published_chunks_.clear()`
+  leaves the bytes of trivially destructible elements in place, so reads
+  through the span keep returning the old values — undefined behaviour that
+  still produces the expected numbers, and no assertion available outside
+  the collector distinguishes it. There is likewise no `reserve()` test
+  (reallocation is not observable through a span) and no `header` test (it
+  is a value member of the caller's own frame, so an assertion about it
+  compares a copy against itself and cannot fail).
 - `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
   default and explicit lattice typing with stable lattice identifiers,
   axial hex coordinate conversion and overflow-safe saturated distance,

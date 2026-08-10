@@ -15,8 +15,11 @@
 - The comment now also states the hazard it only implied: holding a frame
   across a `publish()` is outside the contract, and the resulting stale
   spans carry `first_tile`/`first_node` indices that can run past the
-  `tiles`/`overlay_nodes` they index, so a consumer reads out of bounds
-  rather than merely reading inconsistent data. Enforcing this is tracked
+  `tiles`/`overlay_nodes` they index — and past the allocation itself if
+  `reserve()` reallocated. In steady state the swap and clear never
+  deallocate, so the read stays inside a live allocation; calling that
+  "reads out of bounds" without qualification, as an earlier draft of this
+  entry did, overstates it. Enforcing this is tracked
   as the remaining half of audit finding API3; this change makes the
   documented hazard accurate, which is the prerequisite for deciding
   whether to enforce it.
