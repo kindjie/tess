@@ -640,6 +640,46 @@ template <typename World, typename Tag, typename Provider>
     MissingChunkPolicy policy = MissingChunkPolicy::TreatAsBlocked)
     -> PathResult;
 
+namespace detail {
+
+// Packed open-list node: the sort key concatenates the ordering's two
+// lexicographic fields so one compare decides whenever (f, g) differ.
+// Order-isomorphic to open_node_less over (f asc, g desc, index asc);
+// UINT32_MAX - g is defined and invertible for every g, so the mapping
+// is injective over the full field range. f is retained in the high
+// word solely for the unit search's two-bucket dial test.
+struct PackedOpenNode {
+  std::uint64_t key = 0;
+  std::uint64_t index = 0;
+
+  [[nodiscard]] static constexpr auto make(std::uint64_t index, std::uint32_t g,
+                                           std::uint32_t f) noexcept
+      -> PackedOpenNode {
+    return PackedOpenNode{(static_cast<std::uint64_t>(f) << 32u) |
+                              (std::numeric_limits<std::uint32_t>::max() - g),
+                          index};
+  }
+
+  [[nodiscard]] constexpr auto g() const noexcept -> std::uint32_t {
+    return std::numeric_limits<std::uint32_t>::max() -
+           static_cast<std::uint32_t>(key);
+  }
+
+  [[nodiscard]] constexpr auto f() const noexcept -> std::uint32_t {
+    return static_cast<std::uint32_t>(key >> 32u);
+  }
+};
+
+[[nodiscard]] constexpr bool packed_open_node_less(
+    PackedOpenNode lhs, PackedOpenNode rhs) noexcept {
+  if (lhs.key != rhs.key) {
+    return lhs.key > rhs.key;
+  }
+  return lhs.index > rhs.index;
+}
+
+}  // namespace detail
+
 /// Owns reusable A* frontier, node state, and returned path storage.
 ///
 /// Instances are caller-owned and require external synchronization. Reserving
