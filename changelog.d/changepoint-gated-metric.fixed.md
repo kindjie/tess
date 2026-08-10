@@ -9,3 +9,9 @@
   alert that did fire printed a confirmation command that measured a
   different metric than the one it reported. The selection rule lives
   in `tools/benchmark_thresholds.py` and is shared by all three tools.
+  Twelve benchmarks change metric: the ten `parallel/` cells and the
+  two manually timed path cache cells, whose CPU time is meaningless
+  by construction. The switch cannot itself raise a false alert,
+  because the detector rebuilds its whole window from the raw
+  artifacts on every run and so re-reads the history on one metric
+  rather than splicing two together.
