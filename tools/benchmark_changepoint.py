@@ -23,6 +23,7 @@ import statistics
 from pathlib import Path
 from typing import Any
 
+from benchmark_thresholds import load_threshold_metrics
 
 CANDIDATES = 3
 MIN_BASELINE = 8
@@ -36,7 +37,10 @@ class ToolError(RuntimeError):
 
 
 def load_artifact(
-    directory: Path, *, allow_legacy: bool = False
+    directory: Path,
+    *,
+    allow_legacy: bool = False,
+    metrics: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
   """Load one artifact directory into medians plus metadata.
 
@@ -85,9 +89,14 @@ def load_artifact(
       if row.get("run_type") == "aggregate":
         continue
       unit = UNIT_TO_NS.get(row.get("time_unit", "ns"))
-      value = row.get("cpu_time")
       name = row.get("name")
-      if unit is None or value is None or name is None:
+      if name is None:
+        continue
+      # Judge each benchmark on the metric its family is gated on, so an
+      # alert and the confirmation command it prints mean the same
+      # number. Absent from the manifests: CPU time, as before.
+      value = row.get((metrics or {}).get(str(name), "cpu_time"))
+      if unit is None or value is None:
         continue
       samples.setdefault(str(name), []).append(float(value) * unit)
     for name, values in samples.items():
@@ -102,14 +111,19 @@ def load_artifact(
 
 
 def load_history(
-    root: Path, *, allow_legacy: bool = False
+    root: Path,
+    *,
+    allow_legacy: bool = False,
+    metrics: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
   """Load every artifact under root, ordered oldest to newest."""
   artifacts = []
   for directory in root.iterdir():
     if not directory.is_dir():
       continue
-    artifact = load_artifact(directory, allow_legacy=allow_legacy)
+    artifact = load_artifact(
+        directory, allow_legacy=allow_legacy, metrics=metrics
+    )
     if artifact is not None and artifact["medians"]:
       artifacts.append(artifact)
   artifacts.sort(key=lambda a: (a["run_id"], a["run_attempt"]))
@@ -262,12 +276,29 @@ def main(argv: list[str] | None = None) -> int:
       action="store_true",
       help="backtesting only: pre-fingerprint artifacts share one stratum",
   )
+  parser.add_argument(
+      "--thresholds-dir",
+      type=Path,
+      default=Path(__file__).resolve().parent.parent / "bench" / "thresholds",
+      help=(
+          "threshold manifests naming each benchmark's gated metric "
+          "(default: the repository's bench/thresholds)"
+      ),
+  )
   args = parser.parse_args(argv)
 
   if not args.artifacts.is_dir():
     print(f"error: {args.artifacts} is not a directory")
     return 1
-  artifacts = load_history(args.artifacts, allow_legacy=args.allow_legacy)
+  if not args.thresholds_dir.is_dir():
+    # Silently defaulting the whole suite to CPU time would restate the
+    # real-time-gated families' history without saying so.
+    print(f"error: {args.thresholds_dir} is not a directory")
+    return 1
+  metrics = load_threshold_metrics(args.thresholds_dir)
+  artifacts = load_history(
+      args.artifacts, allow_legacy=args.allow_legacy, metrics=metrics
+  )
   downloaded = sum(1 for d in args.artifacts.iterdir() if d.is_dir())
   result = detect(
       artifacts,

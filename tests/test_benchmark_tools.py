@@ -39,12 +39,13 @@ def entry(
     run_type: str = "iteration",
     aggregate_name: str | None = None,
     run_name: str | None = None,
+    real_time: float | None = None,
 ) -> dict:
   benchmark = {
       "name": name,
       "run_name": run_name if run_name is not None else name,
       "run_type": run_type,
-      "real_time": cpu_time,
+      "real_time": cpu_time if real_time is None else real_time,
       "cpu_time": cpu_time,
       "time_unit": time_unit,
   }
@@ -800,3 +801,73 @@ def test_fingerprint_complete_fields_key_deterministically(
   assert first["usable"] is True
   assert first["key"] == second["key"]
   assert first["bench_flags"] == "-O3"
+
+
+def test_trends_renders_real_time_for_real_time_gated_benchmarks(tmp_path):
+  # The parallel pool family is gated on real time because its work runs
+  # on worker threads; plotting its CPU time would publish a series the
+  # gate and the paired confirmation do not use.
+  directory = tmp_path / "artifact"
+  directory.mkdir()
+  write_json(
+      directory / "parallel.json",
+      {
+          "benchmarks": [
+              entry("parallel/tile_touch_pool_w4", 18_000.0,
+                    real_time=36_000.0)
+          ]
+      },
+  )
+  write_json(directory / "metadata.json", {"commit": "a" * 40})
+  thresholds = tmp_path / "thresholds"
+  thresholds.mkdir()
+  write_json(
+      thresholds / "parallel.json",
+      {
+          "version": 1,
+          "benchmarks": {
+              "parallel/tile_touch_pool_w4": {
+                  "max_real_time_ns": 61_000,
+                  "max_cpu_time_ns": None,
+              }
+          },
+      },
+  )
+
+  metrics = benchmark_trends.load_threshold_metrics(thresholds)
+  values = benchmark_trends.collect_values(
+      directory, ("parallel/tile_touch_pool_w4",), metrics=metrics
+  )
+
+  assert values == {"parallel/tile_touch_pool_w4": 36_000.0}
+
+
+def test_trends_keeps_cpu_time_for_everything_else(tmp_path):
+  directory = tmp_path / "artifact"
+  directory.mkdir()
+  write_json(
+      directory / "path.json",
+      {"benchmarks": [entry("path/sample", 100.0, real_time=999.0)]},
+  )
+  write_json(directory / "metadata.json", {"commit": "a" * 40})
+  thresholds = tmp_path / "thresholds"
+  thresholds.mkdir()
+  write_json(
+      thresholds / "path.json",
+      {
+          "version": 1,
+          "benchmarks": {
+              "path/sample": {
+                  "max_real_time_ns": None,
+                  "max_cpu_time_ns": 500,
+              }
+          },
+      },
+  )
+
+  metrics = benchmark_trends.load_threshold_metrics(thresholds)
+  values = benchmark_trends.collect_values(
+      directory, ("path/sample",), metrics=metrics
+  )
+
+  assert values == {"path/sample": 100.0}

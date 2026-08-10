@@ -127,6 +127,35 @@ def load_json(path: Path) -> dict[str, Any]:
   return data
 
 
+def load_threshold_metrics(thresholds_dir: Path) -> dict[str, str]:
+  """Map benchmark names to the metric their family is judged on.
+
+  A benchmark with a real-time ceiling (the parallel pool suite and the
+  manually timed cache benchmarks) is judged on real time everywhere it
+  is analysed, not only by the gate: the parallel families set
+  `max_cpu_time_ns` to null on purpose, because pool work happens on
+  worker threads and the dispatching thread's CPU time understates the
+  operation. Everything else, including ungated lab registrations with
+  no manifest entry at all, defaults to CPU time.
+
+  Shared by the gate's siblings — the paired sentinel confirmation, the
+  change-point detector and the trend renderer — so an alert, its
+  confirmation command and the published series cannot disagree about
+  which number they mean.
+  """
+  metrics: dict[str, str] = {}
+  for manifest in sorted(thresholds_dir.glob("*.json")):
+    entries = load_json(manifest)
+    for name, entry in entries.get("benchmarks", {}).items():
+      if not isinstance(entry, dict):
+        continue
+      if entry.get("max_real_time_ns") is not None:
+        metrics[str(name)] = "real_time"
+      else:
+        metrics[str(name)] = "cpu_time"
+  return metrics
+
+
 def base_name(benchmark: dict[str, Any]) -> str:
   # Repetition entries and their aggregates share `run_name`; aggregate
   # entries suffix `name` (for example `_median`), so `run_name` is the

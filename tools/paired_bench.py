@@ -23,6 +23,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from benchmark_thresholds import ToolError as _ThresholdsError
+from benchmark_thresholds import (
+  load_threshold_metrics as _load_threshold_metrics,
+)
+
 
 class ToolError(RuntimeError):
   """An input or execution failure that must fail the run."""
@@ -440,24 +445,13 @@ MAX_SUSPECTS = 64
 def load_threshold_metrics(thresholds_dir: Path) -> dict[str, str]:
   """Map benchmark names to their gated metric from the manifests.
 
-  A benchmark gated on real time (the parallel pool suite and manually
-  timed cache benchmarks) is judged on real time here too; everything
-  else, including ungated lab registrations, defaults to CPU time.
+  Shared with the change-point detector and the trend renderer, so a
+  confirmation measures the same metric the alert was raised on.
   """
-  metrics: dict[str, str] = {}
-  for manifest in sorted(thresholds_dir.glob("*.json")):
-    try:
-      entries = json.loads(manifest.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-      raise ToolError(
-        f"unreadable thresholds manifest {manifest}: {error}"
-      ) from error
-    for name, entry in entries.get("benchmarks", {}).items():
-      if entry.get("max_real_time_ns") is not None:
-        metrics[name] = "real_time"
-      else:
-        metrics[name] = "cpu_time"
-  return metrics
+  try:
+    return _load_threshold_metrics(thresholds_dir)
+  except _ThresholdsError as error:
+    raise ToolError(str(error)) from error
 
 
 def suspect_sentinels(
