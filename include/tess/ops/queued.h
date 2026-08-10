@@ -2227,6 +2227,12 @@ template <typename World>
  * stamp. Rejected merges leave both the world and accumulator unchanged.
  */
 template <typename World>
+// noexcept, and the only overload of this family that is: it merges an
+// already-populated accumulator into the world and allocates nothing. The
+// rule across the three is "noexcept iff the overload does not allocate",
+// not an inconsistency -- marking the allocating ones noexcept would turn
+// a std::bad_alloc into std::terminate. An -fno-exceptions consumer can
+// therefore read the signature instead of the body.
 [[nodiscard]] auto merge_planned_dirty(World& world,
                                        PlannedDirtyAccumulator& dirty) noexcept
     -> PlannedDirtyMergeResult {
@@ -2346,6 +2352,9 @@ template <typename World>
 
 template <typename World>
 /** Collects partitioned dirty records and applies their merged bounds. */
+// Deliberately NOT noexcept: collect_planned_dirty reserves the
+// destination accumulator, so this can throw std::bad_alloc. See the
+// accumulator overload for the rule.
 [[nodiscard]] auto merge_planned_dirty(World& world,
                                        PlannedDirtyPartitions& partitions,
                                        PlannedDirtyAccumulator& dirty_scratch)
@@ -2376,7 +2385,15 @@ template <typename World>
 }
 
 template <typename World>
-/** Applies phase dirty records through the scratch object's accumulator. */
+/**
+ * Applies phase dirty records through the scratch object's accumulator.
+ *
+ * Deliberately NOT noexcept: it reserves the merged accumulator before
+ * transferring anything, so it can throw `std::bad_alloc`. Capacity is
+ * checked first and reported as `CapacityExceeded`, so the throw is an
+ * allocation failure rather than a contract violation. See the
+ * accumulator overload for the rule.
+ */
 [[nodiscard]] auto merge_planned_dirty(World& world,
                                        PlannedPhaseExecutionScratch& scratch)
     -> PlannedDirtyMergeResult {
