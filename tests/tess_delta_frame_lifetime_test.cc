@@ -31,17 +31,12 @@ auto make_collector() -> tess::DeltaCollector {
   return collector;
 }
 
-void mark(World& world, tess::Coord3 at) {
-  world.field<TerrainTag>(at) = 1;
-  world.mark_dirty(tess::chunk_key<Shape>(tess::tile_key<Shape>(at)),
-                   kTerrainBit, tess::Box3{at, tess::Extent3{1, 1, 1}});
-}
-
 // Every published record carries DISTINCT values. A first draft marked two
 // chunks identically, so swapping or shifting the published records would
 // have passed; and it observed only `chunks`, so corruption of
 // `published_entities_` by record_move would have gone unnoticed.
-void mark_sized(World& world, tess::Coord3 at, std::uint32_t extent) {
+void mark_sized(World& world, tess::Coord3 at,
+                decltype(tess::Extent3{}.x) extent) {
   world.field<TerrainTag>(at) = 1;
   world.mark_dirty(tess::chunk_key<Shape>(tess::tile_key<Shape>(at)),
                    kTerrainBit,
@@ -50,8 +45,11 @@ void mark_sized(World& world, tess::Coord3 at, std::uint32_t extent) {
 
 struct PublishedSnapshot {
   std::size_t chunk_count = 0;
-  std::uint32_t first_extent = 0;
-  std::uint32_t second_extent = 0;
+  // Deliberately spelled from the source type rather than a guessed width:
+  // Extent3's members are 64-bit, and capturing them as uint32_t is a
+  // narrowing conversion GCC rejects under -Werror=conversion.
+  decltype(tess::Extent3{}.x) first_extent = 0;
+  decltype(tess::Extent3{}.x) second_extent = 0;
   std::size_t entity_count = 0;
   tess::Coord3 entity_from{};
   tess::Coord3 entity_to{};
