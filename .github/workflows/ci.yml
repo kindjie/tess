@@ -516,7 +516,7 @@ jobs:
     if: ${{ needs.changes.outputs.code_required == 'true' }}
     name: Quality Gates (${{ matrix.preset }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -968,25 +968,69 @@ jobs:
           cmake --build --preset bench --parallel 1
           --target tess_bench_all_thresholds
 
+  # Non-gating baseline collection, in its own job: the ~27-minute
+  # tess_bench_ci_baselines run pushed the gates job past the 45-minute
+  # ceiling #109 introduced, cancelling every full main push at the
+  # final step — the threshold gates themselves were green each time.
+  # The push-only steps never run in pull-request CI, which is how the
+  # under-budget ceiling merged unnoticed. Baselines feed change-point
+  # and publish-benchmark-history, not the merge decision, so this job
+  # is deliberately NOT in ci-gate's needs (waived in ADVISORY_CI_JOBS
+  # with the same reasoning as paired-bench); report-failure still
+  # observes it so a broken collection files the ci-failure issue.
+  bench-baselines:
+    needs: changes
+    name: Benchmark Baselines
+    if: >-
+      ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          needs.changes.outputs.code_required == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install ccache
+        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+
+      # Its own key family so this job and the gates job never race one
+      # save slot; the gates family is the warm fallback because both
+      # build the same preset.
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-bench-baselines--${{ github.sha }}
+          restore-keys: |
+            ccache-bench-baselines--
+            ccache-bench--
+
+      - name: Configure
+        run: cmake --preset bench
+
+      - name: Build
+        run: cmake --build --preset bench
+
+      - name: Report compiler cache effectiveness
+        if: always()
+        run: ccache --show-stats
+
       - name: Collect non-gating benchmark baselines
-        if: >-
-          github.event_name != 'pull_request' &&
-          github.ref == 'refs/heads/main'
         run: cmake --build --preset bench --target tess_bench_ci_baselines
 
       - name: Write benchmark artifact metadata
-        if: >-
-          github.event_name != 'pull_request' &&
-          github.ref == 'refs/heads/main'
         run: |
           tools/benchmark_artifact_metadata.py \
             --out build/bench/bench/ci-baselines/metadata.json \
             --build-dir build/bench
 
       - name: Upload benchmark baseline artifact
-        if: >-
-          github.event_name != 'pull_request' &&
-          github.ref == 'refs/heads/main'
         # upload-artifact v7.0.1.
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -1158,7 +1202,7 @@ jobs:
   # problem, not a performance verdict, and it gates nothing.
   change-point:
     name: Benchmark Change Point
-    needs: bench
+    needs: bench-baselines
     if: >-
       ${{ github.event_name == 'push' &&
           github.ref == 'refs/heads/main' }}
@@ -1272,11 +1316,11 @@ jobs:
   # covering every main commit.
   publish-benchmark-history:
     name: Publish Benchmark History
-    needs: bench
+    needs: bench-baselines
     if: >-
       ${{ github.event_name == 'push' &&
           github.ref == 'refs/heads/main' &&
-          needs.bench.result == 'success' }}
+          needs.bench-baselines.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -1632,6 +1676,7 @@ jobs:
       - windows
       - windows-noexceptions
       - bench
+      - bench-baselines
       - coverage
       - long-seed-properties
       - publish-benchmark-history

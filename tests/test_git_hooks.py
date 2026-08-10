@@ -492,6 +492,10 @@ def test_ci_gate_aggregates_every_required_ci_job():
 ADVISORY_CI_JOBS = {
   "ci-gate": "the gate itself",
   "paired-bench": "shadow mode; the section 4.3 promotion criteria are unmet",
+  "bench-baselines": (
+    "non-gating baseline collection after a main push; feeds change-point "
+    "and publish-benchmark-history, never the merge decision"
+  ),
   "change-point": "post-merge drift detection on main, not a pull-request gate",
   "publish-benchmark-history": "publishes baselines after a main push",
   "long-seed-properties": "scheduled deep sweep, far longer than a gate allows",
@@ -729,23 +733,29 @@ def test_required_clang_tidy_uses_an_explicit_major_version():
 
 
 def test_non_gating_benchmark_baselines_run_only_on_main():
+  """Baselines live in their own main-push-only job, outside the gate.
+
+  They used to be trailing steps of the gates job, where their
+  ~27-minute run pushed it past the 45-minute ceiling on every full
+  main push — cancelling CI Gate while the threshold gates themselves
+  were green. The job-level guard replaces the per-step guards.
+  """
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
-  bench = workflow.split("  bench:\n", 1)[1].split("  ci-gate:\n", 1)[0]
-  main_only_steps = (
+  baselines = _job_body(workflow, "bench-baselines")
+  bench = _job_body(workflow, "bench")
+  moved_steps = (
     "Collect non-gating benchmark baselines",
     "Write benchmark artifact metadata",
     "Upload benchmark baseline artifact",
   )
 
-  main_only_if = (
-    "        if: >-\n"
-    "          github.event_name != 'pull_request' &&\n"
-    "          github.ref == 'refs/heads/main'\n"
-  )
-  for name in main_only_steps:
-    step = bench.split(f"      - name: {name}\n", 1)[1]
-    assert step.startswith(main_only_if)
+  assert "github.event_name == 'push' &&" in baselines
+  assert "github.ref == 'refs/heads/main' &&" in baselines
+  assert "needs.changes.outputs.code_required == 'true'" in baselines
+  for name in moved_steps:
+    assert f"      - name: {name}\n" in baselines
+    assert f"      - name: {name}\n" not in bench
 
   thresholds = bench.split("      - name: Benchmark thresholds\n", 1)[1]
   assert thresholds.startswith(
