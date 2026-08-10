@@ -6,7 +6,9 @@ name: CI
 # compile+smoke, diff-scoped clang-tidy, path-filtered TSan); pushes to
 # main, the weekly schedule, and manual dispatches additionally run the
 # full matrix (werror, TSan, full-tree clang-tidy, release, macOS) and
-# the benchmark threshold gates with baseline artifact collection.
+# the benchmark threshold gates; baseline artifact collection runs on
+# main pushes only, in its own non-gating job, so change-point sees
+# exactly one artifact set per merged commit's run.
 on:
   pull_request:
   push:
@@ -28,7 +30,7 @@ concurrency:
 env:
   CMAKE_CXX_COMPILER_LAUNCHER: ccache
   CCACHE_DIR: ${{ github.workspace }}/.ccache
-  # CI3: ccache defaults to a 5 GiB cache. Nine namespaces at that
+  # CI3: ccache defaults to a 5 GiB cache. Ten namespaces at that
   # ceiling overrun the 10 GB repository quota, and every run then
   # evicts the previous run's caches. Cap each one well inside it.
   CCACHE_MAXSIZE: 250M
@@ -516,7 +518,7 @@ jobs:
     if: ${{ needs.changes.outputs.code_required == 'true' }}
     name: Quality Gates (${{ matrix.preset }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -867,9 +869,9 @@ jobs:
         run: tools/fetchcontent_smoke.sh
 
   # Pull requests compile the bench tree and run the smoke suite (build
-  # and API rot, bench_check hooks); threshold gating and baseline
-  # artifact collection run on the full tier, staying authoritative until
-  # the redesign's phase 4 shadow-mode criteria retire them.
+  # and API rot, bench_check hooks); threshold gating runs on the full
+  # tier, staying authoritative until the redesign's phase 4 shadow-mode
+  # criteria retire it. Baseline collection lives in bench-baselines.
   bench:
     needs: changes
     if: ${{ needs.changes.outputs.code_required == 'true' }}
@@ -968,25 +970,79 @@ jobs:
           cmake --build --preset bench --parallel 1
           --target tess_bench_all_thresholds
 
+  # Non-gating baseline collection, in its own job: the ~27-minute
+  # tess_bench_ci_baselines run pushed the gates job past the 45-minute
+  # ceiling #109 introduced, cancelling every full main push at the
+  # final step — the threshold gates themselves were green each time.
+  # The push-only steps never run in pull-request CI, which is how the
+  # under-budget ceiling merged unnoticed. Baselines feed change-point
+  # and publish-benchmark-history, not the merge decision, so this job
+  # is deliberately NOT in ci-gate's needs (waived in ADVISORY_CI_JOBS
+  # with the same reasoning as paired-bench); report-failure still
+  # observes it so a broken collection files the ci-failure issue.
+  bench-baselines:
+    needs: changes
+    name: Benchmark Baselines
+    if: >-
+      ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          needs.changes.outputs.code_required == 'true' }}
+    runs-on: ubuntu-24.04
+    # A pure backstop: the step-level timeouts below (30 + 35 minutes)
+    # trip first and conclude as step FAILURES, which report-failure
+    # recognizes. A job-ceiling kill concludes as cancelled — the same
+    # verdict as a benign concurrency supersede — and would silence the
+    # ci-failure issue for exactly the overrun this job was split to
+    # contain.
+    timeout-minutes: 75
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install ccache
+        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+
+      # Its own key family so this job and the gates job never race one
+      # save slot; the gates family is the warm fallback because both
+      # build the same preset.
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .ccache
+          key: ccache-bench-baselines--${{ github.sha }}
+          restore-keys: |
+            ccache-bench-baselines--
+            ccache-bench--
+
+      - name: Configure
+        run: cmake --preset bench
+
+      # Observed 13-21 minutes depending on cache warmth.
+      - name: Build
+        timeout-minutes: 30
+        run: cmake --build --preset bench
+
+      - name: Report compiler cache effectiveness
+        if: always()
+        run: ccache --show-stats
+
+      # Observed ~27 minutes on the last completed collection.
       - name: Collect non-gating benchmark baselines
-        if: >-
-          github.event_name != 'pull_request' &&
-          github.ref == 'refs/heads/main'
+        timeout-minutes: 35
         run: cmake --build --preset bench --target tess_bench_ci_baselines
 
       - name: Write benchmark artifact metadata
-        if: >-
-          github.event_name != 'pull_request' &&
-          github.ref == 'refs/heads/main'
         run: |
           tools/benchmark_artifact_metadata.py \
             --out build/bench/bench/ci-baselines/metadata.json \
             --build-dir build/bench
 
       - name: Upload benchmark baseline artifact
-        if: >-
-          github.event_name != 'pull_request' &&
-          github.ref == 'refs/heads/main'
         # upload-artifact v7.0.1.
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -1158,7 +1214,7 @@ jobs:
   # problem, not a performance verdict, and it gates nothing.
   change-point:
     name: Benchmark Change Point
-    needs: bench
+    needs: bench-baselines
     if: >-
       ${{ github.event_name == 'push' &&
           github.ref == 'refs/heads/main' }}
@@ -1263,7 +1319,7 @@ jobs:
   # missing.
   #
   # KNOWN GAP: the workflow-level concurrency group cancels a superseded
-  # main run, and this job waits on bench, so a commit merged while an
+  # main run, and this job waits on bench-baselines, so a commit merged while an
   # earlier run is still building publishes nothing. The history is
   # therefore per-completed-main-RUN, not per-commit, and rapid merges
   # leave holes. Acceptable for bisection, which reads the nearest
@@ -1272,11 +1328,11 @@ jobs:
   # covering every main commit.
   publish-benchmark-history:
     name: Publish Benchmark History
-    needs: bench
+    needs: bench-baselines
     if: >-
       ${{ github.event_name == 'push' &&
           github.ref == 'refs/heads/main' &&
-          needs.bench.result == 'success' }}
+          needs.bench-baselines.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -1632,6 +1688,7 @@ jobs:
       - windows
       - windows-noexceptions
       - bench
+      - bench-baselines
       - coverage
       - long-seed-properties
       - publish-benchmark-history
