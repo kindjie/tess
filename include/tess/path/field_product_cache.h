@@ -857,9 +857,10 @@ template <typename World, typename Tag, typename Provider>
       TESS_DIAG_EVENT(path_heap_push);
     } else {
       scratch.weighted_frontier_.push_back(
-          PathScratch::OpenNode{goal_index, 0, 0});
+          detail::PackedOpenNode::make(goal_index, 0, 0));
       std::push_heap(scratch.weighted_frontier_.begin(),
-                     scratch.weighted_frontier_.end(), detail::open_node_less);
+                     scratch.weighted_frontier_.end(),
+                     detail::packed_open_node_less);
       TESS_DIAG_EVENT(path_heap_push);
     }
   }
@@ -918,13 +919,14 @@ template <typename World, typename Tag, typename Provider>
     while (!scratch.weighted_frontier_.empty()) {
       TESS_DIAG_EVENT(path_heap_pop);
       std::pop_heap(scratch.weighted_frontier_.begin(),
-                    scratch.weighted_frontier_.end(), detail::open_node_less);
+                    scratch.weighted_frontier_.end(),
+                    detail::packed_open_node_less);
       const auto current = scratch.weighted_frontier_.back();
       scratch.weighted_frontier_.pop_back();
       const auto current_offset = static_cast<std::size_t>(current.index);
       const auto current_distance =
           scratch.distance_at(current_offset, infinite_distance);
-      if (current.g != current_distance) {
+      if (current.g() != current_distance) {
         TESS_DIAG_EVENT_VALUE(path_skip_pop, false);
         continue;
       }
@@ -957,11 +959,11 @@ template <typename World, typename Tag, typename Provider>
             if (next_distance < scratch.distance_[neighbor_offset]) {
               TESS_DIAG_EVENT(path_relax_success);
               scratch.distance_[neighbor_offset] = next_distance;
-              scratch.weighted_frontier_.push_back(PathScratch::OpenNode{
-                  probe.to_index, next_distance, next_distance});
+              scratch.weighted_frontier_.push_back(detail::PackedOpenNode::make(
+                  probe.to_index, next_distance, next_distance));
               std::push_heap(scratch.weighted_frontier_.begin(),
                              scratch.weighted_frontier_.end(),
-                             detail::open_node_less);
+                             detail::packed_open_node_less);
               TESS_DIAG_EVENT(path_heap_push);
             }
           });
@@ -1060,22 +1062,25 @@ template <typename World, typename Class, typename Provider>
     }
     scratch.distance_[offset] = 0;
     scratch.touch_node(index);
-    scratch.weighted_frontier_.push_back(PathScratch::OpenNode{index, 0, 0});
+    scratch.weighted_frontier_.push_back(
+        detail::PackedOpenNode::make(index, 0, 0));
     std::push_heap(scratch.weighted_frontier_.begin(),
-                   scratch.weighted_frontier_.end(), detail::open_node_less);
+                   scratch.weighted_frontier_.end(),
+                   detail::packed_open_node_less);
   }
 
   auto expanded_nodes = std::size_t{0};
   auto cost_overflow = false;
   while (!scratch.weighted_frontier_.empty()) {
     std::pop_heap(scratch.weighted_frontier_.begin(),
-                  scratch.weighted_frontier_.end(), detail::open_node_less);
+                  scratch.weighted_frontier_.end(),
+                  detail::packed_open_node_less);
     const auto current = scratch.weighted_frontier_.back();
     scratch.weighted_frontier_.pop_back();
     const auto current_offset = static_cast<std::size_t>(current.index);
     const auto current_distance =
         scratch.distance_at(current_offset, infinite_distance);
-    if (current.g != current_distance) {
+    if (current.g() != current_distance) {
       continue;
     }
     ++expanded_nodes;
@@ -1103,10 +1108,10 @@ template <typename World, typename Class, typename Provider>
           if (next < scratch.distance_[offset]) {
             scratch.distance_[offset] = next;
             scratch.weighted_frontier_.push_back(
-                PathScratch::OpenNode{probe.to_index, next, next});
+                detail::PackedOpenNode::make(probe.to_index, next, next));
             std::push_heap(scratch.weighted_frontier_.begin(),
                            scratch.weighted_frontier_.end(),
-                           detail::open_node_less);
+                           detail::packed_open_node_less);
           }
         });
   }

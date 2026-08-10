@@ -635,11 +635,7 @@ template <typename World, typename Tag>
   TESS_DIAG_EVENT(path_heuristic);
   const auto model = Model{};
   auto current_f = model.heuristic(world, request.start, request.goal);
-  scratch.open_.push_back(PathScratch::OpenNode{
-      start,
-      0,
-      current_f,
-  });
+  scratch.open_.push_back(detail::PackedOpenNode::make(start, 0, current_f));
   TESS_DIAG_EVENT(path_heap_push);
 
   std::size_t expanded_nodes = 0;
@@ -665,7 +661,7 @@ template <typename World, typename Tag>
     const auto current_offset = space.offset(current.index);
     const auto current_state = scratch.state_at(current_offset, unseen);
     if (current_state == closed ||
-        current.g != scratch.g_at(current_offset, infinite_cost)) {
+        current.g() != scratch.g_at(current_offset, infinite_cost)) {
       TESS_DIAG_EVENT_VALUE(path_skip_pop, current_state == closed);
       continue;
     }
@@ -683,7 +679,7 @@ template <typename World, typename Tag>
         step = scratch.parent_[space.offset(step)];
       }
       std::reverse(scratch.path_.begin(), scratch.path_.end());
-      return PathResult{PathStatus::Found, current.g, expanded_nodes,
+      return PathResult{PathStatus::Found, current.g(), expanded_nodes,
                         scratch.touched_count_, scratch.path_};
     }
 
@@ -712,7 +708,7 @@ template <typename World, typename Tag>
             TESS_DIAG_EVENT(path_neighbor_closed);
             return;
           }
-          const auto tentative_g = current.g + 1;
+          const auto tentative_g = current.g() + 1;
           TESS_DIAG_EVENT(path_relax_attempt);
           if (tentative_g < scratch.g_at(neighbor_offset, infinite_cost)) {
             TESS_DIAG_EVENT(path_relax_success);
@@ -724,14 +720,12 @@ template <typename World, typename Tag>
             scratch.parent_[neighbor_offset] = current.index;
             scratch.state_[neighbor_offset] = open;
             TESS_DIAG_EVENT(path_heuristic);
-            const auto updated_node = PathScratch::OpenNode{
-                neighbor_index,
-                tentative_g,
+            const auto updated_node = detail::PackedOpenNode::make(
+                neighbor_index, tentative_g,
                 detail::saturating_add(
                     tentative_g,
-                    model.heuristic(world, neighbor, request.goal)),
-            };
-            if (updated_node.f <= current_f) {
+                    model.heuristic(world, neighbor, request.goal)));
+            if (updated_node.f() <= current_f) {
               scratch.open_.push_back(updated_node);
             } else {
               scratch.open_next_.push_back(updated_node);
@@ -1019,13 +1013,10 @@ template <typename World, typename Class, typename Provider>
   TESS_DIAG_EVENT(path_touch_node);
   TESS_DIAG_EVENT(path_heuristic);
   const auto model = Model{provider};
-  scratch.open_.push_back(PathScratch::OpenNode{
-      start,
-      0,
-      model.heuristic(world, request.start, request.goal),
-  });
+  scratch.open_.push_back(detail::PackedOpenNode::make(
+      start, 0, model.heuristic(world, request.start, request.goal)));
   std::push_heap(scratch.open_.begin(), scratch.open_.end(),
-                 detail::open_node_less);
+                 detail::packed_open_node_less);
   TESS_DIAG_EVENT(path_heap_push);
 
   std::size_t expanded_nodes = 0;
@@ -1038,14 +1029,14 @@ template <typename World, typename Class, typename Provider>
   while (!scratch.open_.empty()) {
     TESS_DIAG_EVENT(path_heap_pop);
     std::pop_heap(scratch.open_.begin(), scratch.open_.end(),
-                  detail::open_node_less);
+                  detail::packed_open_node_less);
     const auto current = scratch.open_.back();
     scratch.open_.pop_back();
 
     const auto current_offset = space.offset(current.index);
     const auto current_state = scratch.state_at(current_offset, unseen);
     if (current_state == closed ||
-        current.g != scratch.g_at(current_offset, infinite_cost)) {
+        current.g() != scratch.g_at(current_offset, infinite_cost)) {
       TESS_DIAG_EVENT_VALUE(path_skip_pop, current_state == closed);
       continue;
     }
@@ -1063,7 +1054,7 @@ template <typename World, typename Class, typename Provider>
         step = scratch.parent_[space.offset(step)];
       }
       std::reverse(scratch.path_.begin(), scratch.path_.end());
-      return make_result(PathStatus::Found, current.g, expanded_nodes,
+      return make_result(PathStatus::Found, current.g(), expanded_nodes,
                          scratch.touched_count_, scratch.path_);
     }
 
@@ -1098,7 +1089,7 @@ template <typename World, typename Class, typename Provider>
           }
           TESS_DIAG_EVENT(path_relax_attempt);
           const auto tentative_g =
-              detail::saturating_add(current.g, probe.cost);
+              detail::saturating_add(current.g(), probe.cost);
           if (tentative_g == infinite_cost) {
             cost_overflow = true;
             return;
@@ -1113,15 +1104,13 @@ template <typename World, typename Class, typename Provider>
             scratch.parent_[neighbor_offset] = current.index;
             scratch.state_[neighbor_offset] = open;
             TESS_DIAG_EVENT(path_heuristic);
-            scratch.open_.push_back(PathScratch::OpenNode{
-                neighbor_index,
-                tentative_g,
+            scratch.open_.push_back(detail::PackedOpenNode::make(
+                neighbor_index, tentative_g,
                 detail::saturating_add(
                     tentative_g,
-                    model.heuristic(world, neighbor, request.goal)),
-            });
+                    model.heuristic(world, neighbor, request.goal))));
             std::push_heap(scratch.open_.begin(), scratch.open_.end(),
-                           detail::open_node_less);
+                           detail::packed_open_node_less);
             TESS_DIAG_EVENT(path_heap_push);
           }
         });
