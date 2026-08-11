@@ -18,3 +18,12 @@ TEST(TessSmoke, ExposesLibraryVersion) {
   EXPECT_EQ(tess::library_version.minor, TESS_EXPECTED_VERSION_MINOR);
   EXPECT_EQ(tess::library_version.patch, TESS_EXPECTED_VERSION_PATCH);
 }
+
+TEST(TessSmoke, DefaultVersionHasNoRelease) {
+  constexpr tess::version version;
+
+  static_assert(version.major == 0);
+  static_assert(version.minor == 0);
+  static_assert(version.patch == 0);
+  static_assert(version.prerelease.empty());
+}

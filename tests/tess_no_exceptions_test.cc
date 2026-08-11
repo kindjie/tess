@@ -1,4 +1,5 @@
 #include <tess/core/config.h>
+#include <tess/experimental/maintenance.h>
 #include <tess/tess.h>
 
 #if !defined(_WIN32)

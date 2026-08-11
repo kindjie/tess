@@ -128,8 +128,9 @@ struct MixedStack {
         -> tess::ScheduleTaskResult {
       (void)tess::tick_weighted_path_agents_with_movement<
           MixedWorld, colony::Walker, colony::kMaxCost, colony::OccupancyTag,
-          colony::ReservationTag>(*tick_state, *world, agents, *runtime, {},
-                                  colony::kOccupancyDirty, graph);
+          colony::ReservationTag>(
+          *tick_state, *world, agents, *runtime,
+          {.movement_dirty_mask = colony::kOccupancyDirty}, graph);
       return {};
     }
   };
