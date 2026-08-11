@@ -799,6 +799,14 @@ def test_required_clang_tidy_uses_an_explicit_major_version():
   assert "-DTESS_CLANG_TIDY_EXE=clang-tidy-18" in advisory
 
 
+def test_diff_clang_tidy_timeout_covers_a_large_public_surface_change():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  tidy_diff = _job_body(workflow, "tidy-diff")
+
+  assert "    timeout-minutes: 30\n" in tidy_diff
+
+
 def test_non_gating_benchmark_baselines_run_only_on_main():
   """Baselines live in their own main-push-only job, outside the gate.
 

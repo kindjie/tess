@@ -338,6 +338,9 @@ class DeltaCollector {
   // that survives the defaulted moves.
   DeltaCollector(const DeltaCollector&) = delete;
   auto operator=(const DeltaCollector&) -> DeltaCollector& = delete;
+  // Generation safety needs fresh shared state after a move and may allocate,
+  // so the move is intentionally not noexcept.
+  // NOLINTNEXTLINE(performance-noexcept-move-constructor)
   DeltaCollector(DeltaCollector&&) = default;
   auto operator=(DeltaCollector&&) -> DeltaCollector& = default;
 
@@ -811,11 +814,13 @@ class DeltaCollector {
     auto operator=(const FrameGeneration&) -> FrameGeneration& = delete;
     ~FrameGeneration() = default;
 
+    // NOLINTNEXTLINE(performance-noexcept-move-constructor)
     FrameGeneration(FrameGeneration&& other)
         : state{std::make_shared<std::atomic<std::uint64_t>>(1)} {
       other.invalidate();
     }
 
+    // NOLINTNEXTLINE(performance-noexcept-move-constructor)
     auto operator=(FrameGeneration&& other) -> FrameGeneration& {
       if (this != &other) {
         invalidate();

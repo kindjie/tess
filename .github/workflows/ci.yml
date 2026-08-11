@@ -706,7 +706,7 @@ jobs:
           needs.changes.outputs.code_required == 'true' }}
     name: Diff Clang-Tidy
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       CC: clang
       CXX: clang++

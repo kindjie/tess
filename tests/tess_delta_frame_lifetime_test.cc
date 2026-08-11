@@ -186,6 +186,8 @@ TEST(TessDeltaFrameLifetime, CollectorIsMoveOnly) {
   // they are ever dropped rather than defaulted.
   static_assert(std::is_move_constructible_v<tess::DeltaCollector>);
   static_assert(std::is_move_assignable_v<tess::DeltaCollector>);
+  static_assert(!std::is_nothrow_move_constructible_v<tess::DeltaCollector>);
+  static_assert(!std::is_nothrow_move_assignable_v<tess::DeltaCollector>);
 
   // And the move actually works end to end, not just on paper.
   World world;
