@@ -1,15 +1,11 @@
 # test_thread_scaling_report.py
 
-- `tests/test_thread_scaling_report.py`: pytest coverage for the
-  thread-scaling sweep report (`tools/thread_scaling_report.py`). It pins
-  the pool's quantization ceiling (exact when runs divide evenly, below the
-  worker count at 190, sawtoothing across widths — hence printed beside
-  every row), the workload, worker, and chunk manifests cross-checked
-  against the literals in `bench/tess_thread_scaling_bench.cc`, which the
-  workload matrix cannot catch when a single point is dropped, `real_time`
-  rather than `cpu_time` (the dispatcher blocks, so cpu_time reports the
-  pool as nearly free), and speedup taken against the serial executor
-  rather than the one-worker pool. The publishability gate covers noisy
+- `tests/test_thread_scaling_report.py`: pins the thread-scaling artifact,
+  statistics, pairing, provenance, and publishability gates. The pool's
+  quantization ceiling sawtooths across widths and is printed beside every
+  row. Reports use `real_time`, because blocked dispatcher time makes
+  `cpu_time` report the pool as nearly free, and compare with the serial
+  executor rather than the one-worker pool. The publishability gate covers noisy
   points, a noisy serial denominator, single-repetition runs whose CV is
   vacuously zero, a per-group noisy paired serial that a pooled CV would
   dilute, a stale `--chunks`, and speedups above the ceiling after the

@@ -5,9 +5,12 @@
   hook-backstop job runs them, and pins its file list to the glob).
 - Per-test documentation lives in `tests/agents.d/<name>.md`, one fragment
   per GoogleTest target and per pytest file. Before modifying or adding a
-  test, read (or write) its fragment: fragments record what a test pins,
-  why specific constants were chosen, and which wider claims are
-  deliberately not made. CI enforces exact synchronization
+  test, read (or write) its fragment. Keep the fragment to a compact purpose
+  plus traps: chosen constants and rationale, deliberately narrow claims,
+  coverage gates, and other facts the source cannot show by itself. Lists of
+  verified behaviors belong in the test; when its comment already records a
+  trap, reference that comment instead of restating it. CI enforces exact
+  synchronization
   (`tools/git_hooks.py ci`): a target or `tests/test_*.py` file without a
   fragment fails, and so does an orphan fragment whose test no longer
   exists, an empty fragment, or a first line that is not `# <name>`.
