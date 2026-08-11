@@ -306,6 +306,47 @@ the broad ceilings as calibrated evidence.
   package behavior until the 1.0 version change.
 - Recalibrate the five fields bootstrap ceilings if the ten-artifact post-fix
   window is available, or record the remaining evidence gap explicitly.
+- Close the outstanding API-shape items from
+  `docs/planning/audit-2026-08-07.md`, listed below.
+
+#### 12.1.1 Outstanding API-shape items
+
+The 2026-08-07 audit routed its API findings here rather than running them
+as a separate workstream, but named none of them in this document, so the
+remaining ones are recorded explicitly. API1-API6, API8 and API12-API16
+are closed; what is left divides by whether it needs this window at all.
+
+Source-breaking, and therefore this window or not before 1.0 — §12.2
+freezes the surface at the first release candidate:
+
+- **API7.** Five `(start, goal)` `Coord3` parameter pairs across nine
+  declaration sites collapse onto `PathRequest`. The widest call-site
+  sweep left; worth its own change rather than folding into another.
+- **API11 (argument order).** The remaining half of API11, after the
+  `noexcept` documentation landed. Every affected parameter pair is
+  cross-type, so a stale call site is a compile error rather than a
+  silent behaviour change — which is also the argument for dropping it:
+  the cost is borne by consumers and the benefit is symmetry.
+- **API17 (duplicate names).** Never dispositioned, and still present:
+  `BlockPipeline::to_frontier` aliases `collect_into`, and
+  `TraceBuffer::stats(category)` and `TimingSnapshot::category(category)`
+  do the same job under opposite names. Removing either alias breaks
+  callers, so the choice — remove, or keep and document the pairing — has
+  to be made in this window. The audit's third example,
+  `EventStream::clear` versus `discard_all`, was already downgraded
+  during consolidation: the header discloses the difference, making it
+  redundant naming rather than a trap.
+
+Non-breaking, so they need no window and can land whenever the
+surrounding subsystem is next touched: **API18**, adoption items
+**AD3-AD9**, and **D7** (Doxygen coverage).
+
+Two findings were dispositioned as unfixed with written rationale rather
+than deferred, and should not reappear as pending work: **API9** (the
+premise holds but the fix is a World-concept redesign, not a break) and
+**API10** (the premise failed verification outright — the type is already
+non-copyable and non-movable). The `ResumableWorkQueue` half of API12
+went the same way in PR #167.
 
 ### 12.2 v1.0.0-rc.1: feature and surface freeze
 
