@@ -43,13 +43,22 @@
 - Epoch rule: pre-#98 and post-#98 `parallel/` observations measure
   different harness codegen around an unchanged library call and must
   not be pooled for baselines, change-point analysis, or threshold
-  calibration. This is recorded, not enforced, and the consequence is
-  predictable: once the detector's rolling window holds readings from
-  both sides, `parallel/tile_touch_pool_w4` will be flagged again. This
-  entry is the answer when that happens. It is the only cell that can
-  do so — the other nine either shift under the 10% relative floor
-  (6.1% at most) or, in `tile_touch_serial`'s case, cannot clear the
-  2,000 ns absolute floor with a 1,260 ns delta.
+  calibration. This is recorded, not enforced. `tile_touch_pool_w4` is
+  the only cell that could be re-flagged over the boundary — the other
+  nine either shift under the 10% relative floor (6.1% at most) or, in
+  `tile_touch_serial`'s case, cannot clear the 2,000 ns absolute floor
+  with a 1,260 ns delta — and this entry is the answer if it is.
+  It was not, at the first opportunity. This entry first predicted the
+  re-flag outright; that was too strong. Run 31444691634 read the whole
+  60-artifact window with the corrected metric selection, 48 of those
+  artifacts predating the boundary, and returned `clean`. One run does
+  not make it impossible: only the newest runner stratum is evaluated,
+  the rule needs all three candidates elevated, and one of the three
+  was a 28,579 ns reading from an unrelated commit — a low candidate
+  defeats the rule by itself. The exposure is transient either way,
+  because baseline artifacts have 30-day retention, so pre-boundary
+  readings age out by roughly 2026-09-01 and each main push pushes them
+  further out.
   Boundary: last old-harness commit
   `6e67d3843b8d9ab5a8c51c593f7a7dc1c077f352` (#97), first
   shared-harness commit `73cf59ca93144dd2b6091d31748091fa14573730`
@@ -67,9 +76,15 @@
   does not actually guarantee. Weighed against it, the cost of not
   enforcing is one duplicate advisory issue that a reader closes by
   citing this entry. A duplicate alert is cheaper than a missed
-  regression, so the alert stays. If this is worth automating later,
-  the design should annotate an alert with the recorded epoch rather
-  than suppress it, which cannot hide anything. Recorded as #164.
+  regression, so the alert stays. Automating this is now recorded as
+  not planned, the clean first run having removed what payoff it had;
+  should a boundary ever justify revisiting it, the design must
+  annotate an alert with its recorded epoch rather than suppress the
+  reading, which cannot hide anything. What #164 keeps is the defect
+  the review turned up on the way: a benchmark the detector skipped for
+  want of history is reported inside a `clean` verdict, so "not
+  evaluated" and "passed" are indistinguishable — which is what made
+  suppression hard to reason about in the first place.
 - Scope, measured rather than assumed (paired run 31438907252,
   6e67d38 -> 73cf59c, all ten gated registrations, real time, 99.5%
   intervals). Only the two `tile_touch` cells moved:
