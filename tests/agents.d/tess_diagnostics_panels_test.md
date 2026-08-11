@@ -1,10 +1,7 @@
 # tess_diagnostics_panels_test
 
 - `tess_diagnostics_panels_test` (diagnostics-enabled, `TESS_ENABLE_IMGUI` on):
-  compile-and-run check for the opt-in diagnostics panels against a minimal
-  ImGui stub (`tests/imgui_stub/imgui.h`) so a panel bug surfaces here rather
-  than only in a real-ImGui consumer. Exercises every diagnostics draw function
-  including recent timed spans with allocation traffic and live/peak memory,
-  accepts an empty timed-span label without forwarding a null `%.*s` pointer,
-  and pins `category_name` for every trace category; includes both optional
-  headers together to reject detail-helper collisions.
+  compile-and-run coverage for every opt-in diagnostics panel against the
+  minimal ImGui stub. It includes both optional headers together to catch
+  detail-helper collisions and pins the empty-label case so no null `%.*s`
+  pointer reaches ImGui.

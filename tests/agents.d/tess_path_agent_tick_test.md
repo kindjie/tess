@@ -1,18 +1,8 @@
 # tess_path_agent_tick_test
 
-- `tess_path_agent_tick_test`: verifies the minimal path-agent tick wrapper,
-  including tick advancement, dirty-gated path processing, movement ordering,
-  explicit dirty-mark requirements after world edits, dirty reprocessing after
-  world edits and goal changes, unreachable goals, weighted shared-goal ticks,
-  allocation-free warm clean ticks (pinning that path processing is skipped
-  while every agent still advances), two-argument goal assignment processed
-  without a manual dirty mark, transiently blocked agents resuming and arriving
-  without occupancy-blind re-plans, successful plain-driver progress resetting
-  a preserved blocked streak, permanent occupancy or
-  reservation exhausting a bounded retained-step wait budget without repeated
-  searches while zero-step ticks preserve that budget (including while another
-  agent requests a scoped planning pass), a seeded multi-agent
-  bottleneck reaching only arrived or explicit terminal outcomes after one
-  initial planning pass, mid-route wall
-  insertion triggering bounded re-paths, and boxed-in goals exhausting the
-  retry budget into terminal Unreachable that stops consuming processing.
+- `tess_path_agent_tick_test`: pins dirty-gated planning and retained-route
+  movement through the minimal tick wrapper. Transient occupancy waits consume
+  a bounded step budget without repeated searches; zero-step ticks preserve
+  that budget, while boxed-in goals eventually become terminal and stop
+  consuming processing. A warm clean tick must still advance every agent while
+  allocating nothing and skipping path processing.

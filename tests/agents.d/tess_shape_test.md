@@ -1,15 +1,6 @@
 # tess_shape_test
 
-- `tess_shape_test`: verifies public shape primitives, constexpr shape traits,
-  default and explicit lattice typing with stable lattice identifiers,
-  axial hex coordinate conversion and overflow-safe saturated distance,
-  degenerate-axis handling, containment helpers, key width inference,
-  coordinate/chunk/local/tile key conversion helpers, the portable
-  `tess::UInt128` operations (carrying multiply, borrow subtract,
-  boundary shifts including counts of 64/127/>=128, comparisons, narrowing,
-  non-negative int construction, a death test for the negative-int
-  constructor precondition when asserts are enabled,
-  and `bit_width`/`bits_for_count` at the 64-bit boundary), >64-bit
-  tile-key round-trips on the huge bounded shape, and the largest legal
-  64-bit boundary shape (single chunk, 2^63 local tiles, `chunk_bits == 0`)
-  round-tripping without wide shifts.
+- `tess_shape_test`: pins public shape, lattice, coordinate, key-width, and
+  portable `UInt128` primitives, with overflow and degenerate-axis boundaries.
+  The largest legal 64-bit shape has one chunk and 2^63 local tiles, so
+  `chunk_bits == 0`; its round trip must avoid a full-width shift.
