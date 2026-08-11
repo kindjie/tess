@@ -17,6 +17,9 @@ fi
 # Derive the expected version from the single authoritative version file.
 version="$(sed -n 's/^set(TESS_VERSION \([0-9][0-9.]*\))$/\1/p' \
   "$root/cmake/tess-version.cmake")"
+prerelease="$(sed -n \
+  's/^set(TESS_VERSION_PRERELEASE "\([^"]*\)")$/\1/p' \
+  "$root/cmake/tess-version.cmake")"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "error: could not parse TESS_VERSION" >&2
   exit 1
@@ -43,6 +46,7 @@ fi
 cmake -S "$root/tests/install_consumer" -B "$build" \
   -DCMAKE_PREFIX_PATH="$prefix" \
   -DTESS_EXPECTED_VERSION="$version" \
+  -DTESS_EXPECTED_PRERELEASE="$prerelease" \
   -DTESS_NO_EXCEPTIONS="$no_exceptions"
 if [[ -n "$config" ]]; then
   cmake --build "$build" --config "$config"

@@ -7,6 +7,7 @@
 #include <tess/diagnostics/diagnostics.h>
 #include <tess/path/node_index_space.h>
 #include <tess/path/path_view.h>
+#include <tess/path/request.h>
 #include <tess/topology/movement_class.h>
 #include <tess/topology/transition_model.h>
 
@@ -53,12 +54,6 @@ enum class MissingChunkPolicy : std::uint8_t {
   // exhausts the resident set having skipped at least one non-resident
   // neighbor, it returns Indeterminate instead of NoPath.
   Indeterminate,
-};
-
-/// Specifies inclusive start and goal coordinates for a path query.
-struct PathRequest {
-  Coord3 start;
-  Coord3 goal;
 };
 
 /// Reports a query outcome and a non-owning view of the resulting path.
@@ -112,14 +107,13 @@ namespace detail {
 // fields it reads against the same const world it just built them from.
 template <typename World, typename Class>
 [[nodiscard]] auto weighted_distance_field_path_core(
-    const World& world, Coord3 start, Coord3 goal,
-    DistanceFieldScratch& scratch, bool verify_residency) -> PathResult;
+    const World& world, PathRequest request, DistanceFieldScratch& scratch,
+    bool verify_residency) -> PathResult;
 
 template <typename World, typename Class, typename Provider>
 [[nodiscard]] auto weighted_distance_field_path_core(
-    const World& world, Coord3 start, Coord3 goal,
-    DistanceFieldScratch& scratch, bool verify_residency,
-    const Provider& provider) -> PathResult;
+    const World& world, PathRequest request, DistanceFieldScratch& scratch,
+    bool verify_residency, const Provider& provider) -> PathResult;
 
 // Core behind build_bounded_weighted_distance_field. settle_targets are
 // validated tile indices whose distances the caller will read; once every
@@ -182,16 +176,16 @@ template <typename World, typename PassableTag, typename CostTag>
 template <typename World, typename Tag>
 [[nodiscard]] auto build_distance_field_product(const World& world,
                                                 const GoalSet& goals,
-                                                DistanceFieldScratch& scratch,
-                                                DistanceFieldProduct& product)
+                                                DistanceFieldProduct& product,
+                                                DistanceFieldScratch& scratch)
     -> DistanceFieldResult;
 
 /// Builds a dense multi-goal field composed with a special provider.
 template <typename World, typename Tag, typename Provider>
 [[nodiscard]] auto build_distance_field_product(const World& world,
                                                 const GoalSet& goals,
-                                                DistanceFieldScratch& scratch,
                                                 DistanceFieldProduct& product,
+                                                DistanceFieldScratch& scratch,
                                                 const Provider& provider)
     -> DistanceFieldResult;
 
@@ -808,6 +802,8 @@ class PathScratch {
 ///
 /// Returned paths borrow this object. Instances require external
 /// synchronization; reserve node capacity for allocation-free warm queries.
+/// Model identities are process-local; do not share an instance across a
+/// dynamic-library boundary.
 class DistanceFieldScratch {
  public:
   void reserve_nodes(std::size_t node_count) {
@@ -842,7 +838,7 @@ class DistanceFieldScratch {
       const Provider& provider) -> DistanceFieldResult;
 
   template <typename World, typename Tag>
-  friend auto distance_field_path(const World& world, Coord3 start, Coord3 goal,
+  friend auto distance_field_path(const World& world, PathRequest request,
                                   DistanceFieldScratch& scratch) -> PathResult;
 
   // The weighted friends name the single-Class cores; the legacy tag-pair
@@ -876,14 +872,13 @@ class DistanceFieldScratch {
   // private access lives in the detail core it forwards to.
   template <typename World, typename Class>
   friend auto detail::weighted_distance_field_path_core(
-      const World& world, Coord3 start, Coord3 goal,
-      DistanceFieldScratch& scratch, bool verify_residency) -> PathResult;
+      const World& world, PathRequest request, DistanceFieldScratch& scratch,
+      bool verify_residency) -> PathResult;
 
   template <typename World, typename Class, typename Provider>
   friend auto detail::weighted_distance_field_path_core(
-      const World& world, Coord3 start, Coord3 goal,
-      DistanceFieldScratch& scratch, bool verify_residency,
-      const Provider& provider) -> PathResult;
+      const World& world, PathRequest request, DistanceFieldScratch& scratch,
+      bool verify_residency, const Provider& provider) -> PathResult;
 
   // The batch skips the core's per-member residency verification and
   // instead asserts the stamp once per group build.
@@ -904,15 +899,15 @@ class DistanceFieldScratch {
   template <typename World, typename Tag>
   friend auto build_distance_field_product(const World& world,
                                            const GoalSet& goals,
-                                           DistanceFieldScratch& scratch,
-                                           DistanceFieldProduct& product)
+                                           DistanceFieldProduct& product,
+                                           DistanceFieldScratch& scratch)
       -> DistanceFieldResult;
 
   template <typename World, typename Tag, typename Provider>
   friend auto build_distance_field_product(const World& world,
                                            const GoalSet& goals,
-                                           DistanceFieldScratch& scratch,
                                            DistanceFieldProduct& product,
+                                           DistanceFieldScratch& scratch,
                                            const Provider& provider)
       -> DistanceFieldResult;
 
@@ -943,8 +938,8 @@ class DistanceFieldScratch {
 
   template <typename World, typename Class, typename Provider>
   friend auto build_weighted_distance_field_product(
-      const World& world, const GoalSet& goals, DistanceFieldScratch& scratch,
-      DistanceFieldProduct& product, const Provider& provider)
+      const World& world, const GoalSet& goals, DistanceFieldProduct& product,
+      DistanceFieldScratch& scratch, const Provider& provider)
       -> DistanceFieldResult;
 
   template <typename World, typename Class, typename Provider>
@@ -2036,8 +2031,7 @@ template <typename WorldType, typename Tag>
 /// The returned path borrows `scratch`; stale sparse residency returns
 /// `NoPath` so callers rebuild instead of reading mismatched node slots.
 template <typename World, typename Tag>
-[[nodiscard]] auto distance_field_path(const World& world, Coord3 start,
-                                       Coord3 goal,
+[[nodiscard]] auto distance_field_path(const World& world, PathRequest request,
                                        DistanceFieldScratch& scratch)
     -> PathResult {
   using Shape = typename World::shape_type;
@@ -2049,11 +2043,11 @@ template <typename World, typename Tag>
 
   if constexpr (Model::cost_scale != 1) {
     return detail::weighted_distance_field_path_core<World, UnitClass>(
-        world, start, goal, scratch, /*verify_residency=*/true);
+        world, request, scratch, /*verify_residency=*/true);
   }
 
   scratch.clear_path();
-  if (!contains<Shape>(start)) {
+  if (!contains<Shape>(request.start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
   if constexpr (!Space::is_dense) {
@@ -2061,25 +2055,26 @@ template <typename World, typename Tag>
     // out of bounds. Report InvalidStart -- the caller learns whether the
     // field itself was truncated from build_distance_field's status.
     const Space residency{world};
-    if (!residency.is_resident_index(detail::tile_index<Shape>(start))) {
+    if (!residency.is_resident_index(
+            detail::tile_index<Shape>(request.start))) {
       return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
     }
   }
   TESS_DIAG_EVENT(path_start_passability_check);
-  if (!detail::is_passable<World, Tag>(world, start)) {
+  if (!detail::is_passable<World, Tag>(world, request.start)) {
     return PathResult{PathStatus::InvalidStart, 0, 0, 0, scratch.path_};
   }
-  if (!contains<Shape>(goal)) {
+  if (!contains<Shape>(request.goal)) {
     return PathResult{PathStatus::InvalidGoal, 0, 0, 0, scratch.path_};
   }
-  if (!scratch.has_goal_ || scratch.goal_ != goal ||
+  if (!scratch.has_goal_ || scratch.goal_ != request.goal ||
       !scratch.template model_matches<Model>() ||
       !scratch.residency_matches(world)) {
     return PathResult{PathStatus::NoPath, 0, 0, 0, scratch.path_};
   }
 
   const Space space{world};
-  const auto start_index = detail::tile_index<Shape>(start);
+  const auto start_index = detail::tile_index<Shape>(request.start);
   auto current = start_index;
   auto current_offset = space.offset(current);
   auto current_distance =
@@ -2089,7 +2084,7 @@ template <typename World, typename Tag>
                       scratch.path_};
   }
 
-  scratch.path_.push_back(start);
+  scratch.path_.push_back(request.start);
   TESS_DIAG_EVENT(path_reconstruct_node);
   const auto model = Model{};
   while (current_distance > 0) {
@@ -2161,14 +2156,13 @@ template <typename WorldType, typename Tag, typename Provider>
 
 /// Reads a provider-aware unweighted field built with the same provider.
 template <typename World, typename Tag, typename Provider>
-[[nodiscard]] auto distance_field_path(const World& world, Coord3 start,
-                                       Coord3 goal,
+[[nodiscard]] auto distance_field_path(const World& world, PathRequest request,
                                        DistanceFieldScratch& scratch,
                                        const Provider& provider) -> PathResult {
   using Class = movement::movement_class_of<Tag>;
   using UnitClass = movement::detail::UnitMovementClass<Class>;
   return detail::weighted_distance_field_path_core<World, UnitClass, Provider>(
-      world, start, goal, scratch, /*verify_residency=*/true, provider);
+      world, request, scratch, /*verify_residency=*/true, provider);
 }
 
 /// Builds a movement-class weighted field into reusable caller scratch.

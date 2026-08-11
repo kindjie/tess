@@ -72,7 +72,7 @@ auto run() -> int {
   product.reserve_nodes(kTileCount);
   product.reserve_dependencies(World::chunk_count);
   const auto build = tess::build_distance_field_product<World, PassableTag>(
-      world, chambers, scratch, product);
+      world, chambers, product, scratch);
   if (build.status != tess::PathStatus::Found) {
     std::cerr << "flood found no chamber\n";
     return 1;

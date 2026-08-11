@@ -125,8 +125,8 @@ TEST(TessMovement, PathAgentMovementCommitsOccupancyAndRejectsConflicts) {
   const auto stats =
       tess::tick_unit_path_agents_with_movement<World, PassableTag,
                                                 OccupancyTag, ReservationTag>(
-          state, world, agents, runtime, tess::PathAgentTickOptions{1, {}},
-          DirtyOccupancy);
+          state, world, agents, runtime,
+          tess::PathAgentTickOptions{1, DirtyOccupancy}, nullptr);
 
   EXPECT_EQ(stats.movement.advanced, 1u);
   EXPECT_EQ(stats.movement.movement_failures.occupied, 1u);
@@ -566,9 +566,8 @@ TEST(TessScheduler, MovementSchedulerCommitsOccupancyAndEmitsDeltas) {
           tess::SimSchedulerOptions{
               DirtyTerrain,
               DirtyRender,
-              tess::PathAgentTickOptions{1, {}},
+              tess::PathAgentTickOptions{1, DirtyOccupancy},
               false,
-              DirtyOccupancy,
           });
 
   EXPECT_EQ(stats.path_agents.movement.advanced, 1u);
@@ -677,8 +676,10 @@ auto run_weighted_movement_to_arrival(World& world,
     -> std::vector<tess::Coord3> {
   tess::SimSchedulerState scheduler;
   const auto options = tess::SimSchedulerOptions{
-      DirtyTerrain, DirtyRender,         tess::PathAgentTickOptions{1, {}},
-      false,        movement_dirty_mask,
+      DirtyTerrain,
+      DirtyRender,
+      tess::PathAgentTickOptions{1, movement_dirty_mask},
+      false,
   };
 
   std::vector<tess::Coord3> visited;

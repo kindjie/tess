@@ -154,11 +154,11 @@ void BM_topology_reachable_far_512x512(benchmark::State& state) {
 
   tess::RegionGraphScratch reach_scratch;
   // Warm the scratch so the timed loop is allocation-free.
-  (void)tess::reachable<TopoShape>(graph, kFarStart, kFarGoal, reach_scratch);
+  (void)tess::reachable<TopoShape>(graph, {kFarStart, kFarGoal}, reach_scratch);
   tess::ReachabilityResult result{};
   for (auto _ : state) {
     result =
-        tess::reachable<TopoShape>(graph, kFarStart, kFarGoal, reach_scratch);
+        tess::reachable<TopoShape>(graph, {kFarStart, kFarGoal}, reach_scratch);
     benchmark::DoNotOptimize(result.visited_regions);
   }
   bench_check(result.status == tess::ReachabilityStatus::Reachable,
@@ -176,11 +176,12 @@ void BM_topology_coarse_path_far_512x512(benchmark::State& state) {
   bench_check(built.region_count > 0, "region graph build produced no regions");
 
   tess::RegionGraphScratch path_scratch;
-  (void)tess::coarse_path<TopoShape>(graph, kFarStart, kFarGoal, path_scratch);
+  (void)tess::coarse_path<TopoShape>(graph, {kFarStart, kFarGoal},
+                                     path_scratch);
   tess::CoarsePathResult result{};
   for (auto _ : state) {
-    result =
-        tess::coarse_path<TopoShape>(graph, kFarStart, kFarGoal, path_scratch);
+    result = tess::coarse_path<TopoShape>(graph, {kFarStart, kFarGoal},
+                                          path_scratch);
     benchmark::DoNotOptimize(result.chunks.data());
   }
   bench_check(result.status == tess::ReachabilityStatus::Reachable,
@@ -262,12 +263,12 @@ void BM_topology_precheck_reachable_512x512(benchmark::State& state) {
   bench_check(built.region_count > 0, "region graph build produced no regions");
 
   tess::RegionGraphScratch precheck_scratch;
-  (void)tess::precheck_path<PassableTag>(graph, world, kFarStart, kFarGoal,
+  (void)tess::precheck_path<PassableTag>(graph, world, {kFarStart, kFarGoal},
                                          precheck_scratch);
   tess::PrecheckStatus status{};
   for (auto _ : state) {
-    status = tess::precheck_path<PassableTag>(graph, world, kFarStart, kFarGoal,
-                                              precheck_scratch);
+    status = tess::precheck_path<PassableTag>(
+        graph, world, {kFarStart, kFarGoal}, precheck_scratch);
     benchmark::DoNotOptimize(status);
   }
   bench_check(status == tess::PrecheckStatus::Reachable,
@@ -286,12 +287,12 @@ void BM_topology_precheck_unreachable_512x512(benchmark::State& state) {
   bench_check(built.region_count > 0, "region graph build produced no regions");
 
   tess::RegionGraphScratch precheck_scratch;
-  (void)tess::precheck_path<PassableTag>(graph, world, kFarStart, kSealedGoal,
+  (void)tess::precheck_path<PassableTag>(graph, world, {kFarStart, kSealedGoal},
                                          precheck_scratch);
   tess::PrecheckStatus status{};
   for (auto _ : state) {
-    status = tess::precheck_path<PassableTag>(graph, world, kFarStart,
-                                              kSealedGoal, precheck_scratch);
+    status = tess::precheck_path<PassableTag>(
+        graph, world, {kFarStart, kSealedGoal}, precheck_scratch);
     benchmark::DoNotOptimize(status);
   }
   bench_check(status == tess::PrecheckStatus::Unreachable,

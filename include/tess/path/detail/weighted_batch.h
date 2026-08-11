@@ -275,9 +275,8 @@ namespace detail {
 // (audit 2026-07-11 M2).
 template <typename World, typename Class, typename Provider>
 [[nodiscard]] auto weighted_distance_field_path_core(
-    const World& world, Coord3 start, Coord3 goal,
-    DistanceFieldScratch& scratch, bool verify_residency,
-    const Provider& provider) -> PathResult {
+    const World& world, PathRequest request, DistanceFieldScratch& scratch,
+    bool verify_residency, const Provider& provider) -> PathResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>,
                 "weighted_distance_field_path<World, Class> requires a "
                 "MovementClass; legacy tag pairs go through the "
@@ -293,26 +292,27 @@ template <typename World, typename Class, typename Provider>
   };
 
   scratch.clear_path();
-  if (!contains<Shape>(start)) {
+  if (!contains<Shape>(request.start)) {
     return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
   }
   if constexpr (!Space::is_dense) {
     // Pure reader: a non-resident start is not in the field (its slot would be
     // out of bounds). The field's own truncation status came from the build.
     const Space residency{world};
-    if (!residency.is_resident_index(detail::tile_index<Shape>(start))) {
+    if (!residency.is_resident_index(
+            detail::tile_index<Shape>(request.start))) {
       return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
     }
   }
   TESS_DIAG_EVENT(path_start_passability_check);
-  if (!detail::is_passable<World, Class>(world, start)) {
+  if (!detail::is_passable<World, Class>(world, request.start)) {
     return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
   }
-  if (!contains<Shape>(goal)) {
+  if (!contains<Shape>(request.goal)) {
     return make_result(PathStatus::InvalidGoal, 0, 0, 0, scratch.path_);
   }
   const auto model = Model{provider};
-  if (!scratch.has_goal_ || scratch.goal_ != goal ||
+  if (!scratch.has_goal_ || scratch.goal_ != request.goal ||
       !scratch.template model_matches<Model>(
           model, detail::transition_provider_instance_identity(provider)) ||
       (verify_residency && !scratch.residency_matches(world))) {
@@ -320,7 +320,7 @@ template <typename World, typename Class, typename Provider>
   }
 
   const Space space{world};
-  const auto start_index = detail::tile_index<Shape>(start);
+  const auto start_index = detail::tile_index<Shape>(request.start);
   if (detail::tile_entry_cost_index<World, Class>(world, start_index) == 0) {
     return make_result(PathStatus::InvalidStart, 0, 0, 0, scratch.path_);
   }
@@ -334,7 +334,7 @@ template <typename World, typename Class, typename Provider>
   }
 
   const auto total_cost = current_distance;
-  scratch.path_.push_back(start);
+  scratch.path_.push_back(request.start);
   TESS_DIAG_EVENT(path_reconstruct_node);
   while (current_distance > 0) {
     const auto current_coord = detail::tile_coord<Shape>(current);
@@ -408,10 +408,10 @@ template <typename World, typename Class, typename Provider>
 
 template <typename World, typename Class>
 [[nodiscard]] auto weighted_distance_field_path_core(
-    const World& world, Coord3 start, Coord3 goal,
-    DistanceFieldScratch& scratch, bool verify_residency) -> PathResult {
+    const World& world, PathRequest request, DistanceFieldScratch& scratch,
+    bool verify_residency) -> PathResult {
   return weighted_distance_field_path_core<World, Class, AdjacentTransitions>(
-      world, start, goal, scratch, verify_residency, AdjacentTransitions{});
+      world, request, scratch, verify_residency, AdjacentTransitions{});
 }
 
 }  // namespace detail
@@ -422,22 +422,22 @@ template <typename World, typename Class>
 /// goal or sparse residency snapshot returns `NoPath`.
 template <typename World, typename Class>
 [[nodiscard]] auto weighted_distance_field_path(const World& world,
-                                                Coord3 start, Coord3 goal,
+                                                PathRequest request,
                                                 DistanceFieldScratch& scratch)
     -> PathResult {
   return detail::weighted_distance_field_path_core<World, Class>(
-      world, start, goal, scratch, /*verify_residency=*/true);
+      world, request, scratch, /*verify_residency=*/true);
 }
 
 /// Reconstructs a weighted field path using the matching special provider.
 template <typename World, typename Class, typename Provider>
 [[nodiscard]] auto weighted_distance_field_path(const World& world,
-                                                Coord3 start, Coord3 goal,
+                                                PathRequest request,
                                                 DistanceFieldScratch& scratch,
                                                 const Provider& provider)
     -> PathResult {
   return detail::weighted_distance_field_path_core<World, Class, Provider>(
-      world, start, goal, scratch, /*verify_residency=*/true, provider);
+      world, request, scratch, /*verify_residency=*/true, provider);
 }
 
 namespace detail {
@@ -635,8 +635,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
         if (field.status == PathStatus::Found) {
           return detail::weighted_distance_field_path_core<World, Class,
                                                            Provider>(
-              world, requests[j].start, requests[j].goal,
-              scratch.field_scratch_, /*verify_residency=*/false, provider);
+              world, requests[j], scratch.field_scratch_,
+              /*verify_residency=*/false, provider);
         }
         if (field.status == PathStatus::CostOverflow) {
           // Overflow is global to the reverse field: one irrelevant saturated
@@ -703,11 +703,11 @@ template <typename World, typename PassableTag, typename CostTag,
 template <typename World, typename PassableTag, typename CostTag>
 /// Reconstructs a weighted path using separate legacy field tags.
 [[nodiscard]] auto weighted_distance_field_path(const World& world,
-                                                Coord3 start, Coord3 goal,
+                                                PathRequest request,
                                                 DistanceFieldScratch& scratch)
     -> PathResult {
   return weighted_distance_field_path<
-      World, movement::LegacyWeighted<PassableTag, CostTag>>(world, start, goal,
+      World, movement::LegacyWeighted<PassableTag, CostTag>>(world, request,
                                                              scratch);
 }
 

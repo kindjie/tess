@@ -74,7 +74,8 @@ auto legacy(World& world, std::vector<tess::PathAgentState>& agents,
             const tess::PathAgentRoutes& routes) -> tess::PathAgentFrameStats {
   return tess::advance_path_agents_with_movement<World, PassableTag,
                                                  OccupancyTag, ReservationTag>(
-      world, std::span<tess::PathAgentState>(agents), routes, 1, 0);
+      world, std::span<tess::PathAgentState>(agents), routes,
+      tess::PathAgentAdvanceOptions{});
 }
 
 TEST(TessJointMovement, ChainDrainsInOneTickWherePerAgentCommitCannot) {
@@ -264,7 +265,8 @@ TEST(TessJointMovement, ObserverSeesTheFullyAppliedConfiguration) {
   const auto stats = tess::advance_path_agents_with_joint_movement<
       World, PassableTag, OccupancyTag, ReservationTag>(
       world, std::span<tess::PathAgentState>(agents), routes, scratch,
-      tess::JointMoveOptions{tess::SwapPolicy::Permit}, 1u, 0u,
+      tess::JointMoveOptions{tess::SwapPolicy::Permit},
+      tess::PathAgentAdvanceOptions{},
       [&](std::size_t index, tess::Coord3 from, tess::Coord3 to) {
         ++callbacks;
         consistent = consistent && agents[index].position == to &&
@@ -389,7 +391,8 @@ TEST(TessJointMovement, DirtyMaskMarksBothChunksPerMove) {
 
   tess::JointMoveScratch scratch;
   const auto stats =
-      joint(world, agents, routes, scratch, tess::JointMoveOptions{}, 1u, 1u);
+      joint(world, agents, routes, scratch, tess::JointMoveOptions{},
+            tess::PathAgentAdvanceOptions{1u, 1u});
   EXPECT_EQ(stats.frame.advanced, 1u);
   EXPECT_GT(world.meta(from_key).version, from_version);
   EXPECT_GT(world.meta(to_key).version, to_version);
@@ -403,7 +406,8 @@ TEST(TessJointMovement, MaxStepsZeroSpendsNoBudgetAndMovesNothing) {
   add_agent(world, agents, routes, {{1, 1, 0}, {2, 1, 0}});
   tess::JointMoveScratch scratch;
   const auto stats =
-      joint(world, agents, routes, scratch, tess::JointMoveOptions{}, 0u, 0u);
+      joint(world, agents, routes, scratch, tess::JointMoveOptions{},
+            tess::PathAgentAdvanceOptions{0u, 0u});
   EXPECT_EQ(stats.frame.advanced, 0u);
   EXPECT_EQ(agents[0].position, (tess::Coord3{1, 1, 0}));
 }
@@ -420,7 +424,8 @@ TEST(TessJointMovement, MultiStepDrainsAChainFurther) {
 
   tess::JointMoveScratch scratch;
   const auto stats =
-      joint(world, agents, routes, scratch, tess::JointMoveOptions{}, 2u, 0u);
+      joint(world, agents, routes, scratch, tess::JointMoveOptions{},
+            tess::PathAgentAdvanceOptions{2u, 0u});
   EXPECT_EQ(stats.frame.advanced, 4u);
   EXPECT_EQ(agents[0].position, (tess::Coord3{3, 1, 0}));
   EXPECT_EQ(agents[1].position, (tess::Coord3{4, 1, 0}));

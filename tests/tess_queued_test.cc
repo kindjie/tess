@@ -1483,7 +1483,7 @@ TEST(TessQueued, PlannedDirtyPartitionsMergeDeterministically) {
                                            second),
             tess::PlannedDirtyRecordStatus::Recorded);
 
-  const auto merged = tess::merge_planned_dirty(world, partitions, scratch);
+  const auto merged = tess::merge_planned_dirty(world, scratch, partitions);
 
   EXPECT_EQ(merged.status, tess::PlannedDirtyMergeStatus::Merged);
   EXPECT_EQ(merged.merged_chunk_count, 1u);
@@ -1509,7 +1509,7 @@ TEST(TessQueued, PlannedDirtyPartitionMergePreflightsEveryShape) {
                                            DirtyTerrain, bounds),
             tess::PlannedDirtyRecordStatus::Recorded);
 
-  const auto merged = tess::merge_planned_dirty(world, partitions, scratch);
+  const auto merged = tess::merge_planned_dirty(world, scratch, partitions);
 
   EXPECT_EQ(merged.status, tess::PlannedDirtyMergeStatus::InvalidShape);
   EXPECT_EQ(merged.merged_chunk_count, 0u);

@@ -1,0 +1,14 @@
+{
+  "cmake": {
+    "version": "3.25.3",
+    "linux_x86_64":
+        "https://cmake.org/files/v3.25/cmake-3.25.3-linux-x86_64.tar.gz",
+    "sha256": "d4d2ba83301b215857d3b6590cd4434a414fa151c5807693abe587bd6c03581e"
+  },
+  "conan": {
+    "version": "2.31.1",
+    "wheel":
+        "https://files.pythonhosted.org/packages/7b/c0/88a09c0c04811cd8d0696fcd83a92223a8e0a07a2e31349dd50429f64350/conan-2.31.1-py3-none-any.whl",
+    "sha256": "9134d7cfe79ea45ff9934cf912db3bd76cfd06c1b89d408a147e3e87b0adaa9f"
+  }
+}

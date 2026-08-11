@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/core/assert.h>
+#include <tess/core/fail_fast.h>
 #include <tess/core/shape.h>
 #include <tess/ecs/entity_handle.h>
 #include <tess/path/path_runtime.h>
@@ -10,9 +11,11 @@
 #include <tess/storage/world.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <span>
 #include <type_traits>
 #include <vector>
@@ -153,26 +156,85 @@ struct DeltaFrameHeader {
 // Single-buffered by design: renderers own their persistent presentation
 // memory. Holding a frame across a publish() is therefore outside the
 // contract -- the buffers it points into become the pending accumulator,
-// are cleared, and are refilled, so the spans go stale and their
-// first_tile/first_node indices can run past the tiles/overlay_nodes they
-// index. This is documented rather than enforced; enforcing it is tracked
-// as the remaining half of audit finding API3.
+// are cleared, and are refilled. Accessors validate the collector generation
+// before exposing a span and fail fast if publication, reserve, move, or
+// destruction has invalidated the view.
 /// Views collector-owned invalidation records for one published frame.
-struct DeltaFrame {
+class DeltaFrame {
+ public:
   DeltaFrameHeader header{};
-  std::span<const TileChunkDelta> chunks{};
-  std::span<const TileDelta> tiles{};
-  std::span<const EntityDelta> entities{};
-  std::span<const PathOverlayDelta> overlays{};
-  std::span<const Coord3> overlay_nodes{};
+
+  [[nodiscard]] auto chunks() const noexcept
+      -> std::span<const TileChunkDelta> {
+    validate();
+    return chunks_;
+  }
+
+  [[nodiscard]] auto tiles() const noexcept -> std::span<const TileDelta> {
+    validate();
+    return tiles_;
+  }
+
+  [[nodiscard]] auto entities() const noexcept -> std::span<const EntityDelta> {
+    validate();
+    return entities_;
+  }
+
+  [[nodiscard]] auto overlays() const noexcept
+      -> std::span<const PathOverlayDelta> {
+    validate();
+    return overlays_;
+  }
+
+  [[nodiscard]] auto overlay_nodes() const noexcept -> std::span<const Coord3> {
+    validate();
+    return overlay_nodes_;
+  }
 
   // Overlays are stateless per-frame decorations and never affect
   // version semantics or emptiness. Truncated frames are never empty:
   // the header itself carries the must-resync signal.
   [[nodiscard]] auto empty() const noexcept -> bool {
-    return chunks.empty() && tiles.empty() && entities.empty() &&
+    validate();
+    return chunks_.empty() && tiles_.empty() && entities_.empty() &&
            !header.baseline && !header.truncated;
   }
+
+ private:
+  friend class DeltaCollector;
+
+  DeltaFrame(DeltaFrameHeader frame_header,
+             std::span<const TileChunkDelta> chunks,
+             std::span<const TileDelta> tiles,
+             std::span<const EntityDelta> entities,
+             std::span<const PathOverlayDelta> overlays,
+             std::span<const Coord3> overlay_nodes,
+             std::weak_ptr<const std::atomic<std::uint64_t>> generation,
+             std::uint64_t expected_generation) noexcept
+      : header{frame_header},
+        chunks_{chunks},
+        tiles_{tiles},
+        entities_{entities},
+        overlays_{overlays},
+        overlay_nodes_{overlay_nodes},
+        generation_{std::move(generation)},
+        expected_generation_{expected_generation} {}
+
+  void validate() const noexcept {
+    const auto generation = generation_.lock();
+    if (generation == nullptr ||
+        generation->load(std::memory_order_relaxed) != expected_generation_) {
+      detail::fail_fast("stale DeltaFrame view accessed");
+    }
+  }
+
+  std::span<const TileChunkDelta> chunks_{};
+  std::span<const TileDelta> tiles_{};
+  std::span<const EntityDelta> entities_{};
+  std::span<const PathOverlayDelta> overlays_{};
+  std::span<const Coord3> overlay_nodes_{};
+  std::weak_ptr<const std::atomic<std::uint64_t>> generation_{};
+  std::uint64_t expected_generation_ = 0;
 };
 
 // True when a consumer at `consumer` can apply `header`'s frame:
@@ -287,6 +349,7 @@ class DeltaCollector {
   void reserve(std::size_t chunk_capacity, std::size_t tile_capacity,
                std::size_t entity_capacity, std::size_t overlay_capacity = 0,
                std::size_t overlay_node_capacity = 0) {
+    frame_generation_.invalidate();
     pending_chunks_.reserve(chunk_capacity);
     published_chunks_.reserve(chunk_capacity);
     pending_tiles_.reserve(tile_capacity);
@@ -456,6 +519,7 @@ class DeltaCollector {
   // only recoverable that way). After a hard clear(), the next
   // non-baseline publish is forced truncated so the consumer resyncs.
   [[nodiscard]] auto publish() -> DeltaFrame {
+    frame_generation_.invalidate();
     if (baseline_pending_) {
       drop_pending_entities();
     }
@@ -512,7 +576,9 @@ class DeltaCollector {
                       published_tiles_,
                       published_entities_,
                       published_overlays_,
-                      published_overlay_nodes_};
+                      published_overlay_nodes_,
+                      frame_generation_.state,
+                      frame_generation_.value()};
   }
 
   // Hard reset of pending state. Poisons the stream: dropped records
@@ -735,6 +801,39 @@ class DeltaCollector {
       return *this;
     }
   };
+
+  struct FrameGeneration {
+    std::shared_ptr<std::atomic<std::uint64_t>> state =
+        std::make_shared<std::atomic<std::uint64_t>>(1);
+
+    FrameGeneration() = default;
+    FrameGeneration(const FrameGeneration&) = delete;
+    auto operator=(const FrameGeneration&) -> FrameGeneration& = delete;
+    ~FrameGeneration() = default;
+
+    FrameGeneration(FrameGeneration&& other)
+        : state{std::make_shared<std::atomic<std::uint64_t>>(1)} {
+      other.invalidate();
+    }
+
+    auto operator=(FrameGeneration&& other) -> FrameGeneration& {
+      if (this != &other) {
+        invalidate();
+        other.invalidate();
+        state = std::make_shared<std::atomic<std::uint64_t>>(1);
+      }
+      return *this;
+    }
+
+    void invalidate() noexcept {
+      state->fetch_add(1, std::memory_order_relaxed);
+    }
+
+    [[nodiscard]] auto value() const noexcept -> std::uint64_t {
+      return state->load(std::memory_order_relaxed);
+    }
+  };
+  FrameGeneration frame_generation_{};
   MovedFromFlag moved_from_{};
   DeltaCollectorStats stats_{};
 };

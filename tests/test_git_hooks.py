@@ -500,6 +500,15 @@ ADVISORY_CI_JOBS = {
   "publish-benchmark-history": "publishes baselines after a main push",
   "long-seed-properties": "scheduled deep sweep, far longer than a gate allows",
   "coverage": "weekly advisory gap-finder, not a threshold",
+  "release-linux-floors": "main/release floor; release-evidence governs RCs",
+  "release-macos-floor": "main/release floor; release-evidence governs RCs",
+  "release-windows-floor": "main/release floor; release-evidence governs RCs",
+  "release-cmake-floor": "main/release floor; release-evidence governs RCs",
+  "release-fuzz": "scheduled/release fuzz; release-evidence governs RCs",
+  "release-packages": "release-only; governed by release-evidence",
+  "release-compatibility": "release-only; governed by release-evidence",
+  "release-docs": "release-only; governed by release-evidence",
+  "release-evidence": "release-only aggregate gate",
   "report-failure": "reports other jobs' failures; gating on it is circular",
 }
 
@@ -542,6 +551,64 @@ def test_every_ci_job_is_gated_or_explicitly_waived():
 
   for reason in ADVISORY_CI_JOBS.values():
     assert reason.strip()
+
+
+def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  changes = _job_body(workflow, "changes")
+  evidence = _job_body(workflow, "release-evidence")
+  release_jobs = (
+    "release-linux-floors",
+    "release-macos-floor",
+    "release-windows-floor",
+    "release-cmake-floor",
+    "release-fuzz",
+    "release-packages",
+    "release-compatibility",
+    "release-docs",
+  )
+  always_required = (
+    "dev",
+    "gcc",
+    "libcxx",
+    "no-exceptions",
+    "hooks-backstop",
+    "quality",
+    "macos",
+    "windows",
+    "windows-noexceptions",
+    "bench",
+    "long-seed-properties",
+    "coverage",
+    "ci-gate",
+  ) + release_jobs
+
+  assert "ref:" in workflow.split("workflow_dispatch:", 1)[1]
+  assert "expected_version:" in workflow.split("workflow_dispatch:", 1)[1]
+  assert "expected_sha:" in workflow.split("workflow_dispatch:", 1)[1]
+  assert 'test "$actual_sha" = "$EXPECTED_SHA"' in changes
+  assert 'test "$version" = "$EXPECTED_VERSION"' in changes
+  assert "needs.changes.outputs.release_mode == 'true'" in evidence
+  for job in always_required:
+    assert f"      - {job}\n" in evidence
+  assert "contains(needs.*.result" not in evidence
+  assert 'test "$result" = success' in evidence
+  assert "            release-evidence.json\n" in evidence
+  assert "            compatibility/\n" in evidence
+
+  for job in release_jobs[5:]:
+    body = _job_body(workflow, job)
+    assert "needs.changes.outputs.release_mode == 'true'" in body
+
+  for job in release_jobs[:4]:
+    body = _job_body(workflow, job)
+    assert "needs.changes.outputs.code_required == 'true'" in body
+    assert "github.event_name != 'pull_request'" in body
+
+  fuzz = _job_body(workflow, "release-fuzz")
+  assert "needs.changes.outputs.release_mode == 'true'" in fuzz
+  assert "github.event_name == 'schedule'" in fuzz
 
 
 def test_documentation_only_changes_skip_expensive_ci_fail_closed():
@@ -1405,11 +1472,19 @@ add_executable(
 target_link_libraries(tess_beta_test PRIVATE tess::tess)
 
 add_executable(other_tool tool.cc)
+
+add_test(
+  NAME tess_package_selection
+  COMMAND cmake -P test-package.cmake
+)
 """
 
 FRAGMENTS_FIXTURE = {
   "tess_alpha_test.md": "# tess_alpha_test\n\n- `tess_alpha_test`: covers alpha.\n",
   "tess_beta_test.md": "# tess_beta_test\n\n- `tess_beta_test`: covers beta.\n",
+  "tess_package_selection.md": (
+    "# tess_package_selection\n\n- `tess_package_selection`: covers packaging.\n"
+  ),
   "test_tool.py.md": "# test_tool.py\n\n- `tests/test_tool.py`: covers a tool.\n",
 }
 PYTEST_FIXTURE = ["test_tool.py"]
@@ -1417,7 +1492,11 @@ PYTEST_FIXTURE = ["test_tool.py"]
 
 def test_extract_cmake_test_targets_handles_multiline_forms():
   targets = git_hooks.extract_cmake_test_targets(CMAKE_FIXTURE)
-  assert targets == ["tess_alpha_test", "tess_beta_test"]
+  assert targets == [
+    "tess_alpha_test",
+    "tess_beta_test",
+    "tess_package_selection",
+  ]
 
 
 def test_agents_fragment_issues_empty_when_synchronized():
@@ -1538,7 +1617,8 @@ def test_repo_agents_fragments_match_targets_and_pytest_files():
     path.name for path in (root / "tests").glob("test_*.py")
   )
   issues = git_hooks.agents_fragment_issues(
-    (root / "tests" / "CMakeLists.txt").read_text(),
+    (root / "CMakeLists.txt").read_text()
+    + (root / "tests" / "CMakeLists.txt").read_text(),
     pytest_names,
     fragments,
   )

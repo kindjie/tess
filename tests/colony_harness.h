@@ -408,9 +408,9 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
           tess::RegionGraphScratch reach_scratch;
           for (const auto& probe : *probes) {
             const auto live = tess::reachable<Shape>(
-                *graph, probe.first, probe.second, reach_scratch);
+                *graph, {probe.first, probe.second}, reach_scratch);
             const auto fresh = tess::reachable<Shape>(
-                fresh_graph, probe.first, probe.second, reach_scratch);
+                fresh_graph, {probe.first, probe.second}, reach_scratch);
             ++result->counters.fresh_graph_comparisons;
             if (live.status != fresh.status) {
               ++result->counters.fresh_graph_mismatches;
@@ -434,7 +434,8 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
         -> tess::ScheduleTaskResult {
       const auto stats = tess::tick_weighted_path_agents_with_movement<
           WorldType, Walker, kMaxCost, OccupancyTag, ReservationTag>(
-          *tick_state, *world, agents, *runtime, {}, kOccupancyDirty, graph);
+          *tick_state, *world, agents, *runtime,
+          {.movement_dirty_mask = kOccupancyDirty}, graph);
       result->counters.blocked_route_repaths += stats.repaths_requested;
       result->counters.blocked_retry_exhaustions += stats.repath_exhausted;
       return {};
@@ -598,11 +599,11 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
     tess::RegionGraphScratch reach_scratch;
     for (std::size_t i = 0; i < agents.size(); ++i) {
       const auto to_goal = tess::reachable<Shape>(
-          graph, agents[i].position, assigned_goals[i], reach_scratch);
+          graph, {agents[i].position, assigned_goals[i]}, reach_scratch);
       result.sampled_reachability.push_back(
           static_cast<std::uint8_t>(to_goal.status));
-      const auto to_blocked = tess::reachable<Shape>(graph, agents[i].position,
-                                                     blocked, reach_scratch);
+      const auto to_blocked = tess::reachable<Shape>(
+          graph, {agents[i].position, blocked}, reach_scratch);
       result.sampled_reachability.push_back(
           static_cast<std::uint8_t>(to_blocked.status));
     }

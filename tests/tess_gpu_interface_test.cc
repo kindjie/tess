@@ -103,9 +103,9 @@ TEST(TessGpuInterface, MockRecordsUploadDispatchReadbackInOrder) {
   ASSERT_TRUE(backend.upload(
       tess::gpu::upload_desc<CostTag>(world, tess::ChunkKey{7})));
   ASSERT_TRUE(backend.dispatch(tess::gpu::DispatchDesc{
-      .product_key = 99, .input_field_index = 0, .chunk_count = 2}));
+      .handle = {.key = 99}, .input_field_index = 0, .chunk_count = 2}));
   ASSERT_TRUE(backend.readback(
-      tess::gpu::ReadbackDesc{.product_key = 99,
+      tess::gpu::ReadbackDesc{.handle = {.key = 99},
                               .policy = tess::gpu::ReadbackPolicy::Summary,
                               .byte_size = 64}));
 

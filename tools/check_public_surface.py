@@ -3,9 +3,8 @@
 
 Extracts public symbol names (types, aliases, concepts, constants, free
 functions, and ``TESS_*`` macros declared at namespace scope) from every
-installed API-bearing header listed in ``TESS_PUBLIC_HEADERS`` or
-``TESS_IMPLEMENTATION_HEADERS`` in ``CMakeLists.txt`` and verifies that each
-name appears in
+installed API-bearing header in ``cmake/tess-headers.json`` and verifies that
+each name appears in
 ``docs/architecture/surface.json``, the manifest mapping each maintained
 architecture doc to the public symbols it documents.
 
@@ -26,8 +25,12 @@ import re
 import sys
 from pathlib import Path
 
+from header_manifest import GENERATED_HEADER_SOURCES, HEADER_CLASSES
+from header_manifest import headers_in_classes
+from header_manifest import load_header_manifest as load_stability_manifest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CMAKE = REPO_ROOT / "CMakeLists.txt"
+DEFAULT_HEADERS_MANIFEST = REPO_ROOT / "cmake" / "tess-headers.json"
 DEFAULT_MANIFEST = REPO_ROOT / "docs" / "architecture" / "surface.json"
 
 NAMESPACE_RE = re.compile(r"^\s*(?:inline\s+)?namespace\s+([\w:]+)\s*\{")
@@ -53,33 +56,18 @@ SKIPPED_NAMESPACE_PARTS = frozenset({"detail", "internal"})
 IGNORED_NAMES = frozenset({"operator"})
 
 
-def parse_header_set(
-    cmake_text: str, name: str, *, required: bool = True
-) -> list[str]:
-    """Return relative header paths from one simple CMake ``set`` block."""
-    pattern = re.compile(
-        rf"set\(\s*\n?\s*{re.escape(name)}\s*(?P<body>[^)]*)\)",
-        re.DOTALL,
+def parse_public_headers(manifest_text: str) -> list[str]:
+    """Return supported public paths from a stability-manifest string."""
+    manifest = json.loads(manifest_text)
+    return headers_in_classes(
+        manifest, "stable", "optional-stable", "experimental"
     )
-    match = pattern.search(cmake_text)
-    if match is None:
-        if not required:
-            return []
-        raise ValueError(f"{name} set() not found")
-    headers = [line.strip() for line in match.group("body").splitlines()]
-    return [line for line in headers if line.endswith(".h")]
 
 
-def parse_public_headers(cmake_text: str) -> list[str]:
-    """Return paths from the required ``TESS_PUBLIC_HEADERS`` set."""
-    return parse_header_set(cmake_text, "TESS_PUBLIC_HEADERS")
-
-
-def parse_api_headers(cmake_text: str) -> list[str]:
-    """Return installed headers that can expose public namespace symbols."""
-    return parse_public_headers(cmake_text) + parse_header_set(
-        cmake_text, "TESS_IMPLEMENTATION_HEADERS", required=False
-    )
+def parse_api_headers(manifest_text: str) -> list[str]:
+    """Return all installed headers that can expose namespace symbols."""
+    manifest = json.loads(manifest_text)
+    return headers_in_classes(manifest, *HEADER_CLASSES)
 
 
 def strip_comments(line: str, in_block_comment: bool) -> tuple[str, bool]:
@@ -254,13 +242,14 @@ def check_headers(
     checked_headers = list(headers)
     generated_template = "include/tess/version.h.in"
     if (
-        generated_template not in checked_headers
+        "include/tess/version.h" not in checked_headers
+        and generated_template not in checked_headers
         and (repo_root / generated_template).is_file()
     ):
         checked_headers.append(generated_template)
 
     for header in checked_headers:
-        header_path = repo_root / header
+        header_path = repo_root / GENERATED_HEADER_SOURCES.get(header, header)
         if not header_path.is_file():
             failures.append(f"{header}: listed public header not found")
             continue
@@ -282,10 +271,10 @@ def check_headers(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--cmake",
+        "--headers-manifest",
         type=Path,
-        default=DEFAULT_CMAKE,
-        help="CMakeLists.txt declaring TESS_PUBLIC_HEADERS",
+        default=DEFAULT_HEADERS_MANIFEST,
+        help="installed-header stability manifest",
     )
     parser.add_argument(
         "--manifest",
@@ -301,7 +290,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    headers = parse_api_headers(args.cmake.read_text(encoding="utf-8"))
+    stability = load_stability_manifest(args.headers_manifest)
+    headers = headers_in_classes(stability, *HEADER_CLASSES)
     manifest = load_manifest(args.manifest)
 
     failures = check_headers(args.repo_root, headers, manifest)

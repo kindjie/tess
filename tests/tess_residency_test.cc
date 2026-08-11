@@ -892,8 +892,8 @@ TEST(TessSparseWeightedAstar, FindsRouteWhenResidentSlotsDifferFromChunkKeys) {
 [[nodiscard]] auto sparse_field_path(const SparseSmall& world,
                                      tess::Coord3 start, tess::Coord3 goal,
                                      tess::DistanceFieldScratch& scratch) {
-  return tess::distance_field_path<SparseSmall, TerrainTag>(world, start, goal,
-                                                            scratch);
+  return tess::distance_field_path<SparseSmall, TerrainTag>(
+      world, {start, goal}, scratch);
 }
 
 TEST(TessSparseDistanceField, BuildsFieldAndExtractsPathAcrossResidentChunks) {
@@ -1095,7 +1095,7 @@ TEST(TessSparseDistanceField,
 
   // The wall genuinely blocks the far side, so no path can be extracted there.
   const auto blocked = tess::distance_field_path<SparseSolo, TerrainTag>(
-      world, {10, 0, 0}, {0, 0, 0}, scratch);
+      world, {{10, 0, 0}, {0, 0, 0}}, scratch);
   EXPECT_EQ(blocked.status, tess::PathStatus::NoPath);
 }
 
@@ -1162,8 +1162,8 @@ TEST(TessSparseDistanceField, FieldWorksWhenResidentSlotsDifferFromChunkKeys) {
     const SparseWeighted& world, tess::Coord3 start, tess::Coord3 goal,
     tess::DistanceFieldScratch& scratch) {
   return tess::weighted_distance_field_path<SparseWeighted, TerrainTag,
-                                            WeightCostTag>(world, start, goal,
-                                                           scratch);
+                                            WeightCostTag>(
+      world, tess::PathRequest{start, goal}, scratch);
 }
 
 TEST(TessSparseWeightedDistanceField,
@@ -1231,8 +1231,8 @@ TEST(TessSparseWeightedDistanceField, RealWallStaysFoundUnderIndeterminate) {
 
   const auto blocked =
       tess::weighted_distance_field_path<SparseWeightedSolo, TerrainTag,
-                                         WeightCostTag>(world, {10, 0, 0},
-                                                        {0, 0, 0}, scratch);
+                                         WeightCostTag>(
+          world, {{10, 0, 0}, {0, 0, 0}}, scratch);
   EXPECT_EQ(blocked.status, tess::PathStatus::NoPath);
 }
 

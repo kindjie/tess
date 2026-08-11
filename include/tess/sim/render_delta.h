@@ -97,8 +97,8 @@ void emit_chunk_render_deltas(const World& world, ChunkKey chunk_key,
 /// Sparse worlds visit resident chunks only. Appending may allocate through
 /// `out`; reserve it first when allocation-free collection is required.
 template <typename World>
-void collect_render_tile_deltas(const World& world, std::uint32_t dirty_mask,
-                                std::vector<RenderTileDelta>& out) {
+void collect_render_tile_deltas(std::vector<RenderTileDelta>& out,
+                                const World& world, std::uint32_t dirty_mask) {
   if (dirty_mask == 0) {
     return;
   }
@@ -124,7 +124,7 @@ template <typename World>
                                       std::uint32_t dirty_mask)
     -> std::vector<RenderTileDelta> {
   std::vector<RenderTileDelta> deltas;
-  collect_render_tile_deltas(world, dirty_mask, deltas);
+  collect_render_tile_deltas(deltas, world, dirty_mask);
   return deltas;
 }
 

@@ -76,7 +76,7 @@ inline void draw_timing_panel(const diagnostics::TimingSnapshot& timing) {
   for (std::size_t index = 0; index < diagnostics::trace_category_count;
        ++index) {
     const auto category = static_cast<diagnostics::TraceCategory>(index);
-    const auto& stats = timing.category(category);
+    const auto& stats = timing.stats(category);
     const auto average =
         stats.samples == 0 ? std::uint64_t{0} : stats.total_ns / stats.samples;
     ImGui::Text("%-10s n=%llu total=%llu avg=%llu min=%llu max=%llu",

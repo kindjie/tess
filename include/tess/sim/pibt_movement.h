@@ -174,9 +174,8 @@ auto advance_path_agents_with_pibt(
     World& world, std::span<PathAgentState> agents,
     const PathAgentRoutes& routes, PibtPriorities& priorities,
     JointMoveScratch& scratch_storage, Ranking&& rank, JointMoveOptions options,
-    std::size_t max_steps, std::uint32_t movement_dirty_mask,
-    OnCommit&& on_commit, diagnostics::FlowAccounting* accounting = nullptr)
-    -> JointMoveStats {
+    PathAgentAdvanceOptions advance_options, OnCommit&& on_commit,
+    diagnostics::FlowAccounting* accounting = nullptr) -> JointMoveStats {
   using Shape = typename World::shape_type;
   using Class = movement::movement_class_of<ClassOrTag>;
   using Model = ResolvedTransitionModel<World, Class, AdjacentTransitions>;
@@ -189,7 +188,7 @@ auto advance_path_agents_with_pibt(
   auto& decision = detail::PibtPrioritiesAccess::scratch(priorities);
   const auto model = Model{AdjacentTransitions{}};
   JointMoveStats stats;
-  if (max_steps == 0) {
+  if (advance_options.max_steps == 0) {
     return stats;  // paused movement, as in the joint advance
   }
   const auto n = agents.size();
@@ -198,7 +197,7 @@ auto advance_path_agents_with_pibt(
   constexpr std::uint8_t deciding = 1;
   constexpr std::uint8_t decided = 2;
 
-  for (std::size_t pass = 0; pass < max_steps; ++pass) {
+  for (std::size_t pass = 0; pass < advance_options.max_steps; ++pass) {
     // 1: adaptive priorities and decision order.
     if (priorities.elapsed.size() < n) {
       priorities.elapsed.resize(n, 0);
@@ -480,11 +479,13 @@ auto advance_path_agents_with_pibt(
       }
       world.template field<OccupancyTag>(to) = true;
       world.template field<ReservationTag>(to) = false;
-      if (movement_dirty_mask != 0) {
+      if (advance_options.movement_dirty_mask != 0) {
         world.mark_dirty(chunk_key<Shape>(chunk_coord<Shape>(from)),
-                         movement_dirty_mask, Box3{from, Extent3{1, 1, 1}});
+                         advance_options.movement_dirty_mask,
+                         Box3{from, Extent3{1, 1, 1}});
         world.mark_dirty(chunk_key<Shape>(chunk_coord<Shape>(to)),
-                         movement_dirty_mask, Box3{to, Extent3{1, 1, 1}});
+                         advance_options.movement_dirty_mask,
+                         Box3{to, Extent3{1, 1, 1}});
       }
       const auto& route = routes.routes[i];
       const bool on_route = agent.path_index + 1 < route.size() &&
@@ -542,13 +543,12 @@ auto advance_path_agents_with_pibt(
     World& world, std::span<PathAgentState> agents,
     const PathAgentRoutes& routes, PibtPriorities& priorities,
     JointMoveScratch& scratch, Ranking&& rank, JointMoveOptions options = {},
-    std::size_t max_steps = 1, std::uint32_t movement_dirty_mask = 0,
+    PathAgentAdvanceOptions advance_options = {},
     diagnostics::FlowAccounting* accounting = nullptr) -> JointMoveStats {
   return advance_path_agents_with_pibt<World, ClassOrTag, OccupancyTag,
                                        ReservationTag>(
       world, agents, routes, priorities, scratch, std::forward<Ranking>(rank),
-      options, max_steps, movement_dirty_mask,
-      [](std::size_t, Coord3, Coord3) {}, accounting);
+      options, advance_options, [](std::size_t, Coord3, Coord3) {}, accounting);
 }
 
 // Mirrors `tick_weighted_path_agents_with_joint_movement` with the PIBT
@@ -562,7 +562,6 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     PathRequestRuntime& runtime, PibtPriorities& priorities,
     JointMoveScratch& scratch, Ranking&& rank,
     PathAgentTickOptions options = {}, JointMoveOptions pibt_options = {},
-    std::uint32_t movement_dirty_mask = 0,
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     JointMoveStats* pibt_stats = nullptr) -> PathAgentTickStats {
   PathAgentTickStats stats;
@@ -584,8 +583,10 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   auto moved =
       advance_path_agents_with_pibt<World, Class, OccupancyTag, ReservationTag>(
           world, agents, state.routes, priorities, scratch,
-          std::forward<Ranking>(rank), pibt_options, options.max_steps,
-          movement_dirty_mask, state.flow_accounting);
+          std::forward<Ranking>(rank), pibt_options,
+          PathAgentAdvanceOptions{options.max_steps,
+                                  options.movement_dirty_mask},
+          state.flow_accounting);
   stats.movement = moved.frame;
   if (pibt_stats != nullptr) {
     *pibt_stats = moved;

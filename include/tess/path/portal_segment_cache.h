@@ -54,6 +54,9 @@ enum class PortalSegmentStoreStatus : std::uint8_t {
 // the cache when that class changes. Keep one cache per (world, class) to avoid
 // that conservative whole-cache fallback on the hot path.
 /// Bounded, movement-class-safe cache of verified weighted path segments.
+///
+/// Movement-class identities are process-local; do not share this cache
+/// across a dynamic-library boundary.
 class WeightedPortalSegmentCache {
  public:
   static constexpr std::size_t default_segment_budget = 256;

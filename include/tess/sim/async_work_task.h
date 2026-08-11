@@ -16,6 +16,11 @@ class ResumableWorkTask {
   explicit ResumableWorkTask(ResumableWorkQueue<T>& queue) noexcept
       : queue_(&queue) {}
 
+  ResumableWorkTask(const ResumableWorkTask&) = delete;
+  auto operator=(const ResumableWorkTask&) -> ResumableWorkTask& = delete;
+  ResumableWorkTask(ResumableWorkTask&&) = delete;
+  auto operator=(ResumableWorkTask&&) -> ResumableWorkTask& = delete;
+
   [[nodiscard]] auto operator()(const ScheduleTaskContext& context)
       -> ScheduleTaskResult {
     const auto stats = queue_->advance(AsyncWorkBudget{context.budget_items});

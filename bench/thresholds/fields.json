@@ -3,20 +3,21 @@
   "benchmarks": {
     "fields/goalset_build_1": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 850000
+      "max_cpu_time_ns": 326214
     },
     "fields/goalset_build_16": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 341301
     },
     "fields/goalset_build_16_512x512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 625000000,
-      "note": "2026-08-08 M3 Max median: 155.6 ms; bootstrap 4x ceiling. The family's memory-bound point: every other cell runs a 64x64 world whose 16 KiB arrays are L1/L2 resident (0.001-0.007 LLC MPKI in the 2026-08-02 campaign), so product-layout and per-build assign changes were measured only where memory traffic is free (audit 2026-08-07 P5). The chunk extent is held at the family's 8x8 so the comparison varies world size alone; an earlier draft also widened chunks to 32x32, which alone accounted for 11.8x at identical tile count (13.2 ms) and would have made the ratio unattributable."
+      "note":
+          "2026-08-08 M3 Max median: 155.6 ms; bootstrap 4x ceiling. The family's memory-bound point: every other cell runs a 64x64 world whose 16 KiB arrays are L1/L2 resident (0.001-0.007 LLC MPKI in the 2026-08-02 campaign), so product-layout and per-build assign changes were measured only where memory traffic is free (audit 2026-08-07 P5). The chunk extent is held at the family's 8x8 so the comparison varies world size alone; an earlier draft also widened chunks to 32x32, which alone accounted for 11.8x at identical tile count (13.2 ms) and would have made the ratio unattributable."
     },
     "fields/goalset_build_256": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1100000
+      "max_cpu_time_ns": 361106
     },
     "fields/nearest_target": {
       "max_real_time_ns": null,
@@ -28,7 +29,7 @@
     },
     "fields/cache_miss_store": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 352727
     },
     "fields/cache_store_reusing": {
       "max_real_time_ns": null,
@@ -38,7 +39,7 @@
     },
     "fields/cache_eviction": {
       "max_real_time_ns": null,
-      "max_cpu_time_ns": 1000000
+      "max_cpu_time_ns": 357455
     },
     "fields/build_alloc_gate": {
       "max_real_time_ns": null,
@@ -53,5 +54,6 @@
       "max_cpu_time_ns": 400000
     }
   },
-  "bootstrap_comment": "fields/cache_scan_entries_* carry BOOTSTRAP ceilings at 4x an M3 Max reading. READ THESE AS TREND VISIBILITY, NOT AS A COMPLEXITY GATE: the linear scans are only about 7% of each reading, so a scan regression must be enormous before a ceiling this loose trips, and one scan going quadratic at 128 entries would still pass. The paired sentinel run, whose effect floor is 8% of the reading rather than a multiple of it, is what actually watches this pair -- fields/cache_scan_entries_128 is registered in bench/sentinels.json for that reason. Recalibrate the ceilings with the family."
+  "bootstrap_comment":
+      "fields/cache_scan_entries_* carry BOOTSTRAP ceilings at 4x an M3 Max reading. READ THESE AS TREND VISIBILITY, NOT AS A COMPLEXITY GATE: the linear scans are only about 7% of each reading, so a scan regression must be enormous before a ceiling this loose trips, and one scan going quadratic at 128 entries would still pass. The paired sentinel run, whose effect floor is 8% of the reading rather than a multiple of it, is what actually watches this pair -- fields/cache_scan_entries_128 is registered in bench/sentinels.json for that reason. Recalibrate the ceilings with the family."
 }

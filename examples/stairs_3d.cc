@@ -72,7 +72,7 @@ auto run() -> int {
   tess::RegionGraph plain;
   (void)tess::build_region_graph<World, PassableTag>(world, scratch, plain);
   const auto without =
-      tess::reachable<Shape>(plain, courtyard, battlement, reach).status;
+      tess::reachable<Shape>(plain, {courtyard, battlement}, reach).status;
   std::cout << "without stairs: battlement is " << name(without) << "\n";
   if (without != tess::ReachabilityStatus::Unreachable) {
     std::cerr << "expected the plain graph to isolate the platform\n";
@@ -85,9 +85,9 @@ auto run() -> int {
   (void)tess::build_region_graph<World, PassableTag>(world, scratch, stairs,
                                                      Stairs{});
   const auto up =
-      tess::reachable<Shape>(stairs, courtyard, battlement, reach).status;
+      tess::reachable<Shape>(stairs, {courtyard, battlement}, reach).status;
   const auto down =
-      tess::reachable<Shape>(stairs, battlement, courtyard, reach).status;
+      tess::reachable<Shape>(stairs, {battlement, courtyard}, reach).status;
   std::cout << "with stairs: up is " << name(up) << ", down is " << name(down)
             << "\n";
   if (up != tess::ReachabilityStatus::Reachable ||
@@ -103,7 +103,7 @@ auto run() -> int {
   // semantics. Omitting it intentionally means adjacent-only transitions and
   // therefore returns GraphStale for this provider-built graph.
   const auto verdict = tess::precheck_path<PassableTag>(
-      stairs, world, courtyard, battlement, reach, Stairs{});
+      stairs, world, {courtyard, battlement}, reach, Stairs{});
   std::cout << "precheck verdict: "
             << (verdict == tess::PrecheckStatus::Reachable ? "reachable"
                                                            : "other")
@@ -123,7 +123,7 @@ auto run() -> int {
       world, scratch, stairs, std::span<const tess::ChunkKey>{&dirty, 1},
       Stairs{});
   const auto after =
-      tess::reachable<Shape>(stairs, courtyard, battlement, reach).status;
+      tess::reachable<Shape>(stairs, {courtyard, battlement}, reach).status;
   std::cout << "after demolition: battlement is " << name(after) << "\n";
   if (after != tess::ReachabilityStatus::Unreachable) {
     std::cerr << "expected demolition to sever the levels\n";

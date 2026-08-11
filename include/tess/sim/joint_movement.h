@@ -212,20 +212,20 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 auto advance_path_agents_with_joint_movement(
     World& world, std::span<PathAgentState> agents,
     const PathAgentRoutes& routes, JointMoveScratch& scratch_storage,
-    JointMoveOptions options, std::size_t max_steps,
-    std::uint32_t movement_dirty_mask, OnCommit&& on_commit,
-    diagnostics::FlowAccounting* accounting = nullptr) -> JointMoveStats {
+    JointMoveOptions options, PathAgentAdvanceOptions advance_options,
+    OnCommit&& on_commit, diagnostics::FlowAccounting* accounting = nullptr)
+    -> JointMoveStats {
   using Shape = typename World::shape_type;
   TESS_ASSERT(routes.routes.size() >= agents.size());
   auto& scratch = detail::JointMoveScratchAccess::state(scratch_storage);
   JointMoveStats stats;
-  if (max_steps == 0) {
+  if (advance_options.max_steps == 0) {
     return stats;
   }
   const auto n = agents.size();
   const auto none = static_cast<std::uint32_t>(-1);
 
-  for (std::size_t step = 0; step < max_steps; ++step) {
+  for (std::size_t step = 0; step < advance_options.max_steps; ++step) {
     scratch.desired.assign(n, Coord3{});
     scratch.state.assign(
         n, static_cast<std::uint8_t>(detail::JointState::Inactive));
@@ -455,11 +455,13 @@ auto advance_path_agents_with_joint_movement(
           const auto to = scratch.desired[i];
           world.template field<OccupancyTag>(to) = true;
           world.template field<ReservationTag>(to) = false;
-          if (movement_dirty_mask != 0) {
+          if (advance_options.movement_dirty_mask != 0) {
             world.mark_dirty(chunk_key<Shape>(chunk_coord<Shape>(from)),
-                             movement_dirty_mask, Box3{from, Extent3{1, 1, 1}});
+                             advance_options.movement_dirty_mask,
+                             Box3{from, Extent3{1, 1, 1}});
             world.mark_dirty(chunk_key<Shape>(chunk_coord<Shape>(to)),
-                             movement_dirty_mask, Box3{to, Extent3{1, 1, 1}});
+                             advance_options.movement_dirty_mask,
+                             Box3{to, Extent3{1, 1, 1}});
           }
           ++agent.path_index;
           agent.position = to;
@@ -521,12 +523,11 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 auto advance_path_agents_with_joint_movement(
     World& world, std::span<PathAgentState> agents,
     const PathAgentRoutes& routes, JointMoveScratch& scratch,
-    JointMoveOptions options = {}, std::size_t max_steps = 1,
-    std::uint32_t movement_dirty_mask = 0,
+    JointMoveOptions options = {}, PathAgentAdvanceOptions advance_options = {},
     diagnostics::FlowAccounting* accounting = nullptr) -> JointMoveStats {
   return advance_path_agents_with_joint_movement<World, ClassOrTag,
                                                  OccupancyTag, ReservationTag>(
-      world, agents, routes, scratch, options, max_steps, movement_dirty_mask,
+      world, agents, routes, scratch, options, advance_options,
       [](std::size_t, Coord3, Coord3) {}, accounting);
 }
 
@@ -539,7 +540,6 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, JointMoveScratch& scratch,
     PathAgentTickOptions options = {}, JointMoveOptions joint_options = {},
-    std::uint32_t movement_dirty_mask = 0,
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     JointMoveStats* joint_stats = nullptr) -> PathAgentTickStats {
   PathAgentTickStats stats;
@@ -558,11 +558,11 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     state.pathing_dirty = false;
   }
 
-  auto joint =
-      advance_path_agents_with_joint_movement<World, Class, OccupancyTag,
-                                              ReservationTag>(
-          world, agents, state.routes, scratch, joint_options,
-          options.max_steps, movement_dirty_mask, state.flow_accounting);
+  auto joint = advance_path_agents_with_joint_movement<
+      World, Class, OccupancyTag, ReservationTag>(
+      world, agents, state.routes, scratch, joint_options,
+      PathAgentAdvanceOptions{options.max_steps, options.movement_dirty_mask},
+      state.flow_accounting);
   stats.movement = joint.frame;
   if (joint_stats != nullptr) {
     *joint_stats = joint;

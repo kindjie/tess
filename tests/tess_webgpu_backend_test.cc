@@ -298,8 +298,7 @@ TEST(TessWebGpuBackend, DispatchRequiresRegisteredFieldAndCurrentGeneration) {
   ASSERT_TRUE(first.has_value());
   const auto first_handle = first.value_or(tess::gpu::GpuProductHandle{});
   EXPECT_FALSE(backend.dispatch(tess::gpu::DispatchDesc{
-      .product_key = first_handle.key,
-      .product_generation = first_handle.generation,
+      .handle = {first_handle.key, first_handle.generation},
       .input_field_index = 0,
       .chunk_count = 3,
       .workgroups_per_chunk = 2,
@@ -307,8 +306,7 @@ TEST(TessWebGpuBackend, DispatchRequiresRegisteredFieldAndCurrentGeneration) {
   ASSERT_TRUE(
       backend.register_field(tess::gpu::field_mirror_desc<World, CostTag>()));
   EXPECT_TRUE(backend.dispatch(tess::gpu::DispatchDesc{
-      .product_key = first_handle.key,
-      .product_generation = first_handle.generation,
+      .handle = {first_handle.key, first_handle.generation},
       .input_field_index = 0,
       .chunk_count = 3,
       .workgroups_per_chunk = 2,
@@ -327,8 +325,7 @@ TEST(TessWebGpuBackend, DispatchRequiresRegisteredFieldAndCurrentGeneration) {
   const auto second_handle = second.value_or(tess::gpu::GpuProductHandle{});
   EXPECT_NE(second_handle.generation, first_handle.generation);
   EXPECT_FALSE(backend.dispatch(tess::gpu::DispatchDesc{
-      .product_key = first_handle.key,
-      .product_generation = first_handle.generation,
+      .handle = {first_handle.key, first_handle.generation},
       .input_field_index = 0,
       .chunk_count = 1,
   }));
@@ -354,8 +351,7 @@ TEST(TessWebGpuBackend, RefusesDispatchBeyondWorkgroupXLimit) {
   const auto handle = registered.value_or(tess::gpu::GpuProductHandle{});
 
   EXPECT_FALSE(backend.dispatch(tess::gpu::DispatchDesc{
-      .product_key = handle.key,
-      .product_generation = handle.generation,
+      .handle = {handle.key, handle.generation},
       .input_field_index = 0,
       .chunk_count = 513,
       .workgroups_per_chunk = 128,
@@ -389,8 +385,7 @@ TEST(TessWebGpuBackend, ReadbackPoliciesRequireSourceAndFullFieldOptIn) {
   const auto source_less_handle =
       source_less.value_or(tess::gpu::GpuProductHandle{});
   EXPECT_FALSE(default_backend.readback(tess::gpu::ReadbackDesc{
-      .product_key = source_less_handle.key,
-      .product_generation = source_less_handle.generation,
+      .handle = {source_less_handle.key, source_less_handle.generation},
       .policy = tess::gpu::ReadbackPolicy::Summary,
       .byte_size = sizeof(capture.values),
   }));
@@ -417,8 +412,7 @@ TEST(TessWebGpuBackend, ReadbackPoliciesRequireSourceAndFullFieldOptIn) {
   PendingMapDrain pending_map_drain;
 
   ASSERT_TRUE(default_backend.readback(tess::gpu::ReadbackDesc{
-      .product_key = default_handle.key,
-      .product_generation = default_handle.generation,
+      .handle = {default_handle.key, default_handle.generation},
       .policy = tess::gpu::ReadbackPolicy::Summary,
       .byte_size = sizeof(capture.values),
   }));
@@ -427,20 +421,17 @@ TEST(TessWebGpuBackend, ReadbackPoliciesRequireSourceAndFullFieldOptIn) {
   EXPECT_EQ(capture.calls, 1u);
 
   EXPECT_FALSE(default_backend.readback(tess::gpu::ReadbackDesc{
-      .product_key = default_handle.key,
-      .product_generation = default_handle.generation,
+      .handle = {default_handle.key, default_handle.generation},
       .policy = tess::gpu::ReadbackPolicy::None,
       .byte_size = sizeof(capture.values),
   }));
   EXPECT_FALSE(default_backend.readback(tess::gpu::ReadbackDesc{
-      .product_key = default_handle.key,
-      .product_generation = default_handle.generation,
+      .handle = {default_handle.key, default_handle.generation},
       .policy = tess::gpu::ReadbackPolicy::FullField,
       .byte_size = sizeof(capture.values),
   }));
   EXPECT_TRUE(full_field_backend.readback(tess::gpu::ReadbackDesc{
-      .product_key = full_field_handle.key,
-      .product_generation = full_field_handle.generation,
+      .handle = {full_field_handle.key, full_field_handle.generation},
       .policy = tess::gpu::ReadbackPolicy::FullField,
       .byte_size = sizeof(capture.values),
   }));
@@ -488,8 +479,7 @@ TEST(TessWebGpuBackend, ReadbackCompletesAsynchronouslyAfterDestruction) {
     ASSERT_TRUE(registered.has_value());
     handle = registered.value_or(tess::gpu::GpuProductHandle{});
     ASSERT_TRUE(backend.readback(tess::gpu::ReadbackDesc{
-        .product_key = handle.key,
-        .product_generation = handle.generation,
+        .handle = {handle.key, handle.generation},
         .policy = tess::gpu::ReadbackPolicy::Summary,
         .byte_size = sizeof(expected),
     }));
@@ -537,8 +527,7 @@ TEST(TessWebGpuBackend, NullMapFutureRejectsAndReleasesReadbackBudget) {
   ASSERT_TRUE(registered.has_value());
   const auto handle = registered.value_or(tess::gpu::GpuProductHandle{});
   const auto request = tess::gpu::ReadbackDesc{
-      .product_key = handle.key,
-      .product_generation = handle.generation,
+      .handle = {handle.key, handle.generation},
       .policy = tess::gpu::ReadbackPolicy::Summary,
       .byte_size = sizeof(capture.values),
   };
@@ -581,8 +570,7 @@ TEST(TessWebGpuBackend, InlineMapCompletionDoesNotTouchFreedOperation) {
   ASSERT_TRUE(registered.has_value());
   const auto handle = registered.value_or(tess::gpu::GpuProductHandle{});
   const auto request = tess::gpu::ReadbackDesc{
-      .product_key = handle.key,
-      .product_generation = handle.generation,
+      .handle = {handle.key, handle.generation},
       .policy = tess::gpu::ReadbackPolicy::Summary,
       .byte_size = sizeof(capture.values),
   };
@@ -631,8 +619,7 @@ TEST(TessWebGpuBackend, OverlappingReadbacksShareBudgetAndReleaseOnFailure) {
   ASSERT_TRUE(registered.has_value());
   const auto handle = registered.value_or(tess::gpu::GpuProductHandle{});
   const auto request = tess::gpu::ReadbackDesc{
-      .product_key = handle.key,
-      .product_generation = handle.generation,
+      .handle = {handle.key, handle.generation},
       .policy = tess::gpu::ReadbackPolicy::Summary,
       .byte_size = sizeof(capture.values),
   };
@@ -685,8 +672,7 @@ TEST(TessWebGpuBackend, ReportedDeviceErrorFailsPendingAndFutureWork) {
   ASSERT_TRUE(registered.has_value());
   const auto handle = registered.value_or(tess::gpu::GpuProductHandle{});
   const auto request = tess::gpu::ReadbackDesc{
-      .product_key = handle.key,
-      .product_generation = handle.generation,
+      .handle = {handle.key, handle.generation},
       .policy = tess::gpu::ReadbackPolicy::Summary,
       .byte_size = sizeof(capture.values),
   };
@@ -697,8 +683,7 @@ TEST(TessWebGpuBackend, ReportedDeviceErrorFailsPendingAndFutureWork) {
       .data = capture.values.data(),
   };
   const auto dispatch = tess::gpu::DispatchDesc{
-      .product_key = handle.key,
-      .product_generation = handle.generation,
+      .handle = {handle.key, handle.generation},
       .input_field_index = 0,
       .chunk_count = 1,
   };

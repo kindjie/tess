@@ -113,13 +113,11 @@ library does not depend on RTTI.
 Virtual functions appear only in the experimental maintenance layer.
 Virtuals need vtables, not RTTI.
 
-Caveats stated plainly:
-
-- **`-fno-rtti` is not tested.** No CI job builds that way. It is
-  expected to work; it is not verified.
-- `tag_identity` is unique **within one binary**. Cross-shared-library
-  identity is not addressed, so do not compare tokens across a DSO
-  boundary.
+Stable surfaces are compiled and exercised without RTTI on every supported
+compiler family. `tag_identity` is unique only within one linked image. Its
+tokens must not be compared, persisted, or transferred across a dynamic
+library boundary. Public caches, graphs, payloads, and products that retain
+such tokens repeat this restriction on their type documentation.
 
 ## Determinism across thread counts
 
@@ -192,10 +190,9 @@ neither carries these):
 
 - At most one dispatch per pool executor may be in flight.
 - A callback must not re-enter its own pool executor, and must not call
-  `reserve_operations` on it during a dispatch. Debug builds assert.
-  Release builds **deadlock or race** — reserving mid-dispatch can
-  reallocate the results storage while workers are writing through it,
-  which is memory corruption, not merely a hang.
+  `reserve_operations` on it during a dispatch. Both violations fail fast in
+  debug and release builds while the pool mutex protects the state check,
+  before shared dispatch state can be changed.
 - **Callbacks are shared across pool workers.** The kernel you supply
   must be stateless or self-synchronising.
 - `Schedule::notify_dirty`, `notify_events`, and `request_run` are
@@ -206,8 +203,9 @@ You may supply your own executor: anything satisfying the
 `PhaseExecutor` concept works. A concurrent executor must not declare
 `serial_execution_tag`.
 
-Both pool executors are marked prototype in their headers. Treat their
-interfaces as less settled than the rest of the library.
+The worker-pool and scoped-thread executors are stable interfaces. The scoped
+executor remains the simple per-dispatch thread-owning alternative; it is not
+an asynchronous scheduler.
 
 ## Steady-state allocations
 

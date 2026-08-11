@@ -121,8 +121,8 @@ world storage. It lives in `include/tess/block/block.h` and is exported by
   referenced range through the terminal therefore affects the caller-owned
   range rather than an implicit copy.
 - `Pipeline::for_each` and `Pipeline::reduce` are fused terminals.
-  `collect_into` and `to_frontier` use caller-owned bounded storage and report
-  both written and required counts through `PipelineCollectResult`.
+  `collect_into` uses caller-owned bounded storage and reports both written
+  and required counts through `PipelineCollectResult`.
   `to_sequence_allocating` is the deliberately explicit allocating terminal.
 - `PipelineDiagnostics` records blocks and items read, items filtered and
   emitted, explicit materializations, and bounded-capacity failures. It is

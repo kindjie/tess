@@ -209,8 +209,8 @@ TEST(TessPackedOpenNode, WeightedFloodSerpentineGolden) {
   EXPECT_EQ(result.reached_nodes, 52u);
   const auto replay =
       tess::weighted_distance_field_path<decltype(fx.world), SerpPassableTag,
-                                         SerpCostTag>(fx.world, fx.start,
-                                                      fx.goal, scratch);
+                                         SerpCostTag>(
+          fx.world, {fx.start, fx.goal}, scratch);
   ASSERT_EQ(replay.status, tess::PathStatus::Found);
   EXPECT_EQ(replay.cost, 24u);
 }
@@ -240,7 +240,7 @@ TEST(TessPackedOpenNode, WeightedGoalSetProductGolden) {
   const auto built = tess::build_weighted_distance_field_product<
       decltype(fx.world),
       tess::movement::LegacyWeighted<SerpPassableTag, SerpCostTag>>(
-      fx.world, goals, scratch, product);
+      fx.world, goals, product, scratch);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   EXPECT_EQ(built.expanded_nodes, 52u);
   EXPECT_EQ(built.reached_nodes, 52u);
@@ -275,7 +275,7 @@ TEST(TessPackedOpenNode, StairProviderProductGolden) {
   tess::DistanceFieldProduct product;
   const auto built =
       tess::build_distance_field_product<StairWorld, SerpPassableTag>(
-          world, goals, scratch, product, provider);
+          world, goals, product, scratch, provider);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   EXPECT_EQ(built.expanded_nodes, 32u);
   EXPECT_EQ(built.reached_nodes, 32u);

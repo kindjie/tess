@@ -214,7 +214,8 @@ flowchart TB
   that scratch, so hit and miss results share one lifetime: valid until the
   next path call that uses the same scratch. Later misses may grow
   cache-internal storage without invalidating results returned through other
-  scratches. Storage is capped (`set_caps`; defaults 512 entries and 2^20
+  scratches. Storage is capped (`set_caps(RouteCacheLimits)`; defaults 512
+  entries and 2^20
   path nodes): an insert that would exceed either cap invalidates the whole
   cache first and counts a `cap_invalidations` stat. Lowering either cap below
   the live footprint applies the same invalidation immediately, including a
@@ -468,12 +469,12 @@ flowchart TB
   world it floods only the resident set; under `MissingChunkPolicy::
   Indeterminate` a field truncated by a non-resident chunk reports
   `PathStatus::Indeterminate` instead of `Found`.
-- `distance_field_path<World, PassableTag>(world, start, goal, scratch)`
+- `distance_field_path<World, PassableTag>(world, request, scratch)`
   reconstructs a start-to-goal path from the most recent matching field. It is
   a pure reader: on a sparse world a non-resident start is `InvalidStart` and a
   start the flood never reached is `NoPath`.
-- `build_distance_field_product<World, PassableTag>(world, goals, scratch,
-  product)` builds a multi-source unit-cost product for an ordered `GoalSet`.
+- `build_distance_field_product<World, PassableTag>(world, goals, product,
+  scratch)` builds a multi-source unit-cost product for an ordered `GoalSet`.
 - `distance_field_product_path<World, PassableTag>(world, start, product,
   scratch)` replays a path from a valid product; `nearest_target` follows
   decreasing distances and returns a `NearestTargetResult` with the status,
@@ -494,8 +495,8 @@ flowchart TB
   costs are between 1 and `MaxCost`. If it encounters a higher positive entry
   cost, it falls back to the general weighted field builder, forwarding the
   missing-chunk policy.
-- `weighted_distance_field_path<World, PassableTag, CostTag>(world, start,
-  goal, scratch)` reconstructs a weighted start-to-goal path from the most
+- `weighted_distance_field_path<World, PassableTag, CostTag>(world, request,
+  scratch)` reconstructs a weighted start-to-goal path from the most
   recent matching weighted field. It is a pure reader: on a sparse world a
   non-resident start is `InvalidStart`.
 

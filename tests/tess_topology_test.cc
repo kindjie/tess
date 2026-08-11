@@ -137,8 +137,9 @@ void expect_reachability_equal(const tess::RegionGraph& lhs,
   for (std::size_t i = 0; i < probes.size(); ++i) {
     const auto start = probes[i];
     const auto goal = probes[(i * 5 + 7) % probes.size()];
-    const auto expected = tess::reachable<Shape>(rhs, start, goal, rhs_scratch);
-    const auto actual = tess::reachable<Shape>(lhs, start, goal, lhs_scratch);
+    const auto expected =
+        tess::reachable<Shape>(rhs, {start, goal}, rhs_scratch);
+    const auto actual = tess::reachable<Shape>(lhs, {start, goal}, lhs_scratch);
     EXPECT_EQ(actual.status, expected.status) << "probe " << i;
     EXPECT_EQ(actual.visited_regions, expected.visited_regions)
         << "probe " << i;
@@ -305,7 +306,7 @@ TEST(TessTopology, RegionGraphPairsBoundaryExitsAndFindsReachability) {
 
   tess::RegionGraphScratch graph_scratch;
   const auto reachable = tess::reachable<Shape>(
-      graph, tess::Coord3{0, 0, 0}, tess::Coord3{15, 7, 0}, graph_scratch);
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{15, 7, 0}}, graph_scratch);
 
   EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Reachable);
   EXPECT_EQ(reachable.visited_regions, 2u);
@@ -325,7 +326,7 @@ TEST(TessTopology, RegionGraphSameRegionReachabilityReturnsImmediately) {
 
   tess::RegionGraphScratch graph_scratch;
   const auto reachable = tess::reachable<Shape>(
-      graph, tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}, graph_scratch);
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}}, graph_scratch);
 
   EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Reachable);
   EXPECT_EQ(reachable.visited_regions, 1u);
@@ -347,7 +348,7 @@ TEST(TessTopology, RegionGraphFindsMultiHopReachability) {
 
   tess::RegionGraphScratch graph_scratch;
   const auto reachable = tess::reachable<Shape>(
-      graph, tess::Coord3{0, 0, 0}, tess::Coord3{23, 7, 0}, graph_scratch);
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{23, 7, 0}}, graph_scratch);
 
   EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Reachable);
   EXPECT_EQ(reachable.visited_regions, 3u);
@@ -371,7 +372,7 @@ TEST(TessTopology, RegionGraphRejectsBlockedSeamReachability) {
 
   tess::RegionGraphScratch graph_scratch;
   const auto reachable = tess::reachable<Shape>(
-      graph, tess::Coord3{0, 0, 0}, tess::Coord3{15, 7, 0}, graph_scratch);
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{15, 7, 0}}, graph_scratch);
 
   EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Unreachable);
   EXPECT_EQ(reachable.visited_regions, 1u);
@@ -395,7 +396,7 @@ TEST(TessTopology, RegionGraphRejectsDisconnectedSameChunkRegions) {
 
   tess::RegionGraphScratch graph_scratch;
   const auto reachable = tess::reachable<Shape>(
-      graph, tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}, graph_scratch);
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}}, graph_scratch);
 
   EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Unreachable);
   EXPECT_EQ(reachable.visited_regions, 1u);
@@ -423,7 +424,7 @@ TEST(TessTopology, RegionGraphRejectsEnclosedRegionReachability) {
 
   tess::RegionGraphScratch graph_scratch;
   const auto reachable = tess::reachable<Shape>(
-      graph, tess::Coord3{4, 4, 0}, tess::Coord3{0, 0, 0}, graph_scratch);
+      graph, {tess::Coord3{4, 4, 0}, tess::Coord3{0, 0, 0}}, graph_scratch);
 
   EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Unreachable);
   EXPECT_EQ(reachable.visited_regions, 1u);
@@ -444,7 +445,7 @@ TEST(TessTopology, RegionGraphSupportsVertical2DChunkReachability) {
 
   tess::RegionGraphScratch graph_scratch;
   const auto reachable = tess::reachable<Shape>(
-      graph, tess::Coord3{0, 0, 0}, tess::Coord3{0, 7, 15}, graph_scratch);
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{0, 7, 15}}, graph_scratch);
 
   EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Reachable);
   EXPECT_EQ(reachable.visited_regions, 2u);
@@ -462,22 +463,26 @@ TEST(TessTopology, ReachabilityReportsInvalidEndpoints) {
                                                          graph);
 
   tess::RegionGraphScratch graph_scratch;
-  EXPECT_EQ(tess::reachable<Shape>(graph, tess::Coord3{-1, 0, 0},
-                                   tess::Coord3{0, 0, 0}, graph_scratch)
-                .status,
-            tess::ReachabilityStatus::InvalidStart);
-  EXPECT_EQ(tess::reachable<Shape>(graph, tess::Coord3{0, 0, 0},
-                                   tess::Coord3{9, 0, 0}, graph_scratch)
-                .status,
-            tess::ReachabilityStatus::InvalidGoal);
-  EXPECT_EQ(tess::reachable<Shape>(graph, tess::Coord3{7, 7, 0},
-                                   tess::Coord3{0, 0, 0}, graph_scratch)
-                .status,
-            tess::ReachabilityStatus::InvalidStart);
-  EXPECT_EQ(tess::reachable<Shape>(graph, tess::Coord3{0, 0, 0},
-                                   tess::Coord3{7, 7, 0}, graph_scratch)
-                .status,
-            tess::ReachabilityStatus::InvalidGoal);
+  EXPECT_EQ(
+      tess::reachable<Shape>(
+          graph, {tess::Coord3{-1, 0, 0}, tess::Coord3{0, 0, 0}}, graph_scratch)
+          .status,
+      tess::ReachabilityStatus::InvalidStart);
+  EXPECT_EQ(
+      tess::reachable<Shape>(
+          graph, {tess::Coord3{0, 0, 0}, tess::Coord3{9, 0, 0}}, graph_scratch)
+          .status,
+      tess::ReachabilityStatus::InvalidGoal);
+  EXPECT_EQ(
+      tess::reachable<Shape>(
+          graph, {tess::Coord3{7, 7, 0}, tess::Coord3{0, 0, 0}}, graph_scratch)
+          .status,
+      tess::ReachabilityStatus::InvalidStart);
+  EXPECT_EQ(
+      tess::reachable<Shape>(
+          graph, {tess::Coord3{0, 0, 0}, tess::Coord3{7, 7, 0}}, graph_scratch)
+          .status,
+      tess::ReachabilityStatus::InvalidGoal);
 }
 
 TEST(TessTopology, LocalRegionBoundsMatchKnown2DLayout) {
@@ -568,7 +573,7 @@ TEST(TessTopology, RegionGraphPairsZFacePortalsAcrossStackedChunks) {
 
   tess::RegionGraphScratch graph_scratch;
   const auto reachable = tess::reachable<Shape>(
-      graph, tess::Coord3{0, 0, 0}, tess::Coord3{3, 3, 7}, graph_scratch);
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{3, 3, 7}}, graph_scratch);
   EXPECT_EQ(reachable.status, tess::ReachabilityStatus::Reachable);
   EXPECT_EQ(reachable.visited_regions, 2u);
 }
@@ -599,12 +604,12 @@ TEST(TessTopology, RegionGraphPairsMultipleRegionsAcrossOneSeam) {
 
   tess::RegionGraphScratch graph_scratch;
   const auto same_band = tess::reachable<Shape>(
-      graph, tess::Coord3{0, 0, 0}, tess::Coord3{15, 0, 0}, graph_scratch);
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{15, 0, 0}}, graph_scratch);
   EXPECT_EQ(same_band.status, tess::ReachabilityStatus::Reachable);
   EXPECT_EQ(same_band.visited_regions, 2u);
 
   const auto cross_band = tess::reachable<Shape>(
-      graph, tess::Coord3{0, 0, 0}, tess::Coord3{15, 7, 0}, graph_scratch);
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{15, 7, 0}}, graph_scratch);
   EXPECT_EQ(cross_band.status, tess::ReachabilityStatus::Unreachable);
   EXPECT_EQ(cross_band.visited_regions, 2u);
 }
@@ -645,7 +650,7 @@ TEST(TessTopology, ReachableMatchesReferenceBfsOnMultiChunkMaze) {
     const auto goal = probes[(i * 5 + 7) % probes.size()];
     const auto expected = reference_reachable<Shape>(graph, start, goal);
     const auto actual =
-        tess::reachable<Shape>(graph, start, goal, graph_scratch);
+        tess::reachable<Shape>(graph, {start, goal}, graph_scratch);
     EXPECT_EQ(actual.status, expected.status)
         << "probe " << i << " start(" << start.x << "," << start.y << ")";
     EXPECT_EQ(actual.visited_regions, expected.visited_regions)
@@ -977,7 +982,7 @@ TEST(TessTopology, UpdateRegionGraphSeamEditWithTwoDirtyChunks) {
 
   tess::RegionGraphScratch graph_scratch;
   const auto crossing = tess::reachable<Shape>(
-      graph, tess::Coord3{0, 0, 0}, tess::Coord3{15, 7, 0}, graph_scratch);
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{15, 7, 0}}, graph_scratch);
   EXPECT_EQ(crossing.status, tess::ReachabilityStatus::Reachable);
 }
 
@@ -1116,7 +1121,7 @@ TEST(TessTopology, UpdateRegionGraphRebuildsAcrossEqualChunkCountShapes) {
 
   tess::RegionGraphScratch region_scratch;
   const auto result = tess::reachable<RowShape>(
-      graph, tess::Coord3{0, 0, 0}, tess::Coord3{7, 1, 0}, region_scratch);
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{7, 1, 0}}, region_scratch);
   EXPECT_EQ(result.status, tess::ReachabilityStatus::Reachable);
 }
 
@@ -1171,7 +1176,7 @@ TEST(TessTopology, AxialHexConnectivityCrossesDiagonalChunkCorner) {
   EXPECT_EQ(built.region_count, 2u);
   EXPECT_EQ(graph.portals().size(), 2u);
   tess::RegionGraphScratch region_scratch;
-  const auto result = tess::reachable<Shape>(graph, from, to, region_scratch);
+  const auto result = tess::reachable<Shape>(graph, {from, to}, region_scratch);
   EXPECT_EQ(result.status, tess::ReachabilityStatus::Reachable);
 }
 

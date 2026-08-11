@@ -264,10 +264,10 @@ guarantee. Its own surface is small on purpose — `reserve`, `clear`,
 `record`, and `records()` — because it deliberately carries no world stamp
 of its own.
 `collect_planned_dirty(...)` appends partition records into a caller-owned
-accumulator and clears the partitions. `merge_planned_dirty(world, partitions,
-scratch)` and `merge_planned_dirty(world, phase_scratch)` collect those records,
-sort/coalesce by chunk key through the normal dirty merge, update world
-metadata, and clear the intermediate buffers.
+accumulator and clears the partitions. `merge_planned_dirty(world, scratch,
+partitions)` and `merge_planned_dirty(world, phase_scratch)` collect those
+records, sort/coalesce by chunk key through the normal dirty merge, update
+world metadata, and clear the intermediate buffers.
 
 `execute_phase_deferred_dirty<Policy>` executes one planner-issued
 `ExecutionPhase` from its bound `ExecutionPlan` through the same deferred-dirty
@@ -346,15 +346,15 @@ not started after a callback exception, join callbacks already in flight, then
 rethrow on the dispatching thread. If callbacks throw concurrently, which
 exception is propagated is unspecified. They do not roll back partial writes.
 
-`ScopedThreadPhaseExecutor` is a documented prototype for this contract, not
-the production backend. It owns no persistent pool: each call splits one
+`ScopedThreadPhaseExecutor` is the stable, simple implementation of this
+contract. It owns no persistent pool: each call splits one
 operation-index range across a bounded number of `std::thread` workers
 (worker counts clamp to at least one, including when
 `hardware_concurrency()` reports zero), joins all workers before returning,
 and reports the first non-`Executed` callback result in operation order. It
 invokes callbacks concurrently, so it pairs only with the partitioned
 variant below. It exists to prove the phase handoff and visibility rules
-as a lightweight comparison backend alongside the long-lived pool. When
+as a lightweight alternative alongside the long-lived pool. When
 diagnostics are enabled, it
 records dispatch counts and worker counts before launching threads; the scoped
 queued-phase diagnostics are intentionally owned by the caller thread and are
@@ -369,7 +369,7 @@ finished and every adopted worker has left the claim loop, so all callback
 writes are visible before it returns; it then reports the first
 non-`Executed` result in operation order. `reserve_operations(count)`
 pre-sizes the per-operation result buffer so warm phases allocate nothing.
-Like the scoped-thread prototype it invokes callbacks concurrently, does not
+Like the scoped-thread executor it invokes callbacks concurrently, does not
 declare `serial_execution_tag`, and pairs only with the partitioned dirty
 variant. It is non-copyable and non-movable, stops its workers via RAII, and
 propagates callback exceptions only after every adopted worker has left the

@@ -33,6 +33,8 @@ Contributor and operations pages (in-repo only; excluded from the site):
 - [Hosting](hosting.md): GitHub Pages and custom-domain runbook.
 - [Style](style.md): C++ coding style and formatting policy.
 - [Git Hooks](git-hooks.md): local commit and push guardrails.
+- [Release process](releasing.md): exact-SHA release mode, RC observation, and
+  GA checklist.
 - [doxygen-awesome](doxygen-awesome/README.md): vendored Doxygen theme.
 - [Fonts](assets/fonts/README.md): vendored heading font.
 - `favicon.ico`: site-root fallback icon (rasterized from

@@ -158,7 +158,7 @@ stateDiagram-v2
   build time, mirroring the shape binding: the graph type encodes neither, so
   a graph labeled for one class must never answer reachability for another.
   False until the first build.
-- `reachable<Shape>(graph, start, goal, scratch)` checks whether two
+- `reachable<Shape>(graph, request, scratch)` checks whether two
   coordinates are connected through local regions and paired portals. It
   returns a `ReachabilityResult`: a `ReachabilityStatus` (`Reachable`,
   `Unreachable`, `InvalidStart`, or `InvalidGoal`) plus the number of visited
@@ -168,7 +168,7 @@ stateDiagram-v2
   than a wrong `Unreachable`. A route found within the resident set still wins
   (`Reachable`), and a component fully enclosed by resident walls is a definite
   `Unreachable`.
-- `coarse_path<Shape>(graph, start, goal, scratch)` uses the same stamped
+- `coarse_path<Shape>(graph, request, scratch)` uses the same stamped
   region graph but retains BFS parents to reconstruct a shortest coarse route.
   Dense and sparse graphs share the API. A sparse route found entirely in the
   resident set is returned normally; an exhausted component touching missing

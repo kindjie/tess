@@ -12,20 +12,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import check_public_surface as cps  # noqa: E402
 
 
-CMAKE_TEXT = """
-set(
-  TESS_PUBLIC_HEADERS
-  include/tess/core/shape.h
-  include/tess/sim/movement.h
-)
-
-set(
-  TESS_IMPLEMENTATION_HEADERS
-  include/tess/path/detail/weighted_batch.h
-)
-
-target_sources(tess INTERFACE FILE_SET HEADERS)
-"""
+MANIFEST_TEXT = """{
+  "stable": ["include/tess/core/shape.h"],
+  "optional-stable": ["include/tess/sim/movement.h"],
+  "experimental": [],
+  "implementation-only": ["include/tess/path/detail/weighted_batch.h"]
+}"""
 
 SYNTHETIC_HEADER = """
 #pragma once
@@ -104,7 +96,7 @@ struct AlsoHidden {};
 
 
 def test_parse_public_headers_extracts_header_lines():
-    headers = cps.parse_public_headers(CMAKE_TEXT)
+    headers = cps.parse_public_headers(MANIFEST_TEXT)
     assert headers == [
         "include/tess/core/shape.h",
         "include/tess/sim/movement.h",
@@ -112,16 +104,11 @@ def test_parse_public_headers_extracts_header_lines():
 
 
 def test_parse_api_headers_includes_installed_implementation_headers():
-    assert cps.parse_api_headers(CMAKE_TEXT) == [
+    assert cps.parse_api_headers(MANIFEST_TEXT) == [
         "include/tess/core/shape.h",
         "include/tess/sim/movement.h",
         "include/tess/path/detail/weighted_batch.h",
     ]
-
-
-def test_parse_public_headers_requires_the_set_block():
-    with pytest.raises(ValueError):
-        cps.parse_public_headers("set(OTHER_VAR a.h)")
 
 
 def test_extract_finds_types_and_free_functions():
@@ -302,7 +289,9 @@ def test_real_manifest_covers_real_headers():
     """The committed manifest must stay complete for the real tree."""
     repo_root = Path(__file__).resolve().parents[1]
     headers = cps.parse_api_headers(
-        (repo_root / "CMakeLists.txt").read_text(encoding="utf-8")
+        (repo_root / "cmake" / "tess-headers.json").read_text(
+            encoding="utf-8"
+        )
     )
     manifest = cps.load_manifest(
         repo_root / "docs" / "architecture" / "surface.json"

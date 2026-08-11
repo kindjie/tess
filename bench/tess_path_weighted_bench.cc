@@ -799,7 +799,8 @@ void BM_path_weighted_portal_first_field_cache_batch_100_room_portals_512x512(
       const auto first =
           tess::weighted_distance_field_path<WeightedPathScaleWorld,
                                              PassableTag, CostTag>(
-              world, request.start, first_portal, field_scratch);
+              world, tess::PathRequest{request.start, first_portal},
+              field_scratch);
       total_reconstruct_expanded += first.expanded_nodes;
       total_cost += first.cost;
       result = tess::build_weighted_portal_route_product<WeightedPathScaleWorld,
@@ -891,7 +892,7 @@ void BM_path_weighted_distance_field_batch_100_shared_sparse_512x512(
         for (const auto request : requests) {
           result = tess::weighted_distance_field_path<WeightedPathScaleWorld,
                                                       PassableTag, CostTag>(
-              world, request.start, request.goal, scratch);
+              world, request, scratch);
           total_cost += result.cost;
           total_expanded += result.expanded_nodes;
         });
@@ -940,7 +941,7 @@ void BM_path_bounded_weighted_distance_field_batch_100_shared_sparse_512x512(
         for (const auto request : requests) {
           result = tess::weighted_distance_field_path<WeightedPathScaleWorld,
                                                       PassableTag, CostTag>(
-              world, request.start, request.goal, scratch);
+              world, request, scratch);
           total_cost += result.cost;
           total_expanded += result.expanded_nodes;
         });
@@ -1039,7 +1040,7 @@ void BM_path_weighted_distance_field_batch_100_multigoal_sparse_512x512(
         }
         result = tess::weighted_distance_field_path<WeightedPathScaleWorld,
                                                     PassableTag, CostTag>(
-            world, request.start, request.goal, scratch);
+            world, request, scratch);
         total_cost += result.cost;
         total_expanded += result.expanded_nodes;
       }
@@ -1105,7 +1106,7 @@ void BM_path_bounded_weighted_distance_field_batch_100_multigoal_sparse_512x512(
         }
         result = tess::weighted_distance_field_path<WeightedPathScaleWorld,
                                                     PassableTag, CostTag>(
-            world, request.start, request.goal, scratch);
+            world, request, scratch);
         total_cost += result.cost;
         total_expanded += result.expanded_nodes;
       }

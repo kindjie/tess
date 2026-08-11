@@ -29,8 +29,13 @@ CONSUMER_OPTIONS = (
 def declared_version() -> str:
   text = (REPO / "cmake" / "tess-version.cmake").read_text(encoding="utf-8")
   match = re.search(r"set\(TESS_VERSION\s+([0-9.]+)\)", text)
+  prerelease = re.search(
+    r'set\(TESS_VERSION_PRERELEASE\s+"([^"]*)"\)', text
+  )
   assert match is not None, "TESS_VERSION not found"
-  return match.group(1)
+  assert prerelease is not None, "TESS_VERSION_PRERELEASE not found"
+  suffix = f"-{prerelease.group(1)}" if prerelease.group(1) else ""
+  return match.group(1) + suffix
 
 
 def test_vcpkg_port_version_matches_the_project():
@@ -38,7 +43,8 @@ def test_vcpkg_port_version_matches_the_project():
     (REPO / "ports" / "tess" / "vcpkg.json").read_text(encoding="utf-8")
   )
 
-  assert manifest["version"] == declared_version()
+  packaged_version = manifest.get("version-semver", manifest.get("version"))
+  assert packaged_version == declared_version()
 
 
 def test_conan_recipe_reads_the_version_rather_than_restating_it():
@@ -103,6 +109,16 @@ def test_conan_recipe_declares_header_library():
   # Header-only packages must not vary by compiler or build type.
   assert "self.info.clear()" in recipe
   assert 'set_property("cmake_target_name", "tess::tess")' in recipe
+
+
+def test_release_package_tools_and_consumer_are_pinned():
+  lock = json.loads((REPO / "ci" / "tools.lock.json").read_text())
+
+  assert lock["conan"]["version"] == "2.31.1"
+  assert re.fullmatch(r"[0-9a-f]{64}", lock["conan"]["sha256"])
+  assert (REPO / "test_package" / "conanfile.py").is_file()
+  assert (REPO / "test_package" / "CMakeLists.txt").is_file()
+  assert (REPO / "test_package" / "main.cc").is_file()
 
 
 def test_recipes_are_listed_in_the_packaging_document():

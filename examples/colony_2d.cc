@@ -75,7 +75,7 @@ struct AgentTask {
     (void)tess::tick_weighted_path_agents_with_movement<
         World, Walker, kMaxCost, OccupancyTag, ReservationTag>(
         colony->tick_state, colony->world, colony->agents, colony->runtime, {},
-        0, &colony->graph);
+        &colony->graph);
     return {};
   }
 };
@@ -210,7 +210,7 @@ auto run() -> int {
     if (!delta_frame.empty()) {
       std::cout << "frame " << frame << ": render frame v"
                 << delta_frame.header.to_version.value << " invalidated "
-                << delta_frame.chunks.size() << " chunks\n";
+                << delta_frame.chunks().size() << " chunks\n";
     }
   }
 

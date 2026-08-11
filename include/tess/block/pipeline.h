@@ -293,18 +293,6 @@ class Pipeline {
     return collect_into(std::span<Output, Size>{output});
   }
 
-  template <typename Output, std::size_t Extent>
-  [[nodiscard]] auto to_frontier(std::span<Output, Extent> output)
-      -> PipelineCollectResult {
-    return collect_into(output);
-  }
-
-  template <typename Output, std::size_t Size>
-  [[nodiscard]] auto to_frontier(std::array<Output, Size>& output)
-      -> PipelineCollectResult {
-    return collect_into(output);
-  }
-
   [[nodiscard]] auto to_sequence_allocating() -> std::vector<value_type> {
     if (diagnostics_ != nullptr) {
       diagnostics_->record_materialization();

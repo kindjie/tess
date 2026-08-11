@@ -316,8 +316,8 @@ struct Demo {
       if (agent.phase != tess::PathAgentPhase::Blocked || !agent.has_goal) {
         continue;
       }
-      if (tess::precheck_path<Walker>(graph, world, agent.position, agent.goal,
-                                      graph_scratch) ==
+      if (tess::precheck_path<Walker>(
+              graph, world, {agent.position, agent.goal}, graph_scratch) ==
           tess::PrecheckStatus::Unreachable) {
         agent.phase = tess::PathAgentPhase::Unreachable;
         agent.status = tess::PathStatus::NoPath;
@@ -416,10 +416,10 @@ struct Demo {
       shadow[static_cast<std::size_t>(coord.y) * kWidth +
              static_cast<std::size_t>(coord.x)] = wall ? 1 : 0;
     };
-    for (const auto& chunk : frame.chunks) {
+    for (const auto& chunk : frame.chunks()) {
       if (chunk.tile_count != 0) {
         for (std::uint32_t i = 0; i < chunk.tile_count; ++i) {
-          repaint(frame.tiles[chunk.first_tile + i].coord);
+          repaint(frame.tiles()[chunk.first_tile + i].coord);
         }
       } else {
         const auto& box = chunk.bounds;

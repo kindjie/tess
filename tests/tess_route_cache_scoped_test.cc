@@ -181,7 +181,8 @@ TEST(TessRouteCacheScoped, RetireCompactionDuringServeIsSafe) {
 
   tess::PathScratch scratch;
   tess::RouteCacheScratch cache;
-  cache.set_caps(1, tess::RouteCacheScratch::default_max_path_nodes);
+  cache.set_caps(tess::RouteCacheLimits{
+      1, tess::RouteCacheScratch::default_max_path_nodes});
   cache.set_staleness(tess::UnitRouteStaleness::ScopedFeasible);
   ASSERT_FALSE(cache.refresh_if_world_changed(world));
 

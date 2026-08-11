@@ -819,9 +819,9 @@ void run_colony_topology_cell(const RunOptions& options) {
     tess::RegionGraphScratch reach_b;
     auto check_probe = [&](tess::Coord3 from, tess::Coord3 to) {
       const auto incremental =
-          tess::reachable<PathScaleShape>(graph, from, to, reach_a);
+          tess::reachable<PathScaleShape>(graph, {from, to}, reach_a);
       const auto fresh =
-          tess::reachable<PathScaleShape>(fresh_graph, from, to, reach_b);
+          tess::reachable<PathScaleShape>(fresh_graph, {from, to}, reach_b);
       check(incremental.status == fresh.status,
             "incremental topology diverges from a fresh rebuild");
     };
@@ -1164,13 +1164,13 @@ void run_field_product_cell(const RunOptions& options) {
   // direct API — the product cache is never constructed here.
   const tess::DistanceFieldResult reference =
       tess::build_distance_field_product<PathScaleWorld, PassableTag>(
-          world, goal_set, scratch, product);
+          world, goal_set, product, scratch);
   check(reference.status == tess::PathStatus::Found,
         "field-product reference build failed");
   const auto reference_reached = reference.reached_nodes;
   const tess::DistanceFieldResult repeat =
       tess::build_distance_field_product<PathScaleWorld, PassableTag>(
-          world, goal_set, scratch, product);
+          world, goal_set, product, scratch);
   check(repeat.reached_nodes == reference_reached,
         "field-product build not deterministic");
 
@@ -1191,7 +1191,7 @@ void run_field_product_cell(const RunOptions& options) {
     accounting.record_admitted();
     const tess::DistanceFieldResult field =
         tess::build_distance_field_product<PathScaleWorld, PassableTag>(
-            world, goal_set, scratch, product);
+            world, goal_set, product, scratch);
     check(field.status == tess::PathStatus::Found,
           "timed field-product build failed");
     const auto work = static_cast<std::uint64_t>(field.reached_nodes);

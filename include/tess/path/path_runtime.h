@@ -194,6 +194,8 @@ struct PathRuntimeStats {
  * Submission and processing may allocate unless the matching `reserve_*()`
  * methods have provisioned sufficient capacity. The runtime is not internally
  * synchronized; confine it to one thread or externally synchronize every use.
+ * Its caches retain process-local class/provider identities; do not share a
+ * runtime across a dynamic-library boundary.
  */
 class PathRequestRuntime {
  public:
@@ -710,8 +712,8 @@ class PathRequestRuntime {
       if (product == nullptr) {
         const auto field =
             build_weighted_distance_field_product<World, Class, Provider>(
-                world, unit_field_goals_, unit_field_scratch_,
-                unit_field_product_, provider);
+                world, unit_field_goals_, unit_field_product_,
+                unit_field_scratch_, provider);
         if (field.status == PathStatus::Found) {
           // See the unit path below: the store returns what it stored, so
           // the second lookup (a full rescan that also counted a spurious
@@ -777,8 +779,8 @@ class PathRequestRuntime {
 
   template <typename World>
   void prepare_process(const World& world, PathRuntimeCachePolicy policy) {
-    unit_route_cache_.set_caps(policy.max_route_entries,
-                               policy.max_route_path_nodes);
+    unit_route_cache_.set_caps(RouteCacheLimits{policy.max_route_entries,
+                                                policy.max_route_path_nodes});
     unit_route_cache_.set_dependency_cap(policy.max_route_dependency_pairs);
     // A staleness-mode flip clears the unit caches unconditionally (entries
     // stored under one mode's semantics are never served under the
@@ -941,7 +943,7 @@ class PathRequestRuntime {
               world, unit_field_goals_);
       if (product == nullptr) {
         const auto field = build_distance_field_product<World, PassableTag>(
-            world, unit_field_goals_, unit_field_scratch_, unit_field_product_);
+            world, unit_field_goals_, unit_field_product_, unit_field_scratch_);
         if (field.status == PathStatus::Found) {
           // The store returns what it stored, so no second lookup is
           // needed. That lookup rescanned every entry AND recorded a hit,
@@ -989,8 +991,7 @@ class PathRequestRuntime {
         continue;
       }
       const auto status = precheck_path<ClassOrTag>(
-          graph, world, requests_[i].start, requests_[i].goal,
-          precheck_scratch_, provider);
+          graph, world, requests_[i], precheck_scratch_, provider);
       if (!precheck_rules_out_path(status)) {
         continue;
       }

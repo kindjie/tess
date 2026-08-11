@@ -100,7 +100,7 @@ TEST(TessSparseTopology, ReachableAcrossResidentChunks) {
 
   tess::RegionGraphScratch reach;
   const auto result =
-      tess::reachable<Small>(graph, {0, 0, 0}, {40, 0, 0}, reach);
+      tess::reachable<Small>(graph, {{0, 0, 0}, {40, 0, 0}}, reach);
   // A definite path exists via the portal, even though chunk 0 also borders
   // non-resident chunks: goal-found dominates the missing-frontier flag.
   EXPECT_EQ(result.status, tess::ReachabilityStatus::Reachable);
@@ -120,7 +120,7 @@ TEST(TessSparseTopology, IndeterminateAcrossNonResidentBoundary) {
   // unloaded), but chunk 0's region exits into the missing chunk 1, so the
   // answer is Indeterminate -- never a wrong Unreachable.
   const auto result =
-      tess::reachable<Small>(graph, {0, 0, 0}, {70, 0, 0}, reach);
+      tess::reachable<Small>(graph, {{0, 0, 0}, {70, 0, 0}}, reach);
   EXPECT_EQ(result.status, tess::ReachabilityStatus::Indeterminate);
 }
 
@@ -139,7 +139,7 @@ TEST(TessSparseTopology, UnreachableWithinFullyResidentEnclosedComponent) {
 
   tess::RegionGraphScratch reach;
   const auto result =
-      tess::reachable<Solo>(graph, {0, 0, 0}, {31, 0, 0}, reach);
+      tess::reachable<Solo>(graph, {{0, 0, 0}, {31, 0, 0}}, reach);
   EXPECT_EQ(result.status, tess::ReachabilityStatus::Unreachable);
 }
 
@@ -153,10 +153,10 @@ TEST(TessSparseTopology, NonResidentEndpointIsIndeterminate) {
 
   tess::RegionGraphScratch reach;
   const auto from_missing =
-      tess::reachable<Small>(graph, {40, 0, 0}, {0, 0, 0}, reach);
+      tess::reachable<Small>(graph, {{40, 0, 0}, {0, 0, 0}}, reach);
   EXPECT_EQ(from_missing.status, tess::ReachabilityStatus::Indeterminate);
   const auto to_missing =
-      tess::reachable<Small>(graph, {0, 0, 0}, {40, 0, 0}, reach);
+      tess::reachable<Small>(graph, {{0, 0, 0}, {40, 0, 0}}, reach);
   EXPECT_EQ(to_missing.status, tess::ReachabilityStatus::Indeterminate);
 }
 
@@ -193,8 +193,8 @@ TEST(TessSparseTopology, IncrementalUpdateEqualsFreshBuild) {
   // And reachability agrees across the edited seam.
   tess::RegionGraphScratch a;
   tess::RegionGraphScratch b;
-  const auto lhs = tess::reachable<Small>(updated, {0, 0, 0}, {40, 0, 0}, a);
-  const auto rhs = tess::reachable<Small>(fresh, {0, 0, 0}, {40, 0, 0}, b);
+  const auto lhs = tess::reachable<Small>(updated, {{0, 0, 0}, {40, 0, 0}}, a);
+  const auto rhs = tess::reachable<Small>(fresh, {{0, 0, 0}, {40, 0, 0}}, b);
   EXPECT_EQ(lhs.status, rhs.status);
   EXPECT_EQ(lhs.visited_regions, rhs.visited_regions);
 }

@@ -55,6 +55,8 @@ struct NearestTargetResult {
 /// allocation-free rebuild. A product is invalid after relevant chunk edits.
 /// A stateful provider used to build it must retain its address until the
 /// product is cleared or rebuilt.
+/// Model identities are process-local; do not share a product across a
+/// dynamic-library boundary.
 class DistanceFieldProduct {
  public:
   void reserve_goals(std::size_t count) { goals_.reserve(count); }
@@ -154,15 +156,15 @@ class DistanceFieldProduct {
   template <typename World, typename Tag>
   friend auto build_distance_field_product(const World& world,
                                            const GoalSet& goals,
-                                           DistanceFieldScratch& scratch,
-                                           DistanceFieldProduct& product)
+                                           DistanceFieldProduct& product,
+                                           DistanceFieldScratch& scratch)
       -> DistanceFieldResult;
 
   template <typename World, typename Tag, typename Provider>
   friend auto build_distance_field_product(const World& world,
                                            const GoalSet& goals,
-                                           DistanceFieldScratch& scratch,
                                            DistanceFieldProduct& product,
+                                           DistanceFieldScratch& scratch,
                                            const Provider& provider)
       -> DistanceFieldResult;
 
@@ -193,8 +195,8 @@ class DistanceFieldProduct {
 
   template <typename World, typename Class, typename Provider>
   friend auto build_weighted_distance_field_product(
-      const World& world, const GoalSet& goals, DistanceFieldScratch& scratch,
-      DistanceFieldProduct& product, const Provider& provider)
+      const World& world, const GoalSet& goals, DistanceFieldProduct& product,
+      DistanceFieldScratch& scratch, const Provider& provider)
       -> DistanceFieldResult;
 
   template <typename World, typename Class, typename Provider>
@@ -256,6 +258,8 @@ struct FieldProductCacheStats {
 /// is destroyed. Moving the cache is safe because it does not move the
 /// externally owned provider. Lookup pointers remain cache-owned and are
 /// invalidated when their entry is replaced, evicted, or cleared.
+/// Model identities are process-local; do not share a cache across a
+/// dynamic-library boundary.
 class FieldProductCache {
   struct Key {
     std::uintptr_t movement_class = 0;
@@ -780,8 +784,8 @@ void capture_field_product_dependencies(const World& world,
 template <typename World, typename Tag, typename Provider>
 [[nodiscard]] auto build_distance_field_product(const World& world,
                                                 const GoalSet& goals,
-                                                DistanceFieldScratch& scratch,
                                                 DistanceFieldProduct& product,
+                                                DistanceFieldScratch& scratch,
                                                 const Provider& provider)
     -> DistanceFieldResult {
   using Shape = typename World::shape_type;
@@ -994,18 +998,18 @@ template <typename World, typename Tag, typename Provider>
 template <typename World, typename Tag>
 [[nodiscard]] auto build_distance_field_product(const World& world,
                                                 const GoalSet& goals,
-                                                DistanceFieldScratch& scratch,
-                                                DistanceFieldProduct& product)
+                                                DistanceFieldProduct& product,
+                                                DistanceFieldScratch& scratch)
     -> DistanceFieldResult {
   return build_distance_field_product<World, Tag, AdjacentTransitions>(
-      world, goals, scratch, product, AdjacentTransitions{});
+      world, goals, product, scratch, AdjacentTransitions{});
 }
 
 /// Builds a dense multi-goal weighted field into a reusable product.
 template <typename World, typename Class, typename Provider>
 [[nodiscard]] auto build_weighted_distance_field_product(
-    const World& world, const GoalSet& goals, DistanceFieldScratch& scratch,
-    DistanceFieldProduct& product, const Provider& provider)
+    const World& world, const GoalSet& goals, DistanceFieldProduct& product,
+    DistanceFieldScratch& scratch, const Provider& provider)
     -> DistanceFieldResult {
   static_assert(std::derived_from<Class, movement::movement_class_tag>);
   static_assert(std::is_same_v<typename World::residency_type, AlwaysResident>,
@@ -1137,11 +1141,11 @@ template <typename World, typename Class, typename Provider>
 /// Builds a weighted product using regular adjacent transitions.
 template <typename World, typename Class>
 [[nodiscard]] auto build_weighted_distance_field_product(
-    const World& world, const GoalSet& goals, DistanceFieldScratch& scratch,
-    DistanceFieldProduct& product) -> DistanceFieldResult {
+    const World& world, const GoalSet& goals, DistanceFieldProduct& product,
+    DistanceFieldScratch& scratch) -> DistanceFieldResult {
   return build_weighted_distance_field_product<World, Class,
                                                AdjacentTransitions>(
-      world, goals, scratch, product, AdjacentTransitions{});
+      world, goals, product, scratch, AdjacentTransitions{});
 }
 
 /// Reconstructs a path from `start` through a valid dense-world product.

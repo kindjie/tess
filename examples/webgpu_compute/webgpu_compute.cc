@@ -260,8 +260,7 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
     return false;
   }
   if (!g_backend->dispatch(tess::gpu::DispatchDesc{
-          .product_key = product->key,
-          .product_generation = product->generation,
+          .handle = {product->key, product->generation},
           .input_field_index = 0,
           .chunk_count = 1,
       })) {
@@ -277,8 +276,7 @@ void device_error(const WGPUDevice*, WGPUErrorType type, WGPUStringView, void*,
     return false;
   }
   if (!g_backend->readback(tess::gpu::ReadbackDesc{
-          .product_key = product->key,
-          .product_generation = product->generation,
+          .handle = {product->key, product->generation},
           .policy = tess::gpu::ReadbackPolicy::Summary,
           .byte_size = 16,
       })) {

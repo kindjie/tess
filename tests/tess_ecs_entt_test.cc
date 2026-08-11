@@ -545,19 +545,19 @@ TEST(TessEcsEntt, LifecycleIntentsRecordDeltasOnlyOnSuccess) {
   static_cast<void>(blocker);
 
   const auto frame = collector.publish();
-  ASSERT_EQ(frame.entities.size(), 5u);
-  const auto handle = frame.entities[0].entity;
-  EXPECT_EQ(frame.entities[0].kind, tess::EntityDeltaKind::Spawned);
-  EXPECT_EQ(frame.entities[0].to, (tess::Coord3{2, 2, 0}));
-  EXPECT_EQ(frame.entities[1].kind, tess::EntityDeltaKind::Teleported);
-  EXPECT_EQ(frame.entities[1].from, (tess::Coord3{2, 2, 0}));
-  EXPECT_EQ(frame.entities[1].to, (tess::Coord3{4, 4, 0}));
-  EXPECT_EQ(frame.entities[2].kind, tess::EntityDeltaKind::Parked);
-  EXPECT_EQ(frame.entities[2].to, (tess::Coord3{4, 4, 0}));
-  EXPECT_EQ(frame.entities[3].kind, tess::EntityDeltaKind::Placed);
-  EXPECT_EQ(frame.entities[3].to, (tess::Coord3{6, 6, 0}));
-  EXPECT_EQ(frame.entities[4].kind, tess::EntityDeltaKind::Parked);
-  for (const auto& record : frame.entities) {
+  ASSERT_EQ(frame.entities().size(), 5u);
+  const auto handle = frame.entities()[0].entity;
+  EXPECT_EQ(frame.entities()[0].kind, tess::EntityDeltaKind::Spawned);
+  EXPECT_EQ(frame.entities()[0].to, (tess::Coord3{2, 2, 0}));
+  EXPECT_EQ(frame.entities()[1].kind, tess::EntityDeltaKind::Teleported);
+  EXPECT_EQ(frame.entities()[1].from, (tess::Coord3{2, 2, 0}));
+  EXPECT_EQ(frame.entities()[1].to, (tess::Coord3{4, 4, 0}));
+  EXPECT_EQ(frame.entities()[2].kind, tess::EntityDeltaKind::Parked);
+  EXPECT_EQ(frame.entities()[2].to, (tess::Coord3{4, 4, 0}));
+  EXPECT_EQ(frame.entities()[3].kind, tess::EntityDeltaKind::Placed);
+  EXPECT_EQ(frame.entities()[3].to, (tess::Coord3{6, 6, 0}));
+  EXPECT_EQ(frame.entities()[4].kind, tess::EntityDeltaKind::Parked);
+  for (const auto& record : frame.entities()) {
     EXPECT_EQ(record.entity, handle);
   }
 }
@@ -574,17 +574,17 @@ TEST(TessEcsEntt, TickDriverFeedsMovesThroughTheCollector) {
     (void)tess::tick_entt_unit_path_agents<World, PassableTag, OccupancyTag,
                                            ReservationTag>(
         sim.registry, sim.context, sim.world, sim.runtime, sim.index, options,
-        0, nullptr, &collector);
+        nullptr, &collector);
   }
 
   // Default coalescing folds the walk into one Moved record spanning
   // start to goal, stamped with the arrival tick.
   const auto frame = collector.publish();
-  ASSERT_EQ(frame.entities.size(), 1u);
-  EXPECT_EQ(frame.entities[0].kind, tess::EntityDeltaKind::Moved);
-  EXPECT_EQ(frame.entities[0].from, (tess::Coord3{0, 0, 0}));
-  EXPECT_EQ(frame.entities[0].to, (tess::Coord3{4, 0, 0}));
-  EXPECT_EQ(frame.entities[0].last_tick, 4u);
+  ASSERT_EQ(frame.entities().size(), 1u);
+  EXPECT_EQ(frame.entities()[0].kind, tess::EntityDeltaKind::Moved);
+  EXPECT_EQ(frame.entities()[0].from, (tess::Coord3{0, 0, 0}));
+  EXPECT_EQ(frame.entities()[0].to, (tess::Coord3{4, 0, 0}));
+  EXPECT_EQ(frame.entities()[0].last_tick, 4u);
   EXPECT_EQ(frame.header.ticks, 4u);
   EXPECT_EQ(collector.stats().moves_coalesced, 3u);
 }

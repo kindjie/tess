@@ -66,6 +66,12 @@ struct PathAgentFrameStats {
   MovementFailureCounts movement_failures{};
 };
 
+/// Configures bounded direct movement and the dirty bits it emits.
+struct PathAgentAdvanceOptions {
+  std::size_t max_steps = 1;
+  std::uint32_t movement_dirty_mask = 0;
+};
+
 // Which agents a processing pass (re)submits (per-agent pathing dirt,
 // optimization-log 2026-07-11/12):
 // - All: every agent with a goal replans -- required after a WORLD change,
@@ -386,11 +392,11 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
  */
 inline auto advance_path_agents_with_movement(
     World& world, std::span<PathAgentState> agents,
-    const PathRequestRuntime& runtime, std::size_t max_steps,
-    std::uint32_t movement_dirty_mask, OnCommit&& on_commit,
-    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
+    const PathRequestRuntime& runtime, PathAgentAdvanceOptions options,
+    OnCommit&& on_commit, diagnostics::FlowAccounting* accounting = nullptr)
+    -> PathAgentFrameStats {
   PathAgentFrameStats stats;
-  if (max_steps == 0) {
+  if (options.max_steps == 0) {
     return stats;
   }
 
@@ -406,7 +412,7 @@ inline auto advance_path_agents_with_movement(
       continue;
     }
 
-    for (std::size_t step = 0; step < max_steps; ++step) {
+    for (std::size_t step = 0; step < options.max_steps; ++step) {
       if (agent.path_index + 1 >= result.path.size()) {
         break;
       }
@@ -416,7 +422,7 @@ inline auto advance_path_agents_with_movement(
       const auto movement =
           commit_movement_intent<World, ClassOrTag, OccupancyTag,
                                  ReservationTag>(
-              world, MovementIntent{from, to, {}}, movement_dirty_mask);
+              world, MovementIntent{from, to, {}}, options.movement_dirty_mask);
       if (movement.status != MovementStatus::Moved) {
         record_movement_failure(stats.movement_failures, movement.status);
         if (is_transient_movement_failure(movement.status)) {
@@ -464,13 +470,12 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
  */
 inline auto advance_path_agents_with_movement(
     World& world, std::span<PathAgentState> agents,
-    const PathRequestRuntime& runtime, std::size_t max_steps = 1,
-    std::uint32_t movement_dirty_mask = 0,
+    const PathRequestRuntime& runtime, PathAgentAdvanceOptions options = {},
     diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   return advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
                                            ReservationTag>(
-      world, agents, runtime, max_steps, movement_dirty_mask,
-      [](std::size_t, Coord3, Coord3) {}, accounting);
+      world, agents, runtime, options, [](std::size_t, Coord3, Coord3) {},
+      accounting);
 }
 
 template <typename World, typename ClassOrTag, typename OccupancyTag,
@@ -478,12 +483,12 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 /// Advances retained routes through provider-aware movement commits.
 inline auto advance_path_agents_with_movement(
     World& world, std::span<PathAgentState> agents,
-    const PathAgentRoutes& routes, std::size_t max_steps,
-    std::uint32_t movement_dirty_mask, const Provider& provider,
-    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
+    const PathAgentRoutes& routes, PathAgentAdvanceOptions options,
+    const Provider& provider, diagnostics::FlowAccounting* accounting = nullptr)
+    -> PathAgentFrameStats {
   TESS_ASSERT(routes.routes.size() >= agents.size());
   PathAgentFrameStats stats;
-  if (max_steps == 0) {
+  if (options.max_steps == 0) {
     return stats;
   }
   for (std::size_t agent_index = 0; agent_index < agents.size();
@@ -494,14 +499,15 @@ inline auto advance_path_agents_with_movement(
     }
     const auto& route = routes.routes[agent_index];
     for (std::size_t step = 0;
-         step < max_steps && agent.path_index + 1 < route.size(); ++step) {
+         step < options.max_steps && agent.path_index + 1 < route.size();
+         ++step) {
       const auto from = agent.position;
       const auto to = route[agent.path_index + 1];
       const auto movement =
           commit_movement_intent<World, ClassOrTag, OccupancyTag,
-                                 ReservationTag>(world,
-                                                 MovementIntent{from, to, {}},
-                                                 movement_dirty_mask, provider);
+                                 ReservationTag>(
+              world, MovementIntent{from, to, {}}, options.movement_dirty_mask,
+              provider);
       if (movement.status != MovementStatus::Moved) {
         record_movement_failure(stats.movement_failures, movement.status);
         if (is_transient_movement_failure(movement.status)) {
@@ -583,13 +589,13 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 /// Advances retained routes and reports each validated movement commit.
 inline auto advance_path_agents_with_movement(
     World& world, std::span<PathAgentState> agents,
-    const PathAgentRoutes& routes, std::size_t max_steps,
-    std::uint32_t movement_dirty_mask, OnCommit&& on_commit,
-    diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
+    const PathAgentRoutes& routes, PathAgentAdvanceOptions options,
+    OnCommit&& on_commit, diagnostics::FlowAccounting* accounting = nullptr)
+    -> PathAgentFrameStats {
   // Same pool-coverage precondition as the plain route-pool advance.
   TESS_ASSERT(routes.routes.size() >= agents.size());
   PathAgentFrameStats stats;
-  if (max_steps == 0) {
+  if (options.max_steps == 0) {
     return stats;
   }
 
@@ -605,7 +611,7 @@ inline auto advance_path_agents_with_movement(
       continue;
     }
 
-    for (std::size_t step = 0; step < max_steps; ++step) {
+    for (std::size_t step = 0; step < options.max_steps; ++step) {
       if (agent.path_index + 1 >= route.size()) {
         break;
       }
@@ -615,7 +621,7 @@ inline auto advance_path_agents_with_movement(
       const auto movement =
           commit_movement_intent<World, ClassOrTag, OccupancyTag,
                                  ReservationTag>(
-              world, MovementIntent{from, to, {}}, movement_dirty_mask);
+              world, MovementIntent{from, to, {}}, options.movement_dirty_mask);
       if (movement.status != MovementStatus::Moved) {
         record_movement_failure(stats.movement_failures, movement.status);
         if (is_transient_movement_failure(movement.status)) {
@@ -653,13 +659,12 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 /// Advances retained routes with validated world movement.
 inline auto advance_path_agents_with_movement(
     World& world, std::span<PathAgentState> agents,
-    const PathAgentRoutes& routes, std::size_t max_steps = 1,
-    std::uint32_t movement_dirty_mask = 0,
+    const PathAgentRoutes& routes, PathAgentAdvanceOptions options = {},
     diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   return advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
                                            ReservationTag>(
-      world, agents, routes, max_steps, movement_dirty_mask,
-      [](std::size_t, Coord3, Coord3) {}, accounting);
+      world, agents, routes, options, [](std::size_t, Coord3, Coord3) {},
+      accounting);
 }
 
 /// Adds every counter in `rhs` into `lhs`.

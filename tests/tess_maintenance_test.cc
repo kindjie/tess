@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <tess/experimental/maintenance.h>
 #include <tess/tess.h>
 
 #include <algorithm>

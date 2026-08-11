@@ -89,7 +89,7 @@ TEST(TessBlockPipeline, FlatMapBuildsBoundedFrontierInStableOrder) {
             return std::array<std::uint32_t, 3>{value - 1, value, value + 1};
           })
           .filter([](std::uint32_t value) { return value % 2u == 0; })
-          .to_frontier(output);
+          .collect_into(output);
 
   EXPECT_FALSE(result.capacity_exhausted);
   EXPECT_EQ(result.written, 5u);

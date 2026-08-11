@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.25...3.28)
 
 include(cmake/tess-version.cmake)
 include(cmake/TessCMakeCompatibility.cmake)
+include(cmake/TessHeaderManifest.cmake)
 
 option(
   TESS_ENABLE_GRID_BENCHMARK_DATA
@@ -46,6 +47,7 @@ option(
 )
 option(TESS_BUILD_EXAMPLES "Build tess examples" ${PROJECT_IS_TOP_LEVEL})
 option(TESS_BUILD_BENCHMARKS "Build tess benchmarks" OFF)
+option(TESS_BUILD_FUZZING "Build libFuzzer archive targets" OFF)
 option(TESS_BUILD_DOCS "Build the tess API reference with Doxygen" OFF)
 option(
   TESS_EXAMPLES_NO_EXCEPTIONS
@@ -135,92 +137,8 @@ configure_file(
   @ONLY
 )
 
-set(
-  TESS_PUBLIC_HEADERS
-  include/tess/block/block.h
-  include/tess/block/pipeline.h
-  include/tess/core/assert.h
-  include/tess/core/capacity.h
-  include/tess/core/config.h
-  include/tess/core/lattice.h
-  include/tess/core/shape.h
-  include/tess/core/uint128.h
-  include/tess/debug/imgui/panels.h
-  include/tess/debug/imgui/tools.h
-  include/tess/diagnostics/diagnostics.h
-  include/tess/diagnostics/export.h
-  include/tess/diagnostics/trace.h
-  include/tess/diagnostics/warning_sink.h
-  include/tess/experimental/maintenance.h
-  include/tess/ecs/adapter.h
-  include/tess/ecs/entity_handle.h
-  include/tess/ecs/entt/entt_adapter.h
-  include/tess/ecs/flecs/flecs_adapter.h
-  include/tess/gpu/backend.h
-  include/tess/gpu/descriptors.h
-  include/tess/gpu/webgpu_backend.h
-  include/tess/ops/async_work.h
-  include/tess/ops/phase_executor.h
-  include/tess/ops/queued.h
-  include/tess/ops/result_channel.h
-  include/tess/path/distance_field_box.h
-  include/tess/path/field_product_cache.h
-  include/tess/path/path.h
-  include/tess/path/path_runtime.h
-  include/tess/path/path_view.h
-  include/tess/path/portal_route.h
-  include/tess/path/portal_segment_cache.h
-  include/tess/path/precheck.h
-  include/tess/path/route_cache.h
-  include/tess/pathfinding.h
-  include/tess/persistence/archive.h
-  include/tess/query/span.h
-  include/tess/sim/auto_exec.h
-  include/tess/sim/async_work_task.h
-  include/tess/sim/delta_frame.h
-  include/tess/sim/event_stream.h
-  include/tess/sim/joint_movement.h
-  include/tess/sim/movement.h
-  include/tess/sim/path_agent.h
-  include/tess/sim/path_agent_tick.h
-  include/tess/sim/pibt_movement.h
-  include/tess/sim/render_delta.h
-  include/tess/sim/schedule.h
-  include/tess/sim/scheduler.h
-  include/tess/sim/time.h
-  include/tess/spatial/area.h
-  include/tess/spatial/local_coordination.h
-  include/tess/spatial/tactical_assignment.h
-  include/tess/storage/chunk_meta.h
-  include/tess/storage/chunk_page.h
-  include/tess/storage/residency.h
-  include/tess/storage/sparse_world.h
-  include/tess/storage/world.h
-  include/tess/simulation.h
-  include/tess/tess.h
-  include/tess/topology/movement_class.h
-  include/tess/topology/step_policy.h
-  include/tess/topology/topology.h
-  include/tess/topology/transition_model.h
-  include/tess/topology/transition_provider.h
-)
-
-# Installed implementation headers are required by the template definitions in
-# the public headers, but declarations in tess::detail are not supported API.
-# Keep this list separate so surface/documentation checks do not accidentally
-# turn implementation details into compatibility promises.
-set(
-  TESS_IMPLEMENTATION_HEADERS
-  include/tess/core/tag_identity.h
-  include/tess/core/fail_fast.h
-  include/tess/path/node_index_space.h
-  include/tess/path/detail/astar.h
-  include/tess/path/detail/weighted_batch.h
-)
-
-set(TESS_INSTALL_HEADERS ${TESS_PUBLIC_HEADERS} ${TESS_IMPLEMENTATION_HEADERS})
-
-# Public and implementation headers live in separate file sets so the
+# Header classes come from cmake/tess-headers.json. Public and implementation
+# headers live in separate file sets so the
 # standalone-compilation check can verify exactly the public contract.
 # Implementation fragments are deliberately not standalone: the
 # path/detail headers #error when included outside their owning public
@@ -233,7 +151,17 @@ target_sources(
   INTERFACE
     FILE_SET HEADERS
     BASE_DIRS include
-    FILES ${TESS_PUBLIC_HEADERS}
+    FILES ${TESS_STABLE_SOURCE_HEADERS}
+  INTERFACE
+    FILE_SET optional_stable_headers
+    TYPE HEADERS
+    BASE_DIRS include
+    FILES ${TESS_OPTIONAL_STABLE_HEADERS}
+  INTERFACE
+    FILE_SET experimental_headers
+    TYPE HEADERS
+    BASE_DIRS include
+    FILES ${TESS_EXPERIMENTAL_HEADERS}
   INTERFACE
     FILE_SET implementation_headers
     TYPE HEADERS
@@ -255,7 +183,8 @@ set_target_properties(
   tess
   PROPERTIES
     VERIFY_INTERFACE_HEADER_SETS ON
-    INTERFACE_HEADER_SETS_TO_VERIFY "HEADERS;generated_headers"
+    INTERFACE_HEADER_SETS_TO_VERIFY
+      "HEADERS;optional_stable_headers;experimental_headers;generated_headers"
 )
 
 # A build-only mirror of the public header contract under the real compiler
@@ -271,7 +200,7 @@ if(TESS_BUILD_TESTING AND TESS_BUILD_NO_EXCEPTIONS_TESTING AND
       FILE_SET no_exceptions_headers
       TYPE HEADERS
       BASE_DIRS include
-      FILES ${TESS_PUBLIC_HEADERS}
+      FILES ${TESS_PUBLIC_SOURCE_HEADERS}
     INTERFACE
       FILE_SET no_exceptions_generated_headers
       TYPE HEADERS
@@ -320,6 +249,8 @@ install(
   TARGETS tess
   EXPORT tess-targets
   FILE_SET HEADERS
+  FILE_SET optional_stable_headers
+  FILE_SET experimental_headers
   FILE_SET implementation_headers
   FILE_SET generated_headers
 )
@@ -337,17 +268,29 @@ configure_package_config_file(
   INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/tess"
 )
 
+if(PROJECT_VERSION_MAJOR EQUAL 0)
+  set(TESS_PACKAGE_COMPATIBILITY SameMinorVersion)
+else()
+  set(TESS_PACKAGE_COMPATIBILITY SameMajorVersion)
+endif()
+
 write_basic_package_version_file(
-  "${CMAKE_CURRENT_BINARY_DIR}/tess-config-version.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/tess-config-version-base.cmake"
   VERSION "${PROJECT_VERSION}"
-  COMPATIBILITY SameMinorVersion
+  COMPATIBILITY ${TESS_PACKAGE_COMPATIBILITY}
   ARCH_INDEPENDENT
+)
+configure_file(
+  cmake/tess-config-version.cmake.in
+  "${CMAKE_CURRENT_BINARY_DIR}/tess-config-version.cmake"
+  @ONLY
 )
 
 install(
   FILES
     "${CMAKE_CURRENT_BINARY_DIR}/tess-config.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/tess-config-version.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/tess-config-version-base.cmake"
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/tess"
 )
 
@@ -364,13 +307,25 @@ if(TESS_BUILD_TESTING)
       COMMAND
         "${CMAKE_COMMAND}"
         -DTESS_SOURCE_DIR=${PROJECT_SOURCE_DIR}
-        "-DTESS_DECLARED_HEADERS=$<JOIN:${TESS_INSTALL_HEADERS},;>"
+        "-DTESS_DECLARED_HEADERS=$<JOIN:${TESS_INSTALL_SOURCE_HEADERS},;>"
         -P ${PROJECT_SOURCE_DIR}/cmake/check-public-headers.cmake
     )
     # Seconds-cheap install-contract check; runs on every selective
     # pre-push (the -L selection would otherwise exclude it).
     set_tests_properties(
       tess_installed_headers_file_set
+      PROPERTIES LABELS "prepush:always"
+    )
+    add_test(
+      NAME tess_package_version_selection
+      COMMAND
+        "${CMAKE_COMMAND}"
+        -DTESS_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+        -DTESS_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/package-version-test
+        -P ${PROJECT_SOURCE_DIR}/tests/cmake/test-package-version.cmake
+    )
+    set_tests_properties(
+      tess_package_version_selection
       PROPERTIES LABELS "prepush:always"
     )
     add_subdirectory(tests)
@@ -383,6 +338,24 @@ endif()
 
 if(TESS_BUILD_BENCHMARKS)
   add_subdirectory(bench)
+endif()
+
+if(TESS_BUILD_FUZZING)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "TESS_BUILD_FUZZING requires Clang libFuzzer")
+  endif()
+  add_executable(
+    tess_world_archive_fuzzer
+    tests/fuzz/tess_world_archive_fuzzer.cc
+  )
+  target_link_libraries(tess_world_archive_fuzzer PRIVATE tess::tess)
+  target_compile_options(
+    tess_world_archive_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined
+  )
+  target_link_options(
+    tess_world_archive_fuzzer PRIVATE -fsanitize=fuzzer,address,undefined
+  )
+  tess_apply_project_options(tess_world_archive_fuzzer)
 endif()
 
 if(TESS_BUILD_DOCS)

@@ -234,7 +234,7 @@ void BM_path_distance_field_product_build_8_goal_room_portals_512x512(
     TESS_PATH_DIAG_RESET();
     TESS_PATH_DIAG_RUN(
         field = tess::build_distance_field_product<PathScaleWorld, PassableTag>(
-            world, goal_set, scratch, product));
+            world, goal_set, product, scratch));
     benchmark::DoNotOptimize(field.expanded_nodes);
     benchmark::DoNotOptimize(product.byte_size());
   }
@@ -268,7 +268,7 @@ void BM_path_weighted_field_product_build_8_goal_open_512x512(
   for (auto _ : state) {
     result = tess::build_weighted_distance_field_product<WeightedWorld,
                                                          WeightedWalker>(
-        world, goals, scratch, product);
+        world, goals, product, scratch);
     benchmark::DoNotOptimize(result.expanded_nodes);
   }
   bench_check(result.status == tess::PathStatus::Found,
@@ -291,7 +291,7 @@ void BM_path_weighted_field_product_replay_open_512x512(
   product.reserve_dependencies(WeightedWorld::chunk_count);
   (void)tess::build_weighted_distance_field_product<WeightedWorld,
                                                     WeightedWalker>(
-      world, goals, scratch, product);
+      world, goals, product, scratch);
   tess::PathResult result;
   for (auto _ : state) {
     result = tess::weighted_distance_field_product_path<WeightedWorld,
@@ -327,7 +327,7 @@ void BM_path_nearest_target_product_100_starts_room_portals_512x512(
   product.reserve_nodes(path_node_count<PathScaleShape>());
   product.reserve_dependencies(PathScaleWorld::chunk_count);
   (void)tess::build_distance_field_product<PathScaleWorld, PassableTag>(
-      world, goal_set, scratch, product);
+      world, goal_set, product, scratch);
 
   TESS_PATH_DIAG_DECL(scratch);
   tess::NearestTargetResult result;
@@ -373,7 +373,7 @@ void BM_path_field_product_cache_hit_replay_room_portals_512x512(
   product.reserve_nodes(path_node_count<PathScaleShape>());
   product.reserve_dependencies(PathScaleWorld::chunk_count);
   (void)tess::build_distance_field_product<PathScaleWorld, PassableTag>(
-      world, goals, scratch, product);
+      world, goals, product, scratch);
 
   tess::FieldProductCache cache{product.byte_size() + 4096u};
   cache.reserve_entries(1);
@@ -418,7 +418,7 @@ void BM_path_field_product_cache_stale_rejection_room_portals_512x512(
   product.reserve_nodes(path_node_count<PathScaleShape>());
   product.reserve_dependencies(PathScaleWorld::chunk_count);
   (void)tess::build_distance_field_product<PathScaleWorld, PassableTag>(
-      world, goals, scratch, product);
+      world, goals, product, scratch);
   world.mark_dirty(tess::ChunkKey{0}, 1u,
                    tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}});
 
@@ -461,7 +461,7 @@ void BM_path_field_product_cache_lru_eviction_512x512(benchmark::State& state) {
   first.reserve_nodes(path_node_count<PathScaleShape>());
   first.reserve_dependencies(PathScaleWorld::chunk_count);
   (void)tess::build_distance_field_product<PathScaleWorld, PassableTag>(
-      world, first_goals, scratch, first);
+      world, first_goals, first, scratch);
 
   tess::FieldProductCache sizing_cache{first.byte_size() + 4096u};
   auto sizing_product = first;
@@ -475,7 +475,7 @@ void BM_path_field_product_cache_lru_eviction_512x512(benchmark::State& state) {
   second.reserve_nodes(path_node_count<PathScaleShape>());
   second.reserve_dependencies(PathScaleWorld::chunk_count);
   (void)tess::build_distance_field_product<PathScaleWorld, PassableTag>(
-      world, second_goals, scratch, second);
+      world, second_goals, second, scratch);
 
   tess::FieldProductCache cache{budget};
   cache.reserve_entries(2);

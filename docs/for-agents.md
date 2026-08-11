@@ -41,12 +41,13 @@ and installed-package consumption is verified separately — see
   `tess-snippet` region byte-matched against a compiled, self-checking
   source file by `tools/check_doc_snippets.py`. Copying a documented
   snippet cannot copy drifted code.
-- **Every installed header is public and supported.** Include the
+- **Header support follows the stability manifest.** Include the
   `<tess/tess.h>` umbrella, one of the aggregates such as
   `<tess/pathfinding.h>` or `<tess/simulation.h>`, or the narrowest header
   that owns the API -- the last is preferable in compile-sensitive code,
-  and is what the quickstart does. See
-  [installation](packaging.md). What
+  and is what the quickstart does. Stable and optional-stable headers are the
+  supported 1.x source surface; experimental and implementation-only headers
+  are not. See [installation](packaging.md). What
   `tools/check_public_surface.py` gates is the symbol MANIFEST, not an
   include policy: every namespace-scope public name must appear in
   `docs/architecture/surface.json`, so a symbol cannot ship undocumented.

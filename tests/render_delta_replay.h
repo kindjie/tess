@@ -35,10 +35,10 @@ class RenderReplayGrid {
       shadow_.clear();
       entities_.clear();
     }
-    for (const auto& chunk : frame.chunks) {
+    for (const auto& chunk : frame.chunks()) {
       if (chunk.tile_count != 0) {
         for (std::uint32_t i = 0; i < chunk.tile_count; ++i) {
-          repaint(frame.tiles[chunk.first_tile + i].coord, world);
+          repaint(frame.tiles()[chunk.first_tile + i].coord, world);
         }
       } else {
         const auto& box = chunk.bounds;
@@ -57,7 +57,7 @@ class RenderReplayGrid {
         }
       }
     }
-    for (const auto& record : frame.entities) {
+    for (const auto& record : frame.entities()) {
       switch (record.kind) {
         case tess::EntityDeltaKind::Moved:
         case tess::EntityDeltaKind::Teleported:

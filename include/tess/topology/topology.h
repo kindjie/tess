@@ -5,6 +5,7 @@
 #include <tess/core/fail_fast.h>
 #include <tess/core/shape.h>
 #include <tess/core/tag_identity.h>
+#include <tess/path/request.h>
 #include <tess/storage/residency.h>
 #include <tess/storage/world.h>
 #include <tess/topology/movement_class.h>
@@ -212,13 +213,13 @@ class RegionGraphScratch {
 
  private:
   template <typename Shape, typename Residency>
-  friend auto reachable(const RegionGraphT<Residency>& graph, Coord3 start,
-                        Coord3 goal, RegionGraphScratch& scratch)
+  friend auto reachable(const RegionGraphT<Residency>& graph,
+                        PathRequest request, RegionGraphScratch& scratch)
       -> ReachabilityResult;
 
   template <typename Shape, typename Residency>
-  friend auto coarse_path(const RegionGraphT<Residency>& graph, Coord3 start,
-                          Coord3 goal, RegionGraphScratch& scratch)
+  friend auto coarse_path(const RegionGraphT<Residency>& graph,
+                          PathRequest request, RegionGraphScratch& scratch)
       -> CoarsePathResult;
 
   // Epoch-stamped visited marks: a region index is visited when its
@@ -371,6 +372,12 @@ template <typename Shape>
 
 }  // namespace detail
 
+/**
+ * Owns topology and process-local class/provider identity for one world.
+ *
+ * Do not compare or share a graph across a dynamic-library boundary; rebuild
+ * it in the linked image that queries it.
+ */
 template <typename Residency>
 class RegionGraphT {
  public:
@@ -542,14 +549,14 @@ class RegionGraphT {
       -> LocalTopologyResult;
 
   template <typename Shape, typename OtherResidency>
-  friend auto reachable(const RegionGraphT<OtherResidency>& graph, Coord3 start,
-                        Coord3 goal, RegionGraphScratch& scratch)
+  friend auto reachable(const RegionGraphT<OtherResidency>& graph,
+                        PathRequest request, RegionGraphScratch& scratch)
       -> ReachabilityResult;
 
   template <typename Shape, typename OtherResidency>
   friend auto coarse_path(const RegionGraphT<OtherResidency>& graph,
-                          Coord3 start, Coord3 goal,
-                          RegionGraphScratch& scratch) -> CoarsePathResult;
+                          PathRequest request, RegionGraphScratch& scratch)
+      -> CoarsePathResult;
 
   template <typename OtherWorld>
   friend auto is_region_graph_fresh(
@@ -1596,31 +1603,33 @@ template <typename World, typename ClassOrTag,
 
 /// Queries graph reachability between two world coordinates.
 template <typename Shape, typename Residency>
-[[nodiscard]] auto reachable(const RegionGraphT<Residency>& graph, Coord3 start,
-                             Coord3 goal, RegionGraphScratch& scratch)
+[[nodiscard]] auto reachable(const RegionGraphT<Residency>& graph,
+                             PathRequest request, RegionGraphScratch& scratch)
     -> ReachabilityResult {
-  if (!contains<Shape>(start)) {
+  if (!contains<Shape>(request.start)) {
     return ReachabilityResult{ReachabilityStatus::InvalidStart, 0};
   }
-  if (!contains<Shape>(goal)) {
+  if (!contains<Shape>(request.goal)) {
     return ReachabilityResult{ReachabilityStatus::InvalidGoal, 0};
   }
 
-  const auto start_region = graph.template region_of<Shape>(start);
+  const auto start_region = graph.template region_of<Shape>(request.start);
   if (start_region.region == invalid_local_region) {
     if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
       // A non-resident endpoint cannot be answered: its region is unknown,
       // distinct from a resident-but-walled tile (InvalidStart below).
-      if (!graph.has_chunk(chunk_key<Shape>(chunk_coord<Shape>(start)))) {
+      if (!graph.has_chunk(
+              chunk_key<Shape>(chunk_coord<Shape>(request.start)))) {
         return ReachabilityResult{ReachabilityStatus::Indeterminate, 0};
       }
     }
     return ReachabilityResult{ReachabilityStatus::InvalidStart, 0};
   }
-  const auto goal_region = graph.template region_of<Shape>(goal);
+  const auto goal_region = graph.template region_of<Shape>(request.goal);
   if (goal_region.region == invalid_local_region) {
     if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
-      if (!graph.has_chunk(chunk_key<Shape>(chunk_coord<Shape>(goal)))) {
+      if (!graph.has_chunk(
+              chunk_key<Shape>(chunk_coord<Shape>(request.goal)))) {
         return ReachabilityResult{ReachabilityStatus::Indeterminate, 0};
       }
     }
@@ -1699,8 +1708,7 @@ template <typename Shape, typename Residency>
 /// corridor bounds cover the complete chunks on the selected region path.
 template <typename Shape, typename Residency>
 [[nodiscard]] auto coarse_path(const RegionGraphT<Residency>& graph,
-                               Coord3 start, Coord3 goal,
-                               RegionGraphScratch& scratch)
+                               PathRequest request, RegionGraphScratch& scratch)
     -> CoarsePathResult {
   const auto region_count = static_cast<std::size_t>(graph.region_count());
   scratch.begin_traversal(region_count);
@@ -1715,26 +1723,28 @@ template <typename Shape, typename Residency>
         {},
     };
   };
-  if (!contains<Shape>(start)) {
+  if (!contains<Shape>(request.start)) {
     return result(ReachabilityStatus::InvalidStart, 0);
   }
-  if (!contains<Shape>(goal)) {
+  if (!contains<Shape>(request.goal)) {
     return result(ReachabilityStatus::InvalidGoal, 0);
   }
 
-  const auto start_region = graph.template region_of<Shape>(start);
+  const auto start_region = graph.template region_of<Shape>(request.start);
   if (start_region.region == invalid_local_region) {
     if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
-      if (!graph.has_chunk(chunk_key<Shape>(chunk_coord<Shape>(start)))) {
+      if (!graph.has_chunk(
+              chunk_key<Shape>(chunk_coord<Shape>(request.start)))) {
         return result(ReachabilityStatus::Indeterminate, 0);
       }
     }
     return result(ReachabilityStatus::InvalidStart, 0);
   }
-  const auto goal_region = graph.template region_of<Shape>(goal);
+  const auto goal_region = graph.template region_of<Shape>(request.goal);
   if (goal_region.region == invalid_local_region) {
     if constexpr (!std::is_same_v<Residency, AlwaysResident>) {
-      if (!graph.has_chunk(chunk_key<Shape>(chunk_coord<Shape>(goal)))) {
+      if (!graph.has_chunk(
+              chunk_key<Shape>(chunk_coord<Shape>(request.goal)))) {
         return result(ReachabilityStatus::Indeterminate, 0);
       }
     }

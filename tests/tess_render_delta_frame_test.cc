@@ -39,10 +39,10 @@ auto make_collector(std::uint32_t threshold = 64, bool coalesce = true)
 auto frame_tile_set(const tess::DeltaFrame& frame)
     -> std::set<std::pair<std::int64_t, std::int64_t>> {
   std::set<std::pair<std::int64_t, std::int64_t>> tiles;
-  for (const auto& chunk : frame.chunks) {
+  for (const auto& chunk : frame.chunks()) {
     if (chunk.tile_count != 0) {
       for (std::uint32_t i = 0; i < chunk.tile_count; ++i) {
-        const auto& tile = frame.tiles[chunk.first_tile + i];
+        const auto& tile = frame.tiles()[chunk.first_tile + i];
         tiles.emplace(tile.coord.x, tile.coord.y);
       }
     } else {
@@ -135,8 +135,8 @@ TEST(TessDeltaFrame, SmallDirtyBoxesEmitPerTileRecordsMatchingLegacy) {
   tess::collect_tile_deltas(collector, world, kTerrainBit);
   const auto frame = collector.publish();
 
-  EXPECT_EQ(frame.chunks.size(), 2u);
-  for (const auto& chunk : frame.chunks) {
+  EXPECT_EQ(frame.chunks().size(), 2u);
+  for (const auto& chunk : frame.chunks()) {
     EXPECT_NE(chunk.tile_count, 0u);
     EXPECT_EQ(chunk.dirty_flags, kTerrainBit);
   }
@@ -152,12 +152,12 @@ TEST(TessDeltaFrame, LargeDirtyBoxesEmitOneClippedBoxRecord) {
   tess::collect_tile_deltas(collector, world, kTerrainBit);
   const auto frame = collector.publish();
 
-  ASSERT_EQ(frame.chunks.size(), 1u);
-  EXPECT_EQ(frame.chunks[0].tile_count, 0u);
-  EXPECT_EQ(frame.chunks[0].bounds.origin, (tess::Coord3{8, 8, 0}));
-  EXPECT_EQ(frame.chunks[0].bounds.extent.x, 8u);
-  EXPECT_EQ(frame.chunks[0].bounds.extent.y, 8u);
-  EXPECT_TRUE(frame.tiles.empty());
+  ASSERT_EQ(frame.chunks().size(), 1u);
+  EXPECT_EQ(frame.chunks()[0].tile_count, 0u);
+  EXPECT_EQ(frame.chunks()[0].bounds.origin, (tess::Coord3{8, 8, 0}));
+  EXPECT_EQ(frame.chunks()[0].bounds.extent.x, 8u);
+  EXPECT_EQ(frame.chunks()[0].bounds.extent.y, 8u);
+  EXPECT_TRUE(frame.tiles().empty());
 }
 
 TEST(TessDeltaFrame, ThresholdZeroIsAlwaysBoxGranular) {
@@ -168,10 +168,10 @@ TEST(TessDeltaFrame, ThresholdZeroIsAlwaysBoxGranular) {
   tess::collect_tile_deltas(collector, world, kTerrainBit);
   const auto frame = collector.publish();
 
-  ASSERT_EQ(frame.chunks.size(), 1u);
-  EXPECT_EQ(frame.chunks[0].tile_count, 0u);
-  EXPECT_EQ(frame.chunks[0].bounds.extent.x, 1u);
-  EXPECT_TRUE(frame.tiles.empty());
+  ASSERT_EQ(frame.chunks().size(), 1u);
+  EXPECT_EQ(frame.chunks()[0].tile_count, 0u);
+  EXPECT_EQ(frame.chunks()[0].bounds.extent.x, 1u);
+  EXPECT_TRUE(frame.tiles().empty());
 }
 
 TEST(TessDeltaFrame, CollectionClearsOnlyTheCollectedMask) {
@@ -220,11 +220,11 @@ TEST(TessDeltaFrame, MovesCoalesceLastWriterWinsWithinAFrame) {
   collector.record_move(pawn, tess::Coord3{2, 0, 0}, tess::Coord3{2, 1, 0});
 
   const auto frame = collector.publish();
-  ASSERT_EQ(frame.entities.size(), 1u);
-  EXPECT_EQ(frame.entities[0].kind, tess::EntityDeltaKind::Moved);
-  EXPECT_EQ(frame.entities[0].from, (tess::Coord3{0, 0, 0}));
-  EXPECT_EQ(frame.entities[0].to, (tess::Coord3{2, 1, 0}));
-  EXPECT_EQ(frame.entities[0].last_tick, 12u);
+  ASSERT_EQ(frame.entities().size(), 1u);
+  EXPECT_EQ(frame.entities()[0].kind, tess::EntityDeltaKind::Moved);
+  EXPECT_EQ(frame.entities()[0].from, (tess::Coord3{0, 0, 0}));
+  EXPECT_EQ(frame.entities()[0].to, (tess::Coord3{2, 1, 0}));
+  EXPECT_EQ(frame.entities()[0].last_tick, 12u);
   EXPECT_EQ(frame.header.first_tick, 10u);
   EXPECT_EQ(frame.header.last_tick, 12u);
   EXPECT_EQ(frame.header.ticks, 3u);
@@ -235,8 +235,8 @@ TEST(TessDeltaFrame, MovesCoalesceLastWriterWinsWithinAFrame) {
   collector.begin_tick(13);
   collector.record_move(pawn, tess::Coord3{2, 1, 0}, tess::Coord3{3, 1, 0});
   const auto next = collector.publish();
-  ASSERT_EQ(next.entities.size(), 1u);
-  EXPECT_EQ(next.entities[0].from, (tess::Coord3{2, 1, 0}));
+  ASSERT_EQ(next.entities().size(), 1u);
+  EXPECT_EQ(next.entities()[0].from, (tess::Coord3{2, 1, 0}));
 }
 
 TEST(TessDeltaFrame, BarriersSplitCoalescing) {
@@ -249,12 +249,12 @@ TEST(TessDeltaFrame, BarriersSplitCoalescing) {
   collector.record_move(pawn, tess::Coord3{8, 9, 0}, tess::Coord3{8, 10, 0});
 
   const auto frame = collector.publish();
-  ASSERT_EQ(frame.entities.size(), 3u);
-  EXPECT_EQ(frame.entities[0].kind, tess::EntityDeltaKind::Moved);
-  EXPECT_EQ(frame.entities[1].kind, tess::EntityDeltaKind::Teleported);
-  EXPECT_EQ(frame.entities[2].kind, tess::EntityDeltaKind::Moved);
-  EXPECT_EQ(frame.entities[2].from, (tess::Coord3{8, 8, 0}));
-  EXPECT_EQ(frame.entities[2].to, (tess::Coord3{8, 10, 0}));
+  ASSERT_EQ(frame.entities().size(), 3u);
+  EXPECT_EQ(frame.entities()[0].kind, tess::EntityDeltaKind::Moved);
+  EXPECT_EQ(frame.entities()[1].kind, tess::EntityDeltaKind::Teleported);
+  EXPECT_EQ(frame.entities()[2].kind, tess::EntityDeltaKind::Moved);
+  EXPECT_EQ(frame.entities()[2].from, (tess::Coord3{8, 8, 0}));
+  EXPECT_EQ(frame.entities()[2].to, (tess::Coord3{8, 10, 0}));
 }
 
 TEST(TessDeltaFrame, CoalescingDisabledKeepsEveryStep) {
@@ -266,9 +266,9 @@ TEST(TessDeltaFrame, CoalescingDisabledKeepsEveryStep) {
   collector.record_move(pawn, tess::Coord3{1, 0, 0}, tess::Coord3{2, 0, 0});
 
   const auto frame = collector.publish();
-  ASSERT_EQ(frame.entities.size(), 2u);
-  EXPECT_EQ(frame.entities[0].to, (tess::Coord3{1, 0, 0}));
-  EXPECT_EQ(frame.entities[1].from, (tess::Coord3{1, 0, 0}));
+  ASSERT_EQ(frame.entities().size(), 2u);
+  EXPECT_EQ(frame.entities()[0].to, (tess::Coord3{1, 0, 0}));
+  EXPECT_EQ(frame.entities()[1].from, (tess::Coord3{1, 0, 0}));
   EXPECT_EQ(collector.stats().moves_coalesced, 0u);
 }
 
@@ -281,7 +281,7 @@ TEST(TessDeltaFrame, EntityCapacityOverflowTruncatesTheFrame) {
   collector.record_spawn(tess::EntityHandle{3}, tess::Coord3{2, 0, 0});
 
   const auto frame = collector.publish();
-  EXPECT_EQ(frame.entities.size(), 2u);
+  EXPECT_EQ(frame.entities().size(), 2u);
   EXPECT_TRUE(frame.header.truncated);
   EXPECT_FALSE(
       tess::delta_frame_applicable(frame.header, frame.header.from_version));
@@ -303,9 +303,9 @@ TEST(TessDeltaFrame, TileOverflowDegradesToABoxRecordWithoutTruncation) {
   tess::collect_tile_deltas(collector, world, kTerrainBit);
   const auto frame = collector.publish();
 
-  ASSERT_EQ(frame.chunks.size(), 1u);
-  EXPECT_EQ(frame.chunks[0].tile_count, 0u);  // box fallback
-  EXPECT_EQ(frame.chunks[0].bounds.extent.x, 3u);
+  ASSERT_EQ(frame.chunks().size(), 1u);
+  EXPECT_EQ(frame.chunks()[0].tile_count, 0u);  // box fallback
+  EXPECT_EQ(frame.chunks()[0].bounds.extent.x, 3u);
   EXPECT_FALSE(frame.header.truncated);
 }
 
@@ -351,7 +351,7 @@ TEST(TessDeltaFrame, BaselinePublishDropsPendingEntityRecords) {
   // apply, so carrying entity records would double-apply them.
   const auto frame = collector.publish();
   EXPECT_TRUE(frame.header.baseline);
-  EXPECT_TRUE(frame.entities.empty());
+  EXPECT_TRUE(frame.entities().empty());
 }
 
 TEST(TessDeltaFrame, BaselineAfterTruncationRecoversInOnePublish) {
@@ -405,12 +405,12 @@ TEST(TessDeltaFrame, OversizedDirtyExtentsClipSafely) {
 
   tess::collect_tile_deltas(collector, world, kTerrainBit);
   const auto frame = collector.publish();
-  ASSERT_EQ(frame.chunks.size(), 1u);
-  EXPECT_EQ(frame.chunks[0].tile_count, 0u);
+  ASSERT_EQ(frame.chunks().size(), 1u);
+  EXPECT_EQ(frame.chunks()[0].tile_count, 0u);
   // Clipped to the chunk: origin at the mark, ending at the chunk edge.
-  EXPECT_EQ(frame.chunks[0].bounds.origin, (tess::Coord3{2, 2, 0}));
-  EXPECT_EQ(frame.chunks[0].bounds.extent.x, 6u);
-  EXPECT_EQ(frame.chunks[0].bounds.extent.y, 6u);
+  EXPECT_EQ(frame.chunks()[0].bounds.origin, (tess::Coord3{2, 2, 0}));
+  EXPECT_EQ(frame.chunks()[0].bounds.extent.x, 6u);
+  EXPECT_EQ(frame.chunks()[0].bounds.extent.y, 6u);
 }
 
 TEST(TessDeltaFrame, FullBaselineCoversEveryChunkAndHealsTheStream) {
@@ -428,8 +428,8 @@ TEST(TessDeltaFrame, FullBaselineCoversEveryChunkAndHealsTheStream) {
   const auto frame = collector.publish();
   EXPECT_TRUE(frame.header.baseline);
   EXPECT_FALSE(frame.header.truncated);
-  ASSERT_EQ(frame.chunks.size(), World::chunk_count);
-  for (const auto& chunk : frame.chunks) {
+  ASSERT_EQ(frame.chunks().size(), World::chunk_count);
+  for (const auto& chunk : frame.chunks()) {
     EXPECT_EQ(chunk.tile_count, 0u);
     EXPECT_EQ(chunk.dirty_flags, kTerrainBit);
     EXPECT_EQ(chunk.bounds.extent.x, 8u);
@@ -471,12 +471,12 @@ TEST(TessDeltaFrame, OverlaysStageCopiesAndReplaceEveryFrame) {
   route.assign({{9, 9, 0}, {9, 9, 0}, {9, 9, 0}});
 
   const auto frame = collector.publish();
-  ASSERT_EQ(frame.overlays.size(), 1u);
-  EXPECT_EQ(frame.overlays[0].entity, (tess::EntityHandle{5}));
-  ASSERT_EQ(frame.overlays[0].node_count, 2u);
-  EXPECT_EQ(frame.overlay_nodes[frame.overlays[0].first_node],
+  ASSERT_EQ(frame.overlays().size(), 1u);
+  EXPECT_EQ(frame.overlays()[0].entity, (tess::EntityHandle{5}));
+  ASSERT_EQ(frame.overlays()[0].node_count, 2u);
+  EXPECT_EQ(frame.overlay_nodes()[frame.overlays()[0].first_node],
             (tess::Coord3{1, 0, 0}));
-  EXPECT_EQ(frame.overlay_nodes[frame.overlays[0].first_node + 1],
+  EXPECT_EQ(frame.overlay_nodes()[frame.overlays()[0].first_node + 1],
             (tess::Coord3{2, 0, 0}));
 
   // Overlays never affect versioning or emptiness: full replacement,
@@ -484,7 +484,7 @@ TEST(TessDeltaFrame, OverlaysStageCopiesAndReplaceEveryFrame) {
   EXPECT_TRUE(frame.empty());
   EXPECT_EQ(frame.header.from_version, frame.header.to_version);
   const auto next = collector.publish();
-  EXPECT_TRUE(next.overlays.empty());
+  EXPECT_TRUE(next.overlays().empty());
 }
 
 TEST(TessDeltaFrame, OverlayOverflowDropsTheOverlayNotTheFrame) {
@@ -502,8 +502,8 @@ TEST(TessDeltaFrame, OverlayOverflowDropsTheOverlayNotTheFrame) {
                                short_view);
 
   const auto frame = collector.publish();
-  ASSERT_EQ(frame.overlays.size(), 1u);
-  EXPECT_EQ(frame.overlays[0].entity, (tess::EntityHandle{2}));
+  ASSERT_EQ(frame.overlays().size(), 1u);
+  EXPECT_EQ(frame.overlays()[0].entity, (tess::EntityHandle{2}));
   EXPECT_FALSE(frame.header.truncated);
 }
 

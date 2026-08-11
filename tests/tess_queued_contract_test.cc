@@ -797,7 +797,7 @@ TEST(TessQueuedContract, DirtyPartitionMergeCapacityFailurePreservesSource) {
             tess::PlannedDirtyRecordStatus::Recorded);
 
   const tess::detail::ScopedCapacityLimitForTesting capacity_limit{0};
-  const auto merged = tess::merge_planned_dirty(world, partitions, scratch);
+  const auto merged = tess::merge_planned_dirty(world, scratch, partitions);
 
   EXPECT_EQ(merged.status, tess::PlannedDirtyMergeStatus::CapacityExceeded);
   EXPECT_EQ(merged.merged_chunk_count, 0u);
@@ -978,7 +978,7 @@ TEST(TessQueuedContract,
 
   static_assert(noexcept(tess::merge_planned_dirty(world, dirty)),
                 "the non-allocating overload must stay noexcept");
-  static_assert(!noexcept(tess::merge_planned_dirty(world, partitions, dirty)),
+  static_assert(!noexcept(tess::merge_planned_dirty(world, dirty, partitions)),
                 "collect_planned_dirty reserves, so this can throw bad_alloc");
   static_assert(!noexcept(tess::merge_planned_dirty(world, scratch)),
                 "this reserves the merged accumulator, so it can throw");

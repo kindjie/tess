@@ -116,7 +116,7 @@ void run_goalset_build_bench(benchmark::State& state, std::size_t goal_count) {
     fill_goals(goals, goal_count);
     const auto result =
         tess::build_distance_field_product<FieldWorld, PassableTag>(
-            *world, goals, scratch, product);
+            *world, goals, product, scratch);
     reached = product.reached_nodes();
     auto status = result.status;
     benchmark::DoNotOptimize(status);
@@ -168,7 +168,7 @@ void BM_fields_goalset_build_large(benchmark::State& state) {
     }
     const auto result =
         tess::build_distance_field_product<LargeFieldWorld, PassableTag>(
-            *world, goals, scratch, product);
+            *world, goals, product, scratch);
     reached = product.reached_nodes();
     auto status = result.status;
     benchmark::DoNotOptimize(status);
@@ -192,7 +192,7 @@ void BM_fields_nearest_target(benchmark::State& state) {
   product.reserve_dependencies(FieldWorld::chunk_count);
   fields_bench_check(
       tess::build_distance_field_product<FieldWorld, PassableTag>(
-          *world, goals, scratch, product)
+          *world, goals, product, scratch)
               .status == tess::PathStatus::Found,
       "product build failed");
 
@@ -221,7 +221,7 @@ void BM_fields_cache_hit(benchmark::State& state) {
   cache.reserve_entries(4);
   fields_bench_check(
       tess::build_distance_field_product<FieldWorld, PassableTag>(
-          *world, goals, scratch, product)
+          *world, goals, product, scratch)
               .status == tess::PathStatus::Found,
       "product build failed");
   fields_bench_check((cache.store<FieldWorld, PassableTag>(std::move(product))),
@@ -271,7 +271,7 @@ void BM_fields_cache_miss_store(benchmark::State& state) {
       product.reserve_nodes(kTileCount);
       product.reserve_dependencies(FieldWorld::chunk_count);
       (void)tess::build_distance_field_product<FieldWorld, PassableTag>(
-          *world, goals, scratch, product);
+          *world, goals, product, scratch);
       benchmark::DoNotOptimize(
           (cache.store<FieldWorld, PassableTag>(std::move(product))));
     }
@@ -318,7 +318,7 @@ void BM_fields_cache_store_reusing(benchmark::State& state) {
     flip = !flip;
     if (cache.lookup<FieldWorld, PassableTag>(*world, goals) == nullptr) {
       (void)tess::build_distance_field_product<FieldWorld, PassableTag>(
-          *world, goals, scratch, product);
+          *world, goals, product, scratch);
       stored = cache.store_reusing<FieldWorld, PassableTag>(product);
       benchmark::DoNotOptimize(stored);
     }
@@ -361,7 +361,7 @@ void BM_fields_cache_eviction(benchmark::State& state) {
       product.reserve_nodes(kTileCount);
       product.reserve_dependencies(FieldWorld::chunk_count);
       (void)tess::build_distance_field_product<FieldWorld, PassableTag>(
-          *world, set, scratch, product);
+          *world, set, product, scratch);
       benchmark::DoNotOptimize(
           (cache.store<FieldWorld, PassableTag>(std::move(product))));
     }
@@ -411,7 +411,7 @@ void BM_fields_cache_scan_at(benchmark::State& state) {
     one.reserve_nodes(kTileCount);
     one.reserve_dependencies(FieldWorld::chunk_count);
     (void)tess::build_distance_field_product<FieldWorld, PassableTag>(
-        *world, goals[0], scratch, one);
+        *world, goals[0], one, scratch);
     (void)probe.store<FieldWorld, PassableTag>(std::move(one));
     return probe.stats().bytes;
   }();
@@ -431,7 +431,7 @@ void BM_fields_cache_scan_at(benchmark::State& state) {
       product.reserve_nodes(kTileCount);
       product.reserve_dependencies(FieldWorld::chunk_count);
       (void)tess::build_distance_field_product<FieldWorld, PassableTag>(
-          *world, set, scratch, product);
+          *world, set, product, scratch);
       benchmark::DoNotOptimize(
           (cache.store<FieldWorld, PassableTag>(std::move(product))));
     }
@@ -464,7 +464,7 @@ void BM_fields_build_alloc_gate(benchmark::State& state) {
   product.reserve_dependencies(FieldWorld::chunk_count);
   fill_goals(goals, 16);
   (void)tess::build_distance_field_product<FieldWorld, PassableTag>(
-      *world, goals, scratch, product);  // warm
+      *world, goals, product, scratch);  // warm
 
   tess::diagnostics::AllocationCounters counters;
   for (auto _ : state) {
@@ -473,7 +473,7 @@ void BM_fields_build_alloc_gate(benchmark::State& state) {
     fill_goals(goals, 16);
     const auto result =
         tess::build_distance_field_product<FieldWorld, PassableTag>(
-            *world, goals, scratch, product);
+            *world, goals, product, scratch);
     auto status = result.status;
     benchmark::DoNotOptimize(status);
   }

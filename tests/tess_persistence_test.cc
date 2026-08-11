@@ -355,7 +355,7 @@ TEST(TessPersistence, DenseLoadInvalidatesWarmDerivedProducts) {
   tess::DistanceFieldScratch scratch;
   tess::DistanceFieldProduct product;
   ASSERT_EQ((tess::build_distance_field_product<DenseWorld, TerrainTag>(
-                 target, goals, scratch, product))
+                 target, goals, product, scratch))
                 .status,
             tess::PathStatus::Found);
   ASSERT_TRUE(product.is_valid(target));

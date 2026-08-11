@@ -1525,7 +1525,7 @@ void BM_path_distance_field_batch_100_shared_room_portals_512x512(
             world, goal, scratch);
         for (const auto request : requests) {
           result = tess::distance_field_path<PathScaleWorld, PassableTag>(
-              world, request.start, request.goal, scratch);
+              world, {request.start, request.goal}, scratch);
           total_cost += result.cost;
           total_expanded += result.expanded_nodes;
         });
@@ -1624,7 +1624,7 @@ void BM_path_distance_field_batch_100_shared_sparse_512x512(
             world, goal, scratch);
         for (const auto request : requests) {
           result = tess::distance_field_path<PathScaleWorld, PassableTag>(
-              world, request.start, request.goal, scratch);
+              world, {request.start, request.goal}, scratch);
           total_cost += result.cost;
           total_expanded += result.expanded_nodes;
         });
@@ -1754,7 +1754,7 @@ void BM_path_distance_field_batch_100_multigoal_room_portals_512x512(
           continue;
         }
         result = tess::distance_field_path<PathScaleWorld, PassableTag>(
-            world, request.start, request.goal, scratch);
+            world, {request.start, request.goal}, scratch);
         total_cost += result.cost;
         total_expanded += result.expanded_nodes;
       }

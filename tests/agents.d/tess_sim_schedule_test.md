@@ -6,3 +6,5 @@
   stay aligned through speed changes, backlog, pause, disablement, and throws.
   A throwing callback restores consumed triggers without rolling back the
   clock. Explicitly `noexcept` tasks retain the no-throw erased signature.
+  Registered resumable task adapters are non-copyable and non-movable so the
+  scheduler never retains an address invalidated by relocation.

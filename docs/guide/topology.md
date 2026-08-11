@@ -35,8 +35,8 @@ tess::LocalTopologyScratch scratch;
 tess::RegionGraph graph;
 tess::build_region_graph<World, Walker>(world, scratch, graph);
 
-const auto verdict =
-    tess::precheck_path<Walker>(graph, world, start, goal, precheck_scratch);
+const auto verdict = tess::precheck_path<Walker>(
+    graph, world, tess::PathRequest{start, goal}, precheck_scratch);
 ```
 <!-- /tess-snippet -->
 

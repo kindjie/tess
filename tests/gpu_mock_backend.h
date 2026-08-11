@@ -59,7 +59,7 @@ class MockGpuBackend {
         dispatch.chunk_count > capabilities_.max_dispatch_chunks) {
       return false;
     }
-    calls_.push_back(GpuCallRecord{GpuCallKind::Dispatch, dispatch.product_key,
+    calls_.push_back(GpuCallRecord{GpuCallKind::Dispatch, dispatch.handle.key,
                                    dispatch.input_field_index,
                                    dispatch.chunk_count, nullptr});
     return true;
@@ -70,7 +70,7 @@ class MockGpuBackend {
         readback.policy == tess::gpu::ReadbackPolicy::None) {
       return false;
     }
-    calls_.push_back(GpuCallRecord{GpuCallKind::Readback, readback.product_key,
+    calls_.push_back(GpuCallRecord{GpuCallKind::Readback, readback.handle.key,
                                    static_cast<std::uint32_t>(readback.policy),
                                    readback.byte_size, nullptr});
     return true;

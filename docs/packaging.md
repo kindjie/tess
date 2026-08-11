@@ -76,10 +76,11 @@ umbrella. All three are dependency-free. The independently gated EnTT and
 Flecs adapters and the Dear ImGui panels are opt-in headers that consumers
 include after their corresponding third-party header; see
 [ECS integration](architecture/ecs.md) and
-[Diagnostics](architecture/diagnostics.md). Every installed header is public and
-supported: include the `<tess/tess.h>` umbrella, an aggregate such as
-`<tess/pathfinding.h>`, or the narrowest header that owns the API. In
-compile-sensitive code, prefer the narrowest one.
+[Diagnostics](architecture/diagnostics.md). Header support is defined by
+`cmake/tess-headers.json`: stable and optional-stable headers carry the 1.x
+source contract, experimental headers do not, and implementation-only headers
+must not be included directly. Prefer the narrowest stable header in
+compile-sensitive code.
 
 ## Package-manager status
 

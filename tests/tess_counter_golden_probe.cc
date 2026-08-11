@@ -225,7 +225,7 @@ auto run_unit_product_replay() -> tess::diagnostics::PathCounters {
     tess::diagnostics::ScopedPathCounters scope{counters};
     const auto build =
         tess::build_distance_field_product<PathWorld, PassableTag>(
-            world, goals, scratch, product);
+            world, goals, product, scratch);
     check(build.status == tess::PathStatus::Found, "unit_product_replay",
           "product build failed");
     const auto replay =
@@ -256,7 +256,7 @@ auto run_weighted_product_nearest() -> tess::diagnostics::PathCounters {
     tess::diagnostics::ScopedPathCounters scope{counters};
     const auto build =
         tess::build_weighted_distance_field_product<PathWorld, Walker>(
-            world, goals, scratch, product);
+            world, goals, product, scratch);
     check(build.status == tess::PathStatus::Found, "weighted_product_nearest",
           "product build failed");
     const auto nearest = tess::weighted_nearest_target<PathWorld, Walker>(

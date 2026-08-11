@@ -308,8 +308,8 @@ TEST(TessEcsAdapter, AdvanceWithIndexKeepsFieldAndIndexInSync) {
 
   const auto stats =
       tess::advance_path_agents_with_index<World, PassableTag, OccupancyTag,
-                                           ReservationTag>(world, batch,
-                                                           runtime, index, 8);
+                                           ReservationTag>(
+          world, batch, runtime, index, {.max_steps = 8});
   EXPECT_EQ(stats.advanced, 2u);
   EXPECT_EQ(stats.arrived, 1u);
 
@@ -348,8 +348,8 @@ TEST(TessEcsAdapter, AdvanceWithIndexLeavesIndexUntouchedOnFailures) {
   world.template field<OccupancyTag>(tess::Coord3{1, 0, 0}) = true;
   auto stats =
       tess::advance_path_agents_with_index<World, PassableTag, OccupancyTag,
-                                           ReservationTag>(world, batch,
-                                                           runtime, index, 1);
+                                           ReservationTag>(
+          world, batch, runtime, index, {.max_steps = 1});
   EXPECT_EQ(stats.blocked_waits, 1u);
   EXPECT_EQ(index.entity_at(tess::Coord3{0, 0, 0}), handle);
   EXPECT_EQ(index.entity_at(tess::Coord3{1, 0, 0}), tess::kNullEntityHandle);
@@ -364,7 +364,7 @@ TEST(TessEcsAdapter, AdvanceWithIndexLeavesIndexUntouchedOnFailures) {
   batch.agents()[0].position = tess::Coord3{5, 5, 0};
   stats = tess::advance_path_agents_with_index<World, PassableTag, OccupancyTag,
                                                ReservationTag>(
-      world, batch, runtime, index, 1);
+      world, batch, runtime, index, {.max_steps = 1});
   EXPECT_EQ(stats.movement_failures.invalid, 1u);
   EXPECT_EQ(batch.agents()[0].phase, tess::PathAgentPhase::Unreachable);
   EXPECT_EQ(index.entity_at(tess::Coord3{0, 0, 0}), handle);
@@ -558,15 +558,15 @@ TEST(TessEcsAdapter, TickPipelineRecordsMovementDeltas) {
   for (int tick = 0; tick < 3; ++tick) {
     (void)tess::tick_ecs_unit_path_agents<World, PassableTag, OccupancyTag,
                                           ReservationTag>(
-        tick_state, world, store, store, batch, runtime, index, {}, 0, nullptr,
+        tick_state, world, store, store, batch, runtime, index, {}, nullptr,
         &collector);
   }
 
   const auto frame = collector.publish();
-  ASSERT_EQ(frame.entities.size(), 3u);
+  ASSERT_EQ(frame.entities().size(), 3u);
   auto previous = tess::Coord3{0, 0, 0};
-  for (std::size_t i = 0; i < frame.entities.size(); ++i) {
-    const auto& record = frame.entities[i];
+  for (std::size_t i = 0; i < frame.entities().size(); ++i) {
+    const auto& record = frame.entities()[i];
     EXPECT_EQ(record.kind, tess::EntityDeltaKind::Moved);
     EXPECT_EQ(record.entity, (tess::EntityHandle{40}));
     EXPECT_EQ(record.from, previous);
