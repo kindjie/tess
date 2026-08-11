@@ -313,15 +313,23 @@ the broad ceilings as calibrated evidence.
 
 The 2026-08-07 audit routed its API findings here rather than running them
 as a separate workstream, but named none of them in this document, so the
-remaining ones are recorded explicitly. API1-API6, API8 and API12-API16
-are closed; what is left divides by whether it needs this window at all.
+remaining ones are recorded explicitly. Each entry states what is left
+rather than which finding number is "done": several findings closed only
+in part, and the remainders are cited against source below so the split is
+checkable rather than remembered.
 
-Source-breaking, and therefore this window or not before 1.0 — §12.2
-freezes the surface at the first release candidate:
+Source-breaking, and therefore this window or the next major version —
+§12.2 freezes the surface at the first release candidate, and §6.1 and
+§6.2 keep documented signatures source-compatible through 1.x:
 
 - **API7.** Five `(start, goal)` `Coord3` parameter pairs across nine
-  declaration sites collapse onto `PathRequest`. The widest call-site
-  sweep left; worth its own change rather than folding into another.
+  declaration sites collapse onto `PathRequest`. The finding also names
+  three same-class hazards that are still present and belong with it:
+  `set_caps(max_entries, max_path_nodes)`, the interconvertible defaulted
+  `(max_steps, movement_dirty_mask)` pairs, and the GPU descriptors
+  re-spelling `GpuProductHandle` as two loose `uint64_t`. The widest
+  call-site sweep left; worth its own change rather than folding into
+  another.
 - **API11 (argument order).** The remaining half of API11, after the
   `noexcept` documentation landed. Every affected parameter pair is
   cross-type, so a stale call site is a compile error rather than a
@@ -338,17 +346,53 @@ freezes the surface at the first release candidate:
   `EventStream::clear` versus `discard_all`, was already downgraded
   during consolidation: the header discloses the difference, making it
   redundant naming rather than a trap.
+- **API3, remaining half.** `sim/delta_frame.h:153-159` says in the source
+  that holding a `DeltaFrame` across `publish()` leaves its spans indexing
+  cleared and refilled buffers, that this is documented rather than
+  enforced, and that enforcement is tracked as the other half of API3. PRs
+  #149 and #151 corrected the contract and made the collector move-only;
+  both reviewers then argued against accessor-gating, so the decision to
+  enforce or to accept the documented contract belongs in this window.
+- **API10, remaining half.** The verification that retired this finding
+  holds only for `AutoExecTask`. `ResumableWorkQueue` defines copy and
+  move explicitly (`ops/async_work.h:116-149`), and `ResumableWorkTask` is
+  implicitly copyable while holding a raw queue pointer
+  (`sim/async_work_task.h:14-26`), so a copy silently aliases the queue.
+  Decide whether those are intended before the surface freezes.
+- **API13, remaining half.** The privatization closed in #161, but the
+  1.x surface question did not: `docs/integration-policy.md:269-296`
+  records that four dense-only families stay production-promoted in the
+  ordinary public namespace and that adding sparse support will change
+  their signatures. Either accept that break for 1.x or carve the
+  families out before the promise starts.
 
-Non-breaking, so they need no window and can land whenever the
-surrounding subsystem is next touched: **API18**, adoption items
-**AD3-AD9**, and **D7** (Doxygen coverage).
+Decision required before 1.0 even though the fix itself is additive:
 
-Two findings were dispositioned as unfixed with written rationale rather
-than deferred, and should not reappear as pending work: **API9** (the
-premise holds but the fix is a World-concept redesign, not a break) and
-**API10** (the premise failed verification outright — the type is already
-non-copyable and non-movable). The `ResumableWorkQueue` half of API12
-went the same way in PR #167.
+- **API18.** `tag_identity` breaks silently across a DSO boundary — with
+  `-fvisibility=hidden` a region graph built in a shared library reports
+  `GraphStale` forever. The finding's instruction is to decide whether
+  cross-DSO use is supported, not merely to document it, because the
+  answer changes what the 1.0 promise covers. PR #167 put the caveat on
+  one public type (`IntentPayloadView::holds`); the other affected types
+  still carry nothing.
+
+Additive and unconstrained by the window:
+
+- **API8, remaining half.** Threading `MissingChunkPolicy` through
+  `weighted_path_batch`, which still hardcodes `TreatAsBlocked` and
+  answers `NoPath` across a missing chunk where the uncached call answers
+  `Indeterminate`. The cached half closed in #144 after the batch attempt
+  was withdrawn for breaking grouped goals;
+  `docs/integration-policy.md:298-301` records the remainder as open work,
+  and the fix needs per-member reclassification against the completed
+  field.
+- Adoption items **AD3-AD9** and **D7** (Doxygen coverage).
+
+Closed as unfixed with written rationale, and not to be reopened as
+pending work: **API9** (the premise holds, but the fix is a World-concept
+redesign rather than a break) and the `ResumableWorkQueue` half of
+**API12** (PR #167: `state(ticket)` and `result_version(ticket)` already
+separate the causes the finding said were collapsed).
 
 ### 12.2 v1.0.0-rc.1: feature and surface freeze
 
