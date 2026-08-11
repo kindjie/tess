@@ -263,10 +263,9 @@ TEST(TessQueuedContract, PayloadViewSeparatesItsThreeKindsOfEmpty) {
   EXPECT_FALSE(unbound.bound());
   EXPECT_FALSE(unbound.holds<tess::PathRequest>());
 
-  // `holds` is a question about type identity, not about size, so the
-  // filled and empty batches answer it identically.
-  EXPECT_EQ(filled.holds<tess::PathRequest>(),
-            bound_empty.holds<tess::PathRequest>());
+  // An empty batch still knows what it is not: the size-zero case must go
+  // through the same identity check rather than short-circuiting to "no".
+  EXPECT_FALSE(bound_empty.holds<tess::MovementIntent>());
 }
 
 TEST(TessQueuedContract, InspectingQueuedAndPlannedOperationsDoesNotAllocate) {

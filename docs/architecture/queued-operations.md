@@ -134,12 +134,15 @@ callbacks. Chunk execution remains explicit through the planner-issued block
 adapters, while specialized path, movement, residency, and presentation
 consumers read the type-checked payload after inspecting `OperationKind`.
 
-Because `OperationKind` fixes the payload type, `IntentPayloadView::as<T>()`
-treats a mismatch as a caller bug: it asserts `holds<T>()` and, with
-assertions compiled out, falls back to an empty span rather than
-reinterpreting the batch. Read `holds<T>()` where the type is genuinely in
-question and `bound()` to skip operations that carry no payload — an empty
-result from `as<T>()` means the batch is empty and nothing else.
+The typed `FrameOps` entry points pair each `OperationKind` with the payload
+type it names, so `IntentPayloadView::as<T>()` treats a mismatch as a caller
+bug: it asserts `holds<T>()` and, with assertions compiled out, falls back to
+an empty span rather than reinterpreting the batch. (Nothing enforces that
+pairing on a hand-built `QueuedOperation` or on `PlannedOperation::create`,
+where `kind` and `payload` are independent fields.) Read `holds<T>()` where
+the type is genuinely in question and `bound()` to skip operations carrying
+no payload; once `holds<T>()` is satisfied, an empty result from `as<T>()`
+means the batch is empty and nothing else.
 
 ## Planning Behavior
 

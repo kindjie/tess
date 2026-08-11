@@ -405,7 +405,11 @@ class ResumableWorkQueue {
   }
 
   /**
-   * Reclassifies a settled result as `Stale` when its version is behind.
+   * Reclassifies a settled result as `Stale` when its version does not
+   * match `current`.
+   *
+   * The comparison is equality, not ordering: a result stamped *ahead* of
+   * `current` is marked stale too.
    *
    * The state rule is the opposite of the setters above: this one acts on
    * `Immediate` or `Ready` slots and refuses `Pending` ones. `false` adds

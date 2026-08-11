@@ -145,9 +145,11 @@ struct IntentPayloadView {
    *
    * The gate to check before `as<T>()`, and the only way to tell a batch
    * this view does not carry from one it carries and that happens to be
-   * empty. Identity is a per-type token whose address is unique **within
-   * one binary image**, so a view produced in another image (a payload
-   * crossing a DLL boundary) does not hold its own type here.
+   * empty. Identity is a per-type token guaranteed unique **within one
+   * binary image** and nothing more, so the answer for a view produced in
+   * another image is unspecified and toolchain-dependent: do not compare
+   * payloads across a shared-library boundary (`docs/integration-policy.md`
+   * states the same caveat for the token itself).
    */
   template <typename T>
   [[nodiscard]] auto holds() const noexcept -> bool {
@@ -173,18 +175,26 @@ struct IntentPayloadView {
    * Returns the batch as `std::span<const T>`; `holds<T>()` is a
    * precondition.
    *
-   * An empty result means the batch is empty, and nothing else. Before,
-   * it also meant "this view carries some other type" and "this view
-   * carries nothing at all", so a caller that asked for the wrong type
-   * processed zero items every frame with no signal — the failure the
-   * assertion now names. Callers dispatch on `QueuedOperation::kind`,
-   * which fixes the type, so a mismatch is a caller bug rather than a
-   * condition to branch on; use `holds<T>()` where the answer is
-   * genuinely in question, and `bound()` to skip payloadless operations.
+   * Once the precondition holds, an empty result means the batch is empty
+   * and nothing else. Before, it also meant "this view carries some other
+   * type" and "this view carries nothing at all", so a caller that asked
+   * for the wrong type processed zero items every frame with no signal —
+   * the failure the assertion now names. Use `holds<T>()` where the type
+   * is genuinely in question, and `bound()` to skip payloadless
+   * operations.
+   *
+   * The typed `FrameOps` entry points pair each `OperationKind` with the
+   * payload type it names, so a consumer dispatching on `kind` over
+   * operations from those entry points has the type fixed for it and a
+   * mismatch is a caller bug. Nothing enforces that pairing on a
+   * hand-built `QueuedOperation` or `PlannedOperation::create`, whose
+   * `kind` and `payload` are independent fields.
    *
    * With assertions compiled out the empty span remains the fallback, so
    * a release build degrades to the old silent behaviour rather than
-   * reading the batch as the wrong type.
+   * reading the batch as the wrong type — which also means the "empty
+   * means empty" reading above is only true there when the caller has
+   * checked `holds<T>()` itself.
    */
   template <typename T>
   [[nodiscard]] auto as() const noexcept -> std::span<const T> {
