@@ -328,9 +328,11 @@ freezes the surface at the first release candidate:
   silent behaviour change — which is also the argument for dropping it:
   the cost is borne by consumers and the benefit is symmetry.
 - **API17 (duplicate names).** Never dispositioned, and still present:
-  `BlockPipeline::to_frontier` aliases `collect_into`, and
-  `TraceBuffer::stats(category)` and `TimingSnapshot::category(category)`
-  do the same job under opposite names. Removing either alias breaks
+  `Pipeline::to_frontier` (`block/pipeline.h:217,297`) aliases
+  `collect_into`, and
+  `TraceBuffer::stats(category)` (`diagnostics/trace.h:101,209`) and
+  `TimingSnapshot::category(category)` (`diagnostics/export.h:22,27`) do
+  the same job under opposite names. Removing either alias breaks
   callers, so the choice — remove, or keep and document the pairing — has
   to be made in this window. The audit's third example,
   `EventStream::clear` versus `discard_all`, was already downgraded
