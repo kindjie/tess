@@ -2,7 +2,9 @@
 #include <tess/core/assert.h>
 #include <tess/tess.h>
 
+#include <array>
 #include <cstdint>
+#include <span>
 #include <utility>
 
 namespace {
@@ -163,6 +165,65 @@ TEST(TessFailFastDeathTest, ScheduleSetEnabledRejectsUnknownId) {
   tess::Schedule schedule;
   EXPECT_DEATH(schedule.set_enabled(0, false), "unknown TaskId");
 }
+
+// `IntentPayloadView::as<T>` is the one place the typed-intent surface
+// checks a payload's type, and it used to answer a wrong-type query with
+// an empty span -- the same answer a correctly-typed empty batch gives.
+// Both configurations matter and disagree, which is why these live here
+// rather than beside the rest of the payload-view coverage: the debug
+// build must abort, and the release build must fall back to the empty span
+// rather than reinterpreting the bytes as the wrong type.
+namespace payload_probe {
+
+struct Request {
+  int value = 0;
+};
+struct OtherRequest {
+  int value = 0;
+};
+
+[[nodiscard]] auto filled_view(std::span<Request> storage)
+    -> tess::IntentPayloadView {
+  return tess::IntentPayloadView::from(storage);
+}
+
+}  // namespace payload_probe
+
+#if TESS_ENABLE_ASSERTS
+
+using TessPayloadViewDeathTest = ::testing::Test;
+
+TEST(TessPayloadViewDeathTest, AsRejectsAPayloadHoldingAnotherType) {
+  std::array<payload_probe::Request, 2> storage{};
+  const auto view = payload_probe::filled_view(storage);
+  EXPECT_DEATH(static_cast<void>(view.as<payload_probe::OtherRequest>().size()),
+               "does not hold T");
+}
+
+TEST(TessPayloadViewDeathTest, AsRejectsAPayloadThatHoldsNothing) {
+  const tess::IntentPayloadView unbound{};
+  EXPECT_DEATH(static_cast<void>(unbound.as<payload_probe::Request>().size()),
+               "does not hold T");
+}
+
+#else
+
+// The release contract: no abort, and no reinterpretation either. A
+// consumer that ships with assertions off keeps the old silent-empty
+// behaviour rather than reading one type's bytes as another's.
+TEST(TessPayloadView, AsFallsBackToAnEmptySpanWithAssertsCompiledOut) {
+  std::array<payload_probe::Request, 2> storage{};
+  const auto view = payload_probe::filled_view(storage);
+  EXPECT_TRUE(view.as<payload_probe::OtherRequest>().empty());
+
+  const tess::IntentPayloadView unbound{};
+  EXPECT_TRUE(unbound.as<payload_probe::Request>().empty());
+
+  // The correctly-typed read still works in this configuration.
+  EXPECT_EQ(view.as<payload_probe::Request>().size(), 2u);
+}
+
+#endif
 
 // ResultChannel::value_for is hardened the same way but has no test here:
 // it is a private producer hook reachable only from the friended execute

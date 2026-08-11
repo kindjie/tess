@@ -194,7 +194,11 @@ TEST(TessQueuedContract, CommonTypedIntentsPreservePayloadAndPlanningMetadata) {
   ASSERT_NE(path, nullptr);
   EXPECT_EQ(path->kind, tess::OperationKind::QueryPaths);
   EXPECT_EQ(path->payload.as<tess::PathRequest>().size(), 2u);
-  EXPECT_EQ(path->payload.as<tess::MovementIntent>().size(), 0u);
+  // Was `as<MovementIntent>().size() == 0`, which asserted nothing about
+  // type separation: an empty span is also what a correctly-typed empty
+  // batch returns. `holds` is the question that test was asking.
+  EXPECT_TRUE(path->payload.holds<tess::PathRequest>());
+  EXPECT_FALSE(path->payload.holds<tess::MovementIntent>());
   EXPECT_EQ(path->versions, metadata.versions);
   EXPECT_EQ(path->invalidations, metadata.invalidations);
   EXPECT_EQ(path->backend, tess::BackendEligibility::CpuOrGpu);
@@ -228,6 +232,41 @@ TEST(TessQueuedContract, CommonTypedIntentsPreservePayloadAndPlanningMetadata) {
             metadata.invalidations);
   EXPECT_EQ(
       report.plan().operations()[0].payload.as<tess::PathRequest>().size(), 2u);
+}
+
+TEST(TessQueuedContract, PayloadViewSeparatesItsThreeKindsOfEmpty) {
+  // `as<T>()` returned the same empty span for a wrong-type query, an
+  // operation carrying no payload, and a correctly-typed empty batch. A
+  // consumer could not tell "nothing to do this frame" from "I asked for
+  // the wrong type and will process nothing every frame".
+  std::vector<tess::PathRequest> requests(2);
+  std::vector<tess::PathRequest> no_requests;
+
+  const auto filled =
+      tess::IntentPayloadView::from(std::span<tess::PathRequest>(requests));
+  const auto bound_empty =
+      tess::IntentPayloadView::from(std::span<tess::PathRequest>(no_requests));
+  const tess::IntentPayloadView unbound{};
+
+  EXPECT_TRUE(filled.bound());
+  EXPECT_TRUE(filled.holds<tess::PathRequest>());
+  EXPECT_FALSE(filled.holds<tess::MovementIntent>());
+  EXPECT_EQ(filled.as<tess::PathRequest>().size(), 2u);
+
+  // A batch that exists and is empty: bound, correctly typed, size zero.
+  EXPECT_TRUE(bound_empty.bound());
+  EXPECT_TRUE(bound_empty.holds<tess::PathRequest>());
+  EXPECT_TRUE(bound_empty.as<tess::PathRequest>().empty());
+
+  // No batch at all: distinguishable from the one above, and holding no
+  // type rather than holding an empty one.
+  EXPECT_FALSE(unbound.bound());
+  EXPECT_FALSE(unbound.holds<tess::PathRequest>());
+
+  // `holds` is a question about type identity, not about size, so the
+  // filled and empty batches answer it identically.
+  EXPECT_EQ(filled.holds<tess::PathRequest>(),
+            bound_empty.holds<tess::PathRequest>());
 }
 
 TEST(TessQueuedContract, InspectingQueuedAndPlannedOperationsDoesNotAllocate) {
