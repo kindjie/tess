@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tess/block/block.h>
+#include <tess/core/assert.h>
 #include <tess/core/capacity.h>
 #include <tess/core/shape.h>
 #include <tess/core/tag_identity.h>
@@ -139,12 +140,70 @@ struct IntentPayloadView {
                              detail::tag_identity<Item>()};
   }
 
+  /**
+   * True when this view carries a batch of `T`.
+   *
+   * The gate to check before `as<T>()`, and the only way to tell a batch
+   * this view does not carry from one it carries and that happens to be
+   * empty. Identity is a per-type token guaranteed unique **within one
+   * binary image** and nothing more, so the answer for a view produced in
+   * another image is unspecified and toolchain-dependent: do not compare
+   * payloads across a shared-library boundary (`docs/integration-policy.md`
+   * states the same caveat for the token itself).
+   */
+  template <typename T>
+  [[nodiscard]] auto holds() const noexcept -> bool {
+    using Item = std::remove_cv_t<T>;
+    static_assert(std::is_object_v<Item>);
+    return item_size == sizeof(Item) &&
+           type_identity == detail::tag_identity<Item>();
+  }
+
+  /**
+   * True when any batch was attached, of any type.
+   *
+   * Distinguishes an operation that carries no payload from one whose
+   * batch is empty. It says nothing about whether the viewed storage is
+   * still alive: this is a non-owning view, and a dangling `data` is
+   * indistinguishable from a live one here.
+   */
+  [[nodiscard]] auto bound() const noexcept -> bool {
+    return type_identity != 0;
+  }
+
+  /**
+   * Returns the batch as `std::span<const T>`; `holds<T>()` is a
+   * precondition.
+   *
+   * Once the precondition holds, an empty result means the batch is empty
+   * and nothing else. Before, it also meant "this view carries some other
+   * type" and "this view carries nothing at all", so a caller that asked
+   * for the wrong type processed zero items every frame with no signal —
+   * the failure the assertion now names. Use `holds<T>()` where the type
+   * is genuinely in question, and `bound()` to skip payloadless
+   * operations.
+   *
+   * The typed `FrameOps` entry points pair each `OperationKind` with the
+   * payload type it names, so a consumer dispatching on `kind` over
+   * operations from those entry points has the type fixed for it and a
+   * mismatch is a caller bug. Nothing enforces that pairing on a
+   * hand-built `QueuedOperation` or `PlannedOperation::create`, whose
+   * `kind` and `payload` are independent fields.
+   *
+   * With assertions compiled out the empty span remains the fallback, so
+   * a release build degrades to the old silent behaviour rather than
+   * reading the batch as the wrong type — which also means the "empty
+   * means empty" reading above is only true there when the caller has
+   * checked `holds<T>()` itself.
+   */
   template <typename T>
   [[nodiscard]] auto as() const noexcept -> std::span<const T> {
     using Item = std::remove_cv_t<T>;
     static_assert(std::is_object_v<Item>);
-    if (item_size != sizeof(Item) ||
-        type_identity != detail::tag_identity<Item>()) {
+    TESS_ASSERT_MSG(holds<Item>(),
+                    "IntentPayloadView::as<T> on a payload that does not "
+                    "hold T; check holds<T>() first");
+    if (!holds<Item>()) {
       return {};
     }
     return {static_cast<const T*>(data), count};

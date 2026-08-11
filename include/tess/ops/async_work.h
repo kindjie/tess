@@ -367,22 +367,58 @@ class ResumableWorkQueue {
     return slot == nullptr ? std::source_location{} : slot->source;
   }
 
+  /**
+   * Moves a `Pending` ticket to `Cancelled`.
+   *
+   * The four terminal setters below all answer one question: **did this
+   * call change the state?** `false` therefore covers three unrelated
+   * situations, and the queue already exposes which one applies —
+   * `state(ticket)` returns `Unbound` for a ticket this queue never
+   * issued or has since retired, and the slot's own state for one that
+   * was already terminal. A caller that needs to tell them apart asks
+   * `state(ticket)` rather than reading it out of the `bool`:
+   *
+   * - the ticket is unknown or retired (`state()` is `Unbound`);
+   * - the slot is no longer `Pending`, so some earlier call already
+   *   settled it (`state()` names that outcome);
+   * - the call arrived during `advance()`, which is a contract
+   *   violation, not an outcome. Assertions abort on it; a release build
+   *   returns `false` and changes nothing.
+   */
   [[nodiscard]] bool cancel(AsyncTicket ticket) noexcept {
     return set_terminal(ticket, AsyncResultState::Cancelled);
   }
 
+  /// Moves a `Pending` ticket to `Superseded`; see `cancel` for `false`.
   [[nodiscard]] bool supersede(AsyncTicket ticket) noexcept {
     return set_terminal(ticket, AsyncResultState::Superseded);
   }
 
+  /// Moves a `Pending` ticket to `Failed`; see `cancel` for `false`.
   [[nodiscard]] bool fail(AsyncTicket ticket) noexcept {
     return set_terminal(ticket, AsyncResultState::Failed);
   }
 
+  /// Moves a `Pending` ticket to `Stale`; see `cancel` for `false`.
   [[nodiscard]] bool mark_stale(AsyncTicket ticket) noexcept {
     return set_terminal(ticket, AsyncResultState::Stale);
   }
 
+  /**
+   * Reclassifies a settled result as `Stale` when its version does not
+   * match `current`.
+   *
+   * The comparison is equality, not ordering: a result stamped *ahead* of
+   * `current` is marked stale too.
+   *
+   * The state rule is the opposite of the setters above: this one acts on
+   * `Immediate` or `Ready` slots and refuses `Pending` ones. `false` adds
+   * a fourth case to their three, and it is the ordinary one — the
+   * result's version already equals `current`, so there is nothing to
+   * reclassify. That is a no-change outcome rather than a failure, and a
+   * caller that retries on it will retry forever; compare
+   * `result_version(ticket)` if the distinction matters.
+   */
   [[nodiscard]] bool mark_stale_if_version(AsyncTicket ticket,
                                            AsyncVersion current) noexcept {
     if (reject_reentrant_mutation()) {

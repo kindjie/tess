@@ -12,3 +12,9 @@
   `ResultChannel::value_for` is hardened the same way but is NOT covered
   here: it is a private producer hook reachable only from the friended
   execute wrappers, so no test can call it without becoming a friend.
+- `IntentPayloadView::as<T>` is covered here rather than beside the rest of
+  the payload-view tests because its two configurations disagree and both
+  are contract: asserts on, a wrong-type or unbound read aborts; asserts
+  off, it falls back to an empty span. Only this source is compiled both
+  ways (`tess_assert_ndebug_test`), so the release half is unobservable
+  anywhere else.
