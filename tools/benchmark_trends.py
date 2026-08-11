@@ -18,6 +18,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 
+from benchmark_thresholds import ToolError as _ThresholdsError
+from benchmark_thresholds import load_threshold_metrics
+
 DEFAULT_BENCHMARKS = (
     "block/context_iteration_2d",
     "block/chunk_tile_iteration_2d",
@@ -46,12 +49,40 @@ def main(argv: list[str] | None = None) -> int:
   parser.add_argument("--benchmark", action="append", dest="benchmarks")
   parser.add_argument("--source-commit")
   parser.add_argument("--source-run-id")
+  parser.add_argument(
+      "--thresholds-dir",
+      type=Path,
+      default=Path(__file__).resolve().parent.parent / "bench" / "thresholds",
+      help=(
+          "threshold manifests naming each benchmark's gated metric "
+          "(default: the repository's bench/thresholds)"
+      ),
+  )
   args = parser.parse_args(argv)
 
   benchmarks = tuple(args.benchmarks or DEFAULT_BENCHMARKS)
+  if not args.thresholds_dir.is_dir():
+    # Fail closed: plotting a real-time-gated benchmark's CPU time
+    # would publish a series the gate does not use.
+    print(
+        f"benchmark_trends: {args.thresholds_dir} is not a directory",
+        file=sys.stderr,
+    )
+    return 1
+  try:
+    metrics = load_threshold_metrics(args.thresholds_dir)
+  except _ThresholdsError as error:
+    print(f"benchmark_trends: {error}", file=sys.stderr)
+    return 1
   runs = sorted(
       (
-          load_run(path, benchmarks, args.source_commit, args.source_run_id)
+          load_run(
+              path,
+              benchmarks,
+              args.source_commit,
+              args.source_run_id,
+              metrics,
+          )
           for path in args.artifacts
       ),
       key=lambda run: run.timestamp
@@ -87,10 +118,11 @@ def load_run(
     benchmarks: tuple[str, ...],
     source_commit: str | None,
     source_run_id: str | None,
+    metrics: dict[str, str] | None = None,
 ) -> Run:
   with artifact_dir(path) as directory:
     metadata = load_metadata(directory)
-    values = collect_values(directory, benchmarks)
+    values = collect_values(directory, benchmarks, metrics=metrics)
     timestamp = metadata_timestamp(metadata) or benchmark_timestamp(directory)
     run_id = metadata.get("run_id") or source_run_id or infer_run_id(path)
     commit = metadata.get("commit") or source_commit
@@ -168,6 +200,8 @@ def load_result(path: Path) -> dict[str, Any]:
 def collect_values(
     directory: Path,
     benchmarks: tuple[str, ...],
+    *,
+    metrics: dict[str, str] | None = None,
 ) -> dict[str, float]:
   samples: dict[str, list[float]] = {name: [] for name in benchmarks}
   for path in benchmark_result_files(directory):
@@ -178,7 +212,13 @@ def collect_values(
         continue
       if is_aggregate_name(str(bench_name)):
         continue
-      value = benchmark.get("cpu_time")
+      # Plot the metric the benchmark is gated on: the parallel pool
+      # family sets max_cpu_time_ns to null because its work runs on
+      # worker threads, so a CPU-time series would not be the number
+      # the gate or the paired confirmation reads.
+      value = benchmark.get(
+          (metrics or {}).get(str(bench_name), "cpu_time")
+      )
       unit = benchmark.get("time_unit")
       if value is None or unit is None:
         continue
@@ -244,9 +284,12 @@ td:first-child, th:first-child {{ text-align: left; }}
 <main>
 <h1>Tess Benchmark Trends</h1>
 <p>{html.escape(stale_label(runs))}</p>
+<p>Each benchmark is shown on the metric its family gates: real time
+where the thresholds set no CPU ceiling (the parallel pool cells and
+the manually timed cache cells), CPU time otherwise.</p>
 {svg}
 <table>
-<thead><tr><th>Benchmark</th><th>Latest median CPU ns</th></tr></thead>
+<thead><tr><th>Benchmark</th><th>Latest median ns</th></tr></thead>
 <tbody>
 {rows}
 </tbody>
@@ -279,7 +322,11 @@ def render_markdown(runs: list[Run], benchmarks: tuple[str, ...]) -> str:
       "",
       "![Benchmark trend snapshot](assets/benchmark-trends.svg)",
       "",
-      "| Benchmark | Latest median CPU ns |",
+      "Each benchmark is shown on the metric its family gates: real"
+      " time where the thresholds set no CPU ceiling, CPU time"
+      " otherwise.",
+      "",
+      "| Benchmark | Latest median ns |",
       "| --- | ---: |",
   ]
   latest = runs[-1] if runs else None

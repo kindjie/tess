@@ -12,7 +12,7 @@ import benchmark_changepoint  # noqa: E402
 
 
 def _artifact(root, run_id, values, key="fp-a", event="push", ref="main",
-              usable=True, unit="ns"):
+              usable=True, unit="ns", real_values=None):
   directory = root / str(run_id)
   directory.mkdir()
   (directory / "metadata.json").write_text(
@@ -30,6 +30,9 @@ def _artifact(root, run_id, values, key="fp-a", event="push", ref="main",
   )
   rows = []
   for name, value in values.items():
+    # Real time defaults to CPU time so metric-agnostic cases stay
+    # unaffected; a case that cares sets the two apart explicitly.
+    real = (real_values or {}).get(name, value)
     for repetition in range(3):
       rows.append(
         {
@@ -37,6 +40,7 @@ def _artifact(root, run_id, values, key="fp-a", event="push", ref="main",
           "run_type": "iteration",
           "time_unit": unit,
           "cpu_time": value,
+          "real_time": real,
         }
       )
     rows.append(
@@ -45,6 +49,7 @@ def _artifact(root, run_id, values, key="fp-a", event="push", ref="main",
         "run_type": "aggregate",
         "time_unit": unit,
         "cpu_time": value * 100,  # must be ignored
+        "real_time": real * 100,
       }
     )
   (directory / "bench.json").write_text(
@@ -52,8 +57,20 @@ def _artifact(root, run_id, values, key="fp-a", event="push", ref="main",
   )
 
 
+def _thresholds_dir(root, entries):
+  """Write a thresholds manifest mapping name to its gated ceilings."""
+  directory = root / "thresholds"
+  directory.mkdir(exist_ok=True)
+  (directory / "family.json").write_text(
+    json.dumps({"version": 1, "benchmarks": entries}), encoding="utf-8"
+  )
+  return directory
+
+
 def _detect(root, **kwargs):
-  artifacts = benchmark_changepoint.load_history(root)
+  artifacts = benchmark_changepoint.load_history(
+    root, metrics=kwargs.get("metrics")
+  )
   return benchmark_changepoint.detect(
     artifacts,
     relative_floor=kwargs.get("relative_floor", 0.10),
@@ -269,3 +286,177 @@ def test_report_routes_diagnostics_suspects_separately(tmp_path):
   assert "--suspects=path/x" in report
   assert "fields/goalset_build_16" in report
   assert "not confirmable by the dispatch workflow" in report
+
+
+def test_real_time_gated_benchmark_is_judged_on_real_time(tmp_path):
+  # The parallel pool family gates real time because the work happens on
+  # worker threads: the dispatching thread's CPU time understates it.
+  # A shift that shows only in real time must still be caught.
+  flat_cpu = {"parallel/tile_touch_pool_w4": 18_000.0}
+  for run in range(9):
+    _artifact(tmp_path, 100 + run, flat_cpu,
+              real_values={"parallel/tile_touch_pool_w4": 30_000.0})
+  for run in range(9, 12):
+    _artifact(tmp_path, 100 + run, flat_cpu,
+              real_values={"parallel/tile_touch_pool_w4": 40_000.0})
+  thresholds = _thresholds_dir(
+    tmp_path,
+    {"parallel/tile_touch_pool_w4": {"max_real_time_ns": 61_000,
+                                     "max_cpu_time_ns": None}},
+  )
+
+  metrics = benchmark_changepoint.load_threshold_metrics(thresholds)
+  result = _detect(tmp_path, metrics=metrics)
+
+  assert result["verdict"] == "suspects"
+  assert result["suspects"][0]["benchmark"] == "parallel/tile_touch_pool_w4"
+  assert result["suspects"][0]["baseline_median_ns"] == 30_000.0
+
+
+def test_real_time_gated_benchmark_ignores_cpu_time_noise(tmp_path):
+  # The converse: CPU time drifting on a real-time-gated benchmark is not
+  # evidence, because that metric is not what the family is judged on.
+  steady_real = {"parallel/tile_touch_pool_w4": 30_000.0}
+  for run in range(9):
+    _artifact(tmp_path, 100 + run, {"parallel/tile_touch_pool_w4": 18_000.0},
+              real_values=steady_real)
+  for run in range(9, 12):
+    _artifact(tmp_path, 100 + run, {"parallel/tile_touch_pool_w4": 26_000.0},
+              real_values=steady_real)
+  thresholds = _thresholds_dir(
+    tmp_path,
+    {"parallel/tile_touch_pool_w4": {"max_real_time_ns": 61_000,
+                                     "max_cpu_time_ns": None}},
+  )
+
+  metrics = benchmark_changepoint.load_threshold_metrics(thresholds)
+
+  assert _detect(tmp_path, metrics=metrics)["verdict"] == "clean"
+
+
+def test_cpu_gated_benchmark_still_uses_cpu_time(tmp_path):
+  # Everything not gated on real time keeps the previous behaviour, so
+  # the fix cannot silently restate the rest of the suite's history.
+  steady_real = {"path/x": 10_000.0}
+  for run in range(9):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0},
+              real_values=steady_real)
+  for run in range(9, 12):
+    _artifact(tmp_path, 100 + run, {"path/x": 14_000.0},
+              real_values=steady_real)
+  thresholds = _thresholds_dir(
+    tmp_path,
+    {"path/x": {"max_real_time_ns": None, "max_cpu_time_ns": 20_000}},
+  )
+
+  metrics = benchmark_changepoint.load_threshold_metrics(thresholds)
+  result = _detect(tmp_path, metrics=metrics)
+
+  assert result["verdict"] == "suspects"
+  assert result["suspects"][0]["benchmark"] == "path/x"
+
+
+def test_benchmark_absent_from_thresholds_defaults_to_cpu_time(tmp_path):
+  # Ungated lab registrations have no manifest entry; they must keep the
+  # documented default rather than be dropped from the history.
+  steady_real = {"lab/thread_scaling/x": 10_000.0}
+  for run in range(9):
+    _artifact(tmp_path, 100 + run, {"lab/thread_scaling/x": 10_000.0},
+              real_values=steady_real)
+  for run in range(9, 12):
+    _artifact(tmp_path, 100 + run, {"lab/thread_scaling/x": 14_000.0},
+              real_values=steady_real)
+  thresholds = _thresholds_dir(
+    tmp_path, {"path/other": {"max_real_time_ns": 1, "max_cpu_time_ns": None}}
+  )
+
+  metrics = benchmark_changepoint.load_threshold_metrics(thresholds)
+
+  assert _detect(tmp_path, metrics=metrics)["verdict"] == "suspects"
+
+
+def test_cli_defaults_to_the_repository_threshold_manifests(tmp_path):
+  # The CI job passes no --thresholds-dir, so the default must resolve
+  # to the real manifests: a silent fallback to CPU time everywhere
+  # would restate the real-time-gated families without saying so.
+  for run in range(12):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
+  out = tmp_path / "cp.json"
+
+  code = benchmark_changepoint.main(
+    ["--artifacts", str(tmp_path), "--json", str(out)]
+  )
+
+  assert code == 0
+  metrics = benchmark_changepoint.load_threshold_metrics(
+    Path(__file__).resolve().parents[1] / "bench" / "thresholds"
+  )
+  assert metrics["parallel/tile_touch_pool_w4"] == "real_time"
+
+
+def test_cli_refuses_a_missing_thresholds_directory(tmp_path):
+  for run in range(12):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
+
+  code = benchmark_changepoint.main(
+    ["--artifacts", str(tmp_path),
+     "--thresholds-dir", str(tmp_path / "absent")]
+  )
+
+  assert code == 1
+
+
+def test_thresholds_directory_without_manifests_is_an_error(tmp_path):
+  # Fail closed: an empty or misshapen manifest set would otherwise
+  # yield an empty map and silently default the whole suite to CPU
+  # time — the exact defect this change exists to remove.
+  empty = tmp_path / "thresholds"
+  empty.mkdir()
+
+  try:
+    benchmark_changepoint.load_threshold_metrics(empty)
+  except Exception as error:  # noqa: BLE001 - the type is the assertion
+    assert "no benchmark" in str(error).lower()
+  else:
+    raise AssertionError("an empty thresholds directory must not be accepted")
+
+
+def test_manifest_without_benchmarks_is_an_error(tmp_path):
+  directory = tmp_path / "thresholds"
+  directory.mkdir()
+  (directory / "family.json").write_text(
+    json.dumps({"version": 1, "benchmarks": {}}), encoding="utf-8"
+  )
+
+  try:
+    benchmark_changepoint.load_threshold_metrics(directory)
+  except Exception as error:  # noqa: BLE001 - the type is the assertion
+    assert "no benchmark" in str(error).lower()
+  else:
+    raise AssertionError("a manifest set naming no benchmarks is broken input")
+
+
+def test_cli_reports_an_empty_manifest_set_without_a_traceback(tmp_path):
+  for run in range(12):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
+  empty = tmp_path / "thresholds"
+  empty.mkdir()
+
+  code = benchmark_changepoint.main(
+    ["--artifacts", str(tmp_path), "--thresholds-dir", str(empty)]
+  )
+
+  assert code == 1
+
+
+def test_cli_reports_an_empty_manifest_set_without_a_traceback(tmp_path):
+  for run in range(12):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
+  empty = tmp_path / "thresholds"
+  empty.mkdir()
+
+  code = benchmark_changepoint.main(
+    ["--artifacts", str(tmp_path), "--thresholds-dir", str(empty)]
+  )
+
+  assert code == 1

@@ -16,7 +16,20 @@
   manifests and their CI/baseline wiring;
   that `tools/benchmark_baseline_summary.py` filters aggregates by
   `run_type` and quotes CSV fields; that `tools/benchmark_trends.py` reads
-  every result file in a baseline artifact and errors on unmatched
-  `--benchmark` selectors; and that `tools/benchmark_artifact_metadata.py`
+  every result file in a baseline artifact, errors on unmatched
+  `--benchmark` selectors, and plots each benchmark on the metric its
+  family gates (real time where `max_cpu_time_ns` is null, CPU time
+  otherwise); and that `tools/benchmark_artifact_metadata.py`
   writes the expected metadata fields. Literal-name extraction covers
   multiline adjacent C++ string literals.
+- The two metric cases give `real_time` and `cpu_time` deliberately
+  different values, so a tool that reads the wrong field fails rather
+  than coincidentally agreeing. The `entry` helper still defaults
+  `real_time` to `cpu_time`, which is why every other case here is
+  indifferent to the change.
+- The renderer's two fail-closed cases assert the specific message,
+  not just the exit code. A missing directory and a directory naming
+  no benchmarks both exit 1, but only the message distinguishes them:
+  asserting the code alone let a mutant that deleted the missing
+  directory check survive, because the shared loader then failed for
+  the other reason and the test still passed.
