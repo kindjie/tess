@@ -17,7 +17,8 @@
   constructors, relational template expressions, requires-expressions, and
   elaborated parameter types, including unparenthesized relations,
   parameterless requirements, dependent bases, and annotated types; stable
-  nested calls and parenthesized object declarators retain the correct identity;
+  nested calls, trailing constraints, parenthesized pointer/reference/array
+  data, and relational dependent-base arguments retain the correct identity;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

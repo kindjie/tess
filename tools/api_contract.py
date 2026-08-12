@@ -36,6 +36,41 @@ PARENTHESIZED_SPECIFIERS = frozenset(
         "__declspec",
     }
 )
+BUILTIN_TYPE_SPECIFIERS = frozenset(
+    {
+        "auto",
+        "bool",
+        "char",
+        "char8_t",
+        "char16_t",
+        "char32_t",
+        "double",
+        "float",
+        "int",
+        "long",
+        "short",
+        "signed",
+        "unsigned",
+        "void",
+        "wchar_t",
+    }
+)
+DECLARATION_SPECIFIERS = BUILTIN_TYPE_SPECIFIERS | frozenset(
+    {
+        "const",
+        "consteval",
+        "constexpr",
+        "constinit",
+        "extern",
+        "inline",
+        "mutable",
+        "register",
+        "static",
+        "thread_local",
+        "typename",
+        "volatile",
+    }
+)
 
 
 def _tokens(text: str) -> list[str]:
@@ -145,14 +180,37 @@ def callable_name(declaration: str | list[str]) -> str | None:
 def qualified_terminal(tokens: list[str]) -> str | None:
   """Return the final qualified component, excluding template arguments."""
   angle_depth = 0
+  round_depth = 0
+  square_depth = 0
+  brace_depth = 0
   for token in reversed(tokens):
-    if token == ">":
+    if token == ")":
+      round_depth += 1
+    elif token == "(" and round_depth:
+      round_depth -= 1
+    elif token in {"]", "]]"}:
+      square_depth += 1
+    elif token in {"[", "[["} and square_depth:
+      square_depth -= 1
+    elif token == "}":
+      brace_depth += 1
+    elif token == "{" and brace_depth:
+      brace_depth -= 1
+    elif token == ">" and not (round_depth or square_depth or brace_depth):
       angle_depth += 1
-    elif token == ">>":
+    elif token == ">>" and not (round_depth or square_depth or brace_depth):
       angle_depth += 2
-    elif token == "<" and angle_depth:
+    elif (
+        token == "<"
+        and angle_depth
+        and not (round_depth or square_depth or brace_depth)
+    ):
       angle_depth -= 1
-    elif angle_depth == 0 and IDENTIFIER_RE.fullmatch(token):
+    elif (
+        angle_depth == 0
+        and not (round_depth or square_depth or brace_depth)
+        and IDENTIFIER_RE.fullmatch(token)
+    ):
       return token
   return None
 
@@ -408,7 +466,9 @@ class _ContractParser:
         )
         continue
 
-      if self._is_function(pending):
+      if self._is_function(
+          pending, names[-1] if kind in TYPE_KEYWORDS and names else None
+      ):
         if self._starts_constructor_braced_initializer(pending):
           braced, index = self._braced_initializer(index)
           pending.extend(braced)
@@ -546,7 +606,7 @@ class _ContractParser:
     if public:
       return False
     non_data = (
-        cls._is_function(declaration)
+        cls._is_function(declaration, names[-1])
         or "using" in declaration
         or "typedef" in declaration
         or "friend" in declaration
@@ -821,7 +881,7 @@ class _ContractParser:
     scope = _qualified(names)
     if scope_kind in TYPE_KEYWORDS:
       additive_member = (
-          self._is_function(declaration)
+          self._is_function(declaration, names[-1] if names else None)
           or "using" in declaration
           or "typedef" in declaration
           or "friend" in declaration
@@ -931,7 +991,9 @@ class _ContractParser:
     return None
 
   @staticmethod
-  def _is_function(tokens: list[str]) -> bool:
+  def _is_function(
+      tokens: list[str], type_name: str | None = None
+  ) -> bool:
     if "(" not in tokens:
       return False
     if tokens and tokens[0] in {"using", "typedef"}:
@@ -948,21 +1010,15 @@ class _ContractParser:
     ):
       return False
     closing = _ContractParser._matching_round_bracket(tokens, opening)
-    prefix_identifiers = [
-        token for token in tokens[:opening] if IDENTIFIER_RE.fullmatch(token)
-    ]
     if closing is not None:
       declarator = tokens[opening + 1 : closing]
-      if (
-          len(prefix_identifiers) == 1
-          and len(declarator) == 1
-          and IDENTIFIER_RE.fullmatch(declarator[0])
-      ):
-        return False
-      if (
-          declarator
-          and declarator[0] in {"*", "&", "&&"}
-          and (opening == 0 or not IDENTIFIER_RE.fullmatch(tokens[opening - 1]))
+      named_function = _ContractParser._has_named_function_declarator(
+          tokens, opening, name, type_name
+      )
+      if not named_function and (
+          _ContractParser._is_parenthesized_object_declarator(
+              tokens, opening, closing, type_name
+          )
       ):
         return False
     if closing is not None and closing + 1 < len(tokens):
@@ -994,6 +1050,96 @@ class _ContractParser:
       elif token == "=" and angle_depth == 0 and square_depth == 0:
         return False
     return True
+
+  @staticmethod
+  def _has_named_function_declarator(
+      tokens: list[str],
+      opening: int,
+      name: str | None,
+      type_name: str | None,
+  ) -> bool:
+    if name is None or opening == 0:
+      return False
+    plain_name = name.removeprefix("~")
+    if tokens[opening - 1] != plain_name:
+      return False
+    if type_name is not None and plain_name == type_name:
+      return True
+    if name in BUILTIN_TYPE_SPECIFIERS:
+      return False
+    prefix = _declarator_prefix(tokens[: opening - 1])
+    if not prefix or prefix[-1] == "::":
+      return False
+    return any(token not in DECLARATION_SPECIFIERS for token in prefix)
+
+  @staticmethod
+  def _is_parenthesized_object_declarator(
+      tokens: list[str],
+      opening: int,
+      closing: int,
+      type_name: str | None,
+  ) -> bool:
+    prefix = _declarator_prefix(tokens[:opening])
+    identifiers: list[tuple[int, str]] = []
+    builtin_type = False
+    angle_depth = 0
+    round_depth = 0
+    for index, token in enumerate(prefix):
+      if token == "(" and angle_depth:
+        round_depth += 1
+      elif token == ")" and round_depth:
+        round_depth -= 1
+      elif token == "<" and round_depth == 0:
+        angle_depth += 1
+      elif token == ">" and angle_depth:
+        angle_depth -= 1
+      elif token == ">>" and angle_depth:
+        angle_depth = max(0, angle_depth - 2)
+      elif angle_depth == 0 and round_depth == 0:
+        if token in BUILTIN_TYPE_SPECIFIERS:
+          builtin_type = True
+        elif (
+            IDENTIFIER_RE.fullmatch(token)
+            and token not in DECLARATION_SPECIFIERS
+        ):
+          identifiers.append((index, token))
+    if type_name is not None and identifiers:
+      if identifiers[-1][1] == type_name:
+        return False
+    if builtin_type:
+      if identifiers:
+        return False
+    elif len(identifiers) > 1:
+      if not all(
+          prefix[right_index - 1] == "::"
+          for (left_index, _), (right_index, _) in zip(
+              identifiers, identifiers[1:]
+          )
+          if right_index > left_index
+      ):
+        return False
+
+    declarator = tokens[opening + 1 : closing]
+    while (
+        len(declarator) >= 2
+        and declarator[0] == "("
+        and _ContractParser._matching_round_bracket(declarator, 0)
+        == len(declarator) - 1
+    ):
+      declarator = declarator[1:-1]
+    if not declarator:
+      return False
+    pointer_or_reference = any(
+        token in {"*", "&", "&&"} for token in declarator
+    )
+    names = [
+        token for token in declarator if IDENTIFIER_RE.fullmatch(token)
+    ]
+    if pointer_or_reference:
+      return bool(names)
+    if len(declarator) != 1 or len(names) != 1:
+      return False
+    return closing + 1 >= len(tokens) or tokens[closing + 1] != "("
 
   @staticmethod
   def _function_opening(tokens: list[str]) -> int | None:
@@ -1059,10 +1205,14 @@ class _ContractParser:
       if closing is None:
         continue
       suffix = tokens[closing + 1 :]
-      if any(
-          IDENTIFIER_RE.fullmatch(token)
-          and token
-          not in {
+      suffix_starts_function_tail = suffix and (
+          suffix[0]
+          in {
+              "&",
+              "&&",
+              "->",
+              "=",
+              "[[",
               "const",
               "constexpr",
               "final",
@@ -1071,7 +1221,12 @@ class _ContractParser:
               "requires",
               "volatile",
           }
-          for token in suffix
+          or suffix[0].startswith("TESS_")
+      )
+      if (
+          suffix
+          and not suffix_starts_function_tail
+          and any(IDENTIFIER_RE.fullmatch(token) for token in suffix)
       ):
         continue
       return opening

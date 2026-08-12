@@ -68,7 +68,10 @@
   including unparenthesized relations, parameterless requirements, dependent
   or nested dependent inherited constructors, function-like annotations before
   types and unscoped enums, nested calls in default arguments, and parenthesized
-  object declarators.
+  object declarators, including pointer, reference, array, member-pointer, and
+  nested forms. Trailing constraints remain associated with their callable,
+  and grouped relational expressions in dependent bases do not hide inherited
+  constructors.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

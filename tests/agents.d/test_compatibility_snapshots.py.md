@@ -13,7 +13,9 @@
   relational template expressions, parameterized and parameterless trailing
   requires-expression bodies, elaborated parameter and return types,
   function-like type/enum annotations, nested calls in fallback declarations,
-  parenthesized object and callable-template data declarators,
+  trailing constraints, parenthesized object, pointer, reference, array,
+  member-pointer, nested, and callable-template data declarators, grouped
+  relational dependent-base arguments,
   constructor-like parameter spellings, and per-configuration
   member and base-clause aggregate availability, anonymous type objects,
   stable-macro redefinition and undefinition, release-tag byte and directory
