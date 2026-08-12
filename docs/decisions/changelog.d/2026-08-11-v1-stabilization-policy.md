@@ -59,7 +59,10 @@
   annotation macros before or after the declared name, and conditional
   `explicit` specifiers without mistaking parameter-type spellings or
   destructors for constructors. Callable identity likewise retains annotated
-  names and distinguishes destructors.
+  names, distinguishes destructors, and treats base overloads imported through
+  using-declarations as overload additions. Conditional aggregate-breaking
+  configurations retain distinct identities, so narrowing the configurations
+  in which a type remains an aggregate is rejected.
   Enumerator order is append-only, and existing callables cannot gain overloads
   because calls and address-taking can become ambiguous; sparse extensions
   therefore use distinctly named entry points. Release tags anchor an

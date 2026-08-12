@@ -306,6 +306,47 @@ def test_existing_callable_cannot_gain_an_ambiguous_overload(tmp_path):
   ), failures
 
 
+def test_existing_callable_cannot_gain_base_overloads_through_using(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableSymbol {",
+      "struct StableBase {\n  void set_limit(double value);\n};\n"
+      "struct StableSymbol : StableBase {",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "struct StableSymbol : StableBase {",
+          "struct StableSymbol : StableBase {\n  using StableBase::set_limit;",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "set_limit" in failure
+      for failure in failures
+  ), failures
+
+
 def test_attributed_callable_cannot_gain_an_ambiguous_overload(tmp_path):
   header_path, payload = make_repo(tmp_path)
   header = tmp_path / "include/tess/tess.h"
@@ -846,6 +887,61 @@ def test_conditional_public_aggregate_cannot_gain_constructor(tmp_path):
       and "StableOptions" in failure
       for failure in failures
   ), failures
+
+
+def test_conditionally_aggregate_type_cannot_lose_remaining_configuration(
+    tmp_path,
+):
+  variants = (
+      (
+          "#if TESS_NONAGGREGATE_OPTIONS\n"
+          " private:\n"
+          "  int conditional_state = 0;\n"
+          "#endif\n",
+          " private:\n  int conditional_state = 0;\n",
+      ),
+      (
+          "#if TESS_NONAGGREGATE_OPTIONS\n"
+          "  StableOptions();\n"
+          "#endif\n",
+          "  StableOptions();\n",
+      ),
+      (
+          "#if TESS_NONAGGREGATE_OPTIONS\n"
+          "  virtual void conditional_method();\n"
+          "#endif\n",
+          "  virtual void conditional_method();\n",
+      ),
+  )
+  for index, (conditional, unconditional) in enumerate(variants):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    original = header.read_text(encoding="utf-8")
+    text = original.replace(
+        "struct StableOptions {\n",
+        "struct StableOptions {\n" + conditional,
+    )
+    header.write_text(text, encoding="utf-8")
+    payload["api_contract"] = snapshots.current_api_contract(
+        repo,
+        payload["headers"]["stable"]
+        + payload["headers"]["optional-stable"],
+    )
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(conditional, unconditional), encoding="utf-8"
+    )
+
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "aggregate compatibility changed" in failure
+        and "StableOptions" in failure
+        for failure in failures
+    ), failures
 
 
 def test_conditional_enums_and_enumerators_retain_branch_identity(tmp_path):

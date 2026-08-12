@@ -314,8 +314,12 @@ class _ContractParser:
         index += 1
         continue
       if token == "}" and kind != "namespace-root":
-        aggregate_eligible &= not self._breaks_aggregate(
-            pending, names, True in access
+        aggregate_eligible = self._retain_aggregate(
+            pending,
+            names,
+            access,
+            access_conditions,
+            aggregate_eligible,
         )
         self._record(
             pending,
@@ -342,8 +346,12 @@ class _ContractParser:
         index += 1
         continue
       if token == ";":
-        aggregate_eligible &= not self._breaks_aggregate(
-            pending, names, True in access
+        aggregate_eligible = self._retain_aggregate(
+            pending,
+            names,
+            access,
+            access_conditions,
+            aggregate_eligible,
         )
         self._record(
             pending,
@@ -428,8 +436,12 @@ class _ContractParser:
           braced, index = self._braced_initializer(index)
           pending.extend(braced)
           continue
-        aggregate_eligible &= not self._breaks_aggregate(
-            pending, names, True in access
+        aggregate_eligible = self._retain_aggregate(
+            pending,
+            names,
+            access,
+            access_conditions,
+            aggregate_eligible,
         )
         self._record(
             pending,
@@ -451,10 +463,44 @@ class _ContractParser:
         visible and True in access,
         access_conditions,
     )
-    aggregate_eligible &= not self._breaks_aggregate(
-        pending, names, True in access
+    aggregate_eligible = self._retain_aggregate(
+        pending,
+        names,
+        access,
+        access_conditions,
+        aggregate_eligible,
     )
     return index, aggregate_eligible
+
+  def _retain_aggregate(
+      self,
+      tokens: list[str],
+      names: tuple[str, ...],
+      access: set[bool],
+      access_conditions: list[str],
+      eligible: bool,
+  ) -> bool:
+    if not eligible or not self._breaks_aggregate(
+        tokens, names, access == {True}
+    ):
+      return eligible
+    conditional = bool(self.conditions or access_conditions) or len(access) > 1
+    if not conditional:
+      return False
+    declaration = self._without_constructor_initializer(tokens, names)
+    access_independent = (
+        self._is_constructor(declaration, names[-1])
+        or self._is_inherited_constructor(declaration)
+        or "virtual" in declaration
+    )
+    condition = self._condition_prefix(access_conditions).strip()
+    if len(access) > 1 and not access_independent:
+      condition = f"@private-access@ {condition}".strip()
+    self.contracts.append(
+        f"aggregate-break {_qualified(names)}:"
+        f"{condition or '@conditional-access@'}"
+    )
+    return True
 
   @classmethod
   def _breaks_aggregate(

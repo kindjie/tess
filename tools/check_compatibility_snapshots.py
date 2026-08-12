@@ -27,7 +27,7 @@ CONDITIONAL_RE = re.compile(
     r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b"
 )
 CONTRACT_SCOPE_RE = re.compile(
-    r"^(?:type|data-member) (.+?)(?<!:):(?!:)"
+    r"^(?:type|data-member|aggregate-break) (.+?)(?<!:):(?!:)"
 )
 VERSION_RE = re.compile(
     r'^set\(TESS_VERSION\s+"?([^"\s)]+)"?\)', re.MULTILINE
@@ -85,6 +85,11 @@ def _contract_scope(contract: str) -> str | None:
   return match.group(1) if match is not None else None
 
 
+def _aggregate_scope(contract: str) -> str | None:
+  match = re.match(r"^aggregate (.+?)(?:(?<!:):(?!:)|$)", contract)
+  return match.group(1) if match is not None else None
+
+
 def _callable_identity(contract: str) -> str | None:
   match = re.match(
       r"^(?:member|function) (.+?)(?<!:):(?!:)(.*)$", contract
@@ -96,6 +101,26 @@ def _callable_identity(contract: str) -> str | None:
   if name is None:
     return None
   return f"{scope}::{name}"
+
+
+def _using_callable_identity(contract: str) -> str | None:
+  match = re.match(r"^member (.+?)(?<!:):(?!:)(.*)$", contract)
+  if match is None:
+    return None
+  scope, declaration = match.groups()
+  tokens = re.findall(r"@[A-Za-z_]\w*@|::|[A-Za-z_]\w*|\S", declaration)
+  if "using" not in tokens or "=" in tokens or "::" not in tokens:
+    return None
+  position = len(tokens) - 1 - tokens[::-1].index("::")
+  name = next(
+      (
+          token
+          for token in tokens[position + 1 :]
+          if re.fullmatch(r"[A-Za-z_]\w*", token)
+      ),
+      None,
+  )
+  return f"{scope}::{name}" if name is not None else None
 
 
 def _macro_identity(contract: str, category: str = "macro") -> str | None:
@@ -523,6 +548,11 @@ def check_snapshots(
             if declaration.startswith("type ")
             if (scope := _contract_scope(declaration)) is not None
         }
+        snapshot_aggregates = {
+            scope
+            for declaration in snapshot_declarations
+            if (scope := _aggregate_scope(declaration)) is not None
+        }
         snapshot_callables = {
             identity
             for declaration in snapshot_declarations
@@ -542,7 +572,17 @@ def check_snapshots(
                 f"{directory.name}: public data member added to existing "
                 f"type: {header}: {addition}"
             )
-          identity = _callable_identity(addition)
+          if (
+              addition.startswith("aggregate-break ")
+              and owner in snapshot_aggregates
+          ):
+            failures.append(
+                f"{directory.name}: aggregate compatibility changed: "
+                f"{header}: {addition}"
+            )
+          identity = _callable_identity(addition) or _using_callable_identity(
+              addition
+          )
           if identity is not None and identity in snapshot_callables:
             failures.append(
                 f"{directory.name}: overload added to existing callable: "
