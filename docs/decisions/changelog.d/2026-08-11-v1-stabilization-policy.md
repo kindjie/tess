@@ -70,8 +70,10 @@
   types and unscoped enums, nested calls in default arguments, and parenthesized
   object declarators, including pointer, reference, array, member-pointer, and
   nested forms. Trailing constraints remain associated with their callable,
-  and grouped relational expressions in dependent bases do not hide inherited
-  constructors.
+  calls inside trailing return or constraint template arguments cannot steal
+  that identity, and grouped or bare relational expressions in dependent bases
+  do not hide inherited constructors. Parenthesized objects remain data when
+  cv or storage specifiers follow their type.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

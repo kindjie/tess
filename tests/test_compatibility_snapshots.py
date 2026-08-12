@@ -685,6 +685,55 @@ def test_relational_dependent_inherited_constructor_uses_derived_identity(
   ), failures
 
 
+def test_bare_relational_dependent_inherited_constructor_uses_derived_identity(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct StableBound { static constexpr int value = 0; };\n"
+      "template < bool Enabled > struct StableBase {\n"
+      "  StableBase(double value);\n"
+      "};\n"
+      "struct StableOptions\n"
+      "  : StableBase<StableBound::value < 1> {\n"
+      "  StableOptions(int value);",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  StableOptions(int value);",
+          "  using StableBase<StableBound::value < 1>::StableBase;\n"
+          "  StableOptions(int value);",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "StableBase" in failure
+      for failure in failures
+  ), failures
+
+
 def test_template_argument_name_does_not_fake_inherited_constructor():
   contract = extract_api_contract(
       "struct Stable { using Base<::Argument>::Argument; int value; };"
@@ -820,6 +869,47 @@ def test_relational_template_with_requires_keeps_callable_identity(tmp_path):
       "noexcept ( N < 3 ) -> bool",
       "template < int N = 1 < 2 > void evaluate ( int value ) "
       "requires StableConcept < N >",
+  )
+  for index, declaration in enumerate(declarations):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {",
+        f"struct StableOptions {{\n  {declaration};",
+    )
+    header.write_text(text, encoding="utf-8")
+    payload["api_contract"] = snapshots.current_api_contract(
+        repo,
+        payload["headers"]["stable"]
+        + payload["headers"]["optional-stable"],
+    )
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            f"  {declaration};",
+            f"  {declaration};\n  void evaluate(double value);",
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "overload added to existing callable" in failure
+        and "evaluate" in failure
+        for failure in failures
+    ), failures
+
+
+def test_trailing_template_calls_do_not_steal_callable_identity(tmp_path):
+  declarations = (
+      "template < int N = 1 < 2 > auto evaluate ( int value ) "
+      "-> Tag < helper ( ) >",
+      "template < int N = 1 < 2 > void evaluate ( int value ) "
+      "requires Concept < helper ( ) >",
   )
   for index, declaration in enumerate(declarations):
     repo = tmp_path / f"variant-{index}"
@@ -1063,6 +1153,10 @@ def test_parenthesized_data_declarators_are_public_data_members(tmp_path):
       "  int ((nested));\n",
       "  int (*values)[4];\n",
       "  int (StableSymbol::*member);\n",
+      "  StableMode const (mode);\n",
+      "  StableMode volatile (*mode_ptr);\n",
+      "  StableMode mutable (mutable_mode);\n",
+      "  StableMode * const (const_ptr);\n",
   )
   for index, addition in enumerate(additions):
     repo = tmp_path / f"variant-{index}"

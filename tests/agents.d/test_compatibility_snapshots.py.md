@@ -15,7 +15,8 @@
   function-like type/enum annotations, nested calls in fallback declarations,
   trailing constraints, parenthesized object, pointer, reference, array,
   member-pointer, nested, and callable-template data declarators, grouped
-  relational dependent-base arguments,
+  grouped and bare relational dependent-base arguments, trailing return and
+  constraint template calls, and post-type cv/storage specifiers,
   constructor-like parameter spellings, and per-configuration
   member and base-clause aggregate availability, anonymous type objects,
   stable-macro redefinition and undefinition, release-tag byte and directory

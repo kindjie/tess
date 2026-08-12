@@ -718,6 +718,13 @@ class _ContractParser:
         ),
         None,
     )
+    leading = next(
+        (token for token in tokens[1:separator]
+         if IDENTIFIER_RE.fullmatch(token)),
+        None,
+    )
+    if right is not None and right == leading:
+      return True
     left = qualified_terminal(tokens[1:separator])
     return right is not None and right == left
 
@@ -1065,7 +1072,7 @@ class _ContractParser:
       return False
     if type_name is not None and plain_name == type_name:
       return True
-    if name in BUILTIN_TYPE_SPECIFIERS:
+    if name in DECLARATION_SPECIFIERS:
       return False
     prefix = _declarator_prefix(tokens[: opening - 1])
     if not prefix or prefix[-1] == "::":
@@ -1191,7 +1198,7 @@ class _ContractParser:
         brace_depth += 1
       elif token == "}" and brace_depth:
         brace_depth -= 1
-    for opening in reversed(candidates):
+    for opening in candidates:
       if opening == 0:
         continue
       previous = tokens[opening - 1]

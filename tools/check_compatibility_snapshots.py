@@ -134,10 +134,14 @@ def _using_callable_identity(contract: str) -> str | None:
   if name is None:
     return None
   owner = scope.rsplit("::", 1)[-1]
-  base = qualified_terminal(
-      tokens[tokens.index("using") + 1 : position]
+  qualifier = tokens[tokens.index("using") + 1 : position]
+  base = qualified_terminal(qualifier)
+  leading = next(
+      (token for token in qualifier if re.fullmatch(r"[A-Za-z_]\w*", token)),
+      None,
   )
-  return f"{scope}::{owner if name == base else name}"
+  inherited = name == base or name == leading
+  return f"{scope}::{owner if inherited else name}"
 
 
 def _macro_identity(contract: str, category: str = "macro") -> str | None:
