@@ -78,7 +78,9 @@
   functions returning function pointers remain functions. Qualified base
   components—not namespace or nested template-argument names—identify
   inherited constructors, and comparison punctuation inside grouped template
-  arguments does not change that result.
+  arguments does not change that result. Annotation removal and redundant
+  grouping are normalized to a fixed point, and parenthesized array bounds do
+  not turn function-pointer data into functions.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

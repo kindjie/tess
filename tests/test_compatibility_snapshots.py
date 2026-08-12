@@ -850,6 +850,16 @@ def test_template_argument_name_does_not_fake_inherited_constructor():
     assert "aggregate Stable" in contract
 
 
+def test_nonterminal_template_component_does_not_fake_constructor():
+  contract = extract_api_contract(
+      "template <class T> struct Argument { struct Wrapper {}; };"
+      "struct Stable : Argument<int>::Wrapper { "
+      "using ::Argument<int>::Wrapper::Argument; int value; };"
+  )
+
+  assert "aggregate Stable" in contract
+
+
 def test_relational_template_expressions_preserve_callable_identity(tmp_path):
   declarations = (
       "template < int N = ( 1 < 2 ) > void evaluate ( int value )",
@@ -1095,6 +1105,28 @@ def test_function_returning_function_pointer_is_not_public_data(tmp_path):
   ) == []
 
 
+def test_function_pointer_array_is_public_data(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct StableOptions {\n"
+      "  int (*callbacks[sizeof(int)])(double);",
+  )
+  header.write_text(text, encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "public data member added to existing type" in failure
+      and "callbacks" in failure
+      for failure in failures
+  ), failures
+
+
 def test_grouped_function_declarator_retains_callable_identity(tmp_path):
   header_path, payload = make_repo(tmp_path)
   header = tmp_path / "include/tess/tess.h"
@@ -1145,6 +1177,7 @@ def test_annotated_grouped_function_retains_callable_identity(tmp_path):
   declarations = (
       "int (TESS_CALL evaluate)(double value)",
       "int (evaluate [[deprecated]])(double value)",
+      "int (TESS_ANNOTATE(api) ((evaluate)))(double value)",
   )
   for index, declaration in enumerate(declarations):
     repo = tmp_path / f"variant-{index}"
@@ -1152,7 +1185,8 @@ def test_annotated_grouped_function_retains_callable_identity(tmp_path):
     header = repo / "include/tess/tess.h"
     text = header.read_text(encoding="utf-8").replace(
         "struct StableOptions {",
-        "#define TESS_CALL\nstruct StableOptions {\n"
+        "#define TESS_CALL\n#define TESS_ANNOTATE(x)\n"
+        "struct StableOptions {\n"
         "  int evaluate(int value);",
     )
     header.write_text(text, encoding="utf-8")
@@ -1179,6 +1213,40 @@ def test_annotated_grouped_function_retains_callable_identity(tmp_path):
         and "evaluate" in failure
         for failure in failures
     ), failures
+
+
+def test_grouped_function_pointer_return_retains_identity(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct StableOptions {\n  int (*((factory))(int))(double);",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int (*((factory))(int))(double);",
+          "  int (*((factory))(int))(double);\n"
+          "  int (*factory(double))(double);",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "factory" in failure
+      for failure in failures
+  ), failures
 
 
 def test_relational_template_grouped_function_keeps_identity(tmp_path):

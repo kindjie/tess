@@ -21,8 +21,9 @@
   cv-qualified parenthesized pointer/reference/array data, grouped function
   declarators (including annotations and relational template headers),
   function-pointer return types, and qualified relational dependent-base
-  arguments retain the correct identity without confusing namespace-named or
-  nested template-argument members;
+  arguments retain the correct identity without confusing namespace-named,
+  nonterminal, or nested template-argument members; pointer arrays with
+  parenthesized bounds remain data;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

@@ -179,8 +179,8 @@ def callable_name(declaration: str | list[str]) -> str | None:
 
 def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
   """Return whether a qualified type-id's terminal component is ``name``."""
-  if tokens and tokens[-1] == name:
-    return True
+  if tokens and IDENTIFIER_RE.fullmatch(tokens[-1]):
+    return tokens[-1] == name
   structural_less: list[int] = []
   structural_close: list[int] = []
   round_depth = 0
@@ -1099,15 +1099,9 @@ class _ContractParser:
           break
     if grouping is None:
       return None
-    declarator = tokens[grouping + 1 : parameter_opening - 1]
-    while (
-        len(declarator) >= 2
-        and declarator[0] == "("
-        and _ContractParser._matching_round_bracket(declarator, 0)
-        == len(declarator) - 1
-    ):
-      declarator = declarator[1:-1]
-    declarator = _declarator_prefix(declarator)
+    declarator = _ContractParser._normalize_grouped_declarator(
+        tokens[grouping + 1 : parameter_opening - 1]
+    )
     if len(declarator) != 1:
       return None
     return (
@@ -1115,6 +1109,18 @@ class _ContractParser:
         if IDENTIFIER_RE.fullmatch(declarator[0])
         else None
     )
+
+  @staticmethod
+  def _normalize_grouped_declarator(tokens: list[str]) -> list[str]:
+    declarator = _declarator_prefix(tokens)
+    while (
+        len(declarator) >= 2
+        and declarator[0] == "("
+        and _ContractParser._matching_round_bracket(declarator, 0)
+        == len(declarator) - 1
+    ):
+      declarator = _declarator_prefix(declarator[1:-1])
+    return declarator
 
   @staticmethod
   def _is_parenthesized_object_declarator(
@@ -1180,7 +1186,9 @@ class _ContractParser:
         token for token in declarator if IDENTIFIER_RE.fullmatch(token)
     ]
     if pointer_or_reference:
-      if "(" in declarator:
+      if _ContractParser._function_pointer_return_opening(
+          tokens, opening, closing
+      ) is not None:
         return False
       return bool(names)
     if len(declarator) != 1 or len(names) != 1:
@@ -1202,15 +1210,9 @@ class _ContractParser:
       )
       if pointer_return is not None:
         return pointer_return
-      grouped_name = tokens[opening + 1 : closing]
-      while (
-          len(grouped_name) >= 2
-          and grouped_name[0] == "("
-          and _ContractParser._matching_round_bracket(grouped_name, 0)
-          == len(grouped_name) - 1
-      ):
-        grouped_name = grouped_name[1:-1]
-      grouped_name = _declarator_prefix(grouped_name)
+      grouped_name = _ContractParser._normalize_grouped_declarator(
+          tokens[opening + 1 : closing]
+      )
       if (
           len(grouped_name) == 1
           and IDENTIFIER_RE.fullmatch(grouped_name[0])
@@ -1239,7 +1241,16 @@ class _ContractParser:
         pointer_seen = True
       elif (
           pointer_seen
+          and token == "("
+          and _ContractParser._grouped_declarator_name(tokens, index)
+          is not None
+      ):
+        return index
+      elif (
+          pointer_seen
           and IDENTIFIER_RE.fullmatch(token)
+          and token not in PARENTHESIZED_SPECIFIERS
+          and not token.startswith("TESS_")
           and index + 1 < closing
           and tokens[index + 1] == "("
       ):
@@ -1281,7 +1292,9 @@ class _ContractParser:
       closing = _ContractParser._matching_round_bracket(tokens, opening)
       if closing is None:
         continue
-      grouped = _declarator_prefix(tokens[opening + 1 : closing])
+      grouped = _ContractParser._normalize_grouped_declarator(
+          tokens[opening + 1 : closing]
+      )
       if (
           len(grouped) == 1
           and IDENTIFIER_RE.fullmatch(grouped[0])
