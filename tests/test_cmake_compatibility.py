@@ -249,6 +249,8 @@ def test_install_smoke_uses_the_tracked_consumer_fixture():
 
 
 def test_prerelease_real_install_is_discoverable_unversioned(tmp_path):
+    env = os.environ.copy()
+    env.pop("CMAKE_CXX_COMPILER_LAUNCHER", None)
     source = tmp_path / "source"
     source.mkdir()
     shutil.copy2(REPO_ROOT / "CMakeLists.txt", source)
@@ -282,9 +284,9 @@ endif()
             str(build),
             "-DTESS_BUILD_TESTING=OFF",
             "-DTESS_BUILD_EXAMPLES=OFF",
-            "-DCMAKE_CXX_COMPILER_LAUNCHER=",
         ],
         check=True,
+        env=env,
     )
     subprocess.run(
         ["cmake", "--install", str(build), "--prefix", str(prefix)],
@@ -302,6 +304,7 @@ endif()
             "-DTESS_EXPECTED_PRERELEASE=rc.1",
         ],
         check=True,
+        env=env,
     )
     subprocess.run(
         ["cmake", "--build", str(consumer_build)], check=True
