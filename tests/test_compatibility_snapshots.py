@@ -785,6 +785,56 @@ def test_nested_template_relational_inherited_constructor_uses_derived_identity(
   ), failures
 
 
+def test_terminal_dependent_base_after_nested_relation_is_inherited_constructor(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "template < bool Enabled > struct Inner {};\n"
+      "template < class T > struct Outer {\n"
+      "  template < class U > struct Base { Base(double value); };\n"
+      "};\n"
+      "template < int N = 0, int M = 1 >\n"
+      "struct StableOptions\n"
+      "  : Outer<Inner<N < M>>::template Base<int> {\n"
+      "  StableOptions(int value);",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  StableOptions(int value);",
+          "  using Outer<Inner<N < M>>::template Base<int>::Base;\n"
+          "  StableOptions(int value);",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
 def test_qualified_relational_inherited_constructor_uses_derived_identity(
     tmp_path,
 ):
@@ -1607,6 +1657,9 @@ def test_parenthesized_data_declarators_are_public_data_members(tmp_path):
       "  int (values[2]);\n",
       "  int ((nested_values)[2]);\n",
       "  StableMode (TESS_ATTR(api) annotated_mode);\n",
+      "  int StableOptions::* (member);\n",
+      "  int StableOptions::* ((nested_member));\n",
+      "  int StableOptions::* (members[2]);\n",
   )
   for index, addition in enumerate(additions):
     repo = tmp_path / f"variant-{index}"
@@ -1627,6 +1680,29 @@ def test_parenthesized_data_declarators_are_public_data_members(tmp_path):
         "public data member added to existing type" in failure
         for failure in failures
     ), (addition, failures)
+
+
+def test_qualified_same_name_parenthesized_object_is_public_data(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableSymbol {",
+      "namespace other { struct StableSymbol {}; }\n"
+      "struct StableSymbol {\n"
+      "  other::StableSymbol (state);",
+  )
+  header.write_text(text, encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "public data member added to existing type" in failure
+      and "state" in failure
+      for failure in failures
+  ), failures
 
 
 def test_attributed_callable_cannot_gain_an_ambiguous_overload(tmp_path):

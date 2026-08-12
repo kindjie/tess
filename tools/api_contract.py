@@ -181,6 +181,24 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
   """Return whether a qualified type-id's terminal component is ``name``."""
   if tokens and IDENTIFIER_RE.fullmatch(tokens[-1]):
     return tokens[-1] == name
+  for index in range(len(tokens) - 3):
+    if tokens[index : index + 3] != ["::", "template", name]:
+      continue
+    if tokens[index + 3] != "<":
+      continue
+    depth = 0
+    for position in range(index + 3, len(tokens)):
+      token = tokens[position]
+      if token == "<":
+        depth += 1
+      elif token == ">":
+        depth -= 1
+      elif token == ">>":
+        depth -= 2
+      if depth == 0:
+        if position == len(tokens) - 1:
+          return True
+        break
   terminal_template = _terminal_template_component(tokens)
   if terminal_template is not None:
     return terminal_template == name
@@ -1080,7 +1098,7 @@ class _ContractParser:
     if tokens[opening - 1] != plain_name:
       return False
     if type_name is not None and plain_name == type_name:
-      return True
+      return not _declarator_prefix(tokens[: opening - 1])
     if name in DECLARATION_SPECIFIERS:
       return False
     prefix = _declarator_prefix(tokens[: opening - 1])
@@ -1161,8 +1179,29 @@ class _ContractParser:
         ):
           identifiers.append((index, token))
     if type_name is not None and identifiers:
-      if identifiers[-1][1] == type_name:
+      owner_index, owner_name = identifiers[-1]
+      qualified_owner = (
+          owner_index > 0 and prefix[owner_index - 1] == "::"
+      )
+      member_pointer_owner = (
+          owner_index + 1 < len(prefix)
+          and prefix[owner_index + 1] == "::"
+      )
+      if (
+          owner_name == type_name
+          and not qualified_owner
+          and not member_pointer_owner
+      ):
         return False
+    member_pointer_owners = {
+        index
+        for index, _ in identifiers
+        if index + 2 < len(prefix)
+        and prefix[index + 1 : index + 3] == ["::", "*"]
+    }
+    identifiers = [
+        item for item in identifiers if item[0] not in member_pointer_owners
+    ]
     if builtin_type:
       if identifiers:
         return False
