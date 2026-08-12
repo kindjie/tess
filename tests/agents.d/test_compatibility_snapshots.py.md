@@ -22,6 +22,8 @@
   constant-expression bounds, fixed-point annotation/group normalization,
   annotated grouped pointer/reference/member-pointer returns, trailing return
   and constraint template calls, and post-type cv/storage specifiers,
+  nested-template relational base arguments, annotated function-pointer data,
+  and parenthesized array or annotated object declarators,
   constructor-like parameter spellings, and per-configuration
   member and base-clause aggregate availability, anonymous type objects,
   stable-macro redefinition and undefinition, release-tag byte and directory

@@ -25,6 +25,7 @@
   nonterminal, or nested template-argument members; pointer arrays with
   arbitrary parenthesized constant-expression bounds remain data, while
   annotated grouped pointer/reference returns retain their callable name;
+  parenthesized arrays and annotated object/pointer declarators remain data;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

@@ -734,6 +734,57 @@ def test_bare_relational_dependent_inherited_constructor_uses_derived_identity(
   ), failures
 
 
+def test_nested_template_relational_inherited_constructor_uses_derived_identity(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "template < class T > struct StableBound {\n"
+      "  static constexpr int value = 0;\n"
+      "};\n"
+      "template < bool Enabled > struct StableBase {\n"
+      "  StableBase(double value);\n"
+      "};\n"
+      "struct StableOptions\n"
+      "  : StableBase<StableBound<int>::value < 1> {\n"
+      "  StableOptions(int value);",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  StableOptions(int value);",
+          "  using StableBase<StableBound<int>::value < 1>::StableBase;\n"
+          "  StableOptions(int value);",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "StableBase" in failure
+      for failure in failures
+  ), failures
+
+
 def test_qualified_relational_inherited_constructor_uses_derived_identity(
     tmp_path,
 ):
@@ -1142,6 +1193,33 @@ def test_function_pointer_array_is_public_data(tmp_path):
     ), failures
 
 
+def test_annotated_function_pointer_is_public_data(tmp_path):
+  additions = (
+      "  int (*TESS_ATTR(api()) callback)(double);\n",
+      '  int (*__attribute__((annotate("x"))) callback)(double);\n',
+  )
+  for index, addition in enumerate(additions):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    snapshot_root = write_snapshot(repo, payload)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {",
+        "#define TESS_ATTR(...)\nstruct StableOptions {\n" + addition,
+    )
+    header.write_text(text, encoding="utf-8")
+
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "public data member added to existing type" in failure
+        and "callback" in failure
+        for failure in failures
+    ), failures
+
+
 def test_grouped_function_declarator_retains_callable_identity(tmp_path):
   header_path, payload = make_repo(tmp_path)
   header = tmp_path / "include/tess/tess.h"
@@ -1526,6 +1604,9 @@ def test_parenthesized_data_declarators_are_public_data_members(tmp_path):
       "  StableMode volatile (*mode_ptr);\n",
       "  StableMode mutable (mutable_mode);\n",
       "  StableMode * const (const_ptr);\n",
+      "  int (values[2]);\n",
+      "  int ((nested_values)[2]);\n",
+      "  StableMode (TESS_ATTR(api) annotated_mode);\n",
   )
   for index, addition in enumerate(additions):
     repo = tmp_path / f"variant-{index}"
@@ -1534,7 +1615,7 @@ def test_parenthesized_data_declarators_are_public_data_members(tmp_path):
     header = repo / "include/tess/tess.h"
     text = header.read_text(encoding="utf-8").replace(
         "struct StableOptions {\n",
-        "struct StableOptions {\n" + addition,
+        "#define TESS_ATTR(x)\nstruct StableOptions {\n" + addition,
     )
     header.write_text(text, encoding="utf-8")
 

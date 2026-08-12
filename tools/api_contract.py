@@ -181,12 +181,23 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
   """Return whether a qualified type-id's terminal component is ``name``."""
   if tokens and IDENTIFIER_RE.fullmatch(tokens[-1]):
     return tokens[-1] == name
-  structural_less: list[int] = []
-  structural_close: list[int] = []
+  terminal_template = _terminal_template_component(tokens)
+  if terminal_template is not None:
+    return terminal_template == name
+  return any(
+      token == name and index + 1 < len(tokens) and tokens[index + 1] == "<"
+      for index, token in enumerate(tokens)
+  )
+
+
+def _terminal_template_component(tokens: list[str]) -> str | None:
+  angle_depth = 0
   round_depth = 0
   square_depth = 0
   brace_depth = 0
-  for position, token in enumerate(tokens):
+  candidates: list[str] = []
+  for index, token in enumerate(tokens):
+    token = tokens[index]
     if token == "(":
       round_depth += 1
     elif token == ")" and round_depth:
@@ -200,25 +211,20 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
     elif token == "}" and brace_depth:
       brace_depth -= 1
     elif not (round_depth or square_depth or brace_depth):
+      if (
+          angle_depth == 0
+          and IDENTIFIER_RE.fullmatch(token)
+          and index + 1 < len(tokens)
+          and tokens[index + 1] == "<"
+      ):
+        candidates.append(token)
       if token == "<":
-        structural_less.append(position)
-      elif token in {">", ">>"}:
-        structural_close.append(position)
-  candidates: list[str] = []
-  for index, token in enumerate(tokens[:-1]):
-    if not IDENTIFIER_RE.fullmatch(token) or tokens[index + 1] != "<":
-      continue
-    earlier_less = max(
-        (position for position in structural_less if position < index),
-        default=-1,
-    )
-    earlier_close = max(
-        (position for position in structural_close if position < index),
-        default=-1,
-    )
-    if earlier_less < 0 or earlier_close > earlier_less:
-      candidates.append(token)
-  return bool(candidates) and candidates[-1] == name
+        angle_depth += 1
+      elif token == ">" and angle_depth:
+        angle_depth -= 1
+      elif token == ">>" and angle_depth:
+        angle_depth = max(0, angle_depth - 2)
+  return candidates[-1] if candidates else None
 
 
 def _is_parenthesized_specifier(token: str) -> bool:
@@ -1178,6 +1184,7 @@ class _ContractParser:
         == len(declarator) - 1
     ):
       declarator = declarator[1:-1]
+    declarator = _ContractParser._strip_declarator_annotations(declarator)
     if not declarator:
       return False
     pointer_or_reference = any(
@@ -1192,9 +1199,41 @@ class _ContractParser:
       ) is not None:
         return False
       return bool(names)
+    if "[" in declarator and names:
+      return True
     if len(declarator) != 1 or len(names) != 1:
       return False
     return closing + 1 >= len(tokens) or tokens[closing + 1] != "("
+
+  @staticmethod
+  def _strip_declarator_annotations(tokens: list[str]) -> list[str]:
+    result: list[str] = []
+    index = 0
+    while index < len(tokens):
+      token = tokens[index]
+      if token == "[[":
+        depth = 1
+        index += 1
+        while index < len(tokens) and depth:
+          if tokens[index] == "[[":
+            depth += 1
+          elif tokens[index] == "]]":
+            depth -= 1
+          index += 1
+        continue
+      if token in {"__attribute__", "__declspec"} or token.startswith(
+          "TESS_"
+      ):
+        index += 1
+        if index < len(tokens) and tokens[index] == "(":
+          closing = _ContractParser._matching_round_bracket(tokens, index)
+          if closing is None:
+            return result
+          index = closing + 1
+        continue
+      result.append(token)
+      index += 1
+    return result
 
   @staticmethod
   def _function_opening(tokens: list[str]) -> int | None:
@@ -1237,7 +1276,10 @@ class _ContractParser:
   ) -> int | None:
     pointer_seen = False
     square_depth = 0
+    ignored_until = -1
     for index in range(opening + 1, closing):
+      if index <= ignored_until:
+        continue
       token = tokens[index]
       if token in {"[", "[["}:
         square_depth += 1
@@ -1246,6 +1288,16 @@ class _ContractParser:
         square_depth -= 1
         continue
       if square_depth:
+        continue
+      if token in {"__attribute__", "__declspec"} or token.startswith(
+          "TESS_"
+      ):
+        if index + 1 < closing and tokens[index + 1] == "(":
+          annotation_end = _ContractParser._matching_round_bracket(
+              tokens, index + 1
+          )
+          if annotation_end is not None and annotation_end < closing:
+            ignored_until = annotation_end
         continue
       if token in {"*", "&", "&&"}:
         pointer_seen = True

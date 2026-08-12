@@ -83,6 +83,9 @@
   not turn function-pointer data into functions. The last valid top-level
   template component is terminal, and pointer-return name scanning skips array
   bounds and annotation groups.
+  Qualified-component scanning tracks outer template depth so relational
+  identifiers after nested templates cannot replace the owning base. Arrays
+  and annotations inside parenthesized object declarators remain data.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is
