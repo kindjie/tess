@@ -87,10 +87,12 @@
   identifiers after nested templates cannot replace the owning base. Arrays
   and annotations inside parenthesized object declarators remain data.
   Terminal dependent or nondependent template components remain identifiable
-  after single, nested, or terminal relational arguments without mistaking a
-  nonterminal dependent component for the owning type. Qualified same-name or
+  after single, nested, or terminal relational arguments and intervening
+  non-template components without mistaking nested arguments or nonterminal
+  dependent components for the owning type. Qualified same-name or
   namespace-qualified member-pointer type prefixes do not turn parenthesized
-  objects into constructors or suppress aggregate evidence.
+  objects into constructors or suppress aggregate evidence; bare and
+  conditional `explicit` constructors both break aggregate eligibility.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

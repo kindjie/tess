@@ -28,9 +28,11 @@
   parenthesized arrays and annotated object/pointer declarators remain data;
   terminal dependent or nondependent template bases remain inherited
   constructors after single, nested, or terminal relational arguments without
-  confusing later nonterminal components, while qualified same-name and
-  namespace-qualified member-pointer object declarations remain data and do not
-  suppress aggregate compatibility evidence;
+  confusing intervening non-template components, nested arguments, or later
+  nonterminal components, while qualified same-name and namespace-qualified
+  member-pointer object declarations remain data and do not suppress aggregate
+  compatibility evidence; bare and conditional `explicit` constructors remain
+  aggregate-breaking;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

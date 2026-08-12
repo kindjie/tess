@@ -62,6 +62,7 @@ DECLARATION_SPECIFIERS = BUILTIN_TYPE_SPECIFIERS | frozenset(
         "constexpr",
         "constinit",
         "extern",
+        "explicit",
         "inline",
         "mutable",
         "register",
@@ -193,16 +194,10 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
         "template",
     ]
     qualified = index >= 1 and tokens[index - 1] == "::"
-    separator = index - (2 if dependent else 1)
-    follows_closed_template = (
-        qualified
-        and separator > 0
-        and tokens[separator - 1] in {">", ">>"}
-    )
     qualification_continues = "::" in tokens[index + 2 :]
     terminal_closes_singly = tokens[-1] == ">"
     if not dependent and not (
-        follows_closed_template
+        qualified
         and (qualification_continues or terminal_closes_singly)
     ):
       continue

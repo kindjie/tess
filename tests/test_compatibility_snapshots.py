@@ -126,8 +126,14 @@ def refresh_payload(root: Path, payload: dict[str, object]) -> None:
   payload["public_symbols"] = sorted(
       snapshots.current_symbols(root, public_headers)
   )
+  refresh_contract(root, payload)
+
+
+def refresh_contract(root: Path, payload: dict[str, object]) -> None:
+  """Refresh only declaration evidence after a synthetic API mutation."""
+  headers = payload["headers"]
   payload["api_contract"] = snapshots.current_api_contract(
-      root, public_headers
+      root, headers["stable"] + headers["optional-stable"]
   )
 
 
@@ -802,6 +808,44 @@ def test_single_relational_terminal_base_is_inherited_constructor(tmp_path):
   ), failures
 
 
+def test_non_template_middle_keeps_terminal_inherited_constructor(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "template < bool Enabled > struct Outer {\n"
+      "  struct Middle {\n"
+      "    template < class U > struct Base { Base(double value); };\n"
+      "  };\n"
+      "};\n"
+      "constexpr int N = 0;\n"
+      "constexpr int M = 1;\n"
+      "struct StableOptions : Outer<N < M>::Middle::Base<int> {\n"
+      "  StableOptions(int value);",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  StableOptions(int value);",
+          "  using Outer<N < M>::Middle::Base<int>::Base;\n"
+          "  StableOptions(int value);",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
 def test_relational_terminal_base_arguments_keep_inherited_constructor(
     tmp_path,
 ):
@@ -997,6 +1041,52 @@ def test_dependent_nonterminal_component_does_not_fake_constructor(tmp_path):
   ), failures
 
 
+def test_nested_argument_name_does_not_hide_terminal_component(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "template < class T > struct Pair {\n"
+      "  template < class U > struct Base {};\n"
+      "};\n"
+      "template < class T > struct Outer {\n"
+      "  struct Middle {\n"
+      "    template < class U > struct Wrapper {\n"
+      "      static void Base(int value);\n"
+      "    };\n"
+      "  };\n"
+      "};\n"
+      "struct StableOptions\n"
+      "  : Outer<Pair<int>::Base<double>>::Middle::Wrapper<int> {\n"
+      "  using Outer<Pair<int>::Base<double>>::Middle::Wrapper<int>::Base;",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  assert any(
+      contract.endswith("aggregate tess::StableOptions")
+      for contracts in payload["api_contract"].values()
+      for contract in contracts
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          "  StableOptions() = default;\n  int max_steps = 1;",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "aggregate compatibility changed" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
 def test_relational_template_expressions_preserve_callable_identity(tmp_path):
   declarations = (
       "template < int N = ( 1 < 2 ) > void evaluate ( int value )",
@@ -1012,11 +1102,7 @@ def test_relational_template_expressions_preserve_callable_identity(tmp_path):
         f"struct StableOptions {{\n  {declaration};",
     )
     header.write_text(text, encoding="utf-8")
-    payload["api_contract"] = snapshots.current_api_contract(
-        repo,
-        payload["headers"]["stable"]
-        + payload["headers"]["optional-stable"],
-    )
+    refresh_contract(repo, payload)
     snapshot_root = write_snapshot(repo, payload)
     header.write_text(
         text.replace(
@@ -1054,11 +1140,7 @@ def test_unparenthesized_relational_template_expressions_keep_identity(
         f"struct StableOptions {{\n  {declaration};",
     )
     header.write_text(text, encoding="utf-8")
-    payload["api_contract"] = snapshots.current_api_contract(
-        repo,
-        payload["headers"]["stable"]
-        + payload["headers"]["optional-stable"],
-    )
+    refresh_contract(repo, payload)
     snapshot_root = write_snapshot(repo, payload)
     header.write_text(
         text.replace(
@@ -1091,11 +1173,7 @@ def test_relational_template_fallback_ignores_nested_default_call(tmp_path):
       f"struct StableOptions {{\n  {declaration};",
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -1134,11 +1212,7 @@ def test_relational_template_with_requires_keeps_callable_identity(tmp_path):
         f"struct StableOptions {{\n  {declaration};",
     )
     header.write_text(text, encoding="utf-8")
-    payload["api_contract"] = snapshots.current_api_contract(
-        repo,
-        payload["headers"]["stable"]
-        + payload["headers"]["optional-stable"],
-    )
+    refresh_contract(repo, payload)
     snapshot_root = write_snapshot(repo, payload)
     header.write_text(
         text.replace(
@@ -1175,11 +1249,7 @@ def test_trailing_template_calls_do_not_steal_callable_identity(tmp_path):
         f"struct StableOptions {{\n  {declaration};",
     )
     header.write_text(text, encoding="utf-8")
-    payload["api_contract"] = snapshots.current_api_contract(
-        repo,
-        payload["headers"]["stable"]
-        + payload["headers"]["optional-stable"],
-    )
+    refresh_contract(repo, payload)
     snapshot_root = write_snapshot(repo, payload)
     header.write_text(
         text.replace(
@@ -1308,11 +1378,7 @@ def test_grouped_function_declarator_retains_callable_identity(tmp_path):
       "struct StableOptions {\n  int (evaluate)(int value);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -1363,11 +1429,7 @@ def test_annotated_grouped_function_retains_callable_identity(tmp_path):
         "  int evaluate(int value);",
     )
     header.write_text(text, encoding="utf-8")
-    payload["api_contract"] = snapshots.current_api_contract(
-        repo,
-        payload["headers"]["stable"]
-        + payload["headers"]["optional-stable"],
-    )
+    refresh_contract(repo, payload)
     snapshot_root = write_snapshot(repo, payload)
     header.write_text(
         text.replace(
@@ -1396,11 +1458,7 @@ def test_grouped_function_pointer_return_retains_identity(tmp_path):
       "struct StableOptions {\n  int (*((factory))(int))(double);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -1438,11 +1496,7 @@ def test_annotated_grouped_pointer_return_retains_identity(tmp_path):
         "  int (*factory(int))(double);",
     )
     header.write_text(text, encoding="utf-8")
-    payload["api_contract"] = snapshots.current_api_contract(
-        repo,
-        payload["headers"]["stable"]
-        + payload["headers"]["optional-stable"],
-    )
+    refresh_contract(repo, payload)
     snapshot_root = write_snapshot(repo, payload)
     header.write_text(
         text.replace(
@@ -1474,11 +1528,7 @@ def test_relational_template_grouped_function_keeps_identity(tmp_path):
       f"struct StableOptions {{\n  {declaration};",
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -1509,11 +1559,7 @@ def test_requires_expression_body_is_part_of_callable_contract(tmp_path):
       "    requires requires(T item) { item.foo(); } {}",
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(text.replace("item.foo()", "item.bar()"), encoding="utf-8")
 
@@ -1538,11 +1584,7 @@ def test_parameterless_requires_expression_body_is_part_of_contract(tmp_path):
       "    requires requires { value.foo(); } {}",
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace("value.foo()", "value.bar()"), encoding="utf-8"
@@ -1573,11 +1615,7 @@ def test_elaborated_types_do_not_hide_inline_overloads(tmp_path):
         f"struct StableOptions {{\n  {declaration}",
     )
     header.write_text(text, encoding="utf-8")
-    payload["api_contract"] = snapshots.current_api_contract(
-        repo,
-        payload["headers"]["stable"]
-        + payload["headers"]["optional-stable"],
-    )
+    refresh_contract(repo, payload)
     snapshot_root = write_snapshot(repo, payload)
     header.write_text(
         text.replace(
@@ -1608,11 +1646,7 @@ def test_function_like_annotation_before_type_preserves_body_contract(
       "TESS_EXPORT(api) struct StableOptions {",
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace("int max_steps = 1", "double max_steps = 1"),
@@ -1801,11 +1835,7 @@ def test_attributed_callable_cannot_gain_an_ambiguous_overload(tmp_path):
       '[[nodiscard("why")]] auto stable_route',
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -1929,6 +1959,7 @@ def test_existing_aggregate_rejects_parenthesized_constructor_specifiers(
 
   for constructor in (
       "  explicit(true) StableOptions(int value = 0);\n",
+      "  explicit StableOptions() = default;\n",
       '  [[deprecated("old")]] StableOptions() = default;\n',
       '  TESS_DEPRECATED("old") StableOptions() = default;\n',
       '  StableOptions [[deprecated("old")]] () = default;\n',
@@ -1965,11 +1996,7 @@ def test_parameter_type_spelling_does_not_hide_aggregate_compatibility(
       "  void consume(StableOptions());\n",
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -1998,11 +2025,7 @@ def test_macro_annotated_callable_cannot_gain_an_overload(tmp_path):
       '  TESS_DEPRECATED("old") void set_limit(int value = 8);',
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -2204,11 +2227,7 @@ def test_conditional_access_labels_retain_branch_identity(tmp_path):
   int max_steps = 1;""",
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace("TESS_PUBLIC_OPTIONS", "TESS_RENAMED_OPTIONS"),
@@ -2240,11 +2259,7 @@ def test_conditional_access_join_retains_each_public_branch(tmp_path):
   int max_steps = 1;""",
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace("#else\n public:", "#else\n private:"),
@@ -2274,11 +2289,7 @@ def test_conditional_public_aggregate_cannot_gain_constructor(tmp_path):
   int max_steps = 1;""",
   )
   header.write_text(text, encoding="utf-8")
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_contract(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -2336,11 +2347,7 @@ def test_conditionally_aggregate_type_cannot_lose_remaining_configuration(
         "struct StableOptions {\n" + conditional,
     )
     header.write_text(text, encoding="utf-8")
-    payload["api_contract"] = snapshots.current_api_contract(
-        repo,
-        payload["headers"]["stable"]
-        + payload["headers"]["optional-stable"],
-    )
+    refresh_contract(repo, payload)
     snapshot_root = write_snapshot(repo, payload)
     header.write_text(
         text.replace(conditional, unconditional), encoding="utf-8"
@@ -2520,11 +2527,7 @@ def test_conditional_enums_and_enumerators_retain_branch_identity(tmp_path):
   snapshot_root = tmp_path / "compatibility"
   for index, text in enumerate(variants):
     header.write_text(text, encoding="utf-8")
-    payload["api_contract"] = snapshots.current_api_contract(
-        tmp_path,
-        payload["headers"]["stable"]
-        + payload["headers"]["optional-stable"],
-    )
+    refresh_contract(tmp_path, payload)
     if index == 0:
       snapshot_root = write_snapshot(tmp_path, payload)
     else:
