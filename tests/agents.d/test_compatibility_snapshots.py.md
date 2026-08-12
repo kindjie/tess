@@ -6,7 +6,8 @@
   derived aggregates), exhaustive conditional-enum alternatives and implicit
   positions, branch-specific visibility, attributed/conditional-explicit
   constructors, parenthesized data-member specifiers, attributed callable
-  identities, stable-macro undefinition, release-tag byte and directory
+  identities, constructor-like parameter spellings, stable-macro redefinition
+  and undefinition, release-tag byte and directory
   immutability (excluding future unmerged tags), installed-package consumer
   metadata, and the exact RC1 snapshot requirement. It intentionally uses a
   minimal synthetic repository; compiling consumers and loading archives are

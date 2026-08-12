@@ -10,8 +10,9 @@
   Worker-pool dispatch ownership now covers plan-ordered result selection;
   even empty nested dispatches fail fast. Released snapshot directories are
   append-only, constructor and data-member detection covers parenthesized
-  specifiers, attributed overloads and stable-macro undefinitions cannot evade
-  compatibility checks, future unmerged tags do not constrain maintenance
+  specifiers and parameter-type spellings, attributed overloads and stable
+  macro redefinitions/undefinitions cannot evade compatibility checks, future
+  unmerged tags do not constrain maintenance
   branches, release evidence retains checksummed actual-version job logs,
   release package checks use C++20 without an unavailable compiler launcher, and
   `DeltaCollector` self-moves and repeated moves invalidate or poison borrowed

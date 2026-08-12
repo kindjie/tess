@@ -54,8 +54,9 @@
   conditional alternatives, including branch-specific visibility. Declarator
   recognition distinguishes parenthesized type/specifier syntax from callable
   parameters, and attributed callables retain their actual callable identity.
-  Undefining a snapshotted stable macro is a compatibility break. Constructor
-  recognition covers attributes and conditional `explicit` specifiers.
+  Redefining or undefining a snapshotted stable macro is a compatibility break.
+  Constructor recognition covers attributes and conditional `explicit`
+  specifiers without mistaking parameter-type spellings for constructors.
   Enumerator order is append-only, and existing callables cannot gain overloads
   because calls and address-taking can become ambiguous; sparse extensions
   therefore use distinctly named entry points. Release tags anchor an

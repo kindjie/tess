@@ -451,14 +451,10 @@ class _ContractParser:
   def _constructor_opening(
       tokens: list[str], type_name: str
   ) -> int | None:
-    return next(
-        (
-            index + 1
-            for index, token in enumerate(tokens[:-1])
-            if token == type_name and tokens[index + 1] == "("
-        ),
-        None,
-    )
+    opening = _ContractParser._function_opening(tokens)
+    if opening is None or opening == 0:
+      return None
+    return opening if tokens[opening - 1] == type_name else None
 
   @staticmethod
   def _is_inherited_constructor(tokens: list[str]) -> bool:

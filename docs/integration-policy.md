@@ -281,22 +281,19 @@ namespace rather than moving to `include/tess/experimental/`, because
 relocating them would churn every consumer include to signal a maturity
 difference that is not the actual distinction.
 
-Being outside `experimental/` is not a stability promise. Every `0.x`
-release is pre-stable — see [support](support.md) — and that applies to
-these families on dense worlds exactly as it does to the rest of the
-surface.
-
-One concrete change to expect: absorbing sparse residency will need the
-`MissingChunkPolicy` parameter that the sparse-aware path entry points
-already carry (`astar_path` and, as of the route-cache work,
-`cached_astar_path`). When these families gain sparse support, expect
-that parameter on their entry points, defaulted to `TreatAsBlocked` so
-existing behaviour is preserved — but the signatures will change.
+The header manifest, not directory placement alone, defines stability; see
+[support](support.md). The current dense queued-operation, field-product, and
+PIBT signatures are frozen for 1.x. Sparse residency support must use distinct
+entry points or additive overloads that leave those dense signatures and their
+existing call resolution unchanged. Such variants can accept the
+`MissingChunkPolicy` used by sparse-aware path entry points such as
+`astar_path` and `cached_astar_path`.
 
 Note that `weighted_path_batch` is residency-generic and *does* compile
 against a sparse world, but currently hardcodes `TreatAsBlocked`: it
 answers `NoPath` across a missing chunk rather than `Indeterminate`.
-Threading the policy there is open work.
+Adding a policy-aware variant there is open work and remains subject to the
+additive-entry-point rule above.
 
 Everything else in the public surface is residency-generic: it either
 works on both world kinds, or names the difference in its own

@@ -554,6 +554,12 @@ def check_snapshots(
                 f"{directory.name}: stable macro undefined: "
                 f"{header}: {addition}"
             )
+          redefined = _macro_identity(addition)
+          if redefined is not None and redefined in snapshot_macros:
+            failures.append(
+                f"{directory.name}: stable macro redefined: "
+                f"{header}: {addition}"
+            )
       if is_current_snapshot:
         current_contract = {
             header: set(api_contract.get(header, []))

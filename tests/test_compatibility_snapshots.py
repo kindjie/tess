@@ -373,6 +373,33 @@ def test_snapshotted_macro_cannot_be_undefined(tmp_path):
     ), failures
 
 
+def test_snapshotted_macro_cannot_gain_a_conditional_redefinition(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  original = header.read_text(encoding="utf-8")
+  header.write_text(
+      original.replace(
+          "#define TESS_COMPAT_LIMIT 8\n",
+          "#define TESS_COMPAT_LIMIT 8\n"
+          "#if TESS_ALTERNATE_LIMIT\n"
+          "#define TESS_COMPAT_LIMIT 16\n"
+          "#endif\n",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "stable macro redefined" in failure
+      and "TESS_COMPAT_LIMIT" in failure
+      for failure in failures
+  ), failures
+
+
 def test_existing_aggregate_cannot_gain_constructor_or_private_state(
     tmp_path,
 ):
@@ -434,6 +461,42 @@ def test_existing_aggregate_rejects_parenthesized_constructor_specifiers(
         and "StableOptions" in failure
         for failure in failures
     ), failures
+
+
+def test_parameter_type_spelling_does_not_hide_aggregate_compatibility(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {\n",
+      "struct StableOptions {\n"
+      "  void consume(StableOptions());\n",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "struct StableOptions {\n",
+          "struct StableOptions {\n  StableOptions() = default;\n",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "aggregate compatibility changed" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
 
 
 def test_existing_derived_aggregate_cannot_gain_constructor(tmp_path):
