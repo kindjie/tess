@@ -11,3 +11,5 @@
   command.
 - Release-package workflow coverage pins an empty CMake compiler launcher on
   the ccache-free image and requires Conan creation in C++20 mode.
+- Release-evidence coverage requires an immutable workflow-run URL for actual
+  version logs plus explicit expected/pinned toolchain identifiers.

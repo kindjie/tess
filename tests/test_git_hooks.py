@@ -596,6 +596,10 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert 'test "$result" = success' in evidence
   assert "            release-evidence.json\n" in evidence
   assert "            compatibility/\n" in evidence
+  assert '"workflow_run_url": os.environ["WORKFLOW_RUN_URL"]' in evidence
+  assert '"actual_versions": "workflow job logs"' in evidence
+  assert '"vcpkg_commit":' in evidence
+  assert '"clang_tidy": "18"' in evidence
 
   for job in release_jobs[5:]:
     body = _job_body(workflow, job)

@@ -18,6 +18,7 @@
   mutex. Detectable misuse must not remain able to corrupt shared state merely
   because assertions were compiled out. A dispatch keeps that ownership until
   its plan-ordered result has been copied from shared storage under the mutex.
+  Even an empty nested dispatch performs the once-per-call misuse check.
   Both threaded executor variants are stable; callback-state synchronization,
   join, allocation, result-order, and worker-count contracts remain unchanged.
 - CMake prereleases carry an explicit label and full version string. An
@@ -50,9 +51,16 @@
   declarations, access labels, enums, and enumerators keep their enclosing C++
   scope and receive branch identities so they cannot evade the same checks;
   aggregate eligibility and implicit enumerator positions are retained across
-  conditional alternatives. Enumerator order is append-only, and existing
-  callables cannot gain overloads because calls and address-taking can become
-  ambiguous; sparse extensions therefore use distinctly named entry points. A
+  conditional alternatives, including branch-specific visibility. Constructor
+  recognition covers attributes and conditional `explicit` specifiers.
+  Enumerator order is append-only, and existing callables cannot gain overloads
+  because calls and address-taking can become ambiguous; sparse extensions
+  therefore use distinctly named entry points. Release tags anchor an
+  append-only snapshot-directory inventory as well as every snapshot byte. A
   newly required snapshot must exactly match the current inventories before
   becoming immutable. Prerelease package configs export numeric, prerelease,
   and full version metadata even though discovery must be unversioned.
+- The release evidence JSON records the expected/pinned toolchain contract and
+  links the immutable workflow run whose platform-job logs contain the actual
+  current and floor tool versions; it does not mislabel expected floors as
+  observed versions.

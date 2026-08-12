@@ -67,4 +67,5 @@ and runs the stable surface with:
 Current compiler and CMake versions are tested separately. Stable surfaces are
 also compiled and run without RTTI on every compiler family, using `-fno-rtti`
 or `/GR-`. Exact release cells and their results are recorded in the release
-evidence artifact.
+evidence artifact; its workflow-run URL points to the immutable job logs that
+record the actual tool versions for each platform cell.

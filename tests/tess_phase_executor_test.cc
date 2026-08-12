@@ -425,6 +425,21 @@ TEST(TessPhaseExecutorDeathTest, WorkerPoolRejectsNestedDispatch) {
       kWorkerPoolDeathMessage);
 }
 
+TEST(TessPhaseExecutorDeathTest, WorkerPoolRejectsNestedEmptyDispatch) {
+  EXPECT_DEATH(
+      {
+        const tess::WorkerPoolPhaseExecutor executor{2};
+        (void)executor.for_each_operation(
+            0, 4, [&](std::size_t) -> tess::PlannedExecutionResult {
+              return executor.for_each_operation(
+                  0, 0, [](std::size_t) -> tess::PlannedExecutionResult {
+                    return tess::PlannedExecutionResult{};
+                  });
+            });
+      },
+      kWorkerPoolDeathMessage);
+}
+
 // Growing the result buffer mid-dispatch would relocate the slots other
 // workers are concurrently writing (use-after-realloc);
 // reserve_operations is only legal between dispatches.

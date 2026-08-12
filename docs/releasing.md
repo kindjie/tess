@@ -14,8 +14,9 @@ identity, bypasses path filtering, and requires the complete platform,
 configuration, sanitizer, no-exception, no-RTTI, documentation, package,
 fuzzing, compatibility, and toolchain-floor matrix. The final job fails if any
 required job failed or was skipped and uploads `release-evidence-<sha>` with
-the tested SHA, expected version, tool versions, snapshot inventory, and gate
-results.
+the tested SHA, expected version, expected/pinned tool contract, snapshot
+inventory, gate results, and the immutable workflow-run URL whose job logs
+record the actual current and floor tool versions.
 
 ## 0.13 and the 1.0 candidate
 

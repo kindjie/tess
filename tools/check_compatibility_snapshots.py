@@ -659,25 +659,40 @@ def check_snapshot_immutability(
   except ValueError:
     return ["snapshot root must be inside the repository"]
 
-  for directory in snapshot_directories(snapshot_root):
-    tag = f"v{directory.name}"
+  tags = _git(repo_root, ["tag", "--list", "v1.*"])
+  if tags.returncode != 0:
+    return ["release tags could not be enumerated"]
+  required_versions = {
+      tag[1:]
+      for tag in tags.stdout.splitlines()
+      if re.fullmatch(r"v1\.\d+\.0(?:-rc\.1)?", tag)
+  }
+  present = {
+      directory.name: directory
+      for directory in snapshot_directories(snapshot_root)
+  }
+  for missing in sorted(required_versions - set(present)):
+    failures.append(f"{missing}: released snapshot directory is missing")
+
+  for name, directory in sorted(present.items()):
+    tag = f"v{name}"
     tag_exists = _git(
         repo_root, ["rev-parse", "--verify", "--quiet", f"refs/tags/{tag}"]
     ).returncode == 0
     if not tag_exists:
-      if directory.name != version:
+      if name != version:
         failures.append(
-            f"{directory.name}: released snapshot tag {tag} is missing"
+            f"{name}: released snapshot tag {tag} is missing"
         )
       continue
-    relative_directory = relative_root / directory.name
+    relative_directory = relative_root / name
     changed = _git(
         repo_root,
         ["diff", "--quiet", tag, "--", relative_directory.as_posix()],
     ).returncode
     if changed != 0:
       failures.append(
-          f"{directory.name}: released snapshot differs from tag {tag}"
+          f"{name}: released snapshot differs from tag {tag}"
       )
   return failures
 

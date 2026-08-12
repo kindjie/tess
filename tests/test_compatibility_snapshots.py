@@ -334,6 +334,37 @@ def test_existing_aggregate_cannot_gain_constructor_or_private_state(
     ), failures
 
 
+def test_existing_aggregate_rejects_parenthesized_constructor_specifiers(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  original = header.read_text(encoding="utf-8")
+
+  for constructor in (
+      "  explicit(true) StableOptions(int value = 0);\n",
+      '  [[deprecated("old")]] StableOptions() = default;\n',
+  ):
+    header.write_text(
+        original.replace(
+            "struct StableOptions {\n",
+            "struct StableOptions {\n" + constructor,
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        tmp_path, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "aggregate compatibility changed" in failure
+        and "StableOptions" in failure
+        for failure in failures
+    ), failures
+
+
 def test_existing_derived_aggregate_cannot_gain_constructor(tmp_path):
   header_path, payload = make_repo(tmp_path)
   header = tmp_path / "include/tess/tess.h"
@@ -530,6 +561,42 @@ def test_conditional_access_labels_retain_branch_identity(tmp_path):
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace("TESS_PUBLIC_OPTIONS", "TESS_RENAMED_OPTIONS"),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "API declaration changed or removed" in failure
+      and "max_steps" in failure
+      for failure in failures
+  ), failures
+
+
+def test_conditional_access_join_retains_each_public_branch(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {\n  int max_steps = 1;",
+      """class StableOptions {
+#if TESS_FIRST_PUBLIC
+ public:
+#else
+ public:
+#endif
+  int max_steps = 1;""",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace("#else\n public:", "#else\n private:"),
       encoding="utf-8",
   )
 
@@ -772,6 +839,50 @@ def test_released_snapshot_must_match_its_release_tag(tmp_path):
       tmp_path, snapshot_root, "1.1.0"
   ) == [
       "1.0.0-rc.1: released snapshot differs from tag v1.0.0-rc.1"
+  ]
+
+
+def test_released_snapshot_directory_cannot_be_deleted(tmp_path):
+  _, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  subprocess.run(["git", "init"], cwd=tmp_path, check=True)
+  subprocess.run(
+      [
+          "git",
+          "config",
+          "user.email",
+          "compatibility" + chr(64) + "example.invalid",
+      ],
+      cwd=tmp_path,
+      check=True,
+  )
+  subprocess.run(
+      ["git", "config", "user.name", "Compatibility Tests"],
+      cwd=tmp_path,
+      check=True,
+  )
+  subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+  subprocess.run(
+      ["git", "-c", "commit.gpgsign=false", "commit", "-m", "snapshot"],
+      cwd=tmp_path,
+      check=True,
+  )
+  subprocess.run(
+      ["git", "tag", "v1.0.0-rc.1"], cwd=tmp_path, check=True
+  )
+  for path in sorted(
+      (snapshot_root / "1.0.0-rc.1").rglob("*"), reverse=True
+  ):
+    if path.is_file():
+      path.unlink()
+    else:
+      path.rmdir()
+  (snapshot_root / "1.0.0-rc.1").rmdir()
+
+  assert snapshots.check_snapshot_immutability(
+      tmp_path, snapshot_root, "1.1.0"
+  ) == [
+      "1.0.0-rc.1: released snapshot directory is missing"
   ]
 
 

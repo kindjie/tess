@@ -165,6 +165,11 @@ class _ContractParser:
           self.conditions.pop()
         if branch_states:
           state = branch_states[-1]
+          if access == {True}:
+            state["public_conditions"].append(state["current_condition"])
+          elif True in access:
+            state["public_conditions"].extend(access_conditions)
+          state["all_public"] = state["all_public"] and access == {True}
           state["combined"] = set(state["combined"]) | access
           access = set(state["entry"])
           if token == PP_ELSE:
@@ -179,12 +184,29 @@ class _ContractParser:
           self.conditions.pop()
         if branch_states:
           state = branch_states.pop()
+          if access == {True}:
+            state["public_conditions"].append(state["current_condition"])
+          elif True in access:
+            state["public_conditions"].extend(access_conditions)
+          state["all_public"] = state["all_public"] and access == {True}
           combined = set(state["combined"]) | access
           if not state["exhaustive"]:
             combined |= set(state["entry"])
+            state["all_public"] = (
+                state["all_public"] and set(state["entry"]) == {True}
+            )
           access = combined
           if state["changed"]:
-            access_conditions.extend(state["conditions"])
+            if state["all_public"]:
+              access_conditions.clear()
+            else:
+              public_conditions = list(state["public_conditions"])
+              if not state["exhaustive"] and set(state["entry"]) == {True}:
+                identity = "/".join(state["conditions"])
+                public_conditions.append(
+                    f"@{_condition_name([], 'fallthrough', identity)}@"
+                )
+              access_conditions = list(dict.fromkeys(public_conditions))
         index += 1
         continue
       if token.startswith("@__tess_pp_"):
@@ -193,6 +215,7 @@ class _ContractParser:
         self.conditions.append(token)
         if expecting_branch and branch_states:
           branch_states[-1]["conditions"].append(token)
+          branch_states[-1]["current_condition"] = token
           expecting_branch = False
         else:
           branch_states.append(
@@ -202,6 +225,9 @@ class _ContractParser:
                   "changed": False,
                   "exhaustive": False,
                   "conditions": [token],
+                  "current_condition": token,
+                  "public_conditions": [],
+                  "all_public": True,
               }
           )
         index += 1
@@ -381,10 +407,20 @@ class _ContractParser:
 
   @staticmethod
   def _is_constructor(tokens: list[str], type_name: str) -> bool:
-    if "(" not in tokens:
-      return False
-    opening = tokens.index("(")
-    return opening > 0 and tokens[opening - 1] == type_name
+    return _ContractParser._constructor_opening(tokens, type_name) is not None
+
+  @staticmethod
+  def _constructor_opening(
+      tokens: list[str], type_name: str
+  ) -> int | None:
+    return next(
+        (
+            index + 1
+            for index, token in enumerate(tokens[:-1])
+            if token == type_name and tokens[index + 1] == "("
+        ),
+        None,
+    )
 
   @staticmethod
   def _is_inherited_constructor(tokens: list[str]) -> bool:
@@ -501,10 +537,10 @@ class _ContractParser:
   def _without_constructor_initializer(
       tokens: list[str], names: tuple[str, ...]
   ) -> list[str]:
-    if not names or "(" not in tokens:
+    if not names:
       return tokens
-    opening = tokens.index("(")
-    if opening == 0 or tokens[opening - 1] != names[-1]:
+    opening = _ContractParser._constructor_opening(tokens, names[-1])
+    if opening is None:
       return tokens
     round_depth = 0
     function_closed = False

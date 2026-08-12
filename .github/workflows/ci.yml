@@ -1736,6 +1736,8 @@ jobs:
           TESTED_SHA: ${{ needs.changes.outputs.tested_sha }}
           EXPECTED_VERSION: ${{ inputs.expected_version }}
           NEEDS_JSON: ${{ toJSON(needs) }}
+          WORKFLOW_RUN_URL: >-
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           python3 - <<'PY'
           import json
@@ -1748,13 +1750,21 @@ jobs:
           payload = {
               "tested_sha": os.environ["TESTED_SHA"],
               "expected_version": os.environ["EXPECTED_VERSION"],
-              "tools": {
-                  "cmake_floor": "3.25.3",
-                  "conan": "2.31.1",
-                  "gcc_floor": "12",
-                  "clang_floor": "16",
-                  "xcode_floor": "16.0",
-                  "msvc_floor": "19.44",
+              "tool_version_evidence": {
+                  "actual_versions": "workflow job logs",
+                  "workflow_run_url": os.environ["WORKFLOW_RUN_URL"],
+                  "expected_and_pinned": {
+                      "cmake_floor": "3.25.3",
+                      "conan": "2.31.1",
+                      "gcc_floor": "12",
+                      "clang_floor": "16",
+                      "xcode_floor": "16.0",
+                      "msvc_floor": "19.44",
+                      "clang_tidy": "18",
+                      "vcpkg_commit": (
+                          "d015e31e90838a4c9dfa3eed45979bc70d9357fc"
+                      ),
+                  },
               },
               "compatibility_snapshots": manifests,
               "gates": {

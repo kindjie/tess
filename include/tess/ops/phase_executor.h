@@ -416,6 +416,12 @@ class WorkerPoolPhaseExecutorImpl
                                         Fn&& fn) const
       -> PlannedExecutionResult {
     if (count == 0) {
+      const std::scoped_lock lock{mutex_};
+      if (dispatch_active_) {
+        detail::fail_fast(
+            "WorkerPoolPhaseExecutor::for_each_operation re-entered during "
+            "an active dispatch");
+      }
       return PlannedExecutionResult{};
     }
     TESS_DIAG_EVENT_VALUE(queued_worker_pool_dispatch,

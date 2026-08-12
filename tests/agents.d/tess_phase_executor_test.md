@@ -6,4 +6,5 @@
   counter is process-global while pool workers live, so several warm dispatches
   precede the one required to allocate nothing. After a throwing callback, all
   in-flight work is joined and the pool must remain reusable. Nested dispatch
-  and reserve-during-dispatch misuse must fail fast in every build mode.
+  (including an empty nested range) and reserve-during-dispatch misuse must fail
+  fast in every build mode.
