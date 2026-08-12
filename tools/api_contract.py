@@ -181,24 +181,29 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
   """Return whether a qualified type-id's terminal component is ``name``."""
   if tokens and IDENTIFIER_RE.fullmatch(tokens[-1]):
     return tokens[-1] == name
-  for index in range(len(tokens) - 3):
-    if tokens[index : index + 3] != ["::", "template", name]:
+  qualified_templates: list[str] = []
+  for index, token in enumerate(tokens[:-1]):
+    if (
+        not IDENTIFIER_RE.fullmatch(token)
+        or tokens[index + 1] != "<"
+    ):
       continue
-    if tokens[index + 3] != "<":
+    dependent = index >= 2 and tokens[index - 2 : index] == [
+        "::",
+        "template",
+    ]
+    qualified = index >= 1 and tokens[index - 1] == "::"
+    separator = index - (2 if dependent else 1)
+    follows_closed_template = (
+        qualified
+        and separator > 0
+        and tokens[separator - 1] == ">>"
+    )
+    if not dependent and not follows_closed_template:
       continue
-    depth = 0
-    for position in range(index + 3, len(tokens)):
-      token = tokens[position]
-      if token == "<":
-        depth += 1
-      elif token == ">":
-        depth -= 1
-      elif token == ">>":
-        depth -= 2
-      if depth == 0:
-        if position == len(tokens) - 1:
-          return True
-        break
+    qualified_templates.append(token)
+  if qualified_templates and qualified_templates[-1] == name:
+    return True
   terminal_template = _terminal_template_component(tokens)
   if terminal_template is not None:
     return terminal_template == name
@@ -1193,15 +1198,11 @@ class _ContractParser:
           and not member_pointer_owner
       ):
         return False
-    member_pointer_owners = {
-        index
-        for index, _ in identifiers
-        if index + 2 < len(prefix)
-        and prefix[index + 1 : index + 3] == ["::", "*"]
-    }
-    identifiers = [
-        item for item in identifiers if item[0] not in member_pointer_owners
-    ]
+    if any(
+        prefix[index : index + 2] == ["::", "*"]
+        for index in range(len(prefix) - 1)
+    ):
+      identifiers = []
     if builtin_type:
       if identifiers:
         return False

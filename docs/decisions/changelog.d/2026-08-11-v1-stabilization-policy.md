@@ -86,9 +86,10 @@
   Qualified-component scanning tracks outer template depth so relational
   identifiers after nested templates cannot replace the owning base. Arrays
   and annotations inside parenthesized object declarators remain data.
-  Explicit terminal dependent template components remain identifiable after
-  nested relational arguments, and qualified same-name or member-pointer type
-  prefixes do not turn parenthesized objects into constructors.
+  Terminal dependent or nondependent template components remain identifiable
+  after nested or terminal relational arguments, and qualified same-name or
+  namespace-qualified member-pointer type prefixes do not turn parenthesized
+  objects into constructors.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

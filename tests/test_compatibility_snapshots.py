@@ -835,6 +835,108 @@ def test_terminal_dependent_base_after_nested_relation_is_inherited_constructor(
   ), failures
 
 
+def test_terminal_nested_base_after_relation_is_inherited_constructor(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "template < bool Enabled > struct Inner {};\n"
+      "template < class T > struct Outer {\n"
+      "  template < class U > struct Base { Base(double value); };\n"
+      "};\n"
+      "constexpr int N = 0;\n"
+      "constexpr int M = 1;\n"
+      "struct StableOptions\n"
+      "  : Outer<Inner<N < M>>::Base<int> {\n"
+      "  StableOptions(int value);",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  StableOptions(int value);",
+          "  using Outer<Inner<N < M>>::Base<int>::Base;\n"
+          "  StableOptions(int value);",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
+def test_relational_terminal_base_arguments_keep_inherited_constructor(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "template < bool Enabled > struct Inner {};\n"
+      "template < class T > struct Outer {\n"
+      "  template < class U > struct Base { Base(double value); };\n"
+      "};\n"
+      "template < int N, int M >\n"
+      "struct StableOptions\n"
+      "  : Outer<Inner<N < M>>::template Base<Inner<N < M>> {\n"
+      "  StableOptions(int value);",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  StableOptions(int value);",
+          "  using Outer<Inner<N < M>>::template "
+          "Base<Inner<N < M>>::Base;\n"
+          "  StableOptions(int value);",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
 def test_qualified_relational_inherited_constructor_uses_derived_identity(
     tmp_path,
 ):
@@ -941,6 +1043,7 @@ def test_template_argument_name_does_not_fake_inherited_constructor():
   declarations = (
       "using Base<::Argument>::Argument;",
       "using Base<Other::Argument<int>>::Argument;",
+      "using Base<Other<int>::Argument<double>>::Argument;",
       "using Wrapper<(N > 0), Other::Argument<int>>::Argument;",
   )
   for declaration in declarations:
@@ -1660,6 +1763,7 @@ def test_parenthesized_data_declarators_are_public_data_members(tmp_path):
       "  int StableOptions::* (member);\n",
       "  int StableOptions::* ((nested_member));\n",
       "  int StableOptions::* (members[2]);\n",
+      "  int ns::Owner::* (qualified_member);\n",
   )
   for index, addition in enumerate(additions):
     repo = tmp_path / f"variant-{index}"
@@ -1668,7 +1772,10 @@ def test_parenthesized_data_declarators_are_public_data_members(tmp_path):
     header = repo / "include/tess/tess.h"
     text = header.read_text(encoding="utf-8").replace(
         "struct StableOptions {\n",
-        "#define TESS_ATTR(x)\nstruct StableOptions {\n" + addition,
+        "#define TESS_ATTR(x)\n"
+        "namespace ns { struct Owner {}; }\n"
+        "struct StableOptions {\n"
+        + addition,
     )
     header.write_text(text, encoding="utf-8")
 
@@ -1701,6 +1808,31 @@ def test_qualified_same_name_parenthesized_object_is_public_data(tmp_path):
   assert any(
       "public data member added to existing type" in failure
       and "state" in failure
+      for failure in failures
+  ), failures
+
+
+def test_private_qualified_member_pointer_breaks_aggregate(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {\n",
+      "namespace ns { struct Owner {}; }\n"
+      "struct StableOptions {\n"
+      " private:\n"
+      "  int ns::Owner::* (state);\n"
+      " public:\n",
+  )
+  header.write_text(text, encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "aggregate compatibility changed" in failure
+      and "StableOptions" in failure
       for failure in failures
   ), failures
 

@@ -26,9 +26,10 @@
   arbitrary parenthesized constant-expression bounds remain data, while
   annotated grouped pointer/reference returns retain their callable name;
   parenthesized arrays and annotated object/pointer declarators remain data;
-  terminal dependent template bases remain inherited constructors after nested
-  relational arguments, while qualified same-name and member-pointer object
-  declarations remain data;
+  terminal dependent or nondependent template bases remain inherited
+  constructors after nested or terminal relational arguments, while qualified
+  same-name and namespace-qualified member-pointer object declarations remain
+  data;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance
