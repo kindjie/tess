@@ -840,6 +840,7 @@ def test_template_argument_name_does_not_fake_inherited_constructor():
   declarations = (
       "using Base<::Argument>::Argument;",
       "using Base<Other::Argument<int>>::Argument;",
+      "using Wrapper<(N > 0), Other::Argument<int>>::Argument;",
   )
   for declaration in declarations:
     contract = extract_api_contract(
@@ -1079,6 +1080,21 @@ def test_named_functions_are_not_mistaken_for_parenthesized_objects():
   )
 
 
+def test_function_returning_function_pointer_is_not_public_data(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct StableOptions {\n  int (*factory(int value))(double);",
+  )
+  header.write_text(text, encoding="utf-8")
+
+  assert snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  ) == []
+
+
 def test_grouped_function_declarator_retains_callable_identity(tmp_path):
   header_path, payload = make_repo(tmp_path)
   header = tmp_path / "include/tess/tess.h"
@@ -1123,6 +1139,82 @@ def test_grouped_function_declarator_retains_callable_identity(tmp_path):
   assert snapshots.check_snapshots(
       tmp_path, snapshot_root, header_path, "1.1.1"
   ) == []
+
+
+def test_annotated_grouped_function_retains_callable_identity(tmp_path):
+  declarations = (
+      "int (TESS_CALL evaluate)(double value)",
+      "int (evaluate [[deprecated]])(double value)",
+  )
+  for index, declaration in enumerate(declarations):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {",
+        "#define TESS_CALL\nstruct StableOptions {\n"
+        "  int evaluate(int value);",
+    )
+    header.write_text(text, encoding="utf-8")
+    payload["api_contract"] = snapshots.current_api_contract(
+        repo,
+        payload["headers"]["stable"]
+        + payload["headers"]["optional-stable"],
+    )
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            "  int evaluate(int value);",
+            f"  int evaluate(int value);\n  {declaration};",
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "overload added to existing callable" in failure
+        and "evaluate" in failure
+        for failure in failures
+    ), failures
+
+
+def test_relational_template_grouped_function_keeps_identity(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  declaration = (
+      "template < int N = 1 < 2 > int (evaluate)(int value)"
+  )
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      f"struct StableOptions {{\n  {declaration};",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          f"  {declaration};",
+          f"  {declaration};\n  int evaluate(double value);",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "evaluate" in failure
+      for failure in failures
+  ), failures
 
 
 def test_requires_expression_body_is_part_of_callable_contract(tmp_path):

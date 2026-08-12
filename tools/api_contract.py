@@ -181,19 +181,38 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
   """Return whether a qualified type-id's terminal component is ``name``."""
   if tokens and tokens[-1] == name:
     return True
+  structural_less: list[int] = []
+  structural_close: list[int] = []
+  round_depth = 0
+  square_depth = 0
+  brace_depth = 0
+  for position, token in enumerate(tokens):
+    if token == "(":
+      round_depth += 1
+    elif token == ")" and round_depth:
+      round_depth -= 1
+    elif token in {"[", "[["}:
+      square_depth += 1
+    elif token in {"]", "]]"} and square_depth:
+      square_depth -= 1
+    elif token == "{":
+      brace_depth += 1
+    elif token == "}" and brace_depth:
+      brace_depth -= 1
+    elif not (round_depth or square_depth or brace_depth):
+      if token == "<":
+        structural_less.append(position)
+      elif token in {">", ">>"}:
+        structural_close.append(position)
   for index, token in enumerate(tokens[:-1]):
     if token != name or tokens[index + 1] != "<":
       continue
     earlier_less = max(
-        (position for position in range(index) if tokens[position] == "<"),
+        (position for position in structural_less if position < index),
         default=-1,
     )
     earlier_close = max(
-        (
-            position
-            for position in range(index)
-            if tokens[position] in {">", ">>"}
-        ),
+        (position for position in structural_close if position < index),
         default=-1,
     )
     if earlier_less < 0 or earlier_close > earlier_less:
@@ -1088,6 +1107,7 @@ class _ContractParser:
         == len(declarator) - 1
     ):
       declarator = declarator[1:-1]
+    declarator = _declarator_prefix(declarator)
     if len(declarator) != 1:
       return None
     return (
@@ -1160,6 +1180,8 @@ class _ContractParser:
         token for token in declarator if IDENTIFIER_RE.fullmatch(token)
     ]
     if pointer_or_reference:
+      if "(" in declarator:
+        return False
       return bool(names)
     if len(declarator) != 1 or len(names) != 1:
       return False
@@ -1175,6 +1197,11 @@ class _ContractParser:
       closing = _ContractParser._matching_round_bracket(tokens, opening)
       if closing is None:
         return None
+      pointer_return = _ContractParser._function_pointer_return_opening(
+          tokens, opening, closing
+      )
+      if pointer_return is not None:
+        return pointer_return
       grouped_name = tokens[opening + 1 : closing]
       while (
           len(grouped_name) >= 2
@@ -1183,6 +1210,7 @@ class _ContractParser:
           == len(grouped_name) - 1
       ):
         grouped_name = grouped_name[1:-1]
+      grouped_name = _declarator_prefix(grouped_name)
       if (
           len(grouped_name) == 1
           and IDENTIFIER_RE.fullmatch(grouped_name[0])
@@ -1198,6 +1226,24 @@ class _ContractParser:
       elif previous not in PARENTHESIZED_SPECIFIERS:
         return opening
       start = closing + 1
+    return None
+
+  @staticmethod
+  def _function_pointer_return_opening(
+      tokens: list[str], opening: int, closing: int
+  ) -> int | None:
+    pointer_seen = False
+    for index in range(opening + 1, closing):
+      token = tokens[index]
+      if token in {"*", "&", "&&"}:
+        pointer_seen = True
+      elif (
+          pointer_seen
+          and IDENTIFIER_RE.fullmatch(token)
+          and index + 1 < closing
+          and tokens[index + 1] == "("
+      ):
+        return index + 1
     return None
 
   @staticmethod
@@ -1232,14 +1278,24 @@ class _ContractParser:
       if opening == 0:
         continue
       previous = tokens[opening - 1]
+      closing = _ContractParser._matching_round_bracket(tokens, opening)
+      if closing is None:
+        continue
+      grouped = _declarator_prefix(tokens[opening + 1 : closing])
       if (
-          not IDENTIFIER_RE.fullmatch(previous)
+          len(grouped) == 1
+          and IDENTIFIER_RE.fullmatch(grouped[0])
+          and closing + 1 < len(tokens)
+          and tokens[closing + 1] == "("
+      ):
+        continue
+      grouped_name = _ContractParser._grouped_declarator_name(tokens, opening)
+      if (
+          grouped_name is None
+          and not IDENTIFIER_RE.fullmatch(previous)
           or previous in PARENTHESIZED_SPECIFIERS
           or previous.startswith("TESS_")
       ):
-        continue
-      closing = _ContractParser._matching_round_bracket(tokens, opening)
-      if closing is None:
         continue
       suffix = tokens[closing + 1 :]
       suffix_starts_function_tail = suffix and (

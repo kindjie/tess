@@ -19,8 +19,10 @@
   parameterless requirements, dependent bases, and annotated types; stable
   nested calls (including trailing template arguments), trailing constraints,
   cv-qualified parenthesized pointer/reference/array data, grouped function
-  declarators, and qualified relational dependent-base arguments retain the
-  correct identity without confusing namespace-named imported members;
+  declarators (including annotations and relational template headers),
+  function-pointer return types, and qualified relational dependent-base
+  arguments retain the correct identity without confusing namespace-named or
+  nested template-argument members;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

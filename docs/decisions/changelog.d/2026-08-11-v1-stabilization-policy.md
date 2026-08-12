@@ -74,8 +74,11 @@
   that identity, and grouped or bare relational expressions in dependent bases
   do not hide inherited constructors. Parenthesized objects remain data when
   cv or storage specifiers follow their type. Grouped function declarators
-  retain the grouped name, while qualified base components—not namespace or
-  template-argument names—identify inherited constructors.
+  retain the grouped name across annotations and relational template headers;
+  functions returning function pointers remain functions. Qualified base
+  components—not namespace or nested template-argument names—identify
+  inherited constructors, and comparison punctuation inside grouped template
+  arguments does not change that result.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is
