@@ -55,8 +55,28 @@ const auto stats =
 ```
 <!-- /tess-snippet -->
 
-For tick APIs, put `movement_dirty_mask` inside `PathAgentTickOptions` instead
-of passing a separate integer after the options argument.
+The same `PathAgentAdvanceOptions` migration applies to the joint-movement and
+PIBT direct-advance families. For tick APIs, put `movement_dirty_mask` inside
+`PathAgentTickOptions` instead of passing a separate integer after the options
+argument. `SimSchedulerOptions::movement_dirty_mask` was removed; migrate it to
+the nested path-agent options:
+
+<!-- tess-snippet: upgrade-scheduler-agent-options source=tests/tess_upgrade_1_0_test.cc -->
+```cpp
+// Before:
+// tess::SimSchedulerOptions options{
+//     .movement_dirty_mask = movement_dirty_mask,
+// };
+
+// After:
+const auto scheduler_options = tess::SimSchedulerOptions{
+    .path_agent_options =
+        tess::PathAgentTickOptions{
+            .movement_dirty_mask = movement_dirty_mask,
+        },
+};
+```
+<!-- /tess-snippet -->
 
 GPU dispatch and readback descriptors now retain one generation-bearing
 handle:

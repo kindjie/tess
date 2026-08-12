@@ -58,7 +58,9 @@
   routes.
 - Three documents stated three different include-surface policies, and the
   tool cited as enforcing one of them enforces neither. There is now one
-  policy: every installed header is public and supported, with the narrowest
-  owning header preferred in compile-sensitive code.
+  policy: the header manifest classifies stable, optional-stable,
+  experimental, and implementation-only headers; only the first two classes
+  carry 1.x compatibility guarantees, with the narrowest owning stable header
+  preferred in compile-sensitive code.
   `tools/check_public_surface.py` is described as what it is — a symbol
   manifest gate, not an include policy.

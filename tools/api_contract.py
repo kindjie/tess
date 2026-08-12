@@ -126,14 +126,57 @@ def callable_name(declaration: str | list[str]) -> str | None:
   opening = _ContractParser._function_opening(tokens)
   if opening is None:
     return None
-  prefix = tokens[:opening]
+  prefix = _declarator_prefix(tokens[:opening])
   if "operator" in prefix:
     position = len(prefix) - 1 - prefix[::-1].index("operator")
     return "operator" + "".join(prefix[position + 1 :])
-  identifiers = [
-      token for token in prefix if IDENTIFIER_RE.fullmatch(token)
+  positions = [
+      index
+      for index, token in enumerate(prefix)
+      if IDENTIFIER_RE.fullmatch(token)
   ]
-  return identifiers[-1] if identifiers else None
+  if not positions:
+    return None
+  position = positions[-1]
+  name = prefix[position]
+  return f"~{name}" if position > 0 and prefix[position - 1] == "~" else name
+
+
+def _is_parenthesized_specifier(token: str) -> bool:
+  return token in PARENTHESIZED_SPECIFIERS or token.startswith("TESS_")
+
+
+def _declarator_prefix(tokens: list[str]) -> list[str]:
+  result: list[str] = []
+  index = 0
+  while index < len(tokens):
+    token = tokens[index]
+    if token == "[[":
+      depth = 1
+      index += 1
+      while index < len(tokens) and depth:
+        if tokens[index] == "[[":
+          depth += 1
+        elif tokens[index] == "]]":
+          depth -= 1
+        index += 1
+      continue
+    if (
+        _is_parenthesized_specifier(token)
+        and index + 1 < len(tokens)
+        and tokens[index + 1] == "("
+    ):
+      closing = _ContractParser._matching_round_bracket(tokens, index + 1)
+      if closing is None:
+        return result
+      index = closing + 1
+      continue
+    if token.startswith("TESS_"):
+      index += 1
+      continue
+    result.append(token)
+    index += 1
+  return result
 
 
 def _code_tokens(text: str) -> list[str]:
@@ -451,18 +494,8 @@ class _ContractParser:
   def _constructor_opening(
       tokens: list[str], type_name: str
   ) -> int | None:
-    start = 0
-    while start < len(tokens):
-      opening = _ContractParser._first_top_level_round(tokens, start)
-      if opening is None:
-        return None
-      if opening > 0 and tokens[opening - 1] == type_name:
-        return opening
-      closing = _ContractParser._matching_round_bracket(tokens, opening)
-      if closing is None:
-        return None
-      start = closing + 1
-    return None
+    opening = _ContractParser._function_opening(tokens)
+    return opening if callable_name(tokens) == type_name else None
 
   @staticmethod
   def _is_inherited_constructor(tokens: list[str]) -> bool:
@@ -700,7 +733,13 @@ class _ContractParser:
       if opening is None:
         return None
       previous = tokens[opening - 1] if opening else ""
-      if previous not in PARENTHESIZED_SPECIFIERS:
+      if previous.startswith("TESS_"):
+        closing = _ContractParser._matching_round_bracket(tokens, opening)
+        if closing is None:
+          return None
+        if _ContractParser._first_top_level_round(tokens, closing + 1) is None:
+          return opening
+      elif previous not in PARENTHESIZED_SPECIFIERS:
         return opening
       closing = _ContractParser._matching_round_bracket(tokens, opening)
       if closing is None:

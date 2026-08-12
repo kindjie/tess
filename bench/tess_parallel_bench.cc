@@ -5,12 +5,12 @@
 
 #include "parallel_phase_support.h"
 
-// Parallel phase-execution benchmarks for the pre-1.0 concurrency stream.
+// Parallel phase-execution benchmarks for the stable executor surface.
 //
-// These compare the serial baseline against the scoped-thread prototype and
-// the persistent worker-pool prototype on identical partitioned queued
-// workloads: one UniquePerChunk operation per chunk, planned into a single
-// parallel phase. Per docs/tdd/tdd_addendum_concurrent_tile_world.md,
+// These compare the serial baseline against the scoped-thread and persistent
+// worker-pool executors on identical partitioned queued workloads: one
+// UniquePerChunk operation per chunk, planned into a single parallel phase.
+// Per docs/tdd/tdd_addendum_concurrent_tile_world.md,
 // threshold gating for the parallel cases waits for CI baseline data
 // (shared-runner scheduling makes parallel dispatch times noisy); the serial
 // cases are the gate candidates once baselines accumulate. Worker counts are

@@ -128,7 +128,13 @@ struct IntentInvalidations {
                                    IntentInvalidations rhs) noexcept = default;
 };
 
-/** Type-checked, non-owning view of one homogeneous intent batch. */
+/**
+ * Type-checked, non-owning view of one homogeneous intent batch.
+ *
+ * Its type token is unique only within one binary image. Do not compare or
+ * consume payload identity across a shared-library boundary; the result is
+ * unspecified and toolchain-dependent.
+ */
 struct IntentPayloadView {
   template <typename T, std::size_t Extent>
   [[nodiscard]] static auto from(std::span<T, Extent> values) noexcept

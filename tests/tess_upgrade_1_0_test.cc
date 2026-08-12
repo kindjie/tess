@@ -101,7 +101,24 @@ TEST(TessUpgrade1_0, OptionsReplaceAdjacentCacheAndMovementIntegers) {
           tess::PathAgentAdvanceOptions{max_steps, movement_dirty_mask});
   // [upgrade-agent-options]
 
+  // [upgrade-scheduler-agent-options]
+  // Before:
+  // tess::SimSchedulerOptions options{
+  //     .movement_dirty_mask = movement_dirty_mask,
+  // };
+
+  // After:
+  const auto scheduler_options = tess::SimSchedulerOptions{
+      .path_agent_options =
+          tess::PathAgentTickOptions{
+              .movement_dirty_mask = movement_dirty_mask,
+          },
+  };
+  // [upgrade-scheduler-agent-options]
+
   EXPECT_EQ(stats.advanced, 0u);
+  EXPECT_EQ(scheduler_options.path_agent_options.movement_dirty_mask,
+            movement_dirty_mask);
 }
 
 TEST(TessUpgrade1_0, GpuDescriptorsRetainAProductHandle) {

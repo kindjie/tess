@@ -444,6 +444,9 @@ def test_existing_aggregate_rejects_parenthesized_constructor_specifiers(
       "  explicit(true) StableOptions(int value = 0);\n",
       '  [[deprecated("old")]] StableOptions() = default;\n',
       '  TESS_DEPRECATED("old") StableOptions() = default;\n',
+      '  StableOptions [[deprecated("old")]] () = default;\n',
+      '  StableOptions TESS_DEPRECATED("old") () = default;\n',
+      "  StableOptions TESS_DEPRECATED () = default;\n",
   ):
     header.write_text(
         original.replace(
@@ -498,6 +501,65 @@ def test_parameter_type_spelling_does_not_hide_aggregate_compatibility(
       and "StableOptions" in failure
       for failure in failures
   ), failures
+
+
+def test_macro_annotated_callable_cannot_gain_an_overload(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "  void set_limit(int value = 8);",
+      '  TESS_DEPRECATED("old") void set_limit(int value = 8);',
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          '  TESS_DEPRECATED("old") void set_limit(int value = 8);',
+          '  TESS_DEPRECATED("old") void set_limit(int value = 8);\n'
+          "  void set_limit(double value);",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "set_limit" in failure
+      for failure in failures
+  ), failures
+
+
+def test_destructor_keeps_aggregate_and_has_distinct_callable_identity(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {\n",
+      "struct StableOptions {\n  ~StableOptions() = default;\n",
+  )
+  header.write_text(text, encoding="utf-8")
+  contract = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )["include/tess/tess.h"]
+
+  assert "aggregate tess::StableOptions" in contract
+  destructor = next(
+      item for item in contract if "~ StableOptions ( )" in item
+  )
+  assert snapshots._callable_identity(destructor) == (
+      "tess::StableOptions::~StableOptions"
+  )
 
 
 def test_existing_derived_aggregate_cannot_gain_constructor(tmp_path):
