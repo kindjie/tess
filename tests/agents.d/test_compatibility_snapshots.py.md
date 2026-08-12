@@ -24,8 +24,10 @@
   and constraint template calls, and post-type cv/storage specifiers,
   nested-template relational base arguments, annotated function-pointer data,
   parenthesized array or annotated object declarators, terminal dependent or
-  nondependent template bases and relational terminal arguments, qualified
-  same-name object types, and parenthesized qualified member-pointer objects,
+  nondependent template bases, single or nested relational terminal arguments,
+  nonterminal dependent-component exclusions, qualified same-name object types,
+  parenthesized qualified member-pointer objects, and aggregate-safe
+  constructor/object disambiguation,
   constructor-like parameter spellings, and per-configuration
   member and base-clause aggregate availability, anonymous type objects,
   stable-macro redefinition and undefinition, release-tag byte and directory

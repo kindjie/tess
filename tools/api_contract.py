@@ -197,9 +197,14 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
     follows_closed_template = (
         qualified
         and separator > 0
-        and tokens[separator - 1] == ">>"
+        and tokens[separator - 1] in {">", ">>"}
     )
-    if not dependent and not follows_closed_template:
+    qualification_continues = "::" in tokens[index + 2 :]
+    terminal_closes_singly = tokens[-1] == ">"
+    if not dependent and not (
+        follows_closed_template
+        and (qualification_continues or terminal_closes_singly)
+    ):
       continue
     qualified_templates.append(token)
   if qualified_templates and qualified_templates[-1] == name:
@@ -736,7 +741,15 @@ class _ContractParser:
       tokens: list[str], type_name: str
   ) -> int | None:
     opening = _ContractParser._function_opening(tokens)
-    return opening if callable_name(tokens) == type_name else None
+    name = callable_name(tokens)
+    if opening is None or name != type_name:
+      return None
+    prefix = [
+        token
+        for token in _declarator_prefix(tokens[:opening])
+        if token not in DECLARATION_SPECIFIERS
+    ]
+    return opening if prefix == [type_name] else None
 
   @staticmethod
   def _is_inherited_constructor(tokens: list[str]) -> bool:

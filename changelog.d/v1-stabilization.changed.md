@@ -27,9 +27,10 @@
   annotated grouped pointer/reference returns retain their callable name;
   parenthesized arrays and annotated object/pointer declarators remain data;
   terminal dependent or nondependent template bases remain inherited
-  constructors after nested or terminal relational arguments, while qualified
-  same-name and namespace-qualified member-pointer object declarations remain
-  data;
+  constructors after single, nested, or terminal relational arguments without
+  confusing later nonterminal components, while qualified same-name and
+  namespace-qualified member-pointer object declarations remain data and do not
+  suppress aggregate compatibility evidence;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

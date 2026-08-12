@@ -119,6 +119,18 @@ add_test(
   return root / "compatibility"
 
 
+def refresh_payload(root: Path, payload: dict[str, object]) -> None:
+  """Refresh snapshot inventories after a synthetic header mutation."""
+  headers = payload["headers"]
+  public_headers = headers["stable"] + headers["optional-stable"]
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(root, public_headers)
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      root, public_headers
+  )
+
+
 def test_valid_snapshot_is_a_subset_of_current_sources(tmp_path):
   header_path, payload = make_repo(tmp_path)
   snapshot_root = write_snapshot(tmp_path, payload)
@@ -315,18 +327,7 @@ def test_existing_callable_cannot_gain_base_overloads_through_using(tmp_path):
       "struct StableSymbol : StableBase {",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -356,18 +357,7 @@ def test_existing_operator_cannot_gain_base_overloads_through_using(tmp_path):
       "struct StableSymbol : StableBase {\n  int operator+(int value);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -427,18 +417,7 @@ def test_less_than_operator_cannot_gain_direct_or_imported_overload(tmp_path):
         "  bool operator<(int value) const;",
     )
     header.write_text(text, encoding="utf-8")
-    payload["public_symbols"] = sorted(
-        snapshots.current_symbols(
-            repo,
-            payload["headers"]["stable"]
-            + payload["headers"]["optional-stable"],
-        )
-    )
-    payload["api_contract"] = snapshots.current_api_contract(
-        repo,
-        payload["headers"]["stable"]
-        + payload["headers"]["optional-stable"],
-    )
+    refresh_payload(repo, payload)
     snapshot_root = write_snapshot(repo, payload)
     header.write_text(
         text.replace(
@@ -474,18 +453,7 @@ def test_compound_operator_cannot_gain_imported_overload(tmp_path):
         f"  bool operator{operator}(int value) const;",
     )
     header.write_text(text, encoding="utf-8")
-    payload["public_symbols"] = sorted(
-        snapshots.current_symbols(
-            repo,
-            payload["headers"]["stable"]
-            + payload["headers"]["optional-stable"],
-        )
-    )
-    payload["api_contract"] = snapshots.current_api_contract(
-        repo,
-        payload["headers"]["stable"]
-        + payload["headers"]["optional-stable"],
-    )
+    refresh_payload(repo, payload)
     snapshot_root = write_snapshot(repo, payload)
     header.write_text(
         text.replace(
@@ -517,18 +485,7 @@ def test_inherited_constructor_matches_derived_constructor_identity(tmp_path):
       "  StableOptions(int value);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -559,18 +516,7 @@ def test_dependent_inherited_constructor_matches_derived_identity(tmp_path):
       "  StableOptions(int value);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -605,18 +551,7 @@ def test_nested_dependent_inherited_constructor_uses_derived_identity(tmp_path):
       "  StableOptions(int value);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -652,18 +587,7 @@ def test_relational_dependent_inherited_constructor_uses_derived_identity(
       "  StableOptions(int value);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -701,18 +625,7 @@ def test_bare_relational_dependent_inherited_constructor_uses_derived_identity(
       "  StableOptions(int value);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -752,18 +665,7 @@ def test_nested_template_relational_inherited_constructor_uses_derived_identity(
       "  StableOptions(int value);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -802,18 +704,7 @@ def test_terminal_dependent_base_after_nested_relation_is_inherited_constructor(
       "  StableOptions(int value);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -853,23 +744,48 @@ def test_terminal_nested_base_after_relation_is_inherited_constructor(
       "  StableOptions(int value);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
           "  StableOptions(int value);",
           "  using Outer<Inner<N < M>>::Base<int>::Base;\n"
+          "  StableOptions(int value);",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
+def test_single_relational_terminal_base_is_inherited_constructor(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "template < bool Enabled > struct Outer {\n"
+      "  template < class U > struct Base { Base(double value); };\n"
+      "};\n"
+      "constexpr int N = 0;\n"
+      "constexpr int M = 1;\n"
+      "struct StableOptions : Outer<N < M>::Base<int> {\n"
+      "  StableOptions(int value);",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  StableOptions(int value);",
+          "  using Outer<N < M>::Base<int>::Base;\n"
           "  StableOptions(int value);",
       ),
       encoding="utf-8",
@@ -903,18 +819,7 @@ def test_relational_terminal_base_arguments_keep_inherited_constructor(
       "  StableOptions(int value);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -955,18 +860,7 @@ def test_qualified_relational_inherited_constructor_uses_derived_identity(
       "  StableOptions(int value);",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -1006,18 +900,7 @@ def test_namespace_name_does_not_fake_inherited_constructor(tmp_path):
       " public:",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -1068,6 +951,50 @@ def test_nonterminal_template_component_does_not_fake_constructor():
     )
 
     assert "aggregate Stable" in contract
+
+
+def test_dependent_nonterminal_component_does_not_fake_constructor(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "template < class T > struct Outer {\n"
+      "  template < class U > struct Base {\n"
+      "    template < bool Enabled > struct Wrapper {\n"
+      "      static void Base(int value);\n"
+      "    };\n"
+      "  };\n"
+      "};\n"
+      "template < int N, int M >\n"
+      "struct StableOptions\n"
+      "  : Outer<int>::Base<int>::Wrapper<N < M> {\n"
+      "  using Outer<int>::template Base<int>::Wrapper<N < M>::Base;",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  assert any(
+      contract.endswith("aggregate tess::StableOptions")
+      for contracts in payload["api_contract"].values()
+      for contract in contracts
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          "  StableOptions() = default;\n  int max_steps = 1;",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "aggregate compatibility changed" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
 
 
 def test_relational_template_expressions_preserve_callable_identity(tmp_path):
@@ -1713,18 +1640,7 @@ def test_function_like_annotation_before_unscoped_enum_preserves_members(
       "TESS_EXPORT(api) enum StableMode { First, Second };",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace("{ First, Second }", "{ Inserted, First, Second }"),
@@ -1810,6 +1726,46 @@ def test_qualified_same_name_parenthesized_object_is_public_data(tmp_path):
       and "state" in failure
       for failure in failures
   ), failures
+
+
+def test_parenthesized_objects_do_not_fake_existing_constructors(tmp_path):
+  declarations = (
+      "namespace other { struct StableOptions {}; }\n"
+      "struct StableOptions { other::StableOptions (state);",
+      "struct StableOptions { int StableOptions::* (member);",
+  )
+  for index, declaration in enumerate(declarations):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {", declaration
+    )
+    header.write_text(text, encoding="utf-8")
+    refresh_payload(repo, payload)
+    assert any(
+        contract.endswith("aggregate tess::StableOptions")
+        for contracts in payload["api_contract"].values()
+        for contract in contracts
+    )
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            "  int max_steps = 1;",
+            "  StableOptions() = default;\n  int max_steps = 1;",
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "aggregate compatibility changed" in failure
+        and "StableOptions" in failure
+        for failure in failures
+    ), (declaration, failures)
 
 
 def test_private_qualified_member_pointer_breaks_aggregate(tmp_path):
@@ -2104,18 +2060,7 @@ def test_existing_derived_aggregate_cannot_gain_constructor(tmp_path):
 struct StableOptions : StableBase {""",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -2148,18 +2093,7 @@ def test_existing_derived_aggregate_cannot_inherit_constructors(tmp_path):
 struct StableOptions : StableBase {""",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -2194,18 +2128,7 @@ template <class T>
 struct StableOptions : StableBase<T> {""",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -2447,18 +2370,7 @@ def test_conditionally_nonaggregate_base_cannot_hide_constructor_addition(
       "#endif\n{",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -2526,18 +2438,7 @@ def test_constructor_in_already_nonaggregate_base_branch_is_compatible(
       "#endif\n{",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -2685,18 +2586,7 @@ def test_implicit_enum_values_are_append_only(tmp_path):
       "enum class ImplicitMode { First, Second };",
   )
   header.write_text(text, encoding="utf-8")
-  payload["public_symbols"] = sorted(
-      snapshots.current_symbols(
-          tmp_path,
-          payload["headers"]["stable"]
-          + payload["headers"]["optional-stable"],
-      )
-  )
-  payload["api_contract"] = snapshots.current_api_contract(
-      tmp_path,
-      payload["headers"]["stable"]
-      + payload["headers"]["optional-stable"],
-  )
+  refresh_payload(tmp_path, payload)
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
