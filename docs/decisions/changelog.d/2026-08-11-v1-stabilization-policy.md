@@ -64,7 +64,9 @@
   relational and compound operators whose punctuation resembles template or
   alias syntax. Inherited constructors use the derived constructor identity.
   Relational expressions in template arguments, trailing requires-expression
-  bodies, and elaborated parameter types retain their callable contracts.
+  bodies, and elaborated parameter types retain their callable contracts,
+  including unparenthesized relations, parameterless requirements, dependent
+  inherited constructors, and function-like annotations before types.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

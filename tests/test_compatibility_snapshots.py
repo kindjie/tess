@@ -549,6 +549,49 @@ def test_inherited_constructor_matches_derived_constructor_identity(tmp_path):
   ), failures
 
 
+def test_dependent_inherited_constructor_matches_derived_identity(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "template < class T > struct StableBase { StableBase(double value); };\n"
+      "template < class T > struct StableOptions : StableBase<T> {\n"
+      "  StableOptions(int value);",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "struct StableOptions : StableBase<T> {",
+          "struct StableOptions : StableBase<T> {\n"
+          "  using StableBase<T>::StableBase;",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "StableBase < T > :: StableBase" in failure
+      for failure in failures
+  ), failures
+
+
 def test_relational_template_expressions_preserve_callable_identity(tmp_path):
   declarations = (
       "template < int N = ( 1 < 2 ) > void evaluate ( int value )",
@@ -587,7 +630,60 @@ def test_relational_template_expressions_preserve_callable_identity(tmp_path):
         "overload added to existing callable" in failure
         and "evaluate" in failure
         for failure in failures
+  ), failures
+
+
+def test_unparenthesized_relational_template_expressions_keep_identity(
+    tmp_path,
+):
+  declarations = (
+      "template < int N = 1 < 2 > void evaluate ( int value )",
+      "template < int N > Result < N < 3 > evaluate ( int value )",
+  )
+  for index, declaration in enumerate(declarations):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {",
+        f"struct StableOptions {{\n  {declaration};",
+    )
+    header.write_text(text, encoding="utf-8")
+    payload["api_contract"] = snapshots.current_api_contract(
+        repo,
+        payload["headers"]["stable"]
+        + payload["headers"]["optional-stable"],
+    )
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            f"  {declaration};",
+            f"  {declaration};\n  void evaluate(double value);",
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "overload added to existing callable" in failure
+        and "evaluate" in failure
+        for failure in failures
     ), failures
+
+
+def test_callable_template_data_member_is_not_mistaken_for_function():
+  contract = extract_api_contract(
+      "struct Stable { Callable<void(int)> callback; };"
+  )
+
+  assert any(
+      item.startswith("data-member Stable:") and "callback" in item
+      for item in contract
+  )
+  assert not any(item.startswith("member Stable:") for item in contract)
 
 
 def test_requires_expression_body_is_part_of_callable_contract(tmp_path):
@@ -607,6 +703,37 @@ def test_requires_expression_body_is_part_of_callable_contract(tmp_path):
   )
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(text.replace("item.foo()", "item.bar()"), encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "API declaration changed or removed" in failure
+      and "evaluate" in failure
+      for failure in failures
+  ), failures
+
+
+def test_parameterless_requires_expression_body_is_part_of_contract(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct StableOptions {\n"
+      "  template < class T > void evaluate(T value)\n"
+      "    requires requires { value.foo(); } {}",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace("value.foo()", "value.bar()"), encoding="utf-8"
+  )
 
   failures = snapshots.check_snapshots(
       tmp_path, snapshot_root, header_path, "1.1.1"
@@ -656,6 +783,38 @@ def test_elaborated_types_do_not_hide_inline_overloads(tmp_path):
         and "evaluate" in failure
         for failure in failures
     ), failures
+
+
+def test_function_like_annotation_before_type_preserves_body_contract(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "TESS_EXPORT(api) struct StableOptions {",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace("int max_steps = 1", "double max_steps = 1"),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "API declaration changed or removed" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
 
 
 def test_attributed_callable_cannot_gain_an_ambiguous_overload(tmp_path):

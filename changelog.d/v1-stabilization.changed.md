@@ -15,7 +15,8 @@
   base-clause aggregate availability, attributed and base-imported named or
   operator overloads (including relational and compound operators), inherited
   constructors, relational template expressions, requires-expressions, and
-  elaborated parameter types, and stable
+  elaborated parameter types, including unparenthesized relations,
+  parameterless requirements, dependent bases, and annotated types; stable
   macro redefinitions/undefinitions cannot evade compatibility checks, future
   unmerged tags do not constrain maintenance
   branches, release evidence retains checksummed actual-version job logs,

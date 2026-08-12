@@ -132,7 +132,7 @@ def _using_callable_identity(contract: str) -> str | None:
   base = next(
       (
           token
-          for token in reversed(tokens[:position])
+          for token in tokens[tokens.index("using") + 1 : position]
           if re.fullmatch(r"[A-Za-z_]\w*", token)
       ),
       None,

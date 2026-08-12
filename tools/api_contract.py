@@ -930,6 +930,11 @@ class _ContractParser:
     opening = _ContractParser._function_opening(tokens)
     if opening is None:
       return False
+    name = callable_name(tokens)
+    if name is None and any(
+        token in TYPE_KEYWORDS for token in tokens[opening + 1 :]
+    ):
+      return False
     closing = _ContractParser._matching_round_bracket(tokens, opening)
     if closing is not None and closing + 1 < len(tokens):
       declarator = tokens[opening + 1 : closing]
@@ -967,7 +972,7 @@ class _ContractParser:
     while start < len(tokens):
       opening = _ContractParser._first_top_level_round(tokens, start)
       if opening is None:
-        return None
+        return _ContractParser._fallback_function_opening(tokens, start)
       previous = tokens[opening - 1] if opening else ""
       if previous.startswith("TESS_"):
         closing = _ContractParser._matching_round_bracket(tokens, opening)
@@ -981,6 +986,42 @@ class _ContractParser:
       if closing is None:
         return None
       start = closing + 1
+    return None
+
+  @staticmethod
+  def _fallback_function_opening(
+      tokens: list[str], start: int = 0
+  ) -> int | None:
+    for opening in range(len(tokens) - 1, start - 1, -1):
+      if tokens[opening] != "(" or opening == 0:
+        continue
+      previous = tokens[opening - 1]
+      if (
+          not IDENTIFIER_RE.fullmatch(previous)
+          or previous in PARENTHESIZED_SPECIFIERS
+          or previous.startswith("TESS_")
+      ):
+        continue
+      closing = _ContractParser._matching_round_bracket(tokens, opening)
+      if closing is None:
+        continue
+      suffix = tokens[closing + 1 :]
+      if any(
+          IDENTIFIER_RE.fullmatch(token)
+          and token
+          not in {
+              "const",
+              "constexpr",
+              "final",
+              "noexcept",
+              "override",
+              "requires",
+              "volatile",
+          }
+          for token in suffix
+      ):
+        continue
+      return opening
     return None
 
   @staticmethod
@@ -1068,7 +1109,9 @@ class _ContractParser:
     if not positions:
       return False
     position = positions[-1]
-    if position + 1 >= len(suffix) or suffix[position + 1] != "(":
+    if position + 1 == len(suffix):
+      return True
+    if suffix[position + 1] != "(":
       return False
     requirement_closing = _ContractParser._matching_round_bracket(
         suffix, position + 1
