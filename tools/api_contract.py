@@ -142,6 +142,21 @@ def callable_name(declaration: str | list[str]) -> str | None:
   return f"~{name}" if position > 0 and prefix[position - 1] == "~" else name
 
 
+def qualified_terminal(tokens: list[str]) -> str | None:
+  """Return the final qualified component, excluding template arguments."""
+  angle_depth = 0
+  for token in reversed(tokens):
+    if token == ">":
+      angle_depth += 1
+    elif token == ">>":
+      angle_depth += 2
+    elif token == "<" and angle_depth:
+      angle_depth -= 1
+    elif angle_depth == 0 and IDENTIFIER_RE.fullmatch(token):
+      return token
+  return None
+
+
 def _is_parenthesized_specifier(token: str) -> bool:
   return token in PARENTHESIZED_SPECIFIERS or token.startswith("TESS_")
 
@@ -643,12 +658,8 @@ class _ContractParser:
         ),
         None,
     )
-    left = {
-        token
-        for token in tokens[1:separator]
-        if IDENTIFIER_RE.fullmatch(token)
-    }
-    return right is not None and right in left
+    left = qualified_terminal(tokens[1:separator])
+    return right is not None and right == left
 
   @classmethod
   def _aggregate_bases_possible(
@@ -932,10 +943,28 @@ class _ContractParser:
       return False
     name = callable_name(tokens)
     if name is None and any(
-        token in TYPE_KEYWORDS for token in tokens[opening + 1 :]
+        token == "enum" or token in TYPE_KEYWORDS
+        for token in tokens[opening + 1 :]
     ):
       return False
     closing = _ContractParser._matching_round_bracket(tokens, opening)
+    prefix_identifiers = [
+        token for token in tokens[:opening] if IDENTIFIER_RE.fullmatch(token)
+    ]
+    if closing is not None:
+      declarator = tokens[opening + 1 : closing]
+      if (
+          len(prefix_identifiers) == 1
+          and len(declarator) == 1
+          and IDENTIFIER_RE.fullmatch(declarator[0])
+      ):
+        return False
+      if (
+          declarator
+          and declarator[0] in {"*", "&", "&&"}
+          and (opening == 0 or not IDENTIFIER_RE.fullmatch(tokens[opening - 1]))
+      ):
+        return False
     if closing is not None and closing + 1 < len(tokens):
       declarator = tokens[opening + 1 : closing]
       if (
@@ -992,8 +1021,32 @@ class _ContractParser:
   def _fallback_function_opening(
       tokens: list[str], start: int = 0
   ) -> int | None:
-    for opening in range(len(tokens) - 1, start - 1, -1):
-      if tokens[opening] != "(" or opening == 0:
+    candidates: list[int] = []
+    round_depth = 0
+    square_depth = 0
+    brace_depth = 0
+    for index, token in enumerate(tokens):
+      if token == "(":
+        if (
+            index >= start
+            and round_depth == 0
+            and square_depth == 0
+            and brace_depth == 0
+        ):
+          candidates.append(index)
+        round_depth += 1
+      elif token == ")" and round_depth:
+        round_depth -= 1
+      elif token in {"[", "[["}:
+        square_depth += 1
+      elif token in {"]", "]]"} and square_depth:
+        square_depth -= 1
+      elif token == "{":
+        brace_depth += 1
+      elif token == "}" and brace_depth:
+        brace_depth -= 1
+    for opening in reversed(candidates):
+      if opening == 0:
         continue
       previous = tokens[opening - 1]
       if (

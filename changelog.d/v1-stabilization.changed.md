@@ -17,7 +17,9 @@
   constructors, relational template expressions, requires-expressions, and
   elaborated parameter types, including unparenthesized relations,
   parameterless requirements, dependent bases, and annotated types; stable
-  macro redefinitions/undefinitions cannot evade compatibility checks, future
+  nested calls and parenthesized object declarators retain the correct identity;
+  stable macro redefinitions/undefinitions cannot evade compatibility checks,
+  future
   unmerged tags do not constrain maintenance
   branches, release evidence retains checksummed actual-version job logs,
   release package checks use C++20 without an unavailable compiler launcher,

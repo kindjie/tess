@@ -66,7 +66,9 @@
   Relational expressions in template arguments, trailing requires-expression
   bodies, and elaborated parameter types retain their callable contracts,
   including unparenthesized relations, parameterless requirements, dependent
-  inherited constructors, and function-like annotations before types.
+  or nested dependent inherited constructors, function-like annotations before
+  types and unscoped enums, nested calls in default arguments, and parenthesized
+  object declarators.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

@@ -9,7 +9,12 @@ import re
 import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from api_contract import _tokens, callable_name, current_api_contract
+from api_contract import (
+    _tokens,
+    callable_name,
+    current_api_contract,
+    qualified_terminal,
+)
 from check_public_surface import extract_public_symbols, strip_comments
 from header_manifest import GENERATED_HEADER_SOURCES, load_header_manifest
 
@@ -129,13 +134,8 @@ def _using_callable_identity(contract: str) -> str | None:
   if name is None:
     return None
   owner = scope.rsplit("::", 1)[-1]
-  base = next(
-      (
-          token
-          for token in tokens[tokens.index("using") + 1 : position]
-          if re.fullmatch(r"[A-Za-z_]\w*", token)
-      ),
-      None,
+  base = qualified_terminal(
+      tokens[tokens.index("using") + 1 : position]
   )
   return f"{scope}::{owner if name == base else name}"
 

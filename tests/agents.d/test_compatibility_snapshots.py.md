@@ -12,8 +12,9 @@
   overload identity (including dependent bases), parenthesized and bare
   relational template expressions, parameterized and parameterless trailing
   requires-expression bodies, elaborated parameter and return types,
-  function-like type annotations, constructor-like parameter spellings, and
-  per-configuration
+  function-like type/enum annotations, nested calls in fallback declarations,
+  parenthesized object and callable-template data declarators,
+  constructor-like parameter spellings, and per-configuration
   member and base-clause aggregate availability, anonymous type objects,
   stable-macro redefinition and undefinition, release-tag byte and directory
   immutability (excluding future unmerged tags), installed-package consumer
