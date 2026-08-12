@@ -965,7 +965,9 @@ class _ContractParser:
     angle_depth = 0
     square_depth = 0
     for index, token in enumerate(tokens):
-      if token == "<":
+      if token == "<" and not (
+          index > 0 and tokens[index - 1] == "operator"
+      ):
         angle_depth += 1
       elif token == ">" and angle_depth:
         angle_depth -= 1

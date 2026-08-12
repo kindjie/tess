@@ -13,7 +13,7 @@
   specifiers, pre/post-name annotation macros, destructor identity, and
   parameter-type spellings and anonymous type objects; conditional member and
   base-clause aggregate availability, attributed and base-imported named or
-  operator overloads, and stable
+  operator overloads (including relational operators), and stable
   macro redefinitions/undefinitions cannot evade compatibility checks, future
   unmerged tags do not constrain maintenance
   branches, release evidence retains checksummed actual-version job logs,

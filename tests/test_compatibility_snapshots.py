@@ -392,6 +392,7 @@ def test_existing_operator_cannot_gain_base_overloads_through_using(tmp_path):
 def test_imported_operator_identities_match_callable_identities():
   declarations = {
       "member tess::S:using B :: operator +": "tess::S::operator+",
+      "member tess::S:using B :: operator <": "tess::S::operator<",
       "member tess::S:using B :: operator ( )": "tess::S::operator()",
       "member tess::S:using B :: operator [ ]": "tess::S::operator[]",
       "member tess::S:using B :: operator bool": "tess::S::operatorbool",
@@ -399,6 +400,63 @@ def test_imported_operator_identities_match_callable_identities():
 
   for declaration, identity in declarations.items():
     assert snapshots._using_callable_identity(declaration) == identity
+
+  direct = "member tess::S:bool operator < ( int value ) const"
+  imported = "member tess::S:using B :: operator <"
+  assert snapshots._callable_identity(direct) == "tess::S::operator<"
+  assert snapshots._using_callable_identity(imported) == (
+      snapshots._callable_identity(direct)
+  )
+
+
+def test_less_than_operator_cannot_gain_direct_or_imported_overload(tmp_path):
+  additions = (
+      "  bool operator<(double value) const;\n",
+      "  using StableBase::operator<;\n",
+  )
+  for index, addition in enumerate(additions):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableSymbol {",
+        "struct StableBase {\n"
+        "  bool operator<(double value) const;\n"
+        "};\n"
+        "struct StableSymbol : StableBase {\n"
+        "  bool operator<(int value) const;",
+    )
+    header.write_text(text, encoding="utf-8")
+    payload["public_symbols"] = sorted(
+        snapshots.current_symbols(
+            repo,
+            payload["headers"]["stable"]
+            + payload["headers"]["optional-stable"],
+        )
+    )
+    payload["api_contract"] = snapshots.current_api_contract(
+        repo,
+        payload["headers"]["stable"]
+        + payload["headers"]["optional-stable"],
+    )
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            "struct StableSymbol : StableBase {\n",
+            "struct StableSymbol : StableBase {\n" + addition,
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "overload added to existing callable" in failure
+        and "operator <" in failure
+        for failure in failures
+    ), failures
 
 
 def test_attributed_callable_cannot_gain_an_ambiguous_overload(tmp_path):
