@@ -373,6 +373,11 @@ class _ContractParser:
         pending.extend(braced)
         continue
 
+      if self._starts_requires_expression(pending):
+        braced, index = self._braced_initializer(index)
+        pending.extend(braced)
+        continue
+
       if self._is_namespace(pending):
         namespace = self._namespace_name(pending)
         namespace_parts = tuple(part for part in namespace.split("::") if part)
@@ -386,6 +391,29 @@ class _ContractParser:
             "namespace",
             child_visible,
         )
+        continue
+
+      if self._is_function(pending):
+        if self._starts_constructor_braced_initializer(pending):
+          braced, index = self._braced_initializer(index)
+          pending.extend(braced)
+          continue
+        aggregate_eligible = self._retain_aggregate(
+            pending,
+            names,
+            access,
+            access_conditions,
+            aggregate_eligible,
+        )
+        self._record(
+            pending,
+            names,
+            kind,
+            visible and True in access,
+            access_conditions,
+        )
+        pending.clear()
+        index = self._skip_braces(index + 1)
         continue
 
       enum_name = self._enum_name(pending)
@@ -434,29 +462,6 @@ class _ContractParser:
           condition = self._condition_prefix(access_conditions).rstrip()
           suffix = f":{condition}" if condition else ""
           self.contracts.append(f"aggregate {qualified}{suffix}")
-        continue
-
-      if self._is_function(pending):
-        if self._starts_constructor_braced_initializer(pending):
-          braced, index = self._braced_initializer(index)
-          pending.extend(braced)
-          continue
-        aggregate_eligible = self._retain_aggregate(
-            pending,
-            names,
-            access,
-            access_conditions,
-            aggregate_eligible,
-        )
-        self._record(
-            pending,
-            names,
-            kind,
-            visible and True in access,
-            access_conditions,
-        )
-        pending.clear()
-        index = self._skip_braces(index + 1)
         continue
 
       braced, index = self._braced_initializer(index)
@@ -870,14 +875,29 @@ class _ContractParser:
   def _type(tokens: list[str]) -> tuple[str | None, str | None]:
     positions: list[int] = []
     angle_depth = 0
+    round_depth = 0
+    square_depth = 0
     for index, token in enumerate(tokens):
-      if token == "<":
+      if token == "(":
+        round_depth += 1
+      elif token == ")" and round_depth:
+        round_depth -= 1
+      elif token in {"[", "[["}:
+        square_depth += 1
+      elif token in {"]", "]]"} and square_depth:
+        square_depth -= 1
+      elif token == "<" and round_depth == 0:
         angle_depth += 1
       elif token == ">" and angle_depth:
         angle_depth -= 1
       elif token == ">>" and angle_depth:
         angle_depth = max(0, angle_depth - 2)
-      elif token in TYPE_KEYWORDS and angle_depth == 0:
+      elif (
+          token in TYPE_KEYWORDS
+          and angle_depth == 0
+          and round_depth == 0
+          and square_depth == 0
+      ):
         positions.append(index)
     if not positions:
       return None, None
@@ -920,9 +940,14 @@ class _ContractParser:
       ):
         return False
     angle_depth = 0
+    round_depth = 0
     square_depth = 0
     for token in tokens[:opening]:
-      if token == "<":
+      if token == "(" and angle_depth:
+        round_depth += 1
+      elif token == ")" and round_depth:
+        round_depth -= 1
+      elif token == "<" and round_depth == 0:
         angle_depth += 1
       elif token == ">" and angle_depth:
         angle_depth -= 1
@@ -963,9 +988,14 @@ class _ContractParser:
       tokens: list[str], start: int = 0
   ) -> int | None:
     angle_depth = 0
+    round_depth = 0
     square_depth = 0
     for index, token in enumerate(tokens):
-      if token == "<" and not (
+      if token == "(" and angle_depth:
+        round_depth += 1
+      elif token == ")" and round_depth:
+        round_depth -= 1
+      elif token == "<" and round_depth == 0 and not (
           index > 0 and tokens[index - 1] == "operator"
       ):
         angle_depth += 1
@@ -981,6 +1011,7 @@ class _ContractParser:
           index >= start
           and token == "("
           and angle_depth == 0
+          and round_depth == 0
           and square_depth == 0
       ):
         return index
@@ -1021,6 +1052,28 @@ class _ContractParser:
         elif initializer_colon and token == ",":
           completed_initializer = False
     return initializer_colon and not completed_initializer
+
+  @staticmethod
+  def _starts_requires_expression(tokens: list[str]) -> bool:
+    opening = _ContractParser._function_opening(tokens)
+    if opening is None:
+      return False
+    closing = _ContractParser._matching_round_bracket(tokens, opening)
+    if closing is None:
+      return False
+    suffix = tokens[closing + 1 :]
+    positions = [
+        index for index, token in enumerate(suffix) if token == "requires"
+    ]
+    if not positions:
+      return False
+    position = positions[-1]
+    if position + 1 >= len(suffix) or suffix[position + 1] != "(":
+      return False
+    requirement_closing = _ContractParser._matching_round_bracket(
+        suffix, position + 1
+    )
+    return requirement_closing == len(suffix) - 1
 
   def _skip_braces(self, index: int) -> int:
     depth = 1

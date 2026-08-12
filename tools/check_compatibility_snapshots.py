@@ -9,7 +9,7 @@ import re
 import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from api_contract import callable_name, current_api_contract
+from api_contract import _tokens, callable_name, current_api_contract
 from check_public_surface import extract_public_symbols, strip_comments
 from header_manifest import GENERATED_HEADER_SOURCES, load_header_manifest
 
@@ -108,10 +108,12 @@ def _using_callable_identity(contract: str) -> str | None:
   if match is None:
     return None
   scope, declaration = match.groups()
-  tokens = re.findall(r"@[A-Za-z_]\w*@|::|[A-Za-z_]\w*|\S", declaration)
-  if "using" not in tokens or "=" in tokens or "::" not in tokens:
+  tokens = _tokens(declaration)
+  if "using" not in tokens or "::" not in tokens:
     return None
   position = len(tokens) - 1 - tokens[::-1].index("::")
+  if "=" in tokens[:position]:
+    return None
   suffix = tokens[position + 1 :]
   if suffix and suffix[0] == "operator":
     name = "operator" + "".join(suffix[1:])
@@ -124,7 +126,18 @@ def _using_callable_identity(contract: str) -> str | None:
       ),
       None,
   )
-  return f"{scope}::{name}" if name is not None else None
+  if name is None:
+    return None
+  owner = scope.rsplit("::", 1)[-1]
+  base = next(
+      (
+          token
+          for token in reversed(tokens[:position])
+          if re.fullmatch(r"[A-Za-z_]\w*", token)
+      ),
+      None,
+  )
+  return f"{scope}::{owner if name == base else name}"
 
 
 def _macro_identity(contract: str, category: str = "macro") -> str | None:

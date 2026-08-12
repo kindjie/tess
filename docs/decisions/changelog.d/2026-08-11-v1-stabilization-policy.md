@@ -61,7 +61,11 @@
   destructors for constructors. Callable identity likewise retains annotated
   names, distinguishes destructors, and treats named or operator base overloads
   imported through using-declarations as overload additions, including
-  relational operators whose punctuation resembles template syntax. Conditional
+  relational and compound operators whose punctuation resembles template or
+  alias syntax. Inherited constructors use the derived constructor identity.
+  Relational expressions in template arguments, trailing requires-expression
+  bodies, and elaborated parameter types retain their callable contracts.
+  Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is
   rejected; private anonymous type objects remain aggregate-breaking data.

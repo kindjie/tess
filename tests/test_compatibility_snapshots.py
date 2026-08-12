@@ -459,6 +459,205 @@ def test_less_than_operator_cannot_gain_direct_or_imported_overload(tmp_path):
     ), failures
 
 
+def test_compound_operator_cannot_gain_imported_overload(tmp_path):
+  operators = ("==", "<=", ">=", "<=>", "+=")
+  for index, operator in enumerate(operators):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableSymbol {",
+        "struct StableBase {\n"
+        f"  bool operator{operator}(double value) const;\n"
+        "};\n"
+        "struct StableSymbol : StableBase {\n"
+        f"  bool operator{operator}(int value) const;",
+    )
+    header.write_text(text, encoding="utf-8")
+    payload["public_symbols"] = sorted(
+        snapshots.current_symbols(
+            repo,
+            payload["headers"]["stable"]
+            + payload["headers"]["optional-stable"],
+        )
+    )
+    payload["api_contract"] = snapshots.current_api_contract(
+        repo,
+        payload["headers"]["stable"]
+        + payload["headers"]["optional-stable"],
+    )
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            "struct StableSymbol : StableBase {\n",
+            "struct StableSymbol : StableBase {\n"
+            f"  using StableBase::operator{operator};\n",
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "overload added to existing callable" in failure
+        and "operator" in failure
+        for failure in failures
+    ), (operator, failures)
+
+
+def test_inherited_constructor_matches_derived_constructor_identity(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct StableBase { StableBase(double value); };\n"
+      "struct StableOptions : StableBase {\n"
+      "  StableOptions(int value);",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "struct StableOptions : StableBase {",
+          "struct StableOptions : StableBase {\n  using StableBase::StableBase;",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "StableBase :: StableBase" in failure
+      for failure in failures
+  ), failures
+
+
+def test_relational_template_expressions_preserve_callable_identity(tmp_path):
+  declarations = (
+      "template < int N = ( 1 < 2 ) > void evaluate ( int value )",
+      "template < int N > enable_if_t < ( N < 3 ) , bool > "
+      "evaluate ( int value )",
+  )
+  for index, declaration in enumerate(declarations):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {",
+        f"struct StableOptions {{\n  {declaration};",
+    )
+    header.write_text(text, encoding="utf-8")
+    payload["api_contract"] = snapshots.current_api_contract(
+        repo,
+        payload["headers"]["stable"]
+        + payload["headers"]["optional-stable"],
+    )
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            f"  {declaration};",
+            f"  {declaration};\n"
+            "  template < int N > void evaluate ( double value );",
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "overload added to existing callable" in failure
+        and "evaluate" in failure
+        for failure in failures
+    ), failures
+
+
+def test_requires_expression_body_is_part_of_callable_contract(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct StableOptions {\n"
+      "  template < class T > void evaluate(T value)\n"
+      "    requires requires(T item) { item.foo(); } {}",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(text.replace("item.foo()", "item.bar()"), encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "API declaration changed or removed" in failure
+      and "evaluate" in failure
+      for failure in failures
+  ), failures
+
+
+def test_elaborated_types_do_not_hide_inline_overloads(tmp_path):
+  declarations = (
+      "void evaluate(struct StableArgument* value) {}",
+      "struct StableArgument* evaluate(int value) { return {}; }",
+  )
+  for index, declaration in enumerate(declarations):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {",
+        f"struct StableOptions {{\n  {declaration}",
+    )
+    header.write_text(text, encoding="utf-8")
+    payload["api_contract"] = snapshots.current_api_contract(
+        repo,
+        payload["headers"]["stable"]
+        + payload["headers"]["optional-stable"],
+    )
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            f"  {declaration}",
+            f"  {declaration}\n  void evaluate(double value) {{}}",
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "overload added to existing callable" in failure
+        and "evaluate" in failure
+        for failure in failures
+    ), failures
+
+
 def test_attributed_callable_cannot_gain_an_ambiguous_overload(tmp_path):
   header_path, payload = make_repo(tmp_path)
   header = tmp_path / "include/tess/tess.h"
