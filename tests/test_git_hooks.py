@@ -610,6 +610,20 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert "needs.changes.outputs.release_mode == 'true'" in fuzz
   assert "github.event_name == 'schedule'" in fuzz
 
+  compatibility = _job_body(workflow, "release-compatibility")
+  assert "fetch-depth: 0" in compatibility
+  assert "fetch-tags: true" in compatibility
+  assert "cmake --install build/compatibility" in compatibility
+  assert '-DCMAKE_PREFIX_PATH="$install_prefix"' in compatibility
+  assert 'cmake -S "$snapshot/$consumer_project"' in compatibility
+  assert 'cmake --build "build/compatibility/$version-consumer"' in (
+      compatibility
+  )
+  assert 'ctest --test-dir "build/compatibility/$version-consumer"' in (
+      compatibility
+  )
+  assert "c++ -std=c++20 -Iinclude" not in compatibility
+
 
 def test_documentation_only_changes_skip_expensive_ci_fail_closed():
   root = Path(__file__).resolve().parents[1]

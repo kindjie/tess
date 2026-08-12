@@ -1572,6 +1572,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
 
       - name: Validate compatibility snapshots
@@ -1581,22 +1583,20 @@ jobs:
             -DTESS_BUILD_TESTING=OFF \
             -DTESS_BUILD_EXAMPLES=OFF \
             -DCMAKE_CXX_COMPILER_LAUNCHER=
+          install_prefix="$PWD/build/compatibility/install"
+          cmake --install build/compatibility --prefix "$install_prefix"
           for manifest in compatibility/*/manifest.json; do
             [ -f "$manifest" ] || continue
             snapshot="$(dirname "$manifest")"
             version="$(basename "$snapshot")"
-            consumer="$(jq -r .consumer "$manifest")"
-            archive_consumer="$(jq -r .archive_consumer "$manifest")"
-            c++ -std=c++20 -Iinclude \
-              -Ibuild/compatibility/generated/include \
-              "$snapshot/$consumer" \
-              -o "build/compatibility/$version-consumer"
-            "build/compatibility/$version-consumer"
-            c++ -std=c++20 -Iinclude \
-              -Ibuild/compatibility/generated/include \
-              "$snapshot/$archive_consumer" \
-              -o "build/compatibility/$version-archive-consumer"
-            "build/compatibility/$version-archive-consumer" "$snapshot"
+            consumer_project="$(jq -r .consumer_project "$manifest")"
+            cmake -S "$snapshot/$consumer_project" \
+              -B "build/compatibility/$version-consumer" \
+              -DCMAKE_PREFIX_PATH="$install_prefix" \
+              -DTESS_SNAPSHOT_DIR="$PWD/$snapshot"
+            cmake --build "build/compatibility/$version-consumer"
+            ctest --test-dir "build/compatibility/$version-consumer" \
+              --output-on-failure
           done
 
   release-docs:

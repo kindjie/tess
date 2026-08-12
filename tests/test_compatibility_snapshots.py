@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -28,7 +29,28 @@ def make_repo(root: Path) -> tuple[Path, dict[str, object]]:
     path.write_text("#pragma once\nstruct StableSymbol {};\n", encoding="utf-8")
   aggregate = root / "include/tess/tess.h"
   aggregate.write_text(
-      "#pragma once\n#include <tess/pathfinding.h>\nstruct StableSymbol {};\n",
+      """#pragma once
+#include <tess/pathfinding.h>
+#define TESS_COMPAT_LIMIT 8
+namespace tess {
+enum class StableMode { First = 1, Second = 2 };
+struct StableSymbol {
+  int max_entries = 4;
+  void set_limit(int value = 8);
+  auto operator=(const StableSymbol& other) -> StableSymbol& {
+    max_entries = other.max_entries;
+    return *this;
+  }
+ private:
+  int internal_revision = 1;
+};
+[[nodiscard]] auto stable_route(int start, int goal = 2) -> bool;
+constexpr auto stable_inline(int value) -> int { return value + 1; }
+template <class T = int>
+constexpr auto stable_template(T value) -> T { return value + 1; }
+inline auto stable_braced(StableSymbol value = {}) -> bool { return true; }
+}  // namespace tess
+""",
       encoding="utf-8",
   )
   header_path = root / "cmake/tess-headers.json"
@@ -42,7 +64,11 @@ def make_repo(root: Path) -> tuple[Path, dict[str, object]]:
       },
       "aggregate_membership": snapshots.aggregate_membership(root),
       "public_symbols": ["StableSymbol"],
+      "api_contract": snapshots.current_api_contract(
+          root, headers["stable"] + headers["optional-stable"]
+      ),
       "consumer": "consumer/main.cc",
+      "consumer_project": "consumer",
       "archive_consumer": "archives/load.cc",
       "archives": [
           {
@@ -61,6 +87,22 @@ def write_snapshot(root: Path, payload: dict[str, object]) -> Path:
   (directory / "consumer").mkdir(parents=True)
   (directory / "archives").mkdir()
   (directory / "consumer/main.cc").write_text("int main() {}\n")
+  (directory / "consumer/CMakeLists.txt").write_text(
+      """cmake_minimum_required(VERSION 3.25)
+project(tess_compatibility_consumer LANGUAGES CXX)
+find_package(tess CONFIG REQUIRED)
+add_executable(consumer main.cc)
+target_link_libraries(consumer PRIVATE tess::tess)
+add_executable(archive_consumer ../archives/load.cc)
+target_link_libraries(archive_consumer PRIVATE tess::tess)
+enable_testing()
+add_test(NAME consumer COMMAND consumer)
+add_test(
+  NAME archive_consumer
+  COMMAND archive_consumer "${TESS_SNAPSHOT_DIR}"
+)
+"""
+  )
   (directory / "archives/load.cc").write_text("int main() {}\n")
   (directory / "archives/one.bin").write_bytes(b"fixture")
   (directory / "manifest.json").write_text(json.dumps(payload))
@@ -70,6 +112,10 @@ def write_snapshot(root: Path, payload: dict[str, object]) -> Path:
 def test_valid_snapshot_is_a_subset_of_current_sources(tmp_path):
   header_path, payload = make_repo(tmp_path)
   snapshot_root = write_snapshot(tmp_path, payload)
+  assert any(
+      contract.startswith("function tess:template < class T = int >")
+      for contract in payload["api_contract"]["include/tess/tess.h"]
+  )
 
   assert snapshots.check_snapshots(
       tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
@@ -83,6 +129,9 @@ def test_removed_contract_and_fixture_fail_deterministically(tmp_path):
       "include/tess/removed.h"
   )
   payload["public_symbols"].append("RemovedSymbol")
+  payload["api_contract"]["include/tess/tess.h"].append(
+      "member tess::StableSymbol::removed_member:int"
+  )
   snapshot_root = write_snapshot(tmp_path, payload)
   (snapshot_root / "1.0.0-rc.1/archives/one.bin").unlink()
 
@@ -96,6 +145,10 @@ def test_removed_contract_and_fixture_fail_deterministically(tmp_path):
       "1.0.0-rc.1: aggregate member removed from include/tess/tess.h: "
       "include/tess/removed.h",
       "1.0.0-rc.1: public symbol removed: RemovedSymbol",
+      "1.0.0-rc.1: api_contract for include/tess/removed.h is missing",
+      "1.0.0-rc.1: API declaration changed or removed: "
+      "include/tess/tess.h: member "
+      "tess::StableSymbol::removed_member:int",
       "1.0.0-rc.1: invalid or missing archive fixture metadata",
   ]
 
@@ -116,3 +169,116 @@ def test_archive_fixture_requires_fixed_schema_metadata(tmp_path):
   assert snapshots.check_snapshots(
       tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
   ) == ["1.0.0-rc.1: invalid or missing archive fixture metadata"]
+
+
+def test_api_contract_catches_source_incompatible_declaration_changes(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+
+  replacements = (
+      ("TESS_COMPAT_LIMIT 8", "TESS_COMPAT_LIMIT 9", "macro"),
+      ("Second = 2", "Second = 3", "enumerator"),
+      ("max_entries = 4", "entry_limit = 4", "member"),
+      ("goal = 2", "goal = 3", "function"),
+  )
+  original = header.read_text(encoding="utf-8")
+  for before, after, declaration_kind in replacements:
+    header.write_text(original.replace(before, after), encoding="utf-8")
+
+    failures = snapshots.check_snapshots(
+        tmp_path, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "API declaration changed or removed" in failure
+        and declaration_kind in failure
+        for failure in failures
+    ), failures
+    header.write_text(original, encoding="utf-8")
+
+
+def test_released_snapshot_must_match_its_release_tag(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  subprocess.run(["git", "init"], cwd=tmp_path, check=True)
+  subprocess.run(
+      [
+          "git",
+          "config",
+          "user.email",
+          "compatibility" + chr(64) + "example.invalid",
+      ],
+      cwd=tmp_path,
+      check=True,
+  )
+  subprocess.run(
+      ["git", "config", "user.name", "Compatibility Tests"],
+      cwd=tmp_path,
+      check=True,
+  )
+  subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+  subprocess.run(
+      ["git", "-c", "commit.gpgsign=false", "commit", "-m", "snapshot"],
+      cwd=tmp_path,
+      check=True,
+  )
+  subprocess.run(
+      ["git", "tag", "v1.0.0-rc.1"], cwd=tmp_path, check=True
+  )
+  manifest = snapshot_root / "1.0.0-rc.1/manifest.json"
+  manifest.write_text(manifest.read_text() + "\n", encoding="utf-8")
+
+  assert snapshots.check_snapshot_immutability(
+      tmp_path, snapshot_root, "1.1.0"
+  ) == [
+      "1.0.0-rc.1: released snapshot differs from tag v1.0.0-rc.1"
+  ]
+
+
+def test_current_release_snapshot_can_precede_its_tag(tmp_path):
+  _, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  subprocess.run(["git", "init"], cwd=tmp_path, check=True)
+
+  assert snapshots.check_snapshot_immutability(
+      tmp_path, snapshot_root, "1.0.0-rc.1"
+  ) == []
+
+
+def test_snapshot_consumer_must_use_installed_package_contract(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  cmake_project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  cmake_project.write_text(
+      "add_executable(consumer main.cc)\n", encoding="utf-8"
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert failures == [
+      "1.0.0-rc.1: consumer project must discover tess CONFIG and link "
+      "tess::tess, build both recorded consumers, and test them"
+  ]
+
+
+def test_api_contract_excludes_bodies_and_private_members(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8")
+  text = text.replace("internal_revision = 1", "implementation_epoch = 2")
+  text = text.replace("return value + 1", "return value + 2")
+  text = text.replace("return true", "return false")
+  text = text.replace(
+      "max_entries = other.max_entries", "max_entries = other.max_entries + 1"
+  )
+  header.write_text(text, encoding="utf-8")
+
+  assert snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  ) == []

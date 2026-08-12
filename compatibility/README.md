@@ -4,20 +4,28 @@ Create an immutable directory named for the complete release version at RC1
 and at every stable minor release. Each directory contains:
 
 - `manifest.json`, recording stable and optional-stable headers, direct stable
-  aggregate membership, extracted public symbol names, the consumer source,
-  and archive fixture metadata;
-- a representative consumer that uses stable headers only; and
+  aggregate membership, extracted public symbol names, normalized public API
+  declarations, the consumer project, and archive fixture metadata;
+- a CMake consumer project that uses stable headers only, discovers the
+  candidate installation with `find_package(tess CONFIG REQUIRED)`, links
+  `tess::tess`, and registers both source and archive consumers as tests; and
 - canonical archive-v1 fixtures with producer version and fixed-schema
   metadata, plus one `archive_consumer` source that loads every listed fixture
   when passed the snapshot directory.
 
 `tools/check_compatibility_snapshots.py` verifies that current sources retain
 every prior header in its original compatibility class, every direct aggregate
-member, and every public symbol, and that fixture files and producer metadata
-are complete. Release CI compiles every prior consumer and archive consumer,
-then runs the latter against its recorded fixtures and schema. Snapshot
-directories are append-only:
-never edit a released snapshot to make a compatibility failure disappear.
+member, public symbol, and normalized declaration contract. Declaration
+contracts retain function signatures and defaults, public members, enum
+values, aliases, concepts, constants, and configuration macro definitions.
+The checker also verifies fixture metadata and compares every earlier snapshot
+byte-for-byte with its `v<version>` release tag. Release CI fetches those tags,
+installs the candidate package, and configures, builds, and tests each immutable
+consumer project against that installation. Snapshot directories are
+append-only: never edit a released snapshot to make a compatibility failure
+disappear.
 
 RC1 and stable `1.x.0` source versions fail the checker until their matching
 snapshot exists. Pre-1.0 development does not fabricate a future snapshot.
+The snapshot matching the version currently being prepared may precede its
+tag; every older snapshot must already have a matching reachable release tag.

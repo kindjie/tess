@@ -6,8 +6,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 from pathlib import Path
 
+from api_contract import current_api_contract
 from check_public_surface import extract_public_symbols
 from header_manifest import GENERATED_HEADER_SOURCES, load_header_manifest
 
@@ -26,6 +28,9 @@ VERSION_RE = re.compile(
 )
 PRERELEASE_RE = re.compile(
     r'^set\(TESS_VERSION_PRERELEASE "([^"]*)"\)', re.MULTILINE
+)
+PACKAGE_FIND_RE = re.compile(
+    r"find_package\s*\(\s*tess\s+CONFIG\s+REQUIRED"
 )
 
 
@@ -112,6 +117,7 @@ def check_snapshots(
   )
   memberships = aggregate_membership(repo_root)
   symbols = current_symbols(repo_root, compatibility_headers)
+  api_contract = current_api_contract(repo_root, compatibility_headers)
   directories = snapshot_directories(snapshot_root)
 
   if release_requires_snapshot(version) and not any(
@@ -175,6 +181,34 @@ def check_snapshots(
       for missing in sorted(set(snapshot_symbols) - symbols):
         failures.append(f"{directory.name}: public symbol removed: {missing}")
 
+    snapshot_contract = payload.get("api_contract")
+    if not isinstance(snapshot_contract, dict):
+      failures.append(f"{directory.name}: api_contract map is missing")
+    else:
+      snapshot_header_values: list[str] = []
+      if isinstance(snapshot_headers, dict):
+        for category in ("stable", "optional-stable"):
+          values = snapshot_headers.get(category)
+          if isinstance(values, list):
+            snapshot_header_values.extend(
+                value for value in values if isinstance(value, str)
+            )
+      for header in sorted(set(snapshot_header_values)):
+        declarations = snapshot_contract.get(header)
+        if not isinstance(declarations, list) or not all(
+            isinstance(declaration, str) for declaration in declarations
+        ):
+          failures.append(
+              f"{directory.name}: api_contract for {header} is missing"
+          )
+          continue
+        current_declarations = set(api_contract.get(header, []))
+        for missing in sorted(set(declarations) - current_declarations):
+          failures.append(
+              f"{directory.name}: API declaration changed or removed: "
+              f"{header}: {missing}"
+          )
+
     consumer = payload.get("consumer")
     if not isinstance(consumer, str) or not (directory / consumer).is_file():
       failures.append(f"{directory.name}: representative consumer is missing")
@@ -185,6 +219,40 @@ def check_snapshots(
         or not (directory / archive_consumer).is_file()
     ):
       failures.append(f"{directory.name}: archive consumer is missing")
+
+    consumer_project = payload.get("consumer_project")
+    project_file = (
+        directory / consumer_project / "CMakeLists.txt"
+        if isinstance(consumer_project, str)
+        else None
+    )
+    if project_file is None or not project_file.is_file():
+      failures.append(f"{directory.name}: consumer project is missing")
+    else:
+      project_text = project_file.read_text(encoding="utf-8")
+      consumer_source = (
+          Path(consumer).name if isinstance(consumer, str) else ""
+      )
+      archive_source = (
+          Path(archive_consumer).name
+          if isinstance(archive_consumer, str)
+          else ""
+      )
+      if (
+          PACKAGE_FIND_RE.search(project_text) is None
+          or "tess::tess" not in project_text
+          or not consumer_source
+          or consumer_source not in project_text
+          or not archive_source
+          or archive_source not in project_text
+          or "TESS_SNAPSHOT_DIR" not in project_text
+          or len(re.findall(r"\badd_test\s*\(", project_text)) < 2
+      ):
+        failures.append(
+            f"{directory.name}: consumer project must discover tess CONFIG "
+            "and link tess::tess, build both recorded consumers, and test "
+            "them"
+        )
 
     archives = payload.get("archives")
     if not isinstance(archives, list) or not archives:
@@ -209,6 +277,53 @@ def check_snapshots(
   return failures
 
 
+def _git(
+    repo_root: Path, arguments: list[str]
+) -> subprocess.CompletedProcess[str]:
+  return subprocess.run(
+      ["git", *arguments],
+      cwd=repo_root,
+      check=False,
+      capture_output=True,
+      text=True,
+  )
+
+
+def check_snapshot_immutability(
+    repo_root: Path,
+    snapshot_root: Path,
+    version: str,
+) -> list[str]:
+  """Verify every earlier snapshot byte-for-byte against its release tag."""
+  failures: list[str] = []
+  try:
+    relative_root = snapshot_root.resolve().relative_to(repo_root.resolve())
+  except ValueError:
+    return ["snapshot root must be inside the repository"]
+
+  for directory in snapshot_directories(snapshot_root):
+    tag = f"v{directory.name}"
+    tag_exists = _git(
+        repo_root, ["rev-parse", "--verify", "--quiet", f"refs/tags/{tag}"]
+    ).returncode == 0
+    if not tag_exists:
+      if directory.name != version:
+        failures.append(
+            f"{directory.name}: released snapshot tag {tag} is missing"
+        )
+      continue
+    relative_directory = relative_root / directory.name
+    changed = _git(
+        repo_root,
+        ["diff", "--quiet", tag, "--", relative_directory.as_posix()],
+    ).returncode
+    if changed != 0:
+      failures.append(
+          f"{directory.name}: released snapshot differs from tag {tag}"
+      )
+  return failures
+
+
 def main() -> int:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
@@ -221,6 +336,13 @@ def main() -> int:
       args.snapshots,
       args.headers,
       current_version(args.version_file),
+  )
+  failures.extend(
+      check_snapshot_immutability(
+          args.repo_root,
+          args.snapshots,
+          current_version(args.version_file),
+      )
   )
   if failures:
     print("\n".join(failures))

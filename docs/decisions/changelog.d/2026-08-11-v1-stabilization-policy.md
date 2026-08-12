@@ -33,3 +33,7 @@
   sparse support must be additive. Breaking argument-pair, options, handle,
   ordering, duplicate-name, lifetime, and identity cleanups land in v0.13 and
   are documented in the 1.0 upgrade guide.
+- Compatibility snapshots retain normalized declarations rather than treating
+  symbol-name retention as source compatibility. Released snapshot bytes are
+  anchored to their `v<version>` tag, and their consumers discover and link the
+  candidate installation through its supported CMake package entry points.
