@@ -59,10 +59,11 @@
   annotation macros before or after the declared name, and conditional
   `explicit` specifiers without mistaking parameter-type spellings or
   destructors for constructors. Callable identity likewise retains annotated
-  names, distinguishes destructors, and treats base overloads imported through
-  using-declarations as overload additions. Conditional aggregate-breaking
-  configurations retain distinct identities, so narrowing the configurations
-  in which a type remains an aggregate is rejected.
+  names, distinguishes destructors, and treats named or operator base overloads
+  imported through using-declarations as overload additions. Conditional
+  aggregate-breaking member and base configurations retain distinct identities,
+  so narrowing the configurations in which a type remains an aggregate is
+  rejected; private anonymous type objects remain aggregate-breaking data.
   Enumerator order is append-only, and existing callables cannot gain overloads
   because calls and address-taking can become ambiguous; sparse extensions
   therefore use distinctly named entry points. Release tags anchor an
@@ -75,4 +76,5 @@
 - The release evidence JSON records the expected/pinned toolchain contract and
   checksums retained copies of the successful platform-job logs containing the
   actual current and floor tool versions. The workflow-run URL remains
-  supplemental provenance; expected floors are not mislabeled as observations.
+  supplemental provenance; expected floors are not mislabeled as observations,
+  and missing MSVC metadata or a version other than 19.44 fails the floor job.

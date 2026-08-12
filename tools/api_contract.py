@@ -408,8 +408,8 @@ class _ContractParser:
       if type_kind is not None and type_name is not None:
         declaration_visible = visible and True in access
         qualified = _qualified(names + (type_name,))
-        aggregate_possible = self._aggregate_bases_possible(
-            pending, type_kind
+        aggregate_possible, base_break_conditions = (
+            self._aggregate_bases_possible(pending, type_kind)
         )
         if declaration_visible:
           self.contracts.append(
@@ -417,6 +417,11 @@ class _ContractParser:
               f"{self._condition_prefix(access_conditions)}"
               f"{_normalize(pending)}"
           )
+          if aggregate_possible:
+            self.contracts.extend(
+                f"aggregate-break {qualified}:{condition}"
+                for condition in base_break_conditions
+            )
         pending.clear()
         index, child_is_aggregate = self._scope(
             index + 1,
@@ -527,10 +532,85 @@ class _ContractParser:
         or "friend" in declaration
         or "static" in declaration
         or "concept" in declaration
-        or "enum" in declaration
-        or any(keyword in declaration for keyword in TYPE_KEYWORDS)
+        or cls._is_type_only_declaration(declaration)
     )
     return not non_data
+
+  @staticmethod
+  def _is_type_only_declaration(tokens: list[str]) -> bool:
+    meaningful = _declarator_prefix(
+        [
+            token
+            for token in tokens
+            if not token.startswith("@__tess_pp_")
+            and token not in {PP_END, PP_ELIF, PP_ELSE}
+        ]
+    )
+    brace_depth = 0
+    position = None
+    for index, token in enumerate(meaningful):
+      if token == "{":
+        brace_depth += 1
+      elif token == "}" and brace_depth:
+        brace_depth -= 1
+      elif (
+          brace_depth == 0
+          and position is None
+          and (token == "enum" or token in TYPE_KEYWORDS)
+      ):
+        position = index
+    if position is None:
+      return False
+    keyword = meaningful[position]
+    opening = next(
+        (
+            index
+            for index in range(position + 1, len(meaningful))
+            if meaningful[index] == "{"
+        ),
+        None,
+    )
+    if opening is not None:
+      depth = 0
+      closing = None
+      for index in range(opening, len(meaningful)):
+        if meaningful[index] == "{":
+          depth += 1
+        elif meaningful[index] == "}":
+          depth -= 1
+          if depth == 0:
+            closing = index
+            break
+      if closing is None or meaningful[closing + 1 :]:
+        return False
+      if keyword == "enum":
+        return True
+      return any(
+          IDENTIFIER_RE.fullmatch(token) and token != "final"
+          for token in meaningful[position + 1 : opening]
+      )
+
+    tail = meaningful[position + 1 :]
+    if keyword == "enum":
+      tail = [token for token in tail if token not in {"class", "struct"}]
+      name = next(
+          (
+              index
+              for index, token in enumerate(tail)
+              if IDENTIFIER_RE.fullmatch(token)
+          ),
+          None,
+      )
+      if name is None:
+        return False
+      remainder = tail[name + 1 :]
+      return not remainder or remainder[0] == ":"
+    identifiers = [
+        token
+        for token in tail
+        if IDENTIFIER_RE.fullmatch(token) and token != "final"
+    ]
+    return len(identifiers) == 1
 
   @staticmethod
   def _is_constructor(tokens: list[str], type_name: str) -> bool:
@@ -565,8 +645,27 @@ class _ContractParser:
     }
     return right is not None and right in left
 
-  @staticmethod
+  @classmethod
   def _aggregate_bases_possible(
+      cls, tokens: list[str], type_kind: str
+  ) -> tuple[bool, list[str]]:
+    variants = cls._conditional_variants(tokens)
+    results = [
+        (cls._aggregate_base_variant_possible(value, type_kind), conditions)
+        for value, conditions in variants
+    ]
+    possible = any(result for result, _ in results)
+    breaks = sorted(
+        {
+            _normalize(conditions)
+            for result, conditions in results
+            if not result and conditions
+        }
+    )
+    return possible, breaks
+
+  @staticmethod
+  def _aggregate_base_variant_possible(
       tokens: list[str], type_kind: str
   ) -> bool:
     if ":" not in tokens:
@@ -617,6 +716,72 @@ class _ContractParser:
       if type_kind == "class" and "public" not in declarations:
         return False
     return True
+
+  @classmethod
+  def _conditional_variants(
+      cls, tokens: list[str]
+  ) -> list[tuple[list[str], list[str]]]:
+    opening = next(
+        (
+            index
+            for index, token in enumerate(tokens)
+            if token.startswith("@__tess_pp_")
+        ),
+        None,
+    )
+    if opening is None:
+      return [(tokens, [])]
+
+    branches: list[tuple[str, list[str]]] = []
+    condition = tokens[opening]
+    start = opening + 1
+    depth = 1
+    exhaustive = False
+    index = start
+    closing = None
+    while index < len(tokens):
+      token = tokens[index]
+      if token.startswith("@__tess_pp_"):
+        depth += 1
+      elif token in {PP_ELIF, PP_ELSE}:
+        if depth == 1:
+          branches.append((condition, tokens[start:index]))
+          exhaustive |= token == PP_ELSE
+          index += 1
+          if index >= len(tokens) or not tokens[index].startswith(
+              "@__tess_pp_"
+          ):
+            return [(tokens, [])]
+          condition = tokens[index]
+          start = index + 1
+        elif index + 1 < len(tokens) and tokens[index + 1].startswith(
+            "@__tess_pp_"
+        ):
+          index += 1
+      elif token == PP_END:
+        depth -= 1
+        if depth == 0:
+          branches.append((condition, tokens[start:index]))
+          closing = index
+          break
+      index += 1
+    if closing is None:
+      return [(tokens, [])]
+    if not exhaustive:
+      identity = "/".join(value for value, _ in branches)
+      fallthrough = f"@{_condition_name([], 'fallthrough', identity)}@"
+      branches.append((fallthrough, []))
+
+    prefix = tokens[:opening]
+    suffix = tokens[closing + 1 :]
+    variants: list[tuple[list[str], list[str]]] = []
+    for branch_condition, branch in branches:
+      for value, conditions in cls._conditional_variants(
+          prefix + branch + suffix
+      ):
+        path = [branch_condition] if branch_condition else []
+        variants.append((value, path + conditions))
+    return variants
 
   def _condition_prefix(self, extra: list[str] | None = None) -> str:
     conditions = list(self.conditions)

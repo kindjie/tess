@@ -112,10 +112,14 @@ def _using_callable_identity(contract: str) -> str | None:
   if "using" not in tokens or "=" in tokens or "::" not in tokens:
     return None
   position = len(tokens) - 1 - tokens[::-1].index("::")
+  suffix = tokens[position + 1 :]
+  if suffix and suffix[0] == "operator":
+    name = "operator" + "".join(suffix[1:])
+    return f"{scope}::{name}" if name != "operator" else None
   name = next(
       (
           token
-          for token in tokens[position + 1 :]
+          for token in suffix
           if re.fullmatch(r"[A-Za-z_]\w*", token)
       ),
       None,

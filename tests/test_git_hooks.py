@@ -605,6 +605,13 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert '"vcpkg_commit":' in evidence
   assert '"clang_tidy": "18"' in evidence
 
+  windows_floor = _job_body(workflow, "release-windows-floor")
+  assert "if ($null -eq $file)" in windows_floor
+  assert "Select-String" in windows_floor
+  assert "-Quiet" in windows_floor
+  assert "if (-not $versionMatches)" in windows_floor
+  assert windows_floor.count("throw ") >= 2
+
   for job in release_jobs[5:]:
     body = _job_body(workflow, job)
     assert "needs.changes.outputs.release_mode == 'true'" in body

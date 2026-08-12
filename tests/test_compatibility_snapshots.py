@@ -347,6 +347,60 @@ def test_existing_callable_cannot_gain_base_overloads_through_using(tmp_path):
   ), failures
 
 
+def test_existing_operator_cannot_gain_base_overloads_through_using(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableSymbol {",
+      "struct StableBase {\n  int operator+(double value);\n};\n"
+      "struct StableSymbol : StableBase {\n  int operator+(int value);",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "struct StableSymbol : StableBase {",
+          "struct StableSymbol : StableBase {\n"
+          "  using StableBase::operator+;",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "operator +" in failure
+      for failure in failures
+  ), failures
+
+
+def test_imported_operator_identities_match_callable_identities():
+  declarations = {
+      "member tess::S:using B :: operator +": "tess::S::operator+",
+      "member tess::S:using B :: operator ( )": "tess::S::operator()",
+      "member tess::S:using B :: operator [ ]": "tess::S::operator[]",
+      "member tess::S:using B :: operator bool": "tess::S::operatorbool",
+  }
+
+  for declaration, identity in declarations.items():
+    assert snapshots._using_callable_identity(declaration) == identity
+
+
 def test_attributed_callable_cannot_gain_an_ambiguous_overload(tmp_path):
   header_path, payload = make_repo(tmp_path)
   header = tmp_path / "include/tess/tess.h"
@@ -941,7 +995,167 @@ def test_conditionally_aggregate_type_cannot_lose_remaining_configuration(
         "aggregate compatibility changed" in failure
         and "StableOptions" in failure
         for failure in failures
+  ), failures
+
+
+def test_conditionally_nonaggregate_base_cannot_hide_constructor_addition(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct StableBase {};\nstruct StableOptions\n"
+      "#if TESS_NONAGGREGATE_BASE\n"
+      ": private StableBase\n"
+      "#endif\n{",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "{\n  int max_steps", "{\n  StableOptions();\n  int max_steps"
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      (
+          "API declaration changed or removed" in failure
+          or "aggregate compatibility changed" in failure
+      )
+      and "aggregate tess::StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
+def test_conditional_base_aggregate_availability_tracks_all_branches():
+  partly_aggregate = extract_api_contract(
+      """struct Base {};
+struct Sometimes
+#if TESS_PRIVATE_BASE
+  : private Base
+#else
+  : public Base
+#endif
+{ int value; };
+"""
+  )
+  never_aggregate = extract_api_contract(
+      """struct Base {};
+struct Never
+#if TESS_PRIVATE_BASE
+  : private Base
+#else
+  : virtual Base
+#endif
+{ int value; };
+"""
+  )
+
+  assert "aggregate Sometimes" in partly_aggregate
+  assert any(
+      item.startswith("aggregate-break Sometimes:")
+      for item in partly_aggregate
+  )
+  assert "aggregate Never" not in never_aggregate
+
+
+def test_constructor_in_already_nonaggregate_base_branch_is_compatible(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct StableBase {};\nstruct StableOptions\n"
+      "#if TESS_NONAGGREGATE_BASE\n"
+      ": private StableBase\n"
+      "#endif\n{",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "{\n  int max_steps",
+          "{\n#if TESS_NONAGGREGATE_BASE\n"
+          "  StableOptions();\n#endif\n  int max_steps",
+      ),
+      encoding="utf-8",
+  )
+
+  assert snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  ) == []
+
+
+def test_private_anonymous_type_objects_break_aggregate_compatibility(
+    tmp_path,
+):
+  additions = (
+      " private:\n  union { int integer; double real; };\n public:\n",
+      " private:\n  struct { int value; } state;\n public:\n",
+  )
+  for index, addition in enumerate(additions):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    snapshot_root = write_snapshot(repo, payload)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {\n",
+        "struct StableOptions {\n" + addition,
+    )
+    header.write_text(text, encoding="utf-8")
+
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        (
+            "API declaration changed or removed" in failure
+            or "aggregate compatibility changed" in failure
+        )
+        and "aggregate tess::StableOptions" in failure
+        for failure in failures
     ), failures
+
+
+def test_private_nested_type_without_an_object_preserves_aggregate():
+  contract = extract_api_contract(
+      "struct Stable { private: struct Nested { int value; }; "
+      "public: int value; };"
+  )
+
+  assert "aggregate Stable" in contract
 
 
 def test_conditional_enums_and_enumerators_retain_branch_identity(tmp_path):

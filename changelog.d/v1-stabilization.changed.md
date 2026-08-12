@@ -11,11 +11,13 @@
   even empty nested dispatches fail fast. Released snapshot directories are
   append-only, constructor and data-member detection covers parenthesized
   specifiers, pre/post-name annotation macros, destructor identity, and
-  parameter-type spellings; conditional aggregate availability, attributed and
-  base-imported overloads, and stable
+  parameter-type spellings and anonymous type objects; conditional member and
+  base-clause aggregate availability, attributed and base-imported named or
+  operator overloads, and stable
   macro redefinitions/undefinitions cannot evade compatibility checks, future
   unmerged tags do not constrain maintenance
   branches, release evidence retains checksummed actual-version job logs,
-  release package checks use C++20 without an unavailable compiler launcher, and
+  release package checks use C++20 without an unavailable compiler launcher,
+  the MSVC 19.44 floor check fails closed, and
   `DeltaCollector` self-moves and repeated moves invalidate or poison borrowed
   frames fail-closed.

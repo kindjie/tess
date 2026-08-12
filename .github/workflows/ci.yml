@@ -1416,8 +1416,14 @@ jobs:
         run: |
           $file = Get-ChildItem build/windows-msvc/CMakeFiles -Recurse `
             -Filter CMakeCXXCompiler.cmake | Select-Object -First 1
-          Select-String -Path $file.FullName `
+          if ($null -eq $file) {
+            throw 'CMake C++ compiler metadata was not generated'
+          }
+          $versionMatches = Select-String -Path $file.FullName -Quiet `
             -Pattern 'CMAKE_CXX_COMPILER_VERSION "19\.44\.'
+          if (-not $versionMatches) {
+            throw 'Expected the MSVC 19.44 compiler floor'
+          }
 
       - name: Build and run full floor suite
         run: |
