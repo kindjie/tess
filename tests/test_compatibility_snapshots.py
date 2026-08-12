@@ -734,12 +734,119 @@ def test_bare_relational_dependent_inherited_constructor_uses_derived_identity(
   ), failures
 
 
-def test_template_argument_name_does_not_fake_inherited_constructor():
-  contract = extract_api_contract(
-      "struct Stable { using Base<::Argument>::Argument; int value; };"
+def test_qualified_relational_inherited_constructor_uses_derived_identity(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct StableBound { static constexpr int value = 0; };\n"
+      "namespace qualified {\n"
+      "template < bool Enabled > struct StableBase {\n"
+      "  StableBase(double value);\n"
+      "};\n"
+      "}\n"
+      "struct StableOptions\n"
+      "  : qualified::StableBase<StableBound::value < 1> {\n"
+      "  StableOptions(int value);",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  StableOptions(int value);",
+          "  using qualified::StableBase<StableBound::value < 1>"
+          "::StableBase;\n"
+          "  StableOptions(int value);",
+      ),
+      encoding="utf-8",
   )
 
-  assert "aggregate Stable" in contract
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "StableBase" in failure
+      for failure in failures
+  ), failures
+
+
+def test_namespace_name_does_not_fake_inherited_constructor(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "namespace evaluate {\n"
+      "template < bool Enabled > struct StableBase {\n"
+      "  void evaluate(double value);\n"
+      "};\n"
+      "}\n"
+      "struct StableOptions : evaluate::StableBase<true> {\n"
+      "  void evaluate(int value);\n"
+      " private:\n"
+      "  int hidden = 0;\n"
+      " public:",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          " public:\n  int max_steps",
+          " public:\n  using evaluate::StableBase<true>::evaluate;\n"
+          "  int max_steps",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "evaluate" in failure
+      for failure in failures
+  ), failures
+
+
+def test_template_argument_name_does_not_fake_inherited_constructor():
+  declarations = (
+      "using Base<::Argument>::Argument;",
+      "using Base<Other::Argument<int>>::Argument;",
+  )
+  for declaration in declarations:
+    contract = extract_api_contract(
+        f"struct Stable {{ {declaration} int value; }};"
+    )
+
+    assert "aggregate Stable" in contract
 
 
 def test_relational_template_expressions_preserve_callable_identity(tmp_path):
@@ -970,6 +1077,52 @@ def test_named_functions_are_not_mistaken_for_parenthesized_objects():
       item.startswith("member Stable:") and "route" in item
       for item in contract
   )
+
+
+def test_grouped_function_declarator_retains_callable_identity(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct StableOptions {\n  int (evaluate)(int value);",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int (evaluate)(int value);",
+          "  int (evaluate)(int value);\n"
+          "  int evaluate(double value);",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "evaluate" in failure
+      for failure in failures
+  ), failures
+
+  header.write_text(
+      text.replace(
+          "  int (evaluate)(int value);",
+          "  int (evaluate)(int value);\n  int distinct(double value);",
+      ),
+      encoding="utf-8",
+  )
+
+  assert snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  ) == []
 
 
 def test_requires_expression_body_is_part_of_callable_contract(tmp_path):

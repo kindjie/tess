@@ -18,8 +18,9 @@
   elaborated parameter types, including unparenthesized relations,
   parameterless requirements, dependent bases, and annotated types; stable
   nested calls (including trailing template arguments), trailing constraints,
-  cv-qualified parenthesized pointer/reference/array data, and relational
-  dependent-base arguments retain the correct identity;
+  cv-qualified parenthesized pointer/reference/array data, grouped function
+  declarators, and qualified relational dependent-base arguments retain the
+  correct identity without confusing namespace-named imported members;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

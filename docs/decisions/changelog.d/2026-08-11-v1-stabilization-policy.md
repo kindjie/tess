@@ -73,7 +73,9 @@
   calls inside trailing return or constraint template arguments cannot steal
   that identity, and grouped or bare relational expressions in dependent bases
   do not hide inherited constructors. Parenthesized objects remain data when
-  cv or storage specifiers follow their type.
+  cv or storage specifiers follow their type. Grouped function declarators
+  retain the grouped name, while qualified base components—not namespace or
+  template-argument names—identify inherited constructors.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

@@ -13,7 +13,7 @@ from api_contract import (
     _tokens,
     callable_name,
     current_api_contract,
-    qualified_terminal,
+    qualified_declares_type_name,
 )
 from check_public_surface import extract_public_symbols, strip_comments
 from header_manifest import GENERATED_HEADER_SOURCES, load_header_manifest
@@ -135,12 +135,7 @@ def _using_callable_identity(contract: str) -> str | None:
     return None
   owner = scope.rsplit("::", 1)[-1]
   qualifier = tokens[tokens.index("using") + 1 : position]
-  base = qualified_terminal(qualifier)
-  leading = next(
-      (token for token in qualifier if re.fullmatch(r"[A-Za-z_]\w*", token)),
-      None,
-  )
-  inherited = name == base or name == leading
+  inherited = qualified_declares_type_name(qualifier, name)
   return f"{scope}::{owner if inherited else name}"
 
 

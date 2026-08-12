@@ -177,42 +177,28 @@ def callable_name(declaration: str | list[str]) -> str | None:
   return f"~{name}" if position > 0 and prefix[position - 1] == "~" else name
 
 
-def qualified_terminal(tokens: list[str]) -> str | None:
-  """Return the final qualified component, excluding template arguments."""
-  angle_depth = 0
-  round_depth = 0
-  square_depth = 0
-  brace_depth = 0
-  for token in reversed(tokens):
-    if token == ")":
-      round_depth += 1
-    elif token == "(" and round_depth:
-      round_depth -= 1
-    elif token in {"]", "]]"}:
-      square_depth += 1
-    elif token in {"[", "[["} and square_depth:
-      square_depth -= 1
-    elif token == "}":
-      brace_depth += 1
-    elif token == "{" and brace_depth:
-      brace_depth -= 1
-    elif token == ">" and not (round_depth or square_depth or brace_depth):
-      angle_depth += 1
-    elif token == ">>" and not (round_depth or square_depth or brace_depth):
-      angle_depth += 2
-    elif (
-        token == "<"
-        and angle_depth
-        and not (round_depth or square_depth or brace_depth)
-    ):
-      angle_depth -= 1
-    elif (
-        angle_depth == 0
-        and not (round_depth or square_depth or brace_depth)
-        and IDENTIFIER_RE.fullmatch(token)
-    ):
-      return token
-  return None
+def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
+  """Return whether a qualified type-id's terminal component is ``name``."""
+  if tokens and tokens[-1] == name:
+    return True
+  for index, token in enumerate(tokens[:-1]):
+    if token != name or tokens[index + 1] != "<":
+      continue
+    earlier_less = max(
+        (position for position in range(index) if tokens[position] == "<"),
+        default=-1,
+    )
+    earlier_close = max(
+        (
+            position
+            for position in range(index)
+            if tokens[position] in {">", ">>"}
+        ),
+        default=-1,
+    )
+    if earlier_less < 0 or earlier_close > earlier_less:
+      return True
+  return False
 
 
 def _is_parenthesized_specifier(token: str) -> bool:
@@ -718,15 +704,9 @@ class _ContractParser:
         ),
         None,
     )
-    leading = next(
-        (token for token in tokens[1:separator]
-         if IDENTIFIER_RE.fullmatch(token)),
-        None,
+    return right is not None and qualified_declares_type_name(
+        tokens[1:separator], right
     )
-    if right is not None and right == leading:
-      return True
-    left = qualified_terminal(tokens[1:separator])
-    return right is not None and right == left
 
   @classmethod
   def _aggregate_bases_possible(
@@ -1067,6 +1047,9 @@ class _ContractParser:
   ) -> bool:
     if name is None or opening == 0:
       return False
+    grouped = _ContractParser._grouped_declarator_name(tokens, opening)
+    if grouped is not None:
+      return grouped == name
     plain_name = name.removeprefix("~")
     if tokens[opening - 1] != plain_name:
       return False
@@ -1078,6 +1061,40 @@ class _ContractParser:
     if not prefix or prefix[-1] == "::":
       return False
     return any(token not in DECLARATION_SPECIFIERS for token in prefix)
+
+  @staticmethod
+  def _grouped_declarator_name(
+      tokens: list[str], parameter_opening: int
+  ) -> str | None:
+    if parameter_opening == 0 or tokens[parameter_opening - 1] != ")":
+      return None
+    depth = 0
+    grouping = None
+    for index in range(parameter_opening - 1, -1, -1):
+      if tokens[index] == ")":
+        depth += 1
+      elif tokens[index] == "(":
+        depth -= 1
+        if depth == 0:
+          grouping = index
+          break
+    if grouping is None:
+      return None
+    declarator = tokens[grouping + 1 : parameter_opening - 1]
+    while (
+        len(declarator) >= 2
+        and declarator[0] == "("
+        and _ContractParser._matching_round_bracket(declarator, 0)
+        == len(declarator) - 1
+    ):
+      declarator = declarator[1:-1]
+    if len(declarator) != 1:
+      return None
+    return (
+        declarator[0]
+        if IDENTIFIER_RE.fullmatch(declarator[0])
+        else None
+    )
 
   @staticmethod
   def _is_parenthesized_object_declarator(
@@ -1155,18 +1172,31 @@ class _ContractParser:
       opening = _ContractParser._first_top_level_round(tokens, start)
       if opening is None:
         return _ContractParser._fallback_function_opening(tokens, start)
+      closing = _ContractParser._matching_round_bracket(tokens, opening)
+      if closing is None:
+        return None
+      grouped_name = tokens[opening + 1 : closing]
+      while (
+          len(grouped_name) >= 2
+          and grouped_name[0] == "("
+          and _ContractParser._matching_round_bracket(grouped_name, 0)
+          == len(grouped_name) - 1
+      ):
+        grouped_name = grouped_name[1:-1]
+      if (
+          len(grouped_name) == 1
+          and IDENTIFIER_RE.fullmatch(grouped_name[0])
+          and closing + 1 < len(tokens)
+          and tokens[closing + 1] == "("
+          and (opening == 0 or not tokens[opening - 1].startswith("TESS_"))
+      ):
+        return closing + 1
       previous = tokens[opening - 1] if opening else ""
       if previous.startswith("TESS_"):
-        closing = _ContractParser._matching_round_bracket(tokens, opening)
-        if closing is None:
-          return None
         if _ContractParser._first_top_level_round(tokens, closing + 1) is None:
           return opening
       elif previous not in PARENTHESIZED_SPECIFIERS:
         return opening
-      closing = _ContractParser._matching_round_bracket(tokens, opening)
-      if closing is None:
-        return None
       start = closing + 1
     return None
 
