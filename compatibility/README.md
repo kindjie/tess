@@ -19,6 +19,8 @@ every prior header in its original compatibility class, every direct aggregate
 member, public symbol, and normalized declaration contract. Declaration
 contracts retain function signatures and defaults, public members, enum
 values, aliases, concepts, constants, and configuration macro definitions.
+Existing types cannot gain public data members, and direct aggregate imports
+must remain uncommented and unconditional.
 The checker also confines every recorded path to its snapshot, verifies fixture
 metadata, and compares every earlier snapshot byte-for-byte with its
 `v<version>` release tag. Normal CI fetches those tags and runs the source

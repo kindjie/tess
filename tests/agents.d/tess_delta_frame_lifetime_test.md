@@ -9,7 +9,10 @@
   asserts all four special-member traits, that a moved-from collector's
   next publish is forced truncated so its consumer resyncs, that the move
   destination is NOT poisoned, and that assigning a fresh collector clears
-  the poison.
+  the poison. Injected failures into move construction and assignment prove
+  invalidation and moved-from poisoning precede the only throwing allocation,
+  so a failed move cannot leave a live frame pointing into transferred
+  storage.
   Death tests prove publication, reserve, move, and collector destruction
   invalidate every frame accessor before it can expose stale storage.
   `header` remains a value member and intentionally survives invalidation.

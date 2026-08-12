@@ -251,7 +251,15 @@ class _ContractParser:
     normalized = _normalize(declaration)
     scope = _qualified(names)
     if scope_kind in TYPE_KEYWORDS:
-      category = "member"
+      additive_member = (
+          self._is_function(declaration)
+          or "using" in declaration
+          or "typedef" in declaration
+          or "friend" in declaration
+          or "static" in declaration
+          or "concept" in declaration
+      )
+      category = "member" if additive_member else "data-member"
     elif self._is_function(tokens):
       category = "function"
     else:

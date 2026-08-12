@@ -6,6 +6,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "allocation_counter.h"
+
 // The DeltaFrame lifetime contract, pinned rather than merely stated.
 //
 // Its comment claimed a frame was valid "until the next mutating call on
@@ -155,6 +157,63 @@ TEST(TessDeltaFrameDeathTest, MoveInvalidatesPublishedView) {
   auto destination = std::move(source);
   EXPECT_DEATH(static_cast<void>(frame.entities()), kStaleFrameDeathMessage);
   static_cast<void>(destination);
+}
+
+TEST(TessDeltaFrameDeathTest,
+     FailedMoveConstructionCannotLeaveADanglingLiveView) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocation failure injection is unavailable";
+  }
+
+  tess::DeltaCollector source;
+  source.reserve(1, 1, 1);
+  const auto frame = source.publish();
+  bool threw = false;
+  {
+    const tess_test::ScopedAllocationFailure failure{0};
+    try {
+      auto destination = std::move(source);
+      static_cast<void>(destination);
+    } catch (const std::bad_alloc&) {
+      threw = true;
+    }
+    EXPECT_EQ(failure.attempts(), 1u);
+  }
+  ASSERT_TRUE(threw);
+
+  // The move contract chooses fail-closed invalidation before allocating:
+  // validation must never succeed after transferred storage is destroyed.
+  EXPECT_DEATH(static_cast<void>(frame.entities()), kStaleFrameDeathMessage);
+}
+
+TEST(TessDeltaFrameDeathTest,
+     FailedMoveAssignmentInvalidatesBothPublishedViews) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocation failure injection is unavailable";
+  }
+
+  tess::DeltaCollector source;
+  source.reserve(1, 1, 1);
+  const auto source_frame = source.publish();
+  tess::DeltaCollector destination;
+  destination.reserve(1, 1, 1);
+  const auto destination_frame = destination.publish();
+  bool threw = false;
+  {
+    const tess_test::ScopedAllocationFailure failure{0};
+    try {
+      destination = std::move(source);
+    } catch (const std::bad_alloc&) {
+      threw = true;
+    }
+    EXPECT_EQ(failure.attempts(), 1u);
+  }
+  ASSERT_TRUE(threw);
+
+  EXPECT_DEATH(static_cast<void>(source_frame.entities()),
+               kStaleFrameDeathMessage);
+  EXPECT_DEATH(static_cast<void>(destination_frame.entities()),
+               kStaleFrameDeathMessage);
 }
 
 TEST(TessDeltaFrameDeathTest, DestructionInvalidatesPublishedView) {

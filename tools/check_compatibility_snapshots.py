@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from api_contract import current_api_contract
-from check_public_surface import extract_public_symbols
+from check_public_surface import extract_public_symbols, strip_comments
 from header_manifest import GENERATED_HEADER_SOURCES, load_header_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +23,12 @@ AGGREGATES = (
     "include/tess/tess.h",
 )
 INCLUDE_RE = re.compile(r"^\s*#\s*include\s*<([^>]+)>", re.MULTILINE)
+CONDITIONAL_RE = re.compile(
+    r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b"
+)
+CONTRACT_SCOPE_RE = re.compile(
+    r"^(?:type|data-member) (.+?)(?<!:):(?!:)"
+)
 VERSION_RE = re.compile(
     r'^set\(TESS_VERSION\s+"?([^"\s)]+)"?\)', re.MULTILINE
 )
@@ -48,12 +54,35 @@ def aggregate_membership(repo_root: Path) -> dict[str, list[str]]:
   result: dict[str, list[str]] = {}
   for aggregate in AGGREGATES:
     text = (repo_root / aggregate).read_text(encoding="utf-8")
-    result[aggregate] = sorted(
-        f"include/{header}"
-        for header in INCLUDE_RE.findall(text)
-        if header.startswith("tess/")
-    )
+    headers: list[str] = []
+    conditional_depth = 0
+    in_block_comment = False
+    for raw_line in text.splitlines():
+      line, in_block_comment = strip_comments(
+          raw_line, in_block_comment
+      )
+      directive = CONDITIONAL_RE.match(line)
+      if directive is not None:
+        kind = directive.group(1)
+        if kind in {"if", "ifdef", "ifndef"}:
+          conditional_depth += 1
+        elif kind == "endif" and conditional_depth:
+          conditional_depth -= 1
+        continue
+      include = INCLUDE_RE.match(line)
+      if (
+          conditional_depth == 0
+          and include is not None
+          and include.group(1).startswith("tess/")
+      ):
+        headers.append(f"include/{include.group(1)}")
+    result[aggregate] = sorted(headers)
   return result
+
+
+def _contract_scope(contract: str) -> str | None:
+  match = CONTRACT_SCOPE_RE.match(contract)
+  return match.group(1) if match is not None else None
 
 
 def current_symbols(repo_root: Path, headers: list[str]) -> set[str]:
@@ -431,11 +460,27 @@ def check_snapshots(
           )
           continue
         current_declarations = set(api_contract.get(header, []))
-        for missing in sorted(set(declarations) - current_declarations):
+        snapshot_declarations = set(declarations)
+        for missing in sorted(snapshot_declarations - current_declarations):
           failures.append(
               f"{directory.name}: API declaration changed or removed: "
               f"{header}: {missing}"
           )
+        snapshot_types = {
+            scope
+            for declaration in snapshot_declarations
+            if declaration.startswith("type ")
+            if (scope := _contract_scope(declaration)) is not None
+        }
+        for addition in sorted(
+            current_declarations - snapshot_declarations
+        ):
+          owner = _contract_scope(addition)
+          if addition.startswith("data-member ") and owner in snapshot_types:
+            failures.append(
+                f"{directory.name}: public data member added to existing "
+                f"type: {header}: {addition}"
+            )
 
     consumer, consumer_status = _snapshot_path(
         directory, payload.get("consumer"), "file"

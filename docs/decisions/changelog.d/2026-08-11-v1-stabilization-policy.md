@@ -39,3 +39,7 @@
   checked on ordinary changes. Their named consumer targets discover and link
   the candidate installation through supported CMake package entry points,
   and release CI builds and runs each named test explicitly.
+- Direct aggregate imports remain unconditional, and existing stable types
+  cannot gain public data members because that would break structured-binding
+  consumers. Prerelease package configs export numeric, prerelease, and full
+  version metadata even though discovery must be unversioned.

@@ -6,4 +6,6 @@
   complete fetch/checkout sequence and scrubs inherited `GIT_DIR`-family
   state. Incompatible options fail before an inherited compiler launcher is
   needed. The `consumer` preset remains consumer-shaped rather than inheriting
-  development facilities.
+  development facilities. A temporary real `1.0.0-rc.1` install proves
+  unversioned discovery exports numeric, prerelease, and full-string metadata
+  to the tracked consumer.

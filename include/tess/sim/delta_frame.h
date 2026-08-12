@@ -749,27 +749,6 @@ class DeltaCollector {
     coalesce_slots_[hole] = CoalesceSlot{};
   }
 
-  DeltaCollectorOptions options_{};
-  RenderVersion version_{1};  // 0 is reserved for fresh consumers
-  std::vector<TileChunkDelta> pending_chunks_;
-  std::vector<TileChunkDelta> published_chunks_;
-  std::vector<TileDelta> pending_tiles_;
-  std::vector<TileDelta> published_tiles_;
-  std::vector<EntityDelta> pending_entities_;
-  std::vector<EntityDelta> published_entities_;
-  std::vector<PathOverlayDelta> pending_overlays_;
-  std::vector<PathOverlayDelta> published_overlays_;
-  std::vector<Coord3> pending_overlay_nodes_;
-  std::vector<Coord3> published_overlay_nodes_;
-  std::vector<CoalesceSlot> coalesce_slots_;
-  std::uint32_t pending_dirty_mask_ = 0;
-  std::uint64_t current_tick_ = 0;
-  std::uint64_t pending_first_tick_ = 0;
-  std::uint64_t pending_last_tick_ = 0;
-  std::uint32_t pending_ticks_ = 0;
-  bool pending_truncated_ = false;
-  bool baseline_pending_ = false;
-  bool needs_baseline_ = false;
   // Poisons the SOURCE of a move, so a moved-from collector's next publish
   // is forced truncated and its consumer resyncs rather than silently
   // accepting an applicable empty frame on a chain that still looks
@@ -816,9 +795,10 @@ class DeltaCollector {
 
     // NOLINTNEXTLINE(performance-noexcept-move-constructor)
     FrameGeneration(FrameGeneration&& other)
-        : state{std::make_shared<std::atomic<std::uint64_t>>(1)} {
-      other.invalidate();
-    }
+        : state{[&other] {
+            other.invalidate();
+            return std::make_shared<std::atomic<std::uint64_t>>(1);
+          }()} {}
 
     // NOLINTNEXTLINE(performance-noexcept-move-constructor)
     auto operator=(FrameGeneration&& other) -> FrameGeneration& {
@@ -838,8 +818,34 @@ class DeltaCollector {
       return state->load(std::memory_order_relaxed);
     }
   };
-  FrameGeneration frame_generation_{};
+
+  // These two sentinels must move before any owned span storage. They poison
+  // and invalidate the source before FrameGeneration's replacement-state
+  // allocation can throw, so exceptional move construction cannot destroy
+  // transferred vectors while leaving an old frame generation live.
   MovedFromFlag moved_from_{};
+  FrameGeneration frame_generation_{};
+  DeltaCollectorOptions options_{};
+  RenderVersion version_{1};  // 0 is reserved for fresh consumers
+  std::vector<TileChunkDelta> pending_chunks_;
+  std::vector<TileChunkDelta> published_chunks_;
+  std::vector<TileDelta> pending_tiles_;
+  std::vector<TileDelta> published_tiles_;
+  std::vector<EntityDelta> pending_entities_;
+  std::vector<EntityDelta> published_entities_;
+  std::vector<PathOverlayDelta> pending_overlays_;
+  std::vector<PathOverlayDelta> published_overlays_;
+  std::vector<Coord3> pending_overlay_nodes_;
+  std::vector<Coord3> published_overlay_nodes_;
+  std::vector<CoalesceSlot> coalesce_slots_;
+  std::uint32_t pending_dirty_mask_ = 0;
+  std::uint64_t current_tick_ = 0;
+  std::uint64_t pending_first_tick_ = 0;
+  std::uint64_t pending_last_tick_ = 0;
+  std::uint32_t pending_ticks_ = 0;
+  bool pending_truncated_ = false;
+  bool baseline_pending_ = false;
+  bool needs_baseline_ = false;
   DeltaCollectorStats stats_{};
 };
 

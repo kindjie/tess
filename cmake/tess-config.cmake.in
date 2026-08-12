@@ -1,5 +1,9 @@
 @PACKAGE_INIT@
 
+set(tess_VERSION "@TESS_VERSION@")
+set(tess_VERSION_PRERELEASE "@TESS_VERSION_PRERELEASE@")
+set(tess_VERSION_STRING "@TESS_VERSION_STRING@")
+
 include("${CMAKE_CURRENT_LIST_DIR}/tess-targets.cmake")
 
 check_required_components(tess)

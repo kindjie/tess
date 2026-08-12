@@ -23,6 +23,10 @@ Within the 1.x release line, tess preserves source compatibility for:
 - archive format v1, including loading fixtures produced by earlier 1.x
   releases.
 
+Direct aggregate membership remains unconditional. Public data-member sets on
+existing stable types also remain fixed, so adding a field cannot break an
+existing structured binding; additive state uses a new type or entry point.
+
 `cmake/tess-headers.json` is the machine-readable source of truth for header
 stability. Every installed header has exactly one classification:
 

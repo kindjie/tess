@@ -195,7 +195,11 @@ tess_apply_project_options(tess_dangling_observer_test)
 
 tess_discover_tests(tess_dangling_observer_test LABELS block core ops storage)
 
-add_executable(tess_delta_frame_lifetime_test tess_delta_frame_lifetime_test.cc)
+add_executable(
+  tess_delta_frame_lifetime_test
+  allocation_counter.cc
+  tess_delta_frame_lifetime_test.cc
+)
 target_link_libraries(
   tess_delta_frame_lifetime_test
   PRIVATE tess::tess GTest::gtest_main
@@ -206,6 +210,7 @@ tess_discover_tests(tess_delta_frame_lifetime_test LABELS core sim storage)
 
 add_executable(
   tess_delta_frame_lifetime_ndebug_test
+  allocation_counter.cc
   tess_delta_frame_lifetime_test.cc
 )
 target_link_libraries(

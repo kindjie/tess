@@ -132,7 +132,7 @@ def test_removed_contract_and_fixture_fail_deterministically(tmp_path):
   )
   payload["public_symbols"].append("RemovedSymbol")
   payload["api_contract"]["include/tess/tess.h"].append(
-      "member tess::StableSymbol::removed_member:int"
+      "data-member tess::StableSymbol::removed_member:int"
   )
   snapshot_root = write_snapshot(tmp_path, payload)
   (snapshot_root / "1.0.0-rc.1/archives/one.bin").unlink()
@@ -149,7 +149,7 @@ def test_removed_contract_and_fixture_fail_deterministically(tmp_path):
       "1.0.0-rc.1: public symbol removed: RemovedSymbol",
       "1.0.0-rc.1: api_contract for include/tess/removed.h is missing",
       "1.0.0-rc.1: API declaration changed or removed: "
-      "include/tess/tess.h: member "
+      "include/tess/tess.h: data-member "
       "tess::StableSymbol::removed_member:int",
       "1.0.0-rc.1: invalid or missing archive fixture metadata",
   ]
@@ -200,6 +200,77 @@ def test_api_contract_catches_source_incompatible_declaration_changes(
         for failure in failures
     ), failures
     header.write_text(original, encoding="utf-8")
+
+
+def test_existing_public_type_cannot_gain_a_data_member(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "  int max_entries = 4;",
+      "  int max_entries = 4;\n  int additive_field = 0;",
+  )
+  header.write_text(text, encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "public data member added to existing type" in failure
+      and "additive_field" in failure
+      for failure in failures
+  ), failures
+
+
+def test_existing_public_type_can_gain_methods_aliases_and_static_data(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "  int max_entries = 4;",
+      """  int max_entries = 4;
+  using AddedAlias = int;
+  static constexpr int added_constant = 1;
+  void additive_method() const;""",
+  )
+  header.write_text(text, encoding="utf-8")
+
+  assert snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  ) == []
+
+
+def test_aggregate_membership_rejects_disabled_or_commented_include(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  aggregate = tmp_path / "include/tess/tess.h"
+  original = aggregate.read_text(encoding="utf-8").replace(
+      "#pragma once", "#pragma once\n#include <tess/pathfinding.h>"
+  )
+  aggregate.write_text(original, encoding="utf-8")
+  payload["aggregate_membership"] = snapshots.aggregate_membership(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+
+  for replacement in (
+      "#if 0\n#include <tess/pathfinding.h>\n#endif",
+      "/* #include <tess/pathfinding.h> */",
+  ):
+    aggregate.write_text(
+        original.replace(
+            "#include <tess/pathfinding.h>", replacement
+        ),
+        encoding="utf-8",
+    )
+    failures = snapshots.check_snapshots(
+        tmp_path, snapshot_root, header_path, "1.1.1"
+    )
+    assert any(
+        "aggregate member removed from include/tess/tess.h" in failure
+        and "include/tess/pathfinding.h" in failure
+        for failure in failures
+    ), failures
 
 
 def test_released_snapshot_must_match_its_release_tag(tmp_path):
