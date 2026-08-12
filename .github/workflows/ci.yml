@@ -1515,6 +1515,8 @@ jobs:
     if: ${{ needs.changes.outputs.release_mode == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ""
     steps:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1564,7 +1566,7 @@ jobs:
       - name: Create Conan package and run consumer
         run: |
           conan profile detect --force
-          conan create . --build=missing
+          conan create . --build=missing -s compiler.cppstd=20
 
   release-compatibility:
     name: Release Compatibility Snapshots

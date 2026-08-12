@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 import check_compatibility_snapshots as snapshots  # noqa: E402
+from api_contract import extract_api_contract  # noqa: E402
 
 
 def make_repo(root: Path) -> tuple[Path, dict[str, object]]:
@@ -421,6 +422,52 @@ struct StableOptions : StableBase {""",
   ), failures
 
 
+def test_template_aggregate_cannot_inherit_dependent_constructors(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      """template <class T>
+struct StableBase {
+  explicit StableBase(T value);
+};
+template <class T>
+struct StableOptions : StableBase<T> {""",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "struct StableOptions : StableBase<T> {",
+          "struct StableOptions : StableBase<T> {\n"
+          "  using StableBase<T>::StableBase;",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "aggregate compatibility changed" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
 def test_conditional_class_additions_keep_the_enclosing_scope(tmp_path):
   header_path, payload = make_repo(tmp_path)
   snapshot_root = write_snapshot(tmp_path, payload)
@@ -497,6 +544,46 @@ def test_conditional_access_labels_retain_branch_identity(tmp_path):
   ), failures
 
 
+def test_conditional_public_aggregate_cannot_gain_constructor(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {\n  int max_steps = 1;",
+      """class StableOptions {
+#if TESS_PUBLIC_OPTIONS
+ public:
+#endif
+  int max_steps = 1;""",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          """#if TESS_PUBLIC_OPTIONS
+  StableOptions() = default;
+#endif
+  int max_steps = 1;""",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "aggregate compatibility changed" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
 def test_conditional_enums_and_enumerators_retain_branch_identity(tmp_path):
   header_path, payload = make_repo(tmp_path)
   header = tmp_path / "include/tess/tess.h"
@@ -548,6 +635,36 @@ def test_conditional_enums_and_enumerators_retain_branch_identity(tmp_path):
         and "StableMode" in failure
         for failure in failures
     ), failures
+
+
+def test_conditional_enum_else_branches_keep_exact_members_and_ordinals():
+  contract = extract_api_contract(
+      """enum class StableMode {
+  First,
+#if TESS_SECOND
+  Second,
+#else
+  Alternative,
+#endif
+  Last
+};
+enum class CommaAfter {
+#if TESS_LEFT
+  Left
+#else
+  Right
+#endif
+  , Last
+};
+"""
+  )
+
+  last = next(item for item in contract if "StableMode::Last:" in item)
+  comma_last = next(item for item in contract if "CommaAfter::Last:" in item)
+  assert last.endswith("Last @index 2")
+  assert comma_last.endswith("Last @index 1")
+  assert any("CommaAfter::Left:" in item for item in contract)
+  assert any("CommaAfter::Right:" in item for item in contract)
 
 
 def test_implicit_enum_values_are_append_only(tmp_path):

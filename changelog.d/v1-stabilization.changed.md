@@ -6,7 +6,8 @@
   Compatibility snapshots must exactly match a new release before becoming
   immutable and preserve aggregate status (including public-base aggregates),
   inherited-constructor absence, fixed public fields, conditional declarations
-  and access, append-only enumerators, and existing overload sets. Worker-pool
-  dispatch ownership now covers plan-ordered result selection, and
-  `DeltaCollector` self-moves and repeated moves invalidate or poison borrowed
-  frames fail-closed.
+  and access, branch-aware append-only enumerators, and existing overload sets.
+  Worker-pool dispatch ownership now covers plan-ordered result selection;
+  release package checks use C++20 without an unavailable compiler launcher;
+  and `DeltaCollector` self-moves and repeated moves invalidate or poison
+  borrowed frames fail-closed.

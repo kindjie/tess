@@ -9,3 +9,5 @@
   tree. The hook-backstop invocation is matched to the `tests/test_*.py` glob
   in both directions, so a new suite cannot disappear from CI's enumerated
   command.
+- Release-package workflow coverage pins an empty CMake compiler launcher on
+  the ccache-free image and requires Conan creation in C++20 mode.

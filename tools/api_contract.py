@@ -21,7 +21,8 @@ TYPE_KEYWORDS = frozenset({"class", "struct", "union"})
 ACCESS = frozenset({"public", "protected", "private"})
 SKIPPED_NAMESPACES = frozenset({"detail", "internal"})
 PP_END = "@tess_pp_end@"
-PP_BRANCH = "@tess_pp_branch@"
+PP_ELIF = "@tess_pp_elif@"
+PP_ELSE = "@tess_pp_else@"
 
 
 def _tokens(text: str) -> list[str]:
@@ -117,7 +118,7 @@ def _code_tokens(text: str) -> list[str]:
           conditions.append(name)
           clean.append(f"@{name}@")
         elif kind in {"elif", "else"} and conditions:
-          clean.append(PP_BRANCH)
+          clean.append(PP_ELSE if kind == "else" else PP_ELIF)
           name = _condition_name(conditions, kind, value)
           conditions[-1] = name
           clean.append(f"@{name}@")
@@ -157,7 +158,7 @@ class _ContractParser:
     aggregate_eligible = kind in TYPE_KEYWORDS and aggregate_possible
     while index < len(self.tokens):
       token = self.tokens[index]
-      if token == PP_BRANCH:
+      if token in {PP_ELIF, PP_ELSE}:
         if pending:
           pending.append(token)
         if self.conditions:
@@ -166,6 +167,8 @@ class _ContractParser:
           state = branch_states[-1]
           state["combined"] = set(state["combined"]) | access
           access = set(state["entry"])
+          if token == PP_ELSE:
+            state["exhaustive"] = True
         expecting_branch = True
         index += 1
         continue
@@ -176,7 +179,9 @@ class _ContractParser:
           self.conditions.pop()
         if branch_states:
           state = branch_states.pop()
-          combined = set(state["combined"]) | access | set(state["entry"])
+          combined = set(state["combined"]) | access
+          if not state["exhaustive"]:
+            combined |= set(state["entry"])
           access = combined
           if state["changed"]:
             access_conditions.extend(state["conditions"])
@@ -195,6 +200,7 @@ class _ContractParser:
                   "entry": set(access),
                   "combined": set(),
                   "changed": False,
+                  "exhaustive": False,
                   "conditions": [token],
               }
           )
@@ -202,7 +208,7 @@ class _ContractParser:
         continue
       if token == "}" and kind != "namespace-root":
         aggregate_eligible &= not self._breaks_aggregate(
-            pending, names, access == {True}
+            pending, names, True in access
         )
         self._record(
             pending,
@@ -230,7 +236,7 @@ class _ContractParser:
         continue
       if token == ";":
         aggregate_eligible &= not self._breaks_aggregate(
-            pending, names, access == {True}
+            pending, names, True in access
         )
         self._record(
             pending,
@@ -316,7 +322,7 @@ class _ContractParser:
           pending.extend(braced)
           continue
         aggregate_eligible &= not self._breaks_aggregate(
-            pending, names, access == {True}
+            pending, names, True in access
         )
         self._record(
             pending,
@@ -339,7 +345,7 @@ class _ContractParser:
         access_conditions,
     )
     aggregate_eligible &= not self._breaks_aggregate(
-        pending, names, access == {True}
+        pending, names, True in access
     )
     return index, aggregate_eligible
 
@@ -384,10 +390,23 @@ class _ContractParser:
   def _is_inherited_constructor(tokens: list[str]) -> bool:
     if not tokens or tokens[0] != "using" or "=" in tokens:
       return False
-    identifiers = [
-        token for token in tokens[1:] if IDENTIFIER_RE.fullmatch(token)
-    ]
-    return len(identifiers) >= 2 and identifiers[-1] == identifiers[-2]
+    if "::" not in tokens:
+      return False
+    separator = len(tokens) - 1 - tokens[::-1].index("::")
+    right = next(
+        (
+            token
+            for token in tokens[separator + 1 :]
+            if IDENTIFIER_RE.fullmatch(token)
+        ),
+        None,
+    )
+    left = {
+        token
+        for token in tokens[1:separator]
+        if IDENTIFIER_RE.fullmatch(token)
+    }
+    return right is not None and right in left
 
   @staticmethod
   def _aggregate_bases_possible(
@@ -428,7 +447,8 @@ class _ContractParser:
       declarations = [
           token
           for token in segment
-          if not token.startswith("@__tess_pp_") and token != PP_END
+          if not token.startswith("@__tess_pp_")
+          and token not in {PP_END, PP_ELIF, PP_ELSE}
       ]
       if not declarations:
         continue
@@ -685,27 +705,52 @@ class _ContractParser:
     square_depth = 0
     brace_depth = 0
     ordinals = {0}
-    ordinal_branches: list[dict[str, set[int]]] = []
+    ordinal_branches: list[dict[str, object]] = []
     expecting_branch = False
+
+    def finish_entry() -> None:
+      nonlocal ordinals
+      if not entry:
+        entry_conditions.clear()
+        return
+      if visible:
+        name = next(
+            (item for item in entry if IDENTIFIER_RE.fullmatch(item)), "?"
+        )
+        self.contracts.append(
+            f"enumerator {_qualified(names + (name,))}:"
+            f"{self._condition_prefix(entry_conditions)}"
+            f"{_normalize(entry)} "
+            f"@index {','.join(str(value) for value in sorted(ordinals))}"
+        )
+      ordinals = {value + 1 for value in ordinals}
+      entry.clear()
+      entry_conditions.clear()
+
     while index < len(self.tokens):
       token = self.tokens[index]
-      if token == PP_BRANCH:
+      if token in {PP_ELIF, PP_ELSE}:
+        finish_entry()
         if self.conditions:
           self.conditions.pop()
         if ordinal_branches:
           state = ordinal_branches[-1]
           state["combined"].update(ordinals)
           ordinals = set(state["entry"])
+          if token == PP_ELSE:
+            state["exhaustive"] = True
         expecting_branch = True
         index += 1
         continue
       if token == PP_END:
+        finish_entry()
         if self.conditions:
           self.conditions.pop()
         if ordinal_branches:
           state = ordinal_branches.pop()
           ordinals.update(state["combined"])
-          ordinals.update(state["entry"])
+          if not state["exhaustive"]:
+            ordinals.update(state["entry"])
         index += 1
         continue
       if token.startswith("@__tess_pp_"):
@@ -715,7 +760,11 @@ class _ContractParser:
           expecting_branch = False
         else:
           ordinal_branches.append(
-              {"entry": set(ordinals), "combined": set()}
+              {
+                  "entry": set(ordinals),
+                  "combined": set(),
+                  "exhaustive": False,
+              }
           )
         index += 1
         continue
@@ -737,19 +786,7 @@ class _ContractParser:
           and square_depth == 0
           and brace_depth == 0
       ):
-        if visible and entry:
-          name = next(
-              (item for item in entry if IDENTIFIER_RE.fullmatch(item)), "?"
-          )
-          self.contracts.append(
-              f"enumerator {_qualified(names + (name,))}:"
-              f"{self._condition_prefix(entry_conditions)}"
-              f"{_normalize(entry)} "
-              f"@index {','.join(str(value) for value in sorted(ordinals))}"
-          )
-          ordinals = {value + 1 for value in ordinals}
-        entry.clear()
-        entry_conditions.clear()
+        finish_entry()
         index += 1
         if token == "}":
           return index

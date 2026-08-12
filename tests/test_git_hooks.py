@@ -645,6 +645,10 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert "fetch-tags: true" in hooks
   assert "python tools/check_compatibility_snapshots.py" in hooks
 
+  packages = _job_body(workflow, "release-packages")
+  assert "CMAKE_CXX_COMPILER_LAUNCHER: \"\"" in packages
+  assert "conan create . --build=missing -s compiler.cppstd=20" in packages
+
 
 def test_documentation_only_changes_skip_expensive_ci_fail_closed():
   root = Path(__file__).resolve().parents[1]

@@ -29,7 +29,10 @@
   contain its own final hash, so central-registry metadata and the archive hash
   are post-release publication work rather than self-fetching 1.0 gates. The
   Conan recipe and checkout-based vcpkg overlay are instead tested through
-  consuming executables.
+  consuming executables. Their release job clears the workflow-level compiler
+  launcher because the hosted image has no `ccache`, and Conan creation pins
+  the supported C++20 language mode rather than accepting its detected C++17
+  default.
 - Dense queued-operation, field-product, and PIBT signatures freeze for 1.x;
   sparse support must be additive. Breaking argument-pair, options, handle,
   ordering, duplicate-name, lifetime, and identity cleanups land in v0.13 and
@@ -45,10 +48,11 @@
   and cannot gain public data members or inherited constructors because those
   changes can break aggregate or structured-binding consumers. Conditional
   declarations, access labels, enums, and enumerators keep their enclosing C++
-  scope and receive branch identities so they cannot evade the same checks.
-  Enumerator order is append-only, and existing callables cannot gain overloads
-  because calls and address-taking can become ambiguous; sparse extensions
-  therefore use distinctly named entry points. A newly required snapshot must
-  exactly match the current inventories before becoming immutable. Prerelease
-  package configs export numeric, prerelease, and full version metadata even
-  though discovery must be unversioned.
+  scope and receive branch identities so they cannot evade the same checks;
+  aggregate eligibility and implicit enumerator positions are retained across
+  conditional alternatives. Enumerator order is append-only, and existing
+  callables cannot gain overloads because calls and address-taking can become
+  ambiguous; sparse extensions therefore use distinctly named entry points. A
+  newly required snapshot must exactly match the current inventories before
+  becoming immutable. Prerelease package configs export numeric, prerelease,
+  and full version metadata even though discovery must be unversioned.
