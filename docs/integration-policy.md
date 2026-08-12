@@ -305,19 +305,21 @@ documentation.
 ## Platforms and compilers
 
 tess requires a C++20 compiler and CMake 3.25 or newer. Beyond that,
-support means *continuously tested*, and the honest picture is uneven:
+support means *continuously tested*. Ordinary change CI and exact-SHA release
+CI provide two layers of evidence:
 
-| Platform | Compiler | What runs |
-| --- | --- | --- |
-| Ubuntu 24.04 | Clang | Build, full test suite, sanitizers, install and FetchContent smokes, standalone-header and macro-configuration checks |
-| Ubuntu 24.04 | GCC | **Compile only** — no test execution |
-| macOS 15 | Clang | Build and tests on every non-PR full-tier event (main pushes, the weekly schedule, manual dispatches) — **never on pull requests** |
-| Windows 2025 | MSVC | Build and tests, required on pull requests |
+- Ubuntu 24.04 with Clang builds and runs the full tests, sanitizers, installed
+  and FetchContent consumers, standalone headers, and macro configurations.
+- Ubuntu 24.04 with GCC 12 and 14 performs warning-clean builds and full
+  runtime tests on code changes.
+- macOS 15 with AppleClang builds, tests, sanitizes, and consumes an install on
+  non-PR full-tier runs. Release runs select Xcode 16.0 and add no-RTTI runtime
+  evidence.
+- Windows 2025 with MSVC is a required PR build-and-test gate. Release runs
+  verify MSVC 19.44 and add no-RTTI runtime evidence.
 
 Consequences worth knowing before you depend on a platform:
 
-- A GCC-specific runtime bug would not be caught: GCC is a
-  compile-only gate.
 - A macOS regression can merge and only surface on the next main,
   scheduled, or dispatched run.
 - Benchmarks and coverage run on Ubuntu only.
@@ -325,11 +327,8 @@ Consequences worth knowing before you depend on a platform:
   pull-request thread sanitizer coverage is path-filtered rather than
   universal.
 
-**No minimum compiler version is enforced or claimed.** The build
-requires C++20 through `target_compile_features`, and nothing rejects
-an older compiler at configure time. That is deliberate: "the oldest
-version we test" and "the oldest version that works" are different
-claims, and a hard rejection would turn away compilers that work fine —
-including consumers who add tess as a subproject and never use it.
-Publishing a tested-version matrix with pinned floor jobs is the
-honest form of that guarantee, and it is not built yet.
+The tested floors are GCC 12, Clang 16, AppleClang from Xcode 16.0, MSVC
+19.44, and CMake 3.25.3. They are evidence-backed support floors, not configure-
+time rejection rules: a different C++20 toolchain may work, but is outside the
+tested contract. See [support](support.md) for the complete floor and no-RTTI
+policy.

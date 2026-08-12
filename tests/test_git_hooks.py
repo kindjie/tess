@@ -610,6 +610,14 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert "needs.changes.outputs.release_mode == 'true'" in fuzz
   assert "github.event_name == 'schedule'" in fuzz
 
+  fuzzer = (root / "tests/fuzz/tess_world_archive_fuzzer.cc").read_text(
+      encoding="utf-8"
+  )
+  assert "normalize_archive_envelope" in fuzzer
+  assert "detail::archive_crc32" in fuzzer
+  assert fuzzer.count("inspect_world_archive") == 2
+  assert fuzzer.count("load_world_archive<Archive>") == 2
+
   compatibility = _job_body(workflow, "release-compatibility")
   assert "fetch-depth: 0" in compatibility
   assert "fetch-tags: true" in compatibility

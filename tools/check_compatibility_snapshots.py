@@ -85,6 +85,28 @@ def _contract_scope(contract: str) -> str | None:
   return match.group(1) if match is not None else None
 
 
+def _callable_identity(contract: str) -> str | None:
+  match = re.match(
+      r"^(?:member|function) (.+?)(?<!:):(?!:)(.*)$", contract
+  )
+  if match is None:
+    return None
+  scope, declaration = match.groups()
+  opening = declaration.find("(")
+  if opening < 0:
+    return None
+  prefix = declaration[:opening]
+  operator_match = re.search(r"\boperator\s*(\S*)\s*$", prefix)
+  if operator_match is not None:
+    name = "operator" + operator_match.group(1)
+  else:
+    identifiers = re.findall(r"[A-Za-z_]\w*", prefix)
+    if not identifiers:
+      return None
+    name = identifiers[-1]
+  return f"{scope}::{name}"
+
+
 def current_symbols(repo_root: Path, headers: list[str]) -> set[str]:
   """Extract current public symbols from compatibility headers."""
   symbols: set[str] = set()
@@ -383,6 +405,9 @@ def check_snapshots(
     failures.append(f"release {version}: compatibility snapshot is missing")
 
   for directory in directories:
+    is_current_snapshot = (
+        release_requires_snapshot(version) and directory.name == version
+    )
     manifest_path = directory / "manifest.json"
     if not manifest_path.is_file():
       failures.append(f"{directory.name}: manifest.json is missing")
@@ -406,6 +431,11 @@ def check_snapshots(
               f"{directory.name}: headers.{category} must be a string list"
           )
           continue
+        if is_current_snapshot and set(values) != current_headers[category]:
+          failures.append(
+              f"{directory.name}: current {category} header inventory "
+              "does not match the snapshot"
+          )
         for missing in sorted(set(values) - current_headers[category]):
           failures.append(
               f"{directory.name}: {category} header removed or reclassified: "
@@ -423,6 +453,13 @@ def check_snapshots(
               f"{directory.name}: membership for {aggregate} is missing"
           )
           continue
+        if is_current_snapshot and set(values) != set(
+            memberships[aggregate]
+        ):
+          failures.append(
+              f"{directory.name}: current aggregate membership for "
+              f"{aggregate} does not match the snapshot"
+          )
         for missing in sorted(set(values) - set(memberships[aggregate])):
           failures.append(
               f"{directory.name}: aggregate member removed from {aggregate}: "
@@ -435,6 +472,11 @@ def check_snapshots(
     ):
       failures.append(f"{directory.name}: public_symbols must be a string list")
     else:
+      if is_current_snapshot and set(snapshot_symbols) != symbols:
+        failures.append(
+            f"{directory.name}: current public symbol inventory does not "
+            "match the snapshot"
+        )
       for missing in sorted(set(snapshot_symbols) - symbols):
         failures.append(f"{directory.name}: public symbol removed: {missing}")
 
@@ -442,6 +484,7 @@ def check_snapshots(
     if not isinstance(snapshot_contract, dict):
       failures.append(f"{directory.name}: api_contract map is missing")
     else:
+      valid_snapshot_contract: dict[str, set[str]] = {}
       snapshot_header_values: list[str] = []
       if isinstance(snapshot_headers, dict):
         for category in ("stable", "optional-stable"):
@@ -459,18 +502,30 @@ def check_snapshots(
               f"{directory.name}: api_contract for {header} is missing"
           )
           continue
+        valid_snapshot_contract[header] = set(declarations)
         current_declarations = set(api_contract.get(header, []))
         snapshot_declarations = set(declarations)
         for missing in sorted(snapshot_declarations - current_declarations):
-          failures.append(
-              f"{directory.name}: API declaration changed or removed: "
-              f"{header}: {missing}"
-          )
+          if missing.startswith("aggregate "):
+            failures.append(
+                f"{directory.name}: aggregate compatibility changed: "
+                f"{header}: {missing}"
+            )
+          else:
+            failures.append(
+                f"{directory.name}: API declaration changed or removed: "
+                f"{header}: {missing}"
+            )
         snapshot_types = {
             scope
             for declaration in snapshot_declarations
             if declaration.startswith("type ")
             if (scope := _contract_scope(declaration)) is not None
+        }
+        snapshot_callables = {
+            identity
+            for declaration in snapshot_declarations
+            if (identity := _callable_identity(declaration)) is not None
         }
         for addition in sorted(
             current_declarations - snapshot_declarations
@@ -481,6 +536,22 @@ def check_snapshots(
                 f"{directory.name}: public data member added to existing "
                 f"type: {header}: {addition}"
             )
+          identity = _callable_identity(addition)
+          if identity is not None and identity in snapshot_callables:
+            failures.append(
+                f"{directory.name}: overload added to existing callable: "
+                f"{header}: {addition}"
+            )
+      if is_current_snapshot:
+        current_contract = {
+            header: set(api_contract.get(header, []))
+            for header in compatibility_headers
+        }
+        if valid_snapshot_contract != current_contract:
+          failures.append(
+              f"{directory.name}: current API contract does not match "
+              "the snapshot"
+          )
 
     consumer, consumer_status = _snapshot_path(
         directory, payload.get("consumer"), "file"

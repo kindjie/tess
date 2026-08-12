@@ -19,8 +19,10 @@ every prior header in its original compatibility class, every direct aggregate
 member, public symbol, and normalized declaration contract. Declaration
 contracts retain function signatures and defaults, public members, enum
 values, aliases, concepts, constants, and configuration macro definitions.
-Existing types cannot gain public data members, and direct aggregate imports
-must remain uncommented and unconditional.
+Existing aggregate types must remain aggregates, existing types cannot gain
+public data members, enumerators are append-only, and overloads cannot be added
+to existing callables. Direct aggregate imports must remain uncommented and
+unconditional.
 The checker also confines every recorded path to its snapshot, verifies fixture
 metadata, and compares every earlier snapshot byte-for-byte with its
 `v<version>` release tag. Normal CI fetches those tags and runs the source
@@ -31,6 +33,8 @@ are append-only: never edit a released snapshot to make a compatibility
 failure disappear.
 
 RC1 and stable `1.x.0` source versions fail the checker until their matching
-snapshot exists. Pre-1.0 development does not fabricate a future snapshot.
+snapshot exists and exactly matches the current header, aggregate, symbol, and
+declaration inventories. Pre-1.0 development does not fabricate a future
+snapshot.
 The snapshot matching the version currently being prepared may precede its
 tag; every older snapshot must already have a matching reachable release tag.

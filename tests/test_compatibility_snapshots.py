@@ -44,6 +44,9 @@ struct StableSymbol {
  private:
   int internal_revision = 1;
 };
+struct StableOptions {
+  int max_steps = 1;
+};
 [[nodiscard]] auto stable_route(int start, int goal = 2) -> bool;
 constexpr auto stable_inline(int value) -> int { return value + 1; }
 template <class T = int>
@@ -63,7 +66,11 @@ inline auto stable_braced(StableSymbol value = {}) -> bool { return true; }
           "optional-stable": headers["optional-stable"],
       },
       "aggregate_membership": snapshots.aggregate_membership(root),
-      "public_symbols": ["StableSymbol"],
+      "public_symbols": sorted(
+          snapshots.current_symbols(
+              root, headers["stable"] + headers["optional-stable"]
+          )
+      ),
       "api_contract": snapshots.current_api_contract(
           root, headers["stable"] + headers["optional-stable"]
       ),
@@ -163,6 +170,30 @@ def test_rc1_requires_its_exact_snapshot(tmp_path):
   ) == ["release 1.0.0-rc.1: compatibility snapshot is missing"]
 
 
+def test_current_release_snapshot_must_match_current_inventories(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  payload["headers"] = {"stable": [], "optional-stable": []}
+  payload["aggregate_membership"] = {
+      aggregate: [] for aggregate in snapshots.AGGREGATES
+  }
+  payload["public_symbols"] = []
+  payload["api_contract"] = {}
+  snapshot_root = write_snapshot(tmp_path, payload)
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any("current stable header inventory" in item for item in failures)
+  assert any(
+      "current optional-stable header inventory" in item
+      for item in failures
+  )
+  assert any("current aggregate membership" in item for item in failures)
+  assert any("current public symbol inventory" in item for item in failures)
+  assert any("current API contract" in item for item in failures)
+
+
 def test_archive_fixture_requires_fixed_schema_metadata(tmp_path):
   header_path, payload = make_repo(tmp_path)
   payload["archives"][0]["schema"] = ""
@@ -206,21 +237,29 @@ def test_existing_public_type_cannot_gain_a_data_member(tmp_path):
   header_path, payload = make_repo(tmp_path)
   snapshot_root = write_snapshot(tmp_path, payload)
   header = tmp_path / "include/tess/tess.h"
-  text = header.read_text(encoding="utf-8").replace(
-      "  int max_entries = 4;",
-      "  int max_entries = 4;\n  int additive_field = 0;",
-  )
-  header.write_text(text, encoding="utf-8")
+  original = header.read_text(encoding="utf-8")
+  for addition, name in (
+      ("int additive_field = 0;", "additive_field"),
+      ("void (*callback)(int);", "callback"),
+      ("std::function<void(int)> handler;", "handler"),
+  ):
+    header.write_text(
+        original.replace(
+            "  int max_entries = 4;",
+            f"  int max_entries = 4;\n  {addition}",
+        ),
+        encoding="utf-8",
+    )
 
-  failures = snapshots.check_snapshots(
-      tmp_path, snapshot_root, header_path, "1.1.1"
-  )
+    failures = snapshots.check_snapshots(
+        tmp_path, snapshot_root, header_path, "1.1.1"
+    )
 
-  assert any(
-      "public data member added to existing type" in failure
-      and "additive_field" in failure
-      for failure in failures
-  ), failures
+    assert any(
+        "public data member added to existing type" in failure
+        and name in failure
+        for failure in failures
+    ), failures
 
 
 def test_existing_public_type_can_gain_methods_aliases_and_static_data(
@@ -241,6 +280,97 @@ def test_existing_public_type_can_gain_methods_aliases_and_static_data(
   assert snapshots.check_snapshots(
       tmp_path, snapshot_root, header_path, "1.1.1"
   ) == []
+
+
+def test_existing_callable_cannot_gain_an_ambiguous_overload(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "  void set_limit(int value = 8);",
+      "  void set_limit(int value = 8);\n  void set_limit(double value);",
+  )
+  header.write_text(text, encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "set_limit" in failure
+      for failure in failures
+  ), failures
+
+
+def test_existing_aggregate_cannot_gain_constructor_or_private_state(
+    tmp_path,
+):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  original = header.read_text(encoding="utf-8")
+
+  for addition in (
+      "  StableOptions() = default;\n",
+      " private:\n  int internal_state = 0;\n",
+  ):
+    header.write_text(
+        original.replace(
+            "struct StableOptions {\n", "struct StableOptions {\n" + addition
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        tmp_path, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "aggregate compatibility changed" in failure
+        and "StableOptions" in failure
+        for failure in failures
+    ), failures
+
+
+def test_implicit_enum_values_are_append_only(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "enum class StableMode { First = 1, Second = 2 };",
+      "enum class ImplicitMode { First, Second };",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "enum class ImplicitMode { First, Second };",
+          "enum class ImplicitMode { Inserted, First, Second };",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "API declaration changed or removed" in failure
+      and "enumerator" in failure
+      for failure in failures
+  ), failures
 
 
 def test_aggregate_membership_rejects_disabled_or_commented_include(tmp_path):

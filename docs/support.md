@@ -23,9 +23,13 @@ Within the 1.x release line, tess preserves source compatibility for:
 - archive format v1, including loading fixtures produced by earlier 1.x
   releases.
 
-Direct aggregate membership remains unconditional. Public data-member sets on
-existing stable types also remain fixed, so adding a field cannot break an
-existing structured binding; additive state uses a new type or entry point.
+Direct aggregate membership remains unconditional. Existing aggregate types
+remain aggregates, and public data-member sets on existing stable types remain
+fixed, so constructors, hidden state, or fields cannot break aggregate or
+structured-binding users. Enumerator order is append-only. New overloads of an
+existing callable are excluded because they can make existing calls and
+address-taking ambiguous; additive behavior uses a distinctly named method,
+type, or entry point.
 
 `cmake/tess-headers.json` is the machine-readable source of truth for header
 stability. Every installed header has exactly one classification:
@@ -45,8 +49,9 @@ boundaries. Rebuild all consuming translation units together with one tess
 version and one macro configuration.
 
 The current dense signatures for queued operations, field products, and PIBT
-are part of the stable source contract. Sparse support must arrive through
-additive overloads or new entry points rather than changing those signatures.
+are part of the stable source contract. Sparse support must arrive through new
+entry points rather than changing those signatures or adding ambiguous
+overloads.
 
 ## Toolchain floors
 

@@ -773,11 +773,15 @@ class DeltaCollector {
     auto operator=(const MovedFromFlag&) -> MovedFromFlag& = default;
     ~MovedFromFlag() = default;
 
-    MovedFromFlag(MovedFromFlag&& other) noexcept { other.value = true; }
+    MovedFromFlag(MovedFromFlag&& other) noexcept : value{other.value} {
+      other.value = true;
+    }
 
     auto operator=(MovedFromFlag&& other) noexcept -> MovedFromFlag& {
-      if (this != &other) {
-        value = false;
+      if (this == &other) {
+        value = true;
+      } else {
+        value = other.value;
         other.value = true;
       }
       return *this;
@@ -802,11 +806,12 @@ class DeltaCollector {
 
     // NOLINTNEXTLINE(performance-noexcept-move-constructor)
     auto operator=(FrameGeneration&& other) -> FrameGeneration& {
-      if (this != &other) {
-        invalidate();
-        other.invalidate();
-        state = std::make_shared<std::atomic<std::uint64_t>>(1);
+      invalidate();
+      if (this == &other) {
+        return *this;
       }
+      other.invalidate();
+      state = std::make_shared<std::atomic<std::uint64_t>>(1);
       return *this;
     }
 

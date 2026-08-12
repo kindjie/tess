@@ -112,8 +112,10 @@ surface `find_package(tess)` installs rather than a second definition free to
 drift. `tests/test_packaging_recipes.py` pins that correspondence, including
 the version, which lives only in `cmake/tess-version.cmake`.
 
-Neither recipe is exercised end to end in CI, since neither tool is installed
-there — the tests check the recipes' contents and correspondence, not a
-completed package build. A future central-registry vcpkg recipe should fetch
-and hash this public stable release instead of using the checkout overlay's
-local source path.
+Ordinary change CI checks the recipes' contents and correspondence without
+installing either package manager. Exact-SHA release CI additionally installs
+the checkout overlay with pinned vcpkg and runs an installed-package consumer,
+then installs the hashed Conan 2.31.1 wheel, creates the package, and runs its
+test package. A future central-registry vcpkg recipe should fetch and hash this
+public stable release instead of using the checkout overlay's local source
+path.

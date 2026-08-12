@@ -144,14 +144,19 @@ class _ContractParser:
       names: tuple[str, ...],
       kind: str,
       visible: bool,
-  ) -> int:
+      aggregate_possible: bool = True,
+  ) -> tuple[int, bool]:
     pending: list[str] = []
     access = kind != "class"
+    aggregate_eligible = kind in TYPE_KEYWORDS and aggregate_possible
     while index < len(self.tokens):
       token = self.tokens[index]
       if token == "}" and kind != "namespace-root":
+        aggregate_eligible &= not self._breaks_aggregate(
+            pending, names, access
+        )
         self._record(pending, names, kind, visible and access)
-        return index + 1
+        return index + 1, aggregate_eligible
       if (
           kind in TYPE_KEYWORDS
           and token == ":"
@@ -163,6 +168,9 @@ class _ContractParser:
         index += 1
         continue
       if token == ";":
+        aggregate_eligible &= not self._breaks_aggregate(
+            pending, names, access
+        )
         self._record(pending, names, kind, visible and access)
         pending.clear()
         index += 1
@@ -184,7 +192,7 @@ class _ContractParser:
             set(namespace_parts) & SKIPPED_NAMESPACES
         )
         pending.clear()
-        index = self._scope(
+        index, _ = self._scope(
             index + 1,
             names + namespace_parts,
             "namespace",
@@ -210,17 +218,21 @@ class _ContractParser:
       if type_kind is not None and type_name is not None:
         declaration_visible = visible and access
         qualified = _qualified(names + (type_name,))
+        aggregate_possible = ":" not in pending
         if declaration_visible:
           self.contracts.append(
               f"type {qualified}:{_normalize(pending)}"
           )
         pending.clear()
-        index = self._scope(
+        index, child_is_aggregate = self._scope(
             index + 1,
             names + (type_name,),
             type_kind,
             declaration_visible,
+            aggregate_possible,
         )
+        if declaration_visible and child_is_aggregate:
+          self.contracts.append(f"aggregate {qualified}")
         continue
 
       if self._is_function(pending):
@@ -228,6 +240,9 @@ class _ContractParser:
           braced, index = self._braced_initializer(index)
           pending.extend(braced)
           continue
+        aggregate_eligible &= not self._breaks_aggregate(
+            pending, names, access
+        )
         self._record(pending, names, kind, visible and access)
         pending.clear()
         index = self._skip_braces(index + 1)
@@ -236,7 +251,45 @@ class _ContractParser:
       braced, index = self._braced_initializer(index)
       pending.extend(braced)
     self._record(pending, names, kind, visible and access)
-    return index
+    aggregate_eligible &= not self._breaks_aggregate(
+        pending, names, access
+    )
+    return index, aggregate_eligible
+
+  @classmethod
+  def _breaks_aggregate(
+      cls,
+      tokens: list[str],
+      names: tuple[str, ...],
+      public: bool,
+  ) -> bool:
+    if not tokens or not names:
+      return False
+    declaration = cls._without_constructor_initializer(tokens, names)
+    if cls._is_constructor(declaration, names[-1]):
+      return True
+    if "virtual" in declaration:
+      return True
+    if public:
+      return False
+    non_data = (
+        cls._is_function(declaration)
+        or "using" in declaration
+        or "typedef" in declaration
+        or "friend" in declaration
+        or "static" in declaration
+        or "concept" in declaration
+        or "enum" in declaration
+        or any(keyword in declaration for keyword in TYPE_KEYWORDS)
+    )
+    return not non_data
+
+  @staticmethod
+  def _is_constructor(tokens: list[str], type_name: str) -> bool:
+    if "(" not in tokens:
+      return False
+    opening = tokens.index("(")
+    return opening > 0 and tokens[opening - 1] == type_name
 
   def _record(
       self,
@@ -354,7 +407,18 @@ class _ContractParser:
       return False
     if "operator" in tokens:
       return True
-    opening = tokens.index("(")
+    opening = _ContractParser._first_top_level_round(tokens)
+    if opening is None:
+      return False
+    closing = _ContractParser._matching_round_bracket(tokens, opening)
+    if closing is not None and closing + 1 < len(tokens):
+      declarator = tokens[opening + 1 : closing]
+      if (
+          "(" not in declarator
+          and any(token in {"*", "&", "&&"} for token in declarator)
+          and tokens[closing + 1] == "("
+      ):
+        return False
     angle_depth = 0
     square_depth = 0
     for token in tokens[:opening]:
@@ -371,6 +435,39 @@ class _ContractParser:
       elif token == "=" and angle_depth == 0 and square_depth == 0:
         return False
     return True
+
+  @staticmethod
+  def _first_top_level_round(tokens: list[str]) -> int | None:
+    angle_depth = 0
+    square_depth = 0
+    for index, token in enumerate(tokens):
+      if token == "<":
+        angle_depth += 1
+      elif token == ">" and angle_depth:
+        angle_depth -= 1
+      elif token == ">>" and angle_depth:
+        angle_depth = max(0, angle_depth - 2)
+      elif token in {"[", "[["}:
+        square_depth += 1
+      elif token in {"]", "]]"} and square_depth:
+        square_depth -= 1
+      elif token == "(" and angle_depth == 0 and square_depth == 0:
+        return index
+    return None
+
+  @staticmethod
+  def _matching_round_bracket(
+      tokens: list[str], opening: int
+  ) -> int | None:
+    depth = 0
+    for index in range(opening, len(tokens)):
+      if tokens[index] == "(":
+        depth += 1
+      elif tokens[index] == ")":
+        depth -= 1
+        if depth == 0:
+          return index
+    return None
 
   @staticmethod
   def _starts_constructor_braced_initializer(tokens: list[str]) -> bool:
@@ -428,6 +525,7 @@ class _ContractParser:
     round_depth = 0
     square_depth = 0
     brace_depth = 0
+    ordinal = 0
     while index < len(self.tokens):
       token = self.tokens[index]
       if token == "(":
@@ -454,8 +552,9 @@ class _ContractParser:
           )
           self.contracts.append(
               f"enumerator {_qualified(names + (name,))}:"
-              f"{_normalize(entry)}"
+              f"{_normalize(entry)} @index {ordinal}"
           )
+          ordinal += 1
         entry.clear()
         index += 1
         if token == "}":

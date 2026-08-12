@@ -159,6 +159,19 @@ TEST(TessDeltaFrameDeathTest, MoveInvalidatesPublishedView) {
   static_cast<void>(destination);
 }
 
+TEST(TessDeltaFrameDeathTest, SelfMoveInvalidatesPublishedView) {
+  tess::DeltaCollector collector;
+  collector.reserve(1, 1, 1);
+  const auto frame = collector.publish();
+
+  auto& self = collector;
+  // NOLINTNEXTLINE(bugprone-self-move)
+  collector = std::move(self);
+
+  EXPECT_DEATH(static_cast<void>(frame.entities()), kStaleFrameDeathMessage);
+  EXPECT_TRUE(collector.publish().header.truncated);
+}
+
 TEST(TessDeltaFrameDeathTest,
      FailedMoveConstructionCannotLeaveADanglingLiveView) {
   if (!tess_test::allocation_failure_injection_supported()) {
@@ -310,6 +323,21 @@ TEST(TessDeltaFrameLifetime, MoveDestinationIsNotPoisoned) {
 
   EXPECT_FALSE(frame.chunks().empty());
   EXPECT_FALSE(frame.header.truncated);
+}
+
+TEST(TessDeltaFrameLifetime, RepeatedMoveRemainsPoisoned) {
+  auto source = make_collector();
+  auto first_destination = std::move(source);
+
+  // A second move from the already moved-from source must not turn the
+  // destination back into an apparently usable collector.
+  // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+  auto second_destination = std::move(source);
+  const auto frame = second_destination.publish();
+
+  EXPECT_TRUE(frame.chunks().empty());
+  EXPECT_TRUE(frame.header.truncated);
+  static_cast<void>(first_destination);
 }
 
 TEST(TessDeltaFrameLifetime, AssigningAFreshCollectorClearsThePoison) {

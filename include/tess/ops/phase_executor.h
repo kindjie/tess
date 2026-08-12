@@ -130,7 +130,7 @@ concept SerialExecutor =
     requires { typename std::remove_cvref_t<Executor>::serial_execution_tag; };
 
 /**
- * Prototype executor that spawns and joins worker threads for each phase.
+ * Executor that spawns and joins worker threads for each phase.
  * Callback exceptions cancel unclaimed work and are rethrown after all
  * already-running callbacks have joined. If callbacks throw concurrently,
  * which exception is propagated is unspecified.
