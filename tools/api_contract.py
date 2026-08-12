@@ -194,11 +194,16 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
         "template",
     ]
     qualified = index >= 1 and tokens[index - 1] == "::"
+    separator = index - (2 if dependent else 1)
     qualification_continues = "::" in tokens[index + 2 :]
-    terminal_closes_singly = tokens[-1] == ">"
+    terminal_closes = tokens[-1] == ">" or (
+        tokens[-1] == ">>"
+        and separator > 0
+        and tokens[separator - 1] == ">>"
+    )
     if not dependent and not (
         qualified
-        and (qualification_continues or terminal_closes_singly)
+        and (qualification_continues or terminal_closes)
     ):
       continue
     qualified_templates.append(token)
@@ -207,10 +212,7 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
   terminal_template = _terminal_template_component(tokens)
   if terminal_template is not None:
     return terminal_template == name
-  return any(
-      token == name and index + 1 < len(tokens) and tokens[index + 1] == "<"
-      for index, token in enumerate(tokens)
-  )
+  return False
 
 
 def _terminal_template_component(tokens: list[str]) -> str | None:
@@ -1189,6 +1191,8 @@ class _ContractParser:
         elif (
             IDENTIFIER_RE.fullmatch(token)
             and token not in DECLARATION_SPECIFIERS
+            and token not in TYPE_KEYWORDS
+            and token != "enum"
         ):
           identifiers.append((index, token))
     if type_name is not None and identifiers:

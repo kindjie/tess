@@ -137,6 +137,18 @@ def refresh_contract(root: Path, payload: dict[str, object]) -> None:
   )
 
 
+def assert_aggregate(payload: dict[str, object], name: str) -> None:
+  expected = f"aggregate tess::{name}"
+  assert any(expected in header for header in payload["api_contract"].values())
+
+
+def assert_aggregate_break(failures: list[str], name: str) -> None:
+  assert any(
+      "aggregate compatibility changed" in failure and name in failure
+      for failure in failures
+  ), failures
+
+
 def test_valid_snapshot_is_a_subset_of_current_sources(tmp_path):
   header_path, payload = make_repo(tmp_path)
   snapshot_root = write_snapshot(tmp_path, payload)
@@ -857,9 +869,10 @@ def test_relational_terminal_base_arguments_keep_inherited_constructor(
       "template < class T > struct Outer {\n"
       "  template < class U > struct Base { Base(double value); };\n"
       "};\n"
-      "template < int N, int M >\n"
+      "constexpr int N = 0;\n"
+      "constexpr int M = 1;\n"
       "struct StableOptions\n"
-      "  : Outer<Inner<N < M>>::template Base<Inner<N < M>> {\n"
+      "  : Outer<Inner<N < M>>::Base<Inner<N < M>> {\n"
       "  StableOptions(int value);",
   )
   header.write_text(text, encoding="utf-8")
@@ -868,8 +881,7 @@ def test_relational_terminal_base_arguments_keep_inherited_constructor(
   header.write_text(
       text.replace(
           "  StableOptions(int value);",
-          "  using Outer<Inner<N < M>>::template "
-          "Base<Inner<N < M>>::Base;\n"
+          "  using Outer<Inner<N < M>>::Base<Inner<N < M>>::Base;\n"
           "  StableOptions(int value);",
       ),
       encoding="utf-8",
@@ -1016,11 +1028,7 @@ def test_dependent_nonterminal_component_does_not_fake_constructor(tmp_path):
   )
   header.write_text(text, encoding="utf-8")
   refresh_payload(tmp_path, payload)
-  assert any(
-      contract.endswith("aggregate tess::StableOptions")
-      for contracts in payload["api_contract"].values()
-      for contract in contracts
-  )
+  assert_aggregate(payload, "StableOptions")
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -1034,11 +1042,7 @@ def test_dependent_nonterminal_component_does_not_fake_constructor(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "aggregate compatibility changed" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_aggregate_break(failures, "StableOptions")
 
 
 def test_nested_argument_name_does_not_hide_terminal_component(tmp_path):
@@ -1062,11 +1066,7 @@ def test_nested_argument_name_does_not_hide_terminal_component(tmp_path):
   )
   header.write_text(text, encoding="utf-8")
   refresh_payload(tmp_path, payload)
-  assert any(
-      contract.endswith("aggregate tess::StableOptions")
-      for contracts in payload["api_contract"].values()
-      for contract in contracts
-  )
+  assert_aggregate(payload, "StableOptions")
   snapshot_root = write_snapshot(tmp_path, payload)
   header.write_text(
       text.replace(
@@ -1080,11 +1080,38 @@ def test_nested_argument_name_does_not_hide_terminal_component(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "aggregate compatibility changed" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_aggregate_break(failures, "StableOptions")
+
+
+def test_decltype_argument_name_does_not_fake_constructor(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "template < class T > struct Base {};\n"
+      "template < class T > struct Tag {};\n"
+      "struct Source { static void Base(int value); };\n"
+      "auto make(Tag<::tess::Base<int>>) -> Source;\n"
+      "struct StableOptions {\n"
+      "  using decltype(make(Tag<::tess::Base<int>>{}))::Base;",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  assert_aggregate(payload, "StableOptions")
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          "  StableOptions() = default;\n  int max_steps = 1;",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert_aggregate_break(failures, "StableOptions")
 
 
 def test_relational_template_expressions_preserve_callable_identity(tmp_path):
@@ -1714,6 +1741,7 @@ def test_parenthesized_data_declarators_are_public_data_members(tmp_path):
       "  int StableOptions::* ((nested_member));\n",
       "  int StableOptions::* (members[2]);\n",
       "  int ns::Owner::* (qualified_member);\n",
+      "  struct ns::StableOptions (elaborated_same_name);\n",
   )
   for index, addition in enumerate(additions):
     repo = tmp_path / f"variant-{index}"
@@ -1723,7 +1751,7 @@ def test_parenthesized_data_declarators_are_public_data_members(tmp_path):
     text = header.read_text(encoding="utf-8").replace(
         "struct StableOptions {\n",
         "#define TESS_ATTR(x)\n"
-        "namespace ns { struct Owner {}; }\n"
+        "namespace ns { struct Owner {}; struct StableOptions {}; }\n"
         "struct StableOptions {\n"
         + addition,
     )
@@ -1777,11 +1805,7 @@ def test_parenthesized_objects_do_not_fake_existing_constructors(tmp_path):
     )
     header.write_text(text, encoding="utf-8")
     refresh_payload(repo, payload)
-    assert any(
-        contract.endswith("aggregate tess::StableOptions")
-        for contracts in payload["api_contract"].values()
-        for contract in contracts
-    )
+    assert_aggregate(payload, "StableOptions")
     snapshot_root = write_snapshot(repo, payload)
     header.write_text(
         text.replace(
@@ -1820,11 +1844,7 @@ def test_private_qualified_member_pointer_breaks_aggregate(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "aggregate compatibility changed" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_aggregate_break(failures, "StableOptions")
 
 
 def test_attributed_callable_cannot_gain_an_ambiguous_overload(tmp_path):
@@ -1942,11 +1962,7 @@ def test_existing_aggregate_cannot_gain_constructor_or_private_state(
         tmp_path, snapshot_root, header_path, "1.1.1"
     )
 
-    assert any(
-        "aggregate compatibility changed" in failure
-        and "StableOptions" in failure
-        for failure in failures
-    ), failures
+    assert_aggregate_break(failures, "StableOptions")
 
 
 def test_existing_aggregate_rejects_parenthesized_constructor_specifiers(
@@ -1978,11 +1994,7 @@ def test_existing_aggregate_rejects_parenthesized_constructor_specifiers(
         tmp_path, snapshot_root, header_path, "1.1.1"
     )
 
-    assert any(
-        "aggregate compatibility changed" in failure
-        and "StableOptions" in failure
-        for failure in failures
-    ), failures
+    assert_aggregate_break(failures, "StableOptions")
 
 
 def test_parameter_type_spelling_does_not_hide_aggregate_compatibility(
@@ -2010,11 +2022,7 @@ def test_parameter_type_spelling_does_not_hide_aggregate_compatibility(
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "aggregate compatibility changed" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_aggregate_break(failures, "StableOptions")
 
 
 def test_macro_annotated_callable_cannot_gain_an_overload(tmp_path):
@@ -2098,11 +2106,7 @@ struct StableOptions : StableBase {""",
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "aggregate compatibility changed" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_aggregate_break(failures, "StableOptions")
 
 
 def test_existing_derived_aggregate_cannot_inherit_constructors(tmp_path):
@@ -2131,11 +2135,7 @@ struct StableOptions : StableBase {""",
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "aggregate compatibility changed" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_aggregate_break(failures, "StableOptions")
 
 
 def test_template_aggregate_cannot_inherit_dependent_constructors(tmp_path):
@@ -2166,11 +2166,7 @@ struct StableOptions : StableBase<T> {""",
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "aggregate compatibility changed" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_aggregate_break(failures, "StableOptions")
 
 
 def test_conditional_class_additions_keep_the_enclosing_scope(tmp_path):
@@ -2306,11 +2302,7 @@ def test_conditional_public_aggregate_cannot_gain_constructor(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "aggregate compatibility changed" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_aggregate_break(failures, "StableOptions")
 
 
 def test_conditionally_aggregate_type_cannot_lose_remaining_configuration(
@@ -2357,11 +2349,7 @@ def test_conditionally_aggregate_type_cannot_lose_remaining_configuration(
         repo, snapshot_root, header_path, "1.1.1"
     )
 
-    assert any(
-        "aggregate compatibility changed" in failure
-        and "StableOptions" in failure
-        for failure in failures
-  ), failures
+    assert_aggregate_break(failures, "StableOptions")
 
 
 def test_conditionally_nonaggregate_base_cannot_hide_constructor_addition(

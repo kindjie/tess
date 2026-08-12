@@ -32,7 +32,8 @@
   nonterminal components, while qualified same-name and namespace-qualified
   member-pointer object declarations remain data and do not suppress aggregate
   compatibility evidence; bare and conditional `explicit` constructors remain
-  aggregate-breaking;
+  aggregate-breaking; elaborated qualified objects remain data and template
+  names nested in `decltype` expressions cannot impersonate an owning type;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

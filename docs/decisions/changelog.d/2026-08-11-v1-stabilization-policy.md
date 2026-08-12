@@ -93,6 +93,8 @@
   namespace-qualified member-pointer type prefixes do not turn parenthesized
   objects into constructors or suppress aggregate evidence; bare and
   conditional `explicit` constructors both break aggregate eligibility.
+  Elaborated qualified objects remain data, and template names nested in
+  `decltype` expressions cannot impersonate the qualifier's owning type.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

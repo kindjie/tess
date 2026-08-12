@@ -28,7 +28,8 @@
   intervening non-template components, nested-argument and nonterminal
   dependent-component exclusions, qualified same-name object types,
   parenthesized qualified member-pointer objects, and aggregate-safe bare or
-  conditional-explicit constructor/object disambiguation,
+  conditional-explicit constructor/object disambiguation, including elaborated
+  qualified types and template names nested in `decltype` expressions,
   constructor-like parameter spellings, and per-configuration
   member and base-clause aggregate availability, anonymous type objects,
   stable-macro redefinition and undefinition, release-tag byte and directory
