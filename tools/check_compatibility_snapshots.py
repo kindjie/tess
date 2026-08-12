@@ -9,7 +9,7 @@ import re
 import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from api_contract import current_api_contract
+from api_contract import callable_name, current_api_contract
 from check_public_surface import extract_public_symbols, strip_comments
 from header_manifest import GENERATED_HEADER_SOURCES, load_header_manifest
 
@@ -92,19 +92,20 @@ def _callable_identity(contract: str) -> str | None:
   if match is None:
     return None
   scope, declaration = match.groups()
-  opening = declaration.find("(")
-  if opening < 0:
+  name = callable_name(declaration)
+  if name is None:
     return None
-  prefix = declaration[:opening]
-  operator_match = re.search(r"\boperator\s*(\S*)\s*$", prefix)
-  if operator_match is not None:
-    name = "operator" + operator_match.group(1)
-  else:
-    identifiers = re.findall(r"[A-Za-z_]\w*", prefix)
-    if not identifiers:
-      return None
-    name = identifiers[-1]
   return f"{scope}::{name}"
+
+
+def _macro_identity(contract: str, category: str = "macro") -> str | None:
+  match = re.match(
+      rf"^{re.escape(category)} (.+?)(?<!:):(?!:)", contract
+  )
+  if match is None:
+    return None
+  declaration = match.group(1)
+  return declaration.rsplit("::", 1)[-1]
 
 
 def current_symbols(repo_root: Path, headers: list[str]) -> set[str]:
@@ -527,6 +528,11 @@ def check_snapshots(
             for declaration in snapshot_declarations
             if (identity := _callable_identity(declaration)) is not None
         }
+        snapshot_macros = {
+            identity
+            for declaration in snapshot_declarations
+            if (identity := _macro_identity(declaration)) is not None
+        }
         for addition in sorted(
             current_declarations - snapshot_declarations
         ):
@@ -540,6 +546,12 @@ def check_snapshots(
           if identity is not None and identity in snapshot_callables:
             failures.append(
                 f"{directory.name}: overload added to existing callable: "
+                f"{header}: {addition}"
+            )
+          undefined = _macro_identity(addition, "macro-undef")
+          if undefined is not None and undefined in snapshot_macros:
+            failures.append(
+                f"{directory.name}: stable macro undefined: "
                 f"{header}: {addition}"
             )
       if is_current_snapshot:
@@ -659,7 +671,14 @@ def check_snapshot_immutability(
   except ValueError:
     return ["snapshot root must be inside the repository"]
 
-  tags = _git(repo_root, ["tag", "--list", "v1.*"])
+  head_exists = _git(
+      repo_root, ["rev-parse", "--verify", "--quiet", "HEAD"]
+  ).returncode == 0
+  tags = (
+      _git(repo_root, ["tag", "--merged", "HEAD", "--list", "v1.*"])
+      if head_exists
+      else subprocess.CompletedProcess([], 0, "", "")
+  )
   if tags.returncode != 0:
     return ["release tags could not be enumerated"]
   required_versions = {

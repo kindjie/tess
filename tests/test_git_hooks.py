@@ -426,6 +426,7 @@ def test_documented_checkout_version_matches_workflows():
 def test_hook_backstop_uses_first_party_python_and_requires_hashes():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  assert "permissions:\n  actions: read\n  contents: read\n" in workflow
 
   assert (
     "uses: actions/setup-python@"
@@ -597,7 +598,10 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert "            release-evidence.json\n" in evidence
   assert "            compatibility/\n" in evidence
   assert '"workflow_run_url": os.environ["WORKFLOW_RUN_URL"]' in evidence
-  assert '"actual_versions": "workflow job logs"' in evidence
+  assert '"bundled_job_logs": observed_logs' in evidence
+  assert "release-job-logs/" in evidence
+  assert "release-jobs-pages.json" in evidence
+  assert "hashlib.sha256" in evidence
   assert '"vcpkg_commit":' in evidence
   assert '"clang_tidy": "18"' in evidence
 

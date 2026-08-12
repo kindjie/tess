@@ -9,8 +9,10 @@
   and access, branch-aware append-only enumerators, and existing overload sets.
   Worker-pool dispatch ownership now covers plan-ordered result selection;
   even empty nested dispatches fail fast. Released snapshot directories are
-  append-only, constructor detection covers attributes and conditional
-  `explicit`, release evidence links actual-version job logs, release package
-  checks use C++20 without an unavailable compiler launcher, and
+  append-only, constructor and data-member detection covers parenthesized
+  specifiers, attributed overloads and stable-macro undefinitions cannot evade
+  compatibility checks, future unmerged tags do not constrain maintenance
+  branches, release evidence retains checksummed actual-version job logs,
+  release package checks use C++20 without an unavailable compiler launcher, and
   `DeltaCollector` self-moves and repeated moves invalidate or poison borrowed
   frames fail-closed.

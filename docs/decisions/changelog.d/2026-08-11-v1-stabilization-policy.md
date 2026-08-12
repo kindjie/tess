@@ -51,16 +51,21 @@
   declarations, access labels, enums, and enumerators keep their enclosing C++
   scope and receive branch identities so they cannot evade the same checks;
   aggregate eligibility and implicit enumerator positions are retained across
-  conditional alternatives, including branch-specific visibility. Constructor
+  conditional alternatives, including branch-specific visibility. Declarator
+  recognition distinguishes parenthesized type/specifier syntax from callable
+  parameters, and attributed callables retain their actual callable identity.
+  Undefining a snapshotted stable macro is a compatibility break. Constructor
   recognition covers attributes and conditional `explicit` specifiers.
   Enumerator order is append-only, and existing callables cannot gain overloads
   because calls and address-taking can become ambiguous; sparse extensions
   therefore use distinctly named entry points. Release tags anchor an
-  append-only snapshot-directory inventory as well as every snapshot byte. A
+  append-only snapshot-directory inventory as well as every snapshot byte on
+  the current history; future unmerged release tags do not constrain older
+  maintenance branches. A
   newly required snapshot must exactly match the current inventories before
   becoming immutable. Prerelease package configs export numeric, prerelease,
   and full version metadata even though discovery must be unversioned.
 - The release evidence JSON records the expected/pinned toolchain contract and
-  links the immutable workflow run whose platform-job logs contain the actual
-  current and floor tool versions; it does not mislabel expected floors as
-  observed versions.
+  checksums retained copies of the successful platform-job logs containing the
+  actual current and floor tool versions. The workflow-run URL remains
+  supplemental provenance; expected floors are not mislabeled as observations.

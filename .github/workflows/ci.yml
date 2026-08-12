@@ -32,6 +32,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 # The event name keeps a scheduled full run from cancelling an in-flight
@@ -1731,6 +1732,34 @@ jobs:
             test "$result" = success
           done
 
+      - name: Capture completed job logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p release-job-logs
+          jobs_url="repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs"
+          gh api --paginate --slurp "$jobs_url?per_page=100" \
+            > release-jobs-pages.json
+          python3 - <<'PY' > release-completed-jobs.txt
+          import json
+          from pathlib import Path
+
+          pages = json.loads(
+              Path("release-jobs-pages.json").read_text(encoding="utf-8")
+          )
+          for page in pages:
+            for job in page["jobs"]:
+              if (
+                  job["status"] == "completed"
+                  and job["conclusion"] == "success"
+              ):
+                print(job["id"])
+          PY
+          while IFS= read -r job_id; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job_id/logs" \
+              > "release-job-logs/$job_id.log"
+          done < release-completed-jobs.txt
+
       - name: Write release evidence
         env:
           TESTED_SHA: ${{ needs.changes.outputs.tested_sha }}
@@ -1740,6 +1769,7 @@ jobs:
             ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           python3 - <<'PY'
+          import hashlib
           import json
           import os
           from pathlib import Path
@@ -1747,11 +1777,27 @@ jobs:
           manifests = sorted(
               str(path) for path in Path("compatibility").glob("*/manifest.json")
           )
+          pages = json.loads(
+              Path("release-jobs-pages.json").read_text(encoding="utf-8")
+          )
+          jobs = {
+              str(job["id"]): job
+              for page in pages
+              for job in page["jobs"]
+          }
+          observed_logs = {}
+          for path in sorted(Path("release-job-logs").glob("*.log")):
+            job_id = path.stem
+            observed_logs[job_id] = {
+                "job": jobs[job_id]["name"],
+                "path": str(path),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
           payload = {
               "tested_sha": os.environ["TESTED_SHA"],
               "expected_version": os.environ["EXPECTED_VERSION"],
               "tool_version_evidence": {
-                  "actual_versions": "workflow job logs",
+                  "bundled_job_logs": observed_logs,
                   "workflow_run_url": os.environ["WORKFLOW_RUN_URL"],
                   "expected_and_pinned": {
                       "cmake_floor": "3.25.3",
@@ -1783,6 +1829,8 @@ jobs:
           name: release-evidence-${{ needs.changes.outputs.tested_sha }}
           path: |
             release-evidence.json
+            release-job-logs/
+            release-jobs-pages.json
             compatibility/
           retention-days: 90
 

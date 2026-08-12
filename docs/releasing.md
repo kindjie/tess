@@ -15,8 +15,10 @@ configuration, sanitizer, no-exception, no-RTTI, documentation, package,
 fuzzing, compatibility, and toolchain-floor matrix. The final job fails if any
 required job failed or was skipped and uploads `release-evidence-<sha>` with
 the tested SHA, expected version, expected/pinned tool contract, snapshot
-inventory, gate results, and the immutable workflow-run URL whose job logs
-record the actual current and floor tool versions.
+inventory, gate results, and checksummed copies of every successful job log
+available before the evidence job.
+Those retained logs record the actual current and floor tool versions; the
+workflow-run URL is supplemental provenance rather than the only copy.
 
 ## 0.13 and the 1.0 candidate
 

@@ -243,6 +243,8 @@ def test_existing_public_type_cannot_gain_a_data_member(tmp_path):
       ("int additive_field = 0;", "additive_field"),
       ("void (*callback)(int);", "callback"),
       ("std::function<void(int)> handler;", "handler"),
+      ("alignas(16) int aligned_field;", "aligned_field"),
+      ("decltype(stable_inline(0)) derived_field;", "derived_field"),
   ):
     header.write_text(
         original.replace(
@@ -304,6 +306,73 @@ def test_existing_callable_cannot_gain_an_ambiguous_overload(tmp_path):
   ), failures
 
 
+def test_attributed_callable_cannot_gain_an_ambiguous_overload(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "[[nodiscard]] auto stable_route",
+      '[[nodiscard("why")]] auto stable_route',
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "[[nodiscard(\"why\")]] auto stable_route(int start, "
+          "int goal = 2) -> bool;",
+          "[[nodiscard(\"why\")]] auto stable_route(int start, "
+          "int goal = 2) -> bool;\n"
+          "auto stable_route(double start, double goal) -> bool;",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "overload added to existing callable" in failure
+      and "stable_route" in failure
+      for failure in failures
+  ), failures
+
+
+def test_snapshotted_macro_cannot_be_undefined(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  original = header.read_text(encoding="utf-8")
+
+  for undefinition in (
+      "#undef TESS_COMPAT_LIMIT\n",
+      "#if TESS_DISABLE_COMPAT_LIMIT\n"
+      "#undef TESS_COMPAT_LIMIT\n"
+      "#endif\n",
+  ):
+    header.write_text(
+        original.replace(
+            "#define TESS_COMPAT_LIMIT 8\n",
+            "#define TESS_COMPAT_LIMIT 8\n" + undefinition,
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        tmp_path, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "stable macro undefined" in failure
+        and "TESS_COMPAT_LIMIT" in failure
+        for failure in failures
+    ), failures
+
+
 def test_existing_aggregate_cannot_gain_constructor_or_private_state(
     tmp_path,
 ):
@@ -315,6 +384,8 @@ def test_existing_aggregate_cannot_gain_constructor_or_private_state(
   for addition in (
       "  StableOptions() = default;\n",
       " private:\n  int internal_state = 0;\n",
+      " private:\n  alignas(16) int aligned_state;\n",
+      " private:\n  decltype(stable_inline(0)) derived_state;\n",
   ):
     header.write_text(
         original.replace(
@@ -884,6 +955,55 @@ def test_released_snapshot_directory_cannot_be_deleted(tmp_path):
   ) == [
       "1.0.0-rc.1: released snapshot directory is missing"
   ]
+
+
+def test_future_unmerged_release_tag_does_not_require_its_snapshot(tmp_path):
+  _, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  subprocess.run(["git", "init"], cwd=tmp_path, check=True)
+  subprocess.run(
+      [
+          "git",
+          "config",
+          "user.email",
+          "compatibility" + chr(64) + "example.invalid",
+      ],
+      cwd=tmp_path,
+      check=True,
+  )
+  subprocess.run(
+      ["git", "config", "user.name", "Compatibility Tests"],
+      cwd=tmp_path,
+      check=True,
+  )
+  subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+  subprocess.run(
+      ["git", "-c", "commit.gpgsign=false", "commit", "-m", "snapshot"],
+      cwd=tmp_path,
+      check=True,
+  )
+  subprocess.run(
+      ["git", "tag", "v1.0.0-rc.1"], cwd=tmp_path, check=True
+  )
+  subprocess.run(
+      ["git", "switch", "--orphan", "future-release"],
+      cwd=tmp_path,
+      check=True,
+  )
+  marker = tmp_path / "future-release.txt"
+  marker.write_text("future\n", encoding="utf-8")
+  subprocess.run(["git", "add", "future-release.txt"], cwd=tmp_path, check=True)
+  subprocess.run(
+      ["git", "-c", "commit.gpgsign=false", "commit", "-m", "future"],
+      cwd=tmp_path,
+      check=True,
+  )
+  subprocess.run(["git", "tag", "v1.1.0"], cwd=tmp_path, check=True)
+  subprocess.run(["git", "switch", "master"], cwd=tmp_path, check=True)
+
+  assert snapshots.check_snapshot_immutability(
+      tmp_path, snapshot_root, "1.0.0-rc.1"
+  ) == []
 
 
 def test_current_release_snapshot_can_precede_its_tag(tmp_path):

@@ -23,6 +23,19 @@ SKIPPED_NAMESPACES = frozenset({"detail", "internal"})
 PP_END = "@tess_pp_end@"
 PP_ELIF = "@tess_pp_elif@"
 PP_ELSE = "@tess_pp_else@"
+PARENTHESIZED_SPECIFIERS = frozenset(
+    {
+        "alignas",
+        "decltype",
+        "explicit",
+        "noexcept",
+        "requires",
+        "sizeof",
+        "typeid",
+        "__attribute__",
+        "__declspec",
+    }
+)
 
 
 def _tokens(text: str) -> list[str]:
@@ -63,6 +76,15 @@ def _macro_contracts(text: str) -> list[str]:
       )
       prefix = _condition_scope(conditions)
       contracts.append(f"macro {prefix}{match.group(1)}:{body}")
+    undefinition = re.match(
+        r"^\s*#\s*undef\s+(TESS_[A-Za-z_]\w*)\b", logical
+    )
+    if undefinition is not None and not undefinition.group(1).endswith(
+        ("_H", "_H_")
+    ):
+      name = undefinition.group(1)
+      prefix = _condition_scope(conditions)
+      contracts.append(f"macro-undef {prefix}{name}:{name}")
     directive_text, _ = strip_comments(logical, False)
     directive = _conditional_directive(directive_text)
     if directive is not None:
@@ -96,6 +118,22 @@ def _condition_name(
 
 def _condition_scope(conditions: list[str]) -> str:
   return "::".join(conditions) + ("::" if conditions else "")
+
+
+def callable_name(declaration: str | list[str]) -> str | None:
+  """Return the declared callable name, skipping parenthesized specifiers."""
+  tokens = _tokens(declaration) if isinstance(declaration, str) else declaration
+  opening = _ContractParser._function_opening(tokens)
+  if opening is None:
+    return None
+  prefix = tokens[:opening]
+  if "operator" in prefix:
+    position = len(prefix) - 1 - prefix[::-1].index("operator")
+    return "operator" + "".join(prefix[position + 1 :])
+  identifiers = [
+      token for token in prefix if IDENTIFIER_RE.fullmatch(token)
+  ]
+  return identifiers[-1] if identifiers else None
 
 
 def _code_tokens(text: str) -> list[str]:
@@ -621,7 +659,7 @@ class _ContractParser:
       return False
     if "operator" in tokens:
       return True
-    opening = _ContractParser._first_top_level_round(tokens)
+    opening = _ContractParser._function_opening(tokens)
     if opening is None:
       return False
     closing = _ContractParser._matching_round_bracket(tokens, opening)
@@ -651,7 +689,25 @@ class _ContractParser:
     return True
 
   @staticmethod
-  def _first_top_level_round(tokens: list[str]) -> int | None:
+  def _function_opening(tokens: list[str]) -> int | None:
+    start = 0
+    while start < len(tokens):
+      opening = _ContractParser._first_top_level_round(tokens, start)
+      if opening is None:
+        return None
+      previous = tokens[opening - 1] if opening else ""
+      if previous not in PARENTHESIZED_SPECIFIERS:
+        return opening
+      closing = _ContractParser._matching_round_bracket(tokens, opening)
+      if closing is None:
+        return None
+      start = closing + 1
+    return None
+
+  @staticmethod
+  def _first_top_level_round(
+      tokens: list[str], start: int = 0
+  ) -> int | None:
     angle_depth = 0
     square_depth = 0
     for index, token in enumerate(tokens):
@@ -665,7 +721,12 @@ class _ContractParser:
         square_depth += 1
       elif token in {"]", "]]"} and square_depth:
         square_depth -= 1
-      elif token == "(" and angle_depth == 0 and square_depth == 0:
+      elif (
+          index >= start
+          and token == "("
+          and angle_depth == 0
+          and square_depth == 0
+      ):
         return index
     return None
 
