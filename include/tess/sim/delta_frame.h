@@ -342,6 +342,7 @@ class DeltaCollector {
   // so the move is intentionally not noexcept.
   // NOLINTNEXTLINE(performance-noexcept-move-constructor)
   DeltaCollector(DeltaCollector&&) = default;
+  // NOLINTNEXTLINE(performance-noexcept-move-constructor)
   auto operator=(DeltaCollector&&) -> DeltaCollector& = default;
 
   // Setup-time capacities; entity_capacity also sizes the coalescing
