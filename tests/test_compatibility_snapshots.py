@@ -851,13 +851,19 @@ def test_template_argument_name_does_not_fake_inherited_constructor():
 
 
 def test_nonterminal_template_component_does_not_fake_constructor():
-  contract = extract_api_contract(
-      "template <class T> struct Argument { struct Wrapper {}; };"
-      "struct Stable : Argument<int>::Wrapper { "
-      "using ::Argument<int>::Wrapper::Argument; int value; };"
+  declarations = (
+      "using ::Argument<int>::Wrapper::Argument;",
+      "using ::Argument<int>::Wrapper<double>::Argument;",
   )
+  for declaration in declarations:
+    contract = extract_api_contract(
+        "template <class T> struct Argument { "
+        "template<class> struct Wrapper {}; };"
+        "struct Stable : Argument<int>::Wrapper<double> { "
+        f"{declaration} int value; }};"
+    )
 
-  assert "aggregate Stable" in contract
+    assert "aggregate Stable" in contract
 
 
 def test_relational_template_expressions_preserve_callable_identity(tmp_path):
@@ -1106,25 +1112,34 @@ def test_function_returning_function_pointer_is_not_public_data(tmp_path):
 
 
 def test_function_pointer_array_is_public_data(tmp_path):
-  header_path, payload = make_repo(tmp_path)
-  snapshot_root = write_snapshot(tmp_path, payload)
-  header = tmp_path / "include/tess/tess.h"
-  text = header.read_text(encoding="utf-8").replace(
-      "struct StableOptions {",
-      "struct StableOptions {\n"
-      "  int (*callbacks[sizeof(int)])(double);",
+  bounds = (
+      "sizeof(int)",
+      "alignof(int)",
+      "sizeof(bound())",
+      "decltype(bound())::value",
+      "bound()",
   )
-  header.write_text(text, encoding="utf-8")
+  for index, bound in enumerate(bounds):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    snapshot_root = write_snapshot(repo, payload)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {",
+        "struct StableOptions {\n"
+        f"  int (*callbacks[{bound}])(double);",
+    )
+    header.write_text(text, encoding="utf-8")
 
-  failures = snapshots.check_snapshots(
-      tmp_path, snapshot_root, header_path, "1.1.1"
-  )
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
 
-  assert any(
-      "public data member added to existing type" in failure
-      and "callbacks" in failure
-      for failure in failures
-  ), failures
+    assert any(
+        "public data member added to existing type" in failure
+        and "callbacks" in failure
+        for failure in failures
+    ), failures
 
 
 def test_grouped_function_declarator_retains_callable_identity(tmp_path):
@@ -1247,6 +1262,47 @@ def test_grouped_function_pointer_return_retains_identity(tmp_path):
       and "factory" in failure
       for failure in failures
   ), failures
+
+
+def test_annotated_grouped_pointer_return_retains_identity(tmp_path):
+  declarations = (
+      "int (*TESS_ATTR(api) ((factory))())(double)",
+      "int (&TESS_ATTR(api) ((factory))())(double)",
+      "int (StableSymbol::*TESS_ATTR(api) ((factory))())(double)",
+  )
+  for index, declaration in enumerate(declarations):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {",
+        "#define TESS_ATTR(x)\nstruct StableOptions {\n"
+        "  int (*factory(int))(double);",
+    )
+    header.write_text(text, encoding="utf-8")
+    payload["api_contract"] = snapshots.current_api_contract(
+        repo,
+        payload["headers"]["stable"]
+        + payload["headers"]["optional-stable"],
+    )
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            "  int (*factory(int))(double);",
+            f"  int (*factory(int))(double);\n  {declaration};",
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "overload added to existing callable" in failure
+        and "factory" in failure
+        for failure in failures
+    ), failures
 
 
 def test_relational_template_grouped_function_keeps_identity(tmp_path):

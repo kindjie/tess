@@ -80,7 +80,9 @@
   inherited constructors, and comparison punctuation inside grouped template
   arguments does not change that result. Annotation removal and redundant
   grouping are normalized to a fixed point, and parenthesized array bounds do
-  not turn function-pointer data into functions.
+  not turn function-pointer data into functions. The last valid top-level
+  template component is terminal, and pointer-return name scanning skips array
+  bounds and annotation groups.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

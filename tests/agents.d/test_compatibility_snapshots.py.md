@@ -19,8 +19,9 @@
   function-pointer return types, qualified grouped and bare relational
   dependent-base arguments, namespace- and nested-template-argument-named
   imports, nonterminal template components, pointer arrays with parenthesized
-  bounds, fixed-point annotation/group normalization, trailing return and
-  constraint template calls, and post-type cv/storage specifiers,
+  constant-expression bounds, fixed-point annotation/group normalization,
+  annotated grouped pointer/reference/member-pointer returns, trailing return
+  and constraint template calls, and post-type cv/storage specifiers,
   constructor-like parameter spellings, and per-configuration
   member and base-clause aggregate availability, anonymous type objects,
   stable-macro redefinition and undefinition, release-tag byte and directory

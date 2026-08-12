@@ -23,7 +23,8 @@
   function-pointer return types, and qualified relational dependent-base
   arguments retain the correct identity without confusing namespace-named,
   nonterminal, or nested template-argument members; pointer arrays with
-  parenthesized bounds remain data;
+  arbitrary parenthesized constant-expression bounds remain data, while
+  annotated grouped pointer/reference returns retain their callable name;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

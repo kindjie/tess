@@ -204,8 +204,9 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
         structural_less.append(position)
       elif token in {">", ">>"}:
         structural_close.append(position)
+  candidates: list[str] = []
   for index, token in enumerate(tokens[:-1]):
-    if token != name or tokens[index + 1] != "<":
+    if not IDENTIFIER_RE.fullmatch(token) or tokens[index + 1] != "<":
       continue
     earlier_less = max(
         (position for position in structural_less if position < index),
@@ -216,8 +217,8 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
         default=-1,
     )
     if earlier_less < 0 or earlier_close > earlier_less:
-      return True
-  return False
+      candidates.append(token)
+  return bool(candidates) and candidates[-1] == name
 
 
 def _is_parenthesized_specifier(token: str) -> bool:
@@ -1235,13 +1236,25 @@ class _ContractParser:
       tokens: list[str], opening: int, closing: int
   ) -> int | None:
     pointer_seen = False
+    square_depth = 0
     for index in range(opening + 1, closing):
       token = tokens[index]
+      if token in {"[", "[["}:
+        square_depth += 1
+        continue
+      if token in {"]", "]]"} and square_depth:
+        square_depth -= 1
+        continue
+      if square_depth:
+        continue
       if token in {"*", "&", "&&"}:
         pointer_seen = True
       elif (
           pointer_seen
           and token == "("
+          and not _ContractParser._is_grouped_name_before_parameters(
+              tokens, index, closing
+          )
           and _ContractParser._grouped_declarator_name(tokens, index)
           is not None
       ):
@@ -1256,6 +1269,23 @@ class _ContractParser:
       ):
         return index + 1
     return None
+
+  @staticmethod
+  def _is_grouped_name_before_parameters(
+      tokens: list[str], opening: int, limit: int
+  ) -> bool:
+    closing = _ContractParser._matching_round_bracket(tokens, opening)
+    if closing is None or closing >= limit:
+      return False
+    grouped = _ContractParser._normalize_grouped_declarator(
+        tokens[opening + 1 : closing]
+    )
+    return (
+        len(grouped) == 1
+        and IDENTIFIER_RE.fullmatch(grouped[0]) is not None
+        and closing + 1 < limit
+        and tokens[closing + 1] == "("
+    )
 
   @staticmethod
   def _fallback_function_opening(
