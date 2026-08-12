@@ -16,9 +16,10 @@
 - Worker-pool nested or concurrent dispatch and reservation during dispatch
   fail fast in release as well as debug builds under the existing once-per-call
   mutex. Detectable misuse must not remain able to corrupt shared state merely
-  because assertions were compiled out. Both threaded executor variants are
-  stable; callback-state synchronization, join, allocation, result-order, and
-  worker-count contracts remain unchanged.
+  because assertions were compiled out. A dispatch keeps that ownership until
+  its plan-ordered result has been copied from shared storage under the mutex.
+  Both threaded executor variants are stable; callback-state synchronization,
+  join, allocation, result-order, and worker-count contracts remain unchanged.
 - CMake prereleases carry an explicit label and full version string. An
   unversioned package lookup may select an RC, while every versioned request is
   rejected. Stable 0.x packages use same-minor selection and stable 1.x
@@ -41,12 +42,13 @@
   and release CI builds and runs each named test explicitly.
 - Direct aggregate imports remain unconditional, and existing stable types
   retain aggregate status, including aggregates with public non-virtual bases,
-  and cannot gain public data members because either change would break
-  aggregate or structured-binding consumers. Conditional declarations keep
-  their enclosing C++ scope and receive branch identities so they cannot evade
-  the same checks. Enumerator order is append-only, and existing callables
-  cannot gain overloads because calls and address-taking can become ambiguous;
-  sparse extensions therefore use distinctly named entry points. A newly
-  required snapshot must exactly match the current inventories before becoming
-  immutable. Prerelease package configs export numeric, prerelease, and full
-  version metadata even though discovery must be unversioned.
+  and cannot gain public data members or inherited constructors because those
+  changes can break aggregate or structured-binding consumers. Conditional
+  declarations, access labels, enums, and enumerators keep their enclosing C++
+  scope and receive branch identities so they cannot evade the same checks.
+  Enumerator order is append-only, and existing callables cannot gain overloads
+  because calls and address-taking can become ambiguous; sparse extensions
+  therefore use distinctly named entry points. A newly required snapshot must
+  exactly match the current inventories before becoming immutable. Prerelease
+  package configs export numeric, prerelease, and full version metadata even
+  though discovery must be unversioned.

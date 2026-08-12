@@ -434,6 +434,7 @@ class WorkerPoolPhaseExecutorImpl
         std::is_nothrow_invocable_r_v<PlannedExecutionResult, Callback&,
                                       std::size_t>;
     std::size_t runs = 0;
+    PlannedExecutionResult result{};
 #if TESS_HAS_EXCEPTIONS
     std::exception_ptr exception;
 #endif
@@ -528,6 +529,15 @@ class WorkerPoolPhaseExecutorImpl
         exception = this->exception_;
       }
 #endif
+      // Select and copy the result before releasing dispatch ownership. A
+      // competing caller may resize or overwrite results_ as soon as the
+      // flag clears.
+      for (std::size_t offset = 0; offset < count; ++offset) {
+        if (results_[offset].status != PlannedExecutionStatus::Executed) {
+          result = results_[offset];
+          break;
+        }
+      }
       job_active_ = false;
       dispatch_active_ = false;
     }
@@ -540,12 +550,7 @@ class WorkerPoolPhaseExecutorImpl
     }
 #endif
 
-    for (std::size_t offset = 0; offset < count; ++offset) {
-      if (results_[offset].status != PlannedExecutionStatus::Executed) {
-        return results_[offset];
-      }
-    }
-    return PlannedExecutionResult{};
+    return result;
   }
 
  private:

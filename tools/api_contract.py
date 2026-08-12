@@ -21,6 +21,7 @@ TYPE_KEYWORDS = frozenset({"class", "struct", "union"})
 ACCESS = frozenset({"public", "protected", "private"})
 SKIPPED_NAMESPACES = frozenset({"detail", "internal"})
 PP_END = "@tess_pp_end@"
+PP_BRANCH = "@tess_pp_branch@"
 
 
 def _tokens(text: str) -> list[str]:
@@ -116,7 +117,7 @@ def _code_tokens(text: str) -> list[str]:
           conditions.append(name)
           clean.append(f"@{name}@")
         elif kind in {"elif", "else"} and conditions:
-          clean.append(PP_END)
+          clean.append(PP_BRANCH)
           name = _condition_name(conditions, kind, value)
           conditions[-1] = name
           clean.append(f"@{name}@")
@@ -149,28 +150,67 @@ class _ContractParser:
       aggregate_possible: bool = True,
   ) -> tuple[int, bool]:
     pending: list[str] = []
-    access = kind != "class"
+    access = {kind != "class"}
+    access_conditions: list[str] = []
+    branch_states: list[dict[str, object]] = []
+    expecting_branch = False
     aggregate_eligible = kind in TYPE_KEYWORDS and aggregate_possible
     while index < len(self.tokens):
       token = self.tokens[index]
+      if token == PP_BRANCH:
+        if pending:
+          pending.append(token)
+        if self.conditions:
+          self.conditions.pop()
+        if branch_states:
+          state = branch_states[-1]
+          state["combined"] = set(state["combined"]) | access
+          access = set(state["entry"])
+        expecting_branch = True
+        index += 1
+        continue
       if token == PP_END:
         if pending:
           pending.append(token)
         if self.conditions:
           self.conditions.pop()
+        if branch_states:
+          state = branch_states.pop()
+          combined = set(state["combined"]) | access | set(state["entry"])
+          access = combined
+          if state["changed"]:
+            access_conditions.extend(state["conditions"])
         index += 1
         continue
       if token.startswith("@__tess_pp_"):
         if pending:
           pending.append(token)
         self.conditions.append(token)
+        if expecting_branch and branch_states:
+          branch_states[-1]["conditions"].append(token)
+          expecting_branch = False
+        else:
+          branch_states.append(
+              {
+                  "entry": set(access),
+                  "combined": set(),
+                  "changed": False,
+                  "conditions": [token],
+              }
+          )
         index += 1
         continue
       if token == "}" and kind != "namespace-root":
         aggregate_eligible &= not self._breaks_aggregate(
-            pending, names, access
+            pending, names, access == {True}
         )
-        self._record(pending, names, kind, visible and access)
+        self._record(
+            pending,
+            names,
+            kind,
+            visible and True in access,
+            access_conditions,
+        )
         return index + 1, aggregate_eligible
       if (
           kind in TYPE_KEYWORDS
@@ -178,15 +218,27 @@ class _ContractParser:
           and len(pending) == 1
           and pending[0] in ACCESS
       ):
-        access = pending[0] == "public"
+        next_access = {pending[0] == "public"}
+        if branch_states and next_access != access:
+          for state in branch_states:
+            state["changed"] = True
+        elif not branch_states:
+          access_conditions.clear()
+        access = next_access
         pending.clear()
         index += 1
         continue
       if token == ";":
         aggregate_eligible &= not self._breaks_aggregate(
-            pending, names, access
+            pending, names, access == {True}
         )
-        self._record(pending, names, kind, visible and access)
+        self._record(
+            pending,
+            names,
+            kind,
+            visible and True in access,
+            access_conditions,
+        )
         pending.clear()
         index += 1
         continue
@@ -203,7 +255,7 @@ class _ContractParser:
       if self._is_namespace(pending):
         namespace = self._namespace_name(pending)
         namespace_parts = tuple(part for part in namespace.split("::") if part)
-        child_visible = visible and access and not bool(
+        child_visible = visible and True in access and not bool(
             set(namespace_parts) & SKIPPED_NAMESPACES
         )
         pending.clear()
@@ -217,11 +269,13 @@ class _ContractParser:
 
       enum_name = self._enum_name(pending)
       if enum_name is not None:
-        declaration_visible = visible and access
+        declaration_visible = visible and True in access
         qualified = _qualified(names + (enum_name,))
         if declaration_visible:
           self.contracts.append(
-              f"type {qualified}:{_normalize(pending)}"
+              f"type {qualified}:"
+              f"{self._condition_prefix(access_conditions)}"
+              f"{_normalize(pending)}"
           )
         pending.clear()
         index = self._enum_body(
@@ -231,7 +285,7 @@ class _ContractParser:
 
       type_kind, type_name = self._type(pending)
       if type_kind is not None and type_name is not None:
-        declaration_visible = visible and access
+        declaration_visible = visible and True in access
         qualified = _qualified(names + (type_name,))
         aggregate_possible = self._aggregate_bases_possible(
             pending, type_kind
@@ -239,7 +293,8 @@ class _ContractParser:
         if declaration_visible:
           self.contracts.append(
               f"type {qualified}:"
-              f"{self._condition_prefix()}{_normalize(pending)}"
+              f"{self._condition_prefix(access_conditions)}"
+              f"{_normalize(pending)}"
           )
         pending.clear()
         index, child_is_aggregate = self._scope(
@@ -250,7 +305,7 @@ class _ContractParser:
             aggregate_possible,
         )
         if declaration_visible and child_is_aggregate:
-          condition = self._condition_prefix().rstrip()
+          condition = self._condition_prefix(access_conditions).rstrip()
           suffix = f":{condition}" if condition else ""
           self.contracts.append(f"aggregate {qualified}{suffix}")
         continue
@@ -261,18 +316,30 @@ class _ContractParser:
           pending.extend(braced)
           continue
         aggregate_eligible &= not self._breaks_aggregate(
-            pending, names, access
+            pending, names, access == {True}
         )
-        self._record(pending, names, kind, visible and access)
+        self._record(
+            pending,
+            names,
+            kind,
+            visible and True in access,
+            access_conditions,
+        )
         pending.clear()
         index = self._skip_braces(index + 1)
         continue
 
       braced, index = self._braced_initializer(index)
       pending.extend(braced)
-    self._record(pending, names, kind, visible and access)
+    self._record(
+        pending,
+        names,
+        kind,
+        visible and True in access,
+        access_conditions,
+    )
     aggregate_eligible &= not self._breaks_aggregate(
-        pending, names, access
+        pending, names, access == {True}
     )
     return index, aggregate_eligible
 
@@ -287,6 +354,8 @@ class _ContractParser:
       return False
     declaration = cls._without_constructor_initializer(tokens, names)
     if cls._is_constructor(declaration, names[-1]):
+      return True
+    if cls._is_inherited_constructor(declaration):
       return True
     if "virtual" in declaration:
       return True
@@ -310,6 +379,15 @@ class _ContractParser:
       return False
     opening = tokens.index("(")
     return opening > 0 and tokens[opening - 1] == type_name
+
+  @staticmethod
+  def _is_inherited_constructor(tokens: list[str]) -> bool:
+    if not tokens or tokens[0] != "using" or "=" in tokens:
+      return False
+    identifiers = [
+        token for token in tokens[1:] if IDENTIFIER_RE.fullmatch(token)
+    ]
+    return len(identifiers) >= 2 and identifiers[-1] == identifiers[-2]
 
   @staticmethod
   def _aggregate_bases_possible(
@@ -363,8 +441,12 @@ class _ContractParser:
         return False
     return True
 
-  def _condition_prefix(self) -> str:
-    return _normalize(self.conditions) + (" " if self.conditions else "")
+  def _condition_prefix(self, extra: list[str] | None = None) -> str:
+    conditions = list(self.conditions)
+    if extra is not None:
+      conditions.extend(extra)
+    conditions = list(dict.fromkeys(conditions))
+    return _normalize(conditions) + (" " if conditions else "")
 
   def _record(
       self,
@@ -372,11 +454,12 @@ class _ContractParser:
       names: tuple[str, ...],
       scope_kind: str,
       visible: bool,
+      conditions: list[str],
   ) -> None:
     if not tokens or not visible or tokens[0] == "static_assert":
       return
     declaration = self._without_constructor_initializer(tokens, names)
-    normalized = self._condition_prefix() + _normalize(declaration)
+    normalized = self._condition_prefix(conditions) + _normalize(declaration)
     scope = _qualified(names)
     if scope_kind in TYPE_KEYWORDS:
       additive_member = (
@@ -597,12 +680,45 @@ class _ContractParser:
       visible: bool,
   ) -> int:
     entry: list[str] = []
+    entry_conditions: list[str] = []
     round_depth = 0
     square_depth = 0
     brace_depth = 0
-    ordinal = 0
+    ordinals = {0}
+    ordinal_branches: list[dict[str, set[int]]] = []
+    expecting_branch = False
     while index < len(self.tokens):
       token = self.tokens[index]
+      if token == PP_BRANCH:
+        if self.conditions:
+          self.conditions.pop()
+        if ordinal_branches:
+          state = ordinal_branches[-1]
+          state["combined"].update(ordinals)
+          ordinals = set(state["entry"])
+        expecting_branch = True
+        index += 1
+        continue
+      if token == PP_END:
+        if self.conditions:
+          self.conditions.pop()
+        if ordinal_branches:
+          state = ordinal_branches.pop()
+          ordinals.update(state["combined"])
+          ordinals.update(state["entry"])
+        index += 1
+        continue
+      if token.startswith("@__tess_pp_"):
+        self.conditions.append(token)
+        entry_conditions.append(token)
+        if expecting_branch:
+          expecting_branch = False
+        else:
+          ordinal_branches.append(
+              {"entry": set(ordinals), "combined": set()}
+          )
+        index += 1
+        continue
       if token == "(":
         round_depth += 1
       elif token == ")":
@@ -627,10 +743,13 @@ class _ContractParser:
           )
           self.contracts.append(
               f"enumerator {_qualified(names + (name,))}:"
-              f"{_normalize(entry)} @index {ordinal}"
+              f"{self._condition_prefix(entry_conditions)}"
+              f"{_normalize(entry)} "
+              f"@index {','.join(str(value) for value in sorted(ordinals))}"
           )
-          ordinal += 1
+          ordinals = {value + 1 for value in ordinals}
         entry.clear()
+        entry_conditions.clear()
         index += 1
         if token == "}":
           return index

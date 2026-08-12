@@ -377,6 +377,50 @@ struct StableOptions : StableBase {""",
   ), failures
 
 
+def test_existing_derived_aggregate_cannot_inherit_constructors(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      """struct StableBase {
+  explicit StableBase(int value);
+};
+struct StableOptions : StableBase {""",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "struct StableOptions : StableBase {",
+          "struct StableOptions : StableBase {\n"
+          "  using StableBase::StableBase;",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "aggregate compatibility changed" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
 def test_conditional_class_additions_keep_the_enclosing_scope(tmp_path):
   header_path, payload = make_repo(tmp_path)
   snapshot_root = write_snapshot(tmp_path, payload)
@@ -417,6 +461,93 @@ def test_conditional_class_additions_keep_the_enclosing_scope(tmp_path):
     )
 
     assert any(expected in failure for failure in failures), failures
+
+
+def test_conditional_access_labels_retain_branch_identity(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {\n  int max_steps = 1;",
+      """class StableOptions {
+#if TESS_PUBLIC_OPTIONS
+ public:
+#endif
+  int max_steps = 1;""",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace("TESS_PUBLIC_OPTIONS", "TESS_RENAMED_OPTIONS"),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "API declaration changed or removed" in failure
+      and "max_steps" in failure
+      for failure in failures
+  ), failures
+
+
+def test_conditional_enums_and_enumerators_retain_branch_identity(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  original = header.read_text(encoding="utf-8")
+
+  variants = (
+      original.replace(
+          "enum class StableMode {",
+          "#if TESS_STABLE_MODE\nenum class StableMode {",
+      ).replace(
+          "};\nstruct StableSymbol", "};\n#endif\nstruct StableSymbol", 1
+      ),
+      original.replace(
+          "enum class StableMode { First = 1, Second = 2 };",
+          """enum class StableMode {
+#if TESS_FIRST_MODE
+  First = 1,
+#endif
+  Second = 2
+};""",
+      ),
+  )
+  snapshot_root = tmp_path / "compatibility"
+  for index, text in enumerate(variants):
+    header.write_text(text, encoding="utf-8")
+    payload["api_contract"] = snapshots.current_api_contract(
+        tmp_path,
+        payload["headers"]["stable"]
+        + payload["headers"]["optional-stable"],
+    )
+    if index == 0:
+      snapshot_root = write_snapshot(tmp_path, payload)
+    else:
+      manifest = snapshot_root / "1.0.0-rc.1/manifest.json"
+      manifest.write_text(json.dumps(payload), encoding="utf-8")
+    header.write_text(
+        text.replace("TESS_STABLE_MODE", "TESS_RENAMED_MODE").replace(
+            "TESS_FIRST_MODE", "TESS_RENAMED_FIRST_MODE"
+        ),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        tmp_path, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(
+        "API declaration changed or removed" in failure
+        and "StableMode" in failure
+        for failure in failures
+    ), failures
 
 
 def test_implicit_enum_values_are_append_only(tmp_path):

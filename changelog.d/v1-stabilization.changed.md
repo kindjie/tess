@@ -5,6 +5,8 @@
   snapshots, checksum-aware deep archive fuzzing, and an upgrade guide.
   Compatibility snapshots must exactly match a new release before becoming
   immutable and preserve aggregate status (including public-base aggregates),
-  fixed public fields, conditional declarations, append-only enumerators, and
-  existing overload sets. `DeltaCollector` self-moves and repeated moves now
-  invalidate or poison borrowed frames fail-closed.
+  inherited-constructor absence, fixed public fields, conditional declarations
+  and access, append-only enumerators, and existing overload sets. Worker-pool
+  dispatch ownership now covers plan-ordered result selection, and
+  `DeltaCollector` self-moves and repeated moves invalidate or poison borrowed
+  frames fail-closed.
