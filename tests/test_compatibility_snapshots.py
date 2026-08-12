@@ -443,6 +443,7 @@ def test_existing_aggregate_rejects_parenthesized_constructor_specifiers(
   for constructor in (
       "  explicit(true) StableOptions(int value = 0);\n",
       '  [[deprecated("old")]] StableOptions() = default;\n',
+      '  TESS_DEPRECATED("old") StableOptions() = default;\n',
   ):
     header.write_text(
         original.replace(

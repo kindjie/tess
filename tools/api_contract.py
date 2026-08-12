@@ -451,10 +451,18 @@ class _ContractParser:
   def _constructor_opening(
       tokens: list[str], type_name: str
   ) -> int | None:
-    opening = _ContractParser._function_opening(tokens)
-    if opening is None or opening == 0:
-      return None
-    return opening if tokens[opening - 1] == type_name else None
+    start = 0
+    while start < len(tokens):
+      opening = _ContractParser._first_top_level_round(tokens, start)
+      if opening is None:
+        return None
+      if opening > 0 and tokens[opening - 1] == type_name:
+        return opening
+      closing = _ContractParser._matching_round_bracket(tokens, opening)
+      if closing is None:
+        return None
+      start = closing + 1
+    return None
 
   @staticmethod
   def _is_inherited_constructor(tokens: list[str]) -> bool:

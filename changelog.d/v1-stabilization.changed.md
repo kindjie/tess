@@ -10,7 +10,8 @@
   Worker-pool dispatch ownership now covers plan-ordered result selection;
   even empty nested dispatches fail fast. Released snapshot directories are
   append-only, constructor and data-member detection covers parenthesized
-  specifiers and parameter-type spellings, attributed overloads and stable
+  specifiers, annotation macros, and parameter-type spellings; attributed
+  overloads and stable
   macro redefinitions/undefinitions cannot evade compatibility checks, future
   unmerged tags do not constrain maintenance
   branches, release evidence retains checksummed actual-version job logs,
