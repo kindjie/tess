@@ -333,6 +333,92 @@ def test_existing_aggregate_cannot_gain_constructor_or_private_state(
     ), failures
 
 
+def test_existing_derived_aggregate_cannot_gain_constructor(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      """struct StableBase {
+  int base_value = 1;
+};
+struct StableOptions : StableBase {""",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["public_symbols"] = sorted(
+      snapshots.current_symbols(
+          tmp_path,
+          payload["headers"]["stable"]
+          + payload["headers"]["optional-stable"],
+      )
+  )
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"]
+      + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "struct StableOptions : StableBase {",
+          "struct StableOptions : StableBase {\n"
+          "  StableOptions() = default;",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "aggregate compatibility changed" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
+def test_conditional_class_additions_keep_the_enclosing_scope(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  original = header.read_text(encoding="utf-8")
+
+  additions = (
+      (
+          "#if TESS_EXTRA_STATE\n  int extra_state = 0;\n#endif\n",
+          "public data member added to existing type",
+      ),
+      (
+          "#if TESS_EXTRA_CONSTRUCTOR\n"
+          "  StableOptions() = default;\n"
+          "#endif\n",
+          "aggregate compatibility changed",
+      ),
+      (
+          "#if TESS_EXTRA_OVERLOAD\n"
+          "  void set_limit(double value);\n"
+          "#endif\n",
+          "overload added to existing callable",
+      ),
+  )
+  for addition, expected in additions:
+    insertion = (
+        "struct StableOptions {\n"
+        if "StableOptions" in addition
+        else "struct StableSymbol {\n"
+    )
+    header.write_text(
+        original.replace(insertion, insertion + addition),
+        encoding="utf-8",
+    )
+
+    failures = snapshots.check_snapshots(
+        tmp_path, snapshot_root, header_path, "1.1.1"
+    )
+
+    assert any(expected in failure for failure in failures), failures
+
+
 def test_implicit_enum_values_are_append_only(tmp_path):
   header_path, payload = make_repo(tmp_path)
   header = tmp_path / "include/tess/tess.h"

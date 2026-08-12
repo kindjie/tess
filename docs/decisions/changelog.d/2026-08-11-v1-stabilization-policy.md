@@ -40,11 +40,13 @@
   the candidate installation through supported CMake package entry points,
   and release CI builds and runs each named test explicitly.
 - Direct aggregate imports remain unconditional, and existing stable types
-  retain aggregate status and cannot gain public data members because either
-  change would break aggregate or structured-binding consumers. Enumerator
-  order is append-only, and existing callables cannot gain overloads because
-  calls and address-taking can become ambiguous; sparse extensions therefore
-  use distinctly named entry points. A newly required snapshot must exactly
-  match the current inventories before becoming immutable. Prerelease package
-  configs export numeric, prerelease, and full version metadata even though
-  discovery must be unversioned.
+  retain aggregate status, including aggregates with public non-virtual bases,
+  and cannot gain public data members because either change would break
+  aggregate or structured-binding consumers. Conditional declarations keep
+  their enclosing C++ scope and receive branch identities so they cannot evade
+  the same checks. Enumerator order is append-only, and existing callables
+  cannot gain overloads because calls and address-taking can become ambiguous;
+  sparse extensions therefore use distinctly named entry points. A newly
+  required snapshot must exactly match the current inventories before becoming
+  immutable. Prerelease package configs export numeric, prerelease, and full
+  version metadata even though discovery must be unversioned.

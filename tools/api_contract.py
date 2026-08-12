@@ -20,6 +20,7 @@ IDENTIFIER_RE = re.compile(r"^[A-Za-z_]\w*$")
 TYPE_KEYWORDS = frozenset({"class", "struct", "union"})
 ACCESS = frozenset({"public", "protected", "private"})
 SKIPPED_NAMESPACES = frozenset({"detail", "internal"})
+PP_END = "@tess_pp_end@"
 
 
 def _tokens(text: str) -> list[str]:
@@ -113,15 +114,15 @@ def _code_tokens(text: str) -> list[str]:
         if kind in {"if", "ifdef", "ifndef"}:
           name = _condition_name(conditions, kind, value)
           conditions.append(name)
-          clean.append(f"namespace {name} {{")
+          clean.append(f"@{name}@")
         elif kind in {"elif", "else"} and conditions:
-          clean.append("}")
+          clean.append(PP_END)
           name = _condition_name(conditions, kind, value)
           conditions[-1] = name
-          clean.append(f"namespace {name} {{")
+          clean.append(f"@{name}@")
         elif kind == "endif" and conditions:
           conditions.pop()
-          clean.append("}")
+          clean.append(PP_END)
       continuation = line.rstrip().endswith("\\")
       continue
     continuation = False
@@ -133,6 +134,7 @@ class _ContractParser:
   def __init__(self, tokens: list[str]) -> None:
     self.tokens = tokens
     self.contracts: list[str] = []
+    self.conditions: list[str] = []
 
   def parse(self) -> list[str]:
     self._scope(0, (), "namespace", True)
@@ -151,6 +153,19 @@ class _ContractParser:
     aggregate_eligible = kind in TYPE_KEYWORDS and aggregate_possible
     while index < len(self.tokens):
       token = self.tokens[index]
+      if token == PP_END:
+        if pending:
+          pending.append(token)
+        if self.conditions:
+          self.conditions.pop()
+        index += 1
+        continue
+      if token.startswith("@__tess_pp_"):
+        if pending:
+          pending.append(token)
+        self.conditions.append(token)
+        index += 1
+        continue
       if token == "}" and kind != "namespace-root":
         aggregate_eligible &= not self._breaks_aggregate(
             pending, names, access
@@ -218,10 +233,13 @@ class _ContractParser:
       if type_kind is not None and type_name is not None:
         declaration_visible = visible and access
         qualified = _qualified(names + (type_name,))
-        aggregate_possible = ":" not in pending
+        aggregate_possible = self._aggregate_bases_possible(
+            pending, type_kind
+        )
         if declaration_visible:
           self.contracts.append(
-              f"type {qualified}:{_normalize(pending)}"
+              f"type {qualified}:"
+              f"{self._condition_prefix()}{_normalize(pending)}"
           )
         pending.clear()
         index, child_is_aggregate = self._scope(
@@ -232,7 +250,9 @@ class _ContractParser:
             aggregate_possible,
         )
         if declaration_visible and child_is_aggregate:
-          self.contracts.append(f"aggregate {qualified}")
+          condition = self._condition_prefix().rstrip()
+          suffix = f":{condition}" if condition else ""
+          self.contracts.append(f"aggregate {qualified}{suffix}")
         continue
 
       if self._is_function(pending):
@@ -291,6 +311,61 @@ class _ContractParser:
     opening = tokens.index("(")
     return opening > 0 and tokens[opening - 1] == type_name
 
+  @staticmethod
+  def _aggregate_bases_possible(
+      tokens: list[str], type_kind: str
+  ) -> bool:
+    if ":" not in tokens:
+      return True
+    bases = tokens[tokens.index(":") + 1 :]
+    segments: list[list[str]] = [[]]
+    angle_depth = 0
+    round_depth = 0
+    square_depth = 0
+    for token in bases:
+      if token == "<":
+        angle_depth += 1
+      elif token == ">" and angle_depth:
+        angle_depth -= 1
+      elif token == ">>" and angle_depth:
+        angle_depth = max(0, angle_depth - 2)
+      elif token == "(":
+        round_depth += 1
+      elif token == ")" and round_depth:
+        round_depth -= 1
+      elif token in {"[", "[["}:
+        square_depth += 1
+      elif token in {"]", "]]"} and square_depth:
+        square_depth -= 1
+      if (
+          token == ","
+          and angle_depth == 0
+          and round_depth == 0
+          and square_depth == 0
+      ):
+        segments.append([])
+      else:
+        segments[-1].append(token)
+    for segment in segments:
+      declarations = [
+          token
+          for token in segment
+          if not token.startswith("@__tess_pp_") and token != PP_END
+      ]
+      if not declarations:
+        continue
+      if any(
+          token in {"private", "protected", "virtual"}
+          for token in declarations
+      ):
+        return False
+      if type_kind == "class" and "public" not in declarations:
+        return False
+    return True
+
+  def _condition_prefix(self) -> str:
+    return _normalize(self.conditions) + (" " if self.conditions else "")
+
   def _record(
       self,
       tokens: list[str],
@@ -301,7 +376,7 @@ class _ContractParser:
     if not tokens or not visible or tokens[0] == "static_assert":
       return
     declaration = self._without_constructor_initializer(tokens, names)
-    normalized = _normalize(declaration)
+    normalized = self._condition_prefix() + _normalize(declaration)
     scope = _qualified(names)
     if scope_kind in TYPE_KEYWORDS:
       additive_member = (
