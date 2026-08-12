@@ -182,8 +182,34 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
   """Return whether a qualified type-id's terminal component is ``name``."""
   if tokens and IDENTIFIER_RE.fullmatch(tokens[-1]):
     return tokens[-1] == name
+  rightmost_template = _rightmost_template_component(tokens)
+  if rightmost_template is not None:
+    return rightmost_template == name
   qualified_templates: list[str] = []
+  round_depth = 0
+  square_depth = 0
+  brace_depth = 0
   for index, token in enumerate(tokens[:-1]):
+    if token == "(":
+      round_depth += 1
+      continue
+    if token == ")" and round_depth:
+      round_depth -= 1
+      continue
+    if token in {"[", "[["}:
+      square_depth += 1
+      continue
+    if token in {"]", "]]"} and square_depth:
+      square_depth -= 1
+      continue
+    if token == "{":
+      brace_depth += 1
+      continue
+    if token == "}" and brace_depth:
+      brace_depth -= 1
+      continue
+    if round_depth or square_depth or brace_depth:
+      continue
     if (
         not IDENTIFIER_RE.fullmatch(token)
         or tokens[index + 1] != "<"
@@ -194,16 +220,8 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
         "template",
     ]
     qualified = index >= 1 and tokens[index - 1] == "::"
-    separator = index - (2 if dependent else 1)
-    qualification_continues = "::" in tokens[index + 2 :]
-    terminal_closes = tokens[-1] == ">" or (
-        tokens[-1] == ">>"
-        and separator > 0
-        and tokens[separator - 1] == ">>"
-    )
     if not dependent and not (
-        qualified
-        and (qualification_continues or terminal_closes)
+        qualified and _follows_closed_template_component(tokens, index)
     ):
       continue
     qualified_templates.append(token)
@@ -212,6 +230,76 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
   terminal_template = _terminal_template_component(tokens)
   if terminal_template is not None:
     return terminal_template == name
+  return False
+
+
+def _rightmost_template_component(tokens: list[str]) -> str | None:
+  """Return a normally balanced template-id at a qualifier's right edge."""
+  if not tokens or tokens[-1] not in {">", ">>"}:
+    return None
+  depth = 2 if tokens[-1] == ">>" else 1
+  for index in range(len(tokens) - 2, -1, -1):
+    token = tokens[index]
+    if token == ">":
+      depth += 1
+    elif token == ">>":
+      depth += 2
+    elif token == "<":
+      depth -= 1
+      if depth == 0:
+        if (
+            index
+            and IDENTIFIER_RE.fullmatch(tokens[index - 1])
+            and _template_prefix_balanced(tokens[: index - 1])
+        ):
+          return tokens[index - 1]
+        return None
+  return None
+
+
+def _template_prefix_balanced(tokens: list[str]) -> bool:
+  depth = 0
+  round_depth = 0
+  square_depth = 0
+  brace_depth = 0
+  for token in tokens:
+    if token == "(":
+      round_depth += 1
+    elif token == ")" and round_depth:
+      round_depth -= 1
+    elif token in {"[", "[["}:
+      square_depth += 1
+    elif token in {"]", "]]"} and square_depth:
+      square_depth -= 1
+    elif token == "{":
+      brace_depth += 1
+    elif token == "}" and brace_depth:
+      brace_depth -= 1
+    elif not (round_depth or square_depth or brace_depth):
+      if token == "<":
+        depth += 1
+      elif token == ">" and depth:
+        depth -= 1
+      elif token == ">>" and depth:
+        depth = max(0, depth - 2)
+  return depth == 0
+
+
+def _follows_closed_template_component(
+    tokens: list[str], component: int
+) -> bool:
+  position = component - 2
+  while position >= 0:
+    if tokens[position] in {">", ">>"}:
+      return True
+    if (
+        IDENTIFIER_RE.fullmatch(tokens[position])
+        and position
+        and tokens[position - 1] == "::"
+    ):
+      position -= 2
+      continue
+    return False
   return False
 
 
@@ -746,6 +834,23 @@ class _ContractParser:
         for token in _declarator_prefix(tokens[:opening])
         if token not in DECLARATION_SPECIFIERS
     ]
+    if prefix and prefix[0] == "template":
+      depth = 0
+      round_depth = 0
+      for index, token in enumerate(prefix[1:], start=1):
+        if token == "(" and depth:
+          round_depth += 1
+        elif token == ")" and round_depth:
+          round_depth -= 1
+        elif token == "<" and round_depth == 0:
+          depth += 1
+        elif token == ">" and round_depth == 0:
+          depth -= 1
+        elif token == ">>" and round_depth == 0:
+          depth -= 2
+        if depth == 0 and token in {">", ">>"}:
+          prefix = prefix[index + 1 :]
+          break
     return opening if prefix == [type_name] else None
 
   @staticmethod
@@ -797,7 +902,7 @@ class _ContractParser:
     angle_depth = 0
     round_depth = 0
     square_depth = 0
-    for token in bases:
+    for index, token in enumerate(bases):
       if token == "<":
         angle_depth += 1
       elif token == ">" and angle_depth:
@@ -814,9 +919,18 @@ class _ContractParser:
         square_depth -= 1
       if (
           token == ","
-          and angle_depth == 0
-          and round_depth == 0
-          and square_depth == 0
+          and (
+              (
+                  angle_depth == 0
+                  and round_depth == 0
+                  and square_depth == 0
+              )
+              or (
+                  index + 1 < len(bases)
+                  and bases[index + 1]
+                  in {"public", "protected", "private", "virtual"}
+              )
+          )
       ):
         segments.append([])
       else:

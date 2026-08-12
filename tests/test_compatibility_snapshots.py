@@ -1009,22 +1009,11 @@ def test_nonterminal_template_component_does_not_fake_constructor():
     assert "aggregate Stable" in contract
 
 
-def test_dependent_nonterminal_component_does_not_fake_constructor(tmp_path):
+def assert_later_constructor_breaks(tmp_path, declaration: str) -> None:
   header_path, payload = make_repo(tmp_path)
   header = tmp_path / "include/tess/tess.h"
   text = header.read_text(encoding="utf-8").replace(
-      "struct StableOptions {",
-      "template < class T > struct Outer {\n"
-      "  template < class U > struct Base {\n"
-      "    template < bool Enabled > struct Wrapper {\n"
-      "      static void Base(int value);\n"
-      "    };\n"
-      "  };\n"
-      "};\n"
-      "template < int N, int M >\n"
-      "struct StableOptions\n"
-      "  : Outer<int>::Base<int>::Wrapper<N < M> {\n"
-      "  using Outer<int>::template Base<int>::Wrapper<N < M>::Base;",
+      "struct StableOptions {", declaration
   )
   header.write_text(text, encoding="utf-8")
   refresh_payload(tmp_path, payload)
@@ -1037,19 +1026,32 @@ def test_dependent_nonterminal_component_does_not_fake_constructor(tmp_path):
       ),
       encoding="utf-8",
   )
-
   failures = snapshots.check_snapshots(
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
-
   assert_aggregate_break(failures, "StableOptions")
 
 
+def test_dependent_nonterminal_component_does_not_fake_constructor(tmp_path):
+  assert_later_constructor_breaks(
+      tmp_path,
+      "template < class T > struct Outer {\n"
+      "  template < class U > struct Base {\n"
+      "    template < bool Enabled > struct Wrapper {\n"
+      "      static void Base(int value);\n"
+      "    };\n"
+      "  };\n"
+      "};\n"
+      "template < int N, int M >\n"
+      "struct StableOptions\n"
+      "  : Outer<int>::Base<int>::Wrapper<N < M> {\n"
+      "  using Outer<int>::template Base<int>::Wrapper<N < M>::Base;",
+  )
+
+
 def test_nested_argument_name_does_not_hide_terminal_component(tmp_path):
-  header_path, payload = make_repo(tmp_path)
-  header = tmp_path / "include/tess/tess.h"
-  text = header.read_text(encoding="utf-8").replace(
-      "struct StableOptions {",
+  assert_later_constructor_breaks(
+      tmp_path,
       "template < class T > struct Pair {\n"
       "  template < class U > struct Base {};\n"
       "};\n"
@@ -1064,30 +1066,33 @@ def test_nested_argument_name_does_not_hide_terminal_component(tmp_path):
       "  : Outer<Pair<int>::Base<double>>::Middle::Wrapper<int> {\n"
       "  using Outer<Pair<int>::Base<double>>::Middle::Wrapper<int>::Base;",
   )
-  header.write_text(text, encoding="utf-8")
-  refresh_payload(tmp_path, payload)
-  assert_aggregate(payload, "StableOptions")
-  snapshot_root = write_snapshot(tmp_path, payload)
-  header.write_text(
-      text.replace(
-          "  int max_steps = 1;",
-          "  StableOptions() = default;\n  int max_steps = 1;",
-      ),
-      encoding="utf-8",
+
+
+def test_spaced_nested_argument_name_does_not_fake_constructor(tmp_path):
+  assert_later_constructor_breaks(
+      tmp_path,
+      "namespace other { template<class T> struct Argument {}; }\n"
+      "template<class T> struct StableBase { static int Argument; };\n"
+      "struct StableOptions : StableBase<other::Argument<int> > {\n"
+      "  using StableBase<other::Argument<int> >::Argument;",
   )
 
-  failures = snapshots.check_snapshots(
-      tmp_path, snapshot_root, header_path, "1.1.1"
-  )
 
-  assert_aggregate_break(failures, "StableOptions")
+def test_relational_member_name_does_not_fake_constructor(tmp_path):
+  assert_later_constructor_breaks(
+      tmp_path,
+      "struct Bound { static constexpr int value = 0; };\n"
+      "namespace q {\n"
+      "template<bool> struct StableBase { static int value; };\n"
+      "}\n"
+      "struct StableOptions : q::StableBase<Bound::value < 1> {\n"
+      "  using q::StableBase<Bound::value < 1>::value;",
+  )
 
 
 def test_decltype_argument_name_does_not_fake_constructor(tmp_path):
-  header_path, payload = make_repo(tmp_path)
-  header = tmp_path / "include/tess/tess.h"
-  text = header.read_text(encoding="utf-8").replace(
-      "struct StableOptions {",
+  assert_later_constructor_breaks(
+      tmp_path,
       "template < class T > struct Base {};\n"
       "template < class T > struct Tag {};\n"
       "struct Source { static void Base(int value); };\n"
@@ -1095,23 +1100,27 @@ def test_decltype_argument_name_does_not_fake_constructor(tmp_path):
       "struct StableOptions {\n"
       "  using decltype(make(Tag<::tess::Base<int>>{}))::Base;",
   )
-  header.write_text(text, encoding="utf-8")
-  refresh_payload(tmp_path, payload)
-  assert_aggregate(payload, "StableOptions")
-  snapshot_root = write_snapshot(tmp_path, payload)
-  header.write_text(
-      text.replace(
-          "  int max_steps = 1;",
-          "  StableOptions() = default;\n  int max_steps = 1;",
-      ),
-      encoding="utf-8",
+
+
+def test_dependent_decltype_argument_name_does_not_fake_constructor(tmp_path):
+  assert_later_constructor_breaks(
+      tmp_path,
+      "template<class T> struct Tag { template<class U> struct Base {}; };\n"
+      "struct Source { static void Base(int value); };\n"
+      "template<class T> Source make(typename Tag<T>::template Base<int>);\n"
+      "template<class T> struct StableOptions {\n"
+      "  using decltype(make<T>(typename Tag<T>::template Base<int>{}))::Base;",
   )
 
-  failures = snapshots.check_snapshots(
-      tmp_path, snapshot_root, header_path, "1.1.1"
+
+def test_relational_base_does_not_absorb_later_public_base():
+  contract = extract_api_contract(
+      "template<bool> struct Base {}; struct Other {}; "
+      "constexpr int N=0, M=1; "
+      "class Stable : Base<N < M>, public Other { public: int x; };"
   )
 
-  assert_aggregate_break(failures, "StableOptions")
+  assert "aggregate Stable" not in contract
 
 
 def test_relational_template_expressions_preserve_callable_identity(tmp_path):
@@ -1976,6 +1985,8 @@ def test_existing_aggregate_rejects_parenthesized_constructor_specifiers(
   for constructor in (
       "  explicit(true) StableOptions(int value = 0);\n",
       "  explicit StableOptions() = default;\n",
+      "  template <class T> StableOptions(T value);\n",
+      "  template <int N = (1 < 2)> StableOptions();\n",
       '  [[deprecated("old")]] StableOptions() = default;\n',
       '  TESS_DEPRECATED("old") StableOptions() = default;\n',
       '  StableOptions [[deprecated("old")]] () = default;\n',

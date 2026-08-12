@@ -33,7 +33,9 @@
   member-pointer object declarations remain data and do not suppress aggregate
   compatibility evidence; bare and conditional `explicit` constructors remain
   aggregate-breaking; elaborated qualified objects remain data and template
-  names nested in `decltype` expressions cannot impersonate an owning type;
+  names nested in dependent `decltype` expressions or spaced nested template
+  arguments cannot impersonate an owning type; constructor templates and
+  relational comma-separated base clauses preserve aggregate evidence;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance
