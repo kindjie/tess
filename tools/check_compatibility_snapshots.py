@@ -7,7 +7,7 @@ import argparse
 import json
 import re
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from api_contract import current_api_contract
 from check_public_surface import extract_public_symbols
@@ -29,9 +29,7 @@ VERSION_RE = re.compile(
 PRERELEASE_RE = re.compile(
     r'^set\(TESS_VERSION_PRERELEASE "([^"]*)"\)', re.MULTILINE
 )
-PACKAGE_FIND_RE = re.compile(
-    r"find_package\s*\(\s*tess\s+CONFIG\s+REQUIRED"
-)
+TARGET_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
 def current_version(path: Path) -> str:
@@ -96,6 +94,236 @@ def release_requires_snapshot(version: str) -> bool:
   prerelease = match.group("prerelease") or ""
   return prerelease == "rc.1" or (
       not prerelease and int(match.group("patch")) == 0
+  )
+
+
+def _snapshot_path(
+    directory: Path, value: object, path_kind: str
+) -> tuple[Path | None, str]:
+  if not isinstance(value, str) or not value:
+    return None, "missing"
+  posix = PurePosixPath(value)
+  windows = PureWindowsPath(value)
+  if (
+      posix.is_absolute()
+      or windows.is_absolute()
+      or ".." in posix.parts
+      or ".." in windows.parts
+  ):
+    return None, "unsafe"
+  try:
+    root = directory.resolve(strict=True)
+    resolved = (directory / value).resolve(strict=True)
+    resolved.relative_to(root)
+  except (OSError, RuntimeError):
+    return None, "missing"
+  except ValueError:
+    return None, "unsafe"
+  exists = resolved.is_file() if path_kind == "file" else resolved.is_dir()
+  return (resolved, "ok") if exists else (None, "missing")
+
+
+def _cmake_without_comments(text: str) -> str:
+  result: list[str] = []
+  index = 0
+  quoted = False
+  escaped = False
+  bracket_end: str | None = None
+  while index < len(text):
+    if bracket_end is not None:
+      if text.startswith(bracket_end, index):
+        index += len(bracket_end)
+        bracket_end = None
+      else:
+        if text[index] == "\n":
+          result.append("\n")
+        index += 1
+      continue
+    character = text[index]
+    if character == '"' and not escaped:
+      quoted = not quoted
+    if character == "#" and not quoted:
+      bracket = re.match(r"#\[(=*)\[", text[index:])
+      if bracket is not None:
+        bracket_end = f"]{bracket.group(1)}]"
+        index += len(bracket.group(0))
+        continue
+      newline = text.find("\n", index)
+      if newline == -1:
+        break
+      result.append("\n")
+      index = newline + 1
+      escaped = False
+      continue
+    result.append(character)
+    escaped = character == "\\" and not escaped
+    if character != "\\":
+      escaped = False
+    index += 1
+  return "".join(result)
+
+
+def _cmake_commands(text: str) -> list[tuple[str, list[str]]]:
+  clean = _cmake_without_comments(text)
+  result: list[tuple[str, list[str]]] = []
+  position = 0
+  while position < len(clean):
+    if clean[position] == '"':
+      position += 1
+      while position < len(clean):
+        if clean[position] == '"' and clean[position - 1] != "\\":
+          position += 1
+          break
+        position += 1
+      continue
+    bracket = re.match(r"\[(=*)\[", clean[position:])
+    if bracket is not None:
+      closing = f"]{bracket.group(1)}]"
+      end = clean.find(closing, position + len(bracket.group(0)))
+      position = len(clean) if end == -1 else end + len(closing)
+      continue
+    match = re.match(r"([A-Za-z_]\w*)", clean[position:])
+    if match is None:
+      position += 1
+      continue
+    name = match.group(1)
+    opening = position + len(name)
+    while opening < len(clean) and clean[opening].isspace():
+      opening += 1
+    if opening >= len(clean) or clean[opening] != "(":
+      position = opening
+      continue
+    index = opening + 1
+    depth = 1
+    quoted = False
+    escaped = False
+    bracket_end: str | None = None
+    while index < len(clean) and depth:
+      if bracket_end is not None:
+        if clean.startswith(bracket_end, index):
+          index += len(bracket_end)
+          bracket_end = None
+        else:
+          index += 1
+        continue
+      character = clean[index]
+      if character == '"' and not escaped:
+        quoted = not quoted
+      elif not quoted:
+        bracket = re.match(r"\[(=*)\[", clean[index:])
+        if bracket is not None:
+          bracket_end = f"]{bracket.group(1)}]"
+          index += len(bracket.group(0))
+          continue
+        if character == "(":
+          depth += 1
+        elif character == ")":
+          depth -= 1
+      escaped = character == "\\" and not escaped
+      if character != "\\":
+        escaped = False
+      index += 1
+    if depth:
+      break
+    body = clean[opening + 1 : index - 1]
+    arguments = [
+        token[1:-1] if token.startswith('"') else token
+        for token in re.findall(r'"(?:\\.|[^"\\])*"|[^\s()]+', body)
+    ]
+    result.append((name.lower(), arguments))
+    position = index
+  return result
+
+
+def _source_argument_matches(
+    argument: str, project: Path, source: Path
+) -> bool:
+  if argument.startswith("$"):
+    return False
+  try:
+    return (project / argument).resolve() == source
+  except (OSError, RuntimeError):
+    return False
+
+
+def _consumer_project_is_valid(
+    project: Path,
+    consumer: Path,
+    consumer_target: object,
+    archive_consumer: Path,
+    archive_target: object,
+) -> bool:
+  if (
+      not isinstance(consumer_target, str)
+      or TARGET_RE.fullmatch(consumer_target) is None
+      or not isinstance(archive_target, str)
+      or TARGET_RE.fullmatch(archive_target) is None
+  ):
+    return False
+  commands = _cmake_commands(
+      (project / "CMakeLists.txt").read_text(encoding="utf-8")
+  )
+  finds = [args for name, args in commands if name == "find_package"]
+  executables = [
+      args for name, args in commands if name == "add_executable"
+  ]
+  links = [
+      args for name, args in commands if name == "target_link_libraries"
+  ]
+  tests = [args for name, args in commands if name == "add_test"]
+
+  def has_executable(target: str, source: Path) -> bool:
+    return any(
+        args
+        and args[0] == target
+        and any(
+            _source_argument_matches(argument, project, source)
+            for argument in args[1:]
+        )
+        for args in executables
+    )
+
+  def links_tess(target: str) -> bool:
+    return any(
+        args and args[0] == target and "tess::tess" in args[1:]
+        for args in links
+    )
+
+  def has_test(target: str, needs_snapshot: bool) -> bool:
+    for args in tests:
+      if "NAME" not in args or "COMMAND" not in args:
+        continue
+      name_index = args.index("NAME")
+      command_index = args.index("COMMAND")
+      if (
+          name_index + 1 >= len(args)
+          or args[name_index + 1] != target
+          or command_index + 1 >= len(args)
+      ):
+        continue
+      if args[command_index + 1] != target:
+        continue
+      if needs_snapshot and not any(
+          "TESS_SNAPSHOT_DIR" in argument for argument in args
+      ):
+        continue
+      return True
+    return False
+
+  return (
+      any(
+          args
+          and args[0] == "tess"
+          and "CONFIG" in args[1:]
+          and "REQUIRED" in args[1:]
+          for args in finds
+      )
+      and has_executable(consumer_target, consumer)
+      and links_tess(consumer_target)
+      and has_test(consumer_target, False)
+      and has_executable(archive_target, archive_consumer)
+      and links_tess(archive_target)
+      and has_test(archive_target, True)
   )
 
 
@@ -209,44 +437,50 @@ def check_snapshots(
               f"{header}: {missing}"
           )
 
-    consumer = payload.get("consumer")
-    if not isinstance(consumer, str) or not (directory / consumer).is_file():
+    consumer, consumer_status = _snapshot_path(
+        directory, payload.get("consumer"), "file"
+    )
+    if consumer_status == "unsafe":
+      failures.append(
+          f"{directory.name}: consumer path must stay inside the "
+          "snapshot directory"
+      )
+    elif consumer is None:
       failures.append(f"{directory.name}: representative consumer is missing")
 
-    archive_consumer = payload.get("archive_consumer")
-    if (
-        not isinstance(archive_consumer, str)
-        or not (directory / archive_consumer).is_file()
-    ):
+    archive_consumer, archive_consumer_status = _snapshot_path(
+        directory, payload.get("archive_consumer"), "file"
+    )
+    if archive_consumer_status == "unsafe":
+      failures.append(
+          f"{directory.name}: archive consumer path must stay inside the "
+          "snapshot directory"
+      )
+    elif archive_consumer is None:
       failures.append(f"{directory.name}: archive consumer is missing")
 
-    consumer_project = payload.get("consumer_project")
+    consumer_project, project_status = _snapshot_path(
+        directory, payload.get("consumer_project"), "directory"
+    )
     project_file = (
-        directory / consumer_project / "CMakeLists.txt"
-        if isinstance(consumer_project, str)
+        consumer_project / "CMakeLists.txt"
+        if consumer_project is not None
         else None
     )
-    if project_file is None or not project_file.is_file():
+    if project_status == "unsafe":
+      failures.append(
+          f"{directory.name}: consumer project path must stay inside the "
+          "snapshot directory"
+      )
+    elif project_file is None or not project_file.is_file():
       failures.append(f"{directory.name}: consumer project is missing")
-    else:
-      project_text = project_file.read_text(encoding="utf-8")
-      consumer_source = (
-          Path(consumer).name if isinstance(consumer, str) else ""
-      )
-      archive_source = (
-          Path(archive_consumer).name
-          if isinstance(archive_consumer, str)
-          else ""
-      )
-      if (
-          PACKAGE_FIND_RE.search(project_text) is None
-          or "tess::tess" not in project_text
-          or not consumer_source
-          or consumer_source not in project_text
-          or not archive_source
-          or archive_source not in project_text
-          or "TESS_SNAPSHOT_DIR" not in project_text
-          or len(re.findall(r"\badd_test\s*\(", project_text)) < 2
+    elif consumer is not None and archive_consumer is not None:
+      if not _consumer_project_is_valid(
+          consumer_project,
+          consumer,
+          payload.get("consumer_target"),
+          archive_consumer,
+          payload.get("archive_consumer_target"),
       ):
         failures.append(
             f"{directory.name}: consumer project must discover tess CONFIG "
@@ -262,10 +496,18 @@ def check_snapshots(
         if not isinstance(archive, dict):
           failures.append(f"{directory.name}: malformed archive metadata")
           continue
-        archive_path = archive.get("path")
+        archive_path, archive_status = _snapshot_path(
+            directory, archive.get("path"), "file"
+        )
+        if archive_status == "unsafe":
+          failures.append(
+              f"{directory.name}: archive path must stay inside the "
+              "snapshot directory"
+          )
+          continue
         if (
-            not isinstance(archive_path, str)
-            or not (directory / archive_path).is_file()
+            archive_status != "ok"
+            or archive_path is None
             or archive.get("format") != 1
             or archive.get("producer_version") != directory.name
             or not isinstance(archive.get("schema"), str)

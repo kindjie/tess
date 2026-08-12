@@ -69,7 +69,9 @@ inline auto stable_braced(StableSymbol value = {}) -> bool { return true; }
       ),
       "consumer": "consumer/main.cc",
       "consumer_project": "consumer",
+      "consumer_target": "consumer",
       "archive_consumer": "archives/load.cc",
+      "archive_consumer_target": "archive_consumer",
       "archives": [
           {
               "path": "archives/one.bin",
@@ -282,3 +284,189 @@ def test_api_contract_excludes_bodies_and_private_members(tmp_path):
   assert snapshots.check_snapshots(
       tmp_path, snapshot_root, header_path, "1.1.1"
   ) == []
+
+
+def test_api_contract_retains_preprocessor_condition_context(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8")
+  text = text.replace(
+      "[[nodiscard]] auto stable_route",
+      "#if 0\n[[nodiscard]] auto stable_route",
+  ).replace(
+      "constexpr auto stable_inline", "#endif\nconstexpr auto stable_inline"
+  )
+  header.write_text(text, encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+
+  assert any(
+      "API declaration changed or removed" in failure
+      and "stable_route" in failure
+      for failure in failures
+  ), failures
+
+
+def test_api_contract_excludes_constructor_initializer_and_body(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "void set_limit(int value = 8);",
+      """StableSymbol(int value) : max_entries{value} {
+    max_entries += 1;
+  }
+  void set_limit(int value = 8);""",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"] + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "max_entries{value}", "max_entries{value + 1}"
+      ).replace("max_entries += 1", "max_entries += 2"),
+      encoding="utf-8",
+  )
+
+  assert snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  ) == []
+
+
+def test_api_contract_excludes_conditionally_private_members(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "  int internal_revision = 1;",
+      """#if TESS_PRIVATE_LAYOUT
+  int internal_revision = 1;
+#endif""",
+  )
+  header.write_text(text, encoding="utf-8")
+  payload["api_contract"] = snapshots.current_api_contract(
+      tmp_path,
+      payload["headers"]["stable"] + payload["headers"]["optional-stable"],
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace("internal_revision", "implementation_epoch"),
+      encoding="utf-8",
+  )
+
+  assert snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  ) == []
+
+
+def test_snapshot_paths_cannot_escape_version_directory(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  shared = tmp_path / "compatibility/shared.cc"
+  shared.write_text("int main() {}\n", encoding="utf-8")
+  payload["consumer"] = "../shared.cc"
+  manifest = snapshot_root / "1.0.0-rc.1/manifest.json"
+  manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert failures == [
+      "1.0.0-rc.1: consumer path must stay inside the snapshot directory"
+  ]
+
+
+def test_snapshot_symlink_cannot_escape_version_directory(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  outside = tmp_path / "outside.cc"
+  outside.write_text("int main() {}\n", encoding="utf-8")
+  link = snapshot_root / "1.0.0-rc.1/consumer/linked.cc"
+  link.symlink_to(outside)
+  payload["consumer"] = "consumer/linked.cc"
+  manifest = snapshot_root / "1.0.0-rc.1/manifest.json"
+  manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert failures == [
+      "1.0.0-rc.1: consumer path must stay inside the snapshot directory"
+  ]
+
+
+def test_snapshot_project_cannot_escape_version_directory(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  outside = tmp_path / "outside-project"
+  outside.mkdir()
+  original = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  (outside / "CMakeLists.txt").write_text(
+      original.read_text(encoding="utf-8"), encoding="utf-8"
+  )
+  payload["consumer_project"] = "../../outside-project"
+  manifest = snapshot_root / "1.0.0-rc.1/manifest.json"
+  manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert failures == [
+      "1.0.0-rc.1: consumer project path must stay inside the "
+      "snapshot directory"
+  ]
+
+
+def test_archive_fixture_cannot_escape_version_directory(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  outside = tmp_path / "compatibility/outside.bin"
+  outside.write_bytes(b"outside fixture")
+  payload["archives"][0]["path"] = "../outside.bin"
+  manifest = snapshot_root / "1.0.0-rc.1/manifest.json"
+  manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert failures == [
+      "1.0.0-rc.1: archive path must stay inside the snapshot directory"
+  ]
+
+
+def test_cmake_contract_cannot_be_satisfied_by_comments(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  project.write_text(
+      """cmake_minimum_required(VERSION 3.25)
+project(empty LANGUAGES CXX)
+#[[
+find_package(tess CONFIG REQUIRED)
+add_executable(consumer main.cc)
+target_link_libraries(consumer PRIVATE tess::tess)
+add_executable(archive_consumer ../archives/load.cc)
+target_link_libraries(archive_consumer PRIVATE tess::tess)
+]]
+# add_test(NAME consumer COMMAND consumer)
+# add_test(NAME archive_consumer COMMAND archive_consumer TESS_SNAPSHOT_DIR)
+""",
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert failures == [
+      "1.0.0-rc.1: consumer project must discover tess CONFIG and link "
+      "tess::tess, build both recorded consumers, and test them",
+  ]

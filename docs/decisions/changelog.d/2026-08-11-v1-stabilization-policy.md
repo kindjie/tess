@@ -35,5 +35,7 @@
   are documented in the 1.0 upgrade guide.
 - Compatibility snapshots retain normalized declarations rather than treating
   symbol-name retention as source compatibility. Released snapshot bytes are
-  anchored to their `v<version>` tag, and their consumers discover and link the
-  candidate installation through its supported CMake package entry points.
+  anchored to their `v<version>` tag, with path confinement and immutability
+  checked on ordinary changes. Their named consumer targets discover and link
+  the candidate installation through supported CMake package entry points,
+  and release CI builds and runs each named test explicitly.

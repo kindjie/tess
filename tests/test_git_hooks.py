@@ -622,7 +622,20 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert 'ctest --test-dir "build/compatibility/$version-consumer"' in (
       compatibility
   )
+  assert compatibility.count("--no-tests=error") == 2
+  assert 'consumer_target="$(jq -r .consumer_target "$manifest")"' in (
+      compatibility
+  )
+  assert 'archive_consumer_target="$(' in compatibility
+  assert 'jq -r .archive_consumer_target "$manifest"' in compatibility
+  assert '-R "^$consumer_target$"' in compatibility
+  assert '-R "^$archive_consumer_target$"' in compatibility
   assert "c++ -std=c++20 -Iinclude" not in compatibility
+
+  hooks = _job_body(workflow, "hooks-backstop")
+  assert "fetch-depth: 0" in hooks
+  assert "fetch-tags: true" in hooks
+  assert "python tools/check_compatibility_snapshots.py" in hooks
 
 
 def test_documentation_only_changes_skip_expensive_ci_fail_closed():

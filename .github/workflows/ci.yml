@@ -486,6 +486,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
 
       - name: Set up Python
@@ -582,6 +584,9 @@ jobs:
       # also pin the latest release. Keep those two versions explicit.
       - name: Documentation versions
         run: python tools/check_doc_versions.py
+
+      - name: Compatibility snapshots
+        run: python tools/check_compatibility_snapshots.py
 
   # The preset list is tier-dependent: pull requests run dev-asan and
   # dev-cppcheck (plus dev-tsan when concurrency-sensitive paths changed);
@@ -1590,13 +1595,22 @@ jobs:
             snapshot="$(dirname "$manifest")"
             version="$(basename "$snapshot")"
             consumer_project="$(jq -r .consumer_project "$manifest")"
+            consumer_target="$(jq -r .consumer_target "$manifest")"
+            archive_consumer_target="$(
+              jq -r .archive_consumer_target "$manifest"
+            )"
             cmake -S "$snapshot/$consumer_project" \
               -B "build/compatibility/$version-consumer" \
               -DCMAKE_PREFIX_PATH="$install_prefix" \
               -DTESS_SNAPSHOT_DIR="$PWD/$snapshot"
-            cmake --build "build/compatibility/$version-consumer"
+            cmake --build "build/compatibility/$version-consumer" \
+              --target "$consumer_target" "$archive_consumer_target"
             ctest --test-dir "build/compatibility/$version-consumer" \
-              --output-on-failure
+              --output-on-failure --no-tests=error \
+              -R "^$consumer_target$"
+            ctest --test-dir "build/compatibility/$version-consumer" \
+              --output-on-failure --no-tests=error \
+              -R "^$archive_consumer_target$"
           done
 
   release-docs:

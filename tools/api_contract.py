@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from hashlib import sha256
 from pathlib import Path
 
 from check_public_surface import strip_comments
@@ -35,6 +36,7 @@ def _qualified(scope: tuple[str, ...]) -> str:
 
 def _macro_contracts(text: str) -> list[str]:
   contracts: list[str] = []
+  conditions: list[str] = []
   lines = text.splitlines()
   index = 0
   while index < len(lines):
@@ -56,19 +58,70 @@ def _macro_contracts(text: str) -> list[str]:
       body = _normalize(
           _tokens(clean_match.group(1) + clean_match.group(2))
       )
-      contracts.append(f"macro {match.group(1)}:{body}")
+      prefix = _condition_scope(conditions)
+      contracts.append(f"macro {prefix}{match.group(1)}:{body}")
+    directive_text, _ = strip_comments(logical, False)
+    directive = _conditional_directive(directive_text)
+    if directive is not None:
+      kind, value = directive
+      if kind in {"if", "ifdef", "ifndef"}:
+        conditions.append(_condition_name(conditions, kind, value))
+      elif kind in {"elif", "else"} and conditions:
+        conditions[-1] = _condition_name(conditions, kind, value)
+      elif kind == "endif" and conditions:
+        conditions.pop()
     index += 1
   return contracts
+
+
+def _conditional_directive(line: str) -> tuple[str, str] | None:
+  match = re.match(
+      r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)$", line
+  )
+  if match is None:
+    return None
+  return match.group(1), _normalize(_tokens(match.group(2)))
+
+
+def _condition_name(
+    parents: list[str], kind: str, value: str
+) -> str:
+  identity = "/".join([*parents, kind, value])
+  digest = sha256(identity.encode("utf-8")).hexdigest()[:16]
+  return f"__tess_pp_{digest}"
+
+
+def _condition_scope(conditions: list[str]) -> str:
+  return "::".join(conditions) + ("::" if conditions else "")
 
 
 def _code_tokens(text: str) -> list[str]:
   clean: list[str] = []
   in_block_comment = False
   continuation = False
+  conditions: list[str] = []
   for raw_line in text.splitlines():
     line, in_block_comment = strip_comments(raw_line, in_block_comment)
     stripped = line.lstrip()
-    if continuation or stripped.startswith("#"):
+    if continuation:
+      continuation = line.rstrip().endswith("\\")
+      continue
+    if stripped.startswith("#"):
+      directive = _conditional_directive(line)
+      if directive is not None:
+        kind, value = directive
+        if kind in {"if", "ifdef", "ifndef"}:
+          name = _condition_name(conditions, kind, value)
+          conditions.append(name)
+          clean.append(f"namespace {name} {{")
+        elif kind in {"elif", "else"} and conditions:
+          clean.append("}")
+          name = _condition_name(conditions, kind, value)
+          conditions[-1] = name
+          clean.append(f"namespace {name} {{")
+        elif kind == "endif" and conditions:
+          conditions.pop()
+          clean.append("}")
       continuation = line.rstrip().endswith("\\")
       continue
     continuation = False
@@ -127,7 +180,7 @@ class _ContractParser:
       if self._is_namespace(pending):
         namespace = self._namespace_name(pending)
         namespace_parts = tuple(part for part in namespace.split("::") if part)
-        child_visible = visible and not bool(
+        child_visible = visible and access and not bool(
             set(namespace_parts) & SKIPPED_NAMESPACES
         )
         pending.clear()
@@ -171,6 +224,10 @@ class _ContractParser:
         continue
 
       if self._is_function(pending):
+        if self._starts_constructor_braced_initializer(pending):
+          braced, index = self._braced_initializer(index)
+          pending.extend(braced)
+          continue
         self._record(pending, names, kind, visible and access)
         pending.clear()
         index = self._skip_braces(index + 1)
@@ -190,7 +247,8 @@ class _ContractParser:
   ) -> None:
     if not tokens or not visible or tokens[0] == "static_assert":
       return
-    normalized = _normalize(tokens)
+    declaration = self._without_constructor_initializer(tokens, names)
+    normalized = _normalize(declaration)
     scope = _qualified(names)
     if scope_kind in TYPE_KEYWORDS:
       category = "member"
@@ -199,6 +257,28 @@ class _ContractParser:
     else:
       category = "declaration"
     self.contracts.append(f"{category} {scope}:{normalized}")
+
+  @staticmethod
+  def _without_constructor_initializer(
+      tokens: list[str], names: tuple[str, ...]
+  ) -> list[str]:
+    if not names or "(" not in tokens:
+      return tokens
+    opening = tokens.index("(")
+    if opening == 0 or tokens[opening - 1] != names[-1]:
+      return tokens
+    round_depth = 0
+    function_closed = False
+    for index in range(opening, len(tokens)):
+      token = tokens[index]
+      if token == "(":
+        round_depth += 1
+      elif token == ")" and round_depth:
+        round_depth -= 1
+        function_closed = round_depth == 0
+      elif token == ":" and function_closed and round_depth == 0:
+        return tokens[:index]
+    return tokens
 
   @staticmethod
   def _has_unclosed_group(tokens: list[str]) -> bool:
@@ -283,6 +363,28 @@ class _ContractParser:
       elif token == "=" and angle_depth == 0 and square_depth == 0:
         return False
     return True
+
+  @staticmethod
+  def _starts_constructor_braced_initializer(tokens: list[str]) -> bool:
+    round_depth = 0
+    function_closed = False
+    initializer_colon = False
+    completed_initializer = False
+    for token in tokens:
+      if token == "(":
+        round_depth += 1
+      elif token == ")" and round_depth:
+        round_depth -= 1
+        if round_depth == 0:
+          function_closed = True
+      elif function_closed and round_depth == 0:
+        if token == ":" and not initializer_colon:
+          initializer_colon = True
+        elif initializer_colon and token in {"}", ")"}:
+          completed_initializer = True
+        elif initializer_colon and token == ",":
+          completed_initializer = False
+    return initializer_colon and not completed_initializer
 
   def _skip_braces(self, index: int) -> int:
     depth = 1
