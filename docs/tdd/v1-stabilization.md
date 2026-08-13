@@ -9,7 +9,10 @@ plan is implemented, maintained documentation such as `docs/support.md`,
 the CMake package configuration remain authoritative for shipped behavior.
 
 Implementation divergences are recorded in the
-[1.0 stabilization decision](../decisions/changelog.d/2026-08-11-v1-stabilization-policy.md).
+[1.0 stabilization decision][stabilization-decision].
+
+[stabilization-decision]:
+  ../decisions/CHANGELOG.md#2026-08-11---define-the-enforceable-1x-stability-boundary
 
 ## 2. Summary
 
@@ -463,3 +466,10 @@ Implementation slices update maintained sources in the same pull request:
 This TDD remains historical intent. Later implementation divergence is
 recorded in those maintained documents rather than rewriting the proposal into
 an API reference.
+
+Implementation note: the compatibility evidence boundary was narrowed from a
+source-level declaration model to inventories plus compiled consumers. See the
+[2026-08-12 compatibility evidence decision][compatibility-evidence].
+
+[compatibility-evidence]:
+  ../decisions/CHANGELOG.md#2026-08-12---keep-c-semantics-in-compiled-compatibility-evidence
