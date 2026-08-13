@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -245,6 +246,72 @@ def test_install_smoke_uses_the_tracked_consumer_fixture():
     assert "_HAS_EXCEPTIONS=0" in fixture_cmake
     assert "requires Clang-family or GCC" not in fixture_cmake
     assert "cat >" not in script
+
+
+def test_prerelease_real_install_is_discoverable_unversioned(tmp_path):
+    env = os.environ.copy()
+    env.pop("CMAKE_CXX_COMPILER_LAUNCHER", None)
+    source = tmp_path / "source"
+    source.mkdir()
+    shutil.copy2(REPO_ROOT / "CMakeLists.txt", source)
+    shutil.copy2(REPO_ROOT / "LICENSE", source)
+    shutil.copytree(REPO_ROOT / "cmake", source / "cmake")
+    shutil.copytree(REPO_ROOT / "include", source / "include")
+    shutil.copytree(
+        REPO_ROOT / "tests" / "install_consumer",
+        source / "install_consumer",
+    )
+    (source / "cmake" / "tess-version.cmake").write_text(
+        """set(TESS_VERSION 1.0.0)
+set(TESS_VERSION_PRERELEASE "rc.1")
+
+set(TESS_VERSION_STRING "${TESS_VERSION}")
+if(NOT TESS_VERSION_PRERELEASE STREQUAL "")
+  string(APPEND TESS_VERSION_STRING "-${TESS_VERSION_PRERELEASE}")
+endif()
+""",
+        encoding="utf-8",
+    )
+    build = tmp_path / "build"
+    prefix = tmp_path / "prefix"
+    consumer_build = tmp_path / "consumer-build"
+    subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(source),
+            "-B",
+            str(build),
+            "-DTESS_BUILD_TESTING=OFF",
+            "-DTESS_BUILD_EXAMPLES=OFF",
+        ],
+        check=True,
+        env=env,
+    )
+    subprocess.run(
+        ["cmake", "--install", str(build), "--prefix", str(prefix)],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(source / "install_consumer"),
+            "-B",
+            str(consumer_build),
+            f"-DCMAKE_PREFIX_PATH={prefix}",
+            "-DTESS_EXPECTED_VERSION=1.0.0",
+            "-DTESS_EXPECTED_PRERELEASE=rc.1",
+        ],
+        check=True,
+        env=env,
+    )
+    subprocess.run(
+        ["cmake", "--build", str(consumer_build)], check=True
+    )
+    subprocess.run(
+        [str(consumer_build / "tess_install_consumer")], check=True
+    )
 
 
 def test_fetchcontent_smoke_uses_the_tracked_consumer_fixture():

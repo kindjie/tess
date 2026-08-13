@@ -426,6 +426,7 @@ def test_documented_checkout_version_matches_workflows():
 def test_hook_backstop_uses_first_party_python_and_requires_hashes():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  assert "permissions:\n  actions: read\n  contents: read\n" in workflow
 
   assert (
     "uses: actions/setup-python@"
@@ -500,6 +501,15 @@ ADVISORY_CI_JOBS = {
   "publish-benchmark-history": "publishes baselines after a main push",
   "long-seed-properties": "scheduled deep sweep, far longer than a gate allows",
   "coverage": "weekly advisory gap-finder, not a threshold",
+  "release-linux-floors": "main/release floor; release-evidence governs RCs",
+  "release-macos-floor": "main/release floor; release-evidence governs RCs",
+  "release-windows-floor": "main/release floor; release-evidence governs RCs",
+  "release-cmake-floor": "main/release floor; release-evidence governs RCs",
+  "release-fuzz": "scheduled/release fuzz; release-evidence governs RCs",
+  "release-packages": "release-only; governed by release-evidence",
+  "release-compatibility": "release-only; governed by release-evidence",
+  "release-docs": "release-only; governed by release-evidence",
+  "release-evidence": "release-only aggregate gate",
   "report-failure": "reports other jobs' failures; gating on it is circular",
 }
 
@@ -542,6 +552,117 @@ def test_every_ci_job_is_gated_or_explicitly_waived():
 
   for reason in ADVISORY_CI_JOBS.values():
     assert reason.strip()
+
+
+def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  changes = _job_body(workflow, "changes")
+  evidence = _job_body(workflow, "release-evidence")
+  release_jobs = (
+    "release-linux-floors",
+    "release-macos-floor",
+    "release-windows-floor",
+    "release-cmake-floor",
+    "release-fuzz",
+    "release-packages",
+    "release-compatibility",
+    "release-docs",
+  )
+  always_required = (
+    "dev",
+    "gcc",
+    "libcxx",
+    "no-exceptions",
+    "hooks-backstop",
+    "quality",
+    "macos",
+    "windows",
+    "windows-noexceptions",
+    "bench",
+    "long-seed-properties",
+    "coverage",
+    "ci-gate",
+  ) + release_jobs
+
+  assert "ref:" in workflow.split("workflow_dispatch:", 1)[1]
+  assert "expected_version:" in workflow.split("workflow_dispatch:", 1)[1]
+  assert "expected_sha:" in workflow.split("workflow_dispatch:", 1)[1]
+  assert 'test "$actual_sha" = "$EXPECTED_SHA"' in changes
+  assert 'test "$version" = "$EXPECTED_VERSION"' in changes
+  assert "needs.changes.outputs.release_mode == 'true'" in evidence
+  for job in always_required:
+    assert f"      - {job}\n" in evidence
+  assert "contains(needs.*.result" not in evidence
+  assert 'test "$result" = success' in evidence
+  assert "            release-evidence.json\n" in evidence
+  assert "            compatibility/\n" in evidence
+  assert '"workflow_run_url": os.environ["WORKFLOW_RUN_URL"]' in evidence
+  assert '"bundled_job_logs": observed_logs' in evidence
+  assert "release-job-logs/" in evidence
+  assert "release-jobs-pages.json" in evidence
+  assert "hashlib.sha256" in evidence
+  assert '"vcpkg_commit":' in evidence
+  assert '"clang_tidy": "18"' in evidence
+
+  windows_floor = _job_body(workflow, "release-windows-floor")
+  assert "if ($null -eq $file)" in windows_floor
+  assert "Select-String" in windows_floor
+  assert "-Quiet" in windows_floor
+  assert "if (-not $versionMatches)" in windows_floor
+  assert windows_floor.count("throw ") >= 2
+
+  for job in release_jobs[5:]:
+    body = _job_body(workflow, job)
+    assert "needs.changes.outputs.release_mode == 'true'" in body
+
+  for job in release_jobs[:4]:
+    body = _job_body(workflow, job)
+    assert "needs.changes.outputs.code_required == 'true'" in body
+    assert "github.event_name != 'pull_request'" in body
+
+  fuzz = _job_body(workflow, "release-fuzz")
+  assert "needs.changes.outputs.release_mode == 'true'" in fuzz
+  assert "github.event_name == 'schedule'" in fuzz
+
+  fuzzer = (root / "tests/fuzz/tess_world_archive_fuzzer.cc").read_text(
+      encoding="utf-8"
+  )
+  assert "normalize_archive_envelope" in fuzzer
+  assert "detail::archive_crc32" in fuzzer
+  assert fuzzer.count("inspect_world_archive") == 2
+  assert fuzzer.count("load_world_archive<Archive>") == 2
+
+  compatibility = _job_body(workflow, "release-compatibility")
+  assert "fetch-depth: 0" in compatibility
+  assert "fetch-tags: true" in compatibility
+  assert "cmake --install build/compatibility" in compatibility
+  assert '-DCMAKE_PREFIX_PATH="$install_prefix"' in compatibility
+  assert 'cmake -S "$snapshot/$consumer_project"' in compatibility
+  assert 'cmake --build "build/compatibility/$version-consumer"' in (
+      compatibility
+  )
+  assert 'ctest --test-dir "build/compatibility/$version-consumer"' in (
+      compatibility
+  )
+  assert compatibility.count("--no-tests=error") == 2
+  assert 'consumer_target="$(jq -r .consumer_target "$manifest")"' in (
+      compatibility
+  )
+  assert 'archive_consumer_target="$(' in compatibility
+  assert 'jq -r .archive_consumer_target "$manifest"' in compatibility
+  assert '-R "^$consumer_target$"' in compatibility
+  assert '-R "^$archive_consumer_target$"' in compatibility
+  assert "c++ -std=c++20 -Iinclude" not in compatibility
+
+  hooks = _job_body(workflow, "hooks-backstop")
+  assert "fetch-depth: 0" in hooks
+  assert "fetch-tags: true" in hooks
+  assert "python tools/check_compatibility_snapshots.py" in hooks
+
+  packages = _job_body(workflow, "release-packages")
+  assert "CMAKE_CXX_COMPILER_LAUNCHER: \"\"" in packages
+  assert "conan create . --build=missing -s compiler.cppstd=20" in packages
 
 
 def test_documentation_only_changes_skip_expensive_ci_fail_closed():
@@ -730,6 +851,14 @@ def test_required_clang_tidy_uses_an_explicit_major_version():
   assert "sudo apt-get install -y ccache clang-tidy-18" in advisory
   assert "clang-tidy-18 --version" in advisory
   assert "-DTESS_CLANG_TIDY_EXE=clang-tidy-18" in advisory
+
+
+def test_diff_clang_tidy_timeout_covers_a_large_public_surface_change():
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  tidy_diff = _job_body(workflow, "tidy-diff")
+
+  assert "    timeout-minutes: 30\n" in tidy_diff
 
 
 def test_non_gating_benchmark_baselines_run_only_on_main():
@@ -1405,11 +1534,19 @@ add_executable(
 target_link_libraries(tess_beta_test PRIVATE tess::tess)
 
 add_executable(other_tool tool.cc)
+
+add_test(
+  NAME tess_package_selection
+  COMMAND cmake -P test-package.cmake
+)
 """
 
 FRAGMENTS_FIXTURE = {
   "tess_alpha_test.md": "# tess_alpha_test\n\n- `tess_alpha_test`: covers alpha.\n",
   "tess_beta_test.md": "# tess_beta_test\n\n- `tess_beta_test`: covers beta.\n",
+  "tess_package_selection.md": (
+    "# tess_package_selection\n\n- `tess_package_selection`: covers packaging.\n"
+  ),
   "test_tool.py.md": "# test_tool.py\n\n- `tests/test_tool.py`: covers a tool.\n",
 }
 PYTEST_FIXTURE = ["test_tool.py"]
@@ -1417,7 +1554,11 @@ PYTEST_FIXTURE = ["test_tool.py"]
 
 def test_extract_cmake_test_targets_handles_multiline_forms():
   targets = git_hooks.extract_cmake_test_targets(CMAKE_FIXTURE)
-  assert targets == ["tess_alpha_test", "tess_beta_test"]
+  assert targets == [
+    "tess_alpha_test",
+    "tess_beta_test",
+    "tess_package_selection",
+  ]
 
 
 def test_agents_fragment_issues_empty_when_synchronized():
@@ -1538,7 +1679,8 @@ def test_repo_agents_fragments_match_targets_and_pytest_files():
     path.name for path in (root / "tests").glob("test_*.py")
   )
   issues = git_hooks.agents_fragment_issues(
-    (root / "tests" / "CMakeLists.txt").read_text(),
+    (root / "CMakeLists.txt").read_text()
+    + (root / "tests" / "CMakeLists.txt").read_text(),
     pytest_names,
     fragments,
   )

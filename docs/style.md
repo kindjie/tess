@@ -42,11 +42,12 @@ coverage for public APIs as they are added.
 
 ## Public And Implementation Headers
 
-`TESS_PUBLIC_HEADERS` in the root CMake file defines the supported API surface.
-Headers in `TESS_IMPLEMENTATION_HEADERS` are installed only because public
-templates include them. Names in `tess::detail`, and direct inclusion of those
-implementation headers, carry no source-compatibility guarantee. Consumer code
-should include the narrowest public header that owns the API it uses; the
+`cmake/tess-headers.json` defines the stable, optional-stable, experimental,
+and implementation-only surfaces. Implementation-only headers are installed
+only because public templates include them. Names in `tess::detail`, and direct
+inclusion of those implementation headers, carry no source-compatibility
+guarantee. Consumer code should include the narrowest compatible header that
+owns the API it uses; the
 `tess/tess.h` umbrella remains available for convenience but has the highest
 compile cost.
 
@@ -56,9 +57,9 @@ Use Doxygen-style comments for public API contracts. Prioritize ownership and
 borrowing, invalidation, allocation behavior, thread safety, checked versus
 unchecked entry points, and sparse-residency behavior over restating names or
 types. `tools/check_public_docs.py` gates namespace-scope symbols across every
-installed header: its list is derived from the CMake header sets, so a header
-added to the install set is gated automatically and there is no opt-in list to
-edit. Document a new namespace-scope symbol when you add it: the gate requires
+installed header: its list is derived from the header stability manifest, so a
+header added to the install set is gated automatically and there is no opt-in
+list to edit. Document a new namespace-scope symbol when you add it: the gate requires
 every namespace-scope public type and free function in an installed header to
 carry a Doxygen comment. It does not validate members, and it accepts an
 undocumented declaration when another declaration with the same normalized

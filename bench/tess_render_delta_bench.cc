@@ -55,7 +55,7 @@ void BM_render_delta_collect_sparse(benchmark::State& state) {
     }
     tess::collect_tile_deltas(collector, *world, kTerrainBit);
     const auto frame = collector.publish();
-    last_chunks = frame.chunks.size();
+    last_chunks = frame.chunks().size();
     benchmark::DoNotOptimize(last_chunks);
   }
   render_bench_check(last_chunks > 0 && last_chunks <= kDirtyTiles,
@@ -79,7 +79,7 @@ void BM_render_delta_collect_box(benchmark::State& state) {
     }
     tess::collect_tile_deltas(collector, *world, kTerrainBit);
     const auto frame = collector.publish();
-    last_chunks = frame.chunks.size();
+    last_chunks = frame.chunks().size();
     benchmark::DoNotOptimize(last_chunks);
   }
   render_bench_check(last_chunks == 64,
@@ -107,7 +107,7 @@ void run_entity_moves_bench(benchmark::State& state, bool coalesce) {
       }
     }
     const auto frame = collector.publish();
-    last_records = frame.entities.size();
+    last_records = frame.entities().size();
     benchmark::DoNotOptimize(last_records);
   }
   render_bench_check(last_records == (coalesce ? kEntities : kEntities * 8),
@@ -132,7 +132,7 @@ void BM_render_delta_baseline(benchmark::State& state) {
   for (auto _ : state) {
     tess::collect_baseline(collector, *world, kTerrainBit);
     const auto frame = collector.publish();
-    last_chunks = frame.chunks.size();
+    last_chunks = frame.chunks().size();
     benchmark::DoNotOptimize(last_chunks);
   }
   render_bench_check(last_chunks == DeltaWorld::chunk_count,
@@ -166,7 +166,7 @@ void BM_render_delta_collect_alloc_gate(benchmark::State& state) {
                           tess::Coord3{1, 0, 0});
     tess::collect_tile_deltas(collector, *world, kTerrainBit);
     const auto frame = collector.publish();
-    auto chunks = frame.chunks.size();
+    auto chunks = frame.chunks().size();
     benchmark::DoNotOptimize(chunks);
   }
   render_bench_check(counters.allocations == 0,
@@ -207,7 +207,7 @@ void BM_render_delta_collect_scan(benchmark::State& state) {
   std::size_t last_size = 0;
   for (auto _ : state) {
     out.clear();
-    tess::collect_render_tile_deltas(*world, kTerrainBit, out);
+    tess::collect_render_tile_deltas(out, *world, kTerrainBit);
     last_size = out.size();
     benchmark::DoNotOptimize(last_size);
   }

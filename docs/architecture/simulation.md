@@ -206,7 +206,7 @@ in a PIBT ranking oracle parks agents permanently beside obstructions.
 
 - `RenderTileDelta` records a changed tile coordinate, chunk key, local tile
   id, matching dirty flags, and chunk version.
-- `collect_render_tile_deltas(world, dirty_mask, out)` appends one delta per
+- `collect_render_tile_deltas(out, world, dirty_mask)` appends one delta per
   dirty tile in each matching chunk dirty bound. On a dense world it scans every
   chunk; on a sparse world it scans only the resident set (a non-resident chunk
   holds no data and cannot be dirty, so this misses no delta and never reads a
@@ -374,9 +374,10 @@ stateDiagram-v2
   `Found` result up to `max_steps` nodes along runtime-owned paths without
   touching world fields.
 - `advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
-  ReservationTag>(world, agents, runtime, max_steps, movement_dirty_mask)`
-  commits each step through `commit_movement_intent` (no version guards),
-  validating with the same movement class the plan used.
+  ReservationTag>(world, agents, runtime, options)` accepts
+  `PathAgentAdvanceOptions{max_steps, movement_dirty_mask}` and commits each
+  step through `commit_movement_intent` (no version guards), validating with
+  the same movement class the plan used.
   An occupied or reserved destination leaves the `Found` route intact so the
   retained step can be retried; other transient failures invalidate the route
   and request a re-plan. Either kind moves the agent to `Blocked` and counts a
@@ -414,8 +415,8 @@ stateDiagram-v2
   every tick). A NeedsOnly processing pass invalidates runtime tickets for
   agents it skips, so callers that need those agents' paths must use the
   tick-driver retained routes rather than reading old runtime tickets.
-- `PathAgentTickOptions` carries `max_steps` per tick, the runtime
-  `PathRuntimeCachePolicy`, and `max_blocked_retries` (default 8).
+- `PathAgentTickOptions` carries `max_steps` and `movement_dirty_mask` per tick,
+  the runtime `PathRuntimeCachePolicy`, and `max_blocked_retries` (default 8).
 - `PathAgentTickStats` reports the tick value, whether paths were processed,
   separate pathing and movement `PathAgentFrameStats`, and the
   `repaths_requested` count for actual searches plus `repath_exhausted` for
@@ -566,7 +567,7 @@ successful run (the paired-clear discipline), and the run's `dirty_mask` union
 feeds the schedule so OnDirty tasks in later phases fire the same tick. The
 worker pool is the production parallel backend (see the
 [queued-operations note](queued-operations.md)); the scoped-thread executor
-remains a comparison prototype. A
+is the stable per-dispatch alternative. A
 planning or kernel exception preserves the caller-owned queue for inspection
 or replacement while the exception path clears transient result slots, so old
 completions cannot leak into a later run. Earlier writes may already have

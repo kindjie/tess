@@ -67,7 +67,7 @@ goals.add(tess::Coord3{31, 31, 0});
 tess::DistanceFieldScratch scratch;
 tess::DistanceFieldProduct product;
 const auto built = tess::build_distance_field_product<World, PassableTag>(
-    world, goals, scratch, product);
+    world, goals, product, scratch);
 
 tess::FieldProductCache cache{1u << 20u};  // Byte-budgeted.
 const auto stored = cache.store<World, PassableTag>(std::move(product));

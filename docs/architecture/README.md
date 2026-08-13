@@ -12,6 +12,13 @@ custom-ECS seam, the versioned DeltaFrame render bridge, compile-gated
 diagnostics, the GPU backend interface, and an optional stable-C-API WebGPU
 backend.
 
+Generated `tess/version.h` exposes `TESS_VERSION_MAJOR`,
+`TESS_VERSION_MINOR`, `TESS_VERSION_PATCH`, `TESS_VERSION_PRERELEASE`, and
+`TESS_VERSION_STRING`. The `library_version` value reports the same components
+through `version`, including its `prerelease` member. A prerelease package can
+be found without a version request, but deliberately rejects every versioned
+`find_package` request so an RC cannot masquerade as stable `1.0.0`.
+
 ## Layer Map
 
 Arrows point from foundations to the higher-level facilities they enable.

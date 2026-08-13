@@ -68,6 +68,7 @@ struct PathAgentTickState {
 /// Configures per-tick movement, caching, and blocked-agent retry limits.
 struct PathAgentTickOptions {
   std::size_t max_steps = 1;
+  std::uint32_t movement_dirty_mask = 0;
   PathRuntimeCachePolicy cache_policy{};
   /// Budget of consecutive ticks spent retrying a Blocked agent.
   ///
@@ -279,7 +280,6 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 [[nodiscard]] auto tick_unit_path_agents_with_movement(
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathAgentTickOptions options = {},
-    std::uint32_t movement_dirty_mask = 0,
     const RegionGraphT<typename World::residency_type>* graph = nullptr)
     -> PathAgentTickStats {
   PathAgentTickStats stats;
@@ -298,11 +298,11 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
     state.pathing_dirty = false;
   }
 
-  stats.movement =
-      advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
-                                        ReservationTag>(
-          world, agents, state.routes, options.max_steps, movement_dirty_mask,
-          state.flow_accounting);
+  stats.movement = advance_path_agents_with_movement<
+      World, ClassOrTag, OccupancyTag, ReservationTag>(
+      world, agents, state.routes,
+      PathAgentAdvanceOptions{options.max_steps, options.movement_dirty_mask},
+      state.flow_accounting);
   return stats;
 }
 
@@ -312,7 +312,6 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 [[nodiscard]] auto tick_unit_path_agents_with_movement(
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathAgentTickOptions options,
-    std::uint32_t movement_dirty_mask,
     const RegionGraphT<typename World::residency_type>* graph,
     const Provider& provider) -> PathAgentTickStats {
   PathAgentTickStats stats;
@@ -331,11 +330,11 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
     state.pathing_dirty = false;
   }
 
-  stats.movement =
-      advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
-                                        ReservationTag>(
-          world, agents, state.routes, options.max_steps, movement_dirty_mask,
-          provider, state.flow_accounting);
+  stats.movement = advance_path_agents_with_movement<
+      World, ClassOrTag, OccupancyTag, ReservationTag>(
+      world, agents, state.routes,
+      PathAgentAdvanceOptions{options.max_steps, options.movement_dirty_mask},
+      provider, state.flow_accounting);
   return stats;
 }
 
@@ -406,7 +405,6 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 [[nodiscard]] auto tick_weighted_path_agents_with_movement(
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathAgentTickOptions options = {},
-    std::uint32_t movement_dirty_mask = 0,
     const RegionGraphT<typename World::residency_type>* graph = nullptr)
     -> PathAgentTickStats {
   PathAgentTickStats stats;
@@ -427,7 +425,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 
   stats.movement = advance_path_agents_with_movement<World, Class, OccupancyTag,
                                                      ReservationTag>(
-      world, agents, state.routes, options.max_steps, movement_dirty_mask,
+      world, agents, state.routes,
+      PathAgentAdvanceOptions{options.max_steps, options.movement_dirty_mask},
       state.flow_accounting);
   return stats;
 }
@@ -438,7 +437,6 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 [[nodiscard]] auto tick_weighted_path_agents_with_movement(
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathAgentTickOptions options,
-    std::uint32_t movement_dirty_mask,
     const RegionGraphT<typename World::residency_type>* graph,
     const Provider& provider) -> PathAgentTickStats {
   PathAgentTickStats stats;
@@ -459,7 +457,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 
   stats.movement = advance_path_agents_with_movement<World, Class, OccupancyTag,
                                                      ReservationTag>(
-      world, agents, state.routes, options.max_steps, movement_dirty_mask,
+      world, agents, state.routes,
+      PathAgentAdvanceOptions{options.max_steps, options.movement_dirty_mask},
       provider, state.flow_accounting);
   return stats;
 }
@@ -501,7 +500,6 @@ template <typename World, typename PassableTag, typename CostTag,
 [[nodiscard]] auto tick_weighted_path_agents_with_movement(
     PathAgentTickState& state, World& world, std::span<PathAgentState> agents,
     PathRequestRuntime& runtime, PathAgentTickOptions options = {},
-    std::uint32_t movement_dirty_mask = 0,
     const RegionGraphT<typename World::residency_type>* graph = nullptr)
     -> PathAgentTickStats {
   PathAgentTickStats stats;
@@ -521,11 +519,11 @@ template <typename World, typename PassableTag, typename CostTag,
     state.pathing_dirty = false;
   }
 
-  stats.movement =
-      advance_path_agents_with_movement<World, PassableTag, OccupancyTag,
-                                        ReservationTag>(
-          world, agents, state.routes, options.max_steps, movement_dirty_mask,
-          state.flow_accounting);
+  stats.movement = advance_path_agents_with_movement<
+      World, PassableTag, OccupancyTag, ReservationTag>(
+      world, agents, state.routes,
+      PathAgentAdvanceOptions{options.max_steps, options.movement_dirty_mask},
+      state.flow_accounting);
   return stats;
 }
 

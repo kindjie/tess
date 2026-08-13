@@ -404,14 +404,12 @@ TEST(TessPhaseExecutor, ExecuteOperationIndexRangeAcceptsAnyPhaseExecutor) {
   EXPECT_EQ(visited, (std::vector<std::size_t>{5, 6, 7}));
 }
 
-#if TESS_ENABLE_ASSERTS
-
-constexpr auto kAssertDeathMessage = "tess assertion failed";
+constexpr auto kWorkerPoolDeathMessage = "WorkerPoolPhaseExecutor";
 
 // WorkerPoolPhaseExecutor supports one dispatch at a time. A worker
 // callback re-entering for_each_operation on the same executor would
 // clobber the shared job state and deadlock the outer dispatch on
-// done_cv_; debug builds must fail fast instead.
+// done_cv_; every build mode must fail fast instead.
 TEST(TessPhaseExecutorDeathTest, WorkerPoolRejectsNestedDispatch) {
   EXPECT_DEATH(
       {
@@ -424,7 +422,22 @@ TEST(TessPhaseExecutorDeathTest, WorkerPoolRejectsNestedDispatch) {
                   });
             });
       },
-      kAssertDeathMessage);
+      kWorkerPoolDeathMessage);
+}
+
+TEST(TessPhaseExecutorDeathTest, WorkerPoolRejectsNestedEmptyDispatch) {
+  EXPECT_DEATH(
+      {
+        const tess::WorkerPoolPhaseExecutor executor{2};
+        (void)executor.for_each_operation(
+            0, 4, [&](std::size_t) -> tess::PlannedExecutionResult {
+              return executor.for_each_operation(
+                  0, 0, [](std::size_t) -> tess::PlannedExecutionResult {
+                    return tess::PlannedExecutionResult{};
+                  });
+            });
+      },
+      kWorkerPoolDeathMessage);
 }
 
 // Growing the result buffer mid-dispatch would relocate the slots other
@@ -440,10 +453,8 @@ TEST(TessPhaseExecutorDeathTest, WorkerPoolRejectsReserveDuringDispatch) {
               return tess::PlannedExecutionResult{};
             });
       },
-      kAssertDeathMessage);
+      kWorkerPoolDeathMessage);
 }
-
-#endif  // TESS_ENABLE_ASSERTS
 
 TEST(TessPhaseExecutor, SerialDispatchDoesNotAllocate) {
   const tess::SerialPhaseExecutor executor;

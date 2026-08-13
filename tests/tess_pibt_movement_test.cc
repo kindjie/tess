@@ -621,7 +621,7 @@ TEST(TessPibtMovement, MaxStepsPausesAndMultiSteps) {
         tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
                                             ReservationTag>(
             world, std::span<tess::PathAgentState>(agents), routes, priorities,
-            scratch, rank(agents), {}, 0);
+            scratch, rank(agents), {}, {.max_steps = 0});
     EXPECT_EQ(stats.frame.advanced, 0u);
     EXPECT_EQ(agents[0].position, (tess::Coord3{1, 1, 0}));
   }
@@ -638,7 +638,7 @@ TEST(TessPibtMovement, MaxStepsPausesAndMultiSteps) {
         tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
                                             ReservationTag>(
             world, std::span<tess::PathAgentState>(agents), routes, priorities,
-            scratch, rank(agents), {}, 2);
+            scratch, rank(agents), {}, {.max_steps = 2});
     EXPECT_EQ(stats.frame.advanced, 2u);
     EXPECT_EQ(agents[0].position, (tess::Coord3{3, 1, 0}));
     EXPECT_EQ(agents[0].path_index, 2u);
@@ -857,7 +857,7 @@ TEST(TessPibtMovement, DistanceAtReadsTheProductAndGuardsShape) {
   tess::DistanceFieldScratch scratch;
   tess::DistanceFieldProduct product;
   const auto built = tess::build_distance_field_product<World, PassableTag>(
-      world, goals, scratch, product);
+      world, goals, product, scratch);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
 
   EXPECT_EQ(product.distance_at<World>({5, 5, 0}), 0u);
@@ -883,7 +883,7 @@ TEST(TessPibtMovement, DistanceAtReadsTheProductAndGuardsShape) {
   }
   tess::DistanceFieldProduct pocket;
   const auto rebuilt = tess::build_distance_field_product<World, PassableTag>(
-      walled, goals, scratch, pocket);
+      walled, goals, pocket, scratch);
   ASSERT_EQ(rebuilt.status, tess::PathStatus::Found);
   EXPECT_EQ(pocket.distance_at<World>({20, 5, 0}),
             tess::DistanceFieldProduct::unreachable_distance);

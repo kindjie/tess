@@ -148,11 +148,11 @@ TEST(TessTopologyMovement, WalkerAndBuilderDivergeExactlyOnConstruction) {
   const auto start = tess::Coord3{1, 4, 0};
   const auto goal = tess::Coord3{3, 4, 0};
   EXPECT_EQ(
-      tess::reachable<TopDown2D>(builder_graph, start, goal, reach_scratch)
+      tess::reachable<TopDown2D>(builder_graph, {start, goal}, reach_scratch)
           .status,
       tess::ReachabilityStatus::Reachable);
   const auto walker_reach =
-      tess::reachable<TopDown2D>(walker_graph, start, goal, reach_scratch);
+      tess::reachable<TopDown2D>(walker_graph, {start, goal}, reach_scratch);
   EXPECT_NE(walker_reach.status, tess::ReachabilityStatus::Reachable);
 }
 
@@ -413,11 +413,11 @@ TEST(TessTopologyMovement, ProviderTransitionsBridgeWalledRegions) {
   const auto start = tess::Coord3{1, 4, 0};
   const auto goal = tess::Coord3{3, 4, 0};
   tess::RegionGraphScratch reach;
-  EXPECT_NE(tess::reachable<TopDown2D>(plain, start, goal, reach).status,
+  EXPECT_NE(tess::reachable<TopDown2D>(plain, {start, goal}, reach).status,
             tess::ReachabilityStatus::Reachable);
-  EXPECT_EQ(tess::reachable<TopDown2D>(bridged, start, goal, reach).status,
+  EXPECT_EQ(tess::reachable<TopDown2D>(bridged, {start, goal}, reach).status,
             tess::ReachabilityStatus::Reachable);
-  EXPECT_EQ(tess::reachable<TopDown2D>(bridged, goal, start, reach).status,
+  EXPECT_EQ(tess::reachable<TopDown2D>(bridged, {goal, start}, reach).status,
             tess::ReachabilityStatus::Reachable);
 }
 
@@ -484,7 +484,7 @@ TEST(TessTopologyMovement, MisownedProviderEdgeDoesNotMarkMissingReach) {
 
   // The contract-violating edge contributes nothing, in either pass, so the
   // answer matches the providerless build rather than degrading.
-  EXPECT_EQ(tess::reachable<ThreeChunk>(graph, start, goal, reach).status,
+  EXPECT_EQ(tess::reachable<ThreeChunk>(graph, {start, goal}, reach).status,
             tess::ReachabilityStatus::Unreachable);
 }
 
@@ -554,7 +554,7 @@ TEST(TessTopologyMovement, ProviderRevisionChangeForcesFullRebuildOnUpdate) {
   const auto start = tess::Coord3{1, 4, 0};
   const auto goal = tess::Coord3{3, 4, 0};
   tess::RegionGraphScratch reach;
-  EXPECT_NE(tess::reachable<TopDown2D>(graph, start, goal, reach).status,
+  EXPECT_NE(tess::reachable<TopDown2D>(graph, {start, goal}, reach).status,
             tess::ReachabilityStatus::Reachable);
 
   provider.enabled = true;
@@ -563,7 +563,7 @@ TEST(TessTopologyMovement, ProviderRevisionChangeForcesFullRebuildOnUpdate) {
       world, scratch, graph, {}, provider);
   ASSERT_EQ(updated.status, tess::TopologyStatus::Built);
   EXPECT_TRUE(graph.matches_provider(provider));
-  EXPECT_EQ(tess::reachable<TopDown2D>(graph, start, goal, reach).status,
+  EXPECT_EQ(tess::reachable<TopDown2D>(graph, {start, goal}, reach).status,
             tess::ReachabilityStatus::Reachable);
 
   tess::RegionGraph reference;
@@ -594,7 +594,7 @@ TEST(TessTopologyMovement,
 
   tess::RegionGraphScratch reach;
   EXPECT_EQ(
-      tess::reachable<TopDown2D>(graph, {1, 4, 0}, {3, 4, 0}, reach).status,
+      tess::reachable<TopDown2D>(graph, {{1, 4, 0}, {3, 4, 0}}, reach).status,
       tess::ReachabilityStatus::Reachable);
 }
 
@@ -652,13 +652,13 @@ TEST(TessTopologyMovement, SparseProviderIntoMissingChunkIsIndeterminate) {
 
   tess::SparseRegionGraph plain;
   tess::build_region_graph<Sparse, Walker>(world, scratch, plain);
-  EXPECT_EQ(tess::reachable<ThreeChunk>(plain, start, goal, reach).status,
+  EXPECT_EQ(tess::reachable<ThreeChunk>(plain, {start, goal}, reach).status,
             tess::ReachabilityStatus::Unreachable);
 
   tess::SparseRegionGraph hopped;
   tess::build_region_graph<Sparse, Walker>(world, scratch, hopped,
                                            EastwardHop{});
-  EXPECT_EQ(tess::reachable<ThreeChunk>(hopped, start, goal, reach).status,
+  EXPECT_EQ(tess::reachable<ThreeChunk>(hopped, {start, goal}, reach).status,
             tess::ReachabilityStatus::Indeterminate);
 }
 
@@ -705,15 +705,15 @@ TEST(TessTopologyMovement, StairConnectsLevelsInBothDirections) {
 
   tess::RegionGraph plain;
   tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, plain);
-  EXPECT_EQ(tess::reachable<TwoLevel>(plain, ground, platform, reach).status,
+  EXPECT_EQ(tess::reachable<TwoLevel>(plain, {ground, platform}, reach).status,
             tess::ReachabilityStatus::Unreachable);
 
   tess::RegionGraph stairs;
   tess::build_region_graph<LevelWorld, PassableTag>(world, scratch, stairs,
                                                     Stairs{});
-  EXPECT_EQ(tess::reachable<TwoLevel>(stairs, ground, platform, reach).status,
+  EXPECT_EQ(tess::reachable<TwoLevel>(stairs, {ground, platform}, reach).status,
             tess::ReachabilityStatus::Reachable);
-  EXPECT_EQ(tess::reachable<TwoLevel>(stairs, platform, ground, reach).status,
+  EXPECT_EQ(tess::reachable<TwoLevel>(stairs, {platform, ground}, reach).status,
             tess::ReachabilityStatus::Reachable);
 }
 
@@ -734,15 +734,15 @@ TEST(TessTopologyMovement, StairEdgesAreFilteredPerClass) {
   tess::build_region_graph<LevelWorld, StairWalker>(world, scratch,
                                                     walker_graph, Stairs{});
   EXPECT_NE(
-      tess::reachable<TwoLevel>(walker_graph, ground, platform, reach).status,
+      tess::reachable<TwoLevel>(walker_graph, {ground, platform}, reach).status,
       tess::ReachabilityStatus::Reachable);
 
   tess::RegionGraph builder_graph;
   tess::build_region_graph<LevelWorld, StairBuilder>(world, scratch,
                                                      builder_graph, Stairs{});
-  EXPECT_EQ(
-      tess::reachable<TwoLevel>(builder_graph, ground, platform, reach).status,
-      tess::ReachabilityStatus::Reachable);
+  EXPECT_EQ(tess::reachable<TwoLevel>(builder_graph, {ground, platform}, reach)
+                .status,
+            tess::ReachabilityStatus::Reachable);
 }
 
 TEST(TessTopologyMovement, StairIncrementalUpdateEqualsFullRebuild) {
@@ -772,8 +772,8 @@ TEST(TessTopologyMovement, StairIncrementalUpdateEqualsFullRebuild) {
 
   // The new stair (landing {0,2,1} on the platform) restores the link.
   tess::RegionGraphScratch reach;
-  EXPECT_EQ(tess::reachable<TwoLevel>(graph, tess::Coord3{6, 6, 0},
-                                      tess::Coord3{1, 2, 1}, reach)
+  EXPECT_EQ(tess::reachable<TwoLevel>(
+                graph, {tess::Coord3{6, 6, 0}, tess::Coord3{1, 2, 1}}, reach)
                 .status,
             tess::ReachabilityStatus::Reachable);
 }
@@ -827,8 +827,8 @@ TEST(TessTopologyMovement, SameChunkStairConnectsItsOwnLevels) {
   tess::build_region_graph<OneChunkWorld, PassableTag>(
       world, scratch, graph, tess::StairTransitions<StairTag>{});
   tess::RegionGraphScratch reach;
-  EXPECT_EQ(tess::reachable<OneChunk>(graph, tess::Coord3{0, 0, 0},
-                                      tess::Coord3{3, 3, 1}, reach)
+  EXPECT_EQ(tess::reachable<OneChunk>(
+                graph, {tess::Coord3{0, 0, 0}, tess::Coord3{3, 3, 1}}, reach)
                 .status,
             tess::ReachabilityStatus::Reachable);
 }
@@ -869,11 +869,11 @@ TEST(TessTopologyMovement, SidewaysCrossingStairConnectsBothDirections) {
   tess::RegionGraphScratch reach;
   const auto ground = tess::Coord3{0, 0, 0};
   const auto platform = tess::Coord3{7, 3, 1};
-  EXPECT_NE(tess::reachable<TwoWide>(plain, ground, platform, reach).status,
+  EXPECT_NE(tess::reachable<TwoWide>(plain, {ground, platform}, reach).status,
             tess::ReachabilityStatus::Reachable);
-  EXPECT_EQ(tess::reachable<TwoWide>(stairs, ground, platform, reach).status,
+  EXPECT_EQ(tess::reachable<TwoWide>(stairs, {ground, platform}, reach).status,
             tess::ReachabilityStatus::Reachable);
-  EXPECT_EQ(tess::reachable<TwoWide>(stairs, platform, ground, reach).status,
+  EXPECT_EQ(tess::reachable<TwoWide>(stairs, {platform, ground}, reach).status,
             tess::ReachabilityStatus::Reachable);
 
   // Incremental update across the seam stays equal to a full rebuild.

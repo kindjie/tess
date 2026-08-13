@@ -21,10 +21,19 @@ def _version_from_cmake(recipe_folder):
     """Read the single source of truth rather than restating it."""
     version_file = os.path.join(recipe_folder, "cmake", "tess-version.cmake")
     with open(version_file, encoding="utf-8") as handle:
-        match = re.search(r"set\(TESS_VERSION\s+([0-9.]+)\)", handle.read())
+        contents = handle.read()
+        match = re.search(r"set\(TESS_VERSION\s+([0-9.]+)\)", contents)
+        prerelease = re.search(
+            r'set\(TESS_VERSION_PRERELEASE\s+"([^"]*)"\)', contents
+        )
     if match is None:
         raise RuntimeError("cannot read TESS_VERSION from tess-version.cmake")
-    return match.group(1)
+    if prerelease is None:
+        raise RuntimeError(
+            "cannot read TESS_VERSION_PRERELEASE from tess-version.cmake"
+        )
+    suffix = f"-{prerelease.group(1)}" if prerelease.group(1) else ""
+    return match.group(1) + suffix
 
 
 class TessConan(ConanFile):

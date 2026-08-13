@@ -15,6 +15,7 @@
 #include <array>
 #include <cstdint>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 namespace {
@@ -164,24 +165,11 @@ TEST(TessAsyncFlow, OldestAgeTracksTheEarliestPendingSubmission) {
   EXPECT_EQ(accounting.counters.oldest_outstanding_age_ticks, 0u);
 }
 
-TEST(TessAsyncFlow, MovingAQueueTransfersTheAttachment) {
-  tess::ResumableWorkQueue<int> source;
-  FlowAccounting accounting;
-  source.set_flow_accounting(&accounting);
-  auto moved = std::move(source);
-  (void)moved.submit_immediate(1);
-  EXPECT_EQ(accounting.counters.admitted, 1u);
-
-  // The copy starts unattached: no double counting.
-  auto copy = moved;
-  (void)copy.submit_immediate(2);
-  EXPECT_EQ(accounting.counters.admitted, 1u);
-
-  // Self-assignment keeps the attachment and the tickets.
-  auto& self = moved;
-  moved = self;
-  (void)moved.submit_immediate(3);
-  EXPECT_EQ(accounting.counters.admitted, 2u);
+TEST(TessAsyncFlow, QueueIdentityIsStable) {
+  static_assert(!std::is_copy_constructible_v<tess::ResumableWorkQueue<int>>);
+  static_assert(!std::is_copy_assignable_v<tess::ResumableWorkQueue<int>>);
+  static_assert(!std::is_move_constructible_v<tess::ResumableWorkQueue<int>>);
+  static_assert(!std::is_move_assignable_v<tess::ResumableWorkQueue<int>>);
 }
 
 struct ThrowingMove {
@@ -511,7 +499,7 @@ TEST(TessAgentFlow, StructuralMovementFailureTerminalizesAsFailed) {
   routes.routes[0] = {tess::Coord3{0, 0, 0}, tess::Coord3{4, 4, 0}};
   const auto stats = tess::advance_path_agents_with_movement<
       AgentWorld, AgentPassableTag, AgentOccupancyTag, AgentReservationTag>(
-      world, std::span<tess::PathAgentState>{agents}, routes, 1, 0u,
+      world, std::span<tess::PathAgentState>{agents}, routes, {.max_steps = 1},
       tick_state.flow_accounting);
   (void)stats;
 

@@ -17,14 +17,29 @@ on:
   schedule:
     - cron: "41 5 * * 3"
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact branch, tag, or commit to test in release mode
+        required: false
+        type: string
+      expected_version:
+        description: Complete expected version, including prerelease label
+        required: false
+        type: string
+      expected_sha:
+        description: Full expected commit SHA
+        required: false
+        type: string
 
 permissions:
+  actions: read
   contents: read
 
 # The event name keeps a scheduled full run from cancelling an in-flight
 # main push run sharing the same ref.
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref }}
+  group: >-
+    ci-${{ github.event_name }}-${{ inputs.expected_sha || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -45,12 +60,47 @@ jobs:
       tsan_required: ${{ steps.classify.outputs.tsan_required }}
       perf_required: ${{ steps.classify.outputs.perf_required }}
       quality_presets: ${{ steps.classify.outputs.quality_presets }}
+      release_mode: ${{ steps.release.outputs.release_mode }}
+      tested_sha: ${{ steps.release.outputs.tested_sha }}
     steps:
       - name: Check out repository history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
           fetch-depth: 0
+
+      - name: Validate release inputs and checked-out identity
+        id: release
+        env:
+          RELEASE_REF: ${{ inputs.ref }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          supplied=0
+          [ -n "$RELEASE_REF" ] && supplied=$((supplied + 1))
+          [ -n "$EXPECTED_VERSION" ] && supplied=$((supplied + 1))
+          [ -n "$EXPECTED_SHA" ] && supplied=$((supplied + 1))
+          actual_sha="$(git rev-parse HEAD)"
+          if [ "$supplied" -eq 0 ]; then
+            echo "release_mode=false" >> "$GITHUB_OUTPUT"
+            echo "tested_sha=$actual_sha" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$supplied" -ne 3 ]; then
+            echo "release mode requires ref, expected_version, and expected_sha" >&2
+            exit 1
+          fi
+          test "$actual_sha" = "$EXPECTED_SHA"
+          version="$(sed -n 's/^set(TESS_VERSION \([^)]*\))$/\1/p' \
+            cmake/tess-version.cmake)"
+          prerelease="$(sed -n \
+            's/^set(TESS_VERSION_PRERELEASE "\([^"]*\)")$/\1/p' \
+            cmake/tess-version.cmake)"
+          [ -z "$prerelease" ] || version="$version-$prerelease"
+          test "$version" = "$EXPECTED_VERSION"
+          echo "release_mode=true" >> "$GITHUB_OUTPUT"
+          echo "tested_sha=$actual_sha" >> "$GITHUB_OUTPUT"
 
       # Scheduled and dispatched runs have no comparison range and fail
       # closed to the full tier inside the classifier.
@@ -80,6 +130,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
       - name: Install ccache
@@ -190,45 +241,59 @@ jobs:
       - name: FetchContent consumer smoke
         run: tools/fetchcontent_smoke.sh
 
-  # Required GCC portability and warning-cleanliness gate: compile only.
-  # GCC's stricter two-phase name lookup catches header portability breaks
-  # that Clang and MSVC accept. Promoted after three consecutive green main
-  # runs on 2026-07-12.
+  # GCC floor and current-toolchain portability, warning, and runtime gates.
   gcc:
     needs: changes
     if: ${{ needs.changes.outputs.code_required == 'true' }}
-    name: GCC Compile
+    name: GCC ${{ matrix.version }} Build And Tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "12"
+            cc: gcc-12
+            cxx: g++-12
+          - version: "14"
+            cc: gcc-14
+            cxx: g++-14
     env:
-      CC: gcc
-      CXX: g++
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
-      - name: Install ccache
-        run: (sudo apt-get update || true) && sudo apt-get install -y ccache
+      - name: Install ccache and compiler
+        run: >-
+          (sudo apt-get update || true) &&
+          sudo apt-get install -y ccache
+          ${{ matrix.cc }} ${{ matrix.cxx }}
 
       - name: Restore compiler cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .ccache
-          key: ccache-gcc--${{ github.sha }}
-          restore-keys: ccache-gcc--
+          key: ccache-gcc-${{ matrix.version }}--${{ github.sha }}
+          restore-keys: ccache-gcc-${{ matrix.version }}--
 
       - name: Show tool versions
         run: |
           cmake --version
-          g++ --version
+          "$CXX" --version
 
       - name: Configure
         run: cmake --preset dev-werror
 
       - name: Build
         run: cmake --build --preset dev-werror
+
+      - name: Test
+        run: ctest --preset dev-werror
 
       # CI14: caching is configured in nine steps; before this it was
       # measured in one, which is how the restore-key collision above
@@ -255,6 +320,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
       - name: Install libc++ and ccache
@@ -307,10 +373,10 @@ jobs:
             cache_fallback: ccache-dev-asan--
             exclude_test: 'Legacy.*CapacityFailureAborts'
           - name: GCC Werror
-            cc: gcc
-            cxx: g++
+            cc: gcc-14
+            cxx: g++-14
             preset: dev-werror
-            cache_fallback: ccache-gcc--
+            cache_fallback: ccache-gcc-14--
             exclude_test: '^$'
     env:
       CC: ${{ matrix.cc }}
@@ -319,6 +385,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
       - name: Install ccache
@@ -419,6 +486,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
 
       - name: Set up Python
@@ -458,6 +528,8 @@ jobs:
           tests/test_packaging_recipes.py
           tests/test_benchmark_tools.py
           tests/test_branding_assets.py
+          tests/test_compatibility_ambiguities.py
+          tests/test_compatibility_snapshots.py
           tests/test_check_public_surface.py
           tests/test_check_public_docs.py
           tests/test_check_docs_links.py
@@ -467,6 +539,7 @@ jobs:
           tests/test_doc_snippets.py
           tests/test_doc_versions.py
           tests/test_tdd_index.py
+          tests/test_header_manifest.py
           tests/test_header_compile_cost.py
           tests/test_grid_benchmark_manifest.py
           tests/test_steamdeck_tools.py
@@ -514,6 +587,9 @@ jobs:
       - name: Documentation versions
         run: python tools/check_doc_versions.py
 
+      - name: Compatibility snapshots
+        run: python tools/check_compatibility_snapshots.py
+
   # The preset list is tier-dependent: pull requests run dev-asan and
   # dev-cppcheck (plus dev-tsan when concurrency-sensitive paths changed);
   # full-tier events run every preset including the full-tree clang-tidy.
@@ -534,6 +610,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
       - name: Install ccache
@@ -636,7 +713,7 @@ jobs:
           needs.changes.outputs.code_required == 'true' }}
     name: Diff Clang-Tidy
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       CC: clang
       CXX: clang++
@@ -644,6 +721,7 @@ jobs:
       - name: Check out repository history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
           fetch-depth: 0
 
@@ -697,6 +775,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
       - name: Restore compiler cache
@@ -758,6 +837,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
       - name: Show tool versions
@@ -819,6 +899,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
       - name: Show tool versions
@@ -889,6 +970,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
       - name: Install ccache
@@ -1006,6 +1088,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
       - name: Install ccache
@@ -1081,6 +1164,7 @@ jobs:
       - name: Check out repository history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
           fetch-depth: 0
 
@@ -1208,6 +1292,555 @@ jobs:
             test "${{ needs.bench.result }}" = skipped
           fi
 
+  release-linux-floors:
+    name: Linux Floor (${{ matrix.name }}, no RTTI)
+    needs: changes
+    if: >-
+      ${{ needs.changes.outputs.code_required == 'true' &&
+          github.event_name != 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GCC 12
+            cc: gcc-12
+            cxx: g++-12
+          - name: Clang 16
+            cc: clang-16
+            cxx: clang++-16
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Install floor toolchain
+        run: |
+          sudo apt-get update || true
+          sudo apt-get install -y ccache ninja-build \
+            ${{ matrix.cc }} ${{ matrix.cxx }}
+
+      - name: Verify compiler floor
+        run: |
+          "$CXX" --version
+          if [ "$CXX" = g++-12 ]; then
+            test "$("$CXX" -dumpversion | cut -d. -f1)" = 12
+          else
+            "$CXX" --version | grep -Eq 'clang version 16\.'
+          fi
+
+      - name: Configure without RTTI
+        run: >-
+          cmake -S . -B build/release-linux-floor -GNinja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_FLAGS=-fno-rtti
+          -DTESS_BUILD_TESTING=ON
+          -DTESS_BUILD_EXAMPLES=ON
+          -DTESS_ENABLE_ENTT=ON
+          -DTESS_ENABLE_FLECS=ON
+          -DTESS_ENABLE_WARNINGS=ON
+          -DTESS_WARNINGS_AS_ERRORS=ON
+
+      - name: Build and run full floor suite
+        run: |
+          cmake --build build/release-linux-floor --parallel
+          ctest --test-dir build/release-linux-floor --output-on-failure
+          build/release-linux-floor/examples/tess_quickstart
+
+  release-macos-floor:
+    name: Xcode 16.0 Floor (no RTTI)
+    needs: changes
+    if: >-
+      ${{ needs.changes.outputs.code_required == 'true' &&
+          github.event_name != 'pull_request' }}
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Select and verify Xcode floor
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_16.0.app
+          xcodebuild -version | grep -Fx 'Xcode 16.0'
+          clang++ --version | grep -Eq 'Apple clang version 16\.0'
+
+      - name: Configure without RTTI
+        run: >-
+          cmake -S . -B build/release-macos-floor
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_FLAGS=-fno-rtti
+          -DCMAKE_CXX_COMPILER_LAUNCHER=
+          -DTESS_BUILD_TESTING=ON
+          -DTESS_BUILD_EXAMPLES=ON
+          -DTESS_ENABLE_WARNINGS=ON
+          -DTESS_WARNINGS_AS_ERRORS=ON
+
+      - name: Build and run full floor suite
+        run: |
+          cmake --build build/release-macos-floor --parallel
+          ctest --test-dir build/release-macos-floor --output-on-failure
+          build/release-macos-floor/examples/tess_quickstart
+
+  release-windows-floor:
+    name: MSVC 19.44 Floor (no RTTI)
+    needs: changes
+    if: >-
+      ${{ needs.changes.outputs.code_required == 'true' &&
+          github.event_name != 'pull_request' }}
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Configure without RTTI
+        run: cmake --preset windows-msvc -DCMAKE_CXX_FLAGS=/GR-
+
+      - name: Verify compiler floor
+        shell: pwsh
+        run: |
+          $file = Get-ChildItem build/windows-msvc/CMakeFiles -Recurse `
+            -Filter CMakeCXXCompiler.cmake | Select-Object -First 1
+          if ($null -eq $file) {
+            throw 'CMake C++ compiler metadata was not generated'
+          }
+          $versionMatches = Select-String -Path $file.FullName -Quiet `
+            -Pattern 'CMAKE_CXX_COMPILER_VERSION "19\.44\.'
+          if (-not $versionMatches) {
+            throw 'Expected the MSVC 19.44 compiler floor'
+          }
+
+      - name: Build and run full floor suite
+        run: |
+          cmake --build --preset windows-msvc
+          ctest --preset windows-msvc
+
+  release-cmake-floor:
+    name: CMake 3.25.3 Consumer Floor
+    needs: changes
+    if: >-
+      ${{ needs.changes.outputs.code_required == 'true' &&
+          github.event_name != 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Install pinned CMake floor
+        run: |
+          url="$(jq -r .cmake.linux_x86_64 ci/tools.lock.json)"
+          expected="$(jq -r .cmake.sha256 ci/tools.lock.json)"
+          archive="$RUNNER_TEMP/cmake-floor.tar.gz"
+          install_dir="$RUNNER_TEMP/cmake-floor"
+          curl --fail --location --retry 3 --output "$archive" "$url"
+          echo "$expected  $archive" | sha256sum --check --strict
+          mkdir -p "$install_dir"
+          tar --extract --gzip --file "$archive" \
+            --directory "$install_dir" --strip-components=1
+          echo "$install_dir/bin" >> "$GITHUB_PATH"
+
+      - name: Configure, install, discover, build, and run
+        env:
+          TESS_INSTALL_SMOKE_BUILD_DIR: >-
+            ${{ github.workspace }}/build/cmake-floor
+        run: |
+          test "$(cmake --version | head -1)" = 'cmake version 3.25.3'
+          cmake -S . -B build/cmake-floor \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER_LAUNCHER= \
+            -DTESS_BUILD_TESTING=OFF \
+            -DTESS_BUILD_EXAMPLES=OFF
+          tools/install_smoke.sh
+
+  release-fuzz:
+    name: Archive Fuzzing
+    needs: changes
+    if: >-
+      ${{ needs.changes.outputs.release_mode == 'true' ||
+          github.event_name == 'schedule' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      CC: clang-16
+      CXX: clang++-16
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Install Clang 16
+        run: |
+          sudo apt-get update || true
+          sudo apt-get install -y clang-16
+
+      - name: Build ASan UBSan libFuzzer target
+        run: |
+          cmake -S . -B build/fuzz -GNinja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_COMPILER_LAUNCHER= \
+            -DTESS_BUILD_TESTING=OFF \
+            -DTESS_BUILD_EXAMPLES=OFF \
+            -DTESS_BUILD_FUZZING=ON
+          cmake --build build/fuzz --target tess_world_archive_fuzzer
+
+      - name: Run archive campaign
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          seconds=60
+          case "$EXPECTED_VERSION" in
+            *-rc.*) seconds=3600 ;;
+          esac
+          build/fuzz/tess_world_archive_fuzzer \
+            tests/fuzz/corpus/world_archive \
+            -max_len=1048576 -max_total_time="$seconds"
+
+  release-packages:
+    name: Release Package Consumers
+    needs: changes
+    if: ${{ needs.changes.outputs.release_mode == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ""
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Check out pinned vcpkg
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: microsoft/vcpkg
+          ref: d015e31e90838a4c9dfa3eed45979bc70d9357fc
+          path: build/vcpkg
+          persist-credentials: false
+
+      - name: Install overlay and run vcpkg consumer
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          build/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          build/vcpkg/vcpkg install tess \
+            --overlay-ports="$GITHUB_WORKSPACE/ports" \
+            --x-install-root="$GITHUB_WORKSPACE/build/vcpkg-installed" \
+            --binarysource=clear
+          numeric_version="${EXPECTED_VERSION%%-*}"
+          prerelease=""
+          if [ "$numeric_version" != "$EXPECTED_VERSION" ]; then
+            prerelease="${EXPECTED_VERSION#*-}"
+          fi
+          cmake -S tests/install_consumer -B build/vcpkg-consumer \
+            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/build/vcpkg-installed/x64-linux" \
+            -DTESS_EXPECTED_VERSION="$numeric_version" \
+            -DTESS_EXPECTED_PRERELEASE="$prerelease"
+          cmake --build build/vcpkg-consumer
+          build/vcpkg-consumer/tess_install_consumer
+
+      - name: Install pinned Conan
+        run: |
+          url="$(jq -r .conan.wheel ci/tools.lock.json)"
+          expected="$(jq -r .conan.sha256 ci/tools.lock.json)"
+          wheel="$RUNNER_TEMP/conan-2.31.1-py3-none-any.whl"
+          curl --fail --location --retry 3 --output "$wheel" "$url"
+          echo "$expected  $wheel" | sha256sum --check --strict
+          python3 -m pip install "$wheel"
+          test "$(conan --version)" = 'Conan version 2.31.1'
+
+      - name: Create Conan package and run consumer
+        run: |
+          conan profile detect --force
+          conan create . --build=missing -s compiler.cppstd=20
+
+  release-compatibility:
+    name: Release Compatibility Snapshots
+    needs: changes
+    if: ${{ needs.changes.outputs.release_mode == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Validate compatibility snapshots
+        run: |
+          python3 tools/check_compatibility_snapshots.py
+          cmake -S . -B build/compatibility \
+            -DTESS_BUILD_TESTING=OFF \
+            -DTESS_BUILD_EXAMPLES=OFF \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=
+          install_prefix="$PWD/build/compatibility/install"
+          cmake --install build/compatibility --prefix "$install_prefix"
+          for manifest in compatibility/*/manifest.json; do
+            [ -f "$manifest" ] || continue
+            snapshot="$(dirname "$manifest")"
+            version="$(basename "$snapshot")"
+            consumer_project="$(jq -r .consumer_project "$manifest")"
+            consumer_target="$(jq -r .consumer_target "$manifest")"
+            archive_consumer_target="$(
+              jq -r .archive_consumer_target "$manifest"
+            )"
+            cmake -S "$snapshot/$consumer_project" \
+              -B "build/compatibility/$version-consumer" \
+              -DCMAKE_PREFIX_PATH="$install_prefix" \
+              -DTESS_SNAPSHOT_DIR="$PWD/$snapshot"
+            cmake --build "build/compatibility/$version-consumer" \
+              --target "$consumer_target" "$archive_consumer_target"
+            ctest --test-dir "build/compatibility/$version-consumer" \
+              --output-on-failure --no-tests=error \
+              -R "^$consumer_target$"
+            ctest --test-dir "build/compatibility/$version-consumer" \
+              --output-on-failure --no-tests=error \
+              -R "^$archive_consumer_target$"
+          done
+
+  release-docs:
+    name: Release Documentation
+    needs: changes
+    if: ${{ needs.changes.outputs.release_mode == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DOXYGEN_VERSION: 1.17.0
+      DOXYGEN_SHA256: >-
+        75419ef4f446fc1c24ef12514b574e66e898ee6f527c6ae2ad84f91a905823c2
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Install documentation tools
+        run: |
+          python3 -m venv .venv-docs
+          .venv-docs/bin/python -m pip install \
+            --require-hashes --requirement requirements-docs.txt
+          archive="$RUNNER_TEMP/doxygen.tar.gz"
+          install_dir="$RUNNER_TEMP/doxygen"
+          release="Release_${DOXYGEN_VERSION//./_}"
+          asset="doxygen-${DOXYGEN_VERSION}.linux.bin.tar.gz"
+          curl --fail --location --retry 3 --output "$archive" \
+            "https://github.com/doxygen/doxygen/releases/download/$release/$asset"
+          echo "$DOXYGEN_SHA256  $archive" | sha256sum --check --strict
+          mkdir -p "$install_dir"
+          tar --extract --gzip --file "$archive" \
+            --directory "$install_dir" --strip-components=1
+          echo "$install_dir/bin" >> "$GITHUB_PATH"
+
+      - name: Build maintained and API documentation
+        run: |
+          python3 tools/fetch_mermaid.py
+          python3 tools/check_doc_snippets.py
+          python3 tools/check_doc_versions.py
+          .venv-docs/bin/mkdocs build --strict
+          cmake -S . -B build/release-docs \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER_LAUNCHER= \
+            -DTESS_BUILD_TESTING=OFF \
+            -DTESS_BUILD_EXAMPLES=OFF \
+            -DTESS_BUILD_DOCS=ON
+          cmake --build build/release-docs --target tess_docs
+
+  release-evidence:
+    name: Release Evidence
+    if: ${{ always() && needs.changes.outputs.release_mode == 'true' }}
+    needs:
+      - changes
+      - dev
+      - gcc
+      - libcxx
+      - no-exceptions
+      - hooks-backstop
+      - quality
+      - macos
+      - windows
+      - windows-noexceptions
+      - bench
+      - long-seed-properties
+      - coverage
+      - ci-gate
+      - release-linux-floors
+      - release-macos-floor
+      - release-windows-floor
+      - release-cmake-floor
+      - release-fuzz
+      - release-packages
+      - release-compatibility
+      - release-docs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Require every release gate
+        env:
+          DEV: ${{ needs.dev.result }}
+          GCC: ${{ needs.gcc.result }}
+          LIBCXX: ${{ needs.libcxx.result }}
+          NO_EXCEPTIONS: ${{ needs.no-exceptions.result }}
+          HOOKS: ${{ needs.hooks-backstop.result }}
+          QUALITY: ${{ needs.quality.result }}
+          MACOS: ${{ needs.macos.result }}
+          WINDOWS: ${{ needs.windows.result }}
+          WINDOWS_NO_EXCEPTIONS: ${{ needs.windows-noexceptions.result }}
+          BENCH: ${{ needs.bench.result }}
+          LONG_SEED: ${{ needs.long-seed-properties.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+          CI_GATE: ${{ needs.ci-gate.result }}
+          LINUX_FLOORS: ${{ needs.release-linux-floors.result }}
+          MACOS_FLOOR: ${{ needs.release-macos-floor.result }}
+          WINDOWS_FLOOR: ${{ needs.release-windows-floor.result }}
+          CMAKE_FLOOR: ${{ needs.release-cmake-floor.result }}
+          FUZZ: ${{ needs.release-fuzz.result }}
+          PACKAGES: ${{ needs.release-packages.result }}
+          COMPATIBILITY: ${{ needs.release-compatibility.result }}
+          DOCS: ${{ needs.release-docs.result }}
+        run: |
+          for result in "$DEV" "$GCC" "$LIBCXX" "$NO_EXCEPTIONS" \
+              "$HOOKS" "$QUALITY" "$MACOS" "$WINDOWS" \
+              "$WINDOWS_NO_EXCEPTIONS" "$BENCH" "$LONG_SEED" \
+              "$COVERAGE" "$CI_GATE" "$LINUX_FLOORS" "$MACOS_FLOOR" \
+              "$WINDOWS_FLOOR" "$CMAKE_FLOOR" "$FUZZ" "$PACKAGES" \
+              "$COMPATIBILITY" "$DOCS"; do
+            test "$result" = success
+          done
+
+      - name: Capture completed job logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p release-job-logs
+          jobs_url="repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs"
+          gh api --paginate --slurp "$jobs_url?per_page=100" \
+            > release-jobs-pages.json
+          python3 - <<'PY' > release-completed-jobs.txt
+          import json
+          from pathlib import Path
+
+          pages = json.loads(
+              Path("release-jobs-pages.json").read_text(encoding="utf-8")
+          )
+          for page in pages:
+            for job in page["jobs"]:
+              if (
+                  job["status"] == "completed"
+                  and job["conclusion"] == "success"
+              ):
+                print(job["id"])
+          PY
+          while IFS= read -r job_id; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job_id/logs" \
+              > "release-job-logs/$job_id.log"
+          done < release-completed-jobs.txt
+
+      - name: Write release evidence
+        env:
+          TESTED_SHA: ${{ needs.changes.outputs.tested_sha }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          WORKFLOW_RUN_URL: >-
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          manifests = sorted(
+              str(path) for path in Path("compatibility").glob("*/manifest.json")
+          )
+          pages = json.loads(
+              Path("release-jobs-pages.json").read_text(encoding="utf-8")
+          )
+          jobs = {
+              str(job["id"]): job
+              for page in pages
+              for job in page["jobs"]
+          }
+          observed_logs = {}
+          for path in sorted(Path("release-job-logs").glob("*.log")):
+            job_id = path.stem
+            observed_logs[job_id] = {
+                "job": jobs[job_id]["name"],
+                "path": str(path),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+          payload = {
+              "tested_sha": os.environ["TESTED_SHA"],
+              "expected_version": os.environ["EXPECTED_VERSION"],
+              "tool_version_evidence": {
+                  "bundled_job_logs": observed_logs,
+                  "workflow_run_url": os.environ["WORKFLOW_RUN_URL"],
+                  "expected_and_pinned": {
+                      "cmake_floor": "3.25.3",
+                      "conan": "2.31.1",
+                      "gcc_floor": "12",
+                      "clang_floor": "16",
+                      "xcode_floor": "16.0",
+                      "msvc_floor": "19.44",
+                      "clang_tidy": "18",
+                      "vcpkg_commit": (
+                          "d015e31e90838a4c9dfa3eed45979bc70d9357fc"
+                      ),
+                  },
+              },
+              "compatibility_snapshots": manifests,
+              "gates": {
+                  name: value["result"]
+                  for name, value in json.loads(os.environ["NEEDS_JSON"]).items()
+              },
+          }
+          Path("release-evidence.json").write_text(
+              json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-evidence-${{ needs.changes.outputs.tested_sha }}
+          path: |
+            release-evidence.json
+            release-job-logs/
+            release-jobs-pages.json
+            compatibility/
+          retention-days: 90
+
   # Change-point alerting (redesign section 4.2): a dedicated job so
   # the bench job, which executes pull-request code, never holds write
   # permissions. Runs only on pushes to main (the artifact series is
@@ -1234,6 +1867,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
       - name: Download trailing baseline artifacts
@@ -1345,6 +1979,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           # Not persisted, matching every other checkout here: a token in
           # .git/config is readable by anything the job later runs. The
           # push below authenticates for that one command instead.
@@ -1450,6 +2085,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
       # The workflow-level CMAKE_CXX_COMPILER_LAUNCHER points at ccache,
@@ -1532,6 +2168,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
           persist-credentials: false
 
       - name: Install toolchain
@@ -1644,7 +2281,7 @@ jobs:
             --export build/bench-coverage/tess_bench-coverage-export.json \
             --export build/bench-coverage/tess_bench_diagnostics-coverage-export.json \
             --include-root include/tess \
-            --cmake-lists CMakeLists.txt \
+            --headers-manifest cmake/tess-headers.json \
             --known-gaps tools/coverage_known_gaps.json \
             --out-markdown build/bench-coverage/coverage-gaps.md \
             --out-json build/bench-coverage/coverage-gaps.json
@@ -1697,6 +2334,7 @@ jobs:
       - long-seed-properties
       - publish-benchmark-history
       - ci-gate
+      - release-evidence
     permissions:
       contents: read
       issues: write

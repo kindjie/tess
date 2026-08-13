@@ -63,6 +63,12 @@ struct RouteCacheStats {
   std::size_t retired_entries = 0;
 };
 
+/// Bounds retained route count and aggregate cached path-node storage.
+struct RouteCacheLimits {
+  std::size_t max_entries = 512;
+  std::size_t max_path_nodes = std::size_t{1} << 20U;
+};
+
 // Exact (start, goal) lookups and same-goal suffix lookups are served by two
 // open-addressed flat hash indexes (power-of-two capacity, linear probing)
 // instead of linear scans. The suffix index is populated per stored
@@ -83,6 +89,9 @@ struct RouteCacheStats {
 // binding; the provider itself must remain at a stable address, and callers
 // must clear bound caches before ending its lifetime.
 /// Bounded scratch cache for exact and same-goal suffix unit routes.
+///
+/// Class and provider identities are process-local; do not share this cache
+/// across a dynamic-library boundary.
 class RouteCacheScratch {
  public:
   static constexpr std::size_t default_max_entries = 512;
@@ -91,9 +100,9 @@ class RouteCacheScratch {
   // A cap of 0 disables storage (every request recomputes); a single route
   // larger than max_path_nodes is skipped without disturbing resident
   // entries (counted in stats().oversized_skips).
-  void set_caps(std::size_t max_entries, std::size_t max_path_nodes) noexcept {
-    max_entries_ = max_entries;
-    max_path_nodes_ = max_path_nodes;
+  void set_caps(RouteCacheLimits limits) noexcept {
+    max_entries_ = limits.max_entries;
+    max_path_nodes_ = limits.max_path_nodes;
     // The normal over-cap insertion policy invalidates the whole cache. Apply
     // that same deterministic policy immediately when a caller lowers either
     // cap below the live footprint; otherwise existing hits could bypass a

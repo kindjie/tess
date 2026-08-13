@@ -113,13 +113,11 @@ library does not depend on RTTI.
 Virtual functions appear only in the experimental maintenance layer.
 Virtuals need vtables, not RTTI.
 
-Caveats stated plainly:
-
-- **`-fno-rtti` is not tested.** No CI job builds that way. It is
-  expected to work; it is not verified.
-- `tag_identity` is unique **within one binary**. Cross-shared-library
-  identity is not addressed, so do not compare tokens across a DSO
-  boundary.
+Stable surfaces are compiled and exercised without RTTI on every supported
+compiler family. `tag_identity` is unique only within one linked image. Its
+tokens must not be compared, persisted, or transferred across a dynamic
+library boundary. Public caches, graphs, payloads, and products that retain
+such tokens repeat this restriction on their type documentation.
 
 ## Determinism across thread counts
 
@@ -192,10 +190,9 @@ neither carries these):
 
 - At most one dispatch per pool executor may be in flight.
 - A callback must not re-enter its own pool executor, and must not call
-  `reserve_operations` on it during a dispatch. Debug builds assert.
-  Release builds **deadlock or race** — reserving mid-dispatch can
-  reallocate the results storage while workers are writing through it,
-  which is memory corruption, not merely a hang.
+  `reserve_operations` on it during a dispatch. Both violations fail fast in
+  debug and release builds while the pool mutex protects the state check,
+  before shared dispatch state can be changed.
 - **Callbacks are shared across pool workers.** The kernel you supply
   must be stateless or self-synchronising.
 - `Schedule::notify_dirty`, `notify_events`, and `request_run` are
@@ -206,8 +203,9 @@ You may supply your own executor: anything satisfying the
 `PhaseExecutor` concept works. A concurrent executor must not declare
 `serial_execution_tag`.
 
-Both pool executors are marked prototype in their headers. Treat their
-interfaces as less settled than the rest of the library.
+The worker-pool and scoped-thread executors are stable interfaces. The scoped
+executor remains the simple per-dispatch thread-owning alternative; it is not
+an asynchronous scheduler.
 
 ## Steady-state allocations
 
@@ -283,22 +281,19 @@ namespace rather than moving to `include/tess/experimental/`, because
 relocating them would churn every consumer include to signal a maturity
 difference that is not the actual distinction.
 
-Being outside `experimental/` is not a stability promise. Every `0.x`
-release is pre-stable — see [support](support.md) — and that applies to
-these families on dense worlds exactly as it does to the rest of the
-surface.
-
-One concrete change to expect: absorbing sparse residency will need the
-`MissingChunkPolicy` parameter that the sparse-aware path entry points
-already carry (`astar_path` and, as of the route-cache work,
-`cached_astar_path`). When these families gain sparse support, expect
-that parameter on their entry points, defaulted to `TreatAsBlocked` so
-existing behaviour is preserved — but the signatures will change.
+The header manifest, not directory placement alone, defines stability; see
+[support](support.md). The current dense queued-operation, field-product, and
+PIBT signatures are frozen for 1.x. Sparse residency support must use distinct
+entry points or additive overloads that leave those dense signatures and their
+existing call resolution unchanged. Such variants can accept the
+`MissingChunkPolicy` used by sparse-aware path entry points such as
+`astar_path` and `cached_astar_path`.
 
 Note that `weighted_path_batch` is residency-generic and *does* compile
 against a sparse world, but currently hardcodes `TreatAsBlocked`: it
 answers `NoPath` across a missing chunk rather than `Indeterminate`.
-Threading the policy there is open work.
+Adding a policy-aware variant there is open work and remains subject to the
+additive-entry-point rule above.
 
 Everything else in the public surface is residency-generic: it either
 works on both world kinds, or names the difference in its own
@@ -307,19 +302,21 @@ documentation.
 ## Platforms and compilers
 
 tess requires a C++20 compiler and CMake 3.25 or newer. Beyond that,
-support means *continuously tested*, and the honest picture is uneven:
+support means *continuously tested*. Ordinary change CI and exact-SHA release
+CI provide two layers of evidence:
 
-| Platform | Compiler | What runs |
-| --- | --- | --- |
-| Ubuntu 24.04 | Clang | Build, full test suite, sanitizers, install and FetchContent smokes, standalone-header and macro-configuration checks |
-| Ubuntu 24.04 | GCC | **Compile only** — no test execution |
-| macOS 15 | Clang | Build and tests on every non-PR full-tier event (main pushes, the weekly schedule, manual dispatches) — **never on pull requests** |
-| Windows 2025 | MSVC | Build and tests, required on pull requests |
+- Ubuntu 24.04 with Clang builds and runs the full tests, sanitizers, installed
+  and FetchContent consumers, standalone headers, and macro configurations.
+- Ubuntu 24.04 with GCC 12 and 14 performs warning-clean builds and full
+  runtime tests on code changes.
+- macOS 15 with AppleClang builds, tests, sanitizes, and consumes an install on
+  non-PR full-tier runs. Release runs select Xcode 16.0 and add no-RTTI runtime
+  evidence.
+- Windows 2025 with MSVC is a required PR build-and-test gate. Release runs
+  verify MSVC 19.44 and add no-RTTI runtime evidence.
 
 Consequences worth knowing before you depend on a platform:
 
-- A GCC-specific runtime bug would not be caught: GCC is a
-  compile-only gate.
 - A macOS regression can merge and only surface on the next main,
   scheduled, or dispatched run.
 - Benchmarks and coverage run on Ubuntu only.
@@ -327,11 +324,8 @@ Consequences worth knowing before you depend on a platform:
   pull-request thread sanitizer coverage is path-filtered rather than
   universal.
 
-**No minimum compiler version is enforced or claimed.** The build
-requires C++20 through `target_compile_features`, and nothing rejects
-an older compiler at configure time. That is deliberate: "the oldest
-version we test" and "the oldest version that works" are different
-claims, and a hard rejection would turn away compilers that work fine —
-including consumers who add tess as a subproject and never use it.
-Publishing a tested-version matrix with pinned floor jobs is the
-honest form of that guarantee, and it is not built yet.
+The tested floors are GCC 12, Clang 16, AppleClang from Xcode 16.0, MSVC
+19.44, and CMake 3.25.3. They are evidence-backed support floors, not configure-
+time rejection rules: a different C++20 toolchain may work, but is outside the
+tested contract. See [support](support.md) for the complete floor and no-RTTI
+policy.

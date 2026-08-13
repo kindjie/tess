@@ -128,7 +128,13 @@ struct IntentInvalidations {
                                    IntentInvalidations rhs) noexcept = default;
 };
 
-/** Type-checked, non-owning view of one homogeneous intent batch. */
+/**
+ * Type-checked, non-owning view of one homogeneous intent batch.
+ *
+ * Its type token is unique only within one binary image. Do not compare or
+ * consume payload identity across a shared-library boundary; the result is
+ * unspecified and toolchain-dependent.
+ */
 struct IntentPayloadView {
   template <typename T, std::size_t Extent>
   [[nodiscard]] static auto from(std::span<T, Extent> values) noexcept
@@ -459,7 +465,12 @@ struct NearestBatchHandle {
   OpHandle operation{};
 };
 
-/** Captures one operation request before domain expansion and validation. */
+/**
+ * Captures one operation request before domain expansion and validation.
+ *
+ * A bound payload carries process-local type identity. Do not transfer an
+ * operation with a bound payload across a dynamic-library boundary.
+ */
 struct QueuedOperation {
   OperationKind kind = OperationKind::UpdateField;
   OpHandle handle{};
@@ -495,7 +506,12 @@ struct PlannedOperationCreateResult;
 class ExecutionReport;
 class ExecutionPhase;
 
-/** A planner-validated operation whose chunk list cannot be mutated. */
+/**
+ * A planner-validated operation whose chunk list cannot be mutated.
+ *
+ * Shape and payload identities are valid only within one linked image. Do not
+ * transfer a planned operation across a dynamic-library boundary.
+ */
 class PlannedOperation {
  public:
   OperationKind kind = OperationKind::UpdateField;
@@ -2415,8 +2431,8 @@ template <typename World>
 // destination accumulator, so this can throw std::bad_alloc. See the
 // accumulator overload for the rule.
 [[nodiscard]] auto merge_planned_dirty(World& world,
-                                       PlannedDirtyPartitions& partitions,
-                                       PlannedDirtyAccumulator& dirty_scratch)
+                                       PlannedDirtyAccumulator& dirty_scratch,
+                                       PlannedDirtyPartitions& partitions)
     -> PlannedDirtyMergeResult {
   for (const auto& partition : partitions.partitions()) {
     const auto validation = partition.validation_status(world);

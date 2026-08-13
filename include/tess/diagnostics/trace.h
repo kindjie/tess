@@ -218,7 +218,7 @@ class TraceBuffer {
 
   // Snapshot of every category's timing accumulator, indexed by
   // static_cast<std::size_t>(TraceCategory).
-  [[nodiscard]] auto category_stats() const noexcept
+  [[nodiscard]] auto all_stats() const noexcept
       -> const std::array<TraceCategoryStats, trace_category_count>& {
     return stats_;
   }

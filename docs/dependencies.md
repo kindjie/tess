@@ -1,5 +1,16 @@
 # Dependencies
 
+## CMake release floor
+
+- Version: `3.25.3`
+- Documentation: https://cmake.org/cmake/help/v3.25/
+- Release files and checksums: https://cmake.org/files/v3.25/
+
+The release-floor job downloads Kitware's Linux x86-64 archive and verifies
+the URL and SHA-256 digest pinned in `ci/tools.lock.json`. It performs a real
+configure, install, package discovery, consumer build, and execution rather
+than relying on syntax compatibility alone.
+
 ## GoogleTest
 
 - Version: `v1.17.0`
@@ -19,6 +30,16 @@ missing. As required for composable `add_subdirectory` use, a canonical
 `GTest::gtest_main` target already provided by a parent project takes
 precedence as an explicit injection/trust boundary; tess does not reinterpret
 directory-scoped version variables, so the parent owns its compatibility.
+
+## Conan
+
+- Version: `2.31.1`
+- Documentation: https://docs.conan.io/2/
+- Package and release files: https://pypi.org/project/conan/2.31.1/
+
+Used only by the release package-validation job. The selected wheel URL and
+SHA-256 digest are pinned in `ci/tools.lock.json`; the library itself has no
+runtime or build dependency on Conan.
 
 ## Google Benchmark
 

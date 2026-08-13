@@ -325,15 +325,15 @@ TEST(TessEcsFlecs, LifecycleAndTickEmitRenderDeltas) {
     tess::PathAgentTickOptions options;
     (void)tess::tick_flecs_unit_path_agents<World, PassableTag, OccupancyTag,
                                             ReservationTag>(
-        sim.ecs, sim.context, sim.world, sim.runtime, sim.index, options, 0,
+        sim.ecs, sim.context, sim.world, sim.runtime, sim.index, options,
         nullptr, &collector);
   }
 
   const auto frame = collector.publish();
-  ASSERT_EQ(frame.entities.size(), 2u);
-  EXPECT_EQ(frame.entities[0].kind, tess::EntityDeltaKind::Spawned);
-  EXPECT_EQ(frame.entities[1].kind, tess::EntityDeltaKind::Moved);
-  EXPECT_EQ(frame.entities[1].to, (tess::Coord3{2, 0, 0}));
+  ASSERT_EQ(frame.entities().size(), 2u);
+  EXPECT_EQ(frame.entities()[0].kind, tess::EntityDeltaKind::Spawned);
+  EXPECT_EQ(frame.entities()[1].kind, tess::EntityDeltaKind::Moved);
+  EXPECT_EQ(frame.entities()[1].to, (tess::Coord3{2, 0, 0}));
 }
 
 TEST(TessEcsFlecs, SteadyStateTickIsAllocationFree) {

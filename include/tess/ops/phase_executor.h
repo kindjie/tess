@@ -2,6 +2,7 @@
 
 #include <tess/core/assert.h>
 #include <tess/core/config.h>
+#include <tess/core/fail_fast.h>
 #include <tess/diagnostics/diagnostics.h>
 
 #include <algorithm>
@@ -129,7 +130,7 @@ concept SerialExecutor =
     requires { typename std::remove_cvref_t<Executor>::serial_execution_tag; };
 
 /**
- * Prototype executor that spawns and joins worker threads for each phase.
+ * Executor that spawns and joins worker threads for each phase.
  * Callback exceptions cancel unclaimed work and are rethrown after all
  * already-running callbacks have joined. If callbacks throw concurrently,
  * which exception is propagated is unspecified.
@@ -277,8 +278,8 @@ using ScopedThreadPhaseExecutor = ScopedThreadPhaseExecutorImpl<has_exceptions>;
 /** Scoped-thread executor for callbacks whose no-throw contract is explicit. */
 using NoThrowScopedThreadPhaseExecutor = ScopedThreadPhaseExecutorImpl<false>;
 
-// Prototype persistent worker-pool backend behind the PhaseExecutor
-// contract: workers are created once and reused across phases, so phase
+// Stable persistent worker-pool backend behind the PhaseExecutor contract:
+// workers are created once and reused across phases, so phase
 // dispatch does not create threads. It invokes callbacks concurrently, so
 // like ScopedThreadPhaseExecutor it does not declare serial_execution_tag
 // and pairs only with execute_phase_partitioned_dirty_with. AutoExec uses it
@@ -295,10 +296,9 @@ using NoThrowScopedThreadPhaseExecutor = ScopedThreadPhaseExecutorImpl<false>;
 // (job_context_ through results_) is shared per executor, so a nested or
 // concurrent dispatch clobbers the active job and deadlocks the outer
 // caller, which waits on done_cv_ while its own worker is parked inside
-// the nested call. Debug builds (TESS_ENABLE_ASSERTS) fail fast on both
-// violations; in release builds the assert compiles out (zero cost, per
-// core/assert.h) and the misuse deadlocks or races exactly as documented
-// here. Distinct executors are independent and may dispatch in parallel.
+// the nested call. Both violations fail fast under the pool mutex in every
+// build before dispatch state can be changed. Distinct executors are
+// independent and may dispatch in parallel.
 // The analyzer's padding complaint is the point: the alignas(128) members
 // below buy false-sharing isolation with those bytes (audit 2026-07-11 M8).
 #if defined(_MSC_VER)
@@ -328,7 +328,7 @@ struct alignas(128) WorkerPoolExceptionState<true> {
 }  // namespace detail
 
 /**
- * Persistent prototype worker pool for allocation-free repeated dispatch.
+ * Persistent worker pool for allocation-free repeated dispatch.
  * Callback exceptions are rethrown after join; callbacks must not re-enter
  * the same pool. If callbacks throw concurrently, which exception is
  * propagated is unspecified.
@@ -401,9 +401,11 @@ class WorkerPoolPhaseExecutorImpl
   // workers write into it would relocate their slots (use-after-realloc).
   void reserve_operations(std::size_t count) const {
     const std::scoped_lock lock{mutex_};
-    TESS_ASSERT_MSG(!dispatch_active_,
-                    "WorkerPoolPhaseExecutor::reserve_operations called "
-                    "during an active dispatch");
+    if (dispatch_active_) {
+      detail::fail_fast(
+          "WorkerPoolPhaseExecutor::reserve_operations called during an "
+          "active dispatch");
+    }
     if (results_.size() < count) {
       results_.resize(count);
     }
@@ -414,6 +416,12 @@ class WorkerPoolPhaseExecutorImpl
                                         Fn&& fn) const
       -> PlannedExecutionResult {
     if (count == 0) {
+      const std::scoped_lock lock{mutex_};
+      if (dispatch_active_) {
+        detail::fail_fast(
+            "WorkerPoolPhaseExecutor::for_each_operation re-entered during "
+            "an active dispatch");
+      }
       return PlannedExecutionResult{};
     }
     TESS_DIAG_EVENT_VALUE(queued_worker_pool_dispatch,
@@ -432,17 +440,18 @@ class WorkerPoolPhaseExecutorImpl
         std::is_nothrow_invocable_r_v<PlannedExecutionResult, Callback&,
                                       std::size_t>;
     std::size_t runs = 0;
+    PlannedExecutionResult result{};
 #if TESS_HAS_EXCEPTIONS
     std::exception_ptr exception;
 #endif
     {
       const std::scoped_lock lock{mutex_};
-      // Single-dispatch guard; see the class comment. The flag is
-      // maintained in release builds too (two stores under an
-      // already-held lock), but only debug builds check it.
-      TESS_ASSERT_MSG(!dispatch_active_,
-                      "WorkerPoolPhaseExecutor::for_each_operation "
-                      "re-entered during an active dispatch");
+      // Single-dispatch guard under the mutex already acquired for setup.
+      if (dispatch_active_) {
+        detail::fail_fast(
+            "WorkerPoolPhaseExecutor::for_each_operation re-entered during "
+            "an active dispatch");
+      }
       if (results_.size() < count) {
         results_.resize(count);
       }
@@ -526,6 +535,15 @@ class WorkerPoolPhaseExecutorImpl
         exception = this->exception_;
       }
 #endif
+      // Select and copy the result before releasing dispatch ownership. A
+      // competing caller may resize or overwrite results_ as soon as the
+      // flag clears.
+      for (std::size_t offset = 0; offset < count; ++offset) {
+        if (results_[offset].status != PlannedExecutionStatus::Executed) {
+          result = results_[offset];
+          break;
+        }
+      }
       job_active_ = false;
       dispatch_active_ = false;
     }
@@ -538,12 +556,7 @@ class WorkerPoolPhaseExecutorImpl
     }
 #endif
 
-    for (std::size_t offset = 0; offset < count; ++offset) {
-      if (results_[offset].status != PlannedExecutionStatus::Executed) {
-        return results_[offset];
-      }
-    }
-    return PlannedExecutionResult{};
+    return result;
   }
 
  private:

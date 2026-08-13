@@ -40,8 +40,8 @@ TEST(TessTopologyCoarsePath, ReconstructsShortestRegionAndPortalPath) {
   const auto graph = build_graph<Shape>(world);
   tess::RegionGraphScratch scratch;
 
-  const auto result = tess::coarse_path<Shape>(graph, tess::Coord3{0, 0, 0},
-                                               tess::Coord3{11, 3, 0}, scratch);
+  const auto result = tess::coarse_path<Shape>(
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{11, 3, 0}}, scratch);
 
   ASSERT_EQ(result.status, tess::ReachabilityStatus::Reachable);
   ASSERT_EQ(result.regions.size(), 3u);
@@ -65,8 +65,8 @@ TEST(TessTopologyCoarsePath, SameRegionProducesOneChunkAndNoPortal) {
   const auto graph = build_graph<Shape>(world);
   tess::RegionGraphScratch scratch;
 
-  const auto result = tess::coarse_path<Shape>(graph, tess::Coord3{0, 0, 0},
-                                               tess::Coord3{3, 3, 0}, scratch);
+  const auto result = tess::coarse_path<Shape>(
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{3, 3, 0}}, scratch);
 
   EXPECT_EQ(result.status, tess::ReachabilityStatus::Reachable);
   EXPECT_EQ(result.visited_regions, 1u);
@@ -88,8 +88,8 @@ TEST(TessTopologyCoarsePath, FindsNonMonotoneChunkDetour) {
   const auto graph = build_graph<Shape>(world);
   tess::RegionGraphScratch scratch;
 
-  const auto result = tess::coarse_path<Shape>(graph, tess::Coord3{0, 0, 0},
-                                               tess::Coord3{11, 0, 0}, scratch);
+  const auto result = tess::coarse_path<Shape>(
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{11, 0, 0}}, scratch);
 
   ASSERT_EQ(result.status, tess::ReachabilityStatus::Reachable);
   const std::array expected{tess::ChunkKey{0}, tess::ChunkKey{3},
@@ -108,11 +108,11 @@ TEST(TessTopologyCoarsePath, DisconnectedResultOwnsNoStalePath) {
   const auto graph = build_graph<Shape>(world);
   tess::RegionGraphScratch scratch;
 
-  const auto found = tess::coarse_path<Shape>(graph, tess::Coord3{0, 0, 0},
-                                              tess::Coord3{3, 3, 0}, scratch);
+  const auto found = tess::coarse_path<Shape>(
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{3, 3, 0}}, scratch);
   ASSERT_EQ(found.status, tess::ReachabilityStatus::Reachable);
-  const auto missing = tess::coarse_path<Shape>(graph, tess::Coord3{0, 0, 0},
-                                                tess::Coord3{7, 3, 0}, scratch);
+  const auto missing = tess::coarse_path<Shape>(
+      graph, {tess::Coord3{0, 0, 0}, tess::Coord3{7, 3, 0}}, scratch);
 
   EXPECT_EQ(missing.status, tess::ReachabilityStatus::Unreachable);
   EXPECT_TRUE(missing.regions.empty());
@@ -128,13 +128,13 @@ TEST(TessTopologyCoarsePath, WarmReconstructionDoesNotAllocate) {
   const auto graph = build_graph<Shape>(world);
   tess::RegionGraphScratch scratch;
   scratch.reserve_regions(graph.region_count());
-  (void)tess::coarse_path<Shape>(graph, {0, 0, 0}, {11, 3, 0}, scratch);
+  (void)tess::coarse_path<Shape>(graph, {{0, 0, 0}, {11, 3, 0}}, scratch);
 
   {
     tess_test::ScopedAllocationCounter counter;
     for (int i = 0; i < 100; ++i) {
       const auto result =
-          tess::coarse_path<Shape>(graph, {0, 0, 0}, {11, 3, 0}, scratch);
+          tess::coarse_path<Shape>(graph, {{0, 0, 0}, {11, 3, 0}}, scratch);
       EXPECT_EQ(result.status, tess::ReachabilityStatus::Reachable);
     }
     EXPECT_EQ(counter.count(), 0u);
@@ -157,7 +157,7 @@ TEST(TessTopologyCoarsePath, SparseResidentCorridorIsReconstructed) {
   tess::RegionGraphScratch scratch;
 
   const auto result =
-      tess::coarse_path<Shape>(graph, {0, 0, 0}, {11, 3, 0}, scratch);
+      tess::coarse_path<Shape>(graph, {{0, 0, 0}, {11, 3, 0}}, scratch);
 
   EXPECT_EQ(result.status, tess::ReachabilityStatus::Reachable);
   ASSERT_EQ(result.chunks.size(), 3u);
@@ -180,7 +180,7 @@ TEST(TessTopologyCoarsePath, SparseMissingCorridorIsIndeterminate) {
   tess::RegionGraphScratch scratch;
 
   const auto result =
-      tess::coarse_path<Shape>(graph, {0, 0, 0}, {11, 3, 0}, scratch);
+      tess::coarse_path<Shape>(graph, {{0, 0, 0}, {11, 3, 0}}, scratch);
 
   EXPECT_EQ(result.status, tess::ReachabilityStatus::Indeterminate);
   EXPECT_TRUE(result.regions.empty());

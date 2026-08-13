@@ -217,7 +217,7 @@ class FieldProductCacheModel {
     product.reserve_goals(1);
     product.reserve_dependencies(CacheWorld::chunk_count);
     (void)tess::build_distance_field_product<CacheWorld, PassableTag>(
-        world_, goals_for(key), scratch_, product);
+        world_, goals_for(key), product, scratch_);
     return product;
   }
 
@@ -311,7 +311,7 @@ class FieldProductCacheModel {
     product.reserve_goals(kOversizedGoals);
     product.reserve_dependencies(CacheWorld::chunk_count);
     (void)tess::build_distance_field_product<CacheWorld, PassableTag>(
-        world_, goals, scratch_, product);
+        world_, goals, product, scratch_);
     return product;
   }
 
@@ -406,7 +406,7 @@ class RouteCacheModel {
     scratch_.reserve_nodes(256);
     cache_.reserve_routes(kMaxEntries);
     cache_.reserve_path_nodes(kMaxPathNodes);
-    cache_.set_caps(kMaxEntries, kMaxPathNodes);
+    cache_.set_caps(tess::RouteCacheLimits{kMaxEntries, kMaxPathNodes});
   }
 
   void apply(std::uint32_t op) {

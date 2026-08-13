@@ -207,6 +207,7 @@ def test_sources_in_the_database_are_checked():
   (
     "examples/webgpu_compute/webgpu_compute.cc",
     "tests/fetchcontent_consumer/main.cc",
+    "tests/fuzz/tess_world_archive_fuzzer.cc",
     "tests/install_consumer/main.cc",
     "tests/no_exceptions_consumer_contract_main.cc",
     "tests/tess_grid_benchmark_data_test.cc",

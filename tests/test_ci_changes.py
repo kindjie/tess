@@ -185,6 +185,7 @@ def test_cli_writes_github_output_and_reason(monkeypatch, capsys):
     "include/tess/sim/scheduler.h",
     "include/tess/sim/auto_exec.h",
     "include/tess/sim/async_work_task.h",
+    "include/tess/sim/delta_frame.h",
     "include/tess/simulation.h",
     "include/tess/tess.h",
     "tests/tess_phase_executor_test.cc",

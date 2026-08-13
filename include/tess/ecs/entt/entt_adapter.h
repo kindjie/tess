@@ -441,7 +441,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 [[nodiscard]] auto tick_entt_unit_path_agents(
     entt::registry& registry, EnttPathAgentContext& context, World& world,
     PathRequestRuntime& runtime, TileOccupancyIndex& index,
-    PathAgentTickOptions options = {}, std::uint32_t movement_dirty_mask = 0,
+    PathAgentTickOptions options = {},
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
   EnttPathAgentSource source(registry, context);
@@ -449,7 +449,7 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
   return tick_ecs_unit_path_agents<World, ClassOrTag, OccupancyTag,
                                    ReservationTag>(
       context.tick_state, world, source, sink, context.batch, runtime, index,
-      options, movement_dirty_mask, graph, render_deltas);
+      options, graph, render_deltas);
 }
 
 template <typename World, typename Class, std::uint32_t MaxCost,
@@ -459,7 +459,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 [[nodiscard]] auto tick_entt_path_agents(
     entt::registry& registry, EnttPathAgentContext& context, World& world,
     PathRequestRuntime& runtime, TileOccupancyIndex& index,
-    PathAgentTickOptions options = {}, std::uint32_t movement_dirty_mask = 0,
+    PathAgentTickOptions options = {},
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
   EnttPathAgentSource source(registry, context);
@@ -467,7 +467,7 @@ template <typename World, typename Class, std::uint32_t MaxCost,
   return tick_ecs_path_agents<World, Class, MaxCost, OccupancyTag,
                               ReservationTag>(
       context.tick_state, world, source, sink, context.batch, runtime, index,
-      options, movement_dirty_mask, graph, render_deltas);
+      options, graph, render_deltas);
 }
 
 template <typename World, typename PassableTag, typename CostTag,
@@ -477,7 +477,7 @@ template <typename World, typename PassableTag, typename CostTag,
 [[nodiscard]] auto tick_entt_path_agents(
     entt::registry& registry, EnttPathAgentContext& context, World& world,
     PathRequestRuntime& runtime, TileOccupancyIndex& index,
-    PathAgentTickOptions options = {}, std::uint32_t movement_dirty_mask = 0,
+    PathAgentTickOptions options = {},
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
   EnttPathAgentSource source(registry, context);
@@ -485,7 +485,7 @@ template <typename World, typename PassableTag, typename CostTag,
   return tick_ecs_path_agents<World, PassableTag, CostTag, MaxCost,
                               OccupancyTag, ReservationTag>(
       context.tick_state, world, source, sink, context.batch, runtime, index,
-      options, movement_dirty_mask, graph, render_deltas);
+      options, graph, render_deltas);
 }
 
 }  // namespace tess

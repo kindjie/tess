@@ -59,10 +59,10 @@ struct Consumer {
             [static_cast<std::size_t>(coord.x)] =
                 value == 0 ? '.' : static_cast<char>(value);
     };
-    for (const auto& chunk : frame.chunks) {
+    for (const auto& chunk : frame.chunks()) {
       if (chunk.tile_count != 0) {
         for (std::uint32_t i = 0; i < chunk.tile_count; ++i) {
-          repaint(frame.tiles[chunk.first_tile + i].coord);
+          repaint(frame.tiles()[chunk.first_tile + i].coord);
         }
       } else {
         const auto& box = chunk.bounds;
@@ -76,7 +76,7 @@ struct Consumer {
         }
       }
     }
-    for (const auto& record : frame.entities) {
+    for (const auto& record : frame.entities()) {
       if (record.kind == tess::EntityDeltaKind::Despawned ||
           record.kind == tess::EntityDeltaKind::Parked) {
         markers.erase(record.entity.value);

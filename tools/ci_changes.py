@@ -44,6 +44,7 @@ CONCURRENCY_SENSITIVE_FILES = (
   "CMakePresets.json",
   "include/tess/sim/async_work_task.h",
   "include/tess/sim/auto_exec.h",
+  "include/tess/sim/delta_frame.h",
   "include/tess/sim/schedule.h",
   "include/tess/sim/scheduler.h",
   "include/tess/simulation.h",

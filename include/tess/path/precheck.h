@@ -85,7 +85,7 @@ enum class PrecheckStatus : std::uint8_t {
 template <typename ClassOrTag, typename World, typename Provider>
 [[nodiscard]] auto precheck_path(
     const RegionGraphT<typename World::residency_type>& graph,
-    const World& world, Coord3 start, Coord3 goal, RegionGraphScratch& scratch,
+    const World& world, PathRequest request, RegionGraphScratch& scratch,
     const Provider& provider) -> PrecheckStatus {
   if (graph.local_topologies().empty()) {
     return PrecheckStatus::NoGraph;
@@ -95,7 +95,7 @@ template <typename ClassOrTag, typename World, typename Provider>
     return PrecheckStatus::GraphStale;
   }
   const auto result =
-      reachable<typename World::shape_type>(graph, start, goal, scratch);
+      reachable<typename World::shape_type>(graph, request, scratch);
   switch (result.status) {
     case ReachabilityStatus::Reachable:
       return PrecheckStatus::Reachable;
@@ -115,9 +115,9 @@ template <typename ClassOrTag, typename World, typename Provider>
 template <typename ClassOrTag, typename World>
 [[nodiscard]] auto precheck_path(
     const RegionGraphT<typename World::residency_type>& graph,
-    const World& world, Coord3 start, Coord3 goal, RegionGraphScratch& scratch)
+    const World& world, PathRequest request, RegionGraphScratch& scratch)
     -> PrecheckStatus {
-  return precheck_path<ClassOrTag>(graph, world, start, goal, scratch,
+  return precheck_path<ClassOrTag>(graph, world, request, scratch,
                                    AdjacentTransitions{});
 }
 

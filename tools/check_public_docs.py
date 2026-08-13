@@ -13,9 +13,11 @@ import check_public_surface as public_surface
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_HEADERS = tuple(
     public_surface.parse_api_headers(
-        (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+        (REPO_ROOT / "cmake" / "tess-headers.json").read_text(
+            encoding="utf-8"
+        )
     )
-) + ("include/tess/version.h.in",)
+)
 
 
 @dataclass(frozen=True)
@@ -309,7 +311,8 @@ def check_headers(
         str, list[tuple[str, PublicDeclaration]]
     ] = {}
     for header in headers:
-        path = repo_root / header
+        source = public_surface.GENERATED_HEADER_SOURCES.get(header, header)
+        path = repo_root / source
         if not path.is_file():
             failures.append(
                 f"{header}: documentation-covered header not found"

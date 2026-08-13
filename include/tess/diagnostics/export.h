@@ -24,7 +24,7 @@ struct TimingSnapshot {
 
   // Timing accumulator for a category, guarding the Count sentinel and any
   // out-of-range value.
-  [[nodiscard]] auto category(TraceCategory value) const noexcept
+  [[nodiscard]] auto stats(TraceCategory value) const noexcept
       -> const TraceCategoryStats& {
     static constexpr TraceCategoryStats kZero{};
     const auto index = static_cast<std::size_t>(value);
@@ -65,7 +65,7 @@ struct DiagnosticsSnapshot {
 [[nodiscard]] inline auto capture_timing(const TraceBuffer& buffer) noexcept
     -> TimingSnapshot {
   TimingSnapshot snapshot;
-  snapshot.per_category = buffer.category_stats();
+  snapshot.per_category = buffer.all_stats();
   return snapshot;
 }
 

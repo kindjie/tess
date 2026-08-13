@@ -230,7 +230,7 @@ TEST(TessPathWeightedBatch, RealizedBucketOverflowAvoidsSecondFullFlood) {
   EXPECT_LT(bounded.expanded_nodes, unbounded.expanded_nodes);
   const auto replay =
       tess::weighted_distance_field_path<SmallWorld, WeightedClass>(
-          world, tess::Coord3{7, 6, 0}, goal, bounded_scratch);
+          world, {{7, 6, 0}, goal}, bounded_scratch);
   EXPECT_EQ(replay.status, tess::PathStatus::NoPath);
 }
 
@@ -439,7 +439,7 @@ TEST(TessPathWeightedBatch, OverMaxCostCorridorEngagesUnboundedFallback) {
   EXPECT_EQ(bounded.reached_nodes, unbounded.reached_nodes);
   const auto replay =
       tess::weighted_distance_field_path<SmallWorld, PassableTag, CostTag>(
-          world, tess::Coord3{0, 0, 0}, goal, bounded_scratch);
+          world, {{0, 0, 0}, goal}, bounded_scratch);
   EXPECT_EQ(replay.status, tess::PathStatus::Found);
   EXPECT_EQ(replay.cost, 15u);
 }
@@ -484,10 +484,10 @@ TEST(TessPathWeightedBatch, BoundedFieldMatchesUnboundedAcrossRandomCosts) {
       const auto start = tess::Coord3{coord_dist(rng), coord_dist(rng), 0};
       const auto lhs =
           tess::weighted_distance_field_path<MidWorld, PassableTag, CostTag>(
-              world, start, goal, bounded_scratch);
+              world, {start, goal}, bounded_scratch);
       const auto rhs =
           tess::weighted_distance_field_path<MidWorld, PassableTag, CostTag>(
-              world, start, goal, unbounded_scratch);
+              world, {start, goal}, unbounded_scratch);
       ASSERT_EQ(lhs.status, rhs.status) << "seed " << seed << " start " << i;
       ASSERT_EQ(lhs.cost, rhs.cost) << "seed " << seed << " start " << i;
     }

@@ -296,7 +296,7 @@ TEST(TessPathMovementClass, DiagonalReverseFieldMatchesExactSearch) {
       world, goal, field_scratch);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   const auto from_field = tess::weighted_distance_field_path<World, Diagonal>(
-      world, start, goal, field_scratch);
+      world, {start, goal}, field_scratch);
 
   ASSERT_EQ(from_field.status, tess::PathStatus::Found);
   EXPECT_EQ(from_field.cost, exact.cost);
@@ -318,7 +318,7 @@ TEST(TessPathMovementClass, DistanceFieldRejectsAnotherResolvedModel) {
                  .status),
             tess::PathStatus::Found);
   const auto mismatched = tess::weighted_distance_field_path<World, Diagonal>(
-      world, goal, goal, scratch);
+      world, {goal, goal}, scratch);
 
   EXPECT_EQ(mismatched.status, tess::PathStatus::NoPath);
 }
@@ -460,14 +460,14 @@ TEST(TessPathMovementClass, ProviderAwareFieldUsesAndStampsStairEdge) {
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   const auto result =
       tess::weighted_distance_field_path<StairWorld, DefaultClass>(
-          world, foot, landing, scratch, provider);
+          world, {foot, landing}, scratch, provider);
   ASSERT_EQ(result.status, tess::PathStatus::Found);
   EXPECT_EQ(result.cost, 1u);
   EXPECT_EQ(result.path.size(), 2u);
 
   const auto mismatched =
       tess::weighted_distance_field_path<StairWorld, DefaultClass>(
-          world, foot, landing, scratch);
+          world, {foot, landing}, scratch);
   EXPECT_EQ(mismatched.status, tess::PathStatus::NoPath);
 
   const auto boxed =
@@ -477,7 +477,7 @@ TEST(TessPathMovementClass, ProviderAwareFieldUsesAndStampsStairEdge) {
           tess::MissingChunkPolicy::TreatAsBlocked, provider);
   ASSERT_EQ(boxed.status, tess::PathStatus::Found);
   EXPECT_EQ((tess::weighted_distance_field_path<StairWorld, DefaultClass>(
-                 world, foot, landing, scratch, provider))
+                 world, {foot, landing}, scratch, provider))
                 .cost,
             1u);
 
@@ -487,7 +487,7 @@ TEST(TessPathMovementClass, ProviderAwareFieldUsesAndStampsStairEdge) {
           provider);
   ASSERT_EQ(bounded.status, tess::PathStatus::Found);
   EXPECT_EQ((tess::weighted_distance_field_path<StairWorld, DefaultClass>(
-                 world, foot, landing, scratch, provider))
+                 world, {foot, landing}, scratch, provider))
                 .cost,
             1u);
 }
@@ -652,7 +652,7 @@ TEST(TessPathMovementClass,
                 .status,
             tess::PathStatus::Found);
   const auto rebound = tess::weighted_distance_field_path<World, DefaultClass>(
-      world, start, goal, scratch, regular);
+      world, {start, goal}, scratch, regular);
 
   EXPECT_EQ(rebound.status, tess::PathStatus::NoPath);
   EXPECT_EQ(rebound.reached_nodes, 0u);
@@ -771,8 +771,8 @@ TEST(TessPathMovementClass, ProviderAwareAgentPlansAndCommitsSameStair) {
   const auto tick =
       tess::tick_unit_path_agents_with_movement<StairWorld, DefaultClass,
                                                 OccupancyTag, ReservationTag>(
-          state, world, agents, runtime, tess::PathAgentTickOptions{}, 0,
-          nullptr, provider);
+          state, world, agents, runtime, tess::PathAgentTickOptions{}, nullptr,
+          provider);
   EXPECT_TRUE(tick.processed_paths);
   EXPECT_EQ(tick.pathing.found, 1u);
   EXPECT_EQ(tick.movement.advanced, 1u);
@@ -833,9 +833,9 @@ TEST(TessPathMovementClass, LegacyWeightedMatchesTagPairDistanceField) {
   const auto start = tess::Coord3{0, 0, 0};
   const auto by_pair =
       tess::weighted_distance_field_path<World, PassableTag, CostTag>(
-          world, start, goal, tag_scratch);
+          world, {start, goal}, tag_scratch);
   const auto by_class = tess::weighted_distance_field_path<
-      World, mv::LegacyWeighted<PassableTag, CostTag>>(world, start, goal,
+      World, mv::LegacyWeighted<PassableTag, CostTag>>(world, {start, goal},
                                                        class_scratch);
   ASSERT_EQ(by_pair.status, tess::PathStatus::Found);
   expect_same_result(by_pair, by_class);

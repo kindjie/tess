@@ -9,7 +9,6 @@
 #include <tess/diagnostics/warning_sink.h>
 #include <tess/ecs/adapter.h>
 #include <tess/ecs/entity_handle.h>
-#include <tess/experimental/maintenance.h>
 #include <tess/gpu/backend.h>
 #include <tess/gpu/descriptors.h>
 #include <tess/ops/async_work.h>
@@ -18,7 +17,6 @@
 #include <tess/ops/result_channel.h>
 #include <tess/path/distance_field_box.h>
 #include <tess/path/field_product_cache.h>
-#include <tess/path/node_index_space.h>
 #include <tess/path/path.h>
 #include <tess/path/path_runtime.h>
 #include <tess/path/path_view.h>

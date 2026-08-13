@@ -335,7 +335,7 @@ TEST(TessPathProduct, DistanceFieldProductInvalidatesAfterUnreachedChunkEdit) {
   tess::DistanceFieldProduct product;
 
   ASSERT_EQ((tess::build_distance_field_product<decltype(world), PassableTag>(
-                 world, goals, scratch, product))
+                 world, goals, product, scratch))
                 .status,
             tess::PathStatus::Found);
   ASSERT_EQ((tess::distance_field_product_path<decltype(world), PassableTag>(
@@ -349,7 +349,7 @@ TEST(TessPathProduct, DistanceFieldProductInvalidatesAfterUnreachedChunkEdit) {
   EXPECT_FALSE(product.is_valid(world));
 
   ASSERT_EQ((tess::build_distance_field_product<decltype(world), PassableTag>(
-                 world, goals, scratch, product))
+                 world, goals, product, scratch))
                 .status,
             tess::PathStatus::Found);
   EXPECT_EQ((tess::distance_field_product_path<decltype(world), PassableTag>(
@@ -368,7 +368,7 @@ TEST(TessPathProduct, DiagonalProductMatchesResolvedUnitSearch) {
   tess::DistanceFieldProduct product;
 
   ASSERT_EQ((tess::build_distance_field_product<decltype(world), DiagonalClass>(
-                 world, goals, scratch, product))
+                 world, goals, product, scratch))
                 .status,
             tess::PathStatus::Found);
   const auto result =
@@ -395,7 +395,7 @@ TEST(TessPathProduct, AxialHexProductUsesSixRegularNeighbors) {
   tess::DistanceFieldProduct product;
 
   ASSERT_EQ((tess::build_distance_field_product<HexWorld, DefaultClass>(
-                 world, goals, scratch, product))
+                 world, goals, product, scratch))
                 .status,
             tess::PathStatus::Found);
   const auto result = tess::distance_field_product_path<HexWorld, DefaultClass>(
@@ -418,7 +418,7 @@ TEST(TessPathProduct, ProductRejectsAnotherResolvedModel) {
   tess::DistanceFieldProduct product;
 
   ASSERT_EQ((tess::build_distance_field_product<decltype(world), DefaultClass>(
-                 world, goals, scratch, product))
+                 world, goals, product, scratch))
                 .status,
             tess::PathStatus::Found);
   const auto result =
@@ -439,7 +439,7 @@ TEST(TessPathProduct, CacheNormalizesRawTagAndIdentityClass) {
   tess::FieldProductCache cache;
 
   ASSERT_EQ((tess::build_distance_field_product<decltype(world), PassableTag>(
-                 world, goals, scratch, product))
+                 world, goals, product, scratch))
                 .status,
             tess::PathStatus::Found);
   ASSERT_TRUE((cache.store<decltype(world), PassableTag>(std::move(product))));
@@ -470,7 +470,7 @@ TEST(TessPathProduct, ProviderProductAndCacheStampStairModel) {
   tess::DistanceFieldProduct product;
 
   ASSERT_EQ((tess::build_distance_field_product<StairWorld, DefaultClass>(
-                 world, goals, scratch, product, provider))
+                 world, goals, product, scratch, provider))
                 .status,
             tess::PathStatus::Found);
   const auto result =
@@ -487,7 +487,7 @@ TEST(TessPathProduct, ProviderProductAndCacheStampStairModel) {
   tess::FieldProductCache cache;
   EXPECT_FALSE((cache.store<StairWorld, DefaultClass>(std::move(product))));
   ASSERT_EQ((tess::build_distance_field_product<StairWorld, DefaultClass>(
-                 world, goals, scratch, product, provider))
+                 world, goals, product, scratch, provider))
                 .status,
             tess::PathStatus::Found);
   ASSERT_TRUE(
@@ -508,7 +508,7 @@ TEST(TessPathProduct, ProductRejectsChangedProviderRevision) {
   auto provider = RevisionProvider{7};
 
   ASSERT_EQ((tess::build_distance_field_product<decltype(world), DefaultClass>(
-                 world, goals, scratch, product, provider))
+                 world, goals, product, scratch, provider))
                 .status,
             tess::PathStatus::Found);
   tess::FieldProductCache cache;

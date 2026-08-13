@@ -362,7 +362,7 @@ TEST(TessPathRuntime, FieldProductCacheLookupPointerStableAcrossStores) {
   first.reserve_nodes(RuntimeTileCount);
   first.reserve_dependencies(World::chunk_count);
   ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
-                 world, held_goals, scratch, first))
+                 world, held_goals, first, scratch))
                 .status,
             tess::PathStatus::Found);
   ASSERT_TRUE((cache.store<World, PassableTag>(std::move(first))));
@@ -377,7 +377,7 @@ TEST(TessPathRuntime, FieldProductCacheLookupPointerStableAcrossStores) {
     other.reserve_nodes(RuntimeTileCount);
     other.reserve_dependencies(World::chunk_count);
     ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
-                   world, other_goals, scratch, other))
+                   world, other_goals, other, scratch))
                   .status,
               tess::PathStatus::Found);
     ASSERT_TRUE((cache.store<World, PassableTag>(std::move(other))));

@@ -40,17 +40,18 @@ def _export(path, files):
 
 
 def _tree(root, headers):
-  """Header files plus a CMakeLists.txt declaring them public."""
+  """Header files plus a stability manifest declaring them public."""
   include_root = root / "include" / "tess"
   for header in headers:
     target = include_root / header
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("#pragma once\n", encoding="utf-8")
-  listed = "\n".join(f"  include/tess/{header}" for header in headers)
-  (root / "CMakeLists.txt").write_text(
-    "set(\n  TESS_PUBLIC_HEADERS\n" + listed + "\n)\n",
-    encoding="utf-8",
-  )
+  (root / "headers.json").write_text(json.dumps({
+    "stable": [f"include/tess/{header}" for header in headers],
+    "optional-stable": [],
+    "experimental": [],
+    "implementation-only": [],
+  }), encoding="utf-8")
   return include_root
 
 
@@ -292,53 +293,27 @@ def test_missing_include_root_fails(tmp_path):
 
 
 def test_public_headers_come_from_the_declared_set(tmp_path):
-  # The physical tree is not the public API: implementation headers
-  # (TESS_IMPLEMENTATION_HEADERS) are excluded and the generated
-  # version.h is included.
-  (tmp_path / "CMakeLists.txt").write_text(
-    "set(\n"
-    "  TESS_PUBLIC_HEADERS\n"
-    "  include/tess/core/lattice.h\n"
-    "  include/tess/path/astar.h\n"
-    ")\n"
-    "set(\n"
-    "  TESS_IMPLEMENTATION_HEADERS\n"
-    "  include/tess/core/uint128.h\n"
-    "  include/tess/path/detail/astar.h\n"
-    ")\n",
-    encoding="utf-8",
-  )
+  # Experimental and implementation headers are outside compatibility
+  # coverage, while generated version.h is included.
+  manifest = tmp_path / "headers.json"
+  manifest.write_text(json.dumps({
+    "stable": ["include/tess/core/lattice.h"],
+    "optional-stable": ["include/tess/path/astar.h"],
+    "experimental": ["include/tess/experimental/tool.h"],
+    "implementation-only": ["include/tess/path/detail/astar.h"],
+  }), encoding="utf-8")
 
-  headers = coverage_gaps.public_headers(tmp_path / "CMakeLists.txt")
+  headers = coverage_gaps.public_headers(manifest)
 
   assert headers == ["core/lattice.h", "path/astar.h", "version.h"]
 
 
-def test_public_headers_survive_parenthesized_comments(tmp_path):
-  # A CMake comment containing (...) inside the block must not
-  # truncate the inventory at the first closing parenthesis.
-  (tmp_path / "CMakeLists.txt").write_text(
-    "set(\n"
-    "  TESS_PUBLIC_HEADERS\n"
-    "  include/tess/core/lattice.h\n"
-    "  # grouped with storage (see docs/architecture/storage.md)\n"
-    "  include/tess/storage/world.h\n"
-    ")\n",
-    encoding="utf-8",
-  )
-
-  headers = coverage_gaps.public_headers(tmp_path / "CMakeLists.txt")
-
-  assert headers == ["core/lattice.h", "storage/world.h", "version.h"]
-
-
-def test_public_headers_without_the_block_fails(tmp_path):
-  (tmp_path / "CMakeLists.txt").write_text(
-    "add_library(tess INTERFACE)\n", encoding="utf-8"
-  )
+def test_public_headers_without_stable_classes_fails(tmp_path):
+  manifest = tmp_path / "headers.json"
+  manifest.write_text("{}\n", encoding="utf-8")
 
   with pytest.raises(coverage_gaps.CoverageError):
-    coverage_gaps.public_headers(tmp_path / "CMakeLists.txt")
+    coverage_gaps.public_headers(manifest)
 
 
 def test_report_lists_new_gaps_before_known_ones(tmp_path):
@@ -509,7 +484,7 @@ def test_main_writes_markdown_and_json(tmp_path):
     [
       f"--export={export}",
       f"--include-root={include_root}",
-      f"--cmake-lists={tmp_path / 'CMakeLists.txt'}",
+      f"--headers-manifest={tmp_path / 'headers.json'}",
       f"--out-markdown={markdown}",
       f"--out-json={payload}",
     ]
@@ -535,7 +510,7 @@ def test_main_stays_zero_when_gaps_exist(tmp_path):
     [
       f"--export={export}",
       f"--include-root={include_root}",
-      f"--cmake-lists={tmp_path / 'CMakeLists.txt'}",
+      f"--headers-manifest={tmp_path / 'headers.json'}",
     ]
   )
 
@@ -549,7 +524,7 @@ def test_main_fails_loudly_on_missing_export(tmp_path):
     [
       f"--export={tmp_path / 'absent.json'}",
       f"--include-root={include_root}",
-      f"--cmake-lists={tmp_path / 'CMakeLists.txt'}",
+      f"--headers-manifest={tmp_path / 'headers.json'}",
     ]
   )
 
@@ -565,7 +540,7 @@ def test_main_fails_loudly_on_unwritable_output(tmp_path):
     [
       f"--export={export}",
       f"--include-root={include_root}",
-      f"--cmake-lists={tmp_path / 'CMakeLists.txt'}",
+      f"--headers-manifest={tmp_path / 'headers.json'}",
       f"--out-markdown={tmp_path}",
     ]
   )
@@ -594,7 +569,7 @@ def test_duplicate_known_gap_entries_fail(tmp_path):
     [
       f"--export={export}",
       f"--include-root={include_root}",
-      f"--cmake-lists={tmp_path / 'CMakeLists.txt'}",
+      f"--headers-manifest={tmp_path / 'headers.json'}",
       f"--known-gaps={gaps_file}",
     ]
   )
@@ -623,7 +598,7 @@ def test_known_gaps_file_round_trips(tmp_path):
     [
       f"--export={export}",
       f"--include-root={include_root}",
-      f"--cmake-lists={tmp_path / 'CMakeLists.txt'}",
+      f"--headers-manifest={tmp_path / 'headers.json'}",
       f"--known-gaps={gaps_file}",
       f"--out-json={payload}",
     ]

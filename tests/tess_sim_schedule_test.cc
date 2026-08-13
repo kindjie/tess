@@ -17,6 +17,15 @@
 // consumption, and allocation-free dispatch after seal.
 namespace {
 
+static_assert(
+    !std::is_copy_constructible_v<tess::ResumableWorkTask<std::uint32_t>>);
+static_assert(
+    !std::is_copy_assignable_v<tess::ResumableWorkTask<std::uint32_t>>);
+static_assert(
+    !std::is_move_constructible_v<tess::ResumableWorkTask<std::uint32_t>>);
+static_assert(
+    !std::is_move_assignable_v<tess::ResumableWorkTask<std::uint32_t>>);
+
 auto run_raw_no_throw_task(void* context,
                            const tess::ScheduleTaskContext&) noexcept
     -> tess::ScheduleTaskResult {

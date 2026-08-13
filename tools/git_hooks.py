@@ -85,7 +85,10 @@ LOCAL_PRIVATE_PATTERNS = repository_common_git_path("tess-private-patterns")
 TOKEN_LIMIT = 24_000
 ZERO_SHA_RE = re.compile(r"^0+$")
 PUSH_SHA_RE = re.compile(r"^[0-9a-f]{40,64}$")
-CMAKE_TEST_TARGET_RE = re.compile(r"add_executable\(\s*(tess_[A-Za-z0-9_]+)")
+CMAKE_TEST_TARGET_RE = re.compile(
+  r"(?:add_executable\(\s*|add_test\(\s*NAME\s+)"
+  r"(tess_[A-Za-z0-9_]+)"
+)
 
 ByteReader = Callable[[str], bytes]
 
@@ -689,10 +692,11 @@ def agents_fragment_issues(
 ) -> list[str]:
   """Issues keeping tests/agents.d/ an exact mirror of the test set.
 
-  Every add_executable(tess_*) target and every tests/test_*.py file must
-  have a fragment named `<name>.md` whose first line is `# <name>` and
-  whose body is nonempty; a fragment matching neither is an orphan, so a
-  renamed or removed test cannot leave stale documentation behind.
+  Every add_executable(tess_*) target, add_test(NAME tess_*) test, and every
+  tests/test_*.py file must have a fragment named `<name>.md` whose first
+  line is `# <name>` and whose body is nonempty; a fragment matching neither
+  is an orphan, so a renamed or removed test cannot leave stale documentation
+  behind.
   """
   expected = set(extract_cmake_test_targets(cmake_text))
   expected.update(pytest_names)
@@ -735,7 +739,10 @@ def check_agents_drift() -> int:
     for path in sorted(fragments_dir.glob("*.md"))
   }
   issues = agents_fragment_issues(
-    (tests_dir / "CMakeLists.txt").read_text(
+    (REPO_ROOT / "CMakeLists.txt").read_text(
+      encoding="utf-8", errors="ignore"
+    )
+    + (tests_dir / "CMakeLists.txt").read_text(
       encoding="utf-8", errors="ignore"
     ),
     sorted(path.name for path in tests_dir.glob("test_*.py")),

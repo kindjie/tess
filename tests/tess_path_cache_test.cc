@@ -814,7 +814,8 @@ TEST(TessPathCache, RouteCacheEntryCapInvalidatesWholeCache) {
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
   tess::RouteCacheScratch cache;
-  cache.set_caps(4, tess::RouteCacheScratch::default_max_path_nodes);
+  cache.set_caps(tess::RouteCacheLimits{
+      4, tess::RouteCacheScratch::default_max_path_nodes});
 
   // Distinct goals so every request is a fresh miss.
   std::vector<tess::PathRequest> requests;
@@ -854,7 +855,8 @@ TEST(TessPathCache, RouteCachePathNodeCapInvalidatesWholeCache) {
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
   tess::RouteCacheScratch cache;
-  cache.set_caps(tess::RouteCacheScratch::default_max_entries, 20);
+  cache.set_caps(
+      tess::RouteCacheLimits{tess::RouteCacheScratch::default_max_entries, 20});
 
   // Straight 8-node routes: the third insert would reach 24 stored nodes.
   for (std::int64_t y = 0; y < 3; ++y) {
@@ -892,7 +894,8 @@ TEST(TessPathCache, RouteCacheAppliesLowerCapsImmediately) {
             tess::PathStatus::Found);
   ASSERT_EQ(cache.stats().entries, 2u);
 
-  cache.set_caps(1, tess::RouteCacheScratch::default_max_path_nodes);
+  cache.set_caps(tess::RouteCacheLimits{
+      1, tess::RouteCacheScratch::default_max_path_nodes});
   EXPECT_EQ(cache.stats().entries, 0u);
   EXPECT_EQ(cache.stats().path_nodes, 0u);
   EXPECT_EQ(cache.stats().cap_invalidations, 1u);
@@ -902,7 +905,7 @@ TEST(TessPathCache, RouteCacheAppliesLowerCapsImmediately) {
   EXPECT_EQ(recomputed.status, tess::PathStatus::Found);
   EXPECT_GT(recomputed.expanded_nodes, 0u);
 
-  cache.set_caps(0, 0);
+  cache.set_caps(tess::RouteCacheLimits{0, 0});
   EXPECT_EQ(cache.stats().entries, 0u);
   EXPECT_EQ(cache.stats().cap_invalidations, 2u);
   const auto disabled = tess::cached_astar_path<decltype(world), PassableTag>(
@@ -921,7 +924,8 @@ TEST(TessPathCache, RouteCacheSkipsRouteLargerThanPathNodeCap) {
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
   tess::RouteCacheScratch cache;
-  cache.set_caps(tess::RouteCacheScratch::default_max_entries, 4);
+  cache.set_caps(
+      tess::RouteCacheLimits{tess::RouteCacheScratch::default_max_entries, 4});
 
   const auto small =
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{3, 0, 0}};
@@ -959,7 +963,7 @@ TEST(TessPathCache, RouteCacheZeroCapsDisableStorage) {
   tess::PathScratch scratch;
   scratch.reserve_nodes(64);
   tess::RouteCacheScratch cache;
-  cache.set_caps(0, 0);
+  cache.set_caps(tess::RouteCacheLimits{0, 0});
 
   const auto request =
       tess::PathRequest{tess::Coord3{0, 0, 0}, tess::Coord3{7, 0, 0}};

@@ -433,7 +433,7 @@ TEST(TessPathAgent, OnCommitHookFiresOncePerSuccessfulCommit) {
   std::vector<Commit> commits;
   const auto stats = tess::advance_path_agents_with_movement<
       MovementWorld, PassableTag, OccupancyTag, ReservationTag>(
-      world, agents, runtime, 8, 0,
+      world, agents, runtime, {.max_steps = 8},
       [&commits](std::size_t agent_index, tess::Coord3 from, tess::Coord3 to) {
         commits.push_back(Commit{agent_index, from, to});
       });
@@ -488,7 +488,7 @@ TEST(TessPathAgent, OnCommitHookSkipsFailedCommits) {
   auto stats =
       tess::advance_path_agents_with_movement<MovementWorld, PassableTag,
                                               OccupancyTag, ReservationTag>(
-          world, agents, runtime, 1, 0, count_commit);
+          world, agents, runtime, {.max_steps = 1}, count_commit);
   EXPECT_EQ(stats.blocked_waits, 1u);
   EXPECT_EQ(commit_count, 0u);
 
@@ -500,7 +500,7 @@ TEST(TessPathAgent, OnCommitHookSkipsFailedCommits) {
   agents[0].position = tess::Coord3{5, 5, 0};
   stats = tess::advance_path_agents_with_movement<MovementWorld, PassableTag,
                                                   OccupancyTag, ReservationTag>(
-      world, agents, runtime, 1, 0, count_commit);
+      world, agents, runtime, {.max_steps = 1}, count_commit);
   EXPECT_EQ(stats.movement_failures.invalid, 1u);
   EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Unreachable);
   EXPECT_EQ(commit_count, 0u);

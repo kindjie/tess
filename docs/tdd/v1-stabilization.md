@@ -8,6 +8,9 @@ plan is implemented, maintained documentation such as `docs/support.md`,
 `docs/integration-policy.md`, architecture notes, public header comments, and
 the CMake package configuration remain authoritative for shipped behavior.
 
+Implementation divergences are recorded in the
+[1.0 stabilization decision](../decisions/changelog.d/2026-08-11-v1-stabilization-policy.md).
+
 ## 2. Summary
 
 The v0.12 roadmap is feature-complete enough to support a 1.0 release. The

@@ -190,8 +190,8 @@ tess::LocalTopologyScratch scratch;
 tess::RegionGraph graph;
 tess::build_region_graph<World, Walker>(world, scratch, graph);
 
-const auto verdict =
-    tess::precheck_path<Walker>(graph, world, start, goal, precheck_scratch);
+const auto verdict = tess::precheck_path<Walker>(
+    graph, world, tess::PathRequest{start, goal}, precheck_scratch);
 ```
 <!-- /tess-snippet -->
 
@@ -247,8 +247,8 @@ Schedule tasks themselves run serially; the selectable parallel phase
 executor (see `tess/ops/phase_executor.h`) parallelizes the planned,
 write-policy-compatible queued operations a task submits. The worker pool
 is the production parallel backend; the scoped-thread executor is a
-comparison prototype. Whether the pool pays off depends on how much work
-each chunk does — see
+stable per-dispatch alternative. Whether the pool pays off depends on how much
+work each chunk does — see
 [performance](performance.md#when-the-worker-pool-is-worth-it), which
 publishes measured four-worker figures and the crossover below which the
 pool loses. Declaring an honest `WritePolicy` on each operation is what

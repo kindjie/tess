@@ -485,7 +485,7 @@ TEST(TessDiagnosticsExport, CapturesCountersAndTiming) {
 
   EXPECT_EQ(snapshot.path.heap_pushes, 2u);
   EXPECT_EQ(snapshot.path.heap_pops, 1u);
-  const auto& topo = snapshot.timing.category(TraceCategory::Topology);
+  const auto& topo = snapshot.timing.stats(TraceCategory::Topology);
   EXPECT_EQ(topo.samples, 3u);
   EXPECT_EQ(topo.total_ns, 160u);
   EXPECT_EQ(topo.min_ns, 40u);
@@ -493,8 +493,8 @@ TEST(TessDiagnosticsExport, CapturesCountersAndTiming) {
 
   // Every category is copied, including untouched ones, and the Count sentinel
   // reads clean zeros.
-  EXPECT_EQ(snapshot.timing.category(TraceCategory::Path).samples, 0u);
-  EXPECT_EQ(snapshot.timing.category(TraceCategory::Count).samples, 0u);
+  EXPECT_EQ(snapshot.timing.stats(TraceCategory::Path).samples, 0u);
+  EXPECT_EQ(snapshot.timing.stats(TraceCategory::Count).samples, 0u);
   ASSERT_EQ(snapshot.trace_record_count, 1u);
   EXPECT_EQ(snapshot.trace_records[0].label, "rebuild");
   EXPECT_EQ(snapshot.trace_records[0].kind, TraceRecordKind::Duration);
@@ -502,7 +502,7 @@ TEST(TessDiagnosticsExport, CapturesCountersAndTiming) {
   EXPECT_EQ(snapshot.trace_records[0].deallocation_bytes, 32u);
 
   const auto timing_only = tess::diagnostics::capture_timing(buffer);
-  EXPECT_EQ(timing_only.category(TraceCategory::Topology).total_ns, 160u);
+  EXPECT_EQ(timing_only.stats(TraceCategory::Topology).total_ns, 160u);
 }
 
 TEST(TessDiagnosticsExport, RetainsMostRecentTraceRecords) {

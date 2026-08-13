@@ -40,3 +40,15 @@ dirt) all sit on x6-local bootstrap ceilings awaiting the same
 The SVG snapshot in `docs/assets/benchmark-trends.svg` is a labeled
 summary, not the source of truth. Use CI benchmark baseline artifacts
 and threshold JSON files for calibration decisions.
+
+The five post-fix fields ceilings were recalibrated 2026-08-11 from ten
+distinct successful main-push artifacts: runs 30960083169, 30969382122,
+30988093194, 31023163856, 31061625127, 31144301368, 31147152368,
+31433526202, 31441445963, and 31444691634. All artifacts reported usable
+Ubuntu 24.04 fingerprints and together supplied 100 raw samples per cell.
+Applying the standing 2x maximum-observed rule produced 326,214 ns for
+`fields/goalset_build_1`, 341,301 ns for `fields/goalset_build_16`, 361,106 ns
+for `fields/goalset_build_256`, 352,727 ns for `fields/cache_miss_store`, and
+357,455 ns for `fields/cache_eviction`. These five values are calibrated
+gates; the separately labeled fields bootstrap cells remain advisory pending
+their own qualifying windows.

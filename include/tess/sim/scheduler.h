@@ -23,7 +23,6 @@ struct SimSchedulerOptions {
   std::uint32_t render_dirty_mask = 0;
   PathAgentTickOptions path_agent_options{};
   bool clear_render_dirty = false;
-  std::uint32_t movement_dirty_mask = 0;
 };
 
 /// Summarizes queued operations, path agents, and render deltas for one tick.
@@ -89,7 +88,7 @@ auto tick_scheduler_core(SimSchedulerState& state, World& world,
   stats.tick = stats.path_agents.tick;
 
   const auto old_size = render_deltas.size();
-  collect_render_tile_deltas(world, options.render_dirty_mask, render_deltas);
+  collect_render_tile_deltas(render_deltas, world, options.render_dirty_mask);
   stats.render_delta_count = render_deltas.size() - old_size;
   if (options.clear_render_dirty) {
     clear_render_delta_dirty(world, options.render_dirty_mask);
@@ -130,7 +129,7 @@ auto tick_unit_movement_scheduler(SimSchedulerState& state, World& world,
         return tick_unit_path_agents_with_movement<
             World, PassableTag, OccupancyTag, ReservationTag>(
             state.path_agents, world, agents, runtime,
-            options.path_agent_options, options.movement_dirty_mask);
+            options.path_agent_options);
       });
 }
 
@@ -166,7 +165,7 @@ auto tick_weighted_movement_scheduler(
         return tick_weighted_path_agents_with_movement<
             World, PassableTag, CostTag, MaxCost, OccupancyTag, ReservationTag>(
             state.path_agents, world, agents, runtime,
-            options.path_agent_options, options.movement_dirty_mask);
+            options.path_agent_options);
       });
 }
 

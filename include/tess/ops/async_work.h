@@ -110,43 +110,10 @@ class ResumableWorkQueue {
   using WorkFn = AsyncWorkStep (*)(void*, AsyncWorkBudget, T&);
 
   ResumableWorkQueue() = default;
-
-  // An attached accountant tracks exactly one queue: copies start
-  // unattached and moves transfer the attachment.
-  ResumableWorkQueue(const ResumableWorkQueue& other)
-      : slots_{other.slots_},
-        generation_{other.generation_},
-        in_advance_{false} {}
-  auto operator=(const ResumableWorkQueue& other) -> ResumableWorkQueue& {
-    if (this != &other) {
-      // Assigning over an instrumented, non-empty queue would orphan
-      // its accountant's outstanding inventory.
-      TESS_ASSERT(accounting_ == nullptr || slots_.empty());
-      slots_ = other.slots_;
-      generation_ = other.generation_;
-      in_advance_ = false;
-      accounting_ = nullptr;
-    }
-    return *this;
-  }
-  ResumableWorkQueue(ResumableWorkQueue&& other) noexcept
-      : slots_{std::move(other.slots_)},
-        generation_{other.generation_},
-        in_advance_{false},
-        accounting_{other.accounting_} {
-    other.accounting_ = nullptr;
-  }
-  auto operator=(ResumableWorkQueue&& other) noexcept -> ResumableWorkQueue& {
-    if (this != &other) {
-      TESS_ASSERT(accounting_ == nullptr || slots_.empty());
-      slots_ = std::move(other.slots_);
-      generation_ = other.generation_;
-      in_advance_ = false;
-      accounting_ = other.accounting_;
-      other.accounting_ = nullptr;
-    }
-    return *this;
-  }
+  ResumableWorkQueue(const ResumableWorkQueue&) = delete;
+  auto operator=(const ResumableWorkQueue&) -> ResumableWorkQueue& = delete;
+  ResumableWorkQueue(ResumableWorkQueue&&) = delete;
+  auto operator=(ResumableWorkQueue&&) -> ResumableWorkQueue& = delete;
   ~ResumableWorkQueue() = default;
 
   /**

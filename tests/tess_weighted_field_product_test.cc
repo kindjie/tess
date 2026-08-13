@@ -95,7 +95,7 @@ TEST(TessWeightedFieldProduct, MultiGoalReplayChoosesLowestWeightedCost) {
   tess::DistanceFieldProduct product;
 
   const auto built = tess::build_weighted_distance_field_product<World, Walker>(
-      world, goals, scratch, product);
+      world, goals, product, scratch);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   const auto path = tess::weighted_distance_field_product_path<World, Walker>(
       world, {0, 0, 0}, product, scratch);
@@ -113,7 +113,7 @@ TEST(TessWeightedFieldProduct, NearestTargetReportsChosenGoalAndPath) {
   tess::DistanceFieldScratch scratch;
   tess::DistanceFieldProduct product;
   ASSERT_EQ((tess::build_weighted_distance_field_product<World, Walker>(
-                 world, goals, scratch, product)
+                 world, goals, product, scratch)
                  .status),
             tess::PathStatus::Found);
 
@@ -133,7 +133,7 @@ TEST(TessWeightedFieldProduct, CacheSeparatesWeightedAndUnitModels) {
   tess::DistanceFieldScratch scratch;
   tess::DistanceFieldProduct product;
   ASSERT_EQ((tess::build_weighted_distance_field_product<World, Walker>(
-                 world, goals, scratch, product)
+                 world, goals, product, scratch)
                  .status),
             tess::PathStatus::Found);
   tess::FieldProductCache cache;
@@ -155,7 +155,7 @@ TEST(TessWeightedFieldProduct,
   tess::DistanceFieldScratch scratch;
   tess::DistanceFieldProduct product;
   ASSERT_EQ((tess::build_weighted_distance_field_product<World, Walker>(
-                 world, goals, scratch, product, shortcut))
+                 world, goals, product, scratch, shortcut))
                 .status,
             tess::PathStatus::Found);
   tess::FieldProductCache cache;
@@ -178,7 +178,7 @@ TEST(TessWeightedFieldProduct, ProviderReverseEdgeBuildsReplayableShortcut) {
   const auto provider = ShortcutProvider{};
 
   const auto built = tess::build_weighted_distance_field_product<World, Walker>(
-      world, goals, scratch, product, provider);
+      world, goals, product, scratch, provider);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   const auto path = tess::weighted_distance_field_product_path<World, Walker>(
       world, {0, 0, 0}, product, scratch, provider);
@@ -199,7 +199,7 @@ TEST(TessWeightedFieldProduct, UnitProductHonorsSpecialTransitionCost) {
   const auto provider = ShortcutProvider{};
 
   const auto built = tess::build_distance_field_product<World, PassableTag>(
-      world, goals, scratch, product, provider);
+      world, goals, product, scratch, provider);
   ASSERT_EQ(built.status, tess::PathStatus::Found);
   const auto path = tess::distance_field_product_path<World, PassableTag>(
       world, {0, 0, 0}, product, scratch, provider);
@@ -238,7 +238,7 @@ TEST(TessWeightedFieldProduct, StoreHandsBackStorageSoRebuildsDoNotAllocate) {
     tess::DistanceFieldProduct one;
     tess::DistanceFieldScratch probe_scratch;
     (void)tess::build_distance_field_product<World, PassableTag>(
-        world, goals_a, probe_scratch, one);
+        world, goals_a, one, probe_scratch);
     (void)probe.store_reusing<World, PassableTag>(one);
     return probe.stats().bytes;
   }();
@@ -250,13 +250,13 @@ TEST(TessWeightedFieldProduct, StoreHandsBackStorageSoRebuildsDoNotAllocate) {
   cache.reserve_entries(2);
 
   ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
-                 world, goals_a, scratch, product))
+                 world, goals_a, product, scratch))
                 .status,
             tess::PathStatus::Found);
   ASSERT_NE((cache.store_reusing<World, PassableTag>(product)), nullptr);
 
   ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
-                 world, goals_b, scratch, product))
+                 world, goals_b, product, scratch))
                 .status,
             tess::PathStatus::Found);
   ASSERT_NE((cache.store_reusing<World, PassableTag>(product)), nullptr);
@@ -268,7 +268,7 @@ TEST(TessWeightedFieldProduct, StoreHandsBackStorageSoRebuildsDoNotAllocate) {
   {
     tess_test::ScopedAllocationCounter counter;
     const auto rebuilt = tess::build_distance_field_product<World, PassableTag>(
-        world, goals_a, scratch, product);
+        world, goals_a, product, scratch);
     EXPECT_EQ(rebuilt.status, tess::PathStatus::Found);
     EXPECT_EQ(counter.count(), 0u);
   }
@@ -286,7 +286,7 @@ TEST(TessWeightedFieldProduct, SupportsVerticalDegenerateLayout) {
   tess::DistanceFieldProduct product;
 
   ASSERT_EQ((tess::build_weighted_distance_field_product<VerticalWorld, Walker>(
-                 world, goals, scratch, product))
+                 world, goals, product, scratch))
                 .status,
             tess::PathStatus::Found);
   const auto path =
@@ -305,7 +305,7 @@ TEST(TessWeightedFieldProduct, RelevantWorldEditInvalidatesCachedProduct) {
   tess::DistanceFieldScratch scratch;
   tess::DistanceFieldProduct product;
   ASSERT_EQ((tess::build_weighted_distance_field_product<World, Walker>(
-                 world, goals, scratch, product)
+                 world, goals, product, scratch)
                  .status),
             tess::PathStatus::Found);
   tess::FieldProductCache cache;
@@ -336,7 +336,7 @@ TEST(TessWeightedFieldProduct,
   tess::DistanceFieldProduct product;
 
   ASSERT_EQ((tess::build_weighted_distance_field_product<WideWorld, Walker>(
-                 world, goals, scratch, product)
+                 world, goals, product, scratch)
                  .status),
             tess::PathStatus::Found);
   ASSERT_EQ(product.dependencies().size(), 2u);
@@ -359,14 +359,14 @@ TEST(TessWeightedFieldProduct, ReservedWarmRebuildDoesNotAllocate) {
   product.reserve_nodes(64);
   product.reserve_dependencies(World::chunk_count);
   (void)tess::build_weighted_distance_field_product<World, Walker>(
-      world, goals, scratch, product);
+      world, goals, product, scratch);
 
   {
     tess_test::ScopedAllocationCounter counter;
     for (int i = 0; i < 10; ++i) {
       const auto result =
           tess::build_weighted_distance_field_product<World, Walker>(
-              world, goals, scratch, product);
+              world, goals, product, scratch);
       EXPECT_EQ(result.status, tess::PathStatus::Found);
     }
     EXPECT_EQ(counter.count(), 0u);
@@ -398,7 +398,7 @@ TEST(TessWeightedFieldProduct, ReplaceStoreThatEvictsReturnsTheStoredEntry) {
     tess::DistanceFieldProduct one;
     tess::DistanceFieldScratch probe_scratch;
     EXPECT_EQ((tess::build_distance_field_product<World, PassableTag>(
-                   world, goals, probe_scratch, one))
+                   world, goals, one, probe_scratch))
                   .status,
               tess::PathStatus::Found);
     EXPECT_NE((probe.store_reusing<World, PassableTag>(one)), nullptr);
@@ -417,7 +417,7 @@ TEST(TessWeightedFieldProduct, ReplaceStoreThatEvictsReturnsTheStoredEntry) {
     goals.add(goal);
     tess::DistanceFieldProduct built;
     EXPECT_EQ((tess::build_distance_field_product<World, PassableTag>(
-                   world, goals, scratch, built))
+                   world, goals, built, scratch))
                   .status,
               tess::PathStatus::Found);
     return cache.store_reusing<World, PassableTag>(built);
@@ -436,7 +436,7 @@ TEST(TessWeightedFieldProduct, ReplaceStoreThatEvictsReturnsTheStoredEntry) {
   goals_b.add(goal_b);
   tess::DistanceFieldProduct rebuilt;
   ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
-                 world, goals_b, scratch, rebuilt))
+                 world, goals_b, rebuilt, scratch))
                 .status,
             tess::PathStatus::Found);
   const auto* stored = cache.store_reusing<World, PassableTag>(rebuilt);
@@ -471,7 +471,7 @@ TEST(TessWeightedFieldProduct, EvictingStoreLeavesCallerWithValidWrongProduct) {
     tess::DistanceFieldProduct one;
     tess::DistanceFieldScratch probe_scratch;
     (void)tess::build_distance_field_product<World, PassableTag>(
-        world, goals, probe_scratch, one);
+        world, goals, one, probe_scratch);
     (void)probe.store_reusing<World, PassableTag>(one);
     return probe.stats().bytes;
   }();
@@ -480,7 +480,7 @@ TEST(TessWeightedFieldProduct, EvictingStoreLeavesCallerWithValidWrongProduct) {
   tess::GoalSet goals;
   goals.add(goal_a);
   ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
-                 world, goals, scratch, product))
+                 world, goals, product, scratch))
                 .status,
             tess::PathStatus::Found);
   ASSERT_NE((cache.store_reusing<World, PassableTag>(product)), nullptr);
@@ -488,7 +488,7 @@ TEST(TessWeightedFieldProduct, EvictingStoreLeavesCallerWithValidWrongProduct) {
   goals.clear();
   goals.add(goal_b);
   ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
-                 world, goals, scratch, product))
+                 world, goals, product, scratch))
                 .status,
             tess::PathStatus::Found);
   // The rvalue wrapper shares store_with_key with store_reusing; use it to
@@ -540,7 +540,7 @@ TEST(TessWeightedFieldProduct, ReplaceStoreThatEvictsIndexesOutOfBounds) {
     tess::DistanceFieldProduct one;
     tess::DistanceFieldScratch probe_scratch;
     EXPECT_EQ((tess::build_distance_field_product<World, PassableTag>(
-                   world, goals, probe_scratch, one))
+                   world, goals, one, probe_scratch))
                   .status,
               tess::PathStatus::Found);
     EXPECT_NE((probe.store_reusing<World, PassableTag>(one)), nullptr);
@@ -553,7 +553,7 @@ TEST(TessWeightedFieldProduct, ReplaceStoreThatEvictsIndexesOutOfBounds) {
     goals.add(goal);
     tess::DistanceFieldProduct built;
     EXPECT_EQ((tess::build_distance_field_product<World, PassableTag>(
-                   world, goals, scratch, built))
+                   world, goals, built, scratch))
                   .status,
               tess::PathStatus::Found);
     return cache.store_reusing<World, PassableTag>(built);
@@ -566,7 +566,7 @@ TEST(TessWeightedFieldProduct, ReplaceStoreThatEvictsIndexesOutOfBounds) {
   goals_b.add(goal_b);
   tess::DistanceFieldProduct rebuilt;
   ASSERT_EQ((tess::build_distance_field_product<World, PassableTag>(
-                 world, goals_b, scratch, rebuilt))
+                 world, goals_b, rebuilt, scratch))
                 .status,
             tess::PathStatus::Found);
   // Evicts goal_a's entry (index 0) and then reads entries_[1] of a

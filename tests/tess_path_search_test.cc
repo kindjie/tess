@@ -195,7 +195,7 @@ TEST(TessPathSearch, StartEqualsGoalDistanceFieldPaths) {
   ASSERT_EQ(unit_field.status, tess::PathStatus::Found);
   const auto unit_path =
       tess::distance_field_path<decltype(world), SerpPassableTag>(
-          world, tile, tile, unit_scratch);
+          world, {tile, tile}, unit_scratch);
   ASSERT_EQ(unit_path.status, tess::PathStatus::Found);
   EXPECT_EQ(unit_path.cost, 0u);
   ASSERT_EQ(unit_path.path.size(), 1u);
@@ -210,7 +210,7 @@ TEST(TessPathSearch, StartEqualsGoalDistanceFieldPaths) {
   ASSERT_EQ(weighted_field.status, tess::PathStatus::Found);
   const auto weighted_path =
       tess::weighted_distance_field_path<decltype(world), SerpPassableTag,
-                                         SerpCostTag>(world, tile, tile,
+                                         SerpCostTag>(world, {tile, tile},
                                                       weighted_scratch);
   ASSERT_EQ(weighted_path.status, tess::PathStatus::Found);
   EXPECT_EQ(weighted_path.cost, 0u);
@@ -225,7 +225,7 @@ TEST(TessPathSearch, StartEqualsGoalDistanceFieldPaths) {
   ASSERT_EQ(bounded_field.status, tess::PathStatus::Found);
   const auto bounded_path =
       tess::weighted_distance_field_path<decltype(world), SerpPassableTag,
-                                         SerpCostTag>(world, tile, tile,
+                                         SerpCostTag>(world, {tile, tile},
                                                       bounded_scratch);
   ASSERT_EQ(bounded_path.status, tess::PathStatus::Found);
   EXPECT_EQ(bounded_path.cost, 0u);
@@ -241,7 +241,7 @@ TEST(TessPathSearch, StartEqualsGoalDistanceFieldPaths) {
   ASSERT_EQ(boxed_field.status, tess::PathStatus::Found);
   const auto boxed_path =
       tess::weighted_distance_field_path<decltype(world), SerpPassableTag,
-                                         SerpCostTag>(world, tile, tile,
+                                         SerpCostTag>(world, {tile, tile},
                                                       boxed_scratch);
   ASSERT_EQ(boxed_path.status, tess::PathStatus::Found);
   EXPECT_EQ(boxed_path.cost, 0u);
@@ -260,7 +260,7 @@ TEST(TessPathSearch, StartEqualsGoalDistanceFieldProductAndNearestTarget) {
   tess::DistanceFieldProduct product;
   const auto field =
       tess::build_distance_field_product<decltype(world), SerpPassableTag>(
-          world, goals, scratch, product);
+          world, goals, product, scratch);
   ASSERT_EQ(field.status, tess::PathStatus::Found);
 
   const auto path =

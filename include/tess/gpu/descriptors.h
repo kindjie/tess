@@ -180,8 +180,7 @@ template <typename Tag, typename World>
 
 /** Backend-neutral request to dispatch work over a mirrored product. */
 struct DispatchDesc {
-  std::uint64_t product_key = 0;
-  std::uint64_t product_generation = 0;
+  GpuProductHandle handle{};
   std::uint32_t input_field_index = 0;
   std::uint64_t chunk_count = 0;
   std::uint32_t workgroups_per_chunk = 1;
@@ -199,8 +198,7 @@ enum class ReadbackPolicy : std::uint8_t {
 
 /** Backend-neutral readback request for a mirrored product. */
 struct ReadbackDesc {
-  std::uint64_t product_key = 0;
-  std::uint64_t product_generation = 0;
+  GpuProductHandle handle{};
   ReadbackPolicy policy = ReadbackPolicy::None;
   std::uint64_t byte_size = 0;
 };

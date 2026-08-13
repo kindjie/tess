@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -87,43 +86,44 @@ def _export_file_summaries(
   return summaries
 
 
-# The block terminator is the closing parenthesis alone at the start
-# of a line (the repository's CMake style): matching a bare first ")"
-# would silently truncate the inventory at any parenthesized comment
-# inside the block.
-PUBLIC_HEADERS_BLOCK = re.compile(
-  r"set\(\s*TESS_PUBLIC_HEADERS\s*(.*?)^\)", re.DOTALL | re.MULTILINE
-)
-HEADER_ENTRY = re.compile(r"include/tess/(\S+?\.h)")
-
-
-def public_headers(cmake_lists: Path) -> list[str]:
+def public_headers(manifest_path: Path) -> list[str]:
   """The declared public header set (relative to include/tess).
 
   The physical tree under include/tess is NOT the public API:
-  CMakeLists.txt separates implementation headers (core/uint128.h,
-  path/detail/...) into TESS_IMPLEMENTATION_HEADERS, and the installed
-  tess/version.h is generated outside the source include directory.
+  The stability manifest separates implementation and experimental headers,
+  and the installed tess/version.h is generated outside the source include
+  directory.
   """
   try:
-    text = cmake_lists.read_text(encoding="utf-8")
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
   except OSError as error:
     raise CoverageError(
-      f"cannot read {cmake_lists}: {error}"
+      f"cannot read {manifest_path}: {error}"
     ) from error
-  match = PUBLIC_HEADERS_BLOCK.search(text)
-  if match is None:
+  except json.JSONDecodeError as error:
     raise CoverageError(
-      f"{cmake_lists} has no set(TESS_PUBLIC_HEADERS ...) block"
-    )
-  headers = HEADER_ENTRY.findall(match.group(1))
+      f"cannot parse {manifest_path}: {error}"
+    ) from error
+  categories = ("stable", "optional-stable")
+  if not isinstance(payload, dict) or any(
+      not isinstance(payload.get(category), list) for category in categories
+  ):
+    raise CoverageError(f"{manifest_path}: missing stable header classes")
+  prefix = "include/tess/"
+  headers = [
+      header[len(prefix):]
+      for category in categories
+      for header in payload[category]
+      if isinstance(header, str) and header.startswith(prefix)
+  ]
   if not headers:
     raise CoverageError(
-      f"{cmake_lists}: TESS_PUBLIC_HEADERS block lists no headers"
+      f"{manifest_path}: stable header classes list no headers"
     )
-  # The generated, installed public header; it lives in the build tree.
-  headers.append("version.h")
-  return sorted(headers)
+  # Older/synthetic manifests may omit the generated installed header.
+  if "version.h" not in headers:
+    headers.append("version.h")
+  return sorted(set(headers))
 
 
 def _subsystem(header: str) -> str:
@@ -358,10 +358,10 @@ def main(argv: list[str] | None = None) -> int:
   )
   parser.add_argument("--include-root", required=True, type=Path)
   parser.add_argument(
-    "--cmake-lists",
+    "--headers-manifest",
     required=True,
     type=Path,
-    help="CMakeLists.txt declaring TESS_PUBLIC_HEADERS",
+    help="installed-header stability manifest",
   )
   parser.add_argument("--known-gaps", type=Path)
   parser.add_argument("--out-markdown", type=Path)
@@ -372,7 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     result = analyze(
       args.exports,
       args.include_root,
-      public_headers(args.cmake_lists),
+      public_headers(args.headers_manifest),
       known_gaps=_load_known_gaps(args.known_gaps),
     )
     report = render_report(result)

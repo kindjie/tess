@@ -79,8 +79,8 @@ auto check_topology(World& world) -> bool {
   tess::RegionGraph graph;
   tess::build_region_graph<World, Walker>(world, scratch, graph);
 
-  const auto verdict =
-      tess::precheck_path<Walker>(graph, world, start, goal, precheck_scratch);
+  const auto verdict = tess::precheck_path<Walker>(
+      graph, world, tess::PathRequest{start, goal}, precheck_scratch);
   // [getting-topology]
 
   return verdict == tess::PrecheckStatus::Reachable;
@@ -134,7 +134,7 @@ auto collect_deltas(World& world) -> bool {
   const auto frame = deltas.publish();
   // [getting-render-deltas]
 
-  return !frame.chunks.empty();
+  return !frame.chunks().empty();
 }
 
 struct TerrainTag {};
@@ -266,7 +266,7 @@ auto share_field_product(World& world) -> bool {
   tess::DistanceFieldScratch scratch;
   tess::DistanceFieldProduct product;
   const auto built = tess::build_distance_field_product<World, PassableTag>(
-      world, goals, scratch, product);
+      world, goals, product, scratch);
 
   tess::FieldProductCache cache{1u << 20u};  // Byte-budgeted.
   const auto stored = cache.store<World, PassableTag>(std::move(product));

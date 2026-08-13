@@ -6,6 +6,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "allocation_counter.h"
+
 // The DeltaFrame lifetime contract, pinned rather than merely stated.
 //
 // Its comment claimed a frame was valid "until the next mutating call on
@@ -60,12 +62,12 @@ struct PublishedSnapshot {
 [[nodiscard]] auto snapshot(const tess::DeltaFrame& frame)
     -> PublishedSnapshot {
   PublishedSnapshot s;
-  s.chunk_count = frame.chunks.size();
-  s.first_extent = frame.chunks[0].bounds.extent.x;
-  s.second_extent = frame.chunks[1].bounds.extent.x;
-  s.entity_count = frame.entities.size();
-  s.entity_from = frame.entities[0].from;
-  s.entity_to = frame.entities[0].to;
+  s.chunk_count = frame.chunks().size();
+  s.first_extent = frame.chunks()[0].bounds.extent.x;
+  s.second_extent = frame.chunks()[1].bounds.extent.x;
+  s.entity_count = frame.entities().size();
+  s.entity_from = frame.entities()[0].from;
+  s.entity_to = frame.entities()[0].to;
   return s;
 }
 
@@ -86,8 +88,8 @@ TEST(TessDeltaFrameLifetime, RecordingTheNextFrameLeavesAPublishedOneIntact) {
   auto collector = make_collector();
 
   const auto frame = publish_two_distinct_chunks(world, collector);
-  ASSERT_GE(frame.chunks.size(), 2u);
-  ASSERT_GE(frame.entities.size(), 1u);
+  ASSERT_GE(frame.chunks().size(), 2u);
+  ASSERT_GE(frame.entities().size(), 1u);
   const auto before = snapshot(frame);
   ASSERT_NE(before.first_extent, before.second_extent);
 
@@ -114,8 +116,8 @@ TEST(TessDeltaFrameLifetime, ClearLeavesAPublishedFrameIntact) {
   auto collector = make_collector();
 
   const auto frame = publish_two_distinct_chunks(world, collector);
-  ASSERT_GE(frame.chunks.size(), 2u);
-  ASSERT_GE(frame.entities.size(), 1u);
+  ASSERT_GE(frame.chunks().size(), 2u);
+  ASSERT_GE(frame.entities().size(), 1u);
   const auto before = snapshot(frame);
 
   // clear() resets the pending side only, so a published frame survives it.
@@ -130,21 +132,111 @@ TEST(TessDeltaFrameLifetime, ClearLeavesAPublishedFrameIntact) {
   EXPECT_EQ(after.entity_from, before.entity_from);
 }
 
-// What these tests can and cannot catch, stated so the next reader does not
-// over-trust them: they detect published records being REPLACED or shifted.
-// They cannot detect a bare `published_chunks_.clear()`, because clearing a
-// vector of trivial elements leaves the bytes in place, so reads through
-// the span keep returning the old values -- undefined behaviour that
-// nonetheless produces the expected numbers. No assertion available from
-// outside the collector distinguishes that case.
+constexpr auto kStaleFrameDeathMessage = "stale DeltaFrame view accessed";
 
-// There is deliberately no test that reserve() relocates published
-// storage. Reallocation is not observable through a DeltaFrame: the span
-// keeps its own pointer, and the collector exposes no handle on the
-// published vector, so any assertion available here would compare values
-// no collector call can change. reserve() belongs on the invalidation list
-// on the strength of the code -- it calls published_*.reserve() on all
-// five vectors -- and that is what the header comment cites.
+TEST(TessDeltaFrameDeathTest, PublishInvalidatesPreviousView) {
+  tess::DeltaCollector collector;
+  collector.reserve(1, 1, 1);
+  const auto frame = collector.publish();
+  (void)collector.publish();
+  EXPECT_DEATH(static_cast<void>(frame.empty()), kStaleFrameDeathMessage);
+}
+
+TEST(TessDeltaFrameDeathTest, ReserveInvalidatesPublishedView) {
+  tess::DeltaCollector collector;
+  collector.reserve(1, 1, 1);
+  const auto frame = collector.publish();
+  collector.reserve(2, 2, 2);
+  EXPECT_DEATH(static_cast<void>(frame.chunks()), kStaleFrameDeathMessage);
+}
+
+TEST(TessDeltaFrameDeathTest, MoveInvalidatesPublishedView) {
+  tess::DeltaCollector source;
+  source.reserve(1, 1, 1);
+  const auto frame = source.publish();
+  auto destination = std::move(source);
+  EXPECT_DEATH(static_cast<void>(frame.entities()), kStaleFrameDeathMessage);
+  static_cast<void>(destination);
+}
+
+TEST(TessDeltaFrameDeathTest, SelfMoveInvalidatesPublishedView) {
+  tess::DeltaCollector collector;
+  collector.reserve(1, 1, 1);
+  const auto frame = collector.publish();
+
+  auto& self = collector;
+  // NOLINTNEXTLINE(bugprone-self-move)
+  collector = std::move(self);
+
+  EXPECT_DEATH(static_cast<void>(frame.entities()), kStaleFrameDeathMessage);
+  EXPECT_TRUE(collector.publish().header.truncated);
+}
+
+TEST(TessDeltaFrameDeathTest,
+     FailedMoveConstructionCannotLeaveADanglingLiveView) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocation failure injection is unavailable";
+  }
+
+  tess::DeltaCollector source;
+  source.reserve(1, 1, 1);
+  const auto frame = source.publish();
+  bool threw = false;
+  {
+    const tess_test::ScopedAllocationFailure failure{0};
+    try {
+      auto destination = std::move(source);
+      static_cast<void>(destination);
+    } catch (const std::bad_alloc&) {
+      threw = true;
+    }
+    EXPECT_EQ(failure.attempts(), 1u);
+  }
+  ASSERT_TRUE(threw);
+
+  // The move contract chooses fail-closed invalidation before allocating:
+  // validation must never succeed after transferred storage is destroyed.
+  EXPECT_DEATH(static_cast<void>(frame.entities()), kStaleFrameDeathMessage);
+}
+
+TEST(TessDeltaFrameDeathTest,
+     FailedMoveAssignmentInvalidatesBothPublishedViews) {
+  if (!tess_test::allocation_failure_injection_supported()) {
+    GTEST_SKIP() << "allocation failure injection is unavailable";
+  }
+
+  tess::DeltaCollector source;
+  source.reserve(1, 1, 1);
+  const auto source_frame = source.publish();
+  tess::DeltaCollector destination;
+  destination.reserve(1, 1, 1);
+  const auto destination_frame = destination.publish();
+  bool threw = false;
+  {
+    const tess_test::ScopedAllocationFailure failure{0};
+    try {
+      destination = std::move(source);
+    } catch (const std::bad_alloc&) {
+      threw = true;
+    }
+    EXPECT_EQ(failure.attempts(), 1u);
+  }
+  ASSERT_TRUE(threw);
+
+  EXPECT_DEATH(static_cast<void>(source_frame.entities()),
+               kStaleFrameDeathMessage);
+  EXPECT_DEATH(static_cast<void>(destination_frame.entities()),
+               kStaleFrameDeathMessage);
+}
+
+TEST(TessDeltaFrameDeathTest, DestructionInvalidatesPublishedView) {
+  const auto frame = [] {
+    tess::DeltaCollector collector;
+    collector.reserve(1, 1, 1);
+    return collector.publish();
+  }();
+  EXPECT_DEATH(static_cast<void>(frame.tiles()), kStaleFrameDeathMessage);
+}
 
 // There is no test that `header` survives a publish. It is a value member
 // of the caller's own DeltaFrame, so an assertion comparing it against a
@@ -166,6 +258,8 @@ TEST(TessDeltaFrameLifetime, CollectorIsMoveOnly) {
   // they are ever dropped rather than defaulted.
   static_assert(std::is_move_constructible_v<tess::DeltaCollector>);
   static_assert(std::is_move_assignable_v<tess::DeltaCollector>);
+  static_assert(!std::is_nothrow_move_constructible_v<tess::DeltaCollector>);
+  static_assert(!std::is_nothrow_move_assignable_v<tess::DeltaCollector>);
 
   // And the move actually works end to end, not just on paper.
   World world;
@@ -173,7 +267,7 @@ TEST(TessDeltaFrameLifetime, CollectorIsMoveOnly) {
   auto moved = std::move(collector);
   mark_sized(world, tess::Coord3{1, 1, 0}, 1);
   tess::collect_tile_deltas(moved, world, kTerrainBit);
-  EXPECT_FALSE(moved.publish().chunks.empty());
+  EXPECT_FALSE(moved.publish().chunks().empty());
 }
 
 // Deleting the copy operations relocated the shared-ownership hazard
@@ -210,7 +304,7 @@ TEST(TessDeltaFrameLifetime, MovedFromCollectorForcesAResync) {
   // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
   const auto starved = source.publish();
 
-  EXPECT_TRUE(starved.chunks.empty());
+  EXPECT_TRUE(starved.chunks().empty());
   EXPECT_TRUE(starved.header.truncated);
   EXPECT_FALSE(
       tess::delta_frame_applicable(starved.header, tess::RenderVersion{1}));
@@ -227,8 +321,23 @@ TEST(TessDeltaFrameLifetime, MoveDestinationIsNotPoisoned) {
   tess::collect_tile_deltas(destination, world, kTerrainBit);
   const auto frame = destination.publish();
 
-  EXPECT_FALSE(frame.chunks.empty());
+  EXPECT_FALSE(frame.chunks().empty());
   EXPECT_FALSE(frame.header.truncated);
+}
+
+TEST(TessDeltaFrameLifetime, RepeatedMoveRemainsPoisoned) {
+  auto source = make_collector();
+  auto first_destination = std::move(source);
+
+  // A second move from the already moved-from source must not turn the
+  // destination back into an apparently usable collector.
+  // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+  auto second_destination = std::move(source);
+  const auto frame = second_destination.publish();
+
+  EXPECT_TRUE(frame.chunks().empty());
+  EXPECT_TRUE(frame.header.truncated);
+  static_cast<void>(first_destination);
 }
 
 TEST(TessDeltaFrameLifetime, AssigningAFreshCollectorClearsThePoison) {
@@ -246,7 +355,7 @@ TEST(TessDeltaFrameLifetime, AssigningAFreshCollectorClearsThePoison) {
   tess::collect_tile_deltas(source, world, kTerrainBit);
   const auto frame = source.publish();
 
-  EXPECT_FALSE(frame.chunks.empty());
+  EXPECT_FALSE(frame.chunks().empty());
   EXPECT_FALSE(frame.header.truncated);
   static_cast<void>(destination);
 }

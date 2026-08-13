@@ -352,10 +352,10 @@ class WebGpuBackend {
 
   /** Encodes and submits one registered compute product asynchronously. */
   [[nodiscard]] bool dispatch(const DispatchDesc& dispatch) {
-    const auto* product = find_product(dispatch.product_key);
+    const auto* product = find_product(dispatch.handle.key);
     if (!available() || product == nullptr ||
         find_field(dispatch.input_field_index) == nullptr ||
-        product->generation != dispatch.product_generation ||
+        product->generation != dispatch.handle.generation ||
         product->desc.input_field_index != dispatch.input_field_index ||
         dispatch.chunk_count == 0 || dispatch.workgroups_per_chunk == 0 ||
         dispatch.chunk_count > config_.max_dispatch_chunks ||
@@ -396,9 +396,9 @@ class WebGpuBackend {
    * later on an arbitrary thread; see `WebGpuReadbackCallback`.
    */
   [[nodiscard]] bool readback(const ReadbackDesc& readback) {
-    const auto* product = find_product(readback.product_key);
+    const auto* product = find_product(readback.handle.key);
     if (!available() || product == nullptr ||
-        product->generation != readback.product_generation ||
+        product->generation != readback.handle.generation ||
         readback.policy == ReadbackPolicy::None ||
         (readback.policy == ReadbackPolicy::FullField &&
          !config_.allow_full_field_readback) ||
@@ -421,7 +421,7 @@ class WebGpuBackend {
     }
     auto* operation = new (std::nothrow) detail::WebGpuReadbackOperation{
         staging,
-        GpuProductHandle{readback.product_key, readback.product_generation},
+        readback.handle,
         size,
         product->desc.readback_callback,
         product->desc.readback_userdata,

@@ -377,13 +377,12 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
  */
 inline auto advance_path_agents_with_index(
     World& world, PathAgentBatch& batch, const PathRequestRuntime& runtime,
-    TileOccupancyIndex& index, std::size_t max_steps = 1,
-    std::uint32_t movement_dirty_mask = 0,
+    TileOccupancyIndex& index, PathAgentAdvanceOptions options = {},
     DeltaCollector* render_deltas = nullptr) -> PathAgentFrameStats {
   const auto handles = batch.handles();
   return advance_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
                                            ReservationTag>(
-      world, batch.agents(), runtime, max_steps, movement_dirty_mask,
+      world, batch.agents(), runtime, options,
       [&index, handles, render_deltas](std::size_t agent_index, Coord3 from,
                                        Coord3 to) {
         index.move(from, to, handles[agent_index]);
@@ -406,7 +405,6 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
     PathAgentTickState& state, World& world, Source& source, Sink& sink,
     PathAgentBatch& batch, PathRequestRuntime& runtime,
     TileOccupancyIndex& index, PathAgentTickOptions options = {},
-    std::uint32_t movement_dirty_mask = 0,
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
   const auto info = source.collect(batch);
@@ -432,7 +430,8 @@ template <typename World, typename ClassOrTag, typename OccupancyTag,
 
   stats.movement = advance_path_agents_with_index<World, ClassOrTag,
                                                   OccupancyTag, ReservationTag>(
-      world, batch, runtime, index, options.max_steps, movement_dirty_mask,
+      world, batch, runtime, index,
+      PathAgentAdvanceOptions{options.max_steps, options.movement_dirty_mask},
       render_deltas);
   sink.apply(batch);
   return stats;
@@ -451,7 +450,6 @@ template <typename World, typename Class, std::uint32_t MaxCost,
     PathAgentTickState& state, World& world, Source& source, Sink& sink,
     PathAgentBatch& batch, PathRequestRuntime& runtime,
     TileOccupancyIndex& index, PathAgentTickOptions options = {},
-    std::uint32_t movement_dirty_mask = 0,
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
   const auto info = source.collect(batch);
@@ -477,7 +475,8 @@ template <typename World, typename Class, std::uint32_t MaxCost,
 
   stats.movement = advance_path_agents_with_index<World, Class, OccupancyTag,
                                                   ReservationTag>(
-      world, batch, runtime, index, options.max_steps, movement_dirty_mask,
+      world, batch, runtime, index,
+      PathAgentAdvanceOptions{options.max_steps, options.movement_dirty_mask},
       render_deltas);
   sink.apply(batch);
   return stats;
@@ -496,7 +495,6 @@ template <typename World, typename PassableTag, typename CostTag,
     PathAgentTickState& state, World& world, Source& source, Sink& sink,
     PathAgentBatch& batch, PathRequestRuntime& runtime,
     TileOccupancyIndex& index, PathAgentTickOptions options = {},
-    std::uint32_t movement_dirty_mask = 0,
     const RegionGraphT<typename World::residency_type>* graph = nullptr,
     DeltaCollector* render_deltas = nullptr) -> PathAgentTickStats {
   const auto info = source.collect(batch);
@@ -523,7 +521,8 @@ template <typename World, typename PassableTag, typename CostTag,
 
   stats.movement = advance_path_agents_with_index<World, PassableTag,
                                                   OccupancyTag, ReservationTag>(
-      world, batch, runtime, index, options.max_steps, movement_dirty_mask,
+      world, batch, runtime, index,
+      PathAgentAdvanceOptions{options.max_steps, options.movement_dirty_mask},
       render_deltas);
   sink.apply(batch);
   return stats;

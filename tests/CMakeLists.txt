@@ -82,6 +82,22 @@ tess_apply_project_options(tess_smoke)
 
 tess_discover_tests(tess_smoke LABELS block core diagnostics ecs experimental gpu ops path persistence query sim spatial storage topology)
 
+add_executable(tess_upgrade_1_0_test tess_upgrade_1_0_test.cc)
+target_link_libraries(
+  tess_upgrade_1_0_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+target_compile_definitions(
+  tess_upgrade_1_0_test
+  PRIVATE TESS_ENABLE_DIAGNOSTICS
+)
+tess_apply_project_options(tess_upgrade_1_0_test)
+
+tess_discover_tests(
+  tess_upgrade_1_0_test
+  LABELS block core diagnostics gpu ops path sim storage topology
+)
+
 if(TESS_BUILD_NO_EXCEPTIONS_TESTING AND
    (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU" OR MSVC))
   add_executable(tess_no_exceptions_test tess_no_exceptions_test.cc)
@@ -179,7 +195,11 @@ tess_apply_project_options(tess_dangling_observer_test)
 
 tess_discover_tests(tess_dangling_observer_test LABELS block core ops storage)
 
-add_executable(tess_delta_frame_lifetime_test tess_delta_frame_lifetime_test.cc)
+add_executable(
+  tess_delta_frame_lifetime_test
+  allocation_counter.cc
+  tess_delta_frame_lifetime_test.cc
+)
 target_link_libraries(
   tess_delta_frame_lifetime_test
   PRIVATE tess::tess GTest::gtest_main
@@ -187,6 +207,25 @@ target_link_libraries(
 tess_apply_project_options(tess_delta_frame_lifetime_test)
 
 tess_discover_tests(tess_delta_frame_lifetime_test LABELS core sim storage)
+
+add_executable(
+  tess_delta_frame_lifetime_ndebug_test
+  allocation_counter.cc
+  tess_delta_frame_lifetime_test.cc
+)
+target_link_libraries(
+  tess_delta_frame_lifetime_ndebug_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+target_compile_definitions(
+  tess_delta_frame_lifetime_ndebug_test PRIVATE NDEBUG
+)
+tess_apply_project_options(tess_delta_frame_lifetime_ndebug_test)
+tess_discover_tests(
+  tess_delta_frame_lifetime_ndebug_test
+  PREFIX ndebug.
+  LABELS core sim storage
+)
 
 add_executable(tess_shape_test allocation_counter.cc tess_shape_test.cc)
 target_link_libraries(tess_shape_test PRIVATE tess::tess GTest::gtest_main)
@@ -648,6 +687,23 @@ target_link_libraries(
 tess_apply_project_options(tess_phase_executor_test)
 
 tess_discover_tests(tess_phase_executor_test LABELS core ops)
+
+add_executable(
+  tess_phase_executor_ndebug_test
+  allocation_counter.cc
+  tess_phase_executor_test.cc
+)
+target_link_libraries(
+  tess_phase_executor_ndebug_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+target_compile_definitions(tess_phase_executor_ndebug_test PRIVATE NDEBUG)
+tess_apply_project_options(tess_phase_executor_ndebug_test)
+tess_discover_tests(
+  tess_phase_executor_ndebug_test
+  PREFIX ndebug.
+  LABELS core ops
+)
 
 add_executable(
   tess_queued_results_test allocation_counter.cc tess_queued_results_test.cc)
