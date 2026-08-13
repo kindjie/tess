@@ -10,6 +10,7 @@ from test_compatibility_snapshots import (
     snapshots,
     write_snapshot,
 )
+from check_public_surface import extract_public_symbols
 
 
 def test_ambiguous_using_import_checks_ordinary_overload_identity(tmp_path):
@@ -842,3 +843,136 @@ def test_multi_argument_public_base_retains_aggregate_evidence(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
   assert_aggregate_break(failures, "StableOptions")
+
+
+def test_global_scope_overloads_are_checked(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8") + "\nvoid evaluate(int);\n"
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(text + "void evaluate(double);\n", encoding="utf-8")
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "evaluate")
+
+
+def test_global_namespace_alias_imports_are_checked(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  prefix = (
+      "namespace external { void evaluate(int); }\n"
+      "namespace ext = external;\nusing namespace ext;\n"
+  )
+  text = prefix + header.read_text(encoding="utf-8")
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(text + "\nvoid evaluate(double);\n", encoding="utf-8")
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "evaluate")
+
+
+def test_member_type_alias_base_callables_are_checked(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct Base { void evaluate(int); };\n"
+      "struct Holder { using Alias = Base; };\n"
+      "struct StableOptions : Holder::Alias {",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          "  void evaluate(double);\n  int max_steps = 1;",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "StableOptions")
+
+
+def test_unnamed_elaborated_parameter_types_remain_distinct(tmp_path):
+  variants = (
+      ("struct Foo", "struct Bar"),
+      ("class Foo", "class Bar"),
+      ("enum Foo", "enum Bar"),
+      ("struct Foo *", "struct Bar *"),
+  )
+  for index, (before, after) in enumerate(variants):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "namespace tess {",
+        f"namespace tess {{\nvoid evaluate({before});",
+    )
+    header.write_text(text, encoding="utf-8")
+    refresh_payload(repo, payload)
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            "[[nodiscard]] auto stable_route",
+            f"void evaluate({after});\n[[nodiscard]] auto stable_route",
+        ),
+        encoding="utf-8",
+    )
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+    assert_overload(failures, "evaluate")
+
+
+def test_cpp_line_splicing_precedes_comment_parsing():
+  visible_after_literal = (
+      'namespace tess { constexpr auto text = "abc\\\n'
+      '//not comment";\nvoid visible(); }'
+  )
+  continued_comment = (
+      "namespace tess {\n// hidden \\\n"
+      "void hidden();\nvoid visible();\n}"
+  )
+  contract = extract_api_contract(visible_after_literal)
+  assert any("visible" in declaration for declaration in contract)
+  assert "visible" in extract_public_symbols(visible_after_literal)
+
+  contract = extract_api_contract(continued_comment)
+  assert not any("hidden" in declaration for declaration in contract)
+  assert any("visible" in declaration for declaration in contract)
+  symbols = extract_public_symbols(continued_comment)
+  assert "hidden" not in symbols
+  assert "visible" in symbols
+
+
+def test_line_spliced_literal_cannot_hide_later_overload(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "}  // namespace tess",
+      'constexpr auto text = "abc\\\n'
+      '//not comment";\nvoid evaluate(int);\n}  // namespace tess',
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "[[nodiscard]] auto stable_route",
+          "void evaluate(double);\n[[nodiscard]] auto stable_route",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "evaluate")

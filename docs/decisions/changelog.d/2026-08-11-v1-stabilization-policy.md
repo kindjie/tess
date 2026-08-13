@@ -111,7 +111,11 @@
   across those headers. Scope-aware type and namespace aliases, exact-global
   qualification, redeclaration-equivalent parameter names/top-level
   qualifiers, template parameters/constraints, and member cv/ref qualifiers
-  retain their C++ overload semantics.
+  retain their C++ overload semantics. Root-scope callables and namespace
+  imports, aliases declared inside public classes, and distinct unnamed
+  elaborated parameter types receive the same evidence. C++ phase-2
+  backslash-newline splicing occurs before literal and comment parsing so it
+  cannot hide real declarations or create phantom ones.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

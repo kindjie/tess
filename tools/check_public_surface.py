@@ -122,6 +122,11 @@ def strip_comments(line: str, state: bool | str) -> tuple[str, bool | str]:
     return "".join(out), lexical_state
 
 
+def splice_logical_lines(text: str) -> str:
+    """Apply C++ backslash-newline splicing before lexical inspection."""
+    return re.sub(r"\\\r?\n", "", text)
+
+
 def _is_namespace_scope(stack: list[tuple[str, bool]]) -> bool:
     return all(kind == "namespace" for kind, _ in stack)
 
@@ -132,6 +137,7 @@ def _is_skipped_scope(stack: list[tuple[str, bool]]) -> bool:
 
 def extract_public_symbols(text: str) -> set[str]:
     """Extract type and free-function names at public namespace scope."""
+    text = splice_logical_lines(text)
     symbols: set[str] = set()
     # Scope stack entries are (kind, skipped): kind is "namespace" or
     # "other" (type bodies, function bodies, initializer braces).

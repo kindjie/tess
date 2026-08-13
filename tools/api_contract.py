@@ -6,7 +6,7 @@ import re
 from hashlib import sha256
 from pathlib import Path
 
-from check_public_surface import strip_comments
+from check_public_surface import splice_logical_lines, strip_comments
 from header_manifest import GENERATED_HEADER_SOURCES
 
 TOKEN_RE = re.compile(
@@ -1791,6 +1791,7 @@ class _ContractParser:
 
 def extract_api_contract(text: str) -> list[str]:
   """Return normalized declarations whose removal breaks source users."""
+  text = splice_logical_lines(text)
   parser = _ContractParser(_code_tokens(text))
   return sorted(set(_macro_contracts(text) + parser.parse()))
 

@@ -30,9 +30,6 @@ AGGREGATES = (
     "include/tess/simulation.h",
     "include/tess/tess.h",
 )
-CONTRACT_SCOPE_RE = re.compile(
-    r"^(?:type|data-member|aggregate-break) (.+?)(?<!:):(?!:)"
-)
 VERSION_RE = re.compile(
     r'^set\(TESS_VERSION\s+"?([^"\s)]+)"?\)', re.MULTILINE
 )
@@ -67,9 +64,26 @@ def aggregate_membership(repo_root: Path) -> dict[str, list[str]]:
   return result
 
 
+def _split_scoped_contract(
+    contract: str, categories: set[str]
+) -> tuple[str, str, str] | None:
+  """Split a scoped contract, including the root-scope ``:::`` form."""
+  category, separator, body = contract.partition(" ")
+  if not separator or category not in categories:
+    return None
+  if body.startswith(":::"):
+    return category, "::", body[3:]
+  match = re.search(r"(?<!:):(?!:)", body)
+  if match is None:
+    return None
+  return category, body[: match.start()], body[match.end() :]
+
+
 def _contract_scope(contract: str) -> str | None:
-  match = CONTRACT_SCOPE_RE.match(contract)
-  return match.group(1) if match is not None else None
+  split = _split_scoped_contract(
+      contract, {"type", "data-member", "aggregate-break"}
+  )
+  return split[1] if split is not None else None
 
 
 def _aggregate_scope(contract: str) -> str | None:
@@ -78,12 +92,10 @@ def _aggregate_scope(contract: str) -> str | None:
 
 
 def _callable_identity(contract: str) -> str | None:
-  match = re.match(
-      r"^(?:member|function) (.+?)(?<!:):(?!:)(.*)$", contract
-  )
-  if match is None:
+  split = _split_scoped_contract(contract, {"member", "function"})
+  if split is None:
     return None
-  scope, declaration = match.groups()
+  _, scope, declaration = split
   name = callable_name(declaration)
   if name is None:
     return None
@@ -94,12 +106,10 @@ def _callable_signature(
     contract: str,
 ) -> tuple[str, tuple[str, ...], tuple[str, ...]] | None:
   """Return callable identity plus parameter types, ignoring parameter names."""
-  match = re.match(
-      r"^(?:member|function) (.+?)(?<!:):(?!:)(.*)$", contract
-  )
-  if match is None:
+  split = _split_scoped_contract(contract, {"member", "function"})
+  if split is None:
     return None
-  scope, declaration = match.groups()
+  _, scope, declaration = split
   tokens = _tokens(declaration)
   opening = _ContractParser._function_opening(tokens)
   name = callable_name(tokens)
@@ -208,6 +218,10 @@ def _canonical_parameters(tokens: list[str]) -> tuple[str, ...]:
           if re.fullmatch(r"[A-Za-z_]\w*", token)
       ]
     if len(identifiers) > 1:
+      elaborated_type_only = (
+          segment[0] in {"class", "struct", "union", "enum"}
+          and len(identifiers) == 2
+      )
       pointer_names = [
           position
           for position in identifiers[1:]
@@ -217,13 +231,13 @@ def _canonical_parameters(tokens: list[str]) -> tuple[str, ...]:
           and segment[position + 1] in {")", "["}
       ]
       position = pointer_names[0] if pointer_names else identifiers[-1]
-      if position == len(segment) - 1 and (
+      if not elaborated_type_only and position == len(segment) - 1 and (
           position == 0 or segment[position - 1] != "::"
       ) and segment[position - 1] not in {
           "const", "volatile", "signed", "unsigned", "short", "long",
       }:
         segment = segment[:position]
-      elif (
+      elif not elaborated_type_only and (
           position > 0
           and segment[position - 1] in {"*", "&", "&&"}
           and position + 1 < len(segment)
@@ -244,12 +258,10 @@ def _using_callable_identity(contract: str) -> str | None:
 
 
 def _using_callable_identities(contract: str) -> set[str]:
-  match = re.match(
-      r"^(?:member|declaration) (.+?)(?<!:):(?!:)(.*)$", contract
-  )
-  if match is None:
+  split = _split_scoped_contract(contract, {"member", "declaration"})
+  if split is None:
     return set()
-  scope, declaration = match.groups()
+  _, scope, declaration = split
   tokens = _tokens(declaration)
   if "using" not in tokens or "::" not in tokens:
     return set()
@@ -343,10 +355,8 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
   types = {
       scope: declaration
       for contract in declarations
-      if (match := re.match(
-          r"^type (.+?)(?<!:):(?!:)(.*)$", contract
-      )) is not None
-      for scope, declaration in [match.groups()]
+      if (split := _split_scoped_contract(contract, {"type"})) is not None
+      for _, scope, declaration in [split]
   }
   own: dict[str, set[str]] = {scope: set() for scope in types}
   for contract in declarations:
@@ -361,12 +371,14 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
   namespace_imports: dict[str, set[str]] = {}
   namespace_aliases: dict[str, str] = {}
   for contract in declarations:
+    split = _split_scoped_contract(contract, {"declaration"})
+    declaration = split[2] if split is not None else ""
     alias_match = re.match(
-        r"^declaration (.+?)(?<!:):(?!:)namespace ([A-Za-z_]\w*) = (.*)$",
-        contract,
+        r"^namespace ([A-Za-z_]\w*) = (.*)$", declaration
     )
-    if alias_match is not None:
-      scope, alias, target = alias_match.groups()
+    if alias_match is not None and split is not None:
+      _, scope, _ = split
+      alias, target = alias_match.groups()
       target_names = [
           token
           for token in _tokens(target)
@@ -377,12 +389,10 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
         namespace_aliases[f"{scope}::{alias}"] = prefix + "::".join(
             target_names
         )
-    match = re.match(
-        r"^declaration (.+?)(?<!:):(?!:)using namespace (.*)$",
-        contract,
-    )
-    if match is not None:
-      scope, imported = match.groups()
+    import_match = re.match(r"^using namespace (.*)$", declaration)
+    if import_match is not None and split is not None:
+      _, scope, _ = split
+      imported = import_match.group(1)
       names = [
           token
           for token in _tokens(imported)
@@ -399,12 +409,10 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
     by_name.setdefault(scope.rsplit("::", 1)[-1], set()).add(scope)
   alias_targets: dict[str, set[str]] = {}
   for contract in declarations:
-    match = re.match(
-        r"^declaration (.+?)(?<!:):(?!:)(.*)$", contract
-    )
-    if match is None:
+    split = _split_scoped_contract(contract, {"declaration", "member"})
+    if split is None:
       continue
-    alias_scope, declaration = match.groups()
+    _, alias_scope, declaration = split
     tokens = _tokens(declaration)
     if "using" in tokens and "=" in tokens:
       equals = tokens.index("=")

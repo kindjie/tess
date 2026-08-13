@@ -46,6 +46,9 @@
   inaccessible and namespace-distinct bases remain independent; scope-aware
   namespace/type aliases, redeclaration-equivalent signatures, template
   constraints, and member qualifiers avoid false positive or missed overloads;
+  global-scope declarations, aliases nested in stable classes, elaborated
+  parameter types, and phase-2 line-spliced literals/comments retain their
+  compatibility identity;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance
