@@ -256,6 +256,7 @@ def _consumer_project_is_valid(
     archive_consumer: Path,
     archive_target: object,
 ) -> bool:
+  """Validate the fixed, intentionally control-flow-free CMake fixture."""
   if (
       not isinstance(consumer_target, str)
       or TARGET_RE.fullmatch(consumer_target) is None
@@ -267,6 +268,17 @@ def _consumer_project_is_valid(
   try:
     commands = _cmake_commands(cmakelists.read_text(encoding="utf-8"))
   except OSError:
+    return False
+  allowed_commands = {
+      "add_executable",
+      "add_test",
+      "cmake_minimum_required",
+      "enable_testing",
+      "find_package",
+      "project",
+      "target_link_libraries",
+  }
+  if not commands or any(name not in allowed_commands for name, _ in commands):
     return False
   finds = [args for name, args in commands if name == "find_package"]
   executables = [
@@ -308,9 +320,7 @@ def _consumer_project_is_valid(
         continue
       if args[command_index + 1] != target:
         continue
-      if needs_snapshot and not any(
-          "TESS_SNAPSHOT_DIR" in argument for argument in args
-      ):
+      if needs_snapshot and "${TESS_SNAPSHOT_DIR}" not in args:
         continue
       return True
     return False
@@ -329,6 +339,7 @@ def _consumer_project_is_valid(
       and has_executable(archive_target, archive_consumer)
       and links_tess(archive_target)
       and has_test(archive_target, True)
+      and any(name == "enable_testing" and not args for name, args in commands)
   )
 
 
