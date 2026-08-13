@@ -10,6 +10,8 @@ import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from api_contract import (
+    BUILTIN_TYPE_SPECIFIERS,
+    DECLARATION_SPECIFIERS,
     _ContractParser,
     _tokens,
     callable_name,
@@ -84,6 +86,11 @@ def _contract_scope(contract: str) -> str | None:
       contract, {"type", "data-member", "aggregate-break"}
   )
   return split[1] if split is not None else None
+
+
+def _scoped_symbol(scope: str, name: str) -> str:
+  """Join a contract scope and symbol using canonical global spelling."""
+  return name if scope in {"", "::"} else f"{scope}::{name}"
 
 
 def _aggregate_scope(contract: str) -> str | None:
@@ -205,12 +212,25 @@ def _canonical_parameters(tokens: list[str]) -> tuple[str, ...]:
   for segment in segments:
     if "=" in segment:
       segment = segment[: segment.index("=")]
+    function_opening = _ContractParser._first_top_level_round(segment)
+    if function_opening is not None and not _grouped_indirection_before(
+        segment, function_opening
+    ):
+      function_name = function_opening - 1
+      if (
+          function_name > 0
+          and re.fullmatch(r"[A-Za-z_]\w*", segment[function_name])
+          and segment[function_name]
+          not in BUILTIN_TYPE_SPECIFIERS | DECLARATION_SPECIFIERS
+          and segment[function_name - 1] != "::"
+      ):
+        segment = segment[:function_name] + segment[function_opening:]
     identifiers = [
         index
         for index, token in enumerate(segment)
         if re.fullmatch(r"[A-Za-z_]\w*", token)
     ]
-    if not any(token in segment for token in {"*", "&", "&&"}):
+    if not any(token in segment for token in {"*", "&", "&&", "["}):
       segment = [token for token in segment if token not in {"const", "volatile"}]
       identifiers = [
           index
@@ -246,10 +266,97 @@ def _canonical_parameters(tokens: list[str]) -> tuple[str, ...]:
         segment = segment[:position] + segment[position + 1 :]
     if "[" in segment:
       bracket = segment.index("[")
-      if bracket and re.fullmatch(r"[A-Za-z_]\w*", segment[bracket - 1]):
+      candidate = segment[bracket - 1] if bracket else ""
+      prefix = segment[: bracket - 1]
+      prefix_has_type = any(
+          token in BUILTIN_TYPE_SPECIFIERS
+          or (
+              re.fullmatch(r"[A-Za-z_]\w*", token)
+              and token
+              not in DECLARATION_SPECIFIERS
+              | {"class", "enum", "struct", "union"}
+          )
+          for token in prefix
+      )
+      if (
+          prefix_has_type
+          and re.fullmatch(r"[A-Za-z_]\w*", candidate)
+          and candidate
+          not in DECLARATION_SPECIFIERS
+          | {"class", "enum", "struct", "union"}
+          and (not prefix or prefix[-1] != "::")
+      ):
         segment = segment[: bracket - 1] + segment[bracket:]
+        bracket -= 1
+      if not _grouped_indirection_before(segment, bracket):
+        depth = 0
+        closing = None
+        for index in range(bracket, len(segment)):
+          if segment[index] == "[":
+            depth += 1
+          elif segment[index] == "]":
+            depth -= 1
+            if depth == 0:
+              closing = index
+              break
+        if closing is not None:
+          segment = segment[:bracket] + ["*"] + segment[closing + 1 :]
+    segment = _normalize_grouped_parameter_pointer(segment)
+    function_opening = _ContractParser._first_top_level_round(segment)
+    if function_opening is not None and not _grouped_indirection_before(
+        segment, function_opening
+    ):
+      closing = _ContractParser._matching_round_bracket(
+          segment, function_opening
+      )
+      if closing == len(segment) - 1:
+        segment = (
+            segment[:function_opening]
+            + ["(", "*", ")"]
+            + segment[function_opening:]
+        )
     normalized.append(" ".join(segment))
   return tuple(normalized)
+
+
+def _grouped_indirection_before(tokens: list[str], limit: int) -> bool:
+  for opening, token in enumerate(tokens[:limit]):
+    if token != "(":
+      continue
+    closing = _ContractParser._matching_round_bracket(tokens, opening)
+    if closing is not None and closing < limit and any(
+        item in {"*", "&", "&&"} for item in tokens[opening + 1 : closing]
+    ):
+      return True
+  return False
+
+
+def _normalize_grouped_parameter_pointer(tokens: list[str]) -> list[str]:
+  """Remove non-semantic names and top-level cv from grouped pointers."""
+  for opening, token in enumerate(tokens):
+    if token != "(":
+      continue
+    closing = _ContractParser._matching_round_bracket(tokens, opening)
+    if closing is None:
+      continue
+    group = tokens[opening + 1 : closing]
+    if not any(item in {"*", "&", "&&"} for item in group):
+      continue
+    cleaned: list[str] = []
+    for index, item in enumerate(group):
+      if item in {"const", "volatile"}:
+        continue
+      if (
+          re.fullmatch(r"[A-Za-z_]\w*", item)
+          and item not in DECLARATION_SPECIFIERS
+          and index > 0
+          and group[index - 1] in {"*", "&", "&&", "const", "volatile"}
+          and (index + 1 == len(group) or group[index + 1] != "::")
+      ):
+        continue
+      cleaned.append(item)
+    return tokens[: opening + 1] + cleaned + tokens[closing:]
+  return tokens
 
 
 def _using_callable_identity(contract: str) -> str | None:
@@ -386,7 +493,7 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
       ]
       if target_names:
         prefix = "::" if _tokens(target)[:1] == ["::"] else ""
-        namespace_aliases[f"{scope}::{alias}"] = prefix + "::".join(
+        namespace_aliases[_scoped_symbol(scope, alias)] = prefix + "::".join(
             target_names
         )
     import_match = re.match(r"^using namespace (.*)$", declaration)
@@ -444,7 +551,9 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
       ]
       if target_names:
         prefix = "::" if target_tokens[:1] == ["::"] else ""
-        alias_targets.setdefault(f"{alias_scope}::{alias}", set()).add(
+        alias_targets.setdefault(
+            _scoped_symbol(alias_scope, alias), set()
+        ).add(
             prefix + "::".join(target_names)
         )
   aliases: dict[str, set[str]] = {

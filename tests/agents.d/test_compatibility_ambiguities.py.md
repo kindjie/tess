@@ -7,6 +7,7 @@
   inaccessible/namespace-distinct base exclusions, cross-header callable and
   macro identities, namespace/type alias scope and qualification, canonical
   redeclaration signatures including complex/template parameters, constraints,
-  and member qualifiers, root-scope imports, member type aliases, elaborated
-  parameter types, C++ line splicing, and symmetric historical/current
+  and member qualifiers, root-scope imports, member type aliases, elaborated or
+  unnamed-array parameter types, C++ array/function parameter adjustment,
+  nested declarator identity, line splicing, and symmetric historical/current
   callable identities.

@@ -1393,6 +1393,13 @@ class _ContractParser:
       closing = _ContractParser._matching_round_bracket(tokens, opening)
       if closing is None:
         return None
+      prefix = _declarator_prefix(tokens[:opening])
+      tail = tokens[closing + 1] if closing + 1 < len(tokens) else ""
+      if (
+          tail not in {"(", "["}
+          and _ContractParser._looks_like_named_function_prefix(prefix)
+      ):
+        return opening
       pointer_return = _ContractParser._function_pointer_return_opening(
           tokens, opening, closing
       )
@@ -1417,6 +1424,28 @@ class _ContractParser:
         return opening
       start = closing + 1
     return None
+
+  @staticmethod
+  def _looks_like_named_function_prefix(tokens: list[str]) -> bool:
+    """Return whether tokens end in a plausible callable declarator name."""
+    if not tokens:
+      return False
+    if tokens[-1] in PARENTHESIZED_SPECIFIERS:
+      return False
+    if IDENTIFIER_RE.fullmatch(tokens[-1]) and tokens[-1] not in {
+        *DECLARATION_SPECIFIERS,
+        "class",
+        "struct",
+        "union",
+    }:
+      if len(tokens) >= 2 and tokens[-2] == "::":
+        return False
+      return True
+    return (
+        len(tokens) >= 2
+        and tokens[-2] == "~"
+        and IDENTIFIER_RE.fullmatch(tokens[-1]) is not None
+    )
 
   @staticmethod
   def _function_pointer_return_opening(

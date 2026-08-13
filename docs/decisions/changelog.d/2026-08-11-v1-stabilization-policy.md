@@ -113,9 +113,13 @@
   qualifiers, template parameters/constraints, and member cv/ref qualifiers
   retain their C++ overload semantics. Root-scope callables and namespace
   imports, aliases declared inside public classes, and distinct unnamed
-  elaborated parameter types receive the same evidence. C++ phase-2
+  elaborated or array parameter types receive the same evidence. C++ phase-2
   backslash-newline splicing occurs before literal and comment parsing so it
-  cannot hide real declarations or create phantom ones.
+  cannot hide real declarations or create phantom ones. Callable signatures
+  apply C++ array/function parameter adjustment, preserve element qualifiers
+  and later array dimensions, discard non-semantic first bounds, parameter
+  names, and grouped-pointer top-level qualifiers, and anchor outer callable
+  identity ahead of nested parameter declarators.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

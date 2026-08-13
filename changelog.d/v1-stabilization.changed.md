@@ -46,9 +46,11 @@
   inaccessible and namespace-distinct bases remain independent; scope-aware
   namespace/type aliases, redeclaration-equivalent signatures, template
   constraints, and member qualifiers avoid false positive or missed overloads;
-  global-scope declarations, aliases nested in stable classes, elaborated
-  parameter types, and phase-2 line-spliced literals/comments retain their
-  compatibility identity;
+  global-scope declarations, aliases nested in stable classes, elaborated and
+  unnamed-array parameter types, and phase-2 line-spliced literals/comments
+  retain their compatibility identity; array and function parameter
+  adjustment, grouped-pointer qualifiers, and nested parameter declarators
+  follow C++ function-type and outer-callable identity rules;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance
