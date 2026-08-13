@@ -54,9 +54,10 @@ entry points rather than changing those signatures or adding ambiguous
 overloads.
 
 Compatibility is enforced in layers. Snapshots protect header classes, direct
-aggregate membership, and documented public namespace-scope names. Installed
-and optional-integration builds, immutable source-consumer fixtures, archive
-fixtures, and release review cover C++ semantics. The snapshot checker
+aggregate membership, documented public namespace-scope names, and public
+`TESS_*` macro names. Installed and optional-integration builds, immutable
+source-consumer fixtures, archive fixtures, and release review cover C++
+semantics. The snapshot checker
 deliberately does not parse declaration signatures or model C++ semantics and
 is not represented as a complete proof of this policy.
 

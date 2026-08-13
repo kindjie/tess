@@ -4,9 +4,9 @@ Create an immutable directory named for the complete release version at RC1
 and at every stable minor release. Each directory contains:
 
 - `manifest.json`, recording stable and optional-stable headers, direct stable
-  aggregate membership, extracted public namespace-scope names, the consumer
-  project and its two executable/test target names, and archive fixture
-  metadata;
+  aggregate membership, extracted public namespace-scope and `TESS_*` macro
+  names, the consumer project and its two executable/test target names, and
+  archive fixture metadata;
 - a CMake consumer project that uses stable headers only, discovers the
   candidate installation with `find_package(tess CONFIG REQUIRED)`, links
   `tess::tess`, and registers both source and archive consumers as tests; and
@@ -15,9 +15,10 @@ and at every stable minor release. Each directory contains:
   when passed the snapshot directory.
 
 `tools/check_compatibility_snapshots.py` preserves header classes, direct
-aggregate membership, and documented public namespace-scope names. It also
-confines recorded paths to the snapshot, verifies fixture metadata, and
-compares released snapshots byte-for-byte with their `v<version>` tags.
+aggregate membership, documented public namespace-scope names, and public
+`TESS_*` macro names. It also confines recorded paths to the snapshot, verifies
+fixture metadata, and compares released snapshots byte-for-byte with their
+`v<version>` tags.
 
 The checker deliberately does not parse declaration signatures or model C++
 semantics; it reuses the documentation gate's namespace-name scanner.

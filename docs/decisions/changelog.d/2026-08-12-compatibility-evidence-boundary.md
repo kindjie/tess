@@ -10,8 +10,8 @@
   specific spellings, so an immutable cross-platform source snapshot would not
   be portable without another normalization language.
 - Kept snapshots deliberately mechanical: header classes, direct aggregate
-  membership, documented public namespace-scope names, consumer/archive
-  metadata, and release-tag immutability. C++ signatures and behavior are
-  evidence from compiled immutable consumers, optional-integration builds, the
-  toolchain matrix, and release review rather than a repository-maintained
-  parser.
+  membership, documented public namespace-scope names, public `TESS_*` macro
+  names, consumer/archive metadata, and release-tag immutability. C++
+  signatures and behavior are evidence from compiled immutable consumers,
+  optional-integration builds, the toolchain matrix, and release review rather
+  than a repository-maintained parser.

@@ -439,6 +439,26 @@ def test_cmake_contract_rejects_extra_executable_source(tmp_path):
   )
 
 
+def test_cmake_contract_requires_distinct_targets(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  payload["archive_consumer_target"] = "consumer"
+  snapshot_root = write_snapshot(tmp_path, payload)
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  text = project.read_text(encoding="utf-8")
+  project.write_text(
+      text.replace("archive_consumer", "consumer"), encoding="utf-8"
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "consumer project must discover tess CONFIG" in item
+      for item in failures
+  )
+
+
 def test_cmake_contract_binds_sources_to_recorded_targets(tmp_path):
   header_path, payload = make_repo(tmp_path)
   snapshot_root = write_snapshot(tmp_path, payload)

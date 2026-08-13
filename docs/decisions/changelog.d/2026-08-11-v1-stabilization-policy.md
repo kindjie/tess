@@ -39,7 +39,8 @@
   ordering, duplicate-name, lifetime, and identity cleanups land in v0.13 and
   are documented in the 1.0 upgrade guide.
 - Compatibility snapshots retain header classes, direct aggregate membership,
-  and documented public namespace-scope names. They do not parse C++
+  documented public namespace-scope names, and public `TESS_*` macro names.
+  They do not parse C++
   declarations. Signatures, defaults, aggregate use, fields, overload
   resolution, and configuration-selected APIs remain protected by immutable
   compiled consumers, integration builds, and release review. The name

@@ -150,6 +150,7 @@ def _consumer_project_is_valid(
       or TARGET_RE.fullmatch(consumer_target) is None
       or not isinstance(archive_target, str)
       or TARGET_RE.fullmatch(archive_target) is None
+      or consumer_target == archive_target
   ):
     return False
   consumer_source = _cmake_source_path(project, consumer)
