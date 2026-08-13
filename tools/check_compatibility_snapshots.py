@@ -28,7 +28,9 @@ AGGREGATES = (
     "include/tess/simulation.h",
     "include/tess/tess.h",
 )
-INCLUDE_RE = re.compile(r"^\s*#\s*include\s*<([^>]+)>", re.MULTILINE)
+INCLUDE_RE = re.compile(
+    r'^\s*#\s*include\s*(?:<([^>\n]+)>|"([^"\n]+)")'
+)
 CONDITIONAL_RE = re.compile(
     r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b"
 )
@@ -76,12 +78,15 @@ def aggregate_membership(repo_root: Path) -> dict[str, list[str]]:
           conditional_depth -= 1
         continue
       include = INCLUDE_RE.match(line)
+      imported = next(
+          (group for group in include.groups() if group is not None), None
+      ) if include is not None else None
       if (
           conditional_depth == 0
-          and include is not None
-          and include.group(1).startswith("tess/")
+          and imported is not None
+          and imported.startswith("tess/")
       ):
-        headers.append(f"include/{include.group(1)}")
+        headers.append(f"include/{imported}")
     result[aggregate] = sorted(headers)
   return result
 
@@ -122,6 +127,61 @@ def _using_callable_identities(contract: str) -> set[str]:
   tokens = _tokens(declaration)
   if "using" not in tokens or "::" not in tokens:
     return set()
+  declarators = _using_declarators(tokens[tokens.index("using") + 1 :])
+  return {
+      identity
+      for declarator in declarators
+      for identity in _using_declarator_identities(scope, declarator)
+  }
+
+
+def _using_declarators(tokens: list[str]) -> list[list[str]]:
+  """Split a using-declarator-list without splitting nested commas."""
+  result: list[list[str]] = []
+  current: list[str] = []
+  round_depth = square_depth = brace_depth = angle_depth = 0
+  for token in tokens:
+    if token == "," and not (round_depth or square_depth or brace_depth):
+      separator = len(current) - 1 - current[::-1].index("::") \
+          if "::" in current else -1
+      suffix = current[separator + 1 :]
+      if angle_depth == 0 and suffix != ["operator"]:
+        result.append(current)
+        current = []
+        continue
+    current.append(token)
+    if token == "(":
+      round_depth += 1
+    elif token == ")" and round_depth:
+      round_depth -= 1
+    elif token in {"[", "[["}:
+      square_depth += 1
+    elif token in {"]", "]]"} and square_depth:
+      square_depth -= 1
+    elif token == "{":
+      brace_depth += 1
+    elif token == "}" and brace_depth:
+      brace_depth -= 1
+    elif not (round_depth or square_depth or brace_depth):
+      separator = len(current) - 1 - current[::-1].index("::") \
+          if "::" in current else -1
+      operator_name = "operator" in current[separator + 1 :]
+      if token == "<" and not operator_name:
+        angle_depth += 1
+      elif token == ">" and angle_depth and not operator_name:
+        angle_depth -= 1
+      elif token == ">>" and angle_depth and not operator_name:
+        angle_depth = max(0, angle_depth - 2)
+  if current:
+    result.append(current)
+  return result
+
+
+def _using_declarator_identities(
+    scope: str, tokens: list[str]
+) -> set[str]:
+  if "::" not in tokens:
+    return set()
   position = len(tokens) - 1 - tokens[::-1].index("::")
   if "=" in tokens[:position]:
     return set()
@@ -140,13 +200,106 @@ def _using_callable_identities(contract: str) -> set[str]:
   if name is None:
     return set()
   owner = scope.rsplit("::", 1)[-1]
-  qualifier = tokens[tokens.index("using") + 1 : position]
+  qualifier = tokens[:position]
   ordinary = f"{scope}::{name}"
   if qualified_declares_type_name(qualifier, name):
     return {f"{scope}::{owner}"}
   if qualified_may_declare_type_name(qualifier, name):
     return {ordinary, f"{scope}::{owner}"}
   return {ordinary}
+
+
+def _inherited_callable_identities(declarations: set[str]) -> set[str]:
+  """Return callable identities visible through snapshotted base classes."""
+  types = {
+      scope: declaration
+      for contract in declarations
+      if (match := re.match(
+          r"^type (.+?)(?<!:):(?!:)(.*)$", contract
+      )) is not None
+      for scope, declaration in [match.groups()]
+  }
+  own: dict[str, set[str]] = {scope: set() for scope in types}
+  for contract in declarations:
+    for identity in (
+        _callable_identity(contract),
+        *_using_callable_identities(contract),
+    ):
+      if identity is not None:
+        scope, name = identity.rsplit("::", 1)
+        own.setdefault(scope, set()).add(name)
+
+  by_name: dict[str, set[str]] = {}
+  for scope in types:
+    by_name.setdefault(scope.rsplit("::", 1)[-1], set()).add(scope)
+  bases: dict[str, set[str]] = {}
+  for scope, declaration in types.items():
+    tokens = _tokens(declaration)
+    if ":" not in tokens:
+      continue
+    candidates = _base_head_names(tokens[tokens.index(":") + 1 :])
+    bases[scope] = {
+        base
+        for name in candidates
+        for base in by_name.get(name, set())
+        if base != scope
+    }
+
+  visible = {scope: set(names) for scope, names in own.items()}
+  changed = True
+  while changed:
+    changed = False
+    for scope, direct_bases in bases.items():
+      inherited = set().union(
+          *(visible.get(base, set()) for base in direct_bases)
+      ) if direct_bases else set()
+      before = len(visible.setdefault(scope, set()))
+      visible[scope].update(inherited)
+      changed |= len(visible[scope]) != before
+  return {
+      f"{scope}::{name}"
+      for scope, direct_bases in bases.items()
+      if direct_bases
+      for name in visible[scope]
+      if name not in own.get(scope, set())
+  }
+
+
+def _base_head_names(tokens: list[str]) -> set[str]:
+  """Return terminal names of ordinary base-specifier heads."""
+  names: set[str] = set()
+  head: list[str] = []
+  angle_depth = round_depth = square_depth = 0
+  for token in [*tokens, ","]:
+    if token == "," and not (angle_depth or round_depth or square_depth):
+      identifiers = [
+          item
+          for item in head
+          if re.fullmatch(r"[A-Za-z_]\w*", item)
+          and item not in {"public", "protected", "private", "virtual"}
+      ]
+      if identifiers:
+        names.add(identifiers[-1])
+      head = []
+      continue
+    if not angle_depth:
+      head.append(token)
+    if token == "(":
+      round_depth += 1
+    elif token == ")" and round_depth:
+      round_depth -= 1
+    elif token in {"[", "[["}:
+      square_depth += 1
+    elif token in {"]", "]]"} and square_depth:
+      square_depth -= 1
+    elif not (round_depth or square_depth):
+      if token == "<":
+        angle_depth += 1
+      elif token == ">" and angle_depth:
+        angle_depth -= 1
+      elif token == ">>" and angle_depth:
+        angle_depth = max(0, angle_depth - 2)
+  return names
 
 
 def _macro_identity(contract: str, category: str = "macro") -> str | None:
@@ -536,6 +689,16 @@ def check_snapshots(
     if not isinstance(snapshot_contract, dict):
       failures.append(f"{directory.name}: api_contract map is missing")
     else:
+      all_snapshot_declarations = {
+          declaration
+          for declarations in snapshot_contract.values()
+          if isinstance(declarations, list)
+          for declaration in declarations
+          if isinstance(declaration, str)
+      }
+      inherited_callables = _inherited_callable_identities(
+          all_snapshot_declarations
+      )
       valid_snapshot_contract: dict[str, set[str]] = {}
       snapshot_header_values: list[str] = []
       if isinstance(snapshot_headers, dict):
@@ -582,8 +745,12 @@ def check_snapshots(
         snapshot_callables = {
             identity
             for declaration in snapshot_declarations
-            if (identity := _callable_identity(declaration)) is not None
-        }
+            for identity in (
+                _callable_identity(declaration),
+                *_using_callable_identities(declaration),
+            )
+            if identity is not None
+        } | inherited_callables
         snapshot_macros = {
             identity
             for declaration in snapshot_declarations

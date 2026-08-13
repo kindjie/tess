@@ -39,7 +39,8 @@
   base clauses preserve aggregate evidence in either access ordering without
   splitting ordinary multi-argument base templates, and lexically ambiguous
   using-imports are checked conservatively as both constructors and ordinary
-  overloads;
+  overloads whether they occur in the snapshot or current sources; complete
+  using-declarator lists and inherited callable hiding are also rejected;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

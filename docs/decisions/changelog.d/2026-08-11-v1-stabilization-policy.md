@@ -100,7 +100,10 @@
   leading constraints and either base-access ordering, without splitting
   ordinary multi-argument base templates. Lexically ambiguous using-imports
   are checked as both inherited constructors and ordinary overloads rather
-  than weakening a snapshotted aggregate or overload set.
+  than weakening a snapshotted aggregate or overload set, in either the
+  historical snapshot or current sources. Every entry in a using-declarator
+  list and callable names inherited transitively from base types participate
+  in the same compatibility check.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

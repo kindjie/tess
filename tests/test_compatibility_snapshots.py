@@ -2546,7 +2546,7 @@ def test_aggregate_membership_rejects_disabled_or_commented_include(tmp_path):
   header_path, payload = make_repo(tmp_path)
   aggregate = tmp_path / "include/tess/tess.h"
   original = aggregate.read_text(encoding="utf-8").replace(
-      "#pragma once", "#pragma once\n#include <tess/pathfinding.h>"
+      "#include <tess/pathfinding.h>", '#include "tess/pathfinding.h"'
   )
   aggregate.write_text(original, encoding="utf-8")
   payload["aggregate_membership"] = snapshots.aggregate_membership(tmp_path)
@@ -2558,7 +2558,7 @@ def test_aggregate_membership_rejects_disabled_or_commented_include(tmp_path):
   ):
     aggregate.write_text(
         original.replace(
-            "#include <tess/pathfinding.h>", replacement
+            '#include "tess/pathfinding.h"', replacement
         ),
         encoding="utf-8",
     )

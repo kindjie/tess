@@ -64,7 +64,7 @@ def test_stable_aggregate_cannot_import_excluded_classes(tmp_path):
   aggregate = tmp_path / "include" / "tess" / "tess.h"
   aggregate.write_text(
       "#include <tess/experimental/tool.h>\n"
-      "#include <tess/detail/fragment.h>\n",
+      '#include "tess/detail/fragment.h"\n',
       encoding="utf-8",
   )
 

@@ -46,6 +46,124 @@ def test_ambiguous_using_import_checks_ordinary_overload_identity(tmp_path):
     assert_overload(failures, "StableOptions")
 
 
+def test_snapshotted_using_import_checks_later_direct_overload(tmp_path):
+  variants = (
+      (
+          "struct Base { void evaluate(double); };\n"
+          "struct StableOptions : Base {\n  using Base::evaluate;",
+          "  void evaluate(int);\n",
+      ),
+      (
+          "struct Base { Base(double); };\n"
+          "struct StableOptions : Base {\n  using Base::Base;",
+          "  StableOptions(int);\n",
+      ),
+      (
+          "template<class> struct Holder { static void Base(double); };\n"
+          "namespace other { template<class> struct Base {}; }\n"
+          "struct StableOptions : Holder<other::Base<int>> {\n"
+          "  using Holder<other::Base<int>>::Base;",
+          "  void Base(int);\n",
+      ),
+  )
+  for index, (replacement, addition) in enumerate(variants):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {", replacement
+    )
+    header.write_text(text, encoding="utf-8")
+    refresh_payload(repo, payload)
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace("  int max_steps = 1;", addition + "  int max_steps = 1;"),
+        encoding="utf-8",
+    )
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+    assert_overload(failures, "StableOptions")
+
+
+def test_using_declarator_lists_check_every_callable(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct Base {\n"
+      "  void evaluate(double);\n  void other(double);\n"
+      "  bool operator<(int) const;\n  void operator,(int);\n};\n"
+      "struct StableOptions : Base {\n"
+      "  void evaluate(int);\n  bool operator<(double) const;",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          "  using Base::operator<, Base::evaluate, Base::other, "
+          "Base::operator,;\n"
+          "  int max_steps = 1;",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "StableOptions")
+
+  reverse = tmp_path / "reverse"
+  header_path, payload = make_repo(reverse)
+  header = reverse / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct Base { void evaluate(double); void other(double); };\n"
+      "struct StableOptions : Base {\n"
+      "  using Base::evaluate, Base::other;",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(reverse, payload)
+  snapshot_root = write_snapshot(reverse, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          "  void other(int);\n  int max_steps = 1;",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      reverse, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "StableOptions")
+
+
+def test_later_member_cannot_hide_inherited_callable(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct Root { void evaluate(int); };\n"
+      "template<class> struct Middle : Root {};\n"
+      "struct StableOptions : Middle<int> {",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          "  void evaluate(const char*);\n  int max_steps = 1;",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "StableOptions")
+
+
 def test_relational_base_does_not_absorb_later_public_base():
   contract = extract_api_contract(
       "template<bool> struct Base {}; struct Other {}; "

@@ -17,7 +17,10 @@ STABLE_AGGREGATES = (
     "include/tess/simulation.h",
     "include/tess/tess.h",
 )
-INCLUDE_RE = re.compile(r"^\s*#\s*include\s*<([^>]+)>", re.MULTILINE)
+INCLUDE_RE = re.compile(
+    r'^\s*#\s*include\s*(?:<([^>\n]+)>|"([^"\n]+)")',
+    re.MULTILINE,
+)
 
 
 def check_manifest(repo_root: Path, manifest_path: Path) -> list[str]:
@@ -56,7 +59,10 @@ def check_manifest(repo_root: Path, manifest_path: Path) -> list[str]:
   )
   for aggregate in STABLE_AGGREGATES:
     text = (repo_root / aggregate).read_text(encoding="utf-8")
-    includes = {f"include/{match}" for match in INCLUDE_RE.findall(text)}
+    includes = {
+        f"include/{angle or quote}"
+        for angle, quote in INCLUDE_RE.findall(text)
+    }
     for imported in sorted(includes & forbidden):
       failures.append(
           f"{aggregate}: stable aggregate imports {owners[imported]} "
