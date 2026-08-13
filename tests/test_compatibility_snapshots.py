@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 import check_compatibility_snapshots as snapshots  # noqa: E402
@@ -545,6 +547,53 @@ def test_snapshot_paths_cannot_escape_version_directory(tmp_path):
   )
 
   assert any("consumer path must stay inside" in item for item in failures)
+
+
+@pytest.mark.parametrize(
+    "archive_path",
+    (
+        "archives\\one.bin",
+        "archives/bad:name.bin",
+        "archives/CON.bin",
+        "archives/one.bin.",
+    ),
+)
+def test_snapshot_paths_must_be_portable_posix_relative(
+    tmp_path, archive_path
+):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  directory = snapshot_root / "1.0.0-rc.1"
+  source = directory / "archives/one.bin"
+  destination = directory / archive_path
+  destination.parent.mkdir(parents=True, exist_ok=True)
+  source.rename(destination)
+  payload["archives"][0]["path"] = archive_path
+  (directory / "manifest.json").write_text(
+      json.dumps(payload), encoding="utf-8"
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any("archive path must stay inside" in item for item in failures)
+
+
+@pytest.mark.parametrize("archive_format", (True, 1.0))
+def test_archive_format_must_be_an_integer(tmp_path, archive_format):
+  header_path, payload = make_repo(tmp_path)
+  payload["archives"][0]["format"] = archive_format
+  snapshot_root = write_snapshot(tmp_path, payload)
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "invalid or missing archive fixture metadata" in item
+      for item in failures
+  )
 
 
 def git(root: Path, *arguments: str) -> None:

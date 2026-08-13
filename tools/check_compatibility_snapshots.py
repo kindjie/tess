@@ -8,7 +8,7 @@ import json
 import os
 import re
 import subprocess
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath
 
 from check_public_surface import extract_public_symbols
 from header_manifest import (
@@ -33,6 +33,15 @@ PRERELEASE_RE = re.compile(
     r'^set\(TESS_VERSION_PRERELEASE "([^"]*)"\)', re.MULTILINE
 )
 TARGET_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+WINDOWS_RESERVED_NAMES = {
+    "AUX",
+    "CON",
+    "NUL",
+    "PRN",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
 
 
 def current_version(path: Path) -> str:
@@ -107,12 +116,16 @@ def _snapshot_path(
   if not isinstance(value, str) or not value:
     return None, "missing"
   posix = PurePosixPath(value)
-  windows = PureWindowsPath(value)
   if (
       posix.is_absolute()
-      or windows.is_absolute()
+      or posix.as_posix() != value
       or ".." in posix.parts
-      or ".." in windows.parts
+      or any(
+          PATH_COMPONENT_RE.fullmatch(part) is None
+          or part.endswith((".", " "))
+          or part.split(".", 1)[0].upper() in WINDOWS_RESERVED_NAMES
+          for part in posix.parts
+      )
   ):
     return None, "unsafe"
   try:
@@ -341,9 +354,12 @@ def check_snapshots(
               "directory"
           )
           continue
+        archive_format = archive.get("format")
         if (
             archive_path is None
-            or archive.get("format") != 1
+            or not isinstance(archive_format, int)
+            or isinstance(archive_format, bool)
+            or archive_format != 1
             or archive.get("producer_version") != directory.name
             or not isinstance(archive.get("schema"), str)
             or not archive["schema"]

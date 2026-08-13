@@ -17,8 +17,8 @@ and at every stable minor release. Each directory contains:
 `tools/check_compatibility_snapshots.py` preserves header classes, direct
 aggregate membership, documented public namespace-scope names, and public
 `TESS_*` macro names. It also confines recorded paths to the snapshot, verifies
-fixture metadata, and compares released snapshots byte-for-byte with their
-`v<version>` tags.
+their portable POSIX-relative spelling, verifies fixture metadata, and compares
+released snapshots byte-for-byte with their `v<version>` tags.
 
 The checker deliberately does not parse declaration signatures or model C++
 semantics; it reuses the documentation gate's namespace-name scanner.
