@@ -4,7 +4,7 @@
   package evidence, release-tag-anchored snapshots, checksum-aware deep archive
   fuzzing, and an upgrade guide.
 - Compatibility snapshots preserve header classes, direct aggregate
-  membership, documented public namespace-scope names, public `TESS_*` macro
+  membership, per-header documented public namespace-scope and `TESS_*` macro
   names, consumer/archive metadata, and release-tag immutability without
   maintaining a handwritten declaration-compatibility parser. Compiled
   consumers and integration builds provide the evidence for signatures,

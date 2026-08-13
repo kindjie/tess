@@ -112,6 +112,7 @@ flowchart TB
 
 Maintained notes for implemented areas:
 
+- [Compatibility evidence](compatibility.md)
 - [Shape, coordinate, and key foundation](shape.md)
 - [Storage foundation](storage.md)
 - [Persistence and compatibility](persistence.md)

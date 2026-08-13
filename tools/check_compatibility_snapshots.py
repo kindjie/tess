@@ -69,17 +69,20 @@ def aggregate_membership(repo_root: Path) -> dict[str, list[str]]:
   return result
 
 
-def current_symbols(repo_root: Path, headers: list[str]) -> set[str]:
-  """Return the documented name inventory for compatibility headers."""
-  symbols: set[str] = set()
-  for header in headers:
-    source = GENERATED_HEADER_SOURCES.get(header, header)
-    symbols.update(
-        extract_public_symbols(
-            (repo_root / source).read_text(encoding="utf-8")
-        )
-    )
-  return symbols
+def current_symbols(
+    repo_root: Path, headers: list[str]
+) -> dict[str, list[str]]:
+  """Return documented names keyed by their compatibility header."""
+  return {
+      header: sorted(
+          extract_public_symbols(
+              (
+                  repo_root / GENERATED_HEADER_SOURCES.get(header, header)
+              ).read_text(encoding="utf-8")
+          )
+      )
+      for header in headers
+  }
 
 
 def snapshot_directories(snapshot_root: Path) -> list[Path]:
@@ -164,6 +167,7 @@ def _consumer_project_is_valid(
       or not isinstance(archive_target, str)
       or TARGET_RE.fullmatch(archive_target) is None
       or consumer_target == archive_target
+      or consumer == archive_consumer
   ):
     return False
   consumer_source = _cmake_source_path(project, consumer)
@@ -288,16 +292,33 @@ def check_snapshots(
           )
 
     snapshot_symbols = payload.get("public_symbols")
-    if not _string_list(snapshot_symbols):
-      failures.append(f"{directory.name}: public_symbols must be a string list")
+    if not isinstance(snapshot_symbols, dict):
+      failures.append(f"{directory.name}: public_symbols must be a map")
     else:
-      if current_snapshot and set(snapshot_symbols) != symbols:
+      if current_snapshot and snapshot_symbols != symbols:
         failures.append(
             f"{directory.name}: current public symbol inventory does not "
             "match the snapshot"
         )
-      for missing in sorted(set(snapshot_symbols) - symbols):
-        failures.append(f"{directory.name}: public symbol removed: {missing}")
+      snapshot_compatibility_headers = set()
+      if isinstance(snapshot_headers, dict):
+        for category in ("stable", "optional-stable"):
+          values = snapshot_headers.get(category)
+          if _string_list(values):
+            snapshot_compatibility_headers.update(values)
+      for header in sorted(snapshot_compatibility_headers):
+        values = snapshot_symbols.get(header)
+        if not _string_list(values):
+          failures.append(
+              f"{directory.name}: public symbols for {header} are missing"
+          )
+          continue
+        current = set(symbols.get(header, []))
+        for missing in sorted(set(values) - current):
+          failures.append(
+              f"{directory.name}: public symbol removed from {header}: "
+              f"{missing}"
+          )
 
     consumer, consumer_status = _snapshot_path(
         directory, payload.get("consumer"), "file"

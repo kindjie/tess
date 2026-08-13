@@ -76,6 +76,7 @@ nav:
       - Diagnostics: guide/diagnostics.md
   - Concepts:
       - architecture/README.md
+      - Compatibility evidence: architecture/compatibility.md
       - Shapes: architecture/shape.md
       - Storage: architecture/storage.md
       - Persistence: architecture/persistence.md

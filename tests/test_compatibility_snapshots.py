@@ -67,9 +67,7 @@ namespace tess { void optional_route(int value); }
           "optional-stable": headers["optional-stable"],
       },
       "aggregate_membership": snapshots.aggregate_membership(root),
-      "public_symbols": sorted(
-          snapshots.current_symbols(root, public_headers)
-      ),
+      "public_symbols": snapshots.current_symbols(root, public_headers),
       "consumer": "consumer/main.cc",
       "consumer_project": "consumer",
       "consumer_target": "consumer",
@@ -154,7 +152,7 @@ def test_current_snapshot_must_match_current_inventories(tmp_path):
   payload["aggregate_membership"] = {
       aggregate: [] for aggregate in snapshots.AGGREGATES
   }
-  payload["public_symbols"] = []
+  payload["public_symbols"] = {}
   snapshot_root = write_snapshot(tmp_path, payload)
 
   failures = snapshots.check_snapshots(
@@ -183,6 +181,45 @@ def test_removed_public_symbol_fails(tmp_path):
 
   assert any(
       "public symbol removed" in failure and "stable_route" in failure
+      for failure in failures
+  )
+
+
+def test_public_symbols_are_preserved_per_header(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  tess = tmp_path / "include/tess/tess.h"
+  optional = tmp_path / "include/tess/optional.h"
+  tess.write_text(
+      tess.read_text(encoding="utf-8").replace(
+          "struct StableOptions", "struct SharedName"
+      ),
+      encoding="utf-8",
+  )
+  optional.write_text(
+      optional.read_text(encoding="utf-8").replace(
+          "void optional_route", "struct SharedName {}; void optional_route"
+      ),
+      encoding="utf-8",
+  )
+  public_headers = [
+      "include/tess/pathfinding.h",
+      "include/tess/simulation.h",
+      "include/tess/tess.h",
+      "include/tess/optional.h",
+  ]
+  payload["public_symbols"] = snapshots.current_symbols(
+      tmp_path, public_headers
+  )
+  snapshot_root = write_snapshot(tmp_path, payload)
+  tess.write_text(
+      tess.read_text(encoding="utf-8").replace("SharedName", "RenamedName"),
+      encoding="utf-8",
+  )
+
+  failures = check_previous(tmp_path, snapshot_root, header_path)
+
+  assert any(
+      "public symbol removed from include/tess/tess.h: SharedName" in failure
       for failure in failures
   )
 
@@ -449,6 +486,26 @@ def test_cmake_contract_requires_distinct_targets(tmp_path):
   text = project.read_text(encoding="utf-8")
   project.write_text(
       text.replace("archive_consumer", "consumer"), encoding="utf-8"
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "consumer project must discover tess CONFIG" in item
+      for item in failures
+  )
+
+
+def test_cmake_contract_requires_distinct_sources(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  payload["archive_consumer"] = "consumer/main.cc"
+  snapshot_root = write_snapshot(tmp_path, payload)
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  text = project.read_text(encoding="utf-8")
+  project.write_text(
+      text.replace("../archives/load.cc", "main.cc"), encoding="utf-8"
   )
 
   failures = snapshots.check_snapshots(

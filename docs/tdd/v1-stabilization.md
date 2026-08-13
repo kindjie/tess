@@ -9,7 +9,10 @@ plan is implemented, maintained documentation such as `docs/support.md`,
 the CMake package configuration remain authoritative for shipped behavior.
 
 Implementation divergences are recorded in the
-[1.0 stabilization decision](../decisions/changelog.d/2026-08-11-v1-stabilization-policy.md).
+[1.0 stabilization decision][stabilization-decision].
+
+[stabilization-decision]:
+  ../decisions/CHANGELOG.md#2026-08-11---define-the-enforceable-1x-stability-boundary
 
 ## 2. Summary
 
@@ -469,4 +472,4 @@ source-level declaration model to inventories plus compiled consumers. See the
 [2026-08-12 compatibility evidence decision][compatibility-evidence].
 
 [compatibility-evidence]:
-  ../decisions/changelog.d/2026-08-12-compatibility-evidence-boundary.md
+  ../decisions/CHANGELOG.md#2026-08-12---keep-c-semantics-in-compiled-compatibility-evidence

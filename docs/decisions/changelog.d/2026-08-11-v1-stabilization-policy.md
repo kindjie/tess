@@ -39,14 +39,14 @@
   ordering, duplicate-name, lifetime, and identity cleanups land in v0.13 and
   are documented in the 1.0 upgrade guide.
 - Compatibility snapshots retain header classes, direct aggregate membership,
-  documented public namespace-scope names, and public `TESS_*` macro names.
-  They do not parse C++
-  declarations. Signatures, defaults, aggregate use, fields, overload
-  resolution, and configuration-selected APIs remain protected by immutable
-  compiled consumers, integration builds, and release review. The name
-  inventory is one evidence layer, not a complete proof of source
-  compatibility. Direct aggregate imports remain unconditional and sparse
-  extensions use distinctly named entry points rather than ambiguous overloads.
+  and per-header documented public namespace-scope and `TESS_*` macro names.
+  They do not parse C++ declarations. Signatures, defaults, aggregate use,
+  fields, overload resolution, and configuration-selected APIs remain
+  protected by immutable compiled consumers, integration builds, and release
+  review. The name inventory is one evidence layer, not a complete proof of
+  source compatibility. Direct aggregate imports remain unconditional and
+  sparse extensions use distinctly named entry points rather than ambiguous
+  overloads.
 - Released snapshot bytes are anchored to their `v<version>` tag, with path
   confinement and immutability checked on ordinary changes. Their named
   consumer targets discover and link the candidate installation through
