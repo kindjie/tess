@@ -227,6 +227,113 @@ def test_snapshot_consumer_must_use_installed_package_contract(tmp_path):
   )
 
 
+def test_cmake_contract_cannot_be_satisfied_by_comments(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  project.write_text(
+      """cmake_minimum_required(VERSION 3.25)
+project(empty LANGUAGES CXX)
+#[[
+find_package(tess CONFIG REQUIRED)
+add_executable(consumer main.cc)
+target_link_libraries(consumer PRIVATE tess::tess)
+add_executable(archive_consumer ../archives/load.cc)
+target_link_libraries(archive_consumer PRIVATE tess::tess)
+add_test(NAME consumer COMMAND consumer)
+add_test(NAME archive_consumer
+  COMMAND archive_consumer TESS_SNAPSHOT_DIR)
+]]
+""",
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "consumer project must discover tess CONFIG" in item
+      for item in failures
+  )
+
+
+def test_cmake_contract_binds_sources_to_recorded_targets(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  project.write_text(
+      """find_package(tess CONFIG REQUIRED)
+add_executable(consumer ../archives/load.cc)
+target_link_libraries(consumer PRIVATE tess::tess)
+add_executable(archive_consumer main.cc)
+target_link_libraries(archive_consumer PRIVATE tess::tess)
+add_test(NAME consumer COMMAND archive_consumer)
+add_test(NAME archive_consumer
+  COMMAND consumer TESS_SNAPSHOT_DIR)
+""",
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "consumer project must discover tess CONFIG" in item
+      for item in failures
+  )
+
+
+def test_cmake_contract_distinguishes_equal_source_basenames(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  archive = snapshot_root / "1.0.0-rc.1/archives/load.cc"
+  renamed = archive.with_name("main.cc")
+  archive.rename(renamed)
+  payload["archive_consumer"] = "archives/main.cc"
+  manifest = snapshot_root / "1.0.0-rc.1/manifest.json"
+  manifest.write_text(json.dumps(payload), encoding="utf-8")
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  project.write_text(
+      """find_package(tess CONFIG REQUIRED)
+add_executable(consumer main.cc)
+target_link_libraries(consumer PRIVATE tess::tess)
+add_executable(archive_consumer main.cc)
+target_link_libraries(archive_consumer PRIVATE tess::tess)
+add_test(NAME consumer COMMAND consumer)
+add_test(NAME archive_consumer
+  COMMAND archive_consumer TESS_SNAPSHOT_DIR)
+""",
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "consumer project must discover tess CONFIG" in item
+      for item in failures
+  )
+
+
+def test_missing_consumer_cmakelists_is_reported(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  project.unlink()
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "consumer project must discover tess CONFIG" in item
+      for item in failures
+  )
+
+
 def test_snapshot_paths_cannot_escape_version_directory(tmp_path):
   header_path, payload = make_repo(tmp_path)
   payload["consumer"] = "../outside.cc"

@@ -57,8 +57,8 @@ Compatibility is enforced in layers. Snapshots protect header classes, direct
 aggregate membership, and documented public namespace-scope names. Installed
 and optional-integration builds, immutable source-consumer fixtures, archive
 fixtures, and release review cover C++ semantics. The snapshot checker
-deliberately does not parse C++ and is not represented as a complete proof of
-this policy.
+deliberately does not parse declaration signatures or model C++ semantics and
+is not represented as a complete proof of this policy.
 
 ## Toolchain floors
 

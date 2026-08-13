@@ -5,10 +5,10 @@
   fuzzing, and an upgrade guide.
 - Compatibility snapshots preserve header classes, direct aggregate
   membership, documented public namespace-scope names, consumer/archive
-  metadata, and release-tag immutability without maintaining a handwritten C++
-  parser. Compiled consumers and integration builds provide the evidence for
-  signatures, defaults, fields, overload resolution, aggregate use, and macro
-  configurations.
+  metadata, and release-tag immutability without maintaining a handwritten
+  declaration-compatibility parser. Compiled consumers and integration builds
+  provide the evidence for signatures, defaults, fields, overload resolution,
+  aggregate use, and macro configurations.
 - Release snapshots are append-only and tag-anchored. Release evidence retains
   checksummed actual-version job logs, package validation uses C++20 without an
   unavailable compiler launcher, and compiler-floor checks fail closed.

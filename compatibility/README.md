@@ -19,12 +19,13 @@ aggregate membership, and documented public namespace-scope names. It also
 confines recorded paths to the snapshot, verifies fixture metadata, and
 compares released snapshots byte-for-byte with their `v<version>` tags.
 
-The checker deliberately does not parse C++. Signatures, defaults, aggregate
-use, fields, overload resolution, macro configurations, and other language
-semantics are protected by compiling the immutable consumer projects against
-the candidate package, exercising optional integrations, and reviewing API
-changes. The name inventory is an inexpensive tripwire, not a standalone proof
-of the full support policy.
+The checker deliberately does not parse declaration signatures or model C++
+semantics; it reuses the documentation gate's namespace-name scanner.
+Signatures, defaults, aggregate use, fields, overload resolution, macro
+configurations, and other language semantics are protected by compiling the
+immutable consumer projects against the candidate package, exercising optional
+integrations, and reviewing API changes. The name inventory is an inexpensive
+tripwire, not a standalone proof of the full support policy.
 
 RC1 and stable `1.x.0` source versions fail the checker until their matching
 snapshot exists and exactly matches the current inventories. Pre-1.0

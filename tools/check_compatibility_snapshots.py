@@ -126,6 +126,129 @@ def _snapshot_path(
   return (resolved, "ok") if exists else (None, "missing")
 
 
+def _cmake_without_comments(text: str) -> str:
+  result: list[str] = []
+  index = 0
+  quoted = False
+  escaped = False
+  bracket_end: str | None = None
+  while index < len(text):
+    if bracket_end is not None:
+      if text.startswith(bracket_end, index):
+        index += len(bracket_end)
+        bracket_end = None
+      else:
+        if text[index] == "\n":
+          result.append("\n")
+        index += 1
+      continue
+    character = text[index]
+    if character == '"' and not escaped:
+      quoted = not quoted
+    if character == "#" and not quoted:
+      bracket = re.match(r"#\[(=*)\[", text[index:])
+      if bracket is not None:
+        bracket_end = f"]{bracket.group(1)}]"
+        index += len(bracket.group(0))
+        continue
+      newline = text.find("\n", index)
+      if newline == -1:
+        break
+      result.append("\n")
+      index = newline + 1
+      escaped = False
+      continue
+    result.append(character)
+    escaped = character == "\\" and not escaped
+    if character != "\\":
+      escaped = False
+    index += 1
+  return "".join(result)
+
+
+def _cmake_commands(text: str) -> list[tuple[str, list[str]]]:
+  clean = _cmake_without_comments(text)
+  result: list[tuple[str, list[str]]] = []
+  position = 0
+  while position < len(clean):
+    if clean[position] == '"':
+      position += 1
+      while position < len(clean):
+        if clean[position] == '"' and clean[position - 1] != "\\":
+          position += 1
+          break
+        position += 1
+      continue
+    bracket = re.match(r"\[(=*)\[", clean[position:])
+    if bracket is not None:
+      closing = f"]{bracket.group(1)}]"
+      end = clean.find(closing, position + len(bracket.group(0)))
+      position = len(clean) if end == -1 else end + len(closing)
+      continue
+    match = re.match(r"([A-Za-z_]\w*)", clean[position:])
+    if match is None:
+      position += 1
+      continue
+    name = match.group(1)
+    opening = position + len(name)
+    while opening < len(clean) and clean[opening].isspace():
+      opening += 1
+    if opening >= len(clean) or clean[opening] != "(":
+      position = opening
+      continue
+    index = opening + 1
+    depth = 1
+    quoted = False
+    escaped = False
+    bracket_end: str | None = None
+    while index < len(clean) and depth:
+      if bracket_end is not None:
+        if clean.startswith(bracket_end, index):
+          index += len(bracket_end)
+          bracket_end = None
+        else:
+          index += 1
+        continue
+      character = clean[index]
+      if character == '"' and not escaped:
+        quoted = not quoted
+      elif not quoted:
+        bracket = re.match(r"\[(=*)\[", clean[index:])
+        if bracket is not None:
+          bracket_end = f"]{bracket.group(1)}]"
+          index += len(bracket.group(0))
+          continue
+        if character == "(":
+          depth += 1
+        elif character == ")":
+          depth -= 1
+      escaped = character == "\\" and not escaped
+      if character != "\\":
+        escaped = False
+      index += 1
+    if depth:
+      break
+    body = clean[opening + 1 : index - 1]
+    arguments = [
+        token[1:-1] if token.startswith('"') else token
+        for token in re.findall(r'"(?:\\.|[^"\\])*"|[^\s()]+', body)
+    ]
+    result.append((name.lower(), arguments))
+    position = index
+  return result
+
+
+def _source_argument_matches(
+    argument: str, project: Path, source: Path
+) -> bool:
+  if argument.startswith("$"):
+    return False
+  try:
+    return (project / argument).resolve() == source
+  except (OSError, RuntimeError):
+    return False
+
+
 def _consumer_project_is_valid(
     project: Path,
     consumer: Path,
@@ -133,7 +256,6 @@ def _consumer_project_is_valid(
     archive_consumer: Path,
     archive_target: object,
 ) -> bool:
-  """Check the small immutable consumer project without interpreting CMake."""
   if (
       not isinstance(consumer_target, str)
       or TARGET_RE.fullmatch(consumer_target) is None
@@ -141,23 +263,73 @@ def _consumer_project_is_valid(
       or TARGET_RE.fullmatch(archive_target) is None
   ):
     return False
-  text = (project / "CMakeLists.txt").read_text(encoding="utf-8")
-  compact = re.sub(r"\s+", " ", re.sub(r"#[^\n]*", "", text))
-  required = (
-      "find_package(tess CONFIG REQUIRED)",
-      f"add_executable({consumer_target}",
-      f"add_executable({archive_target}",
-      f"target_link_libraries({consumer_target}",
-      f"target_link_libraries({archive_target}",
-      "tess::tess",
-      f"add_test(NAME {consumer_target}",
-      f"add_test(NAME {archive_target}",
-      "TESS_SNAPSHOT_DIR",
-  )
-  if not all(fragment in compact for fragment in required):
+  cmakelists = project / "CMakeLists.txt"
+  try:
+    commands = _cmake_commands(cmakelists.read_text(encoding="utf-8"))
+  except OSError:
     return False
-  source_names = {consumer.name, archive_consumer.name}
-  return all(name in compact for name in source_names)
+  finds = [args for name, args in commands if name == "find_package"]
+  executables = [
+      args for name, args in commands if name == "add_executable"
+  ]
+  links = [
+      args for name, args in commands if name == "target_link_libraries"
+  ]
+  tests = [args for name, args in commands if name == "add_test"]
+
+  def has_executable(target: str, source: Path) -> bool:
+    return any(
+        args
+        and args[0] == target
+        and any(
+            _source_argument_matches(argument, project, source)
+            for argument in args[1:]
+        )
+        for args in executables
+    )
+
+  def links_tess(target: str) -> bool:
+    return any(
+        args and args[0] == target and "tess::tess" in args[1:]
+        for args in links
+    )
+
+  def has_test(target: str, needs_snapshot: bool) -> bool:
+    for args in tests:
+      if "NAME" not in args or "COMMAND" not in args:
+        continue
+      name_index = args.index("NAME")
+      command_index = args.index("COMMAND")
+      if (
+          name_index + 1 >= len(args)
+          or args[name_index + 1] != target
+          or command_index + 1 >= len(args)
+      ):
+        continue
+      if args[command_index + 1] != target:
+        continue
+      if needs_snapshot and not any(
+          "TESS_SNAPSHOT_DIR" in argument for argument in args
+      ):
+        continue
+      return True
+    return False
+
+  return (
+      any(
+          args
+          and args[0] == "tess"
+          and "CONFIG" in args[1:]
+          and "REQUIRED" in args[1:]
+          for args in finds
+      )
+      and has_executable(consumer_target, consumer)
+      and links_tess(consumer_target)
+      and has_test(consumer_target, False)
+      and has_executable(archive_target, archive_consumer)
+      and links_tess(archive_target)
+      and has_test(archive_target, True)
+  )
 
 
 def _string_list(value: object) -> bool:
