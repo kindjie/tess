@@ -119,7 +119,9 @@
   apply C++ array/function parameter adjustment, preserve element qualifiers
   and later array dimensions, discard non-semantic first bounds, parameter
   names, and grouped-pointer top-level qualifiers, and anchor outer callable
-  identity ahead of nested parameter declarators.
+  identity ahead of nested parameter declarators. Redundant parentheses around
+  array/function parameter names and named top-level-cv pointer or
+  member-pointer declarators normalize to the same adjusted function type.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

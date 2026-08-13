@@ -50,7 +50,8 @@
   unnamed-array parameter types, and phase-2 line-spliced literals/comments
   retain their compatibility identity; array and function parameter
   adjustment, grouped-pointer qualifiers, and nested parameter declarators
-  follow C++ function-type and outer-callable identity rules;
+  follow C++ function-type and outer-callable identity rules, including
+  parenthesized parameter names and named top-level-cv pointers;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

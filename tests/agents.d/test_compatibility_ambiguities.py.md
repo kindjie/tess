@@ -9,5 +9,5 @@
   redeclaration signatures including complex/template parameters, constraints,
   and member qualifiers, root-scope imports, member type aliases, elaborated or
   unnamed-array parameter types, C++ array/function parameter adjustment,
-  nested declarator identity, line splicing, and symmetric historical/current
-  callable identities.
+  nested and parenthesized declarator identity, named top-level-cv pointers,
+  line splicing, and symmetric historical/current callable identities.

@@ -1217,3 +1217,39 @@ def test_user_defined_pointer_return_retains_factory_identity(tmp_path):
         repo, snapshot_root, header_path, "1.1.1"
     )
     assert_overload(failures, "factory")
+
+
+def test_parameter_names_and_top_level_pointer_cv_are_nonsemantic(tmp_path):
+  variants = (
+      ("int * const value", "int *renamed"),
+      ("int C::* const value", "int C::*renamed"),
+      ("int (value)[3]", "int *renamed"),
+      ("int (callback)(double)", "int (*renamed)(double)"),
+  )
+  for index, (before, after) in enumerate(variants):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    prefix = "struct C {};\n" if "C::*" in before else ""
+    text = header.read_text(encoding="utf-8").replace(
+        "namespace tess {",
+        f"namespace tess {{\n{prefix}void evaluate({before});",
+    )
+    header.write_text(text, encoding="utf-8")
+    refresh_payload(repo, payload)
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            "[[nodiscard]] auto stable_route",
+            f"void evaluate({after});\n[[nodiscard]] auto stable_route",
+        ),
+        encoding="utf-8",
+    )
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+    assert not any(
+        "overload added to existing callable" in failure
+        and "evaluate" in failure
+        for failure in failures
+    ), failures

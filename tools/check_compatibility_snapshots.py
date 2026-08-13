@@ -212,6 +212,15 @@ def _canonical_parameters(tokens: list[str]) -> tuple[str, ...]:
   for segment in segments:
     if "=" in segment:
       segment = segment[: segment.index("=")]
+    segment = _normalize_parenthesized_parameter_name(segment)
+    if len(segment) >= 3 and re.fullmatch(
+        r"[A-Za-z_]\w*", segment[-1]
+    ):
+      qualifier = len(segment) - 2
+      if segment[qualifier] in {"const", "volatile"}:
+        indirection = qualifier - 1
+        if indirection >= 0 and segment[indirection] in {"*", "&", "&&"}:
+          segment = segment[:qualifier]
     function_opening = _ContractParser._first_top_level_round(segment)
     if function_opening is not None and not _grouped_indirection_before(
         segment, function_opening
@@ -329,6 +338,24 @@ def _grouped_indirection_before(tokens: list[str], limit: int) -> bool:
     ):
       return True
   return False
+
+
+def _normalize_parenthesized_parameter_name(tokens: list[str]) -> list[str]:
+  """Remove redundant parentheses around an array/function parameter name."""
+  for opening, token in enumerate(tokens):
+    if token != "(" or opening == 0:
+      continue
+    closing = _ContractParser._matching_round_bracket(tokens, opening)
+    if closing is None or closing + 1 >= len(tokens):
+      continue
+    group = tokens[opening + 1 : closing]
+    if (
+        len(group) == 1
+        and re.fullmatch(r"[A-Za-z_]\w*", group[0])
+        and tokens[closing + 1] in {"(", "["}
+    ):
+      return tokens[:opening] + tokens[closing + 1 :]
+  return tokens
 
 
 def _normalize_grouped_parameter_pointer(tokens: list[str]) -> list[str]:
