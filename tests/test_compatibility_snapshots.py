@@ -149,6 +149,13 @@ def assert_aggregate_break(failures: list[str], name: str) -> None:
   ), failures
 
 
+def assert_overload(failures: list[str], name: str) -> None:
+  assert any(
+      "overload added to existing callable" in failure and name in failure
+      for failure in failures
+  ), failures
+
+
 def test_valid_snapshot_is_a_subset_of_current_sources(tmp_path):
   header_path, payload = make_repo(tmp_path)
   snapshot_root = write_snapshot(tmp_path, payload)
@@ -329,11 +336,7 @@ def test_existing_callable_cannot_gain_an_ambiguous_overload(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "set_limit" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "set_limit")
 
 
 def test_existing_callable_cannot_gain_base_overloads_through_using(tmp_path):
@@ -359,11 +362,7 @@ def test_existing_callable_cannot_gain_base_overloads_through_using(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "set_limit" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "set_limit")
 
 
 def test_existing_operator_cannot_gain_base_overloads_through_using(tmp_path):
@@ -620,11 +619,7 @@ def test_relational_dependent_inherited_constructor_uses_derived_identity(
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "StableBase" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "StableBase")
 
 
 def test_bare_relational_dependent_inherited_constructor_uses_derived_identity(
@@ -658,11 +653,7 @@ def test_bare_relational_dependent_inherited_constructor_uses_derived_identity(
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "StableBase" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "StableBase")
 
 
 def test_nested_template_relational_inherited_constructor_uses_derived_identity(
@@ -698,11 +689,7 @@ def test_nested_template_relational_inherited_constructor_uses_derived_identity(
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "StableBase" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "StableBase")
 
 
 def test_terminal_dependent_base_after_nested_relation_is_inherited_constructor(
@@ -737,11 +724,7 @@ def test_terminal_dependent_base_after_nested_relation_is_inherited_constructor(
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "StableOptions")
 
 
 def test_terminal_nested_base_after_relation_is_inherited_constructor(
@@ -777,11 +760,7 @@ def test_terminal_nested_base_after_relation_is_inherited_constructor(
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "StableOptions")
 
 
 def test_single_relational_terminal_base_is_inherited_constructor(tmp_path):
@@ -813,11 +792,7 @@ def test_single_relational_terminal_base_is_inherited_constructor(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "StableOptions")
 
 
 def test_non_template_middle_keeps_terminal_inherited_constructor(tmp_path):
@@ -851,11 +826,7 @@ def test_non_template_middle_keeps_terminal_inherited_constructor(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "StableOptions")
 
 
 def test_relational_terminal_base_arguments_keep_inherited_constructor(
@@ -891,11 +862,7 @@ def test_relational_terminal_base_arguments_keep_inherited_constructor(
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "StableOptions" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "StableOptions")
 
 
 def test_qualified_relational_inherited_constructor_uses_derived_identity(
@@ -932,11 +899,7 @@ def test_qualified_relational_inherited_constructor_uses_derived_identity(
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "StableBase" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "StableBase")
 
 
 def test_namespace_name_does_not_fake_inherited_constructor(tmp_path):
@@ -971,11 +934,7 @@ def test_namespace_name_does_not_fake_inherited_constructor(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "evaluate" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "evaluate")
 
 
 def test_template_argument_name_does_not_fake_inherited_constructor():
@@ -1090,6 +1049,16 @@ def test_relational_member_name_does_not_fake_constructor(tmp_path):
   )
 
 
+def test_relational_template_member_name_does_not_fake_constructor(tmp_path):
+  assert_later_constructor_breaks(
+      tmp_path,
+      "template<class> struct Other { static constexpr int Base = 0; };\n"
+      "template<bool> struct Holder { static void Base(int value); };\n"
+      "struct StableOptions : Holder<Other<int>::Base < 1> {\n"
+      "  using Holder<Other<int>::Base < 1>::Base;",
+  )
+
+
 def test_decltype_argument_name_does_not_fake_constructor(tmp_path):
   assert_later_constructor_breaks(
       tmp_path,
@@ -1113,14 +1082,39 @@ def test_dependent_decltype_argument_name_does_not_fake_constructor(tmp_path):
   )
 
 
-def test_relational_base_does_not_absorb_later_public_base():
-  contract = extract_api_contract(
-      "template<bool> struct Base {}; struct Other {}; "
-      "constexpr int N=0, M=1; "
-      "class Stable : Base<N < M>, public Other { public: int x; };"
+def test_decltype_inherited_constructor_is_conservatively_rejected(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "struct Base { Base(int value); };\n"
+      "Base make();\n"
+      "struct StableOptions : Base {\n"
+      "  using decltype(make())::Base;",
+  )
+  header.write_text(text, encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert "aggregate Stable" not in contract
+  assert_aggregate_break(failures, "StableOptions")
+
+
+def test_relational_base_does_not_absorb_later_public_base():
+  declarations = (
+      "class Stable : Base<N < M>, public Other { public: int x; };",
+      "class Stable : public Base<N < M>, Other { public: int x; };",
+      "class Stable : public Base<N < M>, ::Other { public: int x; };",
+  )
+  for declaration in declarations:
+    contract = extract_api_contract(
+        "template<bool> struct Base {}; struct Other {}; "
+        "constexpr int N=0, M=1; " + declaration
+    )
+
+    assert "aggregate Stable" not in contract
 
 
 def test_relational_template_expressions_preserve_callable_identity(tmp_path):
@@ -1153,11 +1147,7 @@ def test_relational_template_expressions_preserve_callable_identity(tmp_path):
         repo, snapshot_root, header_path, "1.1.1"
     )
 
-    assert any(
-        "overload added to existing callable" in failure
-        and "evaluate" in failure
-        for failure in failures
-  ), failures
+    assert_overload(failures, "evaluate")
 
 
 def test_unparenthesized_relational_template_expressions_keep_identity(
@@ -1190,11 +1180,7 @@ def test_unparenthesized_relational_template_expressions_keep_identity(
         repo, snapshot_root, header_path, "1.1.1"
     )
 
-    assert any(
-        "overload added to existing callable" in failure
-        and "evaluate" in failure
-        for failure in failures
-    ), failures
+    assert_overload(failures, "evaluate")
 
 
 def test_relational_template_fallback_ignores_nested_default_call(tmp_path):
@@ -1223,11 +1209,7 @@ def test_relational_template_fallback_ignores_nested_default_call(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "evaluate" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "evaluate")
 
 
 def test_relational_template_with_requires_keeps_callable_identity(tmp_path):
@@ -1262,11 +1244,7 @@ def test_relational_template_with_requires_keeps_callable_identity(tmp_path):
         repo, snapshot_root, header_path, "1.1.1"
     )
 
-    assert any(
-        "overload added to existing callable" in failure
-        and "evaluate" in failure
-        for failure in failures
-    ), failures
+    assert_overload(failures, "evaluate")
 
 
 def test_trailing_template_calls_do_not_steal_callable_identity(tmp_path):
@@ -1299,11 +1277,7 @@ def test_trailing_template_calls_do_not_steal_callable_identity(tmp_path):
         repo, snapshot_root, header_path, "1.1.1"
     )
 
-    assert any(
-        "overload added to existing callable" in failure
-        and "evaluate" in failure
-        for failure in failures
-    ), failures
+    assert_overload(failures, "evaluate")
 
 
 def test_callable_template_data_member_is_not_mistaken_for_function():
@@ -1429,11 +1403,7 @@ def test_grouped_function_declarator_retains_callable_identity(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "evaluate" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "evaluate")
 
   header.write_text(
       text.replace(
@@ -1479,11 +1449,7 @@ def test_annotated_grouped_function_retains_callable_identity(tmp_path):
         repo, snapshot_root, header_path, "1.1.1"
     )
 
-    assert any(
-        "overload added to existing callable" in failure
-        and "evaluate" in failure
-        for failure in failures
-    ), failures
+    assert_overload(failures, "evaluate")
 
 
 def test_grouped_function_pointer_return_retains_identity(tmp_path):
@@ -1509,11 +1475,7 @@ def test_grouped_function_pointer_return_retains_identity(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "factory" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "factory")
 
 
 def test_annotated_grouped_pointer_return_retains_identity(tmp_path):
@@ -1546,11 +1508,7 @@ def test_annotated_grouped_pointer_return_retains_identity(tmp_path):
         repo, snapshot_root, header_path, "1.1.1"
     )
 
-    assert any(
-        "overload added to existing callable" in failure
-        and "factory" in failure
-        for failure in failures
-    ), failures
+    assert_overload(failures, "factory")
 
 
 def test_relational_template_grouped_function_keeps_identity(tmp_path):
@@ -1578,11 +1536,7 @@ def test_relational_template_grouped_function_keeps_identity(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "evaluate" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "evaluate")
 
 
 def test_requires_expression_body_is_part_of_callable_contract(tmp_path):
@@ -1665,11 +1619,7 @@ def test_elaborated_types_do_not_hide_inline_overloads(tmp_path):
         repo, snapshot_root, header_path, "1.1.1"
     )
 
-    assert any(
-        "overload added to existing callable" in failure
-        and "evaluate" in failure
-        for failure in failures
-    ), failures
+    assert_overload(failures, "evaluate")
 
 
 def test_function_like_annotation_before_type_preserves_body_contract(
@@ -1881,11 +1831,7 @@ def test_attributed_callable_cannot_gain_an_ambiguous_overload(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "stable_route" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "stable_route")
 
 
 def test_snapshotted_macro_cannot_be_undefined(tmp_path):
@@ -1987,6 +1933,12 @@ def test_existing_aggregate_rejects_parenthesized_constructor_specifiers(
       "  explicit StableOptions() = default;\n",
       "  template <class T> StableOptions(T value);\n",
       "  template <int N = (1 < 2)> StableOptions();\n",
+      "  template <int N = 1 < 2> StableOptions();\n",
+      "  template <class T> requires (sizeof(T) > 0) StableOptions(T);\n",
+      "  template <class T> requires "
+      "(sizeof(T) > sizeof(StableOptions*)) StableOptions(T);\n",
+      "  template <int N = (1 > sizeof(StableOptions*))> "
+      "StableOptions();\n",
       '  [[deprecated("old")]] StableOptions() = default;\n',
       '  TESS_DEPRECATED("old") StableOptions() = default;\n',
       '  StableOptions [[deprecated("old")]] () = default;\n',
@@ -2059,11 +2011,7 @@ def test_macro_annotated_callable_cannot_gain_an_overload(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
 
-  assert any(
-      "overload added to existing callable" in failure
-      and "set_limit" in failure
-      for failure in failures
-  ), failures
+  assert_overload(failures, "set_limit")
 
 
 def test_destructor_keeps_aggregate_and_has_distinct_callable_identity(

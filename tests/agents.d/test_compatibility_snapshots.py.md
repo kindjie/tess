@@ -31,7 +31,9 @@
   conditional-explicit constructor/object disambiguation, including elaborated
   qualified types, constructor templates with relational defaults, template
   names nested in dependent `decltype` expressions, spaced nested template
-  closings, and relational comma-separated base clauses,
+  closings, conservative ambiguous inherited-constructor rejection, leading
+  constrained constructor templates, and relational comma-separated base
+  clauses in either access ordering,
   constructor-like parameter spellings, and per-configuration
   member and base-clause aggregate availability, anonymous type objects,
   stable-macro redefinition and undefinition, release-tag byte and directory

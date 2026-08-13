@@ -185,52 +185,20 @@ def qualified_declares_type_name(tokens: list[str], name: str) -> bool:
   rightmost_template = _rightmost_template_component(tokens)
   if rightmost_template is not None:
     return rightmost_template == name
-  qualified_templates: list[str] = []
-  round_depth = 0
-  square_depth = 0
-  brace_depth = 0
-  for index, token in enumerate(tokens[:-1]):
-    if token == "(":
-      round_depth += 1
-      continue
-    if token == ")" and round_depth:
-      round_depth -= 1
-      continue
-    if token in {"[", "[["}:
-      square_depth += 1
-      continue
-    if token in {"]", "]]"} and square_depth:
-      square_depth -= 1
-      continue
-    if token == "{":
-      brace_depth += 1
-      continue
-    if token == "}" and brace_depth:
-      brace_depth -= 1
-      continue
-    if round_depth or square_depth or brace_depth:
-      continue
-    if (
-        not IDENTIFIER_RE.fullmatch(token)
-        or tokens[index + 1] != "<"
-    ):
-      continue
-    dependent = index >= 2 and tokens[index - 2 : index] == [
-        "::",
-        "template",
-    ]
-    qualified = index >= 1 and tokens[index - 1] == "::"
-    if not dependent and not (
-        qualified and _follows_closed_template_component(tokens, index)
-    ):
-      continue
-    qualified_templates.append(token)
-  if qualified_templates and qualified_templates[-1] == name:
-    return True
   terminal_template = _terminal_template_component(tokens)
   if terminal_template is not None:
     return terminal_template == name
   return False
+
+
+def qualified_may_declare_type_name(tokens: list[str], name: str) -> bool:
+  """Conservatively identify ambiguous inherited-constructor qualifiers."""
+  if qualified_declares_type_name(tokens, name):
+    return True
+  return any(
+      token == name and index + 1 < len(tokens) and tokens[index + 1] == "<"
+      for index, token in enumerate(tokens)
+  ) or "decltype" in tokens
 
 
 def _rightmost_template_component(tokens: list[str]) -> str | None:
@@ -283,24 +251,6 @@ def _template_prefix_balanced(tokens: list[str]) -> bool:
       elif token == ">>" and depth:
         depth = max(0, depth - 2)
   return depth == 0
-
-
-def _follows_closed_template_component(
-    tokens: list[str], component: int
-) -> bool:
-  position = component - 2
-  while position >= 0:
-    if tokens[position] in {">", ">>"}:
-      return True
-    if (
-        IDENTIFIER_RE.fullmatch(tokens[position])
-        and position
-        and tokens[position - 1] == "::"
-    ):
-      position -= 2
-      continue
-    return False
-  return False
 
 
 def _terminal_template_component(tokens: list[str]) -> str | None:
@@ -690,6 +640,12 @@ class _ContractParser:
       access_conditions: list[str],
       eligible: bool,
   ) -> bool:
+    if eligible and self._is_ambiguous_inherited_constructor(tokens):
+      self.contracts.append(
+          f"aggregate-break {_qualified(names)}:"
+          "@ambiguous-inherited-constructor@"
+      )
+      return eligible
     if not eligible or not self._breaks_aggregate(
         tokens, names, access == {True}
     ):
@@ -711,6 +667,29 @@ class _ContractParser:
         f"{condition or '@conditional-access@'}"
     )
     return True
+
+  @staticmethod
+  def _is_ambiguous_inherited_constructor(tokens: list[str]) -> bool:
+    if not tokens or tokens[0] != "using" or "=" in tokens:
+      return False
+    if "::" not in tokens:
+      return False
+    separator = len(tokens) - 1 - tokens[::-1].index("::")
+    right = next(
+        (
+            token
+            for token in tokens[separator + 1 :]
+            if IDENTIFIER_RE.fullmatch(token)
+        ),
+        None,
+    )
+    if right is None:
+      return False
+    qualifier = tokens[1:separator]
+    return (
+        not qualified_declares_type_name(qualifier, right)
+        and qualified_may_declare_type_name(qualifier, right)
+    )
 
   @classmethod
   def _breaks_aggregate(
@@ -835,22 +814,8 @@ class _ContractParser:
         if token not in DECLARATION_SPECIFIERS
     ]
     if prefix and prefix[0] == "template":
-      depth = 0
-      round_depth = 0
-      for index, token in enumerate(prefix[1:], start=1):
-        if token == "(" and depth:
-          round_depth += 1
-        elif token == ")" and round_depth:
-          round_depth -= 1
-        elif token == "<" and round_depth == 0:
-          depth += 1
-        elif token == ">" and round_depth == 0:
-          depth -= 1
-        elif token == ">>" and round_depth == 0:
-          depth -= 2
-        if depth == 0 and token in {">", ">>"}:
-          prefix = prefix[index + 1 :]
-          break
+      constructor = len(prefix) - 1 - prefix[::-1].index(type_name)
+      prefix = prefix[constructor:]
     return opening if prefix == [type_name] else None
 
   @staticmethod
@@ -929,6 +894,22 @@ class _ContractParser:
                   index + 1 < len(bases)
                   and bases[index + 1]
                   in {"public", "protected", "private", "virtual"}
+              )
+              or (
+                  type_kind == "class"
+                  and any(
+                      access in segments[-1]
+                      for access in {"public", "protected", "private"}
+                  )
+                  and index + 1 < len(bases)
+                  and (
+                      IDENTIFIER_RE.fullmatch(bases[index + 1])
+                      or (
+                          bases[index + 1] == "::"
+                          and index + 2 < len(bases)
+                          and IDENTIFIER_RE.fullmatch(bases[index + 2])
+                      )
+                  )
               )
           )
       ):

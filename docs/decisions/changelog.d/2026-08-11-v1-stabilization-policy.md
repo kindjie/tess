@@ -96,7 +96,10 @@
   Elaborated qualified objects remain data, and template names nested in
   dependent `decltype` expressions or spaced nested template arguments cannot
   impersonate the qualifier's owning type. Constructor templates and relational
-  comma-separated base clauses retain accurate aggregate evidence.
+  comma-separated base clauses retain accurate aggregate evidence, including
+  leading constraints and either base-access ordering. Lexically ambiguous
+  inherited-constructor imports are rejected conservatively rather than
+  weakening a snapshotted aggregate or overload set.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

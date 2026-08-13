@@ -35,7 +35,10 @@
   aggregate-breaking; elaborated qualified objects remain data and template
   names nested in dependent `decltype` expressions or spaced nested template
   arguments cannot impersonate an owning type; constructor templates and
-  relational comma-separated base clauses preserve aggregate evidence;
+  leading constraints preserve constructor identity, relational comma-separated
+  base clauses preserve aggregate evidence in either access ordering, and
+  lexically ambiguous inherited-constructor imports are rejected
+  conservatively;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance
