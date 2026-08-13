@@ -36,9 +36,10 @@
   names nested in dependent `decltype` expressions or spaced nested template
   arguments cannot impersonate an owning type; constructor templates and
   leading constraints preserve constructor identity, relational comma-separated
-  base clauses preserve aggregate evidence in either access ordering, and
-  lexically ambiguous inherited-constructor imports are rejected
-  conservatively;
+  base clauses preserve aggregate evidence in either access ordering without
+  splitting ordinary multi-argument base templates, and lexically ambiguous
+  using-imports are checked conservatively as both constructors and ordinary
+  overloads;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

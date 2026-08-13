@@ -110,20 +110,25 @@ def _callable_identity(contract: str) -> str | None:
 
 
 def _using_callable_identity(contract: str) -> str | None:
+  identities = _using_callable_identities(contract)
+  return next(iter(identities)) if len(identities) == 1 else None
+
+
+def _using_callable_identities(contract: str) -> set[str]:
   match = re.match(r"^member (.+?)(?<!:):(?!:)(.*)$", contract)
   if match is None:
-    return None
+    return set()
   scope, declaration = match.groups()
   tokens = _tokens(declaration)
   if "using" not in tokens or "::" not in tokens:
-    return None
+    return set()
   position = len(tokens) - 1 - tokens[::-1].index("::")
   if "=" in tokens[:position]:
-    return None
+    return set()
   suffix = tokens[position + 1 :]
   if suffix and suffix[0] == "operator":
     name = "operator" + "".join(suffix[1:])
-    return f"{scope}::{name}" if name != "operator" else None
+    return {f"{scope}::{name}"} if name != "operator" else set()
   name = next(
       (
           token
@@ -133,11 +138,15 @@ def _using_callable_identity(contract: str) -> str | None:
       None,
   )
   if name is None:
-    return None
+    return set()
   owner = scope.rsplit("::", 1)[-1]
   qualifier = tokens[tokens.index("using") + 1 : position]
-  inherited = qualified_may_declare_type_name(qualifier, name)
-  return f"{scope}::{owner if inherited else name}"
+  ordinary = f"{scope}::{name}"
+  if qualified_declares_type_name(qualifier, name):
+    return {f"{scope}::{owner}"}
+  if qualified_may_declare_type_name(qualifier, name):
+    return {ordinary, f"{scope}::{owner}"}
+  return {ordinary}
 
 
 def _macro_identity(contract: str, category: str = "macro") -> str | None:
@@ -597,10 +606,15 @@ def check_snapshots(
                 f"{directory.name}: aggregate compatibility changed: "
                 f"{header}: {addition}"
             )
-          identity = _callable_identity(addition) or _using_callable_identity(
-              addition
-          )
-          if identity is not None and identity in snapshot_callables:
+          identities = {
+              identity
+              for identity in (
+                  _callable_identity(addition),
+                  *_using_callable_identities(addition),
+              )
+              if identity is not None
+          }
+          if identities & snapshot_callables:
             failures.append(
                 f"{directory.name}: overload added to existing callable: "
                 f"{header}: {addition}"

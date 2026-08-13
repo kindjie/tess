@@ -528,6 +528,7 @@ jobs:
           tests/test_packaging_recipes.py
           tests/test_benchmark_tools.py
           tests/test_branding_assets.py
+          tests/test_compatibility_ambiguities.py
           tests/test_compatibility_snapshots.py
           tests/test_check_public_surface.py
           tests/test_check_public_docs.py

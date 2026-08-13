@@ -854,7 +854,24 @@ class _ContractParser:
             if not result and conditions
         }
     )
+    if possible and cls._ambiguous_base_clause(tokens, type_kind):
+      breaks.append("@ambiguous-base-clause@")
     return possible, breaks
+
+  @staticmethod
+  def _ambiguous_base_clause(tokens: list[str], type_kind: str) -> bool:
+    if type_kind != "class" or ":" not in tokens:
+      return False
+    bases = tokens[tokens.index(":") + 1 :]
+    return any(
+        token == ","
+        and index
+        and bases[index - 1] in {">", ">>"}
+        and index + 1 < len(bases)
+        and bases[index + 1]
+        not in {"public", "protected", "private", "virtual"}
+        for index, token in enumerate(bases)
+    )
 
   @staticmethod
   def _aggregate_base_variant_possible(
@@ -894,22 +911,6 @@ class _ContractParser:
                   index + 1 < len(bases)
                   and bases[index + 1]
                   in {"public", "protected", "private", "virtual"}
-              )
-              or (
-                  type_kind == "class"
-                  and any(
-                      access in segments[-1]
-                      for access in {"public", "protected", "private"}
-                  )
-                  and index + 1 < len(bases)
-                  and (
-                      IDENTIFIER_RE.fullmatch(bases[index + 1])
-                      or (
-                          bases[index + 1] == "::"
-                          and index + 2 < len(bases)
-                          and IDENTIFIER_RE.fullmatch(bases[index + 2])
-                      )
-                  )
               )
           )
       ):

@@ -1102,21 +1102,6 @@ def test_decltype_inherited_constructor_is_conservatively_rejected(tmp_path):
   assert_aggregate_break(failures, "StableOptions")
 
 
-def test_relational_base_does_not_absorb_later_public_base():
-  declarations = (
-      "class Stable : Base<N < M>, public Other { public: int x; };",
-      "class Stable : public Base<N < M>, Other { public: int x; };",
-      "class Stable : public Base<N < M>, ::Other { public: int x; };",
-  )
-  for declaration in declarations:
-    contract = extract_api_contract(
-        "template<bool> struct Base {}; struct Other {}; "
-        "constexpr int N=0, M=1; " + declaration
-    )
-
-    assert "aggregate Stable" not in contract
-
-
 def test_relational_template_expressions_preserve_callable_identity(tmp_path):
   declarations = (
       "template < int N = ( 1 < 2 ) > void evaluate ( int value )",
