@@ -21,6 +21,8 @@ compares released snapshots byte-for-byte with their `v<version>` tags.
 
 The checker deliberately does not parse declaration signatures or model C++
 semantics; it reuses the documentation gate's namespace-name scanner.
+Consumer `CMakeLists.txt` files use one canonical generated form so the checker
+can compare them exactly instead of interpreting the CMake language.
 Signatures, defaults, aggregate use, fields, overload resolution, macro
 configurations, and other language semantics are protected by compiling the
 immutable consumer projects against the candidate package, exercising optional

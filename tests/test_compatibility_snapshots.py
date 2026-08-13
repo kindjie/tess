@@ -374,6 +374,71 @@ def test_cmake_contract_rejects_interface_only_linkage(tmp_path):
   )
 
 
+def test_cmake_contract_rejects_inactive_test_configuration(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  text = project.read_text(encoding="utf-8")
+  project.write_text(
+      text.replace(
+          "add_test(NAME consumer COMMAND consumer)",
+          "add_test(NAME consumer COMMAND consumer CONFIGURATIONS Never)",
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "consumer project must discover tess CONFIG" in item
+      for item in failures
+  )
+
+
+def test_cmake_contract_rejects_link_scope_switch(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  text = project.read_text(encoding="utf-8")
+  project.write_text(
+      text.replace(
+          "PRIVATE tess::tess", "PRIVATE other INTERFACE tess::tess"
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "consumer project must discover tess CONFIG" in item
+      for item in failures
+  )
+
+
+def test_cmake_contract_rejects_extra_executable_source(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  text = project.read_text(encoding="utf-8")
+  project.write_text(
+      text.replace("consumer main.cc)", "consumer main.cc extra.cc)"),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "consumer project must discover tess CONFIG" in item
+      for item in failures
+  )
+
+
 def test_cmake_contract_binds_sources_to_recorded_targets(tmp_path):
   header_path, payload = make_repo(tmp_path)
   snapshot_root = write_snapshot(tmp_path, payload)
