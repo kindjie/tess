@@ -70,27 +70,56 @@ def parse_api_headers(manifest_text: str) -> list[str]:
     return headers_in_classes(manifest, *HEADER_CLASSES)
 
 
-def strip_comments(line: str, in_block_comment: bool) -> tuple[str, bool]:
-    """Remove // and /* */ comment text from one line."""
+def strip_comments(line: str, state: bool | str) -> tuple[str, bool | str]:
+    """Remove comments without interpreting markers inside C++ literals."""
+    lexical_state = "block" if state is True else (state or "")
     out: list[str] = []
     i = 0
     while i < len(line):
-        if in_block_comment:
+        if lexical_state == "block":
             end = line.find("*/", i)
             if end == -1:
-                return "".join(out), True
+                return "".join(out), lexical_state
             i = end + 2
-            in_block_comment = False
+            lexical_state = ""
+            continue
+        if lexical_state.startswith("raw:"):
+            terminator = ")" + lexical_state.removeprefix("raw:") + '"'
+            end = line.find(terminator, i)
+            if end == -1:
+                return "".join(out), lexical_state
+            i = end + len(terminator)
+            lexical_state = ""
             continue
         if line.startswith("//", i):
             break
         if line.startswith("/*", i):
-            in_block_comment = True
+            lexical_state = "block"
             i += 2
+            continue
+        raw = re.match(r'R"([^\s()\\]{0,16})\(', line[i:])
+        if raw is not None:
+            out.append(raw.group(0))
+            i += len(raw.group(0))
+            lexical_state = f"raw:{raw.group(1)}"
+            continue
+        if line[i] in {'"', "'"}:
+            quote = line[i]
+            out.append(quote)
+            i += 1
+            while i < len(line):
+                out.append(line[i])
+                if line[i] == "\\" and i + 1 < len(line):
+                    i += 1
+                    out.append(line[i])
+                elif line[i] == quote:
+                    i += 1
+                    break
+                i += 1
             continue
         out.append(line[i])
         i += 1
-    return "".join(out), in_block_comment
+    return "".join(out), lexical_state
 
 
 def _is_namespace_scope(stack: list[tuple[str, bool]]) -> bool:

@@ -5,4 +5,6 @@
   public base templates, full class/namespace using-declarator lists, alias and
   dependent/transitive inherited callable hiding, namespace imports,
   inaccessible/namespace-distinct base exclusions, cross-header callable and
-  macro identities, and symmetric historical/current callable identities.
+  macro identities, namespace/type alias scope and qualification, canonical
+  redeclaration signatures including complex/template parameters, constraints,
+  and member qualifiers, and symmetric historical/current callable identities.

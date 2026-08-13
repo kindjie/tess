@@ -194,6 +194,89 @@ def test_namespace_using_directive_participates_in_lookup(tmp_path):
   assert_overload(failures, "tess")
 
 
+def test_namespace_alias_using_directive_participates_in_lookup(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "namespace tess {",
+      "namespace a::external { void evaluate(int); }\n"
+      "namespace tess {\nnamespace ext = a::external;\n"
+      "using namespace ext;",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "[[nodiscard]] auto stable_route",
+          "void evaluate(double);\n[[nodiscard]] auto stable_route",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "tess")
+
+
+def test_namespace_alias_chain_participates_in_lookup(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "namespace tess {",
+      "namespace a { void evaluate(int); }\nnamespace tess {\n"
+      "namespace x = a; namespace y = x; using namespace y;",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "[[nodiscard]] auto stable_route",
+          "void evaluate(double);\n[[nodiscard]] auto stable_route",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "tess")
+
+
+def test_global_namespace_import_and_base_preserve_qualification(tmp_path):
+  variants = (
+      "namespace a { void evaluate(int); }\n"
+      "namespace tess { namespace a { void other(int); } "
+      "using namespace ::a;",
+      "struct Root { void evaluate(int); };\n"
+      "namespace tess { struct Root { void other(int); }; "
+      "struct StableOptions : ::Root {",
+  )
+  for index, replacement in enumerate(variants):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    marker = "namespace tess {" if index == 0 else "struct StableOptions {"
+    text = header.read_text(encoding="utf-8").replace(marker, replacement)
+    header.write_text(text, encoding="utf-8")
+    refresh_payload(repo, payload)
+    snapshot_root = write_snapshot(repo, payload)
+    insertion = (
+        "void evaluate(double);\n[[nodiscard]] auto stable_route"
+        if index == 0
+        else "  void evaluate(double);\n  int max_steps = 1;"
+    )
+    current = text.replace(
+        "[[nodiscard]] auto stable_route" if index == 0 else "  int max_steps = 1;",
+        insertion,
+    )
+    header.write_text(current, encoding="utf-8")
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+    assert_overload(failures, "tess" if index == 0 else "StableOptions")
+
+
 def test_namespace_overloads_are_checked_across_headers(tmp_path):
   header_path, payload = make_repo(tmp_path)
   first = tmp_path / "include/tess/pathfinding.h"
@@ -214,6 +297,229 @@ def test_namespace_overloads_are_checked_across_headers(tmp_path):
       tmp_path, snapshot_root, header_path, "1.1.1"
   )
   assert_overload(failures, "tess")
+
+
+def test_identical_cross_header_redeclaration_is_compatible(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  first = tmp_path / "include/tess/pathfinding.h"
+  second = tmp_path / "include/tess/optional.h"
+  declaration = "\nnamespace tess { void evaluate(int value); }\n"
+  first.write_text(
+      first.read_text(encoding="utf-8") + declaration,
+      encoding="utf-8",
+  )
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  second.write_text(
+      second.read_text(encoding="utf-8")
+      + "\nnamespace tess { void evaluate(int other); }\n",
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert not any(
+      "overload added to existing callable" in failure
+      and "evaluate" in failure
+      for failure in failures
+  ), failures
+
+
+def test_nested_template_redeclaration_ignores_parameter_names(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  first = tmp_path / "include/tess/pathfinding.h"
+  second = tmp_path / "include/tess/optional.h"
+  first.write_text(
+      first.read_text(encoding="utf-8")
+      + "\nnamespace tess { void evaluate("
+      "std::pair<int, std::vector<long>> first, int count); }\n",
+      encoding="utf-8",
+  )
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  second.write_text(
+      second.read_text(encoding="utf-8")
+      + "\nnamespace tess { void evaluate("
+      "std::pair<int, std::vector<long>> other, int value); }\n",
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert not any(
+      "overload added to existing callable" in failure
+      and "evaluate" in failure
+      for failure in failures
+  ), failures
+
+
+def test_template_redeclaration_ignores_template_parameter_names(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  first = tmp_path / "include/tess/pathfinding.h"
+  second = tmp_path / "include/tess/optional.h"
+  first.write_text(
+      first.read_text(encoding="utf-8")
+      + "\nnamespace tess { template<class T> "
+      "void evaluate(T value); }\n",
+      encoding="utf-8",
+  )
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  second.write_text(
+      second.read_text(encoding="utf-8")
+      + "\nnamespace tess { template<class U> "
+      "void evaluate(U other); }\n",
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert not any(
+      "overload added to existing callable" in failure
+      and "evaluate" in failure
+      for failure in failures
+  ), failures
+
+
+def test_distinct_trailing_constraints_remain_overloads(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  first = tmp_path / "include/tess/pathfinding.h"
+  second = tmp_path / "include/tess/optional.h"
+  first.write_text(
+      first.read_text(encoding="utf-8")
+      + "\nnamespace tess { template<class T> "
+      "void evaluate(T) requires C1<T>; }\n",
+      encoding="utf-8",
+  )
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  second.write_text(
+      second.read_text(encoding="utf-8")
+      + "\nnamespace tess { template<class T> "
+      "void evaluate(T) requires C2<T>; }\n",
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "tess")
+
+
+def test_unnamed_nontype_template_parameter_types_remain_distinct(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  first = tmp_path / "include/tess/pathfinding.h"
+  second = tmp_path / "include/tess/optional.h"
+  first.write_text(
+      first.read_text(encoding="utf-8")
+      + "\nnamespace tess { template<int> void evaluate(); }\n",
+      encoding="utf-8",
+  )
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  second.write_text(
+      second.read_text(encoding="utf-8")
+      + "\nnamespace tess { template<long> void evaluate(); }\n",
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "tess")
+
+
+def test_complex_redeclarations_ignore_declarator_names_and_top_cv(tmp_path):
+  pairs = (
+      ("int value[3]", "int other[3]"),
+      ("void (*callback)(int)", "void (*other)(int)"),
+      ("int value", "const int other"),
+  )
+  for index, (before, after) in enumerate(pairs):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    first = repo / "include/tess/pathfinding.h"
+    second = repo / "include/tess/optional.h"
+    first.write_text(
+        first.read_text(encoding="utf-8")
+        + f"\nnamespace tess {{ void evaluate({before}); }}\n",
+        encoding="utf-8",
+    )
+    refresh_payload(repo, payload)
+    snapshot_root = write_snapshot(repo, payload)
+    second.write_text(
+        second.read_text(encoding="utf-8")
+        + f"\nnamespace tess {{ void evaluate({after}); }}\n",
+        encoding="utf-8",
+    )
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+    assert not any(
+        "overload added to existing callable" in failure
+        and "evaluate" in failure
+        for failure in failures
+    ), failures
+
+
+def test_distinct_unnamed_multitoken_parameters_are_overloads(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  first = tmp_path / "include/tess/pathfinding.h"
+  second = tmp_path / "include/tess/optional.h"
+  first.write_text(
+      first.read_text(encoding="utf-8")
+      + "\nnamespace tess { void evaluate(const char); }\n",
+      encoding="utf-8",
+  )
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  second.write_text(
+      second.read_text(encoding="utf-8")
+      + "\nnamespace tess { void evaluate(const int); }\n",
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "tess")
+
+
+def test_member_cv_and_ref_qualifiers_remain_distinct_overloads(tmp_path):
+  additions = ("void evaluate() const;", "void evaluate() &;")
+  for index, addition in enumerate(additions):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {",
+        "struct StableOptions {\n  void evaluate();",
+    )
+    header.write_text(text, encoding="utf-8")
+    refresh_payload(repo, payload)
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            "  int max_steps = 1;", f"  {addition}\n  int max_steps = 1;"
+        ),
+        encoding="utf-8",
+    )
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+    assert_overload(failures, "StableOptions")
+
+
+def test_comment_marker_in_macro_string_does_not_hide_contract(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  header.write_text(
+      header.read_text(encoding="utf-8").replace(
+          "#define TESS_COMPAT_LIMIT 8",
+          '#define TESS_COMPAT_LIMIT "/*"',
+      ),
+      encoding="utf-8",
+  )
+  refresh_payload(tmp_path, payload)
+  declarations = payload["api_contract"]["include/tess/tess.h"]
+  assert any("type tess::StableOptions" in item for item in declarations)
 
 
 def test_stable_macros_are_checked_across_headers(tmp_path):
@@ -340,6 +646,12 @@ def test_inaccessible_or_same_named_base_does_not_fake_overload(tmp_path):
       "namespace a { struct Root { void evaluate(int); }; }\n"
       "namespace b { struct Root { void other(int); }; }\n"
       "struct StableOptions : b::Root {",
+      "template<bool> struct Root { void evaluate(int); };\n"
+      "struct Other {}; constexpr int N=0, M=1;\n"
+      "class StableOptions : Root<N < M>, public Other {\n public:",
+      "namespace inner { struct Root { void evaluate(int); }; }\n"
+      "namespace tess { namespace inner { struct Root {}; } }\n"
+      "struct StableOptions : tess::inner::Root {",
   )
   for index, replacement in enumerate(variants):
     repo = tmp_path / f"variant-{index}"
@@ -366,6 +678,125 @@ def test_inaccessible_or_same_named_base_does_not_fake_overload(tmp_path):
         and "StableOptions" in failure
         for failure in failures
     ), failures
+
+
+def test_qualified_namespace_import_does_not_merge_same_leaf(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "namespace tess {",
+      "namespace a::external { void evaluate(int); }\n"
+      "namespace b::external { void other(int); }\n"
+      "namespace tess {\nusing namespace b::external;",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "[[nodiscard]] auto stable_route",
+          "void evaluate(double);\n[[nodiscard]] auto stable_route",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert not any(
+      "overload added to existing callable" in failure
+      and "evaluate" in failure
+      for failure in failures
+  ), failures
+
+
+def test_qualified_alias_does_not_merge_same_leaf(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "namespace a { struct Root { void evaluate(int); }; "
+      "using Alias=Root; }\n"
+      "namespace b { struct Other {}; using Alias=Other; }\n"
+      "struct StableOptions : b::Alias {",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          "  void evaluate(double);\n  int max_steps = 1;",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert not any(
+      "overload added to existing callable" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
+def test_alias_template_argument_does_not_become_base(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "namespace a { struct Root { void evaluate(int); }; }\n"
+      "namespace b { template<class> struct Wrapper {}; }\n"
+      "using Alias = b::Wrapper<a::Root>;\n"
+      "struct StableOptions : Alias {",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          "  void evaluate(double);\n  int max_steps = 1;",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert not any(
+      "overload added to existing callable" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
+
+
+def test_qualified_alias_head_preserves_namespace(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "namespace a { template<class> struct Wrapper { "
+      "void evaluate(int); }; }\n"
+      "namespace b { template<class> struct Wrapper {}; }\n"
+      "using Alias = b::Wrapper<int>;\nstruct StableOptions : Alias {",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          "  void evaluate(double);\n  int max_steps = 1;",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert not any(
+      "overload added to existing callable" in failure
+      and "StableOptions" in failure
+      for failure in failures
+  ), failures
 
 
 def test_relational_base_does_not_absorb_later_public_base():

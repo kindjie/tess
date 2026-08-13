@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from api_contract import (
+    _ContractParser,
     _tokens,
     callable_name,
     current_api_contract,
@@ -87,6 +88,154 @@ def _callable_identity(contract: str) -> str | None:
   if name is None:
     return None
   return f"{scope}::{name}"
+
+
+def _callable_signature(
+    contract: str,
+) -> tuple[str, tuple[str, ...], tuple[str, ...]] | None:
+  """Return callable identity plus parameter types, ignoring parameter names."""
+  match = re.match(
+      r"^(?:member|function) (.+?)(?<!:):(?!:)(.*)$", contract
+  )
+  if match is None:
+    return None
+  scope, declaration = match.groups()
+  tokens = _tokens(declaration)
+  opening = _ContractParser._function_opening(tokens)
+  name = callable_name(tokens)
+  if opening is None or name is None:
+    return None
+  depth = 0
+  closing = None
+  for index in range(opening, len(tokens)):
+    if tokens[index] == "(":
+      depth += 1
+    elif tokens[index] == ")":
+      depth -= 1
+      if depth == 0:
+        closing = index
+        break
+  if closing is None:
+    return None
+  template_parameters = _template_parameter_names(tokens[:opening])
+  canonical_tokens = [
+      template_parameters.get(token, token) for token in tokens
+  ]
+  parameters = _canonical_parameters(
+      canonical_tokens[opening + 1 : closing]
+  )
+  trailing = canonical_tokens[closing + 1 :]
+  suffix_tokens = [
+      token for token in trailing if token in {"const", "volatile", "&", "&&"}
+  ]
+  if "requires" in trailing:
+    suffix_tokens.extend(trailing[trailing.index("requires") :])
+  suffix = tuple(suffix_tokens)
+  template_head = (
+      tuple(canonical_tokens[:opening])
+      if "template" in tokens[:opening]
+      else ()
+  )
+  return f"{scope}::{name}", parameters, template_head + suffix
+
+
+def _template_parameter_names(tokens: list[str]) -> dict[str, str]:
+  if "template" not in tokens or "<" not in tokens:
+    return {}
+  opening = tokens.index("<", tokens.index("template"))
+  depth = 0
+  segment: list[str] = []
+  segments: list[list[str]] = []
+  for token in tokens[opening + 1 :]:
+    if token == ">" and depth == 0:
+      segments.append(segment)
+      break
+    if token == "," and depth == 0:
+      segments.append(segment)
+      segment = []
+      continue
+    segment.append(token)
+    if token == "<":
+      depth += 1
+    elif token == ">" and depth:
+      depth -= 1
+  result: dict[str, str] = {}
+  for index, parameter in enumerate(segments):
+    before_default = parameter[: parameter.index("=")] \
+        if "=" in parameter else parameter
+    identifiers = [
+        token
+        for token in before_default
+        if re.fullmatch(r"[A-Za-z_]\w*", token)
+        and token not in {"class", "typename", "template"}
+    ]
+    if identifiers and (
+        len(identifiers) > 1
+        or any(token in before_default for token in {"class", "typename"})
+    ):
+      result[identifiers[-1]] = f"__tess_template_parameter_{index}"
+  return result
+
+
+def _canonical_parameters(tokens: list[str]) -> tuple[str, ...]:
+  segments: list[list[str]] = [[]]
+  depth = 0
+  for token in tokens:
+    if token == "," and depth == 0:
+      segments.append([])
+      continue
+    segments[-1].append(token)
+    if token in {"(", "[", "<"}:
+      depth += 1
+    elif token in {")", "]", ">"} and depth:
+      depth -= 1
+    elif token == ">>" and depth:
+      depth = max(0, depth - 2)
+  normalized: list[str] = []
+  for segment in segments:
+    if "=" in segment:
+      segment = segment[: segment.index("=")]
+    identifiers = [
+        index
+        for index, token in enumerate(segment)
+        if re.fullmatch(r"[A-Za-z_]\w*", token)
+    ]
+    if not any(token in segment for token in {"*", "&", "&&"}):
+      segment = [token for token in segment if token not in {"const", "volatile"}]
+      identifiers = [
+          index
+          for index, token in enumerate(segment)
+          if re.fullmatch(r"[A-Za-z_]\w*", token)
+      ]
+    if len(identifiers) > 1:
+      pointer_names = [
+          position
+          for position in identifiers[1:]
+          if position > 0
+          and segment[position - 1] in {"*", "&", "&&"}
+          and position + 1 < len(segment)
+          and segment[position + 1] in {")", "["}
+      ]
+      position = pointer_names[0] if pointer_names else identifiers[-1]
+      if position == len(segment) - 1 and (
+          position == 0 or segment[position - 1] != "::"
+      ) and segment[position - 1] not in {
+          "const", "volatile", "signed", "unsigned", "short", "long",
+      }:
+        segment = segment[:position]
+      elif (
+          position > 0
+          and segment[position - 1] in {"*", "&", "&&"}
+          and position + 1 < len(segment)
+          and segment[position + 1] in {")", "["}
+      ):
+        segment = segment[:position] + segment[position + 1 :]
+    if "[" in segment:
+      bracket = segment.index("[")
+      if bracket and re.fullmatch(r"[A-Za-z_]\w*", segment[bracket - 1]):
+        segment = segment[: bracket - 1] + segment[bracket:]
+    normalized.append(" ".join(segment))
+  return tuple(normalized)
 
 
 def _using_callable_identity(contract: str) -> str | None:
@@ -210,7 +359,24 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
         own.setdefault(scope, set()).add(name)
 
   namespace_imports: dict[str, set[str]] = {}
+  namespace_aliases: dict[str, str] = {}
   for contract in declarations:
+    alias_match = re.match(
+        r"^declaration (.+?)(?<!:):(?!:)namespace ([A-Za-z_]\w*) = (.*)$",
+        contract,
+    )
+    if alias_match is not None:
+      scope, alias, target = alias_match.groups()
+      target_names = [
+          token
+          for token in _tokens(target)
+          if re.fullmatch(r"[A-Za-z_]\w*", token)
+      ]
+      if target_names:
+        prefix = "::" if _tokens(target)[:1] == ["::"] else ""
+        namespace_aliases[f"{scope}::{alias}"] = prefix + "::".join(
+            target_names
+        )
     match = re.match(
         r"^declaration (.+?)(?<!:):(?!:)using namespace (.*)$",
         contract,
@@ -223,17 +389,23 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
           if re.fullmatch(r"[A-Za-z_]\w*", token)
       ]
       if names:
-        namespace_imports.setdefault(scope, set()).add(names[-1])
+        prefix = "::" if _tokens(imported)[:1] == ["::"] else ""
+        namespace_imports.setdefault(scope, set()).add(
+            prefix + "::".join(names)
+        )
 
   by_name: dict[str, set[str]] = {}
   for scope in types:
     by_name.setdefault(scope.rsplit("::", 1)[-1], set()).add(scope)
-  aliases: dict[str, set[str]] = {}
+  alias_targets: dict[str, set[str]] = {}
   for contract in declarations:
-    match = re.match(r"^declaration .+?(?<!:):(?!:)(.*)$", contract)
+    match = re.match(
+        r"^declaration (.+?)(?<!:):(?!:)(.*)$", contract
+    )
     if match is None:
       continue
-    tokens = _tokens(match.group(1))
+    alias_scope, declaration = match.groups()
+    tokens = _tokens(declaration)
     if "using" in tokens and "=" in tokens:
       equals = tokens.index("=")
       alias = next(
@@ -255,21 +427,36 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
     else:
       continue
     if alias is not None:
-      aliases.setdefault(alias, set()).update(
+      if "<" in target_tokens:
+        target_tokens = target_tokens[: target_tokens.index("<")]
+      target_names = [
           token
           for token in target_tokens
           if re.fullmatch(r"[A-Za-z_]\w*", token)
-      )
+      ]
+      if target_names:
+        prefix = "::" if target_tokens[:1] == ["::"] else ""
+        alias_targets.setdefault(f"{alias_scope}::{alias}", set()).add(
+            prefix + "::".join(target_names)
+        )
+  aliases: dict[str, set[str]] = {
+      alias: set() for alias in alias_targets
+  }
   changed = True
   while changed:
     changed = False
-    for alias, targets in aliases.items():
-      expanded = set().union(
-          *(aliases.get(target, {target}) for target in targets)
-      ) if targets else set()
-      before = len(targets)
-      targets.update(expanded)
-      changed |= len(targets) != before
+    for alias, target_names in alias_targets.items():
+      alias_scope = alias.rsplit("::", 1)[0]
+      resolved: set[str] = set()
+      for target in target_names:
+        matches = _resolve_scoped_names(
+            {*types, *aliases}, alias_scope, target
+        )
+        for candidate in matches:
+          resolved.update(aliases.get(candidate) or {candidate})
+      before = len(aliases[alias])
+      aliases[alias].update(resolved)
+      changed |= len(aliases[alias]) != before
   bases: dict[str, set[str]] = {}
   dependent_base_scopes: set[str] = set()
   for scope, declaration in types.items():
@@ -295,11 +482,6 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
         for token in segment
         if token in by_name
     )
-    candidates.update(
-        target
-        for candidate in tuple(candidates)
-        for target in aliases.get(candidate, set())
-    )
     bases[scope] = set()
     for segment in public_segments:
       identifiers = [
@@ -309,12 +491,17 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
           and token
           not in {"public", "protected", "private", "virtual", "template"}
       ]
-      qualified = "::".join(identifiers)
-      exact = {
-          candidate
-          for candidate in types
-          if candidate == qualified or candidate.endswith(f"::{qualified}")
-      } if "::" in segment else set()
+      qualified = ("::" if segment[:1] == ["::"] else "") + "::".join(
+          identifiers
+      )
+      lexical_scope = scope.rsplit("::", 1)[0]
+      exact = _resolve_scoped_names(set(types), lexical_scope, qualified)
+      alias_matches = _resolve_scoped_names(
+          set(aliases), lexical_scope, qualified
+      )
+      exact.update(
+          target for alias in alias_matches for target in aliases[alias]
+      )
       if exact:
         bases[scope].update(exact - {scope})
         continue
@@ -332,13 +519,33 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
   while changed:
     changed = False
     for scope, imports in namespace_imports.items():
+      expanded_imports = set(imports)
+      changed_alias = True
+      while changed_alias:
+        changed_alias = False
+        for imported in tuple(expanded_imports):
+          alias_matches = _resolve_scoped_names(
+              set(namespace_aliases), scope, imported
+          )
+          targets = {
+              namespace_aliases[alias] for alias in alias_matches
+          }
+          before = len(expanded_imports)
+          expanded_imports.update(targets)
+          changed_alias |= len(expanded_imports) != before
+      resolved_imports = set().union(
+          *(
+              _resolve_scoped_names(set(visible), scope, imported)
+              for imported in expanded_imports
+          )
+      ) if expanded_imports else set()
       imported_names = set().union(
           *(
               names
               for namespace, names in visible.items()
-              if namespace.rsplit("::", 1)[-1] in imports
+              if namespace in resolved_imports
           )
-      ) if imports else set()
+      ) if resolved_imports else set()
       before = len(visible.setdefault(scope, set()))
       visible[scope].update(imported_names)
       changed |= len(visible[scope]) != before
@@ -367,15 +574,45 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
   }
 
 
+def _resolve_scoped_names(
+    symbols: set[str], scope: str, name: str
+) -> set[str]:
+  """Resolve a type, alias, or namespace from its nearest lexical scope."""
+  if name.startswith("::"):
+    return {name.removeprefix("::")} & symbols
+  parents = scope.split("::") if scope else []
+  for length in range(len(parents), -1, -1):
+    prefix = "::".join(parents[:length])
+    candidate = f"{prefix}::{name}" if prefix else name
+    if candidate in symbols:
+      return {candidate}
+  if "::" not in name:
+    matches = {
+        symbol for symbol in symbols if symbol.rsplit("::", 1)[-1] == name
+    }
+    return matches if len(matches) == 1 else set()
+  return set()
+
+
 def _public_base_segments(
     tokens: list[str], type_kind: str
 ) -> list[list[str]]:
   """Return base-specifier segments whose inheritance is public."""
   segments: list[list[str]] = [[]]
   angle_depth = round_depth = square_depth = 0
-  for token in tokens:
-    if token == "," and not (angle_depth or round_depth or square_depth):
+  for index, token in enumerate(tokens):
+    explicit_next_access = (
+        token == ","
+        and index + 1 < len(tokens)
+        and tokens[index + 1]
+        in {"public", "protected", "private", "virtual"}
+    )
+    if token == "," and (
+        not (angle_depth or round_depth or square_depth)
+        or (not (round_depth or square_depth) and explicit_next_access)
+    ):
       segments.append([])
+      angle_depth = 0
       continue
     segments[-1].append(token)
     if token == "(":
@@ -853,6 +1090,11 @@ def check_snapshots(
           for declaration in all_snapshot_declarations
           if (identity := _macro_identity(declaration)) is not None
       }
+      global_snapshot_signatures = {
+          signature
+          for declaration in all_snapshot_declarations
+          if (signature := _callable_signature(declaration)) is not None
+      }
       valid_snapshot_contract: dict[str, set[str]] = {}
       snapshot_header_values: list[str] = []
       if isinstance(snapshot_headers, dict):
@@ -926,7 +1168,10 @@ def check_snapshots(
           inherited_wildcards = {
               f"{identity.rsplit('::', 1)[0]}::*" for identity in identities
           }
-          if (identities | inherited_wildcards) & snapshot_callables:
+          if (
+              _callable_signature(addition) not in global_snapshot_signatures
+              and (identities | inherited_wildcards) & snapshot_callables
+          ):
             failures.append(
                 f"{directory.name}: overload added to existing callable: "
                 f"{header}: {addition}"

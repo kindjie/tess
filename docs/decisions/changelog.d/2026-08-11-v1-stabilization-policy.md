@@ -108,7 +108,10 @@
   Chained aliases, alias templates, namespace imports, and unknown dependent
   bases are conservative; inaccessible and namespace-distinct bases do not
   create false overload relationships. Stable macros are likewise global
-  across those headers.
+  across those headers. Scope-aware type and namespace aliases, exact-global
+  qualification, redeclaration-equivalent parameter names/top-level
+  qualifiers, template parameters/constraints, and member cv/ref qualifiers
+  retain their C++ overload semantics.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

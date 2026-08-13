@@ -43,7 +43,9 @@
   namespace/class using-declarator lists and inherited callable hiding through
   direct, chained alias, alias-template, namespace-import, transitive, or
   dependent template bases are also rejected across supported headers, while
-  inaccessible and namespace-distinct bases remain independent;
+  inaccessible and namespace-distinct bases remain independent; scope-aware
+  namespace/type aliases, redeclaration-equivalent signatures, template
+  constraints, and member qualifiers avoid false positive or missed overloads;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

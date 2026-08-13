@@ -32,10 +32,10 @@ def direct_tess_includes(
   text = re.sub(r"\\\r?\n[ \t]*", " ", text)
   paths: list[str] = []
   conditional_depth = 0
-  in_block_comment = False
+  lexical_state = ""
   nonliteral = False
   for raw_line in text.splitlines():
-    line, in_block_comment = _strip_comments(raw_line, in_block_comment)
+    line, lexical_state = _strip_comments(raw_line, lexical_state)
     directive = _CONDITIONAL_RE.match(line)
     if directive is not None:
       kind = directive.group(1)
@@ -65,25 +65,51 @@ def direct_tess_includes(
   return sorted(paths), nonliteral
 
 
-def _strip_comments(line: str, in_block: bool) -> tuple[str, bool]:
+def _strip_comments(line: str, state: str) -> tuple[str, str]:
+  """Strip comments while preserving quoted and multiline raw literals."""
   out: list[str] = []
   index = 0
   while index < len(line):
-    if in_block:
+    if state == "block":
       end = line.find("*/", index)
       if end < 0:
-        return "".join(out), True
+        return "".join(out), state
       index = end + 2
-      in_block = False
+      state = ""
+    elif state.startswith("raw:"):
+      terminator = ")" + state.removeprefix("raw:") + '"'
+      end = line.find(terminator, index)
+      if end < 0:
+        return "".join(out), state
+      index = end + len(terminator)
+      state = ""
     elif line.startswith("//", index):
       break
     elif line.startswith("/*", index):
-      in_block = True
+      state = "block"
       index += 2
+    elif (raw := re.match(r'R"([^\s()\\]{0,16})\(', line[index:])):
+      delimiter = raw.group(1)
+      out.append(raw.group(0))
+      index += len(raw.group(0))
+      state = f"raw:{delimiter}"
+    elif line[index] in {'"', "'"}:
+      quote = line[index]
+      out.append(quote)
+      index += 1
+      while index < len(line):
+        out.append(line[index])
+        if line[index] == "\\" and index + 1 < len(line):
+          index += 1
+          out.append(line[index])
+        elif line[index] == quote:
+          index += 1
+          break
+        index += 1
     else:
       out.append(line[index])
       index += 1
-  return "".join(out), in_block
+  return "".join(out), state
 
 
 def load_header_manifest(path: Path) -> dict[str, list[str]]:

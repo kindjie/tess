@@ -150,5 +150,28 @@ def test_commented_include_is_ignored_and_macro_include_fails_closed(tmp_path):
   ]
 
 
+def test_include_parser_is_literal_aware(tmp_path):
+  make_headers(tmp_path)
+  aggregate = tmp_path / "include" / "tess" / "tess.h"
+  manifest = write_manifest(tmp_path, complete_classes())
+  aggregate.write_text(
+      '#define TESS_TEXT "/*"\n'
+      "#include <tess/experimental/tool.h>\n",
+      encoding="utf-8",
+  )
+  assert chm.check_manifest(tmp_path, manifest) == [
+      "include/tess/tess.h: stable aggregate imports experimental header "
+      "include/tess/experimental/tool.h"
+  ]
+
+  aggregate.write_text(
+      'constexpr auto text = R"doc(\n'
+      "#include <tess/experimental/tool.h>\n"
+      ')doc";\n',
+      encoding="utf-8",
+  )
+  assert chm.check_manifest(tmp_path, manifest) == []
+
+
 def test_real_manifest_is_exhaustive_and_aggregate_safe():
   assert chm.check_manifest(chm.REPO_ROOT, chm.DEFAULT_MANIFEST) == []
