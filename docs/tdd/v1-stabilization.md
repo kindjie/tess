@@ -463,3 +463,10 @@ Implementation slices update maintained sources in the same pull request:
 This TDD remains historical intent. Later implementation divergence is
 recorded in those maintained documents rather than rewriting the proposal into
 an API reference.
+
+Implementation note: the compatibility evidence boundary was narrowed from a
+source-level declaration model to inventories plus compiled consumers. See the
+[2026-08-12 compatibility evidence decision][compatibility-evidence].
+
+[compatibility-evidence]:
+  ../decisions/changelog.d/2026-08-12-compatibility-evidence-boundary.md

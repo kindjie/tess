@@ -53,6 +53,13 @@ are part of the stable source contract. Sparse support must arrive through new
 entry points rather than changing those signatures or adding ambiguous
 overloads.
 
+Compatibility is enforced in layers. Snapshots protect header classes, direct
+aggregate membership, and documented public namespace-scope names. Installed
+and optional-integration builds, immutable source-consumer fixtures, archive
+fixtures, and release review cover C++ semantics. The snapshot checker
+deliberately does not parse C++ and is not represented as a complete proof of
+this policy.
+
 ## Toolchain floors
 
 The required language baseline is C++20. Release evidence continuously builds

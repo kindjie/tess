@@ -4,9 +4,9 @@ Create an immutable directory named for the complete release version at RC1
 and at every stable minor release. Each directory contains:
 
 - `manifest.json`, recording stable and optional-stable headers, direct stable
-  aggregate membership, extracted public symbol names, normalized public API
-  declarations, the consumer project and its two executable/test target
-  names, and archive fixture metadata;
+  aggregate membership, extracted public namespace-scope names, the consumer
+  project and its two executable/test target names, and archive fixture
+  metadata;
 - a CMake consumer project that uses stable headers only, discovers the
   candidate installation with `find_package(tess CONFIG REQUIRED)`, links
   `tess::tess`, and registers both source and archive consumers as tests; and
@@ -14,27 +14,21 @@ and at every stable minor release. Each directory contains:
   metadata, plus one `archive_consumer` source that loads every listed fixture
   when passed the snapshot directory.
 
-`tools/check_compatibility_snapshots.py` verifies that current sources retain
-every prior header in its original compatibility class, every direct aggregate
-member, public symbol, and normalized declaration contract. Declaration
-contracts retain function signatures and defaults, public members, enum
-values, aliases, concepts, constants, and configuration macro definitions.
-Existing aggregate types must remain aggregates, existing types cannot gain
-public data members, enumerators are append-only, and overloads cannot be added
-to existing callables. Direct aggregate imports must remain uncommented and
-unconditional.
-The checker also confines every recorded path to its snapshot, verifies fixture
-metadata, and compares every earlier snapshot byte-for-byte with its
-`v<version>` release tag. Normal CI fetches those tags and runs the source
-superset and immutability checks. Release CI additionally installs the
-candidate package, then configures, builds, and runs both named tests from each
-immutable consumer project against that installation. Snapshot directories
-are append-only: never edit a released snapshot to make a compatibility
-failure disappear.
+`tools/check_compatibility_snapshots.py` preserves header classes, direct
+aggregate membership, and documented public namespace-scope names. It also
+confines recorded paths to the snapshot, verifies fixture metadata, and
+compares released snapshots byte-for-byte with their `v<version>` tags.
+
+The checker deliberately does not parse C++. Signatures, defaults, aggregate
+use, fields, overload resolution, macro configurations, and other language
+semantics are protected by compiling the immutable consumer projects against
+the candidate package, exercising optional integrations, and reviewing API
+changes. The name inventory is an inexpensive tripwire, not a standalone proof
+of the full support policy.
 
 RC1 and stable `1.x.0` source versions fail the checker until their matching
-snapshot exists and exactly matches the current header, aggregate, symbol, and
-declaration inventories. Pre-1.0 development does not fabricate a future
-snapshot.
-The snapshot matching the version currently being prepared may precede its
-tag; every older snapshot must already have a matching reachable release tag.
+snapshot exists and exactly matches the current inventories. Pre-1.0
+development does not fabricate a future snapshot. The snapshot matching the
+version being prepared may precede its tag; every older snapshot must already
+have a matching reachable release tag. Snapshot directories are append-only:
+never edit a released snapshot to make a compatibility failure disappear.
