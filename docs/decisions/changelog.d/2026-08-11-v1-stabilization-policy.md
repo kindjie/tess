@@ -104,7 +104,11 @@
   historical snapshot or current sources. Every entry in a using-declarator
   list, at class or namespace scope, and callable names inherited through
   direct, alias, transitive, or dependent template bases participate in the
-  same compatibility check.
+  same compatibility check across every stable and optional-stable header.
+  Chained aliases, alias templates, namespace imports, and unknown dependent
+  bases are conservative; inaccessible and namespace-distinct bases do not
+  create false overload relationships. Stable macros are likewise global
+  across those headers.
   Conditional
   aggregate-breaking member and base configurations retain distinct identities,
   so narrowing the configurations in which a type remains an aggregate is

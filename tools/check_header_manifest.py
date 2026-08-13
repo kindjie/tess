@@ -4,11 +4,10 @@
 from __future__ import annotations
 
 import argparse
-import posixpath
-import re
 from pathlib import Path
 
 from header_manifest import GENERATED_HEADER_SOURCES, HEADER_CLASSES
+from header_manifest import direct_tess_includes
 from header_manifest import load_header_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -17,10 +16,6 @@ STABLE_AGGREGATES = (
     "include/tess/pathfinding.h",
     "include/tess/simulation.h",
     "include/tess/tess.h",
-)
-INCLUDE_RE = re.compile(
-    r'^\s*#\s*include\s*(?:<([^>\n]+)>|"([^"\n]+)")',
-    re.MULTILINE,
 )
 
 
@@ -60,21 +55,12 @@ def check_manifest(repo_root: Path, manifest_path: Path) -> list[str]:
   )
   for aggregate in STABLE_AGGREGATES:
     text = (repo_root / aggregate).read_text(encoding="utf-8")
-    includes = {
-        (
-            f"include/{angle}"
-            if angle
-            else (
-                f"include/{quote}"
-                if quote.startswith("tess/")
-                else posixpath.normpath(
-                    (Path(aggregate).parent / quote).as_posix()
-                )
-            )
-        )
-        for angle, quote in INCLUDE_RE.findall(text)
-    }
-    for imported in sorted(includes & forbidden):
+    includes, nonliteral = direct_tess_includes(text, aggregate)
+    if nonliteral:
+      failures.append(
+          f"{aggregate}: stable aggregate has a nonliteral include"
+      )
+    for imported in sorted(set(includes) & forbidden):
       failures.append(
           f"{aggregate}: stable aggregate imports {owners[imported]} "
           f"header {imported}"

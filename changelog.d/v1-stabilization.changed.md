@@ -41,7 +41,9 @@
   using-imports are checked conservatively as both constructors and ordinary
   overloads whether they occur in the snapshot or current sources; complete
   namespace/class using-declarator lists and inherited callable hiding through
-  direct, alias, transitive, or dependent template bases are also rejected;
+  direct, chained alias, alias-template, namespace-import, transitive, or
+  dependent template bases are also rejected across supported headers, while
+  inaccessible and namespace-distinct bases remain independent;
   stable macro redefinitions/undefinitions cannot evade compatibility checks,
   future
   unmerged tags do not constrain maintenance

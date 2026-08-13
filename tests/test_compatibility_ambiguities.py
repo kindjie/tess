@@ -169,6 +169,78 @@ def test_namespace_using_participates_in_overload_checks(tmp_path):
     )
     assert_overload(failures, "tess")
 
+
+def test_namespace_using_directive_participates_in_lookup(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "namespace tess {",
+      "namespace external { void evaluate(int); }\n"
+      "namespace tess {\nusing namespace external;",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "[[nodiscard]] auto stable_route",
+          "void evaluate(double);\n[[nodiscard]] auto stable_route",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "tess")
+
+
+def test_namespace_overloads_are_checked_across_headers(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  first = tmp_path / "include/tess/pathfinding.h"
+  second = tmp_path / "include/tess/optional.h"
+  first.write_text(
+      first.read_text(encoding="utf-8")
+      + "\nnamespace tess { void evaluate(int); }\n",
+      encoding="utf-8",
+  )
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  second.write_text(
+      second.read_text(encoding="utf-8")
+      + "\nnamespace tess { void evaluate(double); }\n",
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "tess")
+
+
+def test_stable_macros_are_checked_across_headers(tmp_path):
+  for index, directive in enumerate(
+      ("#undef TESS_SHARED_LIMIT", "#define TESS_SHARED_LIMIT 9")
+  ):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    first = repo / "include/tess/pathfinding.h"
+    second = repo / "include/tess/optional.h"
+    first.write_text(
+        first.read_text(encoding="utf-8")
+        + "\n#define TESS_SHARED_LIMIT 8\n",
+        encoding="utf-8",
+    )
+    refresh_payload(repo, payload)
+    snapshot_root = write_snapshot(repo, payload)
+    second.write_text(
+        second.read_text(encoding="utf-8") + f"\n{directive}\n",
+        encoding="utf-8",
+    )
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+    expected = "undefined" if index == 0 else "redefined"
+    assert any(f"stable macro {expected}" in failure for failure in failures)
+
   reverse = tmp_path / "reverse"
   header_path, payload = make_repo(reverse)
   header = reverse / "include/tess/tess.h"
@@ -204,6 +276,14 @@ def test_later_member_cannot_hide_inherited_callable(tmp_path):
       "struct Root { void evaluate(int); };\n"
       "template<class T> struct Middle : T {};\n"
       "struct StableOptions : Middle<Root> {",
+      "struct Root { void evaluate(int); };\n"
+      "using Alias1 = Root;\nusing Alias2 = Alias1;\n"
+      "struct StableOptions : Alias2 {",
+      "struct Root { void evaluate(int); };\n"
+      "typedef Root Alias;\nstruct StableOptions : Alias {",
+      "struct Root { void evaluate(int); };\n"
+      "template<class> using Alias = Root;\n"
+      "struct StableOptions : Alias<int> {",
   )
   for index, replacement in enumerate(variants):
     repo = tmp_path / f"variant-{index}"
@@ -226,6 +306,66 @@ def test_later_member_cannot_hide_inherited_callable(tmp_path):
         repo, snapshot_root, header_path, "1.1.1"
     )
     assert_overload(failures, "StableOptions")
+
+
+def test_dependent_base_conservatively_blocks_callable_addition(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "template<class T> struct StableOptions : T {",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          "  void evaluate(double);\n  int max_steps = 1;",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "StableOptions")
+
+
+def test_inaccessible_or_same_named_base_does_not_fake_overload(tmp_path):
+  variants = (
+      "struct Root { void evaluate(int); };\n"
+      "struct StableOptions : private Root {",
+      "struct Root { void evaluate(int); };\n"
+      "class StableOptions : Root {\n public:",
+      "namespace a { struct Root { void evaluate(int); }; }\n"
+      "namespace b { struct Root { void other(int); }; }\n"
+      "struct StableOptions : b::Root {",
+  )
+  for index, replacement in enumerate(variants):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {", replacement
+    )
+    header.write_text(text, encoding="utf-8")
+    refresh_payload(repo, payload)
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            "  int max_steps = 1;",
+            "  void evaluate(double);\n  int max_steps = 1;",
+        ),
+        encoding="utf-8",
+    )
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+    assert not any(
+        "overload added to existing callable" in failure
+        and "StableOptions" in failure
+        for failure in failures
+    ), failures
 
 
 def test_relational_base_does_not_absorb_later_public_base():

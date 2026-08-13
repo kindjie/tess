@@ -95,5 +95,60 @@ def test_relative_quoted_experimental_include_is_forbidden(tmp_path):
   ]
 
 
+def test_continued_experimental_include_is_forbidden(tmp_path):
+  make_headers(tmp_path)
+  aggregate = tmp_path / "include" / "tess" / "tess.h"
+  aggregate.write_text(
+      '#include \\\n  "experimental/tool.h"\n', encoding="utf-8"
+  )
+  failures = chm.check_manifest(
+      tmp_path, write_manifest(tmp_path, complete_classes())
+  )
+  assert failures == [
+      "include/tess/tess.h: stable aggregate imports experimental header "
+      "include/tess/experimental/tool.h"
+  ]
+
+
+def test_noncanonical_experimental_include_is_forbidden(tmp_path):
+  for index, include in enumerate(
+      (
+          "<tess/experimental/../experimental/tool.h>",
+          '"tess/experimental/../experimental/tool.h"',
+      )
+  ):
+    repo = tmp_path / f"variant-{index}"
+    make_headers(repo)
+    aggregate = repo / "include" / "tess" / "tess.h"
+    aggregate.write_text(f"#include {include}\n", encoding="utf-8")
+    failures = chm.check_manifest(
+        repo, write_manifest(repo, complete_classes())
+    )
+    assert failures == [
+        "include/tess/tess.h: stable aggregate imports experimental header "
+        "include/tess/experimental/tool.h"
+    ]
+
+
+def test_commented_include_is_ignored_and_macro_include_fails_closed(tmp_path):
+  make_headers(tmp_path)
+  aggregate = tmp_path / "include" / "tess" / "tess.h"
+  aggregate.write_text(
+      "/*\n#include <tess/experimental/tool.h>\n*/\n",
+      encoding="utf-8",
+  )
+  manifest = write_manifest(tmp_path, complete_classes())
+  assert chm.check_manifest(tmp_path, manifest) == []
+
+  aggregate.write_text(
+      "#define TESS_EXCLUDED <tess/experimental/tool.h>\n"
+      "#include TESS_EXCLUDED\n",
+      encoding="utf-8",
+  )
+  assert chm.check_manifest(tmp_path, manifest) == [
+      "include/tess/tess.h: stable aggregate has a nonliteral include"
+  ]
+
+
 def test_real_manifest_is_exhaustive_and_aggregate_safe():
   assert chm.check_manifest(chm.REPO_ROOT, chm.DEFAULT_MANIFEST) == []

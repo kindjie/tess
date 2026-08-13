@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import posixpath
 import re
 import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -17,8 +16,9 @@ from api_contract import (
     qualified_declares_type_name,
     qualified_may_declare_type_name,
 )
-from check_public_surface import extract_public_symbols, strip_comments
+from check_public_surface import extract_public_symbols
 from header_manifest import GENERATED_HEADER_SOURCES, load_header_manifest
+from header_manifest import direct_tess_includes
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SNAPSHOTS = REPO_ROOT / "compatibility"
@@ -28,12 +28,6 @@ AGGREGATES = (
     "include/tess/pathfinding.h",
     "include/tess/simulation.h",
     "include/tess/tess.h",
-)
-INCLUDE_RE = re.compile(
-    r'^\s*#\s*include\s*(?:<([^>\n]+)>|"([^"\n]+)")'
-)
-CONDITIONAL_RE = re.compile(
-    r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b"
 )
 CONTRACT_SCOPE_RE = re.compile(
     r"^(?:type|data-member|aggregate-break) (.+?)(?<!:):(?!:)"
@@ -63,37 +57,11 @@ def aggregate_membership(repo_root: Path) -> dict[str, list[str]]:
   result: dict[str, list[str]] = {}
   for aggregate in AGGREGATES:
     text = (repo_root / aggregate).read_text(encoding="utf-8")
-    headers: list[str] = []
-    conditional_depth = 0
-    in_block_comment = False
-    for raw_line in text.splitlines():
-      line, in_block_comment = strip_comments(
-          raw_line, in_block_comment
-      )
-      directive = CONDITIONAL_RE.match(line)
-      if directive is not None:
-        kind = directive.group(1)
-        if kind in {"if", "ifdef", "ifndef"}:
-          conditional_depth += 1
-        elif kind == "endif" and conditional_depth:
-          conditional_depth -= 1
-        continue
-      include = INCLUDE_RE.match(line)
-      imported = next(
-          (group for group in include.groups() if group is not None), None
-      ) if include is not None else None
-      if (
-          conditional_depth == 0
-          and imported is not None
-      ):
-        if include.group(1) is not None or imported.startswith("tess/"):
-          headers.append(f"include/{imported}")
-        else:
-          headers.append(
-              posixpath.normpath(
-                  (Path(aggregate).parent / imported).as_posix()
-              )
-          )
+    headers, nonliteral = direct_tess_includes(
+        text, aggregate, unconditional_only=True
+    )
+    if nonliteral:
+      headers.append("@nonliteral-include@")
     result[aggregate] = sorted(headers)
   return result
 
@@ -241,43 +209,139 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
         scope, name = identity.rsplit("::", 1)
         own.setdefault(scope, set()).add(name)
 
+  namespace_imports: dict[str, set[str]] = {}
+  for contract in declarations:
+    match = re.match(
+        r"^declaration (.+?)(?<!:):(?!:)using namespace (.*)$",
+        contract,
+    )
+    if match is not None:
+      scope, imported = match.groups()
+      names = [
+          token
+          for token in _tokens(imported)
+          if re.fullmatch(r"[A-Za-z_]\w*", token)
+      ]
+      if names:
+        namespace_imports.setdefault(scope, set()).add(names[-1])
+
   by_name: dict[str, set[str]] = {}
   for scope in types:
     by_name.setdefault(scope.rsplit("::", 1)[-1], set()).add(scope)
   aliases: dict[str, set[str]] = {}
   for contract in declarations:
-    match = re.match(
-        r"^declaration (.+?)(?<!:):(?!:)using ([A-Za-z_]\w*) = (.*)$",
-        contract,
-    )
-    if match is not None:
-      namespace, alias, target = match.groups()
-      aliases.setdefault(alias, set()).update(
-          name for name in by_name if re.search(rf"\b{re.escape(name)}\b", target)
+    match = re.match(r"^declaration .+?(?<!:):(?!:)(.*)$", contract)
+    if match is None:
+      continue
+    tokens = _tokens(match.group(1))
+    if "using" in tokens and "=" in tokens:
+      equals = tokens.index("=")
+      alias = next(
+          (
+              token
+              for token in reversed(tokens[:equals])
+              if re.fullmatch(r"[A-Za-z_]\w*", token)
+              and token not in {"using", "template", "class", "typename"}
+          ),
+          None,
       )
+      target_tokens = tokens[equals + 1 :]
+    elif "typedef" in tokens:
+      identifiers = [
+          token for token in tokens if re.fullmatch(r"[A-Za-z_]\w*", token)
+      ]
+      alias = identifiers[-1] if len(identifiers) > 1 else None
+      target_tokens = identifiers[1:-1]
+    else:
+      continue
+    if alias is not None:
+      aliases.setdefault(alias, set()).update(
+          token
+          for token in target_tokens
+          if re.fullmatch(r"[A-Za-z_]\w*", token)
+      )
+  changed = True
+  while changed:
+    changed = False
+    for alias, targets in aliases.items():
+      expanded = set().union(
+          *(aliases.get(target, {target}) for target in targets)
+      ) if targets else set()
+      before = len(targets)
+      targets.update(expanded)
+      changed |= len(targets) != before
   bases: dict[str, set[str]] = {}
+  dependent_base_scopes: set[str] = set()
   for scope, declaration in types.items():
     tokens = _tokens(declaration)
     if ":" not in tokens:
       continue
-    candidates = _base_head_names(tokens[tokens.index(":") + 1 :])
+    base_tokens = tokens[tokens.index(":") + 1 :]
+    type_kind = next(
+        (
+            token
+            for token in reversed(tokens[: tokens.index(":")])
+            if token in {"struct", "class"}
+        ),
+        "class",
+    )
+    public_segments = _public_base_segments(base_tokens, type_kind)
+    candidates = set().union(
+        *(_base_head_names(segment) for segment in public_segments)
+    ) if public_segments else set()
     candidates.update(
-        token for token in tokens[tokens.index(":") + 1 :] if token in by_name
+        token
+        for segment in public_segments
+        for token in segment
+        if token in by_name
     )
     candidates.update(
-        target for candidate in tuple(candidates) for target in aliases.get(candidate, set())
+        target
+        for candidate in tuple(candidates)
+        for target in aliases.get(candidate, set())
     )
-    bases[scope] = {
-        base
-        for name in candidates
-        for base in by_name.get(name, set())
-        if base != scope
-    }
+    bases[scope] = set()
+    for segment in public_segments:
+      identifiers = [
+          token
+          for token in segment
+          if re.fullmatch(r"[A-Za-z_]\w*", token)
+          and token
+          not in {"public", "protected", "private", "virtual", "template"}
+      ]
+      qualified = "::".join(identifiers)
+      exact = {
+          candidate
+          for candidate in types
+          if candidate == qualified or candidate.endswith(f"::{qualified}")
+      } if "::" in segment else set()
+      if exact:
+        bases[scope].update(exact - {scope})
+        continue
+      bases[scope].update(
+          base
+          for name in candidates
+          for base in by_name.get(name, set())
+          if base != scope
+      )
+    if public_segments and not bases[scope]:
+      dependent_base_scopes.add(scope)
 
   visible = {scope: set(names) for scope, names in own.items()}
   changed = True
   while changed:
     changed = False
+    for scope, imports in namespace_imports.items():
+      imported_names = set().union(
+          *(
+              names
+              for namespace, names in visible.items()
+              if namespace.rsplit("::", 1)[-1] in imports
+          )
+      ) if imports else set()
+      before = len(visible.setdefault(scope, set()))
+      visible[scope].update(imported_names)
+      changed |= len(visible[scope]) != before
     for scope, direct_bases in bases.items():
       inherited = set().union(
           *(visible.get(base, set()) for base in direct_bases)
@@ -285,13 +349,60 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
       before = len(visible.setdefault(scope, set()))
       visible[scope].update(inherited)
       changed |= len(visible[scope]) != before
-  return {
+  inherited = {
       f"{scope}::{name}"
       for scope, direct_bases in bases.items()
       if direct_bases
       for name in visible[scope]
       if name not in own.get(scope, set())
   }
+  imported = {
+      f"{scope}::{name}"
+      for scope in namespace_imports
+      for name in visible.get(scope, set())
+      if name not in own.get(scope, set())
+  }
+  return inherited | imported | {
+      f"{scope}::*" for scope in dependent_base_scopes
+  }
+
+
+def _public_base_segments(
+    tokens: list[str], type_kind: str
+) -> list[list[str]]:
+  """Return base-specifier segments whose inheritance is public."""
+  segments: list[list[str]] = [[]]
+  angle_depth = round_depth = square_depth = 0
+  for token in tokens:
+    if token == "," and not (angle_depth or round_depth or square_depth):
+      segments.append([])
+      continue
+    segments[-1].append(token)
+    if token == "(":
+      round_depth += 1
+    elif token == ")" and round_depth:
+      round_depth -= 1
+    elif token in {"[", "[["}:
+      square_depth += 1
+    elif token in {"]", "]]"} and square_depth:
+      square_depth -= 1
+    elif not (round_depth or square_depth):
+      if token == "<":
+        angle_depth += 1
+      elif token == ">" and angle_depth:
+        angle_depth -= 1
+      elif token == ">>" and angle_depth:
+        angle_depth = max(0, angle_depth - 2)
+  default_public = type_kind == "struct"
+  return [
+      segment
+      for segment in segments
+      if "public" in segment
+      or (
+          default_public
+          and not {"private", "protected"}.intersection(segment)
+      )
+  ]
 
 
 def _base_head_names(tokens: list[str]) -> set[str]:
@@ -728,6 +839,20 @@ def check_snapshots(
       inherited_callables = _inherited_callable_identities(
           all_snapshot_declarations
       )
+      global_snapshot_callables = {
+          identity
+          for declaration in all_snapshot_declarations
+          for identity in (
+              _callable_identity(declaration),
+              *_using_callable_identities(declaration),
+          )
+          if identity is not None
+      } | inherited_callables
+      global_snapshot_macros = {
+          identity
+          for declaration in all_snapshot_declarations
+          if (identity := _macro_identity(declaration)) is not None
+      }
       valid_snapshot_contract: dict[str, set[str]] = {}
       snapshot_header_values: list[str] = []
       if isinstance(snapshot_headers, dict):
@@ -771,20 +896,8 @@ def check_snapshots(
             for declaration in snapshot_declarations
             if (scope := _aggregate_scope(declaration)) is not None
         }
-        snapshot_callables = {
-            identity
-            for declaration in snapshot_declarations
-            for identity in (
-                _callable_identity(declaration),
-                *_using_callable_identities(declaration),
-            )
-            if identity is not None
-        } | inherited_callables
-        snapshot_macros = {
-            identity
-            for declaration in snapshot_declarations
-            if (identity := _macro_identity(declaration)) is not None
-        }
+        snapshot_callables = global_snapshot_callables
+        snapshot_macros = global_snapshot_macros
         for addition in sorted(
             current_declarations - snapshot_declarations
         ):
@@ -810,7 +923,10 @@ def check_snapshots(
               )
               if identity is not None
           }
-          if identities & snapshot_callables:
+          inherited_wildcards = {
+              f"{identity.rsplit('::', 1)[0]}::*" for identity in identities
+          }
+          if (identities | inherited_wildcards) & snapshot_callables:
             failures.append(
                 f"{directory.name}: overload added to existing callable: "
                 f"{header}: {addition}"
