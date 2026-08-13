@@ -302,7 +302,10 @@ def _consumer_project_is_valid(
 
   def links_tess(target: str) -> bool:
     return any(
-        args and args[0] == target and "tess::tess" in args[1:]
+        len(args) >= 3
+        and args[0] == target
+        and args[1] == "PRIVATE"
+        and "tess::tess" in args[2:]
         for args in links
     )
 
@@ -320,7 +323,11 @@ def _consumer_project_is_valid(
         continue
       if args[command_index + 1] != target:
         continue
-      if needs_snapshot and "${TESS_SNAPSHOT_DIR}" not in args:
+      snapshot_index = command_index + 2
+      if needs_snapshot and (
+          snapshot_index >= len(args)
+          or args[snapshot_index] != "${TESS_SNAPSHOT_DIR}"
+      ):
         continue
       return True
     return False

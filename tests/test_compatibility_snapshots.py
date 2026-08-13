@@ -312,6 +312,68 @@ def test_cmake_contract_requires_exact_snapshot_argument(tmp_path):
   )
 
 
+def test_cmake_contract_rejects_snapshot_variable_as_test_property(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  text = project.read_text(encoding="utf-8")
+  project.write_text(
+      text.replace(
+          'COMMAND archive_consumer "${TESS_SNAPSHOT_DIR}"',
+          'COMMAND archive_consumer WORKING_DIRECTORY "${TESS_SNAPSHOT_DIR}"',
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "consumer project must discover tess CONFIG" in item
+      for item in failures
+  )
+
+
+def test_cmake_contract_rejects_literal_snapshot_argument(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  text = project.read_text(encoding="utf-8")
+  project.write_text(
+      text.replace(
+          '"${TESS_SNAPSHOT_DIR}"', '[=[${TESS_SNAPSHOT_DIR}]=]'
+      ),
+      encoding="utf-8",
+  )
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "consumer project must discover tess CONFIG" in item
+      for item in failures
+  )
+
+
+def test_cmake_contract_rejects_interface_only_linkage(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  project = snapshot_root / "1.0.0-rc.1/consumer/CMakeLists.txt"
+  text = project.read_text(encoding="utf-8")
+  project.write_text(text.replace(" PRIVATE ", " INTERFACE "), encoding="utf-8")
+
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.0.0-rc.1"
+  )
+
+  assert any(
+      "consumer project must discover tess CONFIG" in item
+      for item in failures
+  )
+
+
 def test_cmake_contract_binds_sources_to_recorded_targets(tmp_path):
   header_path, payload = make_repo(tmp_path)
   snapshot_root = write_snapshot(tmp_path, payload)
