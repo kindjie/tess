@@ -2572,6 +2572,17 @@ def test_aggregate_membership_rejects_disabled_or_commented_include(tmp_path):
     ), failures
 
 
+def test_aggregate_membership_resolves_relative_quoted_include(tmp_path):
+  make_repo(tmp_path)
+  aggregate = tmp_path / "include/tess/tess.h"
+  aggregate.write_text(
+      '#pragma once\n#include "pathfinding.h"\n', encoding="utf-8"
+  )
+  assert snapshots.aggregate_membership(tmp_path)[
+      "include/tess/tess.h"
+  ] == ["include/tess/pathfinding.h"]
+
+
 def test_released_snapshot_must_match_its_release_tag(tmp_path):
   header_path, payload = make_repo(tmp_path)
   snapshot_root = write_snapshot(tmp_path, payload)

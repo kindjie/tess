@@ -114,6 +114,61 @@ def test_using_declarator_lists_check_every_callable(tmp_path):
   )
   assert_overload(failures, "StableOptions")
 
+
+def test_relational_using_list_checks_every_callable(tmp_path):
+  header_path, payload = make_repo(tmp_path)
+  header = tmp_path / "include/tess/tess.h"
+  text = header.read_text(encoding="utf-8").replace(
+      "struct StableOptions {",
+      "template<bool> struct Holder {\n"
+      "  void evaluate(double);\n  using value_type = int;\n};\n"
+      "struct StableOptions : Holder<true> {\n  void evaluate(int);",
+  )
+  header.write_text(text, encoding="utf-8")
+  refresh_payload(tmp_path, payload)
+  snapshot_root = write_snapshot(tmp_path, payload)
+  header.write_text(
+      text.replace(
+          "  int max_steps = 1;",
+          "  using Holder<1 < 2>::evaluate, Holder<true>::value_type;\n"
+          "  int max_steps = 1;",
+      ),
+      encoding="utf-8",
+  )
+  failures = snapshots.check_snapshots(
+      tmp_path, snapshot_root, header_path, "1.1.1"
+  )
+  assert_overload(failures, "StableOptions")
+
+
+def test_namespace_using_participates_in_overload_checks(tmp_path):
+  for index in range(2):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "namespace tess {",
+        "namespace external { void evaluate(double); }\nnamespace tess {\n"
+        + ("using external::evaluate;\n" if index else "void evaluate(int);\n"),
+    )
+    header.write_text(text, encoding="utf-8")
+    refresh_payload(repo, payload)
+    snapshot_root = write_snapshot(repo, payload)
+    if index:
+      current = text.replace(
+          "[[nodiscard]] auto stable_route",
+          "void evaluate(int);\n[[nodiscard]] auto stable_route",
+      )
+    else:
+      current = text.replace(
+          "namespace tess {", "namespace tess {\nusing external::evaluate;"
+      )
+    header.write_text(current, encoding="utf-8")
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+    assert_overload(failures, "tess")
+
   reverse = tmp_path / "reverse"
   header_path, payload = make_repo(reverse)
   header = reverse / "include/tess/tess.h"
@@ -140,28 +195,37 @@ def test_using_declarator_lists_check_every_callable(tmp_path):
 
 
 def test_later_member_cannot_hide_inherited_callable(tmp_path):
-  header_path, payload = make_repo(tmp_path)
-  header = tmp_path / "include/tess/tess.h"
-  text = header.read_text(encoding="utf-8").replace(
-      "struct StableOptions {",
+  variants = (
       "struct Root { void evaluate(int); };\n"
       "template<class> struct Middle : Root {};\n"
       "struct StableOptions : Middle<int> {",
+      "struct Root { void evaluate(int); };\nusing Alias = Root;\n"
+      "struct StableOptions : Alias {",
+      "struct Root { void evaluate(int); };\n"
+      "template<class T> struct Middle : T {};\n"
+      "struct StableOptions : Middle<Root> {",
   )
-  header.write_text(text, encoding="utf-8")
-  refresh_payload(tmp_path, payload)
-  snapshot_root = write_snapshot(tmp_path, payload)
-  header.write_text(
-      text.replace(
-          "  int max_steps = 1;",
-          "  void evaluate(const char*);\n  int max_steps = 1;",
-      ),
-      encoding="utf-8",
-  )
-  failures = snapshots.check_snapshots(
-      tmp_path, snapshot_root, header_path, "1.1.1"
-  )
-  assert_overload(failures, "StableOptions")
+  for index, replacement in enumerate(variants):
+    repo = tmp_path / f"variant-{index}"
+    header_path, payload = make_repo(repo)
+    header = repo / "include/tess/tess.h"
+    text = header.read_text(encoding="utf-8").replace(
+        "struct StableOptions {", replacement
+    )
+    header.write_text(text, encoding="utf-8")
+    refresh_payload(repo, payload)
+    snapshot_root = write_snapshot(repo, payload)
+    header.write_text(
+        text.replace(
+            "  int max_steps = 1;",
+            "  void evaluate(const char*);\n  int max_steps = 1;",
+        ),
+        encoding="utf-8",
+    )
+    failures = snapshots.check_snapshots(
+        repo, snapshot_root, header_path, "1.1.1"
+    )
+    assert_overload(failures, "StableOptions")
 
 
 def test_relational_base_does_not_absorb_later_public_base():

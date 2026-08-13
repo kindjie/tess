@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import posixpath
 import re
 import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -84,9 +85,15 @@ def aggregate_membership(repo_root: Path) -> dict[str, list[str]]:
       if (
           conditional_depth == 0
           and imported is not None
-          and imported.startswith("tess/")
       ):
-        headers.append(f"include/{imported}")
+        if include.group(1) is not None or imported.startswith("tess/"):
+          headers.append(f"include/{imported}")
+        else:
+          headers.append(
+              posixpath.normpath(
+                  (Path(aggregate).parent / imported).as_posix()
+              )
+          )
     result[aggregate] = sorted(headers)
   return result
 
@@ -120,7 +127,9 @@ def _using_callable_identity(contract: str) -> str | None:
 
 
 def _using_callable_identities(contract: str) -> set[str]:
-  match = re.match(r"^member (.+?)(?<!:):(?!:)(.*)$", contract)
+  match = re.match(
+      r"^(?:member|declaration) (.+?)(?<!:):(?!:)(.*)$", contract
+  )
   if match is None:
     return set()
   scope, declaration = match.groups()
@@ -145,7 +154,10 @@ def _using_declarators(tokens: list[str]) -> list[list[str]]:
       separator = len(current) - 1 - current[::-1].index("::") \
           if "::" in current else -1
       suffix = current[separator + 1 :]
-      if angle_depth == 0 and suffix != ["operator"]:
+      complete = (
+          len(suffix) == 1 and re.fullmatch(r"[A-Za-z_]\w*", suffix[0])
+      ) or (suffix and suffix[0] == "operator" and len(suffix) > 1)
+      if (angle_depth == 0 or complete) and suffix != ["operator"]:
         result.append(current)
         current = []
         continue
@@ -232,12 +244,29 @@ def _inherited_callable_identities(declarations: set[str]) -> set[str]:
   by_name: dict[str, set[str]] = {}
   for scope in types:
     by_name.setdefault(scope.rsplit("::", 1)[-1], set()).add(scope)
+  aliases: dict[str, set[str]] = {}
+  for contract in declarations:
+    match = re.match(
+        r"^declaration (.+?)(?<!:):(?!:)using ([A-Za-z_]\w*) = (.*)$",
+        contract,
+    )
+    if match is not None:
+      namespace, alias, target = match.groups()
+      aliases.setdefault(alias, set()).update(
+          name for name in by_name if re.search(rf"\b{re.escape(name)}\b", target)
+      )
   bases: dict[str, set[str]] = {}
   for scope, declaration in types.items():
     tokens = _tokens(declaration)
     if ":" not in tokens:
       continue
     candidates = _base_head_names(tokens[tokens.index(":") + 1 :])
+    candidates.update(
+        token for token in tokens[tokens.index(":") + 1 :] if token in by_name
+    )
+    candidates.update(
+        target for candidate in tuple(candidates) for target in aliases.get(candidate, set())
+    )
     bases[scope] = {
         base
         for name in candidates

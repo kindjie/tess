@@ -64,7 +64,7 @@ def test_stable_aggregate_cannot_import_excluded_classes(tmp_path):
   aggregate = tmp_path / "include" / "tess" / "tess.h"
   aggregate.write_text(
       "#include <tess/experimental/tool.h>\n"
-      '#include "tess/detail/fragment.h"\n',
+      '#include "detail/fragment.h"\n',
       encoding="utf-8",
   )
 
@@ -77,6 +77,21 @@ def test_stable_aggregate_cannot_import_excluded_classes(tmp_path):
       "header include/tess/detail/fragment.h",
       "include/tess/tess.h: stable aggregate imports experimental header "
       "include/tess/experimental/tool.h",
+  ]
+
+
+def test_relative_quoted_experimental_include_is_forbidden(tmp_path):
+  make_headers(tmp_path)
+  aggregate = tmp_path / "include" / "tess" / "tess.h"
+  aggregate.write_text(
+      '#include "experimental/tool.h"\n', encoding="utf-8"
+  )
+  failures = chm.check_manifest(
+      tmp_path, write_manifest(tmp_path, complete_classes())
+  )
+  assert failures == [
+      "include/tess/tess.h: stable aggregate imports experimental header "
+      "include/tess/experimental/tool.h"
   ]
 
 

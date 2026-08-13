@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import posixpath
 import re
 from pathlib import Path
 
@@ -60,7 +61,17 @@ def check_manifest(repo_root: Path, manifest_path: Path) -> list[str]:
   for aggregate in STABLE_AGGREGATES:
     text = (repo_root / aggregate).read_text(encoding="utf-8")
     includes = {
-        f"include/{angle or quote}"
+        (
+            f"include/{angle}"
+            if angle
+            else (
+                f"include/{quote}"
+                if quote.startswith("tess/")
+                else posixpath.normpath(
+                    (Path(aggregate).parent / quote).as_posix()
+                )
+            )
+        )
         for angle, quote in INCLUDE_RE.findall(text)
     }
     for imported in sorted(includes & forbidden):
