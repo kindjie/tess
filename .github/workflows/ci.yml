@@ -551,6 +551,7 @@ jobs:
           tests/test_check_mermaid.py
           tests/test_cloud_perf.py
           tests/test_macro_odr_guards.py
+          tests/test_msvc_warning_guards.py
           tests/test_parser_fuzz.py
           tests/test_publish_benchmark_data.py
 
