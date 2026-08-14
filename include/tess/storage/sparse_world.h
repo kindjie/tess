@@ -763,7 +763,7 @@ class World<Shape, Schema, SparseResident> {
 
   [[nodiscard]] static constexpr std::size_t clamp_capacity(
       std::size_t byte_budget) noexcept {
-    if (page_byte_size == 0) {
+    if constexpr (page_byte_size == 0) {
       return 1;
     }
     const auto count = byte_budget / page_byte_size;

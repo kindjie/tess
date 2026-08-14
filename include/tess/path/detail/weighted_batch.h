@@ -94,7 +94,11 @@ template <typename World, typename Class, std::uint32_t MaxCost>
   // non-resident neighbor, and stopping early could miss that boundary
   // and misreport Indeterminate as Found.
   auto targets_remaining = std::size_t{0};
-  if (Space::is_dense || policy == MissingChunkPolicy::TreatAsBlocked) {
+  bool arm_early_termination = policy == MissingChunkPolicy::TreatAsBlocked;
+  if constexpr (Space::is_dense) {
+    arm_early_termination = true;
+  }
+  if (arm_early_termination) {
     for (const auto target : settle_targets) {
       const auto target_offset = space.offset(target);
       if (!scratch.is_settle_target(target_offset)) {

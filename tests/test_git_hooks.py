@@ -682,6 +682,17 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
     assert '    env:\n      CMAKE_CXX_COMPILER_LAUNCHER: ""\n' in body
 
 
+def test_release_macos_floor_bounds_build_parallelism():
+  """The three-core hosted runner must not launch unbounded compilers."""
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  macos_floor = _job_body(workflow, "release-macos-floor")
+
+  assert (
+    "cmake --build build/release-macos-floor --parallel 3" in macos_floor
+  )
+
+
 def test_non_pr_failure_report_observes_every_runnable_job():
   """Every non-PR job failure must reach the rolling failure issue."""
   root = Path(__file__).resolve().parents[1]

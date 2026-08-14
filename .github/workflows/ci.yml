@@ -551,6 +551,7 @@ jobs:
           tests/test_check_mermaid.py
           tests/test_cloud_perf.py
           tests/test_macro_odr_guards.py
+          tests/test_msvc_warning_guards.py
           tests/test_parser_fuzz.py
           tests/test_publish_benchmark_data.py
 
@@ -1389,7 +1390,9 @@ jobs:
 
       - name: Build and run full floor suite
         run: |
-          cmake --build build/release-macos-floor --parallel
+          # macos-15 is a three-core, 7 GB hosted runner. An unbounded native
+          # build launches every translation unit and exhausts the job budget.
+          cmake --build build/release-macos-floor --parallel 3
           ctest --test-dir build/release-macos-floor --output-on-failure
           build/release-macos-floor/examples/tess_quickstart
 
