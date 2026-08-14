@@ -350,14 +350,16 @@ Studio 2022 release floor — instead of `-latest` labels. This avoids automatic
 OS-family migrations, but GitHub refreshes each hosted image in place, so its
 compilers, CMake, and preinstalled tools still roll. GitHub currently documents
 the public x64 Ubuntu runner as four CPUs with 16 GB of RAM; the clang-tidy cap
-matches those CPUs. The blocking Linux analysis jobs install and invoke
-`clang-tidy-18` explicitly; the weekly advisory job follows the runner's
-rolling unversioned `clang-tidy` package so newer diagnostics surface without
-changing the required baseline. Other preinstalled tools still roll with the
-runner image. Benchmark baseline JSON is uploaded from CI artifacts so timing
-thresholds can be calibrated against the same runner family that will enforce
-them; benchmark gates therefore run only on the Linux runner family they were
-calibrated on. Every checkout disables persisted Git credentials because these
+matches those CPUs. The standard `macos-15` runner has three M1 CPUs and 7 GB
+of RAM, so its uncached release-floor build is capped at three compile jobs.
+The blocking Linux analysis jobs install and invoke `clang-tidy-18` explicitly;
+the weekly advisory job follows the runner's rolling unversioned `clang-tidy`
+package so newer diagnostics surface without changing the required baseline.
+Other preinstalled tools still roll with the runner image. Benchmark baseline
+JSON is uploaded from CI artifacts so timing thresholds can be calibrated
+against the same runner family that will enforce them; benchmark gates
+therefore run only on the Linux runner family they were calibrated on. Every
+checkout disables persisted Git credentials because these
 jobs only need repository read access.
 
 The required CI workflow always runs its change classifier, hook backstop, and
