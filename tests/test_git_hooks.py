@@ -606,6 +606,7 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert '"clang_tidy": "18"' in evidence
 
   windows_floor = _job_body(workflow, "release-windows-floor")
+  assert "    runs-on: windows-2022\n" in windows_floor
   assert "if ($null -eq $file)" in windows_floor
   assert "Select-String" in windows_floor
   assert "-Quiet" in windows_floor
@@ -663,6 +664,44 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   packages = _job_body(workflow, "release-packages")
   assert "CMAKE_CXX_COMPILER_LAUNCHER: \"\"" in packages
   assert "conan create . --build=missing -s compiler.cppstd=20" in packages
+
+  # These jobs do not provision ccache. A command-line cache override is too
+  # late for CMake's first compiler probe when the workflow-level environment
+  # already names the absent launcher, so each job must shadow it explicitly.
+  ccache_free_jobs = (
+    "release-macos-floor",
+    "release-windows-floor",
+    "release-cmake-floor",
+    "release-fuzz",
+    "release-packages",
+    "release-compatibility",
+    "release-docs",
+  )
+  for job in ccache_free_jobs:
+    body = _job_body(workflow, job)
+    assert '    env:\n      CMAKE_CXX_COMPILER_LAUNCHER: ""\n' in body
+
+
+def test_non_pr_failure_report_observes_every_runnable_job():
+  """Every non-PR job failure must reach the rolling failure issue."""
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
+  body = workflow.split("\njobs:\n", 1)[1]
+  jobs = set(
+    re.findall(r"^  ([a-z0-9][a-z0-9_-]*):$", body, flags=re.M)
+  )
+  report_failure = _job_body(workflow, "report-failure")
+  reported = set()
+  for line in report_failure.split("    needs:\n", 1)[1].split("\n"):
+    entry = re.match(r"^      - ([a-z0-9][a-z0-9_-]*)$", line)
+    if not entry:
+      break
+    reported.add(entry.group(1))
+
+  # paired-bench is pull-request-only, while the reporter is deliberately
+  # disabled on pull requests. The reporter cannot depend on itself.
+  expected_unreported = {"paired-bench", "report-failure"}
+  assert jobs - reported == expected_unreported
 
 
 def test_documentation_only_changes_skip_expensive_ci_fail_closed():

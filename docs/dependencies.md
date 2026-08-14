@@ -326,6 +326,10 @@ runbook and the cleanup mechanisms.
 - Setup Python documentation: https://github.com/actions/setup-python
 - Hosted runner documentation:
   https://docs.github.com/actions/reference/runners/github-hosted-runners
+- Hosted runner image inventories and label guidance:
+  https://github.com/actions/runner-images
+- Windows 2022 image inventory:
+  https://github.com/actions/runner-images/blob/main/images/windows/Windows2022-Readme.md
 - Job-condition documentation:
   https://docs.github.com/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions
 - Required-check troubleshooting:
@@ -341,10 +345,11 @@ runbook and the cleanup mechanisms.
   https://docs.github.com/pages/configuring-a-custom-domain-for-your-github-pages-site
 
 CI selects explicit OS-family labels — `ubuntu-24.04`, `macos-15`, and
-`windows-2025` — instead of `-latest` labels. This avoids automatic OS-family
-migrations, but GitHub refreshes each hosted image in place, so its compilers,
-CMake, and preinstalled tools still roll. GitHub currently documents the
-public x64 Ubuntu runner as four CPUs with 16 GB of RAM; the clang-tidy cap
+`windows-2025` for current-toolchain jobs, plus `windows-2022` for the Visual
+Studio 2022 release floor — instead of `-latest` labels. This avoids automatic
+OS-family migrations, but GitHub refreshes each hosted image in place, so its
+compilers, CMake, and preinstalled tools still roll. GitHub currently documents
+the public x64 Ubuntu runner as four CPUs with 16 GB of RAM; the clang-tidy cap
 matches those CPUs. The blocking Linux analysis jobs install and invoke
 `clang-tidy-18` explicitly; the weekly advisory job follows the runner's
 rolling unversioned `clang-tidy` package so newer diagnostics surface without

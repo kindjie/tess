@@ -9,9 +9,11 @@
   tree. The hook-backstop invocation is matched to the `tests/test_*.py` glob
   in both directions, so a new suite cannot disappear from CI's enumerated
   command.
-- Release-package workflow coverage pins an empty CMake compiler launcher on
-  the ccache-free image and requires Conan creation in C++20 mode. Release-floor
-  coverage requires the MSVC metadata lookup and 19.44 match to fail closed.
+- Release workflow coverage pins an empty CMake compiler launcher on every
+  ccache-free job and requires Conan creation in C++20 mode. Release-floor
+  coverage pins the Visual Studio 2022 runner and requires the MSVC metadata
+  lookup and 19.44 match to fail closed. The non-PR failure reporter directly
+  observes every applicable workflow job.
 - Release-evidence coverage requires checksummed, retained job logs containing
   actual versions, a provenance workflow-run URL, and explicit expected/pinned
   toolchain identifiers.
