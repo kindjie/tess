@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 from pathlib import Path
 from typing import Any
@@ -76,6 +77,8 @@ def load_artifact(
       return None
 
   medians: dict[str, float] = {}
+  observed_names: set[str] = set()
+  unusable_names: set[str] = set()
   for result in sorted(directory.glob("*.json")):
     if result.name == "metadata.json":
       continue
@@ -87,27 +90,41 @@ def load_artifact(
       return None
     samples: dict[str, list[float]] = {}
     for row in data.get("benchmarks", []):
+      name = row.get("run_name", row.get("name"))
+      if name is None:
+        continue
+      name = str(name)
+      observed_names.add(name)
       if row.get("run_type") == "aggregate":
         continue
       unit = UNIT_TO_NS.get(row.get("time_unit", "ns"))
-      name = row.get("name")
-      if name is None:
-        continue
       # Judge each benchmark on the metric its family is gated on, so an
       # alert and the confirmation command it prints mean the same
       # number. Absent from the manifests: CPU time, as before.
-      value = row.get((metrics or {}).get(str(name), "cpu_time"))
+      value = row.get((metrics or {}).get(name, "cpu_time"))
       if unit is None or value is None:
+        unusable_names.add(name)
         continue
-      samples.setdefault(str(name), []).append(float(value) * unit)
+      try:
+        normalized = float(value) * unit
+      except (TypeError, ValueError, OverflowError):
+        unusable_names.add(name)
+        continue
+      if not math.isfinite(normalized):
+        unusable_names.add(name)
+        continue
+      samples.setdefault(name, []).append(normalized)
     for name, values in samples.items():
-      medians[name] = statistics.median(values)
+      if name not in unusable_names:
+        medians[name] = statistics.median(values)
   return {
       "run_id": int(metadata.get("run_id") or 0),
       "run_attempt": int(metadata.get("run_attempt") or 1),
       "commit": metadata.get("commit"),
       "key": key,
       "medians": medians,
+      "observed_names": sorted(observed_names),
+      "unusable_names": sorted(unusable_names),
   }
 
 
@@ -125,7 +142,7 @@ def load_history(
     artifact = load_artifact(
         directory, allow_legacy=allow_legacy, metrics=metrics
     )
-    if artifact is not None and artifact["medians"]:
+    if artifact is not None and artifact["observed_names"]:
       artifacts.append(artifact)
   artifacts.sort(key=lambda a: (a["run_id"], a["run_attempt"]))
   return artifacts
@@ -139,7 +156,7 @@ def detect(
 ) -> dict[str, Any]:
   """Run the control-chart rule over the newest artifact's stratum."""
   if not artifacts:
-    return {"verdict": "no-data", "suspects": []}
+    return _result("no-data")
   newest_key = artifacts[-1]["key"]
   stratum = [a for a in artifacts if a["key"] == newest_key]
   if len(stratum) < CANDIDATES + MIN_BASELINE:
@@ -147,23 +164,64 @@ def detect(
     verdict = "insufficient-history" if seen_before else (
         "series-break" if len(artifacts) > 1 else "insufficient-history"
     )
-    return {
-        "verdict": verdict,
-        "stratum_size": len(stratum),
-        "suspects": [],
-    }
+    candidate_names = _candidate_names(stratum[-CANDIDATES:])
+    not_evaluated = [
+        {
+            "benchmark": name,
+            "reason": "insufficient-stratum-history",
+            "stratum_artifacts": len(stratum),
+            "required_stratum_artifacts": CANDIDATES + MIN_BASELINE,
+        }
+        for name in candidate_names
+    ]
+    return _result(
+        verdict,
+        stratum_size=len(stratum),
+        candidate_count=len(candidate_names),
+        not_evaluated=not_evaluated,
+    )
 
   candidates = stratum[-CANDIDATES:]
   baseline = stratum[-(CANDIDATES + MAX_BASELINE):-CANDIDATES]
   suspects = []
-  for name in sorted(candidates[-1]["medians"]):
-    if any(name not in c["medians"] for c in candidates):
+  not_evaluated = []
+  evaluated_count = 0
+  candidate_names = _candidate_names(candidates)
+  for name in candidate_names:
+    missing_run_ids = [
+        c["run_id"] for c in candidates
+        if name not in set(c["observed_names"])
+    ]
+    if missing_run_ids:
+      not_evaluated.append({
+          "benchmark": name,
+          "reason": "missing-candidate",
+          "missing_run_ids": missing_run_ids,
+      })
+      continue
+    unusable_run_ids = [
+        c["run_id"] for c in candidates
+        if name in set(c["unusable_names"]) or name not in c["medians"]
+    ]
+    if unusable_run_ids:
+      not_evaluated.append({
+          "benchmark": name,
+          "reason": "unusable-candidate-reading",
+          "unusable_run_ids": unusable_run_ids,
+      })
       continue
     history = [
         a["medians"][name] for a in baseline if name in a["medians"]
     ]
     if len(history) < MIN_BASELINE:
+      not_evaluated.append({
+          "benchmark": name,
+          "reason": "insufficient-baseline",
+          "baseline_artifacts": len(history),
+          "required_baseline_artifacts": MIN_BASELINE,
+      })
       continue
+    evaluated_count += 1
     base_median = statistics.median(history)
     if all(
         c["medians"][name] > base_median * (1.0 + relative_floor)
@@ -177,13 +235,55 @@ def detect(
           "newest_median_ns": newest,
           "delta_relative": newest / base_median - 1.0,
       })
+  if suspects:
+    verdict = "suspects"
+  elif evaluated_count == 0:
+    verdict = "insufficient-history"
+  elif not_evaluated:
+    verdict = "partial"
+  else:
+    verdict = "clean"
+  return _result(
+      verdict,
+      stratum_size=len(stratum),
+      candidate_count=len(candidate_names),
+      evaluated_count=evaluated_count,
+      not_evaluated=not_evaluated,
+      suspects=suspects,
+      first_elevated_commit=candidates[0]["commit"],
+      last_clean_commit=baseline[-1]["commit"],
+      newest_commit=candidates[-1]["commit"],
+  )
+
+
+def _candidate_names(candidates: list[dict[str, Any]]) -> list[str]:
+  """Return the deterministic union of raw names in candidate artifacts."""
+  return sorted({
+      name
+      for candidate in candidates
+      for name in candidate["observed_names"]
+  })
+
+
+def _result(
+    verdict: str,
+    *,
+    stratum_size: int = 0,
+    candidate_count: int = 0,
+    evaluated_count: int = 0,
+    not_evaluated: list[dict[str, Any]] | None = None,
+    suspects: list[dict[str, Any]] | None = None,
+    **details: Any,
+) -> dict[str, Any]:
+  """Build a result with coverage fields present for every verdict."""
   return {
-      "verdict": "suspects" if suspects else "clean",
-      "stratum_size": len(stratum),
-      "first_elevated_commit": candidates[0]["commit"],
-      "last_clean_commit": baseline[-1]["commit"],
-      "newest_commit": candidates[-1]["commit"],
-      "suspects": suspects,
+      "verdict": verdict,
+      "stratum_size": stratum_size,
+      "candidate_count": candidate_count,
+      "evaluated_count": evaluated_count,
+      "not_evaluated": not_evaluated or [],
+      "suspects": suspects or [],
+      **details,
   }
 
 
@@ -191,16 +291,23 @@ def render_report(result: dict[str, Any]) -> str:
   """Render the markdown report for the step summary and issue."""
   verdict = result["verdict"]
   if verdict == "series-break":
-    return (
-        "### Benchmark change-point check: series break\n\n"
+    lines = [
+        "### Benchmark change-point check: series break",
+        "",
         "The runner fingerprint changed; confirm any suspicion manually "
         "with the paired sentinel confirmation workflow while the new "
-        "stratum accumulates history.\n"
-    )
+        "stratum accumulates history.",
+    ]
+    lines.extend(_coverage_report(result))
+    return "\n".join(lines) + "\n"
   if verdict != "suspects":
-    return f"### Benchmark change-point check: {verdict}\n"
+    lines = [f"### Benchmark change-point check: {verdict}"]
+    lines.extend(_coverage_report(result))
+    return "\n".join(lines) + "\n"
   lines = [
       "### Benchmark change-point check: sustained shift suspected",
+      "",
+      *(_coverage_report(result, leading_blank=False)),
       "",
       f"Suspect commit range: `{result['last_clean_commit']}` (newest"
       f" baseline artifact) ... `{result['first_elevated_commit']}` (first"
@@ -265,6 +372,55 @@ def render_report(result: dict[str, Any]) -> str:
   return "\n".join(lines) + "\n"
 
 
+def _coverage_report(
+    result: dict[str, Any], *, leading_blank: bool = True
+) -> list[str]:
+  """Render coverage counts and any benchmark-level omissions."""
+  lines = [""] if leading_blank else []
+  lines.append(
+      f"Evaluated {result['evaluated_count']} of "
+      f"{result['candidate_count']} candidate benchmarks."
+  )
+  lines.extend(_not_evaluated_report(result["not_evaluated"]))
+  return lines
+
+
+def _not_evaluated_report(entries: list[dict[str, Any]]) -> list[str]:
+  """Render deterministic details for benchmarks not evaluated."""
+  if not entries:
+    return []
+  lines = [
+      "",
+      "| Benchmark not evaluated | Reason |",
+      "| --- | --- |",
+  ]
+  for entry in entries:
+    reason = entry["reason"]
+    if reason == "missing-candidate":
+      detail = "missing from candidate run(s) " + ", ".join(
+          str(run_id) for run_id in entry["missing_run_ids"]
+      )
+    elif reason == "unusable-candidate-reading":
+      detail = "unusable reading in candidate run(s) " + ", ".join(
+          str(run_id) for run_id in entry["unusable_run_ids"]
+      )
+    elif reason == "insufficient-baseline":
+      detail = (
+          f"{entry['baseline_artifacts']} of "
+          f"{entry['required_baseline_artifacts']} required baseline "
+          "artifacts"
+      )
+    elif reason == "insufficient-stratum-history":
+      detail = (
+          f"{entry['stratum_artifacts']} of "
+          f"{entry['required_stratum_artifacts']} required stratum artifacts"
+      )
+    else:
+      detail = str(reason)
+    lines.append(f"| {entry['benchmark']} | {detail} |")
+  return lines
+
+
 def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--artifacts", required=True, type=Path)
@@ -305,13 +461,6 @@ def main(argv: list[str] | None = None) -> int:
       args.artifacts, allow_legacy=args.allow_legacy, metrics=metrics
   )
   downloaded = sum(1 for d in args.artifacts.iterdir() if d.is_dir())
-  result = detect(
-      artifacts,
-      relative_floor=args.relative_floor,
-      absolute_floor_ns=args.absolute_floor_ns,
-  )
-  result["artifacts_loaded"] = len(artifacts)
-  result["directories_downloaded"] = downloaded
   newest_dir = max(
       (int(d.name) for d in args.artifacts.iterdir()
        if d.is_dir() and d.name.isdigit()),
@@ -323,8 +472,15 @@ def main(argv: list[str] | None = None) -> int:
         f"(run {newest_dir}) was unusable; analysis reflects an older "
         "run and the fingerprint producer should be checked"
     )
-    result["verdict"] = "newest-unusable"
-    result["suspects"] = []
+    result = _result("newest-unusable")
+  else:
+    result = detect(
+        artifacts,
+        relative_floor=args.relative_floor,
+        absolute_floor_ns=args.absolute_floor_ns,
+    )
+  result["artifacts_loaded"] = len(artifacts)
+  result["directories_downloaded"] = downloaded
   if downloaded > 0 and not artifacts:
     # A dead loader must be loud, never a green "no-data".
     print(

@@ -98,6 +98,28 @@ def test_hook_backstop_runs_branding_asset_regressions():
   assert "tests/test_branding_assets.py" in workflow
 
 
+def test_change_point_verdict_dispatch_is_exhaustive():
+  workflow = (
+    Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci.yml"
+  ).read_text(encoding="utf-8")
+  start = workflow.index("      - name: File or update the perf-change-point")
+  end = workflow.index("\n  # Long-retention benchmark history", start)
+  dispatch = workflow[start:end]
+
+  assert 'case "$verdict" in' in dispatch
+  assert "partial)" in dispatch
+  assert "clean|insufficient-history|no-data|series-break|newest-unusable)" in (
+    dispatch
+  )
+  assert '::warning::change-point verdict is partial' in dispatch
+  assert '::error::unknown change-point verdict:' in dispatch
+  assert "exit 1" in dispatch
+  partial = dispatch[dispatch.index("            partial)"):]
+  partial = partial[:partial.index("            clean|")]
+  assert "exit 0" in partial
+  assert "gh " not in partial
+
+
 def test_git_diff_is_nul_safe_and_disables_rename_detection():
   captured = []
 

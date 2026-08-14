@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 import benchmark_changepoint  # noqa: E402
@@ -86,6 +88,26 @@ def test_insufficient_history_never_alerts(tmp_path):
 
   assert result["verdict"] == "insufficient-history"
   assert result["suspects"] == []
+  assert result["candidate_count"] == 1
+  assert result["evaluated_count"] == 0
+  assert result["not_evaluated"][0]["reason"] == (
+    "insufficient-stratum-history"
+  )
+
+
+def test_no_data_has_uniform_coverage_fields():
+  result = benchmark_changepoint.detect(
+    [], relative_floor=0.10, absolute_floor_ns=2000.0
+  )
+
+  assert result == {
+    "verdict": "no-data",
+    "stratum_size": 0,
+    "candidate_count": 0,
+    "evaluated_count": 0,
+    "not_evaluated": [],
+    "suspects": [],
+  }
 
 
 def test_stable_series_is_clean(tmp_path):
@@ -95,6 +117,161 @@ def test_stable_series_is_clean(tmp_path):
   result = _detect(tmp_path)
 
   assert result["verdict"] == "clean"
+  assert result["candidate_count"] == 1
+  assert result["evaluated_count"] == 1
+  assert result["not_evaluated"] == []
+
+
+def test_missing_from_newest_candidate_is_partial(tmp_path):
+  values = {"path/stable": 10_000.0, "path/removed": 10_000.0}
+  for run in range(10):
+    _artifact(tmp_path, 100 + run, values)
+  _artifact(tmp_path, 110, {"path/stable": 10_000.0})
+
+  result = _detect(tmp_path)
+
+  assert result["verdict"] == "partial"
+  assert result["candidate_count"] == 2
+  assert result["evaluated_count"] == 1
+  assert result["not_evaluated"] == [
+    {
+      "benchmark": "path/removed",
+      "reason": "missing-candidate",
+      "missing_run_ids": [110],
+    }
+  ]
+
+
+def test_short_per_benchmark_history_is_partial(tmp_path):
+  for run in range(8):
+    values = {"path/eight": 10_000.0}
+    if run > 0:
+      values["path/seven"] = 10_000.0
+    _artifact(tmp_path, 100 + run, values)
+  for run in range(8, 11):
+    _artifact(
+      tmp_path,
+      100 + run,
+      {"path/eight": 10_000.0, "path/seven": 10_000.0},
+    )
+
+  result = _detect(tmp_path)
+
+  assert result["verdict"] == "partial"
+  assert result["evaluated_count"] == 1
+  assert result["not_evaluated"] == [
+    {
+      "benchmark": "path/seven",
+      "reason": "insufficient-baseline",
+      "baseline_artifacts": 7,
+      "required_baseline_artifacts": 8,
+    }
+  ]
+
+
+def test_rename_across_candidates_leaves_both_names_unevaluable(tmp_path):
+  for run in range(8):
+    _artifact(tmp_path, 100 + run, {"path/old": 10_000.0})
+  _artifact(tmp_path, 108, {"path/old": 10_000.0})
+  for run in (109, 110):
+    _artifact(tmp_path, run, {"path/new": 10_000.0})
+
+  result = _detect(tmp_path)
+
+  assert result["verdict"] == "insufficient-history"
+  assert result["candidate_count"] == 2
+  assert result["evaluated_count"] == 0
+  assert result["not_evaluated"] == [
+    {
+      "benchmark": "path/new",
+      "reason": "missing-candidate",
+      "missing_run_ids": [108],
+    },
+    {
+      "benchmark": "path/old",
+      "reason": "missing-candidate",
+      "missing_run_ids": [109, 110],
+    },
+  ]
+
+
+def test_nothing_evaluable_is_insufficient_history(tmp_path):
+  for run in range(8):
+    _artifact(tmp_path, 100 + run, {"path/old": 10_000.0})
+  for run in range(8, 11):
+    _artifact(tmp_path, 100 + run, {"path/new": 10_000.0})
+
+  result = _detect(tmp_path)
+
+  assert result["verdict"] == "insufficient-history"
+  assert result["candidate_count"] == 1
+  assert result["evaluated_count"] == 0
+  assert result["not_evaluated"] == [
+    {
+      "benchmark": "path/new",
+      "reason": "insufficient-baseline",
+      "baseline_artifacts": 0,
+      "required_baseline_artifacts": 8,
+    }
+  ]
+
+
+def test_suspect_wins_while_partial_coverage_remains_visible(tmp_path):
+  for run in range(8):
+    _artifact(tmp_path, 100 + run, {"path/shift": 10_000.0})
+  for run in range(8, 11):
+    _artifact(
+      tmp_path,
+      100 + run,
+      {"path/shift": 14_000.0, "path/new": 10_000.0},
+    )
+
+  result = _detect(tmp_path)
+
+  assert result["verdict"] == "suspects"
+  assert result["evaluated_count"] == 1
+  assert [entry["benchmark"] for entry in result["suspects"]] == [
+    "path/shift"
+  ]
+  assert [entry["benchmark"] for entry in result["not_evaluated"]] == [
+    "path/new"
+  ]
+
+
+@pytest.mark.parametrize(
+  "corruption", ("missing-metric", "invalid-unit", "aggregate-only")
+)
+def test_unusable_candidate_reading_is_partial(tmp_path, corruption):
+  values = {"path/stable": 10_000.0, "path/broken": 10_000.0}
+  for run in range(11):
+    _artifact(tmp_path, 100 + run, values)
+  result_path = tmp_path / "110" / "bench.json"
+  data = json.loads(result_path.read_text(encoding="utf-8"))
+  if corruption == "aggregate-only":
+    data["benchmarks"] = [
+      row for row in data["benchmarks"]
+      if row["name"] != "path/broken" or row["run_type"] == "aggregate"
+    ]
+  for row in data["benchmarks"]:
+    if row["name"] != "path/broken" or row["run_type"] == "aggregate":
+      continue
+    if corruption == "missing-metric":
+      del row["cpu_time"]
+    else:
+      row["time_unit"] = "ticks"
+  result_path.write_text(json.dumps(data), encoding="utf-8")
+
+  result = _detect(tmp_path)
+
+  assert result["verdict"] == "partial"
+  assert result["evaluated_count"] == 1
+  assert result["not_evaluated"] == [
+    {
+      "benchmark": "path/broken",
+      "reason": "unusable-candidate-reading",
+      "unusable_run_ids": [110],
+    }
+  ]
 
 
 def test_sustained_shift_flags_with_commit_range(tmp_path):
@@ -138,6 +315,11 @@ def test_new_fingerprint_is_a_series_break(tmp_path):
 
   assert result["verdict"] == "series-break"
   assert result["suspects"] == []
+  assert result["candidate_count"] == 1
+  assert result["evaluated_count"] == 0
+  assert result["not_evaluated"][0]["reason"] == (
+    "insufficient-stratum-history"
+  )
 
 
 def test_returning_fingerprint_resumes_its_stratum(tmp_path):
@@ -186,6 +368,28 @@ def test_report_names_suspects_and_range(tmp_path):
   assert "path/x" in report
   assert "c108" in report
   assert "+40.0%" in report
+  assert "Evaluated 1 of 1 candidate benchmarks" in report
+
+
+def test_partial_report_names_coverage_gap(tmp_path):
+  for run in range(8):
+    values = {"path/stable": 10_000.0}
+    if run == 7:
+      values["path/new"] = 10_000.0
+    _artifact(tmp_path, 100 + run, values)
+  for run in range(8, 11):
+    _artifact(
+      tmp_path,
+      100 + run,
+      {"path/stable": 10_000.0, "path/new": 10_000.0},
+    )
+
+  report = benchmark_changepoint.render_report(_detect(tmp_path))
+
+  assert "partial" in report
+  assert "Evaluated 1 of 2 candidate benchmarks" in report
+  assert "path/new" in report
+  assert "1 of 8 required baseline artifacts" in report
 
 
 def test_fingerprinted_artifacts_must_attest_push_and_main(tmp_path):
@@ -394,6 +598,37 @@ def test_cli_defaults_to_the_repository_threshold_manifests(tmp_path):
   assert metrics["parallel/tile_touch_pool_w4"] == "real_time"
 
 
+def test_cli_newest_unusable_has_no_stale_analysis_fields(tmp_path):
+  for run in range(11):
+    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
+  newest = tmp_path / "999"
+  newest.mkdir()
+  (newest / "metadata.json").write_text("truncated{", encoding="utf-8")
+  thresholds = _thresholds_dir(
+    tmp_path,
+    {"path/x": {"max_real_time_ns": None, "max_cpu_time_ns": 20_000}},
+  )
+  out = tmp_path / "cp.json"
+
+  code = benchmark_changepoint.main(
+    [
+      "--artifacts", str(tmp_path),
+      "--thresholds-dir", str(thresholds),
+      "--json", str(out),
+    ]
+  )
+  result = json.loads(out.read_text(encoding="utf-8"))
+
+  assert code == 0
+  assert result["verdict"] == "newest-unusable"
+  assert result["candidate_count"] == 0
+  assert result["evaluated_count"] == 0
+  assert result["not_evaluated"] == []
+  assert result["suspects"] == []
+  assert "first_elevated_commit" not in result
+  assert "last_clean_commit" not in result
+
+
 def test_cli_refuses_a_missing_thresholds_directory(tmp_path):
   for run in range(12):
     _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
@@ -434,19 +669,6 @@ def test_manifest_without_benchmarks_is_an_error(tmp_path):
     assert "no benchmark" in str(error).lower()
   else:
     raise AssertionError("a manifest set naming no benchmarks is broken input")
-
-
-def test_cli_reports_an_empty_manifest_set_without_a_traceback(tmp_path):
-  for run in range(12):
-    _artifact(tmp_path, 100 + run, {"path/x": 10_000.0})
-  empty = tmp_path / "thresholds"
-  empty.mkdir()
-
-  code = benchmark_changepoint.main(
-    ["--artifacts", str(tmp_path), "--thresholds-dir", str(empty)]
-  )
-
-  assert code == 1
 
 
 def test_cli_reports_an_empty_manifest_set_without_a_traceback(tmp_path):
