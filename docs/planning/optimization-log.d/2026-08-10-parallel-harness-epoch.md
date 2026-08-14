@@ -85,6 +85,18 @@
   want of history is reported inside a `clean` verdict, so "not
   evaluated" and "passed" are indistinguishable — which is what made
   suppression hard to reason about in the first place.
+- Second alert, refuted 2026-08-13: change-point run 31669132367 reported
+  `tile_touch_pool_w4` at 39,997 ns against a 32,734 ns baseline (+22.2%)
+  over suspect range b193d0ba ... 2131b279. An exact local paired
+  confirmation on Apple M3 Max/AppleClang 21 measured 13,628 ns at the base
+  and 13,692 ns at the head, +0.1% with a 95% interval of [-1.1%, +0.7%],
+  verdict `immaterial-scale`. The range changes no parallel source or harness;
+  its only library edits add exception-free assertions to queued-operation
+  headers. This refutes a regression attributable to the reported range, not
+  every older level in the hosted series. Decision: close the duplicate alert,
+  keep the 61,000 ns ceiling unchanged, and reconsider only if a widened
+  paired comparison or a later same-stratum alert identifies a reproducible
+  range.
 - Scope, measured rather than assumed (paired run 31438907252,
   6e67d38 -> 73cf59c, all ten gated registrations, real time, 99.5%
   intervals). Only the two `tile_touch` cells moved:

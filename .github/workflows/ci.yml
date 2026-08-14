@@ -1361,6 +1361,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ""
       CC: clang
       CXX: clang++
     steps:
@@ -1381,7 +1382,6 @@ jobs:
           cmake -S . -B build/release-macos-floor
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_CXX_FLAGS=-fno-rtti
-          -DCMAKE_CXX_COMPILER_LAUNCHER=
           -DTESS_BUILD_TESTING=ON
           -DTESS_BUILD_EXAMPLES=ON
           -DTESS_ENABLE_WARNINGS=ON
@@ -1399,8 +1399,13 @@ jobs:
     if: >-
       ${{ needs.changes.outputs.code_required == 'true' &&
           github.event_name != 'pull_request' }}
-    runs-on: windows-2025
+    # windows-2025 moved to Visual Studio 2026 in June 2026. GitHub directs
+    # Visual Studio 2022 users to windows-2022, which carries the 17.14/MSVC
+    # 19.44 floor verified below.
+    runs-on: windows-2022
     timeout-minutes: 45
+    env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ""
     steps:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1438,6 +1443,8 @@ jobs:
           github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ""
     steps:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1466,7 +1473,6 @@ jobs:
           test "$(cmake --version | head -1)" = 'cmake version 3.25.3'
           cmake -S . -B build/cmake-floor \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_COMPILER_LAUNCHER= \
             -DTESS_BUILD_TESTING=OFF \
             -DTESS_BUILD_EXAMPLES=OFF
           tools/install_smoke.sh
@@ -1480,6 +1486,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ""
       CC: clang-16
       CXX: clang++-16
     steps:
@@ -1498,7 +1505,6 @@ jobs:
         run: |
           cmake -S . -B build/fuzz -GNinja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_CXX_COMPILER_LAUNCHER= \
             -DTESS_BUILD_TESTING=OFF \
             -DTESS_BUILD_EXAMPLES=OFF \
             -DTESS_BUILD_FUZZING=ON
@@ -1581,6 +1587,8 @@ jobs:
     if: ${{ needs.changes.outputs.release_mode == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ""
     steps:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1595,8 +1603,7 @@ jobs:
           python3 tools/check_compatibility_snapshots.py
           cmake -S . -B build/compatibility \
             -DTESS_BUILD_TESTING=OFF \
-            -DTESS_BUILD_EXAMPLES=OFF \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=
+            -DTESS_BUILD_EXAMPLES=OFF
           install_prefix="$PWD/build/compatibility/install"
           cmake --install build/compatibility --prefix "$install_prefix"
           for manifest in compatibility/*/manifest.json; do
@@ -1629,6 +1636,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ""
       DOXYGEN_VERSION: 1.17.0
       DOXYGEN_SHA256: >-
         75419ef4f446fc1c24ef12514b574e66e898ee6f527c6ae2ad84f91a905823c2
@@ -1664,7 +1672,6 @@ jobs:
           .venv-docs/bin/mkdocs build --strict
           cmake -S . -B build/release-docs \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_COMPILER_LAUNCHER= \
             -DTESS_BUILD_TESTING=OFF \
             -DTESS_BUILD_EXAMPLES=OFF \
             -DTESS_BUILD_DOCS=ON
@@ -2300,9 +2307,9 @@ jobs:
             build/bench-coverage/coverage-gaps.json
           retention-days: 90
 
-  # Keeps demoted-job regressions owned: a failed main, scheduled, or
-  # dispatched run files or extends one rolling ci-failure issue. Never
-  # runs on pull_request events and never executes repository code. The
+  # Keeps every non-PR job failure owned: a failed main, scheduled, or
+  # dispatched run files or extends one rolling ci-failure issue. Never runs
+  # on pull_request events and never executes repository code. The
   # repository-wide concurrency group serializes concurrent reporters so
   # the find-then-create dedupe cannot race itself into duplicates;
   # Actions keeps only one reporter pending per group, so when three or
@@ -2320,6 +2327,7 @@ jobs:
       - changes
       - dev
       - gcc
+      - libcxx
       - no-exceptions
       - hooks-backstop
       - quality
@@ -2329,11 +2337,20 @@ jobs:
       - windows-noexceptions
       - bench
       - bench-baselines
+      - ci-gate
+      - release-linux-floors
+      - release-macos-floor
+      - release-windows-floor
+      - release-cmake-floor
+      - release-fuzz
+      - release-packages
+      - release-compatibility
+      - release-docs
+      - release-evidence
+      - change-point
+      - publish-benchmark-history
       - coverage
       - long-seed-properties
-      - publish-benchmark-history
-      - ci-gate
-      - release-evidence
     permissions:
       contents: read
       issues: write

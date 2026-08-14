@@ -312,8 +312,9 @@ CI provide two layers of evidence:
 - macOS 15 with AppleClang builds, tests, sanitizes, and consumes an install on
   non-PR full-tier runs. Release runs select Xcode 16.0 and add no-RTTI runtime
   evidence.
-- Windows 2025 with MSVC is a required PR build-and-test gate. Release runs
-  verify MSVC 19.44 and add no-RTTI runtime evidence.
+- Windows 2025 with current MSVC is a required PR build-and-test gate. Release
+  runs use Windows 2022 to verify Visual Studio 2022 17.14/MSVC 19.44 and add
+  no-RTTI runtime evidence.
 
 Consequences worth knowing before you depend on a platform:
 
