@@ -4,3 +4,6 @@
   classifier and tier selection. The TSan path set has a drift scan over every
   header that owns a threading primitive, so a new concurrent component cannot
   silently bypass the pull-request TSan gate.
+- The change-point dispatch assertion keeps every known verdict explicit:
+  partial coverage warns and exits before issue commands, while an empty or
+  unknown verdict reaches the non-zero catch-all.

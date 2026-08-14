@@ -1920,10 +1920,22 @@ jobs:
         run: |
           verdict=$(python3 -c \
             "import json; print(json.load(open('change-point.json'))['verdict'])")
-          if [ "$verdict" != "suspects" ]; then
-            echo "verdict: $verdict — no issue action"
-            exit 0
-          fi
+          case "$verdict" in
+            suspects)
+              ;;
+            partial)
+              echo "::warning::change-point verdict is partial; see summary"
+              exit 0
+              ;;
+            clean|insufficient-history|no-data|series-break|newest-unusable)
+              echo "verdict: $verdict — no issue action"
+              exit 0
+              ;;
+            *)
+              echo "::error::unknown change-point verdict: ${verdict:-<empty>}"
+              exit 1
+              ;;
+          esac
           marker="<!-- perf-change-point:${GITHUB_RUN_ID} -->"
           printf '%s\n\n' "$marker" > issue-body.md
           cat change-point.md >> issue-body.md
