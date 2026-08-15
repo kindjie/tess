@@ -61,6 +61,30 @@ class CountingAllocator {
   return false;
 }
 
+void accumulate_timing(diagnostics::TimingSnapshot& history,
+                       const diagnostics::TimingSnapshot& frame) noexcept {
+  for (std::size_t index = 0; index < diagnostics::trace_category_count;
+       ++index) {
+    const auto& source = frame.per_category[index];
+    if (source.samples == 0) {
+      continue;
+    }
+    auto& destination = history.per_category[index];
+    if (destination.samples == 0) {
+      destination = source;
+      continue;
+    }
+    destination.samples += source.samples;
+    destination.total_ns += source.total_ns;
+    if (source.min_ns < destination.min_ns) {
+      destination.min_ns = source.min_ns;
+    }
+    if (source.max_ns > destination.max_ns) {
+      destination.max_ns = source.max_ns;
+    }
+  }
+}
+
 }  // namespace
 
 auto ReadinessEvidence::ready() const noexcept -> bool {
@@ -201,6 +225,8 @@ auto DiagnosticsModel::tick() -> bool {
   ++tick_number_;
   snapshot_ = diagnostics::capture_diagnostics(
       path_counters_, allocation_counters_, queued_counters_, trace_buffer_);
+  accumulate_timing(timing_history_, snapshot_.timing);
+  snapshot_.timing = timing_history_;
   evidence_.workload_tick = evidence_.workload_tick || succeeded;
   update_evidence();
   return succeeded;

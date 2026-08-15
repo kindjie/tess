@@ -36,6 +36,8 @@
 #include <tess/diagnostics/export.h>
 #include <tess/diagnostics/trace.h>
 
+#include <array>
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -46,6 +48,16 @@ namespace detail {
 [[nodiscard]] inline auto to_ull(std::uint64_t value) noexcept
     -> unsigned long long {
   return static_cast<unsigned long long>(value);
+}
+
+inline void draw_right_aligned(std::uint64_t value) {
+  std::array<char, std::numeric_limits<std::uint64_t>::digits10 + 2> text{};
+  const auto result =
+      std::to_chars(text.data(), text.data() + text.size() - 1, value);
+  const auto text_width = ImGui::CalcTextSize(text.data(), result.ptr).x;
+  const auto available_width = ImGui::GetContentRegionAvail().x;
+  ImGui::SetCursorPosX(ImGui::GetCursorPosX() + available_width - text_width);
+  ImGui::TextUnformatted(text.data(), result.ptr);
 }
 }  // namespace detail
 
@@ -115,15 +127,15 @@ inline void draw_timing_panel(const diagnostics::TimingSnapshot& timing) {
     ImGui::TableSetColumnIndex(0);
     ImGui::TextUnformatted(category_name(category));
     ImGui::TableSetColumnIndex(1);
-    ImGui::Text("%llu", detail::to_ull(stats.samples));
+    detail::draw_right_aligned(stats.samples);
     ImGui::TableSetColumnIndex(2);
-    ImGui::Text("%llu", detail::to_ull(stats.total_ns));
+    detail::draw_right_aligned(stats.total_ns);
     ImGui::TableSetColumnIndex(3);
-    ImGui::Text("%llu", detail::to_ull(average));
+    detail::draw_right_aligned(average);
     ImGui::TableSetColumnIndex(4);
-    ImGui::Text("%llu", detail::to_ull(stats.min_ns));
+    detail::draw_right_aligned(stats.min_ns);
     ImGui::TableSetColumnIndex(5);
-    ImGui::Text("%llu", detail::to_ull(stats.max_ns));
+    detail::draw_right_aligned(stats.max_ns);
   }
   ImGui::EndTable();
 }

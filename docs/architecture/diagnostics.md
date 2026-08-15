@@ -183,11 +183,13 @@ not include it.
   emits a `#error` if `IMGUI_VERSION` is undefined when both gates are on, so a
   misordered include fails loudly instead of with name-lookup errors.
 - The panels use stable ImGui text primitives and the tables API available
-  since Dear ImGui 1.80. They print `uint64` values through `unsigned long
-  long` casts for portable printf-style formatting.
+  since Dear ImGui 1.80. General `uint64` values use portable `unsigned long
+  long` casts for printf-style formatting; timing-table values use allocation-
+  free `std::to_chars` conversion so their measured text can be right-aligned.
 - `draw_timing_panel(TimingSnapshot)` renders per-category timing statistics
-  in fixed, independently clipped columns with horizontal scrolling, so live
-  digit-count changes cannot shift neighboring metrics;
+  in fixed, independently clipped columns with right-aligned numeric values
+  and horizontal scrolling, so live digit-count changes cannot shift
+  neighboring metrics;
   `draw_recent_timing_spans_panel(DiagnosticsSnapshot)` renders each retained
   duration with milliseconds and inclusive allocation/free byte deltas;
   `draw_path_counters_panel`, `draw_queued_counters_panel`, and
@@ -200,7 +202,10 @@ tess validates the header in CI against a minimal ImGui stub
 also compiles the pinned real Dear ImGui core with its GLFW/OpenGL3 backends
 and smoke-tests a submitted WebGL2 frame at `/demo/diagnostics/`. Normal tess
 builds and packages remain dependency-free; only that integration artifact
-fetches ImGui.
+fetches ImGui. The demo keeps path, queue, and allocation counters frame-local,
+but merges each active frame's timing sample into the displayed history so the
+sample, average, minimum, and maximum columns remain meaningful even when the
+browser exposes a coarse monotonic clock.
 
 When diagnostics are enabled, `Schedule::run_tick` automatically records a
 `Scheduler` duration named `schedule_tick` and one nested duration named after

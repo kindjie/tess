@@ -82,6 +82,7 @@ class DiagnosticsModel {
   diagnostics::QueuedPhaseCounters queued_counters_{};
   diagnostics::AllocationCounters allocation_counters_{};
   diagnostics::DiagnosticsSnapshot snapshot_{};
+  diagnostics::TimingSnapshot timing_history_{};
   Coord3 selected_{4, 4, 0};
   int intensity_ = 4;
   bool paused_ = false;
