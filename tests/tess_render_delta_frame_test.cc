@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <set>
 #include <utility>
+#include <vector>
 
 #include "allocation_counter.h"
 #include "render_delta_replay.h"
@@ -506,6 +509,163 @@ TEST(TessDeltaFrame, OverlayOverflowDropsTheOverlayNotTheFrame) {
   EXPECT_EQ(frame.overlays()[0].entity, (tess::EntityHandle{2}));
   EXPECT_FALSE(frame.header.truncated);
 }
+
+TEST(TessDeltaFrame, RetainedOverlaysSurviveNeedsOnlyTicketInvalidation) {
+  tess::DeltaCollector collector;
+  collector.reserve(4, 16, 4, 2, 16);
+
+  std::array<tess::PathAgentState, 2> agents{};
+  std::array<tess::EntityHandle, 2> handles{tess::EntityHandle{10},
+                                            tess::EntityHandle{11}};
+  tess::PathAgentRoutes routes;
+  routes.routes = {
+      {{0, 0, 0}, {1, 0, 0}, {2, 0, 0}},
+      {{0, 1, 0}, {1, 1, 0}, {2, 1, 0}},
+  };
+
+  tess::PathRequestRuntime runtime;
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    agents[i].has_goal = true;
+    agents[i].status = tess::PathStatus::Found;
+    agents[i].phase = tess::PathAgentPhase::Following;
+    agents[i].ticket = runtime.submit(
+        tess::PathRequest{routes.routes[i].front(), routes.routes[i].back()});
+  }
+  agents[0].path_index = 1;
+  const auto old_ticket = agents[0].ticket;
+
+  const auto stats = tess::submit_path_agents(agents, runtime,
+                                              tess::PathSubmitScope::NeedsOnly);
+  EXPECT_EQ(stats.submitted, 0u);
+  const auto current = runtime.submit(
+      tess::PathRequest{tess::Coord3{4, 4, 0}, tess::Coord3{5, 4, 0}});
+  ASSERT_NE(current.generation, old_ticket.generation);
+
+  tess::collect_path_overlays(collector, agents, routes, handles);
+  const auto frame = collector.publish();
+  ASSERT_EQ(frame.overlays().size(), 2u);
+  EXPECT_EQ(frame.overlays()[0].entity, handles[0]);
+  EXPECT_EQ(frame.overlays()[0].ticket.value, old_ticket.value);
+  EXPECT_EQ(frame.overlays()[0].ticket.generation, old_ticket.generation);
+  EXPECT_NE(frame.overlays()[0].ticket.generation, current.generation);
+  EXPECT_EQ(frame.overlays()[0].node_count, 2u);
+  EXPECT_EQ(frame.overlay_nodes()[frame.overlays()[0].first_node],
+            (tess::Coord3{1, 0, 0}));
+  EXPECT_EQ(frame.overlays()[1].entity, handles[1]);
+  EXPECT_EQ(frame.overlays()[1].node_count, 3u);
+}
+
+TEST(TessDeltaFrame, RetainedOverlaySelectionSupportsQueueProducedRoutes) {
+  World world;
+  for (auto& page : world.chunks()) {
+    std::fill(page.field_span<TerrainTag>().begin(),
+              page.field_span<TerrainTag>().end(), 1u);
+  }
+
+  std::array<tess::PathAgentState, 3> agents{};
+  tess::set_path_agent_goal(agents[0], tess::Coord3{1, 0, 0});
+  agents[0].status = tess::PathStatus::Found;
+  tess::set_path_agent_goal(agents[1], tess::Coord3{3, 1, 0});
+  tess::set_path_agent_goal(agents[2], tess::Coord3{3, 2, 0});
+  agents[2].status = tess::PathStatus::NoPath;
+  agents[2].phase = tess::PathAgentPhase::Blocked;
+
+  tess::PathAgentRoutes routes;
+  routes.ensure_size(agents.size());
+  routes.routes[2] = {{0, 2, 0}, {1, 2, 0}};
+  tess::PathAgentReplanQueue queue;
+  ASSERT_TRUE(queue.request(1, agents[1]));
+  tess::PathScratch scratch;
+  const auto stats = tess::process_unit_path_agent_replans<World, TerrainTag>(
+      world, agents, routes, queue, scratch);
+  ASSERT_EQ(stats.found, 1u);
+  ASSERT_EQ(agents[1].ticket.generation, 0u);
+
+  tess::DeltaCollector collector;
+  collector.reserve(4, 16, 4, 3, 32);
+  const std::array handles{tess::EntityHandle{20}, tess::EntityHandle{21},
+                           tess::EntityHandle{22}};
+  const std::array<std::size_t, 3> selection{2, 1, 0};
+  tess::collect_path_overlays(collector, agents, routes, handles, selection);
+  const auto frame = collector.publish();
+
+  ASSERT_EQ(frame.overlays().size(), 1u);
+  EXPECT_EQ(frame.overlays()[0].entity, handles[1]);
+  EXPECT_EQ(frame.overlays()[0].ticket.generation, 0u);
+  EXPECT_EQ(frame.overlay_nodes()[frame.overlays()[0].first_node],
+            agents[1].position);
+  EXPECT_EQ(frame.overlay_nodes()[frame.overlays()[0].first_node +
+                                  frame.overlays()[0].node_count - 1],
+            agents[1].goal);
+}
+
+TEST(TessDeltaFrame, RetainedOverlayOverflowRemainsBestEffort) {
+  std::array<tess::PathAgentState, 2> agents{};
+  for (auto& agent : agents) {
+    agent.has_goal = true;
+    agent.status = tess::PathStatus::Found;
+    agent.phase = tess::PathAgentPhase::Following;
+  }
+  tess::PathAgentRoutes routes;
+  routes.routes = {
+      {{0, 0, 0}, {1, 0, 0}, {2, 0, 0}},
+      {{0, 1, 0}, {1, 1, 0}, {2, 1, 0}},
+  };
+  const std::array handles{tess::EntityHandle{30}, tess::EntityHandle{31}};
+  tess::DeltaCollector collector;
+  collector.reserve(4, 16, 4, 1, 3);
+
+  tess::collect_path_overlays(collector, agents, routes, handles);
+  const auto frame = collector.publish();
+  ASSERT_EQ(frame.overlays().size(), 1u);
+  EXPECT_EQ(frame.overlays()[0].entity, handles[0]);
+  EXPECT_EQ(collector.stats().overlay_truncations, 1u);
+  EXPECT_FALSE(frame.header.truncated);
+}
+
+#if TESS_ENABLE_ASSERTS
+TEST(TessDeltaFrameDeathTest, RetainedOverlaysRejectMismatchedPairing) {
+  tess::DeltaCollector collector;
+  std::array<tess::PathAgentState, 1> agents{};
+  tess::PathAgentRoutes routes;
+  routes.ensure_size(agents.size());
+  const std::array<tess::EntityHandle, 0> handles{};
+  EXPECT_DEATH(tess::collect_path_overlays(collector, agents, routes, handles),
+               "tess assertion failed");
+}
+
+TEST(TessDeltaFrameDeathTest, RetainedOverlaysRejectMissingRoute) {
+  tess::DeltaCollector collector;
+  std::array<tess::PathAgentState, 1> agents{};
+  tess::PathAgentRoutes routes;
+  const std::array handles{tess::EntityHandle{40}};
+  EXPECT_DEATH(tess::collect_path_overlays(collector, agents, routes, handles),
+               "tess assertion failed");
+}
+
+TEST(TessDeltaFrameDeathTest, RetainedSelectionRejectsInvalidIndex) {
+  tess::DeltaCollector collector;
+  std::array<tess::PathAgentState, 1> agents{};
+  tess::PathAgentRoutes routes;
+  routes.ensure_size(agents.size());
+  const std::array handles{tess::EntityHandle{41}};
+  const std::array<std::size_t, 1> selection{1};
+  EXPECT_DEATH(tess::collect_path_overlays(collector, agents, routes, handles,
+                                           selection),
+               "tess assertion failed");
+}
+
+TEST(TessDeltaFrameDeathTest, RuntimeSelectionRejectsInvalidIndex) {
+  tess::DeltaCollector collector;
+  tess::PathRequestRuntime runtime;
+  std::array<tess::PathAgentState, 1> agents{};
+  const std::array handles{tess::EntityHandle{42}};
+  const std::array<std::size_t, 1> selection{1};
+  EXPECT_DEATH(tess::collect_path_overlays(collector, runtime, agents, handles,
+                                           selection),
+               "tess assertion failed");
+}
+#endif
 
 // ---- section-8 acceptance: randomized replay == projected state ----
 
