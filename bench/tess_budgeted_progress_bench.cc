@@ -1457,6 +1457,15 @@ auto main(int argc, char** argv) -> int {
         }
         start = comma + 1;
       }
+    } else if (argument == "--mixed-world" && i + 1 < argc) {
+      const std::string world = argv[++i];
+      if (world == "512") {
+        options.mixed_world = 512;
+      } else if (world == "1024") {
+        options.mixed_world = 1024;
+      } else {
+        fail("--mixed-world must be exactly 512 or 1024");
+      }
     } else if (argument == "--mixed-populations" && i + 1 < argc) {
       options.mixed_populations_explicit = true;
       options.mixed_populations.clear();
@@ -1477,7 +1486,7 @@ auto main(int argc, char** argv) -> int {
       fail(
           "usage: tess_bench_budgeted_progress --out-dir DIR "
           "[--smoke] [--mixed-only] [--mixed-tiers baseline,pibt] "
-          "[--reps N]");
+          "[--mixed-world 512|1024] [--reps N]");
     }
   }
   if (options.out_dir.empty()) {

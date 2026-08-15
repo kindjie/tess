@@ -91,6 +91,10 @@ struct RunOptions {
   // per-agent advance, "pibt" the PIBT tier with the route-attachment
   // ranking. Each tier is a separate scenario_id cohort.
   std::vector<std::string> mixed_tiers = {"baseline"};
+  // World extent for the mixed matrix: 512 is the canonical anchored
+  // cell; 1024 is the design's capacity cell (section 3.1) over the
+  // same 64x64 logical map at scale 16.
+  std::int64_t mixed_world = 512;
   // Explicit CLI axes win over the smoke defaults, so a smoke run can
   // still exercise a chosen matrix point (the seating-capacity ctest
   // depends on this).
