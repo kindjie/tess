@@ -10,10 +10,10 @@ const replan = document.getElementById('replan');
 const resetButton = document.getElementById('reset');
 const clearButton = document.getElementById('clear-walls');
 
-// Mirrors kWallMinX/kWallMaxX in colony.cc: painting is rejected in the
+// Mirrors kWallMinX/kWallMaxX in colony_model.cc: painting is rejected in the
 // spawn band on the left and the turnaround band on the right.
 const bandWidth = 10;
-// Mirrors the FixedStepAccumulator rate in colony.cc.
+// Mirrors the FixedStepAccumulator rate in colony_model.cc.
 const ticksPerSecond = 20;
 // Five seconds of no agent moving at all. Well above transient contention.
 const stallTicks = 5 * ticksPerSecond;
@@ -32,6 +32,8 @@ let turnaroundSince = 0;
 const walls = new Set();
 
 function paintWall(x, y) {
+  // Example: persist only edits the C++ model admitted. The browser remembers
+  // accepted walls across resets but never claims authority over occupancy.
   const key = y * width + x;
   if (walls.has(key)) {
     return;
@@ -79,6 +81,7 @@ function reset() {
   emaUs = 0;
   leg = api.leg();
   turnaroundSince = 0;
+  lastTimestamp = 0;
 }
 
 function cellAt(event) {
@@ -91,12 +94,18 @@ function cellAt(event) {
 
 function draw() {
   const tilesPtr = api.tiles();
-  const agentsPtr = api.agents();
+  const currentAgentsPtr = api.agents();
+  const previousAgentsPtr = api.previousAgents();
   const count = api.agentCount();
+  const alpha = api.interpolationAlpha();
   const tiles = module.HEAPU8.subarray(tilesPtr, tilesPtr + width * height);
-  const agents = module.HEAP16.subarray(
-      agentsPtr / 2,
-      agentsPtr / 2 + count * 2,
+  const currentAgents = module.HEAP16.subarray(
+      currentAgentsPtr / 2,
+      currentAgentsPtr / 2 + count * 2,
+  );
+  const previousAgents = module.HEAP16.subarray(
+      previousAgentsPtr / 2,
+      previousAgentsPtr / 2 + count * 2,
   );
 
   ctx.fillStyle = '#10141c';
@@ -115,8 +124,20 @@ function draw() {
     }
   }
   ctx.fillStyle = '#60dfbe';
+  // Example: interpolate fixed-tick snapshots for presentation. These
+  // fractional coordinates exist only in canvas drawing; C++ remains on
+  // integer tiles and supplies the accumulator remainder as alpha.
+  const interpolate = (previous, current) =>
+    previous + (current - previous) * alpha;
+  const agentSize = cell * 0.72;
+  const agentInset = (cell - agentSize) / 2;
   for (let i = 0; i < count; i += 1) {
-    ctx.fillRect(agents[i * 2] * cell, agents[i * 2 + 1] * cell, cell, cell);
+    const x = interpolate(previousAgents[i * 2], currentAgents[i * 2]);
+    const y = interpolate(previousAgents[i * 2 + 1],
+        currentAgents[i * 2 + 1]);
+    // A centered inset glyph keeps crossing and permitted-swap motion legible.
+    ctx.fillRect(x * cell + agentInset, y * cell + agentInset,
+        agentSize, agentSize);
   }
 }
 
@@ -171,7 +192,8 @@ function frame(timestamp) {
     } else {
       message.textContent = 'Colony running';
     }
-    metrics.textContent = `${emaUs.toFixed(0)} µs/tick · ` +
+    metrics.textContent = `C++ update ${emaUs.toFixed(0)} µs/tick; ` +
+        `canvas render excluded · ` +
         `${arrived}/${count} arrived · ${crowdBlocked} crowd-blocked · ` +
         `${unreachable} wall-blocked · leg ${leg} · ` +
         `${completedLegs} completed · ${abortedLegs} crowd turnarounds`;
@@ -205,6 +227,10 @@ createTessColony()
         leg: instance.cwrap('tess_colony_leg', 'number', []),
         tiles: instance.cwrap('tess_colony_tiles', 'number', []),
         agents: instance.cwrap('tess_colony_agents', 'number', []),
+        previousAgents: instance.cwrap(
+            'tess_colony_previous_agents', 'number', []),
+        interpolationAlpha: instance.cwrap(
+            'tess_colony_interpolation_alpha', 'number', []),
         agentCount: instance.cwrap('tess_colony_agent_count', 'number', []),
         arrived: instance.cwrap('tess_colony_arrived', 'number', []),
         unreachable: instance.cwrap(

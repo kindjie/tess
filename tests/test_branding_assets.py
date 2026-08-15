@@ -154,11 +154,27 @@ def test_web_demo_uses_brand_logo_and_compact_favicon():
 
 
 def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
-  model = read("examples/web_colony/colony.cc")
+  model = read("examples/web_colony/colony_model.cc") + read(
+    "examples/web_colony/colony_model_internal.h"
+  )
+  model_header = read("examples/web_colony/colony_model.h")
+  wasm = read("examples/web_colony/colony_wasm.cc")
+  native = read("examples/web_colony/colony_native.cc")
   app = read("examples/web_colony/site/app.js")
   build_script = read("tools/build_web_demo.sh")
+  cmake = read("examples/CMakeLists.txt")
 
-  assert "tess_colony_unreachable" in model
+  assert not (ROOT / "examples/web_colony/colony.cc").exists()
+  for source in ("colony_model.cc", "colony_native.cc"):
+    assert source in cmake
+  native_target = cmake.split("tess_web_colony_model", 1)[1].split(")", 1)[0]
+  assert "colony_wasm.cc" not in native_target
+  assert "tess_web_colony_wasm_adapter OBJECT" in cmake
+  assert "web_colony/colony_wasm.cc" in cmake
+  assert "colony_model.cc" in build_script
+  assert "colony_wasm.cc" in build_script
+
+  assert "tess_colony_unreachable" in wasm
   assert "_tess_colony_unreachable" in build_script
   assert "api.unreachable()" in app
   assert "wall-blocked" in app
@@ -166,7 +182,7 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   # A pointer stroke cannot make an occupied source impassable. The backend
   # decides admission, and JavaScript persists only requests it accepted.
   assert "world.field<OccupancyTag>(coord)" in model
-  assert "occupied wall request was accepted" in model
+  assert "occupied wall request was accepted" in native
   assert "if (api.setWall(x, y) === 1)" in app
 
   # A durable verdict is decided by search, not by a retry clock, so the
@@ -182,19 +198,22 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   assert "astar_path<World, Walker>" in model
   assert "kRecoveryWindowTicks" in model
   assert "BlockedAgentRecoverySchedule" in model
-  assert "2U * static_cast<std::uint32_t>(demo->agents.size()) + 8U" not in model
+  assert (
+    "2U * static_cast<std::uint32_t>(demo->agents.size()) + 8U"
+    not in model
+  )
 
-  assert "tess_colony_crowd_blocked" in model
+  assert "tess_colony_crowd_blocked" in wasm
   assert "_tess_colony_crowd_blocked" in build_script
   assert "api.crowdBlocked()" in app
-  assert "tess_colony_turnaround_ready" in model
+  assert "tess_colony_turnaround_ready" in wasm
   assert "_tess_colony_turnaround_ready" in build_script
   assert "api.turnaroundReady()" in app
   assert "crowd-blocked agents waiting for turnaround" in app
-  assert "tess_colony_completed_legs" in model
+  assert "tess_colony_completed_legs" in wasm
   assert "_tess_colony_completed_legs" in build_script
   assert "api.completedLegs()" in app
-  assert "tess_colony_aborted_legs" in model
+  assert "tess_colony_aborted_legs" in wasm
   assert "_tess_colony_aborted_legs" in build_script
   assert "api.abortedLegs()" in app
 
@@ -209,19 +228,49 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   # on that version and a plain field write does not touch it. Without the
   # bump a replan is served the cached route through the tile that just
   # closed, and the agent retries it forever.
-  assert "kSettledDirty" in model
-  assert "world.mark_dirty(key, kSettledDirty" in model
+  assert "mark_content_changed" in model
+  assert "kSettledDirty" not in model
 
   # A colony can stop dead with nobody durably blocked -- two agents each
   # standing on the tile the other needs. Reporting only the durable count
   # left that reading as a running colony over a frozen grid, so sustained
   # absence of movement is reported too, and the page must keep saying
   # "Colony running" in the ordinary case for the Pages smoke.
-  assert "tess_colony_stalled_ticks" in model
+  assert "tess_colony_stalled_ticks" in wasm
   assert "_tess_colony_stalled_ticks" in build_script
   assert "api.stalledTicks()" in app
   assert "Colony stalled" in app
   assert "'Colony running'" in app
+
+  # Fixed-tick state stays in C++; interpolation is presentation-only. The
+  # browser reads the previous/current pair and the accumulator alpha, then
+  # lerps without feeding fractional positions back into tess.
+  assert "previous_agent_xy" in model
+  assert "interpolation_alpha" in model
+  assert "tess_colony_previous_agents" in wasm
+  assert "tess_colony_interpolation_alpha" in wasm
+  assert "_tess_colony_previous_agents" in build_script
+  assert "_tess_colony_interpolation_alpha" in build_script
+  assert "api.previousAgents()" in app
+  assert "api.interpolationAlpha()" in app
+  assert "previous + (current - previous) * alpha" in app
+  assert "swap animation pair diverged" in native
+  assert "const agentSize = cell * 0.72" in app
+  assert "canvas render excluded" in app
+
+  # Tutorial structure is part of the example contract: the model labels the
+  # reusable library patterns and repairs a rejected delta stream by publishing
+  # a full baseline before applying more incremental frames.
+  assert "Example: queue a world edit" in model
+  assert "Example: rebuild derived topology on dirty input" in model
+  assert "Example: run bounded pathing before movement" in model
+  assert "Example: recover a rejected DeltaFrame" in model
+  assert "collect_baseline" in model
+  assert "shadow[shadow_index] != 0" in native
+  assert "version != impl().deltas.version()" in native
+  assert "class ColonyModel" in model_header
+  assert "run_native_self_check" not in model_header
+  assert "run_native_self_check" in native
 
 
 def test_wasm_diagnostics_demo_has_real_accessible_integration_contract():
