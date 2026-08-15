@@ -18,6 +18,13 @@ the provided macros rather than `#ifdef`ing ad hoc. tess never links or
 fetches Dear ImGui itself — the panels are headers your ImGui-enabled
 host compiles.
 
+The [live diagnostics demo](https://tess.owx.dev/demo/diagnostics/) shows the
+complete integration: scoped counters and timers around real A* and queued
+work, snapshot capture on the recording thread, and the reference panels in a
+Dear ImGui GLFW/WebGL2 host. Its allocation panel is explicitly
+consumer-instrumented; it reports a demo-owned transient allocator, not hidden
+allocations inside tess scratch objects.
+
 World overview, chunk inspection, and boolean-field edit-intent helpers are
 also available from `tess/debug/imgui/tools.h`. They require only
 `TESS_ENABLE_IMGUI`, accept const worlds, and return edits for the application

@@ -20,6 +20,10 @@ cmake --build --preset examples
   walls you draw (walls survive resets), with completed and crowd-turnaround
   leg counters, a per-tick cost readout, and a retained-routes vs
   replan-every-tick toggle.
+- [Live diagnostics](https://tess.owx.dev/demo/diagnostics/) — real Dear ImGui
+  panels over path, queued-phase, timing, trace, and consumer-instrumented
+  allocation snapshots. Mirrored HTML controls keep the demo keyboard
+  operable and make its runtime state visible to browser automation.
 - [`quickstart.cc`][quickstart] — the complete program on the
   [home page](index.md): a world, a schema, and an A* query.
 - [`colony_2d.cc`][colony_2d] — the flagship composition: queued
@@ -66,6 +70,9 @@ cmake --build --preset examples
   consumer rebuilding a shadow grid from published frames.
 - [`web_pathfinder`][web_pathfinder] — the source of the live demo above:
   a single-threaded WebAssembly build with a small JavaScript shell.
+- [`web_diagnostics`][web_diagnostics] — a dependency-free native model
+  self-check plus the Dear ImGui GLFW/WebGL2 browser host used by the
+  [live diagnostics demo](https://tess.owx.dev/demo/diagnostics/).
 
 [quickstart]: https://github.com/kindjie/tess/blob/main/examples/quickstart.cc
 [colony_2d]: https://github.com/kindjie/tess/blob/main/examples/colony_2d.cc
@@ -80,3 +87,4 @@ cmake --build --preset examples
 [flecs_pawns]: https://github.com/kindjie/tess/blob/main/examples/flecs_pawns.cc
 [render_delta]: https://github.com/kindjie/tess/blob/main/examples/render_delta_consumer.cc
 [web_pathfinder]: https://github.com/kindjie/tess/tree/main/examples/web_pathfinder
+[web_diagnostics]: https://github.com/kindjie/tess/tree/main/examples/web_diagnostics
