@@ -16,6 +16,10 @@
       "max_cpu_time_ns": 150000,
       "note": "2026-07-24 local arm64 median: 24.4 us; bootstrap 6x ceiling"
     },
+    "maintenance/sparse/dirty_bit/256": {
+      "gating": false,
+      "note": "Informational until Linux main-tier calibration exists"
+    },
     "maintenance/dense/immediate/512": {
       "max_real_time_ns": null,
       "max_cpu_time_ns": 37000,
@@ -30,6 +34,142 @@
       "max_real_time_ns": null,
       "max_cpu_time_ns": 20000,
       "note": "2026-07-24 local arm64 median: 3.22 us; bootstrap 6x ceiling"
+    },
+    "maintenance/dense/dirty_bit/512": {
+      "gating": false,
+      "note": "Informational until Linux main-tier calibration exists"
+    },
+    "maintenance/chunk_dirty/sparse/immediate/256/256": {
+      "gating": false,
+      "note": "New representative workload awaiting Linux calibration"
+    },
+    "maintenance/chunk_dirty/sparse/fifo/256/256": {
+      "gating": false,
+      "note": "New representative workload awaiting Linux calibration"
+    },
+    "maintenance/chunk_dirty/sparse/coalescing/256/256": {
+      "gating": false,
+      "note": "New representative workload awaiting Linux calibration"
+    },
+    "maintenance/chunk_dirty/sparse/dirty_bit/256/256": {
+      "gating": false,
+      "note": "New representative workload awaiting Linux calibration"
+    },
+    "maintenance/chunk_dirty/dense/immediate/1/512": {
+      "gating": false,
+      "note": "New representative workload awaiting Linux calibration"
+    },
+    "maintenance/chunk_dirty/dense/fifo/1/512": {
+      "gating": false,
+      "note": "New representative workload awaiting Linux calibration"
+    },
+    "maintenance/chunk_dirty/dense/coalescing/1/512": {
+      "gating": false,
+      "note": "New representative workload awaiting Linux calibration"
+    },
+    "maintenance/chunk_dirty/dense/dirty_bit/1/512": {
+      "gating": false,
+      "note": "New representative workload awaiting Linux calibration"
+    },
+    "maintenance/chunk_dirty/mixed/immediate/64/4096": {
+      "gating": false,
+      "note": "New representative workload awaiting Linux calibration"
+    },
+    "maintenance/chunk_dirty/mixed/fifo/64/4096": {
+      "gating": false,
+      "note": "New representative workload awaiting Linux calibration"
+    },
+    "maintenance/chunk_dirty/mixed/coalescing/64/4096": {
+      "gating": false,
+      "note": "New representative workload awaiting Linux calibration"
+    },
+    "maintenance/chunk_dirty/mixed/dirty_bit/64/4096": {
+      "gating": false,
+      "note": "New representative workload awaiting Linux calibration"
+    },
+    "maintenance/flush_sparse/fifo/256": {
+      "gating": false,
+      "note": "New flush workload awaiting Linux calibration"
+    },
+    "maintenance/flush_sparse/coalescing/256": {
+      "gating": false,
+      "note": "New flush workload awaiting Linux calibration"
+    },
+    "maintenance/flush_sparse/dirty_bit/256": {
+      "gating": false,
+      "note": "New flush workload awaiting Linux calibration"
+    },
+    "maintenance/budgeted/fifo/256/10/64": {
+      "gating": false,
+      "note": "New budgeted workload awaiting Linux calibration"
+    },
+    "maintenance/budgeted/coalescing/256/10/64": {
+      "gating": false,
+      "note": "New budgeted workload awaiting Linux calibration"
+    },
+    "maintenance/budgeted/dirty_bit/256/10/64": {
+      "gating": false,
+      "note": "New budgeted workload awaiting Linux calibration"
+    },
+    "maintenance/sparse_scaling/immediate/16": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/immediate/64": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/immediate/256": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/immediate/1024": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/immediate/4096": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/coalescing/16": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/coalescing/64": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/coalescing/256": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/coalescing/1024": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/coalescing/4096": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/dirty_bit/16": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/dirty_bit/64": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/dirty_bit/256": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/dirty_bit/1024": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
+    },
+    "maintenance/sparse_scaling/dirty_bit/4096": {
+      "gating": false,
+      "note": "Exploratory scaling workload"
     }
   }
 }

@@ -66,7 +66,9 @@ Three current inconsistencies require explicit decisions:
    prototypes.
 2. The all-in-one compatibility umbrella includes
    `experimental/maintenance.h`, even though experimental maintenance failed a
-   promotion gate and is not part of the shipped storage model.
+   promotion gate and is not part of the shipped storage model. This was the
+   state when this historical plan was written; the later registered dirty-bit
+   candidate passed its gates, while storage integration remains unshipped.
 3. The installed CMake package uses `SameMinorVersion`, which prevents the
    normal 1.x source-compatible minor-version consumption that the stable
    policy is expected to promise.

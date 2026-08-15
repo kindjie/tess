@@ -763,7 +763,7 @@
     },
     {
       "family": "maintenance/schedulers",
-      "pattern": "^maintenance/(?:sparse|dense)/(?:immediate|fifo|coalescing)/(?:256|512)$",
+      "pattern": "^maintenance/(?:sparse|dense)/(?:immediate|fifo|coalescing|dirty_bit)/(?:256|512)$",
       "captures": {},
       "defaults": {
         "world_extent": "not_applicable",
@@ -793,6 +793,62 @@
         "maintenance/dense/coalescing/512": {
           "payload": "1 task scheduled 512x, coalescing to 1 execution"
         }
+      }
+    },
+    {
+      "family": "maintenance/sparse-scaling",
+      "pattern": "^maintenance/sparse_scaling/(?:immediate|coalescing|dirty_bit)/(?:16|64|256|1024|4096)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "not_applicable",
+        "chunk_extent": "not_applicable",
+        "layout": "not_applicable",
+        "storage": "not_applicable",
+        "executor_kind": "serial",
+        "worker_count": "1",
+        "payload": "distinct-task scheduler scaling"
+      }
+    },
+    {
+      "family": "maintenance/chunk-dirty",
+      "pattern": "^maintenance/chunk_dirty/(?:sparse|dense|mixed)/(?:immediate|fifo|coalescing|dirty_bit)/(?:1|64|256)/(?:256|512|4096)$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "512x512",
+        "chunk_extent": "32x32",
+        "layout": "not_applicable",
+        "storage": "always_resident",
+        "executor_kind": "serial",
+        "worker_count": "1",
+        "payload": "world dirty marks, scheduling, derived-version rebuild, and generation-safe clear"
+      }
+    },
+    {
+      "family": "maintenance/flush-sparse",
+      "pattern": "^maintenance/flush_sparse/(?:fifo|coalescing|dirty_bit)/256$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "not_applicable",
+        "chunk_extent": "not_applicable",
+        "layout": "not_applicable",
+        "storage": "not_applicable",
+        "executor_kind": "serial",
+        "worker_count": "1",
+        "payload": "flush 256 distinct tasks after untimed admission"
+      }
+    },
+    {
+      "family": "maintenance/budgeted",
+      "pattern": "^maintenance/budgeted/(?:fifo|coalescing|dirty_bit)/256/10/64$",
+      "captures": {},
+      "defaults": {
+        "world_extent": "not_applicable",
+        "chunk_extent": "not_applicable",
+        "layout": "not_applicable",
+        "storage": "not_applicable",
+        "executor_kind": "serial",
+        "worker_count": "1",
+        "payload": "256 tasks x 10 units under 64-unit drains"
       }
     },
     {
