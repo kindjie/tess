@@ -852,6 +852,26 @@ if(BUILD_TESTING)
   set_tests_properties(tess_bench_budgeted_progress_mixed_seats_ladder_max
     PROPERTIES TIMEOUT 600)
 
+  # The design's 1024x1024 capacity cell (section 3.1) must seat its
+  # full ladder through the bench placement path: the ladder tops at
+  # 2000 there, and the seat preflight aborts up front if a rung
+  # cannot be placed. Smoke keeps this to one cell.
+  set(budgeted_w1024_dir "${CMAKE_CURRENT_BINARY_DIR}/seat-1024")
+  file(MAKE_DIRECTORY "${budgeted_w1024_dir}")
+  add_test(
+    NAME tess_bench_budgeted_progress_mixed_seats_1024_ladder_max
+    COMMAND
+      tess_bench_budgeted_progress
+      --smoke
+      --mixed-only
+      --mixed-world 1024
+      --mixed-populations 2000
+      --mixed-views fidelity
+      --out-dir ${budgeted_w1024_dir}
+  )
+  set_tests_properties(tess_bench_budgeted_progress_mixed_seats_1024_ladder_max
+    PROPERTIES TIMEOUT 600)
+
   # The PIBT tier arm must run in CI or its dispatch, per-tier
   # equivalence proof, and artifact identity could regress while every
   # baseline-default test stays green. This smoke runs the tier and
