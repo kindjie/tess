@@ -1423,6 +1423,15 @@ auto main(int argc, char** argv) -> int {
           ++cursor;
         }
       }
+    } else if (argument == "--mixed-views" && i + 1 < argc) {
+      const std::string views = argv[++i];
+      // Exact enumeration: substring matching accepted typos like
+      // "fidelityy" and misread "no-fidelity" as fidelity.
+      options.mixed_view_fidelity = views == "fidelity" || views == "both";
+      options.mixed_view_quanta = views == "quanta" || views == "both";
+      if (!options.mixed_view_fidelity && !options.mixed_view_quanta) {
+        fail("--mixed-views must be exactly fidelity, quanta, or both");
+      }
     } else if (argument == "--mixed-populations" && i + 1 < argc) {
       options.mixed_populations.clear();
       for (const char* cursor = argv[++i]; *cursor != 0;) {

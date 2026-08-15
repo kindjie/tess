@@ -83,6 +83,12 @@ struct RunOptions {
   // --mixed-populations.
   std::vector<std::uint32_t> mixed_tps = {20};
   std::vector<std::size_t> mixed_populations = {100};
+  // Which section 7.3 views to run. The two views are identical by
+  // construction in this stack (no defer boundaries exist), so a
+  // campaign runs one and treats the other as analytically equal;
+  // the default keeps both for smoke plumbing coverage.
+  bool mixed_view_fidelity = true;
+  bool mixed_view_quanta = true;
   std::uint64_t warmup_frames = 120;
   std::uint64_t measured_frames = 600;
   std::uint64_t repetitions = 10;
