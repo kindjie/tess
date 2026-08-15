@@ -373,7 +373,11 @@ class PathAgentReplanQueue {
     if (empty()) {
       return;
     }
-    queued_[indices_[head_]] = 0;
+    const auto index = indices_[head_];
+    TESS_ASSERT(index < queued_.size());
+    if (index < queued_.size()) {
+      queued_[index] = 0;
+    }
     ++head_;
     if (head_ == indices_.size()) {
       indices_.clear();
