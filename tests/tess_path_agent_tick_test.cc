@@ -779,6 +779,25 @@ TEST(TessPathAgentTick, ReplanQueueDeduplicatesAndPreservesOrder) {
   EXPECT_TRUE(queue.empty());
 }
 
+TEST(TessPathAgentTick, UnreservedSingleReplanRequestDrainsSafely) {
+  std::array<tess::PathAgentState, 1> agents{{
+      {
+          .phase = tess::PathAgentPhase::Following,
+          .has_goal = true,
+      },
+  }};
+  tess::PathAgentReplanQueue queue;
+
+  queue.request_all(agents);
+
+  EXPECT_EQ(queue.pending(), 1u);
+  ASSERT_EQ(queue.front(), 0u);
+  queue.pop_front();
+  EXPECT_TRUE(queue.empty());
+  queue.pop_front();
+  EXPECT_TRUE(queue.empty());
+}
+
 TEST(TessPathAgentTick, ReplanQueueBoundsExactPlanningAcrossTicks) {
   World world;
   fill_world(world);
