@@ -116,9 +116,17 @@ TEST(TessUpgrade1_0, OptionsReplaceAdjacentCacheAndMovementIntegers) {
   };
   // [upgrade-scheduler-agent-options]
 
+  // [upgrade-blocked-exhaustion-policy]
+  auto options = tess::PathAgentTickOptions{};
+  options.blocked_exhaustion_policy =
+      tess::BlockedAgentExhaustionPolicy::MarkUnreachable;
+  // [upgrade-blocked-exhaustion-policy]
+
   EXPECT_EQ(stats.advanced, 0u);
   EXPECT_EQ(scheduler_options.path_agent_options.movement_dirty_mask,
             movement_dirty_mask);
+  EXPECT_EQ(options.blocked_exhaustion_policy,
+            tess::BlockedAgentExhaustionPolicy::MarkUnreachable);
 }
 
 TEST(TessUpgrade1_0, GpuDescriptorsRetainAProductHandle) {

@@ -83,11 +83,13 @@ Blocked retry exhaustion no longer claims geometric `NoPath` by default.
 `BlockedAgentExhaustionPolicy::RemainBlocked`. Callers that intentionally used
 the former timeout-as-terminal policy must select it explicitly:
 
+<!-- tess-snippet: upgrade-blocked-exhaustion-policy source=tests/tess_upgrade_1_0_test.cc -->
 ```cpp
 auto options = tess::PathAgentTickOptions{};
 options.blocked_exhaustion_policy =
     tess::BlockedAgentExhaustionPolicy::MarkUnreachable;
 ```
+<!-- /tess-snippet -->
 
 GPU dispatch and readback descriptors now retain one generation-bearing
 handle:
