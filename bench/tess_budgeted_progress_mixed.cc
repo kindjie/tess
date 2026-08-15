@@ -632,7 +632,17 @@ struct MixedSuite {
                 demand.open_item.assign(population, MixedDemand::npos);
                 demand.current_goal = stack->assigned_goals;
                 demand.heading_away.assign(population, 1);
-                demand.items.reserve(8192);
+                // Upper-bound the ping-pong history so it can never
+                // grow inside the timed frame loop: each agent's open
+                // item plus one item per completed leg, where a leg
+                // needs at least goal-distance+1 ticks of the run's
+                // maximum tick budget.
+                const std::uint64_t max_run_ticks =
+                    (options.warmup_frames + options.measured_frames) * 8 +
+                    kMixedSettlementTicks;
+                const std::uint64_t max_legs_per_agent =
+                    max_run_ticks / (kMixedGoalDistance + 1) + 2;
+                demand.items.reserve(population * (max_legs_per_agent + 1));
                 demand.rearm_queue.reserve(population);
                 for (std::size_t agent = 0; agent < population; ++agent) {
                   ++demand.accounting.counters.offered;
@@ -912,14 +922,19 @@ struct MixedSuite {
                   const std::int64_t words[2] = {edit.coord.x, edit.coord.y};
                   hasher.update(words, sizeof(words));
                 }
-                const std::uint64_t params[6] = {
-                    kSeed,
-                    population,
-                    kMixedChurnPeriod,
-                    kMixedAllowanceTicks,
-                    static_cast<std::uint64_t>(tier),
-                    static_cast<std::uint64_t>(kExtent)};
+                // The five-word parameter encoding is versioned by
+                // the colony_pingpong_v2 tag and must stay byte-stable
+                // for the historical 512 world; the extent word
+                // extends the encoding only for the newer worlds.
+                const std::uint64_t params[5] = {
+                    kSeed, population, kMixedChurnPeriod, kMixedAllowanceTicks,
+                    static_cast<std::uint64_t>(tier)};
                 hasher.update(params, sizeof(params));
+                if (kExtent != 512) {
+                  const std::uint64_t extent_word =
+                      static_cast<std::uint64_t>(kExtent);
+                  hasher.update(&extent_word, sizeof(extent_word));
+                }
                 artifact.trace.sha256 = hasher.hex_digest();
                 artifact.trace.realized_churn_sha256 =
                     cell.realized_churn_sha256;
