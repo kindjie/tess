@@ -182,11 +182,12 @@ not include it.
 - The consumer must include `<imgui.h>` **before** `panels.h`; the header
   emits a `#error` if `IMGUI_VERSION` is undefined when both gates are on, so a
   misordered include fails loudly instead of with name-lookup errors.
-- The panels use only the three most stable ImGui text primitives (`Text`,
-  `TextUnformatted`, `Separator`) and print `uint64` values through
-  `unsigned long long` casts for portable printf-style formatting, so they
-  compile across ImGui versions.
-- `draw_timing_panel(TimingSnapshot)` renders the per-category timing table;
+- The panels use stable ImGui text primitives and the tables API available
+  since Dear ImGui 1.80. They print `uint64` values through `unsigned long
+  long` casts for portable printf-style formatting.
+- `draw_timing_panel(TimingSnapshot)` renders per-category timing statistics
+  in fixed, independently clipped columns with horizontal scrolling, so live
+  digit-count changes cannot shift neighboring metrics;
   `draw_recent_timing_spans_panel(DiagnosticsSnapshot)` renders each retained
   duration with milliseconds and inclusive allocation/free byte deltas;
   `draw_path_counters_panel`, `draw_queued_counters_panel`, and
