@@ -7,13 +7,13 @@
 // on its own target, and it never fetches or links Dear ImGui itself. The
 // consumer must include <imgui.h> BEFORE this header (the panels call into the
 // ImGui namespace); when the gates are on but ImGui has not been included, the
-// #error below fires instead of emitting confusing name-lookup failures.
+// #error below fires instead of emitting confusing name-lookup failures. The
+// timing panel requires the Dear ImGui tables API available since 1.80.
 //
 // tess.h does NOT include this header, so a diagnostics build that does not use
-// ImGui never sees it. Only the three most stable ImGui text primitives are
-// used (Text, TextUnformatted, Separator) so the panels compile across ImGui
-// versions and uint64 values are printed through unsigned long long casts for
-// portable printf-style formatting.
+// ImGui never sees it. The panels use stable ImGui text and table APIs, and
+// uint64 values are printed through unsigned long long casts for portable
+// printf-style formatting.
 //
 // Threading: the panels only read the snapshot copies they are passed, so they
 // are safe on a render thread -- but producing those copies is not. Capture
@@ -27,6 +27,10 @@
 
 #ifndef IMGUI_VERSION
 #error "tess/debug/imgui/panels.h requires <imgui.h> to be included first"
+#endif
+
+#ifndef IMGUI_HAS_TABLE
+#error "tess/debug/imgui/panels.h requires Dear ImGui 1.80 or later"
 #endif
 
 #include <tess/diagnostics/export.h>
@@ -69,21 +73,59 @@ namespace detail {
   return "?";
 }
 
-/** Draws per-category sample totals and nanosecond timing statistics. */
+/** Draws per-category timing statistics in stable, independently clipped cells.
+ */
 inline void draw_timing_panel(const diagnostics::TimingSnapshot& timing) {
   ImGui::TextUnformatted("Timing (ns)");
   ImGui::Separator();
+  constexpr int column_count = 6;
+  constexpr ImGuiTableFlags flags =
+      ImGuiTableFlags_Resizable | ImGuiTableFlags_NoSavedSettings |
+      ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
+      ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollX |
+      ImGuiTableFlags_ScrollY;
+  const auto unit = ImGui::GetTextLineHeightWithSpacing();
+  const auto visible_rows =
+      static_cast<float>(diagnostics::trace_category_count) + 2.0F;
+  if (!ImGui::BeginTable("##tess_timing", column_count, flags,
+                         ImVec2{0.0F, unit * visible_rows})) {
+    return;
+  }
+  ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthFixed,
+                          unit * 4.5F);
+  ImGui::TableSetupColumn("Samples", ImGuiTableColumnFlags_WidthFixed,
+                          unit * 3.5F);
+  ImGui::TableSetupColumn("Total", ImGuiTableColumnFlags_WidthFixed,
+                          unit * 5.5F);
+  ImGui::TableSetupColumn("Average", ImGuiTableColumnFlags_WidthFixed,
+                          unit * 5.5F);
+  ImGui::TableSetupColumn("Minimum", ImGuiTableColumnFlags_WidthFixed,
+                          unit * 5.5F);
+  ImGui::TableSetupColumn("Maximum", ImGuiTableColumnFlags_WidthFixed,
+                          unit * 5.5F);
+  ImGui::TableSetupScrollFreeze(1, 1);
+  ImGui::TableHeadersRow();
   for (std::size_t index = 0; index < diagnostics::trace_category_count;
        ++index) {
     const auto category = static_cast<diagnostics::TraceCategory>(index);
     const auto& stats = timing.stats(category);
     const auto average =
         stats.samples == 0 ? std::uint64_t{0} : stats.total_ns / stats.samples;
-    ImGui::Text("%-10s n=%llu total=%llu avg=%llu min=%llu max=%llu",
-                category_name(category), detail::to_ull(stats.samples),
-                detail::to_ull(stats.total_ns), detail::to_ull(average),
-                detail::to_ull(stats.min_ns), detail::to_ull(stats.max_ns));
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::TextUnformatted(category_name(category));
+    ImGui::TableSetColumnIndex(1);
+    ImGui::Text("%llu", detail::to_ull(stats.samples));
+    ImGui::TableSetColumnIndex(2);
+    ImGui::Text("%llu", detail::to_ull(stats.total_ns));
+    ImGui::TableSetColumnIndex(3);
+    ImGui::Text("%llu", detail::to_ull(average));
+    ImGui::TableSetColumnIndex(4);
+    ImGui::Text("%llu", detail::to_ull(stats.min_ns));
+    ImGui::TableSetColumnIndex(5);
+    ImGui::Text("%llu", detail::to_ull(stats.max_ns));
   }
+  ImGui::EndTable();
 }
 
 /** Draws headline path-search work counters from a stable snapshot. */

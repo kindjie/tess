@@ -62,6 +62,32 @@ TEST(TessDiagnosticsPanels, EmptyTimingLabelUsesValidStringPointer) {
   EXPECT_STREQ(tess_imgui_stub::last_precision_string, "");
 }
 
+TEST(TessDiagnosticsPanels, TimingRowsUseStableColumnsAcrossDigitBoundaries) {
+  tess_imgui_stub::reset();
+  tess::diagnostics::TimingSnapshot timing;
+  timing.per_category[0] = {9, 99, 9, 99};
+  timing.per_category[1] = {10, 100, 10, 100};
+
+  tess::debug::imgui::draw_timing_panel(timing);
+
+  EXPECT_EQ(tess_imgui_stub::table_begin_count, 1);
+  EXPECT_EQ(tess_imgui_stub::table_end_count, 1);
+  EXPECT_EQ(tess_imgui_stub::table_column_count, 6);
+  EXPECT_EQ(tess_imgui_stub::table_setup_count, 6);
+  EXPECT_EQ(tess_imgui_stub::table_header_row_count, 1);
+  EXPECT_EQ(tess_imgui_stub::table_row_count,
+            static_cast<int>(tess::diagnostics::trace_category_count));
+  EXPECT_EQ(tess_imgui_stub::table_frozen_columns, 1);
+  EXPECT_EQ(tess_imgui_stub::table_frozen_rows, 1);
+  EXPECT_NE(tess_imgui_stub::table_flags & ImGuiTableFlags_ScrollX, 0);
+  EXPECT_NE(tess_imgui_stub::table_flags & ImGuiTableFlags_ScrollY, 0);
+  EXPECT_GT(tess_imgui_stub::table_outer_size.y, 0.0F);
+  for (const int visits : tess_imgui_stub::table_column_visits) {
+    EXPECT_EQ(visits,
+              static_cast<int>(tess::diagnostics::trace_category_count));
+  }
+}
+
 TEST(TessDiagnosticsPanels, CategoryNamesCoverEveryCategory) {
   using tess::diagnostics::TraceCategory;
   EXPECT_STREQ(tess::debug::imgui::category_name(TraceCategory::General),

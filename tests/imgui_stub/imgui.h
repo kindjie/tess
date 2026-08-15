@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdarg>
 #include <cstring>
 
@@ -10,6 +11,36 @@
 // the real header. Text bodies are no-ops; Checkbox has explicit test control.
 
 #define IMGUI_VERSION "tess-stub"
+#define IMGUI_HAS_TABLE
+
+struct ImVec2 {
+  constexpr ImVec2(float x_value = 0.0F, float y_value = 0.0F) noexcept
+      : x(x_value), y(y_value) {}
+
+  float x;
+  float y;
+};
+
+using ImGuiID = unsigned int;
+using ImGuiTableFlags = int;
+using ImGuiTableColumnFlags = int;
+using ImGuiTableRowFlags = int;
+
+enum ImGuiTableFlags_ {
+  ImGuiTableFlags_None = 0,
+  ImGuiTableFlags_Resizable = 1 << 0,
+  ImGuiTableFlags_NoSavedSettings = 1 << 4,
+  ImGuiTableFlags_RowBg = 1 << 6,
+  ImGuiTableFlags_BordersInnerV = 1 << 9,
+  ImGuiTableFlags_SizingFixedFit = 1 << 13,
+  ImGuiTableFlags_ScrollX = 1 << 24,
+  ImGuiTableFlags_ScrollY = 1 << 25,
+};
+
+enum ImGuiTableColumnFlags_ {
+  ImGuiTableColumnFlags_None = 0,
+  ImGuiTableColumnFlags_WidthFixed = 1 << 4,
+};
 
 // Mirror of real ImGui's IM_FMTARGS so -Wformat checks panel format strings
 // against their arguments when compiling against the stub (real ImGui
@@ -28,12 +59,34 @@ inline bool checkbox_pending = false;
 inline bool checkbox_changed = false;
 inline bool checkbox_value = false;
 inline const char* last_precision_string = nullptr;
+inline int table_begin_count = 0;
+inline int table_end_count = 0;
+inline int table_column_count = 0;
+inline int table_setup_count = 0;
+inline int table_header_row_count = 0;
+inline int table_row_count = 0;
+inline int table_frozen_columns = 0;
+inline int table_frozen_rows = 0;
+inline ImGuiTableFlags table_flags = ImGuiTableFlags_None;
+inline ImVec2 table_outer_size;
+inline std::array<int, 6> table_column_visits{};
 
 inline void reset() noexcept {
   checkbox_pending = false;
   checkbox_changed = false;
   checkbox_value = false;
   last_precision_string = nullptr;
+  table_begin_count = 0;
+  table_end_count = 0;
+  table_column_count = 0;
+  table_setup_count = 0;
+  table_header_row_count = 0;
+  table_row_count = 0;
+  table_frozen_columns = 0;
+  table_frozen_rows = 0;
+  table_flags = ImGuiTableFlags_None;
+  table_outer_size = {};
+  table_column_visits.fill(0);
 }
 
 inline void set_next_checkbox(bool changed, bool value) noexcept {
@@ -45,6 +98,36 @@ inline void set_next_checkbox(bool changed, bool value) noexcept {
 }  // namespace tess_imgui_stub
 
 namespace ImGui {
+
+inline bool BeginTable(const char*, int columns, ImGuiTableFlags flags = 0,
+                       const ImVec2& outer_size = ImVec2{}, float = 0.0F) {
+  ++tess_imgui_stub::table_begin_count;
+  tess_imgui_stub::table_column_count = columns;
+  tess_imgui_stub::table_flags = flags;
+  tess_imgui_stub::table_outer_size = outer_size;
+  return true;
+}
+inline void EndTable() { ++tess_imgui_stub::table_end_count; }
+inline void TableNextRow(ImGuiTableRowFlags = 0, float = 0.0F) {
+  ++tess_imgui_stub::table_row_count;
+}
+inline bool TableSetColumnIndex(int column) {
+  if (column >= 0 &&
+      column < static_cast<int>(tess_imgui_stub::table_column_visits.size())) {
+    ++tess_imgui_stub::table_column_visits[static_cast<std::size_t>(column)];
+  }
+  return true;
+}
+inline void TableSetupColumn(const char*, ImGuiTableColumnFlags = 0,
+                             float = 0.0F, ImGuiID = 0) {
+  ++tess_imgui_stub::table_setup_count;
+}
+inline void TableSetupScrollFreeze(int columns, int rows) {
+  tess_imgui_stub::table_frozen_columns = columns;
+  tess_imgui_stub::table_frozen_rows = rows;
+}
+inline void TableHeadersRow() { ++tess_imgui_stub::table_header_row_count; }
+inline float GetTextLineHeightWithSpacing() { return 16.0F; }
 
 // Attribute lives on a preceding declaration (as in real ImGui); the inline
 // definition below inherits it.
