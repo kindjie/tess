@@ -547,6 +547,7 @@ jobs:
           tests/test_sweep_cpu_plan.py
           tests/test_budgeted_artifacts.py
           tests/test_compare_budgeted_passes.py
+          tests/test_summarize_budgeted_curves.py
           tests/test_changelog_fragments.py
           tests/test_check_mermaid.py
           tests/test_cloud_perf.py
