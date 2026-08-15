@@ -78,6 +78,9 @@ struct RunOptions {
   bool counter_pass = false;
   // Set by --smoke: shrinks every cell's frame counts and matrices.
   bool smoke = false;
+  // Set by --mixed-only: runs only the mixed-colony matrix, for
+  // campaigns resuming after the isolated cells already completed.
+  bool mixed_only = false;
   // Mixed-colony matrix (design section 7): defaults keep an
   // uninvoked full run tractable; campaigns widen via --mixed-tps and
   // --mixed-populations.

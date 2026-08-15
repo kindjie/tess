@@ -79,6 +79,11 @@ struct ColonyConfig {
   // tick. End-of-run sampling alone cannot catch an intermediate
   // graph that is wrong and later self-heals.
   bool verify_fresh_graph_each_churn = false;
+  // Row stride of the scan-order agent placement. 0 keeps the
+  // historical default of kSizeY / 64 (8 rows apart on the 512-tile
+  // world, which seats at most 227 agents on the default map);
+  // smaller strides visit more rows and seat larger populations.
+  std::int64_t placement_stride = 0;
 };
 
 // Scenario-level counters. PathAgentTickStats::repaths_requested only
@@ -244,7 +249,9 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
   std::vector<tess::Coord3> assigned_goals;
   agents.reserve(config_.agents);
   assigned_goals.reserve(config_.agents);
-  const std::int64_t stride = std::max<std::int64_t>(1, kSizeY / 64);
+  const std::int64_t stride = config_.placement_stride > 0
+                                  ? config_.placement_stride
+                                  : std::max<std::int64_t>(1, kSizeY / 64);
   for (std::int64_t y = 1; y < kSizeY && agents.size() < config_.agents;
        y += stride) {
     for (std::int64_t x = 1;
