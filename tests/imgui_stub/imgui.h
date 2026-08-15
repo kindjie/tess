@@ -37,7 +37,8 @@ enum ImGuiTableFlags_ {
   ImGuiTableFlags_ScrollY = 1 << 25,
 };
 
-enum ImGuiTableColumnFlags_ {
+// Match Dear ImGui's int-based public flag API in this compile-only stub.
+enum ImGuiTableColumnFlags_ {  // NOLINT(performance-enum-size)
   ImGuiTableColumnFlags_None = 0,
   ImGuiTableColumnFlags_WidthFixed = 1 << 4,
 };
