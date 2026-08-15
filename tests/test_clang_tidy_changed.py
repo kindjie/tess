@@ -205,6 +205,7 @@ def test_sources_in_the_database_are_checked():
 @pytest.mark.parametrize(
   "path",
   (
+    "examples/web_diagnostics/diagnostics_wasm.cc",
     "examples/webgpu_compute/webgpu_compute.cc",
     "tests/fetchcontent_consumer/main.cc",
     "tests/fuzz/tess_world_archive_fuzzer.cc",
