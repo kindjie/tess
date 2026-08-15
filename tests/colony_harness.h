@@ -53,6 +53,12 @@ inline constexpr std::uint32_t kOccupancyDirty = 1U << 1U;
 // multiple of it so the raster scale is exact.
 inline constexpr std::size_t kLogicalExtent = 64;
 
+/// Selects the movement advance the colony's agent task runs.
+enum class ColonyMovementTier : std::uint8_t {
+  Baseline,
+  Pibt,
+};
+
 struct ColonyConfig {
   std::size_t agents = 100;
   std::uint64_t seed = 0x5C0107;
@@ -84,6 +90,12 @@ struct ColonyConfig {
   // world, which seats at most 227 agents on the default map);
   // smaller strides visit more rows and seat larger populations.
   std::int64_t placement_stride = 0;
+  // Movement tier for the agent task. Baseline is the historical
+  // per-agent advance (on-route steps only; occupancy wedges persist,
+  // by design of that tier). Pibt runs the PIBT advance under
+  // SwapPolicy::Forbid with the route-attachment ranking, which
+  // resolves wedges by off-route yields.
+  ColonyMovementTier movement_tier = ColonyMovementTier::Baseline;
 };
 
 // Scenario-level counters. PathAgentTickStats::repaths_requested only
@@ -101,6 +113,10 @@ struct ColonyCounters {
   std::uint64_t executed_runs = 0;
   std::uint64_t pool_phases = 0;
   std::uint64_t delta_publishes = 0;
+  // Agent-task passes that ran the PIBT advance: the dispatch witness
+  // for ColonyMovementTier::Pibt (a silently ignored tier cannot pass
+  // a test asserting this stays nonzero).
+  std::uint64_t pibt_passes = 0;
 };
 
 struct ColonyRun {
@@ -436,13 +452,33 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
     tess::PathAgentTickState* tick_state = nullptr;
     ColonyRun* result = nullptr;
     const tess::RegionGraph* graph = nullptr;
+    ColonyMovementTier tier = ColonyMovementTier::Baseline;
+    // Owned by the harness for the PIBT tier; the advance maintains the
+    // adaptive priorities itself.
+    tess::PibtPriorities* pibt_priorities = nullptr;
+    tess::JointMoveScratch* pibt_scratch = nullptr;
 
     auto operator()(const tess::ScheduleTaskContext&)
         -> tess::ScheduleTaskResult {
+      const tess::PathAgentTickOptions options{.movement_dirty_mask =
+                                                   kOccupancyDirty};
+      if (tier == ColonyMovementTier::Pibt) {
+        const tess::RouteAttachmentRanking rank{
+            std::span<const tess::PathAgentState>{agents.data(), agents.size()},
+            &tick_state->routes};
+        const auto stats = tess::tick_weighted_path_agents_with_pibt<
+            WorldType, Walker, kMaxCost, OccupancyTag, ReservationTag>(
+            *tick_state, *world, agents, *runtime, *pibt_priorities,
+            *pibt_scratch, rank, options,
+            tess::JointMoveOptions{tess::SwapPolicy::Forbid}, graph);
+        result->counters.blocked_route_repaths += stats.repaths_requested;
+        result->counters.blocked_retry_exhaustions += stats.repath_exhausted;
+        ++result->counters.pibt_passes;
+        return {};
+      }
       const auto stats = tess::tick_weighted_path_agents_with_movement<
           WorldType, Walker, kMaxCost, OccupancyTag, ReservationTag>(
-          *tick_state, *world, agents, *runtime,
-          {.movement_dirty_mask = kOccupancyDirty}, graph);
+          *tick_state, *world, agents, *runtime, options, graph);
       result->counters.blocked_route_repaths += stats.repaths_requested;
       result->counters.blocked_retry_exhaustions += stats.repath_exhausted;
       return {};
@@ -467,9 +503,19 @@ auto Colony<Shape, Schema>::run() -> ColonyRun {
                              &runtime,
                              &probes,
                              {}};
-  AgentTask agent_task{world.get(), std::span<tess::PathAgentState>{agents},
-                       &runtime,    &tick_state,
-                       &result,     &graph};
+  tess::PibtPriorities pibt_priorities;
+  tess::JointMoveScratch pibt_scratch;
+  pibt_priorities.reserve(agents.size());
+  pibt_scratch.reserve(agents.size());
+  AgentTask agent_task{world.get(),
+                       std::span<tess::PathAgentState>{agents},
+                       &runtime,
+                       &tick_state,
+                       &result,
+                       &graph,
+                       config_.movement_tier,
+                       &pibt_priorities,
+                       &pibt_scratch};
 
   tess::Schedule schedule;
   schedule.reserve_tasks(3);

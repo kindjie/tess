@@ -86,6 +86,11 @@ struct RunOptions {
   // --mixed-populations.
   std::vector<std::uint32_t> mixed_tps = {20};
   std::vector<std::size_t> mixed_populations = {100};
+  // Movement tiers the mixed matrix runs (design follow-up to the
+  // 2026-08-15 starvation attribution): "baseline" is the historical
+  // per-agent advance, "pibt" the PIBT tier with the route-attachment
+  // ranking. Each tier is a separate scenario_id cohort.
+  std::vector<std::string> mixed_tiers = {"baseline"};
   // Explicit CLI axes win over the smoke defaults, so a smoke run can
   // still exercise a chosen matrix point (the seating-capacity ctest
   // depends on this).

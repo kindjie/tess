@@ -15,4 +15,7 @@
   label instead of failing a tolerance, and `--smoke-report-only`, which
   the CLI test proves suppresses a statistical finding (the pairing and
   trace-identity hard failures are covered through `run_comparison()`
-  directly, not through that flag).
+  directly, not through that flag). Pairing uses the full cell
+  identity (scenario, kind, movement tier, budget, tps, population, rate,
+  pacing); duplicate identities in either directory are fatal rather than
+  silently shadowed, and baseline/pibt cells never pair with each other.

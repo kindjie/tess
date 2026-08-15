@@ -84,7 +84,9 @@ def sort_cells(cells: list) -> list:
     _, document = entry
     experiment = document["experiment"]
     return (experiment.get("scenario_id", ""), experiment.get("kind", ""),
-            experiment.get("pass", "timing"), experiment.get("sim_tps") or 0,
+            experiment.get("pass", "timing"),
+            experiment.get("movement_tier", "baseline"),
+            experiment.get("sim_tps") or 0,
             experiment.get("population", 0),
             experiment.get("arrival_rate_num", 0),
             experiment.get("pacing", ""), experiment.get("budget_ns", 0))
@@ -144,14 +146,14 @@ def summarize_isolated(cells: list) -> tuple[list[str], list[str]]:
 
 def summarize_demand(cells: list) -> tuple[list[str], list[str]]:
   """Arrival and mixed cells: success and stability per matrix point."""
-  header = ("kind,scenario,view_or_rate,tps,population,budget_ms,pass,"
+  header = ("kind,scenario,view_or_rate,tier,tps,population,budget_ms,pass,"
             "useful,useful_per_frame,deadline_success,flow_stable,starved,"
             "useful_per_wall_second,lag_p99_ns,machine,commit")
   rows = []
-  lines = ["| kind | point | tps | pop | budget ms | useful/frame |"
+  lines = ["| kind | point | tier | tps | pop | budget ms | useful/frame |"
            " success | stable | wall rate/s | lag p99 ns | machine |"
            " commit |",
-           "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |"
+           "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |"
            " ---: | ---: | --- | --- |"]
   for _, document in sort_cells(cells):
     experiment = document["experiment"]
@@ -182,14 +184,16 @@ def summarize_demand(cells: list) -> tuple[list[str], list[str]]:
     frames = summary.get("measured_frames", 0) * summary.get("repetitions", 1)
     per_frame = (f"{summary['useful_completions'] / frames:.3f}"
                  if frames else "-")
-    rows.append(csv_row(kind, experiment["scenario_id"], point,
+    tier = experiment.get("movement_tier", "baseline")
+    rows.append(csv_row(kind, experiment["scenario_id"], point, tier,
                         experiment.get("sim_tps"), population, budget,
                         bench_pass, summary["useful_completions"], per_frame,
                         success_text, stable, starved, wall_text, lag_text,
                         machine(document), commit))
     if bench_pass != "timing":
       continue  # Counter-pass wall figures are never published curves.
-    lines.append(f"| {kind} | {point} | {experiment.get('sim_tps')} |"
+    lines.append(f"| {kind} | {point} | {tier} |"
+                 f" {experiment.get('sim_tps')} |"
                  f" {population} | {budget} | {per_frame} |"
                  f" {success_text} | {stable} | {wall_text} | {lag_text} |"
                  f" {machine(document)} | {commit[:9]} |")
@@ -309,6 +313,7 @@ def report_missing(cells: list, searches: list) -> list[str]:
     experiment = document["experiment"]
     commits.add(document["run"]["commit"])
     group = (experiment.get("kind", ""), experiment.get("pass", "timing"),
+             experiment.get("movement_tier", "baseline"),
              experiment.get("sim_tps"), experiment.get("population", 0),
              experiment.get("arrival_rate_num", 0),
              experiment.get("arrival_rate_den", 1),
@@ -321,9 +326,10 @@ def report_missing(cells: list, searches: list) -> list[str]:
   for group, budgets in sorted(budgets_by_group.items()):
     missing = sorted(budgets_by_kind[group[0]] - budgets)
     if missing:
-      kind, bench_pass, tps, population, num, den, pacing = group
-      notes.append(f"{kind} (pass {bench_pass}, tps {tps}, pop {population},"
-                   f" rate {num}/{den}, pacing {pacing or '-'}): no artifacts"
+      kind, bench_pass, tier, tps, population, num, den, pacing = group
+      notes.append(f"{kind} (pass {bench_pass}, tier {tier}, tps {tps},"
+                   f" pop {population}, rate {num}/{den},"
+                   f" pacing {pacing or '-'}): no artifacts"
                    f" at budgets {[fmt_budget(b) for b in missing]}")
   for _, document in searches:
     commits.add(document["run"]["commit"])

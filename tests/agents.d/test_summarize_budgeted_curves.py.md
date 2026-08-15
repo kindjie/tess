@@ -11,4 +11,6 @@
   directory fatal, and the CLI writes the three CSV files beside its
   Markdown. Trap: the tool must never hold thresholds or measure — it
   only reshapes artifacts, so every expected value in these tests is
-  hand-derivable from the fixture JSON.
+  hand-derivable from the fixture JSON. The movement tier joins the sort key,
+  coverage-group identity, and demand columns, so tier cohorts never
+  fabricate holes across each other.

@@ -286,4 +286,27 @@ TEST(TessColonyHarness, SerialScenarioGolden) {
   EXPECT_EQ(run.agent_flow.outstanding_current, 6u);
 }
 
+// The PIBT tier golden doubles as the dispatch witness: `pibt_passes`
+// proves the configuration branch actually ran (an accidentally ignored
+// tier cannot pass), and the pinned outcome catches behavioral drift in
+// the tier exactly as the serial golden does for baseline. The numbers
+// intentionally differ from the baseline golden: PIBT admits off-route
+// yields, so wedges that baseline leaves in place resolve.
+TEST(TessColonyHarness, PibtTierDispatchesAndPinsItsScenario) {
+  auto config = base_config();
+  config.movement_tier = colony::ColonyMovementTier::Pibt;
+
+  const auto run = NarrowColony(config).run();
+
+  EXPECT_EQ(run.counters.pibt_passes, 40u);
+  // Fewer total steps than the baseline golden's 2838 with the same 94
+  // arrivals: ranking-driven stepping takes different (here, fewer)
+  // moves on the same fixture, so the tiers demonstrably diverge.
+  EXPECT_EQ(run.total_steps, 2566u);
+  EXPECT_EQ(run.arrivals, 94u);
+  EXPECT_EQ(run.agent_flow.completed, 94u);
+  EXPECT_TRUE(run.agent_flow.admission_identity_holds());
+  EXPECT_TRUE(run.agent_flow.retention_identity_holds());
+}
+
 }  // namespace

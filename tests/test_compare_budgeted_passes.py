@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import copy
 import json
+
+import pytest
 import sys
 from pathlib import Path
 
@@ -168,3 +170,54 @@ def test_fixture_isolation():
   second = copy.deepcopy(first)
   second["flow"]["offered"] = 99
   assert first["flow"]["offered"] == 1
+
+def test_duplicate_cell_identity_is_fatal(tmp_path):
+  """Two artifacts sharing a full cell identity must abort, not shadow."""
+  timing_dir = tmp_path / "timing"
+  counter_dir = tmp_path / "counter"
+  timing_dir.mkdir()
+  counter_dir.mkdir()
+  first = cell("isolated_saturated", "timing", 10, 1000)
+  (timing_dir / "a.json").write_text(json.dumps(first))
+  (timing_dir / "b.json").write_text(json.dumps(first))
+  (counter_dir / "c.json").write_text(
+      json.dumps(cell("isolated_saturated", "counter", 10, 1000)))
+  with pytest.raises(SystemExit, match="duplicate cell identity"):
+    cbp.main(["--timing-dir", str(timing_dir),
+              "--counter-dir", str(counter_dir)])
+
+
+def test_duplicate_counter_identity_is_fatal(tmp_path):
+  """The counter directory rejects duplicates too, symmetrically."""
+  timing_dir = tmp_path / "timing"
+  counter_dir = tmp_path / "counter"
+  timing_dir.mkdir()
+  counter_dir.mkdir()
+  (timing_dir / "t.json").write_text(
+      json.dumps(cell("isolated_saturated", "timing", 10, 1000)))
+  duplicate = cell("isolated_saturated", "counter", 10, 1000)
+  (counter_dir / "a.json").write_text(json.dumps(duplicate))
+  (counter_dir / "b.json").write_text(json.dumps(duplicate))
+  with pytest.raises(SystemExit, match="duplicate cell identity"):
+    cbp.main(["--timing-dir", str(timing_dir),
+              "--counter-dir", str(counter_dir)])
+
+
+def test_movement_tier_separates_otherwise_identical_cells(tmp_path):
+  """Baseline and pibt cells never pair with each other."""
+  timing_dir = tmp_path / "timing"
+  counter_dir = tmp_path / "counter"
+  timing_dir.mkdir()
+  counter_dir.mkdir()
+  baseline = cell("isolated_saturated", "timing", 10, 1000)
+  pibt = cell("isolated_saturated", "timing", 12, 1200)
+  pibt["experiment"]["movement_tier"] = "pibt"
+  (timing_dir / "baseline.json").write_text(json.dumps(baseline))
+  (timing_dir / "pibt.json").write_text(json.dumps(pibt))
+  counter = cell("isolated_saturated", "counter", 10, 1000)
+  (counter_dir / "counter.json").write_text(json.dumps(counter))
+  # The counter artifact (legacy, no tier field = baseline) pairs with
+  # the baseline timing cell only; the pibt cell stays unpaired rather
+  # than colliding or mispairing.
+  assert cbp.main(["--timing-dir", str(timing_dir),
+                   "--counter-dir", str(counter_dir)]) == 0
