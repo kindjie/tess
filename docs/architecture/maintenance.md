@@ -24,9 +24,11 @@ can compile the experiment, but no world or scheduler adopts it implicitly.
   preallocated membership index makes admission independent of queue depth.
 - `DirtyBitScheduler` is the selected chunk-maintenance candidate. An external
   owner registers long-lived tasks during setup, calls `seal()`, and then may
-  schedule registered tasks concurrently without allocation or a producer
-  lock. Atomic task bits coalesce repeated schedules; drains are serialized
-  and visit tasks in registration order.
+  schedule registered tasks concurrently without a producer lock. After a
+  thread's first successful post-seal schedule or first task execution,
+  scheduling is allocation-free on that thread; either first use may initialize
+  platform thread-local runtime state. Atomic task bits coalesce repeated
+  schedules; drains are serialized and visit tasks in registration order.
 - `MaintenanceMetrics` reports schedules, collapsed schedules, executions, and
   capacity failures.
 
@@ -53,8 +55,11 @@ completes before publication or is rejected. Scheduling and draining are
 rejected before sealing, and post-seal registration is rejected. The registry
 stores non-owning pointers, so registered tasks must outlive the scheduler or
 a completed `flush()`. Destroying the scheduler drops pending bits without
-executing tasks. A thrown task consumes only its own claimed bit; other claimed
-or concurrently scheduled tasks remain pending for a later drain.
+executing tasks. Allocation-sensitive callers must warm every producer and
+drain thread with a successful schedule or task execution before entering the
+measured or allocation-prohibited region; `seal()` warms no thread. A thrown
+task consumes only its own claimed bit; other claimed or concurrently scheduled
+tasks remain pending for a later drain.
 
 A queued backend removes an entry before invoking its task. If the task throws,
 the exception propagates and that queue entry is not restored. The task's

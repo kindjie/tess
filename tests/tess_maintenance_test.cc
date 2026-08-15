@@ -536,6 +536,9 @@ void check_cross_task_zero_progress_handoff() {
   second.scheduler = &scheduler;
   second.next = &first;
   second.handoffs_remaining = &handoffs_remaining;
+  register_maintenance_task(scheduler, first);
+  register_maintenance_task(scheduler, second);
+  seal_maintenance_scheduler(scheduler);
   ASSERT_TRUE(scheduler.schedule(first));
 
   EXPECT_FALSE(scheduler.run_some(maintenance::MaintenanceBudget{1}));
@@ -555,6 +558,10 @@ TEST(TessMaintenance, CoalescingCrossTaskZeroProgressStopsEachDrain) {
 
 TEST(TessMaintenance, FifoCrossTaskZeroProgressStopsEachDrain) {
   check_cross_task_zero_progress_handoff<maintenance::FifoScheduler>();
+}
+
+TEST(TessMaintenance, DirtyBitCrossTaskZeroProgressStopsEachDrain) {
+  check_cross_task_zero_progress_handoff<maintenance::DirtyBitScheduler>();
 }
 
 TEST(TessMaintenance, PartialClearPreservesUnrelatedDirtyFlags) {
@@ -880,12 +887,14 @@ TEST(TessMaintenance, DirtyBitConcurrentDrainsNeverOverlapTaskExecution) {
   EXPECT_EQ(task.maximum_active.load(), 1);
 }
 
-TEST(TessMaintenance, DirtyBitScheduleDoesNotAllocateAfterRegistration) {
+TEST(TessMaintenance, DirtyBitWarmScheduleDoesNotAllocate) {
   maintenance::DirtyBitScheduler scheduler(1);
   CountingTask task;
   task.scheduler = &scheduler;
   ASSERT_TRUE(scheduler.register_task(task));
   scheduler.seal();
+  ASSERT_TRUE(scheduler.schedule(task));
+  ASSERT_TRUE(scheduler.flush());
 
   {
     tess_test::ScopedAllocationCounter counter;
@@ -895,6 +904,9 @@ TEST(TessMaintenance, DirtyBitScheduleDoesNotAllocateAfterRegistration) {
     EXPECT_EQ(counter.count(), 0u);
   }
   EXPECT_TRUE(scheduler.flush());
+  EXPECT_EQ(task.executions, 2u);
+  EXPECT_EQ(scheduler.metrics().schedule_calls, 1'001u);
+  EXPECT_EQ(scheduler.metrics().coalesced_calls, 999u);
 }
 
 TEST(TessMaintenance, DirtyBitPendingWorkIsReleasedAtShutdown) {
