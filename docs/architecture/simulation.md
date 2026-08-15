@@ -171,6 +171,17 @@ span, or make their tile impassable to the movement class, which is the
   `DistanceFieldProduct::distance_at` provides an exact per-tile oracle
   from `build_distance_field_product` over the same movement class; rebuild
   the product when the class's inputs (for example a settled set) change.
+- `RouteAttachmentRanking` is the shipped oracle for route-following
+  populations: it scores a candidate by its best local attachment to the
+  agent's retained A* route (attachment hop plus remaining route length),
+  steering detached candidates back toward the corridor and falling back
+  to goal distance for routeless agents. The attachment radius defaults
+  to 1, the largest passability-safe radius — distance-1 tile pairs are
+  edge-adjacent, while wider radii can attach across a one-tile wall and
+  recreate exactly the wall-face parking the oracle exists to prevent
+  (pinned by the tier's lure regression test). Distance fields are exact
+  but per-goal; the route oracle serves populations with per-agent goals
+  at planning cost already paid.
 - `tick_weighted_path_agents_with_pibt<World, Class, MaxCost, OccupancyTag,
   ReservationTag>` mirrors the joint tick driver with the PIBT advance in
   place of the joint one.

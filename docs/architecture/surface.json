@@ -451,6 +451,7 @@
     "RenderTileDelta",
     "RenderVersion",
     "ResumableWorkTask",
+    "RouteAttachmentRanking",
     "Schedule",
     "ScheduleFrameSummary",
     "ScheduleTaskContext",

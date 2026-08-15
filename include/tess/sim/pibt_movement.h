@@ -43,6 +43,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <span>
 #include <type_traits>
@@ -97,6 +98,90 @@ struct PibtScratchState {
 template <typename Ranking>
 concept PibtRanking = requires(Ranking& rank, std::size_t agent, Coord3 coord) {
   { rank(agent, coord) } -> std::convertible_to<std::uint32_t>;
+};
+
+// A production ranking oracle for open worlds with walls. The oracle
+// contract at the top of this header names the two hazards a ranking must
+// avoid; this adds the third one measured in the mixed-colony bench:
+// distance heuristics that ignore terrain (Manhattan, or any field
+// truncated short of the map's doorways) rate wall-adjacent tiles best and
+// park agents at local minima that yields alone cannot fix. Each agent
+// already carries an exact, terrain-aware plan — its retained A* route —
+// so the oracle scores a candidate by its best LOCAL attachment to that
+// route: the hop onto a route point within `attach_radius`, plus that
+// point's remaining route length. The radius bound is load-bearing twice
+// over. First, distant attachments are wall-blind: far-side route points
+// lure agents onto a wall face (measured; the regression test pins it).
+// Second, the default radius of 1 is the only radius that is
+// passability-safe without inspecting terrain: distance-1 tile pairs are
+// edge-adjacent, so two passable tiles at distance 1 are mutually
+// reachable in one step, while distance-2 pairs can sit on opposite sides
+// of a one-tile wall — exactly the lure again, one tile closer. PIBT only
+// ever ranks an agent's own tile and its legal neighbours, so radius 1
+// covers route-following and one-tile yields; deeper displacement falls
+// through to the steer-back band, which is monotone toward the route.
+// A candidate with no local attachment scores far above any attached one,
+// graded by its distance to the nearest route point so displaced agents
+// steer back to the corridor. Agents with no usable route (fewer than two
+// points, or no goal) fall back to distance toward the goal, which is
+// also the natural open-terrain behavior. All distances are the
+// overflow-safe three-axis Manhattan metric clamped into the score
+// domain, so stacked 3D worlds rank levels apart as apart.
+//
+// Complexity: O(remaining route) per candidate query, bounded by the
+// route lengths the planner produces. The scan starts at the agent's
+// route cursor but the cursor does not advance during off-route PIBT
+// walks, so callers should treat the full-route scan as the cost model.
+/// Ranks PIBT candidates by local attachment to each agent's retained
+/// route.
+struct RouteAttachmentRanking {
+  std::span<const PathAgentState> agents;
+  const PathAgentRoutes* routes = nullptr;
+  /// Maximum hop from a candidate onto a route point. The default of 1
+  /// is the largest passability-safe radius; see the class comment
+  /// before raising it.
+  std::uint32_t attach_radius = 1;
+
+  /// Scores below `kDetachedBase` are attached; higher steer back.
+  static constexpr std::uint32_t kDetachedBase =
+      std::numeric_limits<std::uint32_t>::max() / 8;
+
+  [[nodiscard]] static auto clamped_distance(Coord3 lhs, Coord3 rhs) noexcept
+      -> std::uint32_t {
+    const std::uint64_t distance = manhattan_distance(lhs, rhs);
+    return distance >= kDetachedBase ? kDetachedBase - 1
+                                     : static_cast<std::uint32_t>(distance);
+  }
+
+  [[nodiscard]] auto operator()(std::size_t agent, Coord3 candidate) const
+      -> std::uint32_t {
+    const PathAgentState& state = agents[agent];
+    if (routes == nullptr || agent >= routes->routes.size()) {
+      return clamped_distance(candidate,
+                              state.has_goal ? state.goal : state.position);
+    }
+    const std::vector<Coord3>& route = routes->routes[agent];
+    if (!state.has_goal || route.size() < 2) {
+      return clamped_distance(candidate,
+                              state.has_goal ? state.goal : state.position);
+    }
+    std::uint32_t best = kDetachedBase;
+    std::uint32_t nearest = kDetachedBase;
+    for (std::size_t j = state.path_index; j < route.size(); ++j) {
+      const std::uint32_t attach = clamped_distance(candidate, route[j]);
+      nearest = std::min(nearest, attach);
+      if (attach > attach_radius) {
+        continue;
+      }
+      const std::uint32_t remaining =
+          static_cast<std::uint32_t>(route.size() - 1 - j);
+      best = std::min(best, attach + remaining);
+    }
+    if (best == kDetachedBase) {
+      return kDetachedBase + nearest;
+    }
+    return best;
+  }
 };
 
 // Index-paired with the agent span handed to the advance, exactly like

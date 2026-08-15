@@ -1074,4 +1074,108 @@ TEST(TessPibtMovement, OnlyElapsedIsPartOfThePrioritiesSurface) {
   SUCCEED();
 }
 
+TEST(TessPibtMovement, RouteAttachmentRankingScoresLocalAttachment) {
+  World world;
+  fill_world(world, true);
+  std::vector<tess::PathAgentState> agents;
+  tess::PathAgentRoutes routes;
+  // A straight 5-point route east: (2,2) .. (6,2).
+  (void)add_agent(world, agents, routes,
+                  {{2, 2, 0}, {3, 2, 0}, {4, 2, 0}, {5, 2, 0}, {6, 2, 0}});
+  const tess::RouteAttachmentRanking rank{
+      std::span<const tess::PathAgentState>{agents}, &routes};
+
+  // On-route candidates score their remaining route length exactly.
+  EXPECT_EQ(rank(0, {6, 2, 0}), 0u);
+  EXPECT_EQ(rank(0, {4, 2, 0}), 2u);
+  EXPECT_EQ(rank(0, {2, 2, 0}), 4u);
+  // A one-tile hop onto the route adds its attachment distance.
+  EXPECT_EQ(rank(0, {4, 3, 0}), 3u);
+  // The best attachment wins: (5,3) attaches to (5,2) for 1+1=2, not to
+  // (4,2) for 2+2=4 or (6,2) for 2+0=2 — ties resolve to the same score.
+  EXPECT_EQ(rank(0, {5, 3, 0}), 2u);
+  // Beyond the radius the candidate is detached and steered back by its
+  // distance to the nearest route point, far above any attached score.
+  const auto detached = rank(0, {10, 8, 0});
+  EXPECT_GE(detached, tess::RouteAttachmentRanking::kDetachedBase);
+  EXPECT_EQ(detached - tess::RouteAttachmentRanking::kDetachedBase, 10u);
+  // Distance 2 is already detached under the default radius: such pairs
+  // can sit on opposite sides of a one-tile wall, so admitting them
+  // would reintroduce the lure one tile closer.
+  EXPECT_GE(rank(0, {4, 4, 0}), tess::RouteAttachmentRanking::kDetachedBase);
+  // The metric is three-axis: a level apart is apart, never colocated.
+  EXPECT_GE(rank(0, {4, 2, 5}), tess::RouteAttachmentRanking::kDetachedBase);
+  EXPECT_EQ(rank(0, {4, 2, 1}), 1u + 2u);
+
+  // Agents without a usable route fall back to Manhattan toward the goal.
+  tess::PathAgentState bare;
+  bare.position = {1, 1, 0};
+  bare.goal = {4, 1, 0};
+  bare.has_goal = true;
+  std::vector<tess::PathAgentState> bare_agents{bare};
+  tess::PathAgentRoutes empty_routes;
+  empty_routes.ensure_size(1);
+  const tess::RouteAttachmentRanking fallback{
+      std::span<const tess::PathAgentState>{bare_agents}, &empty_routes, 2};
+  EXPECT_EQ(fallback(0, {3, 1, 0}), 1u);
+}
+
+// The measured wall-face lure, pinned as a regression: Manhattan
+// attachment is wall-blind, so with an unbounded radius the far-side
+// route points score a candidate pressed against the wall better than
+// following the detour, and the agent parks at the wall face forever.
+// The bounded radius admits only local attachments, so the same agent
+// walks its detour and arrives. This is the mixed-colony stranding
+// mechanism reduced to one agent.
+TEST(TessPibtMovement, BoundedAttachmentArrivesWhereUnboundedParks) {
+  for (const bool bounded : {false, true}) {
+    World world;
+    fill_world(world, true);
+    // A wall at x=16 spanning y in [1, 31]; the doorway is at y=0.
+    for (std::int64_t y = 1; y < 32; ++y) {
+      world.field<PassableTag>({16, y, 0}) = false;
+    }
+    std::vector<tess::PathAgentState> agents;
+    tess::PathAgentRoutes routes;
+    // The detour route: west side up to the door, through, back down.
+    std::vector<tess::Coord3> route;
+    for (std::int64_t y = 16; y >= 0; --y) {
+      route.push_back({2, y, 0});
+    }
+    for (std::int64_t x = 3; x <= 30; ++x) {
+      route.push_back({x, 0, 0});
+    }
+    for (std::int64_t y = 1; y <= 16; ++y) {
+      route.push_back({30, y, 0});
+    }
+    const auto goal = route.back();
+    (void)add_agent(world, agents, routes, std::move(route));
+
+    tess::PibtPriorities priorities;
+    priorities.reserve(agents.size());
+    tess::JointMoveScratch scratch;
+    scratch.reserve(agents.size());
+    const tess::RouteAttachmentRanking rank{
+        std::span<const tess::PathAgentState>{agents}, &routes,
+        bounded ? tess::RouteAttachmentRanking{}.attach_radius : 10'000u};
+    for (int tick = 0; tick < 96 && agents[0].position != goal; ++tick) {
+      (void)tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
+                                                ReservationTag>(
+          world, std::span<tess::PathAgentState>(agents), routes, priorities,
+          scratch, rank);
+    }
+    if (bounded) {
+      EXPECT_EQ(agents[0].position, goal)
+          << "bounded attachment must follow the detour";
+    } else {
+      EXPECT_NE(agents[0].position, goal)
+          << "unbounded attachment is expected to park at the wall face; "
+             "if this arrives, the lure regression no longer reproduces "
+             "and the radius bound needs a new justification";
+      EXPECT_LT(agents[0].position.x, 16)
+          << "the lured agent should stay pressed against the west face";
+    }
+  }
+}
+
 }  // namespace

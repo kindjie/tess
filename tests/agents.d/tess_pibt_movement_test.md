@@ -7,4 +7,7 @@
   joint congestion lets settled arrivals seal a goal, while PIBT keeps the
   system moving and solves. Ranking must use the same movement class as
   planning; a terrain-only oracle strands an agent where the class-consistent
-  oracle detours. Swap counters include only secured exchanges.
+  oracle detours. Swap counters include only secured exchanges. The
+  RouteAttachmentRanking tests pin exact attachment scores and the
+  wall-face lure regression; the trap and the radius justification live
+  in that test's own comment.
