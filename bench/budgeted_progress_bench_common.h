@@ -86,6 +86,11 @@ struct RunOptions {
   // --mixed-populations.
   std::vector<std::uint32_t> mixed_tps = {20};
   std::vector<std::size_t> mixed_populations = {100};
+  // Explicit CLI axes win over the smoke defaults, so a smoke run can
+  // still exercise a chosen matrix point (the seating-capacity ctest
+  // depends on this).
+  bool mixed_tps_explicit = false;
+  bool mixed_populations_explicit = false;
   // Which section 7.3 views to run. The two views are identical by
   // construction in this stack (no defer boundaries exist), so a
   // campaign runs one and treats the other as analytically equal;

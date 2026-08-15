@@ -1419,6 +1419,7 @@ auto main(int argc, char** argv) -> int {
       }
       pass_explicit = true;
     } else if (argument == "--mixed-tps" && i + 1 < argc) {
+      options.mixed_tps_explicit = true;
       options.mixed_tps.clear();
       for (const char* cursor = argv[++i]; *cursor != 0;) {
         options.mixed_tps.push_back(
@@ -1440,6 +1441,7 @@ auto main(int argc, char** argv) -> int {
         fail("--mixed-views must be exactly fidelity, quanta, or both");
       }
     } else if (argument == "--mixed-populations" && i + 1 < argc) {
+      options.mixed_populations_explicit = true;
       options.mixed_populations.clear();
       for (const char* cursor = argv[++i]; *cursor != 0;) {
         options.mixed_populations.push_back(

@@ -830,6 +830,28 @@ if(BUILD_TESTING)
   set_tests_properties(tess_bench_budgeted_progress_smoke PROPERTIES
     FIXTURES_SETUP budgeted_smoke_artifacts TIMEOUT 600)
 
+  # The benchmark duplicates the harness's placement (the equivalence
+  # proof covers dynamics at population 100 only), so seat the mixed
+  # ladder's largest rung through the BENCH placement path: the
+  # stage-4 campaign aborted on a 227-agent seating ceiling that every
+  # population-100 smoke was blind to. Explicit axes override the
+  # smoke defaults, and the preflight seat check fails the run up
+  # front if the rung cannot be placed.
+  set(budgeted_seat_dir "${CMAKE_CURRENT_BINARY_DIR}/seat-500")
+  file(MAKE_DIRECTORY "${budgeted_seat_dir}")
+  add_test(
+    NAME tess_bench_budgeted_progress_mixed_seats_ladder_max
+    COMMAND
+      tess_bench_budgeted_progress
+      --smoke
+      --mixed-only
+      --mixed-populations 500
+      --mixed-views fidelity
+      --out-dir ${budgeted_seat_dir}
+  )
+  set_tests_properties(tess_bench_budgeted_progress_mixed_seats_ladder_max
+    PROPERTIES TIMEOUT 600)
+
   # The emitted smoke artifacts must pass the fail-closed schema
   # validator (design section 14.2 puts schema validation in CI
   # scope), not just the validator's synthetic-fixture unit tests.

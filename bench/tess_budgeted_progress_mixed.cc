@@ -498,9 +498,22 @@ void run_mixed_colony_cells(const RunOptions& base_options) {
       options.smoke ? std::span<const Nanos>{kSmokeMixedBudgets}
                     : std::span<const Nanos>{kAllMixedBudgets};
   const std::vector<std::uint32_t> tps_axis =
-      options.smoke ? std::vector<std::uint32_t>{60} : options.mixed_tps;
+      options.smoke && !options.mixed_tps_explicit
+          ? std::vector<std::uint32_t>{60}
+          : options.mixed_tps;
   const std::vector<std::size_t> population_axis =
-      options.smoke ? std::vector<std::size_t>{100} : options.mixed_populations;
+      options.smoke && !options.mixed_populations_explicit
+          ? std::vector<std::size_t>{100}
+          : options.mixed_populations;
+
+  // Fail fast: seat the largest requested population before any cell
+  // runs, so an unplaceable rung aborts the campaign up front rather
+  // than deep into the matrix (the stage-4 timing pass died 40
+  // minutes in on exactly that).
+  if (!population_axis.empty()) {
+    (void)build_mixed_stack(
+        *std::max_element(population_axis.begin(), population_axis.end()));
+  }
 
   struct MixedCellAccumulator {
     tess::diagnostics::FlowCounters window_flow{};
