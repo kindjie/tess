@@ -23,9 +23,9 @@ version/invalidation policy; cooperative tickets resume budgeted work across
 ticks; and exact event streams drive coalesced OnEvent schedule cadences.
 Block-resolved lazy pipelines fuse adapters into explicit terminals, while
 exact box, Euclidean-radius, and chunk-local span queries emit allocation-free
-x-runs. Experimental maintenance backends are available for evaluation but
-are not integrated into storage because the coalescing prototype failed its
-sparse-overhead promotion gate.
+x-runs. Experimental maintenance backends remain opt-in and are not integrated
+into storage. A registered dirty-bit backend has passed the promotion gates
+and is the selected candidate for an external chunk-maintenance adapter.
 Region graphs also reconstruct shortest coarse region/portal routes and chunk
 corridors. Dense weighted multi-goal products are versioned, byte-budgeted,
 provider-aware, and reusable across runtime calls through an opt-in policy.
@@ -57,9 +57,10 @@ item moves to **Shipped**.
 - **Persistent maintenance**
   ([scheduler TDD][tdd-scheduler], [maintenance addendum][tdd-work]) — fixed
   cadences, dirty/manual/event triggers, exact event streams, and deterministic
-  background continuation shipped. Experimental immediate, FIFO, and
-  coalescing backends also shipped for evaluation, but coalescing maintenance
-  handles are not integrated into storage.
+  background continuation shipped. Experimental immediate, FIFO, queued
+  coalescing, and registered dirty-bit backends also shipped for evaluation.
+  The dirty-bit backend passed its promotion gates, but maintenance handles
+  and an external chunk adapter are not yet integrated with storage.
 - **Further spatial query acceleration**
   ([block TDD][tdd-block], [layout addendum][tdd-layout]) — resolved block-lazy
   pipelines and exact box/radius/chunk spans shipped. Predicate bitsets,

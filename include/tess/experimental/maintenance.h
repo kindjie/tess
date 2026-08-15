@@ -5,6 +5,7 @@
 #include <tess/diagnostics/diagnostics.h>
 
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -62,9 +63,9 @@ class MaintenanceScheduler {
    * Schedules derived-state work.
    *
    * The task must outlive this scheduler or an explicit `flush()`. A false
-   * result reports bounded queue exhaustion or a backend that cannot make
-   * progress; authoritative state must retain its dirty signal so a caller can
-   * retry.
+   * result reports bounded capacity exhaustion, incomplete backend setup, an
+   * unknown task identity, or a backend that cannot make progress;
+   * authoritative state must retain its dirty signal so a caller can retry.
    */
   [[nodiscard]] virtual auto schedule(MaintenanceTask& task) -> bool = 0;
 
@@ -119,32 +120,25 @@ class MetricsStore {
 struct QueuedMaintenanceEntry {
   MaintenanceTask* task = nullptr;
   std::uint64_t admitted_tick = 0;
+  std::size_t queue_slot = std::numeric_limits<std::size_t>::max();
 };
 
 class BoundedTaskQueue {
  public:
   explicit BoundedTaskQueue(std::size_t capacity) : entries_(capacity) {}
 
-  [[nodiscard]] auto push(MaintenanceTask& task,
-                          std::uint64_t admitted_tick) noexcept -> bool {
+  [[nodiscard]] auto push(MaintenanceTask& task, std::uint64_t admitted_tick,
+                          std::size_t* queue_slot = nullptr) noexcept -> bool {
     if (size_ == entries_.size()) {
       return false;
     }
     const auto tail = (head_ + size_) % entries_.size();
-    entries_[tail] = QueuedMaintenanceEntry{&task, admitted_tick};
+    entries_[tail] = QueuedMaintenanceEntry{&task, admitted_tick, tail};
+    if (queue_slot != nullptr) {
+      *queue_slot = tail;
+    }
     ++size_;
     return true;
-  }
-
-  [[nodiscard]] auto contains(const MaintenanceTask& task) const noexcept
-      -> bool {
-    for (std::size_t offset = 0; offset < size_; ++offset) {
-      const auto index = (head_ + offset) % entries_.size();
-      if (entries_[index].task == &task) {
-        return true;
-      }
-    }
-    return false;
   }
 
   [[nodiscard]] auto pop() noexcept -> QueuedMaintenanceEntry {
@@ -172,10 +166,94 @@ class BoundedTaskQueue {
   std::size_t size_ = 0;
 };
 
+/// Preallocated chained membership index for pending queue slots.
+class PendingTaskIndex {
+ public:
+  explicit PendingTaskIndex(std::size_t capacity)
+      : buckets_(bucket_count(capacity), npos), nodes_(capacity) {}
+
+  [[nodiscard]] auto contains(const MaintenanceTask& task) const noexcept
+      -> bool {
+    if (buckets_.empty()) {
+      return false;
+    }
+    for (auto index = buckets_[home(task)]; index != npos;
+         index = nodes_[index].next) {
+      if (nodes_[index].task == &task) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  [[nodiscard]] auto insert(MaintenanceTask& task,
+                            std::size_t queue_slot) noexcept -> bool {
+    if (buckets_.empty() || queue_slot >= nodes_.size() ||
+        nodes_[queue_slot].task != nullptr) {
+      return false;
+    }
+    const auto bucket = home(task);
+    nodes_[queue_slot] = Node{&task, buckets_[bucket]};
+    buckets_[bucket] = queue_slot;
+    return true;
+  }
+
+  [[nodiscard]] auto erase(const MaintenanceTask& task,
+                           std::size_t queue_slot) noexcept -> bool {
+    if (buckets_.empty() || queue_slot >= nodes_.size()) {
+      return false;
+    }
+    auto* link = &buckets_[home(task)];
+    while (*link != npos) {
+      if (*link == queue_slot) {
+        *link = nodes_[queue_slot].next;
+        nodes_[queue_slot] = {};
+        return true;
+      }
+      link = &nodes_[*link].next;
+    }
+    return false;
+  }
+
+ private:
+  static constexpr auto npos = std::numeric_limits<std::size_t>::max();
+
+  struct Node {
+    MaintenanceTask* task = nullptr;
+    std::size_t next = npos;
+  };
+
+  [[nodiscard]] static auto bucket_count(std::size_t capacity) noexcept
+      -> std::size_t {
+    if (capacity == 0) {
+      return 0;
+    }
+    const auto maximum = std::numeric_limits<std::size_t>::max();
+    return capacity > maximum - capacity ? capacity : capacity * 2;
+  }
+
+  [[nodiscard]] auto home(const MaintenanceTask& task) const noexcept
+      -> std::size_t {
+    auto value = reinterpret_cast<std::uintptr_t>(&task);
+    value >>= 3u;
+    value ^= value >> 17u;
+    if constexpr (sizeof(value) >= sizeof(std::uint64_t)) {
+      value *= std::uintptr_t{0x9e3779b97f4a7c15ULL};
+    } else {
+      value *= std::uintptr_t{0x9e3779b9U};
+    }
+    return static_cast<std::size_t>(value) % buckets_.size();
+  }
+
+  std::vector<std::size_t> buckets_;
+  std::vector<Node> nodes_;
+};
+
 template <bool Coalescing>
 class QueuedScheduler : public MaintenanceScheduler {
  public:
-  explicit QueuedScheduler(std::size_t capacity) : queue_(capacity) {}
+  explicit QueuedScheduler(std::size_t capacity)
+      : queue_(capacity), pending_(Coalescing ? capacity : 0) {}
 
   [[nodiscard]] auto schedule(MaintenanceTask& task) -> bool override {
     metrics_.record_schedule();
@@ -184,7 +262,7 @@ class QueuedScheduler : public MaintenanceScheduler {
     // concurrent producer must not make a completed task look stalled.
     const auto called_from_task = running_thread_ == std::this_thread::get_id();
     if constexpr (Coalescing) {
-      if (queue_.contains(task)) {
+      if (pending_.contains(task)) {
         if (called_from_task) {
           running_task_scheduled_ = true;
         }
@@ -198,13 +276,19 @@ class QueuedScheduler : public MaintenanceScheduler {
     }
     const auto admitted_tick =
         accounting_ != nullptr ? accounting_->last_observed_tick : 0;
-    if (!queue_.push(task, admitted_tick)) {
+    auto queue_slot = std::size_t{0};
+    if (!queue_.push(task, admitted_tick, &queue_slot)) {
       metrics_.record_capacity_failure();
       if (accounting_ != nullptr) {
         ++accounting_->counters.offered;
         ++accounting_->counters.rejected;
       }
       return false;
+    }
+    if constexpr (Coalescing) {
+      const auto inserted = pending_.insert(task, queue_slot);
+      TESS_ASSERT(inserted);
+      static_cast<void>(inserted);
     }
     if (called_from_task) {
       running_task_scheduled_ = true;
@@ -227,7 +311,7 @@ class QueuedScheduler : public MaintenanceScheduler {
       auto entry = detail::QueuedMaintenanceEntry{};
       {
         const auto queue_lock = std::scoped_lock{queue_mutex_};
-        entry = queue_.pop();
+        entry = pop_pending();
       }
       if (entry.task == nullptr) {
         return true;
@@ -248,7 +332,7 @@ class QueuedScheduler : public MaintenanceScheduler {
       auto entry = detail::QueuedMaintenanceEntry{};
       {
         const auto queue_lock = std::scoped_lock{queue_mutex_};
-        entry = queue_.pop();
+        entry = pop_pending();
       }
       if (entry.task == nullptr) {
         return true;
@@ -349,6 +433,20 @@ class QueuedScheduler : public MaintenanceScheduler {
     return budget.remaining() != before || !scheduled_follow_up;
   }
 
+  /// Pops one entry and removes its pending-membership stamp. Callers hold
+  /// queue_mutex_ (or are destroying a quiescent scheduler).
+  [[nodiscard]] auto pop_pending() noexcept -> QueuedMaintenanceEntry {
+    auto entry = queue_.pop();
+    if constexpr (Coalescing) {
+      if (entry.task != nullptr) {
+        const auto erased = pending_.erase(*entry.task, entry.queue_slot);
+        TESS_ASSERT(erased);
+        static_cast<void>(erased);
+      }
+    }
+    return entry;
+  }
+
   /// Buckets one popped entry after its run; callers hold queue_mutex_.
   /// A popped-but-running task stayed outstanding until here, so the
   /// retention identity holds at every quiescent point.
@@ -369,6 +467,7 @@ class QueuedScheduler : public MaintenanceScheduler {
   mutable std::mutex queue_mutex_;
   std::mutex run_mutex_;
   BoundedTaskQueue queue_;
+  PendingTaskIndex pending_;
 
  public:
   /// Destroying a scheduler with queued work drops it after admission,
@@ -378,7 +477,7 @@ class QueuedScheduler : public MaintenanceScheduler {
       return;
     }
     for (;;) {
-      const auto entry = queue_.pop();
+      const auto entry = pop_pending();
       if (entry.task == nullptr) {
         break;
       }
@@ -541,6 +640,232 @@ class ImmediateScheduler final : public MaintenanceScheduler {
   std::recursive_mutex run_mutex_;
   ActiveRun* active_run_ = nullptr;
   diagnostics::FlowAccounting* accounting_ = nullptr;
+};
+
+/**
+ * Coalescing scheduler backed by registered task bits.
+ *
+ * Register every task during setup, before scheduling or draining begins.
+ * Registration is idempotent for the same task and bounded by the constructor
+ * capacity. Call `seal()` after registration; it publishes the immutable
+ * registry to concurrent producers. Tasks remain non-owning and must outlive
+ * this scheduler or a completed `flush()`. Registration order defines
+ * deterministic drain order. Destroying the scheduler drops pending work
+ * without executing it.
+ */
+class DirtyBitScheduler final : public MaintenanceScheduler {
+ public:
+  explicit DirtyBitScheduler(std::size_t capacity)
+      : tasks_(capacity, nullptr),
+        registrations_(index_capacity(capacity)),
+        pending_(word_count(capacity)) {
+    for (auto& word : pending_) {
+      word.store(0, std::memory_order_relaxed);
+    }
+  }
+
+  /** Registers one task during setup; false reports exhausted capacity. */
+  [[nodiscard]] auto register_task(MaintenanceTask& task) -> bool {
+    const auto setup_lock = std::scoped_lock{setup_mutex_};
+    if (sealed_.load(std::memory_order_relaxed)) {
+      return false;
+    }
+    if (find_index(task) != npos) {
+      return true;
+    }
+    if (registered_ == tasks_.size()) {
+      metrics_.record_capacity_failure();
+      return false;
+    }
+    const auto index = registered_++;
+    tasks_[index] = &task;
+    auto slot = home(task);
+    while (registrations_[slot].task != nullptr) {
+      slot = next_registration(slot);
+    }
+    registrations_[slot] = Registration{&task, index};
+    return true;
+  }
+
+  /** Publishes the completed registry and ends the setup phase. */
+  void seal() {
+    const auto setup_lock = std::scoped_lock{setup_mutex_};
+    sealed_.store(true, std::memory_order_release);
+  }
+
+  [[nodiscard]] auto schedule(MaintenanceTask& task) -> bool override {
+    metrics_.record_schedule();
+    if (!sealed_.load(std::memory_order_acquire)) {
+      return false;
+    }
+    const auto index = find_index(task);
+    if (index == npos) {
+      return false;
+    }
+    const auto mask = std::uint64_t{1} << (index % 64u);
+    const auto previous =
+        pending_[index / 64u].fetch_or(mask, std::memory_order_release);
+    if ((previous & mask) != 0) {
+      metrics_.record_coalesced();
+    }
+    if (active_scheduler_ == this) {
+      running_task_scheduled_ = true;
+    }
+    return true;
+  }
+
+  [[nodiscard]] auto run_some(MaintenanceBudget budget) -> bool override {
+    if (!sealed_.load(std::memory_order_acquire)) {
+      return false;
+    }
+    const auto run_lock = std::scoped_lock{run_mutex_};
+    return drain(budget);
+  }
+
+  [[nodiscard]] auto flush() -> bool override {
+    if (!sealed_.load(std::memory_order_acquire)) {
+      return false;
+    }
+    const auto run_lock = std::scoped_lock{run_mutex_};
+    auto budget = MaintenanceBudget{};
+    return drain(budget);
+  }
+
+  [[nodiscard]] auto metrics() const noexcept -> MaintenanceMetrics override {
+    return metrics_.snapshot();
+  }
+
+ private:
+  struct Registration {
+    MaintenanceTask* task = nullptr;
+    std::size_t index = 0;
+  };
+
+  static constexpr auto npos = std::numeric_limits<std::size_t>::max();
+
+  [[nodiscard]] static auto index_capacity(std::size_t capacity) noexcept
+      -> std::size_t {
+    if (capacity == 0) {
+      return 0;
+    }
+    const auto maximum = std::numeric_limits<std::size_t>::max();
+    return capacity > maximum - capacity ? capacity : capacity * 2;
+  }
+
+  [[nodiscard]] static auto word_count(std::size_t capacity) noexcept
+      -> std::size_t {
+    return capacity / 64u + (capacity % 64u == 0 ? 0u : 1u);
+  }
+
+  [[nodiscard]] auto home(const MaintenanceTask& task) const noexcept
+      -> std::size_t {
+    auto value = reinterpret_cast<std::uintptr_t>(&task);
+    value >>= 3u;
+    value ^= value >> 17u;
+    if constexpr (sizeof(value) >= sizeof(std::uint64_t)) {
+      value *= std::uintptr_t{0x9e3779b97f4a7c15ULL};
+    } else {
+      value *= std::uintptr_t{0x9e3779b9U};
+    }
+    return static_cast<std::size_t>(value) % registrations_.size();
+  }
+
+  [[nodiscard]] auto next_registration(std::size_t slot) const noexcept
+      -> std::size_t {
+    return slot + 1 == registrations_.size() ? 0 : slot + 1;
+  }
+
+  [[nodiscard]] auto find_index(const MaintenanceTask& task) const noexcept
+      -> std::size_t {
+    if (registrations_.empty()) {
+      return npos;
+    }
+    auto slot = home(task);
+    for (std::size_t probed = 0; probed < registrations_.size(); ++probed) {
+      if (registrations_[slot].task == nullptr) {
+        return npos;
+      }
+      if (registrations_[slot].task == &task) {
+        return registrations_[slot].index;
+      }
+      slot = next_registration(slot);
+    }
+    return npos;
+  }
+
+  [[nodiscard]] auto drain(MaintenanceBudget& budget) -> bool {
+    for (;;) {
+      auto executed = false;
+      for (std::size_t word_index = 0; word_index < pending_.size();
+           ++word_index) {
+        auto word = pending_[word_index].exchange(0, std::memory_order_acquire);
+        while (word != 0) {
+          if (budget.remaining() == 0) {
+            pending_[word_index].fetch_or(word, std::memory_order_release);
+            return true;
+          }
+          const auto bit = static_cast<std::size_t>(std::countr_zero(word));
+          const auto index = word_index * 64u + bit;
+          const auto mask = std::uint64_t{1} << bit;
+          word &= ~mask;
+          executed = true;
+#if TESS_HAS_EXCEPTIONS
+          try {
+            if (!run_task(*tasks_[index], budget)) {
+              if (word != 0) {
+                pending_[word_index].fetch_or(word, std::memory_order_release);
+              }
+              return false;
+            }
+          } catch (...) {
+            if (word != 0) {
+              pending_[word_index].fetch_or(word, std::memory_order_release);
+            }
+            throw;
+          }
+#else
+          if (!run_task(*tasks_[index], budget)) {
+            if (word != 0) {
+              pending_[word_index].fetch_or(word, std::memory_order_release);
+            }
+            return false;
+          }
+#endif
+        }
+      }
+      if (!executed) {
+        return true;
+      }
+    }
+  }
+
+  [[nodiscard]] auto run_task(MaintenanceTask& task, MaintenanceBudget& budget)
+      -> bool {
+    metrics_.record_execution();
+    const auto before = budget.remaining();
+    struct ActiveRunGuard {
+      DirtyBitScheduler*& active;
+      DirtyBitScheduler* previous;
+      ~ActiveRunGuard() { active = previous; }
+    };
+    const auto previous = active_scheduler_;
+    active_scheduler_ = this;
+    const auto guard = ActiveRunGuard{active_scheduler_, previous};
+    running_task_scheduled_ = false;
+    task.run(budget);
+    return budget.remaining() != before || !running_task_scheduled_;
+  }
+
+  detail::MetricsStore metrics_;
+  std::mutex setup_mutex_;
+  std::mutex run_mutex_;
+  std::vector<MaintenanceTask*> tasks_;
+  std::vector<Registration> registrations_;
+  std::vector<std::atomic<std::uint64_t>> pending_;
+  std::size_t registered_ = 0;
+  std::atomic<bool> sealed_ = false;
+  bool running_task_scheduled_ = false;
+  inline static thread_local DirtyBitScheduler* active_scheduler_ = nullptr;
 };
 
 /// Bounded non-deduplicating queue used as the amplification baseline.

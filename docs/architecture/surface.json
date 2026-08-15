@@ -193,6 +193,7 @@
   ],
   "docs/architecture/maintenance.md": [
     "CoalescingScheduler",
+    "DirtyBitScheduler",
     "FifoScheduler",
     "ImmediateScheduler",
     "MaintenanceBudget",
