@@ -109,9 +109,11 @@ two-gate build policy.
   sorted order so batch index i and entry i stay one agent. Collection
   reconciles `PathGoal` into the lifecycle: a present goal differing from
   the armed one arms it (reported as `pathing_dirty`); an absent goal
-  clears an armed lifecycle. An Unreachable agent with an UNCHANGED
-  `PathGoal` stays terminal because the lifecycle retains the failed
-  goal.
+  clears an armed lifecycle. An `Unreachable` agent with an unchanged
+  `PathGoal` stays terminal because the lifecycle retains the failed goal.
+  Retry exhaustion reaches that phase only when the caller explicitly selects
+  `BlockedAgentExhaustionPolicy::MarkUnreachable`; the default leaves it
+  `Blocked` for caller-owned recovery.
 - `EnttPathAgentSink` (templated on a `PositionAdapter`) mirrors batch
   state back: `PathState` stored unconditionally, positions through the
   adapter, and `PathGoal` consumed on arrival so the arrival-cleared

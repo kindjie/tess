@@ -450,6 +450,8 @@ TEST(TessAgentFlow, ExhaustedRetriesTerminalizeAsFailed) {
   tess::PathRequestRuntime runtime;
   auto options = tess::PathAgentTickOptions{};
   options.max_blocked_retries = 2;
+  options.blocked_exhaustion_policy =
+      tess::BlockedAgentExhaustionPolicy::MarkUnreachable;
 
   tess::set_path_agent_goal(tick_state, agents[0], tess::Coord3{7, 7, 0});
   for (std::uint64_t tick = 1; tick <= 8; ++tick) {

@@ -6,3 +6,5 @@
   Every tick runs both per-entity agreement and the exhaustive all-tiles
   occupancy biconditional. Create/destroy churn deliberately changes pool
   packing while `AgentId`-ordered outcomes and statistics remain identical.
+  The terminal-lifecycle fixture explicitly selects the compatibility
+  exhaustion policy; honest retry exhaustion remains the library default.

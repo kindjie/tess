@@ -26,9 +26,9 @@ EXECUTABLE_OUTPUT_DOCS = {
 }
 
 # The curated concurrency surface for the path-filtered TSan job. When a
-# header gains a standard threading primitive, add it here;
-# tests/test_ci_changes.py scans include/tess/ for primitives and fails
-# if one is missing. Composition risk (a serial-looking header executed
+# header or test gains a standard threading primitive, add it here;
+# tests/test_ci_changes.py scans include/tess/ and tests/ for primitives and
+# fails if one is missing. Composition risk (a serial-looking header executed
 # under the parallel phase backend) is covered by TSan-always on main.
 CONCURRENCY_SENSITIVE_DIRECTORIES = (
   ".github/workflows/",
@@ -57,6 +57,7 @@ CONCURRENCY_SENSITIVE_TEST_PREFIXES = (
   "tests/tess_execution_phase_safety",
   "tests/tess_maintenance",
   "tests/tess_no_exceptions",
+  "tests/tess_path_agent_tick",
   "tests/tess_phase_executor",
   "tests/tess_queued",
   "tests/tess_sim_auto_exec",

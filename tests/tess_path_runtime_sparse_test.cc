@@ -168,6 +168,36 @@ TEST(TessSparsePathRuntime, WeightedBatchRoutesOverSparseWorld) {
   EXPECT_EQ(runtime.result(a).status, tess::PathStatus::NoPath);
 }
 
+TEST(TessSparsePathRuntime, ReplanQueuePreservesIndeterminateBoundary) {
+  Sparse world{tess::ResidencyConfig{3 * Sparse::page_byte_size}};
+  fill_chunk(world, tess::ChunkKey{0});
+  fill_chunk(world, tess::ChunkKey{2});
+  ASSERT_FALSE(world.is_resident(tess::ChunkKey{1}));
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = {0, 0, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], {64, 0, 0});
+  tess::PathAgentRoutes routes;
+  tess::PathAgentReplanQueue queue;
+  queue.request_all(agents);
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(kTileReserve);
+
+  const auto stats = tess::process_unit_path_agent_replans<Sparse, PassableTag>(
+      world, agents, routes, queue, scratch,
+      tess::PathAgentReplanOptions{
+          .max_requests = 1,
+          .missing_chunk_policy = tess::MissingChunkPolicy::Indeterminate,
+      });
+
+  EXPECT_EQ(stats.indeterminate, 1u);
+  EXPECT_EQ(agents[0].status, tess::PathStatus::Indeterminate);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+  EXPECT_NE(agents[0].phase, tess::PathAgentPhase::Unreachable);
+  EXPECT_TRUE(queue.empty());
+}
+
 // A shared-goal group member whose start sits in a NON-RESIDENT chunk must
 // be excluded from the settle-target set (audit 2026-07-11 M3 arming): it
 // can never settle, so arming it would hold the flood open for the whole

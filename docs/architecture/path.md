@@ -339,14 +339,27 @@ flowchart TB
   agree per class. Goals assigned through either `set_path_agent_goal`
   overload are picked up on the next tick. `Blocked` agents consume one retry
   per following movement-enabled tick until `options.max_blocked_retries` runs
-  out and they turn terminally `Unreachable`. Occupied/reserved destinations
-  retry the retained step without processing because occupancy is
-  intentionally absent from planning passability; other transient failures
-  request a re-path. Ticks with `max_steps == 0` pause the retry budget without
-  attempting movement. Successful movement resets the consecutive-block
-  count.
+  out. The default `RemainBlocked` exhaustion policy then sleeps without
+  inventing `NoPath`; `MarkUnreachable` explicitly selects the historical
+  terminal transition. Occupied/reserved destinations retry the retained step
+  without processing because occupancy is intentionally absent from planning
+  passability; other transient failures request a re-path. Ticks with
+  `max_steps == 0` pause the retry budget without attempting movement.
+  Successful movement resets the consecutive-block count.
   `mark_pathing_dirty(state)` remains the hook -- and the only correct one --
   for replans after world edits.
+- `BlockedAgentRecoverySchedule` is caller-owned scheduling scratch for
+  persistently blocked checks. It applies deterministic exponential backoff,
+  equal jitter, round-robin fairness, and a per-call selection cap, but never
+  claims reachability. A position change starts a fresh recovery episode even
+  when an agent moves and becomes blocked again within one tick.
+  `PathAgentReplanQueue` separately deduplicates exact replan requests in FIFO
+  order; `process_unit_path_agent_replans` and
+  `process_weighted_path_agent_replans` drain no more than the configured
+  request count into retained routes. A successful blocked-agent replan keeps
+  the retry streak until movement proves progress. Both mechanisms are
+  externally synchronized and index-paired with the agent span. The replan
+  budget does not bound expansions within one synchronous A*.
 - `astar_path<World, PassableTag>(world, request, scratch, policy)` runs
   optimized unit-cost deterministic pathfinding. The passability field is
   treated as boolean-like. It runs natively on sparse worlds, honoring

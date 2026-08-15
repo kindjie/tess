@@ -216,6 +216,7 @@ def test_cli_writes_github_output_and_reason(monkeypatch, capsys):
     "tests/tess_sim_scheduler_test.cc",
     "tests/tess_maintenance_test.cc",
     "tests/tess_no_exceptions_test.cc",
+    "tests/tess_path_agent_tick_test.cc",
     "tests/tess_webgpu_backend_test.cc",
     "tests/tess_sim_auto_exec_test.cc",
     "tests/tess_execution_phase_safety_test.cc",
