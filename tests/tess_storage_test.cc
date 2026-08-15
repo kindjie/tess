@@ -315,6 +315,7 @@ TEST(TessStorage, WorldHotAccessorsAreNoexcept) {
   static_assert(noexcept(world.mark_dirty(
       key, DirtyTerrain,
       tess::Box3{tess::Coord3{0, 0, 0}, tess::Extent3{1, 1, 1}})));
+  static_assert(noexcept(world.mark_content_changed(key)));
   static_assert(noexcept(world.clear_dirty(key, DirtyTerrain)));
   static_assert(noexcept(world.mark_active(key, ActiveFluid)));
   static_assert(noexcept(world.clear_active(key, ActiveFluid)));
@@ -554,6 +555,40 @@ TEST(TessStorage, WorldClearDirtyObservedPreservesMarksAfterObservation) {
   EXPECT_TRUE(world.clear_dirty_observed(key, refreshed));
   EXPECT_EQ(world.dirty_flags(key), 0u);
   EXPECT_EQ(world.dirty_bounds(key), (tess::Box3{}));
+}
+
+TEST(TessStorage, WorldMarkContentChangedAdvancesOnlyContentVersion) {
+  World<TopDown2D> world;
+  constexpr auto key = tess::ChunkKey{7};
+  const auto bounds =
+      tess::Box3{tess::Coord3{32, 16, 0}, tess::Extent3{2, 2, 1}};
+
+  world.mark_dirty(key, DirtyTerrain, bounds);
+  world.mark_topology_rebuilt(key);
+  world.mark_active(key, ActiveFluid);
+  const auto observed = world.observe_dirty(key, DirtyTerrain);
+  const auto before = world.meta(key);
+  const auto dirty_flags = world.dirty_flags(key);
+  const auto dirty_bounds = world.dirty_bounds(key);
+  const auto active_flags = world.active_flags(key);
+
+  {
+    tess_test::ScopedAllocationCounter counter;
+    world.mark_content_changed(key);
+    EXPECT_EQ(counter.count(), 0u);
+    EXPECT_EQ(counter.bytes(), 0u);
+  }
+
+  EXPECT_EQ(world.meta(key).version, before.version + 1);
+  EXPECT_EQ(world.meta(key).topology_version, before.topology_version);
+  EXPECT_EQ(world.meta(key).state, before.state);
+  EXPECT_EQ(world.meta(key).active_count, before.active_count);
+  EXPECT_EQ(world.meta(key).entity_count, before.entity_count);
+  EXPECT_EQ(world.dirty_flags(key), dirty_flags);
+  EXPECT_EQ(world.dirty_bounds(key), dirty_bounds);
+  EXPECT_EQ(world.active_flags(key), active_flags);
+  EXPECT_FALSE(world.clear_dirty_observed(key, observed));
+  EXPECT_EQ(world.dirty_flags(key), DirtyTerrain);
 }
 
 TEST(TessStorage, WorldClearDirtyObservedIgnoresEmptyObservations) {

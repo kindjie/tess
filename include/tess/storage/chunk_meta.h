@@ -124,6 +124,10 @@ inline void meta_mark_dirty(std::uint32_t& dirty_flags, Box3& dirty_bounds,
   ++meta.version;
 }
 
+inline void meta_mark_content_changed(ChunkMeta& meta) noexcept {
+  ++meta.version;
+}
+
 inline void meta_clear_dirty(std::uint32_t& dirty_flags, Box3& dirty_bounds,
                              std::uint32_t flags) noexcept {
   if (flags == 0) {

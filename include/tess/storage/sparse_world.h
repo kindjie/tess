@@ -501,6 +501,24 @@ class World<Shape, Schema, SparseResident> {
                             metadata_[slot], flags, bounds);
   }
 
+  /**
+   * Advances the resident chunk's content version without marking dirty
+   * work.
+   *
+   * Use this after a content write that must invalidate version-keyed
+   * derived state but does not concern any dirty-mask consumer. This changes
+   * only the content version. Use `mark_dirty` for dirty-metadata consumers,
+   * `mark_topology_dirty` when topology freshness must change, and the
+   * schedule's notification protocol when an OnDirty task must run. An
+   * intervening call also makes an earlier `DirtyObservation` stale.
+   *
+   * The key must be resident, matching the precondition of `mark_dirty`.
+   */
+  void mark_content_changed(ChunkKey key) noexcept {
+    const auto slot = resident_slot_checked(key);
+    detail::meta_mark_content_changed(metadata_[slot]);
+  }
+
   void mark_topology_dirty(ChunkKey key, std::uint32_t flags,
                            Box3 bounds) noexcept {
     if (flags == 0) {

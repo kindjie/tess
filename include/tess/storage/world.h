@@ -233,6 +233,23 @@ class World<Shape, Schema, AlwaysResident> {
                             flags, bounds);
   }
 
+  /**
+   * Advances the chunk content version without marking dirty work.
+   *
+   * Use this after a content write that must invalidate version-keyed
+   * derived state but does not concern any dirty-mask consumer. This changes
+   * only the content version. Use `mark_dirty` for dirty-metadata consumers,
+   * `mark_topology_dirty` when topology freshness must change, and the
+   * schedule's notification protocol when an OnDirty task must run. An
+   * intervening call also makes an earlier `DirtyObservation` stale.
+   *
+   * The key must be valid, matching the precondition of `mark_dirty`.
+   */
+  void mark_content_changed(ChunkKey key) noexcept {
+    TESS_ASSERT(key.value < chunk_count);
+    detail::meta_mark_content_changed(meta(key));
+  }
+
   void mark_topology_dirty(ChunkKey key, std::uint32_t flags,
                            Box3 bounds) noexcept {
     if (flags == 0) {
