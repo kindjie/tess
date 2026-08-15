@@ -1,11 +1,10 @@
 # test_branding_assets.py
 
 - `tests/test_branding_assets.py`: static asset and browser-demo contract
-  coverage, including the colony's explicit terminal bottleneck metric so an
-  exhausted path-agent lifecycle cannot look like a silently running colony,
-  a terminal verdict decided by search rather than by a retry clock (terrain
-  precheck first, then a settled-aware search), bounded recovery scheduling,
-  and settled colonists treated as obstacles so a bottleneck cannot deadlock
-  the convoy behind the first agent to arrive, plus maintained architecture
-  navigation coverage for persistence;
+  coverage, including backend rejection of occupied wall tiles, separate wall-
+  and crowd-blocked outcomes, terrain-versus-settled exact-search
+  classification, bounded recovery scheduling, whole-wave turnaround after a
+  crowd-blocked leg, distinct completed-versus-aborted counters, and settled
+  colonists treated as obstacles while a leg is active, plus maintained
+  architecture navigation coverage for persistence;
   hosted hook-backstop CI runs this file explicitly.

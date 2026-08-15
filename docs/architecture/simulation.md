@@ -202,6 +202,16 @@ marking) must follow all three steps, for every movement tier:
 Omitting any step reproduces the original colony deadlock; omitting step 3
 in a PIBT ranking oracle parks agents permanently beside obstructions.
 
+The browser colony scopes settled obstacles to one synchronized leg. A cheap
+terrain-graph precheck rejects obvious wall seals. Otherwise an exact search
+with the settled-aware class tests current reachability; if that fails, an
+exact terrain-only search distinguishes a durable wall failure from a goal
+blocked only by completed teammates. The latter outcome cancels the unfinished
+goal and is quiescent for the leg. Once every agent has arrived or reached that
+crowd-blocked outcome, the controller rearms the entire wave toward the
+opposite side. Wall edits on occupied tiles are rejected at admission,
+preserving `occupied => standable`.
+
 ### Render Deltas
 
 - `RenderTileDelta` records a changed tile coordinate, chunk key, local tile
