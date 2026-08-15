@@ -43,6 +43,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <span>
 #include <type_traits>
@@ -97,6 +98,73 @@ struct PibtScratchState {
 template <typename Ranking>
 concept PibtRanking = requires(Ranking& rank, std::size_t agent, Coord3 coord) {
   { rank(agent, coord) } -> std::convertible_to<std::uint32_t>;
+};
+
+// A production ranking oracle for open worlds with walls. The oracle
+// contract at the top of this header names the two hazards a ranking must
+// avoid; this adds the third one measured in the mixed-colony bench:
+// distance heuristics that ignore terrain (Manhattan, or any field
+// truncated short of the map's doorways) rate wall-adjacent tiles best and
+// park agents at local minima that yields alone cannot fix. Each agent
+// already carries an exact, terrain-aware plan — its retained A* route —
+// so the oracle scores a candidate by its best LOCAL attachment to that
+// route: the Manhattan hop onto a route point within `attach_radius`, plus
+// that point's remaining route length. The radius bound is load-bearing:
+// Manhattan attachment is wall-blind, and admitting distant attachments
+// lets far-side route points lure agents onto a wall face (measured; the
+// regression test pins it). A candidate with no local attachment scores
+// far above any attached one, graded by its distance to the nearest route
+// point so displaced agents steer back to the corridor. Agents with no
+// usable route (fewer than two points, or no goal) fall back to Manhattan
+// toward the goal, which is also the natural open-terrain behavior.
+//
+// Complexity: O(remaining route) per candidate query, bounded by the
+// route lengths the planner produces. The scan starts at the agent's
+// route cursor but the cursor does not advance during off-route PIBT
+// walks, so callers should treat the full-route scan as the cost model.
+/// Ranks PIBT candidates by local attachment to each agent's retained
+/// route.
+struct RouteAttachmentRanking {
+  std::span<const PathAgentState> agents;
+  const PathAgentRoutes* routes = nullptr;
+  /// Maximum Manhattan hop from a candidate onto a route point.
+  std::uint32_t attach_radius = 2;
+
+  /// Scores below `kDetachedBase` are attached; higher steer back.
+  static constexpr std::uint32_t kDetachedBase =
+      std::numeric_limits<std::uint32_t>::max() / 8;
+
+  [[nodiscard]] auto operator()(std::size_t agent, Coord3 candidate) const
+      -> std::uint32_t {
+    const PathAgentState& state = agents[agent];
+    const auto manhattan = [&](Coord3 a, Coord3 b) {
+      return static_cast<std::uint32_t>(std::abs(a.x - b.x) +
+                                        std::abs(a.y - b.y));
+    };
+    if (routes == nullptr || agent >= routes->routes.size()) {
+      return manhattan(candidate, state.has_goal ? state.goal : state.position);
+    }
+    const std::vector<Coord3>& route = routes->routes[agent];
+    if (!state.has_goal || route.size() < 2) {
+      return manhattan(candidate, state.has_goal ? state.goal : state.position);
+    }
+    std::uint32_t best = kDetachedBase;
+    std::uint32_t nearest = kDetachedBase;
+    for (std::size_t j = state.path_index; j < route.size(); ++j) {
+      const std::uint32_t attach = manhattan(candidate, route[j]);
+      nearest = std::min(nearest, attach);
+      if (attach > attach_radius) {
+        continue;
+      }
+      const std::uint32_t remaining =
+          static_cast<std::uint32_t>(route.size() - 1 - j);
+      best = std::min(best, attach + remaining);
+    }
+    if (best == kDetachedBase) {
+      return kDetachedBase + nearest;
+    }
+    return best;
+  }
 };
 
 // Index-paired with the agent span handed to the advance, exactly like
