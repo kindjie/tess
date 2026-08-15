@@ -9,6 +9,5 @@
   planning; a terrain-only oracle strands an agent where the class-consistent
   oracle detours. Swap counters include only secured exchanges. The
   RouteAttachmentRanking tests pin exact attachment scores and the
-  wall-face lure regression: unbounded Manhattan attachment must PARK the
-  agent (if it starts arriving, the radius bound has lost its measured
-  justification), while radius-2 attachment walks the detour.
+  wall-face lure regression; the trap and the radius justification live
+  in that test's own comment.

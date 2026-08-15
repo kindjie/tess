@@ -1083,7 +1083,7 @@ TEST(TessPibtMovement, RouteAttachmentRankingScoresLocalAttachment) {
   (void)add_agent(world, agents, routes,
                   {{2, 2, 0}, {3, 2, 0}, {4, 2, 0}, {5, 2, 0}, {6, 2, 0}});
   const tess::RouteAttachmentRanking rank{
-      std::span<const tess::PathAgentState>{agents}, &routes, 2};
+      std::span<const tess::PathAgentState>{agents}, &routes};
 
   // On-route candidates score their remaining route length exactly.
   EXPECT_EQ(rank(0, {6, 2, 0}), 0u);
@@ -1099,6 +1099,13 @@ TEST(TessPibtMovement, RouteAttachmentRankingScoresLocalAttachment) {
   const auto detached = rank(0, {10, 8, 0});
   EXPECT_GE(detached, tess::RouteAttachmentRanking::kDetachedBase);
   EXPECT_EQ(detached - tess::RouteAttachmentRanking::kDetachedBase, 10u);
+  // Distance 2 is already detached under the default radius: such pairs
+  // can sit on opposite sides of a one-tile wall, so admitting them
+  // would reintroduce the lure one tile closer.
+  EXPECT_GE(rank(0, {4, 4, 0}), tess::RouteAttachmentRanking::kDetachedBase);
+  // The metric is three-axis: a level apart is apart, never colocated.
+  EXPECT_GE(rank(0, {4, 2, 5}), tess::RouteAttachmentRanking::kDetachedBase);
+  EXPECT_EQ(rank(0, {4, 2, 1}), 1u + 2u);
 
   // Agents without a usable route fall back to Manhattan toward the goal.
   tess::PathAgentState bare;
@@ -1150,7 +1157,7 @@ TEST(TessPibtMovement, BoundedAttachmentArrivesWhereUnboundedParks) {
     scratch.reserve(agents.size());
     const tess::RouteAttachmentRanking rank{
         std::span<const tess::PathAgentState>{agents}, &routes,
-        bounded ? 2u : 10'000u};
+        bounded ? tess::RouteAttachmentRanking{}.attach_radius : 10'000u};
     for (int tick = 0; tick < 96 && agents[0].position != goal; ++tick) {
       (void)tess::advance_path_agents_with_pibt<World, Walker, OccupancyTag,
                                                 ReservationTag>(
