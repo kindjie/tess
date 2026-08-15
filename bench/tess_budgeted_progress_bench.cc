@@ -1423,6 +1423,13 @@ auto main(int argc, char** argv) -> int {
           ++cursor;
         }
       }
+    } else if (argument == "--mixed-views" && i + 1 < argc) {
+      const std::string views = argv[++i];
+      options.mixed_view_fidelity = views.find("fidelity") != std::string::npos;
+      options.mixed_view_quanta = views.find("quanta") != std::string::npos;
+      if (!options.mixed_view_fidelity && !options.mixed_view_quanta) {
+        fail("--mixed-views must name fidelity, quanta, or both");
+      }
     } else if (argument == "--mixed-populations" && i + 1 < argc) {
       options.mixed_populations.clear();
       for (const char* cursor = argv[++i]; *cursor != 0;) {

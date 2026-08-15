@@ -497,9 +497,14 @@ void run_mixed_colony_cells(const RunOptions& base_options) {
     std::uint64_t peak_rss = 0;
   };
 
-  const std::array<const char*, 2> kViews = {"mixed_current_fidelity",
-                                             "mixed_existing_quanta"};
-  for (const char* view : kViews) {
+  std::vector<const char*> views;
+  if (options.mixed_view_fidelity) {
+    views.push_back("mixed_current_fidelity");
+  }
+  if (options.mixed_view_quanta) {
+    views.push_back("mixed_existing_quanta");
+  }
+  for (const char* view : views) {
     for (const std::uint32_t tps : tps_axis) {
       for (const std::size_t population : population_axis) {
         SteadyClock clock;
