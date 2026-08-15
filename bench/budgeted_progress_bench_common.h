@@ -78,11 +78,19 @@ struct RunOptions {
   bool counter_pass = false;
   // Set by --smoke: shrinks every cell's frame counts and matrices.
   bool smoke = false;
+  // Set by --mixed-only: runs only the mixed-colony matrix, for
+  // campaigns resuming after the isolated cells already completed.
+  bool mixed_only = false;
   // Mixed-colony matrix (design section 7): defaults keep an
   // uninvoked full run tractable; campaigns widen via --mixed-tps and
   // --mixed-populations.
   std::vector<std::uint32_t> mixed_tps = {20};
   std::vector<std::size_t> mixed_populations = {100};
+  // Explicit CLI axes win over the smoke defaults, so a smoke run can
+  // still exercise a chosen matrix point (the seating-capacity ctest
+  // depends on this).
+  bool mixed_tps_explicit = false;
+  bool mixed_populations_explicit = false;
   // Which section 7.3 views to run. The two views are identical by
   // construction in this stack (no defer boundaries exist), so a
   // campaign runs one and treats the other as analytically equal;

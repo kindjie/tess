@@ -50,6 +50,11 @@ using MixedWorld = tess::AlwaysResidentWorld<PathScaleShape, MixedSchema>;
 using MixedColony = colony::Colony<PathScaleShape, MixedSchema>;
 
 constexpr std::size_t kMixedAgents = 100;
+// The historical stride of 8 rows seats at most 227 agents on this
+// map; the population ladder tops out at 500. Stride 2 seats 908,
+// and one stride for every rung keeps the ladder varying only
+// population, never placement geometry.
+constexpr std::int64_t kMixedPlacementStride = 2;
 constexpr std::uint32_t kMixedChurnPeriod = 8;
 constexpr std::uint32_t kMixedChurnChunks = 4;
 constexpr std::int64_t kMixedGoalDistance = 24;
@@ -208,8 +213,10 @@ struct MixedStack {
     }
   }
 
-  // Agents: the harness's scan-order placement, verbatim.
-  const std::int64_t stride = std::max<std::int64_t>(1, 512 / 64);
+  // Agents: the harness's scan-order placement, verbatim (the stride
+  // mirrors ColonyConfig::placement_stride, proven equivalent by
+  // validate_mixed_stack).
+  const std::int64_t stride = kMixedPlacementStride;
   for (std::int64_t y = 1; y < 512 && stack->agents.size() < population;
        y += stride) {
     for (std::int64_t x = 1;
@@ -230,7 +237,15 @@ struct MixedStack {
       stack->homes.push_back(start);
     }
   }
-  check(stack->agents.size() == population, "mixed colony under-placed agents");
+  if (stack->agents.size() != population) {
+    char message[128];
+    std::snprintf(message, sizeof(message),
+                  "mixed colony under-placed agents: %zu of %zu seated "
+                  "(placement stride %lld)",
+                  stack->agents.size(), population,
+                  static_cast<long long>(stride));
+    fail(message);
+  }
 
   stack->runtime.reserve_requests(stack->agents.size());
   stack->runtime.reserve_search_nodes(512 * 512);
@@ -324,6 +339,7 @@ void validate_mixed_stack() {
   config.ticks = 40;
   config.churn_period = kMixedChurnPeriod;
   config.churn_chunks = kMixedChurnChunks;
+  config.placement_stride = kMixedPlacementStride;
   MixedColony reference(config);
   const colony::ColonyRun reference_run = reference.run();
 
@@ -482,9 +498,22 @@ void run_mixed_colony_cells(const RunOptions& base_options) {
       options.smoke ? std::span<const Nanos>{kSmokeMixedBudgets}
                     : std::span<const Nanos>{kAllMixedBudgets};
   const std::vector<std::uint32_t> tps_axis =
-      options.smoke ? std::vector<std::uint32_t>{60} : options.mixed_tps;
+      options.smoke && !options.mixed_tps_explicit
+          ? std::vector<std::uint32_t>{60}
+          : options.mixed_tps;
   const std::vector<std::size_t> population_axis =
-      options.smoke ? std::vector<std::size_t>{100} : options.mixed_populations;
+      options.smoke && !options.mixed_populations_explicit
+          ? std::vector<std::size_t>{100}
+          : options.mixed_populations;
+
+  // Fail fast: seat the largest requested population before any cell
+  // runs, so an unplaceable rung aborts the campaign up front rather
+  // than deep into the matrix (the stage-4 timing pass died 40
+  // minutes in on exactly that).
+  if (!population_axis.empty()) {
+    (void)build_mixed_stack(
+        *std::max_element(population_axis.begin(), population_axis.end()));
+  }
 
   struct MixedCellAccumulator {
     tess::diagnostics::FlowCounters window_flow{};

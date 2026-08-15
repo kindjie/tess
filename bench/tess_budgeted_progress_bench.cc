@@ -1384,6 +1384,11 @@ void run_resumable_cell(const RunOptions& options) {
 }  // namespace
 
 auto main(int argc, char** argv) -> int {
+  // Line-buffer stdout: campaigns redirect both streams to one log,
+  // and block buffering reordered progress lines past the unbuffered
+  // stderr diagnostics (a fatal placement error was invisible in the
+  // stage-4 timing log because of exactly that).
+  std::setvbuf(stdout, nullptr, _IOLBF, 0);
   RunOptions options;
   bool pass_explicit = false;
 #if TESS_DIAGNOSTICS_ENABLED
@@ -1392,7 +1397,9 @@ auto main(int argc, char** argv) -> int {
 #endif
   for (int i = 1; i < argc; ++i) {
     const std::string argument = argv[i];
-    if (argument == "--smoke") {
+    if (argument == "--mixed-only") {
+      options.mixed_only = true;
+    } else if (argument == "--smoke") {
       options.smoke = true;
       options.warmup_frames = 5;
       options.measured_frames = 30;
@@ -1412,6 +1419,7 @@ auto main(int argc, char** argv) -> int {
       }
       pass_explicit = true;
     } else if (argument == "--mixed-tps" && i + 1 < argc) {
+      options.mixed_tps_explicit = true;
       options.mixed_tps.clear();
       for (const char* cursor = argv[++i]; *cursor != 0;) {
         options.mixed_tps.push_back(
@@ -1433,6 +1441,7 @@ auto main(int argc, char** argv) -> int {
         fail("--mixed-views must be exactly fidelity, quanta, or both");
       }
     } else if (argument == "--mixed-populations" && i + 1 < argc) {
+      options.mixed_populations_explicit = true;
       options.mixed_populations.clear();
       for (const char* cursor = argv[++i]; *cursor != 0;) {
         options.mixed_populations.push_back(
@@ -1450,7 +1459,7 @@ auto main(int argc, char** argv) -> int {
     } else {
       fail(
           "usage: tess_bench_budgeted_progress --out-dir DIR "
-          "[--smoke] [--reps N]");
+          "[--smoke] [--mixed-only] [--reps N]");
     }
   }
   if (options.out_dir.empty()) {
@@ -1472,6 +1481,15 @@ auto main(int argc, char** argv) -> int {
   }
 #endif
 
+  if (options.mixed_only) {
+    if (options.counter_pass) {
+      fail("--mixed-only has no counter-pass cells");
+    }
+    // The mixed matrix needs no A* cell; validate_mixed_stack still
+    // gates the run on the harness-equivalence proof.
+    run_mixed_colony_cells(options);
+    return 0;
+  }
   AstarCell astar_cell = build_astar_cell(options);
   validate_astar_cell(astar_cell, options.validation_requests);
   if (options.counter_pass) {

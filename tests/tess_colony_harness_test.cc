@@ -247,6 +247,25 @@ TEST(TessColonyHarness, FlowIdentitiesHold) {
   EXPECT_GT(run.agent_flow.inventory_tick_weighted, 0u);
 }
 
+// The default stride-8 scan placement seats at most 227 agents on
+// the shared map; requesting more must be visible in
+// agents_unplaced, never silent truncation, and a denser stride must
+// actually seat the large populations the mixed-colony population
+// ladder runs (its stage-4 campaign died on exactly this ceiling).
+TEST(TessColonyHarness, PlacementStrideControlsSeatingCapacity) {
+  auto over_capacity = base_config();
+  over_capacity.agents = 500;
+  over_capacity.ticks = 1;
+  const auto truncated = NarrowColony(over_capacity).run();
+  EXPECT_EQ(truncated.agents_unplaced, 500u - 227u);
+
+  auto dense = over_capacity;
+  dense.placement_stride = 2;
+  const auto seated = NarrowColony(dense).run();
+  EXPECT_EQ(seated.agents_unplaced, 0u);
+  EXPECT_EQ(seated.final_positions.size(), 500u);
+}
+
 // Serial-only scenario golden (section 3.3 scopes goldens to serial
 // precisely because pool workers do not aggregate into the caller's
 // counter sink). Pinning the outcome catches behavioral drift that
