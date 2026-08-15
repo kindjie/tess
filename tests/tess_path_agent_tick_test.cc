@@ -795,10 +795,14 @@ TEST(TessPathAgentTick, WarmContinuouslyPendingReplanQueueDoesNotGrow) {
 
   tess_test::ScopedAllocationCounter counter;
   for (std::size_t turn = 0; turn < 100; ++turn) {
-    const auto index = queue.front();
-    ASSERT_TRUE(index.has_value());
+    const auto pending_index = queue.front();
+    if (!pending_index.has_value()) {
+      FAIL() << "continuously pending queue became empty";
+      return;
+    }
+    const auto index = pending_index.value();
     queue.pop_front();
-    EXPECT_TRUE(queue.request(*index, agents[*index]));
+    EXPECT_TRUE(queue.request(index, agents[index]));
   }
 
   EXPECT_EQ(queue.pending(), agents.size());

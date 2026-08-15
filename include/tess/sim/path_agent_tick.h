@@ -396,7 +396,11 @@ template <typename Search>
   PathAgentFrameStats stats;
   routes.ensure_size(agents.size());
   while (!queue.empty() && stats.submitted < options.max_requests) {
-    const auto index = *queue.front();
+    const auto pending_index = queue.front();
+    if (!pending_index.has_value()) {
+      break;
+    }
+    const auto index = pending_index.value();
     if (index >= agents.size()) {
       queue.pop_front();
       continue;
