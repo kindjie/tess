@@ -457,8 +457,14 @@ struct MixedCellSummary {
       continue;
     }
     ++out.cohort_admitted;
+    // Every completed cohort item contributes a lateness sample —
+    // zero when on time — so the artifact family's sample base really
+    // is completed_cohort_items. Recording only positive lateness
+    // made the published percentiles describe just the handful of
+    // late completions (bug found in the 2026-08-15 campaign review).
     if (item.completed && item.completed_tick <= deadline) {
       ++out.cohort_met;
+      out.lateness.push_back(0);
     }
     if (item.completed && item.completed_tick > deadline) {
       out.lateness.push_back(item.completed_tick - deadline);
