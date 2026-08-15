@@ -88,6 +88,26 @@ TEST(TessDiagnosticsPanels, TimingRowsUseStableColumnsAcrossDigitBoundaries) {
   }
 }
 
+TEST(TessDiagnosticsPanels, TimingValuesAreRightAligned) {
+  tess_imgui_stub::reset();
+  tess::diagnostics::TimingSnapshot timing;
+  for (auto& stats : timing.per_category) {
+    stats = {UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX};
+  }
+
+  tess::debug::imgui::draw_timing_panel(timing);
+
+  constexpr auto numeric_columns = 5;
+  EXPECT_EQ(tess_imgui_stub::cursor_pos_x_set_count,
+            static_cast<int>(tess::diagnostics::trace_category_count) *
+                numeric_columns);
+  // The stub exposes 100 px after a 5 px cursor. A 20-digit uint64 is 160 px
+  // wide and therefore starts at -55 px so its right edge stays at 105 px;
+  // the one-digit average starts at 97 px and reaches the same edge.
+  EXPECT_FLOAT_EQ(tess_imgui_stub::cursor_pos_x_values[0], -55.0F);
+  EXPECT_FLOAT_EQ(tess_imgui_stub::cursor_pos_x_values[2], 97.0F);
+}
+
 TEST(TessDiagnosticsPanels, CategoryNamesCoverEveryCategory) {
   using tess::diagnostics::TraceCategory;
   EXPECT_STREQ(tess::debug::imgui::category_name(TraceCategory::General),

@@ -87,6 +87,13 @@ auto main() -> int {
     std::cerr << "intensity contract failed\n";
     return 1;
   }
+  const auto& accumulated_path =
+      model.snapshot().timing.stats(tess::diagnostics::TraceCategory::Path);
+  if (accumulated_path.samples <=
+      first.timing.stats(tess::diagnostics::TraceCategory::Path).samples) {
+    std::cerr << "timing aggregation contract failed\n";
+    return 1;
+  }
   if (!expected_path_outcomes_remain_operational(model)) {
     std::cerr << "expected path outcome handling failed\n";
     return 1;

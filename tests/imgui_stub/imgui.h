@@ -71,6 +71,8 @@ inline int table_frozen_rows = 0;
 inline ImGuiTableFlags table_flags = ImGuiTableFlags_None;
 inline ImVec2 table_outer_size;
 inline std::array<int, 6> table_column_visits{};
+inline int cursor_pos_x_set_count = 0;
+inline std::array<float, 35> cursor_pos_x_values{};
 
 inline void reset() noexcept {
   checkbox_pending = false;
@@ -88,6 +90,8 @@ inline void reset() noexcept {
   table_flags = ImGuiTableFlags_None;
   table_outer_size = {};
   table_column_visits.fill(0);
+  cursor_pos_x_set_count = 0;
+  cursor_pos_x_values.fill(0.0F);
 }
 
 inline void set_next_checkbox(bool changed, bool value) noexcept {
@@ -129,6 +133,23 @@ inline void TableSetupScrollFreeze(int columns, int rows) {
 }
 inline void TableHeadersRow() { ++tess_imgui_stub::table_header_row_count; }
 inline float GetTextLineHeightWithSpacing() { return 16.0F; }
+inline ImVec2 GetContentRegionAvail() { return {100.0F, 100.0F}; }
+inline ImVec2 CalcTextSize(const char* text, const char* text_end = nullptr,
+                           bool = false, float = -1.0F) {
+  const auto size = text_end == nullptr
+                        ? std::strlen(text)
+                        : static_cast<std::size_t>(text_end - text);
+  return {static_cast<float>(size) * 8.0F, 16.0F};
+}
+inline float GetCursorPosX() { return 5.0F; }
+inline void SetCursorPosX(float value) {
+  if (tess_imgui_stub::cursor_pos_x_set_count <
+      static_cast<int>(tess_imgui_stub::cursor_pos_x_values.size())) {
+    tess_imgui_stub::cursor_pos_x_values[static_cast<std::size_t>(
+        tess_imgui_stub::cursor_pos_x_set_count)] = value;
+  }
+  ++tess_imgui_stub::cursor_pos_x_set_count;
+}
 
 // Attribute lives on a preceding declaration (as in real ImGui); the inline
 // definition below inherits it.
