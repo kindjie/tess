@@ -349,8 +349,9 @@ stateDiagram-v2
   `PathStatus`: `Idle` (no goal or arrived), `NeedsPath` (goal assigned, no
   route yet), `Following` (walking a `Found` route), `Blocked` (transient
   failure; retained-step contention waits, while route-invalidating failures
-  re-path, until the shared retry budget runs out), and `Unreachable`
-  (terminal until a new goal is assigned).
+  re-path until the shared retry budget and exhaustion policy take effect),
+  and `Unreachable` (structural failure or explicitly terminal exhaustion;
+  terminal until a new goal is assigned).
 - `set_path_agent_goal(agent, goal)` arms the lifecycle (`NeedsPath`, retry
   count reset); `clear_path_agent_goal(agent)` returns the agent to `Idle`.
 - `PathAgentFrameStats` counts submitted, completed, found, invalid-start,
@@ -399,6 +400,13 @@ stateDiagram-v2
   forward to the runtime's precheck gate; when supplied, goals the region graph
   proves unreachable are resolved without A* and surfaced in
   `PathAgentFrameStats::precheck_ruled_out`.
+- `PathAgentReplanQueue` is an opt-in, caller-owned FIFO for exact replans.
+  Pending agent indices deduplicate; `process_unit_path_agent_replans` and
+  `process_weighted_path_agent_replans` solve at most
+  `PathAgentReplanOptions::max_requests`, copy results into retained routes,
+  and preserve the selected `MissingChunkPolicy`. This bounds request count,
+  not one search's expansions or wall time. Queue, agents, routes, and scratch
+  are externally synchronized; independent owners may run independently.
 
 ### Path-Agent Tick
 
@@ -416,7 +424,11 @@ stateDiagram-v2
   agents it skips, so callers that need those agents' paths must use the
   tick-driver retained routes rather than reading old runtime tickets.
 - `PathAgentTickOptions` carries `max_steps` and `movement_dirty_mask` per tick,
-  the runtime `PathRuntimeCachePolicy`, and `max_blocked_retries` (default 8).
+  the runtime `PathRuntimeCachePolicy`, `max_blocked_retries` (default 8), and
+  `blocked_exhaustion_policy`. `BlockedAgentExhaustionPolicy` defaults to
+  `RemainBlocked`, preserving the goal and last status because elapsed retries
+  do not prove `NoPath`; `MarkUnreachable` retains the historical terminal
+  behavior explicitly.
 - `PathAgentTickStats` reports the tick value, whether paths were processed,
   separate pathing and movement `PathAgentFrameStats`, and the
   `repaths_requested` count for actual searches plus `repath_exhausted` for
@@ -427,8 +439,17 @@ stateDiagram-v2
   dirty mark. `Blocked` agents consume one retry on each following tick.
   Occupied/reserved destinations retain `PathStatus::Found` and retry the
   retained step without a search; route-invalidating transient failures use
-  `PathStatus::NoPath` and request processing. Exhaustion turns either case
-  terminally `Unreachable`.
+  their last non-Found status and request processing. At exhaustion the default
+  leaves the agent `Blocked` without further automatic path processing;
+  `MarkUnreachable` instead terminalizes it and rewrites the status to
+  `NoPath` for compatibility.
+- `BlockedAgentRecoverySchedule` selects a deterministic, caller-bounded subset
+  of persistently blocked agents for expensive recovery checks. Exponential
+  delay with deterministic equal jitter spreads repeated checks; scheduling
+  never decides reachability. `BlockedAgentRecoveryOptions` controls its delay,
+  cap, and salt; `BlockedAgentRecoveryStats` reports blocked, due, selected,
+  and deferred counts. The caller owns exact search, sparse residency,
+  movement-class, result, and synchronization semantics.
 - `tick_unit_path_agents<World, ClassOrTag>(...)`,
   `tick_weighted_path_agents<World, Class, MaxCost>(...)`,
   `tick_unit_path_agents_with_movement<World, ClassOrTag, OccupancyTag,
@@ -684,7 +705,8 @@ land in `Blocked`; each following tick consumes one of
 `max_blocked_retries` when movement is enabled; `max_steps == 0` pauses the
 budget. Occupancy and reservations retry the retained step, while
 route-invalidating failures re-path. Successful movement resets the
-consecutive-block count; exhaustion becomes terminal `Unreachable`.
+consecutive-block count. Exhaustion remains `Blocked` by default; callers that
+need the historical terminal timeout select `MarkUnreachable` explicitly.
 Structural movement failures (invalid endpoints, non-adjacent steps) skip the
 retry budget entirely. A missing edge under a special-transition provider is
 `StaleTopology`, because a provider revision can legitimately remove it, and
@@ -696,7 +718,7 @@ edges are omitted from the diagram to keep the failure paths legible.
 ```mermaid
 stateDiagram-v2
   accTitle: Path-agent lifecycle
-  accDescr: Goals arm pathfinding; transient failures retry through Blocked, while structural failures or exhausted retries remain Unreachable.
+  accDescr: Goals arm pathfinding; transient failures retry through Blocked, while structural failures become Unreachable and an explicit compatibility policy may terminalize exhausted retries.
 
   [*] --> Idle
   Idle --> NeedsPath: assign goal
@@ -706,7 +728,8 @@ stateDiagram-v2
   Following --> Blocked: transient move failure
   Following --> Unreachable: structural move failure
   Blocked --> Following: route found or retained step moves
-  Blocked --> Unreachable: retry budget exhausted
+  Blocked --> Blocked: retry exhausted (default sleep/recovery)
+  Blocked --> Unreachable: retry exhausted (compatibility policy)
   Unreachable --> NeedsPath: assign new goal
 ```
 
@@ -737,8 +760,9 @@ terminal outcome is a fresh admission. The tick-state
 `clear_path_agent_goal` cancels a live goal. `arrive_path_agent`
 completes the lifecycle at the arrival transition inside the advance
 helpers — including the joint-movement and PIBT tiers — and
-`fail_path_agent_flow` terminalizes it as failed at every structural
-failure and blocked-budget exhaustion `Unreachable` transition. `observe_path_agent_flow_tick` drives the
+`fail_path_agent_flow` terminalizes it as failed at every structural failure
+and explicit `MarkUnreachable` exhaustion transition.
+`observe_path_agent_flow_tick` drives the
 per-tick inventory weighting and refreshes the oldest outstanding goal
 age from per-agent admission stamps. The bare state-only goal helpers
 perform no accounting and say so.

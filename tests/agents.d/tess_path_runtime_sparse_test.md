@@ -5,4 +5,5 @@
   unchanged resident count must invalidate via `residency_generation` alone:
   its chunk version resets to zero, so a version-only fingerprint misses the
   replacement. Movement and rendering must never index non-resident storage;
-  the suite also runs under ASan.
+  budgeted replanning with `Indeterminate` must not turn a missing chunk
+  into `NoPath`. The suite also runs under ASan.

@@ -167,10 +167,12 @@ def test_colony_demo_reports_terminal_bottleneck_outcomes():
   # page cannot report a merely congested convoy as permanently stuck. Two
   # searches back it: the terrain graph rejects a sealed goal cheaply, and
   # only then does a Traveler search decide whether settled colonists leave a
-  # route. A retry allowance sized to the convoy replaced neither.
-  assert "refresh_settled_agents" in model
+  # route. A bounded, jittered recovery schedule controls when that exact
+  # verdict is requested; its delay window replaces no search semantics.
+  assert "recover_blocked_agents" in model
   assert "precheck_path<Walker>" in model
-  assert "kMaxBlockedRetries" in model
+  assert "kRecoveryWindowTicks" in model
+  assert "BlockedAgentRecoverySchedule" in model
   assert "2U * static_cast<std::uint32_t>(demo->agents.size()) + 8U" not in model
 
   # Agents that will never move again are obstacles to everyone else, or a

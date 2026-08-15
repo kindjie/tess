@@ -366,6 +366,8 @@ TEST(TessEcsEntt, UnreachableGoalStaysTerminalUntilGoalChanges) {
 
   tess::PathAgentTickOptions options;
   options.max_blocked_retries = 2;
+  options.blocked_exhaustion_policy =
+      tess::BlockedAgentExhaustionPolicy::MarkUnreachable;
   const auto tick = [&] {
     return tess::tick_entt_unit_path_agents<World, PassableTag, OccupancyTag,
                                             ReservationTag>(

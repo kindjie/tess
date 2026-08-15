@@ -18,9 +18,9 @@ namespace tess {
 // - Following: a Found route is being walked tile by tile.
 // - Blocked: the last step or path attempt hit a transient failure; the agent
 //   retries a retained occupancy-blocked step or re-paths an invalid route
-//   until its shared retry budget runs out.
-// - Unreachable: the retry budget was exhausted or a structural movement
-//   failure occurred; terminal until a new goal is assigned.
+//   until its shared retry budget runs out, then follows the tick policy.
+// - Unreachable: a structural movement failure or an explicit compatibility
+//   exhaustion policy terminalized the goal until a new one is assigned.
 /// Describes the lifecycle phase of an independently routed agent.
 enum class PathAgentPhase : std::uint8_t {
   Idle,
@@ -181,8 +181,8 @@ inline void clear_path_agent_goal(PathAgentState& agent) noexcept {
   return agent.has_goal && agent.phase != PathAgentPhase::Unreachable;
 }
 
-/// Terminalizes an agent's goal lifecycle as failed at a structural
-/// failure or exhaustion transition; the phase change stays the
+/// Terminalizes an agent's goal lifecycle as failed at a structural failure
+/// or an explicitly terminal exhaustion transition; phase change stays the
 /// caller's.
 inline void fail_path_agent_flow(
     const PathAgentState& agent,
@@ -307,8 +307,8 @@ inline auto apply_path_agent_results(std::span<PathAgentState> agents,
         routes->routes[i].assign(result.path.begin(), result.path.end());
       }
     } else {
-      // Planner failures are retried through the Blocked lifecycle until
-      // the tick driver's retry budget runs out.
+      // Planner failures are retried through the Blocked lifecycle until the
+      // tick driver's retry budget and exhaustion policy take effect.
       agent.phase = PathAgentPhase::Blocked;
       if (routes != nullptr) {
         routes->routes[i].clear();

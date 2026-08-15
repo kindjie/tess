@@ -42,11 +42,16 @@ constexpr int kMaxAgents = 1024;
 // left and the turnaround columns on the right always stay standable.
 constexpr int kWallMinX = 10;
 constexpr int kWallMaxX = kWidth - 11;
-// Consecutive blocked ticks an agent may spend before the demo re-examines it.
-// Terminal is then decided by an actual search rather than by the clock (see
-// Demo::refresh_settled_agents), so this only has to be long enough that
-// ordinary convoy shuffling never pays for that search.
-constexpr std::uint32_t kMaxBlockedRetries = 32;
+// Recovery probes begin after half this window. It only has to be long enough
+// that ordinary convoy shuffling does not pay for an exact reachability probe.
+constexpr std::uint32_t kRecoveryWindowTicks = 32;
+constexpr std::size_t kMaxPlanningQueriesPerTick = 8;
+constexpr auto kRecoveryOptions = tess::BlockedAgentRecoveryOptions{
+    .initial_delay_ticks = kRecoveryWindowTicks / 2,
+    .max_delay_ticks = 256,
+    .max_probes_per_tick = 8,
+    .jitter_seed = 0x434f4c4f4e59ULL,
+};
 
 using Shape =
     tess::Shape<tess::Extent3{kWidth, kHeight, 1}, tess::Extent3{16, 16, 1}>;
@@ -79,7 +84,7 @@ constexpr std::uint32_t kTerrainDirty = 1U << 0U;
 // Bumps a chunk's content version when a colonist settles or leaves, without
 // waking the terrain consumers. Deliberately not kTerrainDirty: the topology
 // task and the delta collector both filter on that bit, and a colonist parking
-// is not terrain. See refresh_settled_agents for why the version has to move.
+// is not terrain. See publish_settled_agents for why the version has to move.
 constexpr std::uint32_t kSettledDirty = 1U << 1U;
 
 struct BuildAck {
@@ -112,8 +117,13 @@ struct Demo {
   std::vector<tess::PathAgentState> agents;
   tess::PathRequestRuntime runtime;
   tess::PathAgentTickState tick_state;
+  tess::BlockedAgentRecoverySchedule recovery_schedule;
+  tess::BlockedAgentRecoveryStats recovery_stats;
+  tess::PathAgentReplanQueue replan_queue;
+  tess::PathAgentFrameStats replan_stats;
   tess::LocalTopologyScratch topo_scratch;
   tess::PathScratch settle_scratch;
+  tess::PathScratch replan_scratch;
   tess::JointMoveScratch joint_scratch;
   tess::RegionGraphScratch graph_scratch;
   tess::RegionGraph graph;
@@ -142,6 +152,8 @@ struct Demo {
   int trips = 1;
   // Consecutive fixed ticks with zero agent movement. See AgentTaskFn.
   std::size_t stalled_ticks = 0;
+  std::size_t max_recovery_probes = 0;
+  std::size_t max_planning_queries = 0;
 
   struct BuildTaskFn {
     Demo* demo;
@@ -180,9 +192,12 @@ struct Demo {
       }
     }
     joint_scratch.reserve(static_cast<std::size_t>(agent_count));
+    recovery_schedule.reserve(static_cast<std::size_t>(agent_count));
+    replan_queue.reserve(static_cast<std::size_t>(agent_count));
     runtime.reserve_requests(2048);
     runtime.reserve_search_nodes(65536);
     runtime.reserve_path_nodes(262144);
+    replan_scratch.reserve_nodes(65536);
     deltas.reserve(World::chunk_count, 8192, 16);
     tess::build_region_graph<World, Walker>(world, topo_scratch, graph);
 
@@ -192,7 +207,10 @@ struct Demo {
       agents[i].position = home_tile(i);
       world.field<OccupancyTag>(agents[i].position) = true;
       tess::set_path_agent_goal(tick_state, agents[i], away_tile(i));
+      agents[i].phase = tess::PathAgentPhase::Blocked;
     }
+    replan_queue.request_all(agents);
+    tick_state.pathing_dirty = false;
 
     shadow.assign(static_cast<std::size_t>(kWidth) * kHeight, 0);
 
@@ -246,7 +264,7 @@ struct Demo {
         demo->topology_ok =
             demo->topology_ok && updated.status == tess::TopologyStatus::Built;
         if (demo->topology_ok) {
-          tess::mark_pathing_dirty(demo->tick_state);
+          demo->replan_queue.request_all(demo->agents);
         }
       }
       return {};
@@ -260,26 +278,23 @@ struct Demo {
   // `Traveler` routes around it. Nothing else marks these -- occupancy cannot,
   // since travelling agents set it too.
   //
-  // Second, keep the terminal verdict honest. The library's retry budget is a
-  // clock: it cannot tell a jammed queue from a sealed goal, and a bottleneck
-  // makes long jams ordinary. So decide the verdict by asking, in two stages
-  // ordered by cost.
+  // Second, keep the terminal verdict honest. A retry clock cannot tell a
+  // jammed queue from a sealed goal, so the tick driver leaves exhausted
+  // agents Blocked. The library recovery schedule selects only a bounded,
+  // jittered subset for the two-stage verdict below.
   //
   // The terrain graph answers the cheap question. It is stamped for `Walker`,
   // so `precheck_path<Walker>` is valid against it, and `Traveler` only ever
   // subtracts tiles from `Walker` -- terrain that seals a goal seals it for
-  // the agent too. Settling that here, on the first blocked tick, is what
-  // keeps a sealed colony affordable: an agent left in `Blocked`/`NoPath` is
-  // resubmitted every tick, and 1,024 of them re-searching the whole region
-  // every tick is a multi-second freeze on the page.
+  // the agent too. Settling that before exact search keeps a sealed colony
+  // affordable.
   //
   // Only when terrain says a route exists is the expensive question worth
-  // asking: is there still one with the settled colonists in the way? If yes
-  // the agent is queueing, and its budget is refunded -- it will move as soon
-  // as the queue ahead does. If no, it keeps its retries and goes terminal on
-  // the clock, which is the one case where the clock is the right answer:
-  // being boxed in by teammates is real, but it can clear when they relaunch.
-  void refresh_settled_agents() {
+  // asking: is there still one with the settled colonists in the way? The
+  // demo's costs are immutable and uniformly one, so unit A* answers that
+  // reachability question without paying for a weighted route. Found leaves
+  // the agent honestly Blocked; NoPath is authoritative for this snapshot.
+  void publish_settled_agents() {
     for (auto& agent : agents) {
       const auto settled =
           !agent.has_goal || agent.phase == tess::PathAgentPhase::Unreachable;
@@ -312,54 +327,89 @@ struct Demo {
                        tess::Box3{agent.position, tess::Extent3{1, 1, 1}});
       world.clear_dirty(key, kSettledDirty);
     }
-    for (auto& agent : agents) {
-      if (agent.phase != tess::PathAgentPhase::Blocked || !agent.has_goal) {
-        continue;
-      }
+  }
+
+  void recover_blocked_agents(std::uint64_t tick, std::size_t max_probes) {
+    auto recovery_options = kRecoveryOptions;
+    recovery_options.max_probes_per_tick = max_probes;
+    recovery_stats =
+        recovery_schedule.collect_due(agents, tick, recovery_options);
+    max_recovery_probes =
+        std::max(max_recovery_probes, recovery_stats.selected);
+    for (const auto index : recovery_schedule.due_agent_indices()) {
+      auto& agent = agents[index];
       if (tess::precheck_path<Walker>(
               graph, world, {agent.position, agent.goal}, graph_scratch) ==
           tess::PrecheckStatus::Unreachable) {
         agent.phase = tess::PathAgentPhase::Unreachable;
         agent.status = tess::PathStatus::NoPath;
-        continue;
+      } else {
+        // A Blocked agent is not settled, but clear its marker defensively so
+        // publication lag cannot make the exact query reject its start.
+        const auto marked = world.field<SettledTag>(agent.position);
+        world.field<SettledTag>(agent.position) = false;
+        const auto route = tess::astar_path<World, Traveler>(
+            world, tess::PathRequest{agent.position, agent.goal},
+            settle_scratch);
+        world.field<SettledTag>(agent.position) = marked;
+        if (route.status == tess::PathStatus::NoPath) {
+          agent.phase = tess::PathAgentPhase::Unreachable;
+          agent.status = tess::PathStatus::NoPath;
+        } else if (route.status == tess::PathStatus::Found &&
+                   agent.status != tess::PathStatus::Found) {
+          // Route rebuilding shares the same exact-query budget on later
+          // ticks; do not wake the synchronous all-agent driver.
+          (void)replan_queue.request(index, agent);
+        }
       }
-      if (agent.blocked_retries < kMaxBlockedRetries / 2) {
-        continue;
-      }
-      // The agent stands on its own tile and a search rejects an impassable
-      // start, so lift its own marker for the probe. Only a settled agent
-      // marks itself, and a Blocked agent is not settled -- but a terminal
-      // agent re-probed after a wall change would be, so clear it either way.
-      const auto marked = world.field<SettledTag>(agent.position);
-      world.field<SettledTag>(agent.position) = false;
-      const auto route = tess::weighted_astar_path<World, Traveler>(
-          world, tess::PathRequest{agent.position, agent.goal}, settle_scratch);
-      world.field<SettledTag>(agent.position) = marked;
-      if (route.status == tess::PathStatus::Found) {
-        agent.blocked_retries = 0;
-      }
+      recovery_schedule.record_attempt(index, tick, recovery_options);
     }
   }
 
   struct AgentTaskFn {
     Demo* demo = nullptr;
-    auto operator()(const tess::ScheduleTaskContext&)
+    auto operator()(const tess::ScheduleTaskContext& context)
         -> tess::ScheduleTaskResult {
-      demo->refresh_settled_agents();
+      demo->publish_settled_agents();
       // Marked here, not in tick(): a frame may grant several fixed ticks,
       // and the toggle promises a replan on every one of them.
       if (demo->replan_each_tick) {
+        // The synchronous diagnostic strategy already replans every active
+        // agent. Do not also drain retained-route recovery work.
+        demo->replan_queue.clear();
+        demo->recovery_schedule.clear();
+        demo->replan_stats = {};
+        demo->recovery_stats = {};
         tess::mark_pathing_dirty(demo->tick_state);
+      } else {
+        demo->replan_stats =
+            tess::process_weighted_path_agent_replans<World, Traveler>(
+                demo->world, demo->agents, demo->tick_state.routes,
+                demo->replan_queue, demo->replan_scratch,
+                tess::PathAgentReplanOptions{
+                    .max_requests = kMaxPlanningQueriesPerTick,
+                });
+        const auto remaining_queries =
+            kMaxPlanningQueriesPerTick - demo->replan_stats.submitted;
+        demo->recover_blocked_agents(context.clock.tick, remaining_queries);
+        demo->max_planning_queries = std::max(
+            demo->max_planning_queries,
+            demo->replan_stats.submitted + demo->recovery_stats.selected);
       }
       auto options = tess::PathAgentTickOptions{};
-      options.max_blocked_retries = kMaxBlockedRetries;
+      // This demo's exact replans are owned by replan_queue. Zero keeps a
+      // Blocked/NoPath agent asleep until recovery enqueues it; retained
+      // occupancy-blocked routes still retry movement every tick.
+      options.max_blocked_retries = 0;
+      options.blocked_exhaustion_policy =
+          tess::BlockedAgentExhaustionPolicy::RemainBlocked;
       // No graph here, deliberately. The graph models terrain and is stamped
       // for `Walker`; `precheck_path` rejects a stamp mismatch outright
       // (GraphStale), so handing it to a `Traveler` search would never prune
       // anything and would only read as though it did. Keeping the graph on
       // terrain is still right -- rebuilding it as colonists settle would
       // churn topology over something that is not terrain -- so the precheck
-      // it can soundly answer is made explicitly, in refresh_settled_agents.
+      // it can soundly answer is made explicitly, in recover_blocked_agents.
       // Joint movement with SwapPolicy::Permit: a mutually blocked pair
       // exchanges tiles instead of wedging. The library default is Forbid --
       // the standard MAPF constraint -- but this demo's colonists have no
@@ -486,9 +536,9 @@ struct Demo {
   // Terminal agents deliberately keep their failed goal and do not relaunch:
   // the page reports that state and requires reset/clear-walls to change the
   // environment rather than silently retrying a proven-unreachable trip. That
-  // is only a defensible policy because `refresh_settled_agents` reserves the
-  // terminal verdict for agents with no route at all — a jammed queue gets its
-  // retry budget back instead of being written off.
+  // is only defensible because `recover_blocked_agents` reserves the terminal
+  // verdict for an exact `NoPath` result. A jammed queue stays Blocked instead
+  // of being written off by a retry clock.
   auto relaunch() -> int {
     if (arrived() != static_cast<int>(agents.size())) {
       return trips;
@@ -498,7 +548,7 @@ struct Demo {
       // Leaving home clears the settled marker: the tile is a through route
       // again, not an obstacle, from the moment its owner is travelling.
       // Opening a tile is as much a passability change as closing one, so it
-      // is announced the same way -- see refresh_settled_agents.
+      // is announced the same way -- see publish_settled_agents.
       if (world.field<SettledTag>(agents[i].position) != 0) {
         world.field<SettledTag>(agents[i].position) = false;
         const auto key = tess::chunk_key<Shape>(
@@ -510,7 +560,9 @@ struct Demo {
       }
       tess::set_path_agent_goal(tick_state, agents[i],
                                 outbound ? away_tile(i) : home_tile(i));
+      agents[i].phase = tess::PathAgentPhase::Blocked;
     }
+    replan_queue.request_all(agents);
     ++trips;
     return trips;
   }
@@ -655,6 +707,18 @@ int main() {
       std::cerr << "web colony model: convoy stalled at the bottleneck ("
                 << tess_colony_arrived() << "/" << kBottleneckAgents
                 << " arrived)\n";
+      return 1;
+    }
+    if (demo->max_recovery_probes > kRecoveryOptions.max_probes_per_tick) {
+      std::cerr << "web colony model: recovery probe budget exceeded ("
+                << demo->max_recovery_probes << "/"
+                << kRecoveryOptions.max_probes_per_tick << ")\n";
+      return 1;
+    }
+    if (demo->max_planning_queries > kMaxPlanningQueriesPerTick) {
+      std::cerr << "web colony model: shared planning budget exceeded ("
+                << demo->max_planning_queries << "/"
+                << kMaxPlanningQueriesPerTick << ")\n";
       return 1;
     }
 

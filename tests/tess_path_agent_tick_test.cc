@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <thread>
 #include <vector>
 
 #include "allocation_counter.h"
@@ -460,7 +462,11 @@ TEST(TessPathAgentTick, PermanentOccupancyWaitIsBoundedWithoutReplanning) {
   tess::PathRequestRuntime runtime;
   reserve_runtime(runtime, agents.size());
   tess::PathAgentTickState tick_state;
-  const auto options = tess::PathAgentTickOptions{.max_blocked_retries = 1};
+  const auto options = tess::PathAgentTickOptions{
+      .max_blocked_retries = 1,
+      .blocked_exhaustion_policy =
+          tess::BlockedAgentExhaustionPolicy::MarkUnreachable,
+  };
 
   auto stats = tick_movement(tick_state, world, agents, runtime, options);
   EXPECT_EQ(stats.movement.blocked_waits, 1u);
@@ -485,6 +491,417 @@ TEST(TessPathAgentTick, PermanentOccupancyWaitIsBoundedWithoutReplanning) {
   EXPECT_EQ(agents[0].position, (tess::Coord3{0, 0, 0}));
 }
 
+TEST(TessPathAgentTick, RemainBlockedExhaustionDoesNotInventNoPath) {
+  MovementWorld world;
+  fill_movement_world(world);
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  world.template field<OccupancyTag>(agents[0].position) = true;
+  const auto occupied = tess::Coord3{1, 0, 0};
+  world.template field<OccupancyTag>(occupied) = true;
+  tess::set_path_agent_goal(agents[0], tess::Coord3{2, 0, 0});
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  // RemainBlocked is the default: exhausting a time budget is not evidence
+  // that an otherwise valid goal is unreachable.
+  const auto options = tess::PathAgentTickOptions{.max_blocked_retries = 1};
+
+  for (int tick = 0; tick < 8; ++tick) {
+    const auto stats =
+        tick_movement(tick_state, world, agents, runtime, options);
+    EXPECT_EQ(stats.repath_exhausted, 0u);
+  }
+
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+  EXPECT_EQ(agents[0].status, tess::PathStatus::Found);
+  EXPECT_EQ(agents[0].blocked_retries, 1u);
+
+  world.template field<OccupancyTag>(occupied) = false;
+  auto stats = tick_movement(tick_state, world, agents, runtime, options);
+  EXPECT_EQ(stats.movement.advanced, 1u);
+  EXPECT_EQ(agents[0].position, occupied);
+  EXPECT_EQ(agents[0].blocked_retries, 0u);
+
+  stats = tick_movement(tick_state, world, agents, runtime, options);
+  EXPECT_EQ(stats.movement.arrived, 1u);
+  EXPECT_FALSE(agents[0].has_goal);
+}
+
+TEST(TessPathAgentTick, RemainBlockedNoPathSleepsUntilWorldChanges) {
+  MovementWorld world;
+  fill_movement_world(world);
+
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = tess::Coord3{0, 0, 0}},
+  }};
+  world.template field<OccupancyTag>(agents[0].position) = true;
+  const auto goal = tess::Coord3{2, 0, 0};
+  mark_movement_passable(world, tess::Coord3{1, 0, 0}, false);
+  mark_movement_passable(world, tess::Coord3{3, 0, 0}, false);
+  mark_movement_passable(world, tess::Coord3{2, 1, 0}, false);
+  tess::set_path_agent_goal(agents[0], goal);
+
+  tess::PathRequestRuntime runtime;
+  reserve_runtime(runtime, agents.size());
+  tess::PathAgentTickState tick_state;
+  const auto options = tess::PathAgentTickOptions{
+      .max_blocked_retries = 1,
+      .blocked_exhaustion_policy =
+          tess::BlockedAgentExhaustionPolicy::RemainBlocked,
+  };
+
+  auto stats = tick_movement(tick_state, world, agents, runtime, options);
+  ASSERT_TRUE(stats.processed_paths);
+  ASSERT_EQ(stats.pathing.no_path, 1u);
+
+  stats = tick_movement(tick_state, world, agents, runtime, options);
+  ASSERT_TRUE(stats.processed_paths);
+  stats = tick_movement(tick_state, world, agents, runtime, options);
+  EXPECT_FALSE(stats.processed_paths);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Blocked);
+  EXPECT_EQ(agents[0].status, tess::PathStatus::NoPath);
+
+  for (int tick = 0; tick < 4; ++tick) {
+    stats = tick_movement(tick_state, world, agents, runtime, options);
+    EXPECT_FALSE(stats.processed_paths);
+    EXPECT_EQ(stats.repath_exhausted, 0u);
+  }
+
+  mark_movement_passable(world, tess::Coord3{1, 0, 0}, true);
+  tess::mark_pathing_dirty(tick_state);
+  stats = tick_movement(tick_state, world, agents, runtime, options);
+  EXPECT_TRUE(stats.processed_paths);
+  EXPECT_EQ(stats.pathing.found, 1u);
+  EXPECT_EQ(stats.movement.advanced, 1u);
+  EXPECT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));
+}
+
+TEST(TessPathAgentTick, RecoveryScheduleIsDeterministicAndBoundedPerTick) {
+  constexpr std::size_t AgentCount = 64;
+  constexpr std::size_t PerTickBudget = 5;
+  std::array<tess::PathAgentState, AgentCount> agents{};
+  for (auto& agent : agents) {
+    agent.has_goal = true;
+    agent.phase = tess::PathAgentPhase::Blocked;
+    agent.status = tess::PathStatus::Found;
+  }
+
+  const auto options = tess::BlockedAgentRecoveryOptions{
+      .initial_delay_ticks = 4,
+      .max_delay_ticks = 32,
+      .max_probes_per_tick = PerTickBudget,
+      .jitter_seed = 0x12345678u,
+  };
+  tess::BlockedAgentRecoverySchedule first;
+  tess::BlockedAgentRecoverySchedule second;
+  first.reserve(AgentCount);
+  second.reserve(AgentCount);
+  std::array<std::size_t, AgentCount> attempts{};
+
+  for (std::uint64_t tick = 1; tick <= 20; ++tick) {
+    const auto first_stats = first.collect_due(agents, tick, options);
+    const auto second_stats = second.collect_due(agents, tick, options);
+    EXPECT_EQ(first_stats.selected, first.due_agent_indices().size());
+    EXPECT_EQ(first_stats.selected, second_stats.selected);
+    const auto first_due = first.due_agent_indices();
+    const auto second_due = second.due_agent_indices();
+    EXPECT_TRUE(std::equal(first_due.begin(), first_due.end(),
+                           second_due.begin(), second_due.end()));
+    EXPECT_LE(first_stats.selected, PerTickBudget);
+    EXPECT_EQ(first_stats.due, first_stats.selected + first_stats.deferred);
+
+    for (const auto index : first.due_agent_indices()) {
+      ++attempts[index];
+      first.record_attempt(index, tick, options);
+    }
+    for (const auto index : second.due_agent_indices()) {
+      second.record_attempt(index, tick, options);
+    }
+  }
+
+  for (const auto count : attempts) {
+    EXPECT_GE(count, 1u);
+  }
+}
+
+TEST(TessPathAgentTick, RecoveryScheduleResetsAfterProgress) {
+  std::array<tess::PathAgentState, 1> agents{{
+      {
+          .status = tess::PathStatus::Found,
+          .phase = tess::PathAgentPhase::Blocked,
+          .has_goal = true,
+      },
+  }};
+  const auto options = tess::BlockedAgentRecoveryOptions{
+      .initial_delay_ticks = 2,
+      .max_delay_ticks = 8,
+      .max_probes_per_tick = 1,
+      .jitter_seed = 7,
+  };
+  tess::BlockedAgentRecoverySchedule schedule;
+
+  auto selected_tick = std::uint64_t{0};
+  for (std::uint64_t tick = 1; tick <= 4; ++tick) {
+    (void)schedule.collect_due(agents, tick, options);
+    if (!schedule.due_agent_indices().empty()) {
+      selected_tick = tick;
+      schedule.record_attempt(0, tick, options);
+      break;
+    }
+  }
+  ASSERT_NE(selected_tick, 0u);
+
+  agents[0].phase = tess::PathAgentPhase::Following;
+  (void)schedule.collect_due(agents, selected_tick + 1, options);
+  EXPECT_TRUE(schedule.due_agent_indices().empty());
+
+  agents[0].phase = tess::PathAgentPhase::Blocked;
+  (void)schedule.collect_due(agents, selected_tick + 2, options);
+  EXPECT_TRUE(schedule.due_agent_indices().empty());
+}
+
+TEST(TessPathAgentTick, RecoveryScheduleSupportsImmediateRetryPolicy) {
+  std::array<tess::PathAgentState, 1> agents{{
+      {
+          .status = tess::PathStatus::Found,
+          .phase = tess::PathAgentPhase::Blocked,
+          .has_goal = true,
+      },
+  }};
+  const auto options = tess::BlockedAgentRecoveryOptions{
+      .initial_delay_ticks = 0,
+      .max_delay_ticks = 32,
+      .max_probes_per_tick = 1,
+  };
+  tess::BlockedAgentRecoverySchedule schedule;
+
+  for (std::uint64_t tick = 1; tick <= 100; ++tick) {
+    const auto stats = schedule.collect_due(agents, tick, options);
+    ASSERT_EQ(stats.selected, 1u);
+    schedule.record_attempt(0, tick, options);
+  }
+}
+
+TEST(TessPathAgentTick, ReplanQueueDeduplicatesAndPreservesOrder) {
+  std::array<tess::PathAgentState, 4> agents{};
+  for (std::size_t i = 0; i < 3; ++i) {
+    agents[i].has_goal = true;
+    agents[i].phase = tess::PathAgentPhase::Following;
+  }
+  tess::PathAgentReplanQueue queue;
+  queue.reserve(agents.size());
+
+  queue.request_all(agents);
+  queue.request_all(agents);
+  EXPECT_EQ(queue.pending(), 3u);
+  ASSERT_EQ(queue.front(), 0u);
+  queue.pop_front();
+  EXPECT_TRUE(queue.request(0, agents[0]));
+  ASSERT_EQ(queue.front(), 1u);
+  queue.pop_front();
+  ASSERT_EQ(queue.front(), 2u);
+  queue.pop_front();
+  ASSERT_EQ(queue.front(), 0u);
+  queue.pop_front();
+  EXPECT_TRUE(queue.empty());
+}
+
+TEST(TessPathAgentTick, ReplanQueueBoundsExactPlanningAcrossTicks) {
+  World world;
+  fill_world(world);
+  std::array<tess::PathAgentState, 3> agents{{
+      {.position = {0, 0, 0}},
+      {.position = {0, 1, 0}},
+      {.position = {0, 2, 0}},
+  }};
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    tess::set_path_agent_goal(agents[i], {7, static_cast<std::int64_t>(i), 0});
+  }
+  tess::PathAgentRoutes routes;
+  routes.ensure_size(agents.size());
+  tess::PathAgentReplanQueue queue;
+  queue.reserve(agents.size());
+  queue.request_all(agents);
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(RuntimeTileCount);
+  const auto options = tess::PathAgentReplanOptions{.max_requests = 2};
+
+  auto stats = tess::process_unit_path_agent_replans<World, PassableTag>(
+      world, agents, routes, queue, scratch, options);
+  EXPECT_EQ(stats.submitted, 2u);
+  EXPECT_EQ(stats.found, 2u);
+  EXPECT_EQ(queue.pending(), 1u);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Following);
+  EXPECT_EQ(agents[1].phase, tess::PathAgentPhase::Following);
+  EXPECT_EQ(agents[2].phase, tess::PathAgentPhase::NeedsPath);
+  EXPECT_FALSE(routes.routes[0].empty());
+  EXPECT_FALSE(routes.routes[1].empty());
+  EXPECT_TRUE(routes.routes[2].empty());
+
+  stats = tess::process_unit_path_agent_replans<World, PassableTag>(
+      world, agents, routes, queue, scratch, options);
+  EXPECT_EQ(stats.submitted, 1u);
+  EXPECT_EQ(stats.found, 1u);
+  EXPECT_TRUE(queue.empty());
+  EXPECT_EQ(agents[2].phase, tess::PathAgentPhase::Following);
+  EXPECT_FALSE(routes.routes[2].empty());
+}
+
+TEST(TessPathAgentTick, WarmReplanQueueDrainDoesNotAllocate) {
+  World world;
+  fill_world(world);
+  std::array<tess::PathAgentState, 8> agents{};
+  tess::PathAgentRoutes routes;
+  routes.ensure_size(agents.size());
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    agents[i].position = {0, static_cast<std::int64_t>(i), 0};
+    tess::set_path_agent_goal(agents[i], {15, static_cast<std::int64_t>(i), 0});
+    routes.routes[i].reserve(16);
+  }
+  tess::PathAgentReplanQueue queue;
+  queue.reserve(agents.size());
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(RuntimeTileCount);
+  const auto options = tess::PathAgentReplanOptions{
+      .max_requests = agents.size(),
+  };
+  queue.request_all(agents);
+  (void)tess::process_unit_path_agent_replans<World, PassableTag>(
+      world, agents, routes, queue, scratch, options);
+
+  tess_test::ScopedAllocationCounter counter;
+  queue.request_all(agents);
+  const auto stats = tess::process_unit_path_agent_replans<World, PassableTag>(
+      world, agents, routes, queue, scratch, options);
+
+  EXPECT_EQ(stats.found, agents.size());
+  EXPECT_TRUE(queue.empty());
+  EXPECT_EQ(counter.count(), 0u);
+}
+
+TEST(TessPathAgentTick, WarmContinuouslyPendingReplanQueueDoesNotGrow) {
+  std::array<tess::PathAgentState, 8> agents{};
+  for (auto& agent : agents) {
+    agent.has_goal = true;
+    agent.phase = tess::PathAgentPhase::Following;
+  }
+  tess::PathAgentReplanQueue queue;
+  queue.reserve(agents.size());
+  queue.request_all(agents);
+
+  tess_test::ScopedAllocationCounter counter;
+  for (std::size_t turn = 0; turn < 100; ++turn) {
+    const auto index = queue.front();
+    ASSERT_TRUE(index.has_value());
+    queue.pop_front();
+    EXPECT_TRUE(queue.request(*index, agents[*index]));
+  }
+
+  EXPECT_EQ(queue.pending(), agents.size());
+  EXPECT_EQ(counter.count(), 0u);
+}
+
+TEST(TessPathAgentTick, WarmRecoverySchedulePassDoesNotAllocate) {
+  constexpr std::size_t AgentCount = 1024;
+  std::array<tess::PathAgentState, AgentCount> agents{};
+  for (auto& agent : agents) {
+    agent.status = tess::PathStatus::Found;
+    agent.phase = tess::PathAgentPhase::Blocked;
+    agent.has_goal = true;
+  }
+  const auto options = tess::BlockedAgentRecoveryOptions{
+      .initial_delay_ticks = 1,
+      .max_delay_ticks = 32,
+      .max_probes_per_tick = 8,
+  };
+  tess::BlockedAgentRecoverySchedule schedule;
+  schedule.reserve(AgentCount);
+  (void)schedule.collect_due(agents, 1, options);
+
+  tess_test::ScopedAllocationCounter counter;
+  const auto stats = schedule.collect_due(agents, 2, options);
+
+  EXPECT_EQ(stats.blocked, AgentCount);
+  EXPECT_EQ(stats.selected, options.max_probes_per_tick);
+  EXPECT_EQ(counter.count(), 0u);
+}
+
+TEST(TessPathAgentTick, IndependentRecoverySchedulesCanRunConcurrently) {
+  constexpr std::size_t AgentCount = 128;
+  std::array<std::size_t, 2> checksums{};
+  const auto run = [&](std::size_t worker) {
+    std::array<tess::PathAgentState, AgentCount> agents{};
+    for (auto& agent : agents) {
+      agent.status = tess::PathStatus::Found;
+      agent.phase = tess::PathAgentPhase::Blocked;
+      agent.has_goal = true;
+    }
+    const auto options = tess::BlockedAgentRecoveryOptions{
+        .initial_delay_ticks = 1,
+        .max_delay_ticks = 16,
+        .max_probes_per_tick = 7,
+        .jitter_seed = 99,
+    };
+    tess::BlockedAgentRecoverySchedule schedule;
+    schedule.reserve(AgentCount);
+    for (std::uint64_t tick = 1; tick <= 64; ++tick) {
+      (void)schedule.collect_due(agents, tick, options);
+      for (const auto index : schedule.due_agent_indices()) {
+        checksums[worker] += index + 1;
+        schedule.record_attempt(index, tick, options);
+      }
+    }
+  };
+
+  std::jthread first(run, 0);
+  std::jthread second(run, 1);
+  first.join();
+  second.join();
+  EXPECT_EQ(checksums[0], checksums[1]);
+  EXPECT_GT(checksums[0], 0u);
+}
+
+TEST(TessPathAgentTick, IndependentReplanQueuesCanRunConcurrently) {
+  World world;
+  fill_world(world);
+  std::array<std::size_t, 2> checksums{};
+  const auto run = [&](std::size_t worker) {
+    std::array<tess::PathAgentState, 4> agents{};
+    for (std::size_t i = 0; i < agents.size(); ++i) {
+      agents[i].position = {0, static_cast<std::int64_t>(i), 0};
+      tess::set_path_agent_goal(agents[i],
+                                {15, static_cast<std::int64_t>(i), 0});
+    }
+    tess::PathAgentRoutes routes;
+    tess::PathAgentReplanQueue queue;
+    queue.reserve(agents.size());
+    queue.request_all(agents);
+    tess::PathScratch scratch;
+    scratch.reserve_nodes(RuntimeTileCount);
+    const auto stats =
+        tess::process_unit_path_agent_replans<World, PassableTag>(
+            world, agents, routes, queue, scratch,
+            tess::PathAgentReplanOptions{
+                .max_requests = agents.size(),
+            });
+    checksums[worker] = stats.found;
+    for (const auto& route : routes.routes) {
+      checksums[worker] += route.size();
+    }
+  };
+
+  std::jthread first(run, 0);
+  std::jthread second(run, 1);
+  first.join();
+  second.join();
+  EXPECT_EQ(checksums[0], checksums[1]);
+  EXPECT_GT(checksums[0], 0u);
+}
+
 TEST(TessPathAgentTick, PermanentReservationWaitIsBoundedWithoutReplanning) {
   MovementWorld world;
   fill_movement_world(world);
@@ -499,7 +916,11 @@ TEST(TessPathAgentTick, PermanentReservationWaitIsBoundedWithoutReplanning) {
   tess::PathRequestRuntime runtime;
   reserve_runtime(runtime, agents.size());
   tess::PathAgentTickState tick_state;
-  const auto options = tess::PathAgentTickOptions{.max_blocked_retries = 1};
+  const auto options = tess::PathAgentTickOptions{
+      .max_blocked_retries = 1,
+      .blocked_exhaustion_policy =
+          tess::BlockedAgentExhaustionPolicy::MarkUnreachable,
+  };
 
   auto stats = tick_movement(tick_state, world, agents, runtime, options);
   EXPECT_EQ(stats.movement.movement_failures.reserved, 1u);
@@ -603,7 +1024,11 @@ TEST(TessPathAgentTick, BottleneckHasBoundedPlanningAndTerminalOutcomes) {
   tess::PathRequestRuntime runtime;
   reserve_runtime(runtime, agents.size());
   tess::PathAgentTickState tick_state;
-  const auto options = tess::PathAgentTickOptions{.max_blocked_retries = 64};
+  const auto options = tess::PathAgentTickOptions{
+      .max_blocked_retries = 64,
+      .blocked_exhaustion_policy =
+          tess::BlockedAgentExhaustionPolicy::MarkUnreachable,
+  };
 
   std::size_t submitted = 0;
   std::size_t processed_ticks = 0;
@@ -686,7 +1111,11 @@ TEST(TessPathAgentTick, BoxedInGoalExhaustsRepathsAndStopsProcessing) {
   tess::PathRequestRuntime runtime;
   reserve_runtime(runtime, agents.size());
   tess::PathAgentTickState tick_state;
-  const auto options = tess::PathAgentTickOptions{.max_blocked_retries = 3};
+  const auto options = tess::PathAgentTickOptions{
+      .max_blocked_retries = 3,
+      .blocked_exhaustion_policy =
+          tess::BlockedAgentExhaustionPolicy::MarkUnreachable,
+  };
 
   auto stats = tick_movement(tick_state, world, agents, runtime, options);
   ASSERT_EQ(agents[0].position, (tess::Coord3{1, 0, 0}));

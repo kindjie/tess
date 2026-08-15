@@ -526,6 +526,8 @@ auto run_flow_agents() -> tess::diagnostics::FlowCounters {
   options.max_steps = 1;
   auto exhaust_options = options;
   exhaust_options.max_blocked_retries = 2;
+  exhaust_options.blocked_exhaustion_policy =
+      tess::BlockedAgentExhaustionPolicy::MarkUnreachable;
   tess::set_path_agent_goal(tick_state, agents[0], tess::Coord3{0, 7, 0});
   for (std::uint64_t tick = 20; tick <= 32; ++tick) {
     tess::observe_path_agent_flow_tick(tick_state, agents, tick);

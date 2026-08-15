@@ -78,6 +78,17 @@ const auto scheduler_options = tess::SimSchedulerOptions{
 ```
 <!-- /tess-snippet -->
 
+Blocked retry exhaustion no longer claims geometric `NoPath` by default.
+`PathAgentTickOptions::blocked_exhaustion_policy` defaults to
+`BlockedAgentExhaustionPolicy::RemainBlocked`. Callers that intentionally used
+the former timeout-as-terminal policy must select it explicitly:
+
+```cpp
+auto options = tess::PathAgentTickOptions{};
+options.blocked_exhaustion_policy =
+    tess::BlockedAgentExhaustionPolicy::MarkUnreachable;
+```
+
 GPU dispatch and readback descriptors now retain one generation-bearing
 handle:
 
