@@ -211,6 +211,15 @@ void BM_maintenance_flush_sparse(benchmark::State& state) {
     state.ResumeTiming();
     maintenance_bench_check(scheduler.flush(), "flush benchmark drain failed");
   }
+
+  std::uint64_t executions = 0;
+  for (const auto& task : tasks) {
+    executions += task.executions;
+  }
+  const auto expected = static_cast<std::uint64_t>(state.iterations()) *
+                        static_cast<std::uint64_t>(task_count);
+  maintenance_bench_check(executions == expected,
+                          "flush benchmark missed an execution");
 }
 
 template <typename Scheduler>
