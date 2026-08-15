@@ -168,10 +168,11 @@ class BlockedAgentRecoverySchedule {
       }
 
       ++stats.blocked;
-      if (!entry.active) {
+      if (!entry.active || entry.observed_position != agent.position) {
         entry.active = true;
         entry.attempt = 0;
         ++entry.episode;
+        entry.observed_position = agent.position;
         entry.next_tick =
             add_saturating(tick, jittered_delay(i, entry, options));
       }
@@ -225,6 +226,7 @@ class BlockedAgentRecoverySchedule {
     std::uint64_t next_tick = 0;
     std::uint64_t episode = 0;
     std::uint32_t attempt = 0;
+    Coord3 observed_position{};
     bool active = false;
   };
 
@@ -266,7 +268,7 @@ class BlockedAgentRecoverySchedule {
     // Equal jitter: preserve half of the exponential delay and spread the
     // remainder deterministically. Unlike full jitter this cannot repeatedly
     // select a zero-delay retry.
-    const auto floor = (cap + 1U) / 2U;
+    const auto floor = cap / 2U + cap % 2U;
     const auto width = cap - floor + 1U;
     auto key = options.jitter_seed;
     key ^= mix(static_cast<std::uint64_t>(agent_index));
@@ -418,6 +420,7 @@ template <typename Search>
       continue;
     }
 
+    const auto was_blocked = agent.phase == PathAgentPhase::Blocked;
     const auto result = search(PathRequest{agent.position, agent.goal});
     ++stats.submitted;
     ++stats.completed;
@@ -429,7 +432,9 @@ template <typename Search>
       agent.path_index = 0;
       agent.status = PathStatus::Found;
       agent.phase = PathAgentPhase::Following;
-      agent.blocked_retries = 0;
+      if (!was_blocked) {
+        agent.blocked_retries = 0;
+      }
     } else {
       routes.routes[index].clear();
       agent.path_index = 0;

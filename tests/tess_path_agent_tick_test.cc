@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <thread>
 #include <vector>
@@ -664,6 +665,74 @@ TEST(TessPathAgentTick, RecoveryScheduleResetsAfterProgress) {
   EXPECT_TRUE(schedule.due_agent_indices().empty());
 }
 
+TEST(TessPathAgentTick, RecoveryScheduleRestartsAfterBlockedPositionChange) {
+  std::array<tess::PathAgentState, 1> agents{{
+      {
+          .position = {0, 0, 0},
+          .status = tess::PathStatus::Found,
+          .phase = tess::PathAgentPhase::Blocked,
+          .has_goal = true,
+      },
+  }};
+  const auto options = tess::BlockedAgentRecoveryOptions{
+      .initial_delay_ticks = 2,
+      .max_delay_ticks = 32,
+      .max_probes_per_tick = 1,
+      .jitter_seed = 7,
+  };
+  tess::BlockedAgentRecoverySchedule schedule;
+
+  auto tick = std::uint64_t{1};
+  for (int attempt = 0; attempt < 6; ++attempt) {
+    for (;;) {
+      (void)schedule.collect_due(agents, tick, options);
+      if (!schedule.due_agent_indices().empty()) {
+        schedule.record_attempt(0, tick, options);
+        break;
+      }
+      ++tick;
+    }
+    ++tick;
+  }
+
+  agents[0].position = {1, 0, 0};
+  auto selected_after_progress = false;
+  for (std::uint32_t elapsed = 0; elapsed <= options.initial_delay_ticks;
+       ++elapsed) {
+    (void)schedule.collect_due(agents, tick + elapsed, options);
+    selected_after_progress |= !schedule.due_agent_indices().empty();
+  }
+  EXPECT_TRUE(selected_after_progress);
+}
+
+TEST(TessPathAgentTick, RecoveryScheduleHandlesMaximumConfiguredDelay) {
+  std::array<tess::PathAgentState, 1> agents{{
+      {
+          .status = tess::PathStatus::Found,
+          .phase = tess::PathAgentPhase::Blocked,
+          .has_goal = true,
+      },
+  }};
+  constexpr auto MaxDelay = std::numeric_limits<std::uint32_t>::max();
+  const auto options = tess::BlockedAgentRecoveryOptions{
+      .initial_delay_ticks = MaxDelay,
+      .max_delay_ticks = MaxDelay,
+      .max_probes_per_tick = 1,
+  };
+  tess::BlockedAgentRecoverySchedule schedule;
+
+  auto stats = schedule.collect_due(agents, 1, options);
+  EXPECT_EQ(stats.blocked, 1u);
+  EXPECT_EQ(stats.selected, 0u);
+
+  constexpr auto EarliestDueTick =
+      std::uint64_t{1} + (std::uint64_t{MaxDelay} + 1U) / 2U;
+  stats = schedule.collect_due(agents, EarliestDueTick - 1U, options);
+  EXPECT_EQ(stats.selected, 0u);
+  stats = schedule.collect_due(agents, std::uint64_t{1} + MaxDelay, options);
+  EXPECT_EQ(stats.selected, 1u);
+}
+
 TEST(TessPathAgentTick, RecoveryScheduleSupportsImmediateRetryPolicy) {
   std::array<tess::PathAgentState, 1> agents{{
       {
@@ -749,6 +818,33 @@ TEST(TessPathAgentTick, ReplanQueueBoundsExactPlanningAcrossTicks) {
   EXPECT_TRUE(queue.empty());
   EXPECT_EQ(agents[2].phase, tess::PathAgentPhase::Following);
   EXPECT_FALSE(routes.routes[2].empty());
+}
+
+TEST(TessPathAgentTick, QueuedReplanPreservesBlockedRetryStreak) {
+  World world;
+  fill_world(world);
+  std::array<tess::PathAgentState, 1> agents{{
+      {.position = {0, 0, 0}},
+  }};
+  tess::set_path_agent_goal(agents[0], {7, 0, 0});
+  agents[0].status = tess::PathStatus::Found;
+  agents[0].phase = tess::PathAgentPhase::Blocked;
+  agents[0].blocked_retries = 3;
+
+  tess::PathAgentRoutes routes;
+  routes.ensure_size(agents.size());
+  tess::PathAgentReplanQueue queue;
+  queue.reserve(agents.size());
+  ASSERT_TRUE(queue.request(0, agents[0]));
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(RuntimeTileCount);
+
+  const auto stats = tess::process_unit_path_agent_replans<World, PassableTag>(
+      world, agents, routes, queue, scratch);
+
+  ASSERT_EQ(stats.found, 1u);
+  EXPECT_EQ(agents[0].phase, tess::PathAgentPhase::Following);
+  EXPECT_EQ(agents[0].blocked_retries, 3u);
 }
 
 TEST(TessPathAgentTick, WarmReplanQueueDrainDoesNotAllocate) {

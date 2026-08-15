@@ -352,9 +352,11 @@ struct Demo {
             world, tess::PathRequest{agent.position, agent.goal},
             settle_scratch);
         world.field<SettledTag>(agent.position) = marked;
-        if (route.status == tess::PathStatus::NoPath) {
+        if (route.status == tess::PathStatus::NoPath ||
+            route.status == tess::PathStatus::InvalidStart ||
+            route.status == tess::PathStatus::InvalidGoal) {
           agent.phase = tess::PathAgentPhase::Unreachable;
-          agent.status = tess::PathStatus::NoPath;
+          agent.status = route.status;
         } else if (route.status == tess::PathStatus::Found &&
                    agent.status != tess::PathStatus::Found) {
           // Route rebuilding shares the same exact-query budget on later
@@ -645,6 +647,23 @@ int main() {
 #if TESS_HAS_EXCEPTIONS
   try {
 #endif
+    // Regression: a wall may be painted under an agent between fixed ticks.
+    // The region graph can still consider the component connected while the
+    // exact query truthfully rejects the now-invalid start. Recovery must
+    // terminalize that definitive result instead of retrying forever.
+    tess_colony_reset(1);
+    auto& invalid_start_agent = demo->agents[0];
+    demo->world.field<PassableTag>(invalid_start_agent.position) = false;
+    invalid_start_agent.phase = tess::PathAgentPhase::Blocked;
+    invalid_start_agent.status = tess::PathStatus::Found;
+    demo->recover_blocked_agents(1, 1);
+    demo->recover_blocked_agents(1 + kRecoveryWindowTicks, 1);
+    if (invalid_start_agent.phase != tess::PathAgentPhase::Unreachable ||
+        invalid_start_agent.status != tess::PathStatus::InvalidStart) {
+      std::cerr << "web colony model: invalid start retried indefinitely\n";
+      return 1;
+    }
+
     tess_colony_reset(8);
     for (int frame = 0; frame < 5000 && tess_colony_arrived() < 8; ++frame) {
       if (frame == 4) {

@@ -445,11 +445,13 @@ stateDiagram-v2
   `NoPath` for compatibility.
 - `BlockedAgentRecoverySchedule` selects a deterministic, caller-bounded subset
   of persistently blocked agents for expensive recovery checks. Exponential
-  delay with deterministic equal jitter spreads repeated checks; scheduling
-  never decides reachability. `BlockedAgentRecoveryOptions` controls its delay,
-  cap, and salt; `BlockedAgentRecoveryStats` reports blocked, due, selected,
-  and deferred counts. The caller owns exact search, sparse residency,
-  movement-class, result, and synchronization semantics.
+  delay with deterministic equal jitter spreads repeated checks across the full
+  `uint32_t` delay range. Position changes restart recovery even when the agent
+  remains blocked at the end of the tick; scheduling never decides
+  reachability. `BlockedAgentRecoveryOptions` controls its delay, cap, and salt;
+  `BlockedAgentRecoveryStats` reports blocked, due, selected, and deferred
+  counts. The caller owns exact search, sparse residency, movement-class,
+  result, and synchronization semantics.
 - `tick_unit_path_agents<World, ClassOrTag>(...)`,
   `tick_weighted_path_agents<World, Class, MaxCost>(...)`,
   `tick_unit_path_agents_with_movement<World, ClassOrTag, OccupancyTag,

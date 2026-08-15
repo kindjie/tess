@@ -32,3 +32,10 @@
   3.0/6.4/6.7/22.5/64.5/254 us. The explicit all-agent-replan diagnostic
   remained near 37/193/483 us p50 at 128/512/1,024 after its redundant queue
   drain was removed.
+- Post-review population sweep (native O3, five paired 600-tick runs) found no
+  material regression from observing blocked-agent position changes. Median
+  retained-route p50 before/after was 0.3/0.3, 1.2/1.3, 2.5/2.5, 12.5/12.7,
+  49.5/49.3, and 164.5/165.2 us at 16/64/128/256/512/1,024 agents. Explicit
+  replan p50 was 38.0/38.0, 195.3/196.5, and 494.8/497.4 us at 128/512/1,024.
+  P95 and p99 moved in both directions; the largest absolute median-run p99
+  increase was 22 us at 1,024 explicit-replan agents.

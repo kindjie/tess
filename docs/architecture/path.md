@@ -351,12 +351,15 @@ flowchart TB
 - `BlockedAgentRecoverySchedule` is caller-owned scheduling scratch for
   persistently blocked checks. It applies deterministic exponential backoff,
   equal jitter, round-robin fairness, and a per-call selection cap, but never
-  claims reachability. `PathAgentReplanQueue` separately deduplicates exact
-  replan requests in FIFO order; `process_unit_path_agent_replans` and
+  claims reachability. A position change starts a fresh recovery episode even
+  when an agent moves and becomes blocked again within one tick.
+  `PathAgentReplanQueue` separately deduplicates exact replan requests in FIFO
+  order; `process_unit_path_agent_replans` and
   `process_weighted_path_agent_replans` drain no more than the configured
-  request count into retained routes. Both mechanisms are externally
-  synchronized and index-paired with the agent span. The replan budget does
-  not bound expansions within one synchronous A*.
+  request count into retained routes. A successful blocked-agent replan keeps
+  the retry streak until movement proves progress. Both mechanisms are
+  externally synchronized and index-paired with the agent span. The replan
+  budget does not bound expansions within one synchronous A*.
 - `astar_path<World, PassableTag>(world, request, scratch, policy)` runs
   optimized unit-cost deterministic pathfinding. The passability field is
   treated as boolean-like. It runs natively on sparse worlds, honoring
