@@ -17,8 +17,9 @@ cmake --build --preset examples
   published with this site.
 - [Live colony](https://tess.owx.dev/demo/colony/) — the scale demo:
   up to 1,024 agents shuttling between the edges and replanning around
-  walls you draw (walls survive resets), with a trip counter, a per-tick
-  cost readout, and a retained-routes vs replan-every-tick toggle.
+  walls you draw (walls survive resets), with completed and crowd-turnaround
+  leg counters, a per-tick cost readout, and a retained-routes vs
+  replan-every-tick toggle.
 - [`quickstart.cc`][quickstart] — the complete program on the
   [home page](index.md): a world, a schema, and an A* query.
 - [`colony_2d.cc`][colony_2d] — the flagship composition: queued

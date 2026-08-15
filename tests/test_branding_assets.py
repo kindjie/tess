@@ -153,7 +153,7 @@ def test_web_demo_uses_brand_logo_and_compact_favicon():
   assert "Raised destination tile" in favicon
 
 
-def test_colony_demo_reports_terminal_bottleneck_outcomes():
+def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   model = read("examples/web_colony/colony.cc")
   app = read("examples/web_colony/site/app.js")
   build_script = read("tools/build_web_demo.sh")
@@ -161,22 +161,45 @@ def test_colony_demo_reports_terminal_bottleneck_outcomes():
   assert "tess_colony_unreachable" in model
   assert "_tess_colony_unreachable" in build_script
   assert "api.unreachable()" in app
-  assert "terminal" in app
+  assert "wall-blocked" in app
 
-  # The terminal verdict is decided by a search, not by a retry clock, so the
-  # page cannot report a merely congested convoy as permanently stuck. Two
-  # searches back it: the terrain graph rejects a sealed goal cheaply, and
-  # only then does a Traveler search decide whether settled colonists leave a
-  # route. A bounded, jittered recovery schedule controls when that exact
-  # verdict is requested; its delay window replaces no search semantics.
+  # A pointer stroke cannot make an occupied source impassable. The backend
+  # decides admission, and JavaScript persists only requests it accepted.
+  assert "world.field<OccupancyTag>(coord)" in model
+  assert "occupied wall request was accepted" in model
+  assert "if (api.setWall(x, y) === 1)" in app
+
+  # A durable verdict is decided by search, not by a retry clock, so the
+  # page cannot report a merely congested convoy as permanently stuck. Three
+  # checks back it: the terrain graph rejects a sealed goal cheaply, then a
+  # Traveler search asks whether settled colonists leave a route, and a Walker
+  # search confirms whether a Traveler-only failure is durable terrain or
+  # crowd-blocked for one leg. A bounded, jittered recovery schedule controls
+  # when those exact verdicts are requested; delay replaces no semantics.
   assert "recover_blocked_agents" in model
   assert "precheck_path<Walker>" in model
+  assert "astar_path<World, Traveler>" in model
+  assert "astar_path<World, Walker>" in model
   assert "kRecoveryWindowTicks" in model
   assert "BlockedAgentRecoverySchedule" in model
   assert "2U * static_cast<std::uint32_t>(demo->agents.size()) + 8U" not in model
 
-  # Agents that will never move again are obstacles to everyone else, or a
-  # bottleneck deadlocks the convoy behind the first colonist to arrive.
+  assert "tess_colony_crowd_blocked" in model
+  assert "_tess_colony_crowd_blocked" in build_script
+  assert "api.crowdBlocked()" in app
+  assert "tess_colony_turnaround_ready" in model
+  assert "_tess_colony_turnaround_ready" in build_script
+  assert "api.turnaroundReady()" in app
+  assert "crowd-blocked agents waiting for turnaround" in app
+  assert "tess_colony_completed_legs" in model
+  assert "_tess_colony_completed_legs" in build_script
+  assert "api.completedLegs()" in app
+  assert "tess_colony_aborted_legs" in model
+  assert "_tess_colony_aborted_legs" in build_script
+  assert "api.abortedLegs()" in app
+
+  # Agents quiescent for the leg are obstacles to everyone else, or a
+  # bottleneck routes through colonists already standing at their goals.
   assert "SettledTag" in model
   assert "using Traveler" in model
   assert "World, Traveler, kMaxCost, OccupancyTag, ReservationTag" in model
@@ -189,8 +212,8 @@ def test_colony_demo_reports_terminal_bottleneck_outcomes():
   assert "kSettledDirty" in model
   assert "world.mark_dirty(key, kSettledDirty" in model
 
-  # A colony can stop dead with nobody declared terminal -- two agents each
-  # standing on the tile the other needs. Reporting only the terminal count
+  # A colony can stop dead with nobody durably blocked -- two agents each
+  # standing on the tile the other needs. Reporting only the durable count
   # left that reading as a running colony over a frozen grid, so sustained
   # absence of movement is reported too, and the page must keep saying
   # "Colony running" in the ordinary case for the Pages smoke.

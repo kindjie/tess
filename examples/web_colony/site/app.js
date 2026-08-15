@@ -27,8 +27,8 @@ let emaUs = 0;
 let activePointer = null;
 let lastCell = null;
 let lastTimestamp = 0;
-let trips = 1;
-let arrivedSince = 0;
+let leg = 1;
+let turnaroundSince = 0;
 const walls = new Set();
 
 function paintWall(x, y) {
@@ -77,8 +77,8 @@ function reset() {
     api.setWall(key % width, Math.floor(key / width));
   }
   emaUs = 0;
-  trips = 1;
-  arrivedSince = 0;
+  leg = api.leg();
+  turnaroundSince = 0;
 }
 
 function cellAt(event) {
@@ -134,26 +134,36 @@ function frame(timestamp) {
     const count = api.agentCount();
     const arrived = api.arrived();
     const unreachable = api.unreachable();
-    if (arrived === count) {
-      if (arrivedSince === 0) {
-        arrivedSince = timestamp;
-      } else if (timestamp - arrivedSince > 1000) {
-        trips = api.relaunch();
-        arrivedSince = 0;
+    const crowdBlocked = api.crowdBlocked();
+    const completedLegs = api.completedLegs();
+    const abortedLegs = api.abortedLegs();
+    const turnaroundReady = api.turnaroundReady() === 1;
+    if (turnaroundReady) {
+      if (turnaroundSince === 0) {
+        turnaroundSince = timestamp;
+      } else if (timestamp - turnaroundSince > 1000) {
+        leg = api.relaunch();
+        turnaroundSince = 0;
       }
     } else {
-      arrivedSince = 0;
+      turnaroundSince = 0;
     }
-    // A colony can stop dead with nobody declared terminal: two agents each
+    // A colony can stop dead with nobody durably blocked: two agents each
     // standing on the tile the other needs block each other forever. Reporting
-    // only the terminal count left that reading as "Colony running" over a
+    // only the durable count left that reading as "Colony running" over a
     // frozen grid, so a sustained absence of movement is reported too. The
     // threshold is far above ordinary convoy shuffling, which clears in a tick
     // or two.
     const stalledTicks = api.stalledTicks();
     if (unreachable > 0) {
       message.textContent =
-          `${unreachable} agents reached a terminal blocked state`;
+          `${unreachable} agents blocked by walls — Clear walls to continue`;
+    } else if (turnaroundReady && crowdBlocked > 0) {
+      message.textContent =
+          `Turnaround: ${crowdBlocked} agents could not reach this side`;
+    } else if (crowdBlocked > 0) {
+      message.textContent =
+          `${crowdBlocked} crowd-blocked agents waiting for turnaround`;
     } else if (stalledTicks >= stallTicks) {
       message.textContent =
           `Colony stalled: no agent has moved for ${
@@ -162,8 +172,9 @@ function frame(timestamp) {
       message.textContent = 'Colony running';
     }
     metrics.textContent = `${emaUs.toFixed(0)} µs/tick · ` +
-        `${arrived}/${count} arrived · ${unreachable} terminal · ` +
-        `trip ${trips}`;
+        `${arrived}/${count} arrived · ${crowdBlocked} crowd-blocked · ` +
+        `${unreachable} wall-blocked · leg ${leg} · ` +
+        `${completedLegs} completed · ${abortedLegs} crowd turnarounds`;
   } catch (error) {
     message.textContent = `Tick failed: ${error}`;
     return;
@@ -191,12 +202,21 @@ createTessColony()
             ]),
         tick: instance.cwrap('tess_colony_tick', 'number', ['number']),
         relaunch: instance.cwrap('tess_colony_relaunch', 'number', []),
+        leg: instance.cwrap('tess_colony_leg', 'number', []),
         tiles: instance.cwrap('tess_colony_tiles', 'number', []),
         agents: instance.cwrap('tess_colony_agents', 'number', []),
         agentCount: instance.cwrap('tess_colony_agent_count', 'number', []),
         arrived: instance.cwrap('tess_colony_arrived', 'number', []),
         unreachable: instance.cwrap(
             'tess_colony_unreachable', 'number', []),
+        crowdBlocked: instance.cwrap(
+            'tess_colony_crowd_blocked', 'number', []),
+        turnaroundReady: instance.cwrap(
+            'tess_colony_turnaround_ready', 'number', []),
+        completedLegs: instance.cwrap(
+            'tess_colony_completed_legs', 'number', []),
+        abortedLegs: instance.cwrap(
+            'tess_colony_aborted_legs', 'number', []),
         stalledTicks: instance.cwrap(
             'tess_colony_stalled_ticks', 'number', []),
       };
