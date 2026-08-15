@@ -861,8 +861,8 @@ TEST(TessPathAgentTick, IndependentRecoverySchedulesCanRunConcurrently) {
     }
   };
 
-  std::jthread first(run, 0);
-  std::jthread second(run, 1);
+  std::thread first(run, 0);
+  std::thread second(run, 1);
   first.join();
   second.join();
   EXPECT_EQ(checksums[0], checksums[1]);
@@ -898,8 +898,8 @@ TEST(TessPathAgentTick, IndependentReplanQueuesCanRunConcurrently) {
     }
   };
 
-  std::jthread first(run, 0);
-  std::jthread second(run, 1);
+  std::thread first(run, 0);
+  std::thread second(run, 1);
   first.join();
   second.join();
   EXPECT_EQ(checksums[0], checksums[1]);
