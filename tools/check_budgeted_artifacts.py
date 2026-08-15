@@ -248,6 +248,23 @@ def check_artifact(document: dict) -> None:
   kind = experiment.get("kind")
   _require(kind in EXPERIMENT_KINDS,
            f"unknown experiment kind {kind!r}: failing closed")
+  movement_tier = experiment.get("movement_tier", "baseline")
+  _require(movement_tier in ("baseline", "pibt"),
+           f"unknown movement_tier {movement_tier!r}: failing closed")
+  scenario_id = experiment.get("scenario_id", "")
+  if isinstance(scenario_id, str) and "pingpong" in scenario_id:
+    # The tier is part of the scenario identity; the field and the
+    # scenario must agree so no consumer can see contradictory
+    # identities (legacy artifacts omit the field and mean baseline).
+    scenario_tier = "pibt" if "-pibt-" in scenario_id else "baseline"
+    _require(movement_tier == scenario_tier,
+             f"movement_tier {movement_tier!r} contradicts scenario "
+             f"{scenario_id!r}")
+  realized = document.get("trace", {}).get("realized_churn_sha256")
+  if realized is not None:
+    _require(isinstance(realized, str) and len(realized) == 64
+             and all(c in "0123456789abcdef" for c in realized),
+             "trace.realized_churn_sha256 must be a lowercase hex sha256")
   if kind == "isolated_arrival_rate":
     rate_num = experiment.get("arrival_rate_num")
     rate_den = experiment.get("arrival_rate_den")

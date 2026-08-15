@@ -869,7 +869,8 @@ if(BUILD_TESTING)
     endforeach()
     # Mixed smoke cells run two budgets at 60 TPS (design section 7);
     # the full matrix is campaign-scale and CLI-configured.
-    foreach(budgeted_cell mixed_fidelity_p100_60tps mixed_quanta_p100_60tps)
+    foreach(budgeted_cell mixed_fidelity_baseline_p100_60tps
+            mixed_quanta_baseline_p100_60tps)
       foreach(budgeted_ns 125000 8000000)
         list(APPEND budgeted_smoke_artifact_paths
           "${CMAKE_CURRENT_BINARY_DIR}/${budgeted_cell}_${budgeted_ns}ns.json")

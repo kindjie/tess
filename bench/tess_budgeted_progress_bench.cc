@@ -1440,6 +1440,23 @@ auto main(int argc, char** argv) -> int {
       if (!options.mixed_view_fidelity && !options.mixed_view_quanta) {
         fail("--mixed-views must be exactly fidelity, quanta, or both");
       }
+    } else if (argument == "--mixed-tiers" && i + 1 < argc) {
+      options.mixed_tiers.clear();
+      const std::string tiers = argv[++i];
+      for (std::size_t start = 0; start <= tiers.size();) {
+        const std::size_t comma = tiers.find(',', start);
+        const std::string tier =
+            tiers.substr(start, comma == std::string::npos ? std::string::npos
+                                                           : comma - start);
+        if (tier != "baseline" && tier != "pibt") {
+          fail("--mixed-tiers entries must be exactly baseline or pibt");
+        }
+        options.mixed_tiers.push_back(tier);
+        if (comma == std::string::npos) {
+          break;
+        }
+        start = comma + 1;
+      }
     } else if (argument == "--mixed-populations" && i + 1 < argc) {
       options.mixed_populations_explicit = true;
       options.mixed_populations.clear();
@@ -1459,7 +1476,8 @@ auto main(int argc, char** argv) -> int {
     } else {
       fail(
           "usage: tess_bench_budgeted_progress --out-dir DIR "
-          "[--smoke] [--mixed-only] [--reps N]");
+          "[--smoke] [--mixed-only] [--mixed-tiers baseline,pibt] "
+          "[--reps N]");
     }
   }
   if (options.out_dir.empty()) {

@@ -467,3 +467,36 @@ def test_deep_copy_fixture_isolated():
   second = copy.deepcopy(first)
   second["flow"]["offered"] = 99
   assert first["flow"]["offered"] == 10
+
+def test_unknown_movement_tier_fails_closed(tmp_path):
+  """An unrecognized tier value must fail, not default."""
+  artifact = saturated_artifact()
+  artifact["experiment"]["movement_tier"] = "teleport"
+  errors = cba.validate_file(write(tmp_path, artifact))
+  assert any("movement_tier" in error for error in errors)
+
+
+def test_movement_tier_must_agree_with_scenario(tmp_path):
+  """A pibt scenario with a baseline tier field is a contradiction."""
+  artifact = demand_limited_artifact()
+  artifact["experiment"]["kind"] = "mixed_current_fidelity"
+  artifact["experiment"]["population"] = 100
+  artifact["experiment"]["scenario_id"] = "colony-roomcorridor-pingpong-pibt-v1"
+  artifact["experiment"]["movement_tier"] = "baseline"
+  errors = cba.validate_file(write(tmp_path, artifact))
+  assert any("contradicts scenario" in error for error in errors)
+  # Legacy artifacts omit the field entirely and mean baseline; a
+  # baseline pingpong scenario without the field stays valid.
+  artifact["experiment"]["scenario_id"] = "colony-roomcorridor-pingpong-v1"
+  del artifact["experiment"]["movement_tier"]
+  assert cba.validate_file(write(tmp_path, artifact)) == []
+
+
+def test_realized_churn_hash_shape_is_validated(tmp_path):
+  """A malformed realized-churn hash fails closed."""
+  artifact = saturated_artifact()
+  artifact["trace"]["realized_churn_sha256"] = "not-a-hash"
+  errors = cba.validate_file(write(tmp_path, artifact))
+  assert any("realized_churn_sha256" in error for error in errors)
+  artifact["trace"]["realized_churn_sha256"] = "ab" * 32
+  assert cba.validate_file(write(tmp_path, artifact)) == []

@@ -258,6 +258,11 @@ struct ExperimentBlock {
   std::uint64_t pool_size = 0;
   // Mixed-colony cells: the closed-loop population (0 = not mixed).
   std::uint64_t population = 0;
+  // Mixed-colony cells: the movement tier the cell ran ("baseline" or
+  // "pibt"). Also encoded in scenario_id so consumers that key on
+  // scenario identity separate the cohorts without reading this field;
+  // legacy artifacts omit it and mean baseline. Empty = omitted.
+  std::string movement_tier;
   std::string executor_kind = "serial";
   std::uint32_t executor_workers = 1;
 };
@@ -278,6 +283,12 @@ struct PathCountersBlock {
 struct TraceBlock {
   std::uint32_t version = 1;
   std::string sha256;
+  // Mixed-colony cells: hash of the churn edits actually applied during
+  // the run. Realized edits skip occupied tiles, so they depend on the
+  // movement tier; the static sha256 above (map, endpoints, candidate
+  // pool) would otherwise claim identity across genuinely different
+  // realized terrain histories. Empty = omitted (non-churn cells).
+  std::string realized_churn_sha256;
 };
 
 // Deadline/age/starvation metrics carried only by demand-limited
@@ -496,6 +507,9 @@ inline void append_family(std::string& out, const char* key,
   if (experiment.population > 0) {
     detail::append_u64(out, "population", experiment.population);
   }
+  if (!experiment.movement_tier.empty()) {
+    detail::append_string(out, "movement_tier", experiment.movement_tier);
+  }
   out += "\"executor\": {";
   detail::append_string(out, "kind", experiment.executor_kind);
   detail::append_u64(out, "workers", experiment.executor_workers, false);
@@ -514,7 +528,13 @@ inline void append_family(std::string& out, const char* key,
   }
   out += "\"trace\": {";
   detail::append_u64(out, "version", artifact.trace.version);
-  detail::append_string(out, "sha256", artifact.trace.sha256, false);
+  if (!artifact.trace.realized_churn_sha256.empty()) {
+    detail::append_string(out, "sha256", artifact.trace.sha256);
+    detail::append_string(out, "realized_churn_sha256",
+                          artifact.trace.realized_churn_sha256, false);
+  } else {
+    detail::append_string(out, "sha256", artifact.trace.sha256, false);
+  }
   out += "}, ";
 
   const auto& flow = artifact.flow;

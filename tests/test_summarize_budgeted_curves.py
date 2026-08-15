@@ -171,3 +171,25 @@ def test_cli_writes_csv_files(tmp_path, capsys):
   assert (csv_dir / "isolated.csv").exists()
   assert (csv_dir / "capacity.csv").exists()
   assert "confirmed /s" in output
+
+def test_movement_tier_joins_identity_and_columns(tmp_path):
+  """Tiers separate coverage groups and appear in demand rows."""
+  baseline = cell("mixed_current_fidelity", 8000000,
+                  experiment={"pacing": "paced", "population": 100},
+                  summary={"deadline_success_rate": 0.9,
+                           "flow_stable": False, "starved_items": 3})
+  pibt = cell("mixed_current_fidelity", 8000000,
+              experiment={"pacing": "paced", "population": 100,
+                          "movement_tier": "pibt",
+                          "scenario_id": "cell-pibt-v1"},
+              summary={"deadline_success_rate": 1.0,
+                       "flow_stable": True, "starved_items": 0})
+  directory = write_dir(tmp_path, [baseline, pibt])
+  cells, _, _ = sbc.load(directory, strict=True)
+  csv_rows, _ = sbc.summarize_demand(cells)
+  assert any(",baseline," in row and "0.900" in row for row in csv_rows)
+  assert any(",pibt," in row and "1.000" in row for row in csv_rows)
+  # Same kind, different tiers, each with a full (single-budget) axis:
+  # no hole is fabricated across the tier boundary.
+  notes = sbc.report_missing(cells, [])
+  assert not any("no artifacts" in note for note in notes)

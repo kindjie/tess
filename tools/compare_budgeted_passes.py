@@ -37,15 +37,30 @@ DEADLINE_SUCCESS_TOLERANCE = 0.02
 
 
 def pair_key(document: dict) -> tuple:
-  """The identity a timing/counter pair must share."""
+  """The full cell identity a timing/counter pair must share.
+
+  Every identity axis participates: two artifacts that differ in any of
+  these fields are different cells, and pairing them would compare
+  incomparable work. scenario_id alone happens to disambiguate today's
+  cells, but relying on that convention silently breaks the first time
+  one scenario spans an axis.
+  """
   experiment = document["experiment"]
-  return (experiment.get("scenario_id"), experiment.get("budget_ns"),
+  return (experiment.get("scenario_id"), experiment.get("kind"),
+          experiment.get("movement_tier", "baseline"),
+          experiment.get("budget_ns"),
+          experiment.get("sim_tps"), experiment.get("population", 0),
           experiment.get("arrival_rate_num", 0),
           experiment.get("arrival_rate_den", 1), experiment.get("pacing"))
 
 
 def load_documents(directory: Path, expected_pass: str) -> dict:
-  """Load cell artifacts of one pass, keyed by pair identity."""
+  """Load cell artifacts of one pass, keyed by full cell identity.
+
+  Duplicate identities are fatal in either direction: silently keeping
+  the last file would compare an arbitrary one of the duplicates and
+  report success against unverified data.
+  """
   documents = {}
   for path in sorted(directory.glob("*.json")):
     document = json.loads(path.read_text(encoding="utf-8"))
@@ -54,7 +69,12 @@ def load_documents(directory: Path, expected_pass: str) -> dict:
     declared = document["experiment"].get("pass", "timing")
     if declared != expected_pass:
       continue
-    documents[pair_key(document)] = (path, document)
+    key = pair_key(document)
+    if key in documents:
+      raise SystemExit(
+          f"error: duplicate cell identity in {directory}: "
+          f"{documents[key][0].name} and {path.name} share {key}")
+    documents[key] = (path, document)
   return documents
 
 
