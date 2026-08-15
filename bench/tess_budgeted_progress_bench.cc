@@ -1425,8 +1425,11 @@ auto main(int argc, char** argv) -> int {
       }
     } else if (argument == "--mixed-views" && i + 1 < argc) {
       const std::string views = argv[++i];
-      options.mixed_view_fidelity = views.find("fidelity") != std::string::npos;
-      options.mixed_view_quanta = views.find("quanta") != std::string::npos;
+      const bool both_views = views == "both";
+      options.mixed_view_fidelity =
+          both_views || views.find("fidelity") != std::string::npos;
+      options.mixed_view_quanta =
+          both_views || views.find("quanta") != std::string::npos;
       if (!options.mixed_view_fidelity && !options.mixed_view_quanta) {
         fail("--mixed-views must name fidelity, quanta, or both");
       }

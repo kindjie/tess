@@ -35,13 +35,18 @@ def cell(kind: str, budget_ns: int, **overrides) -> dict:
 
 
 def search(budget_ns: int) -> dict:
-  """A minimal capacity-search summary."""
+  """A minimal capacity-search summary with confirmed-point evidence."""
+  rep = {"stable": True, "cohort_admitted": 100, "cohort_deadline_met": 99,
+         "outstanding_growth": 1, "oldest_age_end_ticks": 4}
   return {
       "schema": sbc.SEARCH_SCHEMA,
       "run": {"commit": "cafe123"},
       "search": {"scenario_id": "search-v1", "budget_ns": budget_ns},
       "capacity_band": {"confirmed_stable": 172, "lowest_unstable": 174},
-      "points": [{}, {}, {}],
+      "points": [{"rate": 86, "confirmation": False, "stable": True},
+                 {"rate": 174, "confirmation": False, "stable": False},
+                 {"rate": 172, "confirmation": True, "stable": True,
+                  "reps": [dict(rep), dict(rep)]}],
       "flapping": 0,
   }
 
@@ -100,7 +105,9 @@ def test_capacity_rows_and_missing_coverage(tmp_path):
   directory = write_dir(tmp_path, documents)
   cells, searches, _ = sbc.load(directory, strict=True)
   csv_rows, _ = sbc.summarize_search(searches)
-  assert "search-v1,0.5,172,174,3,0" in csv_rows[1]
+  # Band edges plus the confirmed point's evidence: 198/200 met, max
+  # growth 1, max oldest age 4 — all from the confirmation reps.
+  assert "search-v1,0.5,172,174,0.990,1,4,3,0,cafe123" in csv_rows[1]
   notes = sbc.report_missing(cells, searches)
   assert any("isolated_saturated" in note and "8" in note for note in notes)
   assert any("mixed_current_fidelity" in note and "0.5" in note
@@ -124,4 +131,4 @@ def test_cli_writes_csv_files(tmp_path, capsys):
   assert "# Budgeted-progress curves" in output
   assert (csv_dir / "isolated.csv").exists()
   assert (csv_dir / "capacity.csv").exists()
-  assert "confirmed stable" in output
+  assert "confirmed /s" in output
