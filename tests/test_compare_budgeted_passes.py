@@ -187,6 +187,22 @@ def test_duplicate_cell_identity_is_fatal(tmp_path):
               "--counter-dir", str(counter_dir)])
 
 
+def test_duplicate_counter_identity_is_fatal(tmp_path):
+  """The counter directory rejects duplicates too, symmetrically."""
+  timing_dir = tmp_path / "timing"
+  counter_dir = tmp_path / "counter"
+  timing_dir.mkdir()
+  counter_dir.mkdir()
+  (timing_dir / "t.json").write_text(
+      json.dumps(cell("isolated_saturated", "timing", 10, 1000)))
+  duplicate = cell("isolated_saturated", "counter", 10, 1000)
+  (counter_dir / "a.json").write_text(json.dumps(duplicate))
+  (counter_dir / "b.json").write_text(json.dumps(duplicate))
+  with pytest.raises(SystemExit, match="duplicate cell identity"):
+    cbp.main(["--timing-dir", str(timing_dir),
+              "--counter-dir", str(counter_dir)])
+
+
 def test_movement_tier_separates_otherwise_identical_cells(tmp_path):
   """Baseline and pibt cells never pair with each other."""
   timing_dir = tmp_path / "timing"

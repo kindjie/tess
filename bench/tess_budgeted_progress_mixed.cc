@@ -360,7 +360,7 @@ struct MixedStack {
 // Stage-3 acceptance: before any budgeted cell runs, the mirrored
 // stack must reproduce the harness's reference run exactly — once per
 // movement tier, since the tier dispatch is part of the mirror. The
-// harness golden pins that the tiers diverge on this fixture (2506
+// harness golden pins that the tiers diverge on this fixture (2566
 // vs 2838 total steps), so passing both proofs is non-vacuous.
 void validate_mixed_stack(colony::ColonyMovementTier tier) {
   auto stack = build_mixed_stack(kMixedAgents, tier);

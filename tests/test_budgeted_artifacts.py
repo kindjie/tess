@@ -492,6 +492,23 @@ def test_movement_tier_must_agree_with_scenario(tmp_path):
   assert cba.validate_file(write(tmp_path, artifact)) == []
 
 
+def test_mixed_cells_require_realized_churn_hash(tmp_path):
+  """A tier-era mixed cell without the realized hash fails closed."""
+  artifact = demand_limited_artifact()
+  artifact["experiment"]["kind"] = "mixed_current_fidelity"
+  artifact["experiment"]["population"] = 100
+  artifact["experiment"]["movement_tier"] = "baseline"
+  errors = cba.validate_file(write(tmp_path, artifact))
+  assert any("must record trace.realized_churn_sha256" in error
+             for error in errors)
+  artifact["trace"]["realized_churn_sha256"] = "ab" * 32
+  assert cba.validate_file(write(tmp_path, artifact)) == []
+  # Legacy mixed artifacts predate both fields and stay valid.
+  del artifact["experiment"]["movement_tier"]
+  del artifact["trace"]["realized_churn_sha256"]
+  assert cba.validate_file(write(tmp_path, artifact)) == []
+
+
 def test_realized_churn_hash_shape_is_validated(tmp_path):
   """A malformed realized-churn hash fails closed."""
   artifact = saturated_artifact()

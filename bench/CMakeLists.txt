@@ -852,6 +852,42 @@ if(BUILD_TESTING)
   set_tests_properties(tess_bench_budgeted_progress_mixed_seats_ladder_max
     PROPERTIES TIMEOUT 600)
 
+  # The PIBT tier arm must run in CI or its dispatch, per-tier
+  # equivalence proof, and artifact identity could regress while every
+  # baseline-default test stays green. This smoke runs the tier and
+  # the fail-closed validator checks its cohort identity (tiered
+  # scenario_id, movement_tier field, realized-churn hash).
+  set(budgeted_pibt_dir "${CMAKE_CURRENT_BINARY_DIR}/pibt-smoke")
+  file(MAKE_DIRECTORY "${budgeted_pibt_dir}")
+  add_test(
+    NAME tess_bench_budgeted_progress_mixed_pibt_smoke
+    COMMAND
+      tess_bench_budgeted_progress
+      --smoke
+      --mixed-only
+      --mixed-tiers pibt
+      --mixed-views fidelity
+      --out-dir ${budgeted_pibt_dir}
+  )
+  set_tests_properties(tess_bench_budgeted_progress_mixed_pibt_smoke
+    PROPERTIES FIXTURES_SETUP budgeted_pibt_artifacts TIMEOUT 600)
+  if(Python3_Interpreter_FOUND)
+    set(budgeted_pibt_artifact_paths "")
+    foreach(budgeted_ns 125000 8000000)
+      list(APPEND budgeted_pibt_artifact_paths
+        "${budgeted_pibt_dir}/mixed_fidelity_pibt_p100_60tps_${budgeted_ns}ns.json")
+    endforeach()
+    add_test(
+      NAME tess_bench_budgeted_progress_pibt_artifacts_valid
+      COMMAND
+        Python3::Interpreter
+        ${PROJECT_SOURCE_DIR}/tools/check_budgeted_artifacts.py
+        ${budgeted_pibt_artifact_paths}
+    )
+    set_tests_properties(tess_bench_budgeted_progress_pibt_artifacts_valid
+      PROPERTIES FIXTURES_REQUIRED budgeted_pibt_artifacts)
+  endif()
+
   # The emitted smoke artifacts must pass the fail-closed schema
   # validator (design section 14.2 puts schema validation in CI
   # scope), not just the validator's synthetic-fixture unit tests.

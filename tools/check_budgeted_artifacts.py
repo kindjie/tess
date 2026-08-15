@@ -261,6 +261,14 @@ def check_artifact(document: dict) -> None:
              f"movement_tier {movement_tier!r} contradicts scenario "
              f"{scenario_id!r}")
   realized = document.get("trace", {}).get("realized_churn_sha256")
+  if (isinstance(kind, str) and kind.startswith("mixed_")
+      and "movement_tier" in experiment):
+    # Every mixed cell runs churn, and realized edits are occupancy-
+    # and therefore tier-dependent: a tier-era mixed artifact without
+    # the realized hash cannot prove which terrain history it
+    # measured. Legacy artifacts predate both fields and stay valid.
+    _require(realized is not None,
+             "mixed cells must record trace.realized_churn_sha256")
   if realized is not None:
     _require(isinstance(realized, str) and len(realized) == 64
              and all(c in "0123456789abcdef" for c in realized),
