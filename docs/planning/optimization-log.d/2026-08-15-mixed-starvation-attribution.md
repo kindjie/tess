@@ -13,21 +13,30 @@
   env-selected movement-tier switch (baseline / joint / PIBT × swap policy
   × ranking oracle) in the bench mixed cell. Arms ran the full 7-budget
   cell at one repetition (dynamics are identical across budgets, so the
-  per-agent dumps are taken from the 0.125 ms cell); dev machine
+  per-agent dumps are taken from the 0.125 ms cell; the baseline arm ran
+  two repetitions and the stuck set was identical in both); dev machine
   (mechanism attribution, not timing evidence). PIBT maintains its own
   adaptive priorities; an early arm double-maintained them externally and
   was rerun after the fix with identical results.
 - **Attribution (each step measured):** 86/500 agents complete zero items —
-  the same set every repetition, all phase Blocked with retries exhausted,
-  goals free, 1-3 neighbors occupied; zero reserved-but-empty tiles
-  (reservation-leak refuted); zero goal-parkers and zero mutual goal pairs
-  (simple head-on refuted); all 148 blocking occupants are themselves
-  ≤2-completion agents forming 92 adjacency clusters (one of 58 agents).
-  Mechanism: planning is occupancy-blind by design, stepping admits only
-  on-route moves, and blocked agents retry the same retained step
-  indefinitely (retry exhaustion stops planning, not stepping), so mutual
-  occupancy-wait chains never resolve — permanent livelock pockets, the
-  documented baseline gap the PIBT tier exists to close.
+  the identical set in both of two baseline repetitions, all phase Blocked
+  with retries exhausted, goals free, 1-3 neighbors occupied; zero
+  reserved-but-empty tiles (reservation-leak refuted); zero goal-parkers
+  and zero mutual goal pairs. The retained-route next steps complete the
+  picture: every one of the 86 next steps is occupied by an agent in the
+  ≤2-completion set (57 by fully stuck agents), and 29 of the 86 form
+  mutual next-step 2-cycles — true head-ons — with the rest in longer
+  chains; the 148 neighboring occupants are all themselves ≤2-completion
+  agents forming 92 adjacency clusters (one of 58 agents). Mechanism:
+  planning is occupancy-blind by design, stepping admits only on-route
+  moves, and blocked agents retry the same retained step indefinitely
+  (retry exhaustion stops planning, not stepping). The wait-for graph is
+  closed over the low-completion set, so it contains cycles, and the
+  baseline has no off-route step that could break them: livelock pockets
+  with no internal resolution mechanism, persisting across the full
+  observed windows — the documented baseline gap the PIBT tier exists to
+  close. (Terrain churn could in principle perturb a pocket; none
+  resolved across any observed window.)
 - **Arms (p500/20 TPS: zero-completion agents / useful / cohort success /
   starved):**
   - baseline: 86 / 1 611 / 0.893 / 161
@@ -39,9 +48,9 @@
     items are invisible to the cohort but caught by the age criterion).
     Swap policy made no difference (PermitOnDeadlock identical), so Forbid
     suffices on this map.
-  - PIBT+Forbid, boxed BFS field ranking: 47 (margin 16) / 31 (margin 48)
-    — boxed fields miss doors beyond the margin; the field is flat inside
-    the box and the trap reappears.
+  - PIBT+Forbid, boxed BFS field ranking, margin 16: 47 / 4 028 / 0.992 /
+    1; margin 48: 31 / 4 048 / 0.985 / 9 — boxed fields miss doors beyond
+    the margin; the field is flat inside the box and the trap reappears.
   - PIBT+Forbid, whole-map static field (limit case): 2 / 4 065 / 0.980 /
     21 — an exact gradient collapses the stuck set.
   - PIBT+Forbid, route-local-attachment ranking: 3 / 4 021 / 0.980 / 28 —
@@ -52,9 +61,10 @@
     detached candidates steered back to the corridor.
 - **Ladder under PIBT + route ranking (zero-stuck / success / starved /
   oldest-age ticks):** p100/20: 0 / 1.000 / 0 / 15; p100/60: 0 / 1.000 /
-  0 / 20; p250/20: 0 / 1.000 / 0 / 30. Stability genuinely holds through
-  p250 and degrades at p500 — a measurable capacity boundary instead of
-  universal failure.
+  0 / 20; p250/20: 0 / 1.000 / 0 / 30; p250/60: 0 / 1.000 / 0 / 45.
+  Stability genuinely holds through p250 at both simulation rates and
+  degrades at p500 — a measurable capacity boundary instead of universal
+  failure.
 - **Cost:** PIBT arms raise mandatory frame cost: p95 ~1.9 ms (baseline) →
   ~5.0 ms (Manhattan) / ~8.9 ms (route ranking, unoptimized O(route)
   scan). Movement remediation shifts cost into the mandatory tick;
