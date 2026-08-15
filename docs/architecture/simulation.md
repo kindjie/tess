@@ -345,13 +345,20 @@ stateDiagram-v2
   deliberately do not exist -- a partial baseline that adopts the frame
   version would permanently lose out-of-scope invalidations from a gap.
 - `collect_path_overlays(collector, runtime, agents, handles[,
-  selection])` stages the remaining route (`path.suffix(path_index)`) of
-  every Following agent, gated on `has_goal && status == Found` before
-  touching a ticket (which provably avoids the runtime's stale-ticket
-  assert and the value-zero cleared-ticket alias). Ordering contract:
-  lifecycle intents run before the tick, overlays collect after it; an
-  intent squeezed between tick and collection leaves that agent's
-  overlay one frame stale while entity deltas stay correct.
+  selection])` stages current runtime results. Its tickets must belong to the
+  runtime's current generation, as they do immediately after an `All`-scope
+  submission and processing pass. It is not valid after a `NeedsOnly`
+  submission clears the runtime but skips agents that need no new request.
+- `collect_path_overlays(collector, agents, routes, handles[, selection])`
+  instead reads authoritative `PathAgentRoutes`. Use it with `NeedsOnly`
+  submission and queue-produced routes: the copied ticket is identity/debug
+  metadata only and may be stale or value-zero; it is never dereferenced.
+  Both forms copy `path.suffix(path_index)`, gate on
+  `has_goal && status == Found`, and require selected indices to be in range;
+  debug builds assert this precondition. Lifecycle intents run before the tick
+  and overlays collect after it; an intent squeezed between tick and
+  collection leaves that agent's overlay one frame stale while entity deltas
+  stay correct.
 - `collect_tile_deltas(collector, world, dirty_mask)` observes, records,
   and clears (observed-generation-safe: a racing mark leaves the bits
   set for a harmless duplicate next frame) every dirty chunk under the

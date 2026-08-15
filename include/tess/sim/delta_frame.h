@@ -1058,22 +1058,19 @@ void collect_baseline(DeltaCollector& collector, World& world,
   collector.mark_baseline_pending();
 }
 
-// Stages the remaining route of every agent (or of `selection`, indices
-// into agents/handles). Gates on has_goal && status == Found before
-// touching a ticket: a cleared ticket is value-zero and could alias a
-// live generation-zero slot, and the gate avoids the runtime's
-// stale-ticket debug assert PROVIDED the batch and runtime are
-// generation-consistent -- the guarantee holds for batches collected by
-// the last processing pass (every armed non-Unreachable agent was
-// re-ticketed), but NOT for a batch that outlived a clear_requests()
-// call. Precondition: whenever the runtime is cleared outside the tick
-// pipeline, clear the batch beside it before the next collection. Nodes are
-// copied at call time; the source PathView storage may be reused immediately
-// after. Ordering contract: run lifecycle intents BEFORE the tick and collect
-// overlays AFTER it -- an intent executed between tick and collection
-// leaves that agent's overlay one frame stale (entity deltas themselves
-// stay correct through the hooks).
-/// Copies active agents' remaining routes into the pending overlay frame.
+/**
+ * Copies active agents' current runtime routes into the pending overlay frame.
+ *
+ * The tickets must belong to the runtime's current generation. This form is
+ * suitable immediately after an `All`-scope runtime submission and processing
+ * pass. Use the retained-route overload after `NeedsOnly` submission or with
+ * queue-produced routes, where an agent ticket may be stale or value-zero.
+ * Nodes are copied at call time.
+ *
+ * @pre `agents.size() == handles.size()`.
+ * @pre Every active, found agent's ticket belongs to `runtime`'s current
+ * generation.
+ */
 inline void collect_path_overlays(DeltaCollector& collector,
                                   const PathRequestRuntime& runtime,
                                   std::span<const PathAgentState> agents,
@@ -1093,7 +1090,14 @@ inline void collect_path_overlays(DeltaCollector& collector,
   }
 }
 
-/// Copies selected agents' remaining routes into the pending overlay frame.
+/**
+ * Copies selected agents' current runtime routes into the pending frame.
+ *
+ * @pre `agents.size() == handles.size()`.
+ * @pre Every selected index is less than `agents.size()`.
+ * @pre Every selected, active, found agent's ticket belongs to `runtime`'s
+ * current generation.
+ */
 inline void collect_path_overlays(DeltaCollector& collector,
                                   const PathRequestRuntime& runtime,
                                   std::span<const PathAgentState> agents,
@@ -1101,6 +1105,7 @@ inline void collect_path_overlays(DeltaCollector& collector,
                                   std::span<const std::size_t> selection) {
   TESS_ASSERT(agents.size() == handles.size());
   for (const auto index : selection) {
+    TESS_ASSERT(index < agents.size());
     const auto& agent = agents[index];
     if (!agent.has_goal || agent.status != PathStatus::Found) {
       continue;
@@ -1111,6 +1116,65 @@ inline void collect_path_overlays(DeltaCollector& collector,
     }
     collector.stage_path_overlay(handles[index], agent.ticket,
                                  result.path.suffix(agent.path_index));
+  }
+}
+
+/**
+ * Copies active agents' retained remaining routes into the pending frame.
+ *
+ * This form reads authoritative routes from `routes` and never dereferences
+ * `PathAgentState::ticket`. The copied ticket is identity/debug metadata only
+ * and may be stale or value-zero. Nodes are copied at call time.
+ *
+ * @pre `agents.size() == handles.size()`.
+ * @pre `routes.routes.size() >= agents.size()`.
+ */
+inline void collect_path_overlays(DeltaCollector& collector,
+                                  std::span<const PathAgentState> agents,
+                                  const PathAgentRoutes& routes,
+                                  std::span<const EntityHandle> handles) {
+  TESS_ASSERT(agents.size() == handles.size());
+  TESS_ASSERT(routes.routes.size() >= agents.size());
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    const auto& agent = agents[i];
+    if (!agent.has_goal || agent.status != PathStatus::Found) {
+      continue;
+    }
+    const PathView route{routes.routes[i]};
+    if (route.empty()) {
+      continue;
+    }
+    collector.stage_path_overlay(handles[i], agent.ticket,
+                                 route.suffix(agent.path_index));
+  }
+}
+
+/**
+ * Copies selected agents' retained remaining routes into the pending frame.
+ *
+ * @pre `agents.size() == handles.size()`.
+ * @pre `routes.routes.size() >= agents.size()`.
+ * @pre Every selected index is less than `agents.size()`.
+ */
+inline void collect_path_overlays(DeltaCollector& collector,
+                                  std::span<const PathAgentState> agents,
+                                  const PathAgentRoutes& routes,
+                                  std::span<const EntityHandle> handles,
+                                  std::span<const std::size_t> selection) {
+  TESS_ASSERT(agents.size() == handles.size());
+  TESS_ASSERT(routes.routes.size() >= agents.size());
+  for (const auto index : selection) {
+    TESS_ASSERT(index < agents.size());
+    const auto& agent = agents[index];
+    if (!agent.has_goal || agent.status != PathStatus::Found) {
+      continue;
+    }
+    const PathView route{routes.routes[index]};
+    if (route.empty()) {
+      continue;
+    }
+    collector.stage_path_overlay(handles[index], agent.ticket,
+                                 route.suffix(agent.path_index));
   }
 }
 
