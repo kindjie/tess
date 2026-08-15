@@ -34,13 +34,13 @@ def cell(kind: str, budget_ns: int, **overrides) -> dict:
   return document
 
 
-def search(budget_ns: int) -> dict:
+def search(budget_ns: int, commit: str = "cafe123") -> dict:
   """A minimal capacity-search summary with confirmed-point evidence."""
   rep = {"stable": True, "cohort_admitted": 100, "cohort_deadline_met": 99,
          "outstanding_growth": 1, "oldest_age_end_ticks": 4}
   return {
       "schema": sbc.SEARCH_SCHEMA,
-      "run": {"commit": "cafe123"},
+      "run": {"commit": commit},
       "search": {"scenario_id": "search-v1", "budget_ns": budget_ns},
       "capacity_band": {"confirmed_stable": 172, "lowest_unstable": 174},
       "points": [{"rate": 86, "confirmation": False, "stable": True},
@@ -94,24 +94,63 @@ def test_demand_rows_cover_arrival_and_mixed(tmp_path):
              and "12345" in row for row in csv_rows)
 
 
-def test_capacity_rows_and_missing_coverage(tmp_path):
-  """Bands render and matrix holes are named, not silently absorbed."""
-  documents = [cell("isolated_saturated", 500000),
+def arrival(budget_ns: int, rate: int) -> dict:
+  """A fixed-rate arrival cell at the given budget and rate."""
+  return cell("isolated_arrival_rate", budget_ns,
+              experiment={"arrival_rate_num": rate, "arrival_rate_den": 1,
+                          "pacing": "paced"},
+              summary={"deadline_success_rate": 0.995, "flow_stable": True,
+                       "starved_items": 0})
+
+
+def test_capacity_rows_join_nearest_arrival_cell(tmp_path):
+  """Bands carry confirmed-point evidence plus borrowed overshoot."""
+  documents = [arrival(500000, 150), arrival(500000, 600), search(500000)]
+  directory = write_dir(tmp_path, documents)
+  cells, searches, _ = sbc.load(directory, strict=True)
+  csv_rows, md_rows = sbc.summarize_search(searches, cells)
+  # Band edges, the confirmed point's evidence (198/200 met, max
+  # growth 1, max oldest age 4), and the overshoot tail p99 borrowed
+  # from the arrival cell nearest the confirmed 172/s (the 150/s one).
+  assert ("search-v1,0.5,172,174,0.990,1,4,1500,150,3,0,cafe123"
+          in csv_rows[1])
+  assert "1500 @150/s" in md_rows[2]
+
+
+def test_missing_coverage_uses_per_kind_budget_axes(tmp_path):
+  """Holes compare within a kind's own budget axis, never across kinds."""
+  documents = [arrival(500000, 150), arrival(500000, 600),
+               arrival(2000000, 150),
                cell("mixed_current_fidelity", 8000000,
                     experiment={"pacing": "paced"},
                     summary={"deadline_success_rate": 1.0,
                              "flow_stable": True, "starved_items": 0}),
-               search(500000)]
+               search(500000, commit="beef456")]
   directory = write_dir(tmp_path, documents)
   cells, searches, _ = sbc.load(directory, strict=True)
-  csv_rows, _ = sbc.summarize_search(searches)
-  # Band edges plus the confirmed point's evidence: 198/200 met, max
-  # growth 1, max oldest age 4 — all from the confirmation reps.
-  assert "search-v1,0.5,172,174,0.990,1,4,3,0,cafe123" in csv_rows[1]
   notes = sbc.report_missing(cells, searches)
-  assert any("isolated_saturated" in note and "8" in note for note in notes)
-  assert any("mixed_current_fidelity" in note and "0.5" in note
+  # The 600/s arrival group misses the 2 ms budget on its own axis.
+  assert any("rate 600/1" in note and "['2']" in note for note in notes)
+  # The mixed kind's axis is only 8 ms, so no hole is fabricated from
+  # the arrival kind's budgets.
+  assert not any("mixed_current_fidelity" in note for note in notes)
+  # Search summaries participate in commit-pooling detection.
+  assert any("2 distinct commits" in note for note in notes)
+  # Partial capacity-search coverage is reported against arrival budgets.
+  assert any("capacity search covers only" in note and "['2']" in note
              for note in notes)
+
+
+def test_counter_pass_rows_stay_out_of_markdown(tmp_path):
+  """Counter-pass rows land in the CSV but never in published curves."""
+  documents = [cell("isolated_saturated", 500000),
+               cell("isolated_saturated", 500000,
+                    experiment={"pass": "counter"})]
+  directory = write_dir(tmp_path, documents)
+  cells, _, _ = sbc.load(directory, strict=True)
+  csv_rows, md_rows = sbc.summarize_isolated(cells)
+  assert sum(",counter," in row for row in csv_rows) == 1
+  assert not any("counter" in line for line in md_rows)
 
 
 def test_strict_empty_directory_fails(tmp_path):

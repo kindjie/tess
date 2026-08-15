@@ -78,6 +78,28 @@ def percentile(family: dict, key: str) -> str:
   return str(value) if isinstance(value, int) else "insufficient"
 
 
+def sort_cells(cells: list) -> list:
+  """Deterministic structured order: scenario, kind, axes, budget."""
+  def key(entry):
+    _, document = entry
+    experiment = document["experiment"]
+    return (experiment.get("scenario_id", ""), experiment.get("kind", ""),
+            experiment.get("pass", "timing"), experiment.get("sim_tps") or 0,
+            experiment.get("population", 0),
+            experiment.get("arrival_rate_num", 0),
+            experiment.get("pacing", ""), experiment.get("budget_ns", 0))
+  return sorted(cells, key=key)
+
+
+def machine(document: dict) -> str:
+  """Machine fingerprint plus executor identity for hardware context."""
+  executor = document["experiment"].get("executor", {})
+  fingerprint = document["run"].get("machine_fingerprint", "-")
+  if isinstance(executor, dict) and executor:
+    return f"{fingerprint}/{executor.get('kind', '-')}"
+  return fingerprint
+
+
 def summarize_isolated(cells: list) -> tuple[list[str], list[str]]:
   """Saturated cells: completions/frame and work/completion vs budget."""
   header = ("scenario,budget_ms,pass,useful_per_frame,work_per_completion,"
@@ -87,7 +109,7 @@ def summarize_isolated(cells: list) -> tuple[list[str], list[str]]:
   lines = ["| scenario | budget ms | pass | useful/frame | work/completion |"
            " overshoot rate | tail p99 ns | mandatory p99 ns | commit |",
            "| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |"]
-  for _, document in cells:
+  for _, document in sort_cells(cells):
     experiment = document["experiment"]
     if experiment.get("kind") != "isolated_saturated":
       continue
@@ -108,6 +130,11 @@ def summarize_isolated(cells: list) -> tuple[list[str], list[str]]:
                         f"{per_frame:.3f}", per_completion,
                         f"{summary['overshoot_frame_rate']:.4f}", tail,
                         mandatory, commit))
+    if bench_pass != "timing":
+      # Counter-pass instrumentation distorts wall figures by design:
+      # its rows stay in the CSV (pass-labeled data) but are never
+      # published in the Markdown curves.
+      continue
     lines.append(f"| {experiment['scenario_id']} | {budget} | {bench_pass} |"
                  f" {per_frame:.3f} | {per_completion} |"
                  f" {summary['overshoot_frame_rate']:.4f} | {tail} |"
@@ -118,14 +145,15 @@ def summarize_isolated(cells: list) -> tuple[list[str], list[str]]:
 def summarize_demand(cells: list) -> tuple[list[str], list[str]]:
   """Arrival and mixed cells: success and stability per matrix point."""
   header = ("kind,scenario,view_or_rate,tps,population,budget_ms,pass,"
-            "useful,deadline_success,flow_stable,starved,"
-            "useful_per_wall_second,lag_p99_ns,commit")
+            "useful,useful_per_frame,deadline_success,flow_stable,starved,"
+            "useful_per_wall_second,lag_p99_ns,machine,commit")
   rows = []
-  lines = ["| kind | point | tps | pop | budget ms | pass | useful |"
-           " success | stable | wall rate/s | lag p99 ns | commit |",
-           "| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | --- |"
-           " ---: | ---: | --- |"]
-  for _, document in cells:
+  lines = ["| kind | point | tps | pop | budget ms | useful/frame |"
+           " success | stable | wall rate/s | lag p99 ns | machine |"
+           " commit |",
+           "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |"
+           " ---: | ---: | --- | --- |"]
+  for _, document in sort_cells(cells):
     experiment = document["experiment"]
     kind = experiment.get("kind", "")
     if kind == "isolated_saturated":
@@ -151,15 +179,20 @@ def summarize_demand(cells: list) -> tuple[list[str], list[str]]:
     bench_pass = experiment.get("pass", "timing")
     starved = summary.get("starved_items", "-")
     commit = document["run"]["commit"]
+    frames = summary.get("measured_frames", 0) * summary.get("repetitions", 1)
+    per_frame = (f"{summary['useful_completions'] / frames:.3f}"
+                 if frames else "-")
     rows.append(csv_row(kind, experiment["scenario_id"], point,
                         experiment.get("sim_tps"), population, budget,
-                        bench_pass, summary["useful_completions"],
+                        bench_pass, summary["useful_completions"], per_frame,
                         success_text, stable, starved, wall_text, lag_text,
-                        commit))
+                        machine(document), commit))
+    if bench_pass != "timing":
+      continue  # Counter-pass wall figures are never published curves.
     lines.append(f"| {kind} | {point} | {experiment.get('sim_tps')} |"
-                 f" {population} | {budget} | {bench_pass} |"
-                 f" {summary['useful_completions']} | {success_text} |"
-                 f" {stable} | {wall_text} | {lag_text} | {commit[:9]} |")
+                 f" {population} | {budget} | {per_frame} |"
+                 f" {success_text} | {stable} | {wall_text} | {lag_text} |"
+                 f" {machine(document)} | {commit[:9]} |")
   return [header] + rows, lines
 
 
@@ -191,36 +224,78 @@ def confirmed_point_evidence(document: dict, confirmed) -> tuple:
   return success, growth, oldest
 
 
-def summarize_search(searches: list) -> tuple[list[str], list[str]]:
+def nearest_arrival_overshoot(cells: list, budget_ns: int,
+                              confirmed) -> tuple[str, str]:
+  """Overshoot p99 from the fixed-rate cell nearest the confirmed rate.
+
+  Search summaries do not retain overshoot percentiles, so the
+  capacity row borrows them from the timing-pass arrival cell at the
+  same budget whose rate is closest to the confirmed capacity. The
+  borrowed rate is reported beside the value so the approximation is
+  visible.
+  """
+  if not isinstance(confirmed, int):
+    return "-", "-"
+  best = None
+  for _, document in cells:
+    experiment = document["experiment"]
+    if (experiment.get("kind") != "isolated_arrival_rate"
+        or experiment.get("pass", "timing") != "timing"
+        or experiment.get("budget_ns") != budget_ns):
+      continue
+    rate = (experiment.get("arrival_rate_num", 0)
+            / max(1, experiment.get("arrival_rate_den", 1)))
+    distance = abs(rate - confirmed)
+    if best is None or distance < best[0]:
+      best = (distance, rate, document)
+  if best is None:
+    return "-", "-"
+  _, rate, document = best
+  tail = percentile(document["summary"]["overshoot_quantum_tail_ns"], "p99")
+  return tail, f"{rate:g}"
+
+
+def summarize_search(searches: list,
+                     cells: list) -> tuple[list[str], list[str]]:
   """Capacity bands per budget with confirmed-point evidence.
 
   The section 12 capacity row plus deadline success, growth, and
-  oldest age derived from the confirmed point's repetitions.
+  oldest age derived from the confirmed point's repetitions, and
+  overshoot borrowed from the nearest fixed-rate arrival cell.
   """
   header = ("scenario,budget_ms,confirmed_stable_per_s,lowest_unstable_per_s,"
             "deadline_success_at_confirmed,max_growth_at_confirmed,"
-            "max_oldest_age_ticks_at_confirmed,points,flapping,commit")
+            "max_oldest_age_ticks_at_confirmed,"
+            "overshoot_tail_p99_ns_nearest_cell,nearest_cell_rate_per_s,"
+            "points,flapping,commit")
   rows = []
   lines = ["| scenario | budget ms | confirmed /s | lowest unstable /s |"
-           " success@confirmed | growth | oldest age | points | flapping |"
-           " commit |",
+           " success@confirmed | growth | oldest age | tail p99 ns (near) |"
+           " points | flapping | commit |",
            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
-           " --- |"]
-  for _, document in searches:
+           " ---: | --- |"]
+  ordered = sorted(searches,
+                   key=lambda entry: (entry[1]["search"]["scenario_id"],
+                                      entry[1]["search"]["budget_ns"]))
+  for _, document in ordered:
     search = document["search"]
     band = document["capacity_band"]
     budget = fmt_budget(search["budget_ns"])
     confirmed = band.get("confirmed_stable")
     lowest = band.get("lowest_unstable")
     success, growth, oldest = confirmed_point_evidence(document, confirmed)
+    tail, near_rate = nearest_arrival_overshoot(cells, search["budget_ns"],
+                                                confirmed)
     commit = document["run"]["commit"]
     rows.append(csv_row(search["scenario_id"], budget, confirmed, lowest,
-                        success, growth, oldest, len(document["points"]),
-                        document["flapping"], commit))
+                        success, growth, oldest, tail, near_rate,
+                        len(document["points"]), document["flapping"],
+                        commit))
+    tail_text = tail if tail == "-" else f"{tail} @{near_rate}/s"
     lines.append(f"| {search['scenario_id']} | {budget} | {confirmed} |"
                  f" {lowest} | {success} | {growth} | {oldest} |"
-                 f" {len(document['points'])} | {document['flapping']} |"
-                 f" {commit[:9]} |")
+                 f" {tail_text} | {len(document['points'])} |"
+                 f" {document['flapping']} | {commit[:9]} |")
   return [header] + rows, lines
 
 
@@ -228,29 +303,45 @@ def report_missing(cells: list, searches: list) -> list[str]:
   """Name matrix holes per full group identity, and mixed commits."""
   notes: list[str] = []
   budgets_by_group: dict = {}
+  budgets_by_kind: dict = {}
   commits = set()
   for _, document in cells:
     experiment = document["experiment"]
     commits.add(document["run"]["commit"])
     group = (experiment.get("kind", ""), experiment.get("pass", "timing"),
              experiment.get("sim_tps"), experiment.get("population", 0),
-             experiment.get("arrival_rate_num", 0))
+             experiment.get("arrival_rate_num", 0),
+             experiment.get("arrival_rate_den", 1),
+             experiment.get("pacing", ""))
     budgets_by_group.setdefault(group, set()).add(experiment["budget_ns"])
-  all_budgets = set()
-  for budgets in budgets_by_group.values():
-    all_budgets |= budgets
+    budgets_by_kind.setdefault(group[0], set()).add(experiment["budget_ns"])
+  # Each kind has its own budget axis (mixed runs more budgets than
+  # isolated); comparing against a global union would fabricate holes
+  # in one kind and mask real ones in another.
   for group, budgets in sorted(budgets_by_group.items()):
-    missing = sorted(all_budgets - budgets)
+    missing = sorted(budgets_by_kind[group[0]] - budgets)
     if missing:
-      kind, bench_pass, tps, population, rate = group
+      kind, bench_pass, tps, population, num, den, pacing = group
       notes.append(f"{kind} (pass {bench_pass}, tps {tps}, pop {population},"
-                   f" rate {rate}): no artifacts at budgets "
-                   f"{[fmt_budget(b) for b in missing]}")
+                   f" rate {num}/{den}, pacing {pacing or '-'}): no artifacts"
+                   f" at budgets {[fmt_budget(b) for b in missing]}")
+  for _, document in searches:
+    commits.add(document["run"]["commit"])
   if len(commits) > 1:
     notes.append(f"artifacts span {len(commits)} distinct commits: "
                  f"{sorted(commits)} — do not pool across them")
   if not searches:
     notes.append("no capacity-search summaries present")
+  else:
+    arrival_budgets = budgets_by_kind.get("isolated_arrival_rate", set())
+    search_budgets = {document["search"]["budget_ns"]
+                      for _, document in searches}
+    unsearched = sorted(arrival_budgets - search_budgets)
+    if unsearched:
+      notes.append(f"capacity search covers only "
+                   f"{[fmt_budget(b) for b in sorted(search_budgets)]} of the"
+                   f" arrival budgets; missing "
+                   f"{[fmt_budget(b) for b in unsearched]}")
   return notes
 
 
@@ -267,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
   cells, searches, errors = load(arguments.artifact_dir, arguments.strict)
   isolated_csv, isolated_md = summarize_isolated(cells)
   demand_csv, demand_md = summarize_demand(cells)
-  search_csv, search_md = summarize_search(searches)
+  search_csv, search_md = summarize_search(searches, cells)
 
   print("# Budgeted-progress curves\n")
   print(f"Source: {len(cells)} cell artifacts, {len(searches)} search "
