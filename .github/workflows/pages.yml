@@ -170,6 +170,19 @@ jobs:
             --enable-webgpu-developer-features \
             --use-gpu-in-tests \
             --enable-accelerated-2d-canvas
+          # This poll proves a real software-rendered WebGL frame, so GPU
+          # acceleration stays enabled for the diagnostics smoke.
+          python3 tools/wait_for_browser_state.py \
+            --browser google-chrome \
+            --url http://127.0.0.1:8000/demo/diagnostics/ \
+            --dataset tessDiagnostics \
+            --expected ready \
+            --timeout 30 \
+            -- \
+            --no-sandbox \
+            --use-gl=angle \
+            --use-angle=swiftshader \
+            --enable-unsafe-swiftshader
 
       - name: Configure Pages
         if: github.ref == 'refs/heads/main'

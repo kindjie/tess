@@ -224,6 +224,93 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   assert "'Colony running'" in app
 
 
+def test_wasm_diagnostics_demo_has_real_accessible_integration_contract():
+  build_script = read("tools/build_web_demo.sh")
+  model = read("examples/web_diagnostics/diagnostics_model.cc")
+  native = read("examples/web_diagnostics/diagnostics_native.cc")
+  wasm = read("examples/web_diagnostics/diagnostics_wasm.cc")
+  html = read("examples/web_diagnostics/site/index.html")
+  app = read("examples/web_diagnostics/site/app.js")
+  pages = read(".github/workflows/pages.yml")
+  dependencies = read("docs/dependencies.md")
+
+  revision = "8936b58fe26e8c3da834b8f60b06511d537b4c63"
+  assert revision in build_script
+  assert revision in dependencies
+  assert "cmake/TessGitPopulate.cmake" in build_script
+  assert "TESS_GIT_REVISION" in build_script
+  for source in (
+    "imgui.cpp",
+    "imgui_draw.cpp",
+    "imgui_tables.cpp",
+    "imgui_widgets.cpp",
+    "imgui_impl_glfw.cpp",
+    "imgui_impl_opengl3.cpp",
+  ):
+    assert source in build_script
+  assert "imgui_demo.cpp" not in build_script
+  assert "-DTESS_ENABLE_DIAGNOSTICS" in build_script
+  assert "-DTESS_ENABLE_IMGUI" in build_script
+  assert "-sUSE_GLFW=3" in build_script
+  assert "-sMIN_WEBGL_VERSION=2" in build_script
+  assert "-sMAX_WEBGL_VERSION=2" in build_script
+  assert 'LICENSE.txt" "$diagnostics/third-party-imgui-LICENSE.txt' in (
+    build_script
+  )
+
+  for control in (
+    'id="paused"',
+    'id="intensity"',
+    'id="selected-x"',
+    'id="selected-y"',
+    'id="passable"',
+  ):
+    assert control in html
+  assert 'aria-live="polite"' in html
+  assert "third-party-imgui-LICENSE.txt" in html
+
+  assert 'dataset.tessDiagnostics = "ready"' in app
+  assert 'dataset.tessDiagnostics = "failed"' in app
+  assert "verificationTimeoutMs" in app
+  for export in (
+    "tess_diagnostics_status",
+    "tess_diagnostics_set_paused",
+    "tess_diagnostics_set_intensity",
+    "tess_diagnostics_select",
+    "tess_diagnostics_set_passable",
+    "tess_diagnostics_paused",
+    "tess_diagnostics_intensity",
+    "tess_diagnostics_selected_x",
+    "tess_diagnostics_selected_y",
+    "tess_diagnostics_selected_passable",
+  ):
+    assert export in app
+    assert f"_{export}" in build_script
+
+  assert "ScopedTimer" in model
+  assert '"path_search"' in model
+  assert '"queued_phase"' in model
+  assert "consumer-instrumented" in wasm
+  assert "ImGui::GetDrawData()->TotalVtxCount" in wasm
+  assert "draw_diagnostics_panel" in wasm
+  assert "draw_world_overview" in wasm
+  assert "draw_chunk_inspector" in wasm
+  assert "draw_bool_field_editor" in wasm
+  assert "ImGui_ImplGlfw_InstallEmscriptenCallbacks" in wasm
+  assert "readiness_without_each_required_signal_is_false" in native
+  assert "expected_path_outcomes_remain_operational" in native
+  assert "passable.checked = api.selectedPassable() === 1" in app
+  assert "verifyMirroredControls" in app
+
+  assert "demo/diagnostics/" in pages
+  assert "--dataset tessDiagnostics" in pages
+  assert "--expected ready" in pages
+  assert "--use-angle=swiftshader" in pages
+  assert "--enable-unsafe-swiftshader" in pages
+  diagnostics_poll = pages.split("demo/diagnostics/", maxsplit=1)[1]
+  assert "--disable-gpu" not in diagnostics_poll.split("Configure Pages", 1)[0]
+
+
 def test_doxygen_uses_the_compact_symbol():
   cmake = read("CMakeLists.txt")
   assert "DOXYGEN_PROJECT_LOGO" in cmake

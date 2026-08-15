@@ -195,8 +195,11 @@ not include it.
   `category_name(TraceCategory)` maps a category to a label for custom panels.
 
 tess validates the header in CI against a minimal ImGui stub
-(`tests/imgui_stub/imgui.h`, `tess_diagnostics_panels_test`); the real Dear
-ImGui build is exercised by a downstream consumer.
+(`tests/imgui_stub/imgui.h`, `tess_diagnostics_panels_test`). The Pages build
+also compiles the pinned real Dear ImGui core with its GLFW/OpenGL3 backends
+and smoke-tests a submitted WebGL2 frame at `/demo/diagnostics/`. Normal tess
+builds and packages remain dependency-free; only that integration artifact
+fetches ImGui.
 
 When diagnostics are enabled, `Schedule::run_tick` automatically records a
 `Scheduler` duration named `schedule_tick` and one nested duration named after

@@ -17,6 +17,7 @@ This site documents the `v0.12.0` release. tess is pre-1.0 — see
 [Get started](getting-started.md){ .md-button .md-button--primary }
 [Try the live pathfinder](demo/){ .md-button }
 [Watch a colony scale](demo/colony/){ .md-button }
+[Inspect live diagnostics](demo/diagnostics/){ .md-button }
 [API reference](https://tess.owx.dev/api/){ .md-button }
 
 </div>

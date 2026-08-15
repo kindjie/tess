@@ -79,6 +79,69 @@ em++ \
   -sEXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","HEAP16"]' \
   -o "$colony/tess-colony.js"
 
+# Reference diagnostics integration: tess remains dependency-free, while this
+# one Pages artifact fetches the exact Dear ImGui revision that it compiles.
+diagnostics="$output/diagnostics"
+mkdir -p "$diagnostics"
+cp "$root/examples/web_diagnostics/site/index.html" "$diagnostics/"
+cp "$root/examples/web_diagnostics/site/style.css" "$diagnostics/"
+cp "$root/examples/web_diagnostics/site/app.js" "$diagnostics/"
+cp "$root/examples/web_pathfinder/site/favicon.svg" "$diagnostics/"
+cp "$root/docs/assets/tess-logo-dark.svg" "$diagnostics/logo.svg"
+
+imgui="$config/_deps/imgui-src"
+git_executable="$(command -v git)"
+cmake \
+  -DTESS_GIT_EXECUTABLE="$git_executable" \
+  -DTESS_GIT_DEPENDENCY=imgui \
+  -DTESS_GIT_REPOSITORY=https://github.com/ocornut/imgui.git \
+  -DTESS_GIT_REVISION=8936b58fe26e8c3da834b8f60b06511d537b4c63 \
+  -DTESS_GIT_SOURCE_DIR="$imgui" \
+  -P "$root/cmake/TessGitPopulate.cmake"
+cp "$imgui/LICENSE.txt" "$diagnostics/third-party-imgui-LICENSE.txt"
+
+diagnostics_exports='["_main","_tess_diagnostics_status"'
+diagnostics_exports+=',"_tess_diagnostics_set_paused"'
+diagnostics_exports+=',"_tess_diagnostics_set_intensity"'
+diagnostics_exports+=',"_tess_diagnostics_select"'
+diagnostics_exports+=',"_tess_diagnostics_set_passable"'
+diagnostics_exports+=',"_tess_diagnostics_paused"'
+diagnostics_exports+=',"_tess_diagnostics_intensity"'
+diagnostics_exports+=',"_tess_diagnostics_selected_x"'
+diagnostics_exports+=',"_tess_diagnostics_selected_y"'
+diagnostics_exports+=',"_tess_diagnostics_selected_passable"]'
+
+em++ \
+  -std=c++20 \
+  -O3 \
+  -DNDEBUG \
+  -DTESS_ENABLE_DIAGNOSTICS \
+  -DTESS_ENABLE_IMGUI \
+  -I"$root/include" \
+  -I"$config/generated/include" \
+  -I"$imgui" \
+  -I"$imgui/backends" \
+  "$root/examples/web_diagnostics/diagnostics_model.cc" \
+  "$root/examples/web_diagnostics/diagnostics_wasm.cc" \
+  "$imgui/imgui.cpp" \
+  "$imgui/imgui_draw.cpp" \
+  "$imgui/imgui_tables.cpp" \
+  "$imgui/imgui_widgets.cpp" \
+  "$imgui/backends/imgui_impl_glfw.cpp" \
+  "$imgui/backends/imgui_impl_opengl3.cpp" \
+  -sUSE_GLFW=3 \
+  -sMIN_WEBGL_VERSION=2 \
+  -sMAX_WEBGL_VERSION=2 \
+  -sFULL_ES3=1 \
+  -sALLOW_MEMORY_GROWTH=1 \
+  -sENVIRONMENT=web \
+  -sFILESYSTEM=0 \
+  -sMODULARIZE=1 \
+  -sEXPORT_NAME=createTessDiagnostics \
+  -sEXPORTED_FUNCTIONS="$diagnostics_exports" \
+  -sEXPORTED_RUNTIME_METHODS='["cwrap"]' \
+  -o "$diagnostics/tess-diagnostics.js"
+
 # WebGPU compute smoke: Emdawnwebgpu's stable C API, a real WGSL dispatch,
 # and explicit summary readback. Adapter absence is a supported runtime state.
 webgpu="$output/webgpu"

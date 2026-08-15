@@ -18,6 +18,17 @@ add_executable(tess_web_pathfinder_model web_pathfinder/pathfinder.cc)
 target_link_libraries(tess_web_pathfinder_model PRIVATE tess::tess)
 tess_apply_project_options(tess_web_pathfinder_model)
 
+add_executable(
+  tess_web_diagnostics_model
+  web_diagnostics/diagnostics_model.cc
+  web_diagnostics/diagnostics_native.cc
+)
+target_link_libraries(tess_web_diagnostics_model PRIVATE tess::tess)
+target_compile_definitions(
+  tess_web_diagnostics_model PRIVATE TESS_ENABLE_DIAGNOSTICS
+)
+tess_apply_project_options(tess_web_diagnostics_model)
+
 add_executable(tess_mvp_path mvp_path.cc)
 target_link_libraries(tess_mvp_path PRIVATE tess::tess)
 tess_apply_project_options(tess_mvp_path)

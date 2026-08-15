@@ -189,17 +189,21 @@ normal CPU-only builds neither fetch nor link Emdawnwebgpu.
 - Documentation: https://github.com/ocornut/imgui (README, `docs/`, wiki)
 - Repository and releases: https://github.com/ocornut/imgui
 
-Optional, consumer-provided integration dependency for the header-only reference
-panels and world tools in `include/tess/debug/imgui/`. tess core never fetches,
-links, or requires ImGui: the headers compile only when the consumer defines
-`TESS_ENABLE_IMGUI`, and the consumer supplies its own Dear ImGui and includes
-`<imgui.h>` first (a `#error` enforces the order). Only the stable core
+Optional, consumer-provided integration dependency for the header-only
+reference panels and world tools in `include/tess/debug/imgui/`. tess core and
+normal builds never fetch, link, or require ImGui: the headers compile only
+when the consumer defines `TESS_ENABLE_IMGUI`, and the consumer supplies its
+own Dear ImGui and includes `<imgui.h>` first (a `#error` enforces the order).
+Only the stable core
 `Text`, `TextUnformatted`, `Separator`, and `Checkbox` functions and the
 `IMGUI_VERSION` macro are used. No minimum version is imposed; the release
-above is the current known-compatible reference. tess CI validates the headers
+above is the current known-compatible reference. CI validates the headers
 against a minimal API-matching stub (`tests/imgui_stub/imgui.h`,
-`tess_diagnostics_panels_test`, `tess_imgui_tools_test`) rather than the real
-library, so tess builds add no ImGui dependency.
+`tess_diagnostics_panels_test`, `tess_imgui_tools_test`) and separately builds
+the Pages diagnostics demo from the six required sources at the exact revision
+above. The demo publishes upstream `LICENSE.txt` beside its artifacts. This
+real-library check is isolated to `tools/build_web_demo.sh`, so tess packages
+and ordinary builds add no ImGui dependency.
 
 ## EnTT
 
