@@ -104,7 +104,8 @@ flowchart TB
   accTitle: Path cache validity inputs
   accDescr: Content versions and sparse residency generations invalidate cached routes and products before stale results can be returned.
 
-  Dirty["mark_dirty"] --> Version["Chunk content version"]
+  ContentChange["mark_dirty or<br/>mark_content_changed"]
+  ContentChange --> Version["Chunk content version"]
   Residency["Sparse residency generation"] --> Fingerprint
   Version --> Fingerprint["Cache fingerprint or product dependencies"]
   Fingerprint --> Decision["Reuse cached result or rebuild"]

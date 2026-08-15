@@ -203,10 +203,11 @@ marking) must follow all three steps, for every movement tier:
 
 1. Mark the obstacle field only when an agent's settled state *changes*
    (arrived or terminally unreachable), not every tick.
-2. Announce the change: `mark_dirty` + `clear_dirty` with the movement
-   dirty mask, so route caches observe the content-version bump — plain
-   field writes bump nothing and stale routes reproduce the pre-settled
-   deadlocks wholesale.
+2. Announce the content change with `mark_content_changed`, so route caches
+   observe the version bump. Plain field writes bump nothing and stale routes
+   reproduce the pre-settled deadlocks wholesale. This is content-only: use
+   `mark_dirty` for dirty metadata, `mark_topology_dirty` for topology
+   freshness, and the schedule's notification protocol for OnDirty tasks.
 3. Plan and rank with a movement class that excludes the obstacle field
    (settled-aware), never the terrain-only class.
 

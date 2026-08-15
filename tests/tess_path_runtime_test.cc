@@ -1025,8 +1025,8 @@ TEST(TessPathRuntime, RepeatedGoalGroupingWarmFrameIsAllocationFree) {
 // whose fingerprint folds chunk CONTENT VERSIONS (see route_cache.h: "staleness
 // is the caller's job"). A plain field write bumps no version, so a caller that
 // closes a tile this way and then replans can be handed the cached route
-// straight through it. `mark_dirty` is what moves the version; the paired
-// `clear_dirty` leaves no flag behind for unrelated dirty-mask consumers.
+// straight through it. `mark_content_changed` moves the version without
+// notifying unrelated dirty-mask consumers.
 //
 // This is unit-path specific: `unit_route_cache_` is consulted by
 // `process_unit_cached` and not by the weighted batch, so a caller on the
@@ -1044,8 +1044,6 @@ using GateClass = tess::movement::MovementClass<
         tess::movement::Field<PassableTag>,
         tess::movement::Not<tess::movement::Field<ClosedTag>>>,
     tess::movement::FieldCost<CostTag>>;
-
-constexpr std::uint32_t kClosedDirty = 1U << 1U;
 
 auto plan_through_gate(GateWorld& world, tess::PathRequestRuntime& runtime)
     -> std::vector<tess::Coord3> {
@@ -1097,8 +1095,8 @@ TEST(PathRuntimeRouteCache, ClosingATileNeedsAVersionBumpToBeSeen) {
   EXPECT_TRUE(route_uses(plan_through_gate(world, runtime), gate));
 
   // Same edit, now announced. The replan detours via row 1.
-  world.mark_dirty(key, kClosedDirty, tess::Box3{gate, tess::Extent3{1, 1, 1}});
-  world.clear_dirty(key, kClosedDirty);
+  world.mark_content_changed(key);
+  EXPECT_EQ(world.dirty_flags(key), 0u);
   const auto detour = plan_through_gate(world, runtime);
   ASSERT_FALSE(detour.empty());
   EXPECT_FALSE(route_uses(detour, gate));

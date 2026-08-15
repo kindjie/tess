@@ -219,17 +219,26 @@ active state when the active flag set becomes nonzero or empty.
 `mark_topology_dirty` applies dirty metadata and increments both the chunk
 version and topology version. `mark_topology_rebuilt` increments only the
 topology version so topology products can observe rebuild/replacement events.
+`mark_content_changed` increments only the chunk version. It invalidates
+version-keyed caches and earlier `DirtyObservation`s without changing dirty
+flags or bounds, topology metadata, active state, or sparse residency state.
+Use `mark_dirty` when dirty-metadata consumers must observe the edit,
+`mark_topology_dirty` when topology freshness must change, and the schedule's
+notification protocol when an OnDirty task must run.
 
 Maintenance passes that rebuild derived state use the generation-stamped
 observe/clear pair instead of raw `clear_dirty`. `observe_dirty(key, flags)`
 snapshots the requested dirty subset, the dirty bounds, the chunk version, and
 the residency generation into a `DirtyObservation`.
 `clear_dirty_observed(key, observation)` clears exactly the observed flags
-only while both stamps still match; any `mark_dirty` that lands after the
-observation advances the version, so a stale clear leaves every flag and
-bound in place and returns `false`, and the caller re-observes before
-clearing. This is the dirty metadata protocol required before concurrent or
-budgeted maintenance may clear flags it did not fully rebuild.
+only while both stamps still match; any `mark_dirty` or
+`mark_content_changed` that lands after the observation advances the version,
+so a stale clear leaves every flag and bound in place and returns `false`, and
+the caller re-observes before clearing. This prevents a serialized
+intervening change from being erased; it does not make simultaneous
+unsynchronized world mutation thread-safe. This is the dirty metadata
+protocol required before concurrent or budgeted maintenance may clear flags
+it did not fully rebuild.
 
 The residency generation scopes an observation to a single residency
 interval. A sparse world assigns a fresh `ChunkMeta` when it reloads a chunk,

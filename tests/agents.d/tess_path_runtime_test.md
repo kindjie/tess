@@ -6,4 +6,6 @@
   computation of every grouping counter. Oversized field products are rejected
   before a duplicate build, and out-of-shape starts before unchecked key
   conversion. Stable result and lookup spans remain valid across unrelated
-  cache growth; an identical warm frame allocates nothing.
+  cache growth; an identical warm frame allocates nothing. A movement-class
+  field edit announced only through `mark_content_changed` invalidates cached
+  routes without leaving dirty work behind.
