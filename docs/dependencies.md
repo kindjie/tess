@@ -325,6 +325,10 @@ runbook and the cleanup mechanisms.
 - Upload artifact action version: `actions/upload-artifact@v7.0.1` (pinned to
   `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`)
 - Upload artifact documentation: https://github.com/actions/upload-artifact
+- Download artifact action version: `actions/download-artifact@v8.0.1` (pinned
+  to `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c`)
+- Download artifact documentation:
+  https://github.com/actions/download-artifact
 - Setup Python action version: `actions/setup-python@v7.0.0` (pinned to
   `5fda3b95a4ea91299a34e894583c3862153e4b97`)
 - Setup Python documentation: https://github.com/actions/setup-python

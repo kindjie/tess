@@ -15,8 +15,8 @@ https://tess.owx.dev/for-agents/
 - [Getting started](https://tess.owx.dev/getting-started/): the concept
   ladder — shapes, schemas, worlds, writes, pathfinding, topology,
   schedule, render bridge
-- [Installation](https://tess.owx.dev/packaging/): FetchContent /
-  find_package, supported include surface
+- [Installation](https://tess.owx.dev/packaging/): portable headers,
+  FetchContent / find_package, supported include surface
 - [Examples](https://tess.owx.dev/examples/): annotated self-checking
   example catalog
 - [Use cases](https://tess.owx.dev/use-cases/): robotics, agent-based

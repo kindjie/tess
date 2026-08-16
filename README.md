@@ -106,7 +106,23 @@ full concept ladder up to the schedule loop and render bridge.
 
 ## Use in your project
 
-tess is header-only and needs a C++20 compiler and CMake 3.25 or newer:
+tess is header-only and needs a C++20 compiler. The portable headers assets
+published with releases containing this capability need no CMake or package
+manager: verify `SHA256SUMS`, extract
+`tess-<version>-headers.tar.gz` or `.zip`, and add the resulting `include`
+directory to your compiler search path:
+
+```sh
+c++ -std=c++20 -Ivendor/tess/include main.cc -o app
+```
+
+The dependency-free core is complete in that archive. Optional EnTT, Flecs,
+Dear ImGui, and WebGPU headers still require their corresponding
+consumer-provided dependency. Raw repository source archives are not the
+portable package because `tess/version.h` is materialized in the tested release
+asset.
+
+CMake 3.25 or newer remains the one-block source-integration path:
 
 ```cmake
 include(FetchContent)
@@ -120,8 +136,8 @@ FetchContent_MakeAvailable(tess)
 target_link_libraries(my_target PRIVATE tess::tess)
 ```
 
-For an installed `find_package` package, install prefixes, include-surface
-guidance, and package-manager status, see
+For archive checksums, an installed `find_package` package, install prefixes,
+include-surface guidance, and package-manager status, see
 [Installation](https://tess.owx.dev/packaging/).
 
 ## Documentation

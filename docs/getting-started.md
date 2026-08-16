@@ -31,9 +31,10 @@ flowchart TB
   Frame --> Renderer["Consumer-owned presentation state"]
 ```
 
-Consume the library per the [installation guide](packaging.md) (installed
-package, `FetchContent`, or `add_subdirectory`), link `tess::tess`, and
-include the pathfinding facade:
+Consume the library per the [installation guide](packaging.md). CMake users can
+use an installed package, `FetchContent`, or `add_subdirectory` and link
+`tess::tess`; compiler-only consumers can extract the portable headers asset
+and add its `include` directory. Then include the pathfinding facade:
 
 <!-- tess-snippet: getting-pathfinding-include source=examples/documentation.cc -->
 ```cpp

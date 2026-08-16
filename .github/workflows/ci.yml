@@ -526,6 +526,7 @@ jobs:
           tests/test_coverage_gaps.py
           tests/test_workload_matrix.py
           tests/test_packaging_recipes.py
+          tests/test_portable_headers.py
           tests/test_benchmark_tools.py
           tests/test_branding_assets.py
           tests/test_compatibility_snapshots.py
@@ -1585,6 +1586,15 @@ jobs:
           conan profile detect --force
           conan create . --build=missing -s compiler.cppstd=20
 
+  release-portable-headers:
+    name: Release Portable Headers
+    needs: changes
+    if: ${{ needs.changes.outputs.release_mode == 'true' }}
+    uses: ./.github/workflows/portable-headers-release.yml
+    with:
+      expected_version: ${{ inputs.expected_version }}
+      tested_sha: ${{ needs.changes.outputs.tested_sha }}
+
   release-compatibility:
     name: Release Compatibility Snapshots
     needs: changes
@@ -1705,6 +1715,7 @@ jobs:
       - release-cmake-floor
       - release-fuzz
       - release-packages
+      - release-portable-headers
       - release-compatibility
       - release-docs
     runs-on: ubuntu-24.04
@@ -1737,6 +1748,7 @@ jobs:
           CMAKE_FLOOR: ${{ needs.release-cmake-floor.result }}
           FUZZ: ${{ needs.release-fuzz.result }}
           PACKAGES: ${{ needs.release-packages.result }}
+          PORTABLE_HEADERS: ${{ needs.release-portable-headers.result }}
           COMPATIBILITY: ${{ needs.release-compatibility.result }}
           DOCS: ${{ needs.release-docs.result }}
         run: |
@@ -1745,7 +1757,7 @@ jobs:
               "$WINDOWS_NO_EXCEPTIONS" "$BENCH" "$LONG_SEED" \
               "$COVERAGE" "$CI_GATE" "$LINUX_FLOORS" "$MACOS_FLOOR" \
               "$WINDOWS_FLOOR" "$CMAKE_FLOOR" "$FUZZ" "$PACKAGES" \
-              "$COMPATIBILITY" "$DOCS"; do
+              "$PORTABLE_HEADERS" "$COMPATIBILITY" "$DOCS"; do
             test "$result" = success
           done
 
@@ -2364,6 +2376,7 @@ jobs:
       - release-cmake-floor
       - release-fuzz
       - release-packages
+      - release-portable-headers
       - release-compatibility
       - release-docs
       - release-evidence

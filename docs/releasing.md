@@ -20,6 +20,20 @@ available before the evidence job.
 Those retained logs record the actual current and floor tool versions; the
 workflow-run URL is supplemental provenance rather than the only copy.
 
+Release mode also stages the canonical CMake install and creates
+`tess-<version>-headers.tar.gz`, `tess-<version>-headers.zip`, and
+`SHA256SUMS`. Linux consumers compile the extracted assets directly with the
+Clang and GCC floors, and a dependent Windows job downloads the same retained
+zip and compiles it directly with MSVC. The release-evidence aggregate requires
+both jobs.
+
+After the exact-SHA run passes, download the retained
+`portable-headers-<sha>` artifact and verify `SHA256SUMS`. Attach those exact
+three files to the GitHub release; never regenerate them after the verified
+run. The workflow intentionally retains `contents: read`, so publishing the
+release stays a deliberate maintainer action rather than giving tested
+repository code a write token.
+
 ## 0.13 and the 1.0 candidate
 
 Publish `v0.13.0` only after all breaking API changes and the

@@ -691,6 +691,7 @@ ADVISORY_CI_JOBS = {
   "release-cmake-floor": "main/release floor; release-evidence governs RCs",
   "release-fuzz": "scheduled/release fuzz; release-evidence governs RCs",
   "release-packages": "release-only; governed by release-evidence",
+  "release-portable-headers": "release-only; governed by release-evidence",
   "release-compatibility": "release-only; governed by release-evidence",
   "release-docs": "release-only; governed by release-evidence",
   "release-evidence": "release-only aggregate gate",
@@ -750,6 +751,7 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
     "release-cmake-floor",
     "release-fuzz",
     "release-packages",
+    "release-portable-headers",
     "release-compatibility",
     "release-docs",
   )
@@ -848,6 +850,9 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   packages = _job_body(workflow, "release-packages")
   assert "CMAKE_CXX_COMPILER_LAUNCHER: \"\"" in packages
   assert "conan create . --build=missing -s compiler.cppstd=20" in packages
+
+  portable = _job_body(workflow, "release-portable-headers")
+  assert "uses: ./.github/workflows/portable-headers-release.yml" in portable
 
   # These jobs do not provision ccache. A command-line cache override is too
   # late for CMake's first compiler probe when the workflow-level environment
@@ -2313,6 +2318,11 @@ def test_every_workflow_job_declares_a_timeout():
     # Split on top-level job keys and check each block for a timeout.
     blocks = re.split(r"^  ([a-z0-9][a-z0-9_-]*):$", body, flags=re.M)
     for name, block in zip(blocks[1::2], blocks[2::2]):
+      # GitHub forbids timeout-minutes on a reusable-workflow caller job.
+      # Its called workflow remains in this scan, so each executable job
+      # inside that workflow must still declare its own timeout.
+      if "\n    uses:" in block:
+        continue
       if "timeout-minutes:" not in block:
         missing.append(f"{path.name}:{name}")
 
