@@ -17,3 +17,8 @@
 - Release-evidence coverage requires checksummed, retained job logs containing
   actual versions, a provenance workflow-run URL, and explicit expected/pinned
   toolchain identifiers.
+- Failure-reporter coverage executes both classifiers embedded in the
+  workflow: a derivative gate-only failure is silent only when a newer push
+  run of the same workflow and branch exists. Real job failures, timeouts,
+  dispatches, unrelated newer runs, and unconfirmed supersession remain
+  reportable.

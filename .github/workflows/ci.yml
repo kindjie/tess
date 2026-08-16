@@ -2324,8 +2324,12 @@ jobs:
           retention-days: 90
 
   # Keeps every non-PR job failure owned: a failed main, scheduled, or
-  # dispatched run files or extends one rolling ci-failure issue. Never runs
-  # on pull_request events and never executes repository code. The
+  # dispatched run files or extends one rolling ci-failure issue. A newer
+  # push can cancel an older run after ci-gate has started; that derivative
+  # gate-only failure is suppressed only after the Actions API confirms a
+  # newer equivalent push run. Dispatch inputs are not available in the run
+  # list, so dispatch and scheduled failures stay reportable. Never runs on
+  # pull_request events and never executes repository code. The
   # repository-wide concurrency group serializes concurrent reporters so
   # the find-then-create dedupe cannot race itself into duplicates;
   # Actions keeps only one reporter pending per group, so when three or
@@ -2368,6 +2372,7 @@ jobs:
       - coverage
       - long-seed-properties
     permissions:
+      actions: read
       contents: read
       issues: write
     runs-on: ubuntu-24.04
@@ -2387,11 +2392,71 @@ jobs:
           failed=$(printf '%s' "$JOB_RESULTS" | python3 -c '
           import json, sys
           needs = json.load(sys.stdin)
-          print(", ".join(sorted(
+          failed = sorted(
             job for job, state in needs.items()
             if state["result"] == "failure"
-          )))
+          )
+          gate_jobs = (
+            "changes",
+            "dev",
+            "gcc",
+            "libcxx",
+            "no-exceptions",
+            "hooks-backstop",
+            "quality",
+            "tidy-diff",
+            "macos",
+            "windows",
+            "windows-noexceptions",
+            "bench",
+          )
+          gate_cancelled = any(
+            needs.get(job, {}).get("result") == "cancelled"
+            for job in gate_jobs
+          )
+          if failed == ["ci-gate"] and gate_cancelled:
+            failed = []
+          print(", ".join(failed))
           ')
+          if [ -z "$failed" ]; then
+            superseded=false
+            if [ "$GITHUB_EVENT_NAME" = push ] &&
+                runs=$(gh api --method GET \
+                "/repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+                -f branch="$GITHUB_REF_NAME" \
+                -f event="$GITHUB_EVENT_NAME" \
+                -F per_page=100) &&
+                superseded=$(printf '%s' "$runs" | \
+                  CURRENT_RUN_NUMBER="$GITHUB_RUN_NUMBER" \
+                  GITHUB_EVENT_NAME="$GITHUB_EVENT_NAME" \
+                  GITHUB_REF_NAME="$GITHUB_REF_NAME" \
+                  python3 -c '
+          # CI_SUPERSESSION_CLASSIFIER_BEGIN
+          import json, os, sys
+          runs = json.load(sys.stdin)
+          current = int(os.environ["CURRENT_RUN_NUMBER"])
+          branch = os.environ["GITHUB_REF_NAME"]
+          event = os.environ["GITHUB_EVENT_NAME"]
+          newer = event == "push" and any(
+            int(run["run_number"]) > current
+            and run.get("head_branch") == branch
+            and run.get("event") == event
+            for run in runs["workflow_runs"]
+          )
+          print("true" if newer else "false")
+          # CI_SUPERSESSION_CLASSIFIER_END
+          '); then
+              :
+            else
+              echo "::warning::Unable to confirm CI run supersession"
+              superseded=false
+            fi
+            if [ "$superseded" = true ]; then
+              echo "Newer equivalent CI run superseded this run"
+              exit 0
+            fi
+            failed=ci-gate
+          fi
           title="CI failing on ${GITHUB_REF_NAME}"
           body="CI ${GITHUB_EVENT_NAME} run failed: ${run_url}
           Failed jobs: ${failed}"

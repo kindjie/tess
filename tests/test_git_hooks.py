@@ -451,6 +451,69 @@ def _job_body(workflow: str, job_id: str) -> str:
   return body[: following.start()] if following else body
 
 
+def _workflow_run_source(source: str) -> str:
+  """Strip exactly the YAML block indentation from embedded source."""
+  lines = source.splitlines()
+  assert all(not line or line.startswith("          ") for line in lines)
+  return "\n".join(line.removeprefix("          ") for line in lines)
+
+
+def _reportable_ci_failures(job_results: dict[str, dict[str, str]]) -> str:
+  """Execute the failure classifier embedded in the reporter job."""
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github/workflows/ci.yml").read_text()
+  reporter = _job_body(workflow, "report-failure")
+  match = re.search(
+    r"failed=\$\(printf '%s' \"\$JOB_RESULTS\" \| python3 -c '\n"
+    r"(?P<source>.*?)\n\s*'\)",
+    reporter,
+    flags=re.S,
+  )
+  assert match is not None
+  source = _workflow_run_source(match.group("source"))
+  result = subprocess.run(
+    (sys.executable, "-c", source),
+    input=json.dumps(job_results),
+    check=True,
+    capture_output=True,
+    text=True,
+  )
+  return result.stdout.strip()
+
+
+def _ci_run_is_superseded(
+  runs: dict[str, list[dict[str, object]]],
+  current_run_number: int,
+  event: str = "push",
+) -> bool:
+  """Execute the reporter's exact newer-equivalent-run classifier."""
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github/workflows/ci.yml").read_text()
+  reporter = _job_body(workflow, "report-failure")
+  start = "# CI_SUPERSESSION_CLASSIFIER_BEGIN\n"
+  end = "# CI_SUPERSESSION_CLASSIFIER_END"
+  assert start in reporter
+  source = _workflow_run_source(
+    reporter.split(start, 1)[1].split(end, 1)[0]
+  )
+  env = {
+    **os.environ,
+    "CURRENT_RUN_NUMBER": str(current_run_number),
+    "GITHUB_EVENT_NAME": event,
+    "GITHUB_REF_NAME": "main",
+  }
+  result = subprocess.run(
+    (sys.executable, "-c", source),
+    input=json.dumps(runs),
+    check=True,
+    capture_output=True,
+    text=True,
+    env=env,
+  )
+  assert result.stdout.strip() in ("false", "true")
+  return result.stdout.strip() == "true"
+
+
 def test_ci_gate_aggregates_every_required_ci_job():
   root = Path(__file__).resolve().parents[1]
   workflow = (root / ".github" / "workflows" / "ci.yml").read_text()
@@ -482,8 +545,129 @@ def test_ci_gate_aggregates_every_required_ci_job():
     assert result_check in ci_gate
 
   report_failure = _job_body(workflow, "report-failure")
+  classifier = re.search(
+    r"gate_jobs = \((?P<jobs>.*?)\n\s*\)",
+    report_failure,
+    flags=re.S,
+  )
+  assert classifier is not None
   for job_id in ("no-exceptions", "windows-noexceptions"):
     assert f"      - {job_id}\n" in report_failure
+  assert tuple(re.findall(r'"([a-z0-9_-]+)"', classifier.group("jobs"))) == (
+    required_jobs
+  )
+
+
+def test_ci_failure_reporter_ignores_superseded_gate_failure():
+  results = {
+    "ci-gate": {"result": "failure"},
+    "quality": {"result": "cancelled"},
+    "dev": {"result": "success"},
+  }
+
+  assert _reportable_ci_failures(results) == ""
+
+  root = Path(__file__).resolve().parents[1]
+  workflow = (root / ".github/workflows/ci.yml").read_text()
+  reporter = _job_body(workflow, "report-failure")
+  guard = reporter.index('if [ -z "$failed" ]; then')
+  api_lookup = reporter.index("actions/workflows/ci.yml/runs", guard)
+  confirmed = reporter.index('if [ "$superseded" = true ]', api_lookup)
+  exit_guard = reporter.index("exit 0", confirmed)
+  fail_closed = reporter.index("failed=ci-gate", exit_guard)
+  issue_body = reporter.index('title="CI failing on', fail_closed)
+  assert guard < api_lookup < confirmed < exit_guard < fail_closed < issue_body
+  assert "    permissions:\n      actions: read\n" in reporter
+  assert '-f branch="$GITHUB_REF_NAME"' in reporter
+  assert '-f event="$GITHUB_EVENT_NAME"' in reporter
+  assert 'if [ "$GITHUB_EVENT_NAME" = push ] &&' in reporter
+
+
+def test_ci_failure_reporter_confirms_newer_equivalent_run():
+  runs = {
+    "workflow_runs": [
+      {"event": "push", "head_branch": "main", "run_number": 42},
+      {"event": "push", "head_branch": "main", "run_number": 41},
+    ]
+  }
+
+  assert _ci_run_is_superseded(runs, 41)
+  assert not _ci_run_is_superseded(runs, 42)
+
+
+def test_ci_failure_reporter_rejects_newer_unrelated_run():
+  runs = {
+    "workflow_runs": [
+      {"event": "push", "head_branch": "other", "run_number": 44},
+      {"event": "schedule", "head_branch": "main", "run_number": 43},
+      {"event": "push", "head_branch": "main", "run_number": 41},
+    ]
+  }
+
+  assert not _ci_run_is_superseded(runs, 42)
+
+
+def test_ci_failure_reporter_rejects_newer_dispatch_with_unknown_key():
+  runs = {
+    "workflow_runs": [
+      {
+        "event": "workflow_dispatch",
+        "head_branch": "main",
+        "run_number": 43,
+      },
+    ]
+  }
+
+  # The run-list API does not expose inputs.expected_sha, so it cannot prove
+  # that two manual release runs share the workflow concurrency key.
+  assert not _ci_run_is_superseded(runs, 42, event="workflow_dispatch")
+
+
+def test_ci_failure_reporter_keeps_timeout_without_newer_run():
+  results = {
+    "ci-gate": {"result": "failure"},
+    "quality": {"result": "cancelled"},
+  }
+  runs = {
+    "workflow_runs": [
+      {"event": "push", "head_branch": "main", "run_number": 42},
+    ]
+  }
+
+  # A cancelled required job is only a candidate for supersession. Without
+  # explicit evidence of a newer equivalent run, reporting remains enabled.
+  assert _reportable_ci_failures(results) == ""
+  assert not _ci_run_is_superseded(runs, 42)
+
+
+def test_ci_failure_reporter_keeps_real_failure_during_cancellation():
+  results = {
+    "ci-gate": {"result": "failure"},
+    "quality": {"result": "failure"},
+    "bench": {"result": "cancelled"},
+  }
+
+  assert _reportable_ci_failures(results) == "ci-gate, quality"
+
+
+def test_ci_failure_reporter_keeps_gate_logic_failure():
+  results = {
+    "ci-gate": {"result": "failure"},
+    "quality": {"result": "success"},
+    "dev": {"result": "success"},
+  }
+
+  assert _reportable_ci_failures(results) == "ci-gate"
+
+
+def test_ci_failure_reporter_does_not_mistake_advisory_cancellation():
+  results = {
+    "ci-gate": {"result": "failure"},
+    "quality": {"result": "success"},
+    "bench-baselines": {"result": "cancelled"},
+  }
+
+  assert _reportable_ci_failures(results) == "ci-gate"
 
 
 # Jobs deliberately outside the merge gate, each with the reason it is
