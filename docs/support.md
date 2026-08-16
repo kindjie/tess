@@ -19,6 +19,9 @@ Within the 1.x release line, tess preserves source compatibility for:
 - documented APIs declared by `stable` and `optional-stable` headers;
 - documented configuration macros;
 - the `tess::tess` CMake target and installed-package entry points;
+- portable release assets named `tess-<version>-headers.tar.gz` and `.zip`,
+  each rooted at `tess-<version>/` with the complete installed `include/tess/`
+  tree;
 - direct membership of the stable aggregate headers; and
 - archive format v1, including loading fixtures produced by earlier 1.x
   releases.

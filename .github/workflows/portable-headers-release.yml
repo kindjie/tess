@@ -1,0 +1,89 @@
+name: Portable Headers Release
+
+on:
+  workflow_call:
+    inputs:
+      expected_version:
+        required: true
+        type: string
+      tested_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build And Test Assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CMAKE_CXX_COMPILER_LAUNCHER: ""
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Verify release source identity
+        env:
+          TESTED_SHA: ${{ inputs.tested_sha }}
+        run: test "$(git rev-parse HEAD)" = "$TESTED_SHA"
+
+      - name: Install direct-consumer compiler floors
+        run: |
+          sudo apt-get update || true
+          sudo apt-get install -y clang-16 g++-12
+
+      - name: Build and consume assets
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          TESTED_SHA: ${{ inputs.tested_sha }}
+        run: >-
+          bash tools/portable_headers_release.sh
+          "$EXPECTED_VERSION" "$TESTED_SHA"
+
+      - name: Retain tested assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: portable-headers-${{ inputs.tested_sha }}
+          path: build/portable-assets/*
+          if-no-files-found: error
+          retention-days: 90
+
+  windows:
+    name: Consume Exact Zip With MSVC
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Check out release consumer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Verify release source identity
+        shell: pwsh
+        env:
+          TESTED_SHA: ${{ inputs.tested_sha }}
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne $env:TESTED_SHA) {
+            throw "checked-out workflow commit does not match tested SHA"
+          }
+
+      - name: Download exact portable assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: portable-headers-${{ inputs.tested_sha }}
+          path: build/portable-assets
+
+      - name: Compile without consumer CMake
+        shell: pwsh
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: >-
+          tools/portable_headers_msvc.ps1
+          -ExpectedVersion "$env:EXPECTED_VERSION"

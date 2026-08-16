@@ -82,6 +82,14 @@ tess_apply_project_options(tess_smoke)
 
 tess_discover_tests(tess_smoke LABELS block core diagnostics ecs experimental gpu ops path persistence query sim spatial storage topology)
 
+# The Python artifact test links and runs this fixture directly against the
+# extracted archive. Keep it in the dev compilation database so changed-source
+# analysis applies the repository's normal C++ policy to the same fixture.
+add_library(
+  tess_portable_headers_consumer OBJECT portable_headers_consumer.cc)
+target_link_libraries(tess_portable_headers_consumer PRIVATE tess::tess)
+tess_apply_project_options(tess_portable_headers_consumer)
+
 add_executable(tess_upgrade_1_0_test tess_upgrade_1_0_test.cc)
 target_link_libraries(
   tess_upgrade_1_0_test

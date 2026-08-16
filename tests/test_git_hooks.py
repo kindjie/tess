@@ -691,6 +691,7 @@ ADVISORY_CI_JOBS = {
   "release-cmake-floor": "main/release floor; release-evidence governs RCs",
   "release-fuzz": "scheduled/release fuzz; release-evidence governs RCs",
   "release-packages": "release-only; governed by release-evidence",
+  "release-portable-headers": "release-only; governed by release-evidence",
   "release-compatibility": "release-only; governed by release-evidence",
   "release-docs": "release-only; governed by release-evidence",
   "release-evidence": "release-only aggregate gate",
@@ -750,6 +751,7 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
     "release-cmake-floor",
     "release-fuzz",
     "release-packages",
+    "release-portable-headers",
     "release-compatibility",
     "release-docs",
   )
@@ -773,7 +775,12 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert "expected_version:" in workflow.split("workflow_dispatch:", 1)[1]
   assert "expected_sha:" in workflow.split("workflow_dispatch:", 1)[1]
   assert 'test "$actual_sha" = "$EXPECTED_SHA"' in changes
+  assert 'test "$RELEASE_REF" = "$DISPATCH_REF"' in changes
+  assert 'test "$EVENT_SHA" = "$EXPECTED_SHA"' in changes
+  assert 'test "$WORKFLOW_SHA" = "$EXPECTED_SHA"' in changes
   assert 'test "$version" = "$EXPECTED_VERSION"' in changes
+  assert "ref: ${{ inputs." not in workflow
+  assert workflow.count("ref: ${{ github.sha }}") == 27
   assert "needs.changes.outputs.release_mode == 'true'" in evidence
   for job in always_required:
     assert f"      - {job}\n" in evidence
@@ -785,6 +792,7 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert '"bundled_job_logs": observed_logs' in evidence
   assert "release-job-logs/" in evidence
   assert "release-jobs-pages.json" in evidence
+  assert "gh api --allow-escape-sequences" in evidence
   assert "hashlib.sha256" in evidence
   assert '"vcpkg_commit":' in evidence
   assert '"clang_tidy": "18"' in evidence
@@ -848,6 +856,9 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   packages = _job_body(workflow, "release-packages")
   assert "CMAKE_CXX_COMPILER_LAUNCHER: \"\"" in packages
   assert "conan create . --build=missing -s compiler.cppstd=20" in packages
+
+  portable = _job_body(workflow, "release-portable-headers")
+  assert "uses: ./.github/workflows/portable-headers-release.yml" in portable
 
   # These jobs do not provision ccache. A command-line cache override is too
   # late for CMake's first compiler probe when the workflow-level environment
@@ -2313,6 +2324,11 @@ def test_every_workflow_job_declares_a_timeout():
     # Split on top-level job keys and check each block for a timeout.
     blocks = re.split(r"^  ([a-z0-9][a-z0-9_-]*):$", body, flags=re.M)
     for name, block in zip(blocks[1::2], blocks[2::2]):
+      # GitHub forbids timeout-minutes on a reusable-workflow caller job.
+      # Its called workflow remains in this scan, so each executable job
+      # inside that workflow must still declare its own timeout.
+      if "\n    uses:" in block:
+        continue
       if "timeout-minutes:" not in block:
         missing.append(f"{path.name}:{name}")
 

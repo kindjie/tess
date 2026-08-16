@@ -8,9 +8,13 @@ simulation is deterministic. This page is the minimal adoption recipe.
 
 ## Install and verify
 
-Consume the library per the [installation guide](packaging.md) —
-`FetchContent` pinned to the release tag is the one-block path. Then
-verify the toolchain end to end with the dependency-free examples:
+Consume the library per the [installation guide](packaging.md).
+`FetchContent` pinned to the release tag is the one-block CMake path. For a
+compiler-only environment, download the release's portable headers archive and
+`SHA256SUMS`, verify it, extract it, and add `<root>/include` to the compiler
+search path. That asset contains the same installed headers tested by the CMake
+package, including its concrete `tess/version.h`; a raw source archive does
+not. Then verify the toolchain end to end with the dependency-free examples:
 
 ```sh
 cmake --preset examples

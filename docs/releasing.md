@@ -8,6 +8,11 @@ Dispatch `.github/workflows/ci.yml` with all three inputs:
 - `expected_version`: the complete version, such as `1.0.0-rc.1`; and
 - `expected_sha`: the full commit SHA.
 
+Select the same branch or tag as the workflow dispatch target and as `ref`.
+Reusable release jobs execute only the commit that defines their workflow and
+fail unless it matches `expected_sha`; an input cannot redirect privileged
+execution to a different revision.
+
 Supplying none runs the ordinary manual full tier. Supplying only part of the
 release tuple fails. Release mode checks out and verifies the requested
 identity, bypasses path filtering, and requires the complete platform,
@@ -19,6 +24,20 @@ inventory, gate results, and checksummed copies of every successful job log
 available before the evidence job.
 Those retained logs record the actual current and floor tool versions; the
 workflow-run URL is supplemental provenance rather than the only copy.
+
+Release mode also stages the canonical CMake install and creates
+`tess-<version>-headers.tar.gz`, `tess-<version>-headers.zip`, and
+`SHA256SUMS`. Linux consumers compile the extracted assets directly with the
+Clang and GCC floors, and a dependent Windows job downloads the same retained
+zip and compiles it directly with MSVC. The release-evidence aggregate requires
+both jobs.
+
+After the exact-SHA run passes, download the retained
+`portable-headers-<sha>` artifact and verify `SHA256SUMS`. Attach those exact
+three files to the GitHub release; never regenerate them after the verified
+run. The workflow intentionally retains `contents: read`, so publishing the
+release stays a deliberate maintainer action rather than giving tested
+repository code a write token.
 
 ## 0.13 and the 1.0 candidate
 

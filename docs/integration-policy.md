@@ -301,9 +301,11 @@ documentation.
 
 ## Platforms and compilers
 
-tess requires a C++20 compiler and CMake 3.25 or newer. Beyond that,
-support means *continuously tested*. Ordinary change CI and exact-SHA release
-CI provide two layers of evidence:
+tess requires a C++20 compiler. CMake-based source and installed-package
+integration additionally require CMake 3.25 or newer; the portable headers
+release asset requires only an include-path-capable build. Beyond that, support
+means *continuously tested*. Ordinary change CI and exact-SHA release CI
+provide two layers of evidence:
 
 - Ubuntu 24.04 with Clang builds and runs the full tests, sanitizers, installed
   and FetchContent consumers, standalone headers, and macro configurations.
@@ -315,6 +317,9 @@ CI provide two layers of evidence:
 - Windows 2025 with current MSVC is a required PR build-and-test gate. Release
   runs use Windows 2022 to verify Visual Studio 2022 17.14/MSVC 19.44 and add
   no-RTTI runtime evidence.
+- Exact-SHA release mode packages the canonical installed headers, directly
+  compiles the extracted tar and zip assets with Clang 16, GCC 12, and MSVC
+  19.44 without consumer-side CMake, and retains those tested bytes.
 
 Consequences worth knowing before you depend on a platform:
 
@@ -325,8 +330,9 @@ Consequences worth knowing before you depend on a platform:
   pull-request thread sanitizer coverage is path-filtered rather than
   universal.
 
-The tested floors are GCC 12, Clang 16, AppleClang from Xcode 16.0, MSVC
-19.44, and CMake 3.25.3. They are evidence-backed support floors, not configure-
-time rejection rules: a different C++20 toolchain may work, but is outside the
+The tested compiler floors are GCC 12, Clang 16, AppleClang from Xcode 16.0,
+and MSVC 19.44. CMake 3.25.3 is the separately tested floor for CMake-based
+integration. These are evidence-backed support floors, not configure-time
+rejection rules: a different C++20 toolchain may work, but is outside the
 tested contract. See [support](support.md) for the complete floor and no-RTTI
 policy.

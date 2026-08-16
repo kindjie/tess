@@ -1,10 +1,10 @@
 # Installation
 
-The library is header-only. A consumer needs a C++20 compiler and CMake 3.25
-or newer; tess itself adds no runtime or link dependency. Installing it needs
-no network access and builds no code. GoogleTest, Google Benchmark, EnTT, and
-Flecs are development or optional integration dependencies, and ordinary
-consumers do not link them through `tess::tess`.
+The library is header-only. Every consumer needs a C++20 compiler; CMake 3.25
+or newer is required only for the CMake integration paths. tess itself adds no
+runtime or link dependency. GoogleTest and Google Benchmark are development
+dependencies. EnTT, Flecs, Dear ImGui, and WebGPU are optional integration
+dependencies supplied by consumers that enable those headers.
 
 They are fetched by the OPTIONS that enable them, not by any preset. That
 matters when you evaluate the repository directly: `TESS_BUILD_TESTING`
@@ -19,6 +19,42 @@ is not the top-level project.
 What tess guarantees once integrated — exceptions, RTTI, determinism
 across thread counts, thread ownership, and steady-state allocations —
 is in the [integration policy](integration-policy.md).
+
+## Portable headers archive
+
+Tagged releases containing this capability provide three assets produced and
+tested together by the exact-commit release workflow:
+
+- `tess-<version>-headers.tar.gz`
+- `tess-<version>-headers.zip`
+- `SHA256SUMS`
+
+Download all three from the release, verify the archive before extracting it,
+and place the versioned root under the application's vendor directory:
+
+```sh
+version=RELEASE_VERSION
+sha256sum --check SHA256SUMS
+tar -xzf "tess-$version-headers.tar.gz"
+mkdir -p vendor
+mv "tess-$version" vendor/tess
+c++ -std=c++20 -Ivendor/tess/include main.cc -o app
+```
+
+On macOS, `shasum -a 256` can verify each digest from `SHA256SUMS`. PowerShell
+consumers can use `Get-FileHash -Algorithm SHA256`. The zip and tar archives
+extract to byte-identical trees containing the complete installed header
+surface, `LICENSE`, `VERSION`, and `SOURCE_COMMIT`.
+
+This is the supported no-CMake distribution boundary. GitHub's automatic
+source archives and arbitrary source checkouts contain `version.h.in`, while
+the tested portable asset contains the concrete `tess/version.h`. Do not copy
+the repository's raw `include/` tree as a substitute.
+
+Build-wide options remain the consumer's responsibility when invoking a
+compiler directly. In particular, use one exception mode and one value for
+`TESS_ENABLE_ASSERTS` and `TESS_ENABLE_DIAGNOSTICS` across every translation
+unit; see the [integration policy](integration-policy.md).
 
 ## FetchContent
 
