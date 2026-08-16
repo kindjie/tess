@@ -1030,9 +1030,9 @@ TEST(TessPathRuntime, RepeatedGoalGroupingWarmFrameIsAllocationFree) {
 //
 // This is unit-path specific: `unit_route_cache_` is consulted by
 // `process_unit_cached` and not by the weighted batch, so a caller on the
-// weighted planner does not hit it. examples/web_colony/colony.cc performs the
-// bump regardless, because the obligation attaches to editing a field the
-// movement class reads rather than to the planner in use today.
+// weighted planner does not hit it. examples/web_colony/colony_model.cc
+// performs the bump regardless, because the obligation attaches to editing a
+// field the movement class reads rather than to the planner in use today.
 struct ClosedTag {};
 
 using GateSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,

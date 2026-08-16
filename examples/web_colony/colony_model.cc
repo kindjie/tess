@@ -1,0 +1,177 @@
+// Platform-neutral model for the colony tutorial. colony_wasm.cc exposes
+// it to JavaScript; colony_native.cc owns native verification scenarios.
+
+#include "colony_model_internal.h"
+
+namespace tess::examples::web_colony {
+
+ColonyModel::Impl::Impl(int agent_count) {
+  const auto count = static_cast<std::size_t>(agent_count);
+  initialize_world();
+  reserve_working_memory(count);
+  initialize_agents(count);
+  configure_build_task();
+  configure_schedule();
+  initialize_render_consumer();
+}
+
+void ColonyModel::Impl::initialize_world() {
+  for (auto& page : world.chunks()) {
+    auto passable = page.field_span<PassableTag>();
+    auto cost = page.field_span<CostTag>();
+    auto settled = page.field_span<SettledTag>();
+    for (std::size_t i = 0; i < passable.size(); ++i) {
+      passable[i] = true;
+      cost[i] = 1;
+      settled[i] = false;
+    }
+  }
+  tess::build_region_graph<World, Walker>(world, topo_scratch, graph);
+}
+
+void ColonyModel::Impl::reserve_working_memory(std::size_t agent_count) {
+  // These one-time reserves keep the browser's fixed-tick hot path free of
+  // incidental growth. Request capacity permits two queued jobs per maximum
+  // population; node capacities cover the demo's 128x128 grid searches and
+  // retained routes. Delta storage covers half a grid of sparse tile edits,
+  // with box records as its bounded fallback.
+  joint_scratch.reserve(agent_count);
+  recovery_schedule.reserve(agent_count);
+  replan_queue.reserve(agent_count);
+  runtime.reserve_requests(2048);
+  runtime.reserve_search_nodes(65536);
+  runtime.reserve_path_nodes(262144);
+  replan_scratch.reserve_nodes(65536);
+  deltas.reserve(World::chunk_count, 8192, 16);
+}
+
+void ColonyModel::Impl::initialize_agents(std::size_t agent_count) {
+  agents.resize(agent_count);
+  agent_xy.resize(agents.size() * 2);
+  previous_agent_xy.resize(agents.size() * 2);
+  crowd_blocked.assign(agents.size(), 0);
+  terrain_confirmation_pending.assign(agents.size(), 0);
+  for (std::size_t i = 0; i < agents.size(); ++i) {
+    agents[i].position = home_tile(i);
+    world.field<OccupancyTag>(agents[i].position) = true;
+    tess::set_path_agent_goal(tick_state, agents[i], away_tile(i));
+    agents[i].phase = tess::PathAgentPhase::Blocked;
+  }
+  snapshot_after_movement();
+  snapshot_before_movement();
+  replan_queue.request_all(agents);
+  tick_state.pathing_dirty = false;
+}
+
+void ColonyModel::Impl::configure_build_task() {
+  build_task = std::make_unique<BuildTask>(world, ops, BuildTaskFn{this});
+  build_task->reserve_operations(64);
+  build_task->set_result_hook(
+      this, [](void* ctx, tess::OpHandle, const tess::OpCompletion& done,
+               const BuildAck* ack) noexcept {
+        auto* self = static_cast<Impl*>(ctx);
+        if (done.ok() && ack != nullptr) {
+          self->built_tiles += ack->tiles;
+          // AutoExec executes accepted kernels before draining hooks. The
+          // accepted operation for a chunk therefore applies all pending walls
+          // in that chunk before this completion clears the shared input.
+          self->pending_walls.clear();
+        }
+      });
+}
+
+void ColonyModel::Impl::configure_schedule() {
+  schedule.reserve_tasks(3);
+  (void)schedule.add_task(
+      {"build", tess::SimPhase::PreUpdate, tess::Cadence::every_tick()},
+      *build_task);
+  (void)schedule.add_task({"topology", tess::SimPhase::Pathing,
+                           tess::Cadence::on_dirty(kTerrainDirty)},
+                          topology_task);
+  // Pathing follows PreUpdate in the same fixed tick, so walls built above
+  // refresh topology before the Movement task can plan against them.
+  (void)schedule.add_task(
+      {"agents", tess::SimPhase::Movement, tess::Cadence::every_tick()},
+      agent_task);
+  schedule.seal();
+}
+
+void ColonyModel::Impl::initialize_render_consumer() {
+  shadow.assign(static_cast<std::size_t>(kWidth) * kHeight, 0);
+  // A fresh consumer accepts only a baseline. Incremental frames start after
+  // the shadow and its consumer version have adopted this complete snapshot.
+  tess::collect_baseline(deltas, world, kTerrainDirty);
+  if (!consume_frame(deltas.publish())) {
+    TESS_ASSERT(false);
+  }
+}
+
+ColonyModel::ColonyModel(int agent_count)
+    : impl_(std::make_unique<Impl>(std::clamp(agent_count, 1, kMaxAgents))) {}
+
+ColonyModel::~ColonyModel() = default;
+
+auto ColonyModel::queue_wall(int x, int y) -> bool {
+  if (x < kWallMinX || x > kWallMaxX || y < 0 || y >= kHeight) {
+    return false;
+  }
+  return impl_->queue_wall(tess::Coord3{x, y, 0});
+}
+
+void ColonyModel::set_replan_each_tick(bool enabled) noexcept {
+  impl_->replan_each_tick = enabled;
+}
+
+auto ColonyModel::tick(double dt_seconds) -> double {
+  return impl_->tick(dt_seconds);
+}
+
+auto ColonyModel::relaunch() -> int { return impl_->relaunch(); }
+
+auto ColonyModel::leg() const noexcept -> int { return impl_->current_leg(); }
+
+auto ColonyModel::completed_legs() const noexcept -> int {
+  return impl_->completed_leg_count();
+}
+
+auto ColonyModel::aborted_legs() const noexcept -> int {
+  return impl_->aborted_leg_count();
+}
+
+auto ColonyModel::agent_count() const noexcept -> int {
+  return static_cast<int>(impl_->agents.size());
+}
+
+auto ColonyModel::arrived() const -> int { return impl_->arrived(); }
+
+auto ColonyModel::unreachable() const -> int { return impl_->unreachable(); }
+
+auto ColonyModel::crowd_blocked() const -> int {
+  return impl_->crowd_blocked_count();
+}
+
+auto ColonyModel::turnaround_ready() const -> bool {
+  return impl_->turnaround_ready();
+}
+
+auto ColonyModel::stalled_ticks() const noexcept -> int {
+  return static_cast<int>(impl_->stalled_ticks);
+}
+
+auto ColonyModel::tiles() const noexcept -> const std::uint8_t* {
+  return impl_->shadow.data();
+}
+
+auto ColonyModel::current_agents() const noexcept -> const std::int16_t* {
+  return impl_->agent_xy.data();
+}
+
+auto ColonyModel::previous_agents() const noexcept -> const std::int16_t* {
+  return impl_->previous_agent_xy.data();
+}
+
+auto ColonyModel::interpolation_alpha() const noexcept -> double {
+  return impl_->interpolation_alpha;
+}
+
+}  // namespace tess::examples::web_colony

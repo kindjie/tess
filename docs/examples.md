@@ -18,8 +18,8 @@ cmake --build --preset examples
 - [Live colony](https://tess.owx.dev/demo/colony/) — the scale demo:
   up to 1,024 agents shuttling between the edges and replanning around
   walls you draw (walls survive resets), with completed and crowd-turnaround
-  leg counters, a per-tick cost readout, and a retained-routes vs
-  replan-every-tick toggle.
+  leg counters, smooth presentation-only movement, a C++-update cost readout,
+  and a retained-routes vs replan-every-tick toggle.
 - [Live diagnostics](https://tess.owx.dev/demo/diagnostics/) — real Dear ImGui
   panels over path, queued-phase, timing, trace, and consumer-instrumented
   allocation snapshots. Mirrored HTML controls keep the demo keyboard
@@ -51,12 +51,24 @@ cmake --build --preset examples
   independently.
 - [`web_colony`][web_colony_src] — the source of the
   [live colony demo](https://tess.owx.dev/demo/colony/): the colony_2d
-  composition compiled to WebAssembly, with a native self-checking model
-  binary keeping it under the same CI as every other example.
+  composition compiled to WebAssembly. Its model, Wasm adapter, native
+  self-check, browser controller, and page are separate so the library
+  patterns are visible without platform glue interrupting them.
 - [`sparse_stream.cc`][sparse_stream] — budget-bounded sparse residency:
   a 1,024-chunk world held to a 16-page budget (64x less resident field
   storage), and a path query that reports `Indeterminate` until the
   missing bridge chunk is streamed in and the retry succeeds.
+
+## Colony tutorial map
+
+The colony model labels five reusable composition patterns directly in the
+source: queueing a world edit, rebuilding derived topology on dirty input,
+running bounded pathing before movement, consuming a `DeltaFrame` as
+invalidation, and recovering a rejected frame with a full baseline. The
+`ColonyModel` interface also makes the simulation/presentation boundary
+explicit: tess owns integer-tile fixed-tick state, while the browser
+interpolates read-only previous/current snapshots with the accumulator alpha.
+The fractional coordinates never return to simulation state.
 
 ## Integration boundaries
 

@@ -10,9 +10,19 @@ add_executable(tess_documentation documentation.cc)
 target_link_libraries(tess_documentation PRIVATE tess::tess)
 tess_apply_project_options(tess_documentation)
 
-add_executable(tess_web_colony_model web_colony/colony.cc)
+add_executable(
+  tess_web_colony_model
+  web_colony/colony_model.cc
+  web_colony/colony_native.cc
+)
 target_link_libraries(tess_web_colony_model PRIVATE tess::tess)
 tess_apply_project_options(tess_web_colony_model)
+
+# Compile the browser adapter under native warnings and diff clang-tidy
+# without coupling it to the native verification executable.
+add_library(tess_web_colony_wasm_adapter OBJECT web_colony/colony_wasm.cc)
+target_link_libraries(tess_web_colony_wasm_adapter PRIVATE tess::tess)
+tess_apply_project_options(tess_web_colony_wasm_adapter)
 
 add_executable(tess_web_pathfinder_model web_pathfinder/pathfinder.cc)
 target_link_libraries(tess_web_pathfinder_model PRIVATE tess::tess)
