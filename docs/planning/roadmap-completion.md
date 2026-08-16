@@ -155,8 +155,9 @@ data-backed CI remain gated until individual-content rights are documented.
 ## Cross-Cutting Acceptance
 
 - Serial and parallel authoritative outputs match at synchronization points.
-- Warm path, field, planner, executor, and maintenance hot paths do not
-  allocate after explicit reserve or setup.
+- Warm field, planner, executor, and maintenance hot paths do not allocate
+  after explicit reserve or setup; dirty-bit maintenance additionally requires
+  each participating thread's first successful schedule or task execution.
 - Dense, sparse, top-down, vertical, 3D, diagonal, and hex configurations use
   the same public model where applicable.
 - CPU-only, no-ECS, no-ImGui, and no-GPU consumers keep compiling without

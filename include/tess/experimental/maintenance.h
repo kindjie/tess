@@ -651,7 +651,9 @@ class ImmediateScheduler final : public MaintenanceScheduler {
  * registry to concurrent producers. Tasks remain non-owning and must outlive
  * this scheduler or a completed `flush()`. Registration order defines
  * deterministic drain order. Destroying the scheduler drops pending work
- * without executing it.
+ * without executing it. A thread's first successful post-seal `schedule()` or
+ * first task execution may initialize platform thread-local runtime state;
+ * later scheduling on that thread is allocation-free.
  */
 class DirtyBitScheduler final : public MaintenanceScheduler {
  public:
