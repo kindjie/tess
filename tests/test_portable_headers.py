@@ -21,7 +21,9 @@ SOURCE_SHA = "a" * 40
 
 
 def run(
-  *args: str | Path, check: bool = True
+  *args: str | Path,
+  check: bool = True,
+  env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
   """Run a repository-local command while capturing diagnostics."""
   return subprocess.run(
@@ -29,6 +31,7 @@ def run(
     cwd=REPO,
     check=check,
     capture_output=True,
+    env=env,
     text=True,
   )
 
@@ -50,6 +53,8 @@ def installed_prefix(tmp_path_factory: pytest.TempPathFactory) -> Path:
   work = tmp_path_factory.mktemp("portable-headers-install")
   build = work / "build"
   prefix = work / "prefix"
+  environment = os.environ.copy()
+  environment.pop("CMAKE_CXX_COMPILER_LAUNCHER", None)
   run(
     "cmake",
     "-S",
@@ -60,6 +65,7 @@ def installed_prefix(tmp_path_factory: pytest.TempPathFactory) -> Path:
     "-DTESS_BUILD_EXAMPLES=OFF",
     "-DTESS_BUILD_BENCHMARKS=OFF",
     "-DTESS_BUILD_DOCS=OFF",
+    env=environment,
   )
   run("cmake", "--install", build, "--prefix", prefix)
   return prefix
