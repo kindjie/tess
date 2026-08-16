@@ -775,7 +775,12 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert "expected_version:" in workflow.split("workflow_dispatch:", 1)[1]
   assert "expected_sha:" in workflow.split("workflow_dispatch:", 1)[1]
   assert 'test "$actual_sha" = "$EXPECTED_SHA"' in changes
+  assert 'test "$RELEASE_REF" = "$DISPATCH_REF"' in changes
+  assert 'test "$EVENT_SHA" = "$EXPECTED_SHA"' in changes
+  assert 'test "$WORKFLOW_SHA" = "$EXPECTED_SHA"' in changes
   assert 'test "$version" = "$EXPECTED_VERSION"' in changes
+  assert "ref: ${{ inputs." not in workflow
+  assert workflow.count("ref: ${{ github.sha }}") == 27
   assert "needs.changes.outputs.release_mode == 'true'" in evidence
   for job in always_required:
     assert f"      - {job}\n" in evidence

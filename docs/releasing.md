@@ -8,6 +8,11 @@ Dispatch `.github/workflows/ci.yml` with all three inputs:
 - `expected_version`: the complete version, such as `1.0.0-rc.1`; and
 - `expected_sha`: the full commit SHA.
 
+Select the same branch or tag as the workflow dispatch target and as `ref`.
+Reusable release jobs execute only the commit that defines their workflow and
+fail unless it matches `expected_sha`; an input cannot redirect privileged
+execution to a different revision.
+
 Supplying none runs the ordinary manual full tier. Supplying only part of the
 release tuple fails. Release mode checks out and verifies the requested
 identity, bypasses path filtering, and requires the complete platform,

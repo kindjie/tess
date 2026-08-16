@@ -263,3 +263,15 @@ def test_release_drivers_preserve_direct_compiler_boundary():
   assert "SHA256SUMS" in windows
   assert "Get-FileHash" in windows
   assert "cmake" not in windows.lower()
+
+
+def test_reusable_release_executes_only_its_workflow_commit():
+  """Release inputs cannot redirect privileged execution to another SHA."""
+  workflow = (
+    REPO / ".github" / "workflows" / "portable-headers-release.yml"
+  ).read_text()
+
+  assert workflow.count("ref: ${{ github.workflow_sha }}") == 2
+  assert "ref: ${{ inputs.tested_sha }}" not in workflow
+  assert workflow.count('test "$(git rev-parse HEAD)" = "$TESTED_SHA"') == 1
+  assert workflow.count("(git rev-parse HEAD).Trim() -ne $env:TESTED_SHA") == 1

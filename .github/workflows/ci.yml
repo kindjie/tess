@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Exact branch, tag, or commit to test in release mode
+        description: Branch or tag selected for the release-mode dispatch
         required: false
         type: string
       expected_version:
@@ -63,19 +63,25 @@ jobs:
       release_mode: ${{ steps.release.outputs.release_mode }}
       tested_sha: ${{ steps.release.outputs.tested_sha }}
     steps:
+      # Manual inputs are claims, not checkout authority. Bind all executable
+      # repository content to the event/workflow commit before validating the
+      # optional release tuple.
       - name: Check out repository history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 0
 
       - name: Validate release inputs and checked-out identity
         id: release
         env:
+          DISPATCH_REF: ${{ github.ref_name }}
+          EVENT_SHA: ${{ github.sha }}
           RELEASE_REF: ${{ inputs.ref }}
           EXPECTED_VERSION: ${{ inputs.expected_version }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           supplied=0
           [ -n "$RELEASE_REF" ] && supplied=$((supplied + 1))
@@ -91,6 +97,9 @@ jobs:
             echo "release mode requires ref, expected_version, and expected_sha" >&2
             exit 1
           fi
+          test "$RELEASE_REF" = "$DISPATCH_REF"
+          test "$EVENT_SHA" = "$EXPECTED_SHA"
+          test "$WORKFLOW_SHA" = "$EXPECTED_SHA"
           test "$actual_sha" = "$EXPECTED_SHA"
           version="$(sed -n 's/^set(TESS_VERSION \([^)]*\))$/\1/p' \
             cmake/tess-version.cmake)"
@@ -130,7 +139,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install ccache
@@ -265,7 +274,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install ccache and compiler
@@ -320,7 +329,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install libc++ and ccache
@@ -385,7 +394,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install ccache
@@ -486,7 +495,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
@@ -612,7 +621,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install ccache
@@ -723,7 +732,7 @@ jobs:
       - name: Check out repository history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 0
 
@@ -777,7 +786,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Restore compiler cache
@@ -839,7 +848,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Show tool versions
@@ -901,7 +910,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Show tool versions
@@ -972,7 +981,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install ccache
@@ -1090,7 +1099,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install ccache
@@ -1166,7 +1175,7 @@ jobs:
       - name: Check out repository history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 0
 
@@ -1319,7 +1328,7 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install floor toolchain
@@ -1371,7 +1380,7 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Select and verify Xcode floor
@@ -1415,7 +1424,7 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Configure without RTTI
@@ -1454,7 +1463,7 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install pinned CMake floor
@@ -1498,7 +1507,7 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install Clang 16
@@ -1539,7 +1548,7 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Check out pinned vcpkg
@@ -1607,7 +1616,7 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
@@ -1658,7 +1667,7 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install documentation tools
@@ -1724,7 +1733,7 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Require every release gate
@@ -1890,7 +1899,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Download trailing baseline artifacts
@@ -2014,7 +2023,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           # Not persisted, matching every other checkout here: a token in
           # .git/config is readable by anything the job later runs. The
           # push below authenticates for that one command instead.
@@ -2120,7 +2129,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       # The workflow-level CMAKE_CXX_COMPILER_LAUNCHER points at ccache,
@@ -2203,7 +2212,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.expected_sha || inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install toolchain
