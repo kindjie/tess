@@ -787,6 +787,7 @@ def test_release_mode_requires_exact_identity_and_aggregates_every_gate():
   assert '"bundled_job_logs": observed_logs' in evidence
   assert "release-job-logs/" in evidence
   assert "release-jobs-pages.json" in evidence
+  assert "gh api --allow-escape-sequences" in evidence
   assert "hashlib.sha256" in evidence
   assert '"vcpkg_commit":' in evidence
   assert '"clang_tidy": "18"' in evidence

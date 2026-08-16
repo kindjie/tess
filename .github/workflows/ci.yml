@@ -1785,7 +1785,8 @@ jobs:
                 print(job["id"])
           PY
           while IFS= read -r job_id; do
-            gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job_id/logs" \
+            gh api --allow-escape-sequences \
+              "repos/$GITHUB_REPOSITORY/actions/jobs/$job_id/logs" \
               > "release-job-logs/$job_id.log"
           done < release-completed-jobs.txt
 
