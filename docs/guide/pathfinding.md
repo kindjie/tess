@@ -1,3 +1,10 @@
+---
+title: C++ Grid Pathfinding Strategies for Game Workloads
+description: >-
+  Choose among A*, weighted routing, route caches, batches, and distance fields
+  in the header-only tess C++20 library for grid-based games.
+---
+
 # Pathfinding strategy
 
 **The decision:** what shape is your path workload? Walk the spine in

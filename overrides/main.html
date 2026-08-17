@@ -8,7 +8,9 @@
 {% block extrahead %}
   {#- page is undefined for generated templates such as 404.html. -#}
   {%- set social_title = config.site_name -%}
-  {%- if page and page.title and not page.is_homepage -%}
+  {%- if page and page.meta and page.meta.get("title") -%}
+    {%- set social_title = page.meta["title"] ~ " - " ~ config.site_name -%}
+  {%- elif page and page.title and not page.is_homepage -%}
     {%- set social_title = page.title ~ " - " ~ config.site_name -%}
   {%- endif -%}
   {%- set social_description = config.site_description -%}
@@ -18,6 +20,7 @@
   {%- set social_image =
     config.site_url ~ "assets/tess-social-preview.png" -%}
   <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ config.site_name }}">
   <meta property="og:title" content="{{ social_title }}">
   <meta property="og:description" content="{{ social_description }}">
   {%- if page and page.canonical_url %}
@@ -30,6 +33,17 @@
   <meta name="twitter:title" content="{{ social_title }}">
   <meta name="twitter:description" content="{{ social_description }}">
   <meta name="twitter:image" content="{{ social_image }}">
+  {%- if page and page.is_homepage %}
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": {{ config.site_name | tojson }},
+      "alternateName": "tess.owx.dev",
+      "url": {{ config.site_url | tojson }}
+    }
+  </script>
+  {%- endif %}
 {% endblock %}
 
 {#

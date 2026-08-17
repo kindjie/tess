@@ -124,6 +124,41 @@ def test_mkdocs_uses_compact_symbol_for_navigation_and_favicon():
   assert "favicon: assets/tess-symbol.svg" in config
 
 
+def test_docs_search_metadata_establishes_tess_site_identity():
+  config = read("mkdocs.yml")
+  template = read("overrides/main.html")
+
+  assert (
+    "site_description: >-\n"
+    "  Header-only C++20 library for grid pathfinding, tile-world storage, "
+    "and\n"
+    "  deterministic simulation"
+    in config
+  )
+  expected_titles = {
+    "docs/index.md": "C++20 Grid Pathfinding and Simulation Library",
+    "docs/getting-started.md": (
+      "Getting Started with C++20 Grid Pathfinding"
+    ),
+    "docs/examples.md": "C++20 Grid Pathfinding and Simulation Examples",
+    "docs/guide/pathfinding.md": (
+      "C++ Grid Pathfinding Strategies for Game Workloads"
+    ),
+    "docs/performance.md": "C++ Grid Pathfinding and Simulation Benchmarks",
+  }
+  for path, title in expected_titles.items():
+    assert read(path).startswith(
+      f"---\ntitle: {title}\ndescription: >-\n"
+    )
+
+  assert 'property="og:site_name" content="{{ config.site_name }}"' in template
+  assert '"@type": "WebSite"' in template
+  assert '"name": {{ config.site_name | tojson }}' in template
+  assert '"alternateName": "tess.owx.dev"' in template
+  assert '"url": {{ config.site_url | tojson }}' in template
+  assert "if page and page.is_homepage" in template
+
+
 def test_mkdocs_navigation_includes_persistence_architecture():
   config = read("mkdocs.yml")
 

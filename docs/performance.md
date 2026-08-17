@@ -1,3 +1,10 @@
+---
+title: C++ Grid Pathfinding and Simulation Benchmarks
+description: >-
+  Review reproducible tess benchmarks for C++ grid pathfinding, retained
+  routes, weighted batches, sparse storage, and deterministic worker scaling.
+---
+
 # Performance
 
 tess is performance-first: production benchmark families are gated in CI with
