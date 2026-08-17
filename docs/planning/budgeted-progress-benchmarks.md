@@ -1,6 +1,10 @@
 # Budgeted-progress benchmarks
 
-Status: **Proposed design, revision 3; no implementation**
+Status: **Stages 1-4 implemented and accepted; stage 5 remains contingent on
+evidence.** The staged design below is now an implementation and acceptance
+record. The 2026-08-15 controlled-hardware campaign supplies stage-4 evidence;
+later campaign fragments extend the measurements without promoting a timing
+gate or production continuation API.
 
 Audited against `main` at `bd304e73063bbb17561180f578d6d81ca2979096`; re-checked against `b613f22` (#108, CI cache/sentinel remediation), which does not affect any claim here.
 Revision 2 fixed factual errors against the audited commit and resolved review findings: frame pacing, completed-to-stale reclassification, percentile sample bases, capacity boundary policy, multi-tick overshoot attribution, counter-pass semantics, equivalence under churn, and per-class artifacts.

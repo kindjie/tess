@@ -2,8 +2,9 @@
 
 Status: complete (2026-07-11). This document records the concurrency stream's
 decisions and completed rollout for the initial milestone. Later coalescing
-maintenance work is tracked by `roadmap-completion.md`. Design intent lives in
-the
+maintenance status is tracked by the [public roadmap](../roadmap.md), while
+the [completion record](roadmap-completion.md) preserves the completed release
+sequence. Design intent lives in the
 [concurrent tile-world addendum](../tdd/tdd_addendum_concurrent_tile_world.md)
 and the [work contracts addendum](../tdd/tdd_addendum_work_contracts.md);
 this plan tracks what has landed and what is deliberately deferred.
@@ -113,5 +114,5 @@ scheduler stage should route only such work to the pool by default.
 The remaining concurrency work is not unfinished S1-S7 rollout. Runtime
 ownership claims and cross-thread diagnostic aggregation remain explicit
 future extensions. The later queued-execution and maintenance releases,
-including the rejected coalescing experiment, are complete in
-`roadmap-completion.md`.
+including the rejected coalescing experiment, are preserved in the
+[completion record](roadmap-completion.md).

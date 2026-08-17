@@ -17,7 +17,8 @@ topology-aware pathfinding, and deterministic simulation updates. It supplies
 the spatial substrate while leaving rendering, physics, and entity ownership
 to your application.
 
-This site documents the `v0.12.0` release. tess is pre-1.0 — see
+This site documents the `v0.12.0` release and identifies unreleased changes
+already landed on `main` in the [roadmap](roadmap.md). tess is pre-1.0 — see
 [support and compatibility](support.md) for the stability policy.
 { .tess-version }
 
