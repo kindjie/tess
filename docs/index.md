@@ -1,9 +1,16 @@
+---
+title: C++20 Grid Pathfinding and Simulation Library
+description: >-
+  tess is a header-only C++20 library for grid pathfinding, tile-world
+  storage, and deterministic simulation in games and headless systems.
+---
+
 <div class="tess-hero" markdown>
 
 ![tess](assets/tess-logo.svg#only-light){ width="520" }
 ![tess](assets/tess-logo-dark.svg#only-dark){ width="520" }
 
-# Tile worlds and paths, without an engine
+# C++20 grid pathfinding and simulation, without an engine
 
 `tess` is a header-only C++20 library for bounded grid storage,
 topology-aware pathfinding, and deterministic simulation updates. It supplies

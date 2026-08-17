@@ -1,3 +1,10 @@
+---
+title: C++20 Grid Pathfinding and Simulation Examples
+description: >-
+  Explore complete, self-checking C++20 examples for grid pathfinding, sparse
+  worlds, coordinated agent movement, simulation, and WebAssembly demos.
+---
+
 # Examples
 
 Every example is a complete, self-checking program built as `tess_<name>`

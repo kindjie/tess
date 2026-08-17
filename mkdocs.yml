@@ -1,5 +1,7 @@
 site_name: tess
-site_description: Performance-first C++20 tile and path simulation
+site_description: >-
+  Header-only C++20 library for grid pathfinding, tile-world storage, and
+  deterministic simulation
 site_url: https://tess.owx.dev/
 repo_url: https://github.com/kindjie/tess
 repo_name: kindjie/tess

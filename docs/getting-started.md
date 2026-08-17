@@ -1,3 +1,10 @@
+---
+title: Getting Started with C++20 Grid Pathfinding
+description: >-
+  Install tess and build a typed grid world with A* pathfinding, topology
+  checks, deterministic scheduling, and versioned render updates.
+---
+
 # Getting Started
 
 This tutorial climbs the `tess` concept ladder in the order the pieces
