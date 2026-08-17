@@ -46,8 +46,10 @@ python3 tools/fetch_mermaid.py
 `tools/fetch_mermaid.py` places the pinned, SHA-256-verified Mermaid runtime
 in `docs/assets/javascripts/` (gitignored — it exceeds the tracked-file token
 budget) so diagram pages serve Mermaid from the site's own origin instead of
-Material's unpkg.com fallback. Without it, local previews fall back to the
-CDN fetch.
+Material's unpkg.com fallback. A small inline proxy in `overrides/main.html`
+preserves Material's `initialize()`/`render()` contract and loads the runtime
+only when a page contains a diagram, including after instant navigation.
+Without the fetched asset, a diagram render reports a runtime-load failure.
 
 CI runs `mkdocs build --strict`, builds the `tess_docs` target with the pinned
 Doxygen release, checks authored-site links, validates every Mermaid fence
