@@ -1,10 +1,14 @@
-# Roadmap Completion Plan
+# Roadmap Completion Record
 
-Status: complete. This is the maintained sequencing and completion record for
-the post-v0.4 roadmap. Architecture documents and code remain authoritative
-for shipped behavior; archived TDDs provide rationale and acceptance criteria.
+Status: **Complete historical record.** This document preserves the sequencing
+and completion evidence for the post-v0.4 roadmap through `v0.12.0`. It does
+not own current or future release status. The
+[public roadmap](../roadmap.md) distinguishes released, main-only,
+release-gated, and future work; architecture documents and code remain
+authoritative for the current checkout, while archived TDDs provide rationale
+and acceptance criteria.
 
-## Delivery Rules
+## Delivery Rules Used
 
 - Deliver one test-first vertical slice per pull request.
 - Keep incomplete public APIs in `tess::experimental` until their release gate
@@ -14,7 +18,7 @@ for shipped behavior; archived TDDs provide rationale and acceptance criteria.
 - Update the roadmap, architecture, decision log, tests, and benchmarks in the
   same slice as behavior changes.
 
-## Release Sequence
+## Completed Release Sequence
 
 | Release | Capability | Status |
 | --- | --- | --- |
@@ -152,12 +156,11 @@ fails in required-data mode. Its cache-verifier readiness gate is deliberately
 false. External manifest entries, fetching, cache verification, and
 data-backed CI remain gated until individual-content rights are documented.
 
-## Cross-Cutting Acceptance
+## Acceptance Claimed at Completion
 
 - Serial and parallel authoritative outputs match at synchronization points.
-- Warm field, planner, executor, and maintenance hot paths do not allocate
-  after explicit reserve or setup; dirty-bit maintenance additionally requires
-  each participating thread's first successful schedule or task execution.
+- Warm path, field, planner, executor, and maintenance hot paths do not
+  allocate after explicit reserve or setup.
 - Dense, sparse, top-down, vertical, 3D, diagonal, and hex configurations use
   the same public model where applicable.
 - CPU-only, no-ECS, no-ImGui, and no-GPU consumers keep compiling without
@@ -197,7 +200,7 @@ future coding agents:
   attributing a visual slowdown to pathfinding. Use a profiler when those
   counters or benchmark gates leave genuine uncertainty.
 
-## Explicit Non-Goals
+## Explicit Non-Goals at Completion
 
 Runtime-sized or unbounded worlds, rendering, physics, navigation-mesh
 generation, continuous steering, game-specific AI meaning, and a standalone

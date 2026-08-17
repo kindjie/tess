@@ -20,8 +20,8 @@ Published on the documentation site:
   track implementation.
 - [Performance](performance.md): adopter-facing benchmark expectations and
   the trend snapshot.
-- [Roadmap](roadmap.md): shipped vs designed-but-deferred vs
-  out-of-scope.
+- [Roadmap](roadmap.md): released vs landed-but-unreleased vs release-gated,
+  deferred, and out-of-scope work.
 - [Support](support.md): adopter help, issue, and compatibility guidance;
   the canonical pre-1.0 stability statement.
 - [For agents](for-agents.md): machine-adoption recipe; `llms.txt` is
@@ -47,8 +47,8 @@ Contributor and operations pages (in-repo only; excluded from the site):
 
 ## Internal Records
 
-- [Planning](planning/README.md): milestone plans and audit records;
-  internal working documents, not a guide to current behavior.
+- [Planning](planning/README.md): maintained runbooks plus clearly separated
+  implementation, completion, audit, and other point-in-time records.
 - [Optimization Log](planning/optimization-log.md): accepted, rejected, and
   deferred performance experiments.
 - [Benchmark Calibration](planning/benchmark-calibration.md): threshold

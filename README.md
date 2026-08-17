@@ -25,8 +25,10 @@ fit for games, colony simulations, robotics prototypes, and headless spatial
 models. It is not a renderer, physics engine, navigation-mesh generator, or
 drop-in ECS.
 
-The latest release is `v0.12.0`; this checkout documents the
-`v0.12.0` release. tess is pre-1.0 — see
+The latest release is `v0.12.0`; this checkout documents the `v0.12.0` release
+and unreleased changes already landed on `main`. The
+[roadmap](https://tess.owx.dev/roadmap/) distinguishes them. tess is pre-1.0 —
+see
 [support and compatibility](https://tess.owx.dev/support/) for the stability
 policy. Release notes live in [`CHANGELOG.md`](CHANGELOG.md).
 

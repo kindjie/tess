@@ -590,6 +590,6 @@ execution system. The shipped implementation deliberately remains narrower:
 - `AutoExecTask` owns one typed callback and selects serial or worker-pool
   phase execution. Queued storage does not yet own arbitrary typed kernels.
 
-Richer domains and the general dependency graph are explicit future
-extensions in the maintained roadmap completion plan, not incomplete release
-work.
+Richer domains and the general dependency graph are explicit
+[future extensions](../roadmap.md#future-and-deferred-extensions), not
+incomplete release work.

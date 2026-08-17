@@ -1,13 +1,12 @@
 # Testing and benchmarking redesign
 
-Status: **Proposed** (2026-07-23; revised 2026-07-25 against the merged
-roadmap-completion work, which confirmed the benchmark gate's one true
-positive, settled the external-data rights question, and shifted the CI
-timing baseline). This document records intent only; nothing in it is
-implemented. Until the sequenced follow-up PRs land, the existing
-[benchmark plan](benchmark-plan.md) and
-[calibration history](benchmark-calibration.md) remain authoritative for how
-CI actually behaves.
+Status: **Partially implemented rollout record.** Proposed 2026-07-23 and
+revised 2026-07-25 against the merged roadmap-completion work, this document's
+per-phase annotations now record what landed, what was rejected, and what
+remains open. The workflow, [benchmark plan](benchmark-plan.md),
+[calibration history](benchmark-calibration.md), and contributor guide are
+authoritative for current CI behavior; this record preserves the redesign's
+intent and rollout evidence.
 
 This is a top-down re-derivation of how the project should test and measure
 itself, prioritizing future signal over continuity with the current setup. It
