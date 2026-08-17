@@ -48,12 +48,56 @@
 
 {#
   Self-hosted Mermaid: tools/fetch_mermaid.py places the pinned runtime
-  in docs/assets/javascripts/ at build time. The script tag must come
-  before Material's bundle so the theme finds window.mermaid and skips
-  its unpkg.com CDN fallback; it loads on every page so instant
-  navigation always has the global regardless of entry page.
+  in docs/assets/javascripts/ at build time. Material calls initialize()
+  and awaits render(); this narrow proxy preserves that contract while
+  deferring the large runtime until a page actually contains a diagram.
+  It remains available across Material's instant navigation.
 #}
 {% block scripts %}
-  <script src="{{ 'assets/javascripts/mermaid.min.js' | url }}"></script>
+  <script>
+    (() => {
+      const mermaidRuntimeUrl = new URL(
+        {{ "assets/javascripts/mermaid.min.js" | url | tojson }},
+        document.baseURI,
+      ).href;
+      let initializationOptions;
+      let runtimePromise;
+
+      const mermaidProxy = {
+        initialize(options) {
+          initializationOptions = options;
+        },
+        async render(...args) {
+          const mermaidRuntime = await loadMermaidRuntime();
+          return mermaidRuntime.render(...args);
+        },
+      };
+
+      function loadMermaidRuntime() {
+        if (!runtimePromise) {
+          runtimePromise = new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = mermaidRuntimeUrl;
+            script.addEventListener("load", () => {
+              const mermaidRuntime = window.mermaid;
+              if (mermaidRuntime === mermaidProxy) {
+                reject(new Error("Mermaid runtime did not initialize"));
+                return;
+              }
+              mermaidRuntime.initialize(initializationOptions);
+              resolve(mermaidRuntime);
+            }, { once: true });
+            script.addEventListener("error", () => {
+              reject(new Error("Unable to load Mermaid runtime"));
+            }, { once: true });
+            document.head.append(script);
+          });
+        }
+        return runtimePromise;
+      }
+
+      window.mermaid = mermaidProxy;
+    })();
+  </script>
   {{ super() }}
 {% endblock %}

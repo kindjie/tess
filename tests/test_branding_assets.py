@@ -159,6 +159,24 @@ def test_docs_search_metadata_establishes_tess_site_identity():
   assert "if page and page.is_homepage" in template
 
 
+def test_docs_lazy_loads_the_self_hosted_mermaid_runtime():
+  template = read("overrides/main.html")
+
+  assert (
+    '<script src="{{ \'assets/javascripts/mermaid.min.js\' | url }}">'
+    not in template
+  )
+  assert "const mermaidRuntimeUrl =" in template
+  assert "document.baseURI," in template
+  assert ").href;" in template
+  assert "window.mermaid = mermaidProxy;" in template
+  assert 'document.createElement("script")' in template
+  assert "script.src = mermaidRuntimeUrl;" in template
+  assert "mermaidRuntime.initialize(initializationOptions);" in template
+  assert "return mermaidRuntime.render(...args);" in template
+  assert "unpkg.com" not in template
+
+
 def test_mkdocs_navigation_includes_persistence_architecture():
   config = read("mkdocs.yml")
 

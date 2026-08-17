@@ -2,7 +2,8 @@
 
 - `tests/test_branding_assets.py`: static asset and browser-demo contract
   coverage, including the documentation site's explicit search identity,
-  backend rejection of occupied wall tiles, separate wall-
+  lazy self-hosted Mermaid loading, backend rejection of occupied wall tiles,
+  separate wall-
   and crowd-blocked outcomes, terrain-versus-settled exact-search
   classification, bounded recovery scheduling, whole-wave turnaround after a
   crowd-blocked leg, distinct completed-versus-aborted counters, and settled

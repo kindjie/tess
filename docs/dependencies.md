@@ -119,10 +119,12 @@ runtime is a separate pinned build-time dependency: `tools/fetch_mermaid.py`
 downloads Mermaid 11.16.1 from the npm registry, verifies pinned SHA-256
 digests, and places it in `docs/assets/javascripts/` (gitignored) so the site
 serves it from its own origin instead of the theme's unpkg.com fallback.
-`overrides/main.html` loads it ahead of the theme bundle; Material still owns
-initialization, so diagrams follow the site's fonts and light/dark palettes
-and work with instant navigation. To upgrade, update the version and both
-digests in `tools/fetch_mermaid.py` (Mermaid releases:
+`overrides/main.html` exposes a narrow lazy proxy ahead of the theme bundle;
+Material still owns initialization and rendering, while the pinned runtime is
+fetched only when a page contains a diagram. Diagrams therefore keep the
+site's fonts and light/dark palettes and work with instant navigation without
+charging every documentation page for the runtime. To upgrade, update the
+version and both digests in `tools/fetch_mermaid.py` (Mermaid releases:
 https://github.com/mermaid-js/mermaid/releases); `tools/check_mermaid.py`
 revalidates every fence against the new runtime in CI.
 
