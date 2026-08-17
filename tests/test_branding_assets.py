@@ -167,6 +167,8 @@ def test_docs_lazy_loads_the_self_hosted_mermaid_runtime():
     not in template
   )
   assert "const mermaidRuntimeUrl =" in template
+  assert "document.baseURI," in template
+  assert ").href;" in template
   assert "window.mermaid = mermaidProxy;" in template
   assert 'document.createElement("script")' in template
   assert "script.src = mermaidRuntimeUrl;" in template

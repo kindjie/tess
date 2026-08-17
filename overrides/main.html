@@ -56,8 +56,10 @@
 {% block scripts %}
   <script>
     (() => {
-      const mermaidRuntimeUrl =
-        {{ "assets/javascripts/mermaid.min.js" | url | tojson }};
+      const mermaidRuntimeUrl = new URL(
+        {{ "assets/javascripts/mermaid.min.js" | url | tojson }},
+        document.baseURI,
+      ).href;
       let initializationOptions;
       let runtimePromise;
 
