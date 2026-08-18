@@ -87,13 +87,14 @@ void print_native_scenario_usage() {
   auto accepted = std::size_t{0};
   if (scenario == "browser-guard" || scenario == "browser-incremental") {
     for (const auto& [x, y] : kEndpointGuardReproductionWalls) {
-      accepted += model.queue_wall(x, y) ? 1 : 0;
+      accepted += model.queue_wall(x, y) ? std::size_t{1} : std::size_t{0};
     }
     return accepted;
   }
   if (scenario == "goal-wall") {
     for (auto y = 0; y < 96; ++y) {
-      accepted += model.queue_wall(kWidth - 19, y) ? 1 : 0;
+      accepted +=
+          model.queue_wall(kWidth - 19, y) ? std::size_t{1} : std::size_t{0};
     }
     return accepted;
   }
@@ -106,7 +107,7 @@ void print_native_scenario_usage() {
                               (y >= 80 && y < 88) || (y >= 112 && y < 120))
                           : false;
     if (wall) {
-      accepted += model.queue_wall(64, y) ? 1 : 0;
+      accepted += model.queue_wall(64, y) ? std::size_t{1} : std::size_t{0};
     }
   }
   return accepted;
