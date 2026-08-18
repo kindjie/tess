@@ -126,6 +126,8 @@ def test_mkdocs_uses_compact_symbol_for_navigation_and_favicon():
 
 def test_docs_search_metadata_establishes_tess_site_identity():
   config = read("mkdocs.yml")
+  readme = read("README.md")
+  robots = read("docs/robots.txt")
   template = read("overrides/main.html")
 
   assert (
@@ -145,11 +147,27 @@ def test_docs_search_metadata_establishes_tess_site_identity():
       "C++ Grid Pathfinding Strategies for Game Workloads"
     ),
     "docs/performance.md": "C++ Grid Pathfinding and Simulation Benchmarks",
+    "docs/packaging.md": "Install the tess Header-Only C++20 Library",
+    "docs/use-cases.md": "Grid Pathfinding and Simulation Use Cases",
   }
   for path, title in expected_titles.items():
     assert read(path).startswith(
       f"---\ntitle: {title}\ndescription: >-\n"
     )
+
+  assert readme.startswith("<p align=\"center\">")
+  assert "# tess: C++20 grid pathfinding and simulation library" in readme
+  assert (
+    "`tess` is a performance-first, header-only C++20 grid pathfinding "
+    "and\n"
+    "deterministic simulation library"
+    in readme
+  )
+  assert robots == (
+    "User-agent: *\n"
+    "Allow: /\n"
+    "Sitemap: https://tess.owx.dev/sitemap.xml\n"
+  )
 
   assert 'property="og:site_name" content="{{ config.site_name }}"' in template
   assert '"@type": "WebSite"' in template

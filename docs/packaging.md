@@ -1,3 +1,10 @@
+---
+title: Install the tess Header-Only C++20 Library
+description: >-
+  Install tess with portable headers, CMake FetchContent, add_subdirectory,
+  or an installed package, with no required runtime dependencies.
+---
+
 # Installation
 
 The library is header-only. Every consumer needs a C++20 compiler; CMake 3.25
