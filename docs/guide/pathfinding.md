@@ -1,11 +1,38 @@
 ---
 title: C++ Grid Pathfinding Strategies for Game Workloads
 description: >-
-  Choose among A*, weighted routing, route caches, batches, and distance fields
-  in the header-only tess C++20 library for grid-based games.
+  Start with A*, then choose weighted routing, route caches, batches, or
+  distance fields in the header-only tess C++20 grid pathfinding library.
 ---
 
 # Pathfinding strategy
+
+tess is a header-only C++20 grid pathfinding library for games, simulations,
+and other headless spatial systems. It provides optimal unit-cost and weighted
+A* over caller-owned tile data, plus reuse strategies for workloads with many
+agents or repeated goals. It does not require an engine, renderer, or ECS.
+
+## Start with A*
+
+[Install tess](../packaging.md), include `<tess/pathfinding.h>`, define a world
+and passability field, then reuse one scratch object across queries:
+
+<!-- tess-snippet: getting-astar source=examples/documentation.cc -->
+```cpp
+tess::PathScratch scratch;
+const auto result = tess::astar_path<World, PassableTag>(
+    world, tess::PathRequest{start, goal}, scratch);
+```
+<!-- /tess-snippet -->
+
+Check `result.status` before using its cost or path. The returned
+`tess::PathView` borrows the scratch storage and remains valid only until the
+next query that reuses it. The [getting-started tutorial](../getting-started.md)
+builds the complete world and field schema; the
+[quickstart](https://github.com/kindjie/tess/blob/main/examples/quickstart.cc)
+is a complete program.
+
+## Choose a strategy
 
 **The decision:** what shape is your path workload? Walk the spine in
 order and stop at the first match. When unsure, start with plain
@@ -38,6 +65,27 @@ measured workload justifies it.
 
 The [pathfinding note](../architecture/path.md) holds the normative
 workload charts and semantics; this page only routes into them.
+
+## Capabilities and boundaries
+
+- **Routing rules:** plain A* handles unit-cost terrain;
+  `weighted_astar_path` and movement classes add positive terrain costs and
+  per-unit passability rules.
+- **Workload reuse:** route caches serve repeated identical routes, batches
+  amortize repeated weighted goals, and distance fields serve many starts that
+  share a goal set.
+- **World storage:** single-shot A* works with dense and sparse-resident worlds.
+  Route caches, weighted batches, and distance-field products are dense-only;
+  use per-request routing when sparse residency is required.
+- **Scope:** tess plans grid routes. It is not a navigation-mesh generator or a
+  continuous-space planner, and it does not compute globally optimal
+  multi-agent plans. Joint movement and PIBT resolve contention when agents
+  move instead.
+
+The [interactive pathfinder](https://tess.owx.dev/demo/) shows the basic A*
+query, while the [colony demo](https://tess.owx.dev/demo/colony/) exercises
+retained routes and multi-agent movement. Reproducible timing and memory
+evidence lives on the [performance page](../performance.md).
 
 ## Thresholds
 

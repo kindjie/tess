@@ -1,3 +1,10 @@
+---
+title: Grid Pathfinding and Simulation Use Cases
+description: >-
+  Apply tess grid pathfinding, tile storage, and deterministic simulation to
+  games, robotics prototypes, agent-based models, and headless servers.
+---
+
 # Use cases
 
 The [getting-started tutorial](getting-started.md) teaches the concept

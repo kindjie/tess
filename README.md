@@ -8,16 +8,16 @@
   </picture>
 </p>
 
-# tess
+# tess: C++20 grid pathfinding and simulation library
 
 [![CI](https://github.com/kindjie/tess/actions/workflows/ci.yml/badge.svg)](https://github.com/kindjie/tess/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/kindjie/tess)](https://github.com/kindjie/tess/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/kindjie/tess)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-tess.owx.dev-673ab7)](https://tess.owx.dev/)
 
-`tess` is a performance-first, header-only C++20 tile and path simulation
-substrate: small spatial pieces composed into large, structured worlds for
-fast simulation, topology, and pathfinding.
+`tess` is a performance-first, header-only C++20 grid pathfinding and
+deterministic simulation library. It composes small spatial pieces into large,
+structured worlds for fast routing, topology, and tile-based simulation.
 
 Use tess when a simulation needs bounded grid storage, topology-aware routing,
 or deterministic queued updates without committing to an engine. It is a good
