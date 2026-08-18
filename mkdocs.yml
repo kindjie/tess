@@ -75,7 +75,7 @@ nav:
       - Topology and precheck: guide/topology.md
       - Entities and ECS: guide/entities.md
       - Presentation: guide/presentation.md
-      - Diagnostics: guide/diagnostics.md
+      - Diagnostics guide: guide/diagnostics.md
   - Concepts:
       - architecture/README.md
       - Compatibility evidence: architecture/compatibility.md
@@ -92,7 +92,7 @@ nav:
       - Queued operations: architecture/queued-operations.md
       - Simulation and scheduling: architecture/simulation.md
       - ECS integration: architecture/ecs.md
-      - Diagnostics: architecture/diagnostics.md
+      - Diagnostics architecture: architecture/diagnostics.md
       - GPU interface: architecture/gpu.md
   - API reference: https://tess.owx.dev/api/
   - Performance: performance.md

@@ -60,15 +60,96 @@
   margin: 0.25rem 0.35rem;
 }
 
+.tess-hero .md-button:not(.md-button--primary) {
+  border-color: #512da8;
+  color: #512da8;
+}
+
+/* Inline links remain identifiable when color perception is limited. */
+.md-typeset a:not(.md-button):not(.headerlink) {
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.15em;
+}
+
 /* Version pill under the tagline. */
 .tess-version {
   font-size: 0.72rem;
-  opacity: 0.85;
+  color: #3f3f46;
+}
+
+.tess-version a {
+  color: #512da8;
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.15em;
 }
 
 .tess-version code {
   border-radius: 1em;
   padding: 0.15em 0.7em;
-  background-color: var(--md-primary-fg-color--light);
-  color: var(--md-primary-bg-color);
+  background-color: #ede7f6;
+  color: #4527a0;
+}
+
+[data-md-color-scheme="slate"] .tess-version {
+  color: #e2e4e9;
+}
+
+[data-md-color-scheme="slate"] .tess-version a {
+  color: #d1b3ff;
+}
+
+[data-md-color-scheme="slate"]
+  .tess-hero .md-button:not(.md-button--primary) {
+  border-color: #d1b3ff;
+  color: #d1b3ff;
+}
+
+[data-md-color-scheme="slate"] .tess-version code {
+  background-color: #4527a0;
+  color: #ffffff;
+}
+
+/* Material's default comment and footer text miss 4.5:1 at this size. */
+[data-md-color-scheme="default"] .highlight :is(
+  .c,
+  .ch,
+  .cm,
+  .cpf,
+  .c1,
+  .cs
+) {
+  color: #455a64;
+}
+
+[data-md-color-scheme="slate"] .highlight :is(
+  .c,
+  .ch,
+  .cm,
+  .cpf,
+  .c1,
+  .cs
+) {
+  color: #b0bec5;
+}
+
+[data-md-color-scheme="slate"] .highlight :is(
+  .m,
+  .mb,
+  .mf,
+  .mh,
+  .mi,
+  .il,
+  .mo
+) {
+  color: #ff8a80;
+}
+
+[data-md-color-scheme="slate"] .highlight .nb {
+  color: #b39ddb;
+}
+
+.md-copyright {
+  color: #ffffff;
 }
