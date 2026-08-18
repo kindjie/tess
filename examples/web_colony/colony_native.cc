@@ -1,6 +1,166 @@
+#include <charconv>
+#include <string_view>
+
+#include "colony_endpoint_guard_fixture.h"
 #include "colony_model_internal.h"
 
 namespace tess::examples::web_colony {
+
+namespace {
+
+// Native-only evidence runner for the tutorial model. It deliberately uses
+// the same public construction, wall-queue, tick, and diagnostic operations
+// available to an adopter; browser wiring and simulation policy stay in their
+// focused tutorial files.
+struct NativeScenarioOptions {
+  std::string_view scenario;
+  int agents = kMaxAgents;
+  int max_ticks = 5000;
+  bool spread = true;
+  bool require_complete = false;
+};
+
+void print_native_scenario_usage() {
+  std::cout << "usage: tess_web_colony_model --scenario "
+               "<open|tip|two-gates|four-gates|goal-wall|browser-guard>\n"
+               "       [--agents 1..1024] [--mode canonical|spread]\n"
+               "       [--max-ticks N] [--require-complete]\n";
+}
+
+[[nodiscard]] auto parse_positive_int(std::string_view text, int& value)
+    -> bool {
+  const auto* begin = text.data();
+  const auto* end = begin + text.size();
+  const auto result = std::from_chars(begin, end, value);
+  return result.ec == std::errc{} && result.ptr == end && value > 0;
+}
+
+[[nodiscard]] auto supported_scenario(std::string_view scenario) -> bool {
+  return scenario == "open" || scenario == "tip" || scenario == "two-gates" ||
+         scenario == "four-gates" || scenario == "goal-wall" ||
+         scenario == "browser-guard";
+}
+
+[[nodiscard]] auto parse_native_scenario_options(int argc, char** argv,
+                                                 NativeScenarioOptions& options)
+    -> bool {
+  for (auto i = 1; i < argc; ++i) {
+    const auto argument = std::string_view{argv[i]};
+    const auto next_value = [&]() -> std::string_view {
+      if (i + 1 >= argc) {
+        return {};
+      }
+      return argv[++i];
+    };
+    if (argument == "--scenario") {
+      options.scenario = next_value();
+    } else if (argument == "--agents") {
+      if (!parse_positive_int(next_value(), options.agents)) {
+        return false;
+      }
+    } else if (argument == "--max-ticks") {
+      if (!parse_positive_int(next_value(), options.max_ticks)) {
+        return false;
+      }
+    } else if (argument == "--mode") {
+      const auto mode = next_value();
+      if (mode == "canonical") {
+        options.spread = false;
+      } else if (mode == "spread") {
+        options.spread = true;
+      } else {
+        return false;
+      }
+    } else if (argument == "--require-complete") {
+      options.require_complete = true;
+    } else {
+      return false;
+    }
+  }
+  return supported_scenario(options.scenario) && options.agents <= kMaxAgents;
+}
+
+void queue_native_scenario_walls(ColonyModel& model,
+                                 std::string_view scenario) {
+  if (scenario == "browser-guard") {
+    for (const auto& [x, y] : kEndpointGuardReproductionWalls) {
+      (void)model.queue_wall(x, y);
+    }
+    return;
+  }
+  if (scenario == "goal-wall") {
+    for (auto y = 0; y < 96; ++y) {
+      (void)model.queue_wall(kWidth - 19, y);
+    }
+    return;
+  }
+  for (auto y = 0; y < kHeight; ++y) {
+    const auto wall = scenario == "tip" ? y >= 32
+                      : scenario == "two-gates"
+                          ? !((y >= 24 && y < 32) || (y >= 96 && y < 104))
+                      : scenario == "four-gates"
+                          ? !((y >= 16 && y < 24) || (y >= 48 && y < 56) ||
+                              (y >= 80 && y < 88) || (y >= 112 && y < 120))
+                          : false;
+    if (wall) {
+      (void)model.queue_wall(64, y);
+    }
+  }
+}
+
+[[nodiscard]] auto run_native_scenario(const NativeScenarioOptions& options)
+    -> int {
+  ColonyModel model{options.agents};
+  model.set_spread_congested_routes(options.spread);
+  auto waits = std::uint64_t{0};
+  auto one_progress_ticks = std::uint64_t{0};
+  auto one_progress_streak = std::uint64_t{0};
+  auto longest_one_progress = std::uint64_t{0};
+  auto max_pending = model.planning_pending();
+  auto ticks = 0;
+  const auto started = std::chrono::steady_clock::now();
+  for (; ticks < options.max_ticks && !model.turnaround_ready(); ++ticks) {
+    if (ticks == 4) {
+      queue_native_scenario_walls(model, options.scenario);
+    }
+    (void)model.tick(0.05);
+    waits += static_cast<std::uint64_t>(model.movement_waits_last_tick());
+    max_pending = std::max(max_pending, model.planning_pending());
+    const auto routed_contention =
+        model.planning_pending() == 0 && model.movement_waits_last_tick() > 0;
+    if (routed_contention && model.advanced_last_tick() == 1) {
+      ++one_progress_ticks;
+      ++one_progress_streak;
+      longest_one_progress =
+          std::max(longest_one_progress, one_progress_streak);
+    } else {
+      one_progress_streak = 0;
+    }
+  }
+  const auto elapsed = std::chrono::duration<double, std::milli>(
+                           std::chrono::steady_clock::now() - started)
+                           .count();
+  const auto& impl = ColonyModelNativeAccess::impl(model);
+  std::cout << "scenario=" << options.scenario
+            << " mode=" << (options.spread ? "spread" : "canonical")
+            << " agents=" << options.agents << " ticks=" << ticks
+            << " waits=" << waits << " arrived=" << model.arrived()
+            << " crowd=" << model.crowd_blocked()
+            << " unreachable=" << model.unreachable()
+            << " pending=" << model.planning_pending()
+            << " max_pending=" << max_pending
+            << " max_planning_queries=" << impl.max_planning_queries
+            << " diversity_waves=" << impl.diversity_replan_waves
+            << " one_progress_ticks=" << one_progress_ticks
+            << " longest_one_progress=" << longest_one_progress
+            << " elapsed_ms=" << elapsed << '\n';
+  const auto complete = model.turnaround_ready() &&
+                        model.arrived() == options.agents &&
+                        model.crowd_blocked() == 0 && model.unreachable() == 0;
+  return options.require_complete && !complete ? 1 : 0;
+}
+
+}  // namespace
 
 auto run_native_self_check() -> int {
   std::unique_ptr<ColonyModel> demo;
@@ -19,6 +179,11 @@ auto run_native_self_check() -> int {
     // frame changes only alpha, one tick exposes its integer endpoints, and a
     // catch-up frame retains the final tick pair rather than one long jump.
     reset(1);
+    if (demo->planning_pending() != 1 || demo->advanced_last_tick() != 0 ||
+        demo->movement_waits_last_tick() != 0) {
+      std::cerr << "web colony model: reset progress metrics diverged\n";
+      return 1;
+    }
     const auto initial_x = demo->current_agents()[0];
     const auto initial_y = demo->current_agents()[1];
     if (demo->previous_agents()[0] != initial_x ||
@@ -26,6 +191,7 @@ auto run_native_self_check() -> int {
       std::cerr << "web colony model: reset animation pair diverged\n";
       return 1;
     }
+
     if (demo->tick(0.01) >= 0.0 || demo->current_agents()[0] != initial_x ||
         demo->current_agents()[1] != initial_y ||
         demo->previous_agents()[0] != initial_x ||
@@ -38,7 +204,9 @@ auto run_native_self_check() -> int {
     if (demo->tick(0.04) < 0.0 || demo->previous_agents()[0] != initial_x ||
         demo->previous_agents()[1] != initial_y ||
         (demo->current_agents()[0] == initial_x &&
-         demo->current_agents()[1] == initial_y)) {
+         demo->current_agents()[1] == initial_y) ||
+        demo->planning_pending() != 0 || demo->advanced_last_tick() != 1 ||
+        demo->movement_waits_last_tick() != 0) {
       std::cerr << "web colony model: one-tick animation pair missing\n";
       return 1;
     }
@@ -93,7 +261,7 @@ auto run_native_self_check() -> int {
     // agent must be rejected synchronously; after the agent vacates it, the
     // same tile is a valid construction target.
     reset(1);
-    (void)demo->tick(0.05);
+    (void)demo->tick(0.10);
     const auto occupied_tile = impl().agents[0].position;
     if (demo->queue_wall(static_cast<int>(occupied_tile.x),
                          static_cast<int>(occupied_tile.y))) {
@@ -206,6 +374,7 @@ auto run_native_self_check() -> int {
       std::cerr << "web colony model: settled enclosure misclassified\n";
       return 1;
     }
+
     if (impl().relaunch() != 2 || impl().completed_leg_count() != 0 ||
         impl().aborted_leg_count() != 1 ||
         !enclosure_flow.counters.retention_identity_holds() ||
@@ -233,6 +402,33 @@ auto run_native_self_check() -> int {
         !enclosure_flow.counters.retention_identity_holds() ||
         enclosure_flow.counters.outstanding_current != 5) {
       std::cerr << "web colony model: post-enclosure accounting diverged\n";
+      return 1;
+    }
+
+    // An aisle beside a populated endpoint column is not a cross-cut through
+    // that column. Model a delayed agent behind a fully settled cohort and
+    // prove the recovery classifier treats the resulting Traveler-only seal
+    // as crowd blocking, not durable terrain failure.
+    reset(1);
+    auto& delayed_agent = impl().agents[0];
+    impl().world.field<OccupancyTag>(delayed_agent.position) = false;
+    delayed_agent.position = {110, 64, 0};
+    impl().world.field<OccupancyTag>(delayed_agent.position) = true;
+    tess::set_path_agent_goal(impl().tick_state, delayed_agent, {112, 64, 0});
+    delayed_agent.phase = tess::PathAgentPhase::Blocked;
+    delayed_agent.status = tess::PathStatus::Found;
+    for (int y = 0; y < kHeight; ++y) {
+      impl().world.field<SettledTag>({111, y, 0}) = true;
+    }
+    impl().recover_blocked_agents(1, 1);
+    const auto settled_column_first_queries =
+        impl().recover_blocked_agents(1 + kRecoveryWindowTicks, 1);
+    const auto settled_column_second_queries =
+        impl().recover_blocked_agents(2 + kRecoveryWindowTicks, 1);
+    if (settled_column_first_queries != 1 ||
+        settled_column_second_queries != 1 || impl().unreachable() != 0 ||
+        impl().crowd_blocked_count() != 1 || !impl().turnaround_ready()) {
+      std::cerr << "web colony model: settled endpoint column misclassified\n";
       return 1;
     }
 
@@ -351,6 +547,271 @@ auto run_native_self_check() -> int {
       return 1;
     }
 
+    // Accumulated walls behind a cohort cannot decide whether a current
+    // start-to-goal barrier already supplies enough openings. Give an older
+    // four-gate column and the active wall equal construction density; only
+    // the one-gate column ahead is straddled by this outbound cohort.
+    reset(64);
+    for (std::size_t i = 0; i < impl().agents.size(); ++i) {
+      impl().agents[i].position =
+          tess::Coord3{80, static_cast<std::int64_t>(i), 0};
+      impl().agents[i].goal =
+          tess::Coord3{120, static_cast<std::int64_t>(i), 0};
+    }
+    for (auto y = 0; y < kHeight; ++y) {
+      const auto old_wall = !((y >= 16 && y < 24) || (y >= 48 && y < 56) ||
+                              (y >= 80 && y < 88) || (y >= 112 && y < 120));
+      impl().world.field<ConstructionTag>(tess::Coord3{40, y, 0}) = old_wall;
+      impl().world.field<ConstructionTag>(tess::Coord3{90, y, 0}) = y >= 32;
+    }
+    if (impl().dominant_barrier_open_runs() != 1) {
+      std::cerr << "web colony model: stale wall selected as active barrier\n";
+      return 1;
+    }
+
+    // Optional congestion spreading waits for measured route contention,
+    // then performs one bounded seeded replan wave. A central two-gate wall
+    // exercises the activation path without entering either guarded endpoint
+    // approach.
+    reset(kBottleneckAgents);
+    demo->set_spread_congested_routes(true);
+    for (int frame = 0; frame < 1000 && !impl().turnaround_ready(); ++frame) {
+      if (frame == 4) {
+        // Sparse wall crossings inside both endpoint-approach guards are not
+        // the congesting barrier and must not suppress central spreading.
+        (void)demo->queue_wall(kWallMinX, 0);
+        (void)demo->queue_wall(kWallMaxX, kHeight - 1);
+        for (int y = 0; y < kHeight; ++y) {
+          if (!((y >= 24 && y < 32) || (y >= 96 && y < 104))) {
+            (void)demo->queue_wall(64, y);
+          }
+        }
+      }
+      (void)demo->tick(0.05);
+    }
+    if (!impl().turnaround_ready() || impl().arrived() != kBottleneckAgents ||
+        impl().crowd_blocked_count() != 0 || impl().unreachable() != 0 ||
+        impl().diversity_replan_waves != 1 ||
+        impl().left_approach_wall_tiles != 1 ||
+        impl().right_approach_wall_tiles != 1) {
+      std::cerr << "web colony model: congested route spreading failed\n";
+      return 1;
+    }
+
+    // Pin the documented endpoint-approach boundary and prove repeated wall
+    // submissions do not inflate the count of distinct construction tiles.
+    reset(1);
+    demo->set_spread_congested_routes(true);
+    for (auto y = std::size_t{0}; y < kApproachBarrierTiles - 1; ++y) {
+      (void)demo->queue_wall(kWallMinX, static_cast<int>(y));
+      (void)demo->queue_wall(kWallMinX, static_cast<int>(y));
+    }
+    (void)demo->tick(0.05);
+    if (impl().left_approach_wall_tiles != kApproachBarrierTiles - 1 ||
+        impl().endpoint_approach_obstructed()) {
+      std::cerr << "web colony model: 63-tile endpoint guard diverged\n";
+      return 1;
+    }
+    const auto boundary_y = static_cast<int>(kApproachBarrierTiles - 1);
+    (void)demo->queue_wall(kWallMinX, boundary_y);
+    (void)demo->queue_wall(kWallMinX, boundary_y);
+    (void)demo->tick(0.05);
+    if (impl().left_approach_wall_tiles != kApproachBarrierTiles ||
+        !impl().endpoint_approach_obstructed()) {
+      std::cerr << "web colony model: 64-tile endpoint guard diverged\n";
+      return 1;
+    }
+
+    // A single seeded snapshot still leaves a wide merge at a long wall tip.
+    // Once at least 64 distinct next tiles have competing claims, one
+    // additional bounded seed must disperse the merge without changing the
+    // terminal outcome.
+    constexpr int kWideMergeAgents = 640;
+    reset(kWideMergeAgents);
+    demo->set_spread_congested_routes(true);
+    for (int frame = 0; frame < 1000 && !impl().turnaround_ready(); ++frame) {
+      if (frame == 4) {
+        for (int y = 32; y < kHeight; ++y) {
+          (void)demo->queue_wall(64, y);
+        }
+      }
+      (void)demo->tick(0.05);
+    }
+    if (!impl().turnaround_ready() || impl().arrived() != kWideMergeAgents ||
+        impl().crowd_blocked_count() != 0 || impl().unreachable() != 0 ||
+        impl().wide_merge_replan_waves != 1 ||
+        impl().max_planning_queries > kMaxPlanningQueriesPerTick) {
+      std::cerr << "web colony model: wide wall-tip merge did not disperse\n";
+      return 1;
+    }
+
+    // Gate queues can eventually produce many blocked agents, but their first
+    // post-wave snapshot is not the broad wall-tip merge above. Prove that the
+    // one-shot observation rejects this scale-matched control and cannot
+    // trigger a later second wave as contention evolves.
+    constexpr int kWideMergeControlAgents = 640;
+    reset(kWideMergeControlAgents);
+    demo->set_spread_congested_routes(true);
+    for (int frame = 0; frame < 1000 && !impl().turnaround_ready(); ++frame) {
+      if (frame == 4) {
+        for (int y = 0; y < kHeight; ++y) {
+          if (!((y >= 24 && y < 32) || (y >= 96 && y < 104))) {
+            (void)demo->queue_wall(64, y);
+          }
+        }
+      }
+      (void)demo->tick(0.05);
+    }
+    if (!impl().turnaround_ready() ||
+        impl().arrived() != kWideMergeControlAgents ||
+        impl().crowd_blocked_count() != 0 || impl().unreachable() != 0 ||
+        impl().wide_merge_replan_waves != 0 || !impl().wide_merge_checked) {
+      std::cerr << "web colony model: ordinary gate triggered wide merge\n";
+      return 1;
+    }
+
+    constexpr int kDiversityContractAgents = 64;
+
+    // A topology edit can land while the seeded snapshot is only partly
+    // drained. After one planning batch, prove the topology owner cancels the
+    // remaining snapshot and canonicalizes every active agent.
+    reset(kDiversityContractAgents);
+    demo->set_spread_congested_routes(true);
+    impl().last_movement_waits = 8;
+    impl().update_route_diversity();
+    (void)tess::process_weighted_path_agent_replans<World, Traveler>(
+        impl().world, impl().agents, impl().tick_state.routes,
+        impl().diversity_replan_queue, impl().replan_scratch,
+        tess::PathAgentReplanOptions{
+            .max_requests = kMaxPlanningQueriesPerTick,
+            .equal_cost_tie_seed = 0x434f4c4f4e59ULL,
+        });
+    if (impl().diversity_replan_queue.pending() !=
+        kDiversityContractAgents - kMaxPlanningQueriesPerTick) {
+      std::cerr << "web colony model: seeded replan batch was not bounded\n";
+      return 1;
+    }
+    constexpr auto in_wave_wall = tess::Coord3{64, 63, 0};
+    impl().world.field<PassableTag>(in_wave_wall) = false;
+    impl().world.field<ConstructionTag>(in_wave_wall) = true;
+    const auto in_wave_wall_key =
+        tess::chunk_key<Shape>(tess::chunk_coord<Shape>(in_wave_wall));
+    impl().world.mark_topology_dirty(
+        in_wave_wall_key, kTerrainDirty,
+        tess::Box3{in_wave_wall, tess::Extent3{1, 1, 1}});
+    (void)impl().topology_task(tess::ScheduleTaskContext{});
+    if (!impl().diversity_replan_queue.empty() ||
+        impl().replan_queue.pending() != kDiversityContractAgents ||
+        impl().routes_diversified) {
+      std::cerr << "web colony model: topology retained seeded replan work\n";
+      return 1;
+    }
+    while (!impl().replan_queue.empty()) {
+      (void)tess::process_weighted_path_agent_replans<World, Traveler>(
+          impl().world, impl().agents, impl().tick_state.routes,
+          impl().replan_queue, impl().replan_scratch,
+          tess::PathAgentReplanOptions{
+              .max_requests = kMaxPlanningQueriesPerTick,
+          });
+    }
+    tess::PathScratch in_wave_canonical_scratch;
+    const auto in_wave_canonical = tess::weighted_astar_path<World, Traveler>(
+        impl().world,
+        tess::PathRequest{impl().agents[0].position, impl().agents[0].goal},
+        in_wave_canonical_scratch);
+    if (in_wave_canonical.status != tess::PathStatus::Found ||
+        impl().tick_state.routes.routes[0] !=
+            std::vector<tess::Coord3>(in_wave_canonical.path.begin(),
+                                      in_wave_canonical.path.end())) {
+      std::cerr << "web colony model: in-wave edit was not canonicalized\n";
+      return 1;
+    }
+
+    // The same topology authority applies to the optional second seed. Cancel
+    // it after one batch and return every active agent to canonical planning.
+    reset(kDiversityContractAgents);
+    demo->set_spread_congested_routes(true);
+    impl().routes_diversified = true;
+    impl().wide_merge_checked = true;
+    impl().wide_merge_replan_queue.request_all(impl().agents);
+    (void)tess::process_weighted_path_agent_replans<World, Traveler>(
+        impl().world, impl().agents, impl().tick_state.routes,
+        impl().wide_merge_replan_queue, impl().replan_scratch,
+        tess::PathAgentReplanOptions{
+            .max_requests = kMaxPlanningQueriesPerTick,
+            .equal_cost_tie_seed = 0x434f4e47455354ULL,
+        });
+    if (impl().wide_merge_replan_queue.pending() !=
+        kDiversityContractAgents - kMaxPlanningQueriesPerTick) {
+      std::cerr << "web colony model: wide-merge batch was not bounded\n";
+      return 1;
+    }
+    constexpr auto in_second_wave_wall = tess::Coord3{64, 62, 0};
+    impl().world.field<PassableTag>(in_second_wave_wall) = false;
+    impl().world.field<ConstructionTag>(in_second_wave_wall) = true;
+    const auto in_second_wave_wall_key =
+        tess::chunk_key<Shape>(tess::chunk_coord<Shape>(in_second_wave_wall));
+    impl().world.mark_topology_dirty(
+        in_second_wave_wall_key, kTerrainDirty,
+        tess::Box3{in_second_wave_wall, tess::Extent3{1, 1, 1}});
+    (void)impl().topology_task(tess::ScheduleTaskContext{});
+    if (!impl().wide_merge_replan_queue.empty() ||
+        impl().replan_queue.pending() != kDiversityContractAgents ||
+        impl().routes_diversified) {
+      std::cerr << "web colony model: topology retained wide-merge work\n";
+      return 1;
+    }
+
+    // The seed belongs to one bounded queue snapshot, not the rest of the
+    // leg. Drain a fresh snapshot without moving, make a later central terrain
+    // edit, and prove the topology-owned queue restores canonical routes and
+    // cannot trigger a second seeded wave.
+    reset(kDiversityContractAgents);
+    demo->set_spread_congested_routes(true);
+    impl().last_movement_waits = 8;
+    impl().update_route_diversity();
+    while (!impl().diversity_replan_queue.empty()) {
+      (void)tess::process_weighted_path_agent_replans<World, Traveler>(
+          impl().world, impl().agents, impl().tick_state.routes,
+          impl().diversity_replan_queue, impl().replan_scratch,
+          tess::PathAgentReplanOptions{
+              .max_requests = kMaxPlanningQueriesPerTick,
+              .equal_cost_tie_seed = 0x434f4c4f4e59ULL,
+          });
+    }
+    constexpr auto later_wall = tess::Coord3{64, 64, 0};
+    impl().world.field<PassableTag>(later_wall) = false;
+    impl().world.field<ConstructionTag>(later_wall) = true;
+    const auto later_wall_key =
+        tess::chunk_key<Shape>(tess::chunk_coord<Shape>(later_wall));
+    impl().world.mark_topology_dirty(
+        later_wall_key, kTerrainDirty,
+        tess::Box3{later_wall, tess::Extent3{1, 1, 1}});
+    (void)impl().topology_task(tess::ScheduleTaskContext{});
+    while (!impl().replan_queue.empty()) {
+      (void)tess::process_weighted_path_agent_replans<World, Traveler>(
+          impl().world, impl().agents, impl().tick_state.routes,
+          impl().replan_queue, impl().replan_scratch,
+          tess::PathAgentReplanOptions{
+              .max_requests = kMaxPlanningQueriesPerTick,
+          });
+    }
+    tess::PathScratch canonical_scratch;
+    const auto canonical = tess::weighted_astar_path<World, Traveler>(
+        impl().world,
+        tess::PathRequest{impl().agents[0].position, impl().agents[0].goal},
+        canonical_scratch);
+    impl().update_route_diversity();
+    if (canonical.status != tess::PathStatus::Found ||
+        impl().tick_state.routes.routes[0] !=
+            std::vector<tess::Coord3>(canonical.path.begin(),
+                                      canonical.path.end()) ||
+        impl().routes_diversified || !impl().diversity_replan_queue.empty() ||
+        impl().diversity_replan_waves != 1) {
+      std::cerr << "web colony model: seeded replan wave leaked\n";
+      return 1;
+    }
+
     // All eight destination columns remain a normal successful case when no
     // obstacle disturbs their equal-length routes. Exercise both directions
     // at maximum population before injecting the reported partial outcome.
@@ -368,11 +829,11 @@ auto run_native_self_check() -> int {
       return 1;
     }
 
-    // Natural maximum-scale reproduction: a wall just before the eight goal
-    // columns funnels every upper-row agent through one gap. The nearest goal
-    // column settles first and cuts off farther columns, producing a
-    // settled-only quiescent outcome without synthetic phase edits.
+    // A wall just before the endpoint band funnels every upper-row agent
+    // through one gap. Permanent aisle columns keep early settlers from
+    // sealing the goals behind them, so maximum-scale travel still completes.
     reset(kMaxAgents);
+    demo->set_spread_congested_routes(true);
     for (int frame = 0; frame < 5000 && !impl().turnaround_ready(); ++frame) {
       if (frame == 4) {
         for (int y = 0; y < 96; ++y) {
@@ -381,24 +842,22 @@ auto run_native_self_check() -> int {
       }
       (void)demo->tick(0.05);
     }
-    if (!impl().turnaround_ready() || impl().arrived() == 0 ||
-        impl().crowd_blocked_count() == 0 || impl().unreachable() != 0 ||
-        impl().arrived() + impl().crowd_blocked_count() != kMaxAgents ||
-        impl().relaunch() != 2 || impl().completed_leg_count() != 0 ||
-        impl().aborted_leg_count() != 1) {
-      std::cerr << "web colony model: natural settled seal not recovered\n";
+    if (!impl().turnaround_ready() || impl().arrived() != kMaxAgents ||
+        impl().crowd_blocked_count() != 0 || impl().unreachable() != 0 ||
+        impl().relaunch() != 2 || impl().completed_leg_count() != 1 ||
+        impl().aborted_leg_count() != 0 || impl().diversity_replan_waves != 0) {
+      std::cerr << "web colony model: aisled outbound goals did not complete\n";
       return 1;
     }
     for (int frame = 0; frame < 5000 && !impl().turnaround_ready(); ++frame) {
       (void)demo->tick(0.05);
     }
-    if (!impl().turnaround_ready() || impl().arrived() == 0 ||
-        impl().crowd_blocked_count() == 0 || impl().unreachable() != 0 ||
-        impl().arrived() + impl().crowd_blocked_count() != kMaxAgents ||
-        impl().relaunch() != 3 || impl().completed_leg_count() != 0 ||
-        impl().aborted_leg_count() != 2 ||
+    if (!impl().turnaround_ready() || impl().arrived() != kMaxAgents ||
+        impl().crowd_blocked_count() != 0 || impl().unreachable() != 0 ||
+        impl().relaunch() != 3 || impl().completed_leg_count() != 2 ||
+        impl().aborted_leg_count() != 0 ||
         impl().outstanding_goal_count() != kMaxAgents) {
-      std::cerr << "web colony model: repeated settled seal stopped the wave\n";
+      std::cerr << "web colony model: aisled inbound goals did not complete\n";
       return 1;
     }
 
@@ -558,4 +1017,19 @@ auto run_native_self_check() -> int {
 
 }  // namespace tess::examples::web_colony
 
-int main() { return tess::examples::web_colony::run_native_self_check(); }
+int main(int argc, char** argv) {
+  if (argc == 1) {
+    return tess::examples::web_colony::run_native_self_check();
+  }
+  if (argc == 2 && std::string_view{argv[1]} == "--help") {
+    tess::examples::web_colony::print_native_scenario_usage();
+    return 0;
+  }
+  auto options = tess::examples::web_colony::NativeScenarioOptions{};
+  if (!tess::examples::web_colony::parse_native_scenario_options(argc, argv,
+                                                                 options)) {
+    tess::examples::web_colony::print_native_scenario_usage();
+    return 2;
+  }
+  return tess::examples::web_colony::run_native_scenario(options);
+}

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tess/tess.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -134,6 +135,65 @@ TEST(TessPath, WeightedAStarAvoidsExpensiveDirectTiles) {
     EXPECT_TRUE(world.template field<PassableTag>(coord));
     EXPECT_GT(world.template field<CostTag>(coord), 0u);
   }
+}
+
+TEST(TessPath, SeededTieBreakDiversifiesOnlyEqualCostWeightedPaths) {
+  tess::AlwaysResidentWorld<TopDown2D, Schema> world;
+  fill_passable(world, true);
+  fill_cost(world, 1);
+  for (int y : {0, 2, 3, 4, 6, 7}) {
+    world.template field<PassableTag>(tess::Coord3{3, y, 0}) = false;
+  }
+
+  tess::PathScratch scratch;
+  scratch.reserve_nodes(64);
+  const auto request =
+      tess::PathRequest{tess::Coord3{0, 3, 0}, tess::Coord3{7, 3, 0}};
+  const auto canonical =
+      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+          world, request, scratch);
+  const auto canonical_path =
+      std::vector<tess::Coord3>(canonical.path.begin(), canonical.path.end());
+  const auto zero_seed =
+      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+          world, request, scratch, tess::PathTieBreak{});
+  EXPECT_EQ(
+      std::vector<tess::Coord3>(zero_seed.path.begin(), zero_seed.path.end()),
+      canonical_path);
+
+  std::array<bool, 8> crossings{};
+  std::vector<tess::Coord3> first_seed_path;
+  for (std::uint64_t seed = 1; seed <= 64; ++seed) {
+    const auto result =
+        tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+            world, request, scratch, tess::PathTieBreak{seed});
+    ASSERT_EQ(result.status, tess::PathStatus::Found);
+    EXPECT_EQ(result.cost, 11u);
+    const auto crossing =
+        std::find_if(result.path.begin(), result.path.end(),
+                     [](tess::Coord3 coord) { return coord.x == 3; });
+    ASSERT_NE(crossing, result.path.end());
+    crossings[static_cast<std::size_t>(crossing->y)] = true;
+    if (seed == 1) {
+      first_seed_path.assign(result.path.begin(), result.path.end());
+    }
+  }
+  EXPECT_TRUE(crossings[1]);
+  EXPECT_TRUE(crossings[5]);
+
+  const auto repeated =
+      tess::weighted_astar_path<decltype(world), PassableTag, CostTag>(
+          world, request, scratch, tess::PathTieBreak{1});
+  EXPECT_EQ(
+      std::vector<tess::Coord3>(repeated.path.begin(), repeated.path.end()),
+      first_seed_path);
+
+  const auto movement_class_result =
+      tess::weighted_astar_path<decltype(world), PortalClass>(
+          world, request, scratch, tess::PathTieBreak{1});
+  EXPECT_EQ(std::vector<tess::Coord3>(movement_class_result.path.begin(),
+                                      movement_class_result.path.end()),
+            first_seed_path);
 }
 
 TEST(TessPath, WeightedAStarTreatsZeroCostTilesAsBlocked) {

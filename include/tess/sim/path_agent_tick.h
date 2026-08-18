@@ -294,6 +294,13 @@ struct PathAgentReplanOptions {
   std::size_t max_requests = 8;
   /// Sparse-world boundary behavior passed through to exact A*.
   MissingChunkPolicy missing_chunk_policy = MissingChunkPolicy::TreatAsBlocked;
+  /**
+   * Base seed for deterministic per-agent equal-cost weighted routes.
+   *
+   * Zero preserves canonical A* ordering. A nonzero value derives a stable
+   * seed from each queued agent index; unit-cost replans ignore this field.
+   */
+  std::uint64_t equal_cost_tie_seed = 0;
 };
 
 /**
@@ -425,7 +432,7 @@ template <typename Search>
     }
 
     const auto was_blocked = agent.phase == PathAgentPhase::Blocked;
-    const auto result = search(PathRequest{agent.position, agent.goal});
+    const auto result = search(index, PathRequest{agent.position, agent.goal});
     ++stats.submitted;
     ++stats.completed;
     record_path_agent_status(stats, result.status);
@@ -461,7 +468,7 @@ template <typename World, typename ClassOrTag>
     diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   return detail::process_path_agent_replans(
       agents, routes, queue, options,
-      [&](PathRequest request) {
+      [&](std::size_t, PathRequest request) {
         return astar_path<World, ClassOrTag>(world, request, scratch,
                                              options.missing_chunk_policy);
       },
@@ -477,7 +484,17 @@ template <typename World, typename Class>
     diagnostics::FlowAccounting* accounting = nullptr) -> PathAgentFrameStats {
   return detail::process_path_agent_replans(
       agents, routes, queue, options,
-      [&](PathRequest request) {
+      [&](std::size_t index, PathRequest request) {
+        if (options.equal_cost_tie_seed != 0) {
+          auto seed = options.equal_cost_tie_seed +
+                      static_cast<std::uint64_t>(index) + 1U;
+          if (seed == 0) {
+            seed = options.equal_cost_tie_seed;
+          }
+          return weighted_astar_path<World, Class>(
+              world, request, scratch, PathTieBreak{seed},
+              options.missing_chunk_policy);
+        }
         return weighted_astar_path<World, Class>(world, request, scratch,
                                                  options.missing_chunk_policy);
       },

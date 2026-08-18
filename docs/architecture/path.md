@@ -61,6 +61,10 @@ flowchart TB
 ## Public Surface
 
 - `PathRequest` contains a start and goal `Coord3`.
+- `PathTieBreak` optionally seeds deterministic tertiary ordering among A*
+  nodes with equal search cost and progress. A zero seed preserves canonical
+  tile-index ordering; nonzero seeds can change route shape but not optimal
+  cost or passability.
 - `PathStatus` reports `Found`, `InvalidStart`, `InvalidGoal`, `NoPath`,
   `Indeterminate`, or `CostOverflow`. `Indeterminate` occurs only on sparse
   worlds: the search

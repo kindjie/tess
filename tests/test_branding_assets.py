@@ -256,6 +256,7 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   model_header = read("examples/web_colony/colony_model.h")
   wasm = read("examples/web_colony/colony_wasm.cc")
   native = read("examples/web_colony/colony_native.cc")
+  html = read("examples/web_colony/site/index.html")
   app = read("examples/web_colony/site/app.js")
   build_script = read("tools/build_web_demo.sh")
   cmake = read("examples/CMakeLists.txt")
@@ -269,6 +270,40 @@ def test_colony_demo_reports_wall_and_crowd_blocked_outcomes():
   assert "web_colony/colony_wasm.cc" in cmake
   assert "colony_model.cc" in build_script
   assert "colony_wasm.cc" in build_script
+
+  # The page distinguishes bounded planning backlog from agents that already
+  # have routes but could not move on the latest fixed tick.
+  for metric in (
+    "planning_pending",
+    "advanced_last_tick",
+    "movement_waits_last_tick",
+  ):
+    assert metric in model_header
+  for export in (
+    "tess_colony_planning_pending",
+    "tess_colony_advanced_last_tick",
+    "tess_colony_movement_waits_last_tick",
+  ):
+    assert export in wasm
+    assert f"_{export}" in build_script
+  assert "api.planningPending()" in app
+  assert "api.advancedLastTick()" in app
+  assert "api.movementWaitsLastTick()" in app
+  assert "pending plans" in app
+  assert "movement waits" in app
+
+  # Congestion spreading is an explicit browser policy. It activates only
+  # after measured movement waits and retains protected access aisles around
+  # the separated endpoint columns.
+  assert "set_spread_congested_routes" in model_header
+  assert "tess_colony_set_spread" in wasm
+  assert "_tess_colony_set_spread" in build_script
+  assert "api.setSpread(spread.checked ? 1 : 0)" in app
+  assert 'id="spread" type="checkbox" checked' in html
+  assert "const bandWidth = 18" in app
+  assert "kEndpointBandWidth = 18" in model
+  assert "update_route_diversity" in model
+  assert "endpoint_approach_obstructed" in model
 
   assert "tess_colony_unreachable" in wasm
   assert "_tess_colony_unreachable" in build_script

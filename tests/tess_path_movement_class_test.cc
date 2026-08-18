@@ -432,6 +432,24 @@ TEST(TessPathMovementClass, ProviderAwareSearchUsesCheaperStairEdge) {
   EXPECT_EQ(unit.path.size(), 2u);
 }
 
+TEST(TessPathMovementClass, ProviderSearchRetainsFiveArgumentFunctionType) {
+  using Provider = tess::AdjacentTransitions;
+  using PathFunction =
+      tess::PathResult (*)(const World&, tess::PathRequest, tess::PathScratch&,
+                           tess::MissingChunkPolicy, const Provider&);
+  const PathFunction path_function =
+      &tess::weighted_astar_path<World, DefaultClass, Provider>;
+
+  World world;
+  fill_open(world, 1);
+  tess::PathScratch scratch;
+  const auto result =
+      path_function(world, {{0, 0, 0}, {3, 0, 0}}, scratch,
+                    tess::MissingChunkPolicy::TreatAsBlocked, Provider{});
+
+  EXPECT_EQ(result.status, tess::PathStatus::Found);
+}
+
 TEST(TessPathMovementClass, ProviderAwareFieldUsesAndStampsStairEdge) {
   using StairSchema = tess::FieldSchema<tess::Field<PassableTag, bool>,
                                         tess::Field<CostTag, std::uint32_t>,

@@ -28,6 +28,7 @@ class ColonyModel {
 
   [[nodiscard]] auto queue_wall(int x, int y) -> bool;
   void set_replan_each_tick(bool enabled) noexcept;
+  void set_spread_congested_routes(bool enabled) noexcept;
   [[nodiscard]] auto tick(double dt_seconds) -> double;
   [[nodiscard]] auto relaunch() -> int;
 
@@ -40,6 +41,9 @@ class ColonyModel {
   [[nodiscard]] auto crowd_blocked() const -> int;
   [[nodiscard]] auto turnaround_ready() const -> bool;
   [[nodiscard]] auto stalled_ticks() const noexcept -> int;
+  [[nodiscard]] auto planning_pending() const noexcept -> int;
+  [[nodiscard]] auto advanced_last_tick() const noexcept -> int;
+  [[nodiscard]] auto movement_waits_last_tick() const noexcept -> int;
 
   [[nodiscard]] auto tiles() const noexcept -> const std::uint8_t*;
   [[nodiscard]] auto current_agents() const noexcept -> const std::int16_t*;

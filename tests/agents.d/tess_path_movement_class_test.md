@@ -9,3 +9,5 @@
   Runtime and direct route caches bind provider type, live instance, revision,
   scale, and movement class so alternating callers cannot receive one another's
   routes. Exact unrepresentable costs report `CostOverflow`.
+  Provider-aware weighted search retains its five-argument function type while
+  exposing seeded ties as a separate overload.

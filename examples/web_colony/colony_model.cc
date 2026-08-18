@@ -38,6 +38,9 @@ void ColonyModel::Impl::reserve_working_memory(std::size_t agent_count) {
   joint_scratch.reserve(agent_count);
   recovery_schedule.reserve(agent_count);
   replan_queue.reserve(agent_count);
+  diversity_replan_queue.reserve(agent_count);
+  wide_merge_replan_queue.reserve(agent_count);
+  merge_claims.resize(static_cast<std::size_t>(kWidth) * kHeight);
   runtime.reserve_requests(2048);
   runtime.reserve_search_nodes(65536);
   runtime.reserve_path_nodes(262144);
@@ -122,6 +125,18 @@ void ColonyModel::set_replan_each_tick(bool enabled) noexcept {
   impl_->replan_each_tick = enabled;
 }
 
+void ColonyModel::set_spread_congested_routes(bool enabled) noexcept {
+  impl_->spread_congested_routes = enabled;
+  if (!enabled &&
+      (!impl_->diversity_replan_queue.empty() ||
+       !impl_->wide_merge_replan_queue.empty() || impl_->routes_diversified)) {
+    impl_->diversity_replan_queue.clear();
+    impl_->wide_merge_replan_queue.clear();
+    impl_->routes_diversified = false;
+    impl_->replan_queue.request_all(impl_->agents);
+  }
+}
+
 auto ColonyModel::tick(double dt_seconds) -> double {
   return impl_->tick(dt_seconds);
 }
@@ -156,6 +171,20 @@ auto ColonyModel::turnaround_ready() const -> bool {
 
 auto ColonyModel::stalled_ticks() const noexcept -> int {
   return static_cast<int>(impl_->stalled_ticks);
+}
+
+auto ColonyModel::planning_pending() const noexcept -> int {
+  return static_cast<int>(impl_->replan_queue.pending() +
+                          impl_->diversity_replan_queue.pending() +
+                          impl_->wide_merge_replan_queue.pending());
+}
+
+auto ColonyModel::advanced_last_tick() const noexcept -> int {
+  return static_cast<int>(impl_->last_advanced);
+}
+
+auto ColonyModel::movement_waits_last_tick() const noexcept -> int {
+  return static_cast<int>(impl_->last_movement_waits);
 }
 
 auto ColonyModel::tiles() const noexcept -> const std::uint8_t* {

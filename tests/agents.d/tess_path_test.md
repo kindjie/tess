@@ -6,4 +6,6 @@
   scratch, so later cache growth cannot invalidate returned spans. Store and
   compaction failures preserve existing entries, misses leave caller storage
   untouched, and bounded-field overflow falls back per request. Repeated
-  queries with reserved scratch allocate nothing.
+  queries with reserved scratch allocate nothing. Seeded weighted-search
+  tie-breaking is deterministic, preserves optimal cost, and can select both
+  sides of a symmetric equal-cost barrier.
