@@ -41,10 +41,10 @@ struct SettledTag {};
 constexpr int kWidth = width;
 constexpr int kHeight = height;
 constexpr int kMaxAgents = max_agents;
-// Eight populated endpoint columns alternate with permanent access aisles.
-// Wall painting stays outside the complete endpoint bands. The aisles reduce
-// convergence in the maintained campaigns, but a fully settled populated
-// column can still seal agents on its far side.
+// Eight mostly populated endpoint columns alternate with permanent access
+// aisles. One shared row remains open through every such column, so settled
+// colonists cannot turn endpoint parking into a full-height wall. Wall
+// painting stays outside the complete endpoint bands.
 constexpr int kEndpointBandWidth = 18;
 constexpr int kWallMinX = kEndpointBandWidth;
 constexpr int kWallMaxX = kWidth - kEndpointBandWidth - 1;
@@ -54,6 +54,10 @@ constexpr std::size_t kApproachBarrierTiles = kHeight / 2;
 // that ordinary convoy shuffling does not pay for an exact reachability probe.
 constexpr std::uint32_t kRecoveryWindowTicks = 32;
 constexpr std::size_t kMaxPlanningQueriesPerTick = 8;
+// Pointer painting can publish one topology revision per fixed tick. Delay a
+// congestion response until the stroke has been quiet long enough that its
+// seeded snapshot describes the visible wall rather than a partial one.
+constexpr std::uint64_t kTopologyIdleTicks = 8;
 constexpr auto kRecoveryOptions = tess::BlockedAgentRecoveryOptions{
     .initial_delay_ticks = kRecoveryWindowTicks / 2,
     .max_delay_ticks = 256,
@@ -95,18 +99,22 @@ struct BuildAck {
 };
 
 // Convoy layout: batch k = i / kHeight walks row y = i % kHeight between
-// columns 16 - 2k (home) and 125 - 2k (away). The eight populated columns on
-// each side are separated by goal-free aisle columns. Every agent owns a
-// distinct goal tile and every leg has equal length. The goal-free aisles
-// reduce endpoint convergence; they are not cross-cuts through an already
-// settled populated column.
+// columns 16 - 2k (home) and 125 - 2k (away). Its middle-row agent parks in a
+// sparse outer column instead. That leaves row 64 as a cross-cut through every
+// otherwise populated column while preserving distinct, equal-length goals.
 constexpr auto home_tile(std::size_t i) -> tess::Coord3 {
-  return {16 - 2 * static_cast<std::int64_t>(i / kHeight),
-          static_cast<std::int64_t>(i % kHeight), 0};
+  const auto batch = static_cast<std::int64_t>(i / kHeight);
+  if (i % kHeight == kHeight / 2) {
+    return {17, 56 + batch, 0};
+  }
+  return {16 - 2 * batch, static_cast<std::int64_t>(i % kHeight), 0};
 }
 constexpr auto away_tile(std::size_t i) -> tess::Coord3 {
-  return {kWidth - 3 - 2 * static_cast<std::int64_t>(i / kHeight),
-          static_cast<std::int64_t>(i % kHeight), 0};
+  const auto batch = static_cast<std::int64_t>(i / kHeight);
+  if (i % kHeight == kHeight / 2) {
+    return {kWidth - 2, 56 + batch, 0};
+  }
+  return {kWidth - 3 - 2 * batch, static_cast<std::int64_t>(i % kHeight), 0};
 }
 
 struct ColonyModel::Impl {
@@ -147,6 +155,7 @@ struct ColonyModel::Impl {
   std::size_t diversity_replan_waves = 0;
   std::size_t wide_merge_replan_waves = 0;
   std::size_t wide_merge_tiles = 0;
+  std::uint64_t last_topology_edit_tick = 0;
   // Persistent schedule clock and accumulator: the carry between frames is
   // what turns measured real deltas into a wall-clock 20 Hz simulation.
   // (tick_state owns the separate agent-tick clock; leave it alone.)
@@ -216,7 +225,7 @@ struct ColonyModel::Impl {
 
   struct TopologyTaskFn {
     Impl* demo = nullptr;
-    auto operator()(const tess::ScheduleTaskContext&)
+    auto operator()(const tess::ScheduleTaskContext& context)
         -> tess::ScheduleTaskResult {
       // Example: rebuild derived topology on dirty input. The schedule runs
       // this OnDirty task only after queued terrain edits publish their bit.
@@ -231,12 +240,16 @@ struct ColonyModel::Impl {
           TESS_ASSERT(false);
           return {};
         }
-        // A topology revision ends any older seeded snapshots. The new world
-        // revision is replanned only through the canonical queue.
+        // A topology revision ends any older seeded snapshot. Canonical work
+        // owns the new revision immediately; a fresh seed becomes eligible
+        // only after pointer painting has remained idle for a short window.
         demo->diversity_replan_queue.clear();
         demo->wide_merge_replan_queue.clear();
         demo->replan_queue.request_all(demo->agents);
         demo->routes_diversified = false;
+        demo->diversity_wave_attempted = false;
+        demo->wide_merge_checked = false;
+        demo->last_topology_edit_tick = context.clock.tick;
       }
       return {};
     }
@@ -330,7 +343,7 @@ struct ColonyModel::Impl {
     return runs;
   }
 
-  void update_route_diversity() {
+  void update_route_diversity(std::uint64_t tick) {
     if (!spread_congested_routes || replan_each_tick ||
         endpoint_approach_obstructed()) {
       if (!diversity_replan_queue.empty() || routes_diversified) {
@@ -340,7 +353,10 @@ struct ColonyModel::Impl {
       }
       return;
     }
-    if (diversity_wave_attempted) {
+    const auto topology_idle =
+        tick >= last_topology_edit_tick &&
+        tick - last_topology_edit_tick >= kTopologyIdleTicks;
+    if (diversity_wave_attempted || !topology_idle) {
       return;
     }
     const auto active = static_cast<std::size_t>(outstanding_goal_count());
@@ -524,7 +540,7 @@ struct ColonyModel::Impl {
       // last pair, which is the pair rendered with the accumulator remainder.
       demo->snapshot_before_movement();
       demo->sync_settled_obstacles();
-      demo->update_route_diversity();
+      demo->update_route_diversity(context.clock.tick);
       demo->update_wide_merge_routes();
       // Example: run bounded pathing before movement. The earlier Pathing
       // phase refreshes shared topology; this Movement task then performs its

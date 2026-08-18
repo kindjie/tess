@@ -8,8 +8,9 @@
 - Reproduction: build `tess_web_colony_model`, then run, for example,
   `tess_web_colony_model --scenario tip --agents 1024 --mode spread
   --max-ticks 5000 --require-complete`. With no arguments the executable
-  retains its original native self-check. `--help` lists the five fixed
-  geometries and two modes; one output line is suitable for a shell matrix.
+  retains its original native self-check. `--help` lists the fixed geometries,
+  the batch and incremental browser replays, and both routing modes; one output
+  line is suitable for a shell matrix.
 - Current target result: canonical routing did not finish the 1,024-agent
   wall-tip fixture in 5,000 ticks and contained 842 one-agent-progress ticks,
   including a 20-tick streak while at least 559 agents remained. One seeded
@@ -90,10 +91,11 @@
   shortest paths per agent and greedily retained the one adding less peak and
   total spatial route load. The candidates differed for 702 of 955 wall-tip
   replans, 556 of 977 two-gate replans, and 810 of 1,024 browser-replay
-  replans, so lack of equal-cost variety was not the limiting factor. Despite
-  that variety, the wall tip regressed from 1,305 ticks and 309,363 waits to
-  1,588 and 405,238; two gates regressed from 867 and 65,187 to 1,328 and
-  175,367; and the browser replay ended at 1,023 arrivals plus one
-  crowd-blocked agent. Reject the portfolio: a spatial overlap score ignores
-  arrival time, mandatory cuts, and merge ordering, so lowering it is not a
-  sound proxy for throughput.
+  replans, proving that the tested candidate generator supplied real variety.
+  Despite that variety, the wall tip regressed from 1,305 ticks and 309,363
+  waits to 1,588 and 405,238; two gates regressed from 867 and 65,187 to 1,328
+  and 175,367; and the browser replay ended at 1,023 arrivals plus one
+  crowd-blocked agent. Reject this portfolio selector: its wave-local spatial
+  overlap score ignores unreplanned routes, arrival time, mandatory cuts, and
+  merge ordering, so lowering it is not a sound proxy for throughput. This
+  does not reject future time-indexed or globally initialized load models.
