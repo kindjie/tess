@@ -191,6 +191,12 @@ def test_docs_theme_overrides_preserve_accessible_names_and_contrast():
   assert "text-decoration: underline" in css
   assert ".md-typeset a:not(.md-button):not(.headerlink)" in css
   assert ".tess-hero .md-button:not(.md-button--primary)" in css
+  assert ".tess-version a:is(:hover, :focus)" in css
+  assert (
+    ".md-button:not(.md-button--primary):is(:hover, :focus)" in css
+  )
+  assert "background-color: #512da8" in css
+  assert "background-color: #d1b3ff" in css
   contrast_pairs = (
     ("#3f3f46", "#ffffff"),
     ("#512da8", "#ffffff"),

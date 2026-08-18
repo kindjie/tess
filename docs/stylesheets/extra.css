@@ -65,6 +65,13 @@
   color: #512da8;
 }
 
+.tess-hero
+  .md-button:not(.md-button--primary):is(:hover, :focus) {
+  background-color: #512da8;
+  border-color: #512da8;
+  color: #ffffff;
+}
+
 /* Inline links remain identifiable when color perception is limited. */
 .md-typeset a:not(.md-button):not(.headerlink) {
   text-decoration: underline;
@@ -85,6 +92,10 @@
   text-underline-offset: 0.15em;
 }
 
+.tess-version a:is(:hover, :focus) {
+  color: #512da8;
+}
+
 .tess-version code {
   border-radius: 1em;
   padding: 0.15em 0.7em;
@@ -101,9 +112,22 @@
 }
 
 [data-md-color-scheme="slate"]
+  .tess-version a:is(:hover, :focus) {
+  color: #d1b3ff;
+}
+
+[data-md-color-scheme="slate"]
   .tess-hero .md-button:not(.md-button--primary) {
   border-color: #d1b3ff;
   color: #d1b3ff;
+}
+
+[data-md-color-scheme="slate"]
+  .tess-hero
+  .md-button:not(.md-button--primary):is(:hover, :focus) {
+  background-color: #d1b3ff;
+  border-color: #d1b3ff;
+  color: #1e2129;
 }
 
 [data-md-color-scheme="slate"] .tess-version code {
