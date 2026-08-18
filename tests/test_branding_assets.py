@@ -177,6 +177,49 @@ def test_docs_lazy_loads_the_self_hosted_mermaid_runtime():
   assert "unpkg.com" not in template
 
 
+def test_docs_theme_overrides_preserve_accessible_names_and_contrast():
+  template = read("overrides/main.html")
+  css = read("docs/stylesheets/extra.css")
+  config = read("mkdocs.yml")
+
+  assert "querySelector(" in template
+  assert '.md-search[role=\\"dialog\\"]' in template
+  assert "setAttribute(" in template
+  assert '"aria-label", {{ lang.t("search") | tojson }}' in template
+
+  assert "opacity: 0.85" not in css
+  assert "text-decoration: underline" in css
+  assert ".md-typeset a:not(.md-button):not(.headerlink)" in css
+  assert ".tess-hero .md-button:not(.md-button--primary)" in css
+  assert ".tess-version a:is(:hover, :focus)" in css
+  assert (
+    ".md-button:not(.md-button--primary):is(:hover, :focus)" in css
+  )
+  assert "background-color: #512da8" in css
+  assert "background-color: #d1b3ff" in css
+  contrast_pairs = (
+    ("#3f3f46", "#ffffff"),
+    ("#512da8", "#ffffff"),
+    ("#4527a0", "#ede7f6"),
+    ("#e2e4e9", "#1e2129"),
+    ("#d1b3ff", "#1e2129"),
+    ("#ffffff", "#4527a0"),
+    ("#455a64", "#f5f5f5"),
+    ("#b0bec5", "#272a35"),
+    ("#ff8a80", "#272a35"),
+    ("#b39ddb", "#272a35"),
+    ("#ffffff", "#111317"),
+  )
+  for color in {color for pair in contrast_pairs for color in pair}:
+    if color not in {"#1e2129", "#f5f5f5", "#272a35", "#111317"}:
+      assert color in css
+  for foreground, background in contrast_pairs:
+    assert contrast_ratio(foreground, background) >= 4.5
+
+  assert "Diagnostics guide: guide/diagnostics.md" in config
+  assert "Diagnostics architecture: architecture/diagnostics.md" in config
+
+
 def test_mkdocs_navigation_includes_persistence_architecture():
   config = read("mkdocs.yml")
 
