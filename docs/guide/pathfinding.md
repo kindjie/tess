@@ -74,9 +74,10 @@ workload charts and semantics; this page only routes into them.
 - **Workload reuse:** route caches serve repeated identical routes, batches
   amortize repeated weighted goals, and distance fields serve many starts that
   share a goal set.
-- **World storage:** single-shot A* works with dense and sparse-resident worlds.
-  Route caches, weighted batches, and distance-field products are dense-only;
-  use per-request routing when sparse residency is required.
+- **World storage:** single-shot A*, route caches, and weighted batches support
+  dense and sparse-resident worlds. Persistent distance-field products are
+  dense-only; use a supported batch or per-request strategy when sparse
+  residency is required.
 - **Scope:** tess plans grid routes. It is not a navigation-mesh generator or a
   continuous-space planner, and it does not compute globally optimal
   multi-agent plans. Joint movement and PIBT resolve contention when agents
