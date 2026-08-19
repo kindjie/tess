@@ -397,18 +397,23 @@ reducedMotion.addEventListener("change", () => {
   }
 });
 
-createTessStrategies().then((module) => {
-  const api = bindApi(module);
-  snapshots = validateSnapshot(api);
-  initializeGrids(snapshots.passability);
-  renderTable(snapshots);
-  updateTopology(snapshots);
-  animationStage = reducedMotion.matches ? 3 : 0;
-  renderStage(animationStage);
-  root.dataset.tessStrategies = "ready";
-  startTimer();
-}).catch((error) => {
-  root.dataset.tessStrategies = "failed";
-  setAnnouncement("Could not validate the C++ WebAssembly results");
-  console.error(error);
-});
+async function initializeStrategies() {
+  try {
+    const module = await createTessStrategies();
+    const api = bindApi(module);
+    snapshots = validateSnapshot(api);
+    initializeGrids(snapshots.passability);
+    renderTable(snapshots);
+    updateTopology(snapshots);
+    animationStage = reducedMotion.matches ? 3 : 0;
+    renderStage(animationStage);
+    root.dataset.tessStrategies = "ready";
+    startTimer();
+  } catch (error) {
+    root.dataset.tessStrategies = "failed";
+    setAnnouncement("Could not validate the C++ WebAssembly results");
+    console.error(error);
+  }
+}
+
+void initializeStrategies();

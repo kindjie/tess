@@ -96,10 +96,11 @@ rejection decision in this repository. Their absence is not a verdict.
 The embedded demo runs the same C++ model as the self-checking example. Its
 animation shows call order and reuse; it deliberately does not time
 WebAssembly or draw a search frontier that the APIs do not report.
-The obstacle course and returned routes are intentionally identical across
-cards. Compare the operation chain and data-product label above each map to
-see whether tess repeats searches, retains a route, groups a batch, or labels
-the reachable map for later reads.
+The obstacle course is shared, and comparable requests return the same routes.
+The cache card instead repeats its first request to expose reuse. Compare the
+operation chain and data-product label above each map to see whether tess
+repeats searches, retains a route, groups a batch, or labels the reachable map
+for later reads.
 
 <iframe class="strategy-demo-frame"
         src="../demo/strategies/"

@@ -324,6 +324,9 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert 'data-tess-strategies="loading"' not in html
   assert 'dataset.tessStrategies = "ready"' in app
   assert 'dataset.tessStrategies = "failed"' in app
+  assert "async function initializeStrategies()" in app
+  assert "await createTessStrategies()" in app
+  assert "void initializeStrategies();" in app
   assert "validateSnapshot" in app
   assert "Cache hits: 1" in app
   assert "Cache misses: 1" in app
@@ -338,6 +341,8 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert 'aria-live="polite"' in html
   assert 'aria-pressed="false"' in html
   assert 'class="tile-grid"' in html
+  assert "Comparable requests intentionally match" in html
+  assert "The routes intentionally match" not in html
   for topology in (
     'data-topology="astar"',
     'data-topology="cache"',
@@ -360,6 +365,8 @@ def test_strategy_demo_uses_shared_cpp_results_and_accessible_embed():
   assert 'src="../demo/strategies/"' in article
   assert 'loading="lazy"' in article
   assert 'title="Interactive pathfinding strategy comparison"' in article
+  assert "comparable requests return the same routes" in article
+  assert "returned routes are intentionally identical across cards" not in article
   assert "Open the strategy demo in a separate page" in article
   assert "## Algorithm and strategy status" in article
   assert "four peer algorithms" in article
