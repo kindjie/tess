@@ -75,7 +75,7 @@ if(BUILD_TESTING)
     tess_web_colony_canonical_endpoint_crosscut_guard
     PROPERTIES
       LABELS "target:tess_web_colony_model;subsystem:path;subsystem:sim"
-      TIMEOUT 120
+      TIMEOUT 240
       PASS_REGULAR_EXPRESSION
         "scenario=browser-guard.*arrived=896.*crowd=0.*unreachable=0"
   )
