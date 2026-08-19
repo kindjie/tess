@@ -971,6 +971,15 @@ tess_apply_project_options(tess_path_portal_route_test)
 
 tess_discover_tests(tess_path_portal_route_test LABELS core path storage topology)
 
+add_executable(tess_portal_memo_test tess_portal_memo_test.cc)
+target_link_libraries(
+  tess_portal_memo_test
+  PRIVATE tess::tess GTest::gtest_main
+)
+tess_apply_project_options(tess_portal_memo_test)
+
+tess_discover_tests(tess_portal_memo_test LABELS core path)
+
 add_executable(
   tess_portal_first_replan_test
   tess_portal_first_replan_test.cc
